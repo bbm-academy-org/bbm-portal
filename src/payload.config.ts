@@ -7,6 +7,12 @@ import sharp from 'sharp'
 
 import { Users } from './collections/Users'
 import { Media } from './collections/Media'
+import { PublicProjects } from './collections/PublicProjects'
+import { Team } from './collections/Team'
+import { Pages } from './collections/Pages'
+import { Philosophy } from './globals/Philosophy'
+import { Contact } from './globals/Contact'
+import { SiteChrome } from './globals/SiteChrome'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -18,7 +24,8 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
   },
-  collections: [Users, Media],
+  collections: [Users, Media, PublicProjects, Team, Pages],
+  globals: [Philosophy, Contact, SiteChrome],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
