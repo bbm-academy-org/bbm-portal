@@ -1,9 +1,10 @@
 {
   "name": "bbm-portal",
   "version": "1.0.0",
-  "description": "A blank template to get started with Payload 3.0",
-  "license": "MIT",
+  "description": "Payload CMS content backend for the BBM Academy public website; seed of the future BBM portal",
+  "license": "UNLICENSED",
   "type": "module",
+  "packageManager": "pnpm@10.7.0",
   "scripts": {
     "build": "cross-env NODE_OPTIONS=\"--no-deprecation --max-old-space-size=8000\" next build",
     "dev": "cross-env NODE_OPTIONS=--no-deprecation next dev",
