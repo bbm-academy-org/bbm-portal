@@ -50,9 +50,10 @@ plugin is **gated on `S3_BUCKET`**:
 - **Leave `S3_BUCKET` empty** → Payload falls back to local-disk storage, so dev
   works without S3 credentials.
 
-The bucket itself is ordered in the Timeweb panel (a one-time user-action); the
-keys are the same account-level S3 credentials used by the estate's off-site
-backups. No migration is involved — the storage adapter adds no DB columns.
+The bucket (`bbm-portal-media`, public-read, Hot class) and its keys are
+provisioned by Terraform — `bbm/infra/timeweb/terraform/portal_media.tf`; read
+the values with `terraform output portal_media_*`. No migration is involved —
+the storage adapter adds no DB columns.
 
 ## Scripts
 | Command | Purpose |
