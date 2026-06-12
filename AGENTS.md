@@ -88,8 +88,15 @@ Strategic tracking lives in **Plane**, workspace **`bbm`**, project **BBM Platfo
 
 ## Dev quickstart
 ```bash
-cp .env.example .env          # set PAYLOAD_SECRET (openssl rand -hex 32)
-docker compose up -d postgres # dedicated `cms` Postgres (decision #2)
+cp .env.example .env          # set PAYLOAD_SECRET (openssl rand -hex 32), point DATABASE_URL at the dev DB
 pnpm install
+pnpm migrate                  # apply migrations — `push: false`, so run this before dev
 pnpm dev                      # admin at http://localhost:3000/admin
 ```
+- **Node 22** (LTS) — pinned by `.nvmrc` / Dockerfile / CI. Payload's migrate CLI
+  uses a tsx ESM loader that breaks on Node 23/24 (`node:crypto?tsx-namespace`
+  ENOENT). `next dev` tolerates 24, but migrations need 22 — stay on 22.
+- **Postgres `cms`** is a dedicated DB + `payload` role (decision #2). Migrations
+  are the schema SSOT (`push: false`); where the container runs is a per-machine
+  recipe (remote TrueNAS-over-SSH or local Docker) — see README → Database. After
+  any collection/global change: `pnpm migrate:create <name>` → commit `src/migrations/*`.
