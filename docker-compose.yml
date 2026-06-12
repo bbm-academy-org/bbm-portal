@@ -1,0 +1,27 @@
+# Local development database for the Payload CMS.
+# Decision #2 (see ../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md):
+# a DEDICATED Postgres database `cms` with its own role. Run this container,
+# then `pnpm dev` on the host connects to it via DATABASE_URL (localhost:5432).
+# Portable contract only: named volume + env-vars, no host paths. Put any
+# machine-specific overrides in an untracked compose.override.yml.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-payload}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payload}
+      POSTGRES_DB: ${POSTGRES_DB:-cms}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-payload} -d ${POSTGRES_DB:-cms}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
