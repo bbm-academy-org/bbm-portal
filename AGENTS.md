@@ -43,14 +43,15 @@ Full rationale: `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-set
 
 **Definition of done (portal-side):** hit each collection/global and get JSON that passes `schema.parse(...)` — exactly as `../bbm-public-website/tests/unit/content.test.ts` does (read seed → `schema.parse`). If the response shape equals the fixture shape, the consumer-side loader swap (`bbm-public-website#61`) is near-mechanical.
 
-### Out of scope now: `leads` (form submissions → PII)
-Leads are **not** a content mirror — they are a **runtime PII receiver** (write-at-runtime, opposite data direction; never part of the build-time loader swap). 152-FZ applies: the site stores no PII and posts form JSON to an RF-hosted receiver (`PUBLIC_SUBMIT_LEAD_URL`, site seam #23). **Payload is the natural receiver candidate** (it will sit in Zone RF per BBMP-30 → compliant; has Postgres + an admin UI for sales to view leads). A `leads` collection = public-write + access-control + anti-spam/rate-limit + retention. Decided in its **own milestone**, not in BBMP-25..32.
+### Out of scope now: `leads` (form submissions → PII) — receiver DECIDED
+Leads are **not** a content mirror — they are a **runtime PII receiver** (write-at-runtime, opposite data direction; never part of the build-time loader swap). 152-FZ applies: the site stores no PII and posts form JSON to an RF-hosted receiver (`PUBLIC_SUBMIT_LEAD_URL`, site seam #23). **Receiver = a `Leads` collection in THIS Payload app — already DECIDED** (ADR-001, `bbm-public-website#77`, 2026-06-12): public create-endpoint, storage in Payload's DB (contour PG cluster, db-per-service), notification `afterChange(create)` → **Mattermost webhook** to `chat.bbm.academy` (in-contour RF; hermes kz-1 and Resend US excluded for PII). A `leads` collection = public-write + access-control + anti-spam/rate-limit + retention. Built in its **own milestone** (`bbm-public-website#23`, depends on Payload-live), not in BBMP-25..32.
 
 ## Architectural authority
 
 Framework/infra choices are fixed by the BBM Platform architecture spec — do not swap:
 - **D-026** — Astro for the public site, **Next.js for the portal, Payload CMS as the headless content source.**
 - **D-018** — dual-zone hosting; the portal (this repo, with PII surfaces later) runs in **Zone RF (Timeweb Cloud)**.
+- **Hosting (2026-06-12):** BBMP-30 deploys to a **dedicated `portal-prod-tw` VPS — NOT co-located on `tools-prod-tw`** (internal tools host: Mattermost/Outline). Public PII service is isolated from internal tooling, per the estate's per-service failure-domain pattern. Terraform (`../bbm/infra/timeweb/terraform/portal.tf`) is written/applied by the agent — not a user-action.
 - `../bbm-public-website/docs/infrastructure-decisions.md` §6a (Payload/portal hosting), §6.
 - `../bbm-platform-prd/docs/superpowers/specs/2026-04-07-bbm-platform-design.md` (D-026, D-018).
 
