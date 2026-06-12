@@ -28,6 +28,14 @@ export default buildConfig({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
     },
+    // Migrations are the single source of truth for the schema (decision #2:
+    // Payload owns the dedicated `cms` database and runs its own migrations).
+    // `push: false` disables dev schema auto-push so even local dev applies the
+    // committed migrations — no dev/prod schema drift. Run `pnpm migrate` before
+    // `pnpm dev`; generate a new migration with `pnpm migrate:create` after any
+    // collection/global change.
+    push: false,
+    migrationDir: path.resolve(dirname, 'migrations'),
   }),
   sharp,
   plugins: [],

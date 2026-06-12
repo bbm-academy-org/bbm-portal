@@ -1,9 +1,19 @@
 # Local development database for the Payload CMS.
 # Decision #2 (see ../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md):
-# a DEDICATED Postgres database `cms` with its own role. Run this container,
-# then `pnpm dev` on the host connects to it via DATABASE_URL (localhost:5432).
-# Portable contract only: named volume + env-vars, no host paths. Put any
-# machine-specific overrides in an untracked compose.override.yml.
+# a DEDICATED Postgres database `cms` with its own role. `pnpm dev` on the host
+# connects to it via DATABASE_URL.
+#
+# WHERE Docker runs is a per-machine recipe, not part of this contract (mirrors
+# ds-platform/infra/dev-stand). The reference recipe runs this container on the
+# LAN TrueNAS box over SSH and the host's `pnpm dev` reaches it on
+# `truenas.local:${POSTGRES_PORT}`; a host with a local Docker daemon runs it on
+# `localhost:${POSTGRES_PORT}`. Host port is env-driven because 5432 is already
+# taken on the shared box — see README → Database.
+#
+# Portable contract only: fixed project name (so containers/volume stay
+# namespaced `bbm-portal-dev-*` and never collide with co-hosted workloads),
+# named volume + env-vars, no host paths.
+name: bbm-portal-dev
 
 services:
   postgres:
@@ -14,7 +24,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payload}
       POSTGRES_DB: ${POSTGRES_DB:-cms}
     ports:
-      - '5432:5432'
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
