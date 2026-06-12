@@ -40,6 +40,20 @@ Schema changes: edit collections/globals → `pnpm migrate:create <name>` → co
 the generated `src/migrations/*` → `pnpm migrate`. Production runs `pnpm migrate`
 on deploy (`push: false` everywhere — no dev/prod schema drift).
 
+### Media storage
+The `media` collection is backed by **Timeweb Object Storage** (S3-compatible,
+decision #3) through `@payloadcms/storage-s3` with `forcePathStyle: true`. The
+plugin is **gated on `S3_BUCKET`**:
+- **Set `S3_BUCKET` + keys** (`S3_ENDPOINT=https://s3.twcstorage.ru`,
+  `S3_REGION=ru-1`, account-level access key/secret) → uploads stream to S3 and
+  are served from the bucket URL. **Production must set these.**
+- **Leave `S3_BUCKET` empty** → Payload falls back to local-disk storage, so dev
+  works without S3 credentials.
+
+The bucket itself is ordered in the Timeweb panel (a one-time user-action); the
+keys are the same account-level S3 credentials used by the estate's off-site
+backups. No migration is involved — the storage adapter adds no DB columns.
+
 ## Scripts
 | Command | Purpose |
 |---|---|
