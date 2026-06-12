@@ -69,6 +69,9 @@ export interface Config {
   collections: {
     users: User;
     media: Media;
+    publicProjects: PublicProject;
+    team: Team;
+    pages: Page;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -78,6 +81,9 @@ export interface Config {
   collectionsSelect: {
     users: UsersSelect<false> | UsersSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
+    publicProjects: PublicProjectsSelect<false> | PublicProjectsSelect<true>;
+    team: TeamSelect<false> | TeamSelect<true>;
+    pages: PagesSelect<false> | PagesSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -87,8 +93,16 @@ export interface Config {
     defaultIDType: number;
   };
   fallbackLocale: null;
-  globals: {};
-  globalsSelect: {};
+  globals: {
+    philosophy: Philosophy;
+    contact: Contact;
+    siteChrome: SiteChrome;
+  };
+  globalsSelect: {
+    philosophy: PhilosophySelect<false> | PhilosophySelect<true>;
+    contact: ContactSelect<false> | ContactSelect<true>;
+    siteChrome: SiteChromeSelect<false> | SiteChromeSelect<true>;
+  };
   locale: null;
   widgets: {
     collections: CollectionsWidget;
@@ -163,6 +177,340 @@ export interface Media {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "publicProjects".
+ */
+export interface PublicProject {
+  id: string;
+  name: string;
+  tagline: string;
+  direction: string;
+  status: 'active' | 'launching' | 'exploring' | 'soon';
+  maturity: 'rich' | 'thin' | 'soon';
+  description?: string | null;
+  disclaimer?: string | null;
+  metrics?:
+    | {
+        label?: string | null;
+        value?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  team?: (string | Team)[] | null;
+  media?: {
+    logo?: string | null;
+  };
+  nextStep?: {
+    label?: string | null;
+    href?: string | null;
+  };
+  related?: string[] | null;
+  visibility?: ('public' | 'restricted') | null;
+  locale: 'ru' | 'en';
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "team".
+ */
+export interface Team {
+  id: string;
+  name: string;
+  initials?: string | null;
+  role?: string | null;
+  bio?: string | null;
+  photo?: string | null;
+  projects?: (string | PublicProject)[] | null;
+  socials?:
+    | {
+        label?: string | null;
+        href?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  locale: 'ru' | 'en';
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pages".
+ */
+export interface Page {
+  id: string;
+  title: string;
+  body?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
+  faq?:
+    | {
+        question?: string | null;
+        answer?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  pathSteps?:
+    | {
+        title?: string | null;
+        body?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  hero?: {
+    eyebrow?: string | null;
+    sticker?: string | null;
+    titleLead?: string | null;
+    titleMark?: string | null;
+    titleTrail?: string | null;
+    lead?: string | null;
+    primaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    secondaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    chips?: string[] | null;
+    proofLabel?: string | null;
+    proofItems?:
+      | {
+          icon?: string | null;
+          title?: string | null;
+          body?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  whatIs?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    paragraphs?: string[] | null;
+  };
+  showcase?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    allLink?: {
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  intro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    actions?:
+      | {
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  filters?: {
+    label?: string | null;
+    allLabel?: string | null;
+  };
+  about?: {
+    whatIs?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+      paragraphs?: string[] | null;
+    };
+    goal?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    values?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    principles?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    approach?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    roles?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    goalKicker?: string | null;
+    missionKicker?: string | null;
+    approachNote?: {
+      title?: string | null;
+      body?: string | null;
+    };
+  };
+  pathIntro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+  };
+  trust?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    stats?:
+      | {
+          value?: string | null;
+          label?: string | null;
+          sub?: string | null;
+          tone?: ('default' | 'teal' | 'empty') | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  contour?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    public?: {
+      kicker?: string | null;
+      title?: string | null;
+      items?: string[] | null;
+    };
+    internal?: {
+      kicker?: string | null;
+      title?: string | null;
+      items?: string[] | null;
+    };
+    boundary?: string | null;
+  };
+  faqIntro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+  };
+  contacts?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    boundary?: {
+      icon?: string | null;
+      label?: string | null;
+      value?: string | null;
+    };
+    note?: string | null;
+  };
+  team?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+  };
+  participate?: {
+    roles?: {
+      slug?: string | null;
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    noScript?: {
+      message?: string | null;
+      linkText?: string | null;
+      contactsLinkText?: string | null;
+    };
+    forms?:
+      | {
+          id?: string | null;
+          scenario?: string | null;
+          eyebrow?: string | null;
+          title?: string | null;
+          lead?: string | null;
+          fields?:
+            | {
+                name?: string | null;
+                type: 'text' | 'email' | 'tel' | 'select' | 'textarea';
+                label?: string | null;
+                placeholder?: string | null;
+                hint?: string | null;
+                required?: boolean | null;
+                full?: boolean | null;
+                autocomplete?: string | null;
+                validationMessage?: string | null;
+                options?:
+                  | {
+                      value?: string | null;
+                      label?: string | null;
+                      id?: string | null;
+                    }[]
+                  | null;
+                placeholderOption?: string | null;
+                id?: string | null;
+              }[]
+            | null;
+          consentLabelLead?: string | null;
+          consentLinkText?: string | null;
+          consentValidationMessage?: string | null;
+          submitLabel?: string | null;
+          states?: {
+            success?: {
+              title?: string | null;
+              body?: string | null;
+            };
+            error?: {
+              title?: string | null;
+              body?: string | null;
+            };
+            unavailable?: {
+              title?: string | null;
+              body?: string | null;
+            };
+          };
+          note?: string | null;
+        }[]
+      | null;
+  };
+  privacy?: {
+    draftNote?: {
+      label?: string | null;
+      body?: string | null;
+    };
+    sections?:
+      | {
+          id?: string | null;
+          heading?: string | null;
+          paragraphs?: string[] | null;
+        }[]
+      | null;
+    operator?: {
+      slug?: string | null;
+      heading?: string | null;
+      paragraphs?: string[] | null;
+    };
+    consent?: {
+      anchor?: string | null;
+      label?: string | null;
+      text?: string[] | null;
+    };
+  };
+  cta?: {
+    title?: string | null;
+    lead?: string | null;
+    primaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    secondaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  locale: 'ru' | 'en';
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -192,6 +540,18 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'media';
         value: number | Media;
+      } | null)
+    | ({
+        relationTo: 'publicProjects';
+        value: string | PublicProject;
+      } | null)
+    | ({
+        relationTo: 'team';
+        value: string | Team;
+      } | null)
+    | ({
+        relationTo: 'pages';
+        value: string | Page;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -277,6 +637,424 @@ export interface MediaSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "publicProjects_select".
+ */
+export interface PublicProjectsSelect<T extends boolean = true> {
+  id?: T;
+  name?: T;
+  tagline?: T;
+  direction?: T;
+  status?: T;
+  maturity?: T;
+  description?: T;
+  disclaimer?: T;
+  metrics?:
+    | T
+    | {
+        label?: T;
+        value?: T;
+        id?: T;
+      };
+  team?: T;
+  media?:
+    | T
+    | {
+        logo?: T;
+      };
+  nextStep?:
+    | T
+    | {
+        label?: T;
+        href?: T;
+      };
+  related?: T;
+  visibility?: T;
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "team_select".
+ */
+export interface TeamSelect<T extends boolean = true> {
+  id?: T;
+  name?: T;
+  initials?: T;
+  role?: T;
+  bio?: T;
+  photo?: T;
+  projects?: T;
+  socials?:
+    | T
+    | {
+        label?: T;
+        href?: T;
+        id?: T;
+      };
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pages_select".
+ */
+export interface PagesSelect<T extends boolean = true> {
+  id?: T;
+  title?: T;
+  body?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
+  faq?:
+    | T
+    | {
+        question?: T;
+        answer?: T;
+        id?: T;
+      };
+  pathSteps?:
+    | T
+    | {
+        title?: T;
+        body?: T;
+        id?: T;
+      };
+  hero?:
+    | T
+    | {
+        eyebrow?: T;
+        sticker?: T;
+        titleLead?: T;
+        titleMark?: T;
+        titleTrail?: T;
+        lead?: T;
+        primaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        secondaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        chips?: T;
+        proofLabel?: T;
+        proofItems?:
+          | T
+          | {
+              icon?: T;
+              title?: T;
+              body?: T;
+              id?: T;
+            };
+      };
+  whatIs?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        paragraphs?: T;
+      };
+  showcase?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        allLink?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+      };
+  intro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        actions?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
+  filters?:
+    | T
+    | {
+        label?: T;
+        allLabel?: T;
+      };
+  about?:
+    | T
+    | {
+        whatIs?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+              paragraphs?: T;
+            };
+        goal?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        values?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        principles?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        approach?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        roles?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        goalKicker?: T;
+        missionKicker?: T;
+        approachNote?:
+          | T
+          | {
+              title?: T;
+              body?: T;
+            };
+      };
+  pathIntro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+      };
+  trust?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        stats?:
+          | T
+          | {
+              value?: T;
+              label?: T;
+              sub?: T;
+              tone?: T;
+              id?: T;
+            };
+      };
+  contour?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        public?:
+          | T
+          | {
+              kicker?: T;
+              title?: T;
+              items?: T;
+            };
+        internal?:
+          | T
+          | {
+              kicker?: T;
+              title?: T;
+              items?: T;
+            };
+        boundary?: T;
+      };
+  faqIntro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+      };
+  contacts?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        boundary?:
+          | T
+          | {
+              icon?: T;
+              label?: T;
+              value?: T;
+            };
+        note?: T;
+      };
+  team?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+      };
+  participate?:
+    | T
+    | {
+        roles?:
+          | T
+          | {
+              slug?: T;
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        noScript?:
+          | T
+          | {
+              message?: T;
+              linkText?: T;
+              contactsLinkText?: T;
+            };
+        forms?:
+          | T
+          | {
+              id?: T;
+              scenario?: T;
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+              fields?:
+                | T
+                | {
+                    name?: T;
+                    type?: T;
+                    label?: T;
+                    placeholder?: T;
+                    hint?: T;
+                    required?: T;
+                    full?: T;
+                    autocomplete?: T;
+                    validationMessage?: T;
+                    options?:
+                      | T
+                      | {
+                          value?: T;
+                          label?: T;
+                          id?: T;
+                        };
+                    placeholderOption?: T;
+                    id?: T;
+                  };
+              consentLabelLead?: T;
+              consentLinkText?: T;
+              consentValidationMessage?: T;
+              submitLabel?: T;
+              states?:
+                | T
+                | {
+                    success?:
+                      | T
+                      | {
+                          title?: T;
+                          body?: T;
+                        };
+                    error?:
+                      | T
+                      | {
+                          title?: T;
+                          body?: T;
+                        };
+                    unavailable?:
+                      | T
+                      | {
+                          title?: T;
+                          body?: T;
+                        };
+                  };
+              note?: T;
+            };
+      };
+  privacy?:
+    | T
+    | {
+        draftNote?:
+          | T
+          | {
+              label?: T;
+              body?: T;
+            };
+        sections?:
+          | T
+          | {
+              id?: T;
+              heading?: T;
+              paragraphs?: T;
+            };
+        operator?:
+          | T
+          | {
+              slug?: T;
+              heading?: T;
+              paragraphs?: T;
+            };
+        consent?:
+          | T
+          | {
+              anchor?: T;
+              label?: T;
+              text?: T;
+            };
+      };
+  cta?:
+    | T
+    | {
+        title?: T;
+        lead?: T;
+        primaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        secondaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+      };
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv_select".
  */
 export interface PayloadKvSelect<T extends boolean = true> {
@@ -314,6 +1092,212 @@ export interface PayloadMigrationsSelect<T extends boolean = true> {
   batch?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "philosophy".
+ */
+export interface Philosophy {
+  id: number;
+  evolutionaryGoal?: string | null;
+  mission?: string | null;
+  values?:
+    | {
+        title?: string | null;
+        body?: string | null;
+        icon?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  principles?:
+    | {
+        title?: string | null;
+        body?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  tealPillars?:
+    | {
+        title?: string | null;
+        body?: string | null;
+        icon?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  roles?:
+    | {
+        code?: string | null;
+        icon?: string | null;
+        share?: string | null;
+        extra?: string | null;
+        body?: string | null;
+        hot?: boolean | null;
+        id?: string | null;
+      }[]
+    | null;
+  locale: 'ru' | 'en';
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "contact".
+ */
+export interface Contact {
+  id: number;
+  email: string;
+  phone?: string | null;
+  socials?:
+    | {
+        label?: string | null;
+        href?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  legalEntity?: string | null;
+  domain?: string | null;
+  locale: 'ru' | 'en';
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "siteChrome".
+ */
+export interface SiteChrome {
+  id: number;
+  nav?:
+    | {
+        label?: string | null;
+        href?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  loginLabel?: string | null;
+  loginHref?: string | null;
+  ctaLabel?: string | null;
+  ctaHref?: string | null;
+  footerTagline?: string | null;
+  footerColumns?:
+    | {
+        heading?: string | null;
+        links?:
+          | {
+              label?: string | null;
+              href?: string | null;
+              id?: string | null;
+            }[]
+          | null;
+        id?: string | null;
+      }[]
+    | null;
+  copyright?: string | null;
+  locale: 'ru' | 'en';
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "philosophy_select".
+ */
+export interface PhilosophySelect<T extends boolean = true> {
+  evolutionaryGoal?: T;
+  mission?: T;
+  values?:
+    | T
+    | {
+        title?: T;
+        body?: T;
+        icon?: T;
+        id?: T;
+      };
+  principles?:
+    | T
+    | {
+        title?: T;
+        body?: T;
+        id?: T;
+      };
+  tealPillars?:
+    | T
+    | {
+        title?: T;
+        body?: T;
+        icon?: T;
+        id?: T;
+      };
+  roles?:
+    | T
+    | {
+        code?: T;
+        icon?: T;
+        share?: T;
+        extra?: T;
+        body?: T;
+        hot?: T;
+        id?: T;
+      };
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "contact_select".
+ */
+export interface ContactSelect<T extends boolean = true> {
+  email?: T;
+  phone?: T;
+  socials?:
+    | T
+    | {
+        label?: T;
+        href?: T;
+        id?: T;
+      };
+  legalEntity?: T;
+  domain?: T;
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "siteChrome_select".
+ */
+export interface SiteChromeSelect<T extends boolean = true> {
+  nav?:
+    | T
+    | {
+        label?: T;
+        href?: T;
+        id?: T;
+      };
+  loginLabel?: T;
+  loginHref?: T;
+  ctaLabel?: T;
+  ctaHref?: T;
+  footerTagline?: T;
+  footerColumns?:
+    | T
+    | {
+        heading?: T;
+        links?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+        id?: T;
+      };
+  copyright?: T;
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
