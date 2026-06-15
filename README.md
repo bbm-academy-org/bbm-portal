@@ -40,6 +40,23 @@ Schema changes: edit collections/globals → `pnpm migrate:create <name>` → co
 the generated `src/migrations/*` → `pnpm migrate`. Production runs `pnpm migrate`
 on deploy (`push: false` everywhere — no dev/prod schema drift).
 
+### Admin auth
+The admin panel at `/admin` uses **native Payload auth** — log in with an
+**email + password**. The user model is a single implicit-admin: every user is a
+full admin (no roles yet; SSO + a roles model are a deferred follow-up). The
+`users` collection is access-controlled to authenticated callers only, so it is
+not world-readable over the REST API.
+
+**Bootstrap the first admin** (headless / non-interactive — e.g. on the prod VPS):
+```bash
+SEED_ADMIN_EMAIL=admin@bbm.academy SEED_ADMIN_PASSWORD='a-strong-password' pnpm seed:admin
+```
+The script is **idempotent** — if a user with that email already exists it skips
+without overwriting. On an empty DB you can equivalently use the `/admin`
+"create first user" screen; Payload bypasses access control until the first user
+exists. Both `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` are required (the
+script fails loudly if either is unset) — see `.env.example`.
+
 ### Media storage
 The `media` collection is backed by **Timeweb Object Storage** (S3-compatible,
 decision #3) through `@payloadcms/storage-s3` with `forcePathStyle: true`. The
@@ -63,6 +80,7 @@ the storage adapter adds no DB columns.
 | `pnpm migrate:create <name>` | generate a migration from the current schema (needs a live DB) |
 | `pnpm migrate:status` | list migrations and whether they ran |
 | `pnpm migrate:down` | roll back the last batch |
+| `pnpm seed:admin` | bootstrap the first admin (needs `SEED_ADMIN_EMAIL` + `SEED_ADMIN_PASSWORD`; idempotent) |
 | `pnpm lint` | ESLint (flat config) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm generate:types` | regenerate `src/payload-types.ts` from collections |
