@@ -59,11 +59,12 @@ image (`runner` stage) contains only `server.js` + traced `node_modules` — it
 has **no pnpm, no Payload CLI, no tsx, and no source**, so `pnpm migrate` /
 `pnpm seed:admin` cannot run from the `app` container.
 
-The `migrate` service solves this: it builds from the Dockerfile **`builder`**
-target (full `node_modules` + source + Node 22), shares the same `env_file` and
-network, waits for Postgres health, and runs `pnpm migrate` by default. It is
-gated behind the `tools` profile, so it never starts on a plain `up`. The admin
-seed reuses the same service with a command override.
+The `migrate` service solves this: it builds from the Dockerfile **`tooling`**
+target (full `node_modules` + source + pnpm/Node 22, but no `next build` — so it
+is fast and needs no build-time swap), shares the network, waits for Postgres
+health, and runs `pnpm migrate` by default. It is gated behind the `tools`
+profile, so it never starts on a plain `up`. The admin seed reuses the same
+service with a command override.
 
 ## First deploy (ordered)
 

@@ -50,17 +50,20 @@ services:
       - '3000'
 
   # One-off tooling job: runs Payload migrations (default command) and the admin
-  # seed (override command). Built from the Dockerfile `builder` target, which
-  # carries full node_modules + source + Node 22 — the standalone `runner` image
-  # cannot run pnpm/Payload CLI. Gated behind the `tools` profile so it never
-  # starts on a plain `docker compose up`.
+  # seed (override command). Built from the Dockerfile `tooling` target, which
+  # carries full node_modules + source + pnpm/Node 22 (no `next build`) — the
+  # standalone `runner` image cannot run pnpm/Payload CLI. Gated behind the
+  # `tools` profile so it never starts on a plain `docker compose up`.
   #   docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
   #   docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
   migrate:
     build:
       context: ..
       dockerfile: Dockerfile
-      target: builder
+      # `tooling` target = deps + source + pnpm, WITHOUT the heavy `next build`
+      # (migrations/seed don't need the built app). Fast to build, no 8 GB build
+      # memory, and avoids the standalone runner's missing-CLI problem.
+      target: tooling
     env_file:
       - .env.prod
     depends_on:

@@ -37,6 +37,17 @@ RUN \
   else echo "Lockfile not found." && exit 1; \
   fi
 
+# Tooling image for one-off jobs (Payload migrations + admin seed), used by the
+# compose `migrate` service (target: tooling). It has full node_modules + source
+# + pnpm/tsx, but deliberately does NOT run `next build` — so it builds fast and
+# does not need the ~8 GB build memory the standalone app build requires. Node 22
+# is baked in, so the migrate tsx-loader gotcha (Node 23/24) does not apply.
+FROM base AS tooling
+WORKDIR /app
+RUN corepack enable pnpm
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
 # Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
