@@ -1,0 +1,84 @@
+# Production stack for bbm-portal (Payload CMS v3 inside Next.js).
+# Runs on the dedicated `portal-prod-tw` VPS (Timeweb ru-2, Zone RF) behind
+# Caddy with automatic Let's Encrypt TLS for https://cms.bbm.academy.
+#
+# Differences from the dev `docker-compose.yml` at repo root (do NOT merge them):
+#   - Postgres port is NOT published to the host (DB reachable only on the
+#     internal compose network — prod hardening).
+#   - The app is built from the repo Dockerfile and fronted by Caddy; no host
+#     port is published for it.
+#   - A profiled `migrate` service runs schema migrations + the admin seed as
+#     one-off jobs (the standalone runtime image lacks pnpm/CLI/source — see
+#     deploy/README.md).
+#
+# Compose file lives in `deploy/`; the Dockerfile is at the repo root, so the
+# build context is the parent directory (`..`).
+name: bbm-portal
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - '3000'
+
+  # One-off tooling job: runs Payload migrations (default command) and the admin
+  # seed (override command). Built from the Dockerfile `builder` target, which
+  # carries full node_modules + source + Node 22 — the standalone `runner` image
+  # cannot run pnpm/Payload CLI. Gated behind the `tools` profile so it never
+  # starts on a plain `docker compose up`.
+  #   docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
+  #   docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
+  migrate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: builder
+    env_file:
+      - .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['pnpm', 'migrate']
+    profiles:
+      - tools
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

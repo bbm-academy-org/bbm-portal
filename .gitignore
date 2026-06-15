@@ -40,6 +40,9 @@ next-env.d.ts
 
 .env
 
+# prod env lives only on the host (deploy/.env.prod.example is the committed template)
+/deploy/.env.prod
+
 /media
 
 # Playwright
