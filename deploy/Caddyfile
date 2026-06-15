@@ -1,0 +1,6 @@
+# Reverse proxy + automatic Let's Encrypt TLS for the portal.
+# DNS already maps cms.bbm.academy -> 201.51.28.190, so Caddy provisions and
+# renews the certificate automatically on first start (HTTP-01/TLS-ALPN-01).
+cms.bbm.academy {
+    reverse_proxy app:3000
+}

@@ -1,0 +1,3 @@
+# Keeps the conventional Next.js public/ dir in git so the Dockerfile
+# `COPY --from=builder /app/public ./public` (standalone runner stage) resolves.
+# Static assets served at the site root go here.

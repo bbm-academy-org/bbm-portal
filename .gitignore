@@ -40,6 +40,10 @@ next-env.d.ts
 
 .env
 
+# prod env lives only on the host (the *.example files are the committed templates)
+/deploy/.env.prod
+/deploy/.env.postgres
+
 /media
 
 # Playwright

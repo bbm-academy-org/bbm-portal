@@ -18,7 +18,7 @@
     "migrate:down": "cross-env NODE_OPTIONS=--no-deprecation payload migrate:down",
     "migrate:fresh": "cross-env NODE_OPTIONS=--no-deprecation payload migrate:fresh",
     "payload": "cross-env NODE_OPTIONS=--no-deprecation payload",
-    "seed:admin": "cross-env NODE_OPTIONS=--no-deprecation payload run src/seed/seedAdmin.ts",
+    "seed:admin": "cross-env NODE_OPTIONS=--no-deprecation tsx src/seed/runSeedAdmin.ts",
     "start": "cross-env NODE_OPTIONS=--no-deprecation next start",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run test:int && pnpm run test:e2e",

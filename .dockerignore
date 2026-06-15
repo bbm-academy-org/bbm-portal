@@ -1,0 +1,21 @@
+# Keep the build context lean and secret-free (Dockerfile does `COPY . .`).
+# node_modules and .next are rebuilt inside the image; .git is never needed.
+**/node_modules
+**/.next
+**/.git
+**/.turbo
+
+# Never bake local secrets into the image. The committed templates are fine.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.prod.example
+
+# Test / tooling artifacts irrelevant to a production build.
+playwright-report
+test-results
+coverage
+**/*.log
+.vscode
+.idea
+.DS_Store
