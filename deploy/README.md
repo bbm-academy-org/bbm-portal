@@ -28,14 +28,24 @@ All commands below run **from the `deploy/` directory on the host**.
    sudo swapon /swapfile
    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
    ```
-3. **The env file.** Copy the template and fill in real secrets (it is
-   gitignored and must exist only on the host):
+3. **The env files.** Two gitignored files, on the host only — split so the
+   postgres container never receives the app's Payload/S3/seed secrets:
    ```bash
-   cp .env.prod.example .env.prod
-   # edit .env.prod — PAYLOAD_SECRET (openssl rand -hex 32), DB password,
-   # S3 keys (terraform output portal_media_*), SEED_ADMIN_*.
+   cp .env.prod.example .env.prod          # app + migrate
+   # edit: PAYLOAD_SECRET (openssl rand -hex 32), DATABASE_URL,
+   #       S3 keys (terraform output portal_media_*), SEED_ADMIN_*.
+
+   cp .env.postgres.example .env.postgres  # postgres container only
+   # edit: POSTGRES_USER/PASSWORD/DB — POSTGRES_PASSWORD MUST equal the
+   #       password embedded in DATABASE_URL above.
    ```
    `DATABASE_URL` host is the compose service name `postgres`, not localhost.
+
+4. **The code on the host.** Org policy disables repo deploy keys, so the box
+   has no `git` clone. Ship the committed tree as an archive from a workstation
+   with repo access (`git archive --format=tar.gz <branch> | ssh … tar -xz …`),
+   or wire a CI image-push later. The "update" flow below assumes the tree is
+   refreshed the same way (not `git pull`).
 
 > **Node version:** the image bakes Node 22 (`Dockerfile`), so the Payload
 > migrate tsx-loader gotcha that bites Node 23/24 on the dev host does **not**
@@ -85,8 +95,9 @@ Steps 1-3 implicitly start the `postgres` container (the `migrate` service
 ## Shipping an update
 
 ```bash
+# Refresh the tree on the host first (archive/scp or CI — see prerequisite 4;
+# the repo has no git clone on the box because org deploy keys are disabled).
 cd deploy
-git pull
 
 # Rebuild the app image with the new code.
 docker compose -f docker-compose.prod.yml build app

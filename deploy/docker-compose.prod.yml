@@ -19,11 +19,13 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
-    # POSTGRES_USER/PASSWORD/DB come from the env file as the container's runtime
-    # env (NOT compose `${...}` interpolation — that reads the auto-loaded `.env`,
-    # not `.env.prod`, and would inject empty values).
+    # Dedicated env file with ONLY POSTGRES_USER/PASSWORD/DB — keeps the app's
+    # Payload/S3/seed secrets out of the postgres container (and out of
+    # `docker inspect postgres`). Loaded as the container's runtime env (NOT
+    # compose `${...}` interpolation, which reads the auto-loaded `.env`, not this
+    # file, and would inject empty values).
     env_file:
-      - .env.prod
+      - .env.postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
