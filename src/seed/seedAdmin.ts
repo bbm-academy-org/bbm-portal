@@ -1,5 +1,3 @@
-import { pathToFileURL } from 'url'
-
 import { getPayload } from 'payload'
 
 import config from '../payload.config'
@@ -47,30 +45,9 @@ export async function seedAdmin(): Promise<void> {
   payload.logger.info(`seed:admin — created admin user ${email}.`)
 }
 
-/**
- * Self-invoke only when run directly, not on import — otherwise the module
- * can't be imported in tests without a stray process.exit.
- *
- * Two direct-run shapes are accepted:
- *  - `node src/seed/seedAdmin.ts` — `process.argv[1]` is this module (standard
- *    ESM entrypoint check).
- *  - `payload run src/seed/seedAdmin.ts` (what `pnpm seed:admin` runs) — Payload
- *    loads the script via `import()` and rewrites `process.argv[1]` to its own
- *    `bin.js`, so the standard check never matches. We additionally treat the
- *    payload bin as a direct-run signal.
- *
- * Under vitest `process.argv[1]` is the vitest runner (neither this module nor
- * payload's bin), so the import stays side-effect-free.
- */
-const argv1 = process.argv[1]
-const isDirectEntrypoint = Boolean(argv1) && import.meta.url === pathToFileURL(argv1).href
-const isPayloadRun = Boolean(argv1) && /[\\/]payload[\\/]bin\.js$/.test(argv1)
-
-if (isDirectEntrypoint || isPayloadRun) {
-  seedAdmin()
-    .then(() => process.exit(0))
-    .catch((err: unknown) => {
-      console.error(err instanceof Error ? err.message : err)
-      process.exit(1)
-    })
-}
+// No self-invoke here on purpose: this module is the importable, side-effect-free
+// core (tests import `seedAdmin` directly). The runnable entrypoint is the thin
+// `runSeedAdmin.ts`, which `pnpm seed:admin` (→ `payload run …`) executes. An
+// earlier `process.argv[1]`-based guard was too fragile — it relied on payload's
+// bin path matching `…/payload/bin.js`, but the real bin is `payload/dist/bin/
+// index.js`, so the seed silently never ran inside the Docker `payload run`.
