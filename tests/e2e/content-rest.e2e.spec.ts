@@ -53,8 +53,13 @@ const fetchById = async (
 }
 
 test.describe('content REST parity (seed → GET /api → schema-shape)', () => {
+  // Local-only: skip the whole group when the sibling fixtures checkout is
+  // absent. This MUST sit at describe-body level — `test.skip()` inside a
+  // `beforeAll` aborts only the hook, leaving the tests to run against an
+  // unseeded DB (mirrors the int spec's `describe.skipIf`).
+  test.skip(!hasFixtures, 'sibling bbm-public-website fixtures checkout is absent')
+
   test.beforeAll(async () => {
-    test.skip(!hasFixtures, 'sibling bbm-public-website fixtures checkout is absent')
     const payload = await getPayload({ config })
     await seedContent(payload, CONTENT)
   })
