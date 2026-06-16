@@ -53,8 +53,13 @@ const MODELED_KEYS = new Set([
  * is rejected with a 400-class error and never persisted. Running in
  * `beforeValidate` means the rejection happens before any write is attempted.
  */
-const captureDetailsAndRequireConsent: CollectionBeforeValidateHook = ({ data }) => {
+const captureDetailsAndRequireConsent: CollectionBeforeValidateHook = ({ data, operation }) => {
   if (!data) return data
+
+  // Create-only: the consent gate and the flat-body detail capture describe the
+  // public site POST. Admin edits are partial updates that legitimately omit
+  // `consent`, so gating them would make stored leads uneditable.
+  if (operation !== 'create') return data
 
   if (data.consent !== true) {
     throw new APIError('Lead consent is required (consent must be true).', 400)

@@ -109,6 +109,21 @@ describe('Leads receiver (bbm-public-website#23)', () => {
     })
   })
 
+  it('lets an authorized caller update a stored lead without resupplying consent', async () => {
+    const doc = await payload.create({ collection: 'leads', data: lead(), overrideAccess: false })
+
+    // An admin edit is a partial body with no `consent` key — the create-time
+    // consent gate must not fire on update, or stored leads become uneditable.
+    const updated = await payload.update({
+      collection: 'leads',
+      id: doc.id,
+      data: { name: 'Пётр Редактов' },
+    })
+
+    expect(updated.name).toBe('Пётр Редактов')
+    expect(updated.consent).toBe(true)
+  })
+
   it('denies unauthenticated read / update / delete (admin-only)', async () => {
     const doc = await payload.create({ collection: 'leads', data: lead(), overrideAccess: false })
 
