@@ -19,10 +19,9 @@ import { SiteChrome } from './globals/SiteChrome'
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
 
-// Origins of the public site allowed to POST leads cross-origin to /api/leads
-// (and trusted for admin CSRF). Comma-split from env so prod scopes it to the
-// real RF-contour site origin(s); empty in dev (same-origin) means no
-// cross-origin access is granted.
+// Origins of the public site allowed to POST leads cross-origin to /api/leads.
+// Comma-split from env so prod scopes it to the real RF-contour site origin(s);
+// empty in dev (same-origin) means no cross-origin access is granted.
 const siteOrigins = (process.env.PUBLIC_SITE_ORIGINS ?? '')
   .split(',')
   .map((origin) => origin.trim())
@@ -35,11 +34,12 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
   },
-  // Scope CORS + CSRF to the public site origin(s). The lead form is an
-  // unauthenticated cross-origin POST from bbm-public-website, so its origin
-  // must be allowed here; CSRF is scoped to the same trusted set.
+  // Allow the public site's browser origin to POST leads cross-origin to
+  // /api/leads. Only CORS is scoped here — the lead create is unauthenticated,
+  // so CSRF (which only gates cookie-bearing requests) is irrelevant to it.
+  // `csrf` is left at its default ([]) on purpose: listing the public site
+  // there would wrongly trust it as an authenticated-cookie origin.
   cors: siteOrigins,
-  csrf: siteOrigins,
   collections: [Users, Media, PublicProjects, Team, Pages, Leads],
   globals: [Philosophy, Contact, SiteChrome],
   editor: lexicalEditor(),
