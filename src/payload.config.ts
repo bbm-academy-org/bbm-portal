@@ -11,12 +11,22 @@ import { Media } from './collections/Media'
 import { PublicProjects } from './collections/PublicProjects'
 import { Team } from './collections/Team'
 import { Pages } from './collections/Pages'
+import { Leads } from './collections/Leads'
 import { Philosophy } from './globals/Philosophy'
 import { Contact } from './globals/Contact'
 import { SiteChrome } from './globals/SiteChrome'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
+
+// Origins of the public site allowed to POST leads cross-origin to /api/leads
+// (and trusted for admin CSRF). Comma-split from env so prod scopes it to the
+// real RF-contour site origin(s); empty in dev (same-origin) means no
+// cross-origin access is granted.
+const siteOrigins = (process.env.PUBLIC_SITE_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
 
 export default buildConfig({
   admin: {
@@ -25,7 +35,12 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
   },
-  collections: [Users, Media, PublicProjects, Team, Pages],
+  // Scope CORS + CSRF to the public site origin(s). The lead form is an
+  // unauthenticated cross-origin POST from bbm-public-website, so its origin
+  // must be allowed here; CSRF is scoped to the same trusted set.
+  cors: siteOrigins,
+  csrf: siteOrigins,
+  collections: [Users, Media, PublicProjects, Team, Pages, Leads],
   globals: [Philosophy, Contact, SiteChrome],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
