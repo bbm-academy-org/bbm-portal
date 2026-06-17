@@ -4,3 +4,10 @@
 cms.bbm.academy {
     reverse_proxy app:3000
 }
+
+# Apex canonical redirect (#108): bare apex 301 -> https://www.bbm.academy.
+# www is canonical (CDN-served via CNAME); the apex A-record points at this host
+# so Caddy holds a valid LE cert and issues the redirect. Path + query preserved.
+bbm.academy {
+    redir https://www.bbm.academy{uri} permanent
+}
