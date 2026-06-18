@@ -1,19 +1,18 @@
-import type { CollectionConfig, Field } from 'payload'
+import type { Field } from 'payload'
 
-import { area, cta, flag, localeField, secIntro, slugField, stringList, text } from '../fields/shared'
-import { restoreGroupAnchorIds, stashGroupAnchorIds } from '../hooks/groupAnchorId'
-import { omitEmptyCollection } from '../hooks/omitEmpty'
+import { area, cta, flag, secIntro, slugField, stringList, text } from './shared'
 
 /**
- * `pages` — per-route copy (`pageSchema`, schemas.ts:410). `id` = route slug
- * (`home`, `about`, …).
+ * Per-page content group fields — shared so each per-page Global (`pageHome`,
+ * `pageAbout`, …) can list ONLY the groups it needs with zero duplication
+ * (#18 split of the old monolithic `pages` collection).
  *
- * Generic fields (`title`/`body`/`seo`/`faq`/`pathSteps`) apply to every page;
- * the rest are PAGE-SPECIFIC optional `group` fields (`hero`, `about`, `trust`,
- * …) — NOT a polymorphic `blocks`/`layout` array. The consumer reads
- * `data.hero`, `data.about` by key; a `blocks` array would emit
- * `layout: [{ blockType }]` and fail `parse` (Decision B). Each group is left
- * non-required so pages that don't use it have it dropped whole by `clean`.
+ * Generic fields (`title`/`seo`/`faq`/`pathSteps`) apply to several pages; the
+ * rest are PAGE-SPECIFIC optional `group` fields (`hero`, `about`, `trust`, …) —
+ * NOT a polymorphic `blocks`/`layout` array. The consumer reads `data.hero`,
+ * `data.about` by key; a `blocks` array would emit `layout: [{ blockType }]` and
+ * fail `parse` (Decision B). Each group is left non-required so a page that does
+ * not use it has it dropped whole by `clean` (omitEmpty).
  */
 
 // proofItems[]: { icon (VERBATIM token), title, body }
@@ -23,7 +22,24 @@ const proofItem: Field = {
   fields: [text('icon'), text('title'), text('body')],
 }
 
-const hero: Field = {
+/** Generic SEO group (`{ title, description }`) shared by every page global. */
+export const seo: Field = {
+  name: 'seo',
+  type: 'group',
+  fields: [text('title'), area('description')],
+}
+
+/** Generic FAQ array (`{ question, answer }[]`) — home + contacts. */
+export const faq: Field = { name: 'faq', type: 'array', fields: [text('question'), area('answer')] }
+
+/** Generic path-steps array (`{ title, body }[]`) — home. */
+export const pathSteps: Field = {
+  name: 'pathSteps',
+  type: 'array',
+  fields: [text('title'), area('body')],
+}
+
+export const hero: Field = {
   name: 'hero',
   type: 'group',
   fields: [
@@ -42,19 +58,19 @@ const hero: Field = {
   ],
 }
 
-const whatIs: Field = {
+export const whatIs: Field = {
   name: 'whatIs',
   type: 'group',
   fields: [text('eyebrow'), text('title'), stringList('paragraphs')],
 }
 
-const showcase: Field = {
+export const showcase: Field = {
   name: 'showcase',
   type: 'group',
   fields: [text('eyebrow'), text('title'), text('lead'), cta('allLink')],
 }
 
-const intro: Field = {
+export const intro: Field = {
   name: 'intro',
   type: 'group',
   fields: [
@@ -66,13 +82,13 @@ const intro: Field = {
   ],
 }
 
-const filters: Field = {
+export const filters: Field = {
   name: 'filters',
   type: 'group',
   fields: [text('label'), text('allLabel')],
 }
 
-const about: Field = {
+export const about: Field = {
   name: 'about',
   type: 'group',
   fields: [
@@ -88,13 +104,13 @@ const about: Field = {
   ],
 }
 
-const pathIntro: Field = {
+export const pathIntro: Field = {
   name: 'pathIntro',
   type: 'group',
   fields: [text('eyebrow'), text('title'), text('lead')],
 }
 
-const trust: Field = {
+export const trust: Field = {
   name: 'trust',
   type: 'group',
   fields: [
@@ -128,7 +144,7 @@ const contourSide: Field = {
   fields: [text('kicker'), text('title'), stringList('items')],
 }
 
-const contour: Field = {
+export const contour: Field = {
   name: 'contour',
   type: 'group',
   fields: [
@@ -140,13 +156,13 @@ const contour: Field = {
   ],
 }
 
-const faqIntro: Field = {
+export const faqIntro: Field = {
   name: 'faqIntro',
   type: 'group',
   fields: [text('eyebrow'), text('title')],
 }
 
-const contacts: Field = {
+export const contacts: Field = {
   name: 'contacts',
   type: 'group',
   fields: [
@@ -159,7 +175,7 @@ const contacts: Field = {
   ],
 }
 
-const teamIntro: Field = {
+export const teamIntro: Field = {
   name: 'team',
   type: 'group',
   fields: [text('eyebrow'), text('title'), text('lead')],
@@ -225,7 +241,7 @@ const leadForm: Field = {
   ],
 }
 
-const participate: Field = {
+export const participate: Field = {
   name: 'participate',
   type: 'group',
   fields: [
@@ -241,7 +257,7 @@ const participate: Field = {
   ],
 }
 
-const privacy: Field = {
+export const privacy: Field = {
   name: 'privacy',
   type: 'group',
   fields: [
@@ -267,49 +283,8 @@ const privacy: Field = {
   ],
 }
 
-const ctaSection: Field = {
+export const ctaSection: Field = {
   name: 'cta',
   type: 'group',
   fields: [text('title'), text('lead'), cta('primaryCta'), cta('secondaryCta')],
-}
-
-export const Pages: CollectionConfig = {
-  slug: 'pages',
-  access: { read: () => true },
-  versions: { drafts: { autosave: true } },
-  admin: { useAsTitle: 'title' },
-  hooks: {
-    beforeValidate: [stashGroupAnchorIds],
-    // restore runs before omitEmpty so the surfaced `id` is kept, not the empty `slug`.
-    afterRead: [restoreGroupAnchorIds, omitEmptyCollection],
-  },
-  fields: [
-    slugField('id', true), // route slug
-    text('title', true),
-    area('body'),
-    {
-      name: 'seo',
-      type: 'group',
-      fields: [text('title'), area('description')],
-    },
-    { name: 'faq', type: 'array', fields: [text('question'), area('answer')] },
-    { name: 'pathSteps', type: 'array', fields: [text('title'), area('body')] },
-    // Page-specific optional groups (present only on the pages that use them).
-    hero,
-    whatIs,
-    showcase,
-    intro,
-    filters,
-    about,
-    pathIntro,
-    trust,
-    contour,
-    faqIntro,
-    contacts,
-    teamIntro,
-    participate,
-    privacy,
-    ctaSection,
-    localeField,
-  ],
 }

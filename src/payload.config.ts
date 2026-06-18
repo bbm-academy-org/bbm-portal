@@ -10,11 +10,16 @@ import { Users } from './collections/Users'
 import { Media } from './collections/Media'
 import { PublicProjects } from './collections/PublicProjects'
 import { Team } from './collections/Team'
-import { Pages } from './collections/Pages'
 import { Leads } from './collections/Leads'
 import { Philosophy } from './globals/Philosophy'
 import { Contact } from './globals/Contact'
 import { SiteChrome } from './globals/SiteChrome'
+import { PageHome } from './globals/PageHome'
+import { PageAbout } from './globals/PageAbout'
+import { PageContacts } from './globals/PageContacts'
+import { PageParticipate } from './globals/PageParticipate'
+import { PagePrivacy } from './globals/PagePrivacy'
+import { PageProjects } from './globals/PageProjects'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -40,8 +45,18 @@ export default buildConfig({
   // `csrf` is left at its default ([]) on purpose: listing the public site
   // there would wrongly trust it as an authenticated-cookie origin.
   cors: siteOrigins,
-  collections: [Users, Media, PublicProjects, Team, Pages, Leads],
-  globals: [Philosophy, Contact, SiteChrome],
+  collections: [Users, Media, PublicProjects, Team, Leads],
+  globals: [
+    Philosophy,
+    Contact,
+    SiteChrome,
+    PageHome,
+    PageAbout,
+    PageContacts,
+    PageParticipate,
+    PagePrivacy,
+    PageProjects,
+  ],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {

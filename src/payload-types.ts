@@ -71,7 +71,6 @@ export interface Config {
     media: Media;
     publicProjects: PublicProject;
     team: Team;
-    pages: Page;
     leads: Lead;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
@@ -84,7 +83,6 @@ export interface Config {
     media: MediaSelect<false> | MediaSelect<true>;
     publicProjects: PublicProjectsSelect<false> | PublicProjectsSelect<true>;
     team: TeamSelect<false> | TeamSelect<true>;
-    pages: PagesSelect<false> | PagesSelect<true>;
     leads: LeadsSelect<false> | LeadsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -99,11 +97,23 @@ export interface Config {
     philosophy: Philosophy;
     contact: Contact;
     siteChrome: SiteChrome;
+    pageHome: PageHome;
+    pageAbout: PageAbout;
+    pageContacts: PageContact;
+    pageParticipate: PageParticipate;
+    pagePrivacy: PagePrivacy;
+    pageProjects: PageProject;
   };
   globalsSelect: {
     philosophy: PhilosophySelect<false> | PhilosophySelect<true>;
     contact: ContactSelect<false> | ContactSelect<true>;
     siteChrome: SiteChromeSelect<false> | SiteChromeSelect<true>;
+    pageHome: PageHomeSelect<false> | PageHomeSelect<true>;
+    pageAbout: PageAboutSelect<false> | PageAboutSelect<true>;
+    pageContacts: PageContactsSelect<false> | PageContactsSelect<true>;
+    pageParticipate: PageParticipateSelect<false> | PageParticipateSelect<true>;
+    pagePrivacy: PagePrivacySelect<false> | PagePrivacySelect<true>;
+    pageProjects: PageProjectsSelect<false> | PageProjectsSelect<true>;
   };
   locale: null;
   widgets: {
@@ -238,284 +248,6 @@ export interface Team {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "pages".
- */
-export interface Page {
-  id: string;
-  title: string;
-  body?: string | null;
-  seo?: {
-    title?: string | null;
-    description?: string | null;
-  };
-  faq?:
-    | {
-        question?: string | null;
-        answer?: string | null;
-        id?: string | null;
-      }[]
-    | null;
-  pathSteps?:
-    | {
-        title?: string | null;
-        body?: string | null;
-        id?: string | null;
-      }[]
-    | null;
-  hero?: {
-    eyebrow?: string | null;
-    sticker?: string | null;
-    titleLead?: string | null;
-    titleMark?: string | null;
-    titleTrail?: string | null;
-    lead?: string | null;
-    primaryCta?: {
-      label?: string | null;
-      href?: string | null;
-    };
-    secondaryCta?: {
-      label?: string | null;
-      href?: string | null;
-    };
-    chips?: string[] | null;
-    proofLabel?: string | null;
-    proofItems?:
-      | {
-          icon?: string | null;
-          title?: string | null;
-          body?: string | null;
-          id?: string | null;
-        }[]
-      | null;
-  };
-  whatIs?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    paragraphs?: string[] | null;
-  };
-  showcase?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    lead?: string | null;
-    allLink?: {
-      label?: string | null;
-      href?: string | null;
-    };
-  };
-  intro?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    lead?: string | null;
-    actions?:
-      | {
-          label?: string | null;
-          href?: string | null;
-          id?: string | null;
-        }[]
-      | null;
-  };
-  filters?: {
-    label?: string | null;
-    allLabel?: string | null;
-  };
-  about?: {
-    whatIs?: {
-      eyebrow?: string | null;
-      title?: string | null;
-      lead?: string | null;
-      paragraphs?: string[] | null;
-    };
-    goal?: {
-      eyebrow?: string | null;
-      title?: string | null;
-      lead?: string | null;
-    };
-    values?: {
-      eyebrow?: string | null;
-      title?: string | null;
-      lead?: string | null;
-    };
-    principles?: {
-      eyebrow?: string | null;
-      title?: string | null;
-      lead?: string | null;
-    };
-    approach?: {
-      eyebrow?: string | null;
-      title?: string | null;
-      lead?: string | null;
-    };
-    roles?: {
-      eyebrow?: string | null;
-      title?: string | null;
-      lead?: string | null;
-    };
-    goalKicker?: string | null;
-    missionKicker?: string | null;
-    approachNote?: {
-      title?: string | null;
-      body?: string | null;
-    };
-  };
-  pathIntro?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    lead?: string | null;
-  };
-  trust?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    lead?: string | null;
-    stats?:
-      | {
-          value?: string | null;
-          label?: string | null;
-          sub?: string | null;
-          tone?: ('default' | 'teal' | 'empty') | null;
-          id?: string | null;
-        }[]
-      | null;
-  };
-  contour?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    public?: {
-      kicker?: string | null;
-      title?: string | null;
-      items?: string[] | null;
-    };
-    internal?: {
-      kicker?: string | null;
-      title?: string | null;
-      items?: string[] | null;
-    };
-    boundary?: string | null;
-  };
-  faqIntro?: {
-    eyebrow?: string | null;
-    title?: string | null;
-  };
-  contacts?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    lead?: string | null;
-    boundary?: {
-      icon?: string | null;
-      label?: string | null;
-      value?: string | null;
-    };
-    note?: string | null;
-  };
-  team?: {
-    eyebrow?: string | null;
-    title?: string | null;
-    lead?: string | null;
-  };
-  participate?: {
-    roles?: {
-      slug?: string | null;
-      eyebrow?: string | null;
-      title?: string | null;
-      lead?: string | null;
-    };
-    noScript?: {
-      message?: string | null;
-      linkText?: string | null;
-      contactsLinkText?: string | null;
-    };
-    forms?:
-      | {
-          id?: string | null;
-          scenario?: string | null;
-          eyebrow?: string | null;
-          title?: string | null;
-          lead?: string | null;
-          fields?:
-            | {
-                name?: string | null;
-                type: 'text' | 'email' | 'tel' | 'select' | 'textarea';
-                label?: string | null;
-                placeholder?: string | null;
-                hint?: string | null;
-                required?: boolean | null;
-                full?: boolean | null;
-                autocomplete?: string | null;
-                validationMessage?: string | null;
-                options?:
-                  | {
-                      value?: string | null;
-                      label?: string | null;
-                      id?: string | null;
-                    }[]
-                  | null;
-                placeholderOption?: string | null;
-                id?: string | null;
-              }[]
-            | null;
-          consentLabelLead?: string | null;
-          consentLinkText?: string | null;
-          consentValidationMessage?: string | null;
-          submitLabel?: string | null;
-          states?: {
-            success?: {
-              title?: string | null;
-              body?: string | null;
-            };
-            error?: {
-              title?: string | null;
-              body?: string | null;
-            };
-            unavailable?: {
-              title?: string | null;
-              body?: string | null;
-            };
-          };
-          note?: string | null;
-        }[]
-      | null;
-  };
-  privacy?: {
-    draftNote?: {
-      label?: string | null;
-      body?: string | null;
-    };
-    sections?:
-      | {
-          id?: string | null;
-          heading?: string | null;
-          paragraphs?: string[] | null;
-        }[]
-      | null;
-    operator?: {
-      slug?: string | null;
-      heading?: string | null;
-      paragraphs?: string[] | null;
-    };
-    consent?: {
-      anchor?: string | null;
-      label?: string | null;
-      text?: string[] | null;
-    };
-  };
-  cta?: {
-    title?: string | null;
-    lead?: string | null;
-    primaryCta?: {
-      label?: string | null;
-      href?: string | null;
-    };
-    secondaryCta?: {
-      label?: string | null;
-      href?: string | null;
-    };
-  };
-  locale: 'ru' | 'en';
-  updatedAt: string;
-  createdAt: string;
-  _status?: ('draft' | 'published') | null;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "leads".
  */
 export interface Lead {
@@ -578,10 +310,6 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'team';
         value: string | Team;
-      } | null)
-    | ({
-        relationTo: 'pages';
-        value: string | Page;
       } | null)
     | ({
         relationTo: 'leads';
@@ -726,364 +454,6 @@ export interface TeamSelect<T extends boolean = true> {
         label?: T;
         href?: T;
         id?: T;
-      };
-  locale?: T;
-  updatedAt?: T;
-  createdAt?: T;
-  _status?: T;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "pages_select".
- */
-export interface PagesSelect<T extends boolean = true> {
-  id?: T;
-  title?: T;
-  body?: T;
-  seo?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-      };
-  faq?:
-    | T
-    | {
-        question?: T;
-        answer?: T;
-        id?: T;
-      };
-  pathSteps?:
-    | T
-    | {
-        title?: T;
-        body?: T;
-        id?: T;
-      };
-  hero?:
-    | T
-    | {
-        eyebrow?: T;
-        sticker?: T;
-        titleLead?: T;
-        titleMark?: T;
-        titleTrail?: T;
-        lead?: T;
-        primaryCta?:
-          | T
-          | {
-              label?: T;
-              href?: T;
-            };
-        secondaryCta?:
-          | T
-          | {
-              label?: T;
-              href?: T;
-            };
-        chips?: T;
-        proofLabel?: T;
-        proofItems?:
-          | T
-          | {
-              icon?: T;
-              title?: T;
-              body?: T;
-              id?: T;
-            };
-      };
-  whatIs?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        paragraphs?: T;
-      };
-  showcase?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        lead?: T;
-        allLink?:
-          | T
-          | {
-              label?: T;
-              href?: T;
-            };
-      };
-  intro?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        lead?: T;
-        actions?:
-          | T
-          | {
-              label?: T;
-              href?: T;
-              id?: T;
-            };
-      };
-  filters?:
-    | T
-    | {
-        label?: T;
-        allLabel?: T;
-      };
-  about?:
-    | T
-    | {
-        whatIs?:
-          | T
-          | {
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-              paragraphs?: T;
-            };
-        goal?:
-          | T
-          | {
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-            };
-        values?:
-          | T
-          | {
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-            };
-        principles?:
-          | T
-          | {
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-            };
-        approach?:
-          | T
-          | {
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-            };
-        roles?:
-          | T
-          | {
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-            };
-        goalKicker?: T;
-        missionKicker?: T;
-        approachNote?:
-          | T
-          | {
-              title?: T;
-              body?: T;
-            };
-      };
-  pathIntro?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        lead?: T;
-      };
-  trust?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        lead?: T;
-        stats?:
-          | T
-          | {
-              value?: T;
-              label?: T;
-              sub?: T;
-              tone?: T;
-              id?: T;
-            };
-      };
-  contour?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        public?:
-          | T
-          | {
-              kicker?: T;
-              title?: T;
-              items?: T;
-            };
-        internal?:
-          | T
-          | {
-              kicker?: T;
-              title?: T;
-              items?: T;
-            };
-        boundary?: T;
-      };
-  faqIntro?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-      };
-  contacts?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        lead?: T;
-        boundary?:
-          | T
-          | {
-              icon?: T;
-              label?: T;
-              value?: T;
-            };
-        note?: T;
-      };
-  team?:
-    | T
-    | {
-        eyebrow?: T;
-        title?: T;
-        lead?: T;
-      };
-  participate?:
-    | T
-    | {
-        roles?:
-          | T
-          | {
-              slug?: T;
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-            };
-        noScript?:
-          | T
-          | {
-              message?: T;
-              linkText?: T;
-              contactsLinkText?: T;
-            };
-        forms?:
-          | T
-          | {
-              id?: T;
-              scenario?: T;
-              eyebrow?: T;
-              title?: T;
-              lead?: T;
-              fields?:
-                | T
-                | {
-                    name?: T;
-                    type?: T;
-                    label?: T;
-                    placeholder?: T;
-                    hint?: T;
-                    required?: T;
-                    full?: T;
-                    autocomplete?: T;
-                    validationMessage?: T;
-                    options?:
-                      | T
-                      | {
-                          value?: T;
-                          label?: T;
-                          id?: T;
-                        };
-                    placeholderOption?: T;
-                    id?: T;
-                  };
-              consentLabelLead?: T;
-              consentLinkText?: T;
-              consentValidationMessage?: T;
-              submitLabel?: T;
-              states?:
-                | T
-                | {
-                    success?:
-                      | T
-                      | {
-                          title?: T;
-                          body?: T;
-                        };
-                    error?:
-                      | T
-                      | {
-                          title?: T;
-                          body?: T;
-                        };
-                    unavailable?:
-                      | T
-                      | {
-                          title?: T;
-                          body?: T;
-                        };
-                  };
-              note?: T;
-            };
-      };
-  privacy?:
-    | T
-    | {
-        draftNote?:
-          | T
-          | {
-              label?: T;
-              body?: T;
-            };
-        sections?:
-          | T
-          | {
-              id?: T;
-              heading?: T;
-              paragraphs?: T;
-            };
-        operator?:
-          | T
-          | {
-              slug?: T;
-              heading?: T;
-              paragraphs?: T;
-            };
-        consent?:
-          | T
-          | {
-              anchor?: T;
-              label?: T;
-              text?: T;
-            };
-      };
-  cta?:
-    | T
-    | {
-        title?: T;
-        lead?: T;
-        primaryCta?:
-          | T
-          | {
-              label?: T;
-              href?: T;
-            };
-        secondaryCta?:
-          | T
-          | {
-              label?: T;
-              href?: T;
-            };
       };
   locale?: T;
   updatedAt?: T;
@@ -1254,6 +624,458 @@ export interface SiteChrome {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageHome".
+ */
+export interface PageHome {
+  id: number;
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
+  hero?: {
+    eyebrow?: string | null;
+    sticker?: string | null;
+    titleLead?: string | null;
+    titleMark?: string | null;
+    titleTrail?: string | null;
+    lead?: string | null;
+    primaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    secondaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    chips?: string[] | null;
+    proofLabel?: string | null;
+    proofItems?:
+      | {
+          icon?: string | null;
+          title?: string | null;
+          body?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  whatIs?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    paragraphs?: string[] | null;
+  };
+  showcase?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    allLink?: {
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  pathIntro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+  };
+  trust?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    stats?:
+      | {
+          value?: string | null;
+          label?: string | null;
+          sub?: string | null;
+          tone?: ('default' | 'teal' | 'empty') | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  contour?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    public?: {
+      kicker?: string | null;
+      title?: string | null;
+      items?: string[] | null;
+    };
+    internal?: {
+      kicker?: string | null;
+      title?: string | null;
+      items?: string[] | null;
+    };
+    boundary?: string | null;
+  };
+  faqIntro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+  };
+  faq?:
+    | {
+        question?: string | null;
+        answer?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  pathSteps?:
+    | {
+        title?: string | null;
+        body?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  cta?: {
+    title?: string | null;
+    lead?: string | null;
+    primaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    secondaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageAbout".
+ */
+export interface PageAbout {
+  id: number;
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
+  intro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    actions?:
+      | {
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  about?: {
+    whatIs?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+      paragraphs?: string[] | null;
+    };
+    goal?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    values?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    principles?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    approach?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    roles?: {
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    goalKicker?: string | null;
+    missionKicker?: string | null;
+    approachNote?: {
+      title?: string | null;
+      body?: string | null;
+    };
+  };
+  cta?: {
+    title?: string | null;
+    lead?: string | null;
+    primaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    secondaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageContacts".
+ */
+export interface PageContact {
+  id: number;
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
+  intro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    actions?:
+      | {
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  contacts?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    boundary?: {
+      icon?: string | null;
+      label?: string | null;
+      value?: string | null;
+    };
+    note?: string | null;
+  };
+  team?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+  };
+  faqIntro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+  };
+  faq?:
+    | {
+        question?: string | null;
+        answer?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  cta?: {
+    title?: string | null;
+    lead?: string | null;
+    primaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    secondaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageParticipate".
+ */
+export interface PageParticipate {
+  id: number;
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
+  intro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    actions?:
+      | {
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  participate?: {
+    roles?: {
+      slug?: string | null;
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    noScript?: {
+      message?: string | null;
+      linkText?: string | null;
+      contactsLinkText?: string | null;
+    };
+    forms?:
+      | {
+          id?: string | null;
+          scenario?: string | null;
+          eyebrow?: string | null;
+          title?: string | null;
+          lead?: string | null;
+          fields?:
+            | {
+                name?: string | null;
+                type: 'text' | 'email' | 'tel' | 'select' | 'textarea';
+                label?: string | null;
+                placeholder?: string | null;
+                hint?: string | null;
+                required?: boolean | null;
+                full?: boolean | null;
+                autocomplete?: string | null;
+                validationMessage?: string | null;
+                options?:
+                  | {
+                      value?: string | null;
+                      label?: string | null;
+                      id?: string | null;
+                    }[]
+                  | null;
+                placeholderOption?: string | null;
+                id?: string | null;
+              }[]
+            | null;
+          consentLabelLead?: string | null;
+          consentLinkText?: string | null;
+          consentValidationMessage?: string | null;
+          submitLabel?: string | null;
+          states?: {
+            success?: {
+              title?: string | null;
+              body?: string | null;
+            };
+            error?: {
+              title?: string | null;
+              body?: string | null;
+            };
+            unavailable?: {
+              title?: string | null;
+              body?: string | null;
+            };
+          };
+          note?: string | null;
+        }[]
+      | null;
+  };
+  cta?: {
+    title?: string | null;
+    lead?: string | null;
+    primaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+    secondaryCta?: {
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pagePrivacy".
+ */
+export interface PagePrivacy {
+  id: number;
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
+  intro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    actions?:
+      | {
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  privacy?: {
+    draftNote?: {
+      label?: string | null;
+      body?: string | null;
+    };
+    sections?:
+      | {
+          id?: string | null;
+          heading?: string | null;
+          paragraphs?: string[] | null;
+        }[]
+      | null;
+    operator?: {
+      slug?: string | null;
+      heading?: string | null;
+      paragraphs?: string[] | null;
+    };
+    consent?: {
+      anchor?: string | null;
+      label?: string | null;
+      text?: string[] | null;
+    };
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageProjects".
+ */
+export interface PageProject {
+  id: number;
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
+  intro?: {
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+    actions?:
+      | {
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  filters?: {
+    label?: string | null;
+    allLabel?: string | null;
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "philosophy_select".
  */
 export interface PhilosophySelect<T extends boolean = true> {
@@ -1352,6 +1174,576 @@ export interface SiteChromeSelect<T extends boolean = true> {
         id?: T;
       };
   copyright?: T;
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageHome_select".
+ */
+export interface PageHomeSelect<T extends boolean = true> {
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
+  hero?:
+    | T
+    | {
+        eyebrow?: T;
+        sticker?: T;
+        titleLead?: T;
+        titleMark?: T;
+        titleTrail?: T;
+        lead?: T;
+        primaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        secondaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        chips?: T;
+        proofLabel?: T;
+        proofItems?:
+          | T
+          | {
+              icon?: T;
+              title?: T;
+              body?: T;
+              id?: T;
+            };
+      };
+  whatIs?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        paragraphs?: T;
+      };
+  showcase?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        allLink?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+      };
+  pathIntro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+      };
+  trust?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        stats?:
+          | T
+          | {
+              value?: T;
+              label?: T;
+              sub?: T;
+              tone?: T;
+              id?: T;
+            };
+      };
+  contour?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        public?:
+          | T
+          | {
+              kicker?: T;
+              title?: T;
+              items?: T;
+            };
+        internal?:
+          | T
+          | {
+              kicker?: T;
+              title?: T;
+              items?: T;
+            };
+        boundary?: T;
+      };
+  faqIntro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+      };
+  faq?:
+    | T
+    | {
+        question?: T;
+        answer?: T;
+        id?: T;
+      };
+  pathSteps?:
+    | T
+    | {
+        title?: T;
+        body?: T;
+        id?: T;
+      };
+  cta?:
+    | T
+    | {
+        title?: T;
+        lead?: T;
+        primaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        secondaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageAbout_select".
+ */
+export interface PageAboutSelect<T extends boolean = true> {
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
+  intro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        actions?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
+  about?:
+    | T
+    | {
+        whatIs?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+              paragraphs?: T;
+            };
+        goal?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        values?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        principles?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        approach?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        roles?:
+          | T
+          | {
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        goalKicker?: T;
+        missionKicker?: T;
+        approachNote?:
+          | T
+          | {
+              title?: T;
+              body?: T;
+            };
+      };
+  cta?:
+    | T
+    | {
+        title?: T;
+        lead?: T;
+        primaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        secondaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageContacts_select".
+ */
+export interface PageContactsSelect<T extends boolean = true> {
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
+  intro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        actions?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
+  contacts?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        boundary?:
+          | T
+          | {
+              icon?: T;
+              label?: T;
+              value?: T;
+            };
+        note?: T;
+      };
+  team?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+      };
+  faqIntro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+      };
+  faq?:
+    | T
+    | {
+        question?: T;
+        answer?: T;
+        id?: T;
+      };
+  cta?:
+    | T
+    | {
+        title?: T;
+        lead?: T;
+        primaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        secondaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageParticipate_select".
+ */
+export interface PageParticipateSelect<T extends boolean = true> {
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
+  intro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        actions?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
+  participate?:
+    | T
+    | {
+        roles?:
+          | T
+          | {
+              slug?: T;
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        noScript?:
+          | T
+          | {
+              message?: T;
+              linkText?: T;
+              contactsLinkText?: T;
+            };
+        forms?:
+          | T
+          | {
+              id?: T;
+              scenario?: T;
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+              fields?:
+                | T
+                | {
+                    name?: T;
+                    type?: T;
+                    label?: T;
+                    placeholder?: T;
+                    hint?: T;
+                    required?: T;
+                    full?: T;
+                    autocomplete?: T;
+                    validationMessage?: T;
+                    options?:
+                      | T
+                      | {
+                          value?: T;
+                          label?: T;
+                          id?: T;
+                        };
+                    placeholderOption?: T;
+                    id?: T;
+                  };
+              consentLabelLead?: T;
+              consentLinkText?: T;
+              consentValidationMessage?: T;
+              submitLabel?: T;
+              states?:
+                | T
+                | {
+                    success?:
+                      | T
+                      | {
+                          title?: T;
+                          body?: T;
+                        };
+                    error?:
+                      | T
+                      | {
+                          title?: T;
+                          body?: T;
+                        };
+                    unavailable?:
+                      | T
+                      | {
+                          title?: T;
+                          body?: T;
+                        };
+                  };
+              note?: T;
+            };
+      };
+  cta?:
+    | T
+    | {
+        title?: T;
+        lead?: T;
+        primaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+        secondaryCta?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+            };
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pagePrivacy_select".
+ */
+export interface PagePrivacySelect<T extends boolean = true> {
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
+  intro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        actions?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
+  privacy?:
+    | T
+    | {
+        draftNote?:
+          | T
+          | {
+              label?: T;
+              body?: T;
+            };
+        sections?:
+          | T
+          | {
+              id?: T;
+              heading?: T;
+              paragraphs?: T;
+            };
+        operator?:
+          | T
+          | {
+              slug?: T;
+              heading?: T;
+              paragraphs?: T;
+            };
+        consent?:
+          | T
+          | {
+              anchor?: T;
+              label?: T;
+              text?: T;
+            };
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pageProjects_select".
+ */
+export interface PageProjectsSelect<T extends boolean = true> {
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
+  intro?:
+    | T
+    | {
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+        actions?:
+          | T
+          | {
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
+  filters?:
+    | T
+    | {
+        label?: T;
+        allLabel?: T;
+      };
   locale?: T;
   _status?: T;
   updatedAt?: T;

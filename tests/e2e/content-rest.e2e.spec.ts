@@ -6,6 +6,7 @@ import { getPayload } from 'payload'
 import config from '../../src/payload.config'
 import {
   DEFAULT_CONTENT_DIR,
+  PAGE_GLOBAL_BY_SLUG,
   pageSlugs,
   projectSlugs,
   readContentJson,
@@ -90,17 +91,15 @@ test.describe('content REST parity (seed → GET /api → schema-shape)', () => 
     }
   })
 
-  test('pages: every page mirrors its fixture (named groups, no blocks array)', async ({
+  test('page globals: every page mirrors its fixture over REST (named groups, no blocks array)', async ({
     request,
   }) => {
-    const byId = await fetchById(request, 'pages')
     for (const slug of pageSlugs(CONTENT)) {
       const fixture = readContentJson(CONTENT, `pages/${slug}.json`)
-      const doc = byId.get(slug)
-      expect(doc, `pages/${slug} present in REST docs`).toBeTruthy()
-      expectSubset(fixture, doc, `pages/${slug}`)
-      expectNoNulls(doc, `pages/${slug}`)
-      expect(doc!.id, 'id === slug').toBe(slug)
+      const global = PAGE_GLOBAL_BY_SLUG[slug]
+      const doc = await getJson(request, `/globals/${global}?depth=0`)
+      expectSubset(fixture, doc, `${global} (pages/${slug})`)
+      expectNoNulls(doc, `${global} (pages/${slug})`)
     }
   })
 
