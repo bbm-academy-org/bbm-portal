@@ -15,6 +15,7 @@ import { Leads } from './collections/Leads'
 import { Philosophy } from './globals/Philosophy'
 import { Contact } from './globals/Contact'
 import { SiteChrome } from './globals/SiteChrome'
+import { publishSiteEndpoint } from './endpoints/publishSite'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -42,6 +43,9 @@ export default buildConfig({
   cors: siteOrigins,
   collections: [Users, Media, PublicProjects, Team, Pages, Leads],
   globals: [Philosophy, Contact, SiteChrome],
+  // Custom one-click publish (#15): POST /api/publish-site — promotes drafts on
+  // the build surfaces and fires the public site's GitHub Actions build.
+  endpoints: [publishSiteEndpoint],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
