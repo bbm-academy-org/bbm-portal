@@ -16,6 +16,7 @@ import { Philosophy } from './globals/Philosophy'
 import { Contact } from './globals/Contact'
 import { SiteChrome } from './globals/SiteChrome'
 import { publishSiteEndpoint } from './endpoints/publishSite'
+import { siteBuildStatusEndpoint } from './endpoints/siteBuildStatus'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -45,7 +46,9 @@ export default buildConfig({
   globals: [Philosophy, Contact, SiteChrome],
   // Custom one-click publish (#15): POST /api/publish-site — promotes drafts on
   // the build surfaces and fires the public site's GitHub Actions build.
-  endpoints: [publishSiteEndpoint],
+  // Build-status proxy (#16): GET /api/site-build-status — reports the latest
+  // publish-site GitHub Actions run for the admin UI (#17).
+  endpoints: [publishSiteEndpoint, siteBuildStatusEndpoint],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
