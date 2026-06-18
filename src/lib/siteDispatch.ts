@@ -99,3 +99,106 @@ export const dispatchSiteBuild = async (): Promise<SiteDispatchResult> => {
 
   return { event_type: PUBLISH_SITE_EVENT_TYPE, repo, at: new Date().toISOString() }
 }
+
+/**
+ * The build-status shape returned by `querySiteBuildStatus` and surfaced by
+ * `GET /api/site-build-status` (#16). All four fields are `null` when no build
+ * has run yet — see {@link NO_BUILD_STATUS}.
+ */
+export type SiteBuildStatus = {
+  /** GitHub run lifecycle: `queued` | `in_progress` | `completed` (or null). */
+  status: string | null
+  /** Terminal result: `success` | `failure` | `cancelled` | … (or null while running / no run). */
+  conclusion: string | null
+  /** Link to the run on github.com, or null when no run exists. */
+  html_url: string | null
+  /** ISO timestamp the run started, or null when no run exists. */
+  startedAt: string | null
+}
+
+/**
+ * The "no build has run yet" payload. We deliberately return a well-formed
+ * all-null shape (NOT a 500 and NOT a `{ status: 'none' }` sentinel) so the #17
+ * admin UI can render "never built" uniformly with a real run — it just sees
+ * null fields. Documented + asserted by the int suite.
+ */
+export const NO_BUILD_STATUS: SiteBuildStatus = {
+  status: null,
+  conclusion: null,
+  html_url: null,
+  startedAt: null,
+}
+
+/** Minimal shape of a GitHub Actions workflow run we read. */
+type GitHubWorkflowRun = {
+  status?: string | null
+  conclusion?: string | null
+  html_url?: string | null
+  run_started_at?: string | null
+  created_at?: string | null
+}
+
+type GitHubRunsResponse = {
+  total_count?: number
+  workflow_runs?: GitHubWorkflowRun[]
+}
+
+/**
+ * Query the GitHub Actions API for the LATEST `repository_dispatch` run on the
+ * site repo and map it to a {@link SiteBuildStatus}.
+ *
+ * `publish-site` is triggered via `repository_dispatch`; the runs API has no
+ * per-`event_type` filter, so we filter `event=repository_dispatch` and take the
+ * single most recent run (`per_page=1`). Empty list → {@link NO_BUILD_STATUS}
+ * (never a 500). Uses the SAME `SITE_DISPATCH_TOKEN` (needs `actions:read`) and
+ * `SITE_DISPATCH_REPO` as the dispatch — a missing token fails loudly (500).
+ * Network failure → 502; any non-2xx from GitHub → propagated as a 502-class
+ * `SiteDispatchError`. The token is never logged.
+ */
+export const querySiteBuildStatus = async (): Promise<SiteBuildStatus> => {
+  const token = requireSiteDispatchToken()
+  const repo = resolveSiteRepo()
+
+  let res: Response
+  try {
+    res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/runs?event=repository_dispatch&per_page=1`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+        },
+      },
+    )
+  } catch (err) {
+    throw new SiteDispatchError(
+      `Failed to reach GitHub to read the site build status: ${(err as Error).message}`,
+      502,
+    )
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new SiteDispatchError(
+      `GitHub rejected the build-status query (HTTP ${res.status})${detail ? `: ${detail}` : ''}`,
+      502,
+    )
+  }
+
+  const body = (await res.json().catch(() => ({}))) as GitHubRunsResponse
+  const runs = body.workflow_runs ?? []
+
+  // "No run yet" — empty list (or total_count 0). Well-formed all-null payload.
+  if ((body.total_count ?? runs.length) === 0 || runs.length === 0) {
+    return { ...NO_BUILD_STATUS }
+  }
+
+  const run = runs[0]
+  return {
+    status: run.status ?? null,
+    conclusion: run.conclusion ?? null,
+    html_url: run.html_url ?? null,
+    startedAt: run.run_started_at ?? run.created_at ?? null,
+  }
+}
