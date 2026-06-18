@@ -210,6 +210,7 @@ export interface PublicProject {
   locale: 'ru' | 'en';
   updatedAt: string;
   createdAt: string;
+  _status?: ('draft' | 'published') | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -233,6 +234,7 @@ export interface Team {
   locale: 'ru' | 'en';
   updatedAt: string;
   createdAt: string;
+  _status?: ('draft' | 'published') | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -510,6 +512,7 @@ export interface Page {
   locale: 'ru' | 'en';
   updatedAt: string;
   createdAt: string;
+  _status?: ('draft' | 'published') | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -703,6 +706,7 @@ export interface PublicProjectsSelect<T extends boolean = true> {
   locale?: T;
   updatedAt?: T;
   createdAt?: T;
+  _status?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -726,6 +730,7 @@ export interface TeamSelect<T extends boolean = true> {
   locale?: T;
   updatedAt?: T;
   createdAt?: T;
+  _status?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1083,6 +1088,7 @@ export interface PagesSelect<T extends boolean = true> {
   locale?: T;
   updatedAt?: T;
   createdAt?: T;
+  _status?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1183,6 +1189,7 @@ export interface Philosophy {
       }[]
     | null;
   locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
   createdAt?: string | null;
 }
@@ -1204,6 +1211,7 @@ export interface Contact {
   legalEntity?: string | null;
   domain?: string | null;
   locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
   createdAt?: string | null;
 }
@@ -1240,6 +1248,7 @@ export interface SiteChrome {
     | null;
   copyright?: string | null;
   locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
   createdAt?: string | null;
 }
@@ -1285,6 +1294,7 @@ export interface PhilosophySelect<T extends boolean = true> {
         id?: T;
       };
   locale?: T;
+  _status?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;
@@ -1306,6 +1316,7 @@ export interface ContactSelect<T extends boolean = true> {
   legalEntity?: T;
   domain?: T;
   locale?: T;
+  _status?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;
@@ -1342,6 +1353,7 @@ export interface SiteChromeSelect<T extends boolean = true> {
       };
   copyright?: T;
   locale?: T;
+  _status?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

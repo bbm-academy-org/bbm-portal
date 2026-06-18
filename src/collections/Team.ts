@@ -14,6 +14,7 @@ import { omitEmptyCollection } from '../hooks/omitEmpty'
 export const Team: CollectionConfig = {
   slug: 'team',
   access: { read: () => true },
+  versions: { drafts: { autosave: true } },
   admin: { useAsTitle: 'name' },
   hooks: { afterRead: [omitEmptyCollection] },
   fields: [

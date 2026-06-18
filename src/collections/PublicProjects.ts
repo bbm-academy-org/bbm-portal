@@ -14,6 +14,7 @@ import { omitEmptyCollection } from '../hooks/omitEmpty'
 export const PublicProjects: CollectionConfig = {
   slug: 'publicProjects',
   access: { read: () => true },
+  versions: { drafts: { autosave: true } },
   admin: { useAsTitle: 'name' },
   hooks: { afterRead: [omitEmptyCollection] },
   fields: [
@@ -26,6 +27,11 @@ export const PublicProjects: CollectionConfig = {
       name: 'status',
       type: 'select',
       required: true,
+      // Drafts (#14) reserve `enum_public_projects_status` for the internal
+      // `_status` field, which collides with this same-named `status` select.
+      // Pin this field's enum to a distinct name so both coexist (the column
+      // name + values, and thus REST output, are unchanged).
+      enumName: 'enum_public_projects_project_status',
       options: [
         { label: 'Active', value: 'active' },
         { label: 'Launching', value: 'launching' },
