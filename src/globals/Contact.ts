@@ -15,6 +15,7 @@ import { omitEmptyGlobal } from '../hooks/omitEmpty'
 export const Contact: GlobalConfig = {
   slug: 'contact',
   access: { read: () => true },
+  versions: { drafts: { autosave: true } },
   hooks: { afterRead: [omitEmptyGlobal] },
   fields: [
     text('email', true),

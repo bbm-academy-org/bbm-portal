@@ -17,6 +17,7 @@ import { omitEmptyGlobal } from '../hooks/omitEmpty'
 export const SiteChrome: GlobalConfig = {
   slug: 'siteChrome',
   access: { read: () => true },
+  versions: { drafts: { autosave: true } },
   hooks: { afterRead: [omitEmptyGlobal] },
   fields: [
     {

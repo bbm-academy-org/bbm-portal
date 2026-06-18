@@ -13,6 +13,7 @@ import { omitEmptyGlobal } from '../hooks/omitEmpty'
 export const Philosophy: GlobalConfig = {
   slug: 'philosophy',
   access: { read: () => true },
+  versions: { drafts: { autosave: true } },
   hooks: { afterRead: [omitEmptyGlobal] },
   fields: [
     area('evolutionaryGoal'),

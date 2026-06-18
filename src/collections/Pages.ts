@@ -276,6 +276,7 @@ const ctaSection: Field = {
 export const Pages: CollectionConfig = {
   slug: 'pages',
   access: { read: () => true },
+  versions: { drafts: { autosave: true } },
   admin: { useAsTitle: 'title' },
   hooks: {
     beforeValidate: [stashGroupAnchorIds],

@@ -18,6 +18,12 @@ import type { CollectionSlug, Payload, RequiredDataFromCollectionSlug } from 'pa
  *
  * The logic is a side-effect-free function (takes an already-resolved `payload`)
  * so tests import it without a stray process.exit — same split as `seedAdmin`.
+ *
+ * Drafts (#14): all 6 surfaces have `versions.drafts` enabled, so every
+ * create/update/updateGlobal here MUST pass `_status: 'published'` — otherwise
+ * the seeded content lands as a draft-only version and an unauthenticated public
+ * REST GET (the public site's read path) returns nothing. Publishing here is what
+ * keeps the content-parity int + content-rest e2e suites green.
  */
 
 /** The site checkout is the content SSOT; default to the sibling-repo path. */
@@ -68,14 +74,14 @@ export async function seedContent(
   // backfill team.projects once the projects exist.
   const team = readContentJson(contentDir, 'team/team.json') as Array<Record<string, unknown>>
   for (const { projects: _projects, ...member } of team) {
-    await payload.create({ collection: 'team', data: asData<'team'>(member) })
+    await payload.create({ collection: 'team', data: asData<'team'>({ ...member, _status: 'published' }) })
   }
 
   for (const slug of projectSlugs(contentDir)) {
     const data = readContentJson(contentDir, `publicProjects/${slug}.json`) as Record<string, unknown>
     await payload.create({
       collection: 'publicProjects',
-      data: asData<'publicProjects'>({ id: slug, ...data }),
+      data: asData<'publicProjects'>({ id: slug, ...data, _status: 'published' }),
     })
   }
 
@@ -84,19 +90,31 @@ export async function seedContent(
       await payload.update({
         collection: 'team',
         id: id as string,
-        data: asData<'team'>({ projects }),
+        data: asData<'team'>({ projects, _status: 'published' }),
       })
     }
   }
 
   for (const slug of pageSlugs(contentDir)) {
     const data = readContentJson(contentDir, `pages/${slug}.json`) as Record<string, unknown>
-    await payload.create({ collection: 'pages', data: asData<'pages'>({ id: slug, ...data }) })
+    await payload.create({
+      collection: 'pages',
+      data: asData<'pages'>({ id: slug, ...data, _status: 'published' }),
+    })
   }
 
-  await payload.updateGlobal({ slug: 'philosophy', data: singleton(contentDir, 'philosophy/philosophy.json') })
-  await payload.updateGlobal({ slug: 'contact', data: singleton(contentDir, 'siteSettings/contact.json') })
-  await payload.updateGlobal({ slug: 'siteChrome', data: singleton(contentDir, 'siteSettings/siteChrome.json') })
+  await payload.updateGlobal({
+    slug: 'philosophy',
+    data: { ...singleton(contentDir, 'philosophy/philosophy.json'), _status: 'published' },
+  })
+  await payload.updateGlobal({
+    slug: 'contact',
+    data: { ...singleton(contentDir, 'siteSettings/contact.json'), _status: 'published' },
+  })
+  await payload.updateGlobal({
+    slug: 'siteChrome',
+    data: { ...singleton(contentDir, 'siteSettings/siteChrome.json'), _status: 'published' },
+  })
 
   payload.logger.info(
     `seed:content — seeded ${projectSlugs(contentDir).length} projects, ${team.length} team members, ` +
