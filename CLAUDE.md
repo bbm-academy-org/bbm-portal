@@ -1,5 +1,17 @@
 # bbm-portal
 
+## Backlog / task tracking — GitHub Issues (not Plane)
+
+The day-to-day backlog for **this repo** lives in **GitHub Issues** on
+`bbm-academy-org/bbm-portal` — use `gh issue list` / `gh issue view`. Issues are
+cross-linked into epics and may reference sibling sub-tasks in the
+`bbm-academy-org/bbm-public-website` repo (the public Astro site). When asked to
+"look at the backlog" or pick up work, start here, **not** in Plane.
+
+Plane (below) is a higher-level / cross-project tracker; do not assume a
+bbm-portal work item lives there. If the prompt names a `BBMP-*` identifier it is
+Plane, otherwise default to GitHub Issues.
+
 ## Plane (project tracker) — workspace targeting
 
 The `plane-pp-cli` / `plane-pp-mcp` setup has **no default workspace** on purpose:
