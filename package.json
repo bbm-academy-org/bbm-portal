@@ -6,24 +6,37 @@
   "type": "module",
   "packageManager": "pnpm@10.7.0",
   "scripts": {
+    "require-node": "node scripts/require-node.mjs",
+    "prebuild": "node scripts/require-node.mjs",
     "build": "cross-env NODE_OPTIONS=\"--no-deprecation --max-old-space-size=8000\" next build",
+    "predev": "node scripts/require-node.mjs",
     "dev": "cross-env NODE_OPTIONS=--no-deprecation next dev",
     "devsafe": "rm -rf .next && cross-env NODE_OPTIONS=--no-deprecation next dev",
     "generate:importmap": "cross-env NODE_OPTIONS=--no-deprecation payload generate:importmap",
     "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
     "lint": "cross-env NODE_OPTIONS=--no-deprecation eslint .",
+    "premigrate": "node scripts/require-node.mjs",
     "migrate": "cross-env NODE_OPTIONS=--no-deprecation payload migrate",
+    "premigrate:create": "node scripts/require-node.mjs",
     "migrate:create": "cross-env NODE_OPTIONS=--no-deprecation payload migrate:create",
+    "premigrate:status": "node scripts/require-node.mjs",
     "migrate:status": "cross-env NODE_OPTIONS=--no-deprecation payload migrate:status",
+    "premigrate:down": "node scripts/require-node.mjs",
     "migrate:down": "cross-env NODE_OPTIONS=--no-deprecation payload migrate:down",
+    "premigrate:fresh": "node scripts/require-node.mjs",
     "migrate:fresh": "cross-env NODE_OPTIONS=--no-deprecation payload migrate:fresh",
     "payload": "cross-env NODE_OPTIONS=--no-deprecation payload",
+    "preseed:admin": "node scripts/require-node.mjs",
     "seed:admin": "cross-env NODE_OPTIONS=--no-deprecation tsx src/seed/runSeedAdmin.ts",
+    "preseed:content": "node scripts/require-node.mjs",
     "seed:content": "cross-env NODE_OPTIONS=--no-deprecation tsx src/seed/runSeedContent.ts",
     "start": "cross-env NODE_OPTIONS=--no-deprecation next start",
     "typecheck": "tsc --noEmit",
+    "pretest": "node scripts/require-node.mjs",
     "test": "pnpm run test:int && pnpm run test:e2e",
+    "pretest:e2e": "node scripts/require-node.mjs",
     "test:e2e": "cross-env NODE_OPTIONS=\"--no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts",
+    "pretest:int": "node scripts/require-node.mjs",
     "test:int": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts"
   },
   "dependencies": {
@@ -58,7 +71,7 @@
     "vitest": "4.0.18"
   },
   "engines": {
-    "node": "^18.20.2 || >=20.9.0",
+    "node": "^22.17.0",
     "pnpm": "^9 || ^10"
   },
   "pnpm": {

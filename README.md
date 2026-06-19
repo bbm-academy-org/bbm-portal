@@ -13,8 +13,21 @@
   Migrations are the source of truth (`push: false`); see [Database](#database).
 - **Media** → Timeweb Object Storage via `@payloadcms/storage-s3` (decision #3; wired in BBMP-27)
 
+## Prerequisites
+**Node 22 is required** — pinned by [`.nvmrc`](./.nvmrc) (`22.17.0`), the
+`Dockerfile`, and CI. With a version manager just run `nvm use` / `fnm use` in the
+repo root to select it automatically. `engine-strict=true` (in `.npmrc`) makes
+`pnpm install` **fail loudly** on the wrong Node major, and the Node-22-sensitive
+scripts (`migrate*`, `dev`, `build`, `test*`, `seed*`) run a preflight
+([`scripts/require-node.mjs`](./scripts/require-node.mjs)) that exits early with a
+clear "use Node 22" message before any deep crash. In particular,
+`pnpm migrate:create` only works on Node 22 — under Node 23/24 drizzle-kit's tsx
+loader crashes (`node:crypto?tsx-namespace` ENOENT), which is why early migrations
+in this repo had to be hand-generated.
+
 ## Local development
 ```bash
+nvm use                         # or `fnm use` — select Node 22 (see .nvmrc)
 cp .env.example .env            # set PAYLOAD_SECRET — `openssl rand -hex 32`, point DATABASE_URL at your dev DB
 pnpm install
 pnpm migrate                    # apply migrations (push is off — run this before first dev)
