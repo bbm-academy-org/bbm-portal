@@ -20,6 +20,9 @@ import { PageContacts } from './globals/PageContacts'
 import { PageParticipate } from './globals/PageParticipate'
 import { PagePrivacy } from './globals/PagePrivacy'
 import { PageProjects } from './globals/PageProjects'
+import { publishSiteEndpoint } from './endpoints/publishSite'
+import { siteBuildStatusEndpoint } from './endpoints/siteBuildStatus'
+import { pendingChangesEndpoint } from './endpoints/pendingChanges'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -37,6 +40,13 @@ export default buildConfig({
     user: Users.slug,
     importMap: {
       baseDir: path.resolve(dirname),
+    },
+    components: {
+      // #17 — admin "Publish to site" panel: confirm-list of pending drafts →
+      // Publish (POST /api/publish-site) → live build status (polls
+      // GET /api/site-build-status). Rendered on the dashboard; admin-only by
+      // virtue of the admin panel's auth.
+      beforeDashboard: ['@/components/PublishPanel#PublishPanel'],
     },
   },
   // Allow the public site's browser origin to POST leads cross-origin to
@@ -57,6 +67,13 @@ export default buildConfig({
     PagePrivacy,
     PageProjects,
   ],
+  // Custom one-click publish (#15): POST /api/publish-site — promotes drafts on
+  // the build surfaces and fires the public site's GitHub Actions build.
+  // Build-status proxy (#16): GET /api/site-build-status — reports the latest
+  // publish-site GitHub Actions run for the admin UI (#17).
+  // Read-only confirm-list source (#17, Part A): GET /api/pending-changes —
+  // lists the drafts publish-site would promote, for the admin button's preview.
+  endpoints: [publishSiteEndpoint, siteBuildStatusEndpoint, pendingChangesEndpoint],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
