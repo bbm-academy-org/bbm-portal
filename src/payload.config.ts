@@ -17,6 +17,7 @@ import { Contact } from './globals/Contact'
 import { SiteChrome } from './globals/SiteChrome'
 import { publishSiteEndpoint } from './endpoints/publishSite'
 import { siteBuildStatusEndpoint } from './endpoints/siteBuildStatus'
+import { pendingChangesEndpoint } from './endpoints/pendingChanges'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -35,6 +36,13 @@ export default buildConfig({
     importMap: {
       baseDir: path.resolve(dirname),
     },
+    components: {
+      // #17 — admin "Publish to site" panel: confirm-list of pending drafts →
+      // Publish (POST /api/publish-site) → live build status (polls
+      // GET /api/site-build-status). Rendered on the dashboard; admin-only by
+      // virtue of the admin panel's auth.
+      beforeDashboard: ['@/components/PublishPanel#PublishPanel'],
+    },
   },
   // Allow the public site's browser origin to POST leads cross-origin to
   // /api/leads. Only CORS is scoped here — the lead create is unauthenticated,
@@ -48,7 +56,9 @@ export default buildConfig({
   // the build surfaces and fires the public site's GitHub Actions build.
   // Build-status proxy (#16): GET /api/site-build-status — reports the latest
   // publish-site GitHub Actions run for the admin UI (#17).
-  endpoints: [publishSiteEndpoint, siteBuildStatusEndpoint],
+  // Read-only confirm-list source (#17, Part A): GET /api/pending-changes —
+  // lists the drafts publish-site would promote, for the admin button's preview.
+  endpoints: [publishSiteEndpoint, siteBuildStatusEndpoint, pendingChangesEndpoint],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
