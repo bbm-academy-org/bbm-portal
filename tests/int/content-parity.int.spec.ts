@@ -5,7 +5,14 @@ import { getPayload, type Payload } from 'payload'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import config from '@/payload.config'
-import { pageSlugs, projectSlugs, readContentJson, seedContent, singleton } from '@/seed/seedContent'
+import {
+  PAGE_GLOBAL_BY_SLUG,
+  pageSlugs,
+  projectSlugs,
+  readContentJson,
+  seedContent,
+  singleton,
+} from '@/seed/seedContent'
 import { expectNoNulls, expectSubset } from '../helpers/parity'
 
 /**
@@ -69,13 +76,13 @@ describe.skipIf(!hasFixtures)('content surfaces parity (seed → read → schema
     }
   })
 
-  it('pages: every page mirrors its fixture (named groups, no blocks array)', async () => {
+  it('page globals: every page mirrors its fixture (named groups, no blocks array)', async () => {
     for (const slug of pageSlugsHere()) {
       const fixture = readJson(`pages/${slug}.json`)
-      const doc = await payload.findByID({ collection: 'pages', id: slug, depth: 0 })
-      expectSubset(fixture, doc, `pages/${slug}`)
-      expectNoNulls(doc, `pages/${slug}`)
-      expect(doc.id, 'id === slug').toBe(slug)
+      const global = PAGE_GLOBAL_BY_SLUG[slug]
+      const doc = await payload.findGlobal({ slug: global, depth: 0 })
+      expectSubset(fixture, doc, `${global} (pages/${slug})`)
+      expectNoNulls(doc, `${global} (pages/${slug})`)
     }
   })
 

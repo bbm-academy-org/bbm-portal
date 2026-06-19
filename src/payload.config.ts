@@ -10,11 +10,16 @@ import { Users } from './collections/Users'
 import { Media } from './collections/Media'
 import { PublicProjects } from './collections/PublicProjects'
 import { Team } from './collections/Team'
-import { Pages } from './collections/Pages'
 import { Leads } from './collections/Leads'
 import { Philosophy } from './globals/Philosophy'
 import { Contact } from './globals/Contact'
 import { SiteChrome } from './globals/SiteChrome'
+import { PageHome } from './globals/PageHome'
+import { PageAbout } from './globals/PageAbout'
+import { PageContacts } from './globals/PageContacts'
+import { PageParticipate } from './globals/PageParticipate'
+import { PagePrivacy } from './globals/PagePrivacy'
+import { PageProjects } from './globals/PageProjects'
 import { publishSiteEndpoint } from './endpoints/publishSite'
 import { siteBuildStatusEndpoint } from './endpoints/siteBuildStatus'
 import { pendingChangesEndpoint } from './endpoints/pendingChanges'
@@ -50,8 +55,18 @@ export default buildConfig({
   // `csrf` is left at its default ([]) on purpose: listing the public site
   // there would wrongly trust it as an authenticated-cookie origin.
   cors: siteOrigins,
-  collections: [Users, Media, PublicProjects, Team, Pages, Leads],
-  globals: [Philosophy, Contact, SiteChrome],
+  collections: [Users, Media, PublicProjects, Team, Leads],
+  globals: [
+    Philosophy,
+    Contact,
+    SiteChrome,
+    PageHome,
+    PageAbout,
+    PageContacts,
+    PageParticipate,
+    PagePrivacy,
+    PageProjects,
+  ],
   // Custom one-click publish (#15): POST /api/publish-site — promotes drafts on
   // the build surfaces and fires the public site's GitHub Actions build.
   // Build-status proxy (#16): GET /api/site-build-status — reports the latest

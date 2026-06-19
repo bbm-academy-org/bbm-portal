@@ -1,4 +1,4 @@
-import type { CollectionAfterReadHook, CollectionBeforeValidateHook } from 'payload'
+import type { GlobalAfterReadHook, GlobalBeforeValidateHook } from 'payload'
 
 /**
  * Payload reserves the field name `id` inside a GROUP and silently drops it
@@ -21,8 +21,13 @@ const groupNode = (root: unknown, group: string, sub: string): Record<string, un
   return s !== null && typeof s === 'object' ? (s as Record<string, unknown>) : undefined
 }
 
-/** On write: stash the incoming `id` as `slug` (the actual stored field). */
-export const stashGroupAnchorIds: CollectionBeforeValidateHook = ({ data }) => {
+/**
+ * The per-page globals (`pageParticipate.participate.roles`,
+ * `pagePrivacy.privacy.operator`) carry the same slug-bearing groups the old
+ * `pages` collection did (#18). On write we stash the incoming `id` as `slug`
+ * (the actual stored field); on read we surface the stored `slug` back as `id`.
+ */
+export const stashGroupAnchorIdsGlobal: GlobalBeforeValidateHook = ({ data }) => {
   for (const [group, sub] of GROUP_ID_PATHS) {
     const node = groupNode(data, group, sub)
     if (node && node.id !== undefined) {
@@ -33,8 +38,7 @@ export const stashGroupAnchorIds: CollectionBeforeValidateHook = ({ data }) => {
   return data
 }
 
-/** On read: surface the stored `slug` back as `id`. */
-export const restoreGroupAnchorIds: CollectionAfterReadHook = ({ doc }) => {
+export const restoreGroupAnchorIdsGlobal: GlobalAfterReadHook = ({ doc }) => {
   for (const [group, sub] of GROUP_ID_PATHS) {
     const node = groupNode(doc, group, sub)
     if (node && node.slug !== undefined) {
