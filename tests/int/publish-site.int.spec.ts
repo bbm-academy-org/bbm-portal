@@ -180,15 +180,22 @@ describe('POST /api/publish-site (#15)', () => {
     })
     expect(typeof body.dispatch.at).toBe('string')
 
-    // The surface set is config-derived: it must resolve to exactly the six
-    // current build surfaces, in config-declaration order (deterministic).
+    // The surface set is config-derived (every collection/global with drafts):
+    // post-#18 that is the publicProjects/team collections + the 3 site globals
+    // + the 6 per-page globals, in config-declaration order (deterministic).
+    // `pages` is gone — #18 retired the collection in favour of the page globals.
     expect(body.published.map((p) => p.surface)).toEqual([
       'publicProjects',
       'team',
-      'pages',
       'philosophy',
       'contact',
       'siteChrome',
+      'pageHome',
+      'pageAbout',
+      'pageContacts',
+      'pageParticipate',
+      'pagePrivacy',
+      'pageProjects',
     ])
 
     const team = body.published.find((p) => p.surface === 'team')
