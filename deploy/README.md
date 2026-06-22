@@ -157,6 +157,8 @@ resolves, so Caddy auto-provisions the cert on first start.
      ```
      PAYLOAD_PREVIEW_TOKEN=users API-Key <the-generated-key>
      ```
+     Leave it **unquoted** — compose passes the value verbatim, so wrapping it in
+     quotes makes them part of the header and Payload 401s. The spaces are fine.
    - This needs `useAPIKey: true` on the Users collection (shipped) **and** the
      migration that adds the api-key columns applied (see _Shipping an update_) —
      without the migration, key auth 401s on prod.
