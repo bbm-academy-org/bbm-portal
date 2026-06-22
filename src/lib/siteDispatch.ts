@@ -2,15 +2,24 @@
  * Public-site GitHub dispatch helper (#15, pairs with #16).
  *
  * Centralises everything about talking to the public site's repo on
- * api.github.com: reading the token, resolving the target repo, and firing the
- * `repository_dispatch`. #16 (`GET /api/site-build-status`) reads the SAME token
- * + repo to query the Actions API, so these resolvers live here to be shared —
- * keep the env-var contract in one place.
+ * api.github.com: resolving the credentials, resolving the target repo, and
+ * firing the `repository_dispatch`. #16 (`GET /api/site-build-status`) reads the
+ * SAME credentials + repo to query the Actions API, so these resolvers live here
+ * to be shared — keep the auth contract in one place.
  *
- * Token provenance: `SITE_DISPATCH_TOKEN` is provisioned in prod by
- * bbm-public-website#111 (a GitHub App / PAT scoped to `contents:write` /
- * `actions` on the public site repo).
+ * Auth (bbm-public-website#111): two modes, App preferred.
+ *   1. GitHub App (PRODUCTION) — when `SITE_DISPATCH_APP_ID`,
+ *      `SITE_DISPATCH_APP_PRIVATE_KEY` and `SITE_DISPATCH_APP_INSTALLATION_ID`
+ *      are all set, mint a short-lived installation token via `@octokit/auth-app`.
+ *      No personal-account token lives in prod (#111 acceptance). The App is
+ *      installed on the site repo with `contents:write` (repository_dispatch) +
+ *      `actions:read` (run status).
+ *   2. Static token (dev / CI / back-compat) — falls back to `SITE_DISPATCH_TOKEN`
+ *      (a PAT or fine-grained token) when no App credentials are configured.
+ * If NEITHER is configured we fail loudly (500) — never a silent skip, which
+ * would leave "promoted in CMS, build never started".
  */
+import { createAppAuth } from '@octokit/auth-app'
 
 /** The `repository_dispatch` event the public site's build workflow listens for. */
 export const PUBLISH_SITE_EVENT_TYPE = 'publish-site'
@@ -33,22 +42,95 @@ export class SiteDispatchError extends Error {
 export const resolveSiteRepo = (): string =>
   (process.env.SITE_DISPATCH_REPO ?? '').trim() || DEFAULT_REPO
 
+/** The three env vars that together enable the GitHub App auth path. */
+type AppCredentials = { appId: string; privateKey: string; installationId: string }
+
 /**
- * Read the dispatch token, or throw a 500-class error.
- *
- * A MISSING token must fail the whole publish loudly — never silently skip the
- * build trigger (that would leave "promoted in CMS, build never started").
+ * A PEM stored as a single-line env value keeps its newlines as the literal
+ * two-character sequence `\n`; `@octokit/auth-app` needs a real multi-line PEM,
+ * so expand them back. A PEM that already has real newlines is returned as-is.
  */
-export const requireSiteDispatchToken = (): string => {
-  const token = (process.env.SITE_DISPATCH_TOKEN ?? '').trim()
-  if (!token) {
+const normalizePrivateKey = (raw: string): string =>
+  raw.includes('\\n') ? raw.replace(/\\n/g, '\n') : raw
+
+/**
+ * Read the GitHub App credentials, or `null` when the App path is not configured
+ * at all (so the caller can fall back to the static token). A PARTIAL App config
+ * is a misconfiguration, not a fallback trigger, so it throws (500).
+ */
+const readAppCredentials = (): AppCredentials | null => {
+  const appId = (process.env.SITE_DISPATCH_APP_ID ?? '').trim()
+  const privateKey = (process.env.SITE_DISPATCH_APP_PRIVATE_KEY ?? '').trim()
+  const installationId = (process.env.SITE_DISPATCH_APP_INSTALLATION_ID ?? '').trim()
+
+  if (!appId && !privateKey && !installationId) return null // App path not configured
+
+  if (!appId || !privateKey || !installationId) {
     throw new SiteDispatchError(
-      'SITE_DISPATCH_TOKEN is not set — cannot trigger the public site build ' +
-        '(token comes from bbm-public-website#111).',
+      'GitHub App dispatch credentials are only partially set — SITE_DISPATCH_APP_ID, ' +
+        'SITE_DISPATCH_APP_PRIVATE_KEY and SITE_DISPATCH_APP_INSTALLATION_ID must all be ' +
+        'set together (or all unset to use SITE_DISPATCH_TOKEN).',
       500,
     )
   }
-  return token
+
+  return { appId, privateKey: normalizePrivateKey(privateKey), installationId }
+}
+
+/**
+ * Memoised `@octokit/auth-app` instance, keyed on the credential tuple. The auth
+ * function caches the installation token internally and refreshes it shortly
+ * before expiry, so reusing the instance across requests means the frequently
+ * polled status endpoint does not mint a fresh token (JWT + token round-trip) on
+ * every call. A credential change (rotation) rebuilds it.
+ */
+let cachedAppAuth: { key: string; auth: ReturnType<typeof createAppAuth> } | null = null
+
+/** Mint (or reuse a cached) GitHub App installation token. */
+const mintInstallationToken = async (creds: AppCredentials): Promise<string> => {
+  const key = `${creds.appId}:${creds.installationId}:${creds.privateKey}`
+  if (!cachedAppAuth || cachedAppAuth.key !== key) {
+    cachedAppAuth = {
+      key,
+      auth: createAppAuth({
+        appId: creds.appId,
+        privateKey: creds.privateKey,
+        installationId: creds.installationId,
+      }),
+    }
+  }
+
+  try {
+    const { token } = await cachedAppAuth.auth({ type: 'installation' })
+    return token
+  } catch (err) {
+    throw new SiteDispatchError(
+      `Failed to mint a GitHub App installation token: ${(err as Error).message}`,
+      502,
+    )
+  }
+}
+
+/**
+ * Resolve a bearer token for the GitHub REST calls: a short-lived GitHub App
+ * installation token in prod, else the static `SITE_DISPATCH_TOKEN` (dev / CI /
+ * back-compat). Throws a 500-class error when NEITHER is configured — the
+ * publish/status must fail loudly, never silently skip the build trigger (which
+ * would leave "promoted in CMS, build never started").
+ */
+export const getSiteDispatchToken = async (): Promise<string> => {
+  const appCredentials = readAppCredentials()
+  if (appCredentials) return mintInstallationToken(appCredentials)
+
+  const token = (process.env.SITE_DISPATCH_TOKEN ?? '').trim()
+  if (token) return token
+
+  throw new SiteDispatchError(
+    'No GitHub dispatch credentials configured — set the SITE_DISPATCH_APP_* GitHub App ' +
+      'credentials (preferred in prod) or SITE_DISPATCH_TOKEN. Cannot trigger or read the ' +
+      'public site build.',
+    500,
+  )
 }
 
 export type SiteDispatchResult = {
@@ -67,7 +149,7 @@ export type SiteDispatchResult = {
  * legitimately know; resolving the actual run is #16.
  */
 export const dispatchSiteBuild = async (): Promise<SiteDispatchResult> => {
-  const token = requireSiteDispatchToken()
+  const token = await getSiteDispatchToken()
   const repo = resolveSiteRepo()
 
   let res: Response
@@ -150,13 +232,14 @@ type GitHubRunsResponse = {
  * `publish-site` is triggered via `repository_dispatch`; the runs API has no
  * per-`event_type` filter, so we filter `event=repository_dispatch` and take the
  * single most recent run (`per_page=1`). Empty list → {@link NO_BUILD_STATUS}
- * (never a 500). Uses the SAME `SITE_DISPATCH_TOKEN` (needs `actions:read`) and
- * `SITE_DISPATCH_REPO` as the dispatch — a missing token fails loudly (500).
- * Network failure → 502; any non-2xx from GitHub → propagated as a 502-class
- * `SiteDispatchError`. The token is never logged.
+ * (never a 500). Uses the SAME credentials (App installation token, needs
+ * `actions:read`, or `SITE_DISPATCH_TOKEN`) and `SITE_DISPATCH_REPO` as the
+ * dispatch — missing credentials fail loudly (500). Network failure → 502; any
+ * non-2xx from GitHub → propagated as a 502-class `SiteDispatchError`. The token
+ * is never logged.
  */
 export const querySiteBuildStatus = async (): Promise<SiteBuildStatus> => {
-  const token = requireSiteDispatchToken()
+  const token = await getSiteDispatchToken()
   const repo = resolveSiteRepo()
 
   let res: Response

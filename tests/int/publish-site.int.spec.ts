@@ -37,6 +37,17 @@ const createdTeamIds: string[] = []
 const ORIGINAL_TOKEN = process.env.SITE_DISPATCH_TOKEN
 const ORIGINAL_REPO = process.env.SITE_DISPATCH_REPO
 
+// #111 added a GitHub App auth path (preferred over the static token). This suite
+// pins the STATIC-token path, so null any App credentials a dev .env might carry
+// — otherwise the helper would prefer the App and ignore SITE_DISPATCH_TOKEN.
+// Saved here and restored in afterEach.
+const APP_ENV_KEYS = [
+  'SITE_DISPATCH_APP_ID',
+  'SITE_DISPATCH_APP_PRIVATE_KEY',
+  'SITE_DISPATCH_APP_INSTALLATION_ID',
+] as const
+const ORIGINAL_APP_ENV = Object.fromEntries(APP_ENV_KEYS.map((k) => [k, process.env[k]]))
+
 // A 204 No Content — the GitHub repository_dispatch success contract.
 const dispatchAccepted = () => ({ ok: true, status: 204, text: async () => '' }) as Response
 // A 4xx/5xx the handler must treat as a failed dispatch.
@@ -101,6 +112,7 @@ describe('POST /api/publish-site (#15)', () => {
   beforeEach(() => {
     process.env.SITE_DISPATCH_TOKEN = 'test-token'
     process.env.SITE_DISPATCH_REPO = 'bbm-academy-org/bbm-public-website'
+    for (const key of APP_ENV_KEYS) delete process.env[key]
   })
 
   afterEach(() => {
@@ -110,6 +122,10 @@ describe('POST /api/publish-site (#15)', () => {
     else process.env.SITE_DISPATCH_TOKEN = ORIGINAL_TOKEN
     if (ORIGINAL_REPO === undefined) delete process.env.SITE_DISPATCH_REPO
     else process.env.SITE_DISPATCH_REPO = ORIGINAL_REPO
+    for (const key of APP_ENV_KEYS) {
+      if (ORIGINAL_APP_ENV[key] === undefined) delete process.env[key]
+      else process.env[key] = ORIGINAL_APP_ENV[key]
+    }
   })
 
   // Clean up ONLY the exact team members this suite created (collected ids). The
