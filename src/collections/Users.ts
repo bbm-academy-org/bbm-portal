@@ -18,7 +18,16 @@ export const Users: CollectionConfig = {
   admin: {
     useAsTitle: 'email',
   },
-  auth: true,
+  // `useAPIKey` adds an opt-in per-user API key (off by default on each user)
+  // so the SSR live-preview origin can read drafts server-to-server without an
+  // admin session (epic #13 / bbm-public-website#114). The preview container
+  // sends the key as the full `Authorization` header `users API-Key <key>`
+  // (contract: bbm-public-website src/preview/draft-source.ts). `push: false`,
+  // so this adds the `enable_a_p_i_key`/`api_key`/`api_key_index` columns via a
+  // committed migration — without it, key auth breaks on prod.
+  auth: {
+    useAPIKey: true,
+  },
   // Lock the users collection down: by default Payload exposes it world-
   // readable/writable over REST, a real gap for a public prod instance.
   access: {

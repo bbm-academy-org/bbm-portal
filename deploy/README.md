@@ -6,7 +6,10 @@ as a single `docker compose` stack:
 
 - **`postgres`** — dedicated Postgres 17 (decision #2), internal network only.
 - **`app`** — the repo `Dockerfile` (Next.js standalone runtime), fronted by Caddy.
-- **`caddy`** — reverse proxy + automatic Let's Encrypt TLS for `cms.bbm.academy`.
+- **`preview`** — Astro SSR live-preview origin for `preview.bbm.academy` (epic #13).
+  Pulled from GHCR (built by the site repo), not built here — see _Preview service_.
+- **`caddy`** — reverse proxy + automatic Let's Encrypt TLS for `cms.bbm.academy`
+  and `preview.bbm.academy`.
 - **`migrate`** — profiled one-off tooling job (migrations + admin seed).
 
 Public endpoint: **`https://cms.bbm.academy`** — admin `/admin`, REST `/api`,
@@ -38,6 +41,10 @@ All commands below run **from the `deploy/` directory on the host**.
    cp .env.postgres.example .env.postgres  # postgres container only
    # edit: POSTGRES_USER/PASSWORD/DB — POSTGRES_PASSWORD MUST equal the
    #       password embedded in DATABASE_URL above.
+
+   cp .env.preview.example .env.preview    # preview container only
+   # edit: PAYLOAD_PREVIEW_TOKEN — a Users API key as the full Authorization
+   #       header value `users API-Key <key>` (see Preview service below).
    ```
    `DATABASE_URL` host is the compose service name `postgres`, not localhost.
 
@@ -127,6 +134,53 @@ docker compose -f docker-compose.prod.yml up -d app
 # Optional: re-run the seed (idempotent) if SEED_ADMIN_* changed.
 docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
 ```
+
+## Preview service (`preview.bbm.academy`, epic #13)
+
+The `preview` service is the Astro SSR live-preview origin: it renders a single
+**draft** document with the real site components so editors see unsaved changes.
+Unlike `app`, it is **not built here** — it is the code-only image the site repo
+publishes to GHCR (`ghcr.io/bbm-academy-org/bbm-site-preview:latest`,
+bbm-public-website `Dockerfile.preview`). It fetches drafts from the CMS
+server-to-server over the internal compose network
+(`PAYLOAD_API_URL=http://app:3000`, set inline in compose), authenticated with a
+**Users API key** carried in `.env.preview` (the only secret). Caddy serves it at
+`preview.bbm.academy` with a CSP `frame-ancestors https://cms.bbm.academy` so only
+the Payload admin can embed it. DNS `preview.bbm.academy → 201.51.28.190` already
+resolves, so Caddy auto-provisions the cert on first start.
+
+**1. Issue the preview token (in `/admin`, one-time):**
+   - Open the **Users** collection → your user document.
+   - Enable **API Key** on that user → Payload reveals a generated key.
+   - Put it in `.env.preview` as the FULL Authorization header value — scheme
+     included, the scheme is the collection slug `users`:
+     ```
+     PAYLOAD_PREVIEW_TOKEN=users API-Key <the-generated-key>
+     ```
+   - This needs `useAPIKey: true` on the Users collection (shipped) **and** the
+     migration that adds the api-key columns applied (see _Shipping an update_) —
+     without the migration, key auth 401s on prod.
+
+**2. Authenticate the host to GHCR (the image is private by default):** either
+   make the GHCR package public in the site repo's package settings (then no
+   host auth is needed), **or** log the host in once with a PAT that has
+   `read:packages`:
+   ```bash
+   echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
+   ```
+
+**3. Pull + start it (and roll Caddy for the new vhost):**
+   ```bash
+   cd deploy
+   docker compose -f docker-compose.prod.yml pull preview
+   docker compose -f docker-compose.prod.yml up -d preview caddy
+   curl -fsS -o /dev/null https://preview.bbm.academy/ && echo "preview reachable"
+   docker compose -f docker-compose.prod.yml logs -f caddy   # watch cert issuance
+   ```
+
+**Updating the preview image** (when the site repo ships a new build): re-pull and
+re-create just that container — `docker compose -f docker-compose.prod.yml pull
+preview && docker compose -f docker-compose.prod.yml up -d preview`.
 
 ## Notes
 

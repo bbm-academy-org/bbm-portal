@@ -49,6 +49,33 @@ services:
     expose:
       - '3000'
 
+  # Astro SSR live-preview origin for `preview.bbm.academy` (epic #13 /
+  # bbm-public-website#114). Unlike `app`, this is NOT built here: it is the
+  # code-only image published by the site repo's GHCR CI (bbm-public-website
+  # PR #125, `Dockerfile.preview`). It carries no CMS URL or token — they are
+  # injected here at runtime:
+  #   - PAYLOAD_API_URL: the internal compose address of the CMS (not a secret,
+  #     so inline `environment`, not an env file). The container fetches each
+  #     draft from `${PAYLOAD_API_URL}/api/globals/<slug>?draft=true` server-to-
+  #     server over the compose network — never through Caddy/the public origin.
+  #   - PAYLOAD_PREVIEW_TOKEN: the ONLY secret, kept in its own least-privilege
+  #     `.env.preview` (a users API key — `users API-Key <key>` — NOT the app's
+  #     Payload/S3 secrets), mirroring the postgres/app env split.
+  # The image binds 0.0.0.0:4321 (Dockerfile.preview HOST/PORT); Caddy reverse-
+  # proxies `preview.bbm.academy` to it. To update: `docker compose pull preview`
+  # then `up -d preview` (GHCR auth — see deploy/README.md).
+  preview:
+    image: ghcr.io/bbm-academy-org/bbm-site-preview:latest
+    restart: unless-stopped
+    environment:
+      PAYLOAD_API_URL: http://app:3000
+    env_file:
+      - .env.preview
+    depends_on:
+      - app
+    expose:
+      - '4321'
+
   # One-off tooling job: runs Payload migrations (default command) and the admin
   # seed (override command). Built from the Dockerfile `tooling` target, which
   # carries full node_modules + source + pnpm/Node 22 (no `next build`) — the
@@ -85,6 +112,7 @@ services:
       - caddy_config:/config
     depends_on:
       - app
+      - preview
 
 volumes:
   pgdata:
