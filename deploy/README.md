@@ -128,8 +128,12 @@ docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
 docker compose -f docker-compose.prod.yml exec -T postgres \
   psql -U payload -d cms -c 'SELECT name, batch FROM payload_migrations ORDER BY id;'
 
-# Roll the app (and caddy if its config changed). Postgres + volumes persist.
+# Roll the app. Postgres + volumes persist.
 docker compose -f docker-compose.prod.yml up -d app
+# If the Caddyfile changed, `up -d caddy` does NOT pick it up (the bind-mounted
+# config does not recreate the container, and `caddy reload` reports "config is
+# unchanged"). Use a plain restart to reload it:
+docker compose -f docker-compose.prod.yml restart caddy
 
 # Optional: re-run the seed (idempotent) if SEED_ADMIN_* changed.
 docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
@@ -141,7 +145,8 @@ The `preview` service is the Astro SSR live-preview origin: it renders a single
 **draft** document with the real site components so editors see unsaved changes.
 Unlike `app`, it is **not built here** — it is the code-only image the site repo
 publishes to GHCR (`ghcr.io/bbm-academy-org/bbm-site-preview:latest`,
-bbm-public-website `Dockerfile.preview`). It fetches drafts from the CMS
+bbm-public-website `Dockerfile.preview`). The image is **public** (non-secret
+code) so the host pulls it anonymously — see step 2 for why. It fetches drafts from the CMS
 server-to-server over the internal compose network
 (`PAYLOAD_API_URL=http://app:3000`, set inline in compose), authenticated with a
 **Users API key** carried in `.env.preview` (the only secret). Caddy serves it at
@@ -149,33 +154,63 @@ server-to-server over the internal compose network
 the Payload admin can embed it. DNS `preview.bbm.academy → 201.51.28.190` already
 resolves, so Caddy auto-provisions the cert on first start.
 
-**1. Issue the preview token (in `/admin`, one-time):**
-   - Open the **Users** collection → your user document.
-   - Enable **API Key** on that user → Payload reveals a generated key.
-   - Put it in `.env.preview` as the FULL Authorization header value — scheme
-     included, the scheme is the collection slug `users`:
-     ```
-     PAYLOAD_PREVIEW_TOKEN=users API-Key <the-generated-key>
-     ```
-     Leave it **unquoted** — compose passes the value verbatim, so wrapping it in
-     quotes makes them part of the header and Payload 401s. The spaces are fine.
+**1. Issue the preview token (one-time):** use a **dedicated** `preview@bbm.academy`
+   user (not a human admin's account) and give it a **self-chosen** API key.
+   Payload **hides `apiKey` on REST reads**, so an auto-generated key cannot be
+   read back out — PATCH the user with a key you generate, and use that value:
+   ```bash
+   KEY=$(openssl rand -hex 32)
+   # Authenticated as an admin (cookie/JWT), PATCH the dedicated preview user:
+   curl -sS -X PATCH "https://cms.bbm.academy/api/users/<preview-user-id>" \
+     -H 'Content-Type: application/json' -H "Authorization: JWT <admin-jwt>" \
+     -d "{\"enableAPIKey\":true,\"apiKey\":\"$KEY\"}"
+   ```
+   Then put it in `.env.preview` as the FULL Authorization header value — scheme
+   included, the scheme is the collection slug `users`:
+   ```
+   PAYLOAD_PREVIEW_TOKEN=users API-Key <the-self-chosen-KEY>
+   ```
+   Leave it **unquoted** — compose passes the value verbatim, so wrapping it in
+   quotes makes them part of the header and Payload 401s. The spaces are fine.
    - This needs `useAPIKey: true` on the Users collection (shipped) **and** the
      migration that adds the api-key columns applied (see _Shipping an update_) —
      without the migration, key auth 401s on prod.
 
-**2. Authenticate the host to GHCR (the image is private by default):** either
-   make the GHCR package public in the site repo's package settings (then no
-   host auth is needed), **or** log the host in once with a PAT that has
-   `read:packages`:
+**2. Make the GHCR package public (one-time) — the host then pulls anonymously,
+   no registry credential on the box.** This is the chosen path; the image is
+   non-secret code. Two facts forced it:
+   - A **GitHub App installation token cannot pull a private, repo-inherited GHCR
+     package** — it 404s even with `packages:read` and the correct installation
+     scope (a GitHub limitation). So the "clean private, no host cred" path is
+     not viable here.
+   - The org had **both Public and Internal package visibility disabled** by
+     policy, so the package could not be made public until that was lifted.
+
+   Resolution (one-time, done): enable **Public** package visibility at the org
+   level (`https://github.com/organizations/bbm-academy-org/settings/packages` —
+   a capability toggle, **not** a mass-publish), then set visibility on **only**
+   `bbm-site-preview` to Public. The host now pulls with a plain
+   `docker compose pull preview` — no `docker login`, no PAT.
+
+   <details><summary>Fallback: keep the package private</summary>
+
+   Only if the package must stay private — log the host in once with a PAT that
+   has `read:packages` (a personal-account credential lives on the box, which is
+   what we avoided):
    ```bash
    echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
    ```
+   </details>
 
-**3. Pull + start it (and roll Caddy for the new vhost):**
+**3. Pull + start it, then restart Caddy for the new vhost:**
    ```bash
    cd deploy
    docker compose -f docker-compose.prod.yml pull preview
-   docker compose -f docker-compose.prod.yml up -d preview caddy
+   docker compose -f docker-compose.prod.yml up -d preview
+   # The new preview.bbm.academy vhost was already added to the Caddyfile. Caddy
+   # needs a RESTART to load it — `up -d caddy` won't recreate the container for a
+   # bind-mounted config change, and `caddy reload` reports "config is unchanged".
+   docker compose -f docker-compose.prod.yml restart caddy
    curl -fsS -o /dev/null https://preview.bbm.academy/ && echo "preview reachable"
    docker compose -f docker-compose.prod.yml logs -f caddy   # watch cert issuance
    ```
