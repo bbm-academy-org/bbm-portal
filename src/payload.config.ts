@@ -23,6 +23,7 @@ import { PageProjects } from './globals/PageProjects'
 import { publishSiteEndpoint } from './endpoints/publishSite'
 import { siteBuildStatusEndpoint } from './endpoints/siteBuildStatus'
 import { pendingChangesEndpoint } from './endpoints/pendingChanges'
+import { livePreview } from './admin/livePreview'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -41,6 +42,11 @@ export default buildConfig({
     importMap: {
       baseDir: path.resolve(dirname),
     },
+    // #19 — Live Preview pane on the 6 page globals: iframes the Astro SSR
+    // preview origin (preview.bbm.academy, #30/#114) so editors see drafts
+    // render near-live (autosave is already on each page global). The slug→URL
+    // contract + breakpoints live in ./admin/livePreview.
+    livePreview,
     components: {
       // #17 — admin "Publish to site" panel: confirm-list of pending drafts →
       // Publish (POST /api/publish-site) → live build status (polls
