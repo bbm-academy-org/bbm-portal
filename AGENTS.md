@@ -74,7 +74,7 @@ If a task seems to require a framework/content-source/infra change, stop and con
 ## Per-task workflow
 
 1. Pick the next task from the **right** tracker (CLAUDE.md is authoritative): code/dev work → GitHub Issues (`gh issue list`); a strategic `BBMP-*` item → move the Plane task to `In Progress`.
-2. Branch: `git checkout -b <type>/<bbmp#>-<slug>` (types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`).
+2. Branch: `git checkout -b <type>/<id>-<slug>` where `<id>` is the GitHub issue # for code/dev work or `bbmp<N>` for a Plane item (types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`).
 3. Implement — TDD where applicable. Conventional Commits.
 4. Open a PR against `main`; run autonomous code review; address every comment; loop until clean.
 5. Merge (squash, delete branch). Move the Plane task to `Done` + results comment.

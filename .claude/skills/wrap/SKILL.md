@@ -87,8 +87,11 @@ Invoke the global `handoff-prompt` skill; note "instructions updated this sessio
   в этом проекте в Plane работем, а не в GitHub?»; «При чём тут Plane… я по инерции
   пошёл в Plane из-за инструкций».)_
 - **Plane CLI 403 / empty result → do NOT improvise raw REST.** Load the `pp-plane`
-  skill and check that a process-wide `PLANE_SLUG` isn't silently overriding
-  `--workspace` (that gives a false 403). Read with
+  skill and check for a **leftover** process-wide `PLANE_SLUG` from another
+  workspace silently overriding `--workspace` (that gives a false 403). NB: an
+  *inline* `PLANE_SLUG=bbm plane-pp-cli relations …` is intended — it's the
+  documented workaround for the `relations`-group `--workspace` bug; the trap is a
+  *stale exported* value, not the inline use. Read with
   `plane-pp-cli work-items get <seq> BBMP --workspace bbm`; write via REST PATCH —
   see memory `plane-write-via-rest.md`. The recipe already exists; the failure is
   not loading it at the decision point. _(symptom: «Куда ты опять упёрся? pp-plane
