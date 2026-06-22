@@ -52,10 +52,13 @@ Framework/infra choices are fixed by the BBM Platform architecture spec — do n
 - **D-026** — Astro for the public site, **Next.js for the portal, Payload CMS as the headless content source.**
 - **D-018** — dual-zone hosting; the portal (this repo, with PII surfaces later) runs in **Zone RF (Timeweb Cloud)**.
 - **Hosting (2026-06-12):** BBMP-30 deploys to a **dedicated `portal-prod-tw` VPS — NOT co-located on `tools-prod-tw`** (internal tools host: Mattermost/Outline). Public PII service is isolated from internal tooling, per the estate's per-service failure-domain pattern. Terraform (`../bbm/infra/timeweb/terraform/portal.tf`) is written/applied by the agent — not a user-action.
+  - **The agent owns host-ops on `portal-prod-tw`** (SSH alias `portal-prod-tw`, key `~/.ssh/portal-prod-tw`; see `deploy/README.md`): run deploys, migrations, and Caddy reloads/restarts **yourself** — do not hand the owner a checklist. Hand off a single step **only** when it provably requires GitHub/org/registry permissions the agent lacks (e.g. changing org package-visibility policy). "I don't have access" is a last resort, not a default — first restore the SSH config / fix key perms.
 - `../bbm-public-website/docs/infrastructure-decisions.md` §6a (Payload/portal hosting), §6.
 - `../bbm-platform-prd/docs/superpowers/specs/2026-04-07-bbm-platform-design.md` (D-026, D-018).
 
 If a task seems to require a framework/content-source/infra change, stop and consult the authority first.
+
+**Severity-gate before escalating a "security finding" to the owner.** The owner is a non-developer and cannot adjudicate an engineering tradeoff — a fake either/or just creates confusion. Before you write a finding up as a "gate" or fire an `AskUserQuestion`, classify the data at risk: **non-PII editorial/CMS content** (page drafts, copy, preview URLs) is **low** — state the industry-standard baseline (e.g. a public preview origin behind `noindex` + CSP `frame-ancestors` is normal) and **pick the architecturally-correct default yourself**. Escalate to the owner **only** when the data is PII/secret/embargoed, or there is a genuine either/or with no correct default.
 
 ## Where to look first
 1. `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md` — the setup plan + accepted decisions + phase/session map.
