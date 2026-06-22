@@ -65,7 +65,7 @@ If a task seems to require a framework/content-source/infra change, stop and con
 
 ## Task management
 
-Strategic tracking lives in **Plane**, workspace **`bbm`**, project **BBM Platform** (`e550afb5-ec05-4973-8456-49a74379ba2f`), module 🌐 Сайт/Портал/CMS, milestone **BBMP-24**. Use the `pp-plane` CLI / skill.
+**Two trackers, split by domain — do not default to one.** **Code/dev work for this repo lives in GitHub Issues** (`bbm-academy-org/bbm-portal`; `gh issue list/view`) — see CLAUDE.md, which is authoritative on tracker choice. **Plane holds organizational / strategic / cross-project tracking** (prefixes `BBMP-*`): workspace **`bbm`**, project **BBM Platform** (`e550afb5-ec05-4973-8456-49a74379ba2f`), module 🌐 Сайт/Портал/CMS, milestone **BBMP-24**. Use the `pp-plane` CLI / skill for Plane.
 
 - CLI: target the bbm workspace with `--workspace bbm` on every command. **Gotcha:** the `relations` group ignores `--workspace` (1.0.0 bug) → use `PLANE_SLUG=bbm plane-pp-cli relations …` for bbm relations.
 - Task workflow: on start → `In Progress`; on close → `Done` + a results comment (artifacts / what was done / what is unblocked).
@@ -73,8 +73,8 @@ Strategic tracking lives in **Plane**, workspace **`bbm`**, project **BBM Platfo
 
 ## Per-task workflow
 
-1. Pick the next Plane task in this milestone; move it to `In Progress`.
-2. Branch: `git checkout -b <type>/<bbmp#>-<slug>` (types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`).
+1. Pick the next task from the **right** tracker (CLAUDE.md is authoritative): code/dev work → GitHub Issues (`gh issue list`); a strategic `BBMP-*` item → move the Plane task to `In Progress`.
+2. Branch: `git checkout -b <type>/<id>-<slug>` where `<id>` is the GitHub issue # for code/dev work or `bbmp<N>` for a Plane item (types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`).
 3. Implement — TDD where applicable. Conventional Commits.
 4. Open a PR against `main`; run autonomous code review; address every comment; loop until clean.
 5. Merge (squash, delete branch). Move the Plane task to `Done` + results comment.
