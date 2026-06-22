@@ -47,6 +47,12 @@ All commands below run **from the `deploy/` directory on the host**.
    or wire a CI image-push later. The "update" flow below assumes the tree is
    refreshed the same way (not `git pull`).
 
+5. **SSH access to the host.** Alias `portal-prod-tw` → `201.51.28.190`, user
+   `deploy`, key `~/.ssh/portal-prod-tw`. If `ssh portal-prod-tw` fails to resolve,
+   the `Host portal-prod-tw` block has gone missing from `~/.ssh/config` (the key
+   and the `known_hosts` entry persist) — restore it by copying another `*-prod-tw`
+   block and swapping host/IP/key. Don't conclude "no access" and escalate.
+
 > **Node version:** the image bakes Node 22 (`Dockerfile`), so the Payload
 > migrate tsx-loader gotcha that bites Node 23/24 on the dev host does **not**
 > apply inside Docker.
@@ -96,15 +102,24 @@ Steps 1-3 implicitly start the `postgres` container (the `migrate` service
 ## Shipping an update
 
 ```bash
-# Refresh the tree on the host first (archive/scp or CI — see prerequisite 4;
-# the repo has no git clone on the box because org deploy keys are disabled).
+# Refresh the tree on the host first. `tar -xz` is ADDITIVE — it overwrites but
+# NEVER deletes files retired in the branch, so a removed source file (e.g. a
+# retired collection) lingers on the host and breaks the type-check. Wipe `src/`
+# first, then extract (env files live in deploy/, not src/, so they survive):
+ssh portal-prod-tw 'rm -rf ~/bbm-portal/src'
+git archive --format=tar.gz main | ssh portal-prod-tw 'tar -xz -C ~/bbm-portal'
 cd deploy
 
-# Rebuild the app image with the new code.
-docker compose -f docker-compose.prod.yml build app
+# Rebuild the app image. If migrations changed, rebuild `migrate` too — it builds
+# from the SEPARATE `tooling` target, and a stale tooling image makes the migrate
+# step a SILENT no-op (logs "Done." with no "Migrating:" lines).
+docker compose -f docker-compose.prod.yml build app migrate
 
-# Apply any new migrations BEFORE the new app starts serving.
+# Apply any new migrations BEFORE the new app starts serving, THEN verify they
+# actually landed (the silent-no-op trap above):
 docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U payload -d cms -c 'SELECT name, batch FROM payload_migrations ORDER BY id;'
 
 # Roll the app (and caddy if its config changed). Postgres + volumes persist.
 docker compose -f docker-compose.prod.yml up -d app

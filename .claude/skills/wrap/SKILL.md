@@ -25,11 +25,23 @@ Shared method + finding schema:
 
 ## Phase 0 — locate THIS session log
 
-Newest-mtime `.jsonl` in this repo's log dir:
+Newest-mtime `.jsonl` in this repo's log dir — but **skip spawned sub-sessions**
+(security-review / SDK side-channels have 0 human turns and will derail the retro).
+Pick the newest log that actually has human turns:
 
 ```bash
-ls -t "$HOME/.claude/projects/C--Users-sidor-repos-bbm-portal/"*.jsonl | head -1
+D="$HOME/.claude/projects/C--Users-sidor-repos-bbm-portal"
+for f in $(ls -t "$D"/*.jsonl); do
+  # a real interactive session has at least one human user turn (not sdk/sidechain)
+  if grep -qE '"type":"user"' "$f" && grep -qvE '"promptSource":"sdk"|"isSidechain":true' "$f"; then
+    echo "$f"; break
+  fi
+done
 ```
+
+If unsure, confirm the pick by grepping the candidate for a distinctive string
+from this session before dispatching the analyst. (A bare `ls -t | head -1` once
+grabbed a 30-second security-review sub-session with 0 human messages.)
 
 ## Phase 1 — dispatch the independent analysis sub-agent (Opus, read-only)
 
