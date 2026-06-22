@@ -8,14 +8,15 @@ import { querySiteBuildStatus, SiteDispatchError } from '../lib/siteDispatch'
  * Proxies the GitHub Actions API for the LATEST `publish-site`
  * (`repository_dispatch`) run on the public site repo and returns a compact
  * `{ status, conclusion, html_url, startedAt }` payload that #17's admin UI
- * polls. Pairs with #15's `POST /api/publish-site` and REUSES its token/repo
- * resolution (`src/lib/siteDispatch.ts`) — the SAME `SITE_DISPATCH_TOKEN`
- * (needs `actions:read`) and `SITE_DISPATCH_REPO`.
+ * polls. Pairs with #15's `POST /api/publish-site` and REUSES its credential/repo
+ * resolution (`src/lib/siteDispatch.ts`) — the SAME GitHub auth (App installation
+ * token, needs `actions:read`, or the static `SITE_DISPATCH_TOKEN`) and
+ * `SITE_DISPATCH_REPO`.
  *
  * Contract:
  *  - admin-only: no `req.user` → 403 (same convention as publishSite.ts);
  *  - no run yet (empty runs list) → 200 with an all-null payload, never a 500;
- *  - missing token → 500 (fail loudly, never a silent skip);
+ *  - missing credentials → 500 (fail loudly, never a silent skip);
  *  - non-2xx from GitHub / network failure → propagated as a 502-class error.
  */
 

@@ -159,6 +159,24 @@ describe('siteDispatch GitHub auth (#111)', () => {
     expect(createAppAuthMock).toHaveBeenCalledTimes(1)
   })
 
+  it('reuses one @octokit/auth-app instance across calls with the same credentials', async () => {
+    process.env.SITE_DISPATCH_APP_ID = '123456'
+    process.env.SITE_DISPATCH_APP_PRIVATE_KEY = 'pem'
+    process.env.SITE_DISPATCH_APP_INSTALLATION_ID = 'inst-cache'
+
+    const fetchMock = vi.fn().mockResolvedValue(dispatchAccepted())
+    vi.stubGlobal('fetch', fetchMock)
+
+    await dispatchSiteBuild()
+    await dispatchSiteBuild()
+
+    // The App is memoised on the credential tuple: constructed once, while the
+    // token mint repeats per call (octokit caches the actual token internally).
+    // A regression that re-built the App on every poll would call it twice.
+    expect(createAppAuthMock).toHaveBeenCalledTimes(1)
+    expect(installationAuthMock).toHaveBeenCalledTimes(2)
+  })
+
   it('returns the static token from getSiteDispatchToken directly', async () => {
     process.env.SITE_DISPATCH_TOKEN = 'static-pat'
     await expect(getSiteDispatchToken()).resolves.toBe('static-pat')
