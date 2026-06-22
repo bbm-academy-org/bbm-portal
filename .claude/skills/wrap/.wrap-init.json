@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-22",
+  "lastAuditAt": "2026-06-22",
+  "foldedThemes": [
+    "task-hygiene:wrong-tracker",
+    "no-live-verify",
+    "reinvent-wheel:plane-cli",
+    "other:over-engineering"
+  ],
+  "tracker": "github+plane",
+  "slug": "C--Users-sidor-repos-bbm-portal",
+  "instructionFile": "CLAUDE.md"
+}
