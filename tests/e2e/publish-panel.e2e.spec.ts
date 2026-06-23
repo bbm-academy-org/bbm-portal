@@ -141,4 +141,37 @@ test.describe('Publish to site panel (#17)', () => {
     await expect(page.locator('[data-status="published"]')).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/^Published/)).toBeVisible()
   })
+
+  test('no pending drafts → button STAYS enabled (publish to site is not gated on drafts)', async () => {
+    // Regression: publishing pushes the current PUBLISHED CMS state to the static
+    // site, which is independent of whether unpublished drafts exist. After a
+    // native Payload "Publish changes" there are zero drafts — the button must
+    // still be usable, and the panel must not claim the site is "up to date".
+    // (Routes registered here take precedence over the prior test's handlers.)
+    await page.route('**/api/pending-changes', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ pending: [], count: 0 }),
+      })
+    })
+    await page.route('**/api/site-build-status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: null, conclusion: null, html_url: null, startedAt: null }),
+      })
+    })
+
+    // Already authenticated from the first test (shared page/context); just reload.
+    await page.goto('http://localhost:3000/admin')
+
+    // Honest copy — NOT the old false "site is up to date with the CMS".
+    await expect(page.locator('[data-testid="nothing-to-publish"]')).toContainText(
+      'No unpublished drafts',
+    )
+
+    // The fix: with zero pending drafts the button is still enabled.
+    await expect(page.getByRole('button', { name: 'Publish to site' })).toBeEnabled()
+  })
 })
