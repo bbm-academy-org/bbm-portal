@@ -2,7 +2,7 @@
 # DNS already maps cms.bbm.academy -> 201.51.28.190, so Caddy provisions and
 # renews the certificate automatically on first start (HTTP-01/TLS-ALPN-01).
 cms.bbm.academy {
-    reverse_proxy app:3000
+	reverse_proxy app:3000
 }
 
 # Astro SSR live-preview origin (epic #13 / bbm-public-website#114). DNS
@@ -12,13 +12,13 @@ cms.bbm.academy {
 # this origin in its live-preview iframe, and bars every other site from framing
 # it (clickjacking guard) — the second flagged decision from epic #13.
 preview.bbm.academy {
-    reverse_proxy preview:4321
-    header Content-Security-Policy "frame-ancestors https://cms.bbm.academy"
+	reverse_proxy preview:4321
+	header Content-Security-Policy "frame-ancestors https://cms.bbm.academy"
 }
 
 # Apex canonical redirect (#108): bare apex 301 -> https://www.bbm.academy.
 # www is canonical (CDN-served via CNAME); the apex A-record points at this host
 # so Caddy holds a valid LE cert and issues the redirect. Path + query preserved.
 bbm.academy {
-    redir https://www.bbm.academy{uri} permanent
+	redir https://www.bbm.academy{uri} permanent
 }
