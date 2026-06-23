@@ -1,7 +1,6 @@
 import type { GlobalConfig } from 'payload'
 
-import { ctaSection, intro, participate, seo } from '../fields/pageGroups'
-import { localeField, text } from '../fields/shared'
+import { ctaSection, intro, pageTabs, participate } from '../fields/pageGroups'
 import { restoreGroupAnchorIdsGlobal, stashGroupAnchorIdsGlobal } from '../hooks/groupAnchorId'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
 
@@ -21,5 +20,5 @@ export const PageParticipate: GlobalConfig = {
     beforeValidate: [stashGroupAnchorIdsGlobal],
     afterRead: [restoreGroupAnchorIdsGlobal, omitEmptyGlobal],
   },
-  fields: [text('title'), seo, intro, participate, ctaSection, localeField],
+  fields: [pageTabs([intro, participate, ctaSection])],
 }

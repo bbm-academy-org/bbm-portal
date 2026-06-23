@@ -1,6 +1,6 @@
 import type { Field } from 'payload'
 
-import { area, cta, flag, secIntro, slugField, stringList, text } from './shared'
+import { area, cta, flag, localeField, secIntro, slugField, stringList, text } from './shared'
 
 /**
  * Per-page content group fields — shared so each per-page Global (`pageHome`,
@@ -27,6 +27,28 @@ export const seo: Field = {
   name: 'seo',
   type: 'group',
   fields: [text('title'), area('description')],
+}
+
+/**
+ * Admin layout for a page global: a "Content" tab holding the page's own groups
+ * and a "SEO & meta" tab holding the service fields (document `title`, the `seo`
+ * meta group, `locale`). Editors land on content first instead of scrolling past
+ * the meta fields.
+ *
+ * UNNAMED tabs (no `name`) are purely presentational — stored data stays FLAT
+ * (`seo.title`, `locale`, the content groups by their own keys), identical to
+ * the pre-tabs flat field list. So there is NO schema change / migration, the
+ * site loader is untouched, and the per-page `groupAnchorId` / `omitEmpty` hooks
+ * (which address fields by path) keep working unchanged.
+ */
+export function pageTabs(content: Field[]): Field {
+  return {
+    type: 'tabs',
+    tabs: [
+      { label: 'Content', fields: content },
+      { label: 'SEO & meta', fields: [text('title'), seo, localeField] },
+    ],
+  }
 }
 
 /** Generic FAQ array (`{ question, answer }[]`) — home + contacts. */

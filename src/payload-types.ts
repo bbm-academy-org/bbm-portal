@@ -634,11 +634,6 @@ export interface SiteChrome {
  */
 export interface PageHome {
   id: number;
-  title?: string | null;
-  seo?: {
-    title?: string | null;
-    description?: string | null;
-  };
   hero?: {
     eyebrow?: string | null;
     sticker?: string | null;
@@ -743,6 +738,11 @@ export interface PageHome {
       href?: string | null;
     };
   };
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
   locale: 'ru' | 'en';
   _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
@@ -754,11 +754,6 @@ export interface PageHome {
  */
 export interface PageAbout {
   id: number;
-  title?: string | null;
-  seo?: {
-    title?: string | null;
-    description?: string | null;
-  };
   intro?: {
     eyebrow?: string | null;
     title?: string | null;
@@ -822,6 +817,11 @@ export interface PageAbout {
       href?: string | null;
     };
   };
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
   locale: 'ru' | 'en';
   _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
@@ -833,11 +833,6 @@ export interface PageAbout {
  */
 export interface PageContact {
   id: number;
-  title?: string | null;
-  seo?: {
-    title?: string | null;
-    description?: string | null;
-  };
   intro?: {
     eyebrow?: string | null;
     title?: string | null;
@@ -889,6 +884,11 @@ export interface PageContact {
       href?: string | null;
     };
   };
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
   locale: 'ru' | 'en';
   _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
@@ -900,11 +900,6 @@ export interface PageContact {
  */
 export interface PageParticipate {
   id: number;
-  title?: string | null;
-  seo?: {
-    title?: string | null;
-    description?: string | null;
-  };
   intro?: {
     eyebrow?: string | null;
     title?: string | null;
@@ -992,6 +987,11 @@ export interface PageParticipate {
       href?: string | null;
     };
   };
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
   locale: 'ru' | 'en';
   _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
@@ -1003,11 +1003,6 @@ export interface PageParticipate {
  */
 export interface PagePrivacy {
   id: number;
-  title?: string | null;
-  seo?: {
-    title?: string | null;
-    description?: string | null;
-  };
   intro?: {
     eyebrow?: string | null;
     title?: string | null;
@@ -1043,6 +1038,11 @@ export interface PagePrivacy {
       text?: string[] | null;
     };
   };
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
+  };
   locale: 'ru' | 'en';
   _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
@@ -1054,11 +1054,6 @@ export interface PagePrivacy {
  */
 export interface PageProject {
   id: number;
-  title?: string | null;
-  seo?: {
-    title?: string | null;
-    description?: string | null;
-  };
   intro?: {
     eyebrow?: string | null;
     title?: string | null;
@@ -1074,6 +1069,11 @@ export interface PageProject {
   filters?: {
     label?: string | null;
     allLabel?: string | null;
+  };
+  title?: string | null;
+  seo?: {
+    title?: string | null;
+    description?: string | null;
   };
   locale: 'ru' | 'en';
   _status?: ('draft' | 'published') | null;
@@ -1191,13 +1191,6 @@ export interface SiteChromeSelect<T extends boolean = true> {
  * via the `definition` "pageHome_select".
  */
 export interface PageHomeSelect<T extends boolean = true> {
-  title?: T;
-  seo?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-      };
   hero?:
     | T
     | {
@@ -1332,6 +1325,13 @@ export interface PageHomeSelect<T extends boolean = true> {
               href?: T;
             };
       };
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
   locale?: T;
   _status?: T;
   updatedAt?: T;
@@ -1343,13 +1343,6 @@ export interface PageHomeSelect<T extends boolean = true> {
  * via the `definition` "pageAbout_select".
  */
 export interface PageAboutSelect<T extends boolean = true> {
-  title?: T;
-  seo?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-      };
   intro?:
     | T
     | {
@@ -1437,6 +1430,13 @@ export interface PageAboutSelect<T extends boolean = true> {
               href?: T;
             };
       };
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
   locale?: T;
   _status?: T;
   updatedAt?: T;
@@ -1448,13 +1448,6 @@ export interface PageAboutSelect<T extends boolean = true> {
  * via the `definition` "pageContacts_select".
  */
 export interface PageContactsSelect<T extends boolean = true> {
-  title?: T;
-  seo?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-      };
   intro?:
     | T
     | {
@@ -1522,6 +1515,13 @@ export interface PageContactsSelect<T extends boolean = true> {
               href?: T;
             };
       };
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
   locale?: T;
   _status?: T;
   updatedAt?: T;
@@ -1533,13 +1533,6 @@ export interface PageContactsSelect<T extends boolean = true> {
  * via the `definition` "pageParticipate_select".
  */
 export interface PageParticipateSelect<T extends boolean = true> {
-  title?: T;
-  seo?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-      };
   intro?:
     | T
     | {
@@ -1649,6 +1642,13 @@ export interface PageParticipateSelect<T extends boolean = true> {
               href?: T;
             };
       };
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
   locale?: T;
   _status?: T;
   updatedAt?: T;
@@ -1660,13 +1660,6 @@ export interface PageParticipateSelect<T extends boolean = true> {
  * via the `definition` "pagePrivacy_select".
  */
 export interface PagePrivacySelect<T extends boolean = true> {
-  title?: T;
-  seo?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-      };
   intro?:
     | T
     | {
@@ -1712,6 +1705,13 @@ export interface PagePrivacySelect<T extends boolean = true> {
               text?: T;
             };
       };
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
+      };
   locale?: T;
   _status?: T;
   updatedAt?: T;
@@ -1723,13 +1723,6 @@ export interface PagePrivacySelect<T extends boolean = true> {
  * via the `definition` "pageProjects_select".
  */
 export interface PageProjectsSelect<T extends boolean = true> {
-  title?: T;
-  seo?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-      };
   intro?:
     | T
     | {
@@ -1749,6 +1742,13 @@ export interface PageProjectsSelect<T extends boolean = true> {
     | {
         label?: T;
         allLabel?: T;
+      };
+  title?: T;
+  seo?:
+    | T
+    | {
+        title?: T;
+        description?: T;
       };
   locale?: T;
   _status?: T;
