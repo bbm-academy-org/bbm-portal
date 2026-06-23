@@ -14,7 +14,9 @@ import { Banner, Button } from '@payloadcms/ui'
  * Flow (from the issue):
  *  1. On mount fetch `GET /api/pending-changes` and render a confirmation list of
  *     the documents that have pending drafts (transparency / multi-editor
- *     safety). Nothing pending → "nothing to publish" + disabled button.
+ *     safety). No pending drafts → a note that publishing will rebuild from the
+ *     current published content; the button STAYS enabled (publishing to the
+ *     static site is independent of whether CMS drafts exist).
  *  2. "Publish to site" → `POST /api/publish-site`; on success start polling
  *     `GET /api/site-build-status`.
  *  3. Status panel: "Building…" for queued/in_progress; "Published (<time>)" for
@@ -225,7 +227,13 @@ export const PublishPanel: React.FC = () => {
 
   const running = isRunning(build) || publishing
   const hasPending = (pending?.count ?? 0) > 0
-  const buttonDisabled = running || !hasPending
+  // "Publish to site" pushes the CURRENT published CMS state to the static site;
+  // that is independent of whether unpublished drafts exist. Gating it on drafts
+  // wrongly disabled the button after a native Payload "Publish changes" (drafts
+  // → 0), leaving the site unable to be rebuilt. So only a running build blocks
+  // it — publishing is idempotent and always available (any pending drafts are
+  // still promoted as a bonus, same as before).
+  const buttonDisabled = running
 
   // A single token naming the visible build-status branch (the status panel is a
   // wrapper carrying `data-status`; <Banner> can't, so the wrapper owns it). Used
@@ -262,7 +270,8 @@ export const PublishPanel: React.FC = () => {
         ) : !hasPending ? (
           <div data-testid="nothing-to-publish">
             <Banner type="default">
-              Nothing to publish — the site is up to date with the CMS.
+              No unpublished drafts. Publishing rebuilds the live site from the current
+              published content.
             </Banner>
           </div>
         ) : (
