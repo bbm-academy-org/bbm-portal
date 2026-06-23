@@ -2,6 +2,7 @@ import type { GlobalConfig } from 'payload'
 
 import { localeField, text } from '../fields/shared'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
+import { siteRebuildGlobalAfterChange } from '../lib/siteSync'
 
 /**
  * `siteChrome` singleton (`siteChromeSchema`, schemas.ts:278). Header nav +
@@ -18,7 +19,12 @@ export const SiteChrome: GlobalConfig = {
   slug: 'siteChrome',
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
-  hooks: { afterRead: [omitEmptyGlobal] },
+  // afterChange → publish-rebuild (#42): a draft→published transition triggers a
+  // whole-site rebuild (best-effort) via siteSync.
+  hooks: {
+    afterRead: [omitEmptyGlobal],
+    afterChange: [siteRebuildGlobalAfterChange],
+  },
   fields: [
     {
       name: 'nav',

@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 
 import { area, cta, localeField, slugField, stringList, text } from '../fields/shared'
 import { omitEmptyCollection } from '../hooks/omitEmpty'
+import { siteRebuildCollectionAfterChange } from '../lib/siteSync'
 
 /**
  * `publicProjects` — the project showcase (`projectSchema`, schemas.ts:128).
@@ -16,7 +17,12 @@ export const PublicProjects: CollectionConfig = {
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
   admin: { useAsTitle: 'name' },
-  hooks: { afterRead: [omitEmptyCollection] },
+  // afterChange → publish-rebuild (#42): a draft→published transition triggers a
+  // whole-site rebuild (best-effort) via siteSync.
+  hooks: {
+    afterRead: [omitEmptyCollection],
+    afterChange: [siteRebuildCollectionAfterChange],
+  },
   fields: [
     // Custom text id = slug (entry identity = the slug consumers key on).
     slugField('id', true),

@@ -14,6 +14,7 @@ import {
   whatIs,
 } from '../fields/pageGroups'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
+import { siteRebuildGlobalAfterChange } from '../lib/siteSync'
 
 /**
  * `pageHome` — homepage copy (formerly `pages` row `home`, #18 split).
@@ -26,7 +27,12 @@ export const PageHome: GlobalConfig = {
   slug: 'pageHome',
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
-  hooks: { afterRead: [omitEmptyGlobal] },
+  // afterChange → publish-rebuild (#42): a draft→published transition triggers a
+  // whole-site rebuild (best-effort) via siteSync.
+  hooks: {
+    afterRead: [omitEmptyGlobal],
+    afterChange: [siteRebuildGlobalAfterChange],
+  },
   fields: [
     pageTabs([hero, whatIs, showcase, pathIntro, trust, contour, faqIntro, faq, pathSteps, ctaSection]),
   ],

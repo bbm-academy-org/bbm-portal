@@ -2,6 +2,7 @@ import type { GlobalConfig } from 'payload'
 
 import { localeField, text } from '../fields/shared'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
+import { siteRebuildGlobalAfterChange } from '../lib/siteSync'
 
 /**
  * `contact` singleton (`contactSchema`, schemas.ts:232). The single source of
@@ -16,7 +17,12 @@ export const Contact: GlobalConfig = {
   slug: 'contact',
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
-  hooks: { afterRead: [omitEmptyGlobal] },
+  // afterChange → publish-rebuild (#42): a draft→published transition triggers a
+  // whole-site rebuild (best-effort) via siteSync.
+  hooks: {
+    afterRead: [omitEmptyGlobal],
+    afterChange: [siteRebuildGlobalAfterChange],
+  },
   fields: [
     text('email', true),
     text('phone'),
