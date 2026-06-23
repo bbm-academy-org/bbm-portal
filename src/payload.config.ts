@@ -44,8 +44,9 @@ export default buildConfig({
     },
     // #19 — Live Preview pane on the 6 page globals: iframes the Astro SSR
     // preview origin (preview.bbm.academy, #30/#114) so editors see drafts
-    // render near-live (autosave is already on each page global). The slug→URL
-    // contract + breakpoints live in ./admin/livePreview.
+    // render near-live (autosave persists each draft; the iframe's live-preview
+    // client, bbm-public-website#126, reloads on the admin's change event). The
+    // slug→URL contract + breakpoints live in ./admin/livePreview.
     livePreview,
     components: {
       // #17 — admin "Publish to site" panel: confirm-list of pending drafts →

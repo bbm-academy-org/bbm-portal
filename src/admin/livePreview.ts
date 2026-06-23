@@ -5,8 +5,11 @@ import type { Config } from 'payload'
  *
  * The 6 per-page globals (#18 split the monolith `pages` into `pageHome`→`home`,
  * …) each get a live-preview pane in /admin that iframes the Astro SSR preview
- * origin (`preview.bbm.academy`, deployed in #30/#114). With autosave already on
- * the globals (`versions.drafts.autosave`), edits refresh the iframe near-live.
+ * origin (`preview.bbm.academy`, deployed in #30/#114). Autosave on the globals
+ * (`versions.drafts.autosave`) persists the draft; the admin then posts a change
+ * event to the iframe, and the SSR page's live-preview client (bbm-public-website
+ * #126) debounce-reloads to pick up the new draft → near-live updates. The client
+ * is the reload mechanism; autosave alone does not refresh the pane.
  *
  * The preview route's contract is `/preview/[type]/[id]` where `[type]` is a
  * PUBLIC token (home/about/…) mapped server-side to the Payload global slug
