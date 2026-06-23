@@ -1,17 +1,17 @@
 import type { GlobalConfig } from 'payload'
 
-import { filters, intro, seo } from '../fields/pageGroups'
-import { localeField, text } from '../fields/shared'
+import { filters, intro, pageTabs } from '../fields/pageGroups'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
 
 /**
  * `pageProjects` — projects-index copy (formerly `pages` row `projects`, #18
- * split). Field map: title, seo, intro, filters.
+ * split). Field map: title, seo, intro, filters (content groups in the
+ * "Content" tab, title/seo/locale in "SEO & meta" — see pageTabs).
  */
 export const PageProjects: GlobalConfig = {
   slug: 'pageProjects',
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
   hooks: { afterRead: [omitEmptyGlobal] },
-  fields: [text('title'), seo, intro, filters, localeField],
+  fields: [pageTabs([intro, filters])],
 }

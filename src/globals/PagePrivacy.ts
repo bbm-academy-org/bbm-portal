@@ -1,7 +1,6 @@
 import type { GlobalConfig } from 'payload'
 
-import { intro, privacy, seo } from '../fields/pageGroups'
-import { localeField, text } from '../fields/shared'
+import { intro, pageTabs, privacy } from '../fields/pageGroups'
 import { restoreGroupAnchorIdsGlobal, stashGroupAnchorIdsGlobal } from '../hooks/groupAnchorId'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
 
@@ -21,5 +20,5 @@ export const PagePrivacy: GlobalConfig = {
     beforeValidate: [stashGroupAnchorIdsGlobal],
     afterRead: [restoreGroupAnchorIdsGlobal, omitEmptyGlobal],
   },
-  fields: [text('title'), seo, intro, privacy, localeField],
+  fields: [pageTabs([intro, privacy])],
 }

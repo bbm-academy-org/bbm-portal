@@ -6,20 +6,21 @@ import {
   faq,
   faqIntro,
   hero,
+  pageTabs,
   pathIntro,
   pathSteps,
-  seo,
   showcase,
   trust,
   whatIs,
 } from '../fields/pageGroups'
-import { localeField, text } from '../fields/shared'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
 
 /**
  * `pageHome` — homepage copy (formerly `pages` row `home`, #18 split).
  * Field map: title, seo, hero, whatIs, showcase, pathIntro, trust, contour,
- * faqIntro, faq, pathSteps, cta — only the groups the homepage uses.
+ * faqIntro, faq, pathSteps, cta — only the groups the homepage uses. Content
+ * groups sit in the "Content" tab; title/seo/locale move to "SEO & meta"
+ * (pageTabs — presentational only, data stays flat).
  */
 export const PageHome: GlobalConfig = {
   slug: 'pageHome',
@@ -27,18 +28,6 @@ export const PageHome: GlobalConfig = {
   versions: { drafts: { autosave: true } },
   hooks: { afterRead: [omitEmptyGlobal] },
   fields: [
-    text('title'),
-    seo,
-    hero,
-    whatIs,
-    showcase,
-    pathIntro,
-    trust,
-    contour,
-    faqIntro,
-    faq,
-    pathSteps,
-    ctaSection,
-    localeField,
+    pageTabs([hero, whatIs, showcase, pathIntro, trust, contour, faqIntro, faq, pathSteps, ctaSection]),
   ],
 }
