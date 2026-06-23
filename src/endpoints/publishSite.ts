@@ -36,6 +36,16 @@ import { dispatchSiteBuild, SiteDispatchError } from '../lib/siteDispatch'
  * ROLL BACK the promotes — the CMS is left exactly as it was, and the request
  * fails. (This beats the dispatch-first fallback, which would risk a build off
  * not-yet-promoted content.)
+ *
+ * SINGLE DISPATCH (#43): every drafts-enabled surface also carries the #42
+ * `afterChange` rebuild hook (`maybeRebuildOnPublish`), which fires its OWN
+ * dispatch on a draft→published transition. Left unchecked, a batch publish would
+ * trigger one rebuild per promoted surface PLUS this endpoint's dispatch. So every
+ * promote write here passes `context: { skipSiteDispatch: true }` — the local-API
+ * `context` option propagates to hooks, and the #42 hook skips its dispatch when it
+ * sees that flag. The batch path therefore owns BOTH the single `dispatchSiteBuild()`
+ * below AND recording `siteBuildState.lastPublishedAt` once (the hook is suppressed,
+ * so it no longer stamps it per-surface).
  */
 
 type PublishedSurface = { surface: string; ids: Array<number | string> }
@@ -91,6 +101,9 @@ const promoteSurfaces = async (req: PayloadRequest): Promise<PublishedSurface[]>
         data: { _status: 'published' },
         draft: false,
         req,
+        // Suppress the #42 per-surface rebuild hook: the batch fires ONE dispatch
+        // itself (below). See SINGLE DISPATCH note in the file header.
+        context: { skipSiteDispatch: true },
       })
       ids.push(updated.id)
     }
@@ -118,6 +131,8 @@ const promoteSurfaces = async (req: PayloadRequest): Promise<PublishedSurface[]>
       data: { _status: 'published' } as Record<string, unknown>,
       draft: false,
       req,
+      // Suppress the #42 per-surface rebuild hook (see the collection promote above).
+      context: { skipSiteDispatch: true },
     })
     published.push({ surface: slug, ids: [slug] })
   }
@@ -142,6 +157,19 @@ export const publishSiteHandler: PayloadHandler = async (req: PayloadRequest): P
   let published: PublishedSurface[]
   try {
     published = await promoteSurfaces(req)
+
+    // The promotes suppressed the #42 hook (`skipSiteDispatch`), so the hook did
+    // NOT stamp `siteBuildState.lastPublishedAt`. The batch path owns it: record
+    // the publish ONCE here, inside the transaction, so it rolls back with the
+    // promotes if the dispatch below fails. Also `skipSiteDispatch` — this global
+    // is drafts-disabled (#41) and carries no rebuild hook, but pass it for
+    // intent + symmetry.
+    await req.payload.updateGlobal({
+      slug: 'siteBuildState',
+      data: { lastPublishedAt: new Date().toISOString() },
+      req,
+      context: { skipSiteDispatch: true },
+    })
   } catch (err) {
     await killTransaction(req)
     req.payload.logger.error({ err, msg: 'publish-site: promote failed, rolled back' })

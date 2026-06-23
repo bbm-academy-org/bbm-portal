@@ -87,6 +87,26 @@ const stageTeamDraft = async (id: string): Promise<string> => {
   return token
 }
 
+// Stage a pending draft change on the drafts-enabled `contact` global (a SECOND
+// build surface) without publishing it, so a batch publish has a global to
+// promote alongside the team collection — exercising the multi-surface path.
+const stageContactDraft = async (): Promise<void> => {
+  await payload.updateGlobal({
+    slug: 'contact',
+    data: { email: `pending-${randomUUID()}@bbm.academy` },
+    draft: true, // write to the draft, do NOT publish
+  })
+}
+
+// Read the current `siteBuildState.lastPublishedAt` (the batch-publish timestamp),
+// or null when never stamped. Used to assert the batch path records it exactly once.
+const readLastPublishedAt = async (): Promise<string | null> => {
+  const state = (await payload.findGlobal({ slug: 'siteBuildState' })) as {
+    lastPublishedAt?: string | null
+  }
+  return state.lastPublishedAt ?? null
+}
+
 describe('POST /api/publish-site (#15)', () => {
   beforeAll(async () => {
     payload = await getPayload({ config: await config })
@@ -224,16 +244,63 @@ describe('POST /api/publish-site (#15)', () => {
     expect(published.role).toBe(token)
   })
 
+  it('fires exactly ONE dispatch for a multi-surface batch (the #42 hook is suppressed)', async () => {
+    // Stage pending drafts across TWO build surfaces — the `team` collection AND
+    // the `contact` global. Each carries the #42 `afterChange` rebuild hook, which
+    // would fire its OWN dispatch on a draft→published transition. The batch
+    // endpoint must suppress those (via `context.skipSiteDispatch`) and fire a
+    // SINGLE build itself — so `fetch` is called exactly once, not once per surface.
+    const memberId = await createTeamMember()
+    await stageTeamDraft(memberId)
+    await stageContactDraft()
+
+    const fetchMock = vi.fn().mockResolvedValue(dispatchAccepted())
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await publishSiteHandler(reqWith({ id: 'admin' }))
+    expect(res.status).toBe(200)
+
+    // Exactly one dispatch for the whole batch — the per-surface hooks were
+    // suppressed, leaving only the endpoint's single dispatchSiteBuild() call.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('records siteBuildState.lastPublishedAt exactly once for the batch', async () => {
+    const memberId = await createTeamMember()
+    await stageTeamDraft(memberId)
+
+    const before = await readLastPublishedAt()
+
+    const fetchMock = vi.fn().mockResolvedValue(dispatchAccepted())
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await publishSiteHandler(reqWith({ id: 'admin' }))
+    expect(res.status).toBe(200)
+
+    // The batch path owns the publish timestamp (the suppressed hook no longer
+    // stamps it per-surface): it is set, ISO-shaped, and strictly advanced from
+    // before — a single fresh write by this batch.
+    const after = await readLastPublishedAt()
+    expect(after).not.toBeNull()
+    expect(typeof after).toBe('string')
+    expect(Number.isNaN(Date.parse(after as string))).toBe(false)
+    if (before !== null) {
+      expect(Date.parse(after as string)).toBeGreaterThan(Date.parse(before))
+    }
+  })
+
   it('rolls back the promote when the dispatch fails (ordering invariant)', async () => {
     const memberId = await createTeamMember()
     await stageTeamDraft(memberId)
 
-    // Snapshot the currently-published role (before the staged draft).
+    // Snapshot the currently-published role (before the staged draft) and the
+    // current publish timestamp — both must be UNCHANGED after a failed dispatch.
     const before = await payload.findByID({
       collection: 'team',
       id: memberId,
       draft: false,
     })
+    const beforePublishedAt = await readLastPublishedAt()
 
     const fetchMock = vi.fn().mockResolvedValue(dispatchRejected(500))
     vi.stubGlobal('fetch', fetchMock)
@@ -250,5 +317,9 @@ describe('POST /api/publish-site (#15)', () => {
       draft: false,
     })
     expect(after.role).toBe(before.role)
+
+    // The batch's lastPublishedAt write lives INSIDE the transaction, so it rolls
+    // back too: nothing was published, so the publish timestamp must not advance.
+    expect(await readLastPublishedAt()).toBe(beforePublishedAt)
   })
 })
