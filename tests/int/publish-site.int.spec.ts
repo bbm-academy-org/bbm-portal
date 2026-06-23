@@ -115,17 +115,27 @@ describe('POST /api/publish-site (#15)', () => {
     // surfaces are in a realistic, publishable state (production seeds them).
     // Otherwise an empty, never-populated global with required fields would fail
     // publish validation — a fixture gap, not the behaviour under test.
+    //
+    // These seeds are a draft→published transition, which now fires the #42
+    // afterChange rebuild hook (`maybeRebuildOnPublish` → `dispatchSiteBuild()`).
+    // They are PURE FIXTURES, not the behaviour under test, so pass
+    // `context: { skipSiteDispatch: true }` to suppress the hook — otherwise, in
+    // CI / any env with dispatch credentials, merely seeding this suite would fire
+    // a REAL repository_dispatch against the production public-site repo.
     await payload.updateGlobal({
       slug: 'contact',
       data: { email: 'hello@bbm.academy', _status: 'published' },
+      context: { skipSiteDispatch: true },
     })
     await payload.updateGlobal({
       slug: 'philosophy',
       data: { _status: 'published' },
+      context: { skipSiteDispatch: true },
     })
     await payload.updateGlobal({
       slug: 'siteChrome',
       data: { _status: 'published' },
+      context: { skipSiteDispatch: true },
     })
   })
 
