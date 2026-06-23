@@ -9,7 +9,7 @@ This repository hosts **`bbm-portal`** — the **Payload CMS** (v3, native insid
 **Owner:** Anton Sidorov (founder, system architect, non-developer — works through AI agents).
 **Hard legal constraint:** 152-FZ — any PII (e.g. future form leads) is stored/processed on Russian territory (Zone RF, Timeweb Cloud). The content this CMS serves today is non-PII editorial content.
 
-The public website is a **consumer**: at build time it fetches collections via Payload's REST/GraphQL and emits static HTML. This repo owns the Payload install, admin UI, and database; the site does not.
+The public website is a **consumer**: at build time it fetches collections via Payload's REST/GraphQL and emits static HTML. This repo owns the Payload install, admin UI, and database; the site does not. **Work that belongs to `bbm-public-website` is filed as an epic-linked GitHub issue from a bbm-portal session and implemented in a separate session run from that repo — do not start building it here** (see CLAUDE.md → "Cross-repo boundary").
 
 ## Accepted setup decisions (brainstorming kickoff, 2026-06-12)
 

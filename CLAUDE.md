@@ -8,6 +8,13 @@ cross-linked into epics and may reference sibling sub-tasks in the
 `bbm-academy-org/bbm-public-website` repo (the public Astro site). When asked to
 "look at the backlog" or pick up work, start here, **not** in Plane.
 
+**Cross-repo boundary — file, don't build.** When work surfaces that belongs to
+`bbm-public-website` (or any sibling repo), the deliverable in a **bbm-portal**
+session is a **filed, epic-linked GitHub issue** — do **not** `cd` into, read, or
+scaffold the sibling repo to start implementing it here. Agreeing on the approach
+is a decision about **what to file**, not authorization to begin the build;
+implementation runs in a separate session launched from that repo.
+
 Plane (below) is a higher-level / cross-project tracker; do not assume a
 bbm-portal work item lives there. If the prompt names a `BBMP-*` identifier it is
 Plane, otherwise default to GitHub Issues.
