@@ -109,7 +109,13 @@ const promoteSurfaces = async (req: PayloadRequest): Promise<PublishedSurface[]>
 
     await payload.updateGlobal({
       slug,
-      data: { _status: 'published' },
+      // `_status` exists on every draft-enabled global's data, but `slug` is the
+      // full `GlobalSlug` union (which now includes the versionless, drafts-
+      // disabled `siteBuildState`, #41). `globalSurfaces` is filtered to drafts-
+      // enabled globals at runtime, so this set always has `_status`; cast the
+      // payload at this by-construction-valid boundary (same as the `as
+      // GlobalSlug` casts above).
+      data: { _status: 'published' } as Record<string, unknown>,
       draft: false,
       req,
     })

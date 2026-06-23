@@ -117,8 +117,13 @@ export async function seedContent(
   for (const slug of pageSlugs(contentDir)) {
     const data = readContentJson(contentDir, `pages/${slug}.json`) as Record<string, unknown>
     await payload.updateGlobal({
+      // `PAGE_GLOBAL_BY_SLUG[slug]` is the full `GlobalSlug` union (which now
+      // includes the versionless, drafts-disabled `siteBuildState`, #41, whose
+      // data has no `_status`); the page globals it actually maps to are all
+      // drafts-enabled, so cast the payload at this by-construction-valid
+      // boundary, same as the explicit-slug updates below.
       slug: PAGE_GLOBAL_BY_SLUG[slug],
-      data: { ...data, _status: 'published' },
+      data: { ...data, _status: 'published' } as Record<string, unknown>,
     })
   }
 

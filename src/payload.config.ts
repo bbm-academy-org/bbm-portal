@@ -14,6 +14,7 @@ import { Leads } from './collections/Leads'
 import { Philosophy } from './globals/Philosophy'
 import { Contact } from './globals/Contact'
 import { SiteChrome } from './globals/SiteChrome'
+import { SiteBuildState } from './globals/SiteBuildState'
 import { PageHome } from './globals/PageHome'
 import { PageAbout } from './globals/PageAbout'
 import { PageContacts } from './globals/PageContacts'
@@ -73,6 +74,10 @@ export default buildConfig({
     PageParticipate,
     PagePrivacy,
     PageProjects,
+    // Versionless, drafts-disabled (#41): NOT a build surface, so writes to it
+    // never trigger the publish-rebuild hook. Persists publish-side truth (last
+    // published / dispatched / dispatch error) for the drift indicator.
+    SiteBuildState,
   ],
   // Custom one-click publish (#15): POST /api/publish-site — promotes drafts on
   // the build surfaces and fires the public site's GitHub Actions build.
