@@ -23,10 +23,31 @@ import { countPendingDrafts } from './pendingChanges'
  *  - `lastSuccessfulBuildAt` + `currentRun` — read off the GitHub Actions API
  *    (`queryLastSuccessfulBuild` / `querySiteBuildStatus`).
  *
- * Derived:
- *  - `inSync` = nothing has ever been published, OR the last successful build is
- *    at-or-after the last publish (the site reflects the latest publish);
- *  - `building` = the current run is `queued` / `in_progress`.
+ * Derived (#52) — ONE authoritative `syncState` enum replaces the old overloaded
+ * `inSync`/`building` booleans. It is computed from ground truth
+ * (`lastPublishedAt`, `lastSuccessfulBuildAt`, `currentRun.{status,conclusion,startedAt}`)
+ * by this precedence (order matters):
+ *
+ *  1. `lastPublishedAt == null` OR `lastSuccessfulBuildAt >= lastPublishedAt`
+ *        → 'in-sync'  (never published, or the live site reflects the last publish)
+ *  2. `currentRun.status` ∈ `queued` / `in_progress`
+ *        → 'building' (a build is actively running)
+ *  3. `currentRun` failed (a non-null conclusion that isn't `success`) AND
+ *     `currentRun.startedAt >= lastPublishedAt`
+ *        → 'failed'   (a terminal failed run that belongs to THIS publish)
+ *  4. else
+ *        → 'building' (published, no successful build yet, no failed run for this
+ *                      publish → the dispatched run is not yet visible — the
+ *                      registration gap; transient, NOT a failure)
+ *
+ * Why this matters (the #52 bug): `publishSite` stamps `lastPublishedAt` only
+ * after the build dispatch returns 204, so `published > built` almost always
+ * means "a build is in flight / about to register", NOT "behind/failed". The old
+ * `inSync === false` rendered that transient gap as a red ⚠️ flash. Step 4 maps
+ * it to 'building'; step 3's `startedAt >= lastPublishedAt` scopes a failure to
+ * the CURRENT publish, so re-publishing over an older failed run reads as
+ * 'building' (new run pending), not a stale red. The enum is stateless /
+ * reload-safe — it does not depend on the client optimistic flag.
  *
  * Contract (matches siteBuildStatus.ts exactly):
  *  - admin-only: no `req.user` → 403;
@@ -44,13 +65,56 @@ const json = (body: unknown, status: number): Response =>
     headers: { 'Content-Type': 'application/json' },
   })
 
+export type SyncState = 'in-sync' | 'building' | 'failed'
+
 export type SiteSyncStatus = {
   pendingCount: number
   lastPublishedAt: string | null
   lastSuccessfulBuildAt: string | null
   currentRun: SiteBuildStatus | null
-  inSync: boolean
-  building: boolean
+  syncState: SyncState
+}
+
+/**
+ * Compute the authoritative `syncState` enum by the #52 precedence (see the file
+ * header). A failed conclusion = any non-null conclusion that isn't `'success'`
+ * (matches the `runFailed` helper in PublishPanel.tsx — keep them consistent).
+ */
+const computeSyncState = (args: {
+  lastPublishedAt: string | null
+  lastSuccessfulBuildAt: string | null
+  currentRun: SiteBuildStatus | null
+}): SyncState => {
+  const { lastPublishedAt, lastSuccessfulBuildAt, currentRun } = args
+
+  // 1 — never published, or the live site already reflects the last publish.
+  if (
+    lastPublishedAt == null ||
+    (lastSuccessfulBuildAt != null &&
+      new Date(lastSuccessfulBuildAt).getTime() >= new Date(lastPublishedAt).getTime())
+  ) {
+    return 'in-sync'
+  }
+
+  // 2 — a build is actively running.
+  if (currentRun?.status === 'queued' || currentRun?.status === 'in_progress') {
+    return 'building'
+  }
+
+  // 3 — a terminal failed run that belongs to THIS publish (started at-or-after it).
+  if (
+    currentRun != null &&
+    currentRun.conclusion != null &&
+    currentRun.conclusion !== 'success' &&
+    currentRun.startedAt != null &&
+    new Date(currentRun.startedAt).getTime() >= new Date(lastPublishedAt).getTime()
+  ) {
+    return 'failed'
+  }
+
+  // 4 — published, no successful build yet, no failed run for this publish: the
+  // dispatched run is not yet visible (the registration gap). Transient, not red.
+  return 'building'
 }
 
 /** `querySiteBuildStatus` returns an all-null shape when no run exists; map it to null. */
@@ -92,21 +156,14 @@ export const siteSyncStatusHandler: PayloadHandler = async (
 
     const currentRun = isNoRun(currentRunRaw) ? null : currentRunRaw
 
-    const inSync =
-      lastPublishedAt == null ||
-      (lastSuccessfulBuildAt != null &&
-        new Date(lastSuccessfulBuildAt).getTime() >= new Date(lastPublishedAt).getTime())
-
-    const building =
-      currentRun?.status === 'queued' || currentRun?.status === 'in_progress'
+    const syncState = computeSyncState({ lastPublishedAt, lastSuccessfulBuildAt, currentRun })
 
     const payload: SiteSyncStatus = {
       pendingCount,
       lastPublishedAt,
       lastSuccessfulBuildAt,
       currentRun,
-      inSync,
-      building,
+      syncState,
     }
     return json(payload, 200)
   } catch (err) {

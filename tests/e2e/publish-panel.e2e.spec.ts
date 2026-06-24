@@ -12,20 +12,27 @@ import { login } from '../helpers/login'
  * needs the prod GitHub dispatch token, so we DON'T hit GitHub: every endpoint
  * is stubbed with Playwright route interception to drive the flow deterministically:
  *   - GET  /api/site-sync-status → the consolidated drift shape
- *       `{ pendingCount, lastPublishedAt, lastSuccessfulBuildAt, currentRun, inSync, building }`,
+ *       `{ pendingCount, lastPublishedAt, lastSuccessfulBuildAt, currentRun, syncState }`,
  *   - GET  /api/pending-changes  → the confirm-list (only fetched when pendingCount > 0),
  *   - POST /api/publish-site     → 200 (accepted; batch publish also rebuilds).
  *
- * DOM hooks the panel exposes (relied on below, EXACTLY as #45 emits them):
+ * #52 — the panel is driven by ONE server-computed `syncState` enum
+ * (`'in-sync' | 'building' | 'failed'`), replacing the old overloaded
+ * `inSync`/`building` booleans. `data-status` mirrors `syncState` directly; the
+ * old `"behind"` value is gone (a publish whose build hasn't registered yet now
+ * reads as `building`, not a red failure).
+ *
+ * DOM hooks the panel exposes (relied on below, EXACTLY as the panel emits them):
  *   - wrapper `data-testid="sync-status"` with `data-status` ∈
- *       { "building" | "in-sync" | "behind" },
+ *       { "building" | "in-sync" | "failed" } (mirrors `syncState`),
  *   - confirm-list `data-testid="pending-changes"`, rows `data-testid="pending-item"`,
  *   - action button by role + accessible name: `Пересобрать сайт` (rebuild) or
- *       `Опубликовать N изменени… на сайт` (batch). When in-sync the button is
- *       ABSENT from the DOM (not merely disabled).
+ *       `Опубликовать N изменени… на сайт` (batch). When in-sync/building the
+ *       button is ABSENT from the DOM (not merely disabled).
  *
- * We drive and assert each visible state: in-sync, behind (rebuild), pending
- * (batch), and a full publish → building → matches lifecycle.
+ * We drive and assert each visible state: in-sync (green), in-sync + pending (no
+ * green, #50), failed (red + rebuild), building (no red), pending (batch), and a
+ * full publish → building → matches lifecycle.
  */
 
 // A DEDICATED admin user for this suite — NOT the shared `seedUser` helper's
@@ -66,8 +73,8 @@ test.describe('Publish to site panel — drift model (#46)', () => {
   })
 
   test('in sync → ✅ copy, status="in-sync", NO action button in the DOM', async () => {
-    // inSync && !building → the panel is status-only. The action button must be
-    // entirely ABSENT (the #45 contract hides it, it is not merely disabled).
+    // syncState='in-sync', no pending → the panel is status-only. The action
+    // button must be entirely ABSENT (the contract hides it, not merely disabled).
     const builtAt = '2026-06-24T10:05:00.000Z'
     const publishedAt = '2026-06-24T10:00:00.000Z'
     await page.route('**/api/site-sync-status', async (route) => {
@@ -84,8 +91,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
             html_url: 'https://github.com/owner/repo/actions/runs/1',
             startedAt: publishedAt,
           },
-          inSync: true,
-          building: false,
+          syncState: 'in-sync',
         }),
       })
     })
@@ -103,7 +109,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
   })
 
   test('in sync BUT pending drafts → NO green banner; confirm-list + batch button', async () => {
-    // #50 — inSync is derived purely from lastPublishedAt vs the last successful
+    // #50 — syncState is derived purely from lastPublishedAt vs the last successful
     // build; it deliberately ignores unpublished drafts. So the site genuinely
     // MATCHES what was last published (data-status stays "in-sync"), but the CMS
     // now holds staged drafts the site does not reflect. The green ✅ "Сайт
@@ -118,15 +124,14 @@ test.describe('Publish to site panel — drift model (#46)', () => {
         body: JSON.stringify({
           pendingCount: 2,
           lastPublishedAt: '2026-06-24T08:00:00.000Z',
-          lastSuccessfulBuildAt: '2026-06-24T08:05:00.000Z', // build newer → inSync
+          lastSuccessfulBuildAt: '2026-06-24T08:05:00.000Z', // build newer → in-sync
           currentRun: {
             status: 'completed',
             conclusion: 'success',
             html_url: 'https://github.com/owner/repo/actions/runs/5',
             startedAt: '2026-06-24T08:00:00.000Z',
           },
-          inSync: true,
-          building: false,
+          syncState: 'in-sync',
         }),
       })
     })
@@ -157,9 +162,9 @@ test.describe('Publish to site panel — drift model (#46)', () => {
     // …but the green banner MUST be absent: pending drafts make "matches CMS" a
     // misleading over-claim. This is the defining #50 assertion.
     await expect(status.getByText(/✅ Сайт совпадает с CMS/)).toHaveCount(0)
-    // No building / behind banner leaked into the green slot either.
+    // No building / failed banner leaked into the green slot either.
     await expect(status.getByText(/Идёт сборка…/)).toHaveCount(0)
-    await expect(status.getByText(/Сайт отстал от CMS/)).toHaveCount(0)
+    await expect(status.getByText(/Сборка упала/)).toHaveCount(0)
 
     // The pending confirm-list + the primary batch-publish button ARE the message.
     const panel = page.locator('[data-testid="pending-changes"]')
@@ -170,12 +175,12 @@ test.describe('Publish to site panel — drift model (#46)', () => {
     ).toBeVisible()
   })
 
-  test('behind, nothing pending → ⚠️ both timestamps + "Пересобрать сайт" button', async () => {
-    // !building && !inSync && pendingCount === 0 → a publish landed but its build
-    // hasn't succeeded yet (here: the latest run FAILED). The panel shows BOTH
-    // timestamps and offers the manual-rebuild safety net.
+  test('failed, nothing pending → ⚠️ red both timestamps + log link + "Пересобрать сайт" button', async () => {
+    // #52: syncState === 'failed' → a run for THIS publish reached a terminal
+    // non-success conclusion (its startedAt >= lastPublishedAt). The panel shows
+    // BOTH timestamps in red, a build-log link, and the manual-rebuild safety net.
     const publishedAt = '2026-06-24T11:00:00.000Z'
-    const builtAt = '2026-06-24T09:00:00.000Z' // older than publishedAt → behind
+    const builtAt = '2026-06-24T09:00:00.000Z' // older than publishedAt
     await page.route('**/api/site-sync-status', async (route) => {
       await route.fulfill({
         status: 200,
@@ -190,8 +195,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
             html_url: 'https://github.com/owner/repo/actions/runs/2',
             startedAt: publishedAt,
           },
-          inSync: false,
-          building: false,
+          syncState: 'failed',
         }),
       })
     })
@@ -199,19 +203,52 @@ test.describe('Publish to site panel — drift model (#46)', () => {
     await page.goto('http://localhost:3000/admin')
 
     const status = page.locator('[data-testid="sync-status"]')
-    await expect(status).toHaveAttribute('data-status', 'behind')
-    // The "behind" copy surfaces BOTH the publish and the build timestamps. We
+    await expect(status).toHaveAttribute('data-status', 'failed')
+    // The "failed" copy surfaces BOTH the publish and the build timestamps. We
     // assert the stable label markers ("опубликовано …, собрано …") rather than
     // the formatted clock string, which depends on the browser's locale/TZ. The
     // panel renders an em dash only for null/invalid times, so requiring real
     // times here (no "—" between the markers) pins that both are shown.
+    await expect(status.getByText(/Сборка упала/)).toBeVisible()
     await expect(status.getByText(/опубликовано .+, собрано .+\)/)).toBeVisible()
     await expect(status.getByText(/опубликовано —/)).toHaveCount(0)
+    // The failed run carries an html_url → a build-log link is offered.
+    await expect(status.getByRole('link', { name: /лог сборки/ })).toBeVisible()
 
-    // Nothing pending, but out of sync → the secondary manual-rebuild button.
+    // Nothing pending, but the build failed → the secondary manual-rebuild button.
     await expect(page.getByRole('button', { name: 'Пересобрать сайт' })).toBeVisible()
     // No confirm-list (pendingCount === 0).
     await expect(page.locator('[data-testid="pending-changes"]')).toHaveCount(0)
+  })
+
+  test('building (publish dispatched, run not yet registered) → 🔄 no red, NO button', async () => {
+    // #52 — the bug fix. Published but the build's run isn't visible yet
+    // (currentRun null, no successful build at-or-after the publish). The old code
+    // rendered this as red "behind"; now the server returns syncState='building'
+    // and the panel shows 🔄 with no red banner and no action button.
+    await page.route('**/api/site-sync-status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          pendingCount: 0,
+          lastPublishedAt: '2026-06-24T11:00:00.000Z',
+          lastSuccessfulBuildAt: '2026-06-24T09:00:00.000Z',
+          currentRun: null,
+          syncState: 'building',
+        }),
+      })
+    })
+
+    await page.goto('http://localhost:3000/admin')
+
+    const status = page.locator('[data-testid="sync-status"]')
+    await expect(status).toHaveAttribute('data-status', 'building')
+    await expect(status.getByText(/Идёт сборка…/)).toBeVisible()
+    // The defining fix: NO red failure banner during a normal in-flight publish.
+    await expect(status.getByText(/Сборка упала/)).toHaveCount(0)
+    // Building → no action button (the build is already running).
+    await expect(page.getByRole('button', { name: ANY_ACTION_BUTTON })).toHaveCount(0)
   })
 
   test('pending changes → confirm-list + "Опубликовать 1 изменение на сайт" button', async () => {
@@ -227,8 +264,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
           lastPublishedAt: '2026-06-24T08:00:00.000Z',
           lastSuccessfulBuildAt: '2026-06-24T08:01:00.000Z',
           currentRun: null,
-          inSync: false,
-          building: false,
+          syncState: 'in-sync',
         }),
       })
     })
@@ -252,9 +288,10 @@ test.describe('Publish to site panel — drift model (#46)', () => {
 
     await page.goto('http://localhost:3000/admin')
 
-    // Behind (a publish exists but isn't live yet) AND it has pending changes.
+    // The published content is live (in-sync) AND there are pending drafts. The
+    // green banner is suppressed (#50) but data-status stays "in-sync".
     const status = page.locator('[data-testid="sync-status"]')
-    await expect(status).toHaveAttribute('data-status', 'behind')
+    await expect(status).toHaveAttribute('data-status', 'in-sync')
 
     // The confirm-list renders the labelled pending doc.
     const panel = page.locator('[data-testid="pending-changes"]')
@@ -274,7 +311,8 @@ test.describe('Publish to site panel — drift model (#46)', () => {
     // the indicator flips to "building", then the next poll lands the terminal
     // in-sync state. The build lifecycle is driven by a small state machine so the
     // flow is deterministic regardless of how the panel times its polls:
-    //   - before Publish is clicked → pending (status="behind", batch button),
+    //   - before Publish is clicked → pending + in-sync (status="in-sync", green
+    //     suppressed by pending #50, batch button shown),
     //   - the publish POST flips `published`,
     //   - the FIRST status read after that → building (status="building"),
     //   - every later read              → in-sync terminal (status="in-sync").
@@ -320,14 +358,14 @@ test.describe('Publish to site panel — drift model (#46)', () => {
     await page.route('**/api/site-sync-status', async (route) => {
       let body
       if (!published) {
-        // Pre-publish: behind with one pending change → batch button shown.
+        // Pre-publish: in-sync (build newer than publish) with one pending change
+        // → green suppressed (#50), batch button shown.
         body = {
           pendingCount: 1,
           lastPublishedAt: '2026-06-24T12:00:00.000Z',
           lastSuccessfulBuildAt: '2026-06-24T12:01:00.000Z',
           currentRun: null,
-          inSync: false,
-          building: false,
+          syncState: 'in-sync',
         }
       } else {
         statusReadsAfterPublish += 1
@@ -344,8 +382,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
                   html_url: RUN_URL,
                   startedAt: new Date().toISOString(),
                 },
-                inSync: false,
-                building: true,
+                syncState: 'building',
               }
             : {
                 // Terminal: the build succeeded → the site matches the CMS again.
@@ -358,8 +395,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
                   html_url: RUN_URL,
                   startedAt: '2026-06-24T12:10:00.000Z',
                 },
-                inSync: true,
-                building: false,
+                syncState: 'in-sync',
               }
       }
       await route.fulfill({
@@ -373,8 +409,9 @@ test.describe('Publish to site panel — drift model (#46)', () => {
 
     const status = page.locator('[data-testid="sync-status"]')
 
-    // 1 — pre-publish: behind, confirm-list shows the changed doc, batch button.
-    await expect(status).toHaveAttribute('data-status', 'behind')
+    // 1 — pre-publish: in-sync (green suppressed by pending), confirm-list shows
+    // the changed doc, batch button.
+    await expect(status).toHaveAttribute('data-status', 'in-sync')
     await expect(
       page.locator('[data-testid="pending-changes"]').getByText('Eduard Ildarkhanov'),
     ).toBeVisible()

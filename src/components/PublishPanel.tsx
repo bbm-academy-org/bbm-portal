@@ -25,28 +25,33 @@ import { Banner, Button } from '@payloadcms/ui'
  * the GitHub Actions run state into a single shape. Driving the whole panel off
  * one endpoint keeps the indicator and the button always mutually consistent.
  *
- * Indicator (visible once the first read lands), from `building` / `inSync` /
- * `pendingCount` / `currentRun`:
- *   - building                              → 🔄 "Идёт сборка…" (+ view-run link
- *                                              when present);
- *   - !building && !inSync                  → ⚠️ "Сайт отстал от CMS" (both
- *                                              timestamps; + a log link when the
- *                                              latest run FAILED);
- *   - !building && inSync && pendingCount===0 → ✅ "Сайт совпадает с CMS"
- *                                              (+ last build time);
- *   - !building && inSync && pendingCount>0  → NOTHING in the green slot (#50).
- *     `inSync` is published-vs-built and ignores unpublished drafts, so with
+ * Indicator (#52) — driven by ONE server-computed `syncState` enum
+ * (`'in-sync' | 'building' | 'failed'`), which replaces the old overloaded
+ * `inSync`/`building` booleans. `data-status` mirrors `syncState` directly. The
+ * three states (visible once the first read lands):
+ *   - 'building'                 → 🔄 "Идёт сборка…" (+ view-run link when
+ *                                  present), regardless of pendingCount. This now
+ *                                  INCLUDES the post-publish "run not yet
+ *                                  registered" gap, so a normal publish no longer
+ *                                  flashes red.
+ *   - 'failed'                   → ⚠️ red "Сборка упала (…timestamps…)" (+ a build
+ *                                  log link when present) + the rebuild button,
+ *                                  regardless of pendingCount. The server scopes
+ *                                  this to a terminal failed run for THIS publish.
+ *   - 'in-sync' && pendingCount===0 → ✅ "Сайт совпадает с CMS" (+ last build time);
+ *   - 'in-sync' && pendingCount>0   → NOTHING in the green slot (#50).
+ *     `syncState` is published-vs-built and ignores unpublished drafts, so with
  *     staged drafts the green "matches CMS" banner would over-claim and
  *     contradict the pending list — the pending list + publish button below IS
  *     the message. `data-status` stays "in-sync" (the published content is live).
  *
  * Action button (scope-correct; HIDDEN when there is nothing to do):
- *   - pendingCount > 0           → primary "Опубликовать N изменений на сайт"
- *                                  (batch publish + single rebuild);
- *   - pendingCount === 0 && !inSync && !building → secondary "Пересобрать сайт"
+ *   - pendingCount > 0 && syncState !== 'building' → primary "Опубликовать N
+ *                                  изменений на сайт" (batch publish + rebuild);
+ *   - pendingCount === 0 && syncState === 'failed' → secondary "Пересобрать сайт"
  *                                  (manual rebuild safety net);
- *   - inSync && !building        → NO button (status only);
- *   - building                   → NO button (the build is already running).
+ *   - syncState === 'in-sync' (no pending) → NO button (status only);
+ *   - syncState === 'building'   → NO button (the build is already running).
  * Both buttons POST `/api/publish-site` (the batch endpoint also rebuilds).
  *
  * Confirm-list: when `pendingCount > 0` we fetch `GET /api/pending-changes` and
@@ -85,23 +90,25 @@ type CurrentRun = {
   startedAt: string | null
 }
 
-/** The consolidated drift read (`GET /api/site-sync-status`, #44). */
+/** The server-computed sync state (#52). Mirrors siteSyncStatus.ts's enum. */
+type SyncState = 'in-sync' | 'building' | 'failed'
+
+/** The consolidated drift read (`GET /api/site-sync-status`, #44, #52). */
 type SiteSyncStatus = {
   pendingCount: number
   lastPublishedAt: string | null
   lastSuccessfulBuildAt: string | null
   currentRun: CurrentRun | null
-  inSync: boolean
-  building: boolean
+  syncState: SyncState
 }
 
 /**
  * A run has FAILED iff it reached a terminal, non-success conclusion. GitHub
  * sets `conclusion` only once a run completes; while queued/in_progress it is
  * null. So a non-null conclusion that isn't `success` is a real failure (e.g.
- * `failure`, `cancelled`, `timed_out`) and earns a log link in the "behind"
- * state. `building` already gates this off in the UI, so a non-null conclusion
- * here is always terminal.
+ * `failure`, `cancelled`, `timed_out`) and earns a build-log link in the 'failed'
+ * state. The server uses the SAME definition to compute `syncState === 'failed'`
+ * (keep them consistent); here it just decides whether to render the log link.
  */
 const runFailed = (run: CurrentRun | null): boolean =>
   run != null && run.conclusion != null && run.conclusion !== 'success'
@@ -142,12 +149,6 @@ const pluralizeChanges = (n: number): string => {
   if (mod10 >= 2 && mod10 <= 4) return 'изменения'
   return 'изменений'
 }
-
-/** The three visible drift branches; mirrored onto `data-status` for the e2e. */
-type DriftStatus = 'building' | 'in-sync' | 'behind'
-
-const driftStatusOf = (sync: SiteSyncStatus): DriftStatus =>
-  sync.building ? 'building' : sync.inSync ? 'in-sync' : 'behind'
 
 export const PublishPanel: React.FC = () => {
   const [sync, setSync] = useState<SiteSyncStatus | null>(null)
@@ -234,12 +235,13 @@ export const PublishPanel: React.FC = () => {
       // confirm-list — the surfaces that shipped are published now, so pending
       // should have shrunk (typically to zero). `wasBuildingRef` is updated
       // AFTER the comparison so we only fire once per transition.
-      if (wasBuildingRef.current && !status.building) {
+      const isBuilding = status.syncState === 'building'
+      if (wasBuildingRef.current && !isBuilding) {
         void loadPending()
       }
-      wasBuildingRef.current = status.building
+      wasBuildingRef.current = isBuilding
 
-      if (mountedRef.current) schedule(status.building)
+      if (mountedRef.current) schedule(isBuilding)
     } catch (err) {
       if (!mountedRef.current) return
       // A transient poll failure must NEVER wedge the panel: we keep the last
@@ -281,9 +283,10 @@ export const PublishPanel: React.FC = () => {
       if (!mountedRef.current) return
       setSync(status)
       setSyncError(null)
-      wasBuildingRef.current = status.building
+      const isBuilding = status.syncState === 'building'
+      wasBuildingRef.current = isBuilding
       if (status.pendingCount > 0) void loadPending()
-      schedule(status.building)
+      schedule(isBuilding)
     } catch (err) {
       // A status read failure on mount is non-fatal: surface it and start a SLOW
       // retry loop so the panel still self-heals once the backend recovers.
@@ -329,14 +332,13 @@ export const PublishPanel: React.FC = () => {
       if (mountedRef.current) {
         setSync((prev) =>
           prev
-            ? { ...prev, building: true }
+            ? { ...prev, syncState: 'building' }
             : {
                 pendingCount: 0,
                 lastPublishedAt: null,
                 lastSuccessfulBuildAt: null,
                 currentRun: null,
-                inSync: false,
-                building: true,
+                syncState: 'building',
               },
         )
         wasBuildingRef.current = true
@@ -353,17 +355,19 @@ export const PublishPanel: React.FC = () => {
 
   const pendingCount = sync?.pendingCount ?? 0
   const hasPending = pendingCount > 0
-  const building = sync?.building ?? false
-  const inSync = sync?.inSync ?? false
+  // Default to 'in-sync' before the first read so no button/banner renders early.
+  const syncState: SyncState = sync?.syncState ?? 'in-sync'
+  const building = syncState === 'building'
 
-  // The action button decision table (see the file header). Exactly one of these
-  // is true at a time, and both map to the SAME POST /api/publish-site:
-  //   - hasPending          → primary batch publish ("Опубликовать N… на сайт");
-  //   - !hasPending,!inSync,!building → secondary manual rebuild ("Пересобрать сайт").
-  // In every other case (in-sync, or building) NO button renders — the e2e
-  // asserts the button is ABSENT from the DOM in the in-sync state.
+  // The action button decision table (see the file header), re-derived from the
+  // single `syncState` enum (#52). Exactly one is true at a time, and both map to
+  // the SAME POST /api/publish-site:
+  //   - hasPending && !building       → primary batch publish ("Опубликовать N…");
+  //   - !hasPending && syncState==='failed' → secondary manual rebuild ("Пересобрать сайт").
+  // In every other case (in-sync with no pending, or building) NO button renders —
+  // the e2e asserts the button is ABSENT from the DOM in the in-sync/building states.
   const showBatchPublish = hasPending && !building
-  const showRebuild = !hasPending && !inSync && !building
+  const showRebuild = !hasPending && syncState === 'failed'
   const showActionButton = showBatchPublish || showRebuild
 
   return (
@@ -384,7 +388,7 @@ export const PublishPanel: React.FC = () => {
           wrapper's status is unambiguous for the e2e. */}
       <section
         data-testid="sync-status"
-        data-status={sync ? driftStatusOf(sync) : undefined}
+        data-status={sync ? sync.syncState : undefined}
         style={{ marginBottom: 'var(--base, 20px)' }}
       >
         {syncError && (
@@ -398,7 +402,9 @@ export const PublishPanel: React.FC = () => {
               Проверка синхронизации сайта…
             </p>
           )
-        ) : sync.building ? (
+        ) : sync.syncState === 'building' ? (
+          // Includes the post-publish "run not yet registered" gap (#52): the
+          // server returns 'building', not red, for a normal in-flight publish.
           <Banner type="info">
             🔄 Идёт сборка…{' '}
             {sync.currentRun?.html_url ? (
@@ -407,22 +413,9 @@ export const PublishPanel: React.FC = () => {
               </a>
             ) : null}
           </Banner>
-        ) : sync.inSync ? (
-          // #50: the green "matches CMS" banner is HONEST only with no staged
-          // drafts. `inSync` is published-vs-built and deliberately ignores
-          // unpublished drafts (siteSyncStatus.ts), so once pendingCount > 0 the
-          // CMS holds changes the live site does not reflect — the green banner
-          // would over-claim and contradict the pending list below. Suppress it;
-          // the pending list + batch publish button is the message in that state.
-          // (data-status stays "in-sync": the *published* content is still live.)
-          sync.pendingCount > 0 ? null : (
-            <Banner type="success">
-              ✅ Сайт совпадает с CMS (собрано {formatTime(sync.lastSuccessfulBuildAt)}).
-            </Banner>
-          )
-        ) : (
+        ) : sync.syncState === 'failed' ? (
           <Banner type="error">
-            ⚠️ Сайт отстал от CMS (опубликовано {formatTime(sync.lastPublishedAt)}, собрано{' '}
+            ⚠️ Сборка упала (опубликовано {formatTime(sync.lastPublishedAt)}, собрано{' '}
             {formatTime(sync.lastSuccessfulBuildAt)}).{' '}
             {runFailed(sync.currentRun) && sync.currentRun?.html_url ? (
               <a href={sync.currentRun.html_url} target="_blank" rel="noreferrer">
@@ -430,6 +423,19 @@ export const PublishPanel: React.FC = () => {
               </a>
             ) : null}
           </Banner>
+        ) : (
+          // syncState === 'in-sync'. #50: the green "matches CMS" banner is HONEST
+          // only with no staged drafts. `syncState` is published-vs-built and
+          // deliberately ignores unpublished drafts (siteSyncStatus.ts), so once
+          // pendingCount > 0 the CMS holds changes the live site does not reflect
+          // — the green banner would over-claim and contradict the pending list
+          // below. Suppress it; the pending list + batch publish button is the
+          // message. (data-status stays "in-sync": the published content is live.)
+          sync.pendingCount > 0 ? null : (
+            <Banner type="success">
+              ✅ Сайт совпадает с CMS (собрано {formatTime(sync.lastSuccessfulBuildAt)}).
+            </Banner>
+          )
         )}
       </section>
 
