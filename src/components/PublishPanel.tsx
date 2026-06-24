@@ -25,11 +25,20 @@ import { Banner, Button } from '@payloadcms/ui'
  * the GitHub Actions run state into a single shape. Driving the whole panel off
  * one endpoint keeps the indicator and the button always mutually consistent.
  *
- * Indicator (always visible), from `building` / `inSync` / `currentRun`:
- *   - building            → 🔄 "Идёт сборка…" (+ view-run link when present);
- *   - !building && inSync  → ✅ "Сайт совпадает с CMS" (+ last build time);
- *   - !building && !inSync → ⚠️ "Сайт отстал от CMS" (both timestamps; + a log
- *                            link when the latest run FAILED).
+ * Indicator (visible once the first read lands), from `building` / `inSync` /
+ * `pendingCount` / `currentRun`:
+ *   - building                              → 🔄 "Идёт сборка…" (+ view-run link
+ *                                              when present);
+ *   - !building && !inSync                  → ⚠️ "Сайт отстал от CMS" (both
+ *                                              timestamps; + a log link when the
+ *                                              latest run FAILED);
+ *   - !building && inSync && pendingCount===0 → ✅ "Сайт совпадает с CMS"
+ *                                              (+ last build time);
+ *   - !building && inSync && pendingCount>0  → NOTHING in the green slot (#50).
+ *     `inSync` is published-vs-built and ignores unpublished drafts, so with
+ *     staged drafts the green "matches CMS" banner would over-claim and
+ *     contradict the pending list — the pending list + publish button below IS
+ *     the message. `data-status` stays "in-sync" (the published content is live).
  *
  * Action button (scope-correct; HIDDEN when there is nothing to do):
  *   - pendingCount > 0           → primary "Опубликовать N изменений на сайт"
@@ -399,9 +408,18 @@ export const PublishPanel: React.FC = () => {
             ) : null}
           </Banner>
         ) : sync.inSync ? (
-          <Banner type="success">
-            ✅ Сайт совпадает с CMS (собрано {formatTime(sync.lastSuccessfulBuildAt)}).
-          </Banner>
+          // #50: the green "matches CMS" banner is HONEST only with no staged
+          // drafts. `inSync` is published-vs-built and deliberately ignores
+          // unpublished drafts (siteSyncStatus.ts), so once pendingCount > 0 the
+          // CMS holds changes the live site does not reflect — the green banner
+          // would over-claim and contradict the pending list below. Suppress it;
+          // the pending list + batch publish button is the message in that state.
+          // (data-status stays "in-sync": the *published* content is still live.)
+          sync.pendingCount > 0 ? null : (
+            <Banner type="success">
+              ✅ Сайт совпадает с CMS (собрано {formatTime(sync.lastSuccessfulBuildAt)}).
+            </Banner>
+          )
         ) : (
           <Banner type="error">
             ⚠️ Сайт отстал от CMS (опубликовано {formatTime(sync.lastPublishedAt)}, собрано{' '}
