@@ -92,6 +92,9 @@ type SyncBody = {
 }
 
 // Stamp `siteBuildState.lastPublishedAt` to a fixed time (the publish-side truth).
+// Relies on serial file execution (vitest.config `fileParallelism: false`, #48):
+// `siteBuildState` is a singleton global, so a concurrent suite restamping it
+// between this set and the handler's read makes the readback order-dependent.
 const setLastPublishedAt = async (at: string | null): Promise<void> => {
   await payload.updateGlobal({ slug: 'siteBuildState', data: { lastPublishedAt: at } })
 }
@@ -279,6 +282,9 @@ describe('GET /api/site-sync-status (#44)', () => {
     const pendingRes = await pendingChangesHandler(reqWith({ id: 'admin' }))
     const pendingBody = (await pendingRes.json()) as { count: number }
 
+    // Relies on serial file execution (vitest.config `fileParallelism: false`,
+    // #48): this compares two separate global count reads, which a concurrent
+    // suite staging/publishing a draft between them would perturb.
     expect(syncBody.pendingCount).toBe(pendingBody.count)
     expect(syncBody.pendingCount).toBeGreaterThan(0)
   })
