@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 
 import { area, localeField, slugField, text } from '../fields/shared'
 import { omitEmptyCollection } from '../hooks/omitEmpty'
+import { siteRebuildCollectionAfterChange } from '../lib/siteSync'
 
 /**
  * `team` — экспертные лица экосистемы (`teamSchema`, schemas.ts:201).
@@ -16,7 +17,12 @@ export const Team: CollectionConfig = {
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
   admin: { useAsTitle: 'name' },
-  hooks: { afterRead: [omitEmptyCollection] },
+  // afterChange → publish-rebuild (#42): a draft→published transition triggers a
+  // whole-site rebuild (best-effort) via siteSync.
+  hooks: {
+    afterRead: [omitEmptyCollection],
+    afterChange: [siteRebuildCollectionAfterChange],
+  },
   fields: [
     slugField('id', true),
     text('name', true), // VERBATIM person name

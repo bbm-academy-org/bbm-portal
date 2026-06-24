@@ -2,6 +2,7 @@ import type { GlobalConfig } from 'payload'
 
 import { contacts, ctaSection, faq, faqIntro, intro, pageTabs, teamIntro } from '../fields/pageGroups'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
+import { siteRebuildGlobalAfterChange } from '../lib/siteSync'
 
 /**
  * `pageContacts` — contacts-page copy (formerly `pages` row `contacts`, #18
@@ -13,6 +14,11 @@ export const PageContacts: GlobalConfig = {
   slug: 'pageContacts',
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
-  hooks: { afterRead: [omitEmptyGlobal] },
+  // afterChange → publish-rebuild (#42): a draft→published transition triggers a
+  // whole-site rebuild (best-effort) via siteSync.
+  hooks: {
+    afterRead: [omitEmptyGlobal],
+    afterChange: [siteRebuildGlobalAfterChange],
+  },
   fields: [pageTabs([intro, contacts, teamIntro, faqIntro, faq, ctaSection])],
 }

@@ -218,6 +218,8 @@ type GitHubWorkflowRun = {
   html_url?: string | null
   run_started_at?: string | null
   created_at?: string | null
+  /** Completion time of the run (set once the run finishes). */
+  updated_at?: string | null
 }
 
 type GitHubRunsResponse = {
@@ -284,4 +286,65 @@ export const querySiteBuildStatus = async (): Promise<SiteBuildStatus> => {
     html_url: run.html_url ?? null,
     startedAt: run.run_started_at ?? run.created_at ?? null,
   }
+}
+
+/**
+ * Query the GitHub Actions API for the COMPLETION time of the latest SUCCESSFUL
+ * `repository_dispatch` run on the site repo, or `null` when none has ever
+ * succeeded. This is the "build-side truth" the drift indicator (#44) compares
+ * against `siteBuildState.lastPublishedAt`: the site reflects a publish only once
+ * a build started after it has COMPLETED successfully.
+ *
+ * The runs API `status` filter accepts a terminal conclusion, so
+ * `status=success` returns only successfully-completed runs; `per_page=1` takes
+ * the most recent. The completion time is `run.updated_at` (set when the run
+ * finishes), falling back to `run_started_at`/`created_at`. Reuses the SAME
+ * credentials (App installation token, needs `actions:read`, or
+ * `SITE_DISPATCH_TOKEN`) and `SITE_DISPATCH_REPO` as the dispatch. Mirrors
+ * {@link querySiteBuildStatus}'s error semantics: missing credentials fail loudly
+ * (500); network failure → 502; any non-2xx → 502-class `SiteDispatchError`; an
+ * empty list → `null` (NOT a throw). The token is never logged.
+ */
+export const queryLastSuccessfulBuild = async (): Promise<string | null> => {
+  const token = await getSiteDispatchToken()
+  const repo = resolveSiteRepo()
+
+  let res: Response
+  try {
+    res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/runs?event=repository_dispatch&status=success&per_page=1`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+        },
+      },
+    )
+  } catch (err) {
+    throw new SiteDispatchError(
+      `Failed to reach GitHub to read the last successful site build: ${(err as Error).message}`,
+      502,
+    )
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new SiteDispatchError(
+      `GitHub rejected the last-successful-build query (HTTP ${res.status})${detail ? `: ${detail}` : ''}`,
+      502,
+    )
+  }
+
+  const body = (await res.json().catch(() => ({}))) as GitHubRunsResponse
+  const runs = body.workflow_runs ?? []
+
+  // No successful run yet — return null (NOT a throw), so the drift indicator can
+  // render "never built / not yet successful" rather than failing the panel.
+  if ((body.total_count ?? runs.length) === 0 || runs.length === 0) {
+    return null
+  }
+
+  const run = runs[0]
+  return run.updated_at ?? run.run_started_at ?? run.created_at ?? null
 }

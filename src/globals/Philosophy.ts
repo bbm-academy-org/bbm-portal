@@ -2,6 +2,7 @@ import type { GlobalConfig } from 'payload'
 
 import { area, flag, localeField, text } from '../fields/shared'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
+import { siteRebuildGlobalAfterChange } from '../lib/siteSync'
 
 /**
  * `philosophy` singleton (`philosophySchema`, schemas.ts:173).
@@ -14,7 +15,12 @@ export const Philosophy: GlobalConfig = {
   slug: 'philosophy',
   access: { read: () => true },
   versions: { drafts: { autosave: true } },
-  hooks: { afterRead: [omitEmptyGlobal] },
+  // afterChange → publish-rebuild (#42): a draft→published transition triggers a
+  // whole-site rebuild (best-effort) via siteSync.
+  hooks: {
+    afterRead: [omitEmptyGlobal],
+    afterChange: [siteRebuildGlobalAfterChange],
+  },
   fields: [
     area('evolutionaryGoal'),
     area('mission'),

@@ -103,6 +103,7 @@ export interface Config {
     pageParticipate: PageParticipate;
     pagePrivacy: PagePrivacy;
     pageProjects: PageProject;
+    siteBuildState: SiteBuildState;
   };
   globalsSelect: {
     philosophy: PhilosophySelect<false> | PhilosophySelect<true>;
@@ -114,6 +115,7 @@ export interface Config {
     pageParticipate: PageParticipateSelect<false> | PageParticipateSelect<true>;
     pagePrivacy: PagePrivacySelect<false> | PagePrivacySelect<true>;
     pageProjects: PageProjectsSelect<false> | PageProjectsSelect<true>;
+    siteBuildState: SiteBuildStateSelect<false> | SiteBuildStateSelect<true>;
   };
   locale: null;
   widgets: {
@@ -1082,6 +1084,18 @@ export interface PageProject {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "siteBuildState".
+ */
+export interface SiteBuildState {
+  id: number;
+  lastPublishedAt?: string | null;
+  lastDispatchAt?: string | null;
+  lastDispatchError?: string | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "philosophy_select".
  */
 export interface PhilosophySelect<T extends boolean = true> {
@@ -1752,6 +1766,18 @@ export interface PageProjectsSelect<T extends boolean = true> {
       };
   locale?: T;
   _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "siteBuildState_select".
+ */
+export interface SiteBuildStateSelect<T extends boolean = true> {
+  lastPublishedAt?: T;
+  lastDispatchAt?: T;
+  lastDispatchError?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

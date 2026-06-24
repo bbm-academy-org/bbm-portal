@@ -4,39 +4,60 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Banner, Button } from '@payloadcms/ui'
 
 /**
- * #17 — admin "Publish to site" panel.
+ * #45 — admin publish panel, rebuilt for the "publish = live" model (#40).
  *
  * Registered via `admin.components.beforeDashboard` in payload.config.ts, so it
  * renders at the top of the Payload admin dashboard (admin-only by virtue of the
  * panel's auth). It is an internal tool: it uses Payload's own UI primitives
  * (`Button`, `Banner`) and admin CSS variables, NOT a separate brand aesthetic.
  *
- * Flow (from the issue):
- *  1. On mount fetch `GET /api/pending-changes` and render a confirmation list of
- *     the documents that have pending drafts (transparency / multi-editor
- *     safety). No pending drafts → a note that publishing will rebuild from the
- *     current published content; the button STAYS enabled (publishing to the
- *     static site is independent of whether CMS drafts exist).
- *  2. "Publish to site" → `POST /api/publish-site`; on success start polling
- *     `GET /api/site-build-status`.
- *  3. Status panel: "Building…" for queued/in_progress; "Published (<time>)" for
- *     completed + success; "Failed → log link" (→ html_url) for completed +
- *     failure. All-null "no run yet" renders as idle.
- *  4. Button disabled while a build is running; re-enabled (and pending list
- *     refreshed) when the run reaches a terminal `completed` state.
- *  5. Poll every 4s and STOP once `completed` (no infinite polling); timers are
- *     cleaned up on unmount.
- *  6. All requests use `credentials: 'include'` so the admin session cookie is
- *     sent (the endpoints are admin-gated).
+ * The redesign moved "go live" onto the native in-page "Publish changes" button
+ * (an `afterChange` hook fires a whole-site rebuild, #42). So this panel is no
+ * longer the only path to production — it becomes two things:
+ *
+ *   (a) an HONEST site↔CMS drift indicator: is the live site current with what
+ *       has been published in the CMS, is a build running, or has it fallen
+ *       behind (a publish landed but its build hasn't succeeded yet)? and
+ *   (b) the explicit BATCH publish path + manual rebuild safety net.
+ *
+ * Primary data source is `GET /api/site-sync-status` (#44) — ONE consolidated
+ * read that joins pending-draft count, the publish-side `lastPublishedAt`, and
+ * the GitHub Actions run state into a single shape. Driving the whole panel off
+ * one endpoint keeps the indicator and the button always mutually consistent.
+ *
+ * Indicator (always visible), from `building` / `inSync` / `currentRun`:
+ *   - building            → 🔄 "Идёт сборка…" (+ view-run link when present);
+ *   - !building && inSync  → ✅ "Сайт совпадает с CMS" (+ last build time);
+ *   - !building && !inSync → ⚠️ "Сайт отстал от CMS" (both timestamps; + a log
+ *                            link when the latest run FAILED).
+ *
+ * Action button (scope-correct; HIDDEN when there is nothing to do):
+ *   - pendingCount > 0           → primary "Опубликовать N изменений на сайт"
+ *                                  (batch publish + single rebuild);
+ *   - pendingCount === 0 && !inSync && !building → secondary "Пересобрать сайт"
+ *                                  (manual rebuild safety net);
+ *   - inSync && !building        → NO button (status only);
+ *   - building                   → NO button (the build is already running).
+ * Both buttons POST `/api/publish-site` (the batch endpoint also rebuilds).
+ *
+ * Confirm-list: when `pendingCount > 0` we fetch `GET /api/pending-changes` and
+ * list the labelled pending surfaces/docs (transparency / multi-editor safety).
+ *
+ * All requests use `credentials: 'include'` so the admin session cookie is sent
+ * (every endpoint is admin-gated).
  */
 
-const POLL_INTERVAL_MS = 4000
+// Poll cadences. FAST while a build is in flight so "building → done" lands
+// quickly; SLOW while idle so an open dashboard still drifts toward truth (a
+// publish made elsewhere, a build that finished) without hammering GitHub.
+const FAST_POLL_MS = 4000
+const SLOW_POLL_MS = 25000
 
-// How many CONSECUTIVE poll failures we tolerate before giving up. A single
-// transient blip (network, a brief 502 from the GitHub site-build-status proxy)
-// must NOT permanently wedge the panel on "Building…", so we keep polling across
-// errors and only stop after this many in a row — at which point we clear the
-// optimistic running state so the button re-enables for a manual retry.
+// How many CONSECUTIVE poll failures we tolerate before backing off. A single
+// transient blip (network, a brief 502 from the GitHub proxy behind
+// site-sync-status) must NOT wedge the panel, so we keep polling across errors
+// and only after this many in a row surface a hard notice — but we KEEP a slow
+// poll alive so the panel still self-heals once the backend recovers.
 const MAX_CONSECUTIVE_POLL_ERRORS = 3
 
 type PendingSurface = {
@@ -47,17 +68,34 @@ type PendingSurface = {
 }
 type PendingChanges = { pending: PendingSurface[]; count: number }
 
-type BuildStatus = {
+/** The current GitHub Actions run, as surfaced by `/api/site-sync-status`. */
+type CurrentRun = {
   status: string | null
   conclusion: string | null
   html_url: string | null
   startedAt: string | null
 }
 
-const isRunning = (s: BuildStatus | null): boolean =>
-  s != null && (s.status === 'queued' || s.status === 'in_progress')
+/** The consolidated drift read (`GET /api/site-sync-status`, #44). */
+type SiteSyncStatus = {
+  pendingCount: number
+  lastPublishedAt: string | null
+  lastSuccessfulBuildAt: string | null
+  currentRun: CurrentRun | null
+  inSync: boolean
+  building: boolean
+}
 
-const isTerminal = (s: BuildStatus | null): boolean => s != null && s.status === 'completed'
+/**
+ * A run has FAILED iff it reached a terminal, non-success conclusion. GitHub
+ * sets `conclusion` only once a run completes; while queued/in_progress it is
+ * null. So a non-null conclusion that isn't `success` is a real failure (e.g.
+ * `failure`, `cancelled`, `timed_out`) and earns a log link in the "behind"
+ * state. `building` already gates this off in the UI, so a non-null conclusion
+ * here is always terminal.
+ */
+const runFailed = (run: CurrentRun | null): boolean =>
+  run != null && run.conclusion != null && run.conclusion !== 'success'
 
 const fetchJSON = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const res = await fetch(url, { credentials: 'include', ...init })
@@ -74,17 +112,39 @@ const fetchJSON = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   return (await res.json()) as T
 }
 
+/** Format an ISO time defensively: null / invalid → an em dash, never a crash. */
 const formatTime = (iso: string | null): string => {
-  if (!iso) return ''
+  if (!iso) return '—'
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
+  if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleString()
 }
 
+/**
+ * Russian pluralization for "изменение" (change): 1 → изменение, 2–4 →
+ * изменения, 0/5+ → изменений (with the usual 11–14 exception). Used to build
+ * the batch button's "Опубликовать N изменени… на сайт" label correctly.
+ */
+const pluralizeChanges = (n: number): string => {
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 14) return 'изменений'
+  const mod10 = n % 10
+  if (mod10 === 1) return 'изменение'
+  if (mod10 >= 2 && mod10 <= 4) return 'изменения'
+  return 'изменений'
+}
+
+/** The three visible drift branches; mirrored onto `data-status` for the e2e. */
+type DriftStatus = 'building' | 'in-sync' | 'behind'
+
+const driftStatusOf = (sync: SiteSyncStatus): DriftStatus =>
+  sync.building ? 'building' : sync.inSync ? 'in-sync' : 'behind'
+
 export const PublishPanel: React.FC = () => {
+  const [sync, setSync] = useState<SiteSyncStatus | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingChanges | null>(null)
   const [pendingError, setPendingError] = useState<string | null>(null)
-  const [build, setBuild] = useState<BuildStatus | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -93,9 +153,20 @@ export const PublishPanel: React.FC = () => {
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
   // Count of CONSECUTIVE poll failures; reset to 0 on any successful poll. Drives
-  // the H1 self-heal: tolerate transient errors, give up (re-enable) only after a
-  // sustained run of them.
+  // the self-heal: tolerate transient errors, surface a hard notice only after a
+  // sustained run — but never stop polling, so the panel recovers on its own.
   const pollErrorsRef = useRef(0)
+  // True WHILE a `pollStatus` read is in flight. A focus event or an onPublish
+  // can fire a poll while an earlier one is still mid-`await`; without this guard
+  // each would start a second concurrent fetch and each completion would call
+  // `schedule()`, spawning a SECOND timer chain (the first is leaked). Repeated
+  // focus events would fan that out unboundedly and hammer the GitHub-backed
+  // endpoint. So overlapping entrants early-return; the in-flight poll reschedules.
+  const isPollingRef = useRef(false)
+  // Tracks the previous `building` value so we can detect a build COMPLETING
+  // (building → not building) and refresh the pending list at that edge (the
+  // surfaces that just shipped are now published, so the confirm-list shrinks).
+  const wasBuildingRef = useRef(false)
 
   const clearPoll = useCallback(() => {
     if (pollRef.current) {
@@ -117,80 +188,101 @@ export const PublishPanel: React.FC = () => {
   }, [])
 
   // One status read + recursive scheduling. The loop body is held in a ref so the
-  // `setTimeout` re-fire can reference the latest function without `pollStatus`
-  // referring to itself before declaration (the recursion is via `pollRef`'s
-  // sibling `pollFnRef`, set in an effect below). When the run is terminal we
-  // stop polling and refresh the pending list (now empty for what just shipped).
+  // `setTimeout` re-fire references the latest function without `pollStatus`
+  // referring to itself before declaration (the recursion goes through
+  // `pollFnRef`, set in an effect below). The cadence is data-driven: FAST while
+  // building, SLOW while idle. The loop NEVER stops on its own — `building` just
+  // changes how often it runs — so an open dashboard always trends toward truth.
   const pollFnRef = useRef<() => void>(() => {})
 
+  const schedule = useCallback((building: boolean) => {
+    // Clear before set so the stored timer is always the ONLY live one — a stray
+    // earlier timer (e.g. one whose `pollStatus` was just superseded) can never be
+    // overwritten-and-leaked into a second concurrent chain.
+    if (pollRef.current) clearTimeout(pollRef.current)
+    pollRef.current = setTimeout(
+      () => pollFnRef.current(),
+      building ? FAST_POLL_MS : SLOW_POLL_MS,
+    )
+  }, [])
+
   const pollStatus = useCallback(async () => {
+    // Overlap guard: if a read is already in flight (a focus/publish fired while
+    // an earlier poll is mid-`await`), do NOT start a second concurrent fetch —
+    // the in-flight poll will reschedule on completion. Without this, two reads
+    // would each call `schedule()` and spawn two timer chains.
+    if (isPollingRef.current) return
+    isPollingRef.current = true
     try {
-      const status = await fetchJSON<BuildStatus>('/api/site-build-status')
+      const status = await fetchJSON<SiteSyncStatus>('/api/site-sync-status')
       if (!mountedRef.current) return
       // A good read clears any prior transient error and resets the failure run.
       pollErrorsRef.current = 0
-      setActionError(null)
-      setBuild(status)
-      if (isTerminal(status)) {
-        clearPoll()
+      setSyncError(null)
+      setSync(status)
+
+      // Edge: a build just COMPLETED (was building, now isn't). Refresh the
+      // confirm-list — the surfaces that shipped are published now, so pending
+      // should have shrunk (typically to zero). `wasBuildingRef` is updated
+      // AFTER the comparison so we only fire once per transition.
+      if (wasBuildingRef.current && !status.building) {
         void loadPending()
-        return
       }
+      wasBuildingRef.current = status.building
+
+      if (mountedRef.current) schedule(status.building)
     } catch (err) {
       if (!mountedRef.current) return
-      // H1: a transient poll failure must NEVER permanently wedge the panel on
-      // "Building…". So we do NOT stop on the first error — we surface a
-      // non-blocking notice and KEEP polling so the running build's status can
-      // resume on its own. Only after MAX_CONSECUTIVE_POLL_ERRORS failures in a
-      // row do we give up: stop polling AND clear the optimistic running state
-      // (`setBuild(null)`) so the button RE-ENABLES for a manual retry, with the
-      // error still visible. The invariant: a failed fetch always ends either
-      // (a) still polling a genuinely running build, or (b) button re-enabled —
-      // never a permanently disabled "Building…".
+      // A transient poll failure must NEVER wedge the panel: we keep the last
+      // good `sync` on screen and keep polling. After MAX_CONSECUTIVE_POLL_ERRORS
+      // in a row we surface a hard notice, but STILL reschedule on the SLOW
+      // cadence so the panel self-heals once the backend recovers — there is no
+      // terminal "stuck" state, only "stale + retrying".
       pollErrorsRef.current += 1
       if (pollErrorsRef.current >= MAX_CONSECUTIVE_POLL_ERRORS) {
-        setActionError(
-          `Could not read the build status after ${MAX_CONSECUTIVE_POLL_ERRORS} attempts ` +
-            `(${(err as Error).message}). Stopped polling — re-check the run, then publish again if needed.`,
+        setSyncError(
+          `Не удалось прочитать статус синхронизации после ${MAX_CONSECUTIVE_POLL_ERRORS} попыток ` +
+            `(${(err as Error).message}). Показаны последние данные — повтор продолжается.`,
         )
-        clearPoll()
-        setBuild(null) // drop optimistic "running" → button re-enables for retry
-        return
+      } else {
+        setSyncError(`Проверка статуса не удалась, повтор… (${(err as Error).message})`)
       }
-      // Transient: keep the running state, surface a soft notice, reschedule.
-      setActionError(`Status check failed, retrying… (${(err as Error).message})`)
-      pollRef.current = setTimeout(() => pollFnRef.current(), POLL_INTERVAL_MS)
-      return
+      // Reschedule SLOW while erroring, regardless of the last known `building`.
+      schedule(false)
+    } finally {
+      // Always release the in-flight flag, even on an early unmount return — so a
+      // remount / the next timer fire can poll again.
+      isPollingRef.current = false
     }
-    // Still running (or no-run-yet that we are watching after a publish) — poll on.
-    if (mountedRef.current) {
-      pollRef.current = setTimeout(() => pollFnRef.current(), POLL_INTERVAL_MS)
-    }
-  }, [clearPoll, loadPending])
+  }, [loadPending, schedule])
 
   // Keep the ref pointed at the latest `pollStatus` so scheduled re-fires (and
-  // the timeout closure above) always invoke the current implementation.
+  // the focus listener / timeout closures) always invoke the current impl.
   useEffect(() => {
     pollFnRef.current = () => void pollStatus()
   }, [pollStatus])
 
-  // On mount: load the confirm-list AND read the current build status once, so a
-  // build already running when the dashboard opens is reflected (and polled).
-  // All state updates here happen asynchronously (after `await`), so they are not
-  // synchronous-in-effect renders — the bootstrap is kicked off, not awaited.
+  // On mount: read the sync status once and, if there are pending drafts, load
+  // the confirm-list. The sync read also seeds the recursive poll loop (via
+  // `pollStatus`'s own reschedule). All state updates here happen AFTER an
+  // `await` (async network I/O), so none is a synchronous-in-effect render.
   const bootstrap = useCallback(async () => {
-    await loadPending()
     try {
-      const status = await fetchJSON<BuildStatus>('/api/site-build-status')
+      const status = await fetchJSON<SiteSyncStatus>('/api/site-sync-status')
       if (!mountedRef.current) return
-      setBuild(status)
-      if (isRunning(status)) {
-        pollRef.current = setTimeout(() => void pollStatus(), POLL_INTERVAL_MS)
-      }
-    } catch {
-      /* a status read failure on mount is non-fatal: the panel still works */
+      setSync(status)
+      setSyncError(null)
+      wasBuildingRef.current = status.building
+      if (status.pendingCount > 0) void loadPending()
+      schedule(status.building)
+    } catch (err) {
+      // A status read failure on mount is non-fatal: surface it and start a SLOW
+      // retry loop so the panel still self-heals once the backend recovers.
+      if (!mountedRef.current) return
+      setSyncError((err as Error).message)
+      schedule(false)
     }
-  }, [loadPending, pollStatus])
+  }, [loadPending, schedule])
 
   useEffect(() => {
     mountedRef.current = true
@@ -200,9 +292,20 @@ export const PublishPanel: React.FC = () => {
     // see through the async boundary, hence the precise, justified disable.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void bootstrap()
+
+    // Re-fetch on window focus so returning to the tab shows fresh state without
+    // waiting out the slow poll. We clear the pending timer and poll immediately;
+    // `pollStatus` reschedules itself at the correct cadence afterwards.
+    const onFocus = () => {
+      clearPoll()
+      pollFnRef.current()
+    }
+    window.addEventListener('focus', onFocus)
+
     return () => {
       mountedRef.current = false
       clearPoll()
+      window.removeEventListener('focus', onFocus)
     }
   }, [bootstrap, clearPoll])
 
@@ -211,43 +314,48 @@ export const PublishPanel: React.FC = () => {
     setPublishing(true)
     try {
       await fetchJSON('/api/publish-site', { method: 'POST' })
-      // Optimistically reflect "Building…" until the first status poll lands.
+      // Optimistically reflect "building" until the first status poll lands, so
+      // the indicator flips immediately and the action button hides. The real
+      // run state replaces this on the next poll (kicked off right below).
       if (mountedRef.current) {
-        setBuild({ status: 'queued', conclusion: null, html_url: null, startedAt: null })
+        setSync((prev) =>
+          prev
+            ? { ...prev, building: true }
+            : {
+                pendingCount: 0,
+                lastPublishedAt: null,
+                lastSuccessfulBuildAt: null,
+                currentRun: null,
+                inSync: false,
+                building: true,
+              },
+        )
+        wasBuildingRef.current = true
       }
       clearPoll()
       pollErrorsRef.current = 0 // fresh publish → fresh retry budget
-      void pollStatus()
+      pollFnRef.current() // poll now; it reschedules on the FAST cadence
     } catch (err) {
       if (mountedRef.current) setActionError((err as Error).message)
     } finally {
       if (mountedRef.current) setPublishing(false)
     }
-  }, [clearPoll, pollStatus])
+  }, [clearPoll])
 
-  const running = isRunning(build) || publishing
-  const hasPending = (pending?.count ?? 0) > 0
-  // "Publish to site" pushes the CURRENT published CMS state to the static site;
-  // that is independent of whether unpublished drafts exist. Gating it on drafts
-  // wrongly disabled the button after a native Payload "Publish changes" (drafts
-  // → 0), leaving the site unable to be rebuilt. So only a running build blocks
-  // it — publishing is idempotent and always available (any pending drafts are
-  // still promoted as a bonus, same as before).
-  const buttonDisabled = running
+  const pendingCount = sync?.pendingCount ?? 0
+  const hasPending = pendingCount > 0
+  const building = sync?.building ?? false
+  const inSync = sync?.inSync ?? false
 
-  // A single token naming the visible build-status branch (the status panel is a
-  // wrapper carrying `data-status`; <Banner> can't, so the wrapper owns it). Used
-  // by the e2e to assert each visible state deterministically.
-  const statusKey: 'idle' | 'building' | 'published' | 'failed' =
-    build == null || (build.status == null && build.conclusion == null)
-      ? 'idle'
-      : isRunning(build)
-        ? 'building'
-        : build.status === 'completed' && build.conclusion === 'success'
-          ? 'published'
-          : build.status === 'completed'
-            ? 'failed'
-            : 'idle'
+  // The action button decision table (see the file header). Exactly one of these
+  // is true at a time, and both map to the SAME POST /api/publish-site:
+  //   - hasPending          → primary batch publish ("Опубликовать N… на сайт");
+  //   - !hasPending,!inSync,!building → secondary manual rebuild ("Пересобрать сайт").
+  // In every other case (in-sync, or building) NO button renders — the e2e
+  // asserts the button is ABSENT from the DOM in the in-sync state.
+  const showBatchPublish = hasPending && !building
+  const showRebuild = !hasPending && !inSync && !building
+  const showActionButton = showBatchPublish || showRebuild
 
   return (
     <div
@@ -259,97 +367,114 @@ export const PublishPanel: React.FC = () => {
         background: 'var(--theme-elevation-50)',
       }}
     >
-      <h2 style={{ marginTop: 0 }}>Publish to site</h2>
+      <h2 style={{ marginTop: 0 }}>Публикация на сайт</h2>
 
-      {/* 1 — confirmation list of pending changes */}
-      <section data-testid="pending-changes" style={{ marginBottom: 'var(--base, 20px)' }}>
-        {pendingError ? (
-          <Banner type="error">Could not load pending changes: {pendingError}</Banner>
-        ) : pending == null ? (
-          <p style={{ color: 'var(--theme-elevation-400)' }}>Checking for pending changes…</p>
-        ) : !hasPending ? (
-          <div data-testid="nothing-to-publish">
-            <Banner type="default">
-              No unpublished drafts. Publishing rebuilds the live site from the current
-              published content.
-            </Banner>
+      {/* 1 — drift indicator (always visible once the first read lands). The
+          `data-status` lives on this wrapping <section> (Payload's <Banner> does
+          not forward data-* attributes), and exactly one branch renders, so the
+          wrapper's status is unambiguous for the e2e. */}
+      <section
+        data-testid="sync-status"
+        data-status={sync ? driftStatusOf(sync) : undefined}
+        style={{ marginBottom: 'var(--base, 20px)' }}
+      >
+        {syncError && (
+          <div style={{ marginBottom: sync ? 'var(--base, 20px)' : 0 }}>
+            <Banner type="error">Не удалось загрузить статус синхронизации: {syncError}</Banner>
           </div>
-        ) : (
-          <div>
-            <p style={{ marginTop: 0 }}>
-              <strong>{pending.count}</strong>{' '}
-              {pending.count === 1 ? 'change' : 'changes'} pending across the build surfaces:
+        )}
+        {sync == null ? (
+          syncError ? null : (
+            <p style={{ color: 'var(--theme-elevation-400)', margin: 0 }}>
+              Проверка синхронизации сайта…
             </p>
-            <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
-              {pending.pending.map((surface) => (
-                <li key={surface.surface} style={{ marginBottom: '0.5rem' }}>
-                  <strong>{surface.surface}</strong>{' '}
-                  <span style={{ color: 'var(--theme-elevation-400)' }}>({surface.type})</span>
-                  <ul style={{ margin: '0.25rem 0', paddingLeft: '1.25rem' }}>
-                    {surface.ids.map((id, i) => (
-                      <li key={String(id)} data-testid="pending-item">
-                        {surface.labels?.[i] ?? String(id)}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </div>
+          )
+        ) : sync.building ? (
+          <Banner type="info">
+            🔄 Идёт сборка…{' '}
+            {sync.currentRun?.html_url ? (
+              <a href={sync.currentRun.html_url} target="_blank" rel="noreferrer">
+                посмотреть запуск
+              </a>
+            ) : null}
+          </Banner>
+        ) : sync.inSync ? (
+          <Banner type="success">
+            ✅ Сайт совпадает с CMS (собрано {formatTime(sync.lastSuccessfulBuildAt)}).
+          </Banner>
+        ) : (
+          <Banner type="error">
+            ⚠️ Сайт отстал от CMS (опубликовано {formatTime(sync.lastPublishedAt)}, собрано{' '}
+            {formatTime(sync.lastSuccessfulBuildAt)}).{' '}
+            {runFailed(sync.currentRun) && sync.currentRun?.html_url ? (
+              <a href={sync.currentRun.html_url} target="_blank" rel="noreferrer">
+                лог сборки
+              </a>
+            ) : null}
+          </Banner>
         )}
       </section>
 
-      {/* 2 — the publish action (disabled while a build runs or nothing pending) */}
-      <Button
-        buttonStyle="primary"
-        onClick={() => void onPublish()}
-        disabled={buttonDisabled}
-        aria-label="Publish to site"
-      >
-        {running ? 'Building…' : 'Publish to site'}
-      </Button>
+      {/* 2 — confirm-list of pending changes (only when there are any). Same
+          rendering as before; reuses data-testid="pending-changes" /
+          "pending-item" that the e2e relies on. */}
+      {hasPending && (
+        <section data-testid="pending-changes" style={{ marginBottom: 'var(--base, 20px)' }}>
+          {pendingError ? (
+            <Banner type="error">Не удалось загрузить список изменений: {pendingError}</Banner>
+          ) : pending == null ? (
+            <p style={{ color: 'var(--theme-elevation-400)', margin: 0 }}>Загрузка изменений…</p>
+          ) : (
+            <div>
+              <p style={{ marginTop: 0 }}>
+                <strong>{pending.count}</strong> {pluralizeChanges(pending.count)} ожидают
+                публикации:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                {pending.pending.map((surface) => (
+                  <li key={surface.surface} style={{ marginBottom: '0.5rem' }}>
+                    <strong>{surface.surface}</strong>{' '}
+                    <span style={{ color: 'var(--theme-elevation-400)' }}>({surface.type})</span>
+                    <ul style={{ margin: '0.25rem 0', paddingLeft: '1.25rem' }}>
+                      {surface.ids.map((id, i) => (
+                        <li key={String(id)} data-testid="pending-item">
+                          {surface.labels?.[i] ?? String(id)}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 3 — the action button. Scope-correct and HIDDEN when there is nothing
+          to do (in-sync, or already building): in those cases NOTHING is in the
+          DOM, which the e2e asserts. Both visible variants POST /publish-site. */}
+      {showActionButton && (
+        <Button
+          buttonStyle={showBatchPublish ? 'primary' : 'secondary'}
+          onClick={() => void onPublish()}
+          disabled={publishing}
+          aria-label={
+            showBatchPublish
+              ? `Опубликовать ${pendingCount} ${pluralizeChanges(pendingCount)} на сайт`
+              : 'Пересобрать сайт'
+          }
+        >
+          {showBatchPublish
+            ? `Опубликовать ${pendingCount} ${pluralizeChanges(pendingCount)} на сайт`
+            : 'Пересобрать сайт'}
+        </Button>
+      )}
 
       {actionError && (
         <div style={{ marginTop: 'var(--base, 20px)' }}>
           <Banner type="error">{actionError}</Banner>
         </div>
       )}
-
-      {/* 3 — live status panel. `data-status` lives on the wrapping <section>
-          (Payload's <Banner> does not forward data-* attributes), and only one
-          branch renders at a time, so the wrapper's status is unambiguous. */}
-      <section
-        data-testid="build-status"
-        data-status={statusKey}
-        style={{ marginTop: 'var(--base, 20px)' }}
-      >
-        {build == null || (build.status == null && build.conclusion == null) ? (
-          <p style={{ color: 'var(--theme-elevation-400)', margin: 0 }}>
-            No site build has run yet.
-          </p>
-        ) : isRunning(build) ? (
-          <Banner type="info">
-            Building… {build.html_url ? <a href={build.html_url}>view run</a> : null}
-          </Banner>
-        ) : build.status === 'completed' && build.conclusion === 'success' ? (
-          <Banner type="success">
-            Published{build.startedAt ? ` (${formatTime(build.startedAt)})` : ''}.
-          </Banner>
-        ) : build.status === 'completed' ? (
-          <Banner type="error">
-            Build failed{build.conclusion ? ` (${build.conclusion})` : ''}.{' '}
-            {build.html_url ? (
-              <a href={build.html_url} target="_blank" rel="noreferrer">
-                View log
-              </a>
-            ) : null}
-          </Banner>
-        ) : (
-          <p style={{ color: 'var(--theme-elevation-400)', margin: 0 }}>
-            No site build has run yet.
-          </p>
-        )}
-      </section>
     </div>
   )
 }
