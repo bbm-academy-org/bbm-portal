@@ -52,7 +52,7 @@ const labelFor = (doc: Record<string, unknown>, titleField: string | undefined):
  * derivation (drafts-enabled collections/globals, in config order) but only
  * READS — it finds docs/globals whose latest version is `_status: 'draft'`.
  */
-const collectPending = async (req: PayloadRequest): Promise<PendingSurface[]> => {
+export const collectPending = async (req: PayloadRequest): Promise<PendingSurface[]> => {
   const { payload } = req
   const pending: PendingSurface[] = []
 
@@ -105,6 +105,17 @@ const collectPending = async (req: PayloadRequest): Promise<PendingSurface[]> =>
   }
 
   return pending
+}
+
+/**
+ * The drafts-derived pending-change count: the total number of docs/globals
+ * across every build surface whose latest version is a draft. This is the SAME
+ * number this endpoint's `count` reports, extracted so the consolidated
+ * `/api/site-sync-status` (#44) reuses ONE derivation rather than duplicating it.
+ */
+export const countPendingDrafts = async (req: PayloadRequest): Promise<number> => {
+  const pending = await collectPending(req)
+  return pending.reduce((n, p) => n + p.ids.length, 0)
 }
 
 /**

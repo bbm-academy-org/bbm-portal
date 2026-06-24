@@ -24,6 +24,7 @@ import { PageProjects } from './globals/PageProjects'
 import { publishSiteEndpoint } from './endpoints/publishSite'
 import { siteBuildStatusEndpoint } from './endpoints/siteBuildStatus'
 import { pendingChangesEndpoint } from './endpoints/pendingChanges'
+import { siteSyncStatusEndpoint } from './endpoints/siteSyncStatus'
 import { livePreview } from './admin/livePreview'
 
 const filename = fileURLToPath(import.meta.url)
@@ -85,7 +86,12 @@ export default buildConfig({
   // publish-site GitHub Actions run for the admin UI (#17).
   // Read-only confirm-list source (#17, Part A): GET /api/pending-changes —
   // lists the drafts publish-site would promote, for the admin button's preview.
-  endpoints: [publishSiteEndpoint, siteBuildStatusEndpoint, pendingChangesEndpoint],
+  endpoints: [
+    publishSiteEndpoint,
+    siteBuildStatusEndpoint,
+    pendingChangesEndpoint,
+    siteSyncStatusEndpoint,
+  ],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
