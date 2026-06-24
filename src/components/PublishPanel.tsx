@@ -156,6 +156,13 @@ export const PublishPanel: React.FC = () => {
   // the self-heal: tolerate transient errors, surface a hard notice only after a
   // sustained run — but never stop polling, so the panel recovers on its own.
   const pollErrorsRef = useRef(0)
+  // True WHILE a `pollStatus` read is in flight. A focus event or an onPublish
+  // can fire a poll while an earlier one is still mid-`await`; without this guard
+  // each would start a second concurrent fetch and each completion would call
+  // `schedule()`, spawning a SECOND timer chain (the first is leaked). Repeated
+  // focus events would fan that out unboundedly and hammer the GitHub-backed
+  // endpoint. So overlapping entrants early-return; the in-flight poll reschedules.
+  const isPollingRef = useRef(false)
   // Tracks the previous `building` value so we can detect a build COMPLETING
   // (building → not building) and refresh the pending list at that edge (the
   // surfaces that just shipped are now published, so the confirm-list shrinks).
@@ -189,6 +196,10 @@ export const PublishPanel: React.FC = () => {
   const pollFnRef = useRef<() => void>(() => {})
 
   const schedule = useCallback((building: boolean) => {
+    // Clear before set so the stored timer is always the ONLY live one — a stray
+    // earlier timer (e.g. one whose `pollStatus` was just superseded) can never be
+    // overwritten-and-leaked into a second concurrent chain.
+    if (pollRef.current) clearTimeout(pollRef.current)
     pollRef.current = setTimeout(
       () => pollFnRef.current(),
       building ? FAST_POLL_MS : SLOW_POLL_MS,
@@ -196,6 +207,12 @@ export const PublishPanel: React.FC = () => {
   }, [])
 
   const pollStatus = useCallback(async () => {
+    // Overlap guard: if a read is already in flight (a focus/publish fired while
+    // an earlier poll is mid-`await`), do NOT start a second concurrent fetch —
+    // the in-flight poll will reschedule on completion. Without this, two reads
+    // would each call `schedule()` and spawn two timer chains.
+    if (isPollingRef.current) return
+    isPollingRef.current = true
     try {
       const status = await fetchJSON<SiteSyncStatus>('/api/site-sync-status')
       if (!mountedRef.current) return
@@ -232,6 +249,10 @@ export const PublishPanel: React.FC = () => {
       }
       // Reschedule SLOW while erroring, regardless of the last known `building`.
       schedule(false)
+    } finally {
+      // Always release the in-flight flag, even on an early unmount return — so a
+      // remount / the next timer fire can poll again.
+      isPollingRef.current = false
     }
   }, [loadPending, schedule])
 
