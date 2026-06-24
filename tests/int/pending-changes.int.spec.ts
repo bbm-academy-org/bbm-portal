@@ -162,8 +162,6 @@ describe('GET /api/pending-changes (#17 Part A)', () => {
     let res = await pendingChangesHandler(reqWith({ id: 'admin' }))
     let body = (await res.json()) as PendingBody
     expect(teamSurface(body)?.ids).toContain(memberId)
-    const countBefore = body.count
-    expect(countBefore).toBe(body.pending.reduce((n, p) => n + p.ids.length, 0))
 
     // 2 — PUBLISH it (promote the draft to published — the publish-site path).
     await payload.update({
@@ -173,8 +171,12 @@ describe('GET /api/pending-changes (#17 Part A)', () => {
       draft: false,
     })
 
-    // 3 — the published id is GONE from the team surface, count decremented, and
-    // the `count === sum of all listed ids` invariant still holds.
+    // 3 — the published id is GONE from the team surface, and the
+    // `count === sum of all listed ids` invariant still holds. Correctness is
+    // self-anchored to OUR id (absent from the flattened pending set) plus the
+    // within-response invariant — never the absolute global count or a global
+    // delta, which a concurrent suite staging/publishing on the shared dev DB
+    // can perturb between the two reads.
     res = await pendingChangesHandler(reqWith({ id: 'admin' }))
     expect(res.status).toBe(200)
     body = (await res.json()) as PendingBody
@@ -182,6 +184,5 @@ describe('GET /api/pending-changes (#17 Part A)', () => {
     expect(teamSurface(body)?.ids ?? []).not.toContain(memberId)
     const totalIds = body.pending.reduce((n, p) => n + p.ids.length, 0)
     expect(body.count).toBe(totalIds)
-    expect(body.count).toBe(countBefore - 1)
   })
 })
