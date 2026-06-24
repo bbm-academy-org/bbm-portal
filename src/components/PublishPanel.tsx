@@ -128,12 +128,20 @@ const fetchJSON = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   return (await res.json()) as T
 }
 
-/** Format an ISO time defensively: null / invalid → an em dash, never a crash. */
+/**
+ * Format an ISO time as Russian `DD.MM.YYYY HH:MM:SS` (24-hour, local time, no
+ * AM/PM). Built from the date parts rather than `toLocaleString` so the format is
+ * locale-independent (an editor's US-locale browser must not flip it to M/D/YYYY
+ * with AM/PM). Defensive: null / invalid → an em dash, never a crash.
+ */
 const formatTime = (iso: string | null): string => {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  const date = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return `${date} ${time}`
 }
 
 /**
