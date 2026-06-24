@@ -62,19 +62,29 @@ export const maybeRebuildOnPublish = async ({
   // The batch endpoint (next task) sets this to fire a single build itself.
   if (!isPublishTransition || context?.skipSiteDispatch === true) return
 
-  // Stamp the publish first — it is true regardless of whether the build trigger
-  // succeeds, and it is what the drift indicator compares against.
-  await writeBuildState(req, { lastPublishedAt: new Date() })
-
+  // The ENTIRE best-effort body is guarded — this runs in afterChange, so ANY
+  // escaping rejection (a state write AND the dispatch) would roll back the user's
+  // publish, which is exactly what this hook must never do. The publish already
+  // happened; the drift indicator + manual rebuild are the safety net.
   try {
+    // Stamp the publish first — true regardless of whether the build trigger
+    // succeeds, and what the drift indicator compares against.
+    await writeBuildState(req, { lastPublishedAt: new Date() })
     await dispatchSiteBuild()
     await writeBuildState(req, { lastDispatchAt: new Date() })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     req.payload.logger.error(`Site build dispatch failed after publish: ${message}`)
     // Persist the error so the drift indicator can surface "publish OK, build not
-    // triggered" and offer a manual rebuild. Swallow — do NOT roll back the publish.
-    await writeBuildState(req, { lastDispatchError: message })
+    // triggered" and offer a manual rebuild. This recording write is ITSELF guarded
+    // — at the moment we most want to record the error, a failing write must not be
+    // the thing that converts a successful publish into a rolled-back one.
+    try {
+      await writeBuildState(req, { lastDispatchError: message })
+    } catch (writeErr) {
+      const writeMessage = writeErr instanceof Error ? writeErr.message : String(writeErr)
+      req.payload.logger.error(`Failed to record lastDispatchError after publish: ${writeMessage}`)
+    }
   }
 }
 

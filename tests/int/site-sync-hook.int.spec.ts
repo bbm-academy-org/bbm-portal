@@ -122,6 +122,29 @@ describe('maybeRebuildOnPublish core (#42)', () => {
     expect(buildStateWrites(updateGlobal)).toHaveLength(0)
   })
 
+  it('never throws even when a siteBuildState write rejects (DB blip)', async () => {
+    // The hook runs in afterChange — an escaping rejection rolls back the user's
+    // publish. EVERY state write must be guarded, not just the dispatch (here the
+    // very first write, lastPublishedAt, rejects).
+    const error = vi.fn()
+    const updateGlobal = vi.fn(async () => {
+      throw new Error('db blip writing siteBuildState')
+    })
+    const req = { payload: { updateGlobal, logger: { error } } } as never
+
+    await expect(
+      maybeRebuildOnPublish({
+        doc: { _status: 'published' },
+        previousDoc: { _status: 'draft' },
+        req,
+        context: {},
+      }),
+    ).resolves.toBeUndefined()
+
+    // The failing write was logged, never re-thrown.
+    expect(error).toHaveBeenCalled()
+  })
+
   it('swallows a dispatch failure: no throw, logs, records lastDispatchError', async () => {
     const { req, updateGlobal, error } = makeReq()
     dispatchSiteBuildMock.mockRejectedValueOnce(
