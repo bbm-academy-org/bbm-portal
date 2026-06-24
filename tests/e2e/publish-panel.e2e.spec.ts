@@ -102,6 +102,74 @@ test.describe('Publish to site panel — drift model (#46)', () => {
     await expect(page.locator('[data-testid="pending-changes"]')).toHaveCount(0)
   })
 
+  test('in sync BUT pending drafts → NO green banner; confirm-list + batch button', async () => {
+    // #50 — inSync is derived purely from lastPublishedAt vs the last successful
+    // build; it deliberately ignores unpublished drafts. So the site genuinely
+    // MATCHES what was last published (data-status stays "in-sync"), but the CMS
+    // now holds staged drafts the site does not reflect. The green ✅ "Сайт
+    // совпадает с CMS" banner would over-claim and contradict the pending list,
+    // so it must be SUPPRESSED while pendingCount > 0 — the pending list + batch
+    // publish button is the message. The building/behind banners are unaffected
+    // (covered by the other cases); only the green slot is gated on pendingCount.
+    await page.route('**/api/site-sync-status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          pendingCount: 2,
+          lastPublishedAt: '2026-06-24T08:00:00.000Z',
+          lastSuccessfulBuildAt: '2026-06-24T08:05:00.000Z', // build newer → inSync
+          currentRun: {
+            status: 'completed',
+            conclusion: 'success',
+            html_url: 'https://github.com/owner/repo/actions/runs/5',
+            startedAt: '2026-06-24T08:00:00.000Z',
+          },
+          inSync: true,
+          building: false,
+        }),
+      })
+    })
+    await page.route('**/api/pending-changes', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          pending: [
+            {
+              surface: 'team',
+              type: 'collection',
+              ids: ['eduard-ildarkhanov', 'jane-doe'],
+              labels: ['Eduard Ildarkhanov', 'Jane Doe'],
+            },
+          ],
+          count: 2,
+        }),
+      })
+    })
+
+    await page.goto('http://localhost:3000/admin')
+
+    const status = page.locator('[data-testid="sync-status"]')
+    // The published content IS live, so the underlying drift state is still
+    // "in-sync" — the data-status vocabulary is unchanged.
+    await expect(status).toHaveAttribute('data-status', 'in-sync')
+    // …but the green banner MUST be absent: pending drafts make "matches CMS" a
+    // misleading over-claim. This is the defining #50 assertion.
+    await expect(status.getByText(/✅ Сайт совпадает с CMS/)).toHaveCount(0)
+    // No building / behind banner leaked into the green slot either.
+    await expect(status.getByText(/Идёт сборка…/)).toHaveCount(0)
+    await expect(status.getByText(/Сайт отстал от CMS/)).toHaveCount(0)
+
+    // The pending confirm-list + the primary batch-publish button ARE the message.
+    const panel = page.locator('[data-testid="pending-changes"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('[data-testid="pending-item"]')).toHaveCount(2)
+    await expect(
+      page.getByRole('button', { name: 'Опубликовать 2 изменения на сайт' }),
+    ).toBeVisible()
+  })
+
   test('behind, nothing pending → ⚠️ both timestamps + "Пересобрать сайт" button', async () => {
     // !building && !inSync && pendingCount === 0 → a publish landed but its build
     // hasn't succeeded yet (here: the latest run FAILED). The panel shows BOTH

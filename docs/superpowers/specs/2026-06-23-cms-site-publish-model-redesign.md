@@ -59,7 +59,11 @@ Two entry points, split by **scope**; the dashboard is the honest status surface
 
 3. **Dashboard panel = honest drift indicator.** One of:
    - ✅ **Site matches CMS** — last successful build is newer than the last
-     publish. Shows build time. **No action button.**
+     publish. Shows build time. **No action button.** Shown **only when there are
+     no pending drafts** (`pendingCount == 0`): `inSync` is published-vs-built and
+     ignores unpublished drafts, so with staged drafts the green banner would
+     over-claim and contradict the pending list — it is suppressed and the pending
+     list + publish button is the message (#50).
    - 🔄 **Building…** — a run is active; links to the run.
    - ⚠️ **Site is behind CMS** — a publish happened after the last successful
      build (hook fired but the run is queued/failed, or a dispatch failed). Shows
