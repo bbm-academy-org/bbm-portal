@@ -8,7 +8,7 @@ import { siteSyncStatusHandler } from '@/endpoints/siteSyncStatus'
 import { pendingChangesHandler } from '@/endpoints/pendingChanges'
 
 /**
- * `GET /api/site-sync-status` (#44) — one consolidated drift read.
+ * `GET /api/site-sync-status` (#44, #52) — one consolidated drift read.
  *
  * A single endpoint that powers the whole publish admin panel so the UI is always
  * current with one fetch. It joins three sources:
@@ -18,9 +18,19 @@ import { pendingChangesHandler } from '@/endpoints/pendingChanges'
  *  - `lastPublishedAt` — from the `siteBuildState` global (the publish-side TRUTH);
  *  - `lastSuccessfulBuildAt` + `currentRun` — read off the GitHub Actions API.
  *
- * From those it derives `inSync` (last successful build is at-or-after the last
- * publish, or nothing has ever been published) and `building` (the current run is
- * queued / in_progress).
+ * From those it derives ONE authoritative `syncState` enum
+ * (`'in-sync' | 'building' | 'failed'`) by precedence (#52, replacing the old
+ * overloaded `inSync`/`building` booleans):
+ *
+ *  1. never published, OR last successful build >= last publish        → in-sync
+ *  2. current run queued / in_progress                                 → building
+ *  3. current run failed AND its startedAt >= last publish             → failed
+ *  4. else (published, no successful build yet, no failed run for it)  → building
+ *
+ * Step 4 is the registration gap: just published, build dispatched, run not yet
+ * visible — normal/transient, NOT a failure. Step 3's `startedAt >= lastPublishedAt`
+ * scopes failure to THIS publish, so re-publishing over an older failed run shows
+ * building (the new run is pending), not a stale red.
  *
  * These tests pin the contract (mirroring the #16 site-build-status suite —
  * getPayload harness, `fetch` mocked, env saved/restored). The GitHub API is
@@ -87,8 +97,7 @@ type SyncBody = {
     html_url: string | null
     startedAt: string | null
   } | null
-  inSync: boolean
-  building: boolean
+  syncState: 'in-sync' | 'building' | 'failed'
 }
 
 // Stamp `siteBuildState.lastPublishedAt` to a fixed time (the publish-side truth).
@@ -117,7 +126,7 @@ const stageTeamDraft = async (id: string): Promise<void> => {
   })
 }
 
-describe('GET /api/site-sync-status (#44)', () => {
+describe('GET /api/site-sync-status (#44, #52)', () => {
   beforeAll(async () => {
     payload = await getPayload({ config: await config })
   })
@@ -157,25 +166,19 @@ describe('GET /api/site-sync-status (#44)', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('is inSync when the last successful build is at-or-after the last publish', async () => {
+  // --- syncState matrix (#52) -------------------------------------------------
+
+  it('syncState=in-sync when the last successful build is at-or-after the last publish', async () => {
     await setLastPublishedAt('2026-06-20T10:00:00.000Z')
 
-    const fetchMock = sequencedFetch({
-      current: runsResponse({
-        status: 'completed',
-        conclusion: 'success',
-        html_url: 'https://github.com/x/y/actions/runs/1',
-        run_started_at: '2026-06-20T11:00:00Z',
-        updated_at: '2026-06-20T11:05:00Z',
-      }),
-      success: runsResponse({
-        status: 'completed',
-        conclusion: 'success',
-        html_url: 'https://github.com/x/y/actions/runs/1',
-        run_started_at: '2026-06-20T11:00:00Z',
-        updated_at: '2026-06-20T11:05:00Z',
-      }),
+    const successRun = runsResponse({
+      status: 'completed',
+      conclusion: 'success',
+      html_url: 'https://github.com/x/y/actions/runs/1',
+      run_started_at: '2026-06-20T11:00:00Z',
+      updated_at: '2026-06-20T11:05:00Z',
     })
+    const fetchMock = sequencedFetch({ current: successRun, success: successRun })
     vi.stubGlobal('fetch', fetchMock)
 
     const res = await siteSyncStatusHandler(reqWith({ id: 'admin' }))
@@ -184,11 +187,10 @@ describe('GET /api/site-sync-status (#44)', () => {
 
     expect(body.lastPublishedAt).toBe('2026-06-20T10:00:00.000Z')
     expect(body.lastSuccessfulBuildAt).toBe('2026-06-20T11:05:00Z')
-    expect(body.inSync).toBe(true)
-    expect(body.building).toBe(false)
+    expect(body.syncState).toBe('in-sync')
   })
 
-  it('is inSync when nothing has ever been published (lastPublishedAt null)', async () => {
+  it('syncState=in-sync when nothing has ever been published (lastPublishedAt null)', async () => {
     await setLastPublishedAt(null)
 
     const fetchMock = sequencedFetch({
@@ -204,40 +206,10 @@ describe('GET /api/site-sync-status (#44)', () => {
     expect(body.lastPublishedAt).toBeNull()
     expect(body.lastSuccessfulBuildAt).toBeNull()
     expect(body.currentRun).toBeNull()
-    expect(body.inSync).toBe(true)
-    expect(body.building).toBe(false)
+    expect(body.syncState).toBe('in-sync')
   })
 
-  it('is NOT inSync when a publish is newer than the last successful build', async () => {
-    await setLastPublishedAt('2026-06-20T12:00:00.000Z')
-
-    const fetchMock = sequencedFetch({
-      current: runsResponse({
-        status: 'completed',
-        conclusion: 'success',
-        html_url: 'https://github.com/x/y/actions/runs/2',
-        run_started_at: '2026-06-20T10:00:00Z',
-        updated_at: '2026-06-20T10:05:00Z',
-      }),
-      success: runsResponse({
-        status: 'completed',
-        conclusion: 'success',
-        html_url: 'https://github.com/x/y/actions/runs/2',
-        run_started_at: '2026-06-20T10:00:00Z',
-        updated_at: '2026-06-20T10:05:00Z',
-      }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    const res = await siteSyncStatusHandler(reqWith({ id: 'admin' }))
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as SyncBody
-
-    expect(body.lastSuccessfulBuildAt).toBe('2026-06-20T10:05:00Z')
-    expect(body.inSync).toBe(false)
-  })
-
-  it('is building when the current run is queued or in_progress', async () => {
+  it('syncState=building when the current run is queued or in_progress', async () => {
     await setLastPublishedAt('2026-06-20T12:00:00.000Z')
 
     const fetchMock = sequencedFetch({
@@ -262,9 +234,99 @@ describe('GET /api/site-sync-status (#44)', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as SyncBody
 
-    expect(body.building).toBe(true)
+    expect(body.syncState).toBe('building')
     expect(body.currentRun?.status).toBe('in_progress')
   })
+
+  it('syncState=building when published but NO run is visible yet (registration gap — #52 bug)', async () => {
+    // The bug: publishSite stamps lastPublishedAt only after a 204 dispatch, so a
+    // build IS in flight; GitHub just hasn't registered the run yet. Published >
+    // built with no run must read as building, NOT a failure (the red flash).
+    await setLastPublishedAt('2026-06-20T12:00:00.000Z')
+
+    const fetchMock = sequencedFetch({
+      current: emptyRunsResponse(),
+      success: emptyRunsResponse(),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await siteSyncStatusHandler(reqWith({ id: 'admin' }))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as SyncBody
+
+    expect(body.currentRun).toBeNull()
+    expect(body.lastSuccessfulBuildAt).toBeNull()
+    expect(body.syncState).toBe('building')
+  })
+
+  it('syncState=failed when a run failed AND its startedAt >= lastPublishedAt (this publish)', async () => {
+    const publishedAt = '2026-06-20T12:00:00.000Z'
+    await setLastPublishedAt(publishedAt)
+
+    const fetchMock = sequencedFetch({
+      // Current run is a terminal failure that started after this publish.
+      current: runsResponse({
+        status: 'completed',
+        conclusion: 'failure',
+        html_url: 'https://github.com/x/y/actions/runs/4',
+        run_started_at: '2026-06-20T12:01:00Z',
+        updated_at: '2026-06-20T12:05:00Z',
+      }),
+      // No successful build at-or-after the publish.
+      success: runsResponse({
+        status: 'completed',
+        conclusion: 'success',
+        html_url: 'https://github.com/x/y/actions/runs/2',
+        run_started_at: '2026-06-20T09:00:00Z',
+        updated_at: '2026-06-20T09:05:00Z',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await siteSyncStatusHandler(reqWith({ id: 'admin' }))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as SyncBody
+
+    expect(body.currentRun?.conclusion).toBe('failure')
+    expect(body.syncState).toBe('failed')
+  })
+
+  it('syncState=building (not failed) when a failed run STARTED BEFORE the latest publish', async () => {
+    // Re-published over an older failed run: the old failure's startedAt is before
+    // the new lastPublishedAt, and the new run is not visible yet. This is the
+    // registration gap for the new publish, NOT a stale failure → building.
+    const publishedAt = '2026-06-20T14:00:00.000Z'
+    await setLastPublishedAt(publishedAt)
+
+    const fetchMock = sequencedFetch({
+      // The current run is an OLD failure (started before the new publish).
+      current: runsResponse({
+        status: 'completed',
+        conclusion: 'failure',
+        html_url: 'https://github.com/x/y/actions/runs/4',
+        run_started_at: '2026-06-20T10:00:00Z',
+        updated_at: '2026-06-20T10:05:00Z',
+      }),
+      // No successful build at-or-after the publish.
+      success: runsResponse({
+        status: 'completed',
+        conclusion: 'success',
+        html_url: 'https://github.com/x/y/actions/runs/2',
+        run_started_at: '2026-06-20T09:00:00Z',
+        updated_at: '2026-06-20T09:05:00Z',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await siteSyncStatusHandler(reqWith({ id: 'admin' }))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as SyncBody
+
+    expect(body.currentRun?.conclusion).toBe('failure')
+    expect(body.syncState).toBe('building')
+  })
+
+  // --- shared contract --------------------------------------------------------
 
   it('reports the same pendingCount as /api/pending-changes for the same DB state', async () => {
     const memberId = await createTeamMember()
@@ -289,7 +351,7 @@ describe('GET /api/site-sync-status (#44)', () => {
     expect(syncBody.pendingCount).toBeGreaterThan(0)
   })
 
-  it('returns nulls + inSync true (200, not 500) when there is no run / no success', async () => {
+  it('returns a well-formed 200 with nulls (not 500) when there is no run / no success', async () => {
     await setLastPublishedAt('2026-06-20T12:00:00.000Z')
 
     const fetchMock = sequencedFetch({
@@ -304,10 +366,9 @@ describe('GET /api/site-sync-status (#44)', () => {
 
     expect(body.currentRun).toBeNull()
     expect(body.lastSuccessfulBuildAt).toBeNull()
-    // No successful build to compare against, but published — by the contract a
-    // null lastSuccessfulBuildAt means NOT inSync only when something was published.
-    expect(body.inSync).toBe(false)
-    expect(body.building).toBe(false)
+    // Published, no successful build, no failed run for this publish → the
+    // dispatched run is not yet visible (registration gap) → building, never 500.
+    expect(body.syncState).toBe('building')
   })
 
   it('fails with 500 when GitHub credentials are missing (no silent skip)', async () => {
