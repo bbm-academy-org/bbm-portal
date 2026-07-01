@@ -9,8 +9,11 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
+# Install dependencies based on the preferred package manager.
+# patches/ must be present before install: pnpm.patchedDependencies makes
+# `pnpm i --frozen-lockfile` fail (patch file not found) if it is missing.
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
+COPY patches ./patches
 RUN \
   if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
   elif [ -f package-lock.json ]; then npm ci; \
