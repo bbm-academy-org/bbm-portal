@@ -1,0 +1,4 @@
+# pnpm dependency patches must stay LF so they apply cleanly in the
+# Linux Docker build (COPY from a Windows working tree would otherwise
+# deliver CRLF and break `pnpm i --frozen-lockfile` patch application).
+patches/*.patch text eol=lf

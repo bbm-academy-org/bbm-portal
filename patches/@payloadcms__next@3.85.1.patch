@@ -1,0 +1,14 @@
+diff --git a/dist/views/Document/getVersions.js b/dist/views/Document/getVersions.js
+index 7ea74ce6f52ab9f7afe53079efae33af9fbda77e..cc64e4b3279045138146e36807e89a4ecaa1f072 100644
+--- a/dist/views/Document/getVersions.js
++++ b/dist/views/Document/getVersions.js
+@@ -164,7 +164,8 @@ export const getVersions = async ({
+           depth: 0,
+           locale,
+           select: {
+-            updatedAt: true
++            updatedAt: true,
++            _status: true
+           },
+           user
+         });

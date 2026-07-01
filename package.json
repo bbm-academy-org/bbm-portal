@@ -80,6 +80,9 @@
       "sharp",
       "esbuild",
       "unrs-resolver"
-    ]
+    ],
+    "patchedDependencies": {
+      "@payloadcms/next@3.85.1": "patches/@payloadcms__next@3.85.1.patch"
+    }
   }
 }
