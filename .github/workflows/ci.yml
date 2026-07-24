@@ -26,3 +26,10 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      # ADR-002: machine-enforced module boundaries of the modular monolith
+      - name: Module boundaries (dependency-cruiser)
+        run: pnpm boundaries
+
+      - name: Unit tests
+        run: pnpm exec vitest run --config ./vitest.config.mts tests/unit

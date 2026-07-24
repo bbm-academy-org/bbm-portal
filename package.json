@@ -15,6 +15,7 @@
     "generate:importmap": "cross-env NODE_OPTIONS=--no-deprecation payload generate:importmap",
     "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
     "lint": "cross-env NODE_OPTIONS=--no-deprecation eslint .",
+    "boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "premigrate": "node scripts/require-node.mjs",
     "migrate": "cross-env NODE_OPTIONS=--no-deprecation payload migrate",
     "premigrate:create": "node scripts/require-node.mjs",
@@ -53,7 +54,8 @@
     "payload": "3.85.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "sharp": "0.34.2"
+    "sharp": "0.34.2",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",
@@ -62,6 +64,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.5.2",
+    "dependency-cruiser": "^18.1.0",
     "eslint": "^9.16.0",
     "eslint-config-next": "16.2.6",
     "jsdom": "28.0.0",

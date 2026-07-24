@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
-    include: ['tests/int/**/*.int.spec.ts'],
+    include: ['tests/int/**/*.int.spec.ts', 'tests/unit/**/*.spec.ts'],
     // int suites share one dev DB (:5444) and a singleton `siteBuildState`
     // global, so cross-file parallelism makes them order-dependent (#48): a
     // suite staging/publishing drafts or stamping the global between another

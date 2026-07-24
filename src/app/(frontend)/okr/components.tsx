@@ -1,0 +1,194 @@
+import React from 'react'
+import { TEAM } from '@/lib/okr'
+import type { Health, OkrAction, OkrKr, OkrObjective } from '@/lib/okr'
+
+/**
+ * Server-rendered pieces of the OKR dashboard, ported from the static
+ * prototype (deploy/index.html). KR expansion is native <details>/<summary> —
+ * the page ships zero client JS.
+ */
+
+export const HEALTH_META: Record<Health, { fill: string; bg: string; ink: string; dot: string; label: string }> = {
+  on: { fill: 'var(--accent)', bg: 'var(--status-pos-bg)', ink: 'var(--status-pos-ink)', dot: 'var(--status-pos-dot)', label: 'в графике' },
+  risk: { fill: '#e0a100', bg: 'var(--status-warn-bg)', ink: 'var(--status-warn-ink)', dot: 'var(--status-warn-dot)', label: 'под риском' },
+  behind: { fill: '#c25e00', bg: '#f7dfb8', ink: '#6e4400', dot: '#c25e00', label: 'отстаём' },
+  undef: { fill: 'var(--ink-3)', bg: 'var(--status-neutral-bg)', ink: 'var(--status-neutral-ink)', dot: 'var(--status-neutral-dot)', label: 'не определено' },
+  q4: { fill: 'var(--accent-2)', bg: 'var(--accent-2-soft)', ink: 'var(--accent-2-ink)', dot: 'var(--accent-2)', label: 'цель на IV квартал' },
+}
+
+export function Badge({ health, text, small }: { health: Health; text?: string; small?: boolean }) {
+  const m = HEALTH_META[health]
+  return (
+    <span className={`okr-badge${small ? ' okr-kr__badge' : ''}`} style={{ background: m.bg, color: m.ink }}>
+      <i style={{ background: m.dot }} />
+      {text ?? m.label}
+    </span>
+  )
+}
+
+export function Bar({ pct, color, variant }: { pct: number | null; color: string; variant: 'hero' | 'card' | 'mini' | 'act' }) {
+  const width = pct == null ? 0 : Math.round(pct * 10) / 10
+  return (
+    <div className={`okr-bar okr-bar--${variant}`}>
+      {width > 0 && <div className="okr-bar__fill" style={{ width: `${width}%`, background: color }} />}
+    </div>
+  )
+}
+
+function LeadChip({ leadId }: { leadId: string | null }) {
+  const member = leadId ? TEAM[leadId] : undefined
+  if (!member) return null
+  return (
+    <span className="okr-av" title={`${member.name} · ${member.role}`}>
+      {member.initials}
+    </span>
+  )
+}
+
+function ActionRow({ action }: { action: OkrAction }) {
+  const pct = action.total > 0 ? (action.done / action.total) * 100 : null
+  return (
+    <div className="okr-act">
+      <span className="okr-act__t">
+        <a href={action.planeUrl} target="_blank" rel="noopener noreferrer">
+          {action.title}
+        </a>
+      </span>
+      {action.total > 0 ? (
+        <>
+          <span className="okr-act__c">
+            {action.done}/{action.total}
+          </span>
+          <span className="okr-act__bar">
+            <Bar pct={pct} color="var(--accent)" variant="act" />
+          </span>
+        </>
+      ) : (
+        // A childless action enters the KR denominator with its own state (FR-2).
+        <span
+          className={`okr-act__state ${action.stateGroup === 'completed' ? 'okr-act__state--done' : 'okr-act__state--open'}`}
+        >
+          {action.stateGroup === 'completed' ? '✓ готово' : '○ в работе'}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function KrRight({ kr }: { kr: OkrKr }) {
+  if (kr.q4) return <Badge health="q4" small />
+  if (kr.note) return <Badge health="undef" text={kr.note} small />
+  if (kr.pct == null) return <Badge health="undef" small />
+  const m = HEALTH_META[kr.health]
+  const value =
+    kr.pctSource === 'metric' && kr.metric
+      ? `${kr.metric.current} / ${kr.metric.target}`
+      : `${Math.round(kr.pct)}%`
+  return (
+    <>
+      <span className="okr-kr__v">{value}</span>
+      <span className="okr-kr__bar">
+        <Bar pct={kr.pct} color={m.fill} variant="mini" />
+      </span>
+    </>
+  )
+}
+
+export function KrRow({ kr }: { kr: OkrKr }) {
+  // «подготовка d/t» when a metric-KR runs in execution mode; plain d/t for execution-KRs.
+  const counter =
+    kr.counts && kr.note
+      ? `подготовка ${kr.counts.done}/${kr.counts.total}`
+      : kr.counts && kr.pctSource === 'execution'
+        ? `${kr.counts.done}/${kr.counts.total}`
+        : null
+
+  const head = (
+    <>
+      <span className="okr-kr__chev" style={kr.actions.length === 0 ? { visibility: 'hidden' } : undefined}>
+        ›
+      </span>
+      <span className="okr-kr__t">
+        <a href={kr.planeUrl} target="_blank" rel="noopener noreferrer">
+          {kr.title}
+        </a>
+      </span>
+      <LeadChip leadId={kr.leadId} />
+      {counter && <span className="okr-kr__n">{counter}</span>}
+      <KrRight kr={kr} />
+    </>
+  )
+
+  if (kr.actions.length === 0) {
+    return (
+      <div className="okr-kr">
+        <div className="okr-kr__head">{head}</div>
+      </div>
+    )
+  }
+  return (
+    <details className="okr-kr">
+      <summary className="okr-kr__head">{head}</summary>
+      <div className="okr-acts__in">
+        {kr.actions.map((a) => (
+          <ActionRow key={a.id} action={a} />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+export function ObjectiveCard({ objective, wide }: { objective: OkrObjective; wide?: boolean }) {
+  const missionClass =
+    objective.mission === 'social' ? 'okr-card--soc' : objective.mission === 'business' ? 'okr-card--biz' : ''
+
+  if (objective.krs.length === 0) {
+    return (
+      <article className={`okr-card okr-card--soon ${missionClass}`}>
+        <div className="okr-card__head">
+          <div className="okr-card__row">
+            <Badge health="undef" text={objective.note ?? 'KR не заданы'} />
+          </div>
+          <h2 className="okr-card__t" style={{ marginBottom: 0 }}>
+            <a href={objective.planeUrl} target="_blank" rel="noopener noreferrer">
+              {objective.title}
+            </a>
+          </h2>
+          <p className="okr-soon-note">
+            Key Results ещё не сформулированы. Objective не входит в общий прогресс цели.
+          </p>
+        </div>
+      </article>
+    )
+  }
+
+  const m = HEALTH_META[objective.health]
+  return (
+    <article className={`okr-card ${missionClass}`}>
+      <div className="okr-card__head">
+        <div className="okr-card__row">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+            {wide && <span className="okr-tag">На стыке обеих миссий</span>}
+            <Badge health={objective.health} />
+          </span>
+        </div>
+        <h2 className="okr-card__t">
+          <a href={objective.planeUrl} target="_blank" rel="noopener noreferrer">
+            {objective.title}
+          </a>
+        </h2>
+        {objective.pct != null && (
+          <div className="okr-card__prog">
+            <Bar pct={objective.pct} color={m.fill} variant="card" />
+            <span className="okr-card__pct">{Math.round(objective.pct)}%</span>
+          </div>
+        )}
+      </div>
+      <div className="okr-card__body">
+        {objective.krs.map((kr) => (
+          <KrRow key={kr.krId} kr={kr} />
+        ))}
+      </div>
+    </article>
+  )
+}
