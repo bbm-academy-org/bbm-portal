@@ -1,12 +1,16 @@
 {
-  "version": 1,
+  "version": 2,
   "generatedAt": "2026-06-22",
-  "lastAuditAt": "2026-06-22",
+  "lastAuditAt": "2026-07-24",
   "foldedThemes": [
     "task-hygiene:wrong-tracker",
     "no-live-verify",
     "reinvent-wheel:plane-cli",
-    "other:over-engineering"
+    "other:over-engineering",
+    "orient-before-acting",
+    "conclude-from-nearest-artifact",
+    "acceptance-screenshot-not-stand",
+    "handoff-fidelity"
   ],
   "tracker": "github+plane",
   "slug": "C--Users-sidor-repos-bbm-portal",
