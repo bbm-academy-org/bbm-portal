@@ -56,6 +56,12 @@ node ~/.claude/skills/wrap-init/tools/transcripts.mjs --slug C--Users-sidor-repo
 It returns, per `retro-method.md`: (1) an **understanding-check**, (2) the
 **findings array** in the schema, (3) a **handoff-seed**. It edits nothing.
 
+The brief MUST include a **scope-vs-actions check**: did the session's actions
+stay inside its authorized scope? Compare what the owner sanctioned for THIS
+session against what actually happened; an overrun is a finding even if the work
+itself was good. _(symptom: «в этой сессии мы должны были только задачи
+нарезать» — а сессия автономно дошла до merge PR по непроверенному handoff.)_
+
 ## Phase 2 — propose concrete diffs (STOP for approval)
 
 Present the understanding-check first (owner confirms/corrects). Then a compact
@@ -89,6 +95,20 @@ file deferred/stale work. Auto-apply safe cleanups; confirm consequential ones.
 Invoke the global `handoff-prompt` skill; note "instructions updated this session:
 <one-line summary>" so the next session starts under the new rules.
 
+Before emitting, gate the handoff text itself (`handoff-prompt` is global —
+post-process its output here, never edit the skill):
+
+- **Unvalidated assumptions → explicit list.** Anything the handoff asserts that
+  the owner did not confirm in-session (domains, scope decisions, "already
+  agreed" claims) goes into a `Confirm before acting:` list at the top, not into
+  the narrative as fact. _(symptom: handoff carried «портал живёт на
+  cms.bbm.academy» из Caddyfile — «откуда вообще такой контекст? Я не помню
+  согласования».)_
+- **Build+merge scope → owner checkpoint first.** If the handoff authorizes
+  implementation through merge, prepend: «чекпойнт с владельцем до начала
+  имплементации — handoff ≠ согласие владельца на объём». _(symptom: следующая
+  сессия дошла до merge по ошибочному handoff без единого чекпойнта.)_
+
 ## Project gotchas
 
 - **Two trackers, by domain — do not default to one.** **Code/dev** work for this
@@ -111,7 +131,18 @@ Invoke the global `handoff-prompt` skill; note "instructions updated this sessio
 - **"Done" = verified on the surface the owner sees (prod), not just the dev DB.**
   For seeds/deploys, hit the prod URL (e.g. `cms.bbm.academy`) before reporting
   done — «мы же не локально работем». _(symptom: «А где? я всё ещё вижу пустой
-  Payload CMS» — dev DB seeded, prod empty.)_
+  Payload CMS» — dev DB seeded, prod empty.)_ **And a screenshot is never the
+  acceptance**: a screenshot/localhost render is evidence for the agent, not the
+  hand-off proof — a product artifact is delivered only when the owner can reach
+  it on a real stand. _(symptom: «А мне не нужен скриншот — дай мне реальный
+  стенд, где посмотреть. Что за странный метод сдачи-приёмки?».)_
+- **A deploy config / task text is NOT an owner decision.** Never assert a
+  domain, scope, or "already agreed" claim by extrapolating from a Caddyfile,
+  env, repo layout, or the nearest task description; if no owner-confirmed
+  source exists, flag it as an open question and gather the full context the
+  owner named before concluding. _(symptoms: «откуда вообще такой контекст? Я не
+  помню согласования этого домена под внутренние приложения»; «я попросил
+  сначала собрать весь контекст, а не просто посмотреть в текст задачи».)_
 - **Owner is a non-developer working through agents.** Don't escalate an
   engineer-internal nicety (e.g. seed-code reproducibility) into an owner decision;
   separate genuine blockers from internal follow-ups. _(symptom: a raised
