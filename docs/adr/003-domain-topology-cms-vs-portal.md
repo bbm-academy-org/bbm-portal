@@ -4,7 +4,7 @@
 **Date:** 2026-07-24
 **Decider:** Anton Sidorov (owner)
 **Prepared by:** Claude (domain-topology recon after the `/okr` near-leak, issue #63 item 2)
-**Related:** ADR-002 (repository & module strategy — modular monolith), issue #63 (post-#61 remediation), #60 (P3 prod: `portal.bbm.academy` DNS + Caddy), #59 (Zitadel OIDC gate), PR #64 (reverted per-route guard), PR #67 (`/okr` unrouted), BBMP-129 milestone
+**Related:** ADR-002 (repository & module strategy — modular monolith), issue #63 (post-#61 remediation), #60 (P3 prod: `portal.bbm.academy` DNS + Caddy), #59 (Zitadel OIDC gate), PR #64 (per-route guard, since reverted), PR #67 (`/okr` unrouted), BBMP-129 milestone
 
 ## Context
 
@@ -44,23 +44,33 @@ A single `middleware.ts` inspects the request `Host` header and the pathname, an
 
 This is a **positive** check ("is this path allowed on this host?"), not a negative one ("is this path forbidden?"). That is the whole point: default-deny means a forgotten module fails **closed** (404), not open.
 
-**Layer 2 — Caddy per-host site blocks (defense in depth).**
-`deploy/Caddyfile` already holds one site block per host. The blocks stay the second layer: even if a bug slips past middleware, the CMS host block should not forward platform paths to the app. This layer is coarse (host-level proxy scoping), the in-process middleware is the fine-grained authority. Two independent layers means a single mistake in either does not produce a leak.
+**Layer 2 — Caddy per-host site blocks (best-effort defense in depth).**
+`deploy/Caddyfile` already holds one site block per host. Be honest about the limit: **host-level scoping alone cannot stop platform paths on the CMS host** — one app serves every path, so `reverse_proxy app:3000` inside the `cms.bbm.academy` block forwards `/okr` just as readily as `/admin`. For Layer 2 to actually block anything, the CMS site block needs its **own path handling** (a matcher that 404s non-CMS paths before `reverse_proxy`) kept consistent with the middleware allowlist — which reintroduces a second place to keep in sync. This ADR therefore scopes Layer 2 as **best-effort defense-in-depth whose exact form is decided at P3 implementation** (#60): either a host-block path matcher mirroring the allowlist, or an accepted "middleware is the sole enforcement, Caddy stays coarse" posture. Layer 1 (in-process middleware) is the authoritative, machine-checkable enforcement regardless; Layer 2 is a second net, not the primary guarantee.
 
 ### 3. How platform routes mount (and how `/okr` returns in P3)
 
-Platform modules mount under a **dedicated route group / path prefix** so that "the platform surface" is one contiguous, allowlistable thing rather than routes scattered across the tree. The concrete prefix is a **proposal — «предложение, требует решения владельца»**: candidates are a bare top-level path (`/okr`, `/…` per module, with the *route group* — e.g. `src/app/(platform)/…` — being the allowlist unit) versus a shared prefix (`/app/okr`, `/p/okr`). The route-group approach (`(platform)` segment, URL-invisible) is the recommended default because it makes the allowlist a single filesystem boundary the middleware can key on, while keeping clean top-level URLs. Final path shape is deferred to P3 (#60) and owner decision.
+Two mechanisms are involved here, and they must not be conflated — a route group is **not** a URL prefix:
 
-`/okr` re-mounts in P3 by adding a `page.tsx` (and layout) under that platform route group that renders the already-preserved `src/modules/okr/view/` components — no view rewrite, just a re-wire. The moment it mounts, it is:
-1. reachable only on `portal.bbm.academy` (middleware §2 default-deny keeps it 404 on the CMS host automatically — **no new guard rule**), and
-2. behind the Zitadel OIDC gate (#59).
+- **(a) The middleware host-allowlist keys on the *visible URL*.** Next middleware sees `request.nextUrl.pathname`, from which App Router route-group segments (the `(…)` folders) are **already stripped** — they never appear in the URL. So the allowlist can only match on real, visible path segments. What the platform surface's visible URL shape is therefore becomes a genuine decision, marked **«предложение, требует решения владельца»**:
+  - **Shared prefix (`/p/*`, or `/app/*`):** every module lives under one visible prefix; the middleware allowlist is a **single entry forever** (`allow /p/* on portal, else 404`), and no per-module wiring is ever needed. Cost: URLs carry a prefix (`portal.bbm.academy/p/okr`).
+  - **Clean top-level URLs (`/okr`, `/reviews`, …):** nicer URLs, but the middleware allowlist must **enumerate every module's top-level prefix** and gain a new entry with each module — reintroducing exactly the "remember to add an entry" burden default-deny exists to eliminate (though failing *closed*, a forgotten entry 404s a real module rather than leaking one — a strictly safer failure than the rejected blocklist, but still manual).
+
+  Recommendation: **shared prefix**, precisely because it makes the allowlist O(1) and self-maintaining. Final choice deferred to P3 (#60) and owner.
+
+- **(b) The `(platform)` route group is a *code* boundary, not a routing/allowlist mechanism.** Its role is to host the **shared OIDC `layout.tsx`** (and any shared platform chrome) so every platform page inherits the Zitadel gate (#59) and shared shell from one place. It is invisible to the URL and to middleware; it does not and cannot participate in the host-allowlist. Both the shared-prefix and clean-URL options above can sit inside a `(platform)` group — the group governs *code layout and the auth layout boundary*, the visible prefix governs *the allowlist*.
+
+`/okr` re-mounts in P3 by adding a `page.tsx` under the `(platform)` group (at the visible prefix chosen in §3(a)) that renders the already-preserved `src/modules/okr/view/` components — no view rewrite, just a re-wire. The moment it mounts, it is:
+1. **404 on the CMS host automatically** — the cms allowlist never contains a platform surface, so no new *deny* rule is ever added for the module (this holds under either §3(a) option); and
+2. behind the Zitadel OIDC gate (#59), inherited from the `(platform)` group's shared `layout.tsx` (§3(b)).
+
+(Under the clean-URL §3(a) option the module additionally needs its top-level prefix added to the *portal* allowlist; under the shared-prefix option even that is unnecessary. Either way the CMS host stays protected with no per-module action.)
 
 The dependency-cruiser boundary (ADR-002) that already isolates `src/modules/okr` from CMS internals stays in force through the re-mount.
 
 ## Consequences
 
 - **Leaks fail closed, not open.** Adding a future platform module requires *no* change to any blocklist; forgetting the host-allowlist wiring produces a 404, not a public page. The `/okr` incident class cannot recur by omission.
-- **Two configs stay in sync by construction.** The host→surface intent lives in one middleware table and is mirrored (coarsely) in Caddy. Both must be updated when a genuinely new *host* appears — a rare, deliberate event (next: `portal.bbm.academy` at P3) — not on every new module.
+- **Host changes are rare and deliberate.** The authoritative host→surface intent lives in one middleware table; Caddy gains a site block per new *host*. Both change only when a genuinely new host appears (next: `portal.bbm.academy` at P3) — not on every new module. If §2 Layer 2 adopts a Caddy path matcher mirroring the allowlist, that is a second place to keep in sync — a cost weighed at P3 against keeping Caddy coarse and treating middleware as sole enforcement.
 - **P3 (#60) gains a concrete acceptance shape:** DNS + Caddy site block for `portal.bbm.academy`, middleware allowlist entry for the platform surface, `/okr` re-mounted under the route group, OIDC gate live. Owner acceptance = opening the real `portal.bbm.academy/okr` URL and signing in via Zitadel.
 - **Middleware is now a load-bearing security boundary,** so it warrants a test (a Host-matrix test: each host × {allowed path, foreign-surface path} → expected 200-ish / 404), added with the P3 wiring, restoring the coverage PR #67 removed with the reverted guard.
 - **Boundaries follow-up candidate (from PR #67 review):** `.dependency-cruiser.cjs`'s `cms-must-not-import-okr-internals` rule lists `app/\(payload\)` in its `from` set but **not** `app/(frontend)`. The CMS frontend route group can therefore import `src/modules/okr` internals without tripping the boundary check. Not fixed here (doc-only PR); flagged as a boundaries-hardening candidate to fold in when the platform route group lands in P3.
