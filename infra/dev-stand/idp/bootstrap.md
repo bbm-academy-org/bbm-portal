@@ -188,7 +188,7 @@ IP.
 - `~/.bbm-portal/idp-bootstrap-pat.txt` — the org-owner PAT (outside the synced dir).
 - `/var/lib/bbm-portal/idp-login-client.pat` — the PAT the login container mounts.
 - `~/.bbm-portal/CREDENTIALS.dev.txt` — human-readable summary: console admin login,
-  the `bbm-test` test-user login + temp password, client id/secret, project id.
+  the `bbm-test` test-user login + permanent password, client id/secret, project id.
 
 None of these are ever committed; the repo carries only `.env.example`
 placeholders.
