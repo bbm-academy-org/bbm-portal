@@ -62,6 +62,10 @@ If a task seems to require a framework/content-source/infra change, stop and con
 
 **Severity-gate before escalating a "security finding" to the owner.** The owner is a non-developer and cannot adjudicate an engineering tradeoff — a fake either/or just creates confusion. Before you write a finding up as a "gate" or fire an `AskUserQuestion`, classify the data at risk: **non-PII editorial/CMS content** (page drafts, copy, preview URLs) is **low** — state the industry-standard baseline (e.g. a public preview origin behind `noindex` + CSP `frame-ancestors` is normal) and **pick the architecturally-correct default yourself**. Escalate to the owner **only** when the data is PII/secret/embargoed, or there is a genuine either/or with no correct default.
 
+## OKR module (`/okr`) — first dynamic platform module
+
+**Anchor (BBMP-129 milestone):** PRD `../bbm/outputs/2026-07-22-okr-dashboard/2026-07-23-prd-plane-integration.md` · progress model §3 + Plane taxonomy §4 `../bbm/outputs/2026-07-22-okr-dashboard/okr-structure.md` · Plane structure cut `../bbm/outputs/2026-07-22-okr-dashboard/2026-07-23-update/plane-cut-spec.md` · tracking: GH #58 (P1 core, `BBMP-130`) → #59 (Zitadel OIDC gate, `BBMP-131`) → #60 (prod + Vercel retire, `BBMP-132`). Code: `src/lib/okr` + `src/app/(frontend)/okr` — reads self-hosted Plane (workspace `doctor-school`, projects DSG1–DSG5) read-only with a TTL cache; SSOT stays in Plane, the only module-owned facts are manual metric values (`metrics.yaml`). Module discipline per ADR-002: no imports from the CMS side (collections/globals/endpoints/payload config), enforced by dependency-cruiser in CI.
+
 ## Where to look first
 1. `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md` — the setup plan + accepted decisions + phase/session map.
 2. `docs/payload-collections-spec.md` — target Payload model, 1:1 with the site contract (the implementation reference for BBMP-28).

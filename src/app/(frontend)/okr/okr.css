@@ -1,0 +1,151 @@
+/* ============================================================================
+   OKR dashboard — прототип deploy/index.html (дизайн-система bbm.academy,
+   BOLD «ПОП» · палитра «Лагуна»), перенесённый в компоненты роута.
+   Токены заинлайнены из bbm-public-website/src/styles/tokens.css
+   (AA-затемнённые значения). Шрифты — next/font (см. layout.tsx).
+   ============================================================================ */
+.okr-root {
+  --paper: #eaf2f0;
+  --paper-2: #d9e9e5;
+  --surface: #ffffff;
+
+  --ink: #0e2a2c;
+  --ink-2: #3c5052;
+  --ink-3: #566a6c;
+
+  --accent: #15b0a6;
+  --accent-ink: #096b65;
+  --accent-soft: #cdedea;
+
+  --accent-2: #f0b429;
+  --accent-2-ink: #7d5a08;
+  --accent-2-soft: #f8eac4;
+
+  --status-pos-bg: #ddf2e4;
+  --status-pos-ink: #136b43;
+  --status-pos-dot: #1b9e5f;
+  --status-warn-bg: #fcebc8;
+  --status-warn-ink: #8a5a00;
+  --status-warn-dot: #e0a100;
+  --status-neutral-bg: #e2eae8;
+  --status-neutral-ink: #3c5052;
+  --status-neutral-dot: #6c8082;
+
+  --display-font: var(--font-unbounded), system-ui, sans-serif;
+  --body-font: var(--font-golos), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono-font: var(--font-plex-mono), ui-monospace, Menlo, monospace;
+  --display-tracking: -0.01em;
+  --t-overline: 700 12.5px/1.3 var(--body-font);
+  --tracking-overline: 0.05em;
+
+  --brd: 2.5px;
+  --rad: 20px;
+  --rad-sm: 13px;
+  --rad-pill: 999px;
+  --hard: 6px 6px 0 var(--ink);
+  --hard-sm: 4px 4px 0 var(--ink);
+  --gutter: 22px;
+
+  background: var(--paper);
+  font-family: var(--body-font);
+  color: var(--ink-2);
+  min-height: 100vh;
+}
+.okr-container{max-width:1360px;margin:0 auto;padding:0 32px}
+.okr-root a{color:inherit;text-decoration:none}
+
+/* ---- hero (ink band) ---- */
+.okr-hero{background:var(--ink);color:var(--paper);border-bottom:var(--brd) solid var(--ink);padding:40px 0 46px}
+.okr-hero__row{display:flex;justify-content:space-between;align-items:center;gap:20px}
+.okr-overline{font:var(--t-overline);letter-spacing:var(--tracking-overline);text-transform:uppercase;color:var(--accent)}
+.okr-hero__title{font:800 clamp(34px,4vw,50px)/1.05 var(--display-font);letter-spacing:var(--display-tracking);color:var(--paper);margin:14px 0 28px;text-wrap:balance}
+.okr-hero__prog{display:flex;align-items:center;gap:28px}
+.okr-hero__pct{font:500 64px/1 var(--mono-font);color:var(--accent);letter-spacing:-.03em}
+.okr-hero__meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px;margin-top:20px;font:600 13.5px var(--body-font);color:#b8ccc9}
+.okr-hero__meta .mono{font-family:var(--mono-font);font-weight:500;color:var(--paper)}
+.okr-legend{display:inline-flex;gap:16px;align-items:center;margin-left:auto;flex-wrap:wrap}
+.okr-legend span{display:inline-flex;align-items:center;gap:6px}
+.okr-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;border:1.5px solid var(--paper)}
+
+/* ---- stale / error banners (FR-7) ---- */
+.okr-banner{border:var(--brd) solid var(--ink);border-radius:var(--rad-sm);box-shadow:var(--hard-sm);padding:14px 18px;margin:26px 0 0;font:600 14px/1.5 var(--body-font)}
+.okr-banner--warn{background:var(--status-warn-bg);color:var(--status-warn-ink)}
+.okr-banner--error{background:#f7dfb8;color:#6e4400}
+
+/* ---- bars ---- */
+.okr-bar{position:relative;flex:1;background:var(--surface);border:var(--brd) solid var(--ink);border-radius:var(--rad-pill);overflow:hidden}
+.okr-bar__fill{position:absolute;top:0;left:0;bottom:0;border-right:var(--brd) solid var(--ink)}
+.okr-bar--hero{height:42px;background:rgba(234,242,240,.14);border-color:var(--paper);box-shadow:6px 6px 0 rgba(0,0,0,.35)}
+.okr-bar--hero .okr-bar__fill{border-right-color:var(--paper)}
+.okr-bar--card{height:14px;border-width:2px}
+.okr-bar--card .okr-bar__fill,.okr-bar--mini .okr-bar__fill,.okr-bar--act .okr-bar__fill{border-right-width:2px}
+.okr-bar--mini{height:9px;border-width:2px}
+.okr-bar--act{height:7px;border-width:1.5px}
+.okr-bar--act .okr-bar__fill{border-right-width:1.5px}
+
+/* ---- lanes ---- */
+.okr-main{padding:36px 0 72px}
+.okr-lanes{display:grid;grid-template-columns:1fr 1fr;gap:var(--gutter)}
+.okr-lane{display:flex;flex-direction:column;gap:var(--gutter)}
+.okr-lane__h{font:800 15px var(--display-font);letter-spacing:var(--display-tracking);color:var(--ink);border:var(--brd) solid var(--ink);border-radius:var(--rad-pill);padding:11px 18px;text-align:center;box-shadow:var(--hard-sm)}
+.okr-bridge{margin-top:var(--gutter)}
+@media (max-width:900px){.okr-lanes{grid-template-columns:1fr}}
+
+/* ---- objective card ---- */
+.okr-card{background:var(--surface);border:var(--brd) solid var(--ink);border-radius:var(--rad);box-shadow:var(--hard-sm);overflow:hidden;transition:transform .14s cubic-bezier(.3,.7,.4,1),box-shadow .14s}
+.okr-card:hover{transform:translate(-3px,-3px);box-shadow:var(--hard)}
+.okr-card--soon{background:transparent;border-style:dashed;box-shadow:none}
+.okr-card--soon:hover{transform:none;box-shadow:none}
+.okr-card__head{padding:18px 20px 20px;background:var(--paper-2)}
+.okr-card--soon .okr-card__head{background:transparent}
+.okr-card--soc:not(.okr-card--soon) .okr-card__head{background:var(--accent-soft)}
+.okr-card--biz:not(.okr-card--soon) .okr-card__head{background:var(--accent-2-soft)}
+.okr-card__row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.okr-card__t{font:800 18px/1.28 var(--display-font);letter-spacing:var(--display-tracking);color:var(--ink);margin:12px 0 16px;text-wrap:balance}
+.okr-card__t a:hover{color:var(--accent-ink)}
+.okr-card__prog{display:flex;align-items:center;gap:14px}
+.okr-card__pct{font:500 22px/1 var(--mono-font);color:var(--ink);min-width:60px;text-align:right}
+.okr-card__body{border-top:2px solid var(--ink);background:var(--surface);padding:4px 20px 8px}
+.okr-tag{font:700 11px var(--body-font);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;color:var(--ink-3)}
+.okr-soon-note{font:500 14px/1.5 var(--body-font);color:var(--ink-3);margin:12px 0 0}
+
+/* ---- badge ---- */
+.okr-badge{display:inline-flex;align-items:center;gap:7px;font:700 12.5px var(--body-font);padding:5px 12px;border:2px solid var(--ink);border-radius:var(--rad-pill);white-space:nowrap}
+.okr-badge i{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+
+/* ---- lead chip ---- */
+.okr-av{width:24px;height:24px;border-radius:50%;border:2px solid var(--ink);background:var(--accent-2-soft);color:var(--accent-2-ink);display:inline-flex;align-items:center;justify-content:center;font:700 9.5px var(--body-font);flex:0 0 auto}
+
+/* ---- KR rows (native details/summary — no client JS) ---- */
+.okr-kr{border-top:1.5px solid var(--paper-2)}
+.okr-kr:first-child{border-top:0}
+.okr-kr__head{display:flex;align-items:center;gap:10px;width:100%;padding:11px 0;font:inherit;text-align:left;color:inherit;border-radius:8px;list-style:none}
+.okr-kr__head::-webkit-details-marker{display:none}
+summary.okr-kr__head{cursor:pointer}
+summary.okr-kr__head:hover{background:var(--paper-2);margin:0 -8px;padding-inline:8px;width:calc(100% + 16px)}
+.okr-kr__chev{flex:0 0 12px;font:700 14px/1 var(--body-font);color:var(--ink-3);transition:transform .2s;transform:translateY(-1px)}
+details[open]>.okr-kr__chev,details[open]>summary .okr-kr__chev{transform:rotate(90deg)}
+.okr-kr__t{flex:1;font:600 13.5px/1.35 var(--body-font);color:var(--ink-2)}
+.okr-kr__t a:hover{color:var(--accent-ink)}
+.okr-kr__n{font:500 12px var(--mono-font);color:var(--ink-3);white-space:nowrap}
+.okr-kr__v{font:500 13.5px var(--mono-font);color:var(--ink);white-space:nowrap}
+.okr-kr__bar{width:88px;flex:0 0 auto;display:flex}
+.okr-kr__badge{font-size:11.5px;padding:4px 10px}
+
+/* ---- actions (expanded) ---- */
+.okr-acts__in{padding:2px 0 12px 22px;display:flex;flex-direction:column;gap:0}
+.okr-act{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1.5px dashed var(--paper-2)}
+.okr-act:first-child{border-top:0}
+.okr-act__t{flex:1;font:500 13px/1.35 var(--body-font);color:var(--ink-2)}
+.okr-act__t a:hover{color:var(--accent-ink)}
+.okr-act__c{font:500 12.5px var(--mono-font);color:var(--ink);white-space:nowrap}
+.okr-act__bar{width:64px;flex:0 0 auto;display:flex}
+.okr-act__state{font:700 12px var(--mono-font);white-space:nowrap}
+.okr-act__state--done{color:var(--status-pos-dot)}
+.okr-act__state--open{color:var(--ink-3)}
+
+/* ---- footer notes / warnings ---- */
+.okr-foot{margin-top:34px;font:500 12.5px/1.6 var(--body-font);color:var(--ink-3)}
+.okr-foot ul{margin:6px 0 0;padding-left:18px}
+
+@media (prefers-reduced-motion:reduce){.okr-root *{transition:none!important}}
