@@ -1,5 +1,5 @@
 # Local development database for the Payload CMS.
-# Decision #2 (see ../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md):
+# Decision #2 (see ../../../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md):
 # a DEDICATED Postgres database `cms` with its own role. `pnpm dev` on the host
 # connects to it via DATABASE_URL.
 #

@@ -2,7 +2,7 @@
 # Runs on the dedicated `portal-prod-tw` VPS (Timeweb ru-2, Zone RF) behind
 # Caddy with automatic Let's Encrypt TLS for https://cms.bbm.academy.
 #
-# Differences from the dev `docker-compose.yml` at repo root (do NOT merge them):
+# Differences from the dev `infra/dev-stand/compose.core.yml` (do NOT merge them):
 #   - Postgres port is NOT published to the host (DB reachable only on the
 #     internal compose network — prod hardening).
 #   - The app is built from the repo Dockerfile and fronted by Caddy; no host
