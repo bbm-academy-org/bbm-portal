@@ -59,7 +59,11 @@ your own.
 
 PR with `Closes #N` + the PR template (`.github/pull_request_template.md`). An independent review subagent (fresh
 context, read-only) posts a PR comment containing a
-`VERDICT: APPROVE | REQUEST_CHANGES` line. On REQUEST_CHANGES: address every
+`VERDICT: APPROVE | REQUEST_CHANGES` line. **The review is dispatched by the
+orchestrating lead, never by the implementer:** a review the implementer
+commissioned for its own PR does not satisfy this gate and is re-run by the
+lead. (2026-07-24: PR #72's implementer self-commissioned an "independent"
+review; the lead's own adversarial re-review was still required.) On REQUEST_CHANGES: address every
 point — fix it, or reject it with reasoning in the thread — then re-review,
 looping until APPROVE. Docs-only PRs may merge on green CI without the
 subagent. Decision context goes onto the PR as comments, proactively
@@ -71,7 +75,11 @@ An owner-visible change does NOT merge without the owner's "принято" on a
 LIVE stand. The showing is always a real URL the owner opens themselves:
 normally the preview stand; until it exists — the dev stand or a tunnel. A
 screenshot or localhost render is the agent's working evidence, never the
-showing. The stand stays up until the verdict; an unanswered design/visual
+showing. **Precondition for inviting the owner to any UI/auth flow: a green
+browser E2E pass (Playwright) of the acceptance scenarios first — curl + unit
+tests do not satisfy this.** (2026-07-24: the P2b invite nearly went out on
+curl evidence alone; the Playwright pre-pass caught a login-blocking IdP
+defect the owner would have hit — «Ты проверял через Playwright CLI?».) The stand stays up until the verdict; an unanswered design/visual
 question = merge stays blocked. Invisible changes (internals, refactoring,
 docs, backend without UI) skip this stage.
 
