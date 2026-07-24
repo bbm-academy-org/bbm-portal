@@ -12,7 +12,9 @@ const CMS_HOST = 'cms.bbm.academy'
  */
 export function isOkrBlockedOnHost(host: string | null | undefined, pathname: string): boolean {
   if (!host) return false
-  const hostname = host.split(':', 1)[0].trim().toLowerCase()
+  // Strip the port, then a single trailing dot so an absolute-FQDN Host
+  // (`cms.bbm.academy.`) can't slip past the exact-match guard.
+  const hostname = host.split(':', 1)[0].trim().toLowerCase().replace(/\.$/, '')
   if (hostname !== CMS_HOST) return false
   return pathname === '/okr' || pathname.startsWith('/okr/')
 }

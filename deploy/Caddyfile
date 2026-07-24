@@ -6,7 +6,8 @@ cms.bbm.academy {
 	# concerns ONLY. The /okr platform module is also blocked in Next middleware,
 	# but 404 it here too so a middleware regression can't expose it (no auth gate
 	# yet). Platform modules move to their own host once it is provisioned.
-	handle /okr /okr/* {
+	@okr path /okr /okr/*
+	handle @okr {
 		respond 404
 	}
 	reverse_proxy app:3000

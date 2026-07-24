@@ -13,6 +13,11 @@ describe('isOkrBlockedOnHost (middleware guard, #63)', () => {
     expect(isOkrBlockedOnHost('cms.bbm.academy:443', '/okr')).toBe(true)
   })
 
+  it('blocks an absolute-FQDN Host (trailing dot), with or without port', () => {
+    expect(isOkrBlockedOnHost('cms.bbm.academy.', '/okr')).toBe(true)
+    expect(isOkrBlockedOnHost('cms.bbm.academy.:443', '/okr')).toBe(true)
+  })
+
   it('passes non-/okr paths on the CMS host (admin, api, static)', () => {
     expect(isOkrBlockedOnHost('cms.bbm.academy', '/admin')).toBe(false)
     expect(isOkrBlockedOnHost('cms.bbm.academy', '/api/media/file/x.png')).toBe(false)
