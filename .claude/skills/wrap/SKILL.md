@@ -90,6 +90,11 @@ branch); reconcile **both** trackers (GitHub Issues for code work, Plane for org
 work — nothing stuck "In Progress" for finished work, results comment on close);
 file deferred/stale work. Auto-apply safe cleanups; confirm consequential ones.
 
+**DEBT.md sweep (mandatory, issue #65):** walk every line of `DEBT.md` — each
+is either fixed now, promoted to a GitHub issue, or explicitly written off in
+this wrap; lines without a return condition do not survive the sweep. (The
+same sweep also runs at every epic close.)
+
 ## Phase 5 — handoff
 
 Invoke the global `handoff-prompt` skill; note "instructions updated this session:
