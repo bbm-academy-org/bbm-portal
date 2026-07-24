@@ -80,19 +80,28 @@ If a task seems to require a framework/content-source/infra change, stop and con
 - Task workflow: on start → `In Progress`; on close → `Done` + a results comment (artifacts / what was done / what is unblocked).
 - Phases & session map are in the setup plan. **This repo is the home for Phase 2 (BBMP-26..30) and the blog milestone.** Phase 1 (BBMP-25) was bootstrapped from the `bbm` repo session.
 
-## Per-task workflow
+## Per-task workflow — task-cycle regulation (mandatory)
 
-1. Pick the next task from the **right** tracker (CLAUDE.md is authoritative): code/dev work → GitHub Issues (`gh issue list`); a strategic `BBMP-*` item → move the Plane task to `In Progress`.
-2. Branch: `git checkout -b <type>/<id>-<slug>` where `<id>` is the GitHub issue # for code/dev work or `bbmp<N>` for a Plane item (types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`).
-3. Implement — TDD where applicable. Conventional Commits.
-4. Open a PR against `main`; run autonomous code review; address every comment; loop until clean.
-5. Merge (squash, delete branch). Move the Plane task to `Done` + results comment.
+Every tracked task follows **`.claude/skills/task-cycle/SKILL.md`** (agreed in
+issue #65): issue → session plan → **owner's explicit "go"** (handoff / task
+text / config ≠ go) → implementation → independent review (`VERDICT:` on the
+PR) → live-stand acceptance for owner-visible changes (**blocks merge**) →
+autonomous merge (squash, delete branch) → close with a results comment +
+deviations line. Key sub-rules the skill carries:
+
+- **TDD — hard rule for platform-module code:** no production module code
+  without a failing test first (the CMS mirror stays covered by the site's
+  contract test).
+- **Spec gate:** a new platform module / new user-facing behavior needs a
+  light spec in `docs/specs/` approved by the owner BEFORE code — the "go" is
+  given on the spec.
+- Minor convention deviations land in `DEBT.md` (significant ones → issue).
 
 ## Code style
 - **TypeScript strict** — no `any` without a written justification.
 - Payload collections/globals live in `src/collections/` and `src/globals/`; keep one collection/global per file.
 - Mirror the contract field-for-field — when unsure about a field, read the seed JSON and `schemas.ts`, do not invent.
-- Conventional Commits, imperative mood; reference the Plane task (`Refs BBMP-N`).
+- Conventional Commits, imperative mood; reference the GitHub issue (`(#N)` in the subject or `Refs #N` — the PR carries `Closes #N`). `Refs BBMP-N` only when the task genuinely is a Plane item.
 - No comments narrating WHAT; comments only for non-obvious WHY.
 
 ## Dev quickstart

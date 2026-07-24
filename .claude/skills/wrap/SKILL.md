@@ -14,7 +14,7 @@ Shared method + finding schema:
 ## Hard rules (read before running)
 
 - **Project-local only.** Edits touch only this repo (`.claude/**`, `CLAUDE.md`,
-  `AGENTS.md`, `docs/**`) and the project memory dir
+  `AGENTS.md`, `DEBT.md`, `docs/**`) and the project memory dir
   `C:\Users\sidor\.claude\projects\C--Users-sidor-repos-bbm-portal\memory\`.
   Never edit global/plugin skills. `handoff-prompt` is global — invoke, never edit.
 - **No fabricated findings.** No symptom quote → no edit. A quiet session goes
@@ -89,6 +89,11 @@ Clean working tree; merge any green, reviewed PR per policy (squash, delete
 branch); reconcile **both** trackers (GitHub Issues for code work, Plane for org
 work — nothing stuck "In Progress" for finished work, results comment on close);
 file deferred/stale work. Auto-apply safe cleanups; confirm consequential ones.
+
+**DEBT.md sweep (mandatory, issue #65):** walk every line of `DEBT.md` — each
+is either fixed now, promoted to a GitHub issue, or explicitly written off in
+this wrap; lines without a return condition do not survive the sweep. (The
+same sweep also runs at every epic close.)
 
 ## Phase 5 — handoff
 
