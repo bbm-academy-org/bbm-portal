@@ -69,7 +69,7 @@ IDP_LOGIN_IMAGE=ghcr.io/zitadel/zitadel-login:v4.15.0
 IDP_LOGIN_PAT_FILE=/var/lib/bbm-portal/idp-login-client.pat
 IDP_BOOTSTRAP=1                                 # ONLY during the fresh init
 IDP_BOOTSTRAP_ADMIN_PASSWORD=<pick one>         # upper+lower+digit+symbol
-IDP_TEST_USER_PASSWORD=<pick one>               # for provision.sh, change-required
+IDP_TEST_USER_PASSWORD=<pick one>               # for provision.sh; set PERMANENT (see step 5)
 ```
 
 ## 2. Fresh init — mint the bootstrap machine user + PAT
@@ -132,8 +132,13 @@ web/OIDC application (`authorization_code` + `refresh_token`, BASIC auth, dev-mo
 http redirect URIs), the project-role assertion, a seed role, the Login V2 feature
 + baseUri, the `IAM_LOGIN_CLIENT` grant, closes public self-registration, and —
 when `IDP_TEST_USER_PASSWORD` is set — a human test user (`bbm-test`, email
-pre-verified, password change-required). Re-running converges; it never
-duplicates.
+pre-verified, password **permanent** / change NOT required). Re-running converges;
+it never duplicates.
+
+> **Why permanent, not change-required:** the Zitadel login-v2
+> `/ui/v2/login/password/change` screen is broken on this stand ("Could not get
+> the context of the user"), so a forced first-login change makes the gate
+> impossible to complete. The password is set permanent from the start.
 
 ```bash
 ssh truenas 'cd ~/bbm-portal-dev-stand/idp && \
@@ -187,7 +192,7 @@ IP.
 - `~/.bbm-portal/idp-bootstrap-pat.txt` — the org-owner PAT (outside the synced dir).
 - `/var/lib/bbm-portal/idp-login-client.pat` — the PAT the login container mounts.
 - `~/.bbm-portal/CREDENTIALS.dev.txt` — human-readable summary: console admin login,
-  the `bbm-test` test-user login + temp password, client id/secret, project id.
+  the `bbm-test` test-user login + permanent password, client id/secret, project id.
 
 None of these are ever committed; the repo carries only `.env.example`
 placeholders.

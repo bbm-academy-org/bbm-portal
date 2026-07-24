@@ -281,9 +281,12 @@ else
 fi
 
 # ── 7. ensure a human test user (only when IDP_TEST_USER_PASSWORD is set) ─────
-# Marked change-required so the owner sets their own password on first login. The
-# email is pre-verified so no mail delivery is needed (this stand has no SMTP).
-# Idempotent: search by username; if present, leave it untouched (no password reset).
+# Password set PERMANENT (changeRequired:false): the Zitadel login-v2
+# /ui/v2/login/password/change screen is broken on this stand ("Could not get the
+# context of the user"), so a forced first-login change makes login IMPOSSIBLE —
+# the owner can never complete the gate. The email is pre-verified so no mail
+# delivery is needed (this stand has no SMTP). Idempotent: search by username; if
+# present, leave it untouched (no password reset).
 if [[ -n "$TEST_PASSWORD" ]]; then
   TEST_UID="$(api POST /v2/users \
     "$(jq -nc --arg u "$TEST_USERNAME" '{queries:[{userNameQuery:{userName:$u,method:"TEXT_QUERY_METHOD_EQUALS"}}]}')" \
@@ -296,10 +299,10 @@ if [[ -n "$TEST_PASSWORD" ]]; then
          '{username:$u,
            profile:{givenName:"BBM", familyName:"Test"},
            email:{email:$e, isVerified:true},
-           password:{password:$p, changeRequired:true}}')" \
+           password:{password:$p, changeRequired:false}}')" \
       | jq -r '.userId // empty')"
     if [[ -n "$TEST_UID" ]]; then
-      echo "created human test user ${TEST_USERNAME} (${TEST_UID}); password change-required" >&2
+      echo "created human test user ${TEST_USERNAME} (${TEST_UID}); password permanent (change not required)" >&2
     else
       echo "WARN: could not create test user ${TEST_USERNAME}" >&2
     fi
