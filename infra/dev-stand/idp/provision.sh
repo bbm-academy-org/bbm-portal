@@ -41,8 +41,10 @@ PROJECT_NAME="${IDP_PROJECT_NAME:-bbm-portal-dev}"
 APP_NAME="${IDP_APP_NAME:-bbm-portal-dev}"
 # Redirect URIs: the app runs on the owner's dev machine (localhost:3000), NOT on
 # the Zitadel host — so the callback is localhost even on the truenas.local recipe.
-# Callback path convention inherited from ds-platform's BFF: /auth/callback.
-REDIRECT_URIS="${IDP_REDIRECT_URIS:-http://localhost:3000/auth/callback}"
+# P2b (#59) wires Auth.js (next-auth v5), whose default callback is
+# /api/auth/callback/zitadel; the historical /auth/callback (ds-platform BFF
+# convention) is kept registered for continuity. Both are registered by default.
+REDIRECT_URIS="${IDP_REDIRECT_URIS:-http://localhost:3000/api/auth/callback/zitadel,http://localhost:3000/auth/callback}"
 POST_LOGOUT_URIS="${IDP_POST_LOGOUT_URIS:-http://localhost:3000}"
 # Project roles to seed, comma-separated. `portal_admin` is a placeholder the P2b
 # gate can adopt or replace; projectRoleCheck stays OFF so login works without it.

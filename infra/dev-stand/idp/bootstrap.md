@@ -21,9 +21,10 @@ drop the `ssh truenas` prefix and the `sudo`.
 >
 > **Redirect URI is NOT the HOST.** The OIDC redirect URI points at the **app's
 > own callback**, and the app runs on your **dev machine**, so it is
-> `http://localhost:3000/auth/callback` even on the truenas.local recipe. A
-> `truenas.local` redirect URI is not registered and Zitadel's authorize returns
-> `400 invalid_request`.
+> `http://localhost:3000/api/auth/callback/zitadel` even on the truenas.local
+> recipe (the Auth.js/next-auth default the P2b gate wires; the historical
+> `/auth/callback` stays registered too). A `truenas.local` redirect URI is not
+> registered and Zitadel's authorize returns `400 invalid_request`.
 
 ---
 
@@ -161,12 +162,15 @@ The app (on the dev machine) reads these from its repo-root `.env`:
 | `IDP_CLIENT_ID` | provision.sh output | no |
 | `IDP_CLIENT_SECRET` | provision.sh output (on create) | **yes** |
 | `IDP_PROJECT_ID` | provision.sh output | no |
-| `IDP_REDIRECT_URI` | `http://localhost:3000/auth/callback` | no |
+| `IDP_REDIRECT_URI` | `http://localhost:3000/api/auth/callback/zitadel` | no |
+| `AUTH_SECRET` | `openssl rand -hex 32` (Auth.js session/JWT) | **yes** |
 | `IDP_SERVICE_TOKEN` | the `bbm-bootstrap` PAT | **yes** |
 
-**Callback path convention: `/auth/callback`** on `http://localhost:3000` (ported
-from the ds-platform BFF convention). If P2b wires a different callback route,
-re-run `provision.sh` with `IDP_REDIRECT_URIS=<new uri>` to register it.
+**Callback path: `/api/auth/callback/zitadel`** on `http://localhost:3000` — the
+Auth.js/next-auth v5 default the P2b gate (#59) wires. `provision.sh` registers it
+by default (alongside the historical ds-platform `/auth/callback`, kept for
+continuity). If a future task wires a different callback route, re-run
+`provision.sh` with `IDP_REDIRECT_URIS=<new uri>` to register it.
 
 ## 7. Browsable admin Console (operator-only)
 

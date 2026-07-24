@@ -19,11 +19,14 @@ module.exports = {
     {
       name: 'cms-must-not-import-okr-internals',
       comment:
-        'ADR-002: the CMS side may not reach into OKR module internals (src/lib/okr, ' +
-        'src/modules/okr). The module is unrouted until the platform host exists (#63).',
+        'ADR-002/ADR-003: the CMS side may not reach into OKR module internals ' +
+        '(src/lib/okr, src/modules/okr). Only the (platform) route group renders the ' +
+        'OKR views (the Zitadel-gated /p/okr surface) — it is deliberately absent from ' +
+        'this from-set. app/(frontend) IS listed (ADR-003 consequence: the CMS frontend ' +
+        'group must not import platform-module internals either).',
       severity: 'error',
       from: {
-        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\))|^src/payload\\.config',
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',
       },
       to: { path: '^src/(lib/okr|modules/okr)' },
     },
