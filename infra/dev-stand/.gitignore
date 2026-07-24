@@ -1,0 +1,7 @@
+# Personal overlay files — never committed. Real values live in ~/.bbm-portal/
+# by convention; this guards the case where a developer keeps them inside
+# infra/dev-stand/ instead. (The repo-root .gitignore already ignores `.env` and
+# `.env*.local` globally; this is a belt-and-braces local guard.)
+.env
+.env.local
+compose.override.yml

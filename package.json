@@ -7,6 +7,12 @@
   "packageManager": "pnpm@10.7.0",
   "scripts": {
     "require-node": "node scripts/require-node.mjs",
+    "dev:up": "node tools/dev/run.mjs up",
+    "dev:down": "node tools/dev/run.mjs down",
+    "dev:status": "node tools/dev/run.mjs status",
+    "dev:logs": "node tools/dev/run.mjs logs",
+    "dev:restart": "node tools/dev/run.mjs restart",
+    "dev:config": "node tools/dev/run.mjs config",
     "prebuild": "node scripts/require-node.mjs",
     "build": "cross-env NODE_OPTIONS=\"--no-deprecation --max-old-space-size=8000\" next build",
     "predev": "node scripts/require-node.mjs",

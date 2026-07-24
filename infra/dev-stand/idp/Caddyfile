@@ -1,0 +1,31 @@
+# bbm-portal dev-stand — single-origin reverse proxy for Zitadel core + Login V2.
+#
+# The admin Console (/ui/console) must be browsable, but Zitadel v4 split the
+# login UI into a separate `idp-login` (zitadel-login) container; the core binary
+# no longer renders a login screen, so the Console's interactive login 404s
+# without it. This proxy serves BOTH under the ONE external origin Zitadel
+# advertises as its issuer (http://${IDP_EXTERNAL_DOMAIN}:${IDP_PORT}), per the
+# canonical Zitadel self-hosting "disabled-TLS" Caddyfile:
+#   /ui/v2/login/*  -> idp-login:3000   (the Login V2 Next.js UI)
+#   everything else -> idp:8080 over h2c (the core API/Console/OIDC/gRPC)
+#
+# h2c (HTTP/2 cleartext) is the correct upstream scheme because core runs with
+# ZITADEL_TLS_ENABLED=false (compose.core.yml), so it speaks plaintext HTTP/2.
+#
+# The site address binds the listener to ${IDP_PORT} on http:// — no automatic
+# HTTPS, this is a trusted-LAN dev stand. compose publishes ${IDP_PORT}:${IDP_PORT}
+# so the host port and this in-container listener port are identical.
+{
+	# Trusted LAN dev stand — no ACME, no auto-HTTPS.
+	auto_https off
+	admin :2019
+}
+
+http://{$IDP_EXTERNAL_DOMAIN}:{$IDP_PORT} {
+	# Login V2 UI (the only path the separate container serves).
+	reverse_proxy /ui/v2/login/* http://idp-login:3000
+
+	# Everything else — Console, OIDC (/oauth, /.well-known, /v2), management/admin
+	# APIs, gRPC — to the core binary over HTTP/2 cleartext.
+	reverse_proxy h2c://idp:8080
+}

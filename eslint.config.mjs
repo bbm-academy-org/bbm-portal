@@ -24,7 +24,15 @@ const eslintConfig = [
     },
   },
   {
-    ignores: ['.next/', 'src/payload-types.ts', 'src/payload-generated-schema.ts', 'src/migrations/'],
+    ignores: [
+      '.next/',
+      'src/payload-types.ts',
+      'src/payload-generated-schema.ts',
+      'src/migrations/',
+      // Node CLI tooling (dev-stand launcher) — plain .mjs node scripts, not app
+      // code; linted by their own runtime, out of the Next/browser lint scope.
+      'tools/',
+    ],
   },
 ]
 
