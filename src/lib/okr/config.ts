@@ -34,12 +34,12 @@ export const OKR_PERIOD = { start: '2026-07-01', end: '2026-09-01' }
  * OQ-6 (grace period of the health formula) — proposed rule: during the first
  * GRACE_DAYS of the period the traffic light does not judge (nodes with data
  * show on-track), because the linear expectation near t0 paints every fresh
- * period red. TODO(Антон): подтвердить правило и длительность.
+ * period red. TODO(Антон): confirm the rule and the duration.
  */
 export const GRACE_DAYS = 14
 
 /**
- * Точечный override q4-статуса (FR-2): q4 выводится из Plane target_date;
+ * Point-wise q4-status override (FR-2): q4 is derived from Plane target_date;
  * this map only overrides misdated nodes. Key: krId or objective ident.
  */
 export const Q4_OVERRIDE: Record<string, boolean> = {}

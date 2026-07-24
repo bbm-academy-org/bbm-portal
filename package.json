@@ -38,7 +38,9 @@
     "pretest:e2e": "node scripts/require-node.mjs",
     "test:e2e": "cross-env NODE_OPTIONS=\"--no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts",
     "pretest:int": "node scripts/require-node.mjs",
-    "test:int": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts"
+    "test:int": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts tests/int",
+    "pretest:unit": "node scripts/require-node.mjs",
+    "test:unit": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts tests/unit"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",

@@ -15,9 +15,12 @@ export async function loadMetrics(rootDir = process.cwd()): Promise<Record<strin
   let raw: string
   try {
     raw = await readFile(path.join(rootDir, METRICS_FILE), 'utf8')
-  } catch {
-    // Missing file is a valid state: every metric-KR simply runs in execution mode.
-    return {}
+  } catch (err) {
+    // Missing file is a valid state: every metric-KR simply runs in execution
+    // mode. Anything else (EACCES, EISDIR, I/O) must fail loudly, not silently
+    // degrade the metrics away.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw err
   }
   return parseMetrics(raw)
 }

@@ -77,6 +77,9 @@ export async function getOkrTree(now = new Date()): Promise<OkrTree> {
   } catch (err) {
     if (slot.tree) {
       // FR-7: Plane is down — serve the last snapshot with a data-age flag.
+      // Advancing fetchedAt rate-limits retries to once per TTL during the
+      // outage instead of re-fanning-out to Plane on every page view.
+      slot.fetchedAt = now.getTime()
       console.warn(`[okr] refresh failed, serving stale snapshot from ${slot.tree.asOf}:`, err)
       return { ...slot.tree, stale: true }
     }

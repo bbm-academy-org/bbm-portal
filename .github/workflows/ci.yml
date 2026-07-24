@@ -31,5 +31,6 @@ jobs:
       - name: Module boundaries (dependency-cruiser)
         run: pnpm boundaries
 
+      # Unit tier only — tests/int needs the live dev DB and stays local (#48)
       - name: Unit tests
-        run: pnpm exec vitest run --config ./vitest.config.mts tests/unit
+        run: pnpm test:unit
