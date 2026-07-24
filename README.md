@@ -34,25 +34,24 @@ pnpm migrate                    # apply migrations (push is off — run this bef
 pnpm dev                        # admin UI at http://localhost:3000/admin
 ```
 
-### Database
-A dedicated `cms` Postgres database + `payload` role (decision #2). The portable
-compose contract lives in [`infra/dev-stand/`](./infra/dev-stand/README.md)
-(`compose.core.yml` + `.env.example`); **where** the container runs is a
-per-machine recipe, not part of that contract — mirroring
-`ds-platform/infra/dev-stand`. Owner scheme (#62/#63): a **separate**
-compose stack `bbm-portal-dev` on the LAN TrueNAS box, app on the host.
-- **Remote (reference recipe):** ship the compose file to the box and bring the
-  stack up over SSH, then point `DATABASE_URL` at `192.168.1.115:${POSTGRES_PORT}`
-  (5432 is taken on the shared box — the compose publishes `${POSTGRES_PORT:-5432}`
-  and the estate convention is to remap it, e.g. `5444`). The box-side file is
-  named `docker-compose.yml` so the existing box layout / volumes keep working:
-  ```bash
-  scp infra/dev-stand/compose.core.yml truenas:~/bbm-portal-dev/docker-compose.yml
-  ssh truenas "cd ~/bbm-portal-dev && sudo docker compose up -d"   # POSTGRES_PORT in ~/bbm-portal-dev/.env
-  ```
-- **Local:** with a local Docker daemon,
-  `docker compose -f infra/dev-stand/compose.core.yml up -d postgres` and use
-  `localhost:5432`.
+### Database & dev-stand
+The dev services (a dedicated `cms` Postgres database — decision #2 — plus the
+**Zitadel OIDC trio** for the portal auth gate, #59) run on a **separate** compose
+stack `bbm-portal-dev` on the LAN TrueNAS box, while the app runs on your host
+(`pnpm dev`). The **source of truth for the stand is
+[`infra/dev-stand/README.md`](./infra/dev-stand/README.md)** — bring-up, ports,
+secrets and the one-time Zitadel init; don't duplicate those details here.
+
+Bring the stand up with the thin launcher (reads your per-machine `.env.local`,
+syncs the contract to the box, runs `docker compose`):
+```bash
+cp infra/dev-stand/.env.example ~/.bbm-portal/.env.local   # fill in per the stand README
+pnpm dev:up          # sync + docker compose up -d
+pnpm dev:status      # ps
+```
+Then point the app's `DATABASE_URL` (repo-root `.env`) at the box —
+`truenas.local:${POSTGRES_PORT}` (default `5444`). A local Docker daemon works too
+(`DEV_SSH_HOST` empty → `localhost`).
 
 Schema changes: edit collections/globals → `pnpm migrate:create <name>` → commit
 the generated `src/migrations/*` → `pnpm migrate`. Production runs `pnpm migrate`
