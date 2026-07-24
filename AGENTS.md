@@ -101,7 +101,7 @@ deviations line. Key sub-rules the skill carries:
 - **TypeScript strict** — no `any` without a written justification.
 - Payload collections/globals live in `src/collections/` and `src/globals/`; keep one collection/global per file.
 - Mirror the contract field-for-field — when unsure about a field, read the seed JSON and `schemas.ts`, do not invent.
-- Conventional Commits, imperative mood; reference the Plane task (`Refs BBMP-N`).
+- Conventional Commits, imperative mood; reference the GitHub issue (`(#N)` in the subject or `Refs #N` — the PR carries `Closes #N`). `Refs BBMP-N` only when the task genuinely is a Plane item.
 - No comments narrating WHAT; comments only for non-obvious WHY.
 
 ## Dev quickstart

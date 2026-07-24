@@ -57,7 +57,7 @@ your own.
 
 ## Stage 4 — review (mandatory)
 
-PR with `Closes #N` + the PR template. An independent review subagent (fresh
+PR with `Closes #N` + the PR template (`.github/pull_request_template.md`). An independent review subagent (fresh
 context, read-only) posts a PR comment containing a
 `VERDICT: APPROVE | REQUEST_CHANGES` line. On REQUEST_CHANGES: address every
 point — fix it, or reject it with reasoning in the thread — then re-review,
@@ -98,3 +98,11 @@ artifacts, what was done, what got unblocked + the mandatory line
 own issue; minor → a line in `DEBT.md`). Plane task (if any) → Done + a
 results comment. Branch deleted. The next step is NAMED as a recommendation
 but not started without a "go" — stage 2 of a new cycle.
+
+## Enforcement hooks — deferred, not rejected
+
+Deterministic hooks enforcing this regulation are deliberately NOT added now
+(issue #65, owner decision 2026-07-24). **Revisit trigger: the first
+recurrence of a symptom this regulation targets.** Candidate #1 on
+recurrence: a Stop-hook blocking any final task report that lacks the
+«Проверить глазами: \<URL\>» line.

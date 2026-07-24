@@ -14,7 +14,7 @@ Shared method + finding schema:
 ## Hard rules (read before running)
 
 - **Project-local only.** Edits touch only this repo (`.claude/**`, `CLAUDE.md`,
-  `AGENTS.md`, `docs/**`) and the project memory dir
+  `AGENTS.md`, `DEBT.md`, `docs/**`) and the project memory dir
   `C:\Users\sidor\.claude\projects\C--Users-sidor-repos-bbm-portal\memory\`.
   Never edit global/plugin skills. `handoff-prompt` is global — invoke, never edit.
 - **No fabricated findings.** No symptom quote → no edit. A quiet session goes
