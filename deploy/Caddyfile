@@ -2,14 +2,6 @@
 # DNS already maps cms.bbm.academy -> 201.51.28.190, so Caddy provisions and
 # renews the certificate automatically on first start (HTTP-01/TLS-ALPN-01).
 cms.bbm.academy {
-	# Defense in depth (issue #63): cms.bbm.academy serves CMS / static-site
-	# concerns ONLY. The /okr platform module is also blocked in Next middleware,
-	# but 404 it here too so a middleware regression can't expose it (no auth gate
-	# yet). Platform modules move to their own host once it is provisioned.
-	@okr path /okr /okr/*
-	handle @okr {
-		respond 404
-	}
 	reverse_proxy app:3000
 }
 

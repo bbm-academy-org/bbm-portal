@@ -8,10 +8,10 @@ module.exports = {
     {
       name: 'okr-must-not-import-cms',
       comment:
-        'ADR-002: the OKR module (src/lib/okr + its route) must not import CMS internals — ' +
+        'ADR-002: the OKR module (src/lib/okr + src/modules/okr) must not import CMS internals — ' +
         'collections/globals/endpoints/hooks/fields/admin/seed/migrations or the Payload config.',
       severity: 'error',
-      from: { path: '^src/(lib/okr|app/\\(frontend\\)/okr)' },
+      from: { path: '^src/(lib/okr|modules/okr)' },
       to: {
         path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations)|^src/payload\\.config|^src/payload-types',
       },
@@ -19,13 +19,13 @@ module.exports = {
     {
       name: 'cms-must-not-import-okr-internals',
       comment:
-        'ADR-002: the CMS side may not reach into OKR module internals; the only legal consumer ' +
-        'of src/lib/okr is the /okr route.',
+        'ADR-002: the CMS side may not reach into OKR module internals (src/lib/okr, ' +
+        'src/modules/okr). The module is unrouted until the platform host exists (#63).',
       severity: 'error',
       from: {
         path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\))|^src/payload\\.config',
       },
-      to: { path: '^src/lib/okr' },
+      to: { path: '^src/(lib/okr|modules/okr)' },
     },
   ],
   options: {

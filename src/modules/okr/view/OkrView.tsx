@@ -3,10 +3,9 @@ import { getOkrTree } from '@/lib/okr'
 import type { Health, OkrTree } from '@/lib/okr'
 import { Badge, Bar, HEALTH_META, ObjectiveCard } from './components'
 
-// Every request goes through the module's own TTL snapshot (FR-6) — the page
-// must never be statically built (a build without PLANE_API_TOKEN would fail
-// or freeze stale data into the bundle).
-export const dynamic = 'force-dynamic'
+// Unrouted OKR dashboard view. Kept out of src/app so no /okr URL exists until
+// the platform host (portal.bbm.academy) is provisioned at P3 — cms.bbm.academy
+// serves CMS concerns only (owner decision, #63). Preserved for that revival.
 
 const LEGEND: Health[] = ['on', 'risk', 'behind', 'undef', 'q4']
 
@@ -54,7 +53,7 @@ function Hero({ tree }: { tree: OkrTree }) {
   )
 }
 
-export default async function OkrPage() {
+export async function OkrView() {
   let tree: OkrTree
   try {
     tree = await getOkrTree()
