@@ -34,3 +34,11 @@ jobs:
       # Unit tier only — tests/int needs the live dev DB and stays local (#48)
       - name: Unit tests
         run: pnpm test:unit
+
+      # #63 — build smoke: catch a broken `next build` on PRs. Runs in this same
+      # job to reuse the install + pnpm cache above (no second install). Needs no
+      # secrets: payload.config reads PAYLOAD_SECRET/DATABASE_URL with `|| ''`
+      # fallbacks and db push is off, so nothing connects at build time — same as
+      # the Dockerfile, which builds with no env. `next build` also typechecks.
+      - name: Build (next build)
+        run: pnpm build

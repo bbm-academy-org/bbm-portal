@@ -35,18 +35,23 @@ pnpm dev                        # admin UI at http://localhost:3000/admin
 ```
 
 ### Database
-A dedicated `cms` Postgres database + `payload` role (decision #2). **Where** the
-container runs is a per-machine recipe, not part of the repo contract — mirroring
-`ds-platform/infra/dev-stand`:
-- **Remote (reference recipe):** run `docker-compose.yml` on the LAN TrueNAS box
-  over SSH and point `DATABASE_URL` at `192.168.1.115:${POSTGRES_PORT}` (5432 is
-  taken on the shared box — the compose publishes `${POSTGRES_PORT:-5432}` and the
-  estate convention is to remap it, e.g. `5444`):
+A dedicated `cms` Postgres database + `payload` role (decision #2). The portable
+compose contract lives in [`infra/dev-stand/`](./infra/dev-stand/README.md)
+(`compose.core.yml` + `.env.example`); **where** the container runs is a
+per-machine recipe, not part of that contract — mirroring
+`ds-platform/infra/dev-stand`. Owner scheme (#62/#63): a **separate**
+compose stack `bbm-portal-dev` on the LAN TrueNAS box, app on the host.
+- **Remote (reference recipe):** ship the compose file to the box and bring the
+  stack up over SSH, then point `DATABASE_URL` at `192.168.1.115:${POSTGRES_PORT}`
+  (5432 is taken on the shared box — the compose publishes `${POSTGRES_PORT:-5432}`
+  and the estate convention is to remap it, e.g. `5444`). The box-side file is
+  named `docker-compose.yml` so the existing box layout / volumes keep working:
   ```bash
-  scp docker-compose.yml truenas:~/bbm-portal-dev/
+  scp infra/dev-stand/compose.core.yml truenas:~/bbm-portal-dev/docker-compose.yml
   ssh truenas "cd ~/bbm-portal-dev && sudo docker compose up -d"   # POSTGRES_PORT in ~/bbm-portal-dev/.env
   ```
-- **Local:** with a local Docker daemon, `docker compose up -d postgres` and use
+- **Local:** with a local Docker daemon,
+  `docker compose -f infra/dev-stand/compose.core.yml up -d postgres` and use
   `localhost:5432`.
 
 Schema changes: edit collections/globals → `pnpm migrate:create <name>` → commit
