@@ -18,8 +18,32 @@ and #63.
 tunable is env-driven (`.env`), nothing is host-path-specific — so the same file
 runs on a LAN box or a local Docker daemon unchanged.
 
-**Today the stack is one service: Postgres 17** (the dedicated `cms` database,
-decision #2). The app's `DATABASE_URL` (repo-root `.env`) points at it.
+**The stack is Postgres 17 + the Zitadel trio.** Postgres is the dedicated `cms`
+database (decision #2); the app's `DATABASE_URL` (repo-root `.env`) points at it.
+The **Zitadel trio** (`idp` + `idp-login` + `idp-proxy`) is the dev OIDC IdP for
+the portal auth gate (#59, ADR-002) — see [`idp/bootstrap.md`](./idp/bootstrap.md).
+
+### Services & ports
+
+| Service | Container port | Host port (bbm-portal-dev) | Published? |
+|---|---|---|---|
+| `postgres` | 5432 | `${POSTGRES_PORT}` = **5444** | yes |
+| `idp` (Zitadel core) | 8080 | — (in-network `idp:8080`) | no |
+| `idp-login` (Login V2 UI) | 3000 | — (in-network `idp-login:3000`) | no |
+| `idp-proxy` (Caddy, issuer origin) | `${IDP_PORT}` | `${IDP_PORT}` = **9180** | yes |
+
+Only **two** host ports are published. `IDP_PORT` is **9180** because the shared
+TrueNAS box already binds **9080** for the co-hosted `ds-platform` stand — the
+trio is otherwise fully namespaced under project `bbm-portal-dev` and shares
+nothing with it. The Zitadel trio is **DB-backed** (state in a dedicated
+`zitadel` database inside this stack's Postgres) and carries no volume of its own.
+No MinIO/Redis/Mailpit/SMS/Unleash — the portal needs the IdP only; media stays
+on Timeweb S3.
+
+The issuer origin is `http://${IDP_EXTERNAL_DOMAIN}:${IDP_PORT}`
+(`http://truenas.local:9180` on the reference recipe). The OIDC **redirect URI**
+is the app's own callback on the dev machine — `http://localhost:3000/auth/callback`
+— **not** the Zitadel host.
 
 ## Where it runs (owner's scheme)
 
@@ -29,31 +53,55 @@ decision #2). The app's `DATABASE_URL` (repo-root `.env`) points at it.
   LAN TrueNAS box (its own project/ports — the `ds-platform` dev containers are
   **not** shared).
 
-## Delivery — light scp/ssh loop
+## Delivery — thin `pnpm dev:*` launcher
 
-No DX launcher yet (owner decision — one arrives with the Zitadel trio in P2).
-Ship the contract to the box and bring the stack up over SSH. The box-side
-directory is `~/bbm-portal-dev/` and the file is named `docker-compose.yml`
-there, so the box layout is byte-compatible with what was deployed before this
-reorg (existing volumes/containers keep working — no state change):
+The trio's arrival brings the owner-approved thin launcher (`tools/dev/run.mjs`,
+backing `pnpm dev:*`). It reads your **per-machine** `.env.local`, picks a
+transport, syncs the contract, and drives `docker compose`:
 
 ```bash
-scp infra/dev-stand/compose.core.yml truenas:~/bbm-portal-dev/docker-compose.yml
-ssh truenas "cd ~/bbm-portal-dev && sudo docker compose up -d"   # POSTGRES_PORT etc. in ~/bbm-portal-dev/.env
+pnpm dev:up        # sync infra/dev-stand/ to the box + docker compose up -d (detached)
+pnpm dev:status    # docker compose ps
+pnpm dev:logs idp  # follow logs (all, or one service)
+pnpm dev:restart idp-login
+pnpm dev:down      # stop (volumes preserved)
+pnpm dev:config    # validate compose + assert required secrets resolve (no up)
 ```
 
-`~/bbm-portal-dev/.env` on the box is the per-machine `.env` (copied from
-`.env.example`) — it is not committed. Read-only status check:
+The SSH recipe (`DEV_SSH_HOST=truenas`, `DEV_DOCKER_SUDO=1`) tars
+`infra/dev-stand/` to a **staging dir** on the box and swaps it in atomically
+(`DEV_REMOTE_DIR`, default `~/bbm-portal-dev-stand`), then ships your `.env.local`
+verbatim as the compose `.env`. A host-only recipe (`DEV_SSH_HOST` empty) runs
+against the local Docker daemon. The fixed project name `bbm-portal-dev` pins
+containers/volume to one project regardless of the box directory.
+
+> The first-time trio bring-up (fresh Zitadel init, PAT minting, OIDC
+> provisioning) is a documented one-time procedure — see
+> [`idp/bootstrap.md`](./idp/bootstrap.md). It brings up the **new** trio services
+> with `--no-recreate` so the running `bbm-portal-dev-postgres-1` is adopted but
+> never restarted. `pnpm dev:up` is for steady-state operation afterwards.
+
+Read-only status check without the launcher:
 
 ```bash
 ssh truenas "sudo docker ps"
 ```
 
-## P2 — Zitadel trio lands here
+## Secrets — per-machine, outside the synced dir
 
-The OKR/portal auth gate (ADR-002, Zitadel OIDC) needs the Zitadel trio
-(`idp` / `idp-login` / `idp-proxy`) on the stand. It is **not** here yet.
-When P2 (#59) lands, the trio is added to `compose.core.yml`, its ports /
-masterkey / issuer are parameterized in `.env.example`, and the light scp/ssh
-loop is likely replaced by a thin `pnpm dev:*` wrapper (owner decision).
-No MinIO — media stays on Timeweb S3.
+Real values live in a **per-machine** `.env.local`, gitignored and **never**
+committed (the repo carries only `.env.example` with `CHANGE_ME` placeholders):
+
+| Where | What | Note |
+|---|---|---|
+| `~/.bbm-portal/.env.local` | the durable secret source | the launcher ships it as the box compose `.env` on each sync |
+| `~/bbm-portal-dev-stand/.env` | the box compose `.env` | auto-loaded by compose; re-provisioned from `.env.local` on sync |
+| `~/.bbm-portal/idp-bootstrap-pat.txt` | the `bbm-bootstrap` org-owner PAT | **outside** the synced dir so `dev:up` never wipes it |
+| `/var/lib/bbm-portal/idp-login-client.pat` | the PAT the `idp-login` container mounts | daemon-host path, outside the synced dir |
+| `~/.bbm-portal/CREDENTIALS.dev.txt` | human-readable console-admin + test-user creds | outside the synced dir |
+
+**The PAT is kept out of sync scope on purpose:** `dev:up` wipes+replaces the
+synced stand dir every time, so a PAT placed inside it would be destroyed — and a
+committed PAT is forbidden. Bootstrap secrets (`IDP_SECRET_KEY`, the admin/test
+passwords) are generated once on the box (`openssl rand`) and kept in the
+per-machine files above.

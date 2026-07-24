@@ -13,6 +13,16 @@
 # Portable contract only: fixed project name (so containers/volume stay
 # namespaced `bbm-portal-dev-*` and never collide with co-hosted workloads),
 # named volume + env-vars, no host paths.
+#
+# The Zitadel trio (idp + idp-login + idp-proxy) is the dev OIDC IdP for the
+# portal auth gate (#59, ADR-002). It is DB-backed: Zitadel stores its config,
+# users, orgs and signing keys in a dedicated `zitadel` database inside THIS
+# stack's Postgres, so the trio carries no named volume of its own — reboot
+# persistence rides on the `pgdata` volume. Only the `idp-proxy` publishes a
+# host port (the single issuer origin, ${IDP_PORT}); the core and login UI are
+# in-network only. See idp/bootstrap.md for the one-time bring-up. Ported thin
+# from the `ds-platform` dev-stand (no MinIO/Redis/Mailpit/SMS/Unleash — the
+# portal needs the IdP only; media stays on Timeweb S3).
 name: bbm-portal-dev
 
 services:
@@ -32,6 +42,185 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # --- Zitadel — OIDC identity provider / JWT issuer (#59, ADR-002) ------------
+  # Single Go binary, DB-backed (no named volume — see the file header).
+  # ExternalDomain/ExternalPort are env-driven so this contract stays
+  # recipe-agnostic: they MUST equal the host:port clients actually reach, or OIDC
+  # discovery advertises a wrong issuer and every client rejects it. TLS is
+  # disabled via ZITADEL_TLS_ENABLED (env, not the start-only --tlsMode flag) so
+  # every subcommand shares it — notably the distroless healthcheck
+  # `/app/zitadel ready`, which probes /debug/ready over the same scheme (no shell
+  # or curl in the image). Zitadel connects to THIS stack's postgres as the
+  # superuser (${POSTGRES_USER}) and creates its own `zitadel` database on first
+  # boot — it never touches the `cms` database the app uses. The masterkey
+  # (IDP_SECRET_KEY) must be exactly 32 characters.
+  idp:
+    image: ghcr.io/zitadel/zitadel:latest
+    restart: unless-stopped
+    # --masterkeyFromEnv reads the secret from ZITADEL_MASTERKEY rather than as a
+    # CLI value, so it never lands in `docker inspect` / the process list.
+    command:
+      - start-from-init
+      - --masterkeyFromEnv
+    environment:
+      ZITADEL_MASTERKEY: ${IDP_SECRET_KEY}
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_EXTERNALDOMAIN: ${IDP_EXTERNAL_DOMAIN:-localhost}
+      ZITADEL_EXTERNALPORT: ${IDP_PORT:-9080}
+      # Login V2 — REQUIRED for a headless BFF session->token exchange and for the
+      # browsable admin Console (the v2 login UI ships as the separate `idp-login`
+      # container). Default true; do not disable it.
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: ${IDP_LOGIN_V2_REQUIRED:-true}
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: ${POSTGRES_USER:-payload}
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${POSTGRES_PASSWORD:-payload}
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: ${POSTGRES_USER:-payload}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${POSTGRES_PASSWORD:-payload}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      # First-instance bootstrap (recipe-opt-in, read ONLY on a fresh init — a
+      # re-init drops the `zitadel` DB so start-from-init re-runs the init step).
+      # When IDP_BOOTSTRAP=1 the setup creates an IAM-owner machine user
+      # (`bbm-bootstrap`, the credential idp/provision.sh authenticates with) plus a
+      # deterministic console admin (`zitadel-admin`), and writes the machine user's
+      # PAT to PatPath. Empty (the default) -> standard init, every var below is inert.
+      ZITADEL_FIRSTINSTANCE_PATPATH: ${IDP_BOOTSTRAP:+/pat/pat.txt}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: ${IDP_BOOTSTRAP:+bbm-bootstrap}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: ${IDP_BOOTSTRAP:+bbm-bootstrap}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: ${IDP_BOOTSTRAP:+2099-12-31T23:59:59Z}
+      # Deterministic console admin (only created when IDP_BOOTSTRAP is set, since
+      # USERNAME gates it). Password is dev-only on a trusted LAN; never reuse it.
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${IDP_BOOTSTRAP:+zitadel-admin}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${IDP_BOOTSTRAP:+${IDP_BOOTSTRAP_ADMIN_PASSWORD:-}}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: ${IDP_BOOTSTRAP:+false}
+    # Writable tmpfs for the FIRSTINSTANCE PatPath file. The distroless image runs
+    # as the non-root `zitadel` user (uid/gid 1000); a default tmpfs / named volume
+    # is root-owned, so owning the tmpfs by 1000 lets the init step write
+    # /pat/pat.txt directly. Inert unless IDP_BOOTSTRAP is set.
+    tmpfs:
+      - /pat:uid=1000,gid=1000,mode=0700
+    # No published host port: the issuer origin (${IDP_PORT}) is fronted by the
+    # `idp-proxy` Caddy service, which single-origin-routes /ui/v2/login/* to the
+    # `idp-login` container and everything else here over h2c. Core is reachable
+    # in-network as `idp:8080`.
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      # start-from-init runs DB migrations inline on a fresh database, so the first
+      # boot needs a longer grace than a warm start.
+      start_period: 60s
+
+  # --- idp-login — Zitadel Login V2 UI (Next.js), operator Console login --------
+  # Zitadel v4 split the v1 console-embedded login into this separate Next.js
+  # container; the core binary no longer renders a login screen, so /ui/console's
+  # interactive login 404s without it. Image PINNED to the running core version so
+  # UI and core never skew. It reaches core over the bridge as `idp:8080` and
+  # authenticates with the `bbm-bootstrap` machine-user PAT (which provision.sh
+  # grants IAM_LOGIN_CLIENT — the role the login client needs), mounted read-only
+  # from a daemon-host path OUTSIDE the synced stand dir (IDP_LOGIN_PAT_FILE),
+  # because `dev:up` wipes+replaces the stand dir on every sync and a committed PAT
+  # is forbidden. CUSTOM_REQUEST_HEADERS pins the Host so core resolves the request
+  # to this instance's external domain. Absent PAT ⇒ fails its healthcheck loudly
+  # (fail-closed) rather than serving a broken login.
+  idp-login:
+    image: ${IDP_LOGIN_IMAGE:-ghcr.io/zitadel/zitadel-login:v4.15.0}
+    restart: unless-stopped
+    environment:
+      ZITADEL_API_URL: http://idp:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /pat/login-client.pat
+      CUSTOM_REQUEST_HEADERS: Host:${IDP_EXTERNAL_DOMAIN:-localhost}
+    expose:
+      - "3000"
+    volumes:
+      # Daemon-host absolute path to the gitignored bbm-bootstrap PAT, placed once
+      # by the operator OUTSIDE the synced stand dir so `dev:up` never wipes it
+      # (see idp/bootstrap.md). Read-only.
+      - ${IDP_LOGIN_PAT_FILE:-/var/lib/bbm-portal/idp-login-client.pat}:/pat/login-client.pat:ro
+    depends_on:
+      idp:
+        condition: service_healthy
+    healthcheck:
+      # The login app serves a health route under its base path. Node 22 in the
+      # image has global fetch (no curl in the image).
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/ui/v2/login/healthy').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # --- idp-proxy — single-origin reverse proxy for Zitadel core + Login V2 ------
+  # The browser must reach BOTH the core (/ui/console, /oauth, /.well-known, /v2,
+  # gRPC) AND the Login V2 UI (/ui/v2/login) under ONE external origin
+  # (${IDP_PORT}). Zitadel core does not proxy to the login container itself, so
+  # this Caddy service path-routes the single origin per the canonical Zitadel
+  # self-hosting pattern (disabled-TLS Caddyfile):
+  #   /ui/v2/login/*  -> idp-login:3000
+  #   everything else -> h2c://idp:8080   (core runs ZITADEL_TLS_ENABLED=false)
+  # so the issuer / OIDC discovery origin is http://${IDP_EXTERNAL_DOMAIN}:${IDP_PORT}.
+  #
+  # PORT MAPPING NOTE (differs from the ds-platform contract, which hard-coded
+  # `${IDP_PORT}:9080`): Caddy binds ${IDP_PORT} INSIDE the container (the site
+  # address in idp/Caddyfile is :${IDP_PORT}), so the published mapping is
+  # ${IDP_PORT}:${IDP_PORT} — identical host and container port. This makes the
+  # trio work on ANY remapped IDP_PORT (the shared TrueNAS box already binds 9080
+  # for the ds-platform stand, so bbm-portal remaps to 9180), not only the 9080
+  # default where host==container happened to coincide. Image pinned.
+  idp-proxy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    environment:
+      IDP_EXTERNAL_DOMAIN: ${IDP_EXTERNAL_DOMAIN:-localhost}
+      IDP_PORT: ${IDP_PORT:-9080}
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
+    volumes:
+      - ./idp/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${IDP_PORT:-9080}:${IDP_PORT:-9080}"
+    depends_on:
+      idp:
+        condition: service_healthy
+      idp-login:
+        condition: service_healthy
+    healthcheck:
+      # Caddy's admin endpoint (localhost:2019) confirms the proxy is up; wget is
+      # present in caddy:*-alpine (busybox).
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://localhost:2019/config/",
+          "-O",
+          "/dev/null",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   pgdata:

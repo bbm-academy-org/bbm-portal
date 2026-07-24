@@ -2,3 +2,12 @@
 # Linux Docker build (COPY from a Windows working tree would otherwise
 # deliver CRLF and break `pnpm i --frozen-lockfile` patch application).
 patches/*.patch text eol=lf
+
+# Dev-stand files executed on the Linux Docker host / box must stay LF: a Windows
+# checkout delivering CRLF would break the bash provisioner and the Caddyfile
+# parse. The launcher tars the working tree straight to the box, so the on-disk
+# EOL is what runs there.
+infra/dev-stand/idp/provision.sh text eol=lf
+infra/dev-stand/idp/Caddyfile text eol=lf
+infra/dev-stand/**/*.sh text eol=lf
+tools/dev/*.mjs text eol=lf
