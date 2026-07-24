@@ -49,6 +49,7 @@ Leads are **not** a content mirror — they are a **runtime PII receiver** (writ
 ## Architectural authority
 
 Framework/infra choices are fixed by the BBM Platform architecture spec — do not swap:
+- **ADR-002 (`docs/adr/002-repository-and-module-strategy.md`, 2026-07-24)** — repository & module strategy: this repo is THE platform code repo (all custom BBM Platform modules live here; future rename `bbm-platform` at workspace conversion). New modules default to a route + isolated lib (modular monolith, machine-enforced boundaries); a separate deployable must be earned via explicit criteria. Portal end-user auth = **Zitadel `id.bbm.academy` (OIDC) from day one**; Payload native auth stays admin-only.
 - **D-026** — Astro for the public site, **Next.js for the portal, Payload CMS as the headless content source.**
 - **D-018** — dual-zone hosting; the portal (this repo, with PII surfaces later) runs in **Zone RF (Timeweb Cloud)**.
 - **Hosting (2026-06-12):** BBMP-30 deploys to a **dedicated `portal-prod-tw` VPS — NOT co-located on `tools-prod-tw`** (internal tools host: Mattermost/Outline). Public PII service is isolated from internal tooling, per the estate's per-service failure-domain pattern. Terraform (`../bbm/infra/timeweb/terraform/portal.tf`) is written/applied by the agent — not a user-action.
