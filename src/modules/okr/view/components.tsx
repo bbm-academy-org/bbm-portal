@@ -164,9 +164,16 @@ export function KrRow({ kr }: { kr: OkrKr }) {
           <PlaneLink href={kr.planeUrl} />
         </span>
       </span>
-      <LeadChip leadId={kr.leadId} />
-      {counter && <span className="okr-kr__n">{counter}</span>}
-      <KrRight kr={kr} />
+      {/* One wrappable unit for everything nowrap or fixed-width (lead chip,
+          counter, value, 88px bar, badge): the row is a single-line flex with a
+          ~460px floor, so the cluster has to travel to a second line as a whole
+          rather than be clipped by `.okr-card{overflow:hidden}` (spec 075
+          scenario 6). Geometry on one line is unchanged — same gap, same order. */}
+      <span className="okr-kr__meta">
+        <LeadChip leadId={kr.leadId} />
+        {counter && <span className="okr-kr__n">{counter}</span>}
+        <KrRight kr={kr} />
+      </span>
     </>
   )
 

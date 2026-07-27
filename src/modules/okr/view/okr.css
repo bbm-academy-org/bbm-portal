@@ -130,8 +130,14 @@
 .okr-tag{font:700 11px var(--body-font);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;color:var(--ink-3)}
 .okr-soon-note{font:500 14px/1.5 var(--body-font);color:var(--ink-3);margin:12px 0 0}
 
-/* ---- badge ---- */
-.okr-badge{display:inline-flex;align-items:center;gap:7px;font:700 12.5px var(--body-font);padding:5px 12px;border:2px solid var(--ink);border-radius:var(--rad-pill);white-space:nowrap}
+/* ---- badge ----
+   white-space:normal instead of the prototype's nowrap: the longest note badge
+   («цель 500 · измерение не подключено») is 282px, wider than the 271px row at
+   375px, and nowrap made it overflow into the card's clipped box. The stadium
+   radius survives multi-line — at --rad-pill the curve intrudes ~3px at the
+   text lines against 12px of padding — so a badge that already fits one line is
+   pixel-identical; text-align keeps the wrapped lines centred in the pill. */
+.okr-badge{display:inline-flex;align-items:center;gap:7px;font:700 12.5px var(--body-font);padding:5px 12px;border:2px solid var(--ink);border-radius:var(--rad-pill);white-space:normal;text-align:center}
 .okr-badge i{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
 
 /* ---- lead chip ---- */
@@ -144,11 +150,28 @@
    (`width:calc(100% + 16px)` + `margin:0 -8px`) — the prototype could rely on
    the UA border-box of <button>, a <summary>/<div> is content-box and would
    grow the *content* width by 16px on hover, re-wrapping the text. */
-.okr-kr__head{box-sizing:border-box;display:flex;align-items:center;gap:10px;width:100%;padding:11px 0;font:inherit;text-align:left;color:inherit;border-radius:8px;list-style:none}
+/* flex-wrap: the row is otherwise a single line with a ~460px floor (nowrap
+   counter/value/badges + the fixed 88px bar), so below that it overflowed and
+   `.okr-card{overflow:hidden}` silently cut the metric cluster off (~195px at
+   375px, ~45px at 1024px). Wrapping is inert while the row fits — the title
+   column eats all free space, so `justify-content` and `row-gap` never apply
+   and wide screens render exactly as before. `width:calc(100% + 16px)` on hover
+   is safe across the wrap only because of `box-sizing:border-box`: the content
+   width does not change, so hovering cannot re-run the line breaking. */
+.okr-kr__head{box-sizing:border-box;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 10px;width:100%;padding:11px 0;font:inherit;text-align:left;color:inherit;border-radius:8px;list-style:none}
 .okr-kr__head::-webkit-details-marker{display:none}
 summary.okr-kr__head{cursor:pointer}
 summary.okr-kr__head:hover{background:var(--paper-2);margin:0 -8px;padding-inline:8px;width:calc(100% + 16px)}
-.okr-kr__main{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;font:600 13.5px/1.35 var(--body-font)}
+/* min-width:auto (not 0) is the wrap trigger. Flex line breaking uses the
+   hypothetical main size, which `min-width:0` pins at 0 — the cluster would
+   then never wrap and the row would overflow instead. With the content-based
+   minimum the line breaks exactly when the title's own minimum (chevron +
+   longest word) can no longer sit beside the cluster; while it can, the column
+   grows past that minimum and the declaration is inert. */
+.okr-kr__main{flex:1;min-width:auto;display:flex;align-items:flex-start;gap:10px;font:600 13.5px/1.35 var(--body-font)}
+/* Shrinkable and self-wrapping: on the second line the cluster gets the whole
+   row, and if even that is too narrow it breaks internally instead of spilling. */
+.okr-kr__meta{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 10px;min-width:0}
 .okr-kr__chev{flex:0 0 12px;height:1.35em;display:flex;align-items:center;justify-content:center;color:var(--ink-3);transition:transform .2s}
 .okr-kr__chev svg{display:block;width:12px;height:12px}
 details[open]>summary .okr-kr__chev{transform:rotate(90deg)}
@@ -160,7 +183,12 @@ details[open]>summary .okr-kr__chev{transform:rotate(90deg)}
 
 /* ---- actions (expanded) ---- */
 .okr-acts__in{padding:2px 0 12px 22px;display:flex;flex-direction:column;gap:0}
-.okr-act{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1.5px dashed var(--paper-2)}
+/* Action rows carry the same shape of risk (nowrap `__c`/`__state` + a fixed
+   64px bar) but cannot clip: their only growable child keeps `min-width:0` plus
+   `overflow-wrap:break-word`, and the fixed cluster floors at ~105px against a
+   249px row at 375px. flex-wrap is the escape hatch if that cluster ever grows;
+   it stays dormant as long as `.okr-act__t` can shrink to zero. */
+.okr-act{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 10px;padding:7px 0;border-top:1.5px dashed var(--paper-2)}
 .okr-act:first-child{border-top:0}
 .okr-act__t{flex:1;min-width:0;font:500 13px/1.35 var(--body-font);color:var(--ink-2);overflow-wrap:break-word}
 .okr-act__c{font:500 12.5px var(--mono-font);color:var(--ink);white-space:nowrap}

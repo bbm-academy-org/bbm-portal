@@ -141,6 +141,28 @@ describe('KR row markup (spec 075 req.2)', () => {
     expect(host.querySelector('details.okr-kr > summary .okr-kr__chev')).not.toBeNull()
   })
 
+  it('groups the metric cluster into one wrappable unit (scenario 6)', () => {
+    // Everything nowrap or fixed-width travels together, so the row can drop
+    // the whole cluster onto a second line instead of being clipped by
+    // `.okr-card{overflow:hidden}`. The title column must stay outside it.
+    const host = render(React.createElement(KrRow, { kr: kr() }))
+    const head = host.querySelector('summary.okr-kr__head')!
+    expect(Array.from(head.children).map((c) => c.className)).toEqual(['okr-kr__main', 'okr-kr__meta'])
+
+    const meta = head.querySelector('.okr-kr__meta')!
+    for (const cls of ['.okr-av', '.okr-kr__n', '.okr-kr__v', '.okr-kr__bar']) {
+      expect(meta.querySelector(cls), `${cls} belongs to the metric cluster`).not.toBeNull()
+    }
+    expect(meta.querySelector('.okr-kr__t'), 'the title must reflow independently').toBeNull()
+  })
+
+  it('keeps a note badge inside that same cluster', () => {
+    const data = kr({ note: 'цель 500 · измерение не подключено', pct: null })
+    const host = render(React.createElement(KrRow, { kr: data }))
+    const meta = host.querySelector('.okr-kr__head > .okr-kr__meta')!
+    expect(meta.querySelector('.okr-badge')).not.toBeNull()
+  })
+
   it('renders action rows with a plain-text title plus an icon link', () => {
     const act = action()
     const host = render(React.createElement(KrRow, { kr: kr({ actions: [act] }) }))
@@ -230,6 +252,52 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     const narrow = /@media\s*\(max-width:900px\)\s*\{\s*\.okr-lanes\s*\{([^}]*)\}/.exec(css)
     expect(narrow, 'the single-column media query for .okr-lanes is missing').not.toBeNull()
     expect(narrow![1]).toContain('grid-template-columns:minmax(0,1fr)')
+  })
+
+  it('reflows the KR row instead of letting the card clip it (scenario 6)', () => {
+    // `minmax(0,1fr)` stopped the document scroll but moved the overflow inside
+    // `.okr-card{overflow:hidden}`, where the metric cluster was silently cut
+    // off (~195px at 375px, ~45px at 1024px). The single-line flex row had a
+    // ~460px floor: nowrap counters/values/badges plus an 88px bar.
+    const head = /\.okr-kr__head\s*\{([^}]*)\}/.exec(css)
+    expect(head![1]).toContain('flex-wrap:wrap')
+    // Inert while the row fits (the title column absorbs all free space), so
+    // wide screens stay pixel-identical; it only right-aligns the second line.
+    expect(head![1]).toContain('justify-content:flex-end')
+
+    // The wrap trigger: with `min-width:0` the title column's hypothetical size
+    // is 0, the cluster never wraps and the row overflows instead. `auto` makes
+    // the flex algorithm break the line exactly when the title's own minimum
+    // can no longer sit beside the cluster.
+    const main = /\.okr-kr__main\s*\{([^}]*)\}/.exec(css)
+    expect(main![1]).toContain('min-width:auto')
+    expect(main![1]).not.toContain('min-width:0')
+
+    // The cluster itself must be able to shrink and wrap on that second line.
+    const meta = /\.okr-kr__meta\s*\{([^}]*)\}/.exec(css)
+    expect(meta, '.okr-kr__meta rule missing').not.toBeNull()
+    expect(meta![1]).toContain('flex-wrap:wrap')
+    expect(meta![1]).toContain('min-width:0')
+  })
+
+  it('lets a long badge wrap its text while staying a pill', () => {
+    // «цель 500 · измерение не подключено» is 282px of nowrap text — wider than
+    // the 271px row at 375px. Wrapping keeps the stadium shape (--rad-pill), so
+    // nothing changes where the badge already fits on one line.
+    const badge = /\.okr-badge\s*\{([^}]*)\}/.exec(css)
+    expect(badge, '.okr-badge rule missing').not.toBeNull()
+    expect(badge![1]).toContain('white-space:normal')
+    expect(badge![1]).not.toContain('white-space:nowrap')
+    expect(badge![1]).toContain('border-radius:var(--rad-pill)')
+  })
+
+  it('keeps the border-box hover trick working across the wrap', () => {
+    // `width:calc(100% + 16px)` may not change the row's *content* width, or
+    // hovering would re-run the line breaking and reflow the row under cursor.
+    const hover = /summary\.okr-kr__head:hover\s*\{([^}]*)\}/.exec(css)
+    expect(hover, 'the hover rule is missing').not.toBeNull()
+    expect(hover![1]).toContain('width:calc(100% + 16px)')
+    expect(/\.okr-kr__head\s*\{([^}]*)\}/.exec(css)![1]).toContain('box-sizing:border-box')
   })
 
   it('pins the chevron rotation to an open KR row', () => {
