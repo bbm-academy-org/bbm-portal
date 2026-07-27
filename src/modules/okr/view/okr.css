@@ -102,11 +102,16 @@
 
 /* ---- lanes ---- */
 .okr-main{padding:36px 0 72px}
-.okr-lanes{display:grid;grid-template-columns:1fr 1fr;gap:var(--gutter)}
+/* minmax(0,1fr), not 1fr: a `1fr` track floors at its min-content width, which
+   the nowrap health badges (widest «цель 500 · измерение не подключено», 282px)
+   prop open — the page scrolled sideways at 375px (scrollWidth 570) and again
+   across 901..~1010px, and the bridge-card headings broke letter-by-letter.
+   deploy/index.html has the same defect; spec 075 scenario 6 outranks it. */
+.okr-lanes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--gutter)}
 .okr-lane{display:flex;flex-direction:column;gap:var(--gutter)}
 .okr-lane__h{font:800 15px var(--display-font);letter-spacing:var(--display-tracking);color:var(--ink);border:var(--brd) solid var(--ink);border-radius:var(--rad-pill);padding:11px 18px;text-align:center;box-shadow:var(--hard-sm)}
 .okr-bridge{margin-top:var(--gutter)}
-@media (max-width:900px){.okr-lanes{grid-template-columns:1fr}}
+@media (max-width:900px){.okr-lanes{grid-template-columns:minmax(0,1fr)}}
 
 /* ---- objective card ---- */
 .okr-card{background:var(--surface);border:var(--brd) solid var(--ink);border-radius:var(--rad);box-shadow:var(--hard-sm);overflow:hidden;transition:transform .14s cubic-bezier(.3,.7,.4,1),box-shadow .14s}

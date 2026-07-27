@@ -217,6 +217,21 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     expect(css).toMatch(/\.okr-root\s+\.okr-ext:hover\s*\{[^}]*color:\s*var\(--accent-ink\)/)
   })
 
+  it('lets the lane tracks shrink below their min-content width (scenario 6)', () => {
+    // A bare `1fr` track has an automatic minimum of min-content, which the
+    // nowrap health badges (widest: «цель 500 · измерение не подключено», 282px)
+    // prop open — the page then scrolled sideways at 375px (scrollWidth 570)
+    // and at 901..~1010px. `minmax(0,1fr)` removes that floor. The reference
+    // prototype has the same defect; spec 075 scenario 6 outranks it.
+    const lanes = /\.okr-lanes\s*\{([^}]*)\}/.exec(css)
+    expect(lanes, '.okr-lanes rule missing').not.toBeNull()
+    expect(lanes![1]).toContain('grid-template-columns:minmax(0,1fr) minmax(0,1fr)')
+
+    const narrow = /@media\s*\(max-width:900px\)\s*\{\s*\.okr-lanes\s*\{([^}]*)\}/.exec(css)
+    expect(narrow, 'the single-column media query for .okr-lanes is missing').not.toBeNull()
+    expect(narrow![1]).toContain('grid-template-columns:minmax(0,1fr)')
+  })
+
   it('pins the chevron rotation to an open KR row', () => {
     expect(css).toMatch(/details\[open\]\s*>\s*summary\s+\.okr-kr__chev\s*\{[^}]*transform:\s*rotate\(90deg\)/)
   })
