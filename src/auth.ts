@@ -18,9 +18,17 @@ import Zitadel from 'next-auth/providers/zitadel'
  * (infra/dev-stand/idp/provision.sh); a fresh stand re-run picks it up.
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  // Non-Vercel host: trust the incoming Host/X-Forwarded-Host (dev localhost;
-  // the P3 portal host is fronted by Caddy).
-  trustHost: true,
+  // Origin handling (spec 060 req.5): `trustHost` is deliberately NOT set.
+  // Auth.js v5 then defaults it from the environment (@auth/core
+  // setEnvDefaults): truthy when AUTH_URL is set OR NODE_ENV !== 'production'.
+  //   - Prod (portal-prod-tw, behind Caddy): AUTH_URL=
+  //     https://portal.bbm.academy/api/auth is REQUIRED — createActionURL
+  //     builds every sign-in/callback/redirect URL from AUTH_URL and ignores
+  //     the incoming Host/X-Forwarded-Host entirely, so the origin is fixed by
+  //     config, not by trusting request headers. Without AUTH_URL a prod
+  //     build fails closed (UntrustedHost error), never open.
+  //   - Dev (localhost, no AUTH_URL): NODE_ENV !== 'production' keeps host
+  //     inference on — unchanged dev ergonomics.
   providers: [
     Zitadel({
       clientId: process.env.IDP_CLIENT_ID,
