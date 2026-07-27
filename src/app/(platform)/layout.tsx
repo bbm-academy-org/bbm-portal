@@ -10,6 +10,13 @@ export const metadata = {
   description: 'BBM Platform surface — behind Zitadel OIDC.',
 }
 
+// Cache gate (spec 060 req.6): every platform segment renders per-request —
+// an authed page must never be served from the static/route cache to an
+// anonymous visitor. auth()/headers() already force dynamic rendering, but the
+// explicit segment config makes the guarantee load-bearing and unit-testable
+// (tests/unit/platform-cache-gate.spec.ts) instead of an implementation detail.
+export const dynamic = 'force-dynamic'
+
 /**
  * Root layout of the (platform) route group (ADR-003 §3(b)): the single place
  * the Zitadel OIDC gate lives, so every current and future platform page

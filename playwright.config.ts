@@ -33,9 +33,15 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: 'chromium' },
     },
   ],
-  webServer: {
-    command: 'pnpm dev',
-    reuseExistingServer: true,
-    url: 'http://localhost:3000',
-  },
+  /* The deployed-stand suite (tests/e2e/portal-prod.e2e.spec.ts) targets the
+   * remote origins in PORTAL_E2E_BASE_URL/CMS_E2E_BASE_URL — when that mode is
+   * active, don't boot (or require) the local dev server. All other e2e specs
+   * run without these vars set and keep the local webServer as before. */
+  webServer: process.env.PORTAL_E2E_BASE_URL
+    ? undefined
+    : {
+        command: 'pnpm dev',
+        reuseExistingServer: true,
+        url: 'http://localhost:3000',
+      },
 })

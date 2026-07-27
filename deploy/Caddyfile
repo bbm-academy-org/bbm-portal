@@ -16,6 +16,18 @@ preview.bbm.academy {
 	header Content-Security-Policy "frame-ancestors https://cms.bbm.academy"
 }
 
+# BBM Platform surface (issue #60 / spec 060, ADR-003). DNS
+# portal.bbm.academy -> 201.51.28.190 already resolves (owner, 2026-07-27), so
+# Caddy auto-provisions the LE cert on first start. Proxies into the SAME app
+# container as cms.bbm.academy — deliberately NO path matching here (spec 060
+# req.2): the host->surface allowlist in the Next middleware (Layer 1,
+# src/middleware.ts) is the single authoritative enforcement; a Caddy path
+# matcher would be a second table to keep in sync, exactly the class of
+# "remember to update" ADR-003 eliminates.
+portal.bbm.academy {
+	reverse_proxy app:3000
+}
+
 # Apex canonical redirect (#108): bare apex 301 -> https://www.bbm.academy.
 # www is canonical (CDN-served via CNAME); the apex A-record points at this host
 # so Caddy holds a valid LE cert and issues the redirect. Path + query preserved.

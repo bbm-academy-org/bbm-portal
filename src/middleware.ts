@@ -1,29 +1,43 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { evaluatePlatformRequest } from '@/lib/platform/hostAllowlist'
+import { evaluateRequest, isPlatformPath, modeFromNodeEnv } from '@/lib/platform/hostAllowlist'
 
 /**
- * Host-allowlist middleware for the platform surface (ADR-003 §2, default-deny).
- * The decision itself is the pure `evaluatePlatformRequest` (unit-tested); this
- * is only the wiring. The matcher scopes middleware to `/p/*`, so CMS routes
- * (`/admin`, `/api`, the static-site frontend, …) never reach it — they stay
- * untouched on every host in P2b (the CMS-host positive allowlist is P3, #60).
+ * Host-allowlist middleware — the authoritative host→surface enforcement
+ * (ADR-003 §2 Layer 1, spec 060 req.2/3). The decision itself is the pure
+ * `evaluateRequest` (unit-tested matrix); this is only the wiring. P3 expands
+ * the matcher from /p/* to ALL paths, so every request on every host is
+ * checked against a positive per-host allowlist: CMS surface on
+ * cms.bbm.academy (+ the internal `app` host for preview S2S), platform
+ * surface on portal.bbm.academy, both on localhost in dev, 404 anywhere else.
+ *
+ * /_next/static and /_next/image are excluded in the matcher (below) purely to
+ * keep middleware off the hot asset path — build-fingerprinted, public-by-
+ * design assets. The allowlist ALSO passes /_next/* on known hosts, so
+ * behavior stays identical if the matcher exclusion is ever changed; the pure
+ * function remains the complete, testable table.
  *
  * Two independent layers: this decides *what is routable on this host*; the
  * (platform) layout's Auth.js gate then decides *who may see it* (spec 059).
  */
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl
-  if (evaluatePlatformRequest(req.headers.get('host'), pathname) === 'not-found') {
+  const mode = modeFromNodeEnv(process.env.NODE_ENV)
+  if (evaluateRequest(req.headers.get('host'), pathname, mode) === 'not-found') {
     return new NextResponse(null, { status: 404 })
   }
-  // Forward the visible pathname so the (platform) layout can build an accurate
-  // post-login callbackUrl without re-parsing the URL.
-  const headers = new Headers(req.headers)
-  headers.set('x-platform-pathname', pathname)
-  return NextResponse.next({ request: { headers } })
+  if (isPlatformPath(pathname)) {
+    // Forward the visible pathname so the (platform) layout can build an
+    // accurate post-login callbackUrl without re-parsing the URL.
+    const headers = new Headers(req.headers)
+    headers.set('x-platform-pathname', pathname)
+    return NextResponse.next({ request: { headers } })
+  }
+  return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/p', '/p/:path*'],
+  // Everything EXCEPT /_next/static and /_next/image (see header comment) —
+  // the allowlist must see every routable path, incl. /, /admin, /api, /p.
+  matcher: ['/((?!_next/static|_next/image).*)'],
 }
