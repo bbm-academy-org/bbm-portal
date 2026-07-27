@@ -1,0 +1,21 @@
+/* ============================================================================
+   Global reset of the (platform) route group. This group is a separate root
+   layout — it renders <html>/<body> itself (there is no src/app/layout.tsx),
+   so nothing upstream neutralises the UA defaults: `body { margin: 8px }` plus
+   the white canvas framed the OKR dashboard in white (#75). The static
+   prototype had the same line (`body{margin:0;background:var(--paper)}`); it
+   was lost when the page moved into route components.
+
+   --platform-paper mirrors the design-system `--paper` (bbm-public-website
+   tokens.css). It lives at :root because the page background paints outside
+   any module subtree; module stylesheets keep their own scoped copy of the
+   token set.
+   ============================================================================ */
+:root {
+  --platform-paper: #eaf2f0;
+}
+
+body {
+  margin: 0;
+  background: var(--platform-paper);
+}

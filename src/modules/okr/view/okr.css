@@ -54,6 +54,17 @@
 .okr-container{max-width:1360px;margin:0 auto;padding:0 32px}
 .okr-root a{color:inherit;text-decoration:none}
 
+/* Design-system globals from colors_and_type.css, lost when the tokens were
+   inlined into the prototype. Scoped to the page, but non-negotiable: the
+   focus ring is the only affordance for keyboard use of the KR rows. */
+.okr-root :focus-visible{outline:3px solid var(--ink);outline-offset:2px;border-radius:3px}
+.okr-root ::selection{background:var(--accent);color:#062223}
+
+/* ---- Plane jump (icon-only link next to a plain-text title) ---- */
+.okr-ext{display:inline-block;width:1em;height:1em;padding:5px;margin:-5px -5px -5px 1px;vertical-align:-.2em;color:var(--ink-3);flex:0 0 auto}
+.okr-ext svg{display:block;width:100%;height:100%}
+.okr-ext:hover{color:var(--accent-ink)}
+
 /* ---- hero (ink band) ---- */
 .okr-hero{background:var(--ink);color:var(--paper);border-bottom:var(--brd) solid var(--ink);padding:40px 0 46px}
 .okr-hero__row{display:flex;justify-content:space-between;align-items:center;gap:20px}
@@ -101,8 +112,7 @@
 .okr-card--soc:not(.okr-card--soon) .okr-card__head{background:var(--accent-soft)}
 .okr-card--biz:not(.okr-card--soon) .okr-card__head{background:var(--accent-2-soft)}
 .okr-card__row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.okr-card__t{font:800 18px/1.28 var(--display-font);letter-spacing:var(--display-tracking);color:var(--ink);margin:12px 0 16px;text-wrap:balance}
-.okr-card__t a:hover{color:var(--accent-ink)}
+.okr-card__t{font:800 18px/1.28 var(--display-font);letter-spacing:var(--display-tracking);color:var(--ink);margin:12px 0 16px;text-wrap:balance;overflow-wrap:break-word}
 .okr-card__prog{display:flex;align-items:center;gap:14px}
 .okr-card__pct{font:500 22px/1 var(--mono-font);color:var(--ink);min-width:60px;text-align:right}
 .okr-card__body{border-top:2px solid var(--ink);background:var(--surface);padding:4px 20px 8px}
@@ -119,14 +129,19 @@
 /* ---- KR rows (native details/summary — no client JS) ---- */
 .okr-kr{border-top:1.5px solid var(--paper-2)}
 .okr-kr:first-child{border-top:0}
-.okr-kr__head{display:flex;align-items:center;gap:10px;width:100%;padding:11px 0;font:inherit;text-align:left;color:inherit;border-radius:8px;list-style:none}
+/* box-sizing: the hover state widens the row by its own padding
+   (`width:calc(100% + 16px)` + `margin:0 -8px`) — the prototype could rely on
+   the UA border-box of <button>, a <summary>/<div> is content-box and would
+   grow the *content* width by 16px on hover, re-wrapping the text. */
+.okr-kr__head{box-sizing:border-box;display:flex;align-items:center;gap:10px;width:100%;padding:11px 0;font:inherit;text-align:left;color:inherit;border-radius:8px;list-style:none}
 .okr-kr__head::-webkit-details-marker{display:none}
 summary.okr-kr__head{cursor:pointer}
 summary.okr-kr__head:hover{background:var(--paper-2);margin:0 -8px;padding-inline:8px;width:calc(100% + 16px)}
-.okr-kr__chev{flex:0 0 12px;font:700 14px/1 var(--body-font);color:var(--ink-3);transition:transform .2s;transform:translateY(-1px)}
-details[open]>.okr-kr__chev,details[open]>summary .okr-kr__chev{transform:rotate(90deg)}
-.okr-kr__t{flex:1;font:600 13.5px/1.35 var(--body-font);color:var(--ink-2)}
-.okr-kr__t a:hover{color:var(--accent-ink)}
+.okr-kr__main{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;font:600 13.5px/1.35 var(--body-font)}
+.okr-kr__chev{flex:0 0 12px;height:1.35em;display:flex;align-items:center;justify-content:center;color:var(--ink-3);transition:transform .2s}
+.okr-kr__chev svg{display:block;width:12px;height:12px}
+details[open]>summary .okr-kr__chev{transform:rotate(90deg)}
+.okr-kr__t{flex:1;min-width:0;color:var(--ink-2);overflow-wrap:break-word}
 .okr-kr__n{font:500 12px var(--mono-font);color:var(--ink-3);white-space:nowrap}
 .okr-kr__v{font:500 13.5px var(--mono-font);color:var(--ink);white-space:nowrap}
 .okr-kr__bar{width:88px;flex:0 0 auto;display:flex}
@@ -136,8 +151,7 @@ details[open]>.okr-kr__chev,details[open]>summary .okr-kr__chev{transform:rotate
 .okr-acts__in{padding:2px 0 12px 22px;display:flex;flex-direction:column;gap:0}
 .okr-act{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1.5px dashed var(--paper-2)}
 .okr-act:first-child{border-top:0}
-.okr-act__t{flex:1;font:500 13px/1.35 var(--body-font);color:var(--ink-2)}
-.okr-act__t a:hover{color:var(--accent-ink)}
+.okr-act__t{flex:1;min-width:0;font:500 13px/1.35 var(--body-font);color:var(--ink-2);overflow-wrap:break-word}
 .okr-act__c{font:500 12.5px var(--mono-font);color:var(--ink);white-space:nowrap}
 .okr-act__bar{width:64px;flex:0 0 auto;display:flex}
 .okr-act__state{font:700 12px var(--mono-font);white-space:nowrap}
