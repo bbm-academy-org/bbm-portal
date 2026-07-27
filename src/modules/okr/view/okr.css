@@ -57,13 +57,19 @@
 /* Design-system globals from colors_and_type.css, lost when the tokens were
    inlined into the prototype. Scoped to the page, but non-negotiable: the
    focus ring is the only affordance for keyboard use of the KR rows. */
-.okr-root :focus-visible{outline:3px solid var(--ink);outline-offset:2px;border-radius:3px}
+.okr-root :focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+/* The DS ships `border-radius:3px` with the ring, meaning «round off square
+   elements» — but at 0,2,0 it also beat `.okr-kr__head`'s own 8px (0,1,0) and
+   squared the KR-row ring. Applied only where the element has no radius. */
+.okr-root a:focus-visible{border-radius:3px}
 .okr-root ::selection{background:var(--accent);color:#062223}
 
-/* ---- Plane jump (icon-only link next to a plain-text title) ---- */
-.okr-ext{display:inline-block;width:1em;height:1em;padding:5px;margin:-5px -5px -5px 1px;vertical-align:-.2em;color:var(--ink-3);flex:0 0 auto}
+/* ---- Plane jump (icon-only link next to a plain-text title) ----
+   Scoped through .okr-root: a bare `.okr-ext` (0,1,0) loses to
+   `.okr-root a{color:inherit}` (0,1,1) and the icon takes the heading ink. */
+.okr-root .okr-ext{display:inline-block;width:1em;height:1em;padding:5px;margin:-5px -5px -5px 1px;vertical-align:-.2em;color:var(--ink-3);flex:0 0 auto}
 .okr-ext svg{display:block;width:100%;height:100%}
-.okr-ext:hover{color:var(--accent-ink)}
+.okr-root .okr-ext:hover{color:var(--accent-ink)}
 
 /* ---- hero (ink band) ---- */
 .okr-hero{background:var(--ink);color:var(--paper);border-bottom:var(--brd) solid var(--ink);padding:40px 0 46px}

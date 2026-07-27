@@ -40,15 +40,20 @@ export function Bar({ pct, color, variant }: { pct: number | null; color: string
  * plain text so that a click anywhere on a row toggles it instead of
  * navigating; the jump is this explicit icon. Inside a <summary> the anchor is
  * the click's activation target, so following it does not also toggle the row.
+ *
+ * The name is deliberately context-free: the accessible name of the enclosing
+ * <summary>/<h2> is computed from its contents and already includes this
+ * label, so spelling the row title out here made a screen reader announce the
+ * title twice. `title` matches the accessible name so hover and SR agree.
  */
-function PlaneLink({ href, label }: { href: string; label: string }) {
+function PlaneLink({ href }: { href: string }) {
   return (
     <a
       className="okr-ext"
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={`Открыть «${label}» в Plane`}
+      aria-label="Открыть в Plane"
       title="Открыть в Plane"
     >
       <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
@@ -97,7 +102,7 @@ function ActionRow({ action }: { action: OkrAction }) {
     <div className="okr-act">
       <span className="okr-act__t">
         {action.title}
-        <PlaneLink href={action.planeUrl} label={action.title} />
+        <PlaneLink href={action.planeUrl} />
       </span>
       {action.total > 0 ? (
         <>
@@ -156,7 +161,7 @@ export function KrRow({ kr }: { kr: OkrKr }) {
         <Chevron hidden={kr.actions.length === 0} />
         <span className="okr-kr__t">
           {kr.title}
-          <PlaneLink href={kr.planeUrl} label={kr.title} />
+          <PlaneLink href={kr.planeUrl} />
         </span>
       </span>
       <LeadChip leadId={kr.leadId} />
@@ -197,7 +202,7 @@ export function ObjectiveCard({ objective, wide }: { objective: OkrObjective; wi
           </div>
           <h2 className="okr-card__t" style={{ marginBottom: 0 }}>
             {objective.title}
-            <PlaneLink href={objective.planeUrl} label={objective.title} />
+            <PlaneLink href={objective.planeUrl} />
           </h2>
           <p className="okr-soon-note">
             Key Results ещё не сформулированы. Objective не входит в общий прогресс цели.
@@ -219,7 +224,7 @@ export function ObjectiveCard({ objective, wide }: { objective: OkrObjective; wi
         </div>
         <h2 className="okr-card__t">
           {objective.title}
-          <PlaneLink href={objective.planeUrl} label={objective.title} />
+          <PlaneLink href={objective.planeUrl} />
         </h2>
         {objective.pct != null && (
           <div className="okr-card__prog">
