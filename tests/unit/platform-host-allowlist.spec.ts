@@ -143,7 +143,7 @@ describe('evaluateRequest — production host × path matrix (spec 060 req.3)', 
     '/api/auth/session',
   ]
   const frameworkPaths = ['/_next/static/chunks/main.js', '/_next/image', '/favicon.ico']
-  const noSurfacePaths = ['/okr', '/players', '/example', '/api/auth-lookalike']
+  const noSurfacePaths = ['/okr', '/players', '/example']
 
   it('CMS host: allows only the CMS surface + framework infra', () => {
     for (const host of cmsHostVariants) {
@@ -175,6 +175,16 @@ describe('evaluateRequest — production host × path matrix (spec 060 req.3)', 
         expect(evaluateRequest(host, path, 'production'), `${host} ${path}`).toBe('not-found')
       }
     }
+  })
+
+  it('the /api/auth/* deny carve-out does not over-match sibling Payload slugs', () => {
+    // /api/auth-lookalike is a legitimate /api/[...slug] catch-all path — it
+    // belongs to Payload on the CMS host (Payload 404s unknown slugs itself)
+    // and stays denied on the portal host (not Auth.js plumbing).
+    expect(evaluateRequest('cms.bbm.academy', '/api/auth-lookalike', 'production')).toBe('pass')
+    expect(evaluateRequest('portal.bbm.academy', '/api/auth-lookalike', 'production')).toBe('not-found')
+    expect(evaluateRequest('cms.bbm.academy', '/api/auth', 'production')).toBe('not-found')
+    expect(evaluateRequest('cms.bbm.academy', '/api/auth/', 'production')).toBe('not-found')
   })
 
   it('internal compose host `app`: CMS surface only (live preview S2S keeps working)', () => {
