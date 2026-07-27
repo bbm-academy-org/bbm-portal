@@ -291,6 +291,31 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     expect(badge![1]).toContain('border-radius:var(--rad-pill)')
   })
 
+  it('pins the status dot to the first line of a wrapped badge', () => {
+    // `align-items:center` on the badge centres the 7px dot against the whole
+    // text block, so on two lines it floats into the gap between them.
+    const dot = /\.okr-badge i\s*\{([^}]*)\}/.exec(css)
+    expect(dot, '.okr-badge i rule missing').not.toBeNull()
+    expect(dot![1]).toContain('align-self:flex-start')
+    // Offset to the optical centre of the first line. `(1lh - 7px)/2` is by
+    // definition what align-items:center produced for a single-line badge,
+    // so the ordinary case stays pixel-identical whatever `line-height:normal`
+    // resolves to; the plain-px declaration is the pre-`lh` fallback.
+    expect(dot![1]).toMatch(/margin-top:calc\(\(1lh - 7px\)\s*\/\s*2\)/)
+  })
+
+  it('breaks unbreakable tokens rather than clipping them', () => {
+    // Only `anywhere` lowers min-content: a long Plane id or URL in a title
+    // would otherwise keep the column wide and be cut off by the card. It also
+    // sharpens the row's wrap trigger. Visually identical for ordinary text.
+    for (const sel of ['.okr-kr__t', '.okr-act__t', '.okr-card__t']) {
+      const rule = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`).exec(css)
+      expect(rule, `${sel} rule missing`).not.toBeNull()
+      expect(rule![1], `${sel} must break anywhere`).toContain('overflow-wrap:anywhere')
+    }
+    expect(css).not.toContain('overflow-wrap:break-word')
+  })
+
   it('keeps the border-box hover trick working across the wrap', () => {
     // `width:calc(100% + 16px)` may not change the row's *content* width, or
     // hovering would re-run the line breaking and reflow the row under cursor.
