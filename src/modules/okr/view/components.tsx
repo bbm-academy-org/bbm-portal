@@ -35,6 +35,57 @@ export function Bar({ pct, color, variant }: { pct: number | null; color: string
   )
 }
 
+/**
+ * The only way out of the dashboard into Plane (spec 075 req.2). Row titles are
+ * plain text so that a click anywhere on a row toggles it instead of
+ * navigating; the jump is this explicit icon. Inside a <summary> the anchor is
+ * the click's activation target, so following it does not also toggle the row.
+ *
+ * The name is deliberately context-free: the accessible name of the enclosing
+ * <summary>/<h2> is computed from its contents and already includes this
+ * label, so spelling the row title out here made a screen reader announce the
+ * title twice. `title` matches the accessible name so hover and SR agree.
+ */
+function PlaneLink({ href }: { href: string }) {
+  return (
+    <a
+      className="okr-ext"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Открыть в Plane"
+      title="Открыть в Plane"
+    >
+      <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+        <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4.2 7.8 8 4" />
+          <path d="M5 4h3v3" />
+        </g>
+      </svg>
+    </a>
+  )
+}
+
+/** Geometry-exact chevron: an SVG centred in the first text line of the row —
+ * a font glyph's optical centre is metric-dependent and cannot be aligned in
+ * both the collapsed and the rotated state (spec 075 req.4). */
+function Chevron({ hidden }: { hidden?: boolean }) {
+  return (
+    <span className="okr-kr__chev" aria-hidden="true" style={hidden ? { visibility: 'hidden' } : undefined}>
+      <svg viewBox="0 0 12 12" focusable="false">
+        <path
+          d="M4.6 2.6 8 6l-3.4 3.4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  )
+}
+
 function LeadChip({ leadId }: { leadId: string | null }) {
   const member = leadId ? TEAM[leadId] : undefined
   if (!member) return null
@@ -50,9 +101,8 @@ function ActionRow({ action }: { action: OkrAction }) {
   return (
     <div className="okr-act">
       <span className="okr-act__t">
-        <a href={action.planeUrl} target="_blank" rel="noopener noreferrer">
-          {action.title}
-        </a>
+        {action.title}
+        <PlaneLink href={action.planeUrl} />
       </span>
       {action.total > 0 ? (
         <>
@@ -105,17 +155,25 @@ export function KrRow({ kr }: { kr: OkrKr }) {
 
   const head = (
     <>
-      <span className="okr-kr__chev" style={kr.actions.length === 0 ? { visibility: 'hidden' } : undefined}>
-        ›
-      </span>
-      <span className="okr-kr__t">
-        <a href={kr.planeUrl} target="_blank" rel="noopener noreferrer">
+      {/* chevron + title share a top-aligned box so the chevron tracks the
+          first line of a wrapping title, not the middle of the whole row. */}
+      <span className="okr-kr__main">
+        <Chevron hidden={kr.actions.length === 0} />
+        <span className="okr-kr__t">
           {kr.title}
-        </a>
+          <PlaneLink href={kr.planeUrl} />
+        </span>
       </span>
-      <LeadChip leadId={kr.leadId} />
-      {counter && <span className="okr-kr__n">{counter}</span>}
-      <KrRight kr={kr} />
+      {/* One wrappable unit for everything nowrap or fixed-width (lead chip,
+          counter, value, 88px bar, badge): the row is a single-line flex with a
+          ~460px floor, so the cluster has to travel to a second line as a whole
+          rather than be clipped by `.okr-card{overflow:hidden}` (spec 075
+          scenario 6). Geometry on one line is unchanged — same gap, same order. */}
+      <span className="okr-kr__meta">
+        <LeadChip leadId={kr.leadId} />
+        {counter && <span className="okr-kr__n">{counter}</span>}
+        <KrRight kr={kr} />
+      </span>
     </>
   )
 
@@ -150,9 +208,8 @@ export function ObjectiveCard({ objective, wide }: { objective: OkrObjective; wi
             <Badge health="undef" text={objective.note ?? 'KR не заданы'} />
           </div>
           <h2 className="okr-card__t" style={{ marginBottom: 0 }}>
-            <a href={objective.planeUrl} target="_blank" rel="noopener noreferrer">
-              {objective.title}
-            </a>
+            {objective.title}
+            <PlaneLink href={objective.planeUrl} />
           </h2>
           <p className="okr-soon-note">
             Key Results ещё не сформулированы. Objective не входит в общий прогресс цели.
@@ -173,9 +230,8 @@ export function ObjectiveCard({ objective, wide }: { objective: OkrObjective; wi
           </span>
         </div>
         <h2 className="okr-card__t">
-          <a href={objective.planeUrl} target="_blank" rel="noopener noreferrer">
-            {objective.title}
-          </a>
+          {objective.title}
+          <PlaneLink href={objective.planeUrl} />
         </h2>
         {objective.pct != null && (
           <div className="okr-card__prog">

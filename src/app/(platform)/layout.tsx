@@ -5,6 +5,8 @@ import React from 'react'
 import { auth } from '@/auth'
 import { resolvePlatformGate } from '@/lib/platform/authGate'
 
+import './platform.css'
+
 export const metadata = {
   title: 'BBM Platform',
   description: 'BBM Platform surface — behind Zitadel OIDC.',
