@@ -430,14 +430,35 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     expect(title![1]).not.toContain('min-width:0')
   })
 
-  it('uses the AA-darkened ink for the «готово» chip, not the dot colour', () => {
-    // 12px bold is not «large text», so the chip needs 4.5:1. --status-pos-dot
-    // (#1b9e5f) gives 3.44:1 on --surface; --status-pos-ink (#136b43) gives
-    // 6.54:1. Since spec 077 req.1 puts this chip on every closed action, the
-    // failing variant would now be all over the screen.
-    const done = /\.okr-act__state--done\s*\{([^}]*)\}/.exec(css)
-    expect(done, '.okr-act__state--done rule missing').not.toBeNull()
-    expect(done![1]).toContain('color:var(--status-pos-ink)')
+  it('keeps every action-state chip above the WCAG AA threshold', () => {
+    // 12px bold is not «large text», so 4.5:1 applies. Pinning the token *name*
+    // would only catch a swap back to --status-pos-dot (3.44:1); it would stay
+    // green if the palette itself were lightened. So compute the real ratio —
+    // both the chip colours and --surface live in this same stylesheet.
+    const token = (name: string): string => {
+      const m = new RegExp(`${name}\\s*:\\s*(#[0-9a-f]{6})`, 'i').exec(css)
+      expect(m, `token ${name} not found in okr.css`).not.toBeNull()
+      return m![1]
+    }
+    const channel = (c: number) => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
+    const luminance = (hex: string) => {
+      const n = Number.parseInt(hex.slice(1), 16)
+      return (
+        0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
+      )
+    }
+    const contrast = (a: string, b: string) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+      return (hi + 0.05) / (lo + 0.05)
+    }
+
+    const surface = token('--surface')
+    for (const mod of ['done', 'started', 'todo']) {
+      const rule = new RegExp(`\\.okr-act__state--${mod}\\s*\\{[^}]*color:\\s*var\\((--[\\w-]+)\\)`).exec(css)
+      expect(rule, `.okr-act__state--${mod} must colour itself from a token`).not.toBeNull()
+      const ratio = contrast(token(rule![1]), surface)
+      expect(ratio, `чип «${mod}» (${rule![1]}) на --surface: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
+    }
   })
 
   it('pins the chevron rotation to an open KR row', () => {

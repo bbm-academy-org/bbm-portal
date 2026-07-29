@@ -191,11 +191,12 @@ details[open]>summary .okr-kr__chev{transform:rotate(90deg)}
 
 /* ---- actions (expanded) ---- */
 .okr-acts__in{padding:2px 0 12px 22px;display:flex;flex-direction:column;gap:0}
-/* Action rows carry the same shape of risk (nowrap `__c`/`__state` + a fixed
-   64px bar) but cannot clip: their only growable child keeps `min-width:0` plus
-   `overflow-wrap:anywhere`, and the fixed cluster floors at ~105px against a
-   249px row at 375px. flex-wrap is the escape hatch if that cluster ever grows;
-   it stays dormant as long as `.okr-act__t` can shrink to zero. */
+/* Action rows carry the same shape of risk as the KR row (nowrap `__c`/`__state`
+   + a fixed 64px bar). Since spec 077 the cluster also carries a state chip and
+   floors at ~186px against a ~245px row at 375px, so flex-wrap is no longer an
+   escape hatch held in reserve: it fires at ≤414px and is what keeps the row
+   readable there. Its trigger is the floor on `.okr-act__t` below — not this
+   declaration. */
 .okr-act{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 10px;padding:7px 0;border-top:1.5px dashed var(--paper-2)}
 .okr-act:first-child{border-top:0}
 /* `min-width` is the wrap trigger, not decoration: with the usual `0` the title

@@ -26,6 +26,15 @@ function module_(over: Partial<PlaneModule> & { name: string }): PlaneModule {
 
 const [DSG1, DSG2, DSG3, DSG4, DSG5] = OKR_PROJECTS
 
+/**
+ * The req.4 invariant, checked by construction rather than by re-typing the
+ * expected numbers: every non-cancelled issue of a KR belongs to exactly one
+ * action row, so the rows always add up to the KR's own flat counter.
+ */
+function sumRows(kr: { actions: Array<{ done: number; total: number }> }): { done: number; total: number } {
+  return kr.actions.reduce((a, r) => ({ done: a.done + r.done, total: a.total + r.total }), { done: 0, total: 0 })
+}
+
 function slice(
   cfg: (typeof OKR_PROJECTS)[number],
   name: string,
@@ -126,6 +135,7 @@ describe('mapOkrTree', () => {
     expect(kr.actions).toHaveLength(1)
     expect({ done: kr.actions[0].done, total: kr.actions[0].total }).toEqual({ done: 1, total: 3 })
     expect(kr.actions[0].tasks.map((t) => t.title)).toEqual(['Суб', 'Внук'])
+    expect(sumRows(kr), 'инвариант req.4 на глубине 3').toEqual(kr.counts)
   })
 
   it('survives a parent cycle: every issue still gets a row and a warning (FR-7)', () => {
@@ -143,6 +153,7 @@ describe('mapOkrTree', () => {
     expect(kr.counts).toEqual({ done: 0, total: 2 })
     expect(kr.actions.map((x) => x.title).sort()).toEqual(['Задача A', 'Задача B'])
     expect(kr.actions.every((x) => x.total === 1)).toBe(true)
+    expect(sumRows(kr), 'инвариант req.4 на циклическом графе').toEqual(kr.counts)
     expect(warnings.some((w) => w.includes('Циклическая'))).toBe(true)
   })
 
@@ -171,11 +182,7 @@ describe('mapOkrTree', () => {
       { done: 0, total: 1 },
     ])
     // the invariant the owner reads off the screen: rows sum to the KR counter
-    const sum = kr.actions.reduce((acc, a) => ({ done: acc.done + a.done, total: acc.total + a.total }), {
-      done: 0,
-      total: 0,
-    })
-    expect(sum).toEqual(kr.counts)
+    expect(sumRows(kr)).toEqual(kr.counts)
   })
 
   it('promotes an orphaned sub (parent cancelled) to a top-level action instead of dropping it', () => {
