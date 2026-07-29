@@ -26,9 +26,14 @@ export interface OkrTask {
 export interface OkrAction {
   id: string
   title: string
-  /** The action's own state — a childless action enters the KR denominator with it (FR-2). */
+  /** The action's own state — every row names it, with or without sub-tasks (spec 077 req.1). */
   stateGroup: StateGroup
-  /** Sub-task counters (cancelled excluded). Display-only; the KR% is computed flat. */
+  /**
+   * Counters over «the action itself + its sub-tasks» (cancelled excluded), so
+   * a started parent with one closed sub reads 1/2, not 1/1 (spec 077 req.3).
+   * `total` is therefore never 0 — use `tasks.length` to ask about sub-tasks.
+   * Display-only; the KR% is computed flat over the same set (§3 p.1).
+   */
   done: number
   total: number
   planeUrl: string

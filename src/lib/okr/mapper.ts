@@ -116,12 +116,16 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
           .sort((a, b) => a.sequence_id - b.sequence_id)
           .map((parent): OkrAction => {
             const subs = active.filter((i) => i.parent === parent.id).sort((a, b) => a.sequence_id - b.sequence_id)
+            // spec 077 req.3–4: the row counts the parent as one unit of work
+            // alongside its subs — the same flat set the KR counter uses, so the
+            // rows of a KR add up to exactly its own d/t.
+            const unit = [parent, ...subs]
             return {
               id: parent.id,
               title: parent.name,
               stateGroup: groupOf(parent),
-              done: subs.filter((s) => groupOf(s) === 'completed').length,
-              total: subs.length,
+              done: unit.filter((i) => groupOf(i) === 'completed').length,
+              total: unit.length,
               planeUrl: issueUrl(parent),
               tasks: subs.map(toTask),
             }

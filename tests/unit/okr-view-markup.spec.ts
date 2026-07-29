@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { KrRow, ObjectiveCard } from '@/modules/okr/view/components'
-import type { OkrAction, OkrKr, OkrObjective } from '@/lib/okr'
+import type { OkrAction, OkrKr, OkrObjective, OkrTask } from '@/lib/okr'
 
 /**
  * Markup contract of the OKR dashboard rows (spec 075, issue #75). The page
@@ -174,15 +174,90 @@ describe('KR row markup (spec 075 req.2)', () => {
   })
 
   it('keeps the state badge of a childless action (FR-2)', () => {
-    const done = action({ id: 'a2', title: 'Готовое действие', stateGroup: 'completed', done: 0, total: 0 })
-    const open = action({ id: 'a3', title: 'Открытое действие', stateGroup: 'started', done: 0, total: 0 })
+    const done = action({ id: 'a2', title: 'Готовое действие', stateGroup: 'completed', done: 1, total: 1, tasks: [] })
+    const open = action({ id: 'a3', title: 'Открытое действие', stateGroup: 'started', done: 0, total: 1, tasks: [] })
     const host = render(React.createElement(KrRow, { kr: kr({ actions: [done, open] }) }))
 
     const states = host.querySelectorAll('.okr-act__state')
     expect(states).toHaveLength(2)
     expect(states[0].className).toContain('okr-act__state--done')
-    expect(states[1].className).toContain('okr-act__state--open')
+    expect(states[1].className).toContain('okr-act__state--started')
+    // spec 077 req.5: a childless row stays a chip — «0/1» says less than «в работе»
     expect(host.querySelectorAll('.okr-act__bar')).toHaveLength(0)
+    expect(host.querySelectorAll('.okr-act__c')).toHaveLength(0)
+  })
+})
+
+describe('action row state (spec 077, issue #77)', () => {
+  const task = (over: Partial<OkrTask> = {}): OkrTask => ({
+    id: 't1',
+    title: 'Подзадача',
+    stateGroup: 'completed',
+    planeUrl: 'https://plane.bbm.academy/doctor-school/browse/DSG2-24/',
+    ...over,
+  })
+
+  it('shows the parent state chip even when the action has sub-tasks (req.1)', () => {
+    // The #77 case: a started parent whose only sub-task is closed used to render
+    // as «1/1» with a full bar — its own state was nowhere on the screen.
+    const congress = action({
+      title: 'Организовать сайт конгресса ортобиологии, перелив трафика',
+      stateGroup: 'started',
+      done: 1,
+      total: 2,
+      tasks: [task()],
+    })
+    const host = render(React.createElement(KrRow, { kr: kr({ actions: [congress] }) }))
+
+    const row = host.querySelector('.okr-act')!
+    const chip = row.querySelector('.okr-act__state')
+    expect(chip, 'an action with sub-tasks must still name its own state').not.toBeNull()
+    expect(chip!.className).toContain('okr-act__state--started')
+    expect(row.querySelector('.okr-act__c')!.textContent).toBe('1/2')
+  })
+
+  it('names all three Plane state groups, not just done/not-done (req.2)', () => {
+    const rows = [
+      action({ id: 'a-done', stateGroup: 'completed', done: 1, total: 1, tasks: [] }),
+      action({ id: 'a-started', stateGroup: 'started', done: 0, total: 1, tasks: [] }),
+      action({ id: 'a-todo', stateGroup: 'unstarted', done: 0, total: 1, tasks: [] }),
+      action({ id: 'a-backlog', stateGroup: 'backlog', done: 0, total: 1, tasks: [] }),
+    ]
+    const host = render(React.createElement(KrRow, { kr: kr({ actions: rows }) }))
+    const chips = Array.from(host.querySelectorAll('.okr-act__state'))
+
+    expect(chips.map((c) => c.textContent)).toEqual([
+      '✓ готово',
+      '◐ в работе',
+      '○ не начато',
+      '○ не начато',
+    ])
+    expect(chips.map((c) => c.className.replace('okr-act__state ', ''))).toEqual([
+      'okr-act__state--done',
+      'okr-act__state--started',
+      'okr-act__state--todo',
+      'okr-act__state--todo',
+    ])
+  })
+
+  it('fills the bar to exactly the number next to it (req.6)', () => {
+    const half = action({ stateGroup: 'started', done: 1, total: 2, tasks: [task()] })
+    const host = render(React.createElement(KrRow, { kr: kr({ actions: [half] }) }))
+
+    const fill = host.querySelector<HTMLElement>('.okr-act__bar .okr-bar__fill')
+    expect(fill, 'a row with sub-tasks carries a progress bar').not.toBeNull()
+    expect(fill!.style.width).toBe('50%')
+  })
+
+  it('decides counter vs chip-only by sub-tasks, not by the counter itself (req.5)', () => {
+    // `total` is never 0 any more (the action counts itself), so the old
+    // `total > 0` switch would have put a bar on every single row.
+    const childless = action({ stateGroup: 'started', done: 0, total: 1, tasks: [] })
+    const host = render(React.createElement(KrRow, { kr: kr({ actions: [childless] }) }))
+
+    expect(host.querySelector('.okr-act__c')).toBeNull()
+    expect(host.querySelector('.okr-act__bar')).toBeNull()
+    expect(host.querySelector('.okr-act__state')!.className).toContain('okr-act__state--started')
   })
 })
 
@@ -323,6 +398,26 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     expect(hover, 'the hover rule is missing').not.toBeNull()
     expect(hover![1]).toContain('width:calc(100% + 16px)')
     expect(/\.okr-kr__head\s*\{([^}]*)\}/.exec(css)![1]).toContain('box-sizing:border-box')
+  })
+
+  it('styles all three action-state chips (spec 077 req.2)', () => {
+    // The markup contract above emits these three classes; a chip with no rule
+    // of its own would silently inherit the row ink and stop reading as a state.
+    for (const mod of ['done', 'started', 'todo']) {
+      expect(css, `.okr-act__state--${mod} has no colour rule`).toMatch(
+        new RegExp(`\\.okr-act__state--${mod}\\s*\\{[^}]*color:`),
+      )
+    }
+    expect(css, 'the old binary --open chip is gone').not.toContain('.okr-act__state--open')
+  })
+
+  it('lets the action row wrap its indicator cluster instead of clipping it (spec 077 req.7)', () => {
+    // The row now carries a chip AND (with sub-tasks) a counter plus a 64px bar.
+    // They travel as one unit, exactly like the KR row's `.okr-kr__meta`.
+    const meta = /\.okr-act__meta\s*\{([^}]*)\}/.exec(css)
+    expect(meta, '.okr-act__meta rule missing').not.toBeNull()
+    expect(meta![1]).toContain('flex-wrap:wrap')
+    expect(meta![1]).toContain('min-width:0')
   })
 
   it('pins the chevron rotation to an open KR row', () => {
