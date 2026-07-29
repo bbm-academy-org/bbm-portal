@@ -35,7 +35,7 @@ export class HoursDataError extends Error {
 const DEFAULT_DATA_FILE = 'data/hours.json'
 
 /** Абсолютный путь к документу. Пустая переменная считается незаданной. */
-export function resolveDataFile(env: NodeJS.ProcessEnv = process.env): string {
+export function resolveDataFile(env: Record<string, string | undefined> = process.env): string {
   const configured = typeof env.HOURS_DATA_FILE === 'string' ? env.HOURS_DATA_FILE.trim() : ''
   const target = configured || DEFAULT_DATA_FILE
   return isAbsolute(target) ? target : resolve(process.cwd(), target)
