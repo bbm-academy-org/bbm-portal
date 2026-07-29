@@ -47,6 +47,11 @@ next-env.d.ts
 
 /media
 
+# Hours module data (#81, spec 081 req.12): the JSON document lives on disk, not
+# in the DB. In dev it is data/hours.json at the repo root; in prod it sits on a
+# mounted volume (HOURS_DATA_FILE). Real declarations must never be committed.
+/data
+
 # Playwright
 node_modules/
 /test-results/

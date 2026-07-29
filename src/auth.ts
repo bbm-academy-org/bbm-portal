@@ -34,6 +34,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.IDP_CLIENT_ID,
       clientSecret: process.env.IDP_CLIENT_SECRET,
       issuer: process.env.IDP_ISSUER,
+      // Scope is requested EXPLICITLY (spec 081 req.8): the hours module
+      // identifies a participant by the session's email claim, and an email
+      // that is merely "usually there by default" is not something a payout
+      // mechanic may rest on. The OKR gate never needed the claim, so nothing
+      // here was pinned before. The change is group-wide — the OKR login is
+      // re-checked on acceptance. `email_verified` is deliberately NOT required:
+      // this is a corporate IdP whose accounts the owner creates himself.
+      authorization: { params: { scope: 'openid profile email' } },
     }),
   ],
 })

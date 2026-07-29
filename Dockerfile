@@ -69,6 +69,15 @@ COPY --from=builder /app/public ./public
 RUN mkdir .next
 RUN chown nextjs:nodejs .next
 
+# Hours module data dir (#81, spec 081 req.18). The app runs as `nextjs` (uid
+# 1001), so a volume mounted here must be writable by that uid — otherwise the
+# first save fails with EACCES on prod and nowhere else. Docker seeds a FRESH
+# named volume from the image path *including ownership*, so creating the
+# directory owned by nextjs:nodejs here is what makes `hoursdata` writable.
+# (An already-existing volume keeps its own ownership — chown it on the host.)
+RUN mkdir -p /data/hours
+RUN chown -R nextjs:nodejs /data
+
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
