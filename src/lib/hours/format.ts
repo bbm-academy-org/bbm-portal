@@ -7,10 +7,23 @@
  * «173 913 ₽» никогда не разрывалось переносом строки.
  */
 
+import type { AssessmentMethod } from './types'
+
 const NBSP = ' '
 
 function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+/**
+ * Подписи способов оценки — вкладки калькулятора (спека 081 п.20). Живут в
+ * домене, а не во вью: их читают и сводка, и карточка сохранения, и они же
+ * расшифровывают поле `method` выгруженного JSON для рассылки (п.26).
+ */
+export const METHOD_LABELS: Record<AssessmentMethod, string> = {
+  period: 'по часам за период',
+  week: 'по средней неделе',
+  day: 'по рабочему дню',
 }
 
 /** Целое с разрядами: 173913 → «173 913». */

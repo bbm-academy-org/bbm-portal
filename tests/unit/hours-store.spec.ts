@@ -115,6 +115,38 @@ describe('readHoursDocument', () => {
     await expect(readHoursDocument()).rejects.toBeInstanceOf(HoursDataError)
   })
 
+  it('нормализует email при чтении — ручная правка JSON на хосте штатна (п.16)', async () => {
+    await mutateHoursDocument(() => ({ ok: true, doc: seed, warnings: [], saved: null }))
+    writeFileSync(
+      file,
+      JSON.stringify({
+        participants: [{ ...seed.participants[0], email: '  Anton@BBM.Academy ' }],
+        periods: seed.periods,
+        assessments: [
+          {
+            period_id: 'p-july',
+            email: 'ANTON@bbm.academy',
+            hours: 160,
+            method: 'period',
+            weekend_hours: 0,
+            split_percent: 0,
+            monthly_rate: 200_000,
+            hourly_rate: 200_000 / 184,
+            accrual: 173_913,
+            cash_amount: 173_913,
+            invest_amount: 0,
+            weekday_count: 23,
+            saved_at: '2026-08-01T09:00:00.000Z',
+          },
+        ],
+      }),
+      'utf8',
+    )
+    const doc = await readHoursDocument()
+    expect(doc.participants[0].email).toBe('anton@bbm.academy')
+    expect(doc.assessments[0].email).toBe('anton@bbm.academy')
+  })
+
   it('недостающие секции дополняются пустыми (документ старой версии)', async () => {
     await mutateHoursDocument(() => ({ ok: true, doc: seed, warnings: [], saved: null }))
     writeFileSync(file, JSON.stringify({ participants: seed.participants }), 'utf8')

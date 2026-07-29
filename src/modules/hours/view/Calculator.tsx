@@ -10,7 +10,7 @@ import type { Assessment, AssessmentMethod, Period } from '@/lib/hours/types'
 import { saveAssessmentAction } from '@/modules/hours/actions'
 import { IDLE_STATE } from '@/modules/hours/actionState'
 
-import { SavedCard } from './components'
+import { SavedCard } from './SavedCard'
 
 /**
  * Калькулятор самооценки (спека 081 пп. 20, 21) — единственный клиентский
@@ -118,13 +118,18 @@ export function Calculator(props: CalculatorProps) {
   const sliderMax = sliderMaxHours(calendar)
   const weekendMax = Math.max(Math.round(calendar.calendarDays * 4), 1)
 
+  // Первый заход — НУЛИ во всех вкладках. Норма периода в качестве дефолта
+  // означала бы, что инструмент задекларировал 184 часа за человека, и одно
+  // нажатие «Сохранить» превратило бы это в его собственную оценку. Часы
+  // объявляет участник, а не форма. Уже сохранённая оценка, наоборот,
+  // восстанавливается целиком — это его же числа.
   const initialMethod: AssessmentMethod = existing?.method ?? 'period'
   const initialWeekend = existing?.weekend_hours ?? 0
-  const initialWeekdayPart = existing ? Math.max(existing.hours - initialWeekend, 0) : calendar.normHours
+  const initialWeekdayPart = existing ? Math.max(existing.hours - initialWeekend, 0) : 0
 
   const [method, setMethod] = useState<AssessmentMethod>(initialMethod)
   const [periodHours, setPeriodHours] = useState(
-    initialMethod === 'period' ? round1(initialWeekdayPart) : round1(calendar.normHours),
+    initialMethod === 'period' ? round1(initialWeekdayPart) : 0,
   )
   const [periodWeekendOn, setPeriodWeekendOn] = useState(
     initialMethod === 'period' && initialWeekend > 0,
@@ -135,12 +140,12 @@ export function Calculator(props: CalculatorProps) {
   const [weekHours, setWeekHours] = useState(
     initialMethod === 'week' && calendar.weekMultiplier > 0
       ? round1((existing?.hours ?? 0) / calendar.weekMultiplier)
-      : 40,
+      : 0,
   )
   const [dayHours, setDayHours] = useState(
     initialMethod === 'day' && calendar.dayMultiplier > 0
       ? round1(initialWeekdayPart / calendar.dayMultiplier)
-      : 8,
+      : 0,
   )
   const [dayWeekendOn, setDayWeekendOn] = useState(initialMethod === 'day' && initialWeekend > 0)
   const [dayWeekendHours, setDayWeekendHours] = useState(
@@ -184,6 +189,13 @@ export function Calculator(props: CalculatorProps) {
       </>
     )
   }
+
+  const savedCard =
+    state.status === 'ok' && state.saved
+      ? { assessment: state.saved, caption: 'Оценка сохранена' }
+      : existing
+        ? { assessment: existing, caption: 'Сохранённая оценка за этот период' }
+        : null
 
   const roundedHours = round1(hours)
   const roundedWeekend = round1(weekendHours)
@@ -402,8 +414,16 @@ export function Calculator(props: CalculatorProps) {
         {state.status === 'error' ? (
           <p className="hours-notice hours-notice--error">{state.message}</p>
         ) : null}
-        {state.status === 'ok' && state.saved ? (
-          <SavedCard assessment={state.saved} periodLabel={period.label} />
+        {/* Ровно ОДНА карточка на странице: только что сохранённая оценка,
+            а при повторном заходе — та, что лежит на диске. Раньше их было
+            две (страница рисовала свою), и после сохранения участник видел
+            рядом старые и новые числа. */}
+        {savedCard ? (
+          <SavedCard
+            assessment={savedCard.assessment}
+            periodLabel={period.label}
+            caption={savedCard.caption}
+          />
         ) : null}
       </div>
     </div>

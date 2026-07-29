@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve } from 'node:path'
 
+import { normalizeEmail } from './access'
 import type { MutationResult } from './document'
 import { emptyHoursDocument, type HoursDocument } from './types'
 
@@ -47,9 +48,25 @@ function normalizeDocument(raw: unknown): HoursDocument {
   }
   const value = raw as Partial<HoursDocument>
   const document = emptyHoursDocument()
-  if (Array.isArray(value.participants)) document.participants = value.participants
+  // Email — ключ и участника, и оценки, а правка JSON руками на хосте это
+  // ШТАТНЫЙ путь спеки (п.16: смена email участника и удаление живут через
+  // владельческий escape-hatch). Владелец напишет «Anton@BBM.Academy» — и без
+  // нормализации на чтении такой участник перестанет находиться по email'у
+  // сессии, то есть тихо потеряет и ставку, и свою оценку. Нормализуем здесь,
+  // на границе с диском: дальше по коду email уже канонический.
+  if (Array.isArray(value.participants)) {
+    document.participants = value.participants.map((participant) => ({
+      ...participant,
+      email: normalizeEmail(participant?.email),
+    }))
+  }
   if (Array.isArray(value.periods)) document.periods = value.periods
-  if (Array.isArray(value.assessments)) document.assessments = value.assessments
+  if (Array.isArray(value.assessments)) {
+    document.assessments = value.assessments.map((assessment) => ({
+      ...assessment,
+      email: normalizeEmail(assessment?.email),
+    }))
+  }
   return document
 }
 

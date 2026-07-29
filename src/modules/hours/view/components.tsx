@@ -8,30 +8,23 @@ import {
   formatRub,
   formatSavedAt,
   formatWeekdayCount,
+  METHOD_LABELS,
 } from '@/lib/hours/format'
 import { effectiveHourlyRate, monthlyHourlyRate } from '@/lib/hours/formula'
 import type { PeriodCalendar } from '@/lib/hours/formula'
-import type { Assessment, AssessmentMethod, Participant, Period } from '@/lib/hours/types'
+import type { Assessment, Participant, Period } from '@/lib/hours/types'
 
 /**
- * Презентационные компоненты модуля часов (спека 081 пп. 8, 9, 19–22).
- * Сознательно СЕРВЕРНЫЕ и без состояния: страницы остаются RSC, а клиентская
- * интерактивность живёт отдельно (Calculator.tsx, п.27). Всё, что здесь
- * рисуется, проверяется markup-тестами — это те самые экраны, которые владелец
- * смотрит на приёмке.
+ * Презентационные компоненты страницы часов (спека 081 пп. 8, 9, 19, 20, 22).
+ * Все — серверные и без состояния; клиентская интерактивность живёт отдельно
+ * (Calculator.tsx, п.27). Это те самые экраны, которые владелец смотрит на
+ * приёмке, поэтому каждый закрыт markup-тестом.
  *
- * Импорты домена ТОЧЕЧНЫЕ (`@/lib/hours/format`, `.../formula`, `.../types`), а
- * не через барель `@/lib/hours`: карточку `SavedCard` рендерит клиентский
- * калькулятор, а барель тянет `store.ts` с `node:fs` — в клиентском бандле ему
- * делать нечего.
+ * Этот файл НИКОГДА не импортируется клиентским компонентом: бандлер тянет
+ * модуль целиком, и одна карточка утащила бы за собой всю страницу. Карточка
+ * сохранения, которая нужна и калькулятору, живёт в отдельном SavedCard.tsx —
+ * факт проверяется тестом, а не соглашением.
  */
-
-/** Подписи способов оценки — вкладки калькулятора (п.20). */
-export const METHOD_LABELS: Record<AssessmentMethod, string> = {
-  period: 'по часам за период',
-  week: 'по средней неделе',
-  day: 'по рабочему дню',
-}
 
 /** «Вошёл как <email>» — так email-claim Zitadel проверяется глазами (п.8). */
 export function SignedInAs({ email }: { email: string }) {
@@ -236,65 +229,6 @@ export function SummaryTable({ rows }: { rows: SummaryRow[] }) {
           ))}
         </tbody>
       </table>
-    </div>
-  )
-}
-
-/** Карточка «оценка сохранена» с итоговыми числами (п.21). */
-export function SavedCard({
-  assessment,
-  periodLabel,
-}: {
-  assessment: Assessment
-  periodLabel: string
-}) {
-  return (
-    <div className="hours-saved">
-      <div className="hours-saved__cap">Оценка сохранена</div>
-      <dl>
-        <div>
-          <dt>Период</dt>
-          <dd>{periodLabel}</dd>
-        </div>
-        <div>
-          <dt>Часы (итог)</dt>
-          <dd>{formatHours(assessment.hours)} ч</dd>
-        </div>
-        <div>
-          <dt>Из них в выходные</dt>
-          <dd>{formatHours(assessment.weekend_hours)} ч</dd>
-        </div>
-        <div>
-          <dt>Способ оценки</dt>
-          <dd>{METHOD_LABELS[assessment.method]}</dd>
-        </div>
-        <div>
-          <dt>Ставка</dt>
-          <dd>
-            {formatRub(assessment.monthly_rate)}/мес · {formatRub(assessment.hourly_rate)}/ч
-          </dd>
-        </div>
-        <div>
-          <dt>Начисление</dt>
-          <dd>{formatRub(assessment.accrual)}</dd>
-        </div>
-        <div>
-          <dt>Деньгами</dt>
-          <dd>
-            {formatRub(assessment.cash_amount)} ({formatPercent(100 - assessment.split_percent)})
-          </dd>
-        </div>
-        <div>
-          <dt>Доинвестиция в 4X</dt>
-          <dd>
-            {formatRub(assessment.invest_amount)} ({formatPercent(assessment.split_percent)})
-          </dd>
-        </div>
-        <div>
-          <dt>Сохранена</dt>
-          <dd>{formatSavedAt(assessment.saved_at)}</dd>
-        </div>
-      </dl>
     </div>
   )
 }

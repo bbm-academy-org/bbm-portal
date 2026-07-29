@@ -18,11 +18,11 @@ import type { HoursDocument } from '@/lib/hours'
 import { Calculator } from '@/modules/hours/view/Calculator'
 import {
   DataUnavailable,
+  FormulaBreakdown,
   NoPeriodsNotice,
   NotAParticipantNotice,
   ParticipantsTable,
   PeriodHeader,
-  SavedCard,
   SignedInAs,
   SummaryTable,
 } from '@/modules/hours/view/components'
@@ -115,6 +115,15 @@ export default async function HoursPage({
           {openPeriod && calendar ? (
             <>
               <PeriodHeader period={openPeriod} calendar={calendar} />
+              {/* Формула показывается честно и ДО калькулятора (п.20): для
+                  многомесячного периода — с помесячной разбивкой, потому что
+                  ставка часа считается по полному календарному месяцу (п.2).
+                  Участник должен видеть, откуда взялась его часовая, а не
+                  только результат. */}
+              <FormulaBreakdown
+                calendar={calendar}
+                monthlyRate={participant?.monthly_rate ?? null}
+              />
               <Calculator
                 period={openPeriod}
                 calendar={calendar}
@@ -125,12 +134,6 @@ export default async function HoursPage({
                 maxHours={maxDeclarableHours(calendar)}
                 disabledReason={disabledReason}
               />
-              {existing ? (
-                <>
-                  <p className="hours-note">Последняя сохранённая оценка за этот период:</p>
-                  <SavedCard assessment={existing} periodLabel={openPeriod.label} />
-                </>
-              ) : null}
             </>
           ) : doc.periods.length === 0 ? (
             <NoPeriodsNotice />

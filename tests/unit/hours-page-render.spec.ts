@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { HoursDocument } from '@/lib/hours'
 
@@ -68,9 +68,12 @@ const seed: HoursDocument = {
 }
 
 beforeAll(() => {
-  writeFileSync(file, JSON.stringify(seed), 'utf8')
   process.env.HOURS_DATA_FILE = file
   process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
+})
+
+beforeEach(() => {
+  writeFileSync(file, JSON.stringify(seed), 'utf8')
 })
 
 afterAll(() => {
@@ -109,5 +112,84 @@ describe('страница /p/hours собирается целиком', () => 
   it('показывает админу ссылку на админку (allowlist)', async () => {
     const html = await renderPage()
     expect(html).toContain('/p/hours/admin')
+  })
+
+  it('рисует ровно одну карточку сохранённой оценки, а не две', async () => {
+    // Раньше карточку рисовали и страница, и калькулятор — после сохранения
+    // участник видел рядом старые и новые числа.
+    const html = await renderPage()
+    expect(html.match(/hours-saved__cap/g) ?? []).toHaveLength(1)
+  })
+
+  it('для одномесячного периода помесячной разбивки нет — она там не нужна', async () => {
+    const html = await renderPage()
+    expect(html).not.toContain('data-month')
+  })
+})
+
+describe('страница показывает помесячную разбивку многомесячного периода (п.20, сценарий 4)', () => {
+  beforeEach(() => {
+    // Кейс владельца «Май–июнь 2026» одним периодом: 21 + 22 будня. Ставка
+    // часа считается по КАЖДОМУ полному месяцу, и участник обязан видеть это
+    // на странице, а не только итоговую эффективную.
+    writeFileSync(
+      file,
+      JSON.stringify({
+        participants: seed.participants,
+        periods: [
+          {
+            id: 'p-may-june',
+            label: 'Май–июнь 2026',
+            date_from: '2026-05-01',
+            date_to: '2026-06-30',
+            status: 'open',
+          },
+        ],
+        assessments: [],
+      }),
+      'utf8',
+    )
+  })
+
+  it('показывает эффективную 1 163 ₽ и обе помесячные ставки', async () => {
+    const html = await renderPage()
+    expect(html).toContain('Май–июнь 2026')
+    expect(html).toContain('1 163 ₽')
+    expect(html).toContain('май 2026')
+    expect(html).toContain('июнь 2026')
+    expect(html).toContain('1 190 ₽')
+    expect(html).toContain('1 136 ₽')
+    // ровно два месяца в разбивке
+    expect(html.match(/data-month=/g) ?? []).toHaveLength(2)
+  })
+
+  it('называет 43 будних дня и норму 344 ч', async () => {
+    const html = await renderPage()
+    expect(html).toContain('43 будних дня')
+    expect(html).toContain('344 ч')
+  })
+
+  it('без ставки участника денежной части на странице нет (п.9)', async () => {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        participants: [],
+        periods: [
+          {
+            id: 'p-may-june',
+            label: 'Май–июнь 2026',
+            date_from: '2026-05-01',
+            date_to: '2026-06-30',
+            status: 'open',
+          },
+        ],
+        assessments: [],
+      }),
+      'utf8',
+    )
+    const html = await renderPage()
+    expect(html).toContain('нет в списке участников')
+    expect(html).toContain('43 будних дня')
+    expect(html).not.toContain('1 163 ₽')
   })
 })

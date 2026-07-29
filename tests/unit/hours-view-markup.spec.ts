@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -13,10 +13,10 @@ import {
   NotAParticipantNotice,
   ParticipantsTable,
   PeriodHeader,
-  SavedCard,
   SignedInAs,
   SummaryTable,
 } from '@/modules/hours/view/components'
+import { SavedCard } from '@/modules/hours/view/SavedCard'
 
 /**
  * Разметка вью модуля часов (спека 081 пп. 8, 9, 19, 20, 21, 22). Проверяется
@@ -257,17 +257,82 @@ describe('NoPeriodsNotice / DataUnavailable (п.17, п.22)', () => {
   })
 })
 
-describe('контракт клиентской интерактивности (п.27)', () => {
-  const viewDir = join(REPO_ROOT, 'src', 'modules', 'hours', 'view')
+describe('что реально уезжает в клиентский бандл (п.27)', () => {
+  const moduleDir = join(REPO_ROOT, 'src', 'modules', 'hours')
+  const viewDir = join(moduleDir, 'view')
 
-  it('калькулятор — отдельный клиентский компонент', () => {
-    const source = readFileSync(join(viewDir, 'Calculator.tsx'), 'utf8')
-    expect(source.startsWith("'use client'")).toBe(true)
+  /** Файл модуля по import-спецификатору; null — импорт за пределы модуля. */
+  function resolve(spec: string, fromDir: string): string | null {
+    const path = spec.startsWith('./')
+      ? join(fromDir, spec.slice(2))
+      : spec.startsWith('@/modules/hours/')
+        ? join(moduleDir, spec.slice('@/modules/hours/'.length))
+        : null
+    if (!path) return null
+    for (const candidate of [`${path}.tsx`, `${path}.ts`]) {
+      if (existsSync(candidate)) return candidate
+    }
+    return null
+  }
+
+  /**
+   * Импорты, которые реально попадают в бандл: `import type` стирается
+   * компилятором и ничего не тянет, поэтому в счёт не идёт.
+   */
+  function importsOf(file: string): string[] {
+    const source = readFileSync(file, 'utf8')
+    return [...source.matchAll(/(?:^|\n)\s*import\s+([\s\S]*?)from\s+'([^']+)'/g)]
+      .filter((match) => !match[1].trimStart().startsWith('type'))
+      .map((match) => match[2])
+  }
+
+  /**
+   * Транзитивное замыкание клиентского бандла. Корни — файлы с директивой
+   * 'use client' (директива тут не предмет проверки, а способ найти вход);
+   * проверяется СЛЕДСТВИЕ: что через эти входы утягивается.
+   */
+  function clientClosure(): { files: Set<string>; specs: Set<string> } {
+    const roots = readdirSync(viewDir)
+      .map((name) => join(viewDir, name))
+      .filter((path) => /\.tsx?$/.test(path))
+      .filter((path) => readFileSync(path, 'utf8').startsWith("'use client'"))
+    expect(roots.length, 'в модуле должен быть хотя бы один клиентский вход').toBeGreaterThan(0)
+
+    const files = new Set<string>()
+    const specs = new Set<string>()
+    const queue = [...roots]
+    while (queue.length > 0) {
+      const current = queue.pop()!
+      if (files.has(current)) continue
+      files.add(current)
+      for (const spec of importsOf(current)) {
+        specs.add(spec)
+        const next = resolve(spec, join(current, '..'))
+        // 'use server' — граница: клиент получает сетевую заглушку экшена, а
+        // не его код, поэтому обход дальше не идёт (как и у бандлера).
+        if (next && !readFileSync(next, 'utf8').startsWith("'use server'")) queue.push(next)
+      }
+    }
+    return { files, specs }
+  }
+
+  it('серверные компоненты страницы не утягиваются в бандл через калькулятор', () => {
+    // Бандлер тянет МОДУЛЬ целиком, а не использованный экспорт: импорт одной
+    // карточки из components.tsx увёз бы в браузер и таблицу участников, и
+    // сводку, и все плашки. Карточка поэтому живёт отдельным файлом.
+    const { files } = clientClosure()
+    expect([...files].map((f) => f.replace(/\\/g, '/'))).not.toContain(
+      join(viewDir, 'components.tsx').replace(/\\/g, '/'),
+    )
+    expect([...files].some((f) => f.endsWith('SavedCard.tsx'))).toBe(true)
   })
 
-  it('презентационные компоненты остаются серверными (без use client)', () => {
-    const source = readFileSync(join(viewDir, 'components.tsx'), 'utf8')
-    expect(source).not.toContain("'use client'")
+  it('в клиентский бандл не тянется ни барель домена, ни node:fs', () => {
+    // Барель @/lib/hours реэкспортирует store.ts с `node:fs`. Клиентские файлы
+    // импортируют домен точечно — это единственная причина такого правила.
+    const { specs } = clientClosure()
+    expect([...specs]).not.toContain('@/lib/hours')
+    expect([...specs].filter((spec) => spec.startsWith('node:'))).toEqual([])
   })
 })
 
