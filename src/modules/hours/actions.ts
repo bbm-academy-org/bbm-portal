@@ -1,0 +1,245 @@
+'use server'
+
+/**
+ * Server Actions модуля часов (спека 081 п.11) — единственный способ что-либо
+ * изменить. Same-origin, Auth.js/`AUTH_URL` за Caddy уже настроены (#60).
+ *
+ * КАЖДЫЙ action сам вызывает `auth()` и сам применяет свои гейты (сессия, email,
+ * админство) — на `(platform)/layout.tsx` здесь НЕ полагаемся: layout защищает
+ * рендер страницы, а action вызывается напрямую, минуя её.
+ *
+ * Это первые Server Actions репозитория на проде за реверс-прокси. Если
+ * origin-check Next (Origin vs X-Forwarded-Host) за Caddy не пройдёт — лечится
+ * `serverActions.allowedOrigins` в next.config.ts; первая мутация на проде —
+ * явный шаг приёмки, не допущение.
+ */
+
+import { randomUUID } from 'node:crypto'
+import { revalidatePath } from 'next/cache'
+
+import { auth } from '@/auth'
+import {
+  createPeriod,
+  deletePeriod,
+  HoursDataError,
+  isHoursAdmin,
+  isOwnEmail,
+  mutateHoursDocument,
+  saveAssessment,
+  sessionEmail,
+  setPeriodStatus,
+  updatePeriod,
+  upsertParticipant,
+} from '@/lib/hours'
+import type { Assessment, AssessmentMethod, Grade, MutationResult, PeriodStatus } from '@/lib/hours'
+
+import type { HoursActionState } from './actionState'
+
+function error(message: string): HoursActionState {
+  return { status: 'error', message, warnings: [], saved: null }
+}
+
+function success(message: string, warnings: string[], saved: Assessment | null = null): HoursActionState {
+  return { status: 'ok', message, warnings, saved }
+}
+
+function text(formData: FormData, key: string): string {
+  const value = formData.get(key)
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/** Число из формы; запятая как разделитель принимается наравне с точкой. */
+function number(formData: FormData, key: string): number {
+  const raw = text(formData, key).replace(',', '.')
+  if (raw === '') return Number.NaN
+  return Number(raw)
+}
+
+/**
+ * Общий предбанник любой мутации: сессия есть и в ней есть email. Сессия без
+ * email читать страницы может, менять — нет (п.8).
+ */
+async function requireEmail(): Promise<{ email: string } | HoursActionState> {
+  const session = await auth()
+  if (!session?.user) return error('Сессия истекла — войди заново.')
+  const email = sessionEmail(session)
+  if (!email) {
+    return error(
+      'В сессии нет email — сохранять нельзя. Нужен claim email у клиента Zitadel; войди заново после его выдачи.',
+    )
+  }
+  return { email }
+}
+
+/** Тот же предбанник плюс allowlist администраторов (п.10, fail-closed). */
+async function requireAdmin(): Promise<{ email: string } | HoursActionState> {
+  const gate = await requireEmail()
+  if ('status' in gate) return gate
+  if (!isHoursAdmin(gate.email, process.env.HOURS_ADMIN_EMAILS)) {
+    return error('Доступ к админке часов есть только у администраторов.')
+  }
+  return gate
+}
+
+function refresh(): void {
+  revalidatePath('/p/hours')
+  revalidatePath('/p/hours/admin')
+}
+
+/** Приводит результат доменной операции к состоянию формы. */
+function toState<T>(
+  result: MutationResult<T>,
+  okMessage: string,
+  saved: (value: T) => Assessment | null = () => null,
+): HoursActionState {
+  if (!result.ok) return error(result.error)
+  refresh()
+  return success(okMessage, result.warnings, saved(result.saved))
+}
+
+async function guarded(
+  run: () => Promise<HoursActionState>,
+): Promise<HoursActionState> {
+  try {
+    return await run()
+  } catch (cause) {
+    if (cause instanceof HoursDataError) {
+      return error('Данные модуля часов не читаются — файл не тронут, позови администратора.')
+    }
+    throw cause
+  }
+}
+
+/** Сохранение самооценки (п.21). Только за себя (п.9) и только в открытый период. */
+export async function saveAssessmentAction(
+  _prev: HoursActionState,
+  formData: FormData,
+): Promise<HoursActionState> {
+  return guarded(async () => {
+    const gate = await requireEmail()
+    if ('status' in gate) return gate
+
+    const target = text(formData, 'email')
+    if (!isOwnEmail(gate.email, target)) {
+      return error('Оценку можно сохранять только за себя.')
+    }
+
+    const result = await mutateHoursDocument((doc) =>
+      saveAssessment(
+        doc,
+        {
+          periodId: text(formData, 'periodId'),
+          email: gate.email,
+          hours: number(formData, 'hours'),
+          method: text(formData, 'method') as AssessmentMethod,
+          weekendHours: number(formData, 'weekendHours'),
+          splitPercent: number(formData, 'splitPercent'),
+        },
+        new Date().toISOString(),
+      ),
+    )
+    return toState(result, 'Оценка сохранена.', (assessment) => assessment)
+  })
+}
+
+/** Добавление/правка участника (п.23) — только админ. */
+export async function saveParticipantAction(
+  _prev: HoursActionState,
+  formData: FormData,
+): Promise<HoursActionState> {
+  return guarded(async () => {
+    const gate = await requireAdmin()
+    if ('status' in gate) return gate
+
+    const result = await mutateHoursDocument((doc) =>
+      upsertParticipant(doc, {
+        email: text(formData, 'email'),
+        name: text(formData, 'name'),
+        role: text(formData, 'role'),
+        forkMin: number(formData, 'forkMin'),
+        forkMax: number(formData, 'forkMax'),
+        grade: text(formData, 'grade') as Grade,
+        monthlyRate: number(formData, 'monthlyRate'),
+      }),
+    )
+    return toState(result, 'Участник сохранён.')
+  })
+}
+
+/** Создание периода (п.24) — только админ; новый период закрыт. */
+export async function createPeriodAction(
+  _prev: HoursActionState,
+  formData: FormData,
+): Promise<HoursActionState> {
+  return guarded(async () => {
+    const gate = await requireAdmin()
+    if ('status' in gate) return gate
+
+    const result = await mutateHoursDocument((doc) =>
+      createPeriod(
+        doc,
+        {
+          label: text(formData, 'label'),
+          dateFrom: text(formData, 'dateFrom'),
+          dateTo: text(formData, 'dateTo'),
+        },
+        randomUUID(),
+      ),
+    )
+    return toState(result, 'Период создан — открой его, когда будет пора.')
+  })
+}
+
+/** Правка периода, пока по нему нет оценок (п.16) — только админ. */
+export async function updatePeriodAction(
+  _prev: HoursActionState,
+  formData: FormData,
+): Promise<HoursActionState> {
+  return guarded(async () => {
+    const gate = await requireAdmin()
+    if ('status' in gate) return gate
+
+    const result = await mutateHoursDocument((doc) =>
+      updatePeriod(doc, {
+        id: text(formData, 'periodId'),
+        label: text(formData, 'label'),
+        dateFrom: text(formData, 'dateFrom'),
+        dateTo: text(formData, 'dateTo'),
+      }),
+    )
+    return toState(result, 'Период обновлён.')
+  })
+}
+
+/** Удаление периода, пока по нему нет оценок (п.16) — только админ. */
+export async function deletePeriodAction(
+  _prev: HoursActionState,
+  formData: FormData,
+): Promise<HoursActionState> {
+  return guarded(async () => {
+    const gate = await requireAdmin()
+    if ('status' in gate) return gate
+
+    const result = await mutateHoursDocument((doc) => deletePeriod(doc, text(formData, 'periodId')))
+    return toState(result, 'Период удалён.')
+  })
+}
+
+/** Открытие/закрытие периода (п.24) — только админ. */
+export async function setPeriodStatusAction(
+  _prev: HoursActionState,
+  formData: FormData,
+): Promise<HoursActionState> {
+  return guarded(async () => {
+    const gate = await requireAdmin()
+    if ('status' in gate) return gate
+
+    const status = text(formData, 'status') as PeriodStatus
+    if (status !== 'open' && status !== 'closed') return error('Неизвестный статус периода.')
+
+    const result = await mutateHoursDocument((doc) =>
+      setPeriodStatus(doc, text(formData, 'periodId'), status),
+    )
+    return toState(result, status === 'open' ? 'Период открыт.' : 'Период закрыт.')
+  })
+}

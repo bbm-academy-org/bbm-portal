@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatHours, formatInt, formatPercent, formatRub, formatWeeks } from '@/lib/hours/format'
+import {
+  formatHours,
+  formatInt,
+  formatIsoDate,
+  formatPercent,
+  formatRub,
+  formatSavedAt,
+  formatWeeks,
+} from '@/lib/hours/format'
 
 /**
  * Отображение чисел (спека 081 п.6: округление ставок — ТОЛЬКО при показе).
@@ -56,5 +64,18 @@ describe('formatPercent', () => {
   it('целые проценты сплита', () => {
     expect(formatPercent(30)).toBe('30%')
     expect(formatPercent(0)).toBe('0%')
+  })
+})
+
+describe('formatIsoDate / formatSavedAt', () => {
+  it('переворачивает ISO-дату без участия Date (таймзона не сдвигает день)', () => {
+    expect(formatIsoDate('2026-07-01')).toBe('01.07.2026')
+    expect(formatIsoDate('2026-12-31')).toBe('31.12.2026')
+    expect(formatIsoDate('мусор')).toBe('—')
+  })
+
+  it('называет зону момента сохранения явно', () => {
+    expect(formatSavedAt('2026-08-01T09:00:00.000Z')).toBe('01.08.2026 09:00 UTC')
+    expect(formatSavedAt(undefined)).toBe('—')
   })
 })

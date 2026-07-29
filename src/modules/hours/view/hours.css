@@ -1,0 +1,717 @@
+/* ============================================================================
+   Модуль «Калькулятор самооценки часов» (спека 081). Дизайн-система перенесена
+   из утверждённого владельцем прототипа
+   `bbm/outputs/2026-07-29-bbm-hours-calculator/index.html` (палитра —
+   валидированные слоты dataviz, типографика — шкала three-paths).
+
+   Токены объявлены на `.hours-root`, а НЕ на `:root`: страница часов — вторая
+   поверхность route-группы `(platform)`, и с её появлением сработал DEFERRED-
+   триггер `platform.css` (спека 081 п.29). Палитра принадлежит поверхности;
+   группа держит только сброс. Фон холста (то, что видно за пределами контента —
+   overscroll) красится точечно через `body:has(.hours-root)`, поэтому соседняя
+   страница OKR остаётся ровно такой, какой была.
+
+   Формулы к вёрстке отношения не имеют: прототипные «÷160», «×4 недели»,
+   «×20 дней» устарели, считает домен (src/lib/hours).
+   ============================================================================ */
+
+.hours-root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --ring: rgba(11, 11, 11, 0.1);
+  --seq-3: #1c5cab;
+  --accent: #0e8f64;
+  --accent-contrast: #ffffff;
+  --danger: #b3261e;
+
+  --fs-xs: 13px;
+  --fs-s: 15px;
+  --fs-b: 17px;
+  --fs-l: clamp(18px, 1.6vw, 20.5px);
+  --fs-h3: clamp(22px, 2.3vw, 27px);
+  --fs-h2: clamp(26px, 3.4vw, 36px);
+  --fs-h1: clamp(32px, 5vw, 52px);
+  --serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --w-wide: 1160px;
+  --w-text: 860px;
+
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--fs-b);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Тёмная тема системы — если пользователь не выбрал светлую явно. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) .hours-root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --ring: rgba(255, 255, 255, 0.1);
+    --seq-3: #6da7ec;
+    --accent: #2fc493;
+    --accent-contrast: #0b0b0b;
+    --danger: #f2b8b5;
+  }
+}
+
+/* Явный выбор переключателем — поверх системного. */
+:root[data-theme='dark'] .hours-root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --ring: rgba(255, 255, 255, 0.1);
+  --seq-3: #6da7ec;
+  --accent: #2fc493;
+  --accent-contrast: #0b0b0b;
+  --danger: #f2b8b5;
+}
+
+/* Фон холста — per-surface (п.29). */
+body:has(.hours-root) {
+  background: #f9f9f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) body:has(.hours-root) {
+    background: #0d0d0d;
+  }
+}
+:root[data-theme='dark'] body:has(.hours-root) {
+  background: #0d0d0d;
+}
+
+.hours-root *,
+.hours-root *::before,
+.hours-root *::after {
+  box-sizing: border-box;
+}
+.hours-root h1,
+.hours-root h2,
+.hours-root h3,
+.hours-root p,
+.hours-root dl,
+.hours-root dd,
+.hours-root ul {
+  margin: 0;
+  padding: 0;
+}
+.hours-root a {
+  color: var(--accent);
+}
+.hours-root :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hours-root *,
+  .hours-root *::before,
+  .hours-root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.hours-wrap {
+  max-width: var(--w-text);
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4vw, 48px);
+}
+.hours-wrap--wide {
+  max-width: var(--w-wide);
+}
+.hours-band {
+  padding-block: clamp(28px, 4vw, 52px);
+}
+.hours-band--alt {
+  background: var(--surface);
+  border-top: 1px solid var(--grid);
+  border-bottom: 1px solid var(--grid);
+}
+.hours-hero {
+  padding: clamp(40px, 6vw, 72px) 0 clamp(16px, 3vw, 28px);
+}
+.hours-display {
+  font-family: var(--serif);
+  font-weight: 400;
+}
+.hours-eyebrow {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.hours-root h1 {
+  font-size: var(--fs-h1);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  margin-bottom: 16px;
+}
+.hours-root h2 {
+  font-size: var(--fs-h3);
+  font-family: var(--serif);
+  font-weight: 400;
+  margin-bottom: 14px;
+}
+.hours-lead {
+  font-size: var(--fs-l);
+  color: var(--ink-2);
+  max-width: 62ch;
+}
+.hours-note {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+.hours-session {
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  margin-top: 14px;
+}
+.hours-session b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Плашки */
+.hours-notice {
+  border: 1px solid var(--grid);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+  padding: 14px 18px;
+  background: var(--surface);
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  margin: 16px 0;
+}
+.hours-notice--warn {
+  border-left-color: var(--baseline);
+}
+.hours-notice--error {
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Таблицы */
+.hours-table-scroll {
+  overflow-x: auto;
+}
+.hours-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-s);
+}
+.hours-table th,
+.hours-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+}
+.hours-table th {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.hours-table td {
+  color: var(--ink-2);
+}
+.hours-table td.hours-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.hours-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Карточка калькулятора */
+.hours-calc {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 14px;
+  padding: clamp(20px, 3vw, 32px) clamp(16px, 3vw, 30px);
+}
+.hours-period {
+  margin-bottom: 18px;
+}
+.hours-period__label {
+  font-size: var(--fs-h3);
+  font-family: var(--serif);
+}
+.hours-period__meta {
+  font-size: var(--fs-s);
+  color: var(--muted);
+}
+.hours-period__status {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--grid);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* Табы-сегменты */
+.hours-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--page);
+  border: 1px solid var(--grid);
+  border-radius: 12px;
+}
+.hours-tabs button {
+  flex: 1 1 0;
+  border: 1px solid transparent;
+  background: none;
+  padding: 10px 8px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.hours-tabs button[aria-selected='true'] {
+  background: var(--surface);
+  border-color: var(--grid);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 4px var(--ring);
+}
+.hours-panel {
+  padding-top: clamp(18px, 3vw, 26px);
+}
+.hours-panel[hidden] {
+  display: none;
+}
+
+/* Ползунок + число */
+.hours-row-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.hours-row-label b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.hours-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.hours-slider-row input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.hours-num-input {
+  flex: none;
+  width: 5.6em;
+  text-align: right;
+  font: 600 var(--fs-b) var(--sans);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  background: var(--page);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.hours-root input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 40px;
+  background: transparent;
+  cursor: pointer;
+}
+.hours-root input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent) var(--p, 0%), var(--grid) var(--p, 0%));
+}
+.hours-root input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  margin-top: -10px;
+  box-shadow: 0 1px 4px var(--ring);
+}
+.hours-root input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--grid);
+}
+.hours-root input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.hours-root input[type='range']::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+
+.hours-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  cursor: pointer;
+  padding: 6px 0;
+  user-select: none;
+}
+.hours-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.hours-subblock {
+  margin-top: 10px;
+  padding-left: 14px;
+  border-left: 3px solid var(--grid);
+}
+.hours-subblock[hidden] {
+  display: none;
+}
+.hours-calc-line {
+  font-size: var(--fs-s);
+  color: var(--muted);
+}
+.hours-calc-line b {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+/* Результат */
+.hours-result {
+  margin-top: clamp(18px, 3vw, 26px);
+  padding-top: clamp(18px, 3vw, 26px);
+  border-top: 1px solid var(--grid);
+}
+.hours-cap {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.hours-total {
+  font-family: var(--serif);
+  font-size: clamp(40px, 6vw, 58px);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+.hours-total small {
+  font-size: 0.45em;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-weight: 400;
+  margin-left: 6px;
+}
+.hours-money {
+  margin-top: clamp(14px, 2vw, 20px);
+  display: grid;
+  gap: 4px;
+}
+.hours-money .hours-hourly {
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+.hours-accrual {
+  font-size: var(--fs-h3);
+  font-family: var(--serif);
+}
+.hours-accrual small {
+  font-family: var(--sans);
+  font-size: var(--fs-s);
+  color: var(--muted);
+}
+
+/* Помесячная разбивка формулы */
+.hours-months {
+  list-style: none;
+  margin-top: 10px;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-s);
+  color: var(--muted);
+}
+.hours-months b {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+/* Сплит */
+.hours-split {
+  margin-top: clamp(16px, 3vw, 22px);
+}
+.hours-split-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+.hours-split-bar i {
+  display: block;
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.hours-split-bar .hours-sb-cash {
+  background: var(--baseline);
+}
+.hours-split-bar .hours-sb-inv {
+  background: var(--seq-3);
+}
+.hours-split-legend {
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+.hours-split-legend span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hours-split-legend .hours-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+  align-self: center;
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.hours-split-legend b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Кнопки */
+.hours-btn {
+  display: inline-block;
+  border: none;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: 600 var(--fs-b) var(--sans);
+  padding: 13px 26px;
+  border-radius: 10px;
+}
+.hours-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.hours-btn--ghost {
+  background: none;
+  border: 1px solid var(--grid);
+  color: var(--ink-2);
+  font: 500 14px var(--sans);
+  padding: 8px 18px;
+  border-radius: 999px;
+}
+.hours-btn--ghost:hover {
+  border-color: var(--baseline);
+  color: var(--ink);
+}
+.hours-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: clamp(16px, 3vw, 24px);
+}
+
+/* Карточка «оценка сохранена» */
+.hours-saved {
+  margin-top: clamp(16px, 3vw, 22px);
+  border: 1px solid var(--grid);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+  padding: 18px 20px;
+  background: var(--surface);
+}
+.hours-saved__cap {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.hours-saved dl {
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-s);
+}
+.hours-saved dl > div {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.hours-saved dt {
+  color: var(--muted);
+}
+.hours-saved dd {
+  color: var(--ink);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Формы админки */
+.hours-form {
+  display: grid;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 14px;
+  padding: clamp(18px, 3vw, 26px);
+}
+.hours-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.hours-field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+.hours-field input,
+.hours-field select {
+  font: 500 var(--fs-s) var(--sans);
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 9px 12px;
+  min-width: 0;
+}
+.hours-inline-form {
+  display: inline;
+}
+
+/* Цикл выплат */
+.hours-tl {
+  list-style: none;
+  display: grid;
+  gap: 22px;
+  margin-top: clamp(18px, 3vw, 26px);
+}
+.hours-tl li {
+  border-top: 2px solid var(--grid);
+  padding-top: 16px;
+  position: relative;
+}
+.hours-tl li::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.hours-tl__when {
+  display: block;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.hours-tl p {
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+
+.hours-footer {
+  padding: 24px 0 40px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  border-top: 1px solid var(--grid);
+}
+
+.hours-theme-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  background: var(--surface);
+  color: var(--ink-2);
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  font-size: 17px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px var(--ring);
+}
+
+@media (min-width: 640px) {
+  .hours-tl {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+  }
+  .hours-tl li {
+    padding-right: clamp(16px, 3vw, 32px);
+  }
+}
+@media (max-width: 560px) {
+  .hours-tabs {
+    flex-direction: column;
+  }
+  .hours-tabs button {
+    text-align: left;
+    padding: 12px 14px;
+  }
+  .hours-slider-row {
+    gap: 12px;
+  }
+}

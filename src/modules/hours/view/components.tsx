@@ -1,0 +1,300 @@
+import React from 'react'
+
+import {
+  formatHours,
+  formatInt,
+  formatIsoDate,
+  formatPercent,
+  formatRub,
+  formatSavedAt,
+  monthlyHourlyRate,
+  effectiveHourlyRate,
+} from '@/lib/hours'
+import type {
+  Assessment,
+  AssessmentMethod,
+  Participant,
+  Period,
+  PeriodCalendar,
+} from '@/lib/hours'
+
+/**
+ * Презентационные компоненты модуля часов (спека 081 пп. 8, 9, 19–22).
+ * Сознательно СЕРВЕРНЫЕ и без состояния: страницы остаются RSC, а клиентская
+ * интерактивность живёт отдельно (Calculator.tsx, п.27). Всё, что здесь
+ * рисуется, проверяется markup-тестами — это те самые экраны, которые владелец
+ * смотрит на приёмке.
+ */
+
+/** Подписи способов оценки — вкладки калькулятора (п.20). */
+export const METHOD_LABELS: Record<AssessmentMethod, string> = {
+  period: 'по часам за период',
+  week: 'по средней неделе',
+  day: 'по рабочему дню',
+}
+
+/** «Вошёл как <email>» — так email-claim Zitadel проверяется глазами (п.8). */
+export function SignedInAs({ email }: { email: string }) {
+  if (!email) {
+    return (
+      <p className="hours-session">
+        В сессии нет email — сохранить оценку не получится. Открой доступ к claim&nbsp;email в
+        Zitadel и войди заново.
+      </p>
+    )
+  }
+  return (
+    <p className="hours-session">
+      Вошёл как <b>{email}</b>
+    </p>
+  )
+}
+
+/** Плашка для залогиненного, которого нет в participants (п.9, сценарий 7). */
+export function NotAParticipantNotice() {
+  return (
+    <p className="hours-notice hours-notice--warn">
+      Тебя нет в списке участников — обратись к администратору. Часы посчитать можно, начисление
+      не показывается: ставки нет.
+    </p>
+  )
+}
+
+/** Плашка «данные недоступны» — битый JSON не молчит (п.17). */
+export function DataUnavailable() {
+  return (
+    <p className="hours-notice hours-notice--error">
+      Данные недоступны: файл модуля часов не читается. Оценки на диске не тронуты — позови
+      администратора.
+    </p>
+  )
+}
+
+/** Периодов ещё не создавали (п.22). */
+export function NoPeriodsNotice() {
+  return (
+    <p className="hours-notice">
+      Периодов пока нет — администратор ещё не создал ни одного. Как только период откроют, здесь
+      появится калькулятор.
+    </p>
+  )
+}
+
+/** Список участников: имя, роль, вилка, грейд, ставка (п.19). */
+export function ParticipantsTable({ participants }: { participants: Participant[] }) {
+  if (participants.length === 0) {
+    return <p className="hours-notice">Ни одного участника ещё не завели.</p>
+  }
+  return (
+    <div className="hours-table-scroll">
+      <table className="hours-table">
+        <thead>
+          <tr>
+            <th scope="col">Имя</th>
+            <th scope="col">Роль</th>
+            <th scope="col">Вилка, ₽/мес</th>
+            <th scope="col">Грейд</th>
+            <th scope="col">Ставка, ₽/мес</th>
+          </tr>
+        </thead>
+        <tbody>
+          {participants.map((participant) => (
+            <tr key={participant.email}>
+              <td>{participant.name}</td>
+              <td>{participant.role}</td>
+              <td className="hours-num">
+                {formatInt(participant.fork_min)} — {formatInt(participant.fork_max)}
+              </td>
+              <td>{participant.grade}</td>
+              <td className="hours-num">{formatRub(participant.monthly_rate)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Заголовок периода: label, диапазон дат, число будних дней (п.20). */
+export function PeriodHeader({
+  period,
+  calendar,
+}: {
+  period: Period
+  calendar: PeriodCalendar
+}) {
+  return (
+    <div className="hours-period">
+      <div className="hours-period__label">
+        {period.label}
+        {period.status === 'closed' ? (
+          <span className="hours-period__status">закрыт</span>
+        ) : null}
+      </div>
+      <div className="hours-period__meta">
+        {formatIsoDate(period.date_from)} — {formatIsoDate(period.date_to)} ·{' '}
+        {calendar.weekdayCount} будних дней · норма {formatHours(calendar.normHours)} ч
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Честная формула (п.20): число будней периода, а для многомесячного — ещё и
+ * помесячная разбивка, потому что ставка часа считается по полному календарному
+ * месяцу (п.2). Без ставки участника денежная часть не показывается вовсе (п.9).
+ */
+export function FormulaBreakdown({
+  calendar,
+  monthlyRate,
+}: {
+  calendar: PeriodCalendar
+  monthlyRate: number | null
+}) {
+  const effective = effectiveHourlyRate(monthlyRate, calendar)
+  const multiMonth = calendar.months.length > 1
+
+  return (
+    <div className="hours-formula">
+      <p className="hours-calc-line">
+        Будних дней в периоде: <b>{calendar.weekdayCount}</b> · норма{' '}
+        <b>{formatHours(calendar.normHours)} ч</b> ({calendar.weekdayCount} × 8)
+      </p>
+      {effective == null ? (
+        <p className="hours-note">
+          Месячной ставки нет — считаем только часы, без начисления.
+        </p>
+      ) : (
+        <>
+          <p className="hours-calc-line">
+            {multiMonth ? 'Эффективная часовая ставка периода' : 'Часовая ставка'}:{' '}
+            <b>{formatRub(effective)}</b> при месячной {formatRub(monthlyRate)}
+          </p>
+          {multiMonth ? (
+            <ul className="hours-months">
+              {calendar.months.map((month) => (
+                <li key={`${month.year}-${month.month}`} data-month={`${month.year}-${month.month}`}>
+                  {month.label}: {month.weekdaysInMonth} будней месяца ·{' '}
+                  {formatHours(month.monthNormHours)} ч · ставка часа{' '}
+                  <b>{formatRub(monthlyHourlyRate(monthlyRate, month.monthNormHours))}</b> · доля
+                  периода {formatHours(month.normHours)} ч
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+export interface SummaryRow {
+  /** Имя из списка участников; null — участника уже нет, показываем email. */
+  name: string | null
+  assessment: Assessment
+}
+
+/** Сводка оценок периода — основа открытой верификации 2-го числа (п.22). */
+export function SummaryTable({ rows }: { rows: SummaryRow[] }) {
+  if (rows.length === 0) {
+    return <p className="hours-notice">За этот период оценок пока нет.</p>
+  }
+  return (
+    <div className="hours-table-scroll">
+      <table className="hours-table">
+        <thead>
+          <tr>
+            <th scope="col">Участник</th>
+            <th scope="col">Часы</th>
+            <th scope="col">Способ</th>
+            <th scope="col">Начисление</th>
+            <th scope="col">Деньгами</th>
+            <th scope="col">В 4X</th>
+            <th scope="col">Сохранена</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.assessment.email}>
+              <td>{row.name ?? row.assessment.email}</td>
+              <td className="hours-num">
+                {formatHours(row.assessment.hours)}
+                {row.assessment.weekend_hours > 0
+                  ? ` (в выходные ${formatHours(row.assessment.weekend_hours)})`
+                  : ''}
+              </td>
+              <td>{METHOD_LABELS[row.assessment.method]}</td>
+              <td className="hours-num">{formatRub(row.assessment.accrual)}</td>
+              <td className="hours-num">
+                {formatRub(row.assessment.cash_amount)} ({formatPercent(100 - row.assessment.split_percent)})
+              </td>
+              <td className="hours-num">
+                {formatRub(row.assessment.invest_amount)} ({formatPercent(row.assessment.split_percent)})
+              </td>
+              <td>{formatSavedAt(row.assessment.saved_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Карточка «оценка сохранена» с итоговыми числами (п.21). */
+export function SavedCard({
+  assessment,
+  periodLabel,
+}: {
+  assessment: Assessment
+  periodLabel: string
+}) {
+  return (
+    <div className="hours-saved">
+      <div className="hours-saved__cap">Оценка сохранена</div>
+      <dl>
+        <div>
+          <dt>Период</dt>
+          <dd>{periodLabel}</dd>
+        </div>
+        <div>
+          <dt>Часы (итог)</dt>
+          <dd>{formatHours(assessment.hours)} ч</dd>
+        </div>
+        <div>
+          <dt>Из них в выходные</dt>
+          <dd>{formatHours(assessment.weekend_hours)} ч</dd>
+        </div>
+        <div>
+          <dt>Способ оценки</dt>
+          <dd>{METHOD_LABELS[assessment.method]}</dd>
+        </div>
+        <div>
+          <dt>Ставка</dt>
+          <dd>
+            {formatRub(assessment.monthly_rate)}/мес · {formatRub(assessment.hourly_rate)}/ч
+          </dd>
+        </div>
+        <div>
+          <dt>Начисление</dt>
+          <dd>{formatRub(assessment.accrual)}</dd>
+        </div>
+        <div>
+          <dt>Деньгами</dt>
+          <dd>
+            {formatRub(assessment.cash_amount)} ({formatPercent(100 - assessment.split_percent)})
+          </dd>
+        </div>
+        <div>
+          <dt>Доинвестиция в 4X</dt>
+          <dd>
+            {formatRub(assessment.invest_amount)} ({formatPercent(assessment.split_percent)})
+          </dd>
+        </div>
+        <div>
+          <dt>Сохранена</dt>
+          <dd>{formatSavedAt(assessment.saved_at)}</dd>
+        </div>
+      </dl>
+    </div>
+  )
+}

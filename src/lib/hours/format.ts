@@ -43,3 +43,24 @@ export function formatPercent(value: number | null | undefined): string {
   if (!isNumber(value)) return '—'
   return `${Math.round(value)}%`
 }
+
+/**
+ * ISO-дата в привычный вид: «2026-07-01» → «01.07.2026». Как и календарь,
+ * работает над строкой: `new Date` сдвинул бы дату в отрицательных смещениях.
+ */
+export function formatIsoDate(value: unknown): string {
+  if (typeof value !== 'string') return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : '—'
+}
+
+/**
+ * Момент сохранения: «2026-08-01T09:00:00.000Z» → «01.08.2026 09:00 UTC».
+ * Зона названа явно — иначе непонятно, чьё это время (прод в UTC, владелец в MSK).
+ */
+export function formatSavedAt(value: unknown): string {
+  if (typeof value !== 'string') return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value)
+  if (!match) return formatIsoDate(value)
+  return `${match[3]}.${match[2]}.${match[1]} ${match[4]}:${match[5]} UTC`
+}

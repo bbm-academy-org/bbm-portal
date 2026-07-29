@@ -62,7 +62,15 @@ export type {
   UpsertParticipantInput,
 } from './document'
 
-export { formatHours, formatInt, formatPercent, formatRub, formatWeeks } from './format'
+export {
+  formatHours,
+  formatInt,
+  formatIsoDate,
+  formatPercent,
+  formatRub,
+  formatSavedAt,
+  formatWeeks,
+} from './format'
 
 export { HoursDataError, mutateHoursDocument, readHoursDocument, resolveDataFile } from './store'
 
