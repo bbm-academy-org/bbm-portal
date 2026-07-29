@@ -70,6 +70,7 @@ export {
   formatPercent,
   formatRub,
   formatSavedAt,
+  formatWeekdayCount,
   formatWeeks,
 } from './format'
 

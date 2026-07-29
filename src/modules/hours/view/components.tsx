@@ -7,16 +7,11 @@ import {
   formatPercent,
   formatRub,
   formatSavedAt,
-  monthlyHourlyRate,
-  effectiveHourlyRate,
-} from '@/lib/hours'
-import type {
-  Assessment,
-  AssessmentMethod,
-  Participant,
-  Period,
-  PeriodCalendar,
-} from '@/lib/hours'
+  formatWeekdayCount,
+} from '@/lib/hours/format'
+import { effectiveHourlyRate, monthlyHourlyRate } from '@/lib/hours/formula'
+import type { PeriodCalendar } from '@/lib/hours/formula'
+import type { Assessment, AssessmentMethod, Participant, Period } from '@/lib/hours/types'
 
 /**
  * Презентационные компоненты модуля часов (спека 081 пп. 8, 9, 19–22).
@@ -24,6 +19,11 @@ import type {
  * интерактивность живёт отдельно (Calculator.tsx, п.27). Всё, что здесь
  * рисуется, проверяется markup-тестами — это те самые экраны, которые владелец
  * смотрит на приёмке.
+ *
+ * Импорты домена ТОЧЕЧНЫЕ (`@/lib/hours/format`, `.../formula`, `.../types`), а
+ * не через барель `@/lib/hours`: карточку `SavedCard` рендерит клиентский
+ * калькулятор, а барель тянет `store.ts` с `node:fs` — в клиентском бандле ему
+ * делать нечего.
  */
 
 /** Подписи способов оценки — вкладки калькулятора (п.20). */
@@ -133,7 +133,7 @@ export function PeriodHeader({
       </div>
       <div className="hours-period__meta">
         {formatIsoDate(period.date_from)} — {formatIsoDate(period.date_to)} ·{' '}
-        {calendar.weekdayCount} будних дней · норма {formatHours(calendar.normHours)} ч
+        {formatWeekdayCount(calendar.weekdayCount)} · норма {formatHours(calendar.normHours)} ч
       </div>
     </div>
   )
@@ -157,7 +157,7 @@ export function FormulaBreakdown({
   return (
     <div className="hours-formula">
       <p className="hours-calc-line">
-        Будних дней в периоде: <b>{calendar.weekdayCount}</b> · норма{' '}
+        В периоде <b>{formatWeekdayCount(calendar.weekdayCount)}</b> · норма{' '}
         <b>{formatHours(calendar.normHours)} ч</b> ({calendar.weekdayCount} × 8)
       </p>
       {effective == null ? (

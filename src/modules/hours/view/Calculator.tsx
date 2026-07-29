@@ -178,7 +178,7 @@ export function Calculator(props: CalculatorProps) {
     explanation = (
       <>
         {formatHours(dayHours)}
-        {NBSP}ч × {calendar.dayMultiplier} будних дней
+        {NBSP}ч × {calendar.dayMultiplier} будн. дн.
         {weekendHours > 0 ? ` + ${formatHours(weekendHours)}${NBSP}ч в выходные` : ''} ={' '}
         <b>{formatHours(hours)}{NBSP}ч</b>
       </>

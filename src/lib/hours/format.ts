@@ -45,6 +45,20 @@ export function formatPercent(value: number | null | undefined): string {
 }
 
 /**
+ * «23 будних дня» / «21 будний день» / «25 будних дней» — число будней владелец
+ * читает на каждой странице, и «23 будних дней» там смотрелось бы опечаткой.
+ */
+export function formatWeekdayCount(value: number): string {
+  const n = Math.abs(Math.round(value))
+  const lastTwo = n % 100
+  const last = n % 10
+  if (lastTwo >= 11 && lastTwo <= 14) return `${n} будних дней`
+  if (last === 1) return `${n} будний день`
+  if (last >= 2 && last <= 4) return `${n} будних дня`
+  return `${n} будних дней`
+}
+
+/**
  * ISO-дата в привычный вид: «2026-07-01» → «01.07.2026». Как и календарь,
  * работает над строкой: `new Date` сдвинул бы дату в отрицательных смещениях.
  */

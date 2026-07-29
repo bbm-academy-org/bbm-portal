@@ -7,6 +7,7 @@ import {
   formatPercent,
   formatRub,
   formatSavedAt,
+  formatWeekdayCount,
   formatWeeks,
 } from '@/lib/hours/format'
 
@@ -64,6 +65,18 @@ describe('formatPercent', () => {
   it('целые проценты сплита', () => {
     expect(formatPercent(30)).toBe('30%')
     expect(formatPercent(0)).toBe('0%')
+  })
+})
+
+describe('formatWeekdayCount', () => {
+  it('склоняет «будний день» по-русски', () => {
+    expect(formatWeekdayCount(1)).toBe('1 будний день')
+    expect(formatWeekdayCount(2)).toBe('2 будних дня')
+    expect(formatWeekdayCount(23)).toBe('23 будних дня')
+    expect(formatWeekdayCount(21)).toBe('21 будний день')
+    expect(formatWeekdayCount(25)).toBe('25 будних дней')
+    expect(formatWeekdayCount(11)).toBe('11 будних дней')
+    expect(formatWeekdayCount(0)).toBe('0 будних дней')
   })
 })
 
