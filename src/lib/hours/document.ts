@@ -73,6 +73,27 @@ export function findOpenPeriod(doc: HoursDocument): Period | undefined {
   return doc.periods.find((period) => period.status === 'open')
 }
 
+/**
+ * Какой период показывать в сводке (п.22): явно выбранный в селекторе, иначе
+ * открытый, иначе последний закрытый (по дате конца). Ни одного периода —
+ * `undefined`, страница скажет об этом прямо.
+ */
+export function pickSummaryPeriod(
+  doc: HoursDocument,
+  requestedId?: string | null,
+): Period | undefined {
+  if (requestedId) {
+    const requested = findPeriod(doc, requestedId)
+    if (requested) return requested
+  }
+  const open = findOpenPeriod(doc)
+  if (open) return open
+  return doc.periods.reduce<Period | undefined>((latest, period) => {
+    if (!latest) return period
+    return period.date_to >= latest.date_to ? period : latest
+  }, undefined)
+}
+
 export interface SaveAssessmentInput {
   periodId: string
   email: string

@@ -343,6 +343,27 @@ describe('(platform) root layout reset (spec 075 req.1)', () => {
 
     const global = readFileSync(join(layoutDir, importMatch![1]), 'utf8')
     expect(global).toMatch(/body\s*\{[^}]*margin:\s*0/)
-    expect(global).toMatch(/body\s*\{[^}]*background:/)
+  })
+
+  it('keeps the group-wide sheet palette-free — the surface paints its own canvas', () => {
+    // Spec 081 req.29: /p/hours is the second page of this group, so the
+    // background moved off the group-wide `body` rule onto a per-surface rule.
+    // A blanket `body { background }` here would repaint every future surface
+    // in the OKR palette.
+    // Comments are stripped: this file documents the old rule in prose, and
+    // prose must not be mistaken for a declaration.
+    const global = readFileSync(join(layoutDir, 'platform.css'), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    )
+    expect(/body\s*\{[^}]*background:/.test(global), 'no group-wide background').toBe(false)
+
+    // …and the OKR page still looks exactly as before: its own stylesheet
+    // paints the canvas with the same --paper value.
+    const okrCss = readFileSync(join(REPO_ROOT, 'src', 'modules', 'okr', 'view', 'okr.css'), 'utf8')
+    const canvas = /body:has\(\.okr-root\)\s*\{([^}]*)\}/.exec(okrCss)
+    expect(canvas, 'okr.css must paint its own canvas').not.toBeNull()
+    expect(canvas![1]).toContain('#eaf2f0')
+    expect(/\.okr-root\s*\{([^}]*)\}/.exec(okrCss)![1]).toContain('--paper: #eaf2f0')
   })
 })

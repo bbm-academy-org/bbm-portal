@@ -4,6 +4,7 @@ import {
   createPeriod,
   deletePeriod,
   findAssessment,
+  pickSummaryPeriod,
   saveAssessment,
   setPeriodStatus,
   updatePeriod,
@@ -345,6 +346,41 @@ describe('setPeriodStatus (п.24)', () => {
 
   it('отклоняет неизвестный период', () => {
     expect(setPeriodStatus(doc(), 'nope', 'open').ok).toBe(false)
+  })
+})
+
+describe('pickSummaryPeriod (п.22)', () => {
+  function withPeriods(): HoursDocument {
+    const base = doc()
+    base.periods[0].status = 'closed'
+    base.periods.push({
+      id: 'p-june',
+      label: 'Июнь 2026',
+      date_from: '2026-06-01',
+      date_to: '2026-06-30',
+      status: 'closed',
+    })
+    return base
+  }
+
+  it('по умолчанию берёт открытый период', () => {
+    expect(pickSummaryPeriod(doc())?.id).toBe('p-july')
+  })
+
+  it('без открытого — последний закрытый по дате конца', () => {
+    expect(pickSummaryPeriod(withPeriods())?.id).toBe('p-july')
+  })
+
+  it('явно выбранный в селекторе выигрывает', () => {
+    expect(pickSummaryPeriod(withPeriods(), 'p-june')?.id).toBe('p-june')
+  })
+
+  it('несуществующий id не ломает страницу', () => {
+    expect(pickSummaryPeriod(withPeriods(), 'nope')?.id).toBe('p-july')
+  })
+
+  it('без периодов — ничего', () => {
+    expect(pickSummaryPeriod(emptyHoursDocument())).toBeUndefined()
   })
 })
 

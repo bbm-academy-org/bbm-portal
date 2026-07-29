@@ -48,6 +48,7 @@ export {
   findOpenPeriod,
   findParticipant,
   findPeriod,
+  pickSummaryPeriod,
   saveAssessment,
   setPeriodStatus,
   updatePeriod,
