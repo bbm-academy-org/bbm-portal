@@ -37,6 +37,7 @@ export interface OkrAction {
   done: number
   total: number
   planeUrl: string
+  /** Everything under the action, flattened — sub-tasks and their own children alike. */
   tasks: OkrTask[]
 }
 

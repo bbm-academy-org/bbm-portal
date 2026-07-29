@@ -109,6 +109,43 @@ describe('mapOkrTree', () => {
     expect({ done: action.done, total: action.total }).toEqual({ done: 2, total: 2 })
   })
 
+  it('keeps a grandchild inside its top-level action row (spec 077 req.4)', () => {
+    // Grouping by direct parent leaves a third-level issue in no row at all: it
+    // is not a root, and its own parent is not a root either. The KR counts it
+    // flat, so the rows stop adding up — and a closed grandchild disappears
+    // from the screen, which is the #77 lie with the sign flipped.
+    const mod = module_({ name: 'KR 1.2 · Готовый 1 урок' })
+    const root = issue({ name: 'Родитель', state: 's-progress' })
+    const sub = issue({ name: 'Суб', parent: root.id })
+    const grand = issue({ name: 'Внук', parent: sub.id, state: 's-done' })
+    const src = sourceOf([slice(DSG1, 'O1 · Врачи', [mod], { [mod.id]: [root, sub, grand] })])
+
+    const { objectives } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    const kr = objectives[0].krs[0]
+    expect(kr.counts).toEqual({ done: 1, total: 3 })
+    expect(kr.actions).toHaveLength(1)
+    expect({ done: kr.actions[0].done, total: kr.actions[0].total }).toEqual({ done: 1, total: 3 })
+    expect(kr.actions[0].tasks.map((t) => t.title)).toEqual(['Суб', 'Внук'])
+  })
+
+  it('survives a parent cycle: every issue still gets a row and a warning (FR-7)', () => {
+    // Plane should not produce this, but an unguarded walk up the parent chain
+    // would hang the render — and the pre-fix root filter dropped both issues,
+    // leaving a KR counter with nothing under it.
+    const mod = module_({ name: 'KR 1.2 · Готовый 1 урок' })
+    const a = issue({ name: 'Задача A' })
+    const b = issue({ name: 'Задача B', parent: a.id })
+    a.parent = b.id
+    const src = sourceOf([slice(DSG1, 'O1 · Врачи', [mod], { [mod.id]: [a, b] })])
+
+    const { objectives, warnings } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    const kr = objectives[0].krs[0]
+    expect(kr.counts).toEqual({ done: 0, total: 2 })
+    expect(kr.actions.map((x) => x.title).sort()).toEqual(['Задача A', 'Задача B'])
+    expect(kr.actions.every((x) => x.total === 1)).toBe(true)
+    expect(warnings.some((w) => w.includes('Циклическая'))).toBe(true)
+  })
+
   it('makes the action rows add up to the KR counter (spec 077 req.4)', () => {
     // The dashboard case from #77: 4 parents + 2 subs, one sub closed → KR 1/6.
     const mod = module_({ name: 'KR 2.2 · Кол-во регистраций на вебинарах' })

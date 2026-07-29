@@ -111,14 +111,50 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
           stateGroup: groupOf(i),
           planeUrl: issueUrl(i),
         })
-        const actions = active
-          .filter((i) => i.parent == null || !active.some((p) => p.id === i.parent))
+        // spec 077 req.4: every active issue of the module belongs to exactly
+        // ONE action row — the row of its topmost ancestor — so the rows add up
+        // to the KR's own flat counter at any nesting depth. Grouping by direct
+        // parent instead would strand a third-level issue in no row at all
+        // (it is not a root, and its parent is not a root either) while the KR
+        // still counted it.
+        const byId = new Map(active.map((i) => [i.id, i]))
+        const isRoot = (i: PlaneIssue) => i.parent == null || !byId.has(i.parent)
+        /** Topmost ancestor, or null when the parent chain closes into a cycle. */
+        const rootOf = (issue: PlaneIssue): PlaneIssue | null => {
+          let cur = issue
+          const seen = new Set([cur.id])
+          while (!isRoot(cur)) {
+            const next = byId.get(cur.parent!)!
+            if (seen.has(next.id)) return null
+            seen.add(next.id)
+            cur = next
+          }
+          return cur
+        }
+
+        const descendants = new Map<string, PlaneIssue[]>()
+        const cycleOrphans: PlaneIssue[] = []
+        for (const i of active) {
+          if (isRoot(i)) continue
+          const root = rootOf(i)
+          if (!root) {
+            // Plane should not allow this; showing the issue on its own row keeps
+            // the counters honest instead of silently dropping work (FR-7).
+            warnings.push(
+              `Циклическая связь parent у ${cfg.ident}-${i.sequence_id} — задача показана отдельной строкой`,
+            )
+            cycleOrphans.push(i)
+            continue
+          }
+          descendants.set(root.id, [...(descendants.get(root.id) ?? []), i])
+        }
+
+        const actions = [...active.filter(isRoot), ...cycleOrphans]
           .sort((a, b) => a.sequence_id - b.sequence_id)
           .map((parent): OkrAction => {
-            const subs = active.filter((i) => i.parent === parent.id).sort((a, b) => a.sequence_id - b.sequence_id)
-            // spec 077 req.3–4: the row counts the parent as one unit of work
-            // alongside its subs — the same flat set the KR counter uses, so the
-            // rows of a KR add up to exactly its own d/t.
+            const subs = (descendants.get(parent.id) ?? []).sort((a, b) => a.sequence_id - b.sequence_id)
+            // spec 077 req.3: the row counts the parent as one unit of work
+            // alongside everything under it.
             const unit = [parent, ...subs]
             return {
               id: parent.id,

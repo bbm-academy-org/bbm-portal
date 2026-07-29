@@ -107,14 +107,15 @@ const ACTION_STATE: Record<StateGroup, { mod: string; label: string }> = {
   started: { mod: 'started', label: '◐ в работе' },
   unstarted: { mod: 'todo', label: '○ не начато' },
   backlog: { mod: 'todo', label: '○ не начато' },
-  cancelled: { mod: 'todo', label: '○ не начато' },
+  cancelled: { mod: 'todo', label: '⊘ отменено' },
 }
 
 function ActionRow({ action }: { action: OkrAction }) {
   // The counter includes the action itself (spec 077 req.3), so `total` is
   // never 0: sub-tasks — not the counter — decide whether a counter is shown.
+  // The guard keeps that invariant from being load-bearing across two files.
   const hasTasks = action.tasks.length > 0
-  const pct = (action.done / action.total) * 100
+  const pct = action.total > 0 ? (action.done / action.total) * 100 : 0
   const state = ACTION_STATE[action.stateGroup]
   return (
     <div className="okr-act">

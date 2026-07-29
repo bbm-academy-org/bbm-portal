@@ -418,6 +418,26 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     expect(meta, '.okr-act__meta rule missing').not.toBeNull()
     expect(meta![1]).toContain('flex-wrap:wrap')
     expect(meta![1]).toContain('min-width:0')
+
+    // `flex-wrap` on the cluster is inert on its own: with `min-width:0` the
+    // title column's hypothetical size is 0, the line never breaks, and the
+    // title shreds into a 4-character column instead — the exact trap already
+    // documented on `.okr-kr__main` above. The floor is the actual wrap trigger,
+    // so pin it (and pin that nobody "tidies" it back to 0).
+    const title = /\.okr-act__t\s*\{([^}]*)\}/.exec(css)
+    expect(title, '.okr-act__t rule missing').not.toBeNull()
+    expect(title![1]).toMatch(/min-width:min\(100%,\s*\d+ch\)/)
+    expect(title![1]).not.toContain('min-width:0')
+  })
+
+  it('uses the AA-darkened ink for the «готово» chip, not the dot colour', () => {
+    // 12px bold is not «large text», so the chip needs 4.5:1. --status-pos-dot
+    // (#1b9e5f) gives 3.44:1 on --surface; --status-pos-ink (#136b43) gives
+    // 6.54:1. Since spec 077 req.1 puts this chip on every closed action, the
+    // failing variant would now be all over the screen.
+    const done = /\.okr-act__state--done\s*\{([^}]*)\}/.exec(css)
+    expect(done, '.okr-act__state--done rule missing').not.toBeNull()
+    expect(done![1]).toContain('color:var(--status-pos-ink)')
   })
 
   it('pins the chevron rotation to an open KR row', () => {
