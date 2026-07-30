@@ -26,6 +26,15 @@ function module_(over: Partial<PlaneModule> & { name: string }): PlaneModule {
 
 const [DSG1, DSG2, DSG3, DSG4, DSG5] = OKR_PROJECTS
 
+/**
+ * The req.4 invariant, checked by construction rather than by re-typing the
+ * expected numbers: every non-cancelled issue of a KR belongs to exactly one
+ * action row, so the rows always add up to the KR's own flat counter.
+ */
+function sumRows(kr: { actions: Array<{ done: number; total: number }> }): { done: number; total: number } {
+  return kr.actions.reduce((a, r) => ({ done: a.done + r.done, total: a.total + r.total }), { done: 0, total: 0 })
+}
+
 function slice(
   cfg: (typeof OKR_PROJECTS)[number],
   name: string,
@@ -80,8 +89,100 @@ describe('mapOkrTree', () => {
     // grouping is by parent id — the sub-issues land under their parent action
     expect(kr.actions).toHaveLength(1)
     expect(kr.actions[0].tasks.map((t) => t.title)).toEqual(['Собрать ОС', 'Доработать'])
+    // spec 077 req.3: the row counts the parent itself as one unit of work
     expect(kr.actions[0].done).toBe(1)
-    expect(kr.actions[0].total).toBe(2)
+    expect(kr.actions[0].total).toBe(3)
+  })
+
+  it('counts the action itself in its own row counter (spec 077 req.3)', () => {
+    const mod = module_({ name: 'KR 2.2 · Регистрации' })
+    const parent = issue({ name: 'Организовать сайт конгресса', state: 's-progress' })
+    const sub = issue({ name: 'Разведать orthobio.ru', parent: parent.id, state: 's-done' })
+    const src = sourceOf([slice(DSG2, 'O2 · Канал', [mod], { [mod.id]: [parent, sub] })])
+
+    const { objectives } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    const action = objectives.find((o) => o.ident === 'DSG2')!.krs[0].actions[0]
+    // the real #77 case: 1 closed sub under a started parent must not read as 1/1
+    expect(action.stateGroup).toBe('started')
+    expect({ done: action.done, total: action.total }).toEqual({ done: 1, total: 2 })
+  })
+
+  it('counts a done parent with a done sub as fully closed (spec 077 req.3)', () => {
+    const mod = module_({ name: 'KR 2.2 · Регистрации' })
+    const parent = issue({ name: 'Закрытое действие', state: 's-done' })
+    const sub = issue({ name: 'Закрытая подзадача', parent: parent.id, state: 's-done' })
+    const src = sourceOf([slice(DSG2, 'O2 · Канал', [mod], { [mod.id]: [parent, sub] })])
+
+    const { objectives } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    const action = objectives.find((o) => o.ident === 'DSG2')!.krs[0].actions[0]
+    expect({ done: action.done, total: action.total }).toEqual({ done: 2, total: 2 })
+  })
+
+  it('keeps a grandchild inside its top-level action row (spec 077 req.4)', () => {
+    // Grouping by direct parent leaves a third-level issue in no row at all: it
+    // is not a root, and its own parent is not a root either. The KR counts it
+    // flat, so the rows stop adding up — and a closed grandchild disappears
+    // from the screen, which is the #77 lie with the sign flipped.
+    const mod = module_({ name: 'KR 1.2 · Готовый 1 урок' })
+    const root = issue({ name: 'Родитель', state: 's-progress' })
+    const sub = issue({ name: 'Суб', parent: root.id })
+    const grand = issue({ name: 'Внук', parent: sub.id, state: 's-done' })
+    const src = sourceOf([slice(DSG1, 'O1 · Врачи', [mod], { [mod.id]: [root, sub, grand] })])
+
+    const { objectives } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    const kr = objectives[0].krs[0]
+    expect(kr.counts).toEqual({ done: 1, total: 3 })
+    expect(kr.actions).toHaveLength(1)
+    expect({ done: kr.actions[0].done, total: kr.actions[0].total }).toEqual({ done: 1, total: 3 })
+    expect(kr.actions[0].tasks.map((t) => t.title)).toEqual(['Суб', 'Внук'])
+    expect(sumRows(kr), 'инвариант req.4 на глубине 3').toEqual(kr.counts)
+  })
+
+  it('survives a parent cycle: every issue still gets a row and a warning (FR-7)', () => {
+    // Plane should not produce this, but an unguarded walk up the parent chain
+    // would hang the render — and the pre-fix root filter dropped both issues,
+    // leaving a KR counter with nothing under it.
+    const mod = module_({ name: 'KR 1.2 · Готовый 1 урок' })
+    const a = issue({ name: 'Задача A' })
+    const b = issue({ name: 'Задача B', parent: a.id })
+    a.parent = b.id
+    const src = sourceOf([slice(DSG1, 'O1 · Врачи', [mod], { [mod.id]: [a, b] })])
+
+    const { objectives, warnings } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    const kr = objectives[0].krs[0]
+    expect(kr.counts).toEqual({ done: 0, total: 2 })
+    expect(kr.actions.map((x) => x.title).sort()).toEqual(['Задача A', 'Задача B'])
+    expect(kr.actions.every((x) => x.total === 1)).toBe(true)
+    expect(sumRows(kr), 'инвариант req.4 на циклическом графе').toEqual(kr.counts)
+    expect(warnings.some((w) => w.includes('Циклическая'))).toBe(true)
+  })
+
+  it('makes the action rows add up to the KR counter (spec 077 req.4)', () => {
+    // The dashboard case from #77: 4 parents + 2 subs, one sub closed → KR 1/6.
+    const mod = module_({ name: 'KR 2.2 · Кол-во регистраций на вебинарах' })
+    const links = issue({ name: 'Разместить ссылки на мероприятия' })
+    const linksSub = issue({ name: 'Решить: размещать ли на новой платформе', parent: links.id })
+    const migrate = issue({ name: 'Мигрировать мероприятия' })
+    const congress = issue({ name: 'Организовать сайт конгресса', state: 's-progress' })
+    const congressSub = issue({ name: 'Разведать orthobio.ru', parent: congress.id, state: 's-done' })
+    const program = issue({ name: 'Подготовить программу ОртоБио 2027' })
+    const src = sourceOf([
+      slice(DSG2, 'O2 · Канал', [mod], {
+        [mod.id]: [links, linksSub, migrate, congress, congressSub, program],
+      }),
+    ])
+
+    const { objectives } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    const kr = objectives.find((o) => o.ident === 'DSG2')!.krs[0]
+    expect(kr.counts).toEqual({ done: 1, total: 6 })
+    expect(kr.actions.map((a) => ({ done: a.done, total: a.total }))).toEqual([
+      { done: 0, total: 2 },
+      { done: 0, total: 1 },
+      { done: 1, total: 2 },
+      { done: 0, total: 1 },
+    ])
+    // the invariant the owner reads off the screen: rows sum to the KR counter
+    expect(sumRows(kr)).toEqual(kr.counts)
   })
 
   it('promotes an orphaned sub (parent cancelled) to a top-level action instead of dropping it', () => {
@@ -94,6 +195,8 @@ describe('mapOkrTree', () => {
     const kr = objectives[0].krs[0]
     expect(kr.counts).toEqual({ done: 0, total: 1 })
     expect(kr.actions.map((a) => a.title)).toEqual(['Живая подзадача'])
+    // promoted to an action, it is its own single unit of work (spec 077 req.3)
+    expect({ done: kr.actions[0].done, total: kr.actions[0].total }).toEqual({ done: 0, total: 1 })
   })
 
   it('marks q4 from Plane target_date past the period end and keeps q4 out of every rollup (§3 p.4)', () => {

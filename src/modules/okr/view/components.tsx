@@ -1,6 +1,6 @@
 import React from 'react'
 import { TEAM } from '@/lib/okr'
-import type { Health, OkrAction, OkrKr, OkrObjective } from '@/lib/okr'
+import type { Health, OkrAction, OkrKr, OkrObjective, StateGroup } from '@/lib/okr'
 
 /**
  * Server-rendered pieces of the OKR dashboard, ported from the static
@@ -96,31 +96,49 @@ function LeadChip({ leadId }: { leadId: string | null }) {
   )
 }
 
+/**
+ * The action row names its own Plane state (spec 077 req.2). Three values, not
+ * two: a Todo issue labelled «в работе» was the same kind of lie as the one
+ * that opened #77. `cancelled` never reaches the view — the mapper drops it
+ * from the tree — but the map stays total so a new group cannot slip through.
+ */
+const ACTION_STATE: Record<StateGroup, { mod: string; label: string }> = {
+  completed: { mod: 'done', label: '✓ готово' },
+  started: { mod: 'started', label: '◐ в работе' },
+  unstarted: { mod: 'todo', label: '○ не начато' },
+  backlog: { mod: 'todo', label: '○ не начато' },
+  cancelled: { mod: 'todo', label: '⊘ отменено' },
+}
+
 function ActionRow({ action }: { action: OkrAction }) {
-  const pct = action.total > 0 ? (action.done / action.total) * 100 : null
+  // The counter includes the action itself (spec 077 req.3), so `total` is
+  // never 0: sub-tasks — not the counter — decide whether a counter is shown.
+  // The guard keeps that invariant from being load-bearing across two files.
+  const hasTasks = action.tasks.length > 0
+  const pct = action.total > 0 ? (action.done / action.total) * 100 : 0
+  const state = ACTION_STATE[action.stateGroup]
   return (
     <div className="okr-act">
       <span className="okr-act__t">
         {action.title}
         <PlaneLink href={action.planeUrl} />
       </span>
-      {action.total > 0 ? (
-        <>
-          <span className="okr-act__c">
-            {action.done}/{action.total}
-          </span>
-          <span className="okr-act__bar">
-            <Bar pct={pct} color="var(--accent)" variant="act" />
-          </span>
-        </>
-      ) : (
-        // A childless action enters the KR denominator with its own state (FR-2).
-        <span
-          className={`okr-act__state ${action.stateGroup === 'completed' ? 'okr-act__state--done' : 'okr-act__state--open'}`}
-        >
-          {action.stateGroup === 'completed' ? '✓ готово' : '○ в работе'}
-        </span>
-      )}
+      {/* One wrappable unit, like `.okr-kr__meta` on the KR row above: chip,
+          counter and the 64px bar travel to a second line together instead of
+          being clipped by `.okr-card{overflow:hidden}` (spec 077 req.7). */}
+      <span className="okr-act__meta">
+        <span className={`okr-act__state okr-act__state--${state.mod}`}>{state.label}</span>
+        {hasTasks && (
+          <>
+            <span className="okr-act__c">
+              {action.done}/{action.total}
+            </span>
+            <span className="okr-act__bar">
+              <Bar pct={pct} color="var(--accent)" variant="act" />
+            </span>
+          </>
+        )}
+      </span>
     </div>
   )
 }

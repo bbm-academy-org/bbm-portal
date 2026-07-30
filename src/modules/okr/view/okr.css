@@ -202,19 +202,35 @@ details[open]>summary .okr-kr__chev{transform:rotate(90deg)}
 
 /* ---- actions (expanded) ---- */
 .okr-acts__in{padding:2px 0 12px 22px;display:flex;flex-direction:column;gap:0}
-/* Action rows carry the same shape of risk (nowrap `__c`/`__state` + a fixed
-   64px bar) but cannot clip: their only growable child keeps `min-width:0` plus
-   `overflow-wrap:anywhere`, and the fixed cluster floors at ~105px against a
-   249px row at 375px. flex-wrap is the escape hatch if that cluster ever grows;
-   it stays dormant as long as `.okr-act__t` can shrink to zero. */
+/* Action rows carry the same shape of risk as the KR row (nowrap `__c`/`__state`
+   + a fixed 64px bar). Since spec 077 the cluster also carries a state chip and
+   floors at ~186px against a ~245px row at 375px, so flex-wrap is no longer an
+   escape hatch held in reserve: it fires at ≤414px and is what keeps the row
+   readable there. Its trigger is the floor on `.okr-act__t` below — not this
+   declaration. */
 .okr-act{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 10px;padding:7px 0;border-top:1.5px dashed var(--paper-2)}
 .okr-act:first-child{border-top:0}
-.okr-act__t{flex:1;min-width:0;font:500 13px/1.35 var(--body-font);color:var(--ink-2);overflow-wrap:anywhere}
+/* `min-width` is the wrap trigger, not decoration: with the usual `0` the title
+   column's hypothetical size is 0, the row never breaks its line, and the
+   indicator cluster stays put while the title shreds into a 4-character column
+   (same trap as `.okr-kr__main` above). The floor makes the flex algorithm
+   break exactly when the title's own minimum can no longer sit beside the
+   cluster; `min(100%,…)` keeps it from re-introducing a horizontal overflow. */
+.okr-act__t{flex:1;min-width:min(100%,14ch);font:500 13px/1.35 var(--body-font);color:var(--ink-2);overflow-wrap:anywhere}
+/* Chip + counter + fixed-width bar as one wrappable cluster (spec 077 req.7),
+   mirroring `.okr-kr__meta`: the row now carries two indicators, and on a narrow
+   card they must move to the second line together rather than be cut off. */
+.okr-act__meta{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;min-width:0;gap:4px 10px}
 .okr-act__c{font:500 12.5px var(--mono-font);color:var(--ink);white-space:nowrap}
 .okr-act__bar{width:64px;flex:0 0 auto;display:flex}
 .okr-act__state{font:700 12px var(--mono-font);white-space:nowrap}
-.okr-act__state--done{color:var(--status-pos-dot)}
-.okr-act__state--open{color:var(--ink-3)}
+/* `--status-pos-ink`, not `--status-pos-dot`: 12px bold is not «large text», so
+   the chip needs 4.5:1 — the dot colour gives 3.44:1 on --surface, the ink 6.54:1.
+   Since req.1 puts this chip on every closed action, the failing variant would
+   now be everywhere. `-dot` stays what it is: a colour for dots. */
+.okr-act__state--done{color:var(--status-pos-ink)}
+.okr-act__state--started{color:var(--status-warn-ink)}
+.okr-act__state--todo{color:var(--ink-3)}
 
 /* ---- footer notes / warnings ---- */
 .okr-foot{margin-top:34px;font:500 12.5px/1.6 var(--body-font);color:var(--ink-3)}

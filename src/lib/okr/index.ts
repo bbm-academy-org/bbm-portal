@@ -8,4 +8,4 @@
 export { getOkrTree, OkrUnavailableError } from './cache'
 export { GRACE_DAYS, OKR_PERIOD, TEAM } from './config'
 export { expectedShare, inGracePeriod } from './rollup'
-export type { Health, OkrAction, OkrKr, OkrObjective, OkrTask, OkrTree } from './types'
+export type { Health, OkrAction, OkrKr, OkrObjective, OkrTask, OkrTree, StateGroup } from './types'
