@@ -1,3 +1,5 @@
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -259,14 +261,16 @@ describe('общие путевые хелперы', () => {
     expect(inWorktree(`${MAIN}/src`)).toBe(false)
   })
 
+  // Ожидания строятся через `resolve`, а не строкой: `C:/…` — абсолютный путь
+  // только на Windows, на Linux-CI он резолвится от cwd раннера.
   it('относительный путь инструмента резолвится от cwd, пустой — это сама cwd', () => {
-    expect(targetPath({ file_path: 'src/a.ts' }, MAIN).replace(/\\/g, '/')).toBe(`${MAIN}/src/a.ts`)
+    expect(targetPath({ file_path: 'src/a.ts' }, MAIN)).toBe(resolve(MAIN, 'src/a.ts'))
     expect(targetPath({}, MAIN)).toBe(MAIN)
   })
 
   it('id сессии санируется в безопасное имя state-файла', () => {
-    expect(stateFilePath(MAIN, '.claude/x-state', 'a/b:c').replace(/\\/g, '/')).toBe(
-      `${MAIN}/.claude/x-state/a_b_c.json`,
+    expect(stateFilePath(MAIN, '.claude/x-state', 'a/b:c')).toBe(
+      resolve(MAIN, '.claude/x-state/a_b_c.json'),
     )
   })
 })
