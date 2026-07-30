@@ -1,0 +1,8 @@
+# docs/specs/081-hours-calculator.md: prettier's markdown printer is not
+# idempotent on one paragraph in this file (unicode fractions ⅙½⅚ and a
+# minus sign − appear to confuse its print-width line-wrap calculation) —
+# a first --write preserves the nested list correctly, but a second
+# --write (which `--check` effectively requires to be stable) silently
+# flattens the list into inline text, destroying content. Exempted rather
+# than accepting the destructive rewrite. See PR for #89.
+docs/specs/081-hours-calculator.md
