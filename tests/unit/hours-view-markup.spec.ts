@@ -292,9 +292,7 @@ describe('SummaryTable (п.22)', () => {
   })
 
   it('участник без имени в списке всё равно виден по email', () => {
-    const host = render(
-      React.createElement(SummaryTable, { rows: [{ name: null, assessment }] }),
-    )
+    const host = render(React.createElement(SummaryTable, { rows: [{ name: null, assessment }] }))
     expect(text(host.querySelector('tbody tr'))).toContain('anton@bbm.academy')
   })
 
@@ -308,9 +306,7 @@ describe('SummaryTable (п.22)', () => {
 
 describe('SavedCard (п.21)', () => {
   it('подтверждает сохранение итоговыми числами', () => {
-    const host = render(
-      React.createElement(SavedCard, { assessment, periodLabel: 'Июль 2026' }),
-    )
+    const host = render(React.createElement(SavedCard, { assessment, periodLabel: 'Июль 2026' }))
     const content = text(host)
     expect(content).toContain('сохранена')
     expect(content).toContain('Июль 2026')
@@ -323,7 +319,9 @@ describe('SavedCard (п.21)', () => {
   })
 
   it('строка сплита — «оставлено в проекте», не «доинвестиция в 4X» (issue #83 п.9)', () => {
-    const content = text(render(React.createElement(SavedCard, { assessment, periodLabel: 'Июль 2026' })))
+    const content = text(
+      render(React.createElement(SavedCard, { assessment, periodLabel: 'Июль 2026' })),
+    )
     expect(content).toContain('в проекте')
     expect(content).not.toContain('Доинвестиция в 4X')
   })
@@ -668,10 +666,7 @@ describe('PeriodRowActions — правка периода с оценками (
 })
 
 describe('контракт стилей модуля (п.29 — палитра принадлежит поверхности)', () => {
-  const css = readFileSync(
-    join(REPO_ROOT, 'src', 'modules', 'hours', 'view', 'hours.css'),
-    'utf8',
-  )
+  const css = readFileSync(join(REPO_ROOT, 'src', 'modules', 'hours', 'view', 'hours.css'), 'utf8')
 
   it('токены объявлены на корне поверхности, а не на :root группы', () => {
     expect(css).toMatch(/\.hours-root\s*\{[^}]*--page:/)

@@ -63,8 +63,7 @@ const emptyRunsResponse = () =>
 // Build the minimal PayloadRequest the handler reads: `user` (auth gate) and
 // `payload` (only for `logger` on the error path). Mirrors how Payload invokes a
 // custom endpoint handler with an authenticated request.
-const reqWith = (user: unknown): PayloadRequest =>
-  ({ user, payload } as unknown as PayloadRequest)
+const reqWith = (user: unknown): PayloadRequest => ({ user, payload }) as unknown as PayloadRequest
 
 describe('GET /api/site-build-status (#16)', () => {
   beforeAll(async () => {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { avg, executionPct, expectedShare, health, inGracePeriod, metricPct } from '@/lib/okr/rollup'
+import {
+  avg,
+  executionPct,
+  expectedShare,
+  health,
+  inGracePeriod,
+  metricPct,
+} from '@/lib/okr/rollup'
 
 const PERIOD = { start: '2026-07-01', end: '2026-09-01' }
 // Period is 62 days; grace (14 days) ends 2026-07-15.

@@ -205,7 +205,11 @@ describe('mutateHoursDocument', () => {
 
   it('пишет результат и отдаёт его вызывающему', async () => {
     const result = await mutateHoursDocument((doc) =>
-      saveAssessment(doc, { ...assessment, email: 'anton@bbm.academy', hours: 160 }, '2026-08-01T09:00:00.000Z'),
+      saveAssessment(
+        doc,
+        { ...assessment, email: 'anton@bbm.academy', hours: 160 },
+        '2026-08-01T09:00:00.000Z',
+      ),
     )
     expect(result.ok).toBe(true)
     const persisted = await readHoursDocument()
@@ -216,7 +220,11 @@ describe('mutateHoursDocument', () => {
   it('отказ мутации ничего не пишет на диск', async () => {
     const before = readFileSync(file, 'utf8')
     const result = await mutateHoursDocument((doc) =>
-      saveAssessment(doc, { ...assessment, email: 'stranger@bbm.academy', hours: 10 }, '2026-08-01T09:00:00.000Z'),
+      saveAssessment(
+        doc,
+        { ...assessment, email: 'stranger@bbm.academy', hours: 10 },
+        '2026-08-01T09:00:00.000Z',
+      ),
     )
     expect(result.ok).toBe(false)
     expect(readFileSync(file, 'utf8')).toBe(before)
@@ -225,10 +233,18 @@ describe('mutateHoursDocument', () => {
   it('двое сохранили одновременно — обе записи на месте (п.13)', async () => {
     const [first, second] = await Promise.all([
       mutateHoursDocument((doc) =>
-        saveAssessment(doc, { ...assessment, email: 'anton@bbm.academy', hours: 160 }, '2026-08-01T09:00:00.000Z'),
+        saveAssessment(
+          doc,
+          { ...assessment, email: 'anton@bbm.academy', hours: 160 },
+          '2026-08-01T09:00:00.000Z',
+        ),
       ),
       mutateHoursDocument((doc) =>
-        saveAssessment(doc, { ...assessment, email: 'eduard@bbm.academy', hours: 80 }, '2026-08-01T09:00:01.000Z'),
+        saveAssessment(
+          doc,
+          { ...assessment, email: 'eduard@bbm.academy', hours: 80 },
+          '2026-08-01T09:00:01.000Z',
+        ),
       ),
     ])
     expect(first.ok && second.ok).toBe(true)
@@ -243,7 +259,11 @@ describe('mutateHoursDocument', () => {
 
   it('не оставляет за собой временных файлов (запись через tmp + rename)', async () => {
     await mutateHoursDocument((doc) =>
-      saveAssessment(doc, { ...assessment, email: 'anton@bbm.academy', hours: 10 }, '2026-08-01T09:00:00.000Z'),
+      saveAssessment(
+        doc,
+        { ...assessment, email: 'anton@bbm.academy', hours: 10 },
+        '2026-08-01T09:00:00.000Z',
+      ),
     )
     expect(readdirSync(join(dir, 'nested'))).toEqual(['hours.json'])
   })
@@ -252,7 +272,11 @@ describe('mutateHoursDocument', () => {
     writeFileSync(file, 'сломано', 'utf8')
     await expect(
       mutateHoursDocument((doc) =>
-        saveAssessment(doc, { ...assessment, email: 'anton@bbm.academy', hours: 10 }, '2026-08-01T09:00:00.000Z'),
+        saveAssessment(
+          doc,
+          { ...assessment, email: 'anton@bbm.academy', hours: 10 },
+          '2026-08-01T09:00:00.000Z',
+        ),
       ),
     ).rejects.toBeInstanceOf(HoursDataError)
     expect(readFileSync(file, 'utf8')).toBe('сломано')

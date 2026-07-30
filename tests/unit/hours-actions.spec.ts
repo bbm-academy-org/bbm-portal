@@ -138,7 +138,8 @@ async function adminMutations() {
     },
     {
       name: 'setPeriodStatusAction',
-      run: () => actions.setPeriodStatusAction(IDLE, form({ periodId: 'p-july', status: 'closed' })),
+      run: () =>
+        actions.setPeriodStatusAction(IDLE, form({ periodId: 'p-july', status: 'closed' })),
     },
   ]
 }
@@ -195,11 +196,24 @@ describe('заведение участника — вилка и грейд н�
     const actions = await import('@/modules/hours/actions')
     const state = await actions.saveParticipantAction(
       IDLE,
-      form({ email: 'new@bbm.academy', name: 'Новый', role: '', forkMin: '', forkMax: '', grade: '' }),
+      form({
+        email: 'new@bbm.academy',
+        name: 'Новый',
+        role: '',
+        forkMin: '',
+        forkMax: '',
+        grade: '',
+      }),
     )
     expect(state.status).toBe('ok')
     const saved = onDisk().participants.find((p) => p.email === 'new@bbm.academy')
-    expect(saved).toMatchObject({ name: 'Новый', role: null, fork_min: null, fork_max: null, grade: null })
+    expect(saved).toMatchObject({
+      name: 'Новый',
+      role: null,
+      fork_min: null,
+      fork_max: null,
+      grade: null,
+    })
     expect(saved).not.toHaveProperty('monthly_rate')
   })
 
@@ -208,7 +222,14 @@ describe('заведение участника — вилка и грейд н�
     const actions = await import('@/modules/hours/actions')
     const state = await actions.saveParticipantAction(
       IDLE,
-      form({ email: 'new@bbm.academy', name: 'Новый', role: '', forkMin: 'сто', forkMax: '', grade: '' }),
+      form({
+        email: 'new@bbm.academy',
+        name: 'Новый',
+        role: '',
+        forkMin: 'сто',
+        forkMax: '',
+        grade: '',
+      }),
     )
     expect(state.status).toBe('error')
   })

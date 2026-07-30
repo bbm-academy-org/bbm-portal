@@ -65,7 +65,10 @@ test.describe('portal.bbm.academy prod acceptance (spec 060 scenarios 1–5)', (
     // Hop 1 (only if the Auth.js provider-picker page is shown): single
     // provider — one button forwards to Zitadel.
     if (new URL(page.url()).pathname.startsWith('/api/auth/signin')) {
-      await page.getByRole('button', { name: /zitadel|sign in/i }).first().click()
+      await page
+        .getByRole('button', { name: /zitadel|sign in/i })
+        .first()
+        .click()
       await page.waitForURL(/id\.bbm\.academy/)
     }
 

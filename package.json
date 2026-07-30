@@ -23,7 +23,7 @@
     "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
     "lint": "cross-env NODE_OPTIONS=--no-deprecation eslint .",
     "lint:css": "stylelint \"src/**/*.css\"",
-    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tools/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"docs/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"deploy/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"*.md\" \"*.json\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tools/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"docs/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"deploy/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tests/**/*.{ts,tsx,css,md,json,yml,yaml}\" \".github/**/*.{yml,yaml}\" \"*.md\" \"*.json\"",
     "boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "premigrate": "node scripts/require-node.mjs",
     "migrate": "cross-env NODE_OPTIONS=--no-deprecation payload migrate",
