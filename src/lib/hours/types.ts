@@ -53,7 +53,7 @@ export interface Assessment {
   method: AssessmentMethod
   /** Справочно: сколько из `hours` пришлось на выходные (0 ≤ x ≤ hours). */
   weekend_hours: number
-  /** Доля доинвестиции в 4X, 0–100. */
+  /** Доля начисления, оставляемая в проекте (учёт — в 4X по номиналу), 0–100. */
   split_percent: number
 
   // --- Снэпшоты на момент сохранения (п.14, п.15) ---
