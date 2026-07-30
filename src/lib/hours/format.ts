@@ -58,17 +58,40 @@ export function formatPercent(value: number | null | undefined): string {
 }
 
 /**
+ * Русское словоизменение по числу: `one` — 1, 21, 101; `few` — 2–4, 22–24;
+ * `many` — 0, 5–20, 11–14 в любой сотне.
+ *
+ * Общая функция, а не четвёртая копия правила: тот же алгоритм нужен и числу
+ * будней, и числу часов, и числу пересчитанных оценок в предупреждениях домена
+ * (`document.ts`). Копия этого правила в доменном модуле мутаций уже стоила
+ * ошибки «заявлено в 1 оценка» — ревью PR #86.
+ *
+ * Падеж выбирает ВЫЗЫВАЮЩИЙ, передавая три готовые формы: «1 оценка» и «в 1
+ * оценке» — разные позиции, и одна функция «на все случаи» здесь невозможна.
+ */
+export function plural(count: number, one: string, few: string, many: string): string {
+  const n = Math.abs(Math.round(count))
+  const lastTwo = n % 100
+  const last = n % 10
+  if (lastTwo >= 11 && lastTwo <= 14) return many
+  if (last === 1) return one
+  if (last >= 2 && last <= 4) return few
+  return many
+}
+
+/**
  * «23 будних дня» / «21 будний день» / «25 будних дней» — число будней владелец
  * читает на каждой странице, и «23 будних дней» там смотрелось бы опечаткой.
  */
 export function formatWeekdayCount(value: number): string {
   const n = Math.abs(Math.round(value))
-  const lastTwo = n % 100
-  const last = n % 10
-  if (lastTwo >= 11 && lastTwo <= 14) return `${n} будних дней`
-  if (last === 1) return `${n} будний день`
-  if (last >= 2 && last <= 4) return `${n} будних дня`
-  return `${n} будних дней`
+  return `${n} ${plural(n, 'будний день', 'будних дня', 'будних дней')}`
+}
+
+/** «24 часа» / «160 часов» / «1 час» — потолок часов и его нарушения (п.21). */
+export function formatHoursCount(value: number): string {
+  const n = Math.abs(Math.round(value))
+  return `${n} ${plural(n, 'час', 'часа', 'часов')}`
 }
 
 /**

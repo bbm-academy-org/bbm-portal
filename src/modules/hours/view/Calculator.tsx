@@ -5,7 +5,13 @@ import { useActionState, useState } from 'react'
 
 import { computeAccrual, computeSplit, sliderMaxHours } from '@/lib/hours/formula'
 import type { PeriodCalendar } from '@/lib/hours/formula'
-import { formatHours, formatPercent, formatRub, formatWeeks } from '@/lib/hours/format'
+import {
+  formatHours,
+  formatHoursCount,
+  formatPercent,
+  formatRub,
+  formatWeeks,
+} from '@/lib/hours/format'
 import type { Assessment, AssessmentMethod, Period } from '@/lib/hours/types'
 import { saveAssessmentAction } from '@/modules/hours/actions'
 import { IDLE_STATE } from '@/modules/hours/actionState'
@@ -413,7 +419,7 @@ export function Calculator(props: CalculatorProps) {
 
         {overCeiling ? (
           <p className="hours-notice hours-notice--error">
-            В периоде физически {maxHours} часов — заявить больше нельзя.
+            В периоде физически {formatHoursCount(maxHours)} — заявить больше нельзя.
           </p>
         ) : null}
 

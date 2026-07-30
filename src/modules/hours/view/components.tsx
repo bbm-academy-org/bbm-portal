@@ -2,7 +2,6 @@ import React from 'react'
 
 import {
   formatHours,
-  formatInt,
   formatIsoDate,
   formatPercent,
   formatRub,
@@ -10,9 +9,9 @@ import {
   formatWeekdayCount,
   METHOD_LABELS,
 } from '@/lib/hours/format'
-import { effectiveHourlyRate, monthlyHourlyRate, participantMonthlyRate } from '@/lib/hours/formula'
+import { effectiveHourlyRate, monthlyHourlyRate } from '@/lib/hours/formula'
 import type { PeriodCalendar } from '@/lib/hours/formula'
-import type { Assessment, Participant, Period } from '@/lib/hours/types'
+import type { Assessment, Period } from '@/lib/hours/types'
 
 /**
  * Презентационные компоненты страницы часов (спека 081 пп. 8, 9, 19, 20, 22).
@@ -21,8 +20,9 @@ import type { Assessment, Participant, Period } from '@/lib/hours/types'
  * приёмке, поэтому каждый закрыт markup-тестом.
  *
  * Этот файл НИКОГДА не импортируется клиентским компонентом: бандлер тянет
- * модуль целиком, и одна карточка утащила бы за собой всю страницу. Карточка
- * сохранения, которая нужна и калькулятору, живёт в отдельном SavedCard.tsx —
+ * модуль целиком, и одна карточка утащила бы за собой всю страницу. Всё, что
+ * нужно и клиенту, вынесено отдельными файлами: SavedCard.tsx (нужна
+ * калькулятору) и ParticipantsTable.tsx (нужна обвязке админки, issue #85) —
  * факт проверяется тестом, а не соглашением.
  */
 
@@ -70,48 +70,6 @@ export function NoPeriodsNotice() {
       Периодов пока нет — администратор ещё не создал ни одного. Как только период откроют, здесь
       появится калькулятор.
     </p>
-  )
-}
-
-/**
- * Список участников: имя, роль, вилка, грейд, ВЫЧИСЛЕННАЯ ставка (п.19).
- * Ставка не хранится — это `participantMonthlyRate` (решение владельца
- * 2026-07-30); незаполненные поля показываются прочерком: участник может быть
- * заведён только с именем и email.
- */
-export function ParticipantsTable({ participants }: { participants: Participant[] }) {
-  if (participants.length === 0) {
-    return <p className="hours-notice">Ни одного участника ещё не завели.</p>
-  }
-  return (
-    <div className="hours-table-scroll">
-      <table className="hours-table">
-        <thead>
-          <tr>
-            <th scope="col">Имя</th>
-            <th scope="col">Роль</th>
-            <th scope="col">Вилка, ₽/мес</th>
-            <th scope="col">Грейд</th>
-            <th scope="col">Ставка, ₽/мес</th>
-          </tr>
-        </thead>
-        <tbody>
-          {participants.map((participant) => (
-            <tr key={participant.email}>
-              <td>{participant.name}</td>
-              <td>{participant.role ?? '—'}</td>
-              <td className="hours-num">
-                {participant.fork_min == null && participant.fork_max == null
-                  ? '—'
-                  : `${formatInt(participant.fork_min)} — ${formatInt(participant.fork_max)}`}
-              </td>
-              <td>{participant.grade ?? '—'}</td>
-              <td className="hours-num">{formatRub(participantMonthlyRate(participant))}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   )
 }
 

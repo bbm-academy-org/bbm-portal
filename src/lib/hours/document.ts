@@ -13,6 +13,9 @@
 
 import { countWeekdays, isValidIsoDate } from './calendar'
 import { normalizeEmail } from './access'
+// Склонение по числу живёт в format.ts (там же, где METHOD_LABELS): это домен,
+// а не вью, и второй копии правила «11–14 — исключение» быть не должно.
+import { formatHoursCount, plural } from './format'
 import {
   computeAccrual,
   computeSplit,
@@ -21,6 +24,7 @@ import {
   maxDeclarableHours,
   participantMonthlyRate,
 } from './formula'
+import type { PeriodCalendar } from './formula'
 import type {
   Assessment,
   AssessmentMethod,
@@ -150,7 +154,7 @@ export function saveAssessment(
   const ceiling = maxDeclarableHours(calendar)
   if (input.hours > ceiling) {
     return fail(
-      `В периоде «${period.label}» физически ${ceiling} часов — заявить больше нельзя.`,
+      `В периоде «${period.label}» физически ${formatHoursCount(ceiling)} — заявить больше нельзя.`,
     )
   }
 
@@ -302,18 +306,68 @@ export function createPeriod(
   }
 }
 
-/** Правит период, пока по нему нет ни одной оценки (п.16). */
+/**
+ * Пересчитывает производные поля оценки от НОВОГО календаря периода
+ * (issue #85, пп. 16/24).
+ *
+ * Источник ставки — сохранённый снэпшот `monthly_rate` самой оценки, а НЕ
+ * текущая вилка/грейд участника: канон п.15 («смена вилки или грейда не трогает
+ * сохранённые оценки») правкой дат не отменяется. Меняются только те числа,
+ * которые вычисляются из календаря: эффективная часовая (п.2), начисление,
+ * сплит (п.5) и число будней.
+ *
+ * `monthly_rate === null` — оценка сохранялась в режиме «только часы»:
+ * `effectiveHourlyRate` вернёт `null`, начисление и обе доли останутся
+ * нулевыми ровно как в `saveAssessment`. Порядок округления тот же (п.6):
+ * округляется произведение, потом доинвестиция, деньги — остаток.
+ *
+ * Границы, названные вслух (ревью PR #86):
+ *   - производные поля выводятся ИЗ ФОРМУЛЫ, поэтому смена дат безвозвратно
+ *     перетирает числа, вписанные в JSON руками через владельческий
+ *     escape-hatch (пп. 16/24), и снэпшоты, посчитанные до смены механики
+ *     ставки 2026-07-30. Обратимость правки (в отличие от удаления) верна
+ *     только для чисел, изначально посчитанных этой же формулой;
+ *   - `weekend_hours` и `method` НЕ пересчитываются и не проверяются против
+ *     нового диапазона: оба — свойства декларации участника («сколько из часов
+ *     пришлось на выходные», «какой вкладкой считал»), а не календаря.
+ *     Авторитетно поле `hours`; деньги ни из того, ни из другого не считаются,
+ *     и плашка на каждую правку дат стоила бы владельцу внимания дороже, чем
+ *     стоит справочное поле. Единственная несогласованность, о которой домен
+ *     всё же говорит, — часы больше физического потолка (см. `updatePeriod`):
+ *     их домен заново уже не принял бы.
+ */
+function recalculateAssessment(assessment: Assessment, calendar: PeriodCalendar): Assessment {
+  const hourlyRate = effectiveHourlyRate(assessment.monthly_rate, calendar)
+  const accrual = hourlyRate == null ? 0 : computeAccrual(assessment.hours, hourlyRate)
+  const { cash, invest } = computeSplit(accrual, assessment.split_percent)
+  return {
+    ...assessment,
+    hourly_rate: hourlyRate,
+    accrual,
+    cash_amount: cash,
+    invest_amount: invest,
+    weekday_count: calendar.weekdayCount,
+  }
+}
+
+/**
+ * Правит label и даты периода (пп. 16, 24). Оценки правку больше НЕ блокируют
+ * (issue #85): опечатка в дате иначе оставалась неисправимой из UI, а
+ * escape-hatch «владелец правит JSON» для этого случая слишком дорог.
+ *
+ * Семантика смены дат — решение владельца: производные поля всех оценок периода
+ * пересчитываются СРАЗУ (иначе в сводке жили бы числа от несуществующего
+ * календаря), но от снэпшота ставки каждой оценки. Правка одного label
+ * пересчёта не запускает — пересчитывать нечего, и лишнее предупреждение
+ * владельца бы только путало. Удаление периода с оценками остаётся закрытым
+ * (`deletePeriod`): у него обратного хода нет.
+ */
 export function updatePeriod(
   doc: HoursDocument,
   input: PeriodInput & { id: string },
 ): MutationResult<Period> {
   const existing = findPeriod(doc, input.id)
   if (!existing) return fail('Период не найден — обнови страницу.')
-  if (doc.assessments.some((assessment) => assessment.period_id === input.id)) {
-    return fail(
-      `По периоду «${existing.label}» уже есть оценки — правка дат и названия закрыта.`,
-    )
-  }
   const validated = validatePeriodInput(input)
   if ('ok' in validated) return validated
 
@@ -323,10 +377,52 @@ export function updatePeriod(
     date_from: input.dateFrom,
     date_to: input.dateTo,
   }
+  const warnings = overlapWarnings(doc, input, input.id)
+
+  const datesChanged =
+    existing.date_from !== input.dateFrom || existing.date_to !== input.dateTo
+  const affected = datesChanged
+    ? doc.assessments.filter((assessment) => assessment.period_id === input.id)
+    : []
+
+  let assessments = doc.assessments
+  if (affected.length > 0) {
+    const calendar = describePeriod(input.dateFrom, input.dateTo)
+    assessments = doc.assessments.map((assessment) =>
+      assessment.period_id === input.id ? recalculateAssessment(assessment, calendar) : assessment,
+    )
+    warnings.push(
+      `Пересчитано по новым датам: ${affected.length} ` +
+        `${plural(affected.length, 'оценка', 'оценки', 'оценок')}; ` +
+        'ставки на момент декларации сохранены.',
+    )
+
+    // Сжатие периода может оставить часы, которых в нём физически нет (п.21).
+    // Это не повод блокировать исправление опечатки, но и молчать нельзя:
+    // такие данные домен заново уже не принял бы.
+    const ceiling = maxDeclarableHours(calendar)
+    const over = affected.filter((assessment) => assessment.hours > ceiling)
+    if (over.length > 0) {
+      // Путь починки называется целиком: закрытый период — самый частый случай
+      // правки задним числом, а в него `saveAssessment` не пускает вовсе, и
+      // совет «пусть участник пересохранит» упёрся бы в отказ (п.21/24).
+      warnings.push(
+        `В новом диапазоне физически ${formatHoursCount(ceiling)}, а больше заявлено в ` +
+          `${over.length} ${plural(over.length, 'оценке', 'оценках', 'оценках')} — ` +
+          'сохранены как есть. Поправить их может сам участник пересохранением; ' +
+          'если период закрыт — сначала переоткрой его.',
+      )
+    }
+  }
+
   return {
     ok: true,
-    doc: { ...doc, periods: doc.periods.map((p) => (p.id === input.id ? period : p)) },
-    warnings: overlapWarnings(doc, input, input.id),
+    doc: {
+      ...doc,
+      periods: doc.periods.map((p) => (p.id === input.id ? period : p)),
+      assessments,
+    },
+    warnings,
     saved: period,
   }
 }

@@ -290,3 +290,68 @@ describe('сохранение оценки — только за себя (п.9
     expect(readFileSync(file, 'utf8')).toBe('не json')
   })
 })
+
+/**
+ * Правка периода, по которому уже есть оценки (issue #85). Домен проверен в
+ * hours-document; здесь проверяется, что экшен доносит пересчёт до диска и
+ * показывает предупреждение форме — то, что владелец увидит на приёмке.
+ */
+describe('правка периода с оценками — пересчёт доезжает до диска (issue #85)', () => {
+  beforeEach(() => {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        ...seed,
+        assessments: [
+          {
+            period_id: 'p-july',
+            email: ADMIN,
+            hours: 160,
+            method: 'period',
+            weekend_hours: 0,
+            split_percent: 30,
+            monthly_rate: 200_000,
+            hourly_rate: 200_000 / 184,
+            accrual: 173_913,
+            cash_amount: 121_739,
+            invest_amount: 52_174,
+            weekday_count: 23,
+            saved_at: '2026-08-01T09:00:00.000Z',
+          },
+        ],
+      } satisfies HoursDocument),
+      'utf8',
+    )
+    authState.session = { user: { email: ADMIN } }
+  })
+
+  it('меняет даты, пересчитывает оценку и предупреждает о числе пересчитанных', async () => {
+    const actions = await import('@/modules/hours/actions')
+    const state = await actions.updatePeriodAction(
+      IDLE,
+      form({
+        periodId: 'p-july',
+        label: 'Май–июнь 2026',
+        dateFrom: '2026-05-01',
+        dateTo: '2026-06-30',
+      }),
+    )
+    expect(state.status).toBe('ok')
+    const warning = state.warnings.find((w) => w.includes('ересчитано'))
+    expect(warning).toBeDefined()
+    expect(warning).toContain('1')
+
+    const saved = onDisk().assessments[0]
+    expect(saved.weekday_count).toBe(43)
+    expect(saved.accrual).toBe(186_047)
+    expect(saved.monthly_rate).toBe(200_000) // снэпшот на момент декларации (п.15)
+    expect(onDisk().periods[0].label).toBe('Май–июнь 2026')
+  })
+
+  it('удаление периода с оценками по-прежнему закрыто', async () => {
+    const actions = await import('@/modules/hours/actions')
+    const state = await actions.deletePeriodAction(IDLE, form({ periodId: 'p-july' }))
+    expect(state.status).toBe('error')
+    expect(onDisk().periods).toHaveLength(1)
+  })
+})

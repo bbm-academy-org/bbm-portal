@@ -9,6 +9,7 @@ import {
   formatSavedAt,
   formatWeekdayCount,
   formatWeeks,
+  plural,
 } from '@/lib/hours/format'
 
 /**
@@ -65,6 +66,59 @@ describe('formatPercent', () => {
   it('целые проценты сплита', () => {
     expect(formatPercent(30)).toBe('30%')
     expect(formatPercent(0)).toBe('0%')
+  })
+})
+
+/**
+ * Общее русское словоизменение по числу. Отдельная функция появилась после
+ * ревью PR #86: тот же четырёхветочный алгоритм жил в `formatWeekdayCount` и
+ * был скопирован в домен мутаций, где ни одного прямого теста у копии не было —
+ * и «заявлено в 1 оценка» проехало в предупреждение владельцу.
+ */
+describe('plural (склонение по числу)', () => {
+  const grade = (n: number) => plural(n, 'оценка', 'оценки', 'оценок')
+
+  it('берёт форму по последней цифре', () => {
+    expect(grade(1)).toBe('оценка')
+    expect(grade(2)).toBe('оценки')
+    expect(grade(3)).toBe('оценки')
+    expect(grade(4)).toBe('оценки')
+    expect(grade(5)).toBe('оценок')
+    expect(grade(9)).toBe('оценок')
+  })
+
+  it('вторая десятка — исключение целиком (11–14)', () => {
+    expect(grade(11)).toBe('оценок')
+    expect(grade(12)).toBe('оценок')
+    expect(grade(13)).toBe('оценок')
+    expect(grade(14)).toBe('оценок')
+    expect(grade(15)).toBe('оценок')
+  })
+
+  it('за пределами первой сотни правило то же', () => {
+    expect(grade(21)).toBe('оценка')
+    expect(grade(22)).toBe('оценки')
+    expect(grade(25)).toBe('оценок')
+    expect(grade(101)).toBe('оценка')
+    expect(grade(111)).toBe('оценок')
+    expect(grade(114)).toBe('оценок')
+    expect(grade(122)).toBe('оценки')
+  })
+
+  it('ноль и дробь/минус не ломают форму', () => {
+    expect(grade(0)).toBe('оценок')
+    expect(grade(1.4)).toBe('оценка')
+    expect(grade(-1)).toBe('оценка')
+    expect(grade(-5)).toBe('оценок')
+  })
+
+  it('работает и для предложного падежа — падеж выбирает вызывающий', () => {
+    // Ровно тот дефект, который ревью PR #86 нашло: предлог «в» требует
+    // предложного падежа, именительный там всегда неверен.
+    const inCase = (n: number) => plural(n, 'оценке', 'оценках', 'оценках')
+    expect(inCase(1)).toBe('оценке')
+    expect(inCase(2)).toBe('оценках')
+    expect(inCase(5)).toBe('оценках')
   })
 })
 

@@ -14,13 +14,16 @@ import type { HoursDocument } from '@/lib/hours'
 import {
   DataUnavailable,
   NoPeriodsNotice,
-  ParticipantsTable,
   PeriodHeader,
   SignedInAs,
   SummaryTable,
 } from '@/modules/hours/view/components'
 import { HoursLayout } from '@/modules/hours/view/HoursLayout'
-import { ParticipantForm, PeriodForm, PeriodRowActions } from '@/modules/hours/view/AdminForms'
+import {
+  ParticipantsAdmin,
+  PeriodForm,
+  PeriodRowActions,
+} from '@/modules/hours/view/AdminForms'
 import { PeriodSelect } from '@/modules/hours/view/PeriodSelect'
 
 /**
@@ -109,12 +112,9 @@ export default async function HoursAdminPage({
       <section className="hours-band">
         <div className="hours-wrap hours-wrap--wide">
           <h2>Участники</h2>
-          <ParticipantsTable participants={doc.participants} />
-          <p className="hours-note">
-            Ставка вычисляется из вилки и грейда (середина трети вилки: I — ⅙, II — ½, III — ⅚)
-            и не вводится руками. Участник без вилки и грейда считает только часы — без денег.
-          </p>
-          <ParticipantForm participants={doc.participants} />
+          {/* Таблица и форма связаны одним клиентским стейтом (issue #85):
+              «Изменить» в строке заполняет форму, перенабора полей нет. */}
+          <ParticipantsAdmin participants={doc.participants} />
         </div>
       </section>
 
@@ -136,7 +136,7 @@ export default async function HoursAdminPage({
                       {formatIsoDate(period.date_from)}—{formatIsoDate(period.date_to)} ·{' '}
                       {hasAssessments ? 'оценки есть' : 'оценок нет'}
                     </p>
-                    <PeriodRowActions period={period} editable={!hasAssessments} />
+                    <PeriodRowActions period={period} hasAssessments={hasAssessments} />
                   </li>
                 )
               })}
