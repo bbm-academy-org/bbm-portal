@@ -5,6 +5,11 @@
 # which means git would otherwise see each one as untracked content.
 /.claude/worktrees/
 
+# Машинное состояние enforcement-хуков (#91), не содержимое репо: снимок живых
+# параллельных сессий и per-session счётчики гардов.
+/.claude/parallel-sessions.flag.json
+/.claude/*-guard-state/
+
 # dependencies
 /node_modules
 /.pnp
