@@ -27,6 +27,8 @@ export {
   HOURS_PER_WEEKDAY,
   maxDeclarableHours,
   monthlyHourlyRate,
+  monthlyRateFromFork,
+  participantMonthlyRate,
   sliderMaxHours,
   WEEKDAYS_PER_WEEK,
 } from './formula'

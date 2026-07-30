@@ -111,8 +111,8 @@ export default async function HoursAdminPage({
           <h2>Участники</h2>
           <ParticipantsTable participants={doc.participants} />
           <p className="hours-note">
-            Ставка вне вилки сохранится с предупреждением — вилка ограничивает жёстко только
-            саму себя (min ≤ max).
+            Ставка вычисляется из вилки и грейда (середина трети вилки: I — ⅙, II — ½, III — ⅚)
+            и не вводится руками. Участник без вилки и грейда считает только часы — без денег.
           </p>
           <ParticipantForm participants={doc.participants} />
         </div>

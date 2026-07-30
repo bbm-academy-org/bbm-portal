@@ -8,8 +8,8 @@ import {
   findOpenPeriod,
   findParticipant,
   HoursDataError,
-  isHoursAdmin,
   maxDeclarableHours,
+  participantMonthlyRate,
   pickSummaryPeriod,
   readHoursDocument,
   sessionEmail,
@@ -54,7 +54,6 @@ export default async function HoursPage({
 }) {
   const session = await auth()
   const email = sessionEmail(session)
-  const admin = isHoursAdmin(email, process.env.HOURS_ADMIN_EMAILS)
 
   let doc: HoursDocument
   try {
@@ -63,7 +62,8 @@ export default async function HoursPage({
     if (!(cause instanceof HoursDataError)) throw cause
     return (
       <HoursLayout>
-        <Header email={email} admin={admin} />
+        {/* Документ нечитаем — участника не найти, под заголовком email. */}
+        <Header email={email} person={email} />
         <section className="hours-band">
           <div className="hours-wrap">
             <DataUnavailable />
@@ -93,13 +93,19 @@ export default async function HoursPage({
     openPeriod && email ? (findAssessment(doc, openPeriod.id, email) ?? null) : null
   const calendar = openPeriod ? describePeriod(openPeriod.date_from, openPeriod.date_to) : null
 
+  // Ставка вычисляется из вилки и грейда (решение владельца 2026-07-30);
+  // участник без вилки — режим «только часы», но сохранять оценку он МОЖЕТ.
+  const monthlyRate = participantMonthlyRate(participant)
+
   let disabledReason = ''
   if (!email) disabledReason = 'В сессии нет email — сохранить оценку нельзя.'
   else if (!participant) disabledReason = 'Тебя нет в списке участников — сохранить оценку нельзя.'
 
   return (
     <HoursLayout>
-      <Header email={email} admin={admin} />
+      {/* Имя под заголовком берёт на себя приёмочную роль «Вошёл как»
+          (проверка email-claim, спека п.8): нет в participants — email. */}
+      <Header email={email} person={participant?.name ?? email} />
 
       <section className="hours-band">
         <div className="hours-wrap">
@@ -120,15 +126,12 @@ export default async function HoursPage({
                   ставка часа считается по полному календарному месяцу (п.2).
                   Участник должен видеть, откуда взялась его часовая, а не
                   только результат. */}
-              <FormulaBreakdown
-                calendar={calendar}
-                monthlyRate={participant?.monthly_rate ?? null}
-              />
+              <FormulaBreakdown calendar={calendar} monthlyRate={monthlyRate} />
               <Calculator
                 period={openPeriod}
                 calendar={calendar}
-                monthlyRate={participant?.monthly_rate ?? null}
-                effectiveHourly={effectiveHourlyRate(participant?.monthly_rate ?? null, calendar)}
+                monthlyRate={monthlyRate}
+                effectiveHourly={effectiveHourlyRate(monthlyRate, calendar)}
                 email={email}
                 existing={existing}
                 maxHours={maxDeclarableHours(calendar)}
@@ -175,10 +178,13 @@ export default async function HoursPage({
             тогда обсуждаем. Заниженная оценка — тоже искажение, а не скромность: декларируй
             столько, сколько отработал.
           </p>
+          {/* Лексика сплита (issue #83 п.9): ведущая формулировка — «оставляю
+              в проекте, увеличивая свою долю»; 4X по номиналу — вторичное
+              упоминание механизма учёта. */}
           <ul className="hours-tl">
             <li>
               <span className="hours-tl__when">1-е число</span>
-              <p>Самооценка часов за период + сплит «деньгами / доинвестиция».</p>
+              <p>Самооценка часов за период + сплит «деньгами / оставить в проекте».</p>
             </li>
             <li>
               <span className="hours-tl__when">2-е число</span>
@@ -186,7 +192,10 @@ export default async function HoursPage({
             </li>
             <li>
               <span className="hours-tl__when">3-е число</span>
-              <p>Выплата денежной части, инвестиционная — в долю 4X по номиналу.</p>
+              <p>
+                Выплата денежной части; оставленное в проекте увеличивает твою долю
+                (учитывается в 4X по номиналу).
+              </p>
             </li>
           </ul>
         </div>
@@ -199,22 +208,20 @@ export default async function HoursPage({
   )
 }
 
-function Header({ email, admin }: { email: string; admin: boolean }) {
+/**
+ * Хиро без лид-абзаца, «Вошёл как» и ссылки на админку (решение владельца
+ * 2026-07-30, issue #83 пп.2–3): только заголовок и крупно — имя авторизованного
+ * участника (нет в participants — email). Именно оно теперь подтверждает
+ * email-claim на приёмке; админы ходят в админку по прямому URL. Сессия без
+ * email — прежняя предупреждающая строка: сохранить оценку не выйдет.
+ */
+function Header({ email, person }: { email: string; person: string }) {
   return (
     <header className="hours-hero">
       <div className="hours-wrap">
         <div className="hours-eyebrow">BBM · механика выплат · раз в период</div>
-        <h1 className="hours-display">Сколько ты отработал?</h1>
-        <p className="hours-lead">
-          Оцени фактические часы любым удобным способом — тайм-трекера нет и не будет.
-          Оплачиваются фактические часы: отработал 10 — получил за 10, отработал 200 — за 200.
-        </p>
-        <SignedInAs email={email} />
-        {admin ? (
-          <p className="hours-session">
-            <a href="/p/hours/admin">Админка часов →</a>
-          </p>
-        ) : null}
+        <h1 className="hours-display">Сколько было отработано</h1>
+        {email ? <p className="hours-person">{person}</p> : <SignedInAs email="" />}
       </div>
     </header>
   )

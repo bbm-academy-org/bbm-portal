@@ -34,7 +34,6 @@ const seed: HoursDocument = {
       fork_min: 150_000,
       fork_max: 250_000,
       grade: 'II',
-      monthly_rate: 200_000,
     },
     {
       email: 'eduard@bbm.academy',
@@ -43,7 +42,6 @@ const seed: HoursDocument = {
       fork_min: 100_000,
       fork_max: 200_000,
       grade: 'I',
-      monthly_rate: 150_000,
     },
   ],
   periods: [
@@ -145,6 +143,41 @@ describe('readHoursDocument', () => {
     const doc = await readHoursDocument()
     expect(doc.participants[0].email).toBe('anton@bbm.academy')
     expect(doc.assessments[0].email).toBe('anton@bbm.academy')
+  })
+
+  it('старый JSON с monthly_rate у участника читается, поле игнорируется (issue #83)', async () => {
+    // До 2026-07-30 ставка хранилась в документе; теперь вычисляется из вилки
+    // и грейда. Прод-файл со старым полем обязан читаться без ошибки, а поле —
+    // не возвращаться в документ (иначе оно бы вечно переписывалось на диск).
+    await mutateHoursDocument(() => ({ ok: true, doc: seed, warnings: [], saved: null }))
+    writeFileSync(
+      file,
+      JSON.stringify({
+        participants: [{ ...seed.participants[0], monthly_rate: 999_999 }],
+        periods: [],
+        assessments: [],
+      }),
+      'utf8',
+    )
+    const doc = await readHoursDocument()
+    expect(doc.participants[0]).not.toHaveProperty('monthly_rate')
+    expect(doc.participants[0].fork_min).toBe(150_000)
+  })
+
+  it('участник только с именем и email (без вилки/грейда/роли) читается как есть', async () => {
+    await mutateHoursDocument(() => ({ ok: true, doc: seed, warnings: [], saved: null }))
+    writeFileSync(
+      file,
+      JSON.stringify({
+        participants: [{ email: 'new@bbm.academy', name: 'Новый' }],
+        periods: [],
+        assessments: [],
+      }),
+      'utf8',
+    )
+    const doc = await readHoursDocument()
+    expect(doc.participants[0].email).toBe('new@bbm.academy')
+    expect(doc.participants[0].name).toBe('Новый')
   })
 
   it('недостающие секции дополняются пустыми (документ старой версии)', async () => {

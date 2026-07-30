@@ -7,6 +7,8 @@ import {
   effectiveHourlyRate,
   maxDeclarableHours,
   monthlyHourlyRate,
+  monthlyRateFromFork,
+  participantMonthlyRate,
 } from '@/lib/hours/formula'
 
 /**
@@ -175,5 +177,57 @@ describe('maxDeclarableHours (п.21 — физический потолок от
   it('календарные дни × 24, а не фиксированное число', () => {
     expect(maxDeclarableHours(describePeriod('2026-07-01', '2026-07-31'))).toBe(31 * 24)
     expect(maxDeclarableHours(describePeriod('2026-05-01', '2026-06-30'))).toBe(61 * 24)
+  })
+})
+
+describe('monthlyRateFromFork (автоставка — решение владельца 2026-07-30, issue #83)', () => {
+  // Канон механики выплат: грейд — точка внутри вилки (середина трети),
+  // не множитель. I = min + ⅙·(max−min), II = середина, III = min + ⅚·(max−min).
+  it('грейды — середины третей вилки 150 000–250 000', () => {
+    expect(monthlyRateFromFork(150_000, 250_000, 'I')).toBe(166_667)
+    expect(monthlyRateFromFork(150_000, 250_000, 'II')).toBe(200_000)
+    expect(monthlyRateFromFork(150_000, 250_000, 'III')).toBe(233_333)
+  })
+
+  it('округляет до рубля', () => {
+    // 100 000 + 100 000/6 = 116 666,66… → 116 667
+    expect(monthlyRateFromFork(100_000, 200_000, 'I')).toBe(116_667)
+    expect(monthlyRateFromFork(100_000, 200_000, 'III')).toBe(183_333)
+  })
+
+  it('вырожденная вилка min = max даёт саму границу для любого грейда', () => {
+    for (const grade of ['I', 'II', 'III'] as const) {
+      expect(monthlyRateFromFork(180_000, 180_000, grade)).toBe(180_000)
+    }
+  })
+
+  it('без любой из трёх составляющих ставки нет (участник «только часы»)', () => {
+    expect(monthlyRateFromFork(null, 250_000, 'II')).toBeNull()
+    expect(monthlyRateFromFork(150_000, null, 'II')).toBeNull()
+    expect(monthlyRateFromFork(150_000, 250_000, null)).toBeNull()
+    expect(monthlyRateFromFork(undefined, undefined, undefined)).toBeNull()
+  })
+
+  it('мусор не превращается в деньги', () => {
+    expect(monthlyRateFromFork(Number.NaN, 250_000, 'II')).toBeNull()
+    expect(monthlyRateFromFork(150_000, Number.POSITIVE_INFINITY, 'II')).toBeNull()
+    expect(monthlyRateFromFork(250_000, 150_000, 'II')).toBeNull() // min > max
+    expect(monthlyRateFromFork(150_000, 250_000, 'IV' as unknown as 'I')).toBeNull()
+  })
+})
+
+describe('participantMonthlyRate (ставка участника — вычисляется, не хранится)', () => {
+  it('считает ставку из вилки и грейда участника', () => {
+    expect(
+      participantMonthlyRate({ fork_min: 150_000, fork_max: 250_000, grade: 'II' }),
+    ).toBe(200_000)
+  })
+
+  it('участник без вилки или грейда — null (денежная часть не показывается)', () => {
+    expect(participantMonthlyRate({ fork_min: null, fork_max: null, grade: null })).toBeNull()
+    expect(participantMonthlyRate({ fork_min: 150_000, fork_max: 250_000, grade: null })).toBeNull()
+    expect(participantMonthlyRate({})).toBeNull()
+    expect(participantMonthlyRate(null)).toBeNull()
+    expect(participantMonthlyRate(undefined)).toBeNull()
   })
 })

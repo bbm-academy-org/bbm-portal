@@ -37,7 +37,6 @@ const seed: HoursDocument = {
       fork_min: 150_000,
       fork_max: 250_000,
       grade: 'II',
-      monthly_rate: 200_000,
     },
     {
       email: MEMBER,
@@ -46,7 +45,6 @@ const seed: HoursDocument = {
       fork_min: 100_000,
       fork_max: 200_000,
       grade: 'I',
-      monthly_rate: 150_000,
     },
   ],
   periods: [
@@ -110,7 +108,6 @@ async function adminMutations() {
             forkMin: '100000',
             forkMax: '200000',
             grade: 'I',
-            monthlyRate: '150000',
           }),
         ),
     },
@@ -189,6 +186,31 @@ describe('мутации админки закрыты от не-админа (�
     )
     expect(state.status).toBe('ok')
     expect(onDisk().periods).toHaveLength(2)
+  })
+})
+
+describe('заведение участника — вилка и грейд необязательны (issue #83)', () => {
+  it('админ заводит участника только с именем и email — пустые поля формы становятся null', async () => {
+    authState.session = { user: { email: ADMIN } }
+    const actions = await import('@/modules/hours/actions')
+    const state = await actions.saveParticipantAction(
+      IDLE,
+      form({ email: 'new@bbm.academy', name: 'Новый', role: '', forkMin: '', forkMax: '', grade: '' }),
+    )
+    expect(state.status).toBe('ok')
+    const saved = onDisk().participants.find((p) => p.email === 'new@bbm.academy')
+    expect(saved).toMatchObject({ name: 'Новый', role: null, fork_min: null, fork_max: null, grade: null })
+    expect(saved).not.toHaveProperty('monthly_rate')
+  })
+
+  it('мусор в границе вилки — отказ, а не молчаливый null', async () => {
+    authState.session = { user: { email: ADMIN } }
+    const actions = await import('@/modules/hours/actions')
+    const state = await actions.saveParticipantAction(
+      IDLE,
+      form({ email: 'new@bbm.academy', name: 'Новый', role: '', forkMin: 'сто', forkMax: '', grade: '' }),
+    )
+    expect(state.status).toBe('error')
   })
 })
 

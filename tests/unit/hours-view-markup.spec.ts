@@ -2,7 +2,21 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// Формы админки тянут server actions ('use server' → next/cache, @/auth);
+// для markup-теста хватает заглушек — гейты живут в hours-actions.spec.
+vi.mock('@/modules/hours/actions', () => {
+  const idle = async () => ({ status: 'idle', message: '', warnings: [], saved: null })
+  return {
+    createPeriodAction: idle,
+    deletePeriodAction: idle,
+    saveAssessmentAction: idle,
+    saveParticipantAction: idle,
+    setPeriodStatusAction: idle,
+    updatePeriodAction: idle,
+  }
+})
 
 import { describePeriod } from '@/lib/hours'
 import type { Assessment, Participant, Period } from '@/lib/hours'
@@ -32,10 +46,10 @@ const participants: Participant[] = [
     email: 'anton@bbm.academy',
     name: 'Антон',
     role: 'Продукт',
+    // ставка вычисляется: 150k + ½·(250k−150k) = 200 000 (решение 2026-07-30)
     fork_min: 150_000,
     fork_max: 250_000,
     grade: 'II',
-    monthly_rate: 200_000,
   },
   {
     email: 'eduard@bbm.academy',
@@ -44,7 +58,11 @@ const participants: Participant[] = [
     fork_min: 100_000,
     fork_max: 200_000,
     grade: 'I',
-    monthly_rate: 150_000,
+  },
+  // Участник «только имя + email» — вилки и грейда ещё нет (issue #83 п.5).
+  {
+    email: 'new@bbm.academy',
+    name: 'Новый',
   },
 ]
 
@@ -107,10 +125,10 @@ describe('NotAParticipantNotice (п.9, сценарий 7)', () => {
 })
 
 describe('ParticipantsTable (п.19)', () => {
-  it('показывает имя, роль, вилку, грейд и месячную ставку', () => {
+  it('показывает имя, роль, вилку, грейд и ВЫЧИСЛЕННУЮ месячную ставку', () => {
     const host = render(React.createElement(ParticipantsTable, { participants }))
     const rows = host.querySelectorAll('tbody tr')
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
 
     const first = text(rows[0])
     expect(first).toContain('Антон')
@@ -118,7 +136,21 @@ describe('ParticipantsTable (п.19)', () => {
     expect(first).toContain('150 000')
     expect(first).toContain('250 000')
     expect(first).toContain('II')
-    expect(first).toContain('200 000 ₽')
+    expect(first).toContain('200 000 ₽') // 150k + ½·(250k−150k), не хранится
+
+    // грейд I — середина нижней трети: 100k + ⅙·100k = 116 667
+    expect(text(rows[1])).toContain('116 667 ₽')
+  })
+
+  it('участник без вилки и роли — прочерки, а не пустые ячейки (issue #83)', () => {
+    const host = render(React.createElement(ParticipantsTable, { participants }))
+    const minimal = host.querySelectorAll('tbody tr')[2]
+    const cells = [...minimal.querySelectorAll('td')].map((cell) => text(cell))
+    expect(cells[0]).toBe('Новый')
+    expect(cells[1]).toBe('—') // роль
+    expect(cells[2]).toBe('—') // вилка
+    expect(cells[3]).toBe('—') // грейд
+    expect(cells[4]).toBe('—') // ставка не вычисляется
   })
 
   it('пустой список не рисует пустую таблицу молча', () => {
@@ -228,6 +260,13 @@ describe('SummaryTable (п.22)', () => {
     )
     expect(text(host.querySelector('tbody tr'))).toContain('anton@bbm.academy')
   })
+
+  it('колонка сплита называется «В проекте», а не «В 4X» (лексика — issue #83 п.9)', () => {
+    const host = render(React.createElement(SummaryTable, { rows }))
+    const headers = [...host.querySelectorAll('th')].map((th) => text(th))
+    expect(headers).toContain('В проекте')
+    expect(headers).not.toContain('В 4X')
+  })
 })
 
 describe('SavedCard (п.21)', () => {
@@ -244,6 +283,12 @@ describe('SavedCard (п.21)', () => {
     expect(content).toContain('52 174 ₽')
     // справочная детализация выходных (п.4)
     expect(content).toContain('12')
+  })
+
+  it('строка сплита — «оставлено в проекте», не «доинвестиция в 4X» (issue #83 п.9)', () => {
+    const content = text(render(React.createElement(SavedCard, { assessment, periodLabel: 'Июль 2026' })))
+    expect(content).toContain('в проекте')
+    expect(content).not.toContain('Доинвестиция в 4X')
   })
 })
 
@@ -336,6 +381,28 @@ describe('что реально уезжает в клиентский банд�
   })
 })
 
+describe('ParticipantForm (п.23 — ставка не вводится, вилка/грейд/роль необязательны)', () => {
+  it('поля «Ставка» нет; обязательны только email и имя', async () => {
+    const { ParticipantForm } = await import('@/modules/hours/view/AdminForms')
+    const host = render(React.createElement(ParticipantForm, { participants }))
+
+    expect(host.querySelector('input[name="monthlyRate"]')).toBeNull()
+
+    for (const name of ['role', 'forkMin', 'forkMax']) {
+      const input = host.querySelector(`input[name="${name}"]`)
+      expect(input, `input ${name}`).not.toBeNull()
+      expect(input!.hasAttribute('required'), `${name} не обязателен`).toBe(false)
+    }
+    // грейд можно оставить незаданным
+    const grade = host.querySelector('select[name="grade"]')
+    expect(grade).not.toBeNull()
+    expect(grade!.querySelector('option[value=""]')).not.toBeNull()
+
+    expect(host.querySelector('input[name="email"]')!.hasAttribute('required')).toBe(true)
+    expect(host.querySelector('input[name="name"]')!.hasAttribute('required')).toBe(true)
+  })
+})
+
 describe('контракт стилей модуля (п.29 — палитра принадлежит поверхности)', () => {
   const css = readFileSync(
     join(REPO_ROOT, 'src', 'modules', 'hours', 'view', 'hours.css'),
@@ -355,5 +422,18 @@ describe('контракт стилей модуля (п.29 — палитра �
     expect(css).toContain('prefers-color-scheme: dark')
     expect(css).toMatch(/\[data-theme=['"]dark['"]\]/)
     expect(css).toMatch(/\[data-theme=['"]light['"]\]/)
+  })
+
+  it('reset и цвет ссылок не перебивают компонентные классы (issue #83 пп.1, 7)', () => {
+    // Первопричина бага отступов и «зелёного на зелёном»: правило вида
+    // `.hours-root p` / `.hours-root a` имеет специфичность (0,1,1) и бьёт
+    // одноклассовые `.hours-notice` (padding) и `.hours-btn` (color) — (0,1,0).
+    // Базовые правила с типом элемента обязаны сидеть в :where(...) с нулевой
+    // специфичностью, чтобы ЛЮБОЙ класс компонента их перекрывал.
+    expect(css).toMatch(/:where\([^)]*\.hours-root p\b[^)]*\)\s*\{[^}]*margin: 0/)
+    expect(css).toMatch(/:where\(\.hours-root\) a\s*\{/)
+    expect(css).not.toMatch(/^\s*\.hours-root a\s*\{/m)
+    // reset-блок «margin: 0; padding: 0» существует только внутри :where(...)
+    expect(css).not.toMatch(/^\.hours-root h1,$/m)
   })
 })

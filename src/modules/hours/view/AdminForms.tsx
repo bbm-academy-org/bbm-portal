@@ -16,8 +16,8 @@ import type { HoursActionState } from '@/modules/hours/actionState'
 
 /**
  * Формы админки (спека 081 пп. 23, 24). Клиентские только ради обратной связи
- * (`useActionState`): и жёсткий отказ, и мягкое предупреждение («ставка вне
- * вилки», «даты пересекаются») должны быть видны там же, где нажали кнопку.
+ * (`useActionState`): и жёсткий отказ, и мягкое предупреждение («даты
+ * пересекаются») должны быть видны там же, где нажали кнопку.
  *
  * Гейт админа применяется на сервере в каждом action — эти формы просто не
  * рисуются не-админу, но безопасность держится не на этом (п.10).
@@ -66,29 +66,29 @@ export function ParticipantForm({ participants }: { participants: Participant[] 
           <span>Имя</span>
           <input type="text" name="name" required />
         </label>
+        {/* Роль, вилка и грейд необязательны (решение владельца 2026-07-30):
+            участника можно завести только с именем и email. Поля «Ставка»
+            нет — ставка вычисляется из вилки и грейда (середина трети). */}
         <label className="hours-field">
-          <span>Роль</span>
-          <input type="text" name="role" required />
+          <span>Роль (необязательно)</span>
+          <input type="text" name="role" />
         </label>
         <label className="hours-field">
-          <span>Вилка min, ₽/мес</span>
-          <input type="number" name="forkMin" min={0} step={1000} required />
+          <span>Вилка min, ₽/мес (необязательно)</span>
+          <input type="number" name="forkMin" min={0} step={1000} />
         </label>
         <label className="hours-field">
-          <span>Вилка max, ₽/мес</span>
-          <input type="number" name="forkMax" min={0} step={1000} required />
+          <span>Вилка max, ₽/мес (необязательно)</span>
+          <input type="number" name="forkMax" min={0} step={1000} />
         </label>
         <label className="hours-field">
-          <span>Грейд</span>
-          <select name="grade" defaultValue="I">
+          <span>Грейд (необязательно)</span>
+          <select name="grade" defaultValue="">
+            <option value="">—</option>
             <option value="I">I</option>
             <option value="II">II</option>
             <option value="III">III</option>
           </select>
-        </label>
-        <label className="hours-field">
-          <span>Ставка, ₽/мес</span>
-          <input type="number" name="monthlyRate" min={0} step={1000} required />
         </label>
       </div>
       <div className="hours-actions">

@@ -33,10 +33,10 @@ const seed: HoursDocument = {
       email: 'anton@bbm.academy',
       name: 'Антон',
       role: 'Продукт',
+      // вычисленная ставка: 150k + ½·(250k−150k) = 200 000 ₽/мес
       fork_min: 150_000,
       fork_max: 250_000,
       grade: 'II',
-      monthly_rate: 200_000,
     },
   ],
   periods: [
@@ -92,10 +92,25 @@ async function renderPage(params: Record<string, string> = {}): Promise<string> 
 }
 
 describe('страница /p/hours собирается целиком', () => {
-  it('называет email сессии, участника, период и часовую ставку 1 087 ₽', async () => {
+  it('заголовок «Сколько было отработано», под ним крупно имя участника (issue #83 пп.2-3)', async () => {
     const html = await renderPage()
-    expect(html).toContain('ошёл как')
-    expect(html).toContain('anton@bbm.academy')
+    expect(html).toContain('Сколько было отработано')
+    expect(html).not.toContain('Сколько ты отработал?')
+    // Имя из participants по email сессии — берёт на себя приёмочную роль
+    // «Вошёл как» (проверка email-claim, спека п.8).
+    expect(html).toMatch(/hours-person[^>]*>Антон</)
+  })
+
+  it('хиро без лид-абзаца, строки «Вошёл как» и ссылки на админку (issue #83 п.2)', async () => {
+    const html = await renderPage()
+    expect(html).not.toContain('Оцени фактические часы')
+    expect(html).not.toContain('ошёл как')
+    expect(html).not.toContain('Админка часов')
+    expect(html).not.toContain('/p/hours/admin')
+  })
+
+  it('называет участника, период и часовую ставку 1 087 ₽ (ставка — из вилки и грейда)', async () => {
+    const html = await renderPage()
     expect(html).toContain('Антон')
     expect(html).toContain('Июль 2026')
     expect(html).toContain('01.07.2026')
@@ -109,9 +124,19 @@ describe('страница /p/hours собирается целиком', () => 
     expect(html).toContain('52 174 ₽')
   })
 
-  it('показывает админу ссылку на админку (allowlist)', async () => {
+  it('ползунок «Часов в рабочий день» ограничен 12 (issue #83 п.8)', async () => {
     const html = await renderPage()
-    expect(html).toContain('/p/hours/admin')
+    expect(html).toMatch(/id="hours-day"[^>]*max="12"/)
+  })
+
+  it('лексика сплита: «оставляю в проекте», а не «доинвестиция в 4X» (issue #83 п.9)', async () => {
+    const html = await renderPage()
+    expect(html).toContain('Оставляю в проекте, увеличивая свою долю')
+    expect(html).not.toContain('доинвестицией в 4X')
+    expect(html).not.toContain('Доля доинвестиции в 4X')
+    // сводка и таймлайн согласованы с легендой
+    expect(html).toContain('В проекте')
+    expect(html).not.toContain('В 4X</th>')
   })
 
   it('рисует ровно одну карточку сохранённой оценки, а не две', async () => {
@@ -191,5 +216,42 @@ describe('страница показывает помесячную разби�
     expect(html).toContain('нет в списке участников')
     expect(html).toContain('43 будних дня')
     expect(html).not.toContain('1 163 ₽')
+    // залогиненного нет в participants — под заголовком его email
+    expect(html).toMatch(/hours-person[^>]*>anton@bbm\.academy</)
+  })
+})
+
+describe('участник без вилки и грейда — режим «только часы» (issue #83 п.5)', () => {
+  beforeEach(() => {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        participants: [{ email: 'anton@bbm.academy', name: 'Антон' }],
+        periods: [
+          {
+            id: 'p-july',
+            label: 'Июль 2026',
+            date_from: '2026-07-01',
+            date_to: '2026-07-31',
+            status: 'open',
+          },
+        ],
+        assessments: [],
+      }),
+      'utf8',
+    )
+  })
+
+  it('денежная часть не показывается, но он участник: плашки «нет в списке» нет, сохранять можно', async () => {
+    const html = await renderPage()
+    expect(html).toContain('Сколько было отработано')
+    expect(html).toMatch(/hours-person[^>]*>Антон</)
+    expect(html).not.toContain('нет в списке участников')
+    expect(html).not.toContain('сохранить оценку нельзя')
+    // ставки нет — формула честно говорит об этом, денег на странице нет
+    expect(html).toContain('Месячной ставки нет')
+    expect(html).not.toContain('1 087 ₽')
+    // в таблице участников — прочерки вместо вилки и ставки
+    expect(html).toMatch(/<td[^>]*>—<\/td>/)
   })
 })

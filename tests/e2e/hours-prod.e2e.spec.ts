@@ -34,7 +34,7 @@ const idpPassword = process.env.E2E_IDP_PASSWORD
 
 /** Маркеры отрисованной страницы часов — их ОТСУТСТВИЕ и есть доказательство. */
 const HOURS_ROOT = '.hours-root'
-const HOURS_HEADING = 'Сколько ты отработал?'
+const HOURS_HEADING = 'Сколько было отработано'
 
 test.describe('portal.bbm.academy · модуль часов (спека 081, сценарии 1, 9, 11)', () => {
   test.skip(
@@ -100,9 +100,13 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
 
     await page.waitForURL(`${portalBase}/p/hours`, { timeout: 45_000 })
     await expect(page.locator(HOURS_ROOT)).toBeVisible()
-    // Наличие email-claim'а у прод-клиента Zitadel — это то, на чём держится
-    // идентификация участника (спека 081 п.8). Проверяется явно.
-    await expect(page.getByText(/ошёл как/).first()).toBeVisible()
-    await expect(page.getByText(new RegExp(idpUsername!, 'i')).first()).toBeVisible()
+    await expect(page.getByRole('heading', { name: HOURS_HEADING })).toBeVisible()
+    // Наличие email-claim'а у прод-клиента Zitadel — то, на чём держится
+    // идентификация участника (спека 081 п.8). С 2026-07-30 строки «Вошёл как»
+    // нет: приёмочную роль несёт блок под заголовком — имя участника из
+    // participants, а для незаведённого в списке — его email.
+    await expect(page.locator('.hours-person')).toBeVisible()
+    const person = (await page.locator('.hours-person').textContent()) ?? ''
+    expect(person.trim().length, 'под заголовком обязано стоять имя или email').toBeGreaterThan(0)
   })
 })

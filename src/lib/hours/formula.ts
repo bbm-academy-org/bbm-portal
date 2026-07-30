@@ -19,9 +19,44 @@
  */
 
 import { countCalendarDays, countWeekdays, monthLabel, monthSegments } from './calendar'
+import type { Grade, Participant } from './types'
 
 /** Норма будня — 8 часов (п.1). */
 export const HOURS_PER_WEEKDAY = 8
+
+/**
+ * Доля вилки по грейду — середина соответствующей трети (канон механики выплат
+ * `bbm/outputs/2026-07-29-bbm-payout-mechanics.md`: «грейд — точка внутри
+ * вилки, не множитель»; решение владельца 2026-07-30, issue #83).
+ */
+const GRADE_SHARE: Record<Grade, number> = { I: 1 / 6, II: 1 / 2, III: 5 / 6 }
+
+/**
+ * Месячная ставка из вилки и грейда: round(min + share·(max − min)).
+ * Ставка больше НЕ хранится и не вводится руками — это единственный источник.
+ * `null`, когда любой из трёх составляющих нет или вилка не является вилкой —
+ * участник в режиме «только часы».
+ */
+export function monthlyRateFromFork(
+  forkMin: number | null | undefined,
+  forkMax: number | null | undefined,
+  grade: Grade | null | undefined,
+): number | null {
+  if (forkMin == null || !Number.isFinite(forkMin) || forkMin < 0) return null
+  if (forkMax == null || !Number.isFinite(forkMax) || forkMax < 0) return null
+  if (forkMin > forkMax) return null
+  const share = grade != null ? GRADE_SHARE[grade] : undefined
+  if (share === undefined) return null
+  return Math.round(forkMin + share * (forkMax - forkMin))
+}
+
+/** Ставка участника — удобная обёртка над `monthlyRateFromFork`. */
+export function participantMonthlyRate(
+  participant: Pick<Participant, 'fork_min' | 'fork_max' | 'grade'> | null | undefined,
+): number | null {
+  if (!participant) return null
+  return monthlyRateFromFork(participant.fork_min, participant.fork_max, participant.grade)
+}
 
 /** Рабочих будней в неделе — множитель вкладки «средняя неделя» (п.20). */
 export const WEEKDAYS_PER_WEEK = 5

@@ -55,10 +55,19 @@ function normalizeDocument(raw: unknown): HoursDocument {
   // сессии, то есть тихо потеряет и ставку, и свою оценку. Нормализуем здесь,
   // на границе с диском: дальше по коду email уже канонический.
   if (Array.isArray(value.participants)) {
-    document.participants = value.participants.map((participant) => ({
-      ...participant,
-      email: normalizeEmail(participant?.email),
-    }))
+    document.participants = value.participants.map((participant) => {
+      // Документы до 2026-07-30 хранили у участника `monthly_rate`; теперь
+      // ставка вычисляется из вилки и грейда. Старое поле молча отбрасывается
+      // при чтении (issue #83) — иначе оно бы вечно переписывалось на диск.
+      const { monthly_rate: _legacyRate, ...rest } = (participant ?? {}) as unknown as Record<
+        string,
+        unknown
+      > & { monthly_rate?: unknown }
+      return {
+        ...(rest as unknown as (typeof document.participants)[number]),
+        email: normalizeEmail(participant?.email),
+      }
+    })
   }
   if (Array.isArray(value.periods)) document.periods = value.periods
   if (Array.isArray(value.assessments)) {
