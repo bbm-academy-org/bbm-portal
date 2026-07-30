@@ -1,6 +1,14 @@
 import type { GlobalConfig } from 'payload'
 
-import { contacts, ctaSection, faq, faqIntro, intro, pageTabs, teamIntro } from '../fields/pageGroups'
+import {
+  contacts,
+  ctaSection,
+  faq,
+  faqIntro,
+  intro,
+  pageTabs,
+  teamIntro,
+} from '../fields/pageGroups'
 import { omitEmptyGlobal } from '../hooks/omitEmpty'
 import { siteRebuildGlobalAfterChange } from '../lib/siteSync'
 

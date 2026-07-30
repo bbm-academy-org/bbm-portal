@@ -33,8 +33,7 @@ const createdTeamIds: string[] = []
 
 // Build the minimal PayloadRequest the handler reads: `user` (auth gate) and
 // `payload` (local API). Mirrors how Payload invokes a custom endpoint handler.
-const reqWith = (user: unknown): PayloadRequest =>
-  ({ user, payload } as unknown as PayloadRequest)
+const reqWith = (user: unknown): PayloadRequest => ({ user, payload }) as unknown as PayloadRequest
 
 type PendingSurface = {
   surface: string

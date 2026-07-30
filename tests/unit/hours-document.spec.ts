@@ -86,9 +86,7 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
   it('участник без вилки сохраняет оценку в режиме «только часы» (решение владельца 2026-07-30)', () => {
     const base = doc()
     base.participants.push({ email: 'new@bbm.academy', name: 'Новый' })
-    const result = ok(
-      saveAssessment(base, { ...validAssessment, email: 'new@bbm.academy' }, NOW),
-    )
+    const result = ok(saveAssessment(base, { ...validAssessment, email: 'new@bbm.academy' }, NOW))
     expect(result.saved).toMatchObject({
       email: 'new@bbm.academy',
       hours: 160,
@@ -101,7 +99,9 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
   })
 
   it('нормализует email оценки (ключ пары period+email — lowercase)', () => {
-    const result = ok(saveAssessment(doc(), { ...validAssessment, email: ' Anton@BBM.Academy ' }, NOW))
+    const result = ok(
+      saveAssessment(doc(), { ...validAssessment, email: ' Anton@BBM.Academy ' }, NOW),
+    )
     expect(result.saved.email).toBe('anton@bbm.academy')
   })
 
@@ -120,9 +120,7 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
     // Вилка выросла: 300–500 тыс., грейд II → вычисленная ставка 400 000 ₽/мес.
     const raised: HoursDocument = {
       ...first.doc,
-      participants: [
-        { ...first.doc.participants[0], fork_min: 300_000, fork_max: 500_000 },
-      ],
+      participants: [{ ...first.doc.participants[0], fork_min: 300_000, fork_max: 500_000 }],
     }
     // до пересохранения снэпшот не трогается — смена вилки не задним числом
     expect(raised.assessments[0].accrual).toBe(173_913)
@@ -144,7 +142,11 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
     })
     const first = ok(saveAssessment(base, validAssessment, NOW))
     const second = ok(
-      saveAssessment(first.doc, { ...validAssessment, email: 'eduard@bbm.academy', hours: 80 }, NOW),
+      saveAssessment(
+        first.doc,
+        { ...validAssessment, email: 'eduard@bbm.academy', hours: 80 },
+        NOW,
+      ),
     )
     expect(second.doc.assessments).toHaveLength(2)
     expect(findAssessment(second.doc, 'p-july', 'anton@bbm.academy')?.hours).toBe(160)
@@ -201,11 +203,7 @@ describe('saveAssessment — валидации (п.21)', () => {
       expect(saveAssessment(doc(), { ...validAssessment, method }, NOW).ok).toBe(true)
     }
     expect(
-      saveAssessment(
-        doc(),
-        { ...validAssessment, method: 'guess' as unknown as 'period' },
-        NOW,
-      ).ok,
+      saveAssessment(doc(), { ...validAssessment, method: 'guess' as unknown as 'period' }, NOW).ok,
     ).toBe(false)
   })
 })
@@ -287,9 +285,9 @@ describe('upsertParticipant (п.23 — ставка не вводится, ви�
   it('отклоняет отрицательные границы вилки и неизвестный грейд', () => {
     expect(upsertParticipant(doc(), { ...participant, forkMin: -1 }).ok).toBe(false)
     expect(upsertParticipant(doc(), { ...participant, forkMax: -1, forkMin: -2 }).ok).toBe(false)
-    expect(
-      upsertParticipant(doc(), { ...participant, grade: 'IV' as unknown as 'I' }).ok,
-    ).toBe(false)
+    expect(upsertParticipant(doc(), { ...participant, grade: 'IV' as unknown as 'I' }).ok).toBe(
+      false,
+    )
   })
 })
 
@@ -309,12 +307,20 @@ describe('createPeriod (п.24)', () => {
   })
 
   it('отклоняет date_from > date_to', () => {
-    const result = createPeriod(doc(), { ...input, dateFrom: '2026-08-31', dateTo: '2026-08-01' }, 'x')
+    const result = createPeriod(
+      doc(),
+      { ...input, dateFrom: '2026-08-31', dateTo: '2026-08-01' },
+      'x',
+    )
     expect(result.ok).toBe(false)
   })
 
   it('отклоняет период без будних дней (иначе деление на ноль)', () => {
-    const result = createPeriod(doc(), { ...input, dateFrom: '2026-07-04', dateTo: '2026-07-05' }, 'x')
+    const result = createPeriod(
+      doc(),
+      { ...input, dateFrom: '2026-07-04', dateTo: '2026-07-05' },
+      'x',
+    )
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('будн')
   })
@@ -326,7 +332,11 @@ describe('createPeriod (п.24)', () => {
 
   it('пересечение с существующим периодом — мягкое предупреждение', () => {
     const result = ok(
-      createPeriod(doc(), { label: 'Хвост июля', dateFrom: '2026-07-20', dateTo: '2026-08-10' }, 'x'),
+      createPeriod(
+        doc(),
+        { label: 'Хвост июля', dateFrom: '2026-07-20', dateTo: '2026-08-10' },
+        'x',
+      ),
     )
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain('Июль 2026')
@@ -334,7 +344,12 @@ describe('createPeriod (п.24)', () => {
 })
 
 describe('updatePeriod / deletePeriod (п.16, п.24)', () => {
-  const edit = { id: 'p-july', label: 'Июль 2026 (правка)', dateFrom: '2026-07-01', dateTo: '2026-07-30' }
+  const edit = {
+    id: 'p-july',
+    label: 'Июль 2026 (правка)',
+    dateFrom: '2026-07-01',
+    dateTo: '2026-07-30',
+  }
 
   it('правит label и даты периода', () => {
     const result = ok(updatePeriod(doc(), edit))
@@ -357,8 +372,12 @@ describe('updatePeriod / deletePeriod (п.16, п.24)', () => {
   })
 
   it('применяет к правке те же жёсткие валидации, что и к созданию', () => {
-    expect(updatePeriod(doc(), { ...edit, dateFrom: '2026-07-04', dateTo: '2026-07-05' }).ok).toBe(false)
-    expect(updatePeriod(doc(), { ...edit, dateFrom: '2026-07-31', dateTo: '2026-07-01' }).ok).toBe(false)
+    expect(updatePeriod(doc(), { ...edit, dateFrom: '2026-07-04', dateTo: '2026-07-05' }).ok).toBe(
+      false,
+    )
+    expect(updatePeriod(doc(), { ...edit, dateFrom: '2026-07-31', dateTo: '2026-07-01' }).ok).toBe(
+      false,
+    )
   })
 })
 
@@ -401,7 +420,9 @@ describe('updatePeriod — пересчёт оценок при смене да�
     }))
     let current: HoursDocument = { ...doc(), participants }
     for (const participant of participants) {
-      current = ok(saveAssessment(current, { ...validAssessment, email: participant.email }, NOW)).doc
+      current = ok(
+        saveAssessment(current, { ...validAssessment, email: participant.email }, NOW),
+      ).doc
     }
     return current
   }
@@ -491,7 +512,9 @@ describe('updatePeriod — пересчёт оценок при смене да�
     const withSecond = ok(
       saveAssessment(twoPeriods, { ...validAssessment, email: 'eduard@bbm.academy' }, NOW),
     ).doc
-    const foreign = ok(saveAssessment(withSecond, { ...validAssessment, periodId: 'p-aug' }, NOW)).doc
+    const foreign = ok(
+      saveAssessment(withSecond, { ...validAssessment, periodId: 'p-aug' }, NOW),
+    ).doc
 
     const result = ok(updatePeriod(foreign, toMayJune))
     const july = result.doc.assessments.filter((a) => a.period_id === 'p-july')
@@ -568,7 +591,12 @@ describe('updatePeriod — пересчёт оценок при смене да�
   })
 
   it('склоняет «оценка» по числу в обоих предупреждениях (ревью PR #86)', () => {
-    const shrink = { id: 'p-july', label: 'Июль 2026', dateFrom: '2026-07-01', dateTo: '2026-07-01' }
+    const shrink = {
+      id: 'p-july',
+      label: 'Июль 2026',
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-01',
+    }
     const forms = [1, 2, 5].map((count) => {
       const warnings = ok(updatePeriod(withAssessments(count), shrink)).warnings
       return {
@@ -603,7 +631,11 @@ describe('setPeriodStatus (п.24)', () => {
 
   it('не даёт держать два открытых периода одновременно', () => {
     const base = ok(
-      createPeriod(doc(), { label: 'Август 2026', dateFrom: '2026-08-01', dateTo: '2026-08-31' }, 'p-aug'),
+      createPeriod(
+        doc(),
+        { label: 'Август 2026', dateFrom: '2026-08-01', dateTo: '2026-08-31' },
+        'p-aug',
+      ),
     ).doc
     const result = setPeriodStatus(base, 'p-aug', 'open')
     expect(result.ok).toBe(false)

@@ -47,8 +47,8 @@ export function SignedInAs({ email }: { email: string }) {
 export function NotAParticipantNotice() {
   return (
     <p className="hours-notice hours-notice--warn">
-      Тебя нет в списке участников — обратись к администратору. Часы посчитать можно, начисление
-      не показывается: ставки нет.
+      Тебя нет в списке участников — обратись к администратору. Часы посчитать можно, начисление не
+      показывается: ставки нет.
     </p>
   )
 }
@@ -74,20 +74,12 @@ export function NoPeriodsNotice() {
 }
 
 /** Заголовок периода: label, диапазон дат, число будних дней (п.20). */
-export function PeriodHeader({
-  period,
-  calendar,
-}: {
-  period: Period
-  calendar: PeriodCalendar
-}) {
+export function PeriodHeader({ period, calendar }: { period: Period; calendar: PeriodCalendar }) {
   return (
     <div className="hours-period">
       <div className="hours-period__label">
         {period.label}
-        {period.status === 'closed' ? (
-          <span className="hours-period__status">закрыт</span>
-        ) : null}
+        {period.status === 'closed' ? <span className="hours-period__status">закрыт</span> : null}
       </div>
       <div className="hours-period__meta">
         {formatIsoDate(period.date_from)} — {formatIsoDate(period.date_to)} ·{' '}
@@ -119,9 +111,7 @@ export function FormulaBreakdown({
         <b>{formatHours(calendar.normHours)} ч</b> ({calendar.weekdayCount} × 8)
       </p>
       {effective == null ? (
-        <p className="hours-note">
-          Месячной ставки нет — считаем только часы, без начисления.
-        </p>
+        <p className="hours-note">Месячной ставки нет — считаем только часы, без начисления.</p>
       ) : (
         <>
           <p className="hours-calc-line">
@@ -131,7 +121,10 @@ export function FormulaBreakdown({
           {multiMonth ? (
             <ul className="hours-months">
               {calendar.months.map((month) => (
-                <li key={`${month.year}-${month.month}`} data-month={`${month.year}-${month.month}`}>
+                <li
+                  key={`${month.year}-${month.month}`}
+                  data-month={`${month.year}-${month.month}`}
+                >
                   {month.label}: {month.weekdaysInMonth} будней месяца ·{' '}
                   {formatHours(month.monthNormHours)} ч · ставка часа{' '}
                   <b>{formatRub(monthlyHourlyRate(monthlyRate, month.monthNormHours))}</b> · доля
@@ -186,10 +179,12 @@ export function SummaryTable({ rows }: { rows: SummaryRow[] }) {
               <td>{METHOD_LABELS[row.assessment.method]}</td>
               <td className="hours-num">{formatRub(row.assessment.accrual)}</td>
               <td className="hours-num">
-                {formatRub(row.assessment.cash_amount)} ({formatPercent(100 - row.assessment.split_percent)})
+                {formatRub(row.assessment.cash_amount)} (
+                {formatPercent(100 - row.assessment.split_percent)})
               </td>
               <td className="hours-num">
-                {formatRub(row.assessment.invest_amount)} ({formatPercent(row.assessment.split_percent)})
+                {formatRub(row.assessment.invest_amount)} (
+                {formatPercent(row.assessment.split_percent)})
               </td>
               <td>{formatSavedAt(row.assessment.saved_at)}</td>
             </tr>

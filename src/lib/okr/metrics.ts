@@ -34,7 +34,9 @@ export function parseMetrics(raw: string): Record<string, KrMetric> {
   const out: Record<string, KrMetric> = {}
   for (const [krId, value] of Object.entries(doc as Record<string, unknown>)) {
     if (value == null || typeof value !== 'object' || Array.isArray(value)) {
-      throw new Error(`metrics.yaml: entry «${krId}» must be a mapping {current, target, unit, as_of}`)
+      throw new Error(
+        `metrics.yaml: entry «${krId}» must be a mapping {current, target, unit, as_of}`,
+      )
     }
     const v = value as Record<string, unknown>
     out[krId] = {

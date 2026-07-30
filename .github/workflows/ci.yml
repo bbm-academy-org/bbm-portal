@@ -24,6 +24,12 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Format check (prettier)
+        run: pnpm format:check
+
+      - name: Lint CSS (stylelint)
+        run: pnpm lint:css
+
       - name: Typecheck
         run: pnpm typecheck
 

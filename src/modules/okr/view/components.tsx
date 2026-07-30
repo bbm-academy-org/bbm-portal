@@ -8,29 +8,69 @@ import type { Health, OkrAction, OkrKr, OkrObjective, StateGroup } from '@/lib/o
  * the page ships zero client JS.
  */
 
-export const HEALTH_META: Record<Health, { fill: string; bg: string; ink: string; dot: string; label: string }> = {
-  on: { fill: 'var(--accent)', bg: 'var(--status-pos-bg)', ink: 'var(--status-pos-ink)', dot: 'var(--status-pos-dot)', label: 'в графике' },
-  risk: { fill: '#e0a100', bg: 'var(--status-warn-bg)', ink: 'var(--status-warn-ink)', dot: 'var(--status-warn-dot)', label: 'под риском' },
+export const HEALTH_META: Record<
+  Health,
+  { fill: string; bg: string; ink: string; dot: string; label: string }
+> = {
+  on: {
+    fill: 'var(--accent)',
+    bg: 'var(--status-pos-bg)',
+    ink: 'var(--status-pos-ink)',
+    dot: 'var(--status-pos-dot)',
+    label: 'в графике',
+  },
+  risk: {
+    fill: '#e0a100',
+    bg: 'var(--status-warn-bg)',
+    ink: 'var(--status-warn-ink)',
+    dot: 'var(--status-warn-dot)',
+    label: 'под риском',
+  },
   behind: { fill: '#c25e00', bg: '#f7dfb8', ink: '#6e4400', dot: '#c25e00', label: 'отстаём' },
-  undef: { fill: 'var(--ink-3)', bg: 'var(--status-neutral-bg)', ink: 'var(--status-neutral-ink)', dot: 'var(--status-neutral-dot)', label: 'не определено' },
-  q4: { fill: 'var(--accent-2)', bg: 'var(--accent-2-soft)', ink: 'var(--accent-2-ink)', dot: 'var(--accent-2)', label: 'цель на IV квартал' },
+  undef: {
+    fill: 'var(--ink-3)',
+    bg: 'var(--status-neutral-bg)',
+    ink: 'var(--status-neutral-ink)',
+    dot: 'var(--status-neutral-dot)',
+    label: 'не определено',
+  },
+  q4: {
+    fill: 'var(--accent-2)',
+    bg: 'var(--accent-2-soft)',
+    ink: 'var(--accent-2-ink)',
+    dot: 'var(--accent-2)',
+    label: 'цель на IV квартал',
+  },
 }
 
 export function Badge({ health, text, small }: { health: Health; text?: string; small?: boolean }) {
   const m = HEALTH_META[health]
   return (
-    <span className={`okr-badge${small ? ' okr-kr__badge' : ''}`} style={{ background: m.bg, color: m.ink }}>
+    <span
+      className={`okr-badge${small ? ' okr-kr__badge' : ''}`}
+      style={{ background: m.bg, color: m.ink }}
+    >
       <i style={{ background: m.dot }} />
       {text ?? m.label}
     </span>
   )
 }
 
-export function Bar({ pct, color, variant }: { pct: number | null; color: string; variant: 'hero' | 'card' | 'mini' | 'act' }) {
+export function Bar({
+  pct,
+  color,
+  variant,
+}: {
+  pct: number | null
+  color: string
+  variant: 'hero' | 'card' | 'mini' | 'act'
+}) {
   const width = pct == null ? 0 : Math.round(pct * 10) / 10
   return (
     <div className={`okr-bar okr-bar--${variant}`}>
-      {width > 0 && <div className="okr-bar__fill" style={{ width: `${width}%`, background: color }} />}
+      {width > 0 && (
+        <div className="okr-bar__fill" style={{ width: `${width}%`, background: color }} />
+      )}
     </div>
   )
 }
@@ -57,7 +97,13 @@ function PlaneLink({ href }: { href: string }) {
       title="Открыть в Plane"
     >
       <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-        <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M4.2 7.8 8 4" />
           <path d="M5 4h3v3" />
         </g>
@@ -71,7 +117,11 @@ function PlaneLink({ href }: { href: string }) {
  * both the collapsed and the rotated state (spec 075 req.4). */
 function Chevron({ hidden }: { hidden?: boolean }) {
   return (
-    <span className="okr-kr__chev" aria-hidden="true" style={hidden ? { visibility: 'hidden' } : undefined}>
+    <span
+      className="okr-kr__chev"
+      aria-hidden="true"
+      style={hidden ? { visibility: 'hidden' } : undefined}
+    >
       <svg viewBox="0 0 12 12" focusable="false">
         <path
           d="M4.6 2.6 8 6l-3.4 3.4"
@@ -216,7 +266,11 @@ export function KrRow({ kr }: { kr: OkrKr }) {
 
 export function ObjectiveCard({ objective, wide }: { objective: OkrObjective; wide?: boolean }) {
   const missionClass =
-    objective.mission === 'social' ? 'okr-card--soc' : objective.mission === 'business' ? 'okr-card--biz' : ''
+    objective.mission === 'social'
+      ? 'okr-card--soc'
+      : objective.mission === 'business'
+        ? 'okr-card--biz'
+        : ''
 
   if (objective.krs.length === 0) {
     return (

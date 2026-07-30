@@ -61,5 +61,6 @@ export function expectSubset(expected: unknown, actual: unknown, at = '$'): void
 export function expectNoNulls(value: unknown, at = '$'): void {
   if (value === null) fail(`${at} must not be null`)
   if (Array.isArray(value)) value.forEach((v, i) => expectNoNulls(v, `${at}[${i}]`))
-  else if (isObject(value)) for (const k of Object.keys(value)) expectNoNulls(value[k], `${at}.${k}`)
+  else if (isObject(value))
+    for (const k of Object.keys(value)) expectNoNulls(value[k], `${at}.${k}`)
 }

@@ -90,11 +90,17 @@ export async function seedContent(
   // backfill team.projects once the projects exist.
   const team = readContentJson(contentDir, 'team/team.json') as Array<Record<string, unknown>>
   for (const { projects: _projects, ...member } of team) {
-    await payload.create({ collection: 'team', data: asData<'team'>({ ...member, _status: 'published' }) })
+    await payload.create({
+      collection: 'team',
+      data: asData<'team'>({ ...member, _status: 'published' }),
+    })
   }
 
   for (const slug of projectSlugs(contentDir)) {
-    const data = readContentJson(contentDir, `publicProjects/${slug}.json`) as Record<string, unknown>
+    const data = readContentJson(contentDir, `publicProjects/${slug}.json`) as Record<
+      string,
+      unknown
+    >
     await payload.create({
       collection: 'publicProjects',
       data: asData<'publicProjects'>({ id: slug, ...data, _status: 'published' }),

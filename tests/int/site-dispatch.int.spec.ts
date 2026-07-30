@@ -30,11 +30,7 @@ const { createAppAuthMock, installationAuthMock } = vi.hoisted(() => {
 })
 vi.mock('@octokit/auth-app', () => ({ createAppAuth: createAppAuthMock }))
 
-import {
-  dispatchSiteBuild,
-  getSiteDispatchToken,
-  querySiteBuildStatus,
-} from '@/lib/siteDispatch'
+import { dispatchSiteBuild, getSiteDispatchToken, querySiteBuildStatus } from '@/lib/siteDispatch'
 
 const CANONICAL_REPO = 'bbm-academy-org/bbm-public-website'
 

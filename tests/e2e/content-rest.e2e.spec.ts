@@ -103,7 +103,9 @@ test.describe('content REST parity (seed → GET /api → schema-shape)', () => 
     }
   })
 
-  test('philosophy global mirrors its fixture (roles[].extra "" preserved)', async ({ request }) => {
+  test('philosophy global mirrors its fixture (roles[].extra "" preserved)', async ({
+    request,
+  }) => {
     const doc = await getJson(request, '/globals/philosophy?depth=0')
     expectSubset(singleton(CONTENT, 'philosophy/philosophy.json'), doc, 'philosophy')
     expectNoNulls(doc, 'philosophy')

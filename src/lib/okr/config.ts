@@ -21,8 +21,18 @@ export const OKR_PROJECTS: OkrProjectConfig[] = [
   { projectId: '88af28c0-e5da-4641-bb35-41945ff60a79', ident: 'DSG1', mission: 'social', order: 1 },
   { projectId: 'da33f873-9f33-4377-98ee-aa05eb44a725', ident: 'DSG2', mission: 'social', order: 2 },
   { projectId: '2c7cd250-36fb-4a41-8159-d91462514496', ident: 'DSG3', mission: 'both', order: 3 },
-  { projectId: 'adff4ed3-7ad8-4dd7-9076-0f75589ff472', ident: 'DSG4', mission: 'business', order: 4 },
-  { projectId: 'b5ced082-04d6-4a73-941a-348c939aa484', ident: 'DSG5', mission: 'business', order: 5 },
+  {
+    projectId: 'adff4ed3-7ad8-4dd7-9076-0f75589ff472',
+    ident: 'DSG4',
+    mission: 'business',
+    order: 4,
+  },
+  {
+    projectId: 'b5ced082-04d6-4a73-941a-348c939aa484',
+    ident: 'DSG5',
+    mission: 'business',
+    order: 5,
+  },
 ]
 
 export const GOAL_TITLE = 'Цель «Academy Doctor.School»'
@@ -57,10 +67,22 @@ export interface TeamMember {
 export const TEAM: Record<string, TeamMember> = {
   '6cd7f33c-fb90-4f46-b668-bf385804ac7f': { name: 'Антон', initials: 'АС', role: 'Tech Lead' },
   '7c8b6b4d-d2bb-439d-99b4-7129b7b845a7': { name: 'Эдуард', initials: 'ЭД', role: 'Product Lead' },
-  '1b9aa5a7-5d9e-4495-8ed8-e74ad135f799': { name: 'Всеволод', initials: 'ВС', role: 'Студия · подкасты' },
-  'f0b3f946-5d7a-4bc2-ac95-b231e205dc46': { name: 'Женя', initials: 'ЕГ', role: 'Сценарии · текст' },
+  '1b9aa5a7-5d9e-4495-8ed8-e74ad135f799': {
+    name: 'Всеволод',
+    initials: 'ВС',
+    role: 'Студия · подкасты',
+  },
+  'f0b3f946-5d7a-4bc2-ac95-b231e205dc46': {
+    name: 'Женя',
+    initials: 'ЕГ',
+    role: 'Сценарии · текст',
+  },
   '12a0569a-d08b-4d26-acb2-a3ea58329650': { name: 'Катя', initials: 'ЕП', role: 'AI-продакшн' },
-  '2d6730f7-bd1b-4c0d-acae-c8f5b0b0dd76': { name: 'Алиса', initials: 'АИ', role: 'Соцсети · трафик' },
+  '2d6730f7-bd1b-4c0d-acae-c8f5b0b0dd76': {
+    name: 'Алиса',
+    initials: 'АИ',
+    role: 'Соцсети · трафик',
+  },
   '80a414e7-3335-4b77-999e-053b764c3ff2': { name: 'Пётр', initials: 'ПГ', role: 'Методология OKR' },
 }
 

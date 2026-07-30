@@ -119,8 +119,18 @@ describe('isCmsSurfaceHost', () => {
 })
 
 describe('evaluateRequest — production host × path matrix (spec 060 req.3)', () => {
-  const cmsHostVariants = ['cms.bbm.academy', 'CMS.BBM.ACADEMY', 'cms.bbm.academy:443', 'cms.bbm.academy.']
-  const portalHostVariants = ['portal.bbm.academy', 'PORTAL.BBM.ACADEMY', 'portal.bbm.academy:443', 'portal.bbm.academy.']
+  const cmsHostVariants = [
+    'cms.bbm.academy',
+    'CMS.BBM.ACADEMY',
+    'cms.bbm.academy:443',
+    'cms.bbm.academy.',
+  ]
+  const portalHostVariants = [
+    'portal.bbm.academy',
+    'PORTAL.BBM.ACADEMY',
+    'portal.bbm.academy:443',
+    'portal.bbm.academy.',
+  ]
 
   const cmsOnlyPaths = [
     '/', // (frontend) static-backend route — today the only one
@@ -182,7 +192,9 @@ describe('evaluateRequest — production host × path matrix (spec 060 req.3)', 
     // belongs to Payload on the CMS host (Payload 404s unknown slugs itself)
     // and stays denied on the portal host (not Auth.js plumbing).
     expect(evaluateRequest('cms.bbm.academy', '/api/auth-lookalike', 'production')).toBe('pass')
-    expect(evaluateRequest('portal.bbm.academy', '/api/auth-lookalike', 'production')).toBe('not-found')
+    expect(evaluateRequest('portal.bbm.academy', '/api/auth-lookalike', 'production')).toBe(
+      'not-found',
+    )
     expect(evaluateRequest('cms.bbm.academy', '/api/auth', 'production')).toBe('not-found')
     expect(evaluateRequest('cms.bbm.academy', '/api/auth/', 'production')).toBe('not-found')
   })
@@ -204,7 +216,14 @@ describe('evaluateRequest — production host × path matrix (spec 060 req.3)', 
 
   it('unknown/missing host: 404 for EVERYTHING (default-deny, incl. framework paths)', () => {
     for (const host of ['unknown.example.com', 'evil.test', null, undefined]) {
-      for (const path of ['/', '/admin', '/api/pages', '/p/okr', '/api/auth/signin', ...frameworkPaths]) {
+      for (const path of [
+        '/',
+        '/admin',
+        '/api/pages',
+        '/p/okr',
+        '/api/auth/signin',
+        ...frameworkPaths,
+      ]) {
         expect(evaluateRequest(host, path, 'production'), `${host} ${path}`).toBe('not-found')
       }
     }

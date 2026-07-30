@@ -30,7 +30,9 @@ function Hero({ tree }: { tree: OkrTree }) {
         <h1 className="okr-hero__title">{tree.goalTitle}</h1>
         <div className="okr-hero__prog">
           <Bar pct={tree.pct} color="var(--accent)" variant="hero" />
-          <span className="okr-hero__pct">{tree.pct == null ? '—' : `${Math.round(tree.pct)}%`}</span>
+          <span className="okr-hero__pct">
+            {tree.pct == null ? '—' : `${Math.round(tree.pct)}%`}
+          </span>
         </div>
         <div className="okr-hero__meta">
           <span>

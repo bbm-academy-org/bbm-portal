@@ -349,7 +349,11 @@ test.describe('Publish to site panel — drift model (#46)', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           published: [{ surface: 'team', ids: ['eduard-ildarkhanov'] }],
-          dispatch: { event_type: 'publish-site', repo: 'owner/repo', at: new Date().toISOString() },
+          dispatch: {
+            event_type: 'publish-site',
+            repo: 'owner/repo',
+            at: new Date().toISOString(),
+          },
         }),
       })
     })

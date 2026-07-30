@@ -17,11 +17,24 @@ const STATES: PlaneState[] = [
 let seq = 0
 function issue(over: Partial<PlaneIssue> & { name: string }): PlaneIssue {
   seq += 1
-  return { id: `i-${seq}`, parent: null, state: 's-todo', target_date: null, sequence_id: seq, ...over }
+  return {
+    id: `i-${seq}`,
+    parent: null,
+    state: 's-todo',
+    target_date: null,
+    sequence_id: seq,
+    ...over,
+  }
 }
 
 function module_(over: Partial<PlaneModule> & { name: string }): PlaneModule {
-  return { id: `m-${over.name}`, lead: null, start_date: '2026-07-24', target_date: OKR_PERIOD.end, ...over }
+  return {
+    id: `m-${over.name}`,
+    lead: null,
+    start_date: '2026-07-24',
+    target_date: OKR_PERIOD.end,
+    ...over,
+  }
 }
 
 const [DSG1, DSG2, DSG3, DSG4, DSG5] = OKR_PROJECTS
@@ -31,8 +44,14 @@ const [DSG1, DSG2, DSG3, DSG4, DSG5] = OKR_PROJECTS
  * expected numbers: every non-cancelled issue of a KR belongs to exactly one
  * action row, so the rows always add up to the KR's own flat counter.
  */
-function sumRows(kr: { actions: Array<{ done: number; total: number }> }): { done: number; total: number } {
-  return kr.actions.reduce((a, r) => ({ done: a.done + r.done, total: a.total + r.total }), { done: 0, total: 0 })
+function sumRows(kr: { actions: Array<{ done: number; total: number }> }): {
+  done: number
+  total: number
+} {
+  return kr.actions.reduce((a, r) => ({ done: a.done + r.done, total: a.total + r.total }), {
+    done: 0,
+    total: 0,
+  })
 }
 
 function slice(
@@ -66,7 +85,9 @@ describe('deriveKrId (stable kr_id rule, FR-3)', () => {
 
 describe('stripObjectivePrefix', () => {
   it('strips the «<emoji> O1 ·» prefix from Plane project names', () => {
-    expect(stripObjectivePrefix('🎓 O1 · Врачи получают новые знания')).toBe('Врачи получают новые знания')
+    expect(stripObjectivePrefix('🎓 O1 · Врачи получают новые знания')).toBe(
+      'Врачи получают новые знания',
+    )
     expect(stripObjectivePrefix('No prefix at all')).toBe('No prefix at all')
   })
 })
@@ -78,7 +99,9 @@ describe('mapOkrTree', () => {
     const subDone = issue({ name: 'Собрать ОС', parent: parent.id, state: 's-done' })
     const subOpen = issue({ name: 'Доработать', parent: parent.id })
     const cancelled = issue({ name: 'Отменённая', state: 's-cancelled' })
-    const src = sourceOf([slice(DSG1, '🎓 O1 · Врачи', [mod], { [mod.id]: [parent, subDone, subOpen, cancelled] })])
+    const src = sourceOf([
+      slice(DSG1, '🎓 O1 · Врачи', [mod], { [mod.id]: [parent, subDone, subOpen, cancelled] }),
+    ])
 
     const { objectives } = mapOkrTree({ source: src, metrics: {}, now: NOW })
     const kr = objectives[0].krs[0]
@@ -164,7 +187,11 @@ describe('mapOkrTree', () => {
     const linksSub = issue({ name: 'Решить: размещать ли на новой платформе', parent: links.id })
     const migrate = issue({ name: 'Мигрировать мероприятия' })
     const congress = issue({ name: 'Организовать сайт конгресса', state: 's-progress' })
-    const congressSub = issue({ name: 'Разведать orthobio.ru', parent: congress.id, state: 's-done' })
+    const congressSub = issue({
+      name: 'Разведать orthobio.ru',
+      parent: congress.id,
+      state: 's-done',
+    })
     const program = issue({ name: 'Подготовить программу ОртоБио 2027' })
     const src = sourceOf([
       slice(DSG2, 'O2 · Канал', [mod], {
@@ -204,7 +231,9 @@ describe('mapOkrTree', () => {
     const q4mod = module_({ name: 'KR 3.2 · Деньги экспертам', target_date: '2026-12-31' })
     const a1 = issue({ name: 'Задача активная', state: 's-done' })
     const a2 = issue({ name: 'Задача q4' })
-    const src = sourceOf([slice(DSG3, '💎 O3 · Эксперт', [active, q4mod], { [active.id]: [a1], [q4mod.id]: [a2] })])
+    const src = sourceOf([
+      slice(DSG3, '💎 O3 · Эксперт', [active, q4mod], { [active.id]: [a1], [q4mod.id]: [a2] }),
+    ])
 
     const { objectives, pct } = mapOkrTree({ source: src, metrics: {}, now: NOW })
     const [kr31, kr32] = objectives.find((o) => o.ident === 'DSG3')!.krs

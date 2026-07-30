@@ -4,13 +4,22 @@ import { parseMetrics } from '@/lib/okr/metrics'
 describe('parseMetrics (metrics.yaml, FR-3)', () => {
   it('parses kr_id → {current, target, unit, as_of}', () => {
     const parsed = parseMetrics(
-      ['kr3-1:', '  current: 0', '  target: 10', '  unit: экспертов', '  as_of: 2026-07-24'].join('\n'),
+      ['kr3-1:', '  current: 0', '  target: 10', '  unit: экспертов', '  as_of: 2026-07-24'].join(
+        '\n',
+      ),
     )
-    expect(parsed['kr3-1']).toEqual({ current: 0, target: 10, unit: 'экспертов', asOf: '2026-07-24' })
+    expect(parsed['kr3-1']).toEqual({
+      current: 0,
+      target: 10,
+      unit: 'экспертов',
+      asOf: '2026-07-24',
+    })
   })
 
   it('accepts null current/target (metric not connected / target not set)', () => {
-    const parsed = parseMetrics(['kr2-1:', '  current: null', '  target: 500', '  unit: MAU'].join('\n'))
+    const parsed = parseMetrics(
+      ['kr2-1:', '  current: null', '  target: 500', '  unit: MAU'].join('\n'),
+    )
     expect(parsed['kr2-1'].current).toBeNull()
     expect(parsed['kr2-1'].target).toBe(500)
   })

@@ -7,6 +7,7 @@
   "packageManager": "pnpm@10.7.0",
   "scripts": {
     "require-node": "node scripts/require-node.mjs",
+    "prepare": "simple-git-hooks",
     "dev:up": "node tools/dev/run.mjs up",
     "dev:down": "node tools/dev/run.mjs down",
     "dev:status": "node tools/dev/run.mjs status",
@@ -24,6 +25,8 @@
     "generate:importmap": "cross-env NODE_OPTIONS=--no-deprecation payload generate:importmap",
     "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
     "lint": "cross-env NODE_OPTIONS=--no-deprecation eslint .",
+    "lint:css": "stylelint \"src/**/*.css\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tools/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"docs/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"deploy/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tests/**/*.{ts,tsx,css,md,json,yml,yaml}\" \".github/**/*.{yml,yaml}\" \"*.md\" \"*.json\"",
     "boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "premigrate": "node scripts/require-node.mjs",
     "migrate": "cross-env NODE_OPTIONS=--no-deprecation payload migrate",
@@ -80,7 +83,10 @@
     "eslint": "^9.16.0",
     "eslint-config-next": "16.2.6",
     "jsdom": "28.0.0",
+    "lint-staged": "^17.2.0",
     "prettier": "^3.4.2",
+    "simple-git-hooks": "^2.13.1",
+    "stylelint": "^17.14.1",
     "tsx": "4.21.0",
     "typescript": "5.7.3",
     "vite-tsconfig-paths": "6.0.5",
@@ -94,10 +100,27 @@
     "onlyBuiltDependencies": [
       "sharp",
       "esbuild",
-      "unrs-resolver"
+      "unrs-resolver",
+      "simple-git-hooks"
     ],
     "patchedDependencies": {
       "@payloadcms/next@3.85.1": "patches/@payloadcms__next@3.85.1.patch"
     }
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.css": [
+      "stylelint --fix",
+      "prettier --write"
+    ],
+    "*.{md,json,yml,yaml}": [
+      "prettier --write"
+    ]
   }
 }

@@ -29,7 +29,10 @@ import type {
 export function deriveKrId(moduleName: string): { krId: string; conventional: boolean } {
   const m = moduleName.match(/^\s*KR\s*(\d+)[.\-](\d+)/i)
   if (m) return { krId: `kr${m[1]}-${m[2]}`, conventional: true }
-  return { krId: `module-${moduleName.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 40)}`, conventional: false }
+  return {
+    krId: `module-${moduleName.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 40)}`,
+    conventional: false,
+  }
 }
 
 /** Plane project names look like «🎓 O1 · Врачи получают…» — the board title is the part after «O<n> ·». */
@@ -63,7 +66,9 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
     const slice = source.slices.get(cfg.projectId)
     const objectiveUrl = `${web}/${OKR_WORKSPACE}/projects/${cfg.projectId}/issues`
     if (!slice) {
-      warnings.push(`Проект ${cfg.ident} не прочитан из Plane — objective показан как «не определено»`)
+      warnings.push(
+        `Проект ${cfg.ident} не прочитан из Plane — objective показан как «не определено»`,
+      )
       return {
         id: `o${cfg.order}`,
         ident: cfg.ident,
@@ -84,7 +89,9 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
     const groupOf = (issue: PlaneIssue): StateGroup => {
       const group = stateGroupById.get(issue.state)
       if (!group) {
-        warnings.push(`Неизвестный state у ${cfg.ident}-${issue.sequence_id} — учтён как незакрытый`)
+        warnings.push(
+          `Неизвестный state у ${cfg.ident}-${issue.sequence_id} — учтён как незакрытый`,
+        )
         return 'unstarted'
       }
       return group
@@ -102,9 +109,16 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
         const issues = slice.issuesByModule[mod.id] ?? []
         // §3 p.1 + OQ-5: flat set of ALL module issues; cancelled leave the denominator.
         const active = issues.filter((i) => groupOf(i) !== 'cancelled')
-        const counts = active.length > 0 ? { done: active.filter((i) => groupOf(i) === 'completed').length, total: active.length } : null
+        const counts =
+          active.length > 0
+            ? {
+                done: active.filter((i) => groupOf(i) === 'completed').length,
+                total: active.length,
+              }
+            : null
 
-        const issueUrl = (i: PlaneIssue) => `${web}/${OKR_WORKSPACE}/browse/${cfg.ident}-${i.sequence_id}/`
+        const issueUrl = (i: PlaneIssue) =>
+          `${web}/${OKR_WORKSPACE}/browse/${cfg.ident}-${i.sequence_id}/`
         const toTask = (i: PlaneIssue): OkrTask => ({
           id: i.id,
           title: i.name,
@@ -152,7 +166,9 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
         const actions = [...active.filter(isRoot), ...cycleOrphans]
           .sort((a, b) => a.sequence_id - b.sequence_id)
           .map((parent): OkrAction => {
-            const subs = (descendants.get(parent.id) ?? []).sort((a, b) => a.sequence_id - b.sequence_id)
+            const subs = (descendants.get(parent.id) ?? []).sort(
+              (a, b) => a.sequence_id - b.sequence_id,
+            )
             // spec 077 req.3: the row counts the parent as one unit of work
             // alongside everything under it.
             const unit = [parent, ...subs]
@@ -171,7 +187,8 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
         const mPct = metricPct(metric)
         const ePct = executionPct(counts)
         const pct = mPct ?? ePct
-        const pctSource: OkrKr['pctSource'] = mPct != null ? 'metric' : ePct != null ? 'execution' : null
+        const pctSource: OkrKr['pctSource'] =
+          mPct != null ? 'metric' : ePct != null ? 'execution' : null
 
         // Honest qualifiers (FR-4): why a metric-KR runs in execution mode, or why the node is undefined.
         let note: string | null = null

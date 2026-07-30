@@ -34,6 +34,17 @@ export const PageHome: GlobalConfig = {
     afterChange: [siteRebuildGlobalAfterChange],
   },
   fields: [
-    pageTabs([hero, whatIs, showcase, pathIntro, trust, contour, faqIntro, faq, pathSteps, ctaSection]),
+    pageTabs([
+      hero,
+      whatIs,
+      showcase,
+      pathIntro,
+      trust,
+      contour,
+      faqIntro,
+      faq,
+      pathSteps,
+      ctaSection,
+    ]),
   ],
 }

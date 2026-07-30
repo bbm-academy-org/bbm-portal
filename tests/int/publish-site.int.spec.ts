@@ -57,8 +57,7 @@ const dispatchRejected = (status = 500) =>
 // Build the minimal PayloadRequest the handler reads: `user` (auth gate) and
 // `payload` (local API + transactions). Mirrors how Payload invokes a custom
 // endpoint handler with an authenticated request.
-const reqWith = (user: unknown): PayloadRequest =>
-  ({ user, payload } as unknown as PayloadRequest)
+const reqWith = (user: unknown): PayloadRequest => ({ user, payload }) as unknown as PayloadRequest
 
 // Create a team member (a row on the drafts-enabled `team` build surface) with a
 // unique id, tracking it for cleanup. Returns the created id.

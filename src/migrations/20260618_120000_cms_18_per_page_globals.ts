@@ -1,7 +1,7 @@
 import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
 
 export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
-await db.execute(sql`
+  await db.execute(sql`
 -- #18: split monolithic 'pages' collection into 6 per-page globals.
 -- (1) create the 6 globals + their _v version tables (drafts).
 CREATE TYPE "public"."enum_page_home_trust_stats_tone" AS ENUM('default', 'teal', 'empty');
@@ -1011,7 +1011,7 @@ DROP TYPE "public"."enum__pages_v_version_status";
 }
 
 export async function down({ db, payload, req }: MigrateDownArgs): Promise<void> {
-await db.execute(sql`
+  await db.execute(sql`
 -- Reverse of #18: restore the 'pages' collection from the 6 page globals.
 -- (1) recreate the pages tables + enums.
 CREATE TYPE "public"."enum_pages_trust_stats_tone" AS ENUM('default', 'teal', 'empty');

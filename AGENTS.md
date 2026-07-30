@@ -25,6 +25,7 @@ Full rationale: `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-set
 **The contract is fixed by code, not prose.** The job is: make Payload's REST/GraphQL output per collection/global **valid against the existing Zod schemas of the site**.
 
 **Source of truth, by decreasing concreteness:**
+
 1. **Golden fixtures — seed files** in `../bbm-public-website/src/content/` (real, validation-passing payloads; emit per-entry JSON of the same shape, field-for-field):
    - Collections: `publicProjects/*.json` (6, `id` = filename slug), `team/team.json` (array), `pages/*.json` (6: home/projects/about/contacts/privacy/participate).
    - Globals (singletons): `philosophy/philosophy.json`, `siteSettings/contact.json`, `siteSettings/siteChrome.json`.
@@ -32,6 +33,7 @@ Full rationale: `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-set
 3. **PRD §7.2** — original field contract (background).
 
 **Critical invariants** (violation → the site's `pnpm build` fails on Zod):
+
 - **3 globals** (`philosophy`, `contact`, `siteChrome`) → Payload **globals**; `publicProjects`/`team`/`pages` → **collections**.
 - **entry id = human-readable slug** (`home`, `doctor-school`), NOT Payload's uuid/numeric id.
 - **references by slug-id:** `publicProjects.team → team.id`, `team.projects → project slug`.
@@ -44,17 +46,19 @@ Full rationale: `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-set
 **Definition of done (portal-side):** hit each collection/global and get JSON that passes `schema.parse(...)` — exactly as `../bbm-public-website/tests/unit/content.test.ts` does (read seed → `schema.parse`). If the response shape equals the fixture shape, the consumer-side loader swap (`bbm-public-website#61`) is near-mechanical.
 
 ### Out of scope now: `leads` (form submissions → PII) — receiver DECIDED
+
 Leads are **not** a content mirror — they are a **runtime PII receiver** (write-at-runtime, opposite data direction; never part of the build-time loader swap). 152-FZ applies: the site stores no PII and posts form JSON to an RF-hosted receiver (`PUBLIC_SUBMIT_LEAD_URL`, site seam #23). **Receiver = a `Leads` collection in THIS Payload app — already DECIDED** (ADR-001, `bbm-public-website#77`, 2026-06-12): public create-endpoint, storage in Payload's DB (contour PG cluster, db-per-service), notification `afterChange(create)` → **Mattermost webhook** to `chat.bbm.academy` (in-contour RF; hermes kz-1 and Resend US excluded for PII). A `leads` collection = public-write + access-control + anti-spam/rate-limit + retention. Built in its **own milestone** (`bbm-public-website#23`, depends on Payload-live), not in BBMP-25..32.
 
 ## Architectural authority
 
 Framework/infra choices are fixed by the BBM Platform architecture spec — do not swap:
+
 - **ADR-002 (`docs/adr/002-repository-and-module-strategy.md`, 2026-07-24)** — repository & module strategy: this repo is THE platform code repo (all custom BBM Platform modules live here; future rename `bbm-platform` at workspace conversion). New modules default to a route + isolated lib (modular monolith, machine-enforced boundaries); a separate deployable must be earned via explicit criteria. Portal end-user auth = **Zitadel `id.bbm.academy` (OIDC) from day one**; Payload native auth stays admin-only.
 - **D-026** — Astro for the public site, **Next.js for the portal, Payload CMS as the headless content source.**
 - **D-018** — dual-zone hosting; the portal (this repo, with PII surfaces later) runs in **Zone RF (Timeweb Cloud)**.
 - **Hosting (2026-06-12):** BBMP-30 deploys to a **dedicated `portal-prod-tw` VPS — NOT co-located on `tools-prod-tw`** (internal tools host: Mattermost/Outline). Public PII service is isolated from internal tooling, per the estate's per-service failure-domain pattern. Terraform (`../bbm/infra/timeweb/terraform/portal.tf`) is written/applied by the agent — not a user-action.
   - **The agent owns host-ops on `portal-prod-tw`** (SSH alias `portal-prod-tw`, key `~/.ssh/portal-prod-tw`; see `deploy/README.md`): run deploys, migrations, and Caddy reloads/restarts **yourself** — do not hand the owner a checklist. Hand off a single step **only** when it provably requires GitHub/org/registry permissions the agent lacks (e.g. changing org package-visibility policy). "I don't have access" is a last resort, not a default — first restore the SSH config / fix key perms.
-  - **Never repurpose a read-scoped service credential for a privileged prod write.** The `preview` service's Users API-key is full-admin but exists to *read drafts*; do not use it (or any service token) to drive `POST`/mutate endpoints as a shortcut. If a real bug makes the UI path fail, fix the bug — don't poke prod with a borrowed credential.
+  - **Never repurpose a read-scoped service credential for a privileged prod write.** The `preview` service's Users API-key is full-admin but exists to _read drafts_; do not use it (or any service token) to drive `POST`/mutate endpoints as a shortcut. If a real bug makes the UI path fail, fix the bug — don't poke prod with a borrowed credential.
 - `../bbm-public-website/docs/infrastructure-decisions.md` §6a (Payload/portal hosting), §6.
 - `../bbm-platform-prd/docs/superpowers/specs/2026-04-07-bbm-platform-design.md` (D-026, D-018).
 
@@ -67,6 +71,7 @@ If a task seems to require a framework/content-source/infra change, stop and con
 **Anchor (BBMP-129 milestone):** PRD `../bbm/outputs/2026-07-22-okr-dashboard/2026-07-23-prd-plane-integration.md` · progress model §3 + Plane taxonomy §4 `../bbm/outputs/2026-07-22-okr-dashboard/okr-structure.md` · Plane structure cut `../bbm/outputs/2026-07-22-okr-dashboard/2026-07-23-update/plane-cut-spec.md` · tracking: GH #58 (P1 core, `BBMP-130`) → #59 (Zitadel OIDC gate, `BBMP-131`) → #60 (prod + Vercel retire, `BBMP-132`). Code: `src/lib/okr` + `src/app/(frontend)/okr` — reads self-hosted Plane (workspace `doctor-school`, projects DSG1–DSG5) read-only with a TTL cache; SSOT stays in Plane, the only module-owned facts are manual metric values (`metrics.yaml`). Module discipline per ADR-002: no imports from the CMS side (collections/globals/endpoints/payload config), enforced by dependency-cruiser in CI.
 
 ## Where to look first
+
 1. `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md` — the setup plan + accepted decisions + phase/session map.
 2. `docs/payload-collections-spec.md` — target Payload model, 1:1 with the site contract (the implementation reference for BBMP-28).
 3. `../bbm-public-website/src/content/schemas.ts` + the seed files — the SSOT of the contract.
@@ -98,6 +103,7 @@ deviations line. Key sub-rules the skill carries:
 - Minor convention deviations land in `DEBT.md` (significant ones → issue).
 
 ## Code style
+
 - **TypeScript strict** — no `any` without a written justification.
 - Payload collections/globals live in `src/collections/` and `src/globals/`; keep one collection/global per file.
 - Mirror the contract field-for-field — when unsure about a field, read the seed JSON and `schemas.ts`, do not invent.
@@ -105,12 +111,14 @@ deviations line. Key sub-rules the skill carries:
 - No comments narrating WHAT; comments only for non-obvious WHY.
 
 ## Dev quickstart
+
 ```bash
 cp .env.example .env          # set PAYLOAD_SECRET (openssl rand -hex 32), point DATABASE_URL at the dev DB
 pnpm install
 pnpm migrate                  # apply migrations — `push: false`, so run this before dev
 pnpm dev                      # admin at http://localhost:3000/admin
 ```
+
 - **Node 22** (LTS) — pinned by `.nvmrc` / Dockerfile / CI. Payload's migrate CLI
   uses a tsx ESM loader that breaks on Node 23/24 (`node:crypto?tsx-namespace`
   ENOENT). `next dev` tolerates 24, but migrations need 22 — stay on 22.
@@ -118,3 +126,15 @@ pnpm dev                      # admin at http://localhost:3000/admin
   are the schema SSOT (`push: false`); where the container runs is a per-machine
   recipe (remote TrueNAS-over-SSH or local Docker) — see README → Database. After
   any collection/global change: `pnpm migrate:create <name>` → commit `src/migrations/*`.
+- **pre-commit hook — install once, from the main checkout.** `simple-git-hooks`
+  (via the `prepare` script) writes the hook to `<repo>/.git/hooks/pre-commit`,
+  so `pnpm install` (or `pnpm exec simple-git-hooks` on its own) must run from
+  the **main checkout** (`C:\Users\sidor\repos\bbm-portal`, the owner's), not
+  from a session worktree (`.claude/worktrees/<N>`). Reason: a linked worktree's
+  `.git` is a _file_, not a directory — `simple-git-hooks` tries to `mkdir` a
+  `hooks/` folder under it and fails with `ENOTDIR`; `pnpm install` still exits
+  0 (the error is caught, not rethrown), so this fails silently. Once installed
+  in the main checkout, the hook **is** shared across every worktree (git
+  resolves hooks through `commondir`, common to the whole repo) — one install
+  covers all parallel dev-stand sessions; re-running `pnpm install` from a
+  worktree afterwards is a harmless no-op, not a reset.

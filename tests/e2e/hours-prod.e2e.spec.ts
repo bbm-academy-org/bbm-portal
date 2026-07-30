@@ -42,9 +42,7 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
     'deployed-stand suite: set PORTAL_E2E_BASE_URL and CMS_E2E_BASE_URL to run',
   )
 
-  test('сценарий 1: аноним на /p/hours уезжает на логин — данные не отдаются', async ({
-    page,
-  }) => {
+  test('сценарий 1: аноним на /p/hours уезжает на логин — данные не отдаются', async ({ page }) => {
     await page.goto(`${portalBase}/p/hours`, { waitUntil: 'domcontentloaded' })
     const url = new URL(page.url())
     expect(url.pathname, 'анонима обязано унести с /p/hours').not.toBe('/p/hours')
@@ -86,7 +84,10 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
     await page.goto(`${portalBase}/p/hours`, { waitUntil: 'domcontentloaded' })
 
     if (new URL(page.url()).pathname.startsWith('/api/auth/signin')) {
-      await page.getByRole('button', { name: /zitadel|sign in/i }).first().click()
+      await page
+        .getByRole('button', { name: /zitadel|sign in/i })
+        .first()
+        .click()
       await page.waitForURL(/id\.bbm\.academy/)
     }
 

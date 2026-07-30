@@ -12,12 +12,12 @@ The BBM Platform target architecture (`bbm-platform-prd/docs/superpowers/specs/2
 
 Inputs weighed:
 
-1. **Current estate** — polyrepo by nature of the repos: `bbm-portal` (the only platform *application*), `bbm-kb` (content master + SSOT), `bbm-public-website` (Astro site), `bbm` (holding ops/strategy/Terraform). One prior decision (2026-06-12 plan, decision #1): single Next.js app, monorepo only when a genuine second deployable appears (YAGNI).
+1. **Current estate** — polyrepo by nature of the repos: `bbm-portal` (the only platform _application_), `bbm-kb` (content master + SSOT), `bbm-public-website` (Astro site), `bbm` (holding ops/strategy/Terraform). One prior decision (2026-06-12 plan, decision #1): single Next.js app, monorepo only when a genuine second deployable appears (YAGNI).
 2. **Sibling precedent** — `ds-platform` ADR-0008: single-purpose monorepo (`apps/*` + `packages/*`, pnpm + Turborepo), explicitly rejecting polyrepo (tooling duplication, no atomic cross-app refactors) and strategy-with-code mixing (AI-agent context bleed). Notably `apps/cms` (Payload) and `apps/portal` are separate apps there.
 3. **Industry practice** (three research sweeps, 2026-07-24; sources in PR):
-   - *Mono vs poly:* for a 1–2 dev TS-only team, a light pnpm-workspace monorepo is the near-consensus choice; anti-monorepo arguments target 100+ dev scale; documented regrets skew toward premature splitting; single-app → workspace conversion costs ~days.
-   - *AI-agent workflows:* repo boundaries act as "context walls" for agents; parallel agent work is isolated via git worktrees, not extra repos; context bloat in bigger repos is managed with nested agent-instruction files and scoped sessions.
-   - *Deploy boundaries:* modular monolith is the default for tiny teams ("Citadel": one core + few earned outposts). Each extra deployable on a Compose/VPS estate costs real ops (image, CI, healthcheck, proxy entry, OIDC client, monitoring, backups, runbook); realistic budget for the whole custom platform at this team size is **~3–5 deployables**. Payload v3's official line is "app framework": product surfaces co-located in the same Next.js app are the mainstream pattern (Local API, shared types).
+   - _Mono vs poly:_ for a 1–2 dev TS-only team, a light pnpm-workspace monorepo is the near-consensus choice; anti-monorepo arguments target 100+ dev scale; documented regrets skew toward premature splitting; single-app → workspace conversion costs ~days.
+   - _AI-agent workflows:_ repo boundaries act as "context walls" for agents; parallel agent work is isolated via git worktrees, not extra repos; context bloat in bigger repos is managed with nested agent-instruction files and scoped sessions.
+   - _Deploy boundaries:_ modular monolith is the default for tiny teams ("Citadel": one core + few earned outposts). Each extra deployable on a Compose/VPS estate costs real ops (image, CI, healthcheck, proxy entry, OIDC client, monitoring, backups, runbook); realistic budget for the whole custom platform at this team size is **~3–5 deployables**. Payload v3's official line is "app framework": product surfaces co-located in the same Next.js app are the mainstream pattern (Local API, shared types).
 
 ## Decision
 
@@ -25,19 +25,19 @@ Inputs weighed:
 2. **What stays outside** (different nature/lifecycle, not "everything BBM" gravity):
    - `bbm-kb` — holding knowledge master + SSOT core (content, PR-edited; D-015);
    - `bbm` — holding strategy/ops; **Terraform/IaC stays centralized there** for all hosts;
-   - `bbm-public-website` — own lifecycle and consumer contract; *candidate* to join the monorepo later, trigger = a genuinely shared package (e.g. content Zod-schemas or design tokens);
+   - `bbm-public-website` — own lifecycle and consumer contract; _candidate_ to join the monorepo later, trigger = a genuinely shared package (e.g. content Zod-schemas or design tokens);
    - `ds-platform` — separate platform forever; identity link is Zitadel OIDC federation only.
 3. **Modular monolith inside (Citadel pattern).** A new platform module is **by default a route + isolated library in this Next.js app**: it exposes a public API, owns its data, and never imports another module's internals. The boundary is machine-enforced in CI (dependency-cruiser or equivalent). A module **earns** a separate deployable only via explicit criteria — at least one of:
    - different runtime/technology (e.g. Python RAG stack);
    - divergent performance/lifecycle profile (queues, cron, long jobs, independent restart cadence);
    - different security perimeter (e.g. provisioning worker holding admin tokens to Zitadel/Plane/Mattermost);
    - the boundary has **stabilized in production** (extraction, not prediction).
-   "Different business domain", "cleaner this way" and "we'll extract it anyway" are explicitly **not** criteria.
+     "Different business domain", "cleaner this way" and "we'll extract it anyway" are explicitly **not** criteria.
 4. **Workspace conversion by trigger, not upfront.** The repo converts to a pnpm workspace (`apps/*` + `packages/*`, `ds-platform` as the structural template) when the **first genuine second app or shared package** appears. Until then: single app at root.
 5. **Auth split (owner decision 2026-07-24, supersedes PRD OQ-2 recommendation):**
    - Portal end-user surfaces (starting with `/okr`) are gated by **Zitadel `id.bbm.academy` (OIDC) from day one** — no interim native-auth stage. The pattern is already proven in the estate (`kb.bbm.academy` behind oauth2-proxy → Zitadel), and the team already holds Zitadel accounts.
    - **Payload native auth remains admin-only** (the `users` collection = CMS editors). It is not used for portal end-users.
-   - Every future *separate* deployable is an OIDC client of `id.bbm.academy` from day one.
+   - Every future _separate_ deployable is an OIDC client of `id.bbm.academy` from day one.
 6. **Platform engineering ADRs live here** (`docs/adr/`), following the `ds-platform` ADR-0008 rationale (decisions next to the code, in the working agent's context). Holding-level decisions stay in `bbm` / `bbm-kb`; platform architecture specs (D-series) stay in `bbm-platform-prd` — a follow-up D-030 entry there should point at this ADR.
 
 ## Consequences

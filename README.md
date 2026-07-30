@@ -5,6 +5,7 @@
 > **Agents:** read [`AGENTS.md`](./AGENTS.md) first — it holds the content contract, accepted setup decisions, architectural authority, and the per-task workflow. Strategic tracking lives in Plane (`bbm` workspace / BBM Platform / milestone BBMP-24).
 
 ## Stack
+
 - **Node 22** (LTS — pinned by `.nvmrc`, the `Dockerfile`, and CI). Payload's
   migrate CLI runs through a tsx ESM loader that **breaks on Node 23/24**
   (`node:crypto?tsx-namespace` ENOENT); stay on 22 locally.
@@ -14,6 +15,7 @@
 - **Media** → Timeweb Object Storage via `@payloadcms/storage-s3` (decision #3; wired in BBMP-27)
 
 ## Prerequisites
+
 **Node 22 is required** — pinned by [`.nvmrc`](./.nvmrc) (`22.17.0`), the
 `Dockerfile`, and CI. With a version manager just run `nvm use` / `fnm use` in the
 repo root to select it automatically. `engine-strict=true` (in `.npmrc`) makes
@@ -26,6 +28,7 @@ loader crashes (`node:crypto?tsx-namespace` ENOENT), which is why early migratio
 in this repo had to be hand-generated.
 
 ## Local development
+
 ```bash
 nvm use                         # or `fnm use` — select Node 22 (see .nvmrc)
 cp .env.example .env            # set PAYLOAD_SECRET — `openssl rand -hex 32`, point DATABASE_URL at your dev DB
@@ -35,6 +38,7 @@ pnpm dev                        # admin UI at http://localhost:3000/admin
 ```
 
 ### Database & dev-stand
+
 The dev services (a dedicated `cms` Postgres database — decision #2 — plus the
 **Zitadel OIDC trio** for the portal auth gate, #59) run on a **separate** compose
 stack `bbm-portal-dev` on the LAN TrueNAS box, while the app runs on your host
@@ -44,11 +48,13 @@ secrets and the one-time Zitadel init; don't duplicate those details here.
 
 Bring the stand up with the thin launcher (reads your per-machine `.env.local`,
 syncs the contract to the box, runs `docker compose`):
+
 ```bash
 cp infra/dev-stand/.env.example ~/.bbm-portal/.env.local   # fill in per the stand README
 pnpm dev:up          # sync + docker compose up -d
 pnpm dev:status      # ps
 ```
+
 Then point the app's `DATABASE_URL` (repo-root `.env`) at the box —
 `truenas.local:${POSTGRES_PORT}` (default `5444`). A local Docker daemon works too
 (`DEV_SSH_HOST` empty → `localhost`).
@@ -58,6 +64,7 @@ the generated `src/migrations/*` → `pnpm migrate`. Production runs `pnpm migra
 on deploy (`push: false` everywhere — no dev/prod schema drift).
 
 ### Admin auth
+
 The admin panel at `/admin` uses **native Payload auth** — log in with an
 **email + password**. The user model is a single implicit-admin: every user is a
 full admin (no roles yet; SSO + a roles model are a deferred follow-up). The
@@ -65,9 +72,11 @@ full admin (no roles yet; SSO + a roles model are a deferred follow-up). The
 not world-readable over the REST API.
 
 **Bootstrap the first admin** (headless / non-interactive — e.g. on the prod VPS):
+
 ```bash
 SEED_ADMIN_EMAIL=admin@bbm.academy SEED_ADMIN_PASSWORD='a-strong-password' pnpm seed:admin
 ```
+
 The script is **idempotent** — if a user with that email already exists it skips
 without overwriting. On an empty DB you can equivalently use the `/admin`
 "create first user" screen; Payload bypasses access control until the first user
@@ -75,9 +84,11 @@ exists. Both `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` are required (the
 script fails loudly if either is unset) — see `.env.example`.
 
 ### Media storage
+
 The `media` collection is backed by **Timeweb Object Storage** (S3-compatible,
 decision #3) through `@payloadcms/storage-s3` with `forcePathStyle: true`. The
 plugin is **gated on `S3_BUCKET`**:
+
 - **Set `S3_BUCKET` + keys** (`S3_ENDPOINT=https://s3.twcstorage.ru`,
   `S3_REGION=ru-1`, account-level access key/secret) → uploads stream to S3 and
   are served from the bucket URL. **Production must set these.**
@@ -90,20 +101,22 @@ the values with `terraform output portal_media_*`. No migration is involved —
 the storage adapter adds no DB columns.
 
 ## Scripts
-| Command | Purpose |
-|---|---|
-| `pnpm dev` | Next.js + Payload dev server (admin at `/admin`) |
-| `pnpm migrate` | apply pending migrations |
-| `pnpm migrate:create <name>` | generate a migration from the current schema (needs a live DB) |
-| `pnpm migrate:status` | list migrations and whether they ran |
-| `pnpm migrate:down` | roll back the last batch |
-| `pnpm seed:admin` | bootstrap the first admin (needs `SEED_ADMIN_EMAIL` + `SEED_ADMIN_PASSWORD`; idempotent) |
-| `pnpm lint` | ESLint (flat config) |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm generate:types` | regenerate `src/payload-types.ts` from collections |
-| `pnpm test` | integration (vitest) + e2e (playwright) |
+
+| Command                      | Purpose                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `pnpm dev`                   | Next.js + Payload dev server (admin at `/admin`)                                         |
+| `pnpm migrate`               | apply pending migrations                                                                 |
+| `pnpm migrate:create <name>` | generate a migration from the current schema (needs a live DB)                           |
+| `pnpm migrate:status`        | list migrations and whether they ran                                                     |
+| `pnpm migrate:down`          | roll back the last batch                                                                 |
+| `pnpm seed:admin`            | bootstrap the first admin (needs `SEED_ADMIN_EMAIL` + `SEED_ADMIN_PASSWORD`; idempotent) |
+| `pnpm lint`                  | ESLint (flat config)                                                                     |
+| `pnpm typecheck`             | `tsc --noEmit`                                                                           |
+| `pnpm generate:types`        | regenerate `src/payload-types.ts` from collections                                       |
+| `pnpm test`                  | integration (vitest) + e2e (playwright)                                                  |
 
 ## Where things live
+
 - `src/payload.config.ts` — Payload config (db adapter, collections, globals, plugins)
 - `src/collections/` — collections (one per file)
 - `src/app/(payload)/` — Payload admin + REST/GraphQL routes

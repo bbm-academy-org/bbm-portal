@@ -25,18 +25,22 @@ GitHub issue number.
 # <Feature name> — spec (issue #N)
 
 ## Why
+
 1–3 sentences: the problem / goal, in product language.
 
 ## Requirements
+
 Plain-language numbered list: what the thing must do. Constraints
 (152-FZ, ADR-002 module boundaries, domain topology) called out explicitly.
 
 ## Acceptance scenarios
+
 Numbered "how the owner verifies it works" walkthroughs: the real URL,
 what he opens, clicks, and sees. These double as the TDD test scenarios
 (task-cycle stage 3) and the stage-5 live-stand acceptance script.
 
 ## Out of scope
+
 What this task explicitly does NOT include.
 ```
 

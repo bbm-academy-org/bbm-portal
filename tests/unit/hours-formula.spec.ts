@@ -218,9 +218,9 @@ describe('monthlyRateFromFork (автоставка — решение влад�
 
 describe('participantMonthlyRate (ставка участника — вычисляется, не хранится)', () => {
   it('считает ставку из вилки и грейда участника', () => {
-    expect(
-      participantMonthlyRate({ fork_min: 150_000, fork_max: 250_000, grade: 'II' }),
-    ).toBe(200_000)
+    expect(participantMonthlyRate({ fork_min: 150_000, fork_max: 250_000, grade: 'II' })).toBe(
+      200_000,
+    )
   })
 
   it('участник без вилки или грейда — null (денежная часть не показывается)', () => {

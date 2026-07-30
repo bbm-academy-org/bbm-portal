@@ -84,8 +84,7 @@ const sequencedFetch = (opts: { current: Response; success: Response }) =>
 
 // Build the minimal PayloadRequest the handler reads: `user` (auth gate) and
 // `payload` (local API + logger).
-const reqWith = (user: unknown): PayloadRequest =>
-  ({ user, payload } as unknown as PayloadRequest)
+const reqWith = (user: unknown): PayloadRequest => ({ user, payload }) as unknown as PayloadRequest
 
 type SyncBody = {
   pendingCount: number

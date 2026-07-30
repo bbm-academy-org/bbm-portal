@@ -19,11 +19,7 @@ import {
   SummaryTable,
 } from '@/modules/hours/view/components'
 import { HoursLayout } from '@/modules/hours/view/HoursLayout'
-import {
-  ParticipantsAdmin,
-  PeriodForm,
-  PeriodRowActions,
-} from '@/modules/hours/view/AdminForms'
+import { ParticipantsAdmin, PeriodForm, PeriodRowActions } from '@/modules/hours/view/AdminForms'
 import { PeriodSelect } from '@/modules/hours/view/PeriodSelect'
 
 /**
@@ -166,8 +162,8 @@ export default async function HoursAdminPage({
             </a>
           </p>
           <p className="hours-note">
-            В выгрузке есть всё для рассылки: имя, период, часы, способ, ставки, начисление, сплит
-            в ₽ и %, время сохранения.
+            В выгрузке есть всё для рассылки: имя, период, часы, способ, ставки, начисление, сплит в
+            ₽ и %, время сохранения.
           </p>
         </div>
       </section>

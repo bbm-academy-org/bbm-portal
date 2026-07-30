@@ -30,9 +30,7 @@ const ORIGINAL_WEBHOOK = process.env.MATTERMOST_LEADS_WEBHOOK_URL
 // concept, …) that are NOT columns — they exercise the `details` capture. A
 // single cast at the create boundary keeps `payload.create` happy without
 // scattering `any` (mirrors the `asData` pattern in content-parity.int.spec.ts).
-const lead = (
-  overrides: Record<string, unknown> = {},
-): RequiredDataFromCollectionSlug<'leads'> =>
+const lead = (overrides: Record<string, unknown> = {}): RequiredDataFromCollectionSlug<'leads'> =>
   ({
     scenario: 'participate',
     name: 'Иван Тестов',

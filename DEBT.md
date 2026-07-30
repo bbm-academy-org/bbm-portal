@@ -22,10 +22,10 @@ Entry format:
 <!-- entries below this line -->
 
 - [ ] 2026-07-30 `worktree-teardown.mjs`: в robocopy-фолбэке финальный
-  `cmd /c rmdir /s /q \\?\<путь>` — no-op (cmd.exe не понимает `\\?\`-префикс);
-  первая ступень PS 5.1 отрабатывает, так что исход — честный exit 1, не потеря
-  данных. Лечится вызовом rmdir с обычным `winPath` — return condition: первый
-  реальный заход в robocopy-фолбэк (teardown упал с exit 1 на long-path) (#90)
+      `cmd /c rmdir /s /q \\?\<путь>` — no-op (cmd.exe не понимает `\\?\`-префикс);
+      первая ступень PS 5.1 отрабатывает, так что исход — честный exit 1, не потеря
+      данных. Лечится вызовом rmdir с обычным `winPath` — return condition: первый
+      реальный заход в robocopy-фолбэк (teardown упал с exit 1 на long-path) (#90)
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
