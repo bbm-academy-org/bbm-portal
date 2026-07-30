@@ -84,12 +84,14 @@ export function ParticipantForm({
           <span>Email (ключ)</span>
           {/* В режиме правки email только показывается: он ключ записи, и его
               смена создала бы дубль вместо правки на месте (п.16). readOnly, а
-              не disabled — иначе поле не попало бы в FormData. */}
+              не disabled — иначе поле не попало бы в FormData; подсказка
+              datalist там же отключается — предлагать варианты для поля,
+              которое не изменить, бессмысленно. */}
           <input
             type="email"
             name="email"
             required
-            list="hours-participant-emails"
+            list={editing ? undefined : 'hours-participant-emails'}
             defaultValue={editing?.email}
             readOnly={editing != null}
           />
@@ -103,7 +105,18 @@ export function ParticipantForm({
         </datalist>
         <label className="hours-field">
           <span>Имя</span>
-          <input type="text" name="name" required defaultValue={editing?.name} />
+          {/* autoFocus только в режиме правки: форма перемонтируется по key,
+              поэтому фокус (и скролл к нему) переезжает на неё сразу после
+              клика «Изменить» — при длинном списке иначе не видно, что вообще
+              что-то произошло. На первой загрузке страницы editing === null,
+              так что фокус ни у кого не отбирается. */}
+          <input
+            type="text"
+            name="name"
+            required
+            defaultValue={editing?.name}
+            autoFocus={editing != null}
+          />
         </label>
         {/* Роль, вилка и грейд необязательны (решение владельца 2026-07-30):
             участника можно завести только с именем и email. Поля «Ставка»
@@ -163,34 +176,45 @@ export function ParticipantForm({
 }
 
 /**
- * Участники админки целиком: таблица со стрелкой «Изменить» и форма под ней
- * (issue #85). Единственное состояние — email правимого участника, а не сам
- * объект: после сохранения серверное дерево перерисовывается, и по email из
- * свежих `participants` всегда достаётся актуальная запись; удалили участника
- * из JSON — режим правки просто гаснет, а не показывает призрака.
+ * Участники админки целиком: таблица с кнопкой «Изменить» и форма под ней
+ * (issue #85). В состоянии лежит email правимого участника, а не сам объект:
+ * после сохранения серверное дерево перерисовывается, и по email из свежих
+ * `participants` всегда достаётся актуальная запись; удалили участника из
+ * JSON — режим правки просто гаснет, а не показывает призрака.
+ *
+ * Рядом с email — счётчик нажатий `pick`. Он существует ровно ради повторного
+ * клика по УЖЕ правимому участнику: без него `setState` получал бы то же
+ * значение, React отсекал бы ре-рендер, `key` не менялся бы и форма не
+ * перемонтировалась — то есть «Изменить» не откатывало бы набранное к
+ * сохранённому, хотя пользователь ждёт именно этого (ревью PR #86).
  *
  * `key` на форме перемонтирует её при смене выбора — это и есть механизм
  * подстановки `defaultValue` без контролируемых полей.
  */
 export function ParticipantsAdmin({ participants }: { participants: Participant[] }) {
-  const [editingEmail, setEditingEmail] = React.useState<string | null>(null)
-  const editing = participants.find((participant) => participant.email === editingEmail) ?? null
+  const [selection, setSelection] = React.useState<{ email: string; pick: number } | null>(null)
+  const editing = participants.find((participant) => participant.email === selection?.email) ?? null
 
   return (
     <>
       <ParticipantsTable
         participants={participants}
-        onEdit={(participant) => setEditingEmail(participant.email)}
+        onEdit={(participant) =>
+          setSelection((previous) => ({
+            email: participant.email,
+            pick: (previous?.pick ?? 0) + 1,
+          }))
+        }
       />
       <p className="hours-note">
         Ставка вычисляется из вилки и грейда (середина трети вилки: I — ⅙, II — ½, III — ⅚) и не
         вводится руками. Участник без вилки и грейда считает только часы — без денег.
       </p>
       <ParticipantForm
-        key={editing?.email ?? '__new__'}
+        key={editing && selection ? `${selection.email}#${selection.pick}` : '__new__'}
         participants={participants}
         editing={editing}
-        onCancel={() => setEditingEmail(null)}
+        onCancel={() => setSelection(null)}
       />
     </>
   )
@@ -248,6 +272,8 @@ export function PeriodRowActions({
   )
   const [editState, editAction, editPending] = useActionState(updatePeriodAction, IDLE_STATE)
   const [deleteState, deleteAction, deletePending] = useActionState(deletePeriodAction, IDLE_STATE)
+  // id периода уникален в документе — годится и как якорь aria-describedby.
+  const noticeId = `hours-period-notice-${period.id}`
 
   return (
     <div>
@@ -282,26 +308,43 @@ export function PeriodRowActions({
           </label>
           <label className="hours-field">
             <span>Начало</span>
-            <input type="date" name="dateFrom" defaultValue={period.date_from} required />
+            <input
+              type="date"
+              name="dateFrom"
+              defaultValue={period.date_from}
+              required
+              aria-describedby={hasAssessments ? noticeId : undefined}
+            />
           </label>
           <label className="hours-field">
             <span>Конец</span>
-            <input type="date" name="dateTo" defaultValue={period.date_to} required />
+            <input
+              type="date"
+              name="dateTo"
+              defaultValue={period.date_to}
+              required
+              aria-describedby={hasAssessments ? noticeId : undefined}
+            />
           </label>
         </div>
+        {/* Предостережение стоит ДО кнопки: под ней его читают уже постфактум.
+            aria-describedby с полей дат — чтобы оно доехало и до скринридера,
+            а не только до глаз. Формулировка разводит две ставки: месячная —
+            снэпшот и не меняется, часовая выводится из календаря (п.15/п.2);
+            «ставку пересчитаем и сохраним» в одной фразе читалось наоборот. */}
+        {hasAssessments ? (
+          <p className="hours-note" id={noticeId}>
+            По периоду уже есть оценки. Месячная ставка на момент декларации у каждой
+            сохранится, а часовая ставка, начисление, сплит и число будней сразу
+            пересчитаются по новым датам. Удалить период с оценками из админки нельзя:
+            удаляет владелец в JSON.
+          </p>
+        ) : null}
         <div className="hours-actions">
           <button type="submit" className="hours-btn hours-btn--ghost" disabled={editPending}>
             Сохранить правку
           </button>
         </div>
-        {hasAssessments ? (
-          <p className="hours-note">
-            По периоду уже есть оценки: смена дат сразу пересчитает их часовую ставку,
-            начисление, сплит и число будней по новым датам — ставки на момент декларации при
-            этом сохранятся. Удалить период с оценками из админки нельзя: удаляет владелец в
-            JSON.
-          </p>
-        ) : null}
         <Feedback state={editState} />
       </form>
 

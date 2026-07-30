@@ -13,6 +13,9 @@
 
 import { countWeekdays, isValidIsoDate } from './calendar'
 import { normalizeEmail } from './access'
+// Склонение по числу живёт в format.ts (там же, где METHOD_LABELS): это домен,
+// а не вью, и второй копии правила «11–14 — исключение» быть не должно.
+import { formatHoursCount, plural } from './format'
 import {
   computeAccrual,
   computeSplit,
@@ -151,7 +154,7 @@ export function saveAssessment(
   const ceiling = maxDeclarableHours(calendar)
   if (input.hours > ceiling) {
     return fail(
-      `В периоде «${period.label}» физически ${ceiling} часов — заявить больше нельзя.`,
+      `В периоде «${period.label}» физически ${formatHoursCount(ceiling)} — заявить больше нельзя.`,
     )
   }
 
@@ -303,16 +306,6 @@ export function createPeriod(
   }
 }
 
-/** «1 оценка» / «2 оценки» / «5 оценок» — число пересчитанных читает человек. */
-function assessmentsWord(count: number): string {
-  const lastTwo = Math.abs(count) % 100
-  const last = count % 10
-  if (lastTwo >= 11 && lastTwo <= 14) return 'оценок'
-  if (last === 1) return 'оценка'
-  if (last >= 2 && last <= 4) return 'оценки'
-  return 'оценок'
-}
-
 /**
  * Пересчитывает производные поля оценки от НОВОГО календаря периода
  * (issue #85, пп. 16/24).
@@ -327,6 +320,21 @@ function assessmentsWord(count: number): string {
  * `effectiveHourlyRate` вернёт `null`, начисление и обе доли останутся
  * нулевыми ровно как в `saveAssessment`. Порядок округления тот же (п.6):
  * округляется произведение, потом доинвестиция, деньги — остаток.
+ *
+ * Границы, названные вслух (ревью PR #86):
+ *   - производные поля выводятся ИЗ ФОРМУЛЫ, поэтому смена дат безвозвратно
+ *     перетирает числа, вписанные в JSON руками через владельческий
+ *     escape-hatch (пп. 16/24), и снэпшоты, посчитанные до смены механики
+ *     ставки 2026-07-30. Обратимость правки (в отличие от удаления) верна
+ *     только для чисел, изначально посчитанных этой же формулой;
+ *   - `weekend_hours` и `method` НЕ пересчитываются и не проверяются против
+ *     нового диапазона: оба — свойства декларации участника («сколько из часов
+ *     пришлось на выходные», «какой вкладкой считал»), а не календаря.
+ *     Авторитетно поле `hours`; деньги ни из того, ни из другого не считаются,
+ *     и плашка на каждую правку дат стоила бы владельцу внимания дороже, чем
+ *     стоит справочное поле. Единственная несогласованность, о которой домен
+ *     всё же говорит, — часы больше физического потолка (см. `updatePeriod`):
+ *     их домен заново уже не принял бы.
  */
 function recalculateAssessment(assessment: Assessment, calendar: PeriodCalendar): Assessment {
   const hourlyRate = effectiveHourlyRate(assessment.monthly_rate, calendar)
@@ -384,7 +392,8 @@ export function updatePeriod(
       assessment.period_id === input.id ? recalculateAssessment(assessment, calendar) : assessment,
     )
     warnings.push(
-      `Пересчитано по новым датам: ${affected.length} ${assessmentsWord(affected.length)}; ` +
+      `Пересчитано по новым датам: ${affected.length} ` +
+        `${plural(affected.length, 'оценка', 'оценки', 'оценок')}; ` +
         'ставки на момент декларации сохранены.',
     )
 
@@ -394,10 +403,14 @@ export function updatePeriod(
     const ceiling = maxDeclarableHours(calendar)
     const over = affected.filter((assessment) => assessment.hours > ceiling)
     if (over.length > 0) {
+      // Путь починки называется целиком: закрытый период — самый частый случай
+      // правки задним числом, а в него `saveAssessment` не пускает вовсе, и
+      // совет «пусть участник пересохранит» упёрся бы в отказ (п.21/24).
       warnings.push(
-        `В новом диапазоне физически ${ceiling} часов, а больше заявлено в ` +
-          `${over.length} ${assessmentsWord(over.length)} — оценки сохранены как есть, ` +
-          'поправить их может только сам участник пересохранением.',
+        `В новом диапазоне физически ${formatHoursCount(ceiling)}, а больше заявлено в ` +
+          `${over.length} ${plural(over.length, 'оценке', 'оценках', 'оценках')} — ` +
+          'сохранены как есть. Поправить их может сам участник пересохранением; ' +
+          'если период закрыт — сначала переоткрой его.',
       )
     }
   }

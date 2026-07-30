@@ -67,6 +67,7 @@ export type {
 
 export {
   formatHours,
+  formatHoursCount,
   formatInt,
   formatIsoDate,
   formatPercent,
@@ -74,6 +75,7 @@ export {
   formatSavedAt,
   formatWeekdayCount,
   formatWeeks,
+  plural,
 } from './format'
 
 export { HoursDataError, mutateHoursDocument, readHoursDocument, resolveDataFile } from './store'

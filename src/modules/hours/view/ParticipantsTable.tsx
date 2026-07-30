@@ -60,10 +60,13 @@ export function ParticipantsTable({
               {onEdit ? (
                 <td>
                   {/* type="button": кнопка ничего не отправляет, она только
-                      заполняет форму ниже — сохранение остаётся за формой. */}
+                      заполняет форму ниже — сохранение остаётся за формой.
+                      aria-label: три кнопки «Изменить» подряд для скринридера
+                      неразличимы, имя строки обязано попасть в доступное имя. */}
                   <button
                     type="button"
                     className="hours-btn hours-btn--ghost"
+                    aria-label={`Изменить ${participant.name}`}
                     onClick={() => onEdit(participant)}
                   >
                     Изменить

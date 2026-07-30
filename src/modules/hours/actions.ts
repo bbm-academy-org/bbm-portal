@@ -207,7 +207,11 @@ export async function createPeriodAction(
   })
 }
 
-/** Правка периода, пока по нему нет оценок (п.16) — только админ. */
+/**
+ * Правка label/дат периода (пп. 16, 24) — только админ. Оценки правку не
+ * блокируют (issue #85); смена дат пересчитывает производные поля оценок
+ * периода и возвращает предупреждение с их числом.
+ */
 export async function updatePeriodAction(
   _prev: HoursActionState,
   formData: FormData,

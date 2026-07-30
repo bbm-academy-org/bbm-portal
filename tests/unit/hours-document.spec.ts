@@ -336,7 +336,7 @@ describe('createPeriod (п.24)', () => {
 describe('updatePeriod / deletePeriod (п.16, п.24)', () => {
   const edit = { id: 'p-july', label: 'Июль 2026 (правка)', dateFrom: '2026-07-01', dateTo: '2026-07-30' }
 
-  it('правит период, пока по нему нет ни одной оценки', () => {
+  it('правит label и даты периода', () => {
     const result = ok(updatePeriod(doc(), edit))
     expect(result.doc.periods[0].label).toBe('Июль 2026 (правка)')
     expect(result.doc.periods[0].date_to).toBe('2026-07-30')
@@ -388,6 +388,22 @@ describe('updatePeriod — пересчёт оценок при смене да�
   /** Документ с одной сохранённой оценкой Антона (ставка 200 000 ₽/мес). */
   function withAssessment(): HoursDocument {
     return ok(saveAssessment(doc(), validAssessment, NOW)).doc
+  }
+
+  /** Документ с `count` оценками по одному периоду — для проверки склонений. */
+  function withAssessments(count: number): HoursDocument {
+    const participants = Array.from({ length: count }, (_, index) => ({
+      email: `p${index}@bbm.academy`,
+      name: `Участник ${index}`,
+      fork_min: 150_000,
+      fork_max: 250_000,
+      grade: 'II' as const,
+    }))
+    let current: HoursDocument = { ...doc(), participants }
+    for (const participant of participants) {
+      current = ok(saveAssessment(current, { ...validAssessment, email: participant.email }, NOW)).doc
+    }
+    return current
   }
 
   /** Тот же документ, но участник без вилки и грейда — режим «только часы». */
@@ -505,24 +521,71 @@ describe('updatePeriod — пересчёт оценок при смене да�
     expect(result.doc.periods[0].label).toBe('Июль 2026 (опечатка исправлена)')
   })
 
-  it('повторный пересчёт теми же датами идемпотентен', () => {
-    const once = ok(updatePeriod(withAssessment(), toMayJune)).doc
-    const twice = ok(updatePeriod(once, toMayJune)).doc
-    expect(twice.assessments).toEqual(once.assessments)
+  it('цикл дат июль → май-июнь → июль возвращает исходные числа', () => {
+    // Настоящая идемпотентность: пересчёт обязан выводиться из снэпшота
+    // monthly_rate и часов, а НЕ из предыдущего результата — иначе туда-обратно
+    // числа бы «поехали». Правка теми же датами этого не проверяет вовсе:
+    // там срабатывает short-circuit `datesChanged === false` (тест выше).
+    const source = withAssessment()
+    const before = source.assessments[0]
+
+    const moved = ok(updatePeriod(source, toMayJune)).doc
+    expect(moved.assessments[0].accrual).not.toBe(before.accrual) // пересчёт был
+
+    const back = ok(
+      updatePeriod(moved, {
+        id: 'p-july',
+        label: 'Июль 2026',
+        dateFrom: '2026-07-01',
+        dateTo: '2026-07-31',
+      }),
+    ).doc
+
+    expect(back.assessments[0].weekday_count).toBe(23)
+    expect(back.assessments[0].accrual).toBe(173_913)
+    expect(back.assessments[0].hourly_rate).toBeCloseTo(200_000 / 184, 9)
+    expect(back.assessments[0]).toEqual(before)
   })
 
   it('сжатие периода ниже заявленных часов — мягкое предупреждение, не блок', () => {
     // 160 ч в периоде из одного календарного дня физически невозможны (п.21);
     // это данные, которые домен уже не принял бы заново, — молчать нельзя.
     const result = ok(
-      updatePeriod(withAssessment(), {
+      updatePeriod(withAssessments(2), {
         id: 'p-july',
         label: 'Июль 2026',
         dateFrom: '2026-07-01',
         dateTo: '2026-07-01',
       }),
     )
-    expect(result.warnings.some((w) => w.includes('физически'))).toBe(true)
+    const warning = result.warnings.find((w) => w.includes('физически'))
+    expect(warning).toBeDefined()
+    expect(warning).toContain('24 часа') // 1 календарный день × 24 (п.21)
+    expect(warning).toContain('в 2 оценках')
+    // Путь починки назван честно: в закрытый период участник не сохранит (п.21),
+    // сначала его надо переоткрыть (п.24).
+    expect(warning).toContain('переоткр')
+  })
+
+  it('склоняет «оценка» по числу в обоих предупреждениях (ревью PR #86)', () => {
+    const shrink = { id: 'p-july', label: 'Июль 2026', dateFrom: '2026-07-01', dateTo: '2026-07-01' }
+    const forms = [1, 2, 5].map((count) => {
+      const warnings = ok(updatePeriod(withAssessments(count), shrink)).warnings
+      return {
+        recalculated: warnings.find((w) => w.includes('ересчитано')) ?? '',
+        overCeiling: warnings.find((w) => w.includes('физически')) ?? '',
+      }
+    })
+
+    // Именительный падеж — «пересчитано: N …».
+    expect(forms[0].recalculated).toContain('1 оценка')
+    expect(forms[1].recalculated).toContain('2 оценки')
+    expect(forms[2].recalculated).toContain('5 оценок')
+
+    // Предложный — «заявлено в N …»; именительный здесь неверен при ЛЮБОМ N.
+    expect(forms[0].overCeiling).toContain('в 1 оценке')
+    expect(forms[1].overCeiling).toContain('в 2 оценках')
+    expect(forms[2].overCeiling).toContain('в 5 оценках')
   })
 })
 
