@@ -19,6 +19,7 @@ import {
   describePeriod,
   effectiveHourlyRate,
   maxDeclarableHours,
+  participantMonthlyRate,
 } from './formula'
 import type {
   Assessment,
@@ -153,7 +154,11 @@ export function saveAssessment(
     )
   }
 
-  const hourlyRate = effectiveHourlyRate(participant.monthly_rate, calendar)
+  // Ставка вычисляется из вилки и грейда на момент сохранения (решение
+  // владельца 2026-07-30); участник без вилки сохраняет «только часы» —
+  // деньги в снэпшоте нулевые, ставка null.
+  const monthlyRate = participantMonthlyRate(participant)
+  const hourlyRate = effectiveHourlyRate(monthlyRate, calendar)
   const accrual = hourlyRate == null ? 0 : computeAccrual(input.hours, hourlyRate)
   const { cash, invest } = computeSplit(accrual, input.splitPercent)
 
@@ -164,7 +169,7 @@ export function saveAssessment(
     method: input.method,
     weekend_hours: input.weekendHours,
     split_percent: input.splitPercent,
-    monthly_rate: participant.monthly_rate,
+    monthly_rate: monthlyRate,
     hourly_rate: hourlyRate,
     accrual,
     cash_amount: cash,
@@ -184,14 +189,20 @@ export function saveAssessment(
 export interface UpsertParticipantInput {
   email: string
   name: string
-  role: string
-  forkMin: number
-  forkMax: number
-  grade: Grade
-  monthlyRate: number
+  /** Роль, вилка и грейд необязательны (решение владельца 2026-07-30):
+   * участника можно завести только с именем и email. */
+  role: string | null
+  forkMin: number | null
+  forkMax: number | null
+  grade: Grade | null
 }
 
-/** Добавляет или правит участника по email (смена email отсутствует — п.16). */
+/**
+ * Добавляет или правит участника по email (смена email отсутствует — п.16).
+ * Ставка не вводится: она вычисляется из вилки и грейда
+ * (`participantMonthlyRate`), поэтому и предупреждения «вне вилки» больше нет —
+ * жёстко валидируется только сама вилка (min ≤ max), и только когда задана.
+ */
 export function upsertParticipant(
   doc: HoursDocument,
   input: UpsertParticipantInput,
@@ -202,24 +213,18 @@ export function upsertParticipant(
   }
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   if (!name) return fail('Нужно имя участника.')
-  const role = typeof input.role === 'string' ? input.role.trim() : ''
-  if (!role) return fail('Нужна роль участника.')
-  if (!GRADES.includes(input.grade)) return fail('Грейд может быть только I, II или III.')
-  if (!isNonNegativeNumber(input.forkMin) || !isNonNegativeNumber(input.forkMax)) {
+  const role = typeof input.role === 'string' && input.role.trim() ? input.role.trim() : null
+  if (input.grade != null && !GRADES.includes(input.grade)) {
+    return fail('Грейд может быть только I, II или III.')
+  }
+  if (input.forkMin != null && !isNonNegativeNumber(input.forkMin)) {
     return fail('Границы вилки должны быть числами не меньше нуля.')
   }
-  if (!isNonNegativeNumber(input.monthlyRate)) {
-    return fail('Месячная ставка должна быть числом не меньше нуля.')
+  if (input.forkMax != null && !isNonNegativeNumber(input.forkMax)) {
+    return fail('Границы вилки должны быть числами не меньше нуля.')
   }
-  if (input.forkMin > input.forkMax) {
+  if (input.forkMin != null && input.forkMax != null && input.forkMin > input.forkMax) {
     return fail('Нижняя граница вилки больше верхней — так вилка не бывает.')
-  }
-
-  const warnings: string[] = []
-  if (input.monthlyRate < input.forkMin || input.monthlyRate > input.forkMax) {
-    warnings.push(
-      `Месячная ставка ${input.monthlyRate} вне вилки ${input.forkMin}–${input.forkMax} — сохранено как есть.`,
-    )
   }
 
   const participant: Participant = {
@@ -229,7 +234,6 @@ export function upsertParticipant(
     fork_min: input.forkMin,
     fork_max: input.forkMax,
     grade: input.grade,
-    monthly_rate: input.monthlyRate,
   }
 
   const index = doc.participants.findIndex((existing) => existing.email === email)
@@ -237,7 +241,7 @@ export function upsertParticipant(
   if (index >= 0) participants[index] = participant
   else participants.push(participant)
 
-  return { ok: true, doc: { ...doc, participants }, warnings, saved: participant }
+  return { ok: true, doc: { ...doc, participants }, warnings: [], saved: participant }
 }
 
 export interface PeriodInput {

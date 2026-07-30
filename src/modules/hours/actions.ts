@@ -56,6 +56,22 @@ function number(formData: FormData, key: string): number {
 }
 
 /**
+ * Необязательное число: пустое поле — осознанный null («не задано»), мусор —
+ * NaN, который доменная валидация отвергнет вслух (пустое ≠ ошибка ввода).
+ */
+function optionalNumber(formData: FormData, key: string): number | null {
+  const raw = text(formData, key)
+  if (raw === '') return null
+  return Number(raw.replace(',', '.'))
+}
+
+/** Необязательный текст: пустое поле — null. */
+function optionalText(formData: FormData, key: string): string | null {
+  const raw = text(formData, key)
+  return raw === '' ? null : raw
+}
+
+/**
  * Общий предбанник любой мутации: сессия есть и в ней есть email. Сессия без
  * email читать страницы может, менять — нет (п.8).
  */
@@ -151,15 +167,16 @@ export async function saveParticipantAction(
     const gate = await requireAdmin()
     if ('status' in gate) return gate
 
+    // Роль, вилка и грейд необязательны (решение владельца 2026-07-30);
+    // ставка не передаётся вовсе — она вычисляется из вилки и грейда.
     const result = await mutateHoursDocument((doc) =>
       upsertParticipant(doc, {
         email: text(formData, 'email'),
         name: text(formData, 'name'),
-        role: text(formData, 'role'),
-        forkMin: number(formData, 'forkMin'),
-        forkMax: number(formData, 'forkMax'),
-        grade: text(formData, 'grade') as Grade,
-        monthlyRate: number(formData, 'monthlyRate'),
+        role: optionalText(formData, 'role'),
+        forkMin: optionalNumber(formData, 'forkMin'),
+        forkMax: optionalNumber(formData, 'forkMax'),
+        grade: optionalText(formData, 'grade') as Grade | null,
       }),
     )
     return toState(result, 'Участник сохранён.')

@@ -27,10 +27,11 @@ function doc(): HoursDocument {
         email: 'anton@bbm.academy',
         name: 'Антон',
         role: 'Продукт',
+        // Ставка НЕ хранится: вилка 150–250 тыс. и грейд II дают 200 000 ₽/мес
+        // (середина средней трети — решение владельца 2026-07-30, issue #83).
         fork_min: 150_000,
         fork_max: 250_000,
         grade: 'II',
-        monthly_rate: 200_000,
       },
     ],
     periods: [
@@ -61,7 +62,7 @@ const validAssessment = {
 }
 
 describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () => {
-  it('сохраняет оценку со всеми числами на момент декларации', () => {
+  it('сохраняет оценку со всеми числами на момент декларации (ставка — из вилки и грейда)', () => {
     const result = ok(saveAssessment(doc(), validAssessment, NOW))
     const saved = result.saved
     expect(saved).toMatchObject({
@@ -71,7 +72,7 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
       method: 'period',
       weekend_hours: 0,
       split_percent: 30,
-      monthly_rate: 200_000,
+      monthly_rate: 200_000, // снэпшот вычисленной ставки: 150k + ½·(250k−150k)
       accrual: 173_913,
       invest_amount: 52_174,
       cash_amount: 121_739,
@@ -80,6 +81,23 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
     })
     expect(saved.hourly_rate).toBeCloseTo(200_000 / 184, 9)
     expect(result.doc.assessments).toHaveLength(1)
+  })
+
+  it('участник без вилки сохраняет оценку в режиме «только часы» (решение владельца 2026-07-30)', () => {
+    const base = doc()
+    base.participants.push({ email: 'new@bbm.academy', name: 'Новый' })
+    const result = ok(
+      saveAssessment(base, { ...validAssessment, email: 'new@bbm.academy' }, NOW),
+    )
+    expect(result.saved).toMatchObject({
+      email: 'new@bbm.academy',
+      hours: 160,
+      monthly_rate: null,
+      hourly_rate: null,
+      accrual: 0,
+      cash_amount: 0,
+      invest_amount: 0,
+    })
   })
 
   it('нормализует email оценки (ключ пары period+email — lowercase)', () => {
@@ -99,11 +117,14 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
 
   it('пересчитывает снэпшоты по ТЕКУЩЕЙ ставке при пересохранении (п.15)', () => {
     const first = ok(saveAssessment(doc(), validAssessment, NOW))
+    // Вилка выросла: 300–500 тыс., грейд II → вычисленная ставка 400 000 ₽/мес.
     const raised: HoursDocument = {
       ...first.doc,
-      participants: [{ ...first.doc.participants[0], monthly_rate: 400_000 }],
+      participants: [
+        { ...first.doc.participants[0], fork_min: 300_000, fork_max: 500_000 },
+      ],
     }
-    // до пересохранения снэпшот не трогается — смена ставки не задним числом
+    // до пересохранения снэпшот не трогается — смена вилки не задним числом
     expect(raised.assessments[0].accrual).toBe(173_913)
 
     const again = ok(saveAssessment(raised, validAssessment, NOW))
@@ -120,7 +141,6 @@ describe('saveAssessment — снэпшоты (п.14, сценарий 3)', () =
       fork_min: 100_000,
       fork_max: 200_000,
       grade: 'I',
-      monthly_rate: 150_000,
     })
     const first = ok(saveAssessment(base, validAssessment, NOW))
     const second = ok(
@@ -190,15 +210,14 @@ describe('saveAssessment — валидации (п.21)', () => {
   })
 })
 
-describe('upsertParticipant (п.23)', () => {
+describe('upsertParticipant (п.23 — ставка не вводится, вилка/грейд/роль необязательны)', () => {
   const participant = {
     email: 'eduard@bbm.academy',
     name: 'Эдуард',
-    role: 'Операции',
-    forkMin: 100_000,
-    forkMax: 200_000,
-    grade: 'I' as const,
-    monthlyRate: 150_000,
+    role: 'Операции' as string | null,
+    forkMin: 100_000 as number | null,
+    forkMax: 200_000 as number | null,
+    grade: 'I' as 'I' | null,
   }
 
   it('добавляет участника с нормализованным email', () => {
@@ -208,46 +227,66 @@ describe('upsertParticipant (п.23)', () => {
     expect(result.warnings).toEqual([])
   })
 
+  it('заводит участника только с именем и email (решение владельца 2026-07-30)', () => {
+    const result = ok(
+      upsertParticipant(doc(), {
+        email: 'new@bbm.academy',
+        name: 'Новый',
+        role: null,
+        forkMin: null,
+        forkMax: null,
+        grade: null,
+      }),
+    )
+    expect(result.doc.participants).toHaveLength(2)
+    expect(result.doc.participants[1]).toMatchObject({
+      email: 'new@bbm.academy',
+      name: 'Новый',
+      role: null,
+      fork_min: null,
+      fork_max: null,
+      grade: null,
+    })
+    expect(result.warnings).toEqual([])
+  })
+
+  it('участник не хранит monthly_rate — ставка вычисляется, а не задаётся', () => {
+    const result = ok(upsertParticipant(doc(), participant))
+    expect(result.doc.participants[1]).not.toHaveProperty('monthly_rate')
+  })
+
   it('правит существующего по email, не создавая дубль', () => {
     const result = ok(
       upsertParticipant(doc(), {
         ...participant,
         email: 'anton@bbm.academy',
         name: 'Антон С.',
-        monthlyRate: 220_000,
+        forkMin: 200_000,
+        forkMax: 300_000,
       }),
     )
     expect(result.doc.participants).toHaveLength(1)
     expect(result.doc.participants[0].name).toBe('Антон С.')
-    expect(result.doc.participants[0].monthly_rate).toBe(220_000)
+    expect(result.doc.participants[0].fork_min).toBe(200_000)
+    expect(result.doc.participants[0].fork_max).toBe(300_000)
   })
 
-  it('fork_min > fork_max — жёсткий отказ', () => {
+  it('fork_min > fork_max — жёсткий отказ (валидация вилки, когда вилка задана)', () => {
     const result = upsertParticipant(doc(), { ...participant, forkMin: 300_000, forkMax: 200_000 })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('вилк')
   })
 
-  it('ставка вне вилки — мягкое предупреждение, сохранить можно (сценарий 8)', () => {
-    const above = ok(upsertParticipant(doc(), { ...participant, monthlyRate: 500_000 }))
-    expect(above.warnings).toHaveLength(1)
-    expect(above.warnings[0]).toContain('вилк')
-    expect(above.doc.participants[1].monthly_rate).toBe(500_000)
-
-    const below = ok(upsertParticipant(doc(), { ...participant, monthlyRate: 1_000 }))
-    expect(below.warnings).toHaveLength(1)
-  })
-
-  it('требует email, имя и роль', () => {
+  it('требует email и имя — роль больше не обязательна', () => {
     expect(upsertParticipant(doc(), { ...participant, email: '' }).ok).toBe(false)
     expect(upsertParticipant(doc(), { ...participant, email: 'not-an-email' }).ok).toBe(false)
     expect(upsertParticipant(doc(), { ...participant, name: '  ' }).ok).toBe(false)
-    expect(upsertParticipant(doc(), { ...participant, role: '' }).ok).toBe(false)
+    expect(upsertParticipant(doc(), { ...participant, role: null }).ok).toBe(true)
   })
 
-  it('отклоняет отрицательные деньги и неизвестный грейд', () => {
+  it('отклоняет отрицательные границы вилки и неизвестный грейд', () => {
     expect(upsertParticipant(doc(), { ...participant, forkMin: -1 }).ok).toBe(false)
-    expect(upsertParticipant(doc(), { ...participant, monthlyRate: -1 }).ok).toBe(false)
+    expect(upsertParticipant(doc(), { ...participant, forkMax: -1, forkMin: -2 }).ok).toBe(false)
     expect(
       upsertParticipant(doc(), { ...participant, grade: 'IV' as unknown as 'I' }).ok,
     ).toBe(false)
