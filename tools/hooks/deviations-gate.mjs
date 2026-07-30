@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs'
 
 import { extractLastAssistantText, isTerminalReport } from './completion-report-gate.mjs'
-import { isDirectRun, readHookPayload } from './shared.mjs'
+import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
 /** Маркер stage 7. Регистронезависимо, с допуском пробела перед двоеточием;
  * markdown-выделение (`**Отклонения от конвенций:**`) содержит тот же токен.
@@ -59,6 +59,7 @@ export function decideBlock({ stopHookActive, lastAssistantText }) {
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     if (payload.stop_hook_active) process.exit(0)
     if (!payload.transcript_path) process.exit(0)

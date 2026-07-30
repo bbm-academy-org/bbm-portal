@@ -15,7 +15,7 @@
 // Контракт: stdin — JSON PreToolUse ({tool_name:"Agent", tool_input}). exit 2 +
 // stderr = BLOCK. exit 0 = разрешено. FAIL-OPEN: сломанный stdin → exit 0.
 
-import { isDirectRun, readHookPayload } from './shared.mjs'
+import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
 /** Fable оркеструет, но никогда не исполняет как субагент. */
 export const FORBIDDEN_MODEL_RE = /fable/i
@@ -68,6 +68,7 @@ export function decideAgentModel({ toolName, toolInput }) {
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const decision = decideAgentModel({
       toolName: payload.tool_name,

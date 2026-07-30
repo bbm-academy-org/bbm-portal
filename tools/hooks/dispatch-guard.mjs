@@ -23,6 +23,7 @@
 import {
   DISPATCH_STATE_DIR_REL,
   emitWarn,
+  hooksDisabled,
   inWorktree,
   isDirectRun,
   mainRepoRoot,
@@ -95,6 +96,7 @@ export function decideDispatch({
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const cwd = payload.cwd || ''
     const projectDir = mainRepoRoot(cwd)

@@ -24,6 +24,7 @@ import {
   FRESH_WINDOW_MS,
   MAIN_TREE_STATE_DIR_REL,
   emitWarn,
+  hooksDisabled,
   inWorktree,
   isAbsolutePath,
   isDirectRun,
@@ -115,6 +116,7 @@ export function decideWriteWarn({
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const tool = payload.tool_name || ''
     if (!/^(Edit|Write|MultiEdit)$/.test(tool)) process.exit(0)

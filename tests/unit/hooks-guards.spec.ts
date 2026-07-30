@@ -128,14 +128,14 @@ describe('merge-gate', () => {
 })
 
 /** Прогон хука как процесса: возвращает код выхода. */
-function runHook(hook: string, input: string) {
+function runHook(hook: string, input: string, extraEnv: Record<string, string> = {}) {
   const res = spawnSync(process.execPath, [resolve(HOOKS_DIR, hook)], {
     input,
     encoding: 'utf8',
     // Временный каталог: `session-flag-writer` резолвит корень репо от cwd, и вне
     // git-дерева он не трогает состояние настоящего чекаута.
     cwd: tmpdir(),
-    env: { ...process.env, CLAUDE_PROJECT_DIR: '' },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: '', ...extraEnv },
   })
   return { status: res.status, stderr: res.stderr ?? '' }
 }
@@ -185,6 +185,15 @@ describe('блокирующие хуки как процессы', () => {
     )
     expect(blocked.status).toBe(2)
     expect(blocked.stderr).toContain('BLOCKED')
+  })
+
+  it('рубильник BBM_HOOKS_DISABLE=1 снимает блок', () => {
+    const payload = JSON.stringify({
+      tool_name: 'Agent',
+      tool_input: { subagent_type: 'general-purpose' },
+    })
+    expect(runHook('agent-model-guard.mjs', payload).status).toBe(2)
+    expect(runHook('agent-model-guard.mjs', payload, { BBM_HOOKS_DISABLE: '1' }).status).toBe(0)
   })
 
   it('secret-echo-guard возвращает 2 на чтении .env в вывод', () => {

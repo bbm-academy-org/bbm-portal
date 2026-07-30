@@ -22,6 +22,7 @@ import {
   FRESH_WINDOW_MS,
   MAIN_TREE_STATE_DIR_REL,
   emitWarn,
+  hooksDisabled,
   inWorktree,
   isDirectRun,
   isUnder,
@@ -88,17 +89,28 @@ export function decideWarn({
   return { warn: true, liveCount: live.length }
 }
 
+/** Дроссель полного предупреждения (ревью PR #99): после первой записи в общее
+ * дерево гард иначе предупреждал бы на КАЖДОЕ чтение — главный источник
+ * warn-fatigue во всём стеке. Одно предупреждение не чаще, чем раз в это окно. */
+export const WARN_THROTTLE_MS = 5 * 60 * 1000
+
 /**
  * Наложение carve-out'а на вердикт `decideWarn()`:
  * - условия не выполнены → `silent`;
- * - запись в основное дерево уже была → `warn` (полное предупреждение);
+ * - запись в основное дерево уже была → `warn`, но не чаще WARN_THROTTLE_MS
+ *   (иначе `silent`); при выдаче возвращается `setWarnedAt` для сохранения;
  * - уведомление ещё не показано → `notice` (один раз);
  * - иначе → `silent`.
  */
-export function decideReadAction({ warnDecision, state }) {
+export function decideReadAction({ warnDecision, state, nowMs, throttleMs = WARN_THROTTLE_MS }) {
   if (!warnDecision || !warnDecision.warn) return { action: 'silent' }
   const s = state || {}
-  if (s.mainTreeWriteSeen) return { action: 'warn', liveCount: warnDecision.liveCount }
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now()
+  if (s.mainTreeWriteSeen) {
+    const last = Number.isFinite(s.warnedAtMs) ? s.warnedAtMs : -Infinity
+    if (now - last < throttleMs) return { action: 'silent' }
+    return { action: 'warn', liveCount: warnDecision.liveCount, setWarnedAt: now }
+  }
   if (!s.noticeShown) {
     return { action: 'notice', liveCount: warnDecision.liveCount, setNoticeShown: true }
   }
@@ -107,6 +119,7 @@ export function decideReadAction({ warnDecision, state }) {
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const cwd = payload.cwd || ''
     const projectDir = mainRepoRoot(cwd)
@@ -122,7 +135,7 @@ function main() {
     })
     const statePath = stateFilePath(projectDir, MAIN_TREE_STATE_DIR_REL, payload.session_id || '')
     const state = readState(statePath)
-    const action = decideReadAction({ warnDecision: decision, state })
+    const action = decideReadAction({ warnDecision: decision, state, nowMs: Date.now() })
     if (action.action === 'warn' || action.action === 'notice') {
       emitWarn(
         action.action === 'warn'
@@ -130,6 +143,7 @@ function main() {
           : softenedNoticeMessage(action.liveCount),
       )
       if (action.setNoticeShown) writeState(statePath, { ...state, noticeShown: true })
+      if (action.setWarnedAt) writeState(statePath, { ...state, warnedAtMs: action.setWarnedAt })
     }
     process.exit(0)
   } catch {

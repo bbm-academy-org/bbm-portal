@@ -159,18 +159,33 @@ export function writeState(path, state, deps = {}) {
   }
 }
 
-/** PreToolUse-предупреждение: exit 0 + systemMessage, вызов разрешён. */
+/**
+ * PreToolUse-предупреждение: только `systemMessage`, БЕЗ `hookSpecificOutput`.
+ *
+ * `permissionDecision: "allow"` — это не «промолчать», а активное разрешение
+ * вызова в обход обычного разрешительного потока владельца: WARN-гард на
+ * `gh pr merge` или на третьей правке лида преавторизовал бы ровно тот вызов,
+ * который он же пометил как подозрительный. Нейтральное значение называется
+ * `"defer"` и по справочнику эквивалентно «exit 0 без вывода», поэтому блок
+ * решения тут не нужен вовсе — предупреждение доходит через `systemMessage`,
+ * а разрешение остаётся за владельцем. Форма закреплена тестом (ревью PR #99).
+ */
 export function emitWarn(message) {
-  process.stdout.write(
-    JSON.stringify({
-      systemMessage: message,
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-        permissionDecisionReason: message,
-      },
-    }),
-  )
+  process.stdout.write(JSON.stringify({ systemMessage: message }))
+}
+
+/** Env-переменная общего рубильника: выключает ВЕСЬ стек хуков. */
+export const HOOKS_DISABLE_ENV = 'BBM_HOOKS_DISABLE'
+
+/**
+ * Общий рубильник (ревью PR #99): `.claude/settings.json` закоммичен, то есть
+ * стек включается у владельца сам и меняет поведение его сессий, а три хука
+ * жёстко блокируют. Один env-выключатель уважают все девять хуков — это выход
+ * из положения, когда гард ошибается, а чинить его прямо сейчас некогда.
+ */
+export function hooksDisabled(env = process.env) {
+  const v = env && env[HOOKS_DISABLE_ENV]
+  return v === '1' || v === 'true' || v === 'yes'
 }
 
 /** Payload хука со stdin; любая ошибка разбора — забота вызывающего main(). */

@@ -15,7 +15,7 @@
 // Контракт: stdin — JSON PreToolUse ({tool_name:"Bash", tool_input:{command}}).
 // WARN = exit 0 + JSON на stdout. Никогда не блокирует. FAIL-OPEN.
 
-import { emitWarn, isDirectRun, readHookPayload } from './shared.mjs'
+import { emitWarn, hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
 /** `gh pr merge` в любом месте команды (в т.ч. после `&&`, с флагами перед). */
 export const MERGE_CMD_RE = /\bgh\b[^\n;|&]*?\bpr\s+merge\b/i
@@ -38,6 +38,7 @@ export function decideMergeWarn({ toolName, toolInput }) {
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const decision = decideMergeWarn({
       toolName: payload.tool_name,

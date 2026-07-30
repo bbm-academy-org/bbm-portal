@@ -26,7 +26,7 @@
 
 import { readFileSync } from 'node:fs'
 
-import { isDirectRun, readHookPayload } from './shared.mjs'
+import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
 /** Маркер stage 6: пункт «Проверить глазами: <URL>». */
 export const EYES_MARKER_RE = /проверить\s+глазами\s*:/i
@@ -56,12 +56,27 @@ export function isCompletionReport(text) {
   return COMPLETION_VERB_RE.test(t) && REF_RE.test(t)
 }
 
-/** Ход, который СПРАШИВАЕТ владельца, — не отчёт о завершении, даже если несёт
- * глаголы и ссылки. Сигнал: последняя непустая строка оканчивается вопросом. */
+/** Сколько непустых строк ещё считается коротким вопросом, а не отчётом. */
+export const DECISION_REQUEST_MAX_LINES = 4
+
+/**
+ * Ход, который СПРАШИВАЕТ владельца, — не отчёт о завершении, даже если несёт
+ * глаголы и ссылки. Сигнал: последняя непустая строка оканчивается вопросом И
+ * ход КОРОТКИЙ.
+ *
+ * Условие длины принципиально (ревью PR #99): пункт 5 формы stage 6 — «вопросы
+ * владельцу», поэтому ПРАВИЛЬНО оформленный финальный отчёт почти всегда
+ * оканчивается строкой с «?». Проверка одной лишь последней строки вырезала
+ * из-под обоих Stop-гейтов ровно каноничную форму — гейт ловил бы только
+ * отчёты, нарушающие форму по последнему пункту. Развёрнутый отчёт (5 пунктов)
+ * длиннее порога и остаётся терминальным; короткий «смержил, закрывать?» —
+ * настоящий вопрос — по-прежнему освобождается.
+ */
 export function isDecisionRequest(text) {
   const t = String(text || '').trim()
   if (!t) return false
   const lines = t.split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length > DECISION_REQUEST_MAX_LINES) return false
   const last = (lines[lines.length - 1] || '').trim()
   return last.replace(/[\s*_`~»"'）)\]]+$/g, '').endsWith('?')
 }
@@ -164,6 +179,7 @@ export function decideBlock({ stopHookActive, lastAssistantText }) {
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     if (payload.stop_hook_active) process.exit(0)
     if (!payload.transcript_path) process.exit(0)

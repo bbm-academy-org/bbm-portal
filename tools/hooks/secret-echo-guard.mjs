@@ -23,7 +23,7 @@
 // Контракт: stdin — JSON PreToolUse ({tool_name:"Bash", tool_input:{command}}).
 // exit 2 + stderr = BLOCK. exit 0 = разрешено. FAIL-OPEN.
 
-import { isDirectRun, readHookPayload } from './shared.mjs'
+import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
 /** Команды, чей аргумент-файл печатается в вывод сессии. */
 export const READER_RE =
@@ -144,6 +144,7 @@ export function decideSecretEcho(command) {
 
 function main() {
   try {
+    if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     if (payload.tool_name !== 'Bash') process.exit(0)
     const decision = decideSecretEcho(payload.tool_input && payload.tool_input.command)

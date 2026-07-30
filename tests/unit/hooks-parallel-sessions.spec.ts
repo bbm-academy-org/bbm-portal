@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 import {
   FLAG_REL,
   FRESH_WINDOW_MS,
+  emitWarn,
+  hooksDisabled,
   inWorktree,
   isUnder,
   liveSessionsFromFlag,
@@ -19,7 +21,11 @@ import {
   isRepoSessionDir,
   liveSessions,
 } from '../../tools/hooks/session-flag-writer.mjs'
-import { decideReadAction, decideWarn } from '../../tools/hooks/main-tree-read-guard.mjs'
+import {
+  WARN_THROTTLE_MS,
+  decideReadAction,
+  decideWarn,
+} from '../../tools/hooks/main-tree-read-guard.mjs'
 import { decideEscapeBlock, decideWriteWarn } from '../../tools/hooks/worktree-path-guard.mjs'
 import {
   DISPATCH_WARN_THRESHOLD,
@@ -130,15 +136,31 @@ describe('main-tree-read-guard', () => {
 
   it('carve-out read-only лида: одно уведомление, потом тишина, после записи — полное предупреждение', () => {
     const warnDecision = { warn: true, liveCount: 2 }
-    expect(decideReadAction({ warnDecision, state: {} })).toEqual({
+    expect(decideReadAction({ warnDecision, state: {}, nowMs: NOW })).toEqual({
       action: 'notice',
       liveCount: 2,
       setNoticeShown: true,
     })
-    expect(decideReadAction({ warnDecision, state: { noticeShown: true } }).action).toBe('silent')
     expect(
-      decideReadAction({ warnDecision, state: { noticeShown: true, mainTreeWriteSeen: true } })
-        .action,
+      decideReadAction({ warnDecision, state: { noticeShown: true }, nowMs: NOW }).action,
+    ).toBe('silent')
+    expect(
+      decideReadAction({
+        warnDecision,
+        state: { noticeShown: true, mainTreeWriteSeen: true },
+        nowMs: NOW,
+      }),
+    ).toMatchObject({ action: 'warn', setWarnedAt: NOW })
+  })
+
+  // Без дросселя гард после первой записи предупреждал бы на КАЖДОЕ чтение —
+  // главный источник warn-fatigue во всём стеке (ревью PR #99).
+  it('после первой записи предупреждает не чаще раза в окно дросселя', () => {
+    const warnDecision = { warn: true, liveCount: 1 }
+    const state = { mainTreeWriteSeen: true, warnedAtMs: NOW }
+    expect(decideReadAction({ warnDecision, state, nowMs: NOW + 1000 }).action).toBe('silent')
+    expect(
+      decideReadAction({ warnDecision, state, nowMs: NOW + WARN_THROTTLE_MS + 1 }).action,
     ).toBe('warn')
   })
 })
@@ -250,6 +272,37 @@ describe('dispatch-guard', () => {
     expect(readStreak({ streak: -3 })).toBe(0)
     expect(readStreak({ streak: 'ой' })).toBe(0)
     expect(readStreak({ streak: 2 })).toBe(2)
+  })
+})
+
+describe('форма вывода WARN и общий рубильник', () => {
+  // Регресс, найденный ревью PR #99: `permissionDecision: "allow"` — это не
+  // «промолчать», а активное разрешение вызова в обход разрешительной системы
+  // владельца. Предупреждающий хук не имеет права выдавать разрешения.
+  it('emitWarn печатает только systemMessage, без решения о разрешении', () => {
+    const chunks: string[] = []
+    const original = process.stdout.write.bind(process.stdout)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(process.stdout as any).write = (chunk: string) => {
+      chunks.push(String(chunk))
+      return true
+    }
+    try {
+      emitWarn('внимание')
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(process.stdout as any).write = original
+    }
+    const payload = JSON.parse(chunks.join(''))
+    expect(payload).toEqual({ systemMessage: 'внимание' })
+    expect(JSON.stringify(payload)).not.toContain('permissionDecision')
+    expect(payload.hookSpecificOutput).toBeUndefined()
+  })
+
+  it('рубильник BBM_HOOKS_DISABLE распознаётся по 1/true/yes', () => {
+    expect(hooksDisabled({ ...process.env, BBM_HOOKS_DISABLE: '1' })).toBe(true)
+    expect(hooksDisabled({ ...process.env, BBM_HOOKS_DISABLE: 'yes' })).toBe(true)
+    expect(hooksDisabled({ ...process.env, BBM_HOOKS_DISABLE: undefined })).toBe(false)
   })
 })
 
