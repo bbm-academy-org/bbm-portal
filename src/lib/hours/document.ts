@@ -379,8 +379,7 @@ export function updatePeriod(
   }
   const warnings = overlapWarnings(doc, input, input.id)
 
-  const datesChanged =
-    existing.date_from !== input.dateFrom || existing.date_to !== input.dateTo
+  const datesChanged = existing.date_from !== input.dateFrom || existing.date_to !== input.dateTo
   const affected = datesChanged
     ? doc.assessments.filter((assessment) => assessment.period_id === input.id)
     : []

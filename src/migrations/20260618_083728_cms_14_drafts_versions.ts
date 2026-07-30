@@ -1,7 +1,7 @@
 import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
 
 export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
-await db.execute(sql`
+  await db.execute(sql`
  CREATE TYPE "public"."enum_public_projects_project_status" AS ENUM('active', 'launching', 'exploring', 'soon');
 CREATE TYPE "public"."enum__public_projects_v_version_maturity" AS ENUM('rich', 'thin', 'soon');
 CREATE TYPE "public"."enum__public_projects_v_version_visibility" AS ENUM('public', 'restricted');
@@ -599,7 +599,7 @@ CREATE INDEX "site_chrome__status_idx" ON "site_chrome" USING btree ("_status");
 }
 
 export async function down({ db, payload, req }: MigrateDownArgs): Promise<void> {
-await db.execute(sql`
+  await db.execute(sql`
  ALTER TABLE "_public_projects_v_version_metrics" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "_public_projects_v" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "_public_projects_v_texts" DISABLE ROW LEVEL SECURITY;

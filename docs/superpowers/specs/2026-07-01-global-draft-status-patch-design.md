@@ -25,10 +25,11 @@ publishedDoc = await payload.findGlobal({
   slug: globalConfig.slug,
   depth: 0,
   locale,
-  select: { updatedAt: true },   // ← срезает _status из ответа
+  select: { updatedAt: true }, // ← срезает _status из ответа
   user,
 })
-if (publishedDoc?._status === 'published') {   // ← _status не выбран → undefined → false
+if (publishedDoc?._status === 'published') {
+  // ← _status не выбран → undefined → false
   hasPublishedDoc = true
 }
 ```

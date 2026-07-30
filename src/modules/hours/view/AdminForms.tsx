@@ -30,11 +30,7 @@ function Feedback({ state }: { state: HoursActionState }) {
     <div>
       {state.message ? (
         <p
-          className={
-            state.status === 'error'
-              ? 'hours-notice hours-notice--error'
-              : 'hours-notice'
-          }
+          className={state.status === 'error' ? 'hours-notice hours-notice--error' : 'hours-notice'}
         >
           {state.message}
         </p>
@@ -280,11 +276,7 @@ export function PeriodRowActions({
       <div className="hours-actions">
         <form action={statusAction} className="hours-inline-form">
           <input type="hidden" name="periodId" value={period.id} />
-          <input
-            type="hidden"
-            name="status"
-            value={period.status === 'open' ? 'closed' : 'open'}
-          />
+          <input type="hidden" name="status" value={period.status === 'open' ? 'closed' : 'open'} />
           <button type="submit" className="hours-btn hours-btn--ghost" disabled={statusPending}>
             {period.status === 'open' ? 'Закрыть' : 'Открыть'}
           </button>
@@ -334,10 +326,9 @@ export function PeriodRowActions({
             «ставку пересчитаем и сохраним» в одной фразе читалось наоборот. */}
         {hasAssessments ? (
           <p className="hours-note" id={noticeId}>
-            По периоду уже есть оценки. Месячная ставка на момент декларации у каждой
-            сохранится, а часовая ставка, начисление, сплит и число будней сразу
-            пересчитаются по новым датам. Удалить период с оценками из админки нельзя:
-            удаляет владелец в JSON.
+            По периоду уже есть оценки. Месячная ставка на момент декларации у каждой сохранится, а
+            часовая ставка, начисление, сплит и число будней сразу пересчитаются по новым датам.
+            Удалить период с оценками из админки нельзя: удаляет владелец в JSON.
           </p>
         ) : null}
         <div className="hours-actions">

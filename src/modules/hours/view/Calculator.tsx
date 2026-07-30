@@ -171,7 +171,11 @@ export function Calculator(props: CalculatorProps) {
         <>
           {formatHours(periodHours)}
           {NBSP}ч + {formatHours(weekendHours)}
-          {NBSP}ч в выходные = <b>{formatHours(hours)}{NBSP}ч</b>
+          {NBSP}ч в выходные ={' '}
+          <b>
+            {formatHours(hours)}
+            {NBSP}ч
+          </b>
         </>
       ) : null
   } else if (method === 'week') {
@@ -180,7 +184,11 @@ export function Calculator(props: CalculatorProps) {
       <>
         {formatHours(weekHours)}
         {NBSP}ч/нед × {formatWeeks(calendar.weekMultiplier)} недель ({calendar.weekdayCount} будних
-        дней ÷ 5) = <b>{formatHours(hours)}{NBSP}ч</b>
+        дней ÷ 5) ={' '}
+        <b>
+          {formatHours(hours)}
+          {NBSP}ч
+        </b>
       </>
     )
   } else {
@@ -191,7 +199,10 @@ export function Calculator(props: CalculatorProps) {
         {formatHours(dayHours)}
         {NBSP}ч × {calendar.dayMultiplier} будн. дн.
         {weekendHours > 0 ? ` + ${formatHours(weekendHours)}${NBSP}ч в выходные` : ''} ={' '}
-        <b>{formatHours(hours)}{NBSP}ч</b>
+        <b>
+          {formatHours(hours)}
+          {NBSP}ч
+        </b>
       </>
     )
   }

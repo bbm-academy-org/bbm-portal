@@ -39,7 +39,11 @@ function error(message: string): HoursActionState {
   return { status: 'error', message, warnings: [], saved: null }
 }
 
-function success(message: string, warnings: string[], saved: Assessment | null = null): HoursActionState {
+function success(
+  message: string,
+  warnings: string[],
+  saved: Assessment | null = null,
+): HoursActionState {
   return { status: 'ok', message, warnings, saved }
 }
 
@@ -113,9 +117,7 @@ function toState<T>(
   return success(okMessage, result.warnings, saved(result.saved))
 }
 
-async function guarded(
-  run: () => Promise<HoursActionState>,
-): Promise<HoursActionState> {
+async function guarded(run: () => Promise<HoursActionState>): Promise<HoursActionState> {
   try {
     return await run()
   } catch (cause) {

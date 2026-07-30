@@ -54,7 +54,10 @@ const PREVIEW_BASE_URL = stripTrailingSlash(
  * no preview surface (which disables the preview pane for that global — Payload's
  * documented way to conditionally render Live Preview).
  */
-export function previewUrlForGlobal(slug: string, baseUrl: string = PREVIEW_BASE_URL): string | null {
+export function previewUrlForGlobal(
+  slug: string,
+  baseUrl: string = PREVIEW_BASE_URL,
+): string | null {
   const type = (PAGE_PREVIEW_TYPES as Record<string, string>)[slug]
   if (!type) return null
   return `${stripTrailingSlash(baseUrl)}/preview/${type}/${slug}`

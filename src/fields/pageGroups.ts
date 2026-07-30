@@ -173,7 +173,11 @@ export const contour: Field = {
     text('eyebrow'),
     text('title'),
     contourSide,
-    { name: 'internal', type: 'group', fields: [text('kicker'), text('title'), stringList('items')] },
+    {
+      name: 'internal',
+      type: 'group',
+      fields: [text('kicker'), text('title'), stringList('items')],
+    },
     text('boundary'),
   ],
 }
@@ -269,7 +273,11 @@ export const participate: Field = {
   fields: [
     // `slug` is surfaced as `id` by the groupAnchorId hooks (Payload drops a
     // field literally named `id` inside a group).
-    { name: 'roles', type: 'group', fields: [slugField('slug'), text('eyebrow'), text('title'), text('lead')] },
+    {
+      name: 'roles',
+      type: 'group',
+      fields: [slugField('slug'), text('eyebrow'), text('title'), text('lead')],
+    },
     {
       name: 'noScript',
       type: 'group',

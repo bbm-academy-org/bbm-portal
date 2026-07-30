@@ -56,8 +56,7 @@ export const maybeRebuildOnPublish = async ({
   req,
   context,
 }: MaybeRebuildArgs): Promise<void> => {
-  const isPublishTransition =
-    doc?._status === 'published' && previousDoc?._status !== 'published'
+  const isPublishTransition = doc?._status === 'published' && previousDoc?._status !== 'published'
 
   // The batch endpoint (next task) sets this to fire a single build itself.
   if (!isPublishTransition || context?.skipSiteDispatch === true) return

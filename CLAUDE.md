@@ -33,6 +33,7 @@ rather than silently hitting the wrong one. Do **not** set `PLANE_SLUG` or
 `default_workspace` to "fix" such an error — name the workspace instead.
 
 **Always target the workspace explicitly:**
+
 - CLI: `plane-pp-cli <cmd> --workspace <slug> …`
 - MCP: pass `workspace: "<slug>"` to `plane_execute`.
 

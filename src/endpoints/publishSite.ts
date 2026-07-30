@@ -144,7 +144,9 @@ const promoteSurfaces = async (req: PayloadRequest): Promise<PublishedSurface[]>
  * The endpoint handler — exported standalone for unit testing (the issue's
  * acceptance asserts against it directly via the getPayload harness).
  */
-export const publishSiteHandler: PayloadHandler = async (req: PayloadRequest): Promise<Response> => {
+export const publishSiteHandler: PayloadHandler = async (
+  req: PayloadRequest,
+): Promise<Response> => {
   // Admin-only. Same convention as Leads: `Boolean(req.user)`. Users is the
   // only auth collection, so any authenticated user is staff.
   if (!req.user) {

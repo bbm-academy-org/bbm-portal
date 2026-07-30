@@ -41,8 +41,8 @@ owner verifies on the dev stand.
      future portal host (P3).
    - Host matching normalizes the header (lowercase, strip port, strip a
      trailing-dot FQDN — the PR #64 bypass, preserved as a known pitfall).
-   Topology decides *what is routable on this host*; the OIDC gate (req. 2)
-   then decides *who may see it* — two independent layers.
+     Topology decides _what is routable on this host_; the OIDC gate (req. 2)
+     then decides _who may see it_ — two independent layers.
 
 4. **OIDC mechanics — RESOLVED (owner decision 2026-07-24).** Auth is an
    **in-app OIDC session (Auth.js / next-auth in-app BFF)**, not an
@@ -55,8 +55,8 @@ owner verifies on the dev stand.
    - matches the estate's `ds-platform` BFF pattern the P2a stand was ported
      from (PR #71 callback convention `…/auth/callback` is already the BFF
      shape).
-   Payload native auth (users collection) stays admin-only for CMS editors,
-   unchanged.
+     Payload native auth (users collection) stays admin-only for CMS editors,
+     unchanged.
 
 5. **Env contract (dev).** The app reads OIDC config from repo-root `.env`
    (values live on the box, non-secret client-id may be committed to
@@ -68,8 +68,8 @@ owner verifies on the dev stand.
      owner's Windows machine; localhost even on the truenas.local recipe). If a
      different callback route is wired, `provision.sh` is re-run with the new
      URI.
-   Prod values (`id.bbm.academy` issuer + a new prod Zitadel client) arrive in
-   **P3 / #60** — out of scope here.
+     Prod values (`id.bbm.academy` issuer + a new prod Zitadel client) arrive in
+     **P3 / #60** — out of scope here.
 
 6. **Constraints.** ADR-003 host/surface topology and ADR-002 module boundaries
    hold through the re-mount: the dependency-cruiser rule isolating

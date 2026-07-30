@@ -34,13 +34,7 @@ export {
 } from './formula'
 export type { PeriodCalendar, PeriodMonthBreakdown } from './formula'
 
-export {
-  isHoursAdmin,
-  isOwnEmail,
-  normalizeEmail,
-  parseAdminEmails,
-  sessionEmail,
-} from './access'
+export { isHoursAdmin, isOwnEmail, normalizeEmail, parseAdminEmails, sessionEmail } from './access'
 export type { HoursSessionLike } from './access'
 
 export {

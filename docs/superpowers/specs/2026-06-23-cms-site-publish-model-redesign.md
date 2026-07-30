@@ -11,11 +11,11 @@ Two controls both read like "publish", and one of them silently lies:
 - **In-page "Publish changes"** (Payload-native, in each document editor) promotes
   draft → published **inside the CMS only**. It does NOT rebuild the live static
   site, so editors who expect it to "go live" are wrong — the site stays behind.
-- **Dashboard "Publish to site"** (`PublishPanel`) is currently the *only* thing
+- **Dashboard "Publish to site"** (`PublishPanel`) is currently the _only_ thing
   that triggers the static `bbm.academy` rebuild.
 
 Compounding it, the dashboard panel reports **draft state, not site↔CMS drift**:
-after a native publish it shows *"No unpublished drafts"* even though the live
+after a native publish it shows _"No unpublished drafts"_ even though the live
 site is still behind — a contradiction the owner flagged. The root cause is the
 **publication model**, not the label on one button.
 
@@ -24,8 +24,8 @@ site is still behind — a contradiction the owner flagged. The root cause is th
 1. **No button lies.** Every "publish" affordance results in the change actually
    reaching the live site. The remaining difference between the two entry points
    is **scope** (this one page vs. everything staged), never "live vs. not live".
-2. **Honest, current drift indicator** on the dashboard: compare the real *last
-   published-content time* against the real *last successful site build*, and say
+2. **Honest, current drift indicator** on the dashboard: compare the real _last
+   published-content time_ against the real _last successful site build_, and say
    plainly whether the live site matches the CMS — kept fresh without a manual
    reload.
 3. **Hide actions that have nothing to do.** The dashboard publish button appears
@@ -34,8 +34,8 @@ site is still behind — a contradiction the owner flagged. The root cause is th
 
 ## Non-goals (out of scope for v1)
 
-- **Debounce / coalescing of rebuilds.** Batching is done *manually and
-  explicitly* by the editor (stage as drafts → one dashboard publish). Automatic
+- **Debounce / coalescing of rebuilds.** Batching is done _manually and
+  explicitly_ by the editor (stage as drafts → one dashboard publish). Automatic
   time-window coalescing is a deferred optimization, filed separately only if
   editors actually hit rebuild churn.
 - Reworking the GitHub Actions build itself, or the live-preview pipeline.
@@ -76,23 +76,23 @@ There is no longer a button that silently fails to publish.
 
 ### Dashboard action button states
 
-| Condition | Button |
-|---|---|
-| `pendingCount > 0` | **"Опубликовать N изменений на сайт"** (primary) — batch publish + 1 rebuild |
-| `pendingCount == 0` and site **behind** (`!inSync`) | **"Пересобрать сайт"** (secondary) — manual re-push |
-| `pendingCount == 0` and **in sync**, not building | *(hidden — status only)* |
-| a run is active (`building`) | *(hidden / disabled while "Building…" status shows)* |
+| Condition                                           | Button                                                                       |
+| --------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `pendingCount > 0`                                  | **"Опубликовать N изменений на сайт"** (primary) — batch publish + 1 rebuild |
+| `pendingCount == 0` and site **behind** (`!inSync`) | **"Пересобрать сайт"** (secondary) — manual re-push                          |
+| `pendingCount == 0` and **in sync**, not building   | _(hidden — status only)_                                                     |
+| a run is active (`building`)                        | _(hidden / disabled while "Building…" status shows)_                         |
 
 ## Architecture
 
 ### Components
 
-1. **`SiteBuildState` global** *(new — requires a migration)*. A versionless,
+1. **`SiteBuildState` global** _(new — requires a migration)_. A versionless,
    drafts-disabled global holding the publish-side truth:
    - `lastPublishedAt: Date | null` — set on every real draft→published transition
      (in-page hook) and by the batch endpoint.
-   - `lastDispatchAt: Date | null` *(optional)* — when a rebuild was last fired.
-   - `lastDispatchError: string | null` *(optional)* — last best-effort dispatch
+   - `lastDispatchAt: Date | null` _(optional)_ — when a rebuild was last fired.
+   - `lastDispatchError: string | null` _(optional)_ — last best-effort dispatch
      failure, surfaced in the "behind" state.
 
    Being drafts-disabled, writing to it does **not** itself trigger the publish
@@ -127,6 +127,7 @@ There is no longer a button that silently fails to publish.
 
 4. **`GET /api/site-sync-status` (new consolidated read).** One fetch that powers
    the whole panel, so it is always current:
+
    ```
    {
      pendingCount: number,                 // from the drafts-derived surfaces
@@ -137,6 +138,7 @@ There is no longer a button that silently fails to publish.
      building: boolean
    }
    ```
+
    `inSync` is true when there is a successful build at least as new as the last
    publish (or when nothing has ever been published). Reuses `siteDispatch.ts`
    credentials/repo. `lastSuccessfulBuildAt` comes from the GitHub runs API
@@ -163,6 +165,7 @@ There is no longer a button that silently fails to publish.
 ### Data flow
 
 **Single-page publish (in-page button):**
+
 ```
 editor clicks native "Publish changes"
   → payload.update(_status: published)
@@ -173,6 +176,7 @@ editor clicks native "Publish changes"
 ```
 
 **Multi-page batch (dashboard button):**
+
 ```
 editor stages pages A,B,C as drafts (no in-page publish)
   → dashboard "Опубликовать 3 изменения" → POST /api/publish-site
@@ -183,6 +187,7 @@ editor stages pages A,B,C as drafts (no in-page publish)
 ```
 
 **Failed / still-queued build (drift):**
+
 ```
 publish happened, lastPublishedAt = t1
   → build dispatch failed OR run still queued/failed

@@ -33,6 +33,7 @@ All commands below run **from the `deploy/` directory on the host**.
    ```
 3. **The env files.** Two gitignored files, on the host only — split so the
    postgres container never receives the app's Payload/S3/seed secrets:
+
    ```bash
    cp .env.prod.example .env.prod          # app + migrate
    # edit: PAYLOAD_SECRET (openssl rand -hex 32), DATABASE_URL,
@@ -46,6 +47,7 @@ All commands below run **from the `deploy/` directory on the host**.
    # edit: PAYLOAD_PREVIEW_TOKEN — a Users API key as the full Authorization
    #       header value `users API-Key <key>` (see Preview service below).
    ```
+
    `DATABASE_URL` host is the compose service name `postgres`, not localhost.
 
 4. **The code on the host.** Org policy disables repo deploy keys, so the box
@@ -155,65 +157,74 @@ the Payload admin can embed it. DNS `preview.bbm.academy → 201.51.28.190` alre
 resolves, so Caddy auto-provisions the cert on first start.
 
 **1. Issue the preview token (one-time):** use a **dedicated** `preview@bbm.academy`
-   user (not a human admin's account) and give it a **self-chosen** API key.
-   Payload **hides `apiKey` on REST reads**, so an auto-generated key cannot be
-   read back out — PATCH the user with a key you generate, and use that value:
-   ```bash
-   KEY=$(openssl rand -hex 32)
-   # Authenticated as an admin (cookie/JWT), PATCH the dedicated preview user:
-   curl -sS -X PATCH "https://cms.bbm.academy/api/users/<preview-user-id>" \
-     -H 'Content-Type: application/json' -H "Authorization: JWT <admin-jwt>" \
-     -d "{\"enableAPIKey\":true,\"apiKey\":\"$KEY\"}"
-   ```
-   Then put it in `.env.preview` as the FULL Authorization header value — scheme
-   included, the scheme is the collection slug `users`:
-   ```
-   PAYLOAD_PREVIEW_TOKEN=users API-Key <the-self-chosen-KEY>
-   ```
-   Leave it **unquoted** — compose passes the value verbatim, so wrapping it in
-   quotes makes them part of the header and Payload 401s. The spaces are fine.
-   - This needs `useAPIKey: true` on the Users collection (shipped) **and** the
-     migration that adds the api-key columns applied (see _Shipping an update_) —
-     without the migration, key auth 401s on prod.
+user (not a human admin's account) and give it a **self-chosen** API key.
+Payload **hides `apiKey` on REST reads**, so an auto-generated key cannot be
+read back out — PATCH the user with a key you generate, and use that value:
+
+```bash
+KEY=$(openssl rand -hex 32)
+# Authenticated as an admin (cookie/JWT), PATCH the dedicated preview user:
+curl -sS -X PATCH "https://cms.bbm.academy/api/users/<preview-user-id>" \
+  -H 'Content-Type: application/json' -H "Authorization: JWT <admin-jwt>" \
+  -d "{\"enableAPIKey\":true,\"apiKey\":\"$KEY\"}"
+```
+
+Then put it in `.env.preview` as the FULL Authorization header value — scheme
+included, the scheme is the collection slug `users`:
+
+```
+PAYLOAD_PREVIEW_TOKEN=users API-Key <the-self-chosen-KEY>
+```
+
+Leave it **unquoted** — compose passes the value verbatim, so wrapping it in
+quotes makes them part of the header and Payload 401s. The spaces are fine.
+
+- This needs `useAPIKey: true` on the Users collection (shipped) **and** the
+  migration that adds the api-key columns applied (see _Shipping an update_) —
+  without the migration, key auth 401s on prod.
 
 **2. Make the GHCR package public (one-time) — the host then pulls anonymously,
-   no registry credential on the box.** This is the chosen path; the image is
-   non-secret code. Two facts forced it:
-   - A **GitHub App installation token cannot pull a private, repo-inherited GHCR
-     package** — it 404s even with `packages:read` and the correct installation
-     scope (a GitHub limitation). So the "clean private, no host cred" path is
-     not viable here.
-   - The org had **both Public and Internal package visibility disabled** by
-     policy, so the package could not be made public until that was lifted.
+no registry credential on the box.** This is the chosen path; the image is
+non-secret code. Two facts forced it:
 
-   Resolution (one-time, done): enable **Public** package visibility at the org
-   level (`https://github.com/organizations/bbm-academy-org/settings/packages` —
-   a capability toggle, **not** a mass-publish), then set visibility on **only**
-   `bbm-site-preview` to Public. The host now pulls with a plain
-   `docker compose pull preview` — no `docker login`, no PAT.
+- A **GitHub App installation token cannot pull a private, repo-inherited GHCR
+  package** — it 404s even with `packages:read` and the correct installation
+  scope (a GitHub limitation). So the "clean private, no host cred" path is
+  not viable here.
+- The org had **both Public and Internal package visibility disabled** by
+  policy, so the package could not be made public until that was lifted.
+
+Resolution (one-time, done): enable **Public** package visibility at the org
+level (`https://github.com/organizations/bbm-academy-org/settings/packages` —
+a capability toggle, **not** a mass-publish), then set visibility on **only**
+`bbm-site-preview` to Public. The host now pulls with a plain
+`docker compose pull preview` — no `docker login`, no PAT.
 
    <details><summary>Fallback: keep the package private</summary>
 
-   Only if the package must stay private — log the host in once with a PAT that
-   has `read:packages` (a personal-account credential lives on the box, which is
-   what we avoided):
-   ```bash
-   echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
-   ```
+Only if the package must stay private — log the host in once with a PAT that
+has `read:packages` (a personal-account credential lives on the box, which is
+what we avoided):
+
+```bash
+echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
+```
+
    </details>
 
 **3. Pull + start it, then restart Caddy for the new vhost:**
-   ```bash
-   cd deploy
-   docker compose -f docker-compose.prod.yml pull preview
-   docker compose -f docker-compose.prod.yml up -d preview
-   # The new preview.bbm.academy vhost was already added to the Caddyfile. Caddy
-   # needs a RESTART to load it — `up -d caddy` won't recreate the container for a
-   # bind-mounted config change, and `caddy reload` reports "config is unchanged".
-   docker compose -f docker-compose.prod.yml restart caddy
-   curl -fsS -o /dev/null https://preview.bbm.academy/ && echo "preview reachable"
-   docker compose -f docker-compose.prod.yml logs -f caddy   # watch cert issuance
-   ```
+
+```bash
+cd deploy
+docker compose -f docker-compose.prod.yml pull preview
+docker compose -f docker-compose.prod.yml up -d preview
+# The new preview.bbm.academy vhost was already added to the Caddyfile. Caddy
+# needs a RESTART to load it — `up -d caddy` won't recreate the container for a
+# bind-mounted config change, and `caddy reload` reports "config is unchanged".
+docker compose -f docker-compose.prod.yml restart caddy
+curl -fsS -o /dev/null https://preview.bbm.academy/ && echo "preview reachable"
+docker compose -f docker-compose.prod.yml logs -f caddy   # watch cert issuance
+```
 
 **Updating the preview image** (when the site repo ships a new build): re-pull and
 re-create just that container — `docker compose -f docker-compose.prod.yml pull

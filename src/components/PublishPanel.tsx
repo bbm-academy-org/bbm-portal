@@ -218,10 +218,7 @@ export const PublishPanel: React.FC = () => {
     // earlier timer (e.g. one whose `pollStatus` was just superseded) can never be
     // overwritten-and-leaked into a second concurrent chain.
     if (pollRef.current) clearTimeout(pollRef.current)
-    pollRef.current = setTimeout(
-      () => pollFnRef.current(),
-      building ? FAST_POLL_MS : SLOW_POLL_MS,
-    )
+    pollRef.current = setTimeout(() => pollFnRef.current(), building ? FAST_POLL_MS : SLOW_POLL_MS)
   }, [])
 
   const pollStatus = useCallback(async () => {
@@ -431,19 +428,17 @@ export const PublishPanel: React.FC = () => {
               </a>
             ) : null}
           </Banner>
-        ) : (
-          // syncState === 'in-sync'. #50: the green "matches CMS" banner is HONEST
-          // only with no staged drafts. `syncState` is published-vs-built and
-          // deliberately ignores unpublished drafts (siteSyncStatus.ts), so once
-          // pendingCount > 0 the CMS holds changes the live site does not reflect
-          // — the green banner would over-claim and contradict the pending list
-          // below. Suppress it; the pending list + batch publish button is the
-          // message. (data-status stays "in-sync": the published content is live.)
-          sync.pendingCount > 0 ? null : (
-            <Banner type="success">
-              ✅ Сайт совпадает с CMS (собрано {formatTime(sync.lastSuccessfulBuildAt)}).
-            </Banner>
-          )
+        ) : // syncState === 'in-sync'. #50: the green "matches CMS" banner is HONEST
+        // only with no staged drafts. `syncState` is published-vs-built and
+        // deliberately ignores unpublished drafts (siteSyncStatus.ts), so once
+        // pendingCount > 0 the CMS holds changes the live site does not reflect
+        // — the green banner would over-claim and contradict the pending list
+        // below. Suppress it; the pending list + batch publish button is the
+        // message. (data-status stays "in-sync": the published content is live.)
+        sync.pendingCount > 0 ? null : (
+          <Banner type="success">
+            ✅ Сайт совпадает с CMS (собрано {formatTime(sync.lastSuccessfulBuildAt)}).
+          </Banner>
         )}
       </section>
 

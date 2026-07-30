@@ -89,8 +89,7 @@ export default async function HoursPage({
         }))
     : []
 
-  const existing =
-    openPeriod && email ? (findAssessment(doc, openPeriod.id, email) ?? null) : null
+  const existing = openPeriod && email ? (findAssessment(doc, openPeriod.id, email) ?? null) : null
   const calendar = openPeriod ? describePeriod(openPeriod.date_from, openPeriod.date_to) : null
 
   // Ставка вычисляется из вилки и грейда (решение владельца 2026-07-30);
@@ -193,8 +192,8 @@ export default async function HoursPage({
             <li>
               <span className="hours-tl__when">3-е число</span>
               <p>
-                Выплата денежной части; оставленное в проекте увеличивает твою долю
-                (учитывается в 4X по номиналу).
+                Выплата денежной части; оставленное в проекте увеличивает твою долю (учитывается в
+                4X по номиналу).
               </p>
             </li>
           </ul>

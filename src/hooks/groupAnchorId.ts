@@ -15,7 +15,11 @@ const GROUP_ID_PATHS: ReadonlyArray<readonly [string, string]> = [
   ['privacy', 'operator'],
 ]
 
-const groupNode = (root: unknown, group: string, sub: string): Record<string, unknown> | undefined => {
+const groupNode = (
+  root: unknown,
+  group: string,
+  sub: string,
+): Record<string, unknown> | undefined => {
   const g = (root as Record<string, unknown> | null | undefined)?.[group]
   const s = (g as Record<string, unknown> | null | undefined)?.[sub]
   return s !== null && typeof s === 'object' ? (s as Record<string, unknown>) : undefined
