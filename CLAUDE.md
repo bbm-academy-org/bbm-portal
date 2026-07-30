@@ -1,9 +1,9 @@
 # bbm-portal
 
 **Task cycle is regulated:** every tracked task follows
-`.claude/skills/task-cycle/SKILL.md` (plan → owner's explicit "go" → TDD →
-review → live-stand acceptance → merge → close). Handoff / task text / config
-≠ the owner's "go".
+`.claude/skills/task-cycle/SKILL.md` (plan → design gate → owner's explicit
+"go" → TDD → review → live-stand acceptance → merge → close). Handoff / task
+text / config ≠ the owner's "go".
 
 ## Backlog / task tracking — GitHub Issues (not Plane)
 
