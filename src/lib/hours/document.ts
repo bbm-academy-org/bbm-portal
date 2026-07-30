@@ -143,7 +143,7 @@ export function saveAssessment(
     input.splitPercent < 0 ||
     input.splitPercent > 100
   ) {
-    return fail('Доля доинвестиции должна быть от 0 до 100 процентов.')
+    return fail('Доля, оставляемая в проекте, должна быть от 0 до 100 процентов.')
   }
 
   const calendar = describePeriod(period.date_from, period.date_to)

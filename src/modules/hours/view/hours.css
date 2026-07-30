@@ -104,17 +104,23 @@ body:has(.hours-root) {
 .hours-root *::after {
   box-sizing: border-box;
 }
-.hours-root h1,
-.hours-root h2,
-.hours-root h3,
-.hours-root p,
-.hours-root dl,
-.hours-root dd,
-.hours-root ul {
+/* Reset и базовый цвет ссылок — с НУЛЕВОЙ специфичностью (:where), иначе
+   `.hours-root p` (0,1,1) бьёт одноклассовые компонентные правила (0,1,0):
+   так `.hours-notice` терял padding/margin (текст плашек упирался в рамку),
+   а `.hours-root a` красил `.hours-btn` в зелёное-на-зелёном (issue #83). */
+:where(
+  .hours-root h1,
+  .hours-root h2,
+  .hours-root h3,
+  .hours-root p,
+  .hours-root dl,
+  .hours-root dd,
+  .hours-root ul
+) {
   margin: 0;
   padding: 0;
 }
-.hours-root a {
+:where(.hours-root) a {
   color: var(--accent);
 }
 .hours-root :focus-visible {
@@ -192,6 +198,14 @@ body:has(.hours-root) {
 .hours-session b {
   color: var(--ink);
   font-weight: 600;
+}
+/* Имя авторизованного участника под h1 — крупно (issue #83 п.3): оно же
+   подтверждает email-claim на приёмке вместо строки «Вошёл как». */
+.hours-person {
+  font-family: var(--serif);
+  font-size: var(--fs-h3);
+  color: var(--ink);
+  margin-top: 2px;
 }
 
 /* Плашки */

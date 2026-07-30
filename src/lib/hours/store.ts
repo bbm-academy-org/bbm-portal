@@ -59,7 +59,7 @@ function normalizeDocument(raw: unknown): HoursDocument {
       // Документы до 2026-07-30 хранили у участника `monthly_rate`; теперь
       // ставка вычисляется из вилки и грейда. Старое поле молча отбрасывается
       // при чтении (issue #83) — иначе оно бы вечно переписывалось на диск.
-      const { monthly_rate: _legacyRate, ...rest } = (participant ?? {}) as Record<
+      const { monthly_rate: _legacyRate, ...rest } = (participant ?? {}) as unknown as Record<
         string,
         unknown
       > & { monthly_rate?: unknown }

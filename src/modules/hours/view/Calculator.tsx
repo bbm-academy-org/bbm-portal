@@ -289,11 +289,13 @@ export function Calculator(props: CalculatorProps) {
         aria-labelledby="hours-tabbtn-day"
         hidden={method !== 'day'}
       >
+        {/* Потолок ползунка 12 ч/день — только UI (решение владельца
+            2026-07-30); серверный потолок периода остаётся дни × 24. */}
         <SliderRow
           id="hours-day"
           label="Часов в рабочий день"
           value={dayHours}
-          max={16}
+          max={12}
           step={0.5}
           onChange={setDayHours}
         />
@@ -347,7 +349,7 @@ export function Calculator(props: CalculatorProps) {
                 <b>
                   {splitPercent === 0
                     ? '100% деньгами'
-                    : `${formatPercent(100 - splitPercent)} деньгами · ${formatPercent(splitPercent)} в 4X`}
+                    : `${formatPercent(100 - splitPercent)} деньгами · ${formatPercent(splitPercent)} в проекте`}
                 </b>
               </div>
               <div className="hours-slider-row">
@@ -357,7 +359,7 @@ export function Calculator(props: CalculatorProps) {
                   max={100}
                   step={1}
                   value={splitPercent}
-                  aria-label="Доля доинвестиции в 4X, процентов"
+                  aria-label="Доля начисления, оставляемая в проекте, процентов"
                   style={trackStyle(splitPercent, 100)}
                   onChange={(event) => setSplitPercent(Number(event.target.value))}
                 />
@@ -371,9 +373,13 @@ export function Calculator(props: CalculatorProps) {
                   <i className="hours-dot" style={{ background: 'var(--baseline)' }} />
                   Забираю деньгами&nbsp;<b>{formatRub(split.cash)}</b>
                 </span>
+                {/* Ведущая формулировка — «оставляю в проекте» (решение
+                    владельца 2026-07-30); учёт в 4X по номиналу — механика,
+                    она названа в таймлайне внизу страницы. */}
                 <span>
                   <i className="hours-dot" style={{ background: 'var(--seq-3)' }} />
-                  Оставляю доинвестицией в&nbsp;4X&nbsp;<b>{formatRub(split.invest)}</b>
+                  Оставляю в&nbsp;проекте, увеличивая свою долю&nbsp;
+                  <b>{formatRub(split.invest)}</b>
                 </span>
               </div>
             </div>

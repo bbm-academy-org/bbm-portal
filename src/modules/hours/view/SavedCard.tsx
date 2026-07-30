@@ -68,7 +68,7 @@ export function SavedCard({
           </dd>
         </div>
         <div>
-          <dt>Доинвестиция в 4X</dt>
+          <dt>Оставлено в проекте</dt>
           <dd>
             {formatRub(assessment.invest_amount)} ({formatPercent(assessment.split_percent)})
           </dd>

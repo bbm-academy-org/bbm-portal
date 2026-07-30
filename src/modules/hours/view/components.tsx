@@ -10,7 +10,7 @@ import {
   formatWeekdayCount,
   METHOD_LABELS,
 } from '@/lib/hours/format'
-import { effectiveHourlyRate, monthlyHourlyRate } from '@/lib/hours/formula'
+import { effectiveHourlyRate, monthlyHourlyRate, participantMonthlyRate } from '@/lib/hours/formula'
 import type { PeriodCalendar } from '@/lib/hours/formula'
 import type { Assessment, Participant, Period } from '@/lib/hours/types'
 
@@ -73,7 +73,12 @@ export function NoPeriodsNotice() {
   )
 }
 
-/** Список участников: имя, роль, вилка, грейд, ставка (п.19). */
+/**
+ * Список участников: имя, роль, вилка, грейд, ВЫЧИСЛЕННАЯ ставка (п.19).
+ * Ставка не хранится — это `participantMonthlyRate` (решение владельца
+ * 2026-07-30); незаполненные поля показываются прочерком: участник может быть
+ * заведён только с именем и email.
+ */
 export function ParticipantsTable({ participants }: { participants: Participant[] }) {
   if (participants.length === 0) {
     return <p className="hours-notice">Ни одного участника ещё не завели.</p>
@@ -94,12 +99,14 @@ export function ParticipantsTable({ participants }: { participants: Participant[
           {participants.map((participant) => (
             <tr key={participant.email}>
               <td>{participant.name}</td>
-              <td>{participant.role}</td>
+              <td>{participant.role ?? '—'}</td>
               <td className="hours-num">
-                {formatInt(participant.fork_min)} — {formatInt(participant.fork_max)}
+                {participant.fork_min == null && participant.fork_max == null
+                  ? '—'
+                  : `${formatInt(participant.fork_min)} — ${formatInt(participant.fork_max)}`}
               </td>
-              <td>{participant.grade}</td>
-              <td className="hours-num">{formatRub(participant.monthly_rate)}</td>
+              <td>{participant.grade ?? '—'}</td>
+              <td className="hours-num">{formatRub(participantMonthlyRate(participant))}</td>
             </tr>
           ))}
         </tbody>
@@ -202,7 +209,9 @@ export function SummaryTable({ rows }: { rows: SummaryRow[] }) {
             <th scope="col">Способ</th>
             <th scope="col">Начисление</th>
             <th scope="col">Деньгами</th>
-            <th scope="col">В 4X</th>
+            {/* Лексика владельца (issue #83 п.9): оставленное в проекте
+                увеличивает долю участника; 4X — механизм учёта, не витрина. */}
+            <th scope="col">В проекте</th>
             <th scope="col">Сохранена</th>
           </tr>
         </thead>
