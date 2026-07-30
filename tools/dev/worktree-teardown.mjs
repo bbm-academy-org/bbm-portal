@@ -23,13 +23,19 @@
 // A BARE name resolves against the PRIMARY tree's `.claude/worktrees/<name>`, so
 // a teardown fired from inside another worktree targets the right tree.
 //
-// Exit codes: 0 = torn down; 1 = refused (dirty worktree without --force) or the
-// orphan directory could not be purged; 2 = usage error; 3 = the argument names
+// The FIRST thing that runs is the scope gate: the canonicalized target must lie
+// strictly inside `<primary>/.claude/worktrees/`. `.`, the container itself, the
+// primary checkout, and anything outside are refused before a single destructive
+// call — this command deletes task worktrees and nothing else.
+//
+// Exit codes: 0 = torn down; 1 = refused (outside the allowed scope, dirty
+// worktree without --force, unreadable working-tree state, or an orphan
+// directory that could not be purged); 2 = usage error; 3 = the argument names
 // neither a registered worktree nor a directory under `.claude/worktrees/`
 // (fail loud — a typo must never masquerade as a clean teardown).
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,16 +67,61 @@ export function resolveWorktreePath(rawArg, root, exists = existsSync) {
 }
 
 /**
+ * Is the target a path this tool is allowed to destroy at all? THE safety gate —
+ * it runs before every `git worktree remove` and every purge, for registered and
+ * orphan targets alike.
+ *
+ * Without it the tool deletes things it must never touch (review of PR #97):
+ *   - `pnpm worktree:teardown .` resolves to the `.claude/worktrees` CONTAINER,
+ *     whose purge takes out every session's tree at once;
+ *   - the primary checkout's own path makes `git worktree remove` fail with
+ *     "is a main working tree" — a message the error parser does not recognize,
+ *     so control fell through to the purge and the MAIN CHECKOUT was erased.
+ *
+ * Legal targets are therefore STRICTLY INSIDE `<primary>/.claude/worktrees/` and
+ * deeper than the container itself. Both sides are canonicalized through `real`
+ * (realpath) first, so a symlink, a junction, or a Windows 8.3 short name cannot
+ * smuggle a path past the prefix test.
+ *
+ * Returns: "inside" | "primary-tree" | "worktrees-root" | "outside" | "no-root".
+ * Pure + injectable (`real`) so the unit tests drive every branch without a
+ * filesystem.
+ */
+export function classifyTeardownScope(absPath, root, real = (p) => p) {
+  if (!root) return 'no-root'
+  const primary = normPath(real(root))
+  const container = normPath(real(join(root, '.claude', 'worktrees')))
+  const target = normPath(real(absPath))
+  if (target === primary) return 'primary-tree'
+  if (target === container) return 'worktrees-root'
+  if (target.startsWith(`${container}/`)) return 'inside'
+  return 'outside'
+}
+
+/**
  * Classify the target so an unresolvable one fails loud instead of exiting 0:
  *   - "registered"   — a live registered worktree → normal teardown,
  *   - "orphan"       — not registered but still on disk → purge only,
  *   - "unresolvable" — neither → typo / shell-mangled path.
+ *
+ * This says WHAT the target is, never whether touching it is allowed — that is
+ * `classifyTeardownScope`, and an "orphan" passes exactly the same gate.
  */
 export function classifyTeardownTarget(absPath, registeredPaths, exists = existsSync) {
   const want = normPath(absPath)
   if (registeredPaths.some((p) => normPath(p) === want)) return 'registered'
   if (exists(absPath)) return 'orphan'
   return 'unresolvable'
+}
+
+/**
+ * Decide what happens to the worktree's branch. Split out as a seam so the
+ * "only a branch main already contains may be deleted" promise is proven by a
+ * test rather than by reading the call site.
+ */
+export function branchDeletionDecision(branch, isMergedIntoMain) {
+  if (!branch) return 'detached'
+  return isMergedIntoMain ? 'delete' : 'keep'
 }
 
 // ── impure CLI ───────────────────────────────────────────────────────────────
@@ -93,6 +144,19 @@ function run(cmd, args, opts = {}) {
     stdout: res.stdout ?? '',
     stderr: res.stderr ?? '',
     error: res.error,
+  }
+}
+
+/**
+ * Canonicalize a path, falling back to the input when it does not exist yet.
+ * Feeding this to the scope gate is what makes a symlink / junction / 8.3 short
+ * name unable to point outside the worktrees container while looking inside it.
+ */
+function safeRealpath(p) {
+  try {
+    return realpathSync.native(p)
+  } catch {
+    return p
   }
 }
 
@@ -167,21 +231,52 @@ function purgeDir(absPath) {
  * KEPT and reported: teardown is a cleanup step, never a way to lose commits.
  */
 function cleanupBranch(root, branch) {
-  if (!branch) {
-    out('worktree was detached (no branch) — nothing to delete.')
-    return
+  // Both refs: the primary checkout's local `main` is often behind (it only
+  // moves when someone pulls), so testing it alone keeps every branch forever.
+  // Containment in EITHER `main` or `origin/main` means the commits are safe.
+  const merged = ['main', 'origin/main'].some(
+    (ref) =>
+      run('git', ['merge-base', '--is-ancestor', branch ?? '', ref], { cwd: root }).status === 0,
+  )
+  switch (branchDeletionDecision(branch, merged)) {
+    case 'detached':
+      out('worktree was detached (no branch) — nothing to delete.')
+      return
+    case 'keep':
+      warn(
+        `branch '${branch}' is NOT merged into main — kept. Its commits still exist; ` +
+          `delete it yourself (git branch -D ${branch}) once the PR is merged or the work is dropped.`,
+      )
+      return
+    default: {
+      const res = run('git', ['branch', '-d', branch], { cwd: root })
+      if (res.status === 0) out(`deleted merged branch '${branch}'.`)
+      else warn(`could not delete merged branch '${branch}': ${res.stderr.trim()}`)
+    }
   }
-  const merged = run('git', ['merge-base', '--is-ancestor', branch, 'main'], { cwd: root })
-  if (merged.status !== 0) {
-    warn(
-      `branch '${branch}' is NOT merged into main — kept. Its commits still exist; ` +
-        `delete it yourself (git branch -D ${branch}) once the PR is merged or the work is dropped.`,
-    )
-    return
+}
+
+/**
+ * Probe the target's working-tree state, FAIL-CLOSED. Returns:
+ *   - "clean"          — git says there is nothing uncommitted,
+ *   - "dirty"          — uncommitted changes (overridable with --force),
+ *   - "unavailable"    — the target IS a git tree but `git status` failed; we
+ *                        know nothing, so we must not assume "clean". NOT
+ *                        overridable by --force: a broken query is not consent,
+ *   - "not-a-worktree" — no `.git` entry at all, so there is no git state to
+ *                        lose. This is the long-path orphan left behind after
+ *                        git already deregistered the tree; the scope gate has
+ *                        already proven it sits inside `.claude/worktrees/`.
+ */
+function probeWorkingTree(absPath) {
+  if (!existsSync(join(absPath, '.git'))) return { state: 'not-a-worktree', detail: '' }
+  const res = run('git', ['status', '--porcelain'], { cwd: absPath })
+  if (res.status !== 0) {
+    return { state: 'unavailable', detail: (res.stderr || res.stdout).trim() }
   }
-  const res = run('git', ['branch', '-d', branch], { cwd: root })
-  if (res.status === 0) out(`deleted merged branch '${branch}'.`)
-  else warn(`could not delete merged branch '${branch}': ${res.stderr.trim()}`)
+  return res.stdout.trim() === ''
+    ? { state: 'clean', detail: '' }
+    : { state: 'dirty', detail: res.stdout.trimEnd() }
 }
 
 function main() {
@@ -202,6 +297,41 @@ function main() {
   const root = mainRepoRoot()
   const absPath = resolveWorktreePath(positional[0], root)
 
+  // 0. THE safety gate, before any git-remove or filesystem delete: the target
+  //    must sit strictly inside <primary>/.claude/worktrees/. `.`, the container
+  //    itself, the primary checkout and anything outside are refused here, so no
+  //    later branch can reach them (PR #97 review).
+  switch (classifyTeardownScope(absPath, root, safeRealpath)) {
+    case 'inside':
+      break
+    case 'primary-tree':
+      die(
+        `'${positional[0]}' resolves to the PRIMARY checkout '${absPath}' — refusing.\n` +
+          `That is the shared tree every session and live stand depends on; it is not a ` +
+          `task worktree and this command will never delete it.`,
+        1,
+      )
+      break
+    case 'worktrees-root':
+      die(
+        `'${positional[0]}' resolves to the worktrees CONTAINER '${absPath}' — refusing.\n` +
+          `Removing it would take out EVERY session's worktree at once. Name one worktree ` +
+          `(e.g. pnpm worktree:teardown 93).`,
+        1,
+      )
+      break
+    case 'no-root':
+      die('not a git repository — cannot locate the primary tree; refusing to delete anything.', 1)
+      break
+    default:
+      die(
+        `'${positional[0]}' resolves to '${absPath}', which is OUTSIDE ` +
+          `'${join(root ?? '', '.claude', 'worktrees')}' — refusing.\n` +
+          `This command only ever removes task worktrees created by pnpm task:worktree.`,
+        1,
+      )
+  }
+
   const registered = listWorktreePaths(root)
   const kind = classifyTeardownTarget(absPath, registered, existsSync)
   if (kind === 'unresolvable') {
@@ -216,23 +346,33 @@ function main() {
     )
   }
 
-  // Refuse on uncommitted work unless --force: `git worktree remove` would too,
-  // but the message here names the remedy instead of leaking a git error.
-  if (kind === 'registered' && !force) {
-    const dirty = run('git', ['status', '--porcelain'], { cwd: absPath })
-    if (dirty.status === 0 && dirty.stdout.trim() !== '') {
-      die(
-        `worktree '${absPath}' has uncommitted changes — refusing to remove it.\n` +
-          `Commit or stash them there first, or re-run with --force to discard them:\n` +
-          dirty.stdout
-            .trimEnd()
-            .split(/\r?\n/)
-            .slice(0, 10)
-            .map((l) => `    ${l}`)
-            .join('\n'),
-        1,
-      )
-    }
+  // Refuse on uncommitted work — for orphans as much as for registered trees,
+  // and FAIL-CLOSED: a `git status` that errors tells us nothing, so it can
+  // never be read as "clean" (PR #97 review).
+  const tree = probeWorkingTree(absPath)
+  if (tree.state === 'unavailable') {
+    die(
+      `cannot read the working-tree state of '${absPath}' — refusing to remove it.\n` +
+        `git status failed there, so uncommitted work cannot be ruled out; --force does NOT ` +
+        `override this (a failed check is not a clean check). Fix the tree, then re-run:\n` +
+        `    ${tree.detail || '(git produced no message)'}`,
+      1,
+    )
+  }
+  if (tree.state === 'dirty' && !force) {
+    die(
+      `worktree '${absPath}' has uncommitted changes — refusing to remove it.\n` +
+        `Commit or stash them there first, or re-run with --force to discard them:\n` +
+        tree.detail
+          .split(/\r?\n/)
+          .slice(0, 10)
+          .map((l) => `    ${l}`)
+          .join('\n'),
+      1,
+    )
+  }
+  if (tree.state === 'not-a-worktree') {
+    out(`'${absPath}' is no longer a git worktree (deregistered leftover) — purging the directory.`)
   }
 
   const branch = resolveWorktreeBranch(root, absPath)

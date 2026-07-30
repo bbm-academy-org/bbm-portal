@@ -10,6 +10,8 @@ import {
   worktreeRelPath,
 } from '../../tools/dev/task-worktree.mjs'
 import {
+  branchDeletionDecision,
+  classifyTeardownScope,
   classifyTeardownTarget,
   normPath,
   resolveWorktreePath,
@@ -110,6 +112,76 @@ describe('resolveWorktreePath', () => {
   it('явный путь honored как есть', () => {
     const abs = resolveWorktreePath('.claude/worktrees/90', root, () => false)
     expect(normPath(abs)).toContain('.claude/worktrees/90')
+  })
+})
+
+/**
+ * Защитный контур разборки (ревью PR #97): удалять можно ТОЛЬКО то, что лежит
+ * строго внутри <primary>/.claude/worktrees/. Оба сценария ревьюера ниже —
+ * `.` (контейнер) и путь основного чекаута — воспроизведены как тесты.
+ */
+describe('classifyTeardownScope', () => {
+  const root = '/repo'
+  const real = (p: string) => p
+
+  it('легитимный вложенный worktree проходит', () => {
+    expect(classifyTeardownScope('/repo/.claude/worktrees/93', root, real)).toBe('inside')
+    expect(classifyTeardownScope('/repo/.claude/worktrees/agent-abc/sub', root, real)).toBe(
+      'inside',
+    )
+  })
+
+  it('`.` резолвится в контейнер worktrees — отказ, иначе сносит все деревья', () => {
+    // resolveWorktreePath('.') даёт join(root, '.claude/worktrees/.') → сам контейнер.
+    const asDot = resolveWorktreePath('.', root, () => true)
+    expect(classifyTeardownScope(asDot, root, real)).toBe('worktrees-root')
+    expect(classifyTeardownScope('/repo/.claude/worktrees', root, real)).toBe('worktrees-root')
+  })
+
+  it('путь основного чекаута — отдельный отказ, а не «orphan» на удаление', () => {
+    expect(classifyTeardownScope('/repo', root, real)).toBe('primary-tree')
+    expect(classifyTeardownScope('/repo/', root, real)).toBe('primary-tree')
+  })
+
+  it('всё вне контейнера — отказ, включая соседа с общим префиксом', () => {
+    expect(classifyTeardownScope('/repo/src', root, real)).toBe('outside')
+    expect(classifyTeardownScope('/repo/.claude/skills', root, real)).toBe('outside')
+    expect(classifyTeardownScope('C:/Users/sidor/Documents', root, real)).toBe('outside')
+    // .claude/worktrees-old не является .claude/worktrees/...
+    expect(classifyTeardownScope('/repo/.claude/worktrees-old/93', root, real)).toBe('outside')
+  })
+
+  it('без корня репозитория не удаляем ничего', () => {
+    expect(classifyTeardownScope('/repo/.claude/worktrees/93', null, real)).toBe('no-root')
+  })
+
+  it('канонизация закрывает обход через симлинк наружу', () => {
+    // Симлинк .claude/worktrees/evil → /repo (основной чекаут).
+    const viaSymlink = (p: string) => (p === '/repo/.claude/worktrees/evil' ? '/repo' : p)
+    expect(classifyTeardownScope('/repo/.claude/worktrees/evil', root, viaSymlink)).toBe(
+      'primary-tree',
+    )
+  })
+
+  it('сравнение регистронезависимо и не зависит от вида слешей (Windows)', () => {
+    const winRoot = 'C:\\repo'
+    expect(classifyTeardownScope('C:/Repo/.claude/Worktrees/93', winRoot, real)).toBe('inside')
+    expect(classifyTeardownScope('C:\\repo', winRoot, real)).toBe('primary-tree')
+  })
+})
+
+describe('branchDeletionDecision', () => {
+  it('удаляет только влитую в main ветку', () => {
+    expect(branchDeletionDecision('feat/90-worktree-ports', true)).toBe('delete')
+  })
+
+  it('несмерженную оставляет — разборка не способ потерять коммиты', () => {
+    expect(branchDeletionDecision('feat/90-worktree-ports', false)).toBe('keep')
+  })
+
+  it('detached HEAD — удалять нечего', () => {
+    expect(branchDeletionDecision(null, true)).toBe('detached')
+    expect(branchDeletionDecision('', false)).toBe('detached')
   })
 })
 
