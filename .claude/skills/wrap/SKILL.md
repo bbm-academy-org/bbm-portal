@@ -62,13 +62,19 @@ session against what actually happened; an overrun is a finding even if the work
 itself was good. _(symptom: «в этой сессии мы должны были только задачи
 нарезать» — а сессия автономно дошла до merge PR по непроверенному handoff.)_
 
+It MUST also include a **recurrence check against `foldedThemes`**
+(`.wrap-init.json`): a theme already folded that surfaced again is its own
+finding, marked `recurrence`, and its remedy is escalation to a deterministic
+mechanism (hook/lint) — never another paragraph of prose.
+
 ## Phase 2 — propose concrete diffs (STOP for approval)
 
 Present the understanding-check first (owner confirms/corrects). Then a compact
-`Finding → Destination → Exact change` table, each mapped to its finding, favoring
-deterministic `remedy_kind` (`prose-not-enforced` → skill/command/hook/lint, not
-more prose). **Stop and ask** which to apply (all / subset / none). Apply nothing
-yet.
+`Finding → recurrence → Destination → Exact change` table, each mapped to its
+finding, favoring deterministic `remedy_kind` (`prose-not-enforced` →
+skill/command/hook/lint, not more prose); a `recurrence: yes` row may not be
+remedied with prose. **Stop and ask** which to apply (all / subset / none).
+Apply nothing yet.
 
 ## Phase 3 — apply approved + COMPACT (never just append)
 
@@ -116,6 +122,10 @@ post-process its output here, never edit the skill):
 
 ## Project gotchas
 
+- **A substantive proposal is a text message; `AskUserQuestion` comes only on
+  the NEXT turn.** Publish the reasoning/options as text and end the turn; the
+  following turn offers the short choice. _(symptom 24.07: диалог «съел» текст
+  предложения — владелец увидел варианты без обоснования.)_
 - **Two trackers, by domain — do not default to one.** **Code/dev** work for this
   repo lives in **GitHub Issues** (`gh issue list/view`, `bbm-academy-org/bbm-portal`).
   **Organizational / strategic / cross-project** work lives in **Plane**

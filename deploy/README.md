@@ -111,12 +111,20 @@ Steps 1-3 implicitly start the `postgres` container (the `migrate` service
 ## Shipping an update
 
 ```bash
+# Ship `origin/main`, never the local `main` — a stale local checkout is how prod
+# silently ends up a merge behind (2026-07-30).
+git fetch origin
+
 # Refresh the tree on the host first. `tar -xz` is ADDITIVE — it overwrites but
 # NEVER deletes files retired in the branch, so a removed source file (e.g. a
 # retired collection) lingers on the host and breaks the type-check. Wipe `src/`
 # first, then extract (env files live in deploy/, not src/, so they survive):
 ssh portal-prod-tw 'rm -rf ~/bbm-portal/src'
-git archive --format=tar.gz main | ssh portal-prod-tw 'tar -xz -C ~/bbm-portal'
+git archive --format=tar.gz origin/main | ssh portal-prod-tw 'tar -xz -C ~/bbm-portal'
+
+# Record WHAT was shipped — the host has no git clone, so the sha must travel
+# with the tree. This marker is what the post-check below compares.
+git rev-parse origin/main | ssh portal-prod-tw 'cat > ~/bbm-portal/DEPLOYED_SHA'
 cd deploy
 
 # Rebuild the app image. If migrations changed, rebuild `migrate` too — it builds
@@ -140,6 +148,40 @@ docker compose -f docker-compose.prod.yml restart caddy
 # Optional: re-run the seed (idempotent) if SEED_ADMIN_* changed.
 docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
 ```
+
+## Post-check: prod == `origin/main` (mandatory, task-cycle stage 6)
+
+A deploy is not done because the commands exited 0 — it is done when prod
+carries the same commit as `origin/main`. Run this from the workstation right
+after `up -d app`; a mismatch means finish shipping, not "noted":
+
+```bash
+git fetch origin
+PROD=$(ssh portal-prod-tw 'cat ~/bbm-portal/DEPLOYED_SHA')
+[ "$PROD" = "$(git rev-parse origin/main)" ] \
+  && echo "prod == origin/main ($PROD)" \
+  || echo "DRIFT: prod=$PROD origin/main=$(git rev-parse origin/main)"
+
+# The marker proves what was EXTRACTED. Prove the RUNNING app carries it too:
+# the app container must have been created AFTER the marker was written. Both
+# timestamps are read ON THE HOST, both as unix epoch — a `docker` command run
+# on the workstation would inspect the LOCAL daemon and pass falsely.
+ssh portal-prod-tw '
+  MARKER=$(stat -c %Y ~/bbm-portal/DEPLOYED_SHA)
+  APP=$(date -d "$(docker inspect -f "{{.Created}}" bbm-portal-app-1)" +%s)
+  if [ "$APP" -ge "$MARKER" ]; then
+    echo "app container newer than the shipped tree (app=$APP marker=$MARKER)"
+  else
+    echo "STALE APP: rebuild/up -d app was skipped (app=$APP marker=$MARKER)"
+  fi'
+```
+
+The container name is `bbm-portal-app-1` — compose project `name: bbm-portal`
+in `docker-compose.prod.yml`, not the `deploy/` directory name.
+
+> TODO: replace the marker+timestamp pair with the app itself reporting its
+> build sha (a `/api/health` field baked in at `docker build`) — then the
+> post-check is one HTTP call and cannot be fooled by a skipped rebuild.
 
 ## Preview service (`preview.bbm.academy`, epic #13)
 

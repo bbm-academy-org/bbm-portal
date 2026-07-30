@@ -1,7 +1,7 @@
 {
-  "version": 2,
+  "version": 3,
   "generatedAt": "2026-06-22",
-  "lastAuditAt": "2026-07-24",
+  "lastAuditAt": "2026-07-30",
   "foldedThemes": [
     "task-hygiene:wrong-tracker",
     "no-live-verify",
@@ -10,7 +10,16 @@
     "orient-before-acting",
     "conclude-from-nearest-artifact",
     "acceptance-screenshot-not-stand",
-    "handoff-fidelity"
+    "handoff-fidelity",
+    "parallel-sessions-shared-checkout",
+    "subagent-model-not-pinned",
+    "crud-hole-parked-in-debt",
+    "frontend-design-not-invoked",
+    "no-visual-guardrails",
+    "secret-echo-to-transcript",
+    "prod-deploy-postcheck",
+    "askuserquestion-swallows-proposal",
+    "artifact-passport"
   ],
   "tracker": "github+plane",
   "slug": "C--Users-sidor-repos-bbm-portal",

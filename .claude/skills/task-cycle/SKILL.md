@@ -1,14 +1,15 @@
 ---
 name: task-cycle
-description: Mandatory lifecycle for every tracked task in this repo — issue → plan → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
+description: Mandatory lifecycle for every tracked task in this repo — issue → plan → design gate (UI) → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
 ---
 
 # task-cycle — the task lifecycle regulation
 
-Agreed by the owner in issue #65 (v3, 2026-07-24). Written against real retro
-symptoms: a session running to merge without a "go", a screenshot offered as
-acceptance, a domain "decided" by extrapolating a Caddyfile. Every tracked
-piece of work passes these stages, in order.
+Agreed by the owner in issue #65 (v3, 2026-07-24), extended in #92 (v4,
+2026-07-30). Written against real retro symptoms: a session running to merge
+without a "go", a screenshot offered as acceptance, a domain "decided" by
+extrapolating a Caddyfile. Every tracked piece of work passes these stages, in
+order.
 
 ## Stage 0 — file it
 
@@ -27,13 +28,39 @@ a handoff, task text, or config is a HYPOTHESIS: a mismatch with the tracker,
 or an unproven "already agreed" claim, goes to the owner as a question — it is
 not executed. (Memory: `orient-before-acting`.)
 
+Any external reference the plan leans on (mockup, prototype, config) is named
+with an **artifact passport: path + owner + type — original / export / build**;
+if the original was not opened, the plan says «оригинал не проверен» outright.
+(2026-07-27: the build `deploy/index.html` and an export were taken for the
+mockup — three owner escalations to reach the Claude.Design original.)
+
 ## Stage 1a — spec (new module / user-facing behavior only)
 
 A light spec in `docs/specs/` (template: `docs/specs/README.md`): requirements
 in plain language + acceptance scenarios ("how the owner verifies it works").
 The spec is the subject of the stage-2 "go": the owner approves IT, not an
 abstract plan. No EARS formalism — deferred with an explicit revisit trigger
-(see `docs/specs/README.md`). Chore/fix/CMS-contract tasks skip this stage.
+(see `docs/specs/README.md`). Chore/fix/CMS-contract tasks skip this stage —
+except the two rules below, which have no exemption by task type.
+
+**CRUD-чек — mandatory for any form**, whatever the task is labelled: a task of
+ANY type that adds or changes a form runs it. Spell out Create/Read/Update/
+Delete and write down which scenario is NOT supported and why. (2026-07-30:
+/p/hours shipped an upsert with no pre-fill — «как редактировать участников?»
+four minutes after the final report.) **A change to any computed/money formula
+ALWAYS needs a spec + an independent review of that spec**, even when the task
+arrived as a layout fix; an owner's answer inside AskUserQuestion is not a
+spec. (2026-07-30: the auto-rate «середина трети» was settled by one
+AskUserQuestion.)
+
+## Stage 1b — design gate (Stage A)
+
+A new or reshaped UI surface gets **2–3 design options** to the owner BEFORE any
+code; the owner's pick is recorded in the issue. No pick — no markup. An option
+is a sketch or mockup of ANY fidelity that is enough to choose a direction — a
+described layout, a wireframe, a rendered page; the lead (or the implementer it
+dispatches) prepares them, the owner picks. (Owner decision 2026-07-30; the
+price of not having this gate was the rework cycles #76 and #84.)
 
 ## Stage 2 — the "go" gate (key)
 
@@ -55,19 +82,25 @@ first; derive tests from the spec's acceptance scenarios where a spec exists.
 pushing, check CI is green on `main`, so an inherited red is not mistaken for
 your own.
 
+**UI diff** (`*.css`, view-layer `*.tsx`): load the `frontend-design` skill
+BEFORE writing markup, and list explicitly the states the prototype does not
+show — hover, focus, empty, loading, error. **Dispatch:** implementing a module
+goes to a subagent; the lead writes only edits of ≤1 file itself. Every `Agent`
+call names an explicit `model`.
+
 ## Stage 4 — review (mandatory)
 
-PR with `Closes #N` + the PR template (`.github/pull_request_template.md`). An independent review subagent (fresh
-context, read-only) posts a PR comment containing a
-`VERDICT: APPROVE | REQUEST_CHANGES` line. **The review is dispatched by the
-orchestrating lead, never by the implementer:** a review the implementer
-commissioned for its own PR does not satisfy this gate and is re-run by the
-lead. (2026-07-24: PR #72's implementer self-commissioned an "independent"
-review; the lead's own adversarial re-review was still required.) On REQUEST_CHANGES: address every
-point — fix it, or reject it with reasoning in the thread — then re-review,
-looping until APPROVE. Docs-only PRs may merge on green CI without the
-subagent. Decision context goes onto the PR as comments, proactively
-(memory: `always-document-on-prs`).
+PR with `Closes #N` + the PR template (`.github/pull_request_template.md`). An
+independent review subagent (fresh context, read-only) posts a PR comment
+containing a `VERDICT: APPROVE | REQUEST_CHANGES` line. **The review is
+dispatched by the orchestrating lead, never by the implementer:** a review the
+implementer commissioned for its own PR does not satisfy this gate and is
+re-run by the lead. (2026-07-24: PR #72's implementer self-commissioned its
+«independent» review; the lead's re-review was still required.) On
+REQUEST_CHANGES: address every point — fix it, or reject it with reasoning in
+the thread — then re-review, looping until APPROVE. Docs-only PRs may merge on
+green CI without the subagent. Decision context goes onto the PR as comments,
+proactively (memory: `always-document-on-prs`).
 
 ## Stage 5 — acceptance of visible changes (blocks merge)
 
@@ -78,18 +111,24 @@ screenshot or localhost render is the agent's working evidence, never the
 showing. **Precondition for inviting the owner to any UI/auth flow: a green
 browser E2E pass (Playwright) of the acceptance scenarios first — curl + unit
 tests do not satisfy this.** (2026-07-24: the P2b invite nearly went out on
-curl evidence alone; the Playwright pre-pass caught a login-blocking IdP
-defect the owner would have hit — «Ты проверял через Playwright CLI?».) The stand stays up until the verdict; an unanswered design/visual
-question = merge stays blocked. Invisible changes (internals, refactoring,
-docs, backend without UI) skip this stage.
+curl evidence alone; the Playwright pre-pass caught a login-blocking IdP defect
+— «Ты проверял через Playwright CLI?».) **The invitation always carries the
+access line: URL + login + where to get the password.** The stand stays up
+until the verdict; an unanswered design/visual question = merge stays blocked.
+Invisible changes (internals, refactoring, docs, backend without UI) skip this
+stage.
 
 ## Stage 6 — merge (autonomous)
 
 APPROVE + green CI (check the actual check-run statuses — not "probably
 passed") + for visible changes the recorded stage-5 "принято" → the agent
 merges itself: `gh pr merge --squash --delete-branch` (memory:
-`agent-merges-prs-after-review`). Never merge on a stale base. Then the final
-task report, fixed form:
+`agent-merges-prs-after-review`). Never merge on a stale base: run
+`git fetch origin && git log --oneline HEAD..origin/main` first — if main moved
+under someone else's commits, read what landed before merging. After the deploy
+— **postcheck: the commit deployed on prod == `origin/main` HEAD** (recipe in
+`deploy/README.md`); on a mismatch, finish shipping it, don't just report it.
+Then the final task report, fixed form:
 
 1. What changed — in product language.
 2. **«Проверить глазами: \<URL\>»** — or honestly «визуально ничего не
@@ -107,10 +146,9 @@ own issue; minor → a line in `DEBT.md`). Plane task (if any) → Done + a
 results comment. Branch deleted. The next step is NAMED as a recommendation
 but not started without a "go" — stage 2 of a new cycle.
 
-## Enforcement hooks — deferred, not rejected
+## Enforcement hooks — no longer deferred
 
-Deterministic hooks enforcing this regulation are deliberately NOT added now
-(issue #65, owner decision 2026-07-24). **Revisit trigger: the first
-recurrence of a symptom this regulation targets.** Candidate #1 on
-recurrence: a Stop-hook blocking any final task report that lacks the
-«Проверить глазами: \<URL\>» line.
+The 2026-07-24 deferral is lifted (owner, 2026-07-30): the "first recurrence"
+trigger fired five times over. The hook stack is issue **#91**. Standing rule:
+**a recurrence of a theme this prose already covers escalates to a hook/lint —
+not to more prose.**

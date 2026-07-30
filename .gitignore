@@ -1,5 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Per-session task worktrees (`pnpm task:worktree <N>`, #90). They live INSIDE
+# the repo so the path stays short enough for Windows MAX_PATH on node_modules —
+# which means git would otherwise see each one as untracked content.
+/.claude/worktrees/
+
 # dependencies
 /node_modules
 /.pnp

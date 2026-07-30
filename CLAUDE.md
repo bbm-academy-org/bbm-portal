@@ -1,9 +1,17 @@
 # bbm-portal
 
 **Task cycle is regulated:** every tracked task follows
-`.claude/skills/task-cycle/SKILL.md` (plan → owner's explicit "go" → TDD →
-review → live-stand acceptance → merge → close). Handoff / task text / config
-≠ the owner's "go".
+`.claude/skills/task-cycle/SKILL.md` (plan → design gate → owner's explicit
+"go" → TDD → review → live-stand acceptance → merge → close). Handoff / task
+text / config ≠ the owner's "go".
+
+**Parallel sessions are the norm here — read the rules before touching a branch
+or a port.** The session's work branch lives in its OWN worktree
+(`pnpm task:worktree <N>`), never in the shared checkout; the dev port is taken
+with `pnpm dev:ports`, never assumed to be 3000; a listener you did not start is
+never killed. Full rules: [`.claude/rules/parallel-sessions.md`](.claude/rules/parallel-sessions.md).
+Machine specifics (portable Node 22, `git -C`, the 3000–3009 Zitadel range):
+[`.claude/rules/dev-env.md`](.claude/rules/dev-env.md).
 
 ## Backlog / task tracking — GitHub Issues (not Plane)
 
@@ -23,6 +31,19 @@ implementation runs in a separate session launched from that repo.
 Plane (below) is a higher-level / cross-project tracker; do not assume a
 bbm-portal work item lives there. If the prompt names a `BBMP-*` identifier it is
 Plane, otherwise default to GitHub Issues.
+
+## Subagents and models
+
+Every `Agent` call must pass an explicit `model` — inheriting the lead's
+session model is forbidden (a Fable lead otherwise silently spawns Fable
+subagents; Fable is never a subagent, only the orchestrator). Mechanical
+fan-out (search, inventory, fact-gathering) → `bbm-explorer` (Sonnet).
+Judgment (review, architecture, implementation) → Opus: `bbm-reviewer` for
+PR review (task-cycle stage 4), or `general-purpose` with explicit
+`model: opus` for everything else. Return contract in every brief is ≤30
+lines by default (`bbm-reviewer`'s own contract is stricter: ≤20); heavy
+output goes to a scratchpad file or PR comment, never into the agent's
+reply.
 
 ## Plane (project tracker) — workspace targeting
 

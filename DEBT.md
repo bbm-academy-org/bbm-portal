@@ -1,9 +1,12 @@
 # DEBT.md — minor convention deviations (decision-debt lite)
 
-Rules (issue #65, owner decision 2026-07-24):
+Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
 
 - **Significance threshold:** anything serious gets its own GitHub issue —
   never a line here. This file is for small, deliberate deviations only.
+- **"First incident" is a BANNED return condition** for gaps touching
+  money/computed data or the only editing path for an entity — those are not
+  small deviations and go straight to their own issue (#92, 2026-07-30).
 - **Every line carries a return condition** (what event or date brings it
   back). Lines without one do not survive a sweep.
 - **Mandatory sweep** on every `/wrap` and at every epic close: each line is
@@ -18,4 +21,12 @@ Entry format:
 
 <!-- entries below this line -->
 
-- [ ] 2026-07-30 Форма участника в админке часов — полный upsert без предзаполнения: правка существующего участника с пустыми вилкой/грейдом молча обнуляет их (после снятия required это денежное поле — вычисленная ставка исчезает). Осознанно оставлено ради простоты MVP-формы — return condition: первый инцидент обнуления вилки/грейда у реального участника → предзаполнение формы или merge-семантика пустых полей (#83)
+- [ ] 2026-07-30 `worktree-teardown.mjs`: в robocopy-фолбэке финальный
+  `cmd /c rmdir /s /q \\?\<путь>` — no-op (cmd.exe не понимает `\\?\`-префикс);
+  первая ступень PS 5.1 отрабатывает, так что исход — честный exit 1, не потеря
+  данных. Лечится вызовом rmdir с обычным `winPath` — return condition: первый
+  реальный заход в robocopy-фолбэк (teardown упал с exit 1 на long-path) (#90)
+
+_(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
+gap the money rule above now bans from this file — was fixed in #85/#86, not
+written off.)_
