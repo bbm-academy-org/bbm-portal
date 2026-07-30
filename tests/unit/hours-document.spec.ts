@@ -343,11 +343,11 @@ describe('updatePeriod / deletePeriod (п.16, п.24)', () => {
     expect(result.doc.periods[0].status).toBe('open')
   })
 
-  it('запрещает правку периода с оценками — дальше только escape-hatch владельца', () => {
+  it('правит период с оценками — запрета больше нет (issue #85)', () => {
     const withAssessment = ok(saveAssessment(doc(), validAssessment, NOW)).doc
-    const result = updatePeriod(withAssessment, edit)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('оценк')
+    const result = ok(updatePeriod(withAssessment, edit))
+    expect(result.doc.periods[0].label).toBe('Июль 2026 (правка)')
+    expect(result.doc.periods[0].date_to).toBe('2026-07-30')
   })
 
   it('удаляет пустой период и отказывается удалять период с оценками', () => {
@@ -359,6 +359,170 @@ describe('updatePeriod / deletePeriod (п.16, п.24)', () => {
   it('применяет к правке те же жёсткие валидации, что и к созданию', () => {
     expect(updatePeriod(doc(), { ...edit, dateFrom: '2026-07-04', dateTo: '2026-07-05' }).ok).toBe(false)
     expect(updatePeriod(doc(), { ...edit, dateFrom: '2026-07-31', dateTo: '2026-07-01' }).ok).toBe(false)
+  })
+})
+
+/**
+ * Правка дат периода, по которому уже есть оценки (issue #85, пп. 16/24).
+ *
+ * Семантика — решение владельца: производные поля пересчитываются СРАЗУ по
+ * новым датам, но от СОХРАНЁННОГО снэпшота `monthly_rate` оценки. Канон п.15
+ * («смена вилки/грейда не трогает старые оценки») этим не нарушается: ставка на
+ * момент декларации остаётся ровно той, какой была.
+ *
+ * Числа проверяются руками, а не пересчётом через тот же `describePeriod`:
+ * май–июнь 2026 = 21 будень мая (норма 168 ч) + 22 будня июня (норма 176 ч),
+ * итого 43 будня / 344 ч. Эффективная часовая при месячной 200 000 ₽ =
+ * (168/344)·(200000/168) + (176/344)·(200000/176) = 400000/344 ≈ 1 162,79 ₽;
+ * начисление за 160 ч = round(160 × 1162,79…) = 186 047 ₽; сплит 30 % —
+ * доинвестиция round(186047 × 0,3) = 55 814 ₽, деньгами остаток 130 233 ₽.
+ */
+describe('updatePeriod — пересчёт оценок при смене дат (issue #85, пп. 16/24)', () => {
+  const toMayJune = {
+    id: 'p-july',
+    label: 'Май–июнь 2026',
+    dateFrom: '2026-05-01',
+    dateTo: '2026-06-30',
+  }
+
+  /** Документ с одной сохранённой оценкой Антона (ставка 200 000 ₽/мес). */
+  function withAssessment(): HoursDocument {
+    return ok(saveAssessment(doc(), validAssessment, NOW)).doc
+  }
+
+  /** Тот же документ, но участник без вилки и грейда — режим «только часы». */
+  function hoursOnly(): HoursDocument {
+    const base = doc()
+    const bare: HoursDocument = {
+      ...base,
+      participants: [{ email: 'anton@bbm.academy', name: 'Антон' }],
+    }
+    return ok(saveAssessment(bare, validAssessment, NOW)).doc
+  }
+
+  it('пересчитывает производные поля всех оценок периода по новым датам', () => {
+    const result = ok(updatePeriod(withAssessment(), toMayJune))
+    const assessment = result.doc.assessments[0]
+
+    expect(assessment.weekday_count).toBe(43)
+    expect(assessment.hourly_rate).toBeCloseTo(400_000 / 344, 9)
+    expect(assessment.accrual).toBe(186_047)
+    expect(assessment.invest_amount).toBe(55_814)
+    expect(assessment.cash_amount).toBe(130_233)
+    // Сплит по номиналу (п.5) не разъезжается после пересчёта.
+    expect(assessment.cash_amount + assessment.invest_amount).toBe(assessment.accrual)
+  })
+
+  it('НЕ трогает снэпшот monthly_rate, часы, способ и время сохранения (п.15)', () => {
+    const before = withAssessment().assessments[0]
+    const after = ok(updatePeriod(withAssessment(), toMayJune)).doc.assessments[0]
+
+    expect(after.monthly_rate).toBe(before.monthly_rate)
+    expect(after.monthly_rate).toBe(200_000)
+    expect(after.hours).toBe(before.hours)
+    expect(after.method).toBe(before.method)
+    expect(after.weekend_hours).toBe(before.weekend_hours)
+    expect(after.split_percent).toBe(before.split_percent)
+    expect(after.saved_at).toBe(before.saved_at)
+  })
+
+  it('в режиме «только часы» деньги остаются пустыми, а будни пересчитываются', () => {
+    const result = ok(updatePeriod(hoursOnly(), toMayJune))
+    const assessment = result.doc.assessments[0]
+
+    expect(assessment.monthly_rate).toBeNull()
+    expect(assessment.hourly_rate).toBeNull()
+    expect(assessment.accrual).toBe(0)
+    expect(assessment.cash_amount).toBe(0)
+    expect(assessment.invest_amount).toBe(0)
+    expect(assessment.weekday_count).toBe(43)
+  })
+
+  it('предупреждает о пересчёте и называет число затронутых оценок', () => {
+    const result = ok(updatePeriod(withAssessment(), toMayJune))
+    const warning = result.warnings.find((w) => w.includes('ересчитано'))
+    expect(warning, 'предупреждение о пересчёте обязано быть').toBeDefined()
+    expect(warning).toContain('1')
+    expect(warning).toContain('ставки на момент декларации сохранены')
+  })
+
+  it('пересчитывает ВСЕ оценки периода и не трогает оценки соседнего периода', () => {
+    const base = withAssessment()
+    const twoPeriods: HoursDocument = {
+      participants: [
+        ...base.participants,
+        {
+          email: 'eduard@bbm.academy',
+          name: 'Эдуард',
+          role: 'Операции',
+          fork_min: 100_000,
+          fork_max: 200_000,
+          grade: 'I',
+        },
+      ],
+      periods: [
+        ...base.periods,
+        {
+          id: 'p-aug',
+          label: 'Август 2026',
+          date_from: '2026-08-01',
+          date_to: '2026-08-31',
+          status: 'open',
+        },
+      ],
+      assessments: base.assessments,
+    }
+    const withSecond = ok(
+      saveAssessment(twoPeriods, { ...validAssessment, email: 'eduard@bbm.academy' }, NOW),
+    ).doc
+    const foreign = ok(saveAssessment(withSecond, { ...validAssessment, periodId: 'p-aug' }, NOW)).doc
+
+    const result = ok(updatePeriod(foreign, toMayJune))
+    const july = result.doc.assessments.filter((a) => a.period_id === 'p-july')
+    const august = result.doc.assessments.filter((a) => a.period_id === 'p-aug')
+
+    expect(july).toHaveLength(2)
+    for (const assessment of july) expect(assessment.weekday_count).toBe(43)
+    expect(result.warnings.find((w) => w.includes('ересчитано'))).toContain('2')
+
+    expect(august).toHaveLength(1)
+    expect(august[0].weekday_count).toBe(21) // будни августа 2026 — период не тронут
+  })
+
+  it('правка одного label не пересчитывает ничего и не предупреждает зря', () => {
+    const source = withAssessment()
+    const result = ok(
+      updatePeriod(source, {
+        id: 'p-july',
+        label: 'Июль 2026 (опечатка исправлена)',
+        dateFrom: '2026-07-01',
+        dateTo: '2026-07-31',
+      }),
+    )
+    // Массив оценок не пересобирается: даты те же — пересчитывать нечего.
+    expect(result.doc.assessments).toBe(source.assessments)
+    expect(result.warnings.find((w) => w.includes('ересчитано'))).toBeUndefined()
+    expect(result.doc.periods[0].label).toBe('Июль 2026 (опечатка исправлена)')
+  })
+
+  it('повторный пересчёт теми же датами идемпотентен', () => {
+    const once = ok(updatePeriod(withAssessment(), toMayJune)).doc
+    const twice = ok(updatePeriod(once, toMayJune)).doc
+    expect(twice.assessments).toEqual(once.assessments)
+  })
+
+  it('сжатие периода ниже заявленных часов — мягкое предупреждение, не блок', () => {
+    // 160 ч в периоде из одного календарного дня физически невозможны (п.21);
+    // это данные, которые домен уже не принял бы заново, — молчать нельзя.
+    const result = ok(
+      updatePeriod(withAssessment(), {
+        id: 'p-july',
+        label: 'Июль 2026',
+        dateFrom: '2026-07-01',
+        dateTo: '2026-07-01',
+      }),
+    )
+    expect(result.warnings.some((w) => w.includes('физически'))).toBe(true)
   })
 })
 
