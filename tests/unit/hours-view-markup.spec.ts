@@ -25,11 +25,13 @@ import {
   FormulaBreakdown,
   NoPeriodsNotice,
   NotAParticipantNotice,
-  ParticipantsTable,
   PeriodHeader,
   SignedInAs,
   SummaryTable,
 } from '@/modules/hours/view/components'
+// Таблица участников живёт отдельным файлом (как SavedCard): её тянет и
+// серверная страница, и клиентская обвязка админки (issue #85).
+import { ParticipantsTable } from '@/modules/hours/view/ParticipantsTable'
 import { SavedCard } from '@/modules/hours/view/SavedCard'
 
 /**
@@ -157,6 +159,24 @@ describe('ParticipantsTable (п.19)', () => {
     const host = render(React.createElement(ParticipantsTable, { participants: [] }))
     expect(text(host)).toContain('участник')
     expect(host.querySelectorAll('tbody tr')).toHaveLength(0)
+  })
+
+  it('без обработчика правки колонки действий нет — /p/hours правку не предлагает', () => {
+    const host = render(React.createElement(ParticipantsTable, { participants }))
+    expect(host.querySelector('button')).toBeNull()
+    expect(host.querySelectorAll('thead th')).toHaveLength(5)
+  })
+
+  it('с обработчиком правки у каждой строки есть кнопка «Изменить» (issue #85)', () => {
+    const host = render(
+      React.createElement(ParticipantsTable, { participants, onEdit: () => undefined }),
+    )
+    const buttons = [...host.querySelectorAll('tbody button')]
+    expect(buttons).toHaveLength(3)
+    for (const button of buttons) expect(text(button)).toBe('Изменить')
+    // Кнопка не отправляет форму строки — она только заполняет форму ниже.
+    expect(buttons.every((b) => b.getAttribute('type') === 'button')).toBe(true)
+    expect(host.querySelectorAll('thead th')).toHaveLength(6)
   })
 })
 
@@ -400,6 +420,103 @@ describe('ParticipantForm (п.23 — ставка не вводится, вил�
 
     expect(host.querySelector('input[name="email"]')!.hasAttribute('required')).toBe(true)
     expect(host.querySelector('input[name="name"]')!.hasAttribute('required')).toBe(true)
+  })
+
+  it('без выбранного участника форма пустая и email вводится руками', async () => {
+    const { ParticipantForm } = await import('@/modules/hours/view/AdminForms')
+    const host = render(React.createElement(ParticipantForm, { participants, editing: null }))
+
+    const email = host.querySelector('input[name="email"]')!
+    expect(email.getAttribute('value')).toBeNull()
+    expect(email.hasAttribute('readonly')).toBe(false)
+    // datalist по email остаётся: он бережёт от опечатки-дубля при ЗАВЕДЕНИИ.
+    expect(email.getAttribute('list')).toBe('hours-participant-emails')
+    expect(host.querySelector('datalist#hours-participant-emails')).not.toBeNull()
+    expect(host.querySelector('input[name="name"]')!.getAttribute('value')).toBeNull()
+  })
+
+  it('выбранный участник заполняет ВСЕ поля — перенабора нет (issue #85)', async () => {
+    const { ParticipantForm } = await import('@/modules/hours/view/AdminForms')
+    const host = render(
+      React.createElement(ParticipantForm, { participants, editing: participants[0] }),
+    )
+
+    expect(host.querySelector('input[name="email"]')!.getAttribute('value')).toBe(
+      'anton@bbm.academy',
+    )
+    expect(host.querySelector('input[name="name"]')!.getAttribute('value')).toBe('Антон')
+    expect(host.querySelector('input[name="role"]')!.getAttribute('value')).toBe('Продукт')
+    expect(host.querySelector('input[name="forkMin"]')!.getAttribute('value')).toBe('150000')
+    expect(host.querySelector('input[name="forkMax"]')!.getAttribute('value')).toBe('250000')
+    expect(host.querySelector('select[name="grade"] option[selected]')!.getAttribute('value')).toBe(
+      'II',
+    )
+
+    // Email — ключ записи: правка на месте не должна превращаться в дубль (п.16).
+    expect(host.querySelector('input[name="email"]')!.hasAttribute('readonly')).toBe(true)
+    // Из режима правки видно, кого правим, и есть выход в «завести нового».
+    expect(text(host)).toContain('anton@bbm.academy')
+    expect(text(host)).toContain('Отмена')
+  })
+
+  it('участник без роли и вилки заполняет форму пустыми полями, а не «—»', async () => {
+    const { ParticipantForm } = await import('@/modules/hours/view/AdminForms')
+    const host = render(
+      React.createElement(ParticipantForm, { participants, editing: participants[2] }),
+    )
+    for (const name of ['role', 'forkMin', 'forkMax']) {
+      const value = host.querySelector(`input[name="${name}"]`)!.getAttribute('value')
+      expect(value === null || value === '', `${name} пустое`).toBe(true)
+    }
+    expect(host.querySelector('select[name="grade"] option[selected]')!.getAttribute('value')).toBe(
+      '',
+    )
+  })
+})
+
+describe('ParticipantsAdmin — таблица и форма связаны (issue #85)', () => {
+  it('рисует таблицу с кнопками правки и форму участника на одной странице', async () => {
+    const { ParticipantsAdmin } = await import('@/modules/hours/view/AdminForms')
+    const host = render(React.createElement(ParticipantsAdmin, { participants }))
+    expect(host.querySelectorAll('tbody button')).toHaveLength(3)
+    expect(host.querySelector('form input[name="email"]')).not.toBeNull()
+  })
+})
+
+describe('PeriodRowActions — правка периода с оценками (issue #85, пп. 16/24)', () => {
+  it('форма правки label/дат доступна и когда по периоду есть оценки', async () => {
+    const { PeriodRowActions } = await import('@/modules/hours/view/AdminForms')
+    const host = render(
+      React.createElement(PeriodRowActions, { period: july, hasAssessments: true }),
+    )
+    expect(host.querySelector('input[name="label"]')!.getAttribute('value')).toBe('Июль 2026')
+    expect(host.querySelector('input[name="dateFrom"]')!.getAttribute('value')).toBe('2026-07-01')
+    expect(host.querySelector('input[name="dateTo"]')!.getAttribute('value')).toBe('2026-07-31')
+
+    const content = text(host)
+    // Про пересчёт предупреждаем ДО нажатия — это не сюрприз.
+    expect(content).toContain('пересчита')
+    // «Правит владелец в JSON» остаётся только про удаление.
+    expect(content).toContain('далить')
+  })
+
+  it('удаление периода с оценками из UI недоступно', async () => {
+    const { PeriodRowActions } = await import('@/modules/hours/view/AdminForms')
+    const host = render(
+      React.createElement(PeriodRowActions, { period: july, hasAssessments: true }),
+    )
+    const buttons = [...host.querySelectorAll('button')].map((b) => text(b))
+    expect(buttons).not.toContain('Удалить')
+  })
+
+  it('пустой период правится и удаляется как раньше', async () => {
+    const { PeriodRowActions } = await import('@/modules/hours/view/AdminForms')
+    const host = render(
+      React.createElement(PeriodRowActions, { period: july, hasAssessments: false }),
+    )
+    const buttons = [...host.querySelectorAll('button')].map((b) => text(b))
+    expect(buttons).toContain('Удалить')
+    expect(host.querySelector('input[name="dateFrom"]')).not.toBeNull()
   })
 })
 

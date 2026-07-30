@@ -13,6 +13,7 @@ import {
 } from '@/modules/hours/actions'
 import { IDLE_STATE } from '@/modules/hours/actionState'
 import type { HoursActionState } from '@/modules/hours/actionState'
+import { ParticipantsTable } from './ParticipantsTable'
 
 /**
  * Формы админки (спека 081 пп. 23, 24). Клиентские только ради обратной связи
@@ -47,16 +48,54 @@ function Feedback({ state }: { state: HoursActionState }) {
   )
 }
 
-/** Добавление/правка участника (п.23). */
-export function ParticipantForm({ participants }: { participants: Participant[] }) {
+/**
+ * Добавление/правка участника (п.23).
+ *
+ * `editing` — участник, выбранный кнопкой «Изменить» в таблице (issue #85):
+ * поля заполняются его значениями, и правка одного грейда перестаёт требовать
+ * перенабора всей карточки. Форма НЕ контролируемая: значения задаются через
+ * `defaultValue`, а смена участника делается перемонтированием по `key` в
+ * `ParticipantsAdmin` — так после сохранения не приходится синхронизировать
+ * стейт с ответом сервера.
+ *
+ * `undefined` вместо `''` в `defaultValue` осознанно: пустой атрибут `value`
+ * превратил бы поле в «пустое значение», а не в «значения нет».
+ */
+export function ParticipantForm({
+  participants,
+  editing = null,
+  onCancel,
+}: {
+  participants: Participant[]
+  editing?: Participant | null
+  /** Выход из режима правки — вернуться к заведению нового участника. */
+  onCancel?: () => void
+}) {
   const [state, formAction, pending] = useActionState(saveParticipantAction, IDLE_STATE)
   return (
     <form className="hours-form" action={formAction}>
+      {editing ? (
+        <p className="hours-note">
+          Правим участника: <b>{editing.name}</b> ({editing.email})
+        </p>
+      ) : null}
       <div className="hours-fields">
         <label className="hours-field">
           <span>Email (ключ)</span>
-          <input type="email" name="email" required list="hours-participant-emails" />
+          {/* В режиме правки email только показывается: он ключ записи, и его
+              смена создала бы дубль вместо правки на месте (п.16). readOnly, а
+              не disabled — иначе поле не попало бы в FormData. */}
+          <input
+            type="email"
+            name="email"
+            required
+            list="hours-participant-emails"
+            defaultValue={editing?.email}
+            readOnly={editing != null}
+          />
         </label>
+        {/* Подсказка по существующим email остаётся: она бережёт от опечатки
+            при ЗАВЕДЕНИИ (опечатка = новая запись вместо правки). */}
         <datalist id="hours-participant-emails">
           {participants.map((participant) => (
             <option key={participant.email} value={participant.email} />
@@ -64,26 +103,38 @@ export function ParticipantForm({ participants }: { participants: Participant[] 
         </datalist>
         <label className="hours-field">
           <span>Имя</span>
-          <input type="text" name="name" required />
+          <input type="text" name="name" required defaultValue={editing?.name} />
         </label>
         {/* Роль, вилка и грейд необязательны (решение владельца 2026-07-30):
             участника можно завести только с именем и email. Поля «Ставка»
             нет — ставка вычисляется из вилки и грейда (середина трети). */}
         <label className="hours-field">
           <span>Роль (необязательно)</span>
-          <input type="text" name="role" />
+          <input type="text" name="role" defaultValue={editing?.role ?? undefined} />
         </label>
         <label className="hours-field">
           <span>Вилка min, ₽/мес (необязательно)</span>
-          <input type="number" name="forkMin" min={0} step={1000} />
+          <input
+            type="number"
+            name="forkMin"
+            min={0}
+            step={1000}
+            defaultValue={editing?.fork_min ?? undefined}
+          />
         </label>
         <label className="hours-field">
           <span>Вилка max, ₽/мес (необязательно)</span>
-          <input type="number" name="forkMax" min={0} step={1000} />
+          <input
+            type="number"
+            name="forkMax"
+            min={0}
+            step={1000}
+            defaultValue={editing?.fork_max ?? undefined}
+          />
         </label>
         <label className="hours-field">
           <span>Грейд (необязательно)</span>
-          <select name="grade" defaultValue="">
+          <select name="grade" defaultValue={editing?.grade ?? ''}>
             <option value="">—</option>
             <option value="I">I</option>
             <option value="II">II</option>
@@ -93,14 +144,55 @@ export function ParticipantForm({ participants }: { participants: Participant[] 
       </div>
       <div className="hours-actions">
         <button type="submit" className="hours-btn" disabled={pending}>
-          {pending ? 'Сохраняю…' : 'Сохранить участника'}
+          {pending ? 'Сохраняю…' : editing ? 'Сохранить изменения' : 'Сохранить участника'}
         </button>
+        {editing ? (
+          <button type="button" className="hours-btn hours-btn--ghost" onClick={onCancel}>
+            Отмена
+          </button>
+        ) : null}
         <span className="hours-note">
-          Существующий email правится на месте; смена email и удаление — через владельца.
+          {editing
+            ? 'Email — ключ записи и не меняется; смена email и удаление участника — правит владелец в JSON.'
+            : 'Кнопка «Изменить» в таблице заполняет эту форму — перенабирать поля не нужно.'}
         </span>
       </div>
       <Feedback state={state} />
     </form>
+  )
+}
+
+/**
+ * Участники админки целиком: таблица со стрелкой «Изменить» и форма под ней
+ * (issue #85). Единственное состояние — email правимого участника, а не сам
+ * объект: после сохранения серверное дерево перерисовывается, и по email из
+ * свежих `participants` всегда достаётся актуальная запись; удалили участника
+ * из JSON — режим правки просто гаснет, а не показывает призрака.
+ *
+ * `key` на форме перемонтирует её при смене выбора — это и есть механизм
+ * подстановки `defaultValue` без контролируемых полей.
+ */
+export function ParticipantsAdmin({ participants }: { participants: Participant[] }) {
+  const [editingEmail, setEditingEmail] = React.useState<string | null>(null)
+  const editing = participants.find((participant) => participant.email === editingEmail) ?? null
+
+  return (
+    <>
+      <ParticipantsTable
+        participants={participants}
+        onEdit={(participant) => setEditingEmail(participant.email)}
+      />
+      <p className="hours-note">
+        Ставка вычисляется из вилки и грейда (середина трети вилки: I — ⅙, II — ½, III — ⅚) и не
+        вводится руками. Участник без вилки и грейда считает только часы — без денег.
+      </p>
+      <ParticipantForm
+        key={editing?.email ?? '__new__'}
+        participants={participants}
+        editing={editing}
+        onCancel={() => setEditingEmail(null)}
+      />
+    </>
   )
 }
 
@@ -134,14 +226,21 @@ export function PeriodForm() {
   )
 }
 
-/** Открыть / закрыть / править / удалить период (пп. 16, 24). */
+/**
+ * Открыть / закрыть / править / удалить период (пп. 16, 24).
+ *
+ * Правка label и дат доступна ВСЕГДА (issue #85) — в том числе по периоду с
+ * оценками: опечатка в дате иначе оставалась неисправимой из UI. Что смена дат
+ * пересчитает производные поля оценок, сказано до нажатия, а не после.
+ * Удаление периода с оценками закрыто по-прежнему: у него обратного хода нет.
+ */
 export function PeriodRowActions({
   period,
-  editable,
+  hasAssessments,
 }: {
   period: Period
-  /** По периоду ещё нет оценок — значит, можно править и удалять (п.16). */
-  editable: boolean
+  /** По периоду уже есть оценки: удаление закрыто, правка — предупреждает. */
+  hasAssessments: boolean
 }) {
   const [statusState, statusAction, statusPending] = useActionState(
     setPeriodStatusAction,
@@ -164,45 +263,47 @@ export function PeriodRowActions({
             {period.status === 'open' ? 'Закрыть' : 'Открыть'}
           </button>
         </form>
-        {editable ? (
+        {hasAssessments ? null : (
           <form action={deleteAction} className="hours-inline-form">
             <input type="hidden" name="periodId" value={period.id} />
             <button type="submit" className="hours-btn hours-btn--ghost" disabled={deletePending}>
               Удалить
             </button>
           </form>
-        ) : null}
+        )}
       </div>
 
-      {editable ? (
-        <form className="hours-form" action={editAction}>
-          <input type="hidden" name="periodId" value={period.id} />
-          <div className="hours-fields">
-            <label className="hours-field">
-              <span>Название</span>
-              <input type="text" name="label" defaultValue={period.label} required />
-            </label>
-            <label className="hours-field">
-              <span>Начало</span>
-              <input type="date" name="dateFrom" defaultValue={period.date_from} required />
-            </label>
-            <label className="hours-field">
-              <span>Конец</span>
-              <input type="date" name="dateTo" defaultValue={period.date_to} required />
-            </label>
-          </div>
-          <div className="hours-actions">
-            <button type="submit" className="hours-btn hours-btn--ghost" disabled={editPending}>
-              Сохранить правку
-            </button>
-          </div>
-          <Feedback state={editState} />
-        </form>
-      ) : (
-        <p className="hours-note">
-          По периоду уже есть оценки — правка дат и удаление закрыты (правит владелец в JSON).
-        </p>
-      )}
+      <form className="hours-form" action={editAction}>
+        <input type="hidden" name="periodId" value={period.id} />
+        <div className="hours-fields">
+          <label className="hours-field">
+            <span>Название</span>
+            <input type="text" name="label" defaultValue={period.label} required />
+          </label>
+          <label className="hours-field">
+            <span>Начало</span>
+            <input type="date" name="dateFrom" defaultValue={period.date_from} required />
+          </label>
+          <label className="hours-field">
+            <span>Конец</span>
+            <input type="date" name="dateTo" defaultValue={period.date_to} required />
+          </label>
+        </div>
+        <div className="hours-actions">
+          <button type="submit" className="hours-btn hours-btn--ghost" disabled={editPending}>
+            Сохранить правку
+          </button>
+        </div>
+        {hasAssessments ? (
+          <p className="hours-note">
+            По периоду уже есть оценки: смена дат сразу пересчитает их часовую ставку,
+            начисление, сплит и число будней по новым датам — ставки на момент декларации при
+            этом сохранятся. Удалить период с оценками из админки нельзя: удаляет владелец в
+            JSON.
+          </p>
+        ) : null}
+        <Feedback state={editState} />
+      </form>
 
       <Feedback state={statusState} />
       <Feedback state={deleteState} />

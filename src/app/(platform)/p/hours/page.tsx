@@ -21,12 +21,12 @@ import {
   FormulaBreakdown,
   NoPeriodsNotice,
   NotAParticipantNotice,
-  ParticipantsTable,
   PeriodHeader,
   SignedInAs,
   SummaryTable,
 } from '@/modules/hours/view/components'
 import { HoursLayout } from '@/modules/hours/view/HoursLayout'
+import { ParticipantsTable } from '@/modules/hours/view/ParticipantsTable'
 import { PeriodSelect } from '@/modules/hours/view/PeriodSelect'
 
 /**
