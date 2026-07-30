@@ -147,7 +147,10 @@ describe('KR row markup (spec 075 req.2)', () => {
     // `.okr-card{overflow:hidden}`. The title column must stay outside it.
     const host = render(React.createElement(KrRow, { kr: kr() }))
     const head = host.querySelector('summary.okr-kr__head')!
-    expect(Array.from(head.children).map((c) => c.className)).toEqual(['okr-kr__main', 'okr-kr__meta'])
+    expect(Array.from(head.children).map((c) => c.className)).toEqual([
+      'okr-kr__main',
+      'okr-kr__meta',
+    ])
 
     const meta = head.querySelector('.okr-kr__meta')!
     for (const cls of ['.okr-av', '.okr-kr__n', '.okr-kr__v', '.okr-kr__bar']) {
@@ -174,8 +177,22 @@ describe('KR row markup (spec 075 req.2)', () => {
   })
 
   it('keeps the state badge of a childless action (FR-2)', () => {
-    const done = action({ id: 'a2', title: 'Готовое действие', stateGroup: 'completed', done: 1, total: 1, tasks: [] })
-    const open = action({ id: 'a3', title: 'Открытое действие', stateGroup: 'started', done: 0, total: 1, tasks: [] })
+    const done = action({
+      id: 'a2',
+      title: 'Готовое действие',
+      stateGroup: 'completed',
+      done: 1,
+      total: 1,
+      tasks: [],
+    })
+    const open = action({
+      id: 'a3',
+      title: 'Открытое действие',
+      stateGroup: 'started',
+      done: 0,
+      total: 1,
+      tasks: [],
+    })
     const host = render(React.createElement(KrRow, { kr: kr({ actions: [done, open] }) }))
 
     const states = host.querySelectorAll('.okr-act__state')
@@ -289,7 +306,7 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // under content-box that grows the *content* width and re-wraps the text.
     const row = /\.okr-kr__head\s*\{([^}]*)\}/.exec(css)
     expect(row, '.okr-kr__head rule missing').not.toBeNull()
-    expect(row![1]).toContain('box-sizing:border-box')
+    expect(row![1]).toContain('box-sizing: border-box')
   })
 
   it('keeps the design-system focus ring and selection colours (colors_and_type.css)', () => {
@@ -304,7 +321,7 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     expect(ring, '.okr-root :focus-visible rule missing').not.toBeNull()
     expect(ring![1], 'the shared ring must not impose a radius').not.toContain('border-radius')
     const row = /\.okr-kr__head\s*\{([^}]*)\}/.exec(css)
-    expect(row![1]).toContain('border-radius:8px')
+    expect(row![1]).toContain('border-radius: 8px')
   })
 
   it('mutes the Plane icon at rest despite `.okr-root a{color:inherit}`', () => {
@@ -322,11 +339,11 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // prototype has the same defect; spec 075 scenario 6 outranks it.
     const lanes = /\.okr-lanes\s*\{([^}]*)\}/.exec(css)
     expect(lanes, '.okr-lanes rule missing').not.toBeNull()
-    expect(lanes![1]).toContain('grid-template-columns:minmax(0,1fr) minmax(0,1fr)')
+    expect(lanes![1]).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)')
 
-    const narrow = /@media\s*\(max-width:900px\)\s*\{\s*\.okr-lanes\s*\{([^}]*)\}/.exec(css)
+    const narrow = /@media\s*\(max-width:\s*900px\)\s*\{\s*\.okr-lanes\s*\{([^}]*)\}/.exec(css)
     expect(narrow, 'the single-column media query for .okr-lanes is missing').not.toBeNull()
-    expect(narrow![1]).toContain('grid-template-columns:minmax(0,1fr)')
+    expect(narrow![1]).toContain('grid-template-columns: minmax(0, 1fr)')
   })
 
   it('reflows the KR row instead of letting the card clip it (scenario 6)', () => {
@@ -335,24 +352,24 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // off (~195px at 375px, ~45px at 1024px). The single-line flex row had a
     // ~460px floor: nowrap counters/values/badges plus an 88px bar.
     const head = /\.okr-kr__head\s*\{([^}]*)\}/.exec(css)
-    expect(head![1]).toContain('flex-wrap:wrap')
+    expect(head![1]).toContain('flex-wrap: wrap')
     // Inert while the row fits (the title column absorbs all free space), so
     // wide screens stay pixel-identical; it only right-aligns the second line.
-    expect(head![1]).toContain('justify-content:flex-end')
+    expect(head![1]).toContain('justify-content: flex-end')
 
     // The wrap trigger: with `min-width:0` the title column's hypothetical size
     // is 0, the cluster never wraps and the row overflows instead. `auto` makes
     // the flex algorithm break the line exactly when the title's own minimum
     // can no longer sit beside the cluster.
     const main = /\.okr-kr__main\s*\{([^}]*)\}/.exec(css)
-    expect(main![1]).toContain('min-width:auto')
-    expect(main![1]).not.toContain('min-width:0')
+    expect(main![1]).toContain('min-width: auto')
+    expect(main![1]).not.toContain('min-width: 0')
 
     // The cluster itself must be able to shrink and wrap on that second line.
     const meta = /\.okr-kr__meta\s*\{([^}]*)\}/.exec(css)
     expect(meta, '.okr-kr__meta rule missing').not.toBeNull()
-    expect(meta![1]).toContain('flex-wrap:wrap')
-    expect(meta![1]).toContain('min-width:0')
+    expect(meta![1]).toContain('flex-wrap: wrap')
+    expect(meta![1]).toContain('min-width: 0')
   })
 
   it('lets a long badge wrap its text while staying a pill', () => {
@@ -361,9 +378,9 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // nothing changes where the badge already fits on one line.
     const badge = /\.okr-badge\s*\{([^}]*)\}/.exec(css)
     expect(badge, '.okr-badge rule missing').not.toBeNull()
-    expect(badge![1]).toContain('white-space:normal')
-    expect(badge![1]).not.toContain('white-space:nowrap')
-    expect(badge![1]).toContain('border-radius:var(--rad-pill)')
+    expect(badge![1]).toContain('white-space: normal')
+    expect(badge![1]).not.toContain('white-space: nowrap')
+    expect(badge![1]).toContain('border-radius: var(--rad-pill)')
   })
 
   it('pins the status dot to the first line of a wrapped badge', () => {
@@ -371,12 +388,12 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // text block, so on two lines it floats into the gap between them.
     const dot = /\.okr-badge i\s*\{([^}]*)\}/.exec(css)
     expect(dot, '.okr-badge i rule missing').not.toBeNull()
-    expect(dot![1]).toContain('align-self:flex-start')
+    expect(dot![1]).toContain('align-self: flex-start')
     // Offset to the optical centre of the first line. `(1lh - 7px)/2` is by
     // definition what align-items:center produced for a single-line badge,
     // so the ordinary case stays pixel-identical whatever `line-height:normal`
     // resolves to; the plain-px declaration is the pre-`lh` fallback.
-    expect(dot![1]).toMatch(/margin-top:calc\(\(1lh - 7px\)\s*\/\s*2\)/)
+    expect(dot![1]).toMatch(/margin-top:\s*calc\(\(1lh - 7px\)\s*\/\s*2\)/)
   })
 
   it('breaks unbreakable tokens rather than clipping them', () => {
@@ -386,9 +403,9 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     for (const sel of ['.okr-kr__t', '.okr-act__t', '.okr-card__t']) {
       const rule = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`).exec(css)
       expect(rule, `${sel} rule missing`).not.toBeNull()
-      expect(rule![1], `${sel} must break anywhere`).toContain('overflow-wrap:anywhere')
+      expect(rule![1], `${sel} must break anywhere`).toContain('overflow-wrap: anywhere')
     }
-    expect(css).not.toContain('overflow-wrap:break-word')
+    expect(css).not.toContain('overflow-wrap: break-word')
   })
 
   it('keeps the border-box hover trick working across the wrap', () => {
@@ -396,8 +413,8 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // hovering would re-run the line breaking and reflow the row under cursor.
     const hover = /summary\.okr-kr__head:hover\s*\{([^}]*)\}/.exec(css)
     expect(hover, 'the hover rule is missing').not.toBeNull()
-    expect(hover![1]).toContain('width:calc(100% + 16px)')
-    expect(/\.okr-kr__head\s*\{([^}]*)\}/.exec(css)![1]).toContain('box-sizing:border-box')
+    expect(hover![1]).toContain('width: calc(100% + 16px)')
+    expect(/\.okr-kr__head\s*\{([^}]*)\}/.exec(css)![1]).toContain('box-sizing: border-box')
   })
 
   it('styles all three action-state chips (spec 077 req.2)', () => {
@@ -416,8 +433,8 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // They travel as one unit, exactly like the KR row's `.okr-kr__meta`.
     const meta = /\.okr-act__meta\s*\{([^}]*)\}/.exec(css)
     expect(meta, '.okr-act__meta rule missing').not.toBeNull()
-    expect(meta![1]).toContain('flex-wrap:wrap')
-    expect(meta![1]).toContain('min-width:0')
+    expect(meta![1]).toContain('flex-wrap: wrap')
+    expect(meta![1]).toContain('min-width: 0')
 
     // `flex-wrap` on the cluster is inert on its own: with `min-width:0` the
     // title column's hypothetical size is 0, the line never breaks, and the
@@ -426,8 +443,8 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // so pin it (and pin that nobody "tidies" it back to 0).
     const title = /\.okr-act__t\s*\{([^}]*)\}/.exec(css)
     expect(title, '.okr-act__t rule missing').not.toBeNull()
-    expect(title![1]).toMatch(/min-width:min\(100%,\s*\d+ch\)/)
-    expect(title![1]).not.toContain('min-width:0')
+    expect(title![1]).toMatch(/min-width:\s*min\(100%,\s*\d+ch\)/)
+    expect(title![1]).not.toContain('min-width: 0')
   })
 
   it('keeps every action-state chip above the WCAG AA threshold', () => {
@@ -440,11 +457,14 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
       expect(m, `token ${name} not found in okr.css`).not.toBeNull()
       return m![1]
     }
-    const channel = (c: number) => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
+    const channel = (c: number) =>
+      c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4
     const luminance = (hex: string) => {
       const n = Number.parseInt(hex.slice(1), 16)
       return (
-        0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
+        0.2126 * channel((n >> 16) & 255) +
+        0.7152 * channel((n >> 8) & 255) +
+        0.0722 * channel(n & 255)
       )
     }
     const contrast = (a: string, b: string) => {
@@ -454,15 +474,22 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
 
     const surface = token('--surface')
     for (const mod of ['done', 'started', 'todo']) {
-      const rule = new RegExp(`\\.okr-act__state--${mod}\\s*\\{[^}]*color:\\s*var\\((--[\\w-]+)\\)`).exec(css)
+      const rule = new RegExp(
+        `\\.okr-act__state--${mod}\\s*\\{[^}]*color:\\s*var\\((--[\\w-]+)\\)`,
+      ).exec(css)
       expect(rule, `.okr-act__state--${mod} must colour itself from a token`).not.toBeNull()
       const ratio = contrast(token(rule![1]), surface)
-      expect(ratio, `чип «${mod}» (${rule![1]}) на --surface: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
+      expect(
+        ratio,
+        `чип «${mod}» (${rule![1]}) на --surface: ${ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(4.5)
     }
   })
 
   it('pins the chevron rotation to an open KR row', () => {
-    expect(css).toMatch(/details\[open\]\s*>\s*summary\s+\.okr-kr__chev\s*\{[^}]*transform:\s*rotate\(90deg\)/)
+    expect(css).toMatch(
+      /details\[open\]\s*>\s*summary\s+\.okr-kr__chev\s*\{[^}]*transform:\s*rotate\(90deg\)/,
+    )
   })
 })
 
