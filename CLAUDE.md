@@ -24,16 +24,18 @@ Plane (below) is a higher-level / cross-project tracker; do not assume a
 bbm-portal work item lives there. If the prompt names a `BBMP-*` identifier it is
 Plane, otherwise default to GitHub Issues.
 
-## Субагенты и модели
+## Subagents and models
 
-Каждый вызов Agent обязан передавать явный `model` — наследование модели
-сессии от лида запрещено (Fable-лид иначе молча плодит Fable-субагентов;
-Fable субагентом не бывает никогда, Fable — только оркестратор). Механический
-fan-out (поиск, инвентаризация, сбор фактов) → `bbm-explorer` (Sonnet).
-Суждение (ревью, архитектура, имплементация) → Opus: `bbm-reviewer` для
-ревью PR (task-cycle stage 4) либо `general-purpose` с явным
-`model: opus` для остального. Return contract в каждом брифе ≤30 строк;
-тяжёлый вывод — в файл scratchpad или PR-комментарий, не в ответ агента.
+Every `Agent` call must pass an explicit `model` — inheriting the lead's
+session model is forbidden (a Fable lead otherwise silently spawns Fable
+subagents; Fable is never a subagent, only the orchestrator). Mechanical
+fan-out (search, inventory, fact-gathering) → `bbm-explorer` (Sonnet).
+Judgment (review, architecture, implementation) → Opus: `bbm-reviewer` for
+PR review (task-cycle stage 4), or `general-purpose` with explicit
+`model: opus` for everything else. Return contract in every brief is ≤30
+lines by default (`bbm-reviewer`'s own contract is stricter: ≤20); heavy
+output goes to a scratchpad file or PR comment, never into the agent's
+reply.
 
 ## Plane (project tracker) — workspace targeting
 
