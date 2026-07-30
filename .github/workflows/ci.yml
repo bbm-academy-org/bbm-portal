@@ -24,6 +24,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: DEBUG diff DEBT.md
+        run: pnpm exec prettier DEBT.md | diff -u DEBT.md - || true
+
       - name: Format check (prettier)
         run: pnpm format:check
 
