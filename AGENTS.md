@@ -126,3 +126,15 @@ pnpm dev                      # admin at http://localhost:3000/admin
   are the schema SSOT (`push: false`); where the container runs is a per-machine
   recipe (remote TrueNAS-over-SSH or local Docker) — see README → Database. After
   any collection/global change: `pnpm migrate:create <name>` → commit `src/migrations/*`.
+- **pre-commit hook — install once, from the main checkout.** `simple-git-hooks`
+  (via the `prepare` script) writes the hook to `<repo>/.git/hooks/pre-commit`,
+  so `pnpm install` (or `pnpm exec simple-git-hooks` on its own) must run from
+  the **main checkout** (`C:\Users\sidor\repos\bbm-portal`, the owner's), not
+  from a session worktree (`.claude/worktrees/<N>`). Reason: a linked worktree's
+  `.git` is a _file_, not a directory — `simple-git-hooks` tries to `mkdir` a
+  `hooks/` folder under it and fails with `ENOTDIR`; `pnpm install` still exits
+  0 (the error is caught, not rethrown), so this fails silently. Once installed
+  in the main checkout, the hook **is** shared across every worktree (git
+  resolves hooks through `commondir`, common to the whole repo) — one install
+  covers all parallel dev-stand sessions; re-running `pnpm install` from a
+  worktree afterwards is a harmless no-op, not a reset.
