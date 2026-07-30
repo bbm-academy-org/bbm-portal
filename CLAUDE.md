@@ -5,6 +5,14 @@
 "go" → TDD → review → live-stand acceptance → merge → close). Handoff / task
 text / config ≠ the owner's "go".
 
+**Parallel sessions are the norm here — read the rules before touching a branch
+or a port.** The session's work branch lives in its OWN worktree
+(`pnpm task:worktree <N>`), never in the shared checkout; the dev port is taken
+with `pnpm dev:ports`, never assumed to be 3000; a listener you did not start is
+never killed. Full rules: [`.claude/rules/parallel-sessions.md`](.claude/rules/parallel-sessions.md).
+Machine specifics (portable Node 22, `git -C`, the 3000–3009 Zitadel range):
+[`.claude/rules/dev-env.md`](.claude/rules/dev-env.md).
+
 ## Backlog / task tracking — GitHub Issues (not Plane)
 
 The day-to-day backlog for **this repo** lives in **GitHub Issues** on
