@@ -24,6 +24,17 @@ Plane (below) is a higher-level / cross-project tracker; do not assume a
 bbm-portal work item lives there. If the prompt names a `BBMP-*` identifier it is
 Plane, otherwise default to GitHub Issues.
 
+## Субагенты и модели
+
+Каждый вызов Agent обязан передавать явный `model` — наследование модели
+сессии от лида запрещено (Fable-лид иначе молча плодит Fable-субагентов;
+Fable субагентом не бывает никогда, Fable — только оркестратор). Механический
+fan-out (поиск, инвентаризация, сбор фактов) → `bbm-explorer` (Sonnet).
+Суждение (ревью, архитектура, имплементация) → Opus: `bbm-reviewer` для
+ревью PR (task-cycle stage 4) либо `general-purpose` с явным
+`model: opus` для остального. Return contract в каждом брифе ≤30 строк;
+тяжёлый вывод — в файл scratchpad или PR-комментарий, не в ответ агента.
+
 ## Plane (project tracker) — workspace targeting
 
 The `plane-pp-cli` / `plane-pp-mcp` setup has **no default workspace** on purpose:
