@@ -160,12 +160,22 @@ PROD=$(ssh portal-prod-tw 'cat ~/bbm-portal/DEPLOYED_SHA')
   && echo "prod == origin/main ($PROD)" \
   || echo "DRIFT: prod=$PROD origin/main=$(git rev-parse origin/main)"
 
-# The marker proves what was EXTRACTED. Prove the running app carries it too —
-# the app container must be newer than the marker file:
-ssh portal-prod-tw 'stat -c %Y ~/bbm-portal/DEPLOYED_SHA'
-docker compose -f docker-compose.prod.yml inspect app --format '{{.Created}}' \
-  2>/dev/null || docker inspect deploy-app-1 --format '{{.Created}}'
+# The marker proves what was EXTRACTED. Prove the RUNNING app carries it too:
+# the app container must have been created AFTER the marker was written. Both
+# timestamps are read ON THE HOST, both as unix epoch — a `docker` command run
+# on the workstation would inspect the LOCAL daemon and pass falsely.
+ssh portal-prod-tw '
+  MARKER=$(stat -c %Y ~/bbm-portal/DEPLOYED_SHA)
+  APP=$(date -d "$(docker inspect -f "{{.Created}}" bbm-portal-app-1)" +%s)
+  if [ "$APP" -ge "$MARKER" ]; then
+    echo "app container newer than the shipped tree (app=$APP marker=$MARKER)"
+  else
+    echo "STALE APP: rebuild/up -d app was skipped (app=$APP marker=$MARKER)"
+  fi'
 ```
+
+The container name is `bbm-portal-app-1` — compose project `name: bbm-portal`
+in `docker-compose.prod.yml`, not the `deploy/` directory name.
 
 > TODO: replace the marker+timestamp pair with the app itself reporting its
 > build sha (a `/api/health` field baked in at `docker build`) — then the

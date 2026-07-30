@@ -1,6 +1,6 @@
 ---
 name: task-cycle
-description: Mandatory lifecycle for every tracked task in this repo — issue → plan → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
+description: Mandatory lifecycle for every tracked task in this repo — issue → plan → design gate (UI) → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
 ---
 
 # task-cycle — the task lifecycle regulation
@@ -41,12 +41,13 @@ in plain language + acceptance scenarios ("how the owner verifies it works").
 The spec is the subject of the stage-2 "go": the owner approves IT, not an
 abstract plan. No EARS formalism — deferred with an explicit revisit trigger
 (see `docs/specs/README.md`). Chore/fix/CMS-contract tasks skip this stage —
-except the money rule below, which has no exemption.
+except the two rules below, which have no exemption by task type.
 
-**CRUD-чек — mandatory for any form:** spell out Create/Read/Update/Delete and
-write down which scenario is NOT supported and why. (2026-07-30: /p/hours
-shipped an upsert with no pre-fill — «как редактировать участников?» four
-minutes after the final report.) **A change to any computed/money formula
+**CRUD-чек — mandatory for any form**, whatever the task is labelled: a task of
+ANY type that adds or changes a form runs it. Spell out Create/Read/Update/
+Delete and write down which scenario is NOT supported and why. (2026-07-30:
+/p/hours shipped an upsert with no pre-fill — «как редактировать участников?»
+four minutes after the final report.) **A change to any computed/money formula
 ALWAYS needs a spec + an independent review of that spec**, even when the task
 arrived as a layout fix; an owner's answer inside AskUserQuestion is not a
 spec. (2026-07-30: the auto-rate «середина трети» was settled by one
@@ -54,10 +55,12 @@ AskUserQuestion.)
 
 ## Stage 1b — design gate (Stage A)
 
-A new or reshaped UI surface gets **2–3 design options** (mockup/sketch) to the
-owner BEFORE any code; the owner's pick is recorded in the issue. No pick — no
-markup. (Owner decision 2026-07-30; the price of not having this gate was the
-rework cycles #76 and #84.)
+A new or reshaped UI surface gets **2–3 design options** to the owner BEFORE any
+code; the owner's pick is recorded in the issue. No pick — no markup. An option
+is a sketch or mockup of ANY fidelity that is enough to choose a direction — a
+described layout, a wireframe, a rendered page; the lead (or the implementer it
+dispatches) prepares them, the owner picks. (Owner decision 2026-07-30; the
+price of not having this gate was the rework cycles #76 and #84.)
 
 ## Stage 2 — the "go" gate (key)
 
@@ -96,8 +99,8 @@ re-run by the lead. (2026-07-24: PR #72's implementer self-commissioned its
 «independent» review; the lead's re-review was still required.) On
 REQUEST_CHANGES: address every point — fix it, or reject it with reasoning in
 the thread — then re-review, looping until APPROVE. Docs-only PRs may merge on
-green CI without the subagent. Decision context goes onto the PR as comments, proactively
-(memory: `always-document-on-prs`).
+green CI without the subagent. Decision context goes onto the PR as comments,
+proactively (memory: `always-document-on-prs`).
 
 ## Stage 5 — acceptance of visible changes (blocks merge)
 
