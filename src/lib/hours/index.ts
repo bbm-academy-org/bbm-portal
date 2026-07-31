@@ -60,6 +60,20 @@ export type {
 } from './document'
 
 export {
+  buildMattermostPreview,
+  createPublicationBatch,
+  isPeriodMutationLocked,
+  recordPublicationDelivery,
+} from './publication'
+export type {
+  PublicationEligibility,
+  PublicationEligibilityStatus,
+  PublicationMutationResult,
+  PublicationPreview,
+  PublicationPreviewMessage,
+} from './publication'
+
+export {
   formatHours,
   formatHoursCount,
   formatInt,
@@ -83,4 +97,8 @@ export type {
   Participant,
   Period,
   PeriodStatus,
+  Publication,
+  PublicationDelivery,
+  PublicationMessage,
+  PublicationStatus,
 } from './types'

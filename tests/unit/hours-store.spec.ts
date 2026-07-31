@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -59,6 +59,7 @@ const seed: HoursDocument = {
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'bbm-hours-'))
   file = join(dir, 'nested', 'hours.json')
+  mkdirSync(join(dir, 'nested'), { recursive: true })
   process.env.HOURS_DATA_FILE = file
 })
 
@@ -91,12 +92,13 @@ describe('readHoursDocument', () => {
       participants: [],
       periods: [],
       assessments: [],
+      publications: [],
     })
   })
 
   it('читает сохранённый документ', async () => {
     await mutateHoursDocument(() => ({ ok: true, doc: seed, warnings: [], saved: null }))
-    await expect(readHoursDocument()).resolves.toEqual(seed)
+    await expect(readHoursDocument()).resolves.toEqual({ ...seed, publications: [] })
   })
 
   it('битый JSON — ошибка вслух, файл не перезаписывается (п.17)', async () => {
@@ -187,7 +189,62 @@ describe('readHoursDocument', () => {
       participants: seed.participants,
       periods: [],
       assessments: [],
+      publications: [],
     })
+  })
+
+  it('старый JSON без publications нормализуется в пустой audit trail (spec 100 п.15)', async () => {
+    writeFileSync(file, JSON.stringify(seed), 'utf8')
+    const doc = (await readHoursDocument()) as HoursDocument & { publications?: unknown[] }
+    expect(doc.publications).toEqual([])
+  })
+
+  it('publication batch сохраняется и читается без потери delivery progress', async () => {
+    const batch = {
+      period_id: 'p-july',
+      status: 'incomplete',
+      started_at: '2026-08-02T00:00:00.000Z',
+      published_at: null,
+      preview_fingerprint: 'sha256:test',
+      messages: [
+        {
+          email: 'anton@bbm.academy',
+          text: 'Сообщение 1',
+          delivery: 'sent',
+          sent_at: '2026-08-02T00:00:01.000Z',
+        },
+        {
+          email: 'eduard@bbm.academy',
+          text: 'Сообщение 2',
+          delivery: 'failed',
+          sent_at: null,
+        },
+      ],
+    }
+    const withBatch = { ...seed, publications: [batch] }
+
+    await mutateHoursDocument(() => ({
+      ok: true,
+      doc: withBatch as HoursDocument,
+      warnings: [],
+      saved: null,
+    }))
+
+    const persisted = (await readHoursDocument()) as HoursDocument & {
+      publications?: (typeof batch)[]
+    }
+    expect(persisted.publications).toEqual([batch])
+  })
+
+  it('битый publications — ошибка вслух и следующая мутация не перезаписывает файл', async () => {
+    const corrupt = JSON.stringify({ ...seed, publications: { period_id: 'p-july' } })
+    writeFileSync(file, corrupt, 'utf8')
+
+    await expect(readHoursDocument()).rejects.toBeInstanceOf(HoursDataError)
+    await expect(
+      mutateHoursDocument((doc) => ({ ok: true, doc, warnings: [], saved: null })),
+    ).rejects.toBeInstanceOf(HoursDataError)
+    expect(readFileSync(file, 'utf8')).toBe(corrupt)
   })
 })
 

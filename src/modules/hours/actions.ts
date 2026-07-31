@@ -19,12 +19,14 @@ import { revalidatePath } from 'next/cache'
 
 import { auth } from '@/auth'
 import {
+  createPublicationBatch,
   createPeriod,
   deletePeriod,
   HoursDataError,
   isHoursAdmin,
   isOwnEmail,
   mutateHoursDocument,
+  recordPublicationDelivery,
   saveAssessment,
   sessionEmail,
   setPeriodStatus,
@@ -34,6 +36,8 @@ import {
 import type { Assessment, AssessmentMethod, Grade, MutationResult, PeriodStatus } from '@/lib/hours'
 
 import type { HoursActionState } from './actionState'
+
+const MATTERMOST_DELIVERY_TIMEOUT_MS = 10_000
 
 function error(message: string): HoursActionState {
   return { status: 'error', message, warnings: [], saved: null }
@@ -264,5 +268,76 @@ export async function setPeriodStatusAction(
       setPeriodStatus(doc, text(formData, 'periodId'), status),
     )
     return toState(result, status === 'open' ? 'Период открыт.' : 'Период закрыт.')
+  })
+}
+
+/**
+ * Publishes one immutable period batch to the channel-bound Mattermost
+ * incoming webhook. Auth and configuration gates run before the atomic batch
+ * write; every delivery result is persisted before the next request.
+ */
+export async function publishHoursToMattermostAction(
+  _prev: HoursActionState,
+  formData: FormData,
+): Promise<HoursActionState> {
+  return guarded(async () => {
+    const gate = await requireAdmin()
+    if ('status' in gate) return gate
+
+    const webhookUrl = process.env.MATTERMOST_HOURS_WEBHOOK_URL?.trim()
+    if (!webhookUrl) {
+      return error('Публикация в Mattermost не настроена — позови администратора.')
+    }
+
+    const periodId = text(formData, 'periodId')
+    const previewFingerprint = text(formData, 'previewFingerprint')
+    if (!periodId || !previewFingerprint) {
+      return error('Предпросмотр устарел — обнови страницу и проверь сообщения снова.')
+    }
+
+    const created = await mutateHoursDocument((doc) =>
+      createPublicationBatch(doc, periodId, previewFingerprint, new Date().toISOString()),
+    )
+    if (!created.ok) return error(created.error)
+
+    for (const [index, message] of created.saved.messages.entries()) {
+      let delivery: 'sent' | 'failed' | 'unknown'
+      try {
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: message.text }),
+          signal: AbortSignal.timeout(MATTERMOST_DELIVERY_TIMEOUT_MS),
+        })
+        const responseBody = await response.text()
+        delivery = response.status === 200 && responseBody.trim() === 'ok' ? 'sent' : 'failed'
+      } catch {
+        delivery = 'unknown'
+      }
+
+      const progressed = await mutateHoursDocument((doc) =>
+        recordPublicationDelivery(doc, periodId, index, delivery, new Date().toISOString()),
+      )
+      if (!progressed.ok) {
+        return error(
+          'Не удалось сохранить прогресс публикации — автоматический повтор заблокирован.',
+        )
+      }
+
+      if (delivery !== 'sent') {
+        refresh()
+        const sent = progressed.saved.messages.filter(
+          (candidate) => candidate.delivery === 'sent',
+        ).length
+        return error(
+          delivery === 'unknown'
+            ? `Результат доставки неизвестен. Отправлено ${sent} из ${progressed.saved.messages.length}; автоматический повтор заблокирован.`
+            : `Mattermost не подтвердил доставку. Отправлено ${sent} из ${progressed.saved.messages.length}; автоматический повтор заблокирован.`,
+        )
+      }
+    }
+
+    refresh()
+    return success(`Опубликовано ${created.saved.messages.length} сообщений в Mattermost.`, [])
   })
 }

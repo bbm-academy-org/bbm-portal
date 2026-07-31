@@ -3,7 +3,7 @@
 import React from 'react'
 import { useActionState } from 'react'
 
-import type { Participant, Period } from '@/lib/hours/types'
+import type { Participant, Period, PublicationStatus } from '@/lib/hours/types'
 import {
   createPeriodAction,
   deletePeriodAction,
@@ -14,6 +14,8 @@ import {
 import { IDLE_STATE } from '@/modules/hours/actionState'
 import type { HoursActionState } from '@/modules/hours/actionState'
 import { ParticipantsTable } from './ParticipantsTable'
+
+export { MattermostVerificationPanel } from './MattermostVerificationPanel'
 
 /**
  * Формы админки (спека 081 пп. 23, 24). Клиентские только ради обратной связи
@@ -249,18 +251,22 @@ export function PeriodForm() {
 /**
  * Открыть / закрыть / править / удалить период (пп. 16, 24).
  *
- * Правка label и дат доступна ВСЕГДА (issue #85) — в том числе по периоду с
- * оценками: опечатка в дате иначе оставалась неисправимой из UI. Что смена дат
- * пересчитает производные поля оценок, сказано до нажатия, а не после.
- * Удаление периода с оценками закрыто по-прежнему: у него обратного хода нет.
+ * Label/date edits stay available when assessments exist (#85). An active
+ * Mattermost delivery freezes them before the first network call, and a
+ * successful publication freezes them permanently; an incomplete attempt
+ * restores the approved repair path. The date recalculation warning is shown
+ * before submit. Period deletion stays unavailable once assessments exist.
  */
 export function PeriodRowActions({
   period,
   hasAssessments,
+  publicationStatus = null,
 }: {
   period: Period
   /** По периоду уже есть оценки: удаление закрыто, правка — предупреждает. */
   hasAssessments: boolean
+  /** Active delivery and successful publication freeze period mutations. */
+  publicationStatus?: PublicationStatus | null
 }) {
   const [statusState, statusAction, statusPending] = useActionState(
     setPeriodStatusAction,
@@ -270,6 +276,16 @@ export function PeriodRowActions({
   const [deleteState, deleteAction, deletePending] = useActionState(deletePeriodAction, IDLE_STATE)
   // id периода уникален в документе — годится и как якорь aria-describedby.
   const noticeId = `hours-period-notice-${period.id}`
+
+  if (publicationStatus === 'sending' || publicationStatus === 'published') {
+    return (
+      <p className="hours-notice hours-notice--warn">
+        {publicationStatus === 'published'
+          ? 'Период опубликован в Mattermost: переоткрыть его или править название и даты нельзя, чтобы сохранённый JSON не разошёлся с постами.'
+          : 'Публикация начата, но не завершена: нужна ручная сверка Mattermost. Переоткрыть период или править название и даты нельзя, чтобы сохранённый JSON не разошёлся с уже отправленными постами.'}
+      </p>
+    )
+  }
 
   return (
     <div>

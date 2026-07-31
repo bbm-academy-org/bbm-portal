@@ -554,6 +554,9 @@ body:has(.hours-root) {
   padding: 13px 26px;
   border-radius: 10px;
 }
+.hours-btn:not([disabled]):hover {
+  filter: brightness(0.94);
+}
 .hours-btn[disabled] {
   opacity: 0.55;
   cursor: not-allowed;
@@ -576,6 +579,63 @@ body:has(.hours-root) {
   gap: 10px;
   align-items: center;
   margin-top: clamp(16px, 3vw, 24px);
+}
+
+/* Inline verification panel: selected period summary → exact MM preview. */
+.hours-verification {
+  margin-top: clamp(22px, 4vw, 34px);
+  padding: clamp(18px, 3vw, 26px);
+  border: 1px solid var(--grid);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.hours-verification[data-state='sending'] {
+  border-left: 3px solid var(--accent);
+}
+.hours-verification[data-state='incomplete'] {
+  border-left: 3px solid var(--danger);
+}
+.hours-verification__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.hours-verification__head h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--fs-h3);
+  font-weight: 400;
+}
+.hours-verification__head .hours-note {
+  margin-top: 2px;
+}
+.hours-verification__status {
+  margin-bottom: 0;
+}
+.hours-verification__preview {
+  margin-top: clamp(18px, 3vw, 24px);
+  padding-top: clamp(18px, 3vw, 24px);
+  border-top: 1px solid var(--grid);
+}
+.hours-verification__messages {
+  display: grid;
+  gap: 12px;
+}
+.hours-verification__message {
+  min-width: 0;
+  border: 1px solid var(--grid);
+  border-radius: 12px;
+  background: var(--page);
+  padding: clamp(14px, 2vw, 20px);
+}
+.hours-verification__message pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--ink-2);
+  font: 500 var(--fs-s) / 1.55 var(--sans);
 }
 
 /* Карточка «оценка сохранена» */

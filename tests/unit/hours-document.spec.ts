@@ -684,6 +684,11 @@ describe('pickSummaryPeriod (п.22)', () => {
 
 describe('emptyHoursDocument', () => {
   it('пустая структура — валидный документ первого запуска', () => {
-    expect(emptyHoursDocument()).toEqual({ participants: [], periods: [], assessments: [] })
+    expect(emptyHoursDocument()).toEqual({
+      participants: [],
+      periods: [],
+      assessments: [],
+      publications: [],
+    })
   })
 })

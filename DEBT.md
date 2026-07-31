@@ -21,6 +21,12 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-07-31 Указанный в task-cycle skill `frontend-design` отсутствует и в
+      репозитории, и в доступном каталоге; для #100 использованы согласованный
+      владельцем wireframe и существующая дизайн-система `hours.css`. Это
+      process deviation, не product gap — return condition: восстановить или
+      зарегистрировать skill до следующей owner-visible frontend-задачи (#100)
+
 - [ ] 2026-07-30 `worktree-teardown.mjs`: в robocopy-фолбэке финальный
       `cmd /c rmdir /s /q \\?\<путь>` — no-op (cmd.exe не понимает `\\?\`-префикс);
       первая ступень PS 5.1 отрабатывает, так что исход — честный exit 1, не потеря

@@ -2,6 +2,7 @@ import React from 'react'
 
 import { auth } from '@/auth'
 import {
+  buildMattermostPreview,
   describePeriod,
   formatIsoDate,
   HoursDataError,
@@ -19,7 +20,12 @@ import {
   SummaryTable,
 } from '@/modules/hours/view/components'
 import { HoursLayout } from '@/modules/hours/view/HoursLayout'
-import { ParticipantsAdmin, PeriodForm, PeriodRowActions } from '@/modules/hours/view/AdminForms'
+import {
+  MattermostVerificationPanel,
+  ParticipantsAdmin,
+  PeriodForm,
+  PeriodRowActions,
+} from '@/modules/hours/view/AdminForms'
 import { PeriodSelect } from '@/modules/hours/view/PeriodSelect'
 
 /**
@@ -91,6 +97,10 @@ export default async function HoursAdminPage({
           assessment,
         }))
     : []
+  const summaryPublication = summaryPeriod
+    ? (doc.publications?.find((publication) => publication.period_id === summaryPeriod.id) ?? null)
+    : null
+  const verificationPreview = summaryPeriod ? buildMattermostPreview(doc, summaryPeriod.id) : null
 
   return (
     <HoursLayout>
@@ -125,6 +135,9 @@ export default async function HoursAdminPage({
               {doc.periods.map((period) => {
                 const calendar = describePeriod(period.date_from, period.date_to)
                 const hasAssessments = doc.assessments.some((a) => a.period_id === period.id)
+                const publicationStatus = doc.publications?.find(
+                  (publication) => publication.period_id === period.id,
+                )?.status
                 return (
                   <li key={period.id}>
                     <PeriodHeader period={period} calendar={calendar} />
@@ -132,7 +145,11 @@ export default async function HoursAdminPage({
                       {formatIsoDate(period.date_from)}—{formatIsoDate(period.date_to)} ·{' '}
                       {hasAssessments ? 'оценки есть' : 'оценок нет'}
                     </p>
-                    <PeriodRowActions period={period} hasAssessments={hasAssessments} />
+                    <PeriodRowActions
+                      period={period}
+                      hasAssessments={hasAssessments}
+                      publicationStatus={publicationStatus}
+                    />
                   </li>
                 )
               })}
@@ -152,6 +169,12 @@ export default async function HoursAdminPage({
                 basePath="/p/hours/admin"
               />
               <SummaryTable rows={summaryRows} />
+              {verificationPreview ? (
+                <MattermostVerificationPanel
+                  preview={verificationPreview}
+                  publication={summaryPublication}
+                />
+              ) : null}
             </>
           ) : (
             <NoPeriodsNotice />
