@@ -296,10 +296,6 @@ export function recordPublicationDelivery(
   }
 }
 
-export function isPeriodPublished(doc: HoursDocument, periodId: string): boolean {
-  return (
-    doc.publications?.some(
-      (publication) => publication.period_id === periodId && publication.status === 'published',
-    ) ?? false
-  )
+export function hasPublicationBatch(doc: HoursDocument, periodId: string): boolean {
+  return doc.publications?.some((publication) => publication.period_id === periodId) ?? false
 }

@@ -135,10 +135,9 @@ export default async function HoursAdminPage({
               {doc.periods.map((period) => {
                 const calendar = describePeriod(period.date_from, period.date_to)
                 const hasAssessments = doc.assessments.some((a) => a.period_id === period.id)
-                const published = doc.publications?.some(
-                  (publication) =>
-                    publication.period_id === period.id && publication.status === 'published',
-                )
+                const publicationStatus = doc.publications?.find(
+                  (publication) => publication.period_id === period.id,
+                )?.status
                 return (
                   <li key={period.id}>
                     <PeriodHeader period={period} calendar={calendar} />
@@ -149,7 +148,7 @@ export default async function HoursAdminPage({
                     <PeriodRowActions
                       period={period}
                       hasAssessments={hasAssessments}
-                      published={published}
+                      publicationStatus={publicationStatus}
                     />
                   </li>
                 )

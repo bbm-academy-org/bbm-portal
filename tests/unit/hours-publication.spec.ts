@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { setPeriodStatus, updatePeriod } from '@/lib/hours/document'
+import { saveAssessment, setPeriodStatus, updatePeriod } from '@/lib/hours/document'
 import type { HoursDocument } from '@/lib/hours/types'
 
 type Delivery = 'pending' | 'sent' | 'failed' | 'unknown'
@@ -45,6 +45,15 @@ interface PublicationApi {
   ) =>
     | { ok: false; error: string }
     | { ok: true; doc: PublicationDocument; warnings: string[]; saved: Publication }
+  recordPublicationDelivery: (
+    doc: PublicationDocument,
+    periodId: string,
+    messageIndex: number,
+    delivery: 'sent' | 'failed' | 'unknown',
+    at: string,
+  ) =>
+    | { ok: false; error: string }
+    | { ok: true; doc: PublicationDocument; warnings: string[]; saved: Publication }
 }
 
 async function publicationApi(): Promise<PublicationApi> {
@@ -57,6 +66,7 @@ async function publicationApi(): Promise<PublicationApi> {
     hours.createPublicationBatch,
     'PHASE B: export createPublicationBatch from the hours domain',
   ).toBeTypeOf('function')
+  expect(hours.recordPublicationDelivery).toBeTypeOf('function')
   return hours as PublicationApi
 }
 
@@ -310,23 +320,126 @@ describe('eligibility and immutable batch (spec 100 requirements 6, 8–9, 15)',
   })
 })
 
-describe('published-period freeze (spec 100 requirement 12)', () => {
-  it('blocks reopening and label/date edits after successful publication', async () => {
-    const { buildMattermostPreview } = await publicationApi()
+describe('publication-batch freeze (spec 100 requirement 12)', () => {
+  async function batchAt(status: PublicationStatus): Promise<PublicationDocument> {
+    const { buildMattermostPreview, createPublicationBatch, recordPublicationDelivery } =
+      await publicationApi()
     const source = document()
-    source.publications = [publication(buildMattermostPreview(source, 'p-july'), 'published')]
+    const preview = buildMattermostPreview(source, 'p-july')
+    const created = createPublicationBatch(
+      source,
+      'p-july',
+      preview.preview_fingerprint,
+      '2026-08-02T00:00:00.000Z',
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error(created.error)
+    if (status === 'sending') return created.doc
 
-    const reopen = setPeriodStatus(source, 'p-july', 'open')
-    expect(reopen.ok).toBe(false)
-    if (!reopen.ok) expect(reopen.error).toContain('опублик')
+    if (status === 'incomplete') {
+      const incomplete = recordPublicationDelivery(
+        created.doc,
+        'p-july',
+        0,
+        'unknown',
+        '2026-08-02T00:00:01.000Z',
+      )
+      expect(incomplete.ok).toBe(true)
+      if (!incomplete.ok) throw new Error(incomplete.error)
+      return incomplete.doc
+    }
 
-    const edit = updatePeriod(source, {
-      id: 'p-july',
-      label: 'Июль 2026 — исправлено',
-      dateFrom: '2026-07-01',
-      dateTo: '2026-07-30',
+    let current = created.doc
+    for (const index of created.saved.messages.keys()) {
+      const progressed = recordPublicationDelivery(
+        current,
+        'p-july',
+        index,
+        'sent',
+        `2026-08-02T00:00:0${index + 1}.000Z`,
+      )
+      expect(progressed.ok).toBe(true)
+      if (!progressed.ok) throw new Error(progressed.error)
+      current = progressed.doc
+    }
+    return current
+  }
+
+  it.each<PublicationStatus>(['sending', 'incomplete', 'published'])(
+    'blocks reopening and label/date edits after the atomic batch reaches %s',
+    async (status) => {
+      const source = await batchAt(status)
+      const periodBefore = structuredClone(source.periods[0])
+      const assessmentsBefore = structuredClone(source.assessments)
+
+      const reopen = setPeriodStatus(source, 'p-july', 'open')
+      expect(reopen.ok).toBe(false)
+      if (!reopen.ok) expect(reopen.error).toMatch(/публикац/i)
+
+      const edit = updatePeriod(source, {
+        id: 'p-july',
+        label: 'Июль 2026 — исправлено',
+        dateFrom: '2026-07-01',
+        dateTo: '2026-07-30',
+      })
+      expect(edit.ok).toBe(false)
+      if (!edit.ok) expect(edit.error).toMatch(/публикац/i)
+      expect(source.periods[0]).toEqual(periodBefore)
+      expect(source.assessments).toEqual(assessmentsBefore)
+    },
+  )
+
+  it('cannot finish a batch as published with an open period or mutable assessments', async () => {
+    const { recordPublicationDelivery } = await publicationApi()
+    const sending = await batchAt('sending')
+    const frozenTexts = sending.publications?.[0].messages.map((message) => message.text)
+
+    expect(setPeriodStatus(sending, 'p-july', 'open').ok).toBe(false)
+    expect(
+      updatePeriod(sending, {
+        id: 'p-july',
+        label: 'Июль 2026 — подменён',
+        dateFrom: '2026-07-02',
+        dateTo: '2026-07-30',
+      }).ok,
+    ).toBe(false)
+
+    let current = sending
+    for (const index of sending.publications?.[0].messages.keys() ?? []) {
+      const progressed = recordPublicationDelivery(
+        current,
+        'p-july',
+        index,
+        'sent',
+        `2026-08-02T00:00:0${index + 1}.000Z`,
+      )
+      expect(progressed.ok).toBe(true)
+      if (!progressed.ok) throw new Error(progressed.error)
+      current = progressed.doc
+    }
+
+    expect(current.periods[0]).toMatchObject({
+      status: 'closed',
+      label: 'Июль 2026',
+      date_from: '2026-07-01',
+      date_to: '2026-07-31',
     })
-    expect(edit.ok).toBe(false)
-    if (!edit.ok) expect(edit.error).toContain('опублик')
+    expect(current.publications?.[0]).toMatchObject({ status: 'published' })
+    expect(current.publications?.[0].messages.map((message) => message.text)).toEqual(frozenTexts)
+
+    const assessmentMutation = saveAssessment(
+      current,
+      {
+        periodId: 'p-july',
+        email: 'anton@bbm.academy',
+        hours: 161,
+        method: 'period',
+        weekendHours: 0,
+        splitPercent: 30,
+      },
+      '2026-08-02T00:01:00.000Z',
+    )
+    expect(assessmentMutation.ok).toBe(false)
+    expect(current.assessments[0].hours).toBe(160)
   })
 })

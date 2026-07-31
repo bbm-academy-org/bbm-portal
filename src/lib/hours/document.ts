@@ -25,7 +25,7 @@ import {
   participantMonthlyRate,
 } from './formula'
 import type { PeriodCalendar } from './formula'
-import { isPeriodPublished } from './publication'
+import { hasPublicationBatch } from './publication'
 import type {
   Assessment,
   AssessmentMethod,
@@ -369,8 +369,10 @@ export function updatePeriod(
 ): MutationResult<Period> {
   const existing = findPeriod(doc, input.id)
   if (!existing) return fail('Период не найден — обнови страницу.')
-  if (isPeriodPublished(doc, input.id)) {
-    return fail(`Период «${existing.label}» уже опубликован — править label или даты нельзя.`)
+  if (hasPublicationBatch(doc, input.id)) {
+    return fail(
+      `Публикация периода «${existing.label}» уже начата — править label или даты нельзя.`,
+    )
   }
   const validated = validatePeriodInput(input)
   if ('ok' in validated) return validated
@@ -447,7 +449,8 @@ export function deletePeriod(doc: HoursDocument, periodId: string): MutationResu
 
 /**
  * Открывает или закрывает период. Открытым может быть максимум один (п.24);
- * закрытый переоткрывается — это путь исправить опечатку перед выплатой 3-го.
+ * закрытый без publication batch переоткрывается — это путь исправить опечатку
+ * перед выплатой 3-го.
  */
 export function setPeriodStatus(
   doc: HoursDocument,
@@ -456,8 +459,8 @@ export function setPeriodStatus(
 ): MutationResult<Period> {
   const existing = findPeriod(doc, periodId)
   if (!existing) return fail('Период не найден — обнови страницу.')
-  if (status === 'open' && isPeriodPublished(doc, periodId)) {
-    return fail(`Период «${existing.label}» уже опубликован — переоткрыть его нельзя.`)
+  if (status === 'open' && hasPublicationBatch(doc, periodId)) {
+    return fail(`Публикация периода «${existing.label}» уже начата — переоткрыть его нельзя.`)
   }
   if (status === 'open') {
     const open = doc.periods.find((period) => period.status === 'open' && period.id !== periodId)

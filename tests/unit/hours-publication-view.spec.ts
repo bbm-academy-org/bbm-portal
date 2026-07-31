@@ -7,7 +7,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { buildMattermostPreview } from '@/lib/hours'
-import type { HoursDocument, Period, Publication, PublicationPreview } from '@/lib/hours'
+import type {
+  HoursDocument,
+  Period,
+  Publication,
+  PublicationPreview,
+  PublicationStatus,
+} from '@/lib/hours'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const authState = vi.hoisted(() => ({ session: null as unknown }))
@@ -291,30 +297,37 @@ describe('Mattermost verification panel — loading/published/error states', () 
   })
 })
 
-describe('published PeriodRowActions freeze', () => {
-  it('proactively removes reopen and label/date edit controls and explains why', async () => {
-    const view = await import('@/modules/hours/view/AdminForms')
-    const PeriodRowActions = view.PeriodRowActions as unknown as React.ComponentType<{
-      period: Period
-      hasAssessments: boolean
-      published: boolean
-    }>
-    const period = { ...document().periods[0], status: 'closed' as const }
-    const host = window.document.createElement('div')
-    host.innerHTML = renderToStaticMarkup(
-      React.createElement(PeriodRowActions, {
-        period,
-        hasAssessments: true,
-        published: true,
-      }),
-    )
+describe('publication-batch PeriodRowActions freeze', () => {
+  it.each<PublicationStatus>(['sending', 'incomplete', 'published'])(
+    'proactively removes reopen and label/date edit controls for %s',
+    async (publicationStatus) => {
+      const view = await import('@/modules/hours/view/AdminForms')
+      const PeriodRowActions = view.PeriodRowActions as unknown as React.ComponentType<{
+        period: Period
+        hasAssessments: boolean
+        publicationStatus: PublicationStatus
+      }>
+      const period = { ...document().periods[0], status: 'closed' as const }
+      const host = window.document.createElement('div')
+      host.innerHTML = renderToStaticMarkup(
+        React.createElement(PeriodRowActions, {
+          period,
+          hasAssessments: true,
+          publicationStatus,
+        }),
+      )
 
-    expect(buttonByText(host, /Открыть/)).toBeUndefined()
-    expect(host.querySelector('input[name="label"]')).toBeNull()
-    expect(host.querySelector('input[name="dateFrom"]')).toBeNull()
-    expect(host.querySelector('input[name="dateTo"]')).toBeNull()
-    expect(text(host)).toMatch(/опубликован.*нельзя|нельзя.*опубликован/i)
-  })
+      expect(buttonByText(host, /Открыть/)).toBeUndefined()
+      expect(host.querySelector('input[name="label"]')).toBeNull()
+      expect(host.querySelector('input[name="dateFrom"]')).toBeNull()
+      expect(host.querySelector('input[name="dateTo"]')).toBeNull()
+      expect(text(host)).toMatch(
+        publicationStatus === 'published'
+          ? /опубликован.*нельзя|нельзя.*опубликован/i
+          : /публикация начата.*ручн.*сверк|ручн.*сверк.*публикация начата/i,
+      )
+    },
+  )
 })
 
 describe('prototype state styling contract', () => {
@@ -373,4 +386,44 @@ describe('admin page wiring', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it.each<PublicationStatus>(['sending', 'incomplete'])(
+    'passes %s batch state to period controls and removes reopen/edit affordances',
+    async (publicationStatus) => {
+      const directory = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-lock-page-'))
+      const file = join(directory, 'hours.json')
+      const originalDataFile = process.env.HOURS_DATA_FILE
+      const originalAdmins = process.env.HOURS_ADMIN_EMAILS
+      const source = document('closed')
+      const preview = buildMattermostPreview(source, 'p-july')
+      source.publications = [storedPublication(preview, publicationStatus)]
+      try {
+        process.env.HOURS_DATA_FILE = file
+        process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
+        authState.session = { user: { email: 'anton@bbm.academy' } }
+        writeFileSync(file, JSON.stringify(source), 'utf8')
+
+        const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
+        const element = await HoursAdminPage({ searchParams: Promise.resolve({}) })
+        const host = window.document.createElement('div')
+        host.innerHTML = renderToStaticMarkup(element)
+
+        expect(text(host)).toMatch(/публикация начата.*ручн.*сверк/i)
+        const periodItem = [...host.querySelectorAll('.hours-months > li')].find((item) =>
+          text(item).includes('Июль 2026'),
+        )
+        expect(periodItem).toBeDefined()
+        expect(buttonByText(periodItem!, /Открыть/)).toBeUndefined()
+        expect(periodItem?.querySelector('input[name="label"]')).toBeNull()
+        expect(periodItem?.querySelector('input[name="dateFrom"]')).toBeNull()
+        expect(periodItem?.querySelector('input[name="dateTo"]')).toBeNull()
+      } finally {
+        if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
+        else process.env.HOURS_DATA_FILE = originalDataFile
+        if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
+        else process.env.HOURS_ADMIN_EMAILS = originalAdmins
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
 })
