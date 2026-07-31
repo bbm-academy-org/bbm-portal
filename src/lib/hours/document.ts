@@ -25,6 +25,7 @@ import {
   participantMonthlyRate,
 } from './formula'
 import type { PeriodCalendar } from './formula'
+import { isPeriodPublished } from './publication'
 import type {
   Assessment,
   AssessmentMethod,
@@ -368,6 +369,9 @@ export function updatePeriod(
 ): MutationResult<Period> {
   const existing = findPeriod(doc, input.id)
   if (!existing) return fail('Период не найден — обнови страницу.')
+  if (isPeriodPublished(doc, input.id)) {
+    return fail(`Период «${existing.label}» уже опубликован — править label или даты нельзя.`)
+  }
   const validated = validatePeriodInput(input)
   if ('ok' in validated) return validated
 
@@ -452,6 +456,9 @@ export function setPeriodStatus(
 ): MutationResult<Period> {
   const existing = findPeriod(doc, periodId)
   if (!existing) return fail('Период не найден — обнови страницу.')
+  if (status === 'open' && isPeriodPublished(doc, periodId)) {
+    return fail(`Период «${existing.label}» уже опубликован — переоткрыть его нельзя.`)
+  }
   if (status === 'open') {
     const open = doc.periods.find((period) => period.status === 'open' && period.id !== periodId)
     if (open) {

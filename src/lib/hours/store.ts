@@ -23,7 +23,13 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 
 import { normalizeEmail } from './access'
 import type { MutationResult } from './document'
-import { emptyHoursDocument, type HoursDocument } from './types'
+import {
+  emptyHoursDocument,
+  type HoursDocument,
+  type Publication,
+  type PublicationDelivery,
+  type PublicationStatus,
+} from './types'
 
 /** Данные на диске нечитаемы — наверх, чтобы страница сказала это вслух. */
 export class HoursDataError extends Error {
@@ -34,12 +40,73 @@ export class HoursDataError extends Error {
 }
 
 const DEFAULT_DATA_FILE = 'data/hours.json'
+const PUBLICATION_STATUSES: PublicationStatus[] = ['sending', 'published', 'incomplete']
+const DELIVERY_STATUSES: PublicationDelivery[] = ['pending', 'sent', 'failed', 'unknown']
 
 /** Абсолютный путь к документу. Пустая переменная считается незаданной. */
 export function resolveDataFile(env: Record<string, string | undefined> = process.env): string {
   const configured = typeof env.HOURS_DATA_FILE === 'string' ? env.HOURS_DATA_FILE.trim() : ''
   const target = configured || DEFAULT_DATA_FILE
   return isAbsolute(target) ? target : resolve(process.cwd(), target)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function normalizePublication(raw: unknown, index: number): Publication {
+  const invalid = (): never => {
+    throw new HoursDataError(
+      `Файл данных модуля часов содержит повреждённую публикацию #${index + 1}.`,
+    )
+  }
+  if (!isRecord(raw)) return invalid()
+  if (
+    typeof raw.period_id !== 'string' ||
+    !raw.period_id ||
+    typeof raw.status !== 'string' ||
+    !PUBLICATION_STATUSES.includes(raw.status as PublicationStatus) ||
+    typeof raw.started_at !== 'string' ||
+    !isNullableString(raw.published_at) ||
+    typeof raw.preview_fingerprint !== 'string' ||
+    !raw.preview_fingerprint ||
+    !Array.isArray(raw.messages)
+  ) {
+    return invalid()
+  }
+
+  const messages = raw.messages.map((message) => {
+    if (
+      !isRecord(message) ||
+      typeof message.email !== 'string' ||
+      !normalizeEmail(message.email) ||
+      typeof message.text !== 'string' ||
+      typeof message.delivery !== 'string' ||
+      !DELIVERY_STATUSES.includes(message.delivery as PublicationDelivery) ||
+      !isNullableString(message.sent_at)
+    ) {
+      return invalid()
+    }
+    return {
+      email: normalizeEmail(message.email),
+      text: message.text,
+      delivery: message.delivery as PublicationDelivery,
+      sent_at: message.sent_at,
+    }
+  })
+
+  return {
+    period_id: raw.period_id,
+    status: raw.status as PublicationStatus,
+    started_at: raw.started_at,
+    published_at: raw.published_at,
+    preview_fingerprint: raw.preview_fingerprint,
+    messages,
+  }
 }
 
 function normalizeDocument(raw: unknown): HoursDocument {
@@ -75,6 +142,18 @@ function normalizeDocument(raw: unknown): HoursDocument {
       ...assessment,
       email: normalizeEmail(assessment?.email),
     }))
+  }
+  if (value.publications !== undefined) {
+    if (!Array.isArray(value.publications)) {
+      throw new HoursDataError('Файл данных модуля часов содержит повреждённый узел publications.')
+    }
+    document.publications = value.publications.map(normalizePublication)
+    const periodIds = document.publications.map((publication) => publication.period_id)
+    if (new Set(periodIds).size !== periodIds.length) {
+      throw new HoursDataError(
+        'Файл данных модуля часов содержит больше одной публикации для периода.',
+      )
+    }
   }
   return document
 }

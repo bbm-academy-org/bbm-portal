@@ -70,13 +70,40 @@ export interface Assessment {
   saved_at: string
 }
 
+export type PublicationDelivery = 'pending' | 'sent' | 'failed' | 'unknown'
+
+export type PublicationStatus = 'sending' | 'published' | 'incomplete'
+
+export interface PublicationMessage {
+  email: string
+  /** Exact Mattermost Markdown frozen before the first network request. */
+  text: string
+  delivery: PublicationDelivery
+  sent_at: string | null
+}
+
+export interface Publication {
+  period_id: string
+  status: PublicationStatus
+  started_at: string
+  published_at: string | null
+  /** Opaque digest of the period, assessments and current participant identity. */
+  preview_fingerprint: string
+  messages: PublicationMessage[]
+}
+
 export interface HoursDocument {
   participants: Participant[]
   periods: Period[]
   assessments: Assessment[]
+  /**
+   * Optional in legacy/on-disk input. Store reads and empty documents always
+   * normalize it to `[]`; domain functions also accept direct legacy fixtures.
+   */
+  publications?: Publication[]
 }
 
 /** Пустая структура — первый запуск на чистом volume (п.17). */
 export function emptyHoursDocument(): HoursDocument {
-  return { participants: [], periods: [], assessments: [] }
+  return { participants: [], periods: [], assessments: [], publications: [] }
 }

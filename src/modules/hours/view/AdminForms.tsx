@@ -15,6 +15,8 @@ import { IDLE_STATE } from '@/modules/hours/actionState'
 import type { HoursActionState } from '@/modules/hours/actionState'
 import { ParticipantsTable } from './ParticipantsTable'
 
+export { MattermostVerificationPanel } from './MattermostVerificationPanel'
+
 /**
  * Формы админки (спека 081 пп. 23, 24). Клиентские только ради обратной связи
  * (`useActionState`): и жёсткий отказ, и мягкое предупреждение («даты
@@ -257,10 +259,13 @@ export function PeriodForm() {
 export function PeriodRowActions({
   period,
   hasAssessments,
+  published = false,
 }: {
   period: Period
   /** По периоду уже есть оценки: удаление закрыто, правка — предупреждает. */
   hasAssessments: boolean
+  /** Successful Mattermost publication freezes reopen and label/date edits. */
+  published?: boolean
 }) {
   const [statusState, statusAction, statusPending] = useActionState(
     setPeriodStatusAction,
@@ -270,6 +275,15 @@ export function PeriodRowActions({
   const [deleteState, deleteAction, deletePending] = useActionState(deletePeriodAction, IDLE_STATE)
   // id периода уникален в документе — годится и как якорь aria-describedby.
   const noticeId = `hours-period-notice-${period.id}`
+
+  if (published) {
+    return (
+      <p className="hours-notice hours-notice--warn">
+        Период опубликован в Mattermost: переоткрыть его или править название и даты нельзя, чтобы
+        сохранённый JSON не разошёлся с постами.
+      </p>
+    )
+  }
 
   return (
     <div>
