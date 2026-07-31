@@ -283,6 +283,7 @@ describe('Mattermost verification panel — loading/published/error states', () 
     try {
       expect(text(rendered.container)).toMatch(/1 из 2/)
       expect(text(rendered.container)).toMatch(/результат доставки неизвестен/i)
+      expect(text(rendered.container)).toMatch(/ручн.*сверк/i)
       expect(buttonByText(rendered.container, /Отправить \d/)).toBeUndefined()
       await rendered.click(buttonByText(rendered.container, /Предпросмотр сообщений/)!)
       expect(
@@ -298,7 +299,7 @@ describe('Mattermost verification panel — loading/published/error states', () 
 })
 
 describe('publication-batch PeriodRowActions freeze', () => {
-  it.each<PublicationStatus>(['sending', 'incomplete', 'published'])(
+  it.each<PublicationStatus>(['sending', 'published'])(
     'proactively removes reopen and label/date edit controls for %s',
     async (publicationStatus) => {
       const view = await import('@/modules/hours/view/AdminForms')
@@ -328,6 +329,29 @@ describe('publication-batch PeriodRowActions freeze', () => {
       )
     },
   )
+
+  it('keeps reopen and label/date edit controls for an incomplete batch', async () => {
+    const view = await import('@/modules/hours/view/AdminForms')
+    const PeriodRowActions = view.PeriodRowActions as unknown as React.ComponentType<{
+      period: Period
+      hasAssessments: boolean
+      publicationStatus: PublicationStatus
+    }>
+    const period = { ...document().periods[0], status: 'closed' as const }
+    const host = window.document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(
+      React.createElement(PeriodRowActions, {
+        period,
+        hasAssessments: true,
+        publicationStatus: 'incomplete',
+      }),
+    )
+
+    expect(buttonByText(host, /Открыть/)).toBeDefined()
+    expect(host.querySelector('input[name="label"]')).not.toBeNull()
+    expect(host.querySelector('input[name="dateFrom"]')).not.toBeNull()
+    expect(host.querySelector('input[name="dateTo"]')).not.toBeNull()
+  })
 })
 
 describe('prototype state styling contract', () => {
@@ -387,43 +411,77 @@ describe('admin page wiring', () => {
     }
   })
 
-  it.each<PublicationStatus>(['sending', 'incomplete'])(
-    'passes %s batch state to period controls and removes reopen/edit affordances',
-    async (publicationStatus) => {
-      const directory = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-lock-page-'))
-      const file = join(directory, 'hours.json')
-      const originalDataFile = process.env.HOURS_DATA_FILE
-      const originalAdmins = process.env.HOURS_ADMIN_EMAILS
-      const source = document('closed')
-      const preview = buildMattermostPreview(source, 'p-july')
-      source.publications = [storedPublication(preview, publicationStatus)]
-      try {
-        process.env.HOURS_DATA_FILE = file
-        process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
-        authState.session = { user: { email: 'anton@bbm.academy' } }
-        writeFileSync(file, JSON.stringify(source), 'utf8')
+  it('passes sending state to period controls and removes reopen/edit affordances', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-lock-page-'))
+    const file = join(directory, 'hours.json')
+    const originalDataFile = process.env.HOURS_DATA_FILE
+    const originalAdmins = process.env.HOURS_ADMIN_EMAILS
+    const source = document('closed')
+    const preview = buildMattermostPreview(source, 'p-july')
+    source.publications = [storedPublication(preview, 'sending')]
+    try {
+      process.env.HOURS_DATA_FILE = file
+      process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
+      authState.session = { user: { email: 'anton@bbm.academy' } }
+      writeFileSync(file, JSON.stringify(source), 'utf8')
 
-        const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
-        const element = await HoursAdminPage({ searchParams: Promise.resolve({}) })
-        const host = window.document.createElement('div')
-        host.innerHTML = renderToStaticMarkup(element)
+      const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
+      const element = await HoursAdminPage({ searchParams: Promise.resolve({}) })
+      const host = window.document.createElement('div')
+      host.innerHTML = renderToStaticMarkup(element)
 
-        expect(text(host)).toMatch(/публикация начата.*ручн.*сверк/i)
-        const periodItem = [...host.querySelectorAll('.hours-months > li')].find((item) =>
-          text(item).includes('Июль 2026'),
-        )
-        expect(periodItem).toBeDefined()
-        expect(buttonByText(periodItem!, /Открыть/)).toBeUndefined()
-        expect(periodItem?.querySelector('input[name="label"]')).toBeNull()
-        expect(periodItem?.querySelector('input[name="dateFrom"]')).toBeNull()
-        expect(periodItem?.querySelector('input[name="dateTo"]')).toBeNull()
-      } finally {
-        if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-        else process.env.HOURS_DATA_FILE = originalDataFile
-        if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
-        else process.env.HOURS_ADMIN_EMAILS = originalAdmins
-        rmSync(directory, { recursive: true, force: true })
-      }
-    },
-  )
+      expect(text(host)).toMatch(/публикация начата.*ручн.*сверк/i)
+      const periodItem = [...host.querySelectorAll('.hours-months > li')].find((item) =>
+        text(item).includes('Июль 2026'),
+      )
+      expect(periodItem).toBeDefined()
+      expect(buttonByText(periodItem!, /Открыть/)).toBeUndefined()
+      expect(periodItem?.querySelector('input[name="label"]')).toBeNull()
+      expect(periodItem?.querySelector('input[name="dateFrom"]')).toBeNull()
+      expect(periodItem?.querySelector('input[name="dateTo"]')).toBeNull()
+    } finally {
+      if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
+      else process.env.HOURS_DATA_FILE = originalDataFile
+      if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
+      else process.env.HOURS_ADMIN_EMAILS = originalAdmins
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps incomplete-period repair controls while the panel requires manual reconciliation', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-repair-page-'))
+    const file = join(directory, 'hours.json')
+    const originalDataFile = process.env.HOURS_DATA_FILE
+    const originalAdmins = process.env.HOURS_ADMIN_EMAILS
+    const source = document('closed')
+    const preview = buildMattermostPreview(source, 'p-july')
+    source.publications = [storedPublication(preview, 'incomplete', ['sent', 'unknown'])]
+    try {
+      process.env.HOURS_DATA_FILE = file
+      process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
+      authState.session = { user: { email: 'anton@bbm.academy' } }
+      writeFileSync(file, JSON.stringify(source), 'utf8')
+
+      const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
+      const element = await HoursAdminPage({ searchParams: Promise.resolve({}) })
+      const host = window.document.createElement('div')
+      host.innerHTML = renderToStaticMarkup(element)
+      const periodItem = [...host.querySelectorAll('.hours-months > li')].find((item) =>
+        text(item).includes('Июль 2026'),
+      )
+
+      expect(text(host)).toMatch(/ручн.*сверк/i)
+      expect(periodItem).toBeDefined()
+      expect(buttonByText(periodItem!, /Открыть/)).toBeDefined()
+      expect(periodItem?.querySelector('input[name="label"]')).not.toBeNull()
+      expect(periodItem?.querySelector('input[name="dateFrom"]')).not.toBeNull()
+      expect(periodItem?.querySelector('input[name="dateTo"]')).not.toBeNull()
+    } finally {
+      if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
+      else process.env.HOURS_DATA_FILE = originalDataFile
+      if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
+      else process.env.HOURS_ADMIN_EMAILS = originalAdmins
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })

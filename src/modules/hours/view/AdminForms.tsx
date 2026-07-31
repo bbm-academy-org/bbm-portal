@@ -251,10 +251,11 @@ export function PeriodForm() {
 /**
  * Открыть / закрыть / править / удалить период (пп. 16, 24).
  *
- * Label/date edits stay available when assessments exist (#85), but creating
- * a Mattermost publication batch freezes them before the first network call.
- * The date recalculation warning is shown before submit. Period deletion stays
- * unavailable once assessments exist because it has no recovery path.
+ * Label/date edits stay available when assessments exist (#85). An active
+ * Mattermost delivery freezes them before the first network call, and a
+ * successful publication freezes them permanently; an incomplete attempt
+ * restores the approved repair path. The date recalculation warning is shown
+ * before submit. Period deletion stays unavailable once assessments exist.
  */
 export function PeriodRowActions({
   period,
@@ -264,7 +265,7 @@ export function PeriodRowActions({
   period: Period
   /** По периоду уже есть оценки: удаление закрыто, правка — предупреждает. */
   hasAssessments: boolean
-  /** Any frozen Mattermost batch blocks reopen and label/date edits. */
+  /** Active delivery and successful publication freeze period mutations. */
   publicationStatus?: PublicationStatus | null
 }) {
   const [statusState, statusAction, statusPending] = useActionState(
@@ -276,7 +277,7 @@ export function PeriodRowActions({
   // id периода уникален в документе — годится и как якорь aria-describedby.
   const noticeId = `hours-period-notice-${period.id}`
 
-  if (publicationStatus) {
+  if (publicationStatus === 'sending' || publicationStatus === 'published') {
     return (
       <p className="hours-notice hours-notice--warn">
         {publicationStatus === 'published'

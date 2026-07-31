@@ -62,7 +62,7 @@ export type {
 export {
   buildMattermostPreview,
   createPublicationBatch,
-  hasPublicationBatch,
+  isPeriodMutationLocked,
   recordPublicationDelivery,
 } from './publication'
 export type {

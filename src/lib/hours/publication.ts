@@ -296,6 +296,7 @@ export function recordPublicationDelivery(
   }
 }
 
-export function hasPublicationBatch(doc: HoursDocument, periodId: string): boolean {
-  return doc.publications?.some((publication) => publication.period_id === periodId) ?? false
+export function isPeriodMutationLocked(doc: HoursDocument, periodId: string): boolean {
+  const status = doc.publications?.find((publication) => publication.period_id === periodId)?.status
+  return status === 'sending' || status === 'published'
 }

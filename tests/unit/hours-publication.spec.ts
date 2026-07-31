@@ -365,7 +365,7 @@ describe('publication-batch freeze (spec 100 requirement 12)', () => {
     return current
   }
 
-  it.each<PublicationStatus>(['sending', 'incomplete', 'published'])(
+  it.each<PublicationStatus>(['sending', 'published'])(
     'blocks reopening and label/date edits after the atomic batch reaches %s',
     async (status) => {
       const source = await batchAt(status)
@@ -388,6 +388,47 @@ describe('publication-batch freeze (spec 100 requirement 12)', () => {
       expect(source.assessments).toEqual(assessmentsBefore)
     },
   )
+
+  it('allows incomplete-period repair without mutating the frozen batch or enabling retry', async () => {
+    const { buildMattermostPreview, createPublicationBatch } = await publicationApi()
+    const source = await batchAt('incomplete')
+    const frozenBatch = structuredClone(source.publications?.[0])
+
+    const reopened = setPeriodStatus(source, 'p-july', 'open')
+    expect(reopened.ok).toBe(true)
+    if (!reopened.ok) throw new Error(reopened.error)
+
+    const edited = updatePeriod(reopened.doc, {
+      id: 'p-july',
+      label: 'Июль 2026 — исправлено после сверки',
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-30',
+    })
+    expect(edited.ok).toBe(true)
+    if (!edited.ok) throw new Error(edited.error)
+
+    expect(edited.doc.periods[0]).toMatchObject({
+      status: 'open',
+      label: 'Июль 2026 — исправлено после сверки',
+      date_to: '2026-07-30',
+    })
+    expect(edited.doc.publications?.[0]).toEqual(frozenBatch)
+    expect(edited.doc.publications?.[0]).toMatchObject({ status: 'incomplete' })
+
+    const changedPreview = buildMattermostPreview(edited.doc, 'p-july')
+    expect(changedPreview.eligibility).toMatchObject({
+      status: 'incomplete',
+      can_publish: false,
+    })
+    expect(
+      createPublicationBatch(
+        edited.doc,
+        'p-july',
+        changedPreview.preview_fingerprint,
+        '2026-08-02T00:02:00.000Z',
+      ).ok,
+    ).toBe(false)
+  })
 
   it('cannot finish a batch as published with an open period or mutable assessments', async () => {
     const { recordPublicationDelivery } = await publicationApi()

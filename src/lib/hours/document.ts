@@ -25,7 +25,7 @@ import {
   participantMonthlyRate,
 } from './formula'
 import type { PeriodCalendar } from './formula'
-import { hasPublicationBatch } from './publication'
+import { isPeriodMutationLocked } from './publication'
 import type {
   Assessment,
   AssessmentMethod,
@@ -369,7 +369,7 @@ export function updatePeriod(
 ): MutationResult<Period> {
   const existing = findPeriod(doc, input.id)
   if (!existing) return fail('Период не найден — обнови страницу.')
-  if (hasPublicationBatch(doc, input.id)) {
+  if (isPeriodMutationLocked(doc, input.id)) {
     return fail(
       `Публикация периода «${existing.label}» уже начата — править label или даты нельзя.`,
     )
@@ -449,8 +449,8 @@ export function deletePeriod(doc: HoursDocument, periodId: string): MutationResu
 
 /**
  * Открывает или закрывает период. Открытым может быть максимум один (п.24);
- * закрытый без publication batch переоткрывается — это путь исправить опечатку
- * перед выплатой 3-го.
+ * закрытый без mutation-locked publication переоткрывается — это путь
+ * исправить опечатку перед выплатой 3-го.
  */
 export function setPeriodStatus(
   doc: HoursDocument,
@@ -459,7 +459,7 @@ export function setPeriodStatus(
 ): MutationResult<Period> {
   const existing = findPeriod(doc, periodId)
   if (!existing) return fail('Период не найден — обнови страницу.')
-  if (status === 'open' && hasPublicationBatch(doc, periodId)) {
+  if (status === 'open' && isPeriodMutationLocked(doc, periodId)) {
     return fail(`Публикация периода «${existing.label}» уже начата — переоткрыть его нельзя.`)
   }
   if (status === 'open') {

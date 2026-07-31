@@ -51,7 +51,7 @@ function PublicationStatus({ publication }: { publication: Publication }): React
     >
       Отправлено {sent} из {total}.{' '}
       {unknown ? 'Результат доставки неизвестен.' : 'Mattermost не подтвердил следующее сообщение.'}{' '}
-      Автоматический повтор заблокирован.
+      Автоматический повтор заблокирован. Нужна ручная сверка Mattermost.
     </p>
   )
 }
