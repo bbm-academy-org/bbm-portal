@@ -120,7 +120,7 @@ export default async function HoursAdminPage({
           <h2>Участники</h2>
           {/* Таблица и форма связаны одним клиентским стейтом (issue #85):
               «Изменить» в строке заполняет форму, перенабора полей нет. */}
-          <ParticipantsAdmin participants={doc.participants} />
+          <ParticipantsAdmin participants={doc.participants} summaryPeriod={summaryPeriod} />
         </div>
       </section>
 

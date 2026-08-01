@@ -131,11 +131,23 @@ describe('NotAParticipantNotice (п.9, сценарий 7)', () => {
   })
 })
 
-describe('ParticipantsTable (п.19)', () => {
-  it('показывает имя, роль, вилку, грейд и ВЫЧИСЛЕННУЮ месячную ставку', () => {
-    const host = render(React.createElement(ParticipantsTable, { participants }))
+describe('ParticipantsTable (spec 102 — grouped desktop table)', () => {
+  it('groups participant/fork details and shows monthly + selected-period hourly rates', () => {
+    const host = render(
+      React.createElement(ParticipantsTable, { participants, summaryPeriod: july }),
+    )
     const rows = host.querySelectorAll('tbody tr')
     expect(rows).toHaveLength(3)
+
+    expect([...host.querySelectorAll('thead th')].map((cell) => text(cell))).toEqual([
+      'Участник',
+      'Вилка и грейд',
+      'Ставка, ₽/мес',
+      'Ставка, ₽/ч',
+    ])
+    expect(text(host.querySelector('.hours-rate-period'))).toBe(
+      'Часовая ставка рассчитана для «Июль 2026» (01.07.2026—31.07.2026)',
+    )
 
     const first = text(rows[0])
     expect(first).toContain('Антон')
@@ -144,51 +156,90 @@ describe('ParticipantsTable (п.19)', () => {
     expect(first).toContain('250 000')
     expect(first).toContain('II')
     expect(first).toContain('200 000 ₽') // 150k + ½·(250k−150k), не хранится
+    expect(first).toContain('1 087 ₽') // отображение округляет 200 000 / 184
+    expect(rows[0].querySelector('.hours-participant-name')).not.toBeNull()
+    expect(rows[0].querySelector('.hours-participant-role')).not.toBeNull()
+    expect(rows[0].querySelector('.hours-fork')).not.toBeNull()
+    expect(rows[0].querySelector('.hours-grade')).not.toBeNull()
 
     // грейд I — середина нижней трети: 100k + ⅙·100k = 116 667
     expect(text(rows[1])).toContain('116 667 ₽')
   })
 
   it('участник без вилки и роли — прочерки, а не пустые ячейки (issue #83)', () => {
-    const host = render(React.createElement(ParticipantsTable, { participants }))
+    const host = render(
+      React.createElement(ParticipantsTable, { participants, summaryPeriod: july }),
+    )
     const minimal = host.querySelectorAll('tbody tr')[2]
     const cells = [...minimal.querySelectorAll('td')].map((cell) => text(cell))
-    expect(cells[0]).toBe('Новый')
-    expect(cells[1]).toBe('—') // роль
-    expect(cells[2]).toBe('—') // вилка
-    expect(cells[3]).toBe('—') // грейд
-    expect(cells[4]).toBe('—') // ставка не вычисляется
+    expect(text(minimal.querySelector('.hours-participant-name'))).toBe('Новый')
+    expect(text(minimal.querySelector('.hours-participant-role'))).toBe('—')
+    expect(text(minimal.querySelector('.hours-fork'))).toBe('—')
+    expect(text(minimal.querySelector('.hours-grade'))).toBe('—')
+    expect(cells[2]).toBe('—') // месячная ставка не вычисляется
+    expect(cells[3]).toBe('—') // часовая ставка не вычисляется
   })
 
   it('пустой список не рисует пустую таблицу молча', () => {
-    const host = render(React.createElement(ParticipantsTable, { participants: [] }))
+    const host = render(
+      React.createElement(ParticipantsTable, { participants: [], summaryPeriod: july }),
+    )
     expect(text(host)).toContain('участник')
     expect(host.querySelectorAll('tbody tr')).toHaveLength(0)
   })
 
+  it('without periods explains the missing calendar and shows no hourly values', () => {
+    const host = render(
+      React.createElement(ParticipantsTable, { participants, summaryPeriod: null }),
+    )
+    expect(text(host.querySelector('.hours-rate-period'))).toBe(
+      'Нет периода для расчёта часовой ставки.',
+    )
+    const hourlyCells = [...host.querySelectorAll('tbody tr')].map((row) =>
+      text(row.querySelectorAll('td')[3]),
+    )
+    expect(hourlyCells).toEqual(['—', '—', '—'])
+  })
+
   it('без обработчика правки колонки действий нет — /p/hours правку не предлагает', () => {
-    const host = render(React.createElement(ParticipantsTable, { participants }))
+    const host = render(
+      React.createElement(ParticipantsTable, { participants, summaryPeriod: july }),
+    )
     expect(host.querySelector('button')).toBeNull()
-    expect(host.querySelectorAll('thead th')).toHaveLength(5)
+    expect(host.querySelectorAll('thead th')).toHaveLength(4)
   })
 
   it('с обработчиком правки у каждой строки есть кнопка «Изменить» (issue #85)', () => {
     const host = render(
-      React.createElement(ParticipantsTable, { participants, onEdit: () => undefined }),
+      React.createElement(ParticipantsTable, {
+        participants,
+        summaryPeriod: july,
+        onEdit: () => undefined,
+      }),
     )
     const buttons = [...host.querySelectorAll('tbody button')]
     expect(buttons).toHaveLength(3)
     for (const button of buttons) expect(text(button)).toBe('Изменить')
     // Кнопка не отправляет форму строки — она только заполняет форму ниже.
     expect(buttons.every((b) => b.getAttribute('type') === 'button')).toBe(true)
-    expect(host.querySelectorAll('thead th')).toHaveLength(6)
+    expect([...host.querySelectorAll('thead th')].map((cell) => text(cell))).toEqual([
+      'Участник',
+      'Вилка и грейд',
+      'Ставка, ₽/мес',
+      'Ставка, ₽/ч',
+      'Правка',
+    ])
   })
 
   it('кнопки различимы на слух: доступное имя называет участника', () => {
     // Три кнопки «Изменить» подряд для скринридера неразличимы — имя строки
     // обязано попасть в доступное имя кнопки.
     const host = render(
-      React.createElement(ParticipantsTable, { participants, onEdit: () => undefined }),
+      React.createElement(ParticipantsTable, {
+        participants,
+        summaryPeriod: july,
+        onEdit: () => undefined,
+      }),
     )
     const labels = [...host.querySelectorAll('tbody button')].map((b) =>
       b.getAttribute('aria-label'),
@@ -530,7 +581,9 @@ describe('ParticipantsAdmin — клик «Изменить» реально з�
 
   it('рисует таблицу с кнопками правки и форму участника на одной странице', async () => {
     const { ParticipantsAdmin } = await import('@/modules/hours/view/AdminForms')
-    const host = render(React.createElement(ParticipantsAdmin, { participants }))
+    const host = render(
+      React.createElement(ParticipantsAdmin, { participants, summaryPeriod: july }),
+    )
     expect(host.querySelectorAll('tbody button')).toHaveLength(3)
     expect(host.querySelector('form input[name="email"]')).not.toBeNull()
   })
@@ -538,7 +591,7 @@ describe('ParticipantsAdmin — клик «Изменить» реально з�
   it('клик по строке подставляет в форму именно её участника', async () => {
     const { ParticipantsAdmin } = await import('@/modules/hours/view/AdminForms')
     const { container, click, cleanup } = await mount(
-      React.createElement(ParticipantsAdmin, { participants }),
+      React.createElement(ParticipantsAdmin, { participants, summaryPeriod: july }),
     )
     try {
       expect(field(container, 'email').value).toBe('')
@@ -568,7 +621,7 @@ describe('ParticipantsAdmin — клик «Изменить» реально з�
   it('«Отмена» возвращает пустую форму заведения', async () => {
     const { ParticipantsAdmin } = await import('@/modules/hours/view/AdminForms')
     const { container, click, cleanup } = await mount(
-      React.createElement(ParticipantsAdmin, { participants }),
+      React.createElement(ParticipantsAdmin, { participants, summaryPeriod: july }),
     )
     try {
       await click(container.querySelectorAll('tbody button')[0])
@@ -589,7 +642,7 @@ describe('ParticipantsAdmin — клик «Изменить» реально з�
   it('повторный клик по тому же участнику сбрасывает набранное к сохранённому', async () => {
     const { ParticipantsAdmin } = await import('@/modules/hours/view/AdminForms')
     const { container, click, cleanup } = await mount(
-      React.createElement(ParticipantsAdmin, { participants }),
+      React.createElement(ParticipantsAdmin, { participants, summaryPeriod: july }),
     )
     try {
       const row = container.querySelectorAll('tbody button')[0]
@@ -694,5 +747,17 @@ describe('контракт стилей модуля (п.29 — палитра �
     expect(css).not.toMatch(/^\s*\.hours-root a\s*\{/m)
     // reset-блок «margin: 0; padding: 0» существует только внутри :where(...)
     expect(css).not.toMatch(/^\.hours-root h1,$/m)
+  })
+
+  it('desktop table wraps roles without clipping and keeps numbers aligned', () => {
+    expect(css).toMatch(/\.hours-table th,\s*\.hours-table td\s*\{[^}]*white-space:\s*nowrap/)
+    expect(css).toMatch(
+      /\.hours-participants-table th,\s*\.hours-participants-table td\s*\{[^}]*white-space:\s*normal/,
+    )
+    expect(css).toMatch(/\.hours-participant-role\s*\{[^}]*white-space:\s*normal/)
+    expect(css).toMatch(/\.hours-participant-role\s*\{[^}]*overflow-wrap:\s*anywhere/)
+    expect(css).toMatch(/\.hours-participant-role\s*\{[^}]*text-overflow:\s*clip/)
+    expect(css).toMatch(/\.hours-table \.hours-num\s*\{[^}]*text-align:\s*right/)
+    expect(css).toMatch(/\.hours-table \.hours-num\s*\{[^}]*white-space:\s*nowrap/)
   })
 })
