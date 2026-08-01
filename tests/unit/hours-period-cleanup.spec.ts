@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -117,11 +118,13 @@ describe('hours cleanup file transaction rollback fixture', () => {
     const original = `${JSON.stringify(before, null, 2)}\n`
     writeFileSync(liveFile, original, { encoding: 'utf8', mode: 0o640 })
     const originalMode = statSync(liveFile).mode & 0o777
+    const transactionSteps: string[] = []
 
     const result = await applyCleanupToFile({
       liveFile,
       backupDirectory,
       appStoppedConfirmation: APP_STOP_CONFIRMATION,
+      onTransactionStep: (step: string) => transactionSteps.push(step),
     })
 
     expect(result.status).toBe('applied')
@@ -144,6 +147,19 @@ describe('hours cleanup file transaction rollback fixture', () => {
     }
     if (process.platform !== 'win32') expect(statSync(report).mode & 0o777).toBe(0o600)
     expect(JSON.parse(readFileSync(report, 'utf8')).status).toBe('applied')
+    expect(transactionSteps).toEqual([
+      'frozen-live-read',
+      'original-metadata-captured',
+      'backups-created',
+      'backup-hashes-verified',
+      'backup-directories-synced',
+      'preservation-snapshot-captured',
+      'staged-file-written',
+      'staged-file-validated',
+      'live-file-renamed',
+      'live-file-verified',
+      'report-written',
+    ])
 
     const beforeSecondRun = statSync(liveFile, { bigint: true })
     const second = await applyCleanupToFile({
@@ -156,6 +172,52 @@ describe('hours cleanup file transaction rollback fixture', () => {
     expect(readFileSync(liveFile)).toEqual(cleanedBytes)
     expect(afterSecondRun.ino).toBe(beforeSecondRun.ino)
     expect(afterSecondRun.mtimeNs).toBe(beforeSecondRun.mtimeNs)
+  })
+
+  it('mechanically verifies the restarted live document against the exact frozen report', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bbm-hours-cleanup-postcheck-'))
+    dirs.push(dir)
+    const liveFile = join(dir, 'hours.json')
+    const backupDirectory = join(dir, 'backups')
+    const before = fixture()
+    writeFileSync(liveFile, `${JSON.stringify(before, null, 2)}\n`)
+
+    const result = await applyCleanupToFile({
+      liveFile,
+      backupDirectory,
+      appStoppedConfirmation: APP_STOP_CONFIRMATION,
+    })
+    expect(result.status).toBe('applied')
+    if (result.status !== 'applied' || !result.report) throw new Error('expected cleanup report')
+
+    const tool = join(__dirname, '..', '..', 'tools', 'ops', 'cleanup-hours-period.mjs')
+    const verify = () =>
+      spawnSync(process.execPath, [tool, '--file', liveFile, '--verify-report', result.report!], {
+        encoding: 'utf8',
+      })
+
+    const verified = verify()
+    expect(verified.status, verified.stderr).toBe(0)
+    expect(JSON.parse(verified.stdout)).toMatchObject({
+      status: 'post-cleanup-verified',
+      removed: { periods: 0, assessments: 0, publications: 0 },
+    })
+
+    const cleaned = JSON.parse(readFileSync(liveFile, 'utf8'))
+    const driftCases = [
+      { ...cleaned, participants: [...cleaned.participants, { email: 'drift@example.test' }] },
+      {
+        ...cleaned,
+        periods: [...cleaned.periods, { id: 'unexpected-period', status: 'open' }],
+      },
+      { ...cleaned, future_root_data: { ...cleaned.future_root_data, drift: true } },
+    ]
+    for (const drifted of driftCases) {
+      writeFileSync(liveFile, `${JSON.stringify(drifted, null, 2)}\n`)
+      const rejected = verify()
+      expect(rejected.status).not.toBe(0)
+      expect(rejected.stderr).toMatch(/preservation|сохранённ/i)
+    }
   })
 
   it('atomically restores the exact frozen bytes and metadata after a post-rename failure', async () => {
@@ -201,5 +263,15 @@ describe('hours cleanup runbook failure semantics', () => {
     expect(notApplied).toBeGreaterThan(restart)
     expect(postcheck).toBeGreaterThan(notApplied)
     expect(runbook.slice(restart, postcheck)).toMatch(/exit [1-9]/)
+  })
+
+  it('ties the post-start preservation check to the exact frozen report', () => {
+    const runbook = readFileSync(
+      join(__dirname, '..', '..', 'docs', 'runbooks', 'hours-period-102-cleanup.md'),
+      'utf8',
+    )
+    expect(runbook).toMatch(/REPORT_FILE=.*CLEANUP_OUTPUT/)
+    expect(runbook).toContain('--verify-report "$REPORT_FILE"')
+    expect(runbook).toMatch(/post-cleanup-verified/)
   })
 })

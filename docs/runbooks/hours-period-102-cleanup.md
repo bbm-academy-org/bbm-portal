@@ -66,6 +66,12 @@ printf '%s\n' "$CLEANUP_OUTPUT"
 # error is an incident: leave app stopped and preserve every artifact.
 CLEANUP_APPLIED=0
 if test "$CLEANUP_STATUS" -eq 0; then
+  REPORT_FILE=$(printf '%s\n' "$CLEANUP_OUTPUT" | docker run --rm -i "$APP_IMAGE" node -e \
+    "let input='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const result=JSON.parse(input);if(result.status!=='applied'||typeof result.report!=='string')process.exit(2);process.stdout.write(result.report)})")
+  case "$REPORT_FILE" in
+    /backup/hours-cleanup-report-*.json) ;;
+    *) echo 'Apply returned an invalid report path; keep app stopped.' >&2; exit 1 ;;
+  esac
   SAFE_TO_START=1
   CLEANUP_APPLIED=1
 elif printf '%s' "$CLEANUP_OUTPUT" | grep -Eq \
@@ -88,13 +94,16 @@ if test "$CLEANUP_APPLIED" -ne 1; then
 fi
 ```
 
-The artifact's order is fixed: frozen read/stat → mode-600 JIT backup on the
-RF host + mode-600 same-volume rollback copy → byte SHA-256 verification →
+The artifact's order is fixed: frozen read → original numeric owner/group/mode
+stat → mode-600 JIT backup on the RF host + mode-600 same-volume rollback copy
+→ byte SHA-256 verification → fsync of both backup parent directories →
 pre-state snapshot → same-volume staged write → full target/preservation
 validation → original numeric owner/group/mode → file fsync → atomic rename →
-directory fsync → live reread/validation/metadata check. Its mode-600 report
-stores counts, serialized values, and canonical SHA-256 before/after for
-participants, every non-target managed record, and all other root data.
+directory fsync → live reread/validation/metadata check. The directory fsyncs
+make both recovery directory entries crash-durable before staging or replacing
+live. Its mode-600 report stores counts, serialized values, and canonical
+SHA-256 before/after for participants, every non-target managed record, and all
+other root data.
 
 If any post-rename check fails, the JIT bytes are copied to a new same-volume
 temp file, hash/JSON/metadata-checked, and atomically renamed over live. A
@@ -102,12 +111,19 @@ failed or unconfirmed rollback leaves the app stopped.
 
 ## Post-check
 
-Run immediately after the app starts:
+Run immediately after the app starts, in the same shell so `REPORT_FILE` is the
+exact mode-600 artifact returned by the successful apply rather than whichever
+report happens to be newest:
 
 ```bash
 set -euo pipefail
 cd /home/deploy/bbm-portal/deploy
 COMPOSE='docker compose -f docker-compose.prod.yml'
+test -n "${REPORT_FILE:-}"
+case "$REPORT_FILE" in
+  /backup/hours-cleanup-report-*.json) ;;
+  *) echo 'Invalid frozen report path.' >&2; exit 1 ;;
+esac
 
 $COMPOSE ps app
 curl -fsS -o /dev/null https://portal.bbm.academy/p/hours
@@ -141,18 +157,24 @@ if (afterHash !== beforeHash) throw new Error('probe changed hours.json')
 console.log(`runtime uid=${process.getuid()} read/write/rename/delete ok; live sha256=${afterHash}`)
 NODE
 
-# Repeatability + post-state: must report already-clean and 0/0/0 targets.
+# Mechanically compare current participants, every non-target managed array,
+# and all other root data against serialized values/counts/canonical hashes in
+# the exact frozen report. This also requires already-clean and 0/0/0 targets.
+# It must print status=post-cleanup-verified; any mismatch exits nonzero.
 APP_IMAGE=$($COMPOSE images -q app)
 docker run --rm --user 0 \
   --mount type=volume,src=bbm-portal_hoursdata,dst=/data/hours \
+  --mount type=bind,src=/home/deploy,dst=/backup,readonly \
   --mount type=bind,src=/home/deploy/bbm-portal/tools/ops,dst=/ops,readonly \
   "$APP_IMAGE" node /ops/cleanup-hours-period.mjs \
-  --file /data/hours/hours.json
+  --file /data/hours/hours.json \
+  --verify-report "$REPORT_FILE"
 
-# Inspect the newest protected report and backups without printing serialized
+# Confirm protection of that exact report without printing serialized
 # participant data into a workstation/session transcript.
-ls -lt /home/deploy/hours-cleanup-report-*.json /home/deploy/hours.json.bak-* | head
-stat -c '%u:%g %a %n' /home/deploy/hours-cleanup-report-*.json /home/deploy/hours.json.bak-* | tail
+REPORT_HOST_FILE="/home/deploy/${REPORT_FILE#/backup/}"
+stat -c '%u:%g %a %n' "$REPORT_HOST_FILE"
+test "$(stat -c '%a' "$REPORT_HOST_FILE")" = 600
 ```
 
 Finally verify in `/p/hours/admin` that `2 спринт`, its assessment, and its

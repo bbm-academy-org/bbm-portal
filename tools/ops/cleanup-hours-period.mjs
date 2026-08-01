@@ -16,6 +16,9 @@ const TARGET_PERIOD = {
   status: 'closed',
 }
 const MANAGED_ARRAYS = ['participants', 'periods', 'assessments', 'publications']
+const PRESERVATION_KEYS = ['participants', 'periods', 'assessments', 'publications', 'root_data']
+/** @type {(step: string) => unknown} */
+const ignoreTransactionStep = () => undefined
 
 export class CleanupInvariantError extends Error {
   constructor(message) {
@@ -213,11 +216,11 @@ async function writeExclusiveSynced(file, bytes, mode = 0o600) {
   const handle = await open(file, 'wx', mode)
   try {
     await handle.writeFile(bytes)
+    await handle.chmod(mode)
     await handle.sync()
   } finally {
     await handle.close()
   }
-  await chmod(file, mode)
 }
 
 async function syncFile(file) {
@@ -312,6 +315,52 @@ function publicPreservation(snapshot) {
   )
 }
 
+function assertPreservationSnapshotShape(snapshot, source) {
+  invariant(isRecord(snapshot), `${source}: preservation snapshot отсутствует.`)
+  invariant(
+    JSON.stringify(Object.keys(snapshot).sort()) === JSON.stringify([...PRESERVATION_KEYS].sort()),
+    `${source}: preservation snapshot содержит не полный набор секций.`,
+  )
+  for (const key of PRESERVATION_KEYS) {
+    const value = snapshot[key]
+    invariant(isRecord(value), `${source}: секция ${key} невалидна.`)
+    invariant(
+      Number.isInteger(value.count) && value.count >= 0,
+      `${source}: count ${key} невалиден.`,
+    )
+    invariant(typeof value.serialized === 'string', `${source}: serialized ${key} отсутствует.`)
+    invariant(
+      typeof value.canonical_sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.canonical_sha256),
+      `${source}: canonical SHA-256 ${key} невалиден.`,
+    )
+  }
+}
+
+export function verifyPostCleanup(document, report) {
+  invariant(isRecord(report), 'Frozen cleanup report должен быть JSON-объектом.')
+  invariant(report.status === 'applied', 'Frozen cleanup report не подтверждает applied cleanup.')
+  invariant(
+    report.target_period_id === TARGET_PERIOD_ID,
+    'Frozen cleanup report относится к другому period.',
+  )
+  invariant(isRecord(report.preservation), 'Frozen cleanup report не содержит preservation.')
+  assertPreservationSnapshotShape(report.preservation.before, 'Frozen report before')
+  assertPreservationSnapshotShape(report.preservation.after, 'Frozen report after')
+  assertPreserved(report.preservation.before, report.preservation.after)
+
+  const current = buildCleanupPlan(document)
+  invariant(current.status === 'already-clean', 'Post-start live всё ещё содержит целевые записи.')
+  assertPreserved(report.preservation.before, current.preservation.before)
+
+  return {
+    status: 'post-cleanup-verified',
+    target_period_id: TARGET_PERIOD_ID,
+    removed: current.removed,
+    frozen_sha256: report.frozen_sha256,
+    preservation: publicPreservation(current.preservation.before),
+  }
+}
+
 /**
  * File transaction used by the runbook. The caller must stop and independently
  * verify the app before passing the exact confirmation phrase.
@@ -321,6 +370,7 @@ export async function applyCleanupToFile({
   backupDirectory,
   appStoppedConfirmation,
   afterRename = async () => undefined,
+  onTransactionStep = ignoreTransactionStep,
 }) {
   invariant(
     appStoppedConfirmation === APP_STOP_CONFIRMATION,
@@ -330,17 +380,20 @@ export async function applyCleanupToFile({
   const absoluteBackup = resolve(backupDirectory)
   const directory = dirname(absoluteLive)
   const stamp = timestamp()
-  await mkdir(absoluteBackup, { recursive: true, mode: 0o700 })
 
   const frozenBytes = await readFile(absoluteLive)
-  const frozenDocument = parseDocument(frozenBytes, 'Frozen live')
-  const plan = buildCleanupPlan(frozenDocument)
-  if (plan.status === 'already-clean') {
-    return { status: 'already-clean', removed: plan.removed }
-  }
-
+  await onTransactionStep('frozen-live-read')
   const fileStat = await stat(absoluteLive)
   const metadata = { uid: fileStat.uid, gid: fileStat.gid, mode: fileStat.mode & 0o777 }
+  await onTransactionStep('original-metadata-captured')
+  const frozenDocument = parseDocument(frozenBytes, 'Frozen live')
+  const frozenTargets = targetRecords(frozenDocument)
+  if (Object.values(frozenTargets).every((records) => records.length === 0)) {
+    const alreadyClean = buildCleanupPlan(frozenDocument)
+    return { status: 'already-clean', removed: alreadyClean.removed }
+  }
+
+  await mkdir(absoluteBackup, { recursive: true, mode: 0o700 })
   const frozenSha = bytesSha256(frozenBytes)
   const jitBackup = resolve(absoluteBackup, `${basename(absoluteLive)}.bak-${stamp}`)
   const rollbackCopy = resolve(directory, `.${basename(absoluteLive)}.rollback-${stamp}`)
@@ -351,27 +404,40 @@ export async function applyCleanupToFile({
   try {
     await writeExclusiveSynced(jitBackup, frozenBytes)
     await writeExclusiveSynced(rollbackCopy, frozenBytes)
+    await onTransactionStep('backups-created')
     for (const backup of [jitBackup, rollbackCopy]) {
       invariant(
         bytesSha256(await readFile(backup)) === frozenSha,
         `Backup hash mismatch: ${backup}`,
       )
     }
+    await onTransactionStep('backup-hashes-verified')
+    await syncDirectory(absoluteBackup)
+    if (directory !== absoluteBackup) await syncDirectory(directory)
+    await onTransactionStep('backup-directories-synced')
+
+    const plan = buildCleanupPlan(frozenDocument)
+    invariant(plan.status === 'ready', 'Frozen pre-state не содержит точную audit-цель.')
+    await onTransactionStep('preservation-snapshot-captured')
 
     const stagedBytes = Buffer.from(`${JSON.stringify(plan.cleaned, null, 2)}\n`, 'utf8')
     await writeExclusiveSynced(stagedFile, stagedBytes)
+    await onTransactionStep('staged-file-written')
     const stagedDocument = parseDocument(await readFile(stagedFile), 'Staged file')
     assertCleanedMatches(frozenDocument, stagedDocument)
+    await onTransactionStep('staged-file-validated')
     await applyMetadata(stagedFile, metadata)
     await rename(stagedFile, absoluteLive)
     renamed = true
     await syncDirectory(directory)
+    await onTransactionStep('live-file-renamed')
 
     await afterRename()
     const appliedBytes = await readFile(absoluteLive)
     invariant(bytesSha256(appliedBytes) === bytesSha256(stagedBytes), 'Applied live hash mismatch.')
     assertCleanedMatches(frozenDocument, parseDocument(appliedBytes, 'Applied live'))
     await assertMetadata(absoluteLive, metadata)
+    await onTransactionStep('live-file-verified')
 
     const report = {
       status: 'applied',
@@ -387,6 +453,7 @@ export async function applyCleanupToFile({
     }
     await writeExclusiveSynced(reportFile, Buffer.from(`${JSON.stringify(report, null, 2)}\n`))
     await syncDirectory(absoluteBackup)
+    await onTransactionStep('report-written')
     return {
       status: 'applied',
       removed: plan.removed,
@@ -433,15 +500,37 @@ function parseArgs(argv) {
     else if (arg === '--file') result.liveFile = argv[++index]
     else if (arg === '--backup-dir') result.backupDirectory = argv[++index]
     else if (arg === '--confirm-app-stopped') result.appStoppedConfirmation = argv[++index]
+    else if (arg === '--verify-report') result.verifyReport = argv[++index]
     else throw new Error(`Unknown argument: ${arg}`)
   }
   invariant(result.liveFile, 'Required argument: --file.')
+  invariant(
+    !(result.apply && result.verifyReport),
+    '--apply and --verify-report are mutually exclusive.',
+  )
   if (result.apply) invariant(result.backupDirectory, 'Apply requires --backup-dir.')
   return result
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  if (args.verifyReport) {
+    const liveFile = resolve(args.liveFile)
+    const reportFile = resolve(args.verifyReport)
+    const reportStat = await stat(reportFile)
+    if (process.platform !== 'win32') {
+      invariant((reportStat.mode & 0o777) === 0o600, 'Frozen cleanup report должен иметь mode 600.')
+    }
+    const report = JSON.parse((await readFile(reportFile)).toString('utf8'))
+    invariant(isRecord(report), 'Frozen cleanup report должен быть JSON-объектом.')
+    invariant(
+      resolve(report.live_file) === liveFile,
+      'Frozen cleanup report относится к другому live-файлу.',
+    )
+    const document = parseDocument(await readFile(liveFile), 'Post-start live')
+    process.stdout.write(`${JSON.stringify(verifyPostCleanup(document, report), null, 2)}\n`)
+    return
+  }
   if (!args.apply) {
     const document = parseDocument(await readFile(resolve(args.liveFile)), 'Live dry-run')
     const plan = buildCleanupPlan(document)

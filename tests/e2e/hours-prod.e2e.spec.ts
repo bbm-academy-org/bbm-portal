@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
+import { isAllowedE2EIdpOrigin } from './support/idp-origin'
+
 /**
  * Browser E2E для acceptance-сценариев спеки 081 (issue #81) — против РЕАЛЬНОГО
  * задеплоенного стенда, не против локального dev-сервера. Обязательный зелёный
@@ -20,6 +22,8 @@ import { expect, test, type Page } from '@playwright/test'
  *   CMS_E2E_BASE_URL     e.g. https://cms.bbm.academy
  * Сценарий с логином дополнительно требует реальных учёток IdP:
  *   E2E_IDP_USERNAME / E2E_IDP_PASSWORD
+ * Для непродового IdP нужен точный host allowlist (с портом):
+ *   E2E_IDP_HOST       e.g. truenas.local:9180
  * Desktop-проверка админской таблицы требует отдельной admin-учётки:
  *   E2E_HOURS_ADMIN_USERNAME / E2E_HOURS_ADMIN_PASSWORD
  *
@@ -33,6 +37,7 @@ const portalBase = (process.env.PORTAL_E2E_BASE_URL ?? '').replace(/\/+$/, '')
 const cmsBase = (process.env.CMS_E2E_BASE_URL ?? '').replace(/\/+$/, '')
 const idpUsername = process.env.E2E_IDP_USERNAME
 const idpPassword = process.env.E2E_IDP_PASSWORD
+const idpHost = process.env.E2E_IDP_HOST
 const hoursAdminUsername = process.env.E2E_HOURS_ADMIN_USERNAME
 const hoursAdminPassword = process.env.E2E_HOURS_ADMIN_PASSWORD
 
@@ -52,15 +57,22 @@ async function signIn(
       .getByRole('button', { name: /zitadel|sign in/i })
       .first()
       .click()
-    await page.waitForURL(/id\.bbm\.academy/)
   }
 
-  if (new URL(page.url()).hostname === 'id.bbm.academy') {
+  const targetUrl = new URL(targetPath, portalBase)
+  if (page.url() !== targetUrl.href) {
     const loginName = page.locator('input[name="loginName"], input#loginName').first()
+    await loginName.waitFor({ state: 'visible', timeout: 30_000 })
+    if (!isAllowedE2EIdpOrigin(page.url(), idpHost)) {
+      throw new Error(`Refusing to submit E2E username to untrusted IdP origin: ${page.url()}`)
+    }
     await loginName.fill(credentials.username)
     await page.keyboard.press('Enter')
     const password = page.locator('input[type="password"]').first()
     await password.waitFor({ state: 'visible' })
+    if (!isAllowedE2EIdpOrigin(page.url(), idpHost)) {
+      throw new Error(`Refusing to submit E2E password to untrusted IdP origin: ${page.url()}`)
+    }
     await password.fill(credentials.password)
     await page.keyboard.press('Enter')
   }
@@ -79,7 +91,7 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
     const url = new URL(page.url())
     expect(url.pathname, 'анонима обязано унести с /p/hours').not.toBe('/p/hours')
     expect(
-      url.hostname === 'id.bbm.academy' || url.pathname.startsWith('/api/auth/signin'),
+      isAllowedE2EIdpOrigin(page.url(), idpHost) || url.pathname.startsWith('/api/auth/signin'),
       `ожидался логин IdP или хоп Auth.js, получено ${page.url()}`,
     ).toBe(true)
     // Ни ставок, ни имён, ни начислений в анонимном контексте.
