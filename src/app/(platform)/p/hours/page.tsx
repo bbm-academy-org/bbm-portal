@@ -109,7 +109,7 @@ export default async function HoursPage({
       <section className="hours-band">
         <div className="hours-wrap">
           <h2>Участники</h2>
-          <ParticipantsTable participants={doc.participants} />
+          <ParticipantsTable participants={doc.participants} summaryPeriod={summaryPeriod} />
           {email && !participant ? <NotAParticipantNotice /> : null}
         </div>
       </section>

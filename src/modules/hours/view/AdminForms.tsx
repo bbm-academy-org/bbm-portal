@@ -189,7 +189,13 @@ export function ParticipantForm({
  * `key` на форме перемонтирует её при смене выбора — это и есть механизм
  * подстановки `defaultValue` без контролируемых полей.
  */
-export function ParticipantsAdmin({ participants }: { participants: Participant[] }) {
+export function ParticipantsAdmin({
+  participants,
+  summaryPeriod,
+}: {
+  participants: Participant[]
+  summaryPeriod: Period | null | undefined
+}) {
   const [selection, setSelection] = React.useState<{ email: string; pick: number } | null>(null)
   const editing = participants.find((participant) => participant.email === selection?.email) ?? null
 
@@ -197,6 +203,7 @@ export function ParticipantsAdmin({ participants }: { participants: Participant[
     <>
       <ParticipantsTable
         participants={participants}
+        summaryPeriod={summaryPeriod}
         onEdit={(participant) =>
           setSelection((previous) => ({
             email: participant.email,

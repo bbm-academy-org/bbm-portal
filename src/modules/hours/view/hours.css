@@ -228,6 +228,11 @@ body:has(.hours-root) {
 }
 
 /* Таблицы */
+.hours-rate-period {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
 .hours-table-scroll {
   overflow-x: auto;
 }
@@ -253,13 +258,71 @@ body:has(.hours-root) {
 .hours-table td {
   color: var(--ink-2);
 }
-.hours-table td.hours-num {
+.hours-table .hours-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hours-table td.hours-num {
   color: var(--ink);
+}
+.hours-participants-table th,
+.hours-participants-table td {
+  white-space: normal;
 }
 .hours-table tbody tr:last-child td {
   border-bottom: none;
+}
+.hours-participants-table {
+  min-width: 700px;
+  table-layout: fixed;
+}
+.hours-participants-table .hours-col-participant {
+  width: 32%;
+}
+.hours-participants-table .hours-col-fork {
+  width: 28%;
+}
+.hours-participants-table .hours-col-monthly,
+.hours-participants-table .hours-col-hourly {
+  width: 20%;
+}
+.hours-participants-table[data-editable='true'] .hours-col-participant {
+  width: 28%;
+}
+.hours-participants-table[data-editable='true'] .hours-col-fork {
+  width: 24%;
+}
+.hours-participants-table[data-editable='true'] .hours-col-monthly,
+.hours-participants-table[data-editable='true'] .hours-col-hourly {
+  width: 17%;
+}
+.hours-participants-table[data-editable='true'] .hours-col-edit {
+  width: 14%;
+}
+.hours-cell-main,
+.hours-cell-secondary {
+  display: block;
+}
+.hours-cell-main {
+  color: var(--ink);
+}
+.hours-cell-secondary {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.hours-participant-role {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.4;
+}
+.hours-fork,
+.hours-grade,
+.hours-edit-cell {
+  white-space: nowrap;
 }
 
 /* Карточка калькулятора */

@@ -18,9 +18,18 @@ import type { HoursDocument } from '@/lib/hours'
  */
 
 vi.mock('@/auth', () => ({ auth: async () => ({ user: { email: 'Anton@BBM.Academy' } }) }))
-vi.mock('@/modules/hours/actions', () => ({
-  saveAssessmentAction: async () => ({ status: 'idle', message: '', warnings: [], saved: null }),
-}))
+vi.mock('@/modules/hours/actions', () => {
+  const idle = async () => ({ status: 'idle', message: '', warnings: [], saved: null })
+  return {
+    createPeriodAction: idle,
+    deletePeriodAction: idle,
+    publishHoursToMattermostAction: idle,
+    saveAssessmentAction: idle,
+    saveParticipantAction: idle,
+    setPeriodStatusAction: idle,
+    updatePeriodAction: idle,
+  }
+})
 
 const dir = mkdtempSync(join(tmpdir(), 'bbm-hours-page-'))
 const file = join(dir, 'hours.json')
@@ -46,6 +55,13 @@ const seed: HoursDocument = {
       date_from: '2026-07-01',
       date_to: '2026-07-31',
       status: 'open',
+    },
+    {
+      id: 'p-may-june',
+      label: 'Май–июнь 2026',
+      date_from: '2026-05-01',
+      date_to: '2026-06-30',
+      status: 'closed',
     },
   ],
   assessments: [
@@ -91,6 +107,22 @@ async function renderPage(params: Record<string, string> = {}): Promise<string> 
   return renderToStaticMarkup(element).replace(/ /g, ' ')
 }
 
+async function renderAdminPage(params: Record<string, string> = {}): Promise<string> {
+  const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
+  const element = await HoursAdminPage({ searchParams: Promise.resolve(params) })
+  return renderToStaticMarkup(element).replace(/ /g, ' ')
+}
+
+function sectionByHeading(html: string, heading: string): HTMLElement {
+  const host = document.createElement('div')
+  host.innerHTML = html
+  const section = [...host.querySelectorAll('section')].find((candidate) =>
+    candidate.querySelector('h2')?.textContent?.includes(heading),
+  )
+  if (!section) throw new Error(`Section not found: ${heading}`)
+  return section as HTMLElement
+}
+
 describe('страница /p/hours собирается целиком', () => {
   it('заголовок «Сколько было отработано», под ним крупно имя участника (issue #83 пп.2-3)', async () => {
     const html = await renderPage()
@@ -115,6 +147,31 @@ describe('страница /p/hours собирается целиком', () => 
     expect(html).toContain('Июль 2026')
     expect(html).toContain('01.07.2026')
     expect(html).toContain('1 087 ₽')
+  })
+
+  it('selected summary period drives the participant hourly rate and visible caption', async () => {
+    const html = await renderPage({ period: 'p-may-june' })
+    const participantsSection = sectionByHeading(html, 'Участники')
+    const summarySection = sectionByHeading(html, 'Сводка оценок')
+
+    expect(participantsSection.textContent).toContain('Май–июнь 2026')
+    expect(participantsSection.textContent).toContain('01.05.2026—30.06.2026')
+    expect(participantsSection.textContent).toContain('1 163 ₽')
+    expect(summarySection.querySelector('select')?.getAttribute('value')).toBe(null)
+    expect(summarySection.querySelector('option[selected]')?.getAttribute('value')).toBe(
+      'p-may-june',
+    )
+  })
+
+  it('admin page passes the same selected summary period into its shared participants table', async () => {
+    const html = await renderAdminPage({ period: 'p-may-june' })
+    const participantsSection = sectionByHeading(html, 'Участники')
+
+    expect(participantsSection.textContent).toContain('Май–июнь 2026')
+    expect(participantsSection.textContent).toContain('1 163 ₽')
+    expect(
+      [...participantsSection.querySelectorAll('thead th')].map((cell) => cell.textContent),
+    ).toEqual(['Участник', 'Вилка и грейд', 'Ставка, ₽/мес', 'Ставка, ₽/ч', 'Правка'])
   })
 
   it('показывает сводку с сохранённой оценкой (открытая верификация)', async () => {
@@ -253,5 +310,26 @@ describe('участник без вилки и грейда — режим «т
     expect(html).not.toContain('1 087 ₽')
     // в таблице участников — прочерки вместо вилки и ставки
     expect(html).toMatch(/<td[^>]*>—<\/td>/)
+  })
+})
+
+describe('страницы без периодов (spec 102)', () => {
+  beforeEach(() => {
+    writeFileSync(
+      file,
+      JSON.stringify({ participants: seed.participants, periods: [], assessments: [] }),
+      'utf8',
+    )
+  })
+
+  it.each([
+    ['public', renderPage],
+    ['admin', renderAdminPage],
+  ])('%s page explains why hourly rates are unavailable', async (_name, renderTarget) => {
+    const html = await renderTarget()
+    const participantsSection = sectionByHeading(html, 'Участники')
+    expect(participantsSection.textContent).toContain('Нет периода для расчёта часовой ставки.')
+    expect(participantsSection.querySelectorAll('tbody td:nth-child(4)')).toHaveLength(1)
+    expect(participantsSection.querySelector('tbody td:nth-child(4)')?.textContent).toBe('—')
   })
 })
