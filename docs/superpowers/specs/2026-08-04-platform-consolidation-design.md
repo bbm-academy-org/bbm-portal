@@ -72,7 +72,7 @@ portal.bbm.academy (Zitadel OIDC — ADR-002 §5, ADR-003)
 ├── Access Sync: обработчик outbox → внешние системы
 └── Payload (схема payload): CMS сайта; admin через payload-authjs
 
-Пропагация: core → Zitadel · Mattermost · Plane · Payload Team → сайт (dispatch #109)
+Пропагация: core → Zitadel · Mattermost · Plane · Payload Team → сайт (dispatch bbm-public-website#109)
                  → bbm-kb (GENERATED team.yaml → CI-билд → kb.bbm.academy → Гермес via git-pull)
 ```
 
@@ -150,8 +150,7 @@ API-сервис**: исходный PRD (фаза 5, D-017) планирова�
 1. Ввод в `/p/admin` → транзакция в `core` (`member` + строки `outbox` + `event_log`).
 2. Обработчик outbox проецирует по целям: Zitadel (учётка), Mattermost
    (приглашение), Plane (приглашение), Payload Team (upsert editorial-записи →
-   сайт пересоберётся имеющимся repository_dispatch; приёмник — issue #109 в
-   `bbm-public-website`), `bbm-kb`.
+   сайт пересоберётся имеющимся repository_dispatch; приёмник — issue `bbm-public-website#109`), `bbm-kb`.
 3. Звено KB: GitHub App (расширение установки существующего site-dispatch App на
    `bbm-kb`, право `contents:write`) обновляет регенерированный
    `ssot/facts/team.yaml` с шапкой «GENERATED из портала — руками не править».
@@ -252,14 +251,14 @@ CI-джоб `propagate-payload.yml` в `bbm-kb`** (`ssot/` → Payload): Access 
 
 ## 12. Интеграции (реестр)
 
-| Интеграция                                                   | Статус                                                                            | Изменения по этому дизайну                                                                                                    |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Mattermost webhooks (Leads, Hours)                           | работают                                                                          | + алёрты Access Sync; + приглашение/деактивация участников (REST)                                                             |
-| GitHub App site-dispatch (issue #109 в `bbm-public-website`) | работает                                                                          | + установка на `bbm-kb`, `contents:write` (GENERATED-PR)                                                                      |
-| Plane API                                                    | read-only (OKR)                                                                   | + приглашения участников; + порождение задач событиями портала (сценарии — в discovery модулей; запись через REST отработана) |
-| Zitadel                                                      | вход `/p/*`                                                                       | + management API: создание/деактивация учёток из Access Sync                                                                  |
-| Zoom                                                         | автопилот `bbm/infra/zoom-rotation` (S2S-OAuth, BBMP-67) — транскрипты не трогает | расширение на забор транскриптов (волна Б); его допущение «нет PHI» пересматривается при ревизии D-018/D-019 (§15)            |
-| Почта `@bbm.academy`                                         | —                                                                                 | открытый вопрос §14                                                                                                           |
+| Интеграция                                                | Статус                                                                            | Изменения по этому дизайну                                                                                                    |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Mattermost webhooks (Leads, Hours)                        | работают                                                                          | + алёрты Access Sync; + приглашение/деактивация участников (REST)                                                             |
+| GitHub App site-dispatch (issue `bbm-public-website#109`) | работает                                                                          | + установка на `bbm-kb`, `contents:write` (GENERATED-PR)                                                                      |
+| Plane API                                                 | read-only (OKR)                                                                   | + приглашения участников; + порождение задач событиями портала (сценарии — в discovery модулей; запись через REST отработана) |
+| Zitadel                                                   | вход `/p/*`                                                                       | + management API: создание/деактивация учёток из Access Sync                                                                  |
+| Zoom                                                      | автопилот `bbm/infra/zoom-rotation` (S2S-OAuth, BBMP-67) — транскрипты не трогает | расширение на забор транскриптов (волна Б); его допущение «нет PHI» пересматривается при ревизии D-018/D-019 (§15)            |
+| Почта `@bbm.academy`                                      | —                                                                                 | открытый вопрос §14                                                                                                           |
 
 ## 13. Порядок работ (эпики)
 
