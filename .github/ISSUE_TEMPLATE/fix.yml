@@ -1,0 +1,90 @@
+name: Дефект (Bug)
+description: Что-то сломано или ведёт себя не так, как задумано
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Форма выставляет штатный тип **Bug** сама. Отдельно проставь на задаче
+        лейбл `source:*` (происхождение) и milestone — их форма задать не может.
+        Задача типа Bug без воспроизведения не берётся, а возвращается автору
+        (`.claude/rules/task-canon.md` §1).
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source
+      description: Происхождение задачи; продублируй его лейблом `source:*`.
+      options:
+        - source:owner
+        - source:spec
+        - source:retro
+        - source:agent
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: >-
+        Для дефекта Context — это воспроизведение: окружение (стенд/прод, URL,
+        браузер, версия), шаги, ожидалось, получилось.
+      value: |
+        **Окружение:**
+
+        **Шаги:**
+
+        1.
+
+        **Ожидалось:**
+
+        **Получилось:**
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Что чиним и что явно НЕ чиним этой задачей (и куда это уходит).
+      value: |
+        **In scope:**
+
+        -
+
+        **Out of scope:**
+
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: spec-reference
+    attributes:
+      label: Spec reference
+      description: 'Спека/ADR + §, либо «нет спеки: <причина>». Пустым это поле не бывает.'
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Что открыть/запустить и что увидеть, чтобы считать дефект закрытым.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Зеркало нативного графа; сами связи проводятся через API (канон §3).
+      value: |
+        **Blocked by:**
+        **Blocks:**
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Свободный текст, логи, ссылки на прогоны.
+    validations:
+      required: false

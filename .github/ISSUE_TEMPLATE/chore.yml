@@ -1,0 +1,78 @@
+name: Обслуживание и документация (Task)
+description: Инфраструктура, рефакторинг, тулинг, зависимости, документация — без новой пользовательской функциональности
+type: Task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Форма выставляет штатный тип **Task** — он покрывает и обслуживание, и
+        документацию: отдельного типа Docs у организации нет и заводить его
+        незачем. Ветку для docs-only изменения можно назвать `docs/<N>-<slug>`
+        вручную (канон §2). Отдельно проставь лейбл `source:*` и milestone.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source
+      description: Происхождение задачи; продублируй его лейблом `source:*`.
+      options:
+        - source:owner
+        - source:spec
+        - source:retro
+        - source:agent
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Почему сейчас, какую боль закрывает, откуда взялось решение.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: 'Пустой «Out of scope» — запах: значит границы не думали.'
+      value: |
+        **In scope:**
+
+        -
+
+        **Out of scope:**
+
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: spec-reference
+    attributes:
+      label: Spec reference
+      description: 'Спека/ADR + §, либо «нет спеки: <причина>». Пустым это поле не бывает.'
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Наблюдаемо и проверяемо — команда, файл, статус прогона.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Зеркало нативного графа; сами связи проводятся через API (канон §3).
+      value: |
+        **Blocked by:**
+        **Blocks:**
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Свободный текст.
+    validations:
+      required: false
