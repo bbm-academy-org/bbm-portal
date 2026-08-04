@@ -17,6 +17,7 @@ import {
   skeletonWarnings,
   channelError,
   composeBody,
+  dedupeLabelFlags,
   normalizeChannel,
   resolveChannel,
   sourceLineError,
@@ -306,6 +307,37 @@ describe('validationError — порядок гейтов', () => {
     expect(validationError(drop('--type'))).toBeTruthy()
     expect(validationError(drop('--milestone'))).toBeTruthy()
     expect(validationError(drop('--body'))).toBeTruthy()
+  })
+})
+
+describe('dedupeLabelFlags', () => {
+  /**
+   * Канал приходит и флагом `--channel`, и лейблом — без схлопывания один и тот
+   * же `channel:*` уезжал в gh дважды.
+   */
+  it('схлопывает повтор одного лейбла, порядок первых вхождений сохраняя', () => {
+    expect(dedupeLabelFlags(['--label', 'channel:owner', '--label', 'channel:owner'])).toEqual([
+      '--label',
+      'channel:owner',
+    ])
+    expect(
+      dedupeLabelFlags(['--label', 'epic', '--label', 'channel:spec', '--label', 'epic']),
+    ).toEqual(['--label', 'epic', '--label', 'channel:spec'])
+  })
+
+  it('разворачивает списки через запятую и короткую форму', () => {
+    expect(dedupeLabelFlags(['-l', 'a,b', '--label=b'])).toEqual(['--label', 'a', '--label', 'b'])
+  })
+
+  it('чужие флаги не трогает', () => {
+    expect(dedupeLabelFlags(['--title', 'x', '--label', 'a', '--milestone', 'M'])).toEqual([
+      '--title',
+      'x',
+      '--label',
+      'a',
+      '--milestone',
+      'M',
+    ])
   })
 })
 

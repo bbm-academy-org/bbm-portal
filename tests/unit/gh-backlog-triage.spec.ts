@@ -123,6 +123,20 @@ describe('sourceLineText', () => {
     expect(sourceLineText('**Source:**')).toBeNull()
     expect(sourceLineText('## Context')).toBeNull()
   })
+
+  /**
+   * Регрессия: в отступах стоял `\s`, который включает `\n`, — пустая строка
+   * `**Source:**` захватывала следующий абзац, и НЕзаполненное поле читалось
+   * как заполненное.
+   */
+  it('пустая строка Source не захватывает следующий абзац', () => {
+    expect(sourceLineText('**Source:**\n\nобычный текст')).toBeNull()
+    expect(sourceLineText('**Source:**   \n\n## Context')).toBeNull()
+  })
+
+  it('невынутая угловая заглушка скелета §1 источником не считается', () => {
+    expect(sourceLineText('**Source:** <на основании чего задача существует>')).toBeNull()
+  })
 })
 
 describe('parseRefsWithRationale', () => {
@@ -151,8 +165,14 @@ describe('isPlaceholder', () => {
     expect(isPlaceholder('<!-- сюда ссылки -->')).toBe(true)
   })
 
+  it('считает пустышкой невынутую угловую заглушку скелета канона §1', () => {
+    expect(isPlaceholder('<на основании чего задача существует — свободный текст>')).toBe(true)
+    expect(isPlaceholder('<конкретный deliverable>')).toBe(true)
+  })
+
   it('осмысленный текст пустышкой не считает', () => {
     expect(isPlaceholder('#12 — причина')).toBe(false)
+    expect(isPlaceholder('баг-репорт <Антона> в Mattermost')).toBe(false)
   })
 })
 

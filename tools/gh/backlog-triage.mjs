@@ -81,7 +81,10 @@ const NON_BLOCKER_PHRASES = [
  */
 export function sourceLineText(body) {
   const text = String(body ?? '')
-  const inline = text.match(/^\s*\*\*Source:\*\*\s*(.*)$/im)
+  // Отступы — ТОЛЬКО пробел и таб: `\s` включает `\n`, и на пустой строке
+  // `**Source:**` захватывал следующий абзац («**Source:**\n\nобычный текст» →
+  // «обычный текст»), то есть незаполненное поле читалось как заполненное.
+  const inline = text.match(/^[ \t]*\*\*Source:\*\*[ \t]*(.*)$/im)
   if (inline) {
     const value = inline[1].trim()
     if (value !== '' && !isPlaceholder(value)) return value
@@ -190,6 +193,9 @@ export function isPlaceholder(text) {
     .toLowerCase()
   if (t === '') return true
   if (/^<!--[\s\S]*-->$/.test(t)) return true
+  // Угловая заглушка скелета канона §1 (`<на основании чего…>`) — это
+  // невынутый шаблон, а не заполненное поле.
+  if (/^<[^<>]*>$/.test(t)) return true
   return ['нет', 'none', 'нету', 'n/a', 'na', '—', '–', '-', 'tbd', '_no response_'].includes(t)
 }
 

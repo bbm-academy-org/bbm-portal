@@ -40,7 +40,7 @@
 // Exit codes: 0 = issue создана, добавлена на борд и подтверждена;
 // 1 = ошибка валидации / gh / подтверждения.
 
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -367,6 +367,39 @@ export function skeletonWarnings(body, labels = []) {
   return warnings
 }
 
+/**
+ * Схлопнуть повторяющиеся `--label`: канал приходит и флагом `--channel`, и
+ * лейблом, поэтому один и тот же `channel:*` иначе уезжает в gh дважды.
+ * Порядок первых вхождений сохраняется; прочие флаги не трогаются.
+ */
+export function dedupeLabelFlags(args) {
+  const out = []
+  const seen = new Set()
+  const list = args ?? []
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i]
+    let raw = null
+    let skipNext = false
+    if (a === '--label' || a === '-l') {
+      raw = list[i + 1]
+      skipNext = true
+    } else if (a.startsWith('--label=')) {
+      raw = a.slice('--label='.length)
+    } else {
+      out.push(a)
+      continue
+    }
+    if (skipNext) i++
+    for (const part of String(raw ?? '').split(',')) {
+      const label = part.trim()
+      if (label === '' || seen.has(label)) continue
+      seen.add(label)
+      out.push('--label', label)
+    }
+  }
+  return out
+}
+
 /** Есть ли уже `--assignee`/`-a`? */
 export function hasAssignee(args) {
   return flagValues(args, 'assignee', 'a').length > 0
@@ -496,16 +529,28 @@ function main() {
     process.stderr.write(`${TAG} замечание (не блокирует): ${w}\n`)
   }
 
-  const bodyFile = join(mkdtempSync(join(tmpdir(), 'bbm-issue-')), 'body.md')
+  const bodyDir = mkdtempSync(join(tmpdir(), 'bbm-issue-'))
+  const bodyFile = join(bodyDir, 'body.md')
   writeFileSync(bodyFile, body, 'utf8')
+  // Уборка вешается на 'exit', а не на try/finally: почти все выходы отсюда
+  // идут через die() → process.exit, а он finally не исполняет.
+  process.on('exit', () => {
+    try {
+      rmSync(bodyDir, { recursive: true, force: true })
+    } catch {
+      /* временный каталог — не повод ронять команду */
+    }
+  })
 
-  const augmented = ensureAssigneeFlag([
-    ...stripConsumedFlags(passthrough),
-    '--label',
-    channel,
-    '--body-file',
-    bodyFile,
-  ])
+  const augmented = ensureAssigneeFlag(
+    dedupeLabelFlags([
+      ...stripConsumedFlags(passthrough),
+      '--label',
+      channel,
+      '--body-file',
+      bodyFile,
+    ]),
+  )
 
   // 1. Создание. `--repo` пинится ПОСЛЕ passthrough: gh уважает последний, так
   //    что даже если оверрайд просочится, issue приземлится в нашем репо.
