@@ -1,0 +1,85 @@
+name: Функциональность (Feature)
+description: Новая возможность или заметное изменение поведения
+type: Feature
+labels:
+  - channel:owner
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Форма выставляет штатный тип **Feature** и лейбл `channel:owner`
+        (из веб-интерфейса задачи заводит владелец; агенты идут через
+        `pnpm issue:create`). Отдельно проставь **milestone** — его форма задать не
+        может, и `pnpm backlog:triage` его отсутствие покажет.
+        Скелет и семантика полей: `.claude/rules/task-canon.md` §1.
+  - type: textarea
+    id: source
+    attributes:
+      label: Source
+      description: >-
+        На основании чего задача существует — свободный текст, одна строка.
+        Например: «баг-репорт Антона в Mattermost 2026-08-04», «executive-решение
+        партнёров», «просьба коллеги на созвоне», «сам поймал при работе над #124»,
+        «обновилась зависимость payload 3.86», «изменилась миссия».
+      placeholder: баг-репорт в Mattermost 2026-08-04
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Почему сейчас, какую боль закрывает, откуда взялось решение. Ссылки на спеку/ADR/PRD.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: 'Пустой «Out of scope» — запах: значит границы не думали.'
+      value: |
+        **In scope:**
+
+        -
+
+        **Out of scope:**
+
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: spec-reference
+    attributes:
+      label: Spec reference
+      description: >-
+        Спека/ADR + конкретный §. Если спека не нужна по гейту task-cycle stage 1a
+        — напиши «нет спеки: <причина>». Пустым это поле не бывает.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Наблюдаемо и проверяемо — команда, URL, статус, файл. «Работает» критерием не является.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: >-
+        Человекочитаемое зеркало нативного графа. Сами связи проводятся через API
+        (sub-issue / blocked_by) — проза связью не считается (канон §3).
+      value: |
+        **Blocked by:**
+        **Blocks:**
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Свободный текст. Stop-state-комментарии живут комментариями, не правкой тела.
+    validations:
+      required: false
