@@ -1,24 +1,27 @@
 name: Дефект (Bug)
 description: Что-то сломано или ведёт себя не так, как задумано
 type: Bug
+labels:
+  - channel:owner
 body:
   - type: markdown
     attributes:
       value: |
-        Форма выставляет штатный тип **Bug** сама. Отдельно проставь на задаче
-        лейбл `source:*` (происхождение) и milestone — их форма задать не может.
+        Форма выставляет штатный тип **Bug** и лейбл `channel:owner` (из
+        веб-интерфейса задачи заводит владелец; агенты идут через
+        `pnpm issue:create`). Отдельно проставь **milestone**.
         Задача типа Bug без воспроизведения не берётся, а возвращается автору
         (`.claude/rules/task-canon.md` §1).
-  - type: dropdown
+  - type: textarea
     id: source
     attributes:
       label: Source
-      description: Происхождение задачи; продублируй его лейблом `source:*`.
-      options:
-        - source:owner
-        - source:spec
-        - source:retro
-        - source:agent
+      description: >-
+        На основании чего задача существует — свободный текст, одна строка.
+        Например: «баг-репорт Антона в Mattermost 2026-08-04», «executive-решение
+        партнёров», «просьба коллеги на созвоне», «сам поймал при работе над #124»,
+        «обновилась зависимость payload 3.86», «изменилась миссия».
+      placeholder: баг-репорт в Mattermost 2026-08-04
     validations:
       required: true
   - type: textarea

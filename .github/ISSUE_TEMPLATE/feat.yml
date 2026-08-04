@@ -1,24 +1,27 @@
 name: Функциональность (Feature)
 description: Новая возможность или заметное изменение поведения
 type: Feature
+labels:
+  - channel:owner
 body:
   - type: markdown
     attributes:
       value: |
-        Форма выставляет штатный тип **Feature** сама. Отдельно проставь на
-        задаче лейбл `source:*` (происхождение) и milestone — их форма задать не
-        может, а `pnpm backlog:triage` их отсутствие покажет.
+        Форма выставляет штатный тип **Feature** и лейбл `channel:owner`
+        (из веб-интерфейса задачи заводит владелец; агенты идут через
+        `pnpm issue:create`). Отдельно проставь **milestone** — его форма задать не
+        может, и `pnpm backlog:triage` его отсутствие покажет.
         Скелет и семантика полей: `.claude/rules/task-canon.md` §1.
-  - type: dropdown
+  - type: textarea
     id: source
     attributes:
       label: Source
-      description: Происхождение задачи; продублируй его лейблом `source:*`.
-      options:
-        - source:owner
-        - source:spec
-        - source:retro
-        - source:agent
+      description: >-
+        На основании чего задача существует — свободный текст, одна строка.
+        Например: «баг-репорт Антона в Mattermost 2026-08-04», «executive-решение
+        партнёров», «просьба коллеги на созвоне», «сам поймал при работе над #124»,
+        «обновилась зависимость payload 3.86», «изменилась миссия».
+      placeholder: баг-репорт в Mattermost 2026-08-04
     validations:
       required: true
   - type: textarea

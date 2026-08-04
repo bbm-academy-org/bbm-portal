@@ -5,7 +5,7 @@ import {
   missingIssueTypes,
   planLabels,
   planMilestone,
-  SOURCE_LABEL_SPECS,
+  CHANNEL_LABEL_SPECS,
 } from '../../tools/gh/bootstrap-taxonomy.mjs'
 import {
   FALLBACK_MILESTONE,
@@ -115,20 +115,20 @@ describe('knownIdWarnings', () => {
 })
 
 describe('bootstrap-taxonomy — план', () => {
-  it('создаёт недостающие source-лейблы', () => {
+  it('создаёт недостающие channel-лейблы', () => {
     const plan = planLabels([])
-    expect(plan.create).toHaveLength(SOURCE_LABEL_SPECS.length)
+    expect(plan.create).toHaveLength(CHANNEL_LABEL_SPECS.length)
     expect(plan.update).toEqual([])
   })
 
   it('совпадающие лейблы оставляет как есть', () => {
-    expect(planLabels(SOURCE_LABEL_SPECS).keep).toHaveLength(SOURCE_LABEL_SPECS.length)
+    expect(planLabels(CHANNEL_LABEL_SPECS).keep).toHaveLength(CHANNEL_LABEL_SPECS.length)
   })
 
   it('обновляет лейбл с разошедшимся цветом или описанием', () => {
-    const drifted = SOURCE_LABEL_SPECS.map((s, i) => (i === 0 ? { ...s, color: 'ffffff' } : s))
+    const drifted = CHANNEL_LABEL_SPECS.map((s, i) => (i === 0 ? { ...s, color: 'ffffff' } : s))
     const plan = planLabels(drifted)
-    expect(plan.update).toEqual([SOURCE_LABEL_SPECS[0]])
+    expect(plan.update).toEqual([CHANNEL_LABEL_SPECS[0]])
   })
 
   it('план никогда не содержит удалений — судьба старых лейблов за задачей 7.2', () => {

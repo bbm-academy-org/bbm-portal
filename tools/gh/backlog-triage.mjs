@@ -13,7 +13,7 @@
 //   • расхождения claim'а: ворктри и `In Progress` — два обязательных сигнала
 //     (§4), разрешение расхождения асимметрично и здесь только докладывается,
 //     чужой claim скриптом не снимается;
-//   • гигиена полей: Type / source:* / milestone / assignee;
+//   • гигиена полей: Type / channel:* / строка **Source:** / milestone / assignee;
 //   • рёбра без записанного rationale (provenance-orphan, повод оспорить ребро);
 //   • мега-блокеры — узел, блокирующий ≥5 задач.
 //
@@ -26,10 +26,10 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import {
+  CHANNEL_LABELS,
   ISSUE_TYPES,
   PROJECT_NUMBER,
   REPO,
-  SOURCE_LABELS,
   buildBoardItemsPageQuery,
   ghGraphqlResult,
   ghJson,
@@ -73,9 +73,34 @@ const NON_BLOCKER_PHRASES = [
 // ── чистые сеймы (юнит-тестируются в tests/unit/gh-backlog-triage.spec.ts) ──
 
 /**
+ * Текст строки `**Source:**` из тела задачи, либо null, если её нет или она
+ * пуста. Принимается и форма `pnpm issue:create` (`**Source:** текст`), и форма
+ * issue-формы GitHub (секция `### Source` со значением на следующих строках).
+ * @param {string} body
+ * @returns {string|null}
+ */
+export function sourceLineText(body) {
+  const text = String(body ?? '')
+  const inline = text.match(/^\s*\*\*Source:\*\*\s*(.*)$/im)
+  if (inline) {
+    const value = inline[1].trim()
+    if (value !== '' && !isPlaceholder(value)) return value
+  }
+  // Без флага `m`: `$` тут обязан значить конец ВСЕГО текста (последняя секция
+  // тела), а не конец строки. Начало строки поэтому задаётся явным `(?:^|\n)`.
+  const section = text.match(/(?:^|\n)#{2,4}[ \t]*Source[ \t]*\r?\n([\s\S]*?)(?=\n#{2,4}[ \t]|$)/i)
+  if (section) {
+    const value = section[1].trim()
+    if (value !== '' && !isPlaceholder(value)) return value
+  }
+  return null
+}
+
+/**
  * Гигиена полей одной задачи. Классификатор — ШТАТНОЕ поле Type; кастомная
- * таксономия ровно одна (`source:*`), потому что штатного поля происхождения у
- * GitHub нет (решение владельца 2026-08-04).
+ * таксономия ровно одна — `channel:*` (канал попадания в бэклог). Происхождение
+ * задачи — свободный текст строки `**Source:**`, и оно тоже обязательно
+ * (решения владельца 2026-08-04).
  * @returns {string[]} список нарушений, пустой = чисто
  */
 export function missingFields(issue) {
@@ -86,13 +111,23 @@ export function missingFields(issue) {
   if (!type) missing.push('нет Type')
   else if (!ISSUE_TYPES.includes(type)) missing.push(`неизвестный Type «${type}»`)
 
-  const sources = labels.filter((l) => l.startsWith('source:'))
-  if (sources.length === 0) missing.push('нет source:*')
-  else if (sources.length > 1) missing.push(`несколько source:* (${sources.join(', ')})`)
-  else if (!SOURCE_LABELS.includes(sources[0])) missing.push(`неизвестный source «${sources[0]}»`)
+  const channels = labels.filter((l) => l.startsWith('channel:'))
+  if (channels.length === 0) missing.push('нет channel:*')
+  else if (channels.length > 1) missing.push(`несколько channel:* (${channels.join(', ')})`)
+  else if (!CHANNEL_LABELS.includes(channels[0])) {
+    missing.push(`неизвестный channel «${channels[0]}»`)
+  }
+
+  // Происхождение — свободный текст, поэтому проверяется только его наличие и
+  // непустота. Смысл проверить нечем, и не надо: содержательность строки —
+  // предмет ревью постановки, а не регулярки.
+  if (!sourceLineText(issue?.body)) missing.push('нет непустой строки **Source:**')
 
   const kinds = labels.filter((l) => l.startsWith('kind:'))
   if (kinds.length > 0) missing.push(`упразднённые kind:*-лейблы (${kinds.join(', ')})`)
+
+  const sources = labels.filter((l) => l.startsWith('source:'))
+  if (sources.length > 0) missing.push(`упразднённые source:*-лейблы (${sources.join(', ')})`)
 
   const legacy = labels.filter((l) => LEGACY_LABELS.includes(l))
   if (legacy.length > 0) missing.push(`дефолтные лейблы GitHub (${legacy.join(', ')}) — миграция 7.2`)
@@ -517,7 +552,7 @@ export const USAGE = `Использование: pnpm backlog:triage
     Рёбра без rationale — provenance-orphan: повод оспорить ребро.
     Мега-блокеры — узел, блокирующий ≥5 задач.
     Эпики — зонтики, сами по себе не берутся.
-    Гигиена полей — Type / source:* / milestone / assignee.
+    Гигиена полей — Type / channel:* / строка **Source:** / milestone / assignee.
 
   Exit codes: 0 — отчёт напечатан (в т.ч. при частичных сбоях: они уходят в
   «Предупреждения»); 1 — не удалось получить список задач.

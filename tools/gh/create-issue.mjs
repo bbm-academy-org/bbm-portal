@@ -15,30 +15,44 @@
 //
 // Классификатор задачи — ШТАТНОЕ поле GitHub **Type** (Bug/Feature/Task),
 // решение владельца 2026-08-04 («не надо выдумывать новые поля взамен
-// существующих»). Кастомная таксономия ровно одна — `source:*`: штатного поля
-// «кто это просил» у GitHub нет.
+// существующих»).
+//
+// Происхождение задачи — ДВА измерения, и их легко перепутать (решение
+// владельца 2026-08-04, там же):
+//   • `--channel` — КАК задача попала в бэклог, кто завёл её в трекер. Закрытый
+//     список из четырёх, становится лейблом `channel:*`. Служит порядку;
+//   • `--source`  — НА ОСНОВАНИИ ЧЕГО она существует. СВОБОДНЫЙ текст, первой
+//     строкой тела. Enum'а тут быть не может: «баг-репорт в Mattermost»,
+//     «executive-решение партнёров», «сам поймал при работе над #124»,
+//     «обновилось приложение», «изменилась миссия» — пространство открытое, а
+//     закрытый список выродился бы в «99% owner», то есть в ноль информации.
 //
 // Использование (тонкий passthrough — всё после управляющих флагов уходит в
 // `gh issue create` дословно, его флаги здесь не переизобретаются):
 //   pnpm issue:create --title "<t>" --body-file <f> --type Task \
-//     --label source:agent --milestone "Платформа: эксплуатация и упрочнение"
+//     --channel agent --source "сам поймал при работе над #130" \
+//     --milestone "Платформа: эксплуатация и упрочнение"
 //   pnpm issue:create --no-todo --title …    # добавить на борд, Status не трогать
 //
-// Управляющие флаги (потребляются здесь, в gh НЕ уходят): `--no-todo`.
+// Управляющие флаги (потребляются здесь, в gh НЕ уходят): `--no-todo`,
+// `--channel`, `--source`, `--body`/`--body-file` (тело пересобирается).
 //
 // Exit codes: 0 = issue создана, добавлена на борд и подтверждена;
 // 1 = ошибка валидации / gh / подтверждения.
 
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import {
+  CHANNEL_LABELS,
   FALLBACK_MILESTONE,
   ISSUE_TYPES,
   OWNER,
   PROJECT_NUMBER,
+  PROJECT_TITLE,
   REPO,
-  SOURCE_LABELS,
   buildNodeQuery,
   buildStatusMutation,
   ghGraphqlResult,
@@ -115,20 +129,108 @@ export function hasRepoOverride(args) {
   )
 }
 
-/** Ровно один `source:*` из таксономии. Возвращает null либо текст ошибки. */
-export function sourceLabelError(args) {
-  const taxonomy = SOURCE_LABELS.join(' | ')
-  const found = collectLabels(args).filter((l) => l.startsWith('source:'))
-  if (found.length === 0) {
-    return `у каждой задачи ровно один лейбл происхождения — передай --label <source>, один из: ${taxonomy}.`
+/** Короткие значения канала: `--channel owner` == `--channel channel:owner`. */
+export function normalizeChannel(value) {
+  const v = String(value ?? '').trim()
+  if (v === '') return ''
+  return v.startsWith('channel:') ? v : `channel:${v}`
+}
+
+/**
+ * Ровно один `channel:*` — канал попадания задачи в бэклог. Принимается и
+ * флагом `--channel owner`, и лейблом `--label channel:owner`: обёртку зовут и
+ * руками, и из скилла, а расходиться в двух формах записи ей незачем.
+ */
+export function channelError(args) {
+  const taxonomy = CHANNEL_LABELS.join(' | ')
+  const short = CHANNEL_LABELS.map((l) => l.slice('channel:'.length)).join('|')
+  const found = [
+    ...flagValues(args, 'channel').map(normalizeChannel),
+    ...collectLabels(args).filter((l) => l.startsWith('channel:')),
+  ].filter((v) => v !== '')
+  const unique = [...new Set(found)]
+  if (unique.length === 0) {
+    return (
+      `у каждой задачи ровно один канал попадания в бэклог — передай --channel <${short}>. ` +
+      `Это НЕ происхождение (оно свободным текстом в --source), а «кто завёл задачу в трекер».`
+    )
   }
-  if (found.length > 1) {
-    return `допустим ровно ОДИН source:*-лейбл, получено: ${found.join(', ')} (таксономия: ${taxonomy}).`
+  if (unique.length > 1) {
+    return `допустим ровно ОДИН канал, получено: ${unique.join(', ')} (таксономия: ${taxonomy}).`
   }
-  if (!SOURCE_LABELS.includes(found[0])) {
-    return `неизвестный source-лейбл «${found[0]}» — должен быть одним из: ${taxonomy}.`
+  if (!CHANNEL_LABELS.includes(unique[0])) {
+    return `неизвестный канал «${unique[0]}» — должен быть одним из: ${taxonomy}.`
   }
   return null
+}
+
+/** Единственный канал из argv (после валидации). */
+export function resolveChannel(args) {
+  const found = [
+    ...flagValues(args, 'channel').map(normalizeChannel),
+    ...collectLabels(args).filter((l) => l.startsWith('channel:')),
+  ].filter((v) => v !== '')
+  return found[0] ?? null
+}
+
+/**
+ * Обязательное происхождение — СВОБОДНЫЙ текст (решение владельца 2026-08-04).
+ * Enum'а тут быть не может: «баг-репорт Х в Mattermost», «executive-решение
+ * партнёров от 2026-07-30», «сам поймал при работе над #124», «обновление
+ * зависимости payload 3.86» — пространство источников открытое, и именно этот
+ * контекст теряется первым.
+ */
+export function sourceTextError(args) {
+  const found = flagValues(args, 'source').map((v) => String(v).trim())
+  if (found.length === 0 || found.every((v) => v === '')) {
+    return (
+      `у каждой задачи есть происхождение — передай --source "<на основании чего>". ` +
+      `Свободный текст, например: «баг-репорт Антона в Mattermost 2026-08-04», ` +
+      `«executive-решение партнёров», «сам поймал при работе над #124», «ретро сессии 2026-08-01».`
+    )
+  }
+  if (found.length > 1) return `допустим ровно ОДИН --source, получено ${found.length}.`
+  return null
+}
+
+/**
+ * Строка `**Source:**` собирается тулингом, а не пишется в тело руками — иначе
+ * их стало бы два и они бы разошлись.
+ */
+export function sourceLineError(bodyText) {
+  if (!/^\s*\*\*Source:\*\*/im.test(String(bodyText ?? ''))) return null
+  return (
+    'в теле уже есть строка **Source:** — не пиши её руками, происхождение задаётся ' +
+    'флагом --source, обёртка сама поставит строку первой.'
+  )
+}
+
+/** Итоговое тело: строка Source первой, затем то, что написал вызывающий. */
+export function composeBody(sourceText, bodyText) {
+  return `**Source:** ${String(sourceText).trim()}\n\n${String(bodyText ?? '').trim()}\n`
+}
+
+/**
+ * Убрать из passthrough флаги тела и наши собственные — тело уезжает в gh
+ * переписанным (через временный файл, чтобы не упереться в лимит длины
+ * командной строки Windows), а `--channel`/`--source` gh не знает.
+ */
+export function stripConsumedFlags(args) {
+  const out = []
+  const list = args ?? []
+  const withValue = new Set(['--body', '-b', '--body-file', '-F', '--channel', '--source'])
+  const prefixes = ['--body=', '--body-file=', '--channel=', '--source=']
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i]
+    if (withValue.has(a)) {
+      i++ // проглотить значение
+      continue
+    }
+    if (prefixes.some((p) => a.startsWith(p))) continue
+    if (a.length > 2 && !a.startsWith('--') && (a.startsWith('-b') || a.startsWith('-F'))) continue
+    out.push(a)
+  }
+  return out
 }
 
 /**
@@ -137,12 +239,21 @@ export function sourceLabelError(args) {
  * пропуска — иначе привычка из ds-platform завела бы вторую классификацию.
  */
 export function kindLabelError(args) {
-  const found = collectLabels(args).filter((l) => l.startsWith('kind:'))
-  if (found.length === 0) return null
-  return (
-    `kind:*-лейблы в этом репо упразднены (${found.join(', ')}) — класс задачи задаётся ` +
-    `штатным полем Type: --type ${ISSUE_TYPES.join('|')}.`
-  )
+  const kinds = collectLabels(args).filter((l) => l.startsWith('kind:'))
+  if (kinds.length > 0) {
+    return (
+      `kind:*-лейблы в этом репо упразднены (${kinds.join(', ')}) — класс задачи задаётся ` +
+      `штатным полем Type: --type ${ISSUE_TYPES.join('|')}.`
+    )
+  }
+  const sources = collectLabels(args).filter((l) => l.startsWith('source:'))
+  if (sources.length > 0) {
+    return (
+      `source:*-лейблы упразднены (${sources.join(', ')}): происхождение — свободный текст ` +
+      `в --source, канал попадания в бэклог — --channel <owner|spec|retro|agent>.`
+    )
+  }
+  return null
 }
 
 /** Ровно один валидный `--type`. */
@@ -280,11 +391,13 @@ export function validationError(args, readFile) {
     )
   }
   return (
-    sourceLabelError(args) ??
+    channelError(args) ??
+    sourceTextError(args) ??
     kindLabelError(args) ??
     typeError(args) ??
     milestoneError(args) ??
     bodyError(args, readFile) ??
+    sourceLineError(readBodyText(args, readFile)) ??
     null
   )
 }
@@ -292,19 +405,19 @@ export function validationError(args, readFile) {
 /**
  * Дополнить ошибку `gh issue create` подсказкой, когда причина — отсутствующий
  * лейбл таксономии. Обёртка объявлена единственным путём заведения задач, а до
- * `taxonomy:bootstrap --apply` лейблов `source:*` в репо нет — без подсказки
+ * `taxonomy:bootstrap --apply` лейблов `channel:*` в репо нет — без подсказки
  * первая же попытка упирается в невнятное «could not add label».
  * @param {string} stderr
- * @param {string[]} labels  лейблы, которые передал вызывающий
+ * @param {string[]} labels  лейблы, которые уехали в gh
  * @returns {string}
  */
 export function enrichCreateError(stderr, labels) {
   const text = String(stderr ?? '')
   if (!/label/i.test(text)) return text
-  const source = (labels ?? []).filter((l) => l.startsWith('source:'))
-  if (source.length === 0) return text
+  const channels = (labels ?? []).filter((l) => String(l).startsWith('channel:'))
+  if (channels.length === 0) return text
   return (
-    `${text}\n  Похоже, лейбла ${source.join(', ')} в репо ещё нет. Таксономия заводится ` +
+    `${text}\n  Похоже, лейбла ${channels.join(', ')} в репо ещё нет. Таксономия заводится ` +
     `один раз: pnpm taxonomy:bootstrap (сухой прогон) → pnpm taxonomy:bootstrap --apply`
   )
 }
@@ -334,18 +447,27 @@ function die(msg) {
 
 export const USAGE =
   `Использование: pnpm issue:create [--no-todo] --title "<t>" --body-file <f> \\\n` +
-      `    --type ${ISSUE_TYPES.join('|')} --label <source:*> --milestone "<тема>"\n\n` +
-      `  Тонкая обёртка над \`gh issue create\` (его флаги идут дословно), которая ещё и\n` +
-      `  ставит задачу на борд «${'BBM Platform'}» (Project ${PROJECT_NUMBER}), выставляет Status=Todo\n` +
-      `  и подтверждает строку прямым GraphQL-чтением. --no-todo: добавить без Status.\n\n` +
-      `  Обязательно (fail-closed, ДО любого gh-вызова):\n` +
-      `    • ровно один --type: ${ISSUE_TYPES.join(' | ')} (штатное поле GitHub);\n` +
-      `    • ровно один source-лейбл: ${SOURCE_LABELS.join(' | ')};\n` +
-      `    • непустой --milestone (fallback «${FALLBACK_MILESTONE}»);\n` +
-      `    • непустое тело (--body или --body-file), скелет — канон §1.\n` +
-      `  Assignee по умолчанию @me. --repo/-R запрещён.\n\n` +
-      `  Таксономия заводится один раз: pnpm taxonomy:bootstrap --apply.\n` +
-      `  Exit codes: 0 — задача создана и подтверждена на борде; 1 — ошибка.\n`
+  `    --type ${ISSUE_TYPES.join('|')} --channel <owner|spec|retro|agent> \\\n` +
+  `    --source "<на основании чего>" --milestone "<тема>"\n\n` +
+  `  Тонкая обёртка над \`gh issue create\` (его флаги идут дословно), которая ещё и\n` +
+  `  ставит задачу на борд «${PROJECT_TITLE}» (Project ${PROJECT_NUMBER}), выставляет Status=Todo\n` +
+  `  и подтверждает строку прямым GraphQL-чтением. --no-todo: добавить без Status.\n\n` +
+  `  Два измерения происхождения, не путать:\n` +
+  `    --channel  КАК задача попала в бэклог (кто завёл её в трекер) — закрытый список,\n` +
+  `               становится лейблом channel:*;\n` +
+  `    --source   НА ОСНОВАНИИ ЧЕГО она существует — свободный текст, становится строкой\n` +
+  `               «**Source:**» первой строкой тела. Например: «баг-репорт Антона в\n` +
+  `               Mattermost 2026-08-04», «executive-решение партнёров», «сам поймал при\n` +
+  `               работе над #124», «обновление зависимости payload 3.86».\n\n` +
+  `  Обязательно (fail-closed, ДО любого gh-вызова):\n` +
+  `    • ровно один --channel: ${CHANNEL_LABELS.join(' | ')};\n` +
+  `    • непустой --source (строку **Source:** в теле писать руками нельзя);\n` +
+  `    • ровно один --type: ${ISSUE_TYPES.join(' | ')} (штатное поле GitHub);\n` +
+  `    • непустой --milestone (fallback «${FALLBACK_MILESTONE}»);\n` +
+  `    • непустое тело (--body или --body-file), скелет — канон §1.\n` +
+  `  Assignee по умолчанию @me. --repo/-R запрещён.\n\n` +
+  `  Таксономия заводится один раз: pnpm taxonomy:bootstrap --apply.\n` +
+  `  Exit codes: 0 — задача создана и подтверждена на борде; 1 — ошибка.\n`
 
 function main() {
   const argv = process.argv.slice(2)
@@ -364,17 +486,32 @@ function main() {
   const error = validationError(passthrough)
   if (error) die(error)
 
-  for (const w of skeletonWarnings(readBodyText(passthrough), collectLabels(passthrough))) {
+  // Тело собирается здесь: строка **Source:** первой, затем текст вызывающего.
+  // Уезжает во временный файл, а не в `--body`, чтобы длинное тело не упёрлось
+  // в лимит длины командной строки Windows.
+  const channel = resolveChannel(passthrough)
+  const sourceText = flagValues(passthrough, 'source')[0]
+  const body = composeBody(sourceText, readBodyText(passthrough))
+  for (const w of skeletonWarnings(body, [channel, ...collectLabels(passthrough)])) {
     process.stderr.write(`${TAG} замечание (не блокирует): ${w}\n`)
   }
 
-  const augmented = ensureAssigneeFlag(passthrough)
+  const bodyFile = join(mkdtempSync(join(tmpdir(), 'bbm-issue-')), 'body.md')
+  writeFileSync(bodyFile, body, 'utf8')
+
+  const augmented = ensureAssigneeFlag([
+    ...stripConsumedFlags(passthrough),
+    '--label',
+    channel,
+    '--body-file',
+    bodyFile,
+  ])
 
   // 1. Создание. `--repo` пинится ПОСЛЕ passthrough: gh уважает последний, так
   //    что даже если оверрайд просочится, issue приземлится в нашем репо.
   out('создаю задачу…')
   const created = ghResult(['issue', 'create', ...augmented, '--repo', REPO])
-  if (!created.ok) die(enrichCreateError(created.error, collectLabels(passthrough)))
+  if (!created.ok) die(enrichCreateError(created.error, collectLabels(augmented)))
   const url = extractIssueUrl(created.stdout)
   if (!url) die(`не нашёл URL созданной задачи в выводе gh:\n${created.stdout.trim()}`)
   const issueNumber = issueNumberFromUrl(url)

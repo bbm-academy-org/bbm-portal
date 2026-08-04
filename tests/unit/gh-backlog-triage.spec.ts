@@ -11,6 +11,7 @@ import {
   isPlaceholder,
   mentionsIssue,
   missingFields,
+  sourceLineText,
   parseDependenciesSection,
   parseProseBlockers,
   parseRefsWithRationale,
@@ -25,7 +26,8 @@ import {
 describe('missingFields', () => {
   const clean = {
     issueType: { name: 'Task' },
-    labels: [{ name: 'source:owner' }],
+    labels: [{ name: 'channel:owner' }],
+    body: '**Source:** баг-репорт в Mattermost 2026-08-04',
     milestone: { title: 'Консолидация платформы' },
     assignees: [{ login: 'sidorovanthon' }],
   }
@@ -44,7 +46,7 @@ describe('missingFields', () => {
   it('ловит упразднённые kind:*-лейблы', () => {
     const res = missingFields({
       ...clean,
-      labels: [{ name: 'source:owner' }, { name: 'kind:feat' }],
+      labels: [{ name: 'channel:owner' }, { name: 'kind:feat' }],
     })
     expect(res).toContainEqual(expect.stringMatching(/упразднённые kind/))
   })
@@ -52,19 +54,34 @@ describe('missingFields', () => {
   it('ловит дефолтные лейблы GitHub и адресует их миграции 7.2', () => {
     const res = missingFields({
       ...clean,
-      labels: [{ name: 'source:owner' }, { name: 'enhancement' }],
+      labels: [{ name: 'channel:owner' }, { name: 'enhancement' }],
     })
     expect(res).toContainEqual(expect.stringMatching(/дефолтные лейблы GitHub.*7\.2/))
   })
 
-  it('требует ровно один source:* из таксономии', () => {
-    expect(missingFields({ ...clean, labels: [] })).toContain('нет source:*')
+  it('требует ровно один channel:* из таксономии', () => {
+    expect(missingFields({ ...clean, labels: [] })).toContain('нет channel:*')
     expect(
-      missingFields({ ...clean, labels: [{ name: 'source:owner' }, { name: 'source:agent' }] }),
-    ).toContainEqual(expect.stringMatching(/несколько source/))
-    expect(missingFields({ ...clean, labels: [{ name: 'source:луна' }] })).toContainEqual(
-      expect.stringMatching(/неизвестный source/),
+      missingFields({ ...clean, labels: [{ name: 'channel:owner' }, { name: 'channel:agent' }] }),
+    ).toContainEqual(expect.stringMatching(/несколько channel/))
+    expect(missingFields({ ...clean, labels: [{ name: 'channel:луна' }] })).toContainEqual(
+      expect.stringMatching(/неизвестный channel/),
     )
+  })
+
+  it('требует непустую строку **Source:** в теле — это отдельное измерение', () => {
+    expect(missingFields({ ...clean, body: '## Context' })).toContain(
+      'нет непустой строки **Source:**',
+    )
+    expect(missingFields({ ...clean, body: '**Source:**' })).toContain(
+      'нет непустой строки **Source:**',
+    )
+  })
+
+  it('ловит упразднённые source:*-лейблы', () => {
+    expect(
+      missingFields({ ...clean, labels: [{ name: 'channel:owner' }, { name: 'source:owner' }] }),
+    ).toContainEqual(expect.stringMatching(/упразднённые source/))
   })
 
   it('требует milestone и assignee', () => {
@@ -73,7 +90,38 @@ describe('missingFields', () => {
   })
 
   it('принимает лейблы как строки — форма ответа gh не единственная', () => {
-    expect(missingFields({ ...clean, labels: ['source:owner'] })).toEqual([])
+    expect(missingFields({ ...clean, labels: ['channel:owner'] })).toEqual([])
+  })
+})
+
+describe('sourceLineText', () => {
+  /**
+   * Происхождение — свободный текст, поэтому проверяется только наличие и
+   * непустота. Тело приезжает в двух формах: `pnpm issue:create` пишет
+   * `**Source:** …`, issue-формы GitHub рендерят секцию `### Source`.
+   */
+  it('читает строку, которую пишет обёртка', () => {
+    expect(sourceLineText('**Source:** баг-репорт в Mattermost\n\n## Context')).toBe(
+      'баг-репорт в Mattermost',
+    )
+  })
+
+  it('читает секцию, которую рендерит issue-форма', () => {
+    expect(sourceLineText('### Source\n\nexecutive-решение партнёров\n\n### Context\n\nx')).toBe(
+      'executive-решение партнёров',
+    )
+  })
+
+  it('читает секцию Source, даже если она последняя в теле', () => {
+    expect(sourceLineText('### Context\n\nx\n\n### Source\n\nсам поймал при работе над #124')).toBe(
+      'сам поймал при работе над #124',
+    )
+  })
+
+  it('незаполненное поле формы происхождением не считает', () => {
+    expect(sourceLineText('### Source\n\n_No response_\n\n### Context')).toBeNull()
+    expect(sourceLineText('**Source:**')).toBeNull()
+    expect(sourceLineText('## Context')).toBeNull()
   })
 })
 

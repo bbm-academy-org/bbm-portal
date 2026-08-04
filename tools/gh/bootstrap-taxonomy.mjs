@@ -2,9 +2,10 @@
 // bbm-portal — `pnpm taxonomy:bootstrap`: идемпотентная заводка таксономии (#130).
 //
 // Что заводит:
-//   • четыре лейбла `source:*` — единственная кастомная таксономия репо
-//     (штатного поля «кто это просил» у GitHub нет; класс задачи живёт в
-//     штатном Type, решение владельца 2026-08-04);
+//   • четыре лейбла `channel:*` — единственная кастомная таксономия репо: канал
+//     попадания задачи в бэклог, штатного поля под это у GitHub нет. Класс
+//     задачи живёт в штатном Type, а происхождение — свободным текстом в строке
+//     `**Source:**` тела (оба — решения владельца 2026-08-04);
 //   • постоянный fallback-milestone «Платформа: эксплуатация и упрочнение» для
 //     процессных/эксплуатационных задач, не попадающих ни в одну тему (канон §2).
 //   • проверяет наличие org Issue Types Bug/Feature/Task (создать их из репо
@@ -23,31 +24,43 @@
 
 import { pathToFileURL } from 'node:url'
 
-import { FALLBACK_MILESTONE, ISSUE_TYPES, OWNER, REPO, SOURCE_LABELS, ghJson, ghResult } from './lib/gh.mjs'
+import {
+  CHANNEL_LABELS,
+  FALLBACK_MILESTONE,
+  ISSUE_TYPES,
+  OWNER,
+  REPO,
+  ghJson,
+  ghResult,
+} from './lib/gh.mjs'
 
 const TAG = '[taxonomy:bootstrap]'
 
-/** Цвет и описание каждого source-лейбла — таксономия читается глазами тоже. */
-export const SOURCE_LABEL_SPECS = [
+/**
+ * Цвет и описание каждого channel-лейбла — таксономия читается глазами тоже.
+ * Канал отвечает на «кто завёл задачу в трекер», а НЕ на «на основании чего она
+ * существует»: второе — свободный текст в строке `**Source:**` тела.
+ */
+export const CHANNEL_LABEL_SPECS = [
   {
-    name: 'source:owner',
+    name: 'channel:owner',
     color: '0e8a16',
-    description: 'Происхождение: просьба или решение владельца',
+    description: 'Канал: задачу завёл или запросил владелец',
   },
   {
-    name: 'source:spec',
+    name: 'channel:spec',
     color: '1d76db',
-    description: 'Происхождение: открыта из спеки или ADR',
+    description: 'Канал: открыта механически из спеки или ADR (issue-граф)',
   },
   {
-    name: 'source:retro',
+    name: 'channel:retro',
     color: 'fbca04',
-    description: 'Происхождение: ретро, /wrap, разбор инцидента',
+    description: 'Канал: пришла из ретро, /wrap или разбора инцидента',
   },
   {
-    name: 'source:agent',
+    name: 'channel:agent',
     color: 'd4c5f9',
-    description: 'Происхождение: инициатива агента',
+    description: 'Канал: инициатива агента',
   },
 ]
 
@@ -59,7 +72,7 @@ export const SOURCE_LABEL_SPECS = [
  * @param {{name:string,color?:string,description?:string}[]} existing
  * @returns {{create:object[], update:object[], keep:object[]}}
  */
-export function planLabels(existing, specs = SOURCE_LABEL_SPECS) {
+export function planLabels(existing, specs = CHANNEL_LABEL_SPECS) {
   const byName = new Map((existing ?? []).map((l) => [l.name, l]))
   const create = []
   const update = []
@@ -121,7 +134,7 @@ function die(msg) {
 export const USAGE = `Использование: pnpm taxonomy:bootstrap [--apply]
 
   Идемпотентно доводит таксономию репо ${REPO} до канона §2:
-    • четыре лейбла source:* (${SOURCE_LABELS.join(', ')});
+    • четыре лейбла channel:* (${CHANNEL_LABELS.join(', ')});
     • постоянный fallback-milestone «${FALLBACK_MILESTONE}»;
     • проверяет наличие org Issue Types ${ISSUE_TYPES.join('/')} — завести их из
       репо нельзя, это настройка организации, поэтому отсутствие докладывается.
