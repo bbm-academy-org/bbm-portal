@@ -5,7 +5,9 @@ import {
   classifyChecks,
   cwdGuardMessage,
   failCode,
+  findAgentApproval,
   gateConditions,
+  headCommittedDate,
   isWorktreeCwd,
   issueCandidates,
   landPr,
@@ -66,6 +68,62 @@ describe('classifyChecks', () => {
   })
 })
 
+describe('findAgentApproval', () => {
+  const HEAD = '2026-08-04T12:00:00Z'
+
+  it('свежий VERDICT: APPROVE засчитывается', () => {
+    const res = findAgentApproval(
+      [{ body: 'ревью…\n\nVERDICT: APPROVE', createdAt: '2026-08-04T12:30:00Z' }],
+      HEAD,
+    )
+    expect(res.ok).toBe(true)
+  })
+
+  it('APPROVE старше последнего коммита — протух: он про другой код', () => {
+    const res = findAgentApproval(
+      [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-04T11:00:00Z' }],
+      HEAD,
+    )
+    expect(res).toMatchObject({ ok: false, reason: 'stale' })
+  })
+
+  it('последний вердикт REQUEST_CHANGES перебивает более ранний APPROVE', () => {
+    const res = findAgentApproval(
+      [
+        { body: 'VERDICT: APPROVE', createdAt: '2026-08-04T12:10:00Z' },
+        { body: 'VERDICT: REQUEST_CHANGES', createdAt: '2026-08-04T12:20:00Z' },
+      ],
+      HEAD,
+    )
+    expect(res).toMatchObject({ ok: false, reason: 'changes' })
+  })
+
+  it('обычные комментарии вердиктом не считаются', () => {
+    expect(
+      findAgentApproval([{ body: 'выглядит ок, мержим', createdAt: HEAD }], HEAD),
+    ).toMatchObject({ ok: false, reason: 'none' })
+  })
+
+  it('без даты последнего коммита свежесть не проверяется, но APPROVE нужен', () => {
+    expect(
+      findAgentApproval([{ body: 'VERDICT: APPROVE', createdAt: '2020-01-01T00:00:00Z' }], null).ok,
+    ).toBe(true)
+    expect(findAgentApproval([], null).ok).toBe(false)
+  })
+})
+
+describe('headCommittedDate', () => {
+  it('берёт дату ПОСЛЕДНЕГО коммита PR', () => {
+    expect(headCommittedDate({ commits: [{ committedDate: 'a' }, { committedDate: 'b' }] })).toBe(
+      'b',
+    )
+  })
+
+  it('на пустом списке коммитов возвращает null, а не падает', () => {
+    expect(headCommittedDate({})).toBeNull()
+  })
+})
+
 describe('gateConditions', () => {
   const ok = {
     state: 'OPEN',
@@ -90,20 +148,56 @@ describe('gateConditions', () => {
     expect(gateConditions({ ...ok, closingIssuesReferences: [] }).red[0]).toMatch(/Closes #N/)
   })
 
-  it('без --require-review отсутствие APPROVE — замечание, а не RED', () => {
+  it('без всякого ревью — RED по умолчанию, с указанием, как это закрыть', () => {
     const res = gateConditions({ ...ok, reviewDecision: '' })
-    expect(res.red).toEqual([])
-    expect(res.warn[0]).toMatch(/stage 6/)
+    expect(res.red[0]).toMatch(/ревью не подтверждено/)
+    expect(res.red[0]).toMatch(/--no-review-gate/)
   })
 
-  it('с --require-review отсутствие APPROVE блокирует', () => {
-    expect(gateConditions({ ...ok, reviewDecision: '' }, { requireReview: true }).red[0]).toMatch(
-      /не APPROVED/,
+  it('комментарий ревьюера-субагента засчитывается наравне с человеческим APPROVE', () => {
+    const res = gateConditions({
+      ...ok,
+      reviewDecision: '',
+      commits: [{ committedDate: '2026-08-04T12:00:00Z' }],
+      comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-04T12:30:00Z' }],
+    })
+    expect(res.red).toEqual([])
+  })
+
+  it('протухший вердикт субагента не спасает — RED', () => {
+    const res = gateConditions({
+      ...ok,
+      reviewDecision: '',
+      commits: [{ committedDate: '2026-08-04T12:00:00Z' }],
+      comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-04T11:00:00Z' }],
+    })
+    expect(res.red[0]).toMatch(/старше последнего коммита/)
+  })
+
+  it('с --require-review комментарий субагента не засчитывается', () => {
+    const res = gateConditions(
+      {
+        ...ok,
+        reviewDecision: '',
+        comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-04T12:30:00Z' }],
+      },
+      { requireReview: true },
     )
+    expect(res.red[0]).toMatch(/человеческого APPROVE/)
+  })
+
+  it('снятый гейт не краснеет, но расхождение остаётся в замечаниях', () => {
+    const res = gateConditions({ ...ok, reviewDecision: '' }, { reviewGate: false })
+    expect(res.red).toEqual([])
+    expect(res.warn.join('\n')).toMatch(/ревью-гейт отключён вручную/)
+  })
+
+  it('про приёмку владельца напоминает ВСЕГДА, даже при APPROVE', () => {
+    expect(gateConditions(ok).warn.join('\n')).toMatch(/stage 5/)
   })
 
   it('отставшая от базы ветка — замечание', () => {
-    expect(gateConditions({ ...ok, mergeStateStatus: 'BEHIND' }).warn[0]).toMatch(/BEHIND/)
+    expect(gateConditions({ ...ok, mergeStateStatus: 'BEHIND' }).warn.join('\n')).toMatch(/BEHIND/)
   })
 })
 
@@ -123,7 +217,7 @@ describe('runGate', () => {
     },
   })
 
-  it('зелёные проверки — зелёный гейт, номера Closes прокинуты дальше', () => {
+  it('зелёные проверки — зелёный гейт, номера Closes и SHA прокинуты дальше', () => {
     const res = runGate(
       1,
       { timeout: 10, interval: 1, requireReview: false },
@@ -132,6 +226,7 @@ describe('runGate', () => {
     expect(res.verdict).toBe('green')
     expect(res.closes).toEqual([130])
     expect(res.branch).toBe('chore/130-x')
+    expect(res.sha).toBe('aaa')
   })
 
   it('ждёт незавершённые проверки и берёт зелёный со второй пробы', () => {
@@ -158,6 +253,8 @@ describe('runGate', () => {
     )
     expect(res.verdict).toBe('red')
     expect(res.reasons[0]).toMatch(/head сдвинулся/)
+    // наружу отдаётся ЗАКРЕПЛЁННЫЙ SHA, а не последний прочитанный
+    expect(res.sha).toBe('aaa')
   })
 
   it('истёкший таймаут — отдельный вердикт, не «зелено» и не «красно»', () => {
@@ -243,6 +340,7 @@ describe('landPr — порядок стадий и обрывы', () => {
     warn: [],
     closes: [130],
     branch: 'chore/130-x',
+    sha: 'deadbeef',
   })
   const okRunners = (over = {}) => ({
     gate: greenGate,
@@ -299,6 +397,17 @@ describe('landPr — порядок стадий и обрывы', () => {
     ]) {
       expect(res.log).toContain(stage)
     }
+  })
+
+  /**
+   * Регрессия: гейт пинил head только на чтении, а `gh pr merge` шёл без
+   * привязки — коммит, приземлившийся за время ожидания (до 900 с), уезжал в
+   * main непроверенным. SHA обязан доехать до команды мержа.
+   */
+  it('в мерж уходит ровно тот SHA, который прошёл гейт', () => {
+    const merge = vi.fn(() => ({ status: 0 }))
+    drive({ merge })
+    expect(merge).toHaveBeenCalledWith(7, 'deadbeef')
   })
 
   it('красный гейт останавливает хвост ДО мержа', () => {
