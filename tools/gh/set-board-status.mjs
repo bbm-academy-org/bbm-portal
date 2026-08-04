@@ -62,15 +62,6 @@ export function parseArgs(argv) {
 
 // ── импуративная часть ───────────────────────────────────────────────────────
 
-function die(msg) {
-  process.stderr.write(`${TAG} ${msg}\n`)
-  process.exit(1)
-}
-
-function warn(msg) {
-  process.stderr.write(`${TAG} замечание: ${msg}\n`)
-}
-
 export const USAGE = `Использование: pnpm board:status <issue#> <${VALID_STATUS.join('|')}>
                pnpm board:status <issue#> --resolve   (только чтение, без мутации)
 
@@ -86,6 +77,63 @@ export const USAGE = `Использование: pnpm board:status <issue#> <${
   Exit codes: 0 — статус установлен (или отрезолвлен); 1 — ошибка.
 `
 
+/**
+ * Весь путь команды после разбора argv: резолвинг → (кросс-чек) → мутация →
+ * итоговая строка. Раннеры инжектируются, поэтому тест прогоняет успешную ветку
+ * ЦЕЛИКОМ, включая формирование финального сообщения, — без сети и без мутации
+ * живого борда.
+ *
+ * Регрессия #132: раньше эта ветка жила прямо в `main()` и юнит-тестами не
+ * исполнялась. В итоговой строке стояла несуществующая переменная `item`
+ * (результат резолвера зовётся `target`): мутация проходила, а команда падала
+ * `ReferenceError` на логе → exit 1 при СДЕЛАННОЙ работе, и `pr:land` читал
+ * стадию board-done как провал.
+ */
+export function runBoardStatus(parsed, io = {}) {
+  const resolve = io.resolve ?? resolveBoardStatusTarget
+  const mutate = io.mutate ?? ghGraphqlResult
+  const out = io.out ?? ((msg) => process.stdout.write(msg))
+  const err = io.err ?? ((msg) => process.stderr.write(msg))
+  const exit = io.exit ?? ((code) => process.exit(code))
+
+  const { issueNumber, resolveOnly, status } = parsed
+  const die = (msg) => {
+    err(`${TAG} ${msg}\n`)
+    return exit(1)
+  }
+  const warn = (msg) => err(`${TAG} замечание: ${msg}\n`)
+
+  // 1. Targeted-резолвинг — один дешёвый запрос, без скана борда. В режиме
+  //    --resolve опция не запрашивается: смысл режима — посмотреть, что есть.
+  const target = resolve(issueNumber, resolveOnly ? VALID_STATUS[0] : status)
+  if (!target.ok) return die(target.error)
+
+  // 2. Кросс-чек с задокументированными id — только WARN, побеждает резолвнутое.
+  for (const w of target.warnings ?? []) warn(w)
+
+  if (resolveOnly) {
+    const { project, statusField } = target
+    out(
+      `${TAG} отрезолвлено (только чтение):\n` +
+        `  проект  = ${project.title} (#${project.number}) ${project.id}\n` +
+        `  поле    = Status ${statusField.id}\n` +
+        `  строка  = #${issueNumber} -> ${target.itemId}\n` +
+        `  опции   = ${(statusField.options ?? []).map((o) => `${o.name}:${o.id}`).join(', ')}\n` +
+        `  Мутации не было (--resolve).\n`,
+    )
+    return exit(0)
+  }
+
+  // 3. Мутация — резолвнутыми живьём id.
+  const mutated = mutate(
+    buildStatusMutation(target.projectId, target.itemId, target.fieldId, target.optionId),
+  )
+  if (!mutated.ok) return die(mutated.error)
+
+  out(`${TAG} ГОТОВО — задача #${issueNumber}: Status = «${status}» (строка ${target.itemId}).\n`)
+  return exit(0)
+}
+
 function main() {
   const argv = process.argv.slice(2)
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -97,38 +145,7 @@ function main() {
     process.stderr.write(`${TAG} ${parsed.error}\n${USAGE}`)
     process.exit(1)
   }
-  const { issueNumber, resolveOnly, status } = parsed
-
-  // 1. Targeted-резолвинг — один дешёвый запрос, без скана борда. В режиме
-  //    --resolve опция не запрашивается: смысл режима — посмотреть, что есть.
-  const target = resolveBoardStatusTarget(issueNumber, resolveOnly ? VALID_STATUS[0] : status)
-  if (!target.ok) die(target.error)
-
-  // 2. Кросс-чек с задокументированными id — только WARN, побеждает резолвнутое.
-  for (const w of target.warnings) warn(w)
-
-  if (resolveOnly) {
-    const { project, statusField } = target
-    process.stdout.write(
-      `${TAG} отрезолвлено (только чтение):\n` +
-        `  проект  = ${project.title} (#${project.number}) ${project.id}\n` +
-        `  поле    = Status ${statusField.id}\n` +
-        `  строка  = #${issueNumber} -> ${target.itemId}\n` +
-        `  опции   = ${(statusField.options ?? []).map((o) => `${o.name}:${o.id}`).join(', ')}\n` +
-        `  Мутации не было (--resolve).\n`,
-    )
-    process.exit(0)
-  }
-
-  // 3. Мутация — резолвнутыми живьём id.
-  const mutated = ghGraphqlResult(
-    buildStatusMutation(target.projectId, target.itemId, target.fieldId, target.optionId),
-  )
-  if (!mutated.ok) die(mutated.error)
-
-  process.stdout.write(
-    `${TAG} ГОТОВО — задача #${issueNumber}: Status = «${status}» (строка ${item.id}).\n`,
-  )
+  runBoardStatus(parsed)
 }
 
 const invokedPath = process.argv[1]

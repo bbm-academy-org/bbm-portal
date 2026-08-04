@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   formatPlan,
@@ -18,7 +18,7 @@ import {
   pickProjectItem,
   resolveStatusOption,
 } from '../../tools/gh/lib/gh.mjs'
-import { parseArgs } from '../../tools/gh/set-board-status.mjs'
+import { parseArgs, runBoardStatus } from '../../tools/gh/set-board-status.mjs'
 
 /**
  * Плюмбинг борда: построители запросов не должны склеиваться из непроверенных
@@ -43,6 +43,109 @@ describe('parseArgs (board:status)', () => {
     expect(parseArgs(['abc', 'Done']).ok).toBe(false)
     expect(parseArgs(['130']).ok).toBe(false)
     expect(parseArgs(['130', 'Review']).ok).toBe(false)
+  })
+})
+
+/**
+ * Регрессия #132. Мутация проходила, а команда падала `ReferenceError: item is
+ * not defined` на строке успешного лога → exit 1 при СДЕЛАННОЙ работе, и
+ * `pr:land` читал стадию board-done как провал. Класс ошибки живёт ровно там,
+ * куда тест не заходил, поэтому здесь успешная ветка исполняется ЦЕЛИКОМ —
+ * вместе с формированием итоговой строки, а не до неё.
+ */
+describe('runBoardStatus — успешная ветка целиком', () => {
+  const target = (over: Record<string, unknown> = {}) => ({
+    ok: true,
+    projectId: 'PVT_kwDOtest',
+    itemId: 'PVTI_lADOtest',
+    fieldId: 'PVTSSF_lADOtest',
+    optionId: '98236657',
+    project: { id: 'PVT_kwDOtest', number: 2, title: 'BBM Platform' },
+    statusField: { id: 'PVTSSF_lADOtest', options: [{ id: '98236657', name: 'Done' }] },
+    warnings: [],
+    ...over,
+  })
+
+  // Команда всегда уходит через exit(); в тесте exit бросает, чтобы выполнение
+  // остановилось ровно там же, где остановился бы процесс.
+  const drive = (
+    parsed: Record<string, unknown>,
+    over: Record<string, unknown> = {},
+  ): { out: string; err: string; code: number | null } => {
+    const out: string[] = []
+    const err: string[] = []
+    let code: number | null = null
+    try {
+      runBoardStatus(parsed, {
+        resolve: () => target(),
+        mutate: () => ({ ok: true, data: {} }),
+        ...over,
+        out: (m: string) => out.push(m),
+        err: (m: string) => err.push(m),
+        exit: (c: number) => {
+          code = c
+          throw new Error('__exit__')
+        },
+      })
+    } catch (e) {
+      if ((e as Error).message !== '__exit__') throw e
+    }
+    return { out: out.join(''), err: err.join(''), code }
+  }
+
+  const done = { ok: true, issueNumber: 130, resolveOnly: false, status: 'Done' }
+
+  it('после успешной мутации печатает ГОТОВО с номером, статусом и строкой борда и выходит 0', () => {
+    const res = drive(done)
+    expect(res.code).toBe(0)
+    expect(res.out).toContain('ГОТОВО')
+    expect(res.out).toContain('#130')
+    expect(res.out).toContain('Done')
+    expect(res.out).toContain('PVTI_lADOtest')
+    // Итоговая строка не должна содержать дыр от несуществующих переменных.
+    expect(res.out).not.toMatch(/undefined/)
+  })
+
+  it('мутация строится РЕЗОЛВНУТЫМИ живьём id', () => {
+    const mutate = vi.fn((_query: string) => ({ ok: true, data: {} }))
+    drive(done, { mutate })
+    const query = String(mutate.mock.calls[0]?.[0] ?? '')
+    expect(query).toContain('PVTI_lADOtest')
+    expect(query).toContain('98236657')
+  })
+
+  it('провал резолвинга — exit 1 и мутации не было', () => {
+    const mutate = vi.fn()
+    const res = drive(done, {
+      resolve: () => ({ ok: false, error: 'задача #130 не стоит на борде' }),
+      mutate,
+    })
+    expect(mutate).not.toHaveBeenCalled()
+    expect(res.code).toBe(1)
+    expect(res.err).toMatch(/не стоит на борде/)
+  })
+
+  it('провал мутации — exit 1 и никакого «ГОТОВО»', () => {
+    const res = drive(done, { mutate: () => ({ ok: false, error: 'GraphQL вернул ошибки' }) })
+    expect(res.code).toBe(1)
+    expect(res.out).not.toContain('ГОТОВО')
+  })
+
+  it('расхождение id — замечание в stderr, но работа доводится до конца', () => {
+    const res = drive(done, { resolve: () => target({ warnings: ['id проекта разошёлся'] }) })
+    expect(res.err).toMatch(/замечание: id проекта разошёлся/)
+    expect(res.code).toBe(0)
+    expect(res.out).toContain('ГОТОВО')
+  })
+
+  it('--resolve печатает разбор, выходит 0 и НЕ мутирует', () => {
+    const mutate = vi.fn()
+    const res = drive({ ok: true, issueNumber: 130, resolveOnly: true, status: null }, { mutate })
+    expect(mutate).not.toHaveBeenCalled()
+    expect(res.code).toBe(0)
+    expect(res.out).toMatch(/Мутации не было/)
+    expect(res.out).toContain('PVTI_lADOtest')
+    expect(res.out).not.toMatch(/undefined/)
   })
 })
 
