@@ -35,16 +35,17 @@ import { pathToFileURL } from 'node:url'
 import {
   FALLBACK_MILESTONE,
   ISSUE_TYPES,
-  KNOWN,
   OWNER,
   PROJECT_NUMBER,
   REPO,
   SOURCE_LABELS,
   buildNodeQuery,
+  buildStatusMutation,
   ghGraphqlResult,
   ghJson,
   ghResult,
   parseNodeReadback,
+  resolveBoardStatusTarget,
 } from './lib/gh.mjs'
 
 const TAG = '[issue:create]'
@@ -288,6 +289,26 @@ export function validationError(args, readFile) {
   )
 }
 
+/**
+ * Дополнить ошибку `gh issue create` подсказкой, когда причина — отсутствующий
+ * лейбл таксономии. Обёртка объявлена единственным путём заведения задач, а до
+ * `taxonomy:bootstrap --apply` лейблов `source:*` в репо нет — без подсказки
+ * первая же попытка упирается в невнятное «could not add label».
+ * @param {string} stderr
+ * @param {string[]} labels  лейблы, которые передал вызывающий
+ * @returns {string}
+ */
+export function enrichCreateError(stderr, labels) {
+  const text = String(stderr ?? '')
+  if (!/label/i.test(text)) return text
+  const source = (labels ?? []).filter((l) => l.startsWith('source:'))
+  if (source.length === 0) return text
+  return (
+    `${text}\n  Похоже, лейбла ${source.join(', ')} в репо ещё нет. Таксономия заводится ` +
+    `один раз: pnpm taxonomy:bootstrap (сухой прогон) → pnpm taxonomy:bootstrap --apply`
+  )
+}
+
 /** URL созданной issue из stdout `gh issue create`. */
 export function extractIssueUrl(stdout) {
   const m = (stdout ?? '').match(/https?:\/\/\S*\/issues\/(\d+)\b/)
@@ -311,9 +332,8 @@ function die(msg) {
   process.exit(1)
 }
 
-function usage() {
-  process.stderr.write(
-    `Использование: pnpm issue:create [--no-todo] --title "<t>" --body-file <f> \\\n` +
+export const USAGE =
+  `Использование: pnpm issue:create [--no-todo] --title "<t>" --body-file <f> \\\n` +
       `    --type ${ISSUE_TYPES.join('|')} --label <source:*> --milestone "<тема>"\n\n` +
       `  Тонкая обёртка над \`gh issue create\` (его флаги идут дословно), которая ещё и\n` +
       `  ставит задачу на борд «${'BBM Platform'}» (Project ${PROJECT_NUMBER}), выставляет Status=Todo\n` +
@@ -323,14 +343,20 @@ function usage() {
       `    • ровно один source-лейбл: ${SOURCE_LABELS.join(' | ')};\n` +
       `    • непустой --milestone (fallback «${FALLBACK_MILESTONE}»);\n` +
       `    • непустое тело (--body или --body-file), скелет — канон §1.\n` +
-      `  Assignee по умолчанию @me. --repo/-R запрещён.\n`,
-  )
-  process.exit(1)
-}
+      `  Assignee по умолчанию @me. --repo/-R запрещён.\n\n` +
+      `  Таксономия заводится один раз: pnpm taxonomy:bootstrap --apply.\n` +
+      `  Exit codes: 0 — задача создана и подтверждена на борде; 1 — ошибка.\n`
 
 function main() {
   const argv = process.argv.slice(2)
-  if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) usage()
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(USAGE)
+    process.exit(0)
+  }
+  if (argv.length === 0) {
+    process.stderr.write(USAGE)
+    process.exit(1)
+  }
 
   const { setTodo, passthrough } = partitionArgs(argv)
 
@@ -348,7 +374,7 @@ function main() {
   //    что даже если оверрайд просочится, issue приземлится в нашем репо.
   out('создаю задачу…')
   const created = ghResult(['issue', 'create', ...augmented, '--repo', REPO])
-  if (!created.ok) die(created.error)
+  if (!created.ok) die(enrichCreateError(created.error, collectLabels(passthrough)))
   const url = extractIssueUrl(created.stdout)
   if (!url) die(`не нашёл URL созданной задачи в выводе gh:\n${created.stdout.trim()}`)
   const issueNumber = issueNumberFromUrl(url)
@@ -382,22 +408,19 @@ function main() {
   }
   out(`поставлена на борд — строка ${itemId}`)
 
-  // 3. Status=Todo.
+  // 3. Status=Todo — id резолвятся ЖИВЬЁМ (задокументированные KNOWN остаются
+  //    кросс-чеком), той же функцией, что использует `board:status`.
   if (setTodo) {
-    const edited = ghResult([
-      'project',
-      'item-edit',
-      '--id',
-      itemId,
-      '--project-id',
-      KNOWN.projectId,
-      '--field-id',
-      KNOWN.statusFieldId,
-      '--single-select-option-id',
-      KNOWN.options.Todo,
-    ])
-    if (!edited.ok) {
-      die(`${edited.error}\n  Почини вручную: pnpm board:status ${issueNumber} Todo`)
+    const target = resolveBoardStatusTarget(issueNumber, 'Todo')
+    if (!target.ok) {
+      die(`${target.error}\n  Почини вручную: pnpm board:status ${issueNumber} Todo`)
+    }
+    for (const w of target.warnings) process.stderr.write(`${TAG} замечание: ${w}\n`)
+    const mutated = ghGraphqlResult(
+      buildStatusMutation(target.projectId, target.itemId, target.fieldId, target.optionId),
+    )
+    if (!mutated.ok) {
+      die(`${mutated.error}\n  Почини вручную: pnpm board:status ${issueNumber} Todo`)
     }
     out('Status = Todo')
   }

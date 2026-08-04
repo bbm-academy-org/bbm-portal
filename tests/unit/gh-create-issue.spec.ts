@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   collectLabels,
+  enrichCreateError,
   ensureAssigneeFlag,
   extractIssueUrl,
   flagValues,
@@ -247,6 +248,23 @@ describe('разбор ответов gh', () => {
 
   it('возвращает null, когда URL в выводе нет', () => {
     expect(extractIssueUrl('creating issue…')).toBeNull()
+  })
+})
+
+describe('enrichCreateError', () => {
+  /**
+   * Обёртка объявлена единственным путём заведения задач, а лейблов `source:*`
+   * в репо нет до `taxonomy:bootstrap --apply` — без подсказки первая попытка
+   * упирается в невнятное «could not add label».
+   */
+  it('на ошибке про лейбл указывает на taxonomy:bootstrap', () => {
+    const msg = enrichCreateError("could not add label: 'source:agent' not found", ['source:agent'])
+    expect(msg).toMatch(/taxonomy:bootstrap --apply/)
+  })
+
+  it('чужие ошибки не обрастают посторонним советом', () => {
+    expect(enrichCreateError('HTTP 502', ['source:agent'])).toBe('HTTP 502')
+    expect(enrichCreateError('could not add label: epic', [])).toBe('could not add label: epic')
   })
 })
 

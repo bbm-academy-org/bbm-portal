@@ -51,7 +51,7 @@ export const SOURCE_LABEL_SPECS = [
   },
 ]
 
-// ── чистые сеймы (юнит-тестируются в tests/unit/gh-bootstrap-taxonomy.spec.ts) ──
+// ── чистые сеймы (юнит-тестируются в tests/unit/gh-board-tools.spec.ts) ──
 
 /**
  * План по лейблам: что создать, что обновить (описание/цвет разошлись), что
@@ -118,14 +118,33 @@ function die(msg) {
   process.exit(1)
 }
 
+export const USAGE = `Использование: pnpm taxonomy:bootstrap [--apply]
+
+  Идемпотентно доводит таксономию репо ${REPO} до канона §2:
+    • четыре лейбла source:* (${SOURCE_LABELS.join(', ')});
+    • постоянный fallback-milestone «${FALLBACK_MILESTONE}»;
+    • проверяет наличие org Issue Types ${ISSUE_TYPES.join('/')} — завести их из
+      репо нельзя, это настройка организации, поэтому отсутствие докладывается.
+
+  Без флагов — СУХОЙ ПРОГОН: печатает план и выходит. Запись только по --apply.
+
+  Ничего не удаляет и удалять не умеет: судьба дефолтных лейблов GitHub идёт
+  вместе с переоформлением задач (задача 7.2), а лейбл, снесённый раньше
+  миграции, обесцвечивает открытый бэклог.
+
+  Exit codes: 0 — план напечатан или применён; 1 — ошибка gh / использования.
+`
+
 function main() {
   const argv = process.argv.slice(2)
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(USAGE)
+    process.exit(0)
+  }
   const apply = argv.includes('--apply')
   for (const a of argv) {
     if (a !== '--apply') {
-      process.stderr.write(
-        `${TAG} неизвестный флаг «${a}»\nИспользование: pnpm taxonomy:bootstrap [--apply]\n`,
-      )
+      process.stderr.write(`${TAG} неизвестный флаг «${a}»\n${USAGE}`)
       process.exit(1)
     }
   }

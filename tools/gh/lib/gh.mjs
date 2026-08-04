@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// bbm-portal — общая плюмбинг-библиотека задачника (#130, этап 2).
+// bbm-portal — общая плюмбинг-библиотека задачника (#130).
 //
 // Здесь живут ТОЛЬКО две вещи:
 //   1. константы борда/репо/таксономии — один источник правды, чтобы id борда
@@ -287,6 +287,56 @@ export function knownIdWarnings(resolved, known = KNOWN) {
     }
   }
   return warnings
+}
+
+/**
+ * Разрезолвить всё, что нужно для мутации Status по конкретной задаче: строка
+ * борда, id проекта, id поля Status и id нужной опции — ЖИВЬЁМ, из одного
+ * targeted-запроса. Задокументированные `KNOWN` служат только кросс-чеком
+ * (`warnings`), мутировать полагается резолвнутыми значениями.
+ *
+ * Общая для `board:status` и `issue:create`: до этого вторая мутировала борд
+ * захардкоженными id, и библиотека утверждала о себе неправду.
+ * @returns {{ok:true, projectId:string, itemId:string, fieldId:string, optionId:string, warnings:string[]}
+ *          |{ok:false, error:string}}
+ */
+export function resolveBoardStatusTarget(issueNumber, statusName) {
+  const res = ghGraphqlResult(buildIssueProjectItemsQuery(issueNumber))
+  if (!res.ok) return { ok: false, error: res.error }
+  const issue = res.data?.repository?.issue
+  if (!issue) return { ok: false, error: `задача #${issueNumber} не найдена в ${REPO}` }
+
+  const item = pickProjectItem(issue.projectItems?.nodes, PROJECT_NUMBER)
+  if (!item) {
+    return {
+      ok: false,
+      error:
+        `задача #${issueNumber} не стоит на борде «${PROJECT_TITLE}» (Project ${PROJECT_NUMBER}). ` +
+        `Поставь: gh project item-add ${PROJECT_NUMBER} --owner ${OWNER} --url <url задачи>`,
+    }
+  }
+  const project = item.project
+  const statusField = project?.field
+  if (!statusField?.id) {
+    return { ok: false, error: `поле Status (single-select) не найдено на Project ${PROJECT_NUMBER}` }
+  }
+  const option = resolveStatusOption(statusField.options, statusName)
+  if (!option) return { ok: false, error: `у поля Status нет опции «${statusName}»` }
+
+  return {
+    ok: true,
+    projectId: project.id,
+    itemId: item.id,
+    fieldId: statusField.id,
+    optionId: option.id,
+    project,
+    statusField,
+    warnings: knownIdWarnings({
+      projectId: project.id,
+      statusFieldId: statusField.id,
+      options: statusField.options,
+    }),
+  }
 }
 
 /** Проверить node-readback против только что созданной issue. */
