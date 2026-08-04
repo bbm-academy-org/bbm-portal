@@ -8,6 +8,8 @@
 //
 // Что печатает (канон §7):
 //   • берущиеся / заблокированные (+ причина по каждому ребру);
+//   • расхождения зеркала `Dependencies` с графом — отдельной секцией, потому
+//     что это гигиена, а НЕ готовность;
 //   • расхождения claim'а: ворктри и `In Progress` — два обязательных сигнала
 //     (§4), разрешение расхождения асимметрично и здесь только докладывается,
 //     чужой claim скриптом не снимается;
@@ -95,7 +97,7 @@ export function missingFields(issue) {
   const legacy = labels.filter((l) => LEGACY_LABELS.includes(l))
   if (legacy.length > 0) missing.push(`дефолтные лейблы GitHub (${legacy.join(', ')}) — миграция 7.2`)
 
-  if (!issue?.milestone?.title && !issue?.milestone) missing.push('нет milestone')
+  if (!issue?.milestone?.title) missing.push('нет milestone')
   if ((issue?.assignees ?? []).length === 0) missing.push('нет assignee')
 
   return missing
@@ -196,17 +198,25 @@ export function evaluateRationale(blockedNumber, blockerNumber, blockedText, blo
 }
 
 /**
- * Классифицировать задачу: берётся или заблокирована. Блокируют ТОЛЬКО открытые
- * задачи — закрытый блокер это уже не блокер.
+ * Классифицировать задачу: берётся или заблокирована.
+ *
+ * Блокирует ТОЛЬКО открытое ребро НАТИВНОГО графа. Проза и зеркало секции
+ * `Dependencies` на готовность не влияют вообще — канон §3: «проза связью не
+ * считается, её не видит ни борд, ни triage». Иначе задача с правильно
+ * заполненным телом и непроведённым ребром выпадала бы из берущихся, а шаг 6
+ * скилла `spec-issue-graph` («в берущихся прибавилась ровно одна») давал бы
+ * ложный зелёный ровно в том сценарии, ради которого написан.
+ *
+ * Фильтр по `source` стоит здесь, а не только на входе, намеренно: это
+ * последняя линия — вызывающий может однажды подмешать зеркало обратно.
  * @param {{number:number,title:string,labels:string[]}} issue
  * @param {{number:number, source:'native'|'prose', open:boolean, rationale:'present'|'absent'|'unknown'}[]} edges
  */
 export function classify(issue, edges) {
   const seen = new Map()
   for (const e of edges ?? []) {
-    const prev = seen.get(e.number)
-    // нативное ребро побеждает прозовое: оно и есть граф
-    if (!prev || (prev.source === 'prose' && e.source === 'native')) seen.set(e.number, e)
+    if (e?.source !== 'native') continue
+    if (!seen.has(e.number)) seen.set(e.number, e)
   }
   const unique = [...seen.values()]
   const blockers = unique.filter((e) => e.open)
@@ -217,6 +227,29 @@ export function classify(issue, edges) {
     edges: unique,
     blockers,
   }
+}
+
+/**
+ * Расхождения человекочитаемого зеркала с графом — диагностика гигиены, НЕ
+ * готовность. Три вида, все три чинятся по-разному:
+ *   • `mirror`    — в `Dependencies` строка есть, ребра в графе нет → провести ребро;
+ *   • `prose`     — зависимость упомянута словами вне секции → перенести в граф;
+ *   • `graph-only`— ребро в графе есть, в теле не отражено → дописать строку с rationale.
+ * @param {string} body
+ * @param {number[]} nativeNumbers  номера блокеров из нативного графа
+ * @returns {{number:number, source:'mirror'|'prose'|'graph-only'}[]}
+ */
+export function findMirrorDrift(body, nativeNumbers) {
+  const native = new Set(nativeNumbers ?? [])
+  const mirror = new Set(parseDependenciesSection(body).blockedBy.map((e) => e.number))
+  const prose = new Set(parseProseBlockers(body))
+  const rows = []
+  for (const n of mirror) if (!native.has(n)) rows.push({ number: n, source: 'mirror' })
+  for (const n of prose) {
+    if (!native.has(n) && !mirror.has(n)) rows.push({ number: n, source: 'prose' })
+  }
+  for (const n of native) if (!mirror.has(n)) rows.push({ number: n, source: 'graph-only' })
+  return rows
 }
 
 /** Узлы, блокирующие ≥ threshold открытых задач. */
@@ -292,6 +325,7 @@ export function formatReport(model) {
     claimIssues = [],
     epics = [],
     hygiene = [],
+    mirrorDrift = [],
     orphanEdges = [],
     megaBlockers = [],
     warnings = [],
@@ -333,6 +367,28 @@ export function formatReport(model) {
             ? '⚠ rationale не записан'
             : 'rationale не проверен'
       lines.push(`  ↳ #${e.number} (${e.source === 'native' ? 'нативное ребро' : 'ТОЛЬКО проза — ребро не проведено'}) — ${rat}`)
+    }
+  }
+  lines.push('')
+
+  lines.push(`## Зеркало Dependencies разошлось с графом (${mirrorDrift.length})`)
+  if (mirrorDrift.length === 0) lines.push('_нет — тело и граф сходятся_')
+  for (const d of mirrorDrift) {
+    if (d.source === 'mirror') {
+      lines.push(
+        `- #${d.number} ← #${d.blocker}: строка в Dependencies есть, ребра в графе НЕТ — ` +
+          `на готовность это не влияет (канон §3), проведи ребро`,
+      )
+    } else if (d.source === 'prose') {
+      lines.push(
+        `- #${d.number} ← #${d.blocker}: зависимость упомянута словами вне Dependencies — ` +
+          `связью не считается, перенеси в граф или переформулируй`,
+      )
+    } else {
+      lines.push(
+        `- #${d.number} ← #${d.blocker}: ребро в графе есть, в теле не отражено — ` +
+          `допиши строку Dependencies с rationale`,
+      )
     }
   }
   lines.push('')
@@ -448,7 +504,36 @@ function fetchNativeBlockers(number, warnings) {
   }))
 }
 
+export const USAGE = `Использование: pnpm backlog:triage
+
+  Отчёт готовности бэклога ${REPO}. Только чтение: ни одной мутации, ни одного
+  комментария, чужой claim не снимается.
+
+  Секции отчёта:
+    Берущиеся / В работе / Заблокированные — готовность из НАТИВНОГО графа
+      (\`dependencies/blocked_by\`). Проза и зеркало тела на неё не влияют.
+    Расхождения claim — сверка двух сигналов канона §4 (ворктри И статус борда).
+    Зеркало Dependencies разошлось с графом — диагностика гигиены, не готовность.
+    Рёбра без rationale — provenance-orphan: повод оспорить ребро.
+    Мега-блокеры — узел, блокирующий ≥5 задач.
+    Эпики — зонтики, сами по себе не берутся.
+    Гигиена полей — Type / source:* / milestone / assignee.
+
+  Exit codes: 0 — отчёт напечатан (в т.ч. при частичных сбоях: они уходят в
+  «Предупреждения»); 1 — не удалось получить список задач.
+`
+
 function main() {
+  const argv = process.argv.slice(2)
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(USAGE)
+    process.exit(0)
+  }
+  if (argv.length > 0) {
+    process.stderr.write(`${TAG} неизвестный аргумент «${argv[0]}»\n${USAGE}`)
+    process.exit(1)
+  }
+
   const warnings = []
   const issuesRes = ghJson([
     'issue',
@@ -477,6 +562,7 @@ function main() {
 
   const triaged = []
   const hygiene = []
+  const mirrorDrift = []
   const orphanEdges = []
   const claimIssues = []
   const epics = []
@@ -487,11 +573,9 @@ function main() {
     const missing = missingFields(issue)
     if (missing.length > 0) hygiene.push({ number: issue.number, missing })
 
-    // Рёбра: нативные (граф) + прозовые (сигнал «ребро не проведено»).
+    // Готовность строится ТОЛЬКО на нативном графе (канон §3). Зеркало тела и
+    // проза сюда не подмешиваются вовсе — они уходят в отдельную диагностику.
     const native = fetchNativeBlockers(issue.number, warnings)
-    const prose = parseProseBlockers(issue.body).concat(
-      parseDependenciesSection(issue.body).blockedBy.map((e) => e.number),
-    )
     const edges = []
     for (const n of native) {
       const rationale = evaluateRationale(
@@ -503,25 +587,24 @@ function main() {
       edges.push({ number: n.number, source: 'native', open: n.open, rationale })
       if (rationale === 'absent') orphanEdges.push({ blocked: issue.number, blocker: n.number })
     }
-    for (const n of new Set(prose)) {
-      if (native.some((e) => e.number === n)) continue
-      const target = byNumber.get(n)
-      edges.push({
-        number: n,
-        source: 'prose',
-        open: target ? true : false,
-        rationale: evaluateRationale(issue.number, n, issue.body, target?.body ?? null),
-      })
+    for (const d of findMirrorDrift(
+      issue.body,
+      native.map((e) => e.number),
+    )) {
+      mirrorDrift.push({ number: issue.number, blocker: d.number, source: d.source })
     }
 
     const t = classify({ number: issue.number, title: issue.title, labels }, edges)
 
+    // Возраст считается явно: `now - Date.parse(x) || 0` схлопывал NaN в 0, и
+    // протухший claim без даты отчитывался бы как «простой <1м».
+    const updatedAt = Date.parse(issue.updatedAt ?? '')
     const claim = detectClaimState({
       number: issue.number,
       hasWorktree: worktrees.has(issue.number),
       hasBranch: branchNumbers.has(issue.number),
       boardStatus: boardStatuses.get(issue.number) ?? null,
-      ageMs: now - Date.parse(issue.updatedAt ?? '') || 0,
+      ageMs: Number.isFinite(updatedAt) ? now - updatedAt : null,
     })
     if (claim.kind === 'in-flight') {
       inFlight.push({ number: issue.number, title: issue.title, claim: claim.message })
@@ -544,6 +627,7 @@ function main() {
     claimIssues,
     epics,
     hygiene,
+    mirrorDrift,
     orphanEdges,
     megaBlockers: findMegaBlockers(triaged),
     warnings,

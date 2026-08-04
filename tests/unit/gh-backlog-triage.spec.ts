@@ -5,6 +5,7 @@ import {
   detectClaimState,
   evaluateRationale,
   findMegaBlockers,
+  findMirrorDrift,
   formatAge,
   formatReport,
   isPlaceholder,
@@ -211,6 +212,47 @@ describe('classify', () => {
     expect(t.edges).toHaveLength(1)
     expect(t.edges[0].source).toBe('native')
   })
+
+  /**
+   * Регрессия: готовность считалась и по прозе, из-за чего задача с правильно
+   * заполненным телом и непроведённым ребром выпадала из берущихся, а шаг 6
+   * скилла `spec-issue-graph` давал ложный зелёный. Канон §3: проза связью не
+   * считается.
+   */
+  it('прозовое ребро БЕЗ нативного не блокирует — проза связью не считается', () => {
+    const t = classify(issue, [{ number: 131, source: 'prose', open: true, rationale: 'present' }])
+    expect(t.blocked).toBe(false)
+    expect(t.blockers).toEqual([])
+    expect(t.edges).toEqual([])
+  })
+})
+
+describe('findMirrorDrift', () => {
+  const body = ['## Dependencies', '', '**Blocked by:** #131 — контракт БД задаётся там'].join('\n')
+
+  it('строка в теле без ребра в графе — расхождение вида mirror', () => {
+    expect(findMirrorDrift(body, [])).toEqual([{ number: 131, source: 'mirror' }])
+  })
+
+  it('ребро в графе без строки в теле — расхождение вида graph-only', () => {
+    expect(findMirrorDrift('пустое тело', [131])).toEqual([{ number: 131, source: 'graph-only' }])
+  })
+
+  it('когда тело и граф сходятся, расхождений нет', () => {
+    expect(findMirrorDrift(body, [131])).toEqual([])
+  })
+
+  it('проза вне секции Dependencies отмечается отдельным видом', () => {
+    expect(findMirrorDrift('Эта задача зависит от #99.', [])).toEqual([
+      { number: 99, source: 'prose' },
+    ])
+  })
+
+  it('одно и то же упоминание не считается дважды', () => {
+    expect(findMirrorDrift(`${body}\nтакже зависит от #131`, [])).toEqual([
+      { number: 131, source: 'mirror' },
+    ])
+  })
 })
 
 describe('findMegaBlockers', () => {
@@ -287,6 +329,21 @@ describe('formatAge', () => {
 
   it('нечисловой возраст не притворяется нулём', () => {
     expect(formatAge(NaN)).toBe('?')
+    expect(formatAge(null)).toBe('?')
+  })
+})
+
+describe('расхождение claim без даты обновления', () => {
+  it('протухший claim без даты отчитывается «?», а не «простой <1м»', () => {
+    const state = detectClaimState({
+      number: 130,
+      hasWorktree: false,
+      hasBranch: false,
+      boardStatus: 'In Progress',
+      ageMs: null,
+    })
+    expect(state.kind).toBe('stale-claim')
+    expect(state.message).toMatch(/простой \?/)
   })
 })
 
@@ -305,6 +362,7 @@ describe('formatReport', () => {
     claimIssues: [{ number: 4, message: 'ворктри есть, статуса нет' }],
     epics: [{ number: 5, title: 'зонтик' }],
     hygiene: [{ number: 6, missing: ['нет Type'] }],
+    mirrorDrift: [{ number: 3, blocker: 1, source: 'mirror' }],
     orphanEdges: [{ blocked: 3, blocker: 1 }],
     megaBlockers: [{ number: 1, blocked: [3], count: 1 }],
     warnings: ['борд не прочитался'],
@@ -317,6 +375,7 @@ describe('formatReport', () => {
       '## В работе (1)',
       '## Расхождения claim (1)',
       '## Заблокированные (1)',
+      '## Зеркало Dependencies разошлось с графом (1)',
       '## Рёбра без rationale (1)',
       '## Мега-блокеры (1)',
       '## Эпики (1)',
