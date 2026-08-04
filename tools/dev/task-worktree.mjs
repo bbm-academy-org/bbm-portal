@@ -15,15 +15,17 @@
 //
 // Usage:
 //   pnpm task:worktree <N>                  # derive slug + type from `gh issue view <N>`
-//   pnpm task:worktree <N> <slug>           # explicit slug, type from the issue title
+//   pnpm task:worktree <N> <slug>           # explicit slug, type from the issue's Type
 //   pnpm task:worktree <N> <slug> <type>    # explicit both (feat|fix|chore|docs)
 //
 // What it does, in order:
 //   1. resolve the PRIMARY tree's root from `git rev-parse --git-common-dir`, so
 //      the worktree always lands under the primary `.claude/worktrees/` even when
 //      this runs from inside another worktree,
-//   2. `gh issue view <N>` → title → branch type (Conventional-Commit prefix of
-//      the title) + slug (transliterated, the titles here are Russian),
+//   2. `gh issue view <N>` → native Type (Bug/Feature/Task) → branch type, per
+//      `.claude/rules/task-canon.md` §2; the title's Conventional-Commit prefix
+//      is the fallback for pre-canon issues that carry no Type. Slug comes from
+//      the title (transliterated — the titles here are Russian),
 //   3. refuse early if the worktree path or the branch already exists,
 //   4. `git fetch origin main` → `git worktree add .claude/worktrees/<N> -b <branch> origin/main`
 //      (the path is the bare issue number: a short path dodges the Windows
@@ -37,6 +39,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { branchTypeFromIssueType } from '../gh/lib/gh.mjs'
 
 // ── pure seams (unit-tested in tests/unit/dev-worktree.spec.ts) ──────────────
 
@@ -101,9 +105,12 @@ function stripConventionalPrefix(title) {
 }
 
 /**
- * Issue title → branch type. The signal is the title's Conventional-Commit
- * prefix (`feat(dev): …` → `feat`) because this repo's issues carry no kind
- * labels — the type lives in the title by convention. Unknown → `chore`.
+ * Issue title → branch type, the FALLBACK signal: the title's
+ * Conventional-Commit prefix (`feat(dev): …` → `feat`). The primary signal is
+ * the issue's native GitHub **Type** (Bug/Feature/Task → `fix`/`feat`/`chore`,
+ * `.claude/rules/task-canon.md` §2, owner's decision 2026-08-04); this reads
+ * the title only for the issues filed before Type became mandatory. Unknown →
+ * `chore`.
  */
 export function branchTypeFromTitle(title) {
   const m = (title ?? '').match(/^\s*([a-zA-Z]+)(\([^)]*\))?!?:/)
@@ -219,17 +226,19 @@ function branchExists(root, branch) {
 }
 
 /**
- * The issue's title via gh, or null when the issue/gh is unavailable.
- * `shell` on Windows because `gh` is commonly a `.cmd` shim that bare spawn
- * cannot execute (git, by contrast, is always a real `.exe`).
+ * The issue's title + native Type via gh, or null when the issue/gh is
+ * unavailable. `shell` on Windows because `gh` is commonly a `.cmd` shim that
+ * bare spawn cannot execute (git, by contrast, is always a real `.exe`).
+ * @returns {{title: string|null, issueType: string|null}|null}
  */
-function fetchIssueTitle(n) {
-  const res = run('gh', ['issue', 'view', String(n), '--json', 'title'], {
+function fetchIssueFields(n) {
+  const res = run('gh', ['issue', 'view', String(n), '--json', 'title,issueType'], {
     shell: process.platform === 'win32',
   })
   if (res.status !== 0) return null
   try {
-    return JSON.parse(res.stdout).title ?? null
+    const parsed = JSON.parse(res.stdout)
+    return { title: parsed.title ?? null, issueType: parsed.issueType?.name ?? null }
   } catch {
     return null
   }
@@ -254,16 +263,22 @@ function main() {
 
   // Args win over gh; gh is only consulted for what is still missing.
   if (!slug || !type) {
-    const title = fetchIssueTitle(n)
-    if (title === null) {
+    const fields = fetchIssueFields(n)
+    if (fields === null || fields.title === null) {
       die(
         `could not resolve issue #${n} via gh (does it exist? is gh authenticated?) — ` +
           `pass an explicit slug: pnpm task:worktree ${n} <slug> [type]`,
         1,
       )
     }
-    slug = slug || slugifyTitle(title)
-    type = type || branchTypeFromTitle(title)
+    slug = slug || slugifyTitle(fields.title)
+    // The native Type is the canonical classifier (canon §2); the title's
+    // Conventional prefix is the fallback for pre-canon issues that have none.
+    type =
+      type ||
+      (fields.issueType
+        ? branchTypeFromIssueType(fields.issueType)
+        : branchTypeFromTitle(fields.title))
   }
   if (!slug) die(`derived an empty slug for #${n} — pass one explicitly.`, 1)
 

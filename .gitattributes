@@ -10,11 +10,13 @@ patches/*.patch text eol=lf
 infra/dev-stand/idp/provision.sh text eol=lf
 infra/dev-stand/idp/Caddyfile text eol=lf
 infra/dev-stand/**/*.sh text eol=lf
-tools/dev/*.mjs text eol=lf
 
-# Hook-скрипты (#91) должны оставаться LF по другой причине: они начинаются с
-# шебанга, а vitest импортирует их сборки-seam'ы в юнит-тестах. На CRLF-чекауте
-# (Windows, core.autocrlf=true) шебанг доезжает до vite-обёртки нетронутым и
-# спека падает с «SyntaxError: Invalid or unexpected token» ещё до первого теста
-# — при этом на Linux-CI всё зелено, то есть поломка видна только локально.
-tools/hooks/*.mjs text eol=lf
+# Node-скрипты тулинга (#91, #130) должны оставаться LF по другой причине: они
+# начинаются с шебанга, а vitest импортирует их чистые сеймы в юнит-тестах. На
+# CRLF-чекауте (Windows, core.autocrlf=true) шебанг доезжает до vite-обёртки
+# нетронутым и спека падает с «SyntaxError: Invalid or unexpected token» ещё до
+# первого теста — при этом на Linux-CI всё зелено, то есть поломка видна только
+# локально. Правило намеренно рекурсивное по всему `tools/`: точечные
+# `tools/dev/*.mjs` + `tools/hooks/*.mjs` уже пропустили `tools/ops/` — его
+# спека падала локально ровно так с момента появления.
+tools/**/*.mjs text eol=lf
