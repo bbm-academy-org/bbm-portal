@@ -11,11 +11,15 @@ import {
   exitCodeFor,
   extractClosedIssues,
   extractSpecPaths,
+  isRelatedSpec,
   parseFrontmatter,
   severityFromEnv,
   specExemptReason,
+  specRefsFromIssueBody,
+  specRefsFromPrBody,
   specRequired,
   specStatus,
+  stripCodeFences,
 } from '../../tools/lint/spec-link-lint.mjs'
 
 /**
@@ -67,19 +71,50 @@ describe('extractClosedIssues', () => {
 })
 
 describe('specExemptReason', () => {
-  it('reads the escape hatch and its reason', () => {
+  it('reads the escape hatch and its reason at a real line start', () => {
     expect(specExemptReason('spec-exempt: CMS-contract upkeep, contract lives in schemas.ts')).toBe(
       'CMS-contract upkeep, contract lives in schemas.ts',
     )
+    expect(specExemptReason('## Why\n\nspec-exempt: chore inside an approved scope\n')).toBe(
+      'chore inside an approved scope',
+    )
+  })
+
+  it('accepts the backticked form the docs show — doc and tool must agree', () => {
+    expect(specExemptReason('`spec-exempt: CMS-contract upkeep`')).toBe('CMS-contract upkeep')
+  })
+
+  /**
+   * The hatch turns the gate off, so a body that merely TALKS about it must not
+   * trip it: a quoted review comment or a PR documenting the guard would
+   * otherwise exempt itself with pure boilerplate.
+   */
+  it('refuses a merely quoted mention — blockquote, list item, indent, code fence', () => {
+    expect(specExemptReason('> spec-exempt: <reason> in the PR body')).toBe(null)
+    expect(specExemptReason('- spec-exempt: like this')).toBe(null)
+    expect(specExemptReason('* spec-exempt: like this')).toBe(null)
+    expect(specExemptReason('    spec-exempt: indented, i.e. a code block')).toBe(null)
+    expect(specExemptReason('The hatch:\n\n```\nspec-exempt: <reason>\n```\n')).toBe(null)
   })
 
   it('returns an empty string for a bare marker — a reasonless exemption is not an exemption', () => {
     expect(specExemptReason('spec-exempt:')).toBe('')
     expect(specExemptReason('spec-exempt:    ')).toBe('')
+    expect(specExemptReason('`spec-exempt:`')).toBe('')
   })
 
   it('returns null when the marker is absent', () => {
     expect(specExemptReason('Closes #1')).toBe(null)
+  })
+})
+
+describe('stripCodeFences', () => {
+  it('removes fenced blocks so quoted markers and paths cannot be mined from them', () => {
+    expect(stripCodeFences('a\n```\nspec-exempt: x\n```\nb')).toBe('a\n\nb')
+  })
+
+  it('leaves inline backticks alone', () => {
+    expect(stripCodeFences('use `spec-exempt: x` here')).toBe('use `spec-exempt: x` here')
   })
 })
 
@@ -97,6 +132,62 @@ describe('extractSpecPaths', () => {
     expect(extractSpecPaths('docs\\specs\\081-a.md docs/specs/081-a.md')).toEqual([
       'docs/specs/081-a.md',
     ])
+  })
+})
+
+/**
+ * A spec path mentioned anywhere in a body used to satisfy the gate, so a PR
+ * that named a spec as background reading passed. The reference now has to sit
+ * in a declared position.
+ */
+describe('specRefsFromPrBody — the anchored position in a PR body', () => {
+  it('reads a `Spec:` line, bare, bolded, or with a section suffix', () => {
+    expect(specRefsFromPrBody('Spec: docs/specs/102-x.md')).toEqual(['docs/specs/102-x.md'])
+    expect(specRefsFromPrBody('**Spec:** `docs/specs/102-x.md` §3')).toEqual([
+      'docs/specs/102-x.md',
+    ])
+    expect(specRefsFromPrBody('Spec reference: docs/specs/102-x.md')).toEqual([
+      'docs/specs/102-x.md',
+    ])
+  })
+
+  it('ignores a spec named anywhere else — background reading is not a declaration', () => {
+    expect(
+      specRefsFromPrBody('Closes #102\n\nFor context see docs/specs/081-hours-calculator.md.'),
+    ).toEqual([])
+    expect(specRefsFromPrBody('> Spec: docs/specs/102-x.md')).toEqual([])
+  })
+})
+
+describe('specRefsFromIssueBody — the task-canon `Spec reference` section', () => {
+  it('reads paths from the section body only', () => {
+    const body =
+      '## Context\n\nSee docs/specs/081-hours-calculator.md for history.\n\n' +
+      '## Spec reference\n\nSpec `docs/specs/102-x.md` §3\n\n## Acceptance criteria\n\n- [ ] x\n'
+    expect(specRefsFromIssueBody(body)).toEqual(['docs/specs/102-x.md'])
+  })
+
+  it('is empty when the issue has no such section', () => {
+    expect(specRefsFromIssueBody('## Context\n\ndocs/specs/102-x.md\n')).toEqual([])
+  })
+})
+
+describe('isRelatedSpec', () => {
+  it('relates by the NNN- filename prefix of a linked issue', () => {
+    expect(isRelatedSpec('docs/specs/102-x.md', {}, [102], [])).toBe(true)
+    expect(isRelatedSpec('docs/specs/081-x.md', {}, [102], [])).toBe(false)
+  })
+
+  it("relates by the spec's own `issue:` frontmatter", () => {
+    expect(
+      isRelatedSpec('docs/superpowers/specs/2026-08-04-x.md', { issue: '102' }, [102], []),
+    ).toBe(true)
+  })
+
+  it('relates a spec the PR itself edits — the shared-spec case', () => {
+    expect(
+      isRelatedSpec('docs/specs/081-x.md', {}, [200], ['src/a.tsx', 'docs/specs/081-x.md']),
+    ).toBe(true)
   })
 })
 
@@ -202,14 +293,14 @@ describe('evaluateSpecLink', () => {
 
   it('flags a spec with no status frontmatter and one with a bogus value', () => {
     const noStatus = evaluateSpecLink({
-      pr: { ...featurePr, body: 'Closes #102\n\ndocs/specs/102-x.md' },
+      pr: { ...featurePr, body: 'Closes #102\n\nSpec: docs/specs/102-x.md' },
       issues: [featureIssue],
       tree: tree({ 'docs/specs/102-x.md': '# Spec\n' }),
     })
     expect(noStatus.findings.join('\n')).toMatch(/no `status:`/)
 
     const bogus = evaluateSpecLink({
-      pr: { ...featurePr, body: 'Closes #102\n\ndocs/specs/102-x.md' },
+      pr: { ...featurePr, body: 'Closes #102\n\nSpec: docs/specs/102-x.md' },
       issues: [featureIssue],
       tree: tree({ 'docs/specs/102-x.md': '---\nstatus: Готово\n---\n' }),
     })
@@ -218,12 +309,88 @@ describe('evaluateSpecLink', () => {
 
   it('flags implementing a spec still on Draft — no owner "go" has moved it', () => {
     const res = evaluateSpecLink({
-      pr: { ...featurePr, body: 'Closes #102\n\ndocs/specs/102-x.md' },
+      pr: { ...featurePr, body: 'Closes #102\n\nSpec: docs/specs/102-x.md' },
       issues: [featureIssue],
       tree: tree({ 'docs/specs/102-x.md': DRAFT }),
     })
     expect(res.verdict).toBe('findings')
     expect(res.findings.join('\n')).toMatch(/Draft/)
+  })
+
+  it('FLAGS a spec mentioned only as background reading — the anchoring hole', () => {
+    // Reproduces the reviewer's case: a PR closing #102 that merely mentions an
+    // unrelated spec somewhere in the prose used to PASS.
+    const res = evaluateSpecLink({
+      pr: {
+        ...featurePr,
+        body: 'Closes #102\n\nFor context see docs/specs/081-hours-calculator.md.',
+      },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/081-hours-calculator.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.findings.join('\n')).toMatch(/names no spec/i)
+  })
+
+  it('FLAGS a declared spec unrelated to any linked issue, and says which', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\nSpec: docs/specs/081-hours-calculator.md' },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/081-hours-calculator.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.findings.join('\n')).toMatch(/none of them references #102/i)
+    // The unrelated mention is still reported — as a note, not silently dropped.
+    expect(res.notes.join('\n')).toMatch(/does not reference #102 — read as background/i)
+  })
+
+  it('accepts a spec the PR edits even when its number differs from the issue', () => {
+    const res = evaluateSpecLink({
+      pr: {
+        ...featurePr,
+        body: 'Closes #102\n\nSpec: docs/specs/081-hours-calculator.md',
+        files: ['src/modules/hours/table.tsx', 'docs/specs/081-hours-calculator.md'],
+      },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/081-hours-calculator.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('ok')
+  })
+
+  it('accepts a spec related by its own `issue:` frontmatter', () => {
+    const res = evaluateSpecLink({
+      pr: {
+        ...featurePr,
+        body: 'Closes #102\n\nSpec: docs/superpowers/specs/2026-08-04-rate.md',
+      },
+      issues: [featureIssue],
+      tree: tree({
+        'docs/superpowers/specs/2026-08-04-rate.md': '---\nstatus: In dev\nissue: 102\n---\n',
+      }),
+    })
+    expect(res.verdict).toBe('ok')
+  })
+
+  it('does not let a quoted escape hatch turn the gate off', () => {
+    const res = evaluateSpecLink({
+      pr: {
+        ...featurePr,
+        body: 'Closes #102\n\nThe guard offers an escape hatch:\n\n> spec-exempt: <reason> in the PR body\n',
+      },
+      issues: [featureIssue],
+      tree: tree({}),
+    })
+    expect(res.verdict).toBe('findings')
+  })
+
+  it('honours the backticked escape hatch the docs show', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\n`spec-exempt: CMS-contract upkeep`' },
+      issues: [featureIssue],
+      tree: tree({}),
+    })
+    expect(res.verdict).toBe('skip')
+    expect(res.notes.join('\n')).toMatch(/CMS-contract upkeep/)
   })
 
   it('skips a PR with no auto-close link at all (a different guard owns that)', () => {

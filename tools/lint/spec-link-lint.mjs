@@ -53,8 +53,29 @@ const SPEC_PATH_RE = /docs[\\/](?:superpowers[\\/])?specs[\\/][A-Za-z0-9][A-Za-z
 /** Conventional Commit `feat` prefix, with or without a scope / `!`. */
 const FEAT_TITLE_RE = /^feat(\([^)]*\))?!?:/i
 
-/** The escape hatch. Captured group is the reason (possibly empty). */
-const EXEMPT_RE = /^[ \t>*-]*spec-exempt:[ \t]*(.*)$/im
+/**
+ * The escape hatch, anchored to a REAL line start: no blockquote `>`, no list
+ * marker, no indent (an indented line is a markdown code block), and fenced
+ * blocks are stripped before matching. A body that merely QUOTES the hatch —
+ * a pasted review comment, a PR documenting the guard — must not turn the gate
+ * off. The docs write the marker in backticks, so the backticked form is
+ * accepted too; doc and tool agree on both spellings.
+ * Captured group is the reason (empty for a bare marker, which is rejected).
+ */
+const EXEMPT_RE = /^`?spec-exempt:[ \t]*([^\n`]*?)[ \t]*`?[ \t]*$/im
+
+/**
+ * The declared position of a spec reference in a PR body: a line that STARTS
+ * with `Spec:` / `Spec reference:` (bold markers tolerated). A path mentioned
+ * anywhere else is background reading, not a declaration.
+ */
+const SPEC_LINE_RE = /^\**spec(?:\s+reference)?:?\**\s*:?[ \t]*(.+)$/gim
+
+/** The task-canon `## Spec reference` section heading of an issue body. */
+const SPEC_SECTION_RE = /^#{1,6}[ \t]*spec\s+reference\b.*$/im
+
+/** A markdown heading, which ends the section above. */
+const NEXT_HEADING_RE = /\n#{1,6}[ \t]/
 
 /** Production module code — the surface stage 1a is about. */
 const PROD_CODE_RE = /^src[\\/]/
@@ -90,14 +111,56 @@ export function extractClosedIssues(body) {
   return out
 }
 
+/** Drop fenced code blocks — anything shown as a code sample is not a declaration. */
+export function stripCodeFences(text) {
+  return String(text ?? '').replace(/^```[\s\S]*?^```[ \t]*$/gm, '')
+}
+
 /**
  * The `spec-exempt:` reason: the string when present, `''` for a bare marker
- * (which the evaluator rejects), `null` when the marker is absent.
+ * (which the evaluator rejects), `null` when the marker is absent or merely
+ * quoted (blockquote, list item, indented line, fenced block).
  */
 export function specExemptReason(body) {
-  const m = String(body ?? '').match(EXEMPT_RE)
+  const m = stripCodeFences(body).match(EXEMPT_RE)
   if (!m) return null
   return m[1].trim()
+}
+
+/** Spec paths declared on a `Spec:` / `Spec reference:` line of a PR body. */
+export function specRefsFromPrBody(body) {
+  const out = []
+  const src = stripCodeFences(body)
+  for (const m of src.matchAll(SPEC_LINE_RE)) {
+    for (const p of extractSpecPaths(m[1])) if (!out.includes(p)) out.push(p)
+  }
+  return out
+}
+
+/** Spec paths inside an issue's `## Spec reference` section (task-canon §1). */
+export function specRefsFromIssueBody(body) {
+  const src = stripCodeFences(body)
+  const h = src.match(SPEC_SECTION_RE)
+  if (h?.index === undefined) return []
+  const rest = src.slice(h.index + h[0].length)
+  const next = rest.search(NEXT_HEADING_RE)
+  return extractSpecPaths(next === -1 ? rest : rest.slice(0, next))
+}
+
+/**
+ * Is this spec actually about the work being reviewed? Three routes, any one
+ * suffices: the `NNN-` filename prefix matches a linked issue; the spec's own
+ * `issue:` frontmatter matches one; or the PR edits the spec file itself (the
+ * shared-spec case — one spec covering work tracked under a later issue).
+ */
+export function isRelatedSpec(specPath, frontmatter, linkedIssues, touchedFiles) {
+  const rel = String(specPath).replace(/\\/g, '/')
+  const issues = (linkedIssues ?? []).map(Number)
+  const prefix = rel.match(/\/(\d{2,4})-/)
+  if (prefix && issues.includes(Number(prefix[1]))) return true
+  const declared = Number(frontmatter?.issue)
+  if (declared && issues.includes(declared)) return true
+  return (touchedFiles ?? []).some((f) => String(f).replace(/\\/g, '/') === rel)
 }
 
 /** Spec paths mentioned in a text, normalized to forward slashes, deduplicated. */
@@ -122,7 +185,7 @@ export function specRequired({ title, files, issues }) {
   if (!featureIssue && !featTitle) {
     return { required: false, reason: 'no `feat:` title and no linked issue of type Feature' }
   }
-  if (!changed.some((f) => PROD_CODE_RE.test(f.replace(/\//g, '/')) || f.startsWith('src/'))) {
+  if (!changed.some((f) => PROD_CODE_RE.test(f))) {
     return {
       required: false,
       reason:
@@ -175,14 +238,17 @@ export function evaluateSpecLink({ pr, issues, tree }) {
   }
   notes.push(`spec gate applies: ${gate.reason}`)
 
-  // Candidate specs, most explicit source first.
+  // Candidate specs — ONLY from declared positions. A path mentioned loosely in
+  // the prose is background reading; treating it as a declaration is how a PR
+  // that cites a spec as context passed the gate without having one.
+  const touched = (pr?.files ?? []).map((f) => String(f).replace(/\\/g, '/'))
   const candidates = []
   const add = (paths) => {
     for (const p of paths) if (!candidates.includes(p)) candidates.push(p)
   }
-  add(extractSpecPaths(body))
-  for (const issue of issues ?? []) add(extractSpecPaths(issue.body))
-  add(extractSpecPaths((pr?.files ?? []).join('\n')))
+  add(specRefsFromPrBody(body)) //                                a `Spec:` line in the PR body
+  for (const issue of issues ?? []) add(specRefsFromIssueBody(issue.body)) // the issue's section
+  add(extractSpecPaths(touched.join('\n'))) //                    a spec the PR itself edits
   // Implicit: the issue-numbered spec already on main.
   const known = tree.listSpecs ? tree.listSpecs() : []
   for (const n of linked) {
@@ -193,18 +259,21 @@ export function evaluateSpecLink({ pr, issues, tree }) {
   if (candidates.length === 0) {
     findings.push(
       `PR #${pr?.number} implements a feature but names no spec. ` +
-        "Add the spec path to the PR body (or to the linked issue's `## Spec reference`), " +
-        'author one per `docs/specs/README.md`, or state `spec-exempt: <reason>`.',
+        'Declare it on a `Spec: docs/specs/NNN-<slug>.md` line in the PR body, or in the ' +
+        "linked issue's `## Spec reference` section; author one per `docs/specs/README.md`; " +
+        'or state `spec-exempt: <reason>` on its own line.',
     )
     return { verdict: 'findings', notes, findings }
   }
 
+  let related = 0
   for (const rel of candidates) {
     if (!tree.exists(rel)) {
       findings.push(`spec \`${rel}\` is referenced but does not exist in the tree.`)
       continue
     }
-    const status = specStatus(tree.read(rel))
+    const text = tree.read(rel)
+    const status = specStatus(text)
     if (status === null) {
       findings.push(
         `spec \`${rel}\` has no \`status:\` frontmatter (docs/specs/README.md § Status model).`,
@@ -223,7 +292,24 @@ export function evaluateSpecLink({ pr, issues, tree }) {
       )
       continue
     }
+    if (!isRelatedSpec(rel, parseFrontmatter(text), linked, touched)) {
+      notes.push(
+        `spec \`${rel}\` → status \`${status}\`, but it does not reference ` +
+          `${linked.map((n) => `#${n}`).join(' / ')} — read as background, not as this PR's spec.`,
+      )
+      continue
+    }
+    related += 1
     notes.push(`spec \`${rel}\` → status \`${status}\` OK`)
+  }
+
+  // A declared spec that belongs to different work does not satisfy the gate.
+  if (related === 0 && findings.length === 0) {
+    findings.push(
+      `PR #${pr?.number} names ${candidates.length} spec(s), but none of them references ` +
+        `${linked.map((n) => `#${n}`).join(' / ')}. Relate the spec to the issue — by its ` +
+        '`NNN-` prefix, its `issue:` frontmatter, or by editing that spec in this PR.',
+    )
   }
 
   return { verdict: findings.length > 0 ? 'findings' : 'ok', notes, findings }
