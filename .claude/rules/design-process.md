@@ -43,7 +43,13 @@ explicitly, in exactly one of three shapes:
 | `Stage-B: batched at #<gate>`                       | acceptance is deferred to a named batched gate issue the owner agreed to     |
 | `Stage-B: N/A (no visual surface) — lead-certified` | the diff changes no visual surface; the **lead** puts its name on that claim |
 
-A bare `N/A`, a `TBD`, or the unfilled template placeholder is **not** a record.
+**The tail is part of the record.** A bare `GO`, a bare `N/A`, a `TBD`, or the
+unfilled template placeholder is **not** a record: the GO stands in for a
+«принято» said by a named person on a named day, and the self-certification is
+the lead putting its own name on the absence of an owner verdict. Text that only
+_talks about_ the marker — the template's `<!-- … -->` instructions, a quoted
+example in a fenced code block — is never evidence; the check strips it.
+
 The lead self-certification is not an owner verdict and is never used to skip a
 pending design question — it exists so a behavioural or backend-shaped PR that
 happens to touch a `.tsx` file does not fake an acceptance it never needed.
@@ -54,6 +60,9 @@ the same definition task-cycle stage 3 uses — and reports whether a valid mark
 exists in the PR body or in a linked-issue comment.
 
 **Severity: WARN.** The guard reports the violation and exits 0 today; run it as
-`pnpm lint:stage-b <PR> --severity block` and a violation exits non-zero.
-TODO(#136): promote per the severity canon of task 7.5, which owns the `ci`
-meta-job and the guard workflow — the CI wiring lands there, not here.
+`pnpm lint:stage-b <PR> --severity block` and a violation exits non-zero. Mind
+the two different WARNs: here it means "exit 0 with a WARN line", while #136's
+canon means `continue-on-error` on the CI job. TODO(#136): promote per that
+canon — the workflow picks which mechanism it uses, and the CI wiring lands
+there, not here. A guard **error** (the PR cannot be read at all) is not a
+violation and always exits non-zero: a check that never ran must not look clean.

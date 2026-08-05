@@ -18,11 +18,21 @@
 // A missing marker, or a placeholder value (`TBD`, the unfilled PR-template
 // angle-bracket line), is a violation. A PR with no UI diff is skipped.
 //
-// SEVERITY: WARN. The check reports the violation and exits 0 by default.
-// TODO(#136): promote per the severity canon of task 7.5 (`ci` meta-job +
-// `pr-body-guards.yml`) — once that canon lands, this guard's default severity
-// moves to BLOCK there, and no code change is needed here: pass `--severity
-// block` (or `STAGE_B_SEVERITY=block`) and a violation exits 1.
+// SEVERITY: WARN. A violation is reported and the process exits 0 by default;
+// `--severity block` (or `STAGE_B_SEVERITY=block`) makes the same violation exit
+// 1. Note the two WARNs are different mechanisms: HERE it means "exit 0 with a
+// WARN line", while in #136's canon WARN means `continue-on-error: true` on the
+// CI job. TODO(#136): the workflow decides which one it uses — either keep the
+// default and let the job be a hard `needs` (the guard self-absorbs), or pass
+// `--severity block` and mark the job `continue-on-error`. Promotion to a real
+// gate is then a one-line workflow change; no code change is needed here.
+//
+// An `error` (the PR cannot be read at all — gh auth, a fork without token
+// scope, an API blip) is NOT a violation and does NOT follow the severity dial:
+// it exits 1 under every severity, by design. A violation is a finding about the
+// PR, which WARN may absorb; an unreadable PR means the guard never ran, and a
+// guard that exits 0 when it never ran is indistinguishable from a clean check.
+// Masking THAT is a job-level `continue-on-error` decision, made in #136.
 //
 // NOT WIRED INTO CI HERE, deliberately: `.github/workflows/ci.yml` and the guard
 // workflow are owned by #136, which is in flight in parallel. Run locally before
@@ -57,8 +67,27 @@ export const EXEMPT_RE =
 /** The `Stage-B:` line, anywhere in a body/comment, through list/quote decoration. */
 const MARKER_RE = /^[ \t>*_-]*stage-?b\s*:\s*(.+?)\s*$/gim
 
-/** `GO`, `GO — Антон 2026-08-05`, … — the owner's live verdict. */
-const GO_RE = /^\**go\b/i
+/**
+ * Text that TALKS ABOUT the marker but does not record one: HTML comments and
+ * fenced code blocks. Stripped before extraction (review PR #151, blocker 1).
+ *
+ * This is not cosmetic. The PR template's own instruction block lives inside
+ * `<!-- … -->` and spells out all three sanctioned shapes verbatim, so without
+ * this the realistic failure — an author fills What/Why and never touches the
+ * Stage B section — read as a recorded owner GO. Same class on the issue-comment
+ * path: a handoff or a review note quoting the shapes in a fence became evidence.
+ */
+const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g
+const FENCED_BLOCK_RE = /^ {0,3}(?:```|~~~)[\s\S]*?^ {0,3}(?:```|~~~)[^\n]*$/gm
+
+/**
+ * `GO — Антон, 2026-08-05` — the owner's live verdict. The attribution tail is
+ * REQUIRED: this value stands in for a «принято» said by a named person on a
+ * named day, so a bare `GO` records nothing anyone can check later. Symmetric
+ * with `N/A`, whose bare form is rejected for the same reason (review PR #151,
+ * minor 4). Any separator the shapes use is accepted — `—`, `-`, `:`, `,`, `(`.
+ */
+const GO_RE = /^\**go\b\**\s*[-–—:,(]\s*\S/i
 /** `batched at #117` — the batched acceptance gate carve-out. */
 const BATCHED_RE = /^\**batched\s+at\s+#\d+/i
 /**
@@ -87,9 +116,8 @@ export function renderFiles(paths) {
  */
 export function extractMarkerValues(text) {
   if (!text) return []
-  return [...String(text).matchAll(MARKER_RE)].map((m) =>
-    (m[1] ?? '').replace(/^[\s*_]+/, '').trim(),
-  )
+  const semantic = String(text).replace(HTML_COMMENT_RE, '').replace(FENCED_BLOCK_RE, '')
+  return [...semantic.matchAll(MARKER_RE)].map((m) => (m[1] ?? '').replace(/^[\s*_]+/, '').trim())
 }
 
 /** Is this marker value one of the three sanctioned records? */
@@ -208,10 +236,33 @@ export function severityFromArgv(argv = [], env = {}) {
   const args = argv ?? []
   for (let i = 0; i < args.length; i++) {
     const a = String(args[i])
-    if (a.startsWith('--severity=')) return a.slice('--severity='.length) === 'block' ? 'block' : 'warn'
+    if (a.startsWith('--severity='))
+      return a.slice('--severity='.length) === 'block' ? 'block' : 'warn'
     if (a === '--severity') return String(args[i + 1] ?? '') === 'block' ? 'block' : 'warn'
   }
   return env.STAGE_B_SEVERITY === 'block' ? 'block' : 'warn'
+}
+
+/**
+ * Full CLI parse: the PR number (positional, else `PR_NUMBER` from env) and the
+ * severity. The flag's VALUE is consumed, so `--severity block` no longer eats
+ * the env fallback's place — the two documented invocation forms combine
+ * (review PR #151, major 2: `PR_NUMBER=151 … --severity block` exited 2).
+ */
+export function parseArgs(argv = [], env = {}) {
+  const severity = severityFromArgv(argv, env)
+  const positional = []
+  for (let i = 0; i < argv.length; i++) {
+    const a = String(argv[i])
+    if (a === '--severity') {
+      i++ // its value is a flag argument, never a positional
+      continue
+    }
+    if (a.startsWith('--')) continue
+    positional.push(a)
+  }
+  const candidate = positional[0] ?? env.PR_NUMBER ?? ''
+  return { prNumber: /^\d+$/.test(String(candidate)) ? String(candidate) : null, severity }
 }
 
 /**
@@ -262,16 +313,12 @@ function usage() {
 }
 
 function main(argv) {
-  const positional = argv.filter((a) => !a.startsWith('--'))
-  const prNumber = positional[0] ?? process.env.PR_NUMBER ?? ''
-  if (!/^\d+$/.test(String(prNumber))) {
+  const { prNumber, severity } = parseArgs(argv, process.env)
+  if (prNumber === null) {
     process.stderr.write(`${usage()}\n`)
     return 2
   }
-  const { exitCode, lines } = runStageBLint({
-    prNumber: Number(prNumber),
-    severity: severityFromArgv(argv, process.env),
-  })
+  const { exitCode, lines } = runStageBLint({ prNumber: Number(prNumber), severity })
   for (const line of lines) {
     if (line.includes('BLOCK') || line.includes('WARN') || line.includes('ERROR')) {
       process.stderr.write(`${line}\n`)
