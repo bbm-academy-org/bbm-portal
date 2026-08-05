@@ -21,6 +21,11 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-05 `tools/gh/handoff-verify.mjs`: a segment naming ≥2 refs with one
+      claim pins the claim on none of them and degrades to INFO (a false PASS is
+      cheaper than a false STALE in a gate that exits 1) — return condition:
+      revisit if real handoff runs produce INFO rows that should have been caught
+      as STALE, i.e. the rule starts hiding genuine drift (#134, review of PR #150)
 - [ ] 2026-08-05 `tools/gh/*` (plus `tools/dev/task-worktree.mjs`, `tests/unit/gh-*`
       and the `.claude/skills/spec-issue-graph/SKILL.md` body) still carry Russian
       file headers, CLI output, test names and prose; #144 fixed only the canon
