@@ -21,27 +21,28 @@
 //   Escape hatch: a `spec-exempt: <reason>` line in the PR body. The reason is
 //   mandatory — a reasonless exemption is not an exemption.
 //
-// SEVERITY: WARN. Findings are printed and the process exits 0.
-//   TODO(#136): promote per severity canon — task 7.5 owns the severity canon,
-//   the `ci` meta-job and the guard workflow. Promotion is a one-knob change:
-//   run this script with `--severity block` (or `--severity=block`, or
-//   `LINT_SEVERITY=block`) and it exits 1 on findings — the same dial as the
-//   sibling guard `stage-b-lint.mjs` (#151). Nothing else in this file needs
-//   editing.
+// SEVERITY: WARN, registered in docs/ci-guardrails.md §5. Mind the canon's two
+//   WARNs: run locally the guard reports and exits 0, while in the canon WARN
+//   means `continue-on-error` on the CI job. The `spec-link` job in
+//   `pr-body-guards.yml` uses both deliberately — it passes `--severity block`
+//   so the script gives a REAL signal (canon §4 promotion clause 1: a guard that
+//   prints and always exits 0 is a stub and is not promotable) while
+//   `continue-on-error: true` keeps the CI plane at WARN. Promotion to BLOCK
+//   follows the canon's §4 clauses (earliest 2026-09-02) and is the three-edit
+//   change described there — nothing in this file needs editing for it.
 //
 // Run: `pnpm lint:spec-link` (PR_NUMBER from Actions, or `--pr <n>` locally).
 // Outside a PR context it exits 0 with a skip note.
 //
 // Seams for tests: `LINT_FIXTURE_ROOT` (spec tree) and `LINT_GH_FIXTURE_DIR`
-// (canned `gh <kind> view <n> --json` payloads as `<kind>-view-<n>.json`).
-// Both inert in production.
+// (canned `gh <kind> view <n> --json` payloads as `<kind>-view-<n>.json`), both
+// via the shared `lib/` modules the contract (§8) forbids re-implementing.
 
-import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 
-export const TAG = '[spec-link]'
+import { ghViewJson } from './lib/gh.mjs'
+import { isEntryPoint, reporter, repoRoot, resolvePrNumber as envPrNumber } from './lib/guard.mjs'
 
 /** The spec status ladder — canon: `docs/specs/README.md` § Status model. */
 export const SPEC_STATUSES = ['Draft', 'In dev', 'Shipped', 'Superseded', 'Retired']
@@ -408,12 +409,8 @@ export function exitCodeFor(result, severity) {
 
 // ── runtime plumbing ─────────────────────────────────────────────────────────
 
-const REPO_ROOT = process.env.LINT_FIXTURE_ROOT
-  ? resolve(process.env.LINT_FIXTURE_ROOT)
-  : resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-
-/** Filesystem seam over the real repo (or a fixture root). */
-export function repoTree(root = REPO_ROOT) {
+/** Filesystem seam over the real repo (or the `LINT_FIXTURE_ROOT` tree). */
+export function repoTree(root = repoRoot()) {
   const list = (rel) => {
     const dir = resolve(root, rel)
     if (!existsSync(dir)) return []
@@ -428,60 +425,32 @@ export function repoTree(root = REPO_ROOT) {
   }
 }
 
-/** `gh <kind> view <n> --json <fields>`, or a canned fixture under the test seam. */
-export function ghViewJson(kind, number, fields) {
-  const fixtureDir = process.env.LINT_GH_FIXTURE_DIR
-  if (fixtureDir) {
-    try {
-      return {
-        ok: true,
-        data: JSON.parse(readFileSync(resolve(fixtureDir, `${kind}-view-${number}.json`), 'utf8')),
-      }
-    } catch (e) {
-      return {
-        ok: false,
-        error: `fixture ${kind}-view-${number}.json unavailable: ${String(e.message).split('\n')[0]}`,
-      }
-    }
-  }
-  // argv array, never a shell string — no command-injection class here.
-  const res = spawnSync('gh', [kind, 'view', String(number), '--json', fields], {
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-    shell: process.platform === 'win32',
-  })
-  if (res.status !== 0)
-    return { ok: false, error: String(res.stderr || res.error || '').split('\n')[0] }
-  try {
-    return { ok: true, data: JSON.parse(res.stdout) }
-  } catch (e) {
-    return { ok: false, error: String(e.message).split('\n')[0] }
-  }
-}
-
-/** PR number from Actions context, `--pr <n>`, or `gh` on the current branch. */
+/**
+ * The PR under test: `--pr <n>` for a local run, otherwise the shared env
+ * resolution (`PR_NUMBER` / `GITHUB_PR_NUMBER` / the Actions ref). `''` when
+ * there is no PR context, which the contract (§8) makes a skip, not a finding.
+ */
 export function resolvePrNumber(argv = process.argv.slice(2), env = process.env) {
   const flag = argv.indexOf('--pr')
-  if (flag !== -1 && argv[flag + 1]) return argv[flag + 1]
-  if (env.PR_NUMBER) return env.PR_NUMBER
-  if (env.GITHUB_PR_NUMBER) return env.GITHUB_PR_NUMBER
-  const m = String(env.GITHUB_REF ?? '').match(/refs\/pull\/(\d+)\//)
-  return m ? m[1] : ''
+  if (flag !== -1 && argv[flag + 1]) return String(argv[flag + 1])
+  return envPrNumber(env)
 }
 
 function main() {
+  const report = reporter('spec-link')
   const severity = severityFromArgv(process.argv.slice(2), process.env)
   const prNumber = resolvePrNumber()
   if (!prNumber) {
-    process.stdout.write(`${TAG} no PR context (PR_NUMBER / --pr unset) — skipping\n`)
-    process.exit(0)
+    // Nothing to check is a clean exit 0 — but it says so, because a silent
+    // exit 0 cannot be told apart from a stub (canon §8).
+    report.ok('no PR context (PR_NUMBER / --pr unset) — nothing to check')
   }
 
-  const prRes = ghViewJson('pr', prNumber, 'number,title,body,files')
-  if (!prRes.ok) {
-    process.stdout.write(`${TAG} could not read PR #${prNumber} (${prRes.error}) — skipping\n`)
-    process.exit(0)
-  }
+  // A guard ERROR is not a finding and does NOT follow the severity dial: it
+  // exits non-zero under every severity. A check that never ran must not look
+  // clean (canon §8, fail-closed).
+  const prRes = ghViewJson('pr', prNumber, 'number,title,body,files', repoRoot())
+  if (!prRes.ok) report.fail(`ERROR could not read PR #${prNumber}: ${prRes.error}`)
   const pr = {
     number: prRes.data.number,
     title: prRes.data.title,
@@ -493,28 +462,22 @@ function main() {
 
   const issues = []
   for (const n of extractClosedIssues(pr.body)) {
-    const r = ghViewJson('issue', n, 'number,title,body,issueType')
-    if (!r.ok) {
-      process.stdout.write(`${TAG} could not read issue #${n} (${r.error})\n`)
-      continue
-    }
+    const r = ghViewJson('issue', n, 'number,title,body,issueType', repoRoot())
+    if (!r.ok) report.fail(`ERROR could not read linked issue #${n}: ${r.error}`)
     issues.push({ number: n, type: r.data.issueType?.name ?? '', body: r.data.body ?? '' })
   }
 
   const result = evaluateSpecLink({ pr, issues, tree: repoTree() })
-  for (const note of result.notes) process.stdout.write(`${TAG} ${note}\n`)
+  for (const note of result.notes) report.info(note)
   for (const f of result.findings) {
-    process.stderr.write(`${TAG} ${severity === 'block' ? 'BLOCK' : 'WARN'} ${f}\n`)
+    report.finding(`${severity === 'block' ? 'BLOCK' : 'WARN'} ${f}`)
   }
-  if (result.verdict === 'ok')
-    process.stdout.write(`${TAG} PASS — the feature PR resolves to a spec.\n`)
+  if (result.verdict === 'ok') report.info('PASS — the feature PR resolves to a spec.')
   if (result.verdict === 'findings' && severity === 'warn') {
-    process.stderr.write(`${TAG} WARN-only today; promotion to BLOCK is tracked in #136.\n`)
+    report.finding('WARN severity (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02)')
   }
   process.exit(exitCodeFor(result, severity))
 }
 
-// Only run when invoked directly, never on import from a test.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  main()
-}
+// Only run when invoked directly, never on import from a spec.
+if (isEntryPoint(import.meta.url)) main()

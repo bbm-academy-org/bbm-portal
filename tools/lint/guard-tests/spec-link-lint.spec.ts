@@ -1,10 +1,10 @@
-import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { runGuard } from './run-guard'
 import {
   SPEC_STATUSES,
   evaluateSpecLink,
@@ -22,7 +22,7 @@ import {
   specStatus,
   substantiallyEdited,
   stripCodeFences,
-} from '../../tools/lint/spec-link-lint.mjs'
+} from '../spec-link-lint.mjs'
 
 /**
  * The gate exists because a feature PR with no spec is a feature the owner
@@ -612,15 +612,20 @@ describe('end-to-end guard run (the acceptance case, on the real script)', () =>
     return { ghDir, root }
   }
 
+  /**
+   * Spawned through the shared harness, which strips the ambient CI env first:
+   * the guard-tests job itself runs inside a real `pull_request` event, so an
+   * un-cleaned run would let this PR-gated guard reach for the LIVE PR mid-test.
+   */
   function run(
     prBody: string,
     specFiles: Record<string, string>,
     env: Record<string, string> = {},
   ) {
     const { ghDir, root } = fixtureDirs(prBody, specFiles)
-    return spawnSync(process.execPath, ['tools/lint/spec-link-lint.mjs', '--pr', '999'], {
-      encoding: 'utf8',
-      env: { ...process.env, LINT_GH_FIXTURE_DIR: ghDir, LINT_FIXTURE_ROOT: root, ...env },
+    return runGuard('spec-link-lint.mjs', root, {
+      extraArgs: ['--pr', '999'],
+      env: { LINT_GH_FIXTURE_DIR: ghDir, ...env },
     })
   }
 
@@ -628,13 +633,13 @@ describe('end-to-end guard run (the acceptance case, on the real script)', () =>
     const res = run('Closes #102', {})
     expect(res.stderr).toMatch(/names no spec/)
     expect(res.stderr).toMatch(/WARN/)
-    expect(res.status).toBe(0)
+    expect(res.code).toBe(0)
   })
 
   it('the same PR fails the run once the guard is promoted to block (#136)', () => {
     const res = run('Closes #102', {}, { LINT_SEVERITY: 'block' })
     expect(res.stderr).toMatch(/BLOCK/)
-    expect(res.status).toBe(1)
+    expect(res.code).toBe(1)
   })
 
   it('passes the same PR once the spec exists with a valid status', () => {
@@ -642,6 +647,6 @@ describe('end-to-end guard run (the acceptance case, on the real script)', () =>
       '102-payout-summary.md': '---\nstatus: In dev\n---\n\n# Spec\n',
     })
     expect(res.stdout).toMatch(/PASS/)
-    expect(res.status).toBe(0)
+    expect(res.code).toBe(0)
   })
 })

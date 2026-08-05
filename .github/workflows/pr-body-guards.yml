@@ -114,6 +114,34 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
+  # WARN — a feature PR with no spec behind it (guard from task 7.4/#135). Reads
+  # the PR body AND each linked issue's `## Spec reference`, so it needs
+  # `issues: read` on top of the usual pair. Invoked with `--severity block` for
+  # the same reason as stage-b: the canon's promotion clause 1 requires a REAL
+  # signal, so the script exits non-zero on a finding while `continue-on-error`
+  # keeps the plane at WARN.
+  spec-link:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-08-05 — canon §5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:spec-link --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
   # WARN — a user-visible change with no note the owner would read. Its promotion
   # is tied to task 7.6 (#137, release-note delivery), not to the §4 clock: a
   # note nothing delivers is not worth blocking a merge over.

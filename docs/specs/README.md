@@ -117,8 +117,11 @@ changing one, use `do-adr-revision`.
 `pnpm lint:spec-link` — on a feature PR (a linked issue of type `Feature`, or a
 `feat:` title, **and** a change under `src/`), it resolves the spec, then checks
 that the file exists, that its `status:` is a valid ladder value, and that it is
-not still `Draft`. **Severity today: WARN** (it reports and exits 0); promotion
-to BLOCK happens under the severity canon of issue #136.
+not still `Draft`. **Severity: WARN**, registered in the guard register
+([`docs/ci-guardrails.md`](../ci-guardrails.md) §5). In CI it runs as the
+`spec-link` job of `pr-body-guards.yml`, invoked with `--severity block` so the
+script gives a real signal while `continue-on-error` keeps the plane at WARN;
+promotion to BLOCK follows the canon's §4 clauses (earliest 2026-09-02).
 
 **Where the reference has to sit.** A spec path mentioned loosely in prose is
 background reading, not a declaration — the guard only reads these positions:
