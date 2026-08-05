@@ -1,0 +1,139 @@
+# Guards that read the PR's own body/metadata rather than the repo tree. They
+# live in a DEDICATED workflow because they must also re-run on the `edited`
+# activity type: fixing a PR body — adding the missing product note, repointing
+# a `Closes` line — has to clear the check without re-running the whole test and
+# build matrix. Folding `edited` into ci.yml was rejected: the `ci` aggregate
+# treats a skipped need as red (see ci.yml), so a body-only edit would poison it.
+#
+# Severity: every job here is WARN (canon docs/ci-guardrails.md §2.1). `needs`
+# does not cross workflows, so a job in this file can never be in ci.yml's
+# needs-list — promoting one to BLOCK needs the decision recorded in canon §2.1
+# (move it into ci.yml, or teach `pnpm pr:land` to demand its check-run by name).
+#
+# Body reliability: each step passes `PR_BODY` from the event payload rather than
+# letting the guard read it back through `gh pr view`. The payload is always
+# current for the event that triggered the run, while a REST read right after PR
+# creation has returned a stale or absent body — and a retry cannot fix that
+# class, because a stale read still succeeds.
+#
+# Auth: every job carries `permissions:` and every step `GH_TOKEN` + `PR_NUMBER`
+# (the workflow-auth guard in ci.yml fails the build if one is missing).
+name: PR body guards
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  # NOT cancel-in-progress. `pnpm pr:land` classifies every check-run in the PR's
+  # rollup structurally — SUCCESS/SKIPPED/NEUTRAL pass, everything else counts as
+  # failed — and it cannot see which job is `continue-on-error`. A cancelled run
+  # would therefore leave CANCELLED check-runs that block a merge these WARN
+  # guards are never supposed to block (canon §2.1). The `if:` no-op fence below
+  # is safe by contrast: SKIPPED passes the gate. These jobs are cheap, so a
+  # superseded run is left to finish rather than turned into a false verdict.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.
+  # Needs `issues: read` on top of the usual pair for the sub-issues endpoint.
+  epic-autoclose:
+    # A title-only edit changes no guard input — skip those runs entirely.
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-08-05 — canon §5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:epic-autoclose
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+  # WARN — an open PR row with no assignee or no milestone cannot be triaged.
+  # It reads PR fields rather than the body, so it re-runs on a push
+  # (`synchronize`) rather than on the field edit itself; the fix is one line and
+  # the job is WARN, so a stale red is a nudge, not a barrier.
+  assignee-milestone:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-08-05 — canon §5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:assignee-milestone
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+  # WARN — a UI diff with no recorded Stage-B verdict (guard from task 7.7/#138,
+  # wired here per the canon: the guard's lane deliberately did not touch this
+  # workflow). Invoked with `--severity block` ON PURPOSE: the canon's promotion
+  # clause 1 requires a REAL signal — a guard that prints and exits 0 is a stub
+  # and is not promotable — so the script exits non-zero on a violation while
+  # `continue-on-error` keeps the CI plane at WARN. Promotion is then one line.
+  stage-b:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-08-05 — canon §5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:stage-b --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+  # WARN — a user-visible change with no note the owner would read. Its promotion
+  # is tied to task 7.6 (#137, release-note delivery), not to the §4 clock: a
+  # note nothing delivers is not worth blocking a merge over.
+  product-note:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, promotion tied to #137
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:product-note
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}

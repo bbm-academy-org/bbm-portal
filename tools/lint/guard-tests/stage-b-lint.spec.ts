@@ -14,9 +14,15 @@ import {
   renderFiles,
   runStageBLint,
   severityFromArgv,
-} from '../../tools/lint/stage-b-lint.mjs'
+} from '../stage-b-lint.mjs'
 
 /**
+ * MOVED from tests/unit/ in #136: a guard's spec lives next to the guard, at
+ * `tools/lint/guard-tests/<name>-lint.spec.ts` (canon docs/ci-guardrails.md §8).
+ * The pairing is not a preference — `guard-test-coverage` BLOCKS a guard whose
+ * spec is not there, so this file's location is what makes the stage-b guard
+ * merge-able at all. Nothing about the assertions changed.
+ *
  * `pnpm lint:stage-b` (#138) turns the prose rule «a UI diff records the owner's
  * live Stage-B verdict before merge» (task-cycle stage 5) into a deterministic
  * pre-merge check.

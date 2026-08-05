@@ -3,10 +3,15 @@
 // from ds-platform tools/hooks/screenshot-path-guard.mjs, where it landed as a
 // BLOCK after 18 stray PNGs / 5.8 MB accumulated in the repo root).
 //
-// TODO(#136): severity canon promotion — this guard ships as WARN (exit 0 +
-// systemMessage) per the 7.3 rule that a newly ported hook does not start out
-// blocking. In ds-platform it is exit 2. The detection logic below is the
-// blocking one, untouched; only the emission is downgraded.
+// SEVERITY (docs/ci-guardrails.md §6, decided 2026-08-05): WARN (exit 0 +
+// systemMessage), and the strongest promotion candidate of the hook set — the
+// rule it enforces is categorical (a screenshot is not acceptance, task-cycle
+// stage 5) and the detection is a path match, not a judgement. In ds-platform
+// the same guard is exit 2. Promote per canon §4: earliest 2026-09-02, and only
+// after a clean window with zero false denials of a legitimate image read. The
+// detection logic below is already the blocking one; only the emission is
+// downgraded, so promotion is a one-line change here plus the spec's exit-code
+// assertion.
 //
 // Mechanism the guard encodes — the MCP server resolves a caller-supplied
 // `filename` against ITS OWN cwd, which is the repository root, and only then
@@ -216,8 +221,8 @@ function main() {
       toolInput: payload.tool_input,
       cwd: payload.cwd || '',
     })
-    // TODO(#136): severity canon promotion — WARN today, exit 2 + stderr once
-    // the severity canon says this class blocks.
+    // WARN today (canon §6). Promotion to BLOCK is exactly this line becoming
+    // `exit 2` + stderr, together with the spec's exit-code assertion.
     if (decision.warn) emitWarn(warnMessage(decision))
     process.exit(0)
   } catch {

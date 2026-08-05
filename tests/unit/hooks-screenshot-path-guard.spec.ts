@@ -18,7 +18,8 @@ import {
  * Screenshot path guard (#134). Playwright MCP resolves a caller-supplied
  * `filename` against its own cwd — the repo root — so a bare name lands as
  * untracked clutter in a tree SHARED with other live sessions. Ported from
- * ds-platform as WARN (see TODO(#136)); the detection logic is the blocking
+ * ds-platform as WARN (severity of record: docs/ci-guardrails.md §6); the
+ * detection logic is the blocking
  * one, so these tests pin BOTH the detection and the WARN emission.
  */
 
@@ -123,7 +124,7 @@ const CLUTTER_PAYLOAD = JSON.stringify({
 })
 
 describe('screenshot-path-guard as a process', () => {
-  it('WARNs (exit 0 + systemMessage), it does NOT block — TODO(#136)', () => {
+  it('WARNs (exit 0 + systemMessage), it does NOT block — canon §6', () => {
     const res = runHook(CLUTTER_PAYLOAD)
     expect(res.status).toBe(0)
     expect(res.stderr).toBe('')

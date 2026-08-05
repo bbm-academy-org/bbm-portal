@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -358,5 +362,45 @@ describe('handoff-verify: gh invocation convention', () => {
     verifyHandoff('#92 смержен', runner)
     const views = runner.calls.filter((c) => c[1] === 'view').map((c) => c[0])
     expect(views).toEqual(['issue', 'pr'])
+  })
+})
+
+/**
+ * Severity contract (docs/ci-guardrails.md §2.3 + §6.1). `handoff-verify` is a
+ * CLI guard, so its EXIT CODE is its severity — one per finding class, and the
+ * canon row is only true if these hold. Pinned after the review of PR #154,
+ * where the canon recorded this file as a flat "WARN" hook while the code exits
+ * 1 on a STALE row.
+ */
+describe('handoff-verify: severity is the exit code (canon §2.3)', () => {
+  it('BLOCK class — a STALE row exits 1', () => {
+    const runner = makeRunner({ issues: { 134: 'open' } })
+    const result = verifyHandoff('issue #134 закрыт', runner)
+    expect(result.stale).toBe(1)
+    expect(result.exitCode).toBe(1)
+  })
+
+  it('WARN class — qualitative rows never bump `stale`, so the run exits 0', () => {
+    const result = verifyHandoff('Бэклог пуст, всё закрыто.', makeRunner({}))
+    expect(result.warn).toBeGreaterThan(0)
+    expect(result.stale).toBe(0)
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('clean input exits 0 — a verdict, unlike exit 2', () => {
+    const runner = makeRunner({ issues: { 134: 'closed' } })
+    expect(verifyHandoff('issue #134 закрыт', runner).exitCode).toBe(0)
+  })
+
+  it('exit 2 is NOT a verdict — unreadable input, asserted on the real process', () => {
+    const script = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../tools/gh/handoff-verify.mjs',
+    )
+    const res = spawnSync(process.execPath, [script, 'no-such-handoff-file.md'], {
+      encoding: 'utf8',
+    })
+    expect(res.status).toBe(2)
+    expect(res.stderr).toContain('cannot read input')
   })
 })

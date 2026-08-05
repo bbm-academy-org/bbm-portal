@@ -21,8 +21,10 @@
 // internal error exits 0 with no output — a guard bug must never break
 // prompting. Kill-switch: `BBM_HOOKS_DISABLE=1` (the stack-wide switch).
 //
-// TODO(#136): severity canon promotion — this hook stays WARN until the
-// severity canon decides which handoff signals may block.
+// SEVERITY (docs/ci-guardrails.md §6, decided 2026-08-05): WARN, PERMANENTLY,
+// by design — not a promotion candidate. This is a SessionStart reminder: a
+// session that cannot start is a broken session, and the whole value of the
+// reminder is that a human reads it and decides.
 
 import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 

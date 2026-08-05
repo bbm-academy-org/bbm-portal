@@ -22,17 +22,21 @@
 // `--severity block` (or `STAGE_B_SEVERITY=block`) makes the same violation exit
 // 1. Note the two WARNs are different mechanisms: HERE it means "exit 0 with a
 // WARN line", while in #136's canon WARN means `continue-on-error: true` on the
-// CI job. TODO(#136): the workflow decides which one it uses — either keep the
-// default and let the job be a hard `needs` (the guard self-absorbs), or pass
-// `--severity block` and mark the job `continue-on-error`. Promotion to a real
-// gate is then a one-line workflow change; no code change is needed here.
+// CI job. DECIDED in #136 (canon docs/ci-guardrails.md §5, row `stage-b`): the
+// `stage-b` job in .github/workflows/pr-body-guards.yml passes `--severity
+// block` and carries `continue-on-error: true`. The script therefore gives a
+// REAL signal (canon §4 clause 1: a guard that prints and exits 0 is a stub and
+// is not promotable) while the CI plane keeps it WARN. Promotion is then a
+// one-line workflow change; no code change is needed here.
 //
 // An `error` (the PR cannot be read at all — gh auth, a fork without token
 // scope, an API blip) is NOT a violation and does NOT follow the severity dial:
 // it exits 1 under every severity, by design. A violation is a finding about the
 // PR, which WARN may absorb; an unreadable PR means the guard never ran, and a
 // guard that exits 0 when it never ran is indistinguishable from a clean check.
-// Masking THAT is a job-level `continue-on-error` decision, made in #136.
+// Masking THAT is a job-level `continue-on-error` decision, and #136 made it:
+// the job is `continue-on-error`, so an unreadable PR shows in the job log
+// rather than blocking — acceptable only while the guard is WARN.
 //
 // NOT WIRED INTO CI HERE, deliberately: `.github/workflows/ci.yml` and the guard
 // workflow are owned by #136, which is in flight in parallel. Run locally before
@@ -223,7 +227,8 @@ export function defaultGh(args) {
 
 function ghJson(gh, args) {
   const res = gh(args)
-  if (res.status !== 0) return { ok: false, error: (res.stderr || '').trim() || `gh exit ${res.status}` }
+  if (res.status !== 0)
+    return { ok: false, error: (res.stderr || '').trim() || `gh exit ${res.status}` }
   try {
     return { ok: true, data: JSON.parse(res.stdout) }
   } catch {
@@ -284,7 +289,9 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
     if (!issueRes.ok) {
       // A linked issue we cannot read is never counted as evidence — the
       // fetch failure is reported so a real verdict is not silently lost.
-      lines.push(`${TAG} note: linked issue #${issue} unreadable (${issueRes.error}) — not evidence`)
+      lines.push(
+        `${TAG} note: linked issue #${issue} unreadable (${issueRes.error}) — not evidence`,
+      )
       continue
     }
     comments.push(...(issueRes.data?.comments ?? []).map((c) => c?.body ?? ''))
@@ -294,7 +301,8 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
   if (result.verdict === 'violation') {
     const level = severity === 'block' ? 'BLOCK' : 'WARN'
     lines.push(`${TAG} ${level}: ${result.message}`)
-    if (level === 'WARN') lines.push(`${TAG} WARN severity (TODO #136: promote per the severity canon)`)
+    if (level === 'WARN')
+      lines.push(`${TAG} WARN severity (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02)`)
     return { verdict: 'violation', exitCode: severity === 'block' ? 1 : 0, lines }
   }
   lines.push(`${TAG} OK: ${result.message}`)
@@ -308,7 +316,7 @@ function usage() {
     'Usage: pnpm lint:stage-b <PR number> [--severity warn|block]',
     '',
     'Checks that a UI PR records the owner Stage-B verdict before merge (#138).',
-    'Severity is WARN today (TODO #136: promote per the severity canon).',
+    'Severity is WARN today (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02).',
   ].join('\n')
 }
 
