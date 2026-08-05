@@ -63,7 +63,17 @@
     "pretest:int": "node scripts/require-node.mjs",
     "test:int": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts tests/int",
     "pretest:unit": "node scripts/require-node.mjs",
-    "test:unit": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts tests/unit"
+    "test:unit": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts tests/unit",
+    "pretest:guards": "node scripts/require-node.mjs",
+    "test:guards": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts tools/lint/guard-tests",
+    "lint:guard-test-coverage": "node tools/lint/guard-test-coverage-lint.mjs",
+    "lint:tdd-signal": "node tools/lint/tdd-signal-lint.mjs",
+    "lint:no-stub": "node tools/lint/no-stub-lint.mjs",
+    "lint:workflow-auth": "node tools/lint/workflow-auth-lint.mjs",
+    "lint:epic-autoclose": "node tools/lint/epic-autoclose-lint.mjs",
+    "lint:assignee-milestone": "node tools/lint/assignee-milestone-lint.mjs",
+    "lint:product-note": "node tools/lint/product-note-lint.mjs",
+    "ci:verify-base": "node tools/gh/verify-base-ci-green.mjs"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",

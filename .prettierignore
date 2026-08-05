@@ -6,3 +6,10 @@
 # flattens the list into inline text, destroying content. Exempted rather
 # than accepting the destructive rewrite. See PR for #89.
 docs/specs/081-hours-calculator.md
+
+# Guard-test fixtures are fake repo trees fed to the CI guards
+# (docs/ci-guardrails.md §8): their content is the INPUT under test — a
+# deliberately malformed workflow, a PR body with a missing section, a source
+# file carrying a banned stub marker. Formatting them would rewrite the
+# assertions.
+tools/lint/guard-tests/fixtures/

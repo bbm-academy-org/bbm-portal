@@ -61,6 +61,10 @@ const eslintConfig = [
   {
     ignores: [
       '.next/',
+      // Fake repo trees fed to the CI guards as input under test
+      // (docs/ci-guardrails.md §8) — a fixture carries a banned stub marker or a
+      // broken workflow ON PURPOSE, so linting it would fight the assertion.
+      'tools/lint/guard-tests/fixtures/',
       'src/payload-types.ts',
       'src/payload-generated-schema.ts',
       'src/migrations/',

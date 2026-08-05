@@ -1,0 +1,132 @@
+#!/usr/bin/env node
+// tdd-signal — production code changed, no test anywhere near it.
+//
+// Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05 (heuristic,
+// so it soaks per §3); earliest promotion 2026-09-02 under the §4 clauses.
+//
+// Why it exists: task-cycle stage 3 makes TDD a hard rule for platform-module
+// code ("no production module code without a failing test first"). A rule stated
+// in a skill is invisible at review time — this is the signal that makes it
+// visible on the PR, for a human to judge.
+//
+// The rule (exact). For the PR's changed file set:
+//   PASS  if any test file is in the diff, OR
+//   PASS  per production file, if a test in the tree already imports it, OR
+//   WARN  otherwise — production changed, and nothing tests it.
+//
+// The "already tested" escape is this repo's substitute for ds-platform's
+// colocated-test glob: tests live centrally in `tests/**` (plus the guard specs
+// in `tools/lint/guard-tests/**`), so coverage is established by finding the
+// changed file's import path inside a test source — both the relative form
+// (`../../src/lib/okr/rollup`) and the `@/` alias form (`@/lib/okr/rollup`).
+//
+// PR-event-gated: the changed set comes from `gh pr view <N> --json files`,
+// because the Actions checkout is shallow and has no base ref to diff against.
+// On a push to `main` there is no PR and the guard exits 0 — the TDD signal only
+// means something at review time (canon §4: greenness on push runs is vacuous).
+//
+// Known blind spots, accepted to keep the false-positive rate low: coverage
+// DEPTH is not measured (any test importing the module counts); a new file added
+// beside an already-imported one passes; a test living only in an unmerged
+// sibling branch is invisible.
+//
+// Run: `pnpm lint:tdd-signal`. Findings: stderr + exit 1. Clean/skip: exit 0.
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { ghViewJson } from './lib/gh.mjs'
+import {
+  isEntryPoint,
+  isPrEvent,
+  reporter,
+  repoRoot,
+  resolvePrNumber,
+  runMain,
+  toPosix,
+  walkFiles,
+} from './lib/guard.mjs'
+
+const TAG = 'tdd-signal'
+
+const TEST_RE = /(^tests\/|^tools\/lint\/guard-tests\/|\.(spec|test)\.[tj]sx?$)/
+const PROD_RE = /^(src|tools)\/.+\.(ts|tsx|mjs)$/
+const PROD_EXEMPT_RE =
+  /(\.d\.ts$|^src\/payload-types\.ts$|^src\/payload-generated-schema\.ts$|^src\/migrations\/|\.config\.[mc]?[jt]sx?$)/
+
+/** Split a changed-file list into production sources and tests. */
+export function classifyChanges(files) {
+  const rels = files.map(toPosix)
+  return {
+    prod: rels.filter((p) => PROD_RE.test(p) && !TEST_RE.test(p) && !PROD_EXEMPT_RE.test(p)),
+    tests: rels.filter((p) => TEST_RE.test(p)),
+  }
+}
+
+/** Import-path needles a test would contain if it covered this file. */
+export function needlesFor(rel) {
+  const noExt = toPosix(rel).replace(/\.[^./]+$/, '')
+  const needles = [noExt]
+  if (noExt.startsWith('src/')) needles.push(noExt.slice('src/'.length))
+  return needles
+}
+
+/**
+ * Pure decision seam. `testSources` is `[{ path, text }]` of every test in the
+ * tree; `diffHasTest` short-circuits the whole rule.
+ */
+export function findUntested(prodFiles, testSources, diffHasTest) {
+  if (diffHasTest) return []
+  return prodFiles.filter(
+    (rel) => !needlesFor(rel).some((n) => testSources.some((t) => t.text.includes(n))),
+  )
+}
+
+async function main() {
+  const out = reporter(TAG)
+  if (!isPrEvent()) {
+    out.ok(
+      `not a pull_request event (GITHUB_EVENT_NAME=${process.env.GITHUB_EVENT_NAME ?? 'unset'}), nothing to check`,
+    )
+  }
+  const prNumber = resolvePrNumber()
+  if (!prNumber) out.ok('cannot resolve a PR number from the environment, nothing to check')
+
+  const root = repoRoot()
+  const res = ghViewJson('pr', prNumber, 'number,files', root)
+  if (!res.ok) out.fail(`could not fetch PR #${prNumber} metadata: ${res.error}`)
+
+  const files = (res.data.files ?? []).map((f) => toPosix(f.path))
+  const { prod, tests } = classifyChanges(files)
+
+  if (prod.length === 0) {
+    out.ok(`PR #${prNumber} changes no production source under src/ or tools/, rule does not apply`)
+  }
+  out.info(
+    `PR #${prNumber} changes ${prod.length} production file(s); the diff ${tests.length ? 'INCLUDES' : 'includes NO'} test file(s)`,
+  )
+  if (tests.length > 0) out.ok('PASS — the changeset ships a test alongside the production change.')
+
+  const testSources = walkFiles(root, { include: (rel) => TEST_RE.test(rel) }).map((rel) => ({
+    path: rel,
+    text: readFileSync(resolve(root, rel), 'utf8'),
+  }))
+  const untested = findUntested(prod, testSources, false)
+
+  if (untested.length === 0) {
+    out.ok('PASS — no test in the diff, but every changed file is already reached by a test.')
+  }
+  for (const rel of untested) {
+    out.finding(
+      `untested change  ${rel}  (no test in tests/** or tools/lint/guard-tests/** imports it)`,
+    )
+  }
+  out.fail(
+    `${untested.length} production file(s) changed with no test in the diff and no test in the tree. ` +
+      'task-cycle stage 3: no production module code without a failing test first. If this is ' +
+      'genuinely test-exempt (pure types, config, generated), the WARN can be left — the job is ' +
+      'continue-on-error. Canon: docs/ci-guardrails.md §5.',
+  )
+}
+
+if (isEntryPoint(import.meta.url)) runMain(TAG, main)
