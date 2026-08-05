@@ -555,7 +555,7 @@ describe('evaluateSpecLink — escape hatch, skips, frontmatter relatedness', ()
   })
 })
 
-describe('severity — WARN today, BLOCK on promotion (#136)', () => {
+describe('severity — WARN today, BLOCK on promotion (canon §4)', () => {
   it('defaults to WARN so findings do not fail the run yet', () => {
     expect(severityFromEnv({})).toBe('warn')
     expect(exitCodeFor({ verdict: 'findings' }, 'warn')).toBe(0)
@@ -636,7 +636,7 @@ describe('end-to-end guard run (the acceptance case, on the real script)', () =>
     expect(res.code).toBe(0)
   })
 
-  it('the same PR fails the run once the guard is promoted to block (#136)', () => {
+  it('the same PR fails the run once the guard is promoted to block (canon §4)', () => {
     const res = run('Closes #102', {}, { LINT_SEVERITY: 'block' })
     expect(res.stderr).toMatch(/BLOCK/)
     expect(res.code).toBe(1)

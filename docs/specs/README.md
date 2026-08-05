@@ -89,7 +89,9 @@ Rules:
   re-derives a settled question from scratch and gets a different answer. If a
   spec is wrong, correct it in place while it is `Draft`/`In dev`; if it is
   obsolete, set `Superseded` (naming the successor) or `Retired`. A rename is
-  fine — a deletion is not.
+  fine — a deletion is not. This rule and the `superseded_by:` requirement are
+  prose today: the `spec-deletion` guard and the repo-wide status sweep that
+  would enforce them are guard tranche 2, tracked in **#157**.
 - **`Shipped` is not a freeze.** Changing an already-shipped behavior updates
   the existing spec (status goes back to `In dev` for the duration of the
   change, then to `Shipped`) — it does not spawn a second spec for the same
@@ -212,7 +214,7 @@ job whatever its syntax.
 
 `ears-test-lint` (both directions: every clause has a test, and every
 `EARS-N`-named test maps to a live clause) and `ears-naming-lint` (malformed
-ids) are **not built here**. They are the **next tranche of the #136 guard
-family**: they land as WARN and promote under the severity canon in
-`docs/ci-guardrails.md` once #154 is merged. Until then the clause ↔ test link
-is checked at review time, not by CI.
+ids) are **not built here**. They are guard tranche 2, tracked in **#157**:
+they land WARN against the guard contract in
+[`docs/ci-guardrails.md`](../ci-guardrails.md) §8 and promote under its §4
+clauses. Until then the clause ↔ test link is checked at review time, not by CI.

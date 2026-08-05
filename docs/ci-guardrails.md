@@ -198,10 +198,13 @@ and `workflow-auth` + `guard-test-coverage` keep the mechanics honest.
 `tools/lint/guard-tests/` per §8, its job in `pr-body-guards.yml`, its row here — all in
 the session that landed it, not by the lead afterwards.
 
-The one remaining italic row is not being written against §8 here: `instruction-budget`
-was authored twice in parallel, and #135 deleted its copy in favour of #139's
-(PR #152) rather than leave two scripts fighting over one `pnpm` script name. That row is
-filled by the session that lands #152.
+The one remaining italic row is not a CI guard at all: `instruction-budget` was authored
+twice in parallel, and #135 deleted its copy in favour of #139's rather than leave two
+scripts fighting over one `pnpm` script name. #139 shipped it CLI-only (§6.1), and no task
+in epic 7 wires it into `ci.yml` — #135's acceptance criterion wanted the always-on context
+MEASURED and its over-budget items listed, which is a report, not a job. Wiring it, and the
+rest of the deferred guard work — the EARS pair, a `spec-deletion` guard and a repo-wide
+spec-status sweep — are **guard tranche 2, tracked in #157**, against §8 and the §4 clock.
 
 ## 6. Hook and CLI guard inventory
 
