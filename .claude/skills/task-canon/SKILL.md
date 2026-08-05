@@ -113,6 +113,10 @@ the title buys nothing.
 issue's Type; the title as a carrier of type survives only as a fallback for
 issues filed before the canon that have no Type. -->
 
+Reformatting an existing issue never changes its subject: if the title or scope
+turns out to be factually wrong, apply the body reformat but raise the
+retitle/rescope to the owner as a separate question BEFORE applying it.
+
 ## 2. Taxonomy: Type (built-in) + exactly one `channel:*` + milestone
 
 **Exactly one built-in `Type`** — `Bug` · `Feature` · `Task`. This is the task
@@ -237,6 +241,10 @@ mandatory:
 1. **the worktree** `.claude/worktrees/<N>` on its own branch `<type>/<N>-<slug>`
    (`pnpm task:worktree <N>`) — created **before the first file edit**;
 2. **status `In Progress`** on the Project 2 board — set in the same motion.
+
+For a task whose deliverable lives entirely outside the repo (issues, board, an
+external service), the claim is board status + a fixing comment on the issue; no
+worktree is created — an empty branch would only become teardown debt.
 
 A divergence is itself a canon violation, not a "detail"; `pnpm backlog:triage`
 catches it (the «Расхождения claim» section). Resolution is asymmetric:

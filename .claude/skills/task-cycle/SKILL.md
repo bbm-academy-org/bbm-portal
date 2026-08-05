@@ -69,7 +69,10 @@ SESSION on the presented scope (for spec tasks — on the spec). Handoff ≠ go;
 task text ≠ go; a config/Caddyfile ≠ an owner decision. The "go" freezes the
 scope: inside it the agent is autonomous through merge; stepping outside it
 (new files/domains/repos/deploys beyond what was stated) = a new checkpoint
-with the owner.
+with the owner. An owner reply that is itself a clarifying question is NOT an
+answer: proceeding on a default is allowed only for reversible actions, and any
+such default MUST land in the final report's «Отклонения от конвенций» line as
+"applied without owner confirmation: \<what\>" — never only in a flags list.
 
 ## Stage 3 — implementation
 

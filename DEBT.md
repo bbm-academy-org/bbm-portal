@@ -27,7 +27,11 @@ Entry format:
       path strings inside them, which is not a material edit, so the on-touch
       translation rule (owner ruling, 2026-08-05: all project artifacts are
       English) did not fire — return condition: translate each file the next
-      time it is materially edited (#144)
+      time it is materially edited (#144). Extended 2026-08-05 (retro PR): the
+      same holds for `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` —
+      materially edited by the retro-hooks PR, but the whole-file translation was
+      deliberately kept out of that PR to keep the behavioral diff reviewable;
+      same return condition applies to them.
 
 - [ ] 2026-08-04 `set-board-status.mjs`: `process.exit(0)` сразу после записи
       «ГОТОВО» — на Windows-TTY запись асинхронна, тот же класс, что #132
@@ -39,12 +43,6 @@ Entry format:
       через parseArgs — дрейф CLI-контракта тесты не поймают. Замечание ревью
       PR #141 — return condition: первое изменение CLI-флагов set-board-status (#132)
 
-- [ ] 2026-07-31 Указанный в task-cycle skill `frontend-design` отсутствует и в
-      репозитории, и в доступном каталоге; для #100 использованы согласованный
-      владельцем wireframe и существующая дизайн-система `hours.css`. Это
-      process deviation, не product gap — return condition: восстановить или
-      зарегистрировать skill до следующей owner-visible frontend-задачи (#100)
-
 - [ ] 2026-07-30 `worktree-teardown.mjs`: в robocopy-фолбэке финальный
       `cmd /c rmdir /s /q \\?\<путь>` — no-op (cmd.exe не понимает `\\?\`-префикс);
       первая ступень PS 5.1 отрабатывает, так что исход — честный exit 1, не потеря
@@ -54,3 +52,10 @@ Entry format:
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_
+
+_(Swept 2026-08-05 (/wrap, retro of the 7.2 session): the 2026-07-31
+`frontend-design` line closed as fixed — the skill is now registered and
+available in the plugin catalog (`frontend-design:frontend-design`), which is
+exactly its return condition. Remaining lines kept: none of their return
+conditions have fired (board:status output complete twice today, no CLI-flag
+changes, no robocopy-fallback entry).)_

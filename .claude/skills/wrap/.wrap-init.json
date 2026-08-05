@@ -1,8 +1,13 @@
 {
   "version": 3,
   "generatedAt": "2026-06-22",
-  "lastAuditAt": "2026-07-30",
+  "lastAuditAt": "2026-08-05",
   "foldedThemes": [
+    "honest-status:deviations-line-self-certified",
+    "unanswered-question-treated-as-consent",
+    "scope:subagent-substantive-change-beyond-brief",
+    "claim-ritual-assumes-code-task",
+    "retro-tooling:queued-human-message-invisible",
     "task-hygiene:wrong-tracker",
     "no-live-verify",
     "reinvent-wheel:plane-cli",

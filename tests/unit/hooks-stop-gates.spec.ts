@@ -9,7 +9,9 @@ import {
 } from '../../tools/hooks/completion-report-gate.mjs'
 import {
   decideBlock as decideDeviationsBlock,
+  detectHaltSignal,
   hasDeviationsLine,
+  hasNoDeviationsValue,
 } from '../../tools/hooks/deviations-gate.mjs'
 
 /**
@@ -131,6 +133,147 @@ describe('deviations-gate (stage 7)', () => {
     expect(decideDeviationsBlock({ stopHookActive: true, lastAssistantText: withEyes }).block).toBe(
       false,
     )
+  })
+})
+
+describe('deviations-gate: самосертификация «нет» после стопа владельца', () => {
+  const withEyes = `${REPORT_NO_MARKERS}\nПроверить глазами: https://portal.bbm.academy/p/okr`
+  const noDeviations = `${withEyes}\n**Отклонения от конвенций:** нет.`
+  const listed = `${withEyes}\nОтклонения от конвенций: диспетчеризация через staging вместо прямого применения.`
+
+  it('распознаёт значение «нет» после маркера', () => {
+    expect(hasNoDeviationsValue('Отклонения от конвенций: нет')).toBe(true)
+    expect(hasNoDeviationsValue('**Отклонения от конвенций:** нет.')).toBe(true)
+    expect(hasNoDeviationsValue('Отклонения от конвенций: значимых отклонений нет')).toBe(true)
+    expect(hasNoDeviationsValue('Отклонения от конвенций: три штуки, см. ниже')).toBe(false)
+    expect(hasNoDeviationsValue(listed)).toBe(false)
+  })
+
+  // Ревью PR #148 (refs #149): судится ТОЛЬКО значение после маркера. Фраза
+  // «значимых отклонений нет» про что-то другое в тексте выше не отменяет список.
+  it('«значимых отклонений нет» вне строки stage 7 значением не считается', () => {
+    expect(
+      hasNoDeviationsValue(
+        'В CI значимых отклонений нет.\nОтклонения от конвенций: staging вместо прямого применения.',
+      ),
+    ).toBe(false)
+  })
+
+  it('«нет» + стоп владельца в сессии → блок', () => {
+    const d = decideDeviationsBlock({
+      stopHookActive: false,
+      lastAssistantText: noDeviations,
+      haltSignal: true,
+    })
+    expect(d.block).toBe(true)
+    expect(d.reason).toBe('self-cert')
+  })
+
+  it('«нет» в тихой сессии проходит', () => {
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        lastAssistantText: noDeviations,
+        haltSignal: false,
+      }).block,
+    ).toBe(false)
+  })
+
+  it('список отклонений после стопа проходит — loop-guard исправленного отчёта', () => {
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        lastAssistantText: listed,
+        haltSignal: true,
+      }).block,
+    ).toBe(false)
+  })
+
+  it('отсутствие строки блокирует как раньше, независимо от сигнала стопа', () => {
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        lastAssistantText: withEyes,
+        haltSignal: true,
+      }).block,
+    ).toBe(true)
+  })
+})
+
+describe('deviations-gate: распознавание стопа владельца в транскрипте', () => {
+  it('видит queued_command от человека', () => {
+    const jsonl = [
+      JSON.stringify({ type: 'user', message: { content: 'привет' } }),
+      JSON.stringify({
+        type: 'user',
+        attachment: { type: 'queued_command', origin: { kind: 'human' }, prompt: 'тормози' },
+      }),
+    ].join('\n')
+    expect(detectHaltSignal(jsonl)).toBe(true)
+  })
+
+  it('видит обычное человеческое сообщение и «Тормози всё!»', () => {
+    expect(
+      detectHaltSignal(
+        JSON.stringify({ type: 'user', message: { content: 'стоп, что ты делаешь' } }),
+      ),
+    ).toBe(true)
+    expect(
+      detectHaltSignal(JSON.stringify({ type: 'user', message: { content: 'Тормози всё!' } })),
+    ).toBe(true)
+  })
+
+  // Ревью PR #148 (refs #149): рабочая просьба «останови стенд» — не стоп сессии.
+  it('рутинная просьба про стенд сигналом не считается', () => {
+    expect(
+      detectHaltSignal(
+        JSON.stringify({ type: 'user', message: { content: 'останови стенд на 3001' } }),
+      ),
+    ).toBe(false)
+  })
+
+  // Ревью PR #148: чтение исходников самого хука не должно взводить сигнал —
+  // текст сообщения гейта попадает в tool_result обычным чтением файла.
+  it('блок Stop-хука распознаётся только в рамке «Stop hook feedback»', () => {
+    const realFeedback = JSON.stringify({
+      type: 'user',
+      message: {
+        content: [
+          {
+            type: 'text',
+            text: 'Stop hook feedback:\n- [node deviations-gate.mjs]: ⛔ deviations gate (#91): нет строки',
+          },
+        ],
+      },
+    })
+    expect(detectHaltSignal(realFeedback)).toBe(true)
+
+    const sourceRead = JSON.stringify({
+      type: 'user',
+      message: {
+        content: [
+          {
+            type: 'tool_result',
+            content:
+              "export function blockMessage() {\n  return '⛔ deviations gate (#91): финальное сообщение …'\n}",
+          },
+        ],
+      },
+    })
+    expect(detectHaltSignal(sourceRead)).toBe(false)
+  })
+
+  it('тихая сессия и битые строки сигнала не дают', () => {
+    const jsonl = [
+      JSON.stringify({ type: 'user', message: { content: 'давай дальше' } }),
+      '{ битая строка',
+      JSON.stringify({
+        type: 'assistant',
+        message: { id: 'a1', content: 'останови всё немедленно' },
+      }),
+    ].join('\n')
+    expect(detectHaltSignal(jsonl)).toBe(false)
+    expect(detectHaltSignal('')).toBe(false)
   })
 })
 
