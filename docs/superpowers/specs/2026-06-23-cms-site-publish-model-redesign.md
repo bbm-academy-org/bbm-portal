@@ -1,7 +1,14 @@
+---
+status: Shipped
+issue: 40
+updated: 2026-07-30
+---
+
 # CMS→site publish model redesign
 
 - **Issue:** [bbm-portal #40](https://github.com/bbm-academy-org/bbm-portal/issues/40)
-- **Status:** Design approved (brainstorming) — ready for implementation plan
+- **Owner sign-off:** design approved (brainstorming) 2026-06-23 — the ladder
+  status lives in the frontmatter above
 - **Date:** 2026-06-23
 
 ## Problem

@@ -42,6 +42,7 @@
     "lint:css": "stylelint \"src/**/*.css\"",
     "lint:stage-b": "node tools/lint/stage-b-lint.mjs",
     "lint:instruction-budget": "node tools/lint/instruction-budget-lint.mjs",
+    "lint:spec-link": "node tools/lint/spec-link-lint.mjs",
     "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tools/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"docs/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"deploy/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tests/**/*.{ts,tsx,css,md,json,yml,yaml}\" \".github/**/*.{yml,yaml}\" \"*.md\" \"*.json\"",
     "boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "premigrate": "node scripts/require-node.mjs",

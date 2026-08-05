@@ -1,6 +1,13 @@
+---
+status: Shipped
+issue: 60
+updated: 2026-07-30
+---
+
 # Portal prod domain + OKR deploy (P3) — spec (issue #60)
 
-**Status: APPROVED rev.2.1 — «го» владельца 2026-07-27 (issue #60, комментарий).**
+**Owner sign-off: APPROVED rev.2.1 — «го» владельца 2026-07-27 (issue #60,
+комментарий).** Ladder status — во frontmatter выше.
 Rev.2: учтено независимое ревью (REQUEST_CHANGES: 1 блокер — redirect URI,
 1 major — default-deny на portal-хосте, 7 minor — все приняты) + два
 подтверждённых факта (DNS заведён; механика прод-клиента Zitadel через
