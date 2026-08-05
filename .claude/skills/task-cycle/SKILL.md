@@ -62,6 +62,14 @@ described layout, a wireframe, a rendered page; the lead (or the implementer it
 dispatches) prepares them, the owner picks. (Owner decision 2026-07-30; the
 price of not having this gate was the rework cycles #76 and #84.)
 
+The pick is then **vendored as a file in `design-source/`** and the build goes
+against that file, never against issue prose
+([`.claude/rules/design-process.md`](../../rules/design-process.md)). Procedure:
+the skills [`author-design-mockup`](../author-design-mockup/SKILL.md) (whole
+surface) and
+[`build-ui-from-design-system`](../build-ui-from-design-system/SKILL.md)
+(element class, incl. the reuse ladder).
+
 ## Stage 2 — the "go" gate (key)
 
 Implementation starts only after the owner's EXPLICIT confirmation IN THIS
@@ -119,7 +127,9 @@ curl evidence alone; the Playwright pre-pass caught a login-blocking IdP defect
 access line: URL + login + where to get the password.** The stand stays up
 until the verdict; an unanswered design/visual question = merge stays blocked.
 Invisible changes (internals, refactoring, docs, backend without UI) skip this
-stage.
+stage — but the PR still records **which** case it is: every PR carries a
+`Stage-B:` line (`GO` / `batched at #N` / `N/A — lead-certified`), checked by
+`pnpm lint:stage-b <PR>` (`.claude/rules/design-process.md`).
 
 ## Stage 6 — merge (autonomous)
 
