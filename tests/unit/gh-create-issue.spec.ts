@@ -32,7 +32,7 @@ import { branchTypeFromIssueType, parseNodeReadback } from '../../tools/gh/lib/g
  * `pnpm issue:create` — единственный путь заведения задачи, и его валидация
  * fail-closed: нарушение таксономии обязано отменить создание ДО первого
  * gh-вызова. Все гейты — чистые функции, поэтому тестируются без сети.
- * Канон: `.claude/rules/task-canon.md` §2 + §7.
+ * Канон: `.claude/skills/task-canon/SKILL.md` §2 + §7.
  */
 
 const OK_ARGS = [

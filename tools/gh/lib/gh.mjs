@@ -7,7 +7,7 @@
 //   2. тонкие обёртки над `gh` (argv-массив, никогда не shell-строка — нет
 //      class'а command injection) + чистые построители GraphQL-запросов.
 //
-// Канон: `.claude/rules/task-canon.md` §7. Образец: ds-platform
+// Канон: `.claude/skills/task-canon/SKILL.md` §7. Образец: ds-platform
 // `tools/gh/lib/projects-v2.mjs` (инвентаризация #127).
 
 import { spawnSync } from 'node:child_process'

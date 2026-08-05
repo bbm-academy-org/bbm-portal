@@ -23,7 +23,7 @@
 //      the worktree always lands under the primary `.claude/worktrees/` even when
 //      this runs from inside another worktree,
 //   2. `gh issue view <N>` → native Type (Bug/Feature/Task) → branch type, per
-//      `.claude/rules/task-canon.md` §2; the title's Conventional-Commit prefix
+//      `.claude/skills/task-canon/SKILL.md` §2; the title's Conventional-Commit prefix
 //      is the fallback for pre-canon issues that carry no Type. Slug comes from
 //      the title (transliterated — the titles here are Russian),
 //   3. refuse early if the worktree path or the branch already exists,
@@ -108,7 +108,7 @@ function stripConventionalPrefix(title) {
  * Issue title → branch type, the FALLBACK signal: the title's
  * Conventional-Commit prefix (`feat(dev): …` → `feat`). The primary signal is
  * the issue's native GitHub **Type** (Bug/Feature/Task → `fix`/`feat`/`chore`,
- * `.claude/rules/task-canon.md` §2, owner's decision 2026-08-04); this reads
+ * `.claude/skills/task-canon/SKILL.md` §2, owner's decision 2026-08-04); this reads
  * the title only for the issues filed before Type became mandatory. Unknown →
  * `chore`.
  */

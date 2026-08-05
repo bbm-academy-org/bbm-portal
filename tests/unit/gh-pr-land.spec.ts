@@ -19,7 +19,7 @@ import {
 /**
  * `pnpm pr:land` — хвост закрытия PR. Все стадии инжектируются, поэтому тест
  * прогоняет их порядок и обрывы без единого подпроцесса и без сети.
- * Канон: `.claude/rules/task-canon.md` §7.
+ * Канон: `.claude/skills/task-canon/SKILL.md` §7.
  */
 
 describe('classifyChecks', () => {
