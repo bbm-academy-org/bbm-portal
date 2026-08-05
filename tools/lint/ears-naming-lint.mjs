@@ -33,6 +33,15 @@
 // §4 clause 1: a guard that prints and exits 0 is a stub and is not promotable).
 // Promotion per §4, earliest 2026-09-02.
 //
+// KNOWN FALSE-POSITIVE CLASS, to be weighed at that promotion review: `ATTEMPT_RE`
+// fires on any title that merely STARTS with the word — `describe('EARS adoption
+// record', …)` reads as a botched id. Unlike `instruction-budget` this guard is
+// therefore NOT a §3 class-1 candidate (its false-positive class is non-empty by
+// construction, being a regex over human text), so the §4 clean window is doing
+// real work here rather than proving what is already provable. The corpus is
+// clean today; the fix if it ever bites is the `ears-naming-ok:` opt-out, or
+// tightening the attempt anchor to require a digit.
+//
 // Ported from ds-platform `tools/lint/ears-naming-lint.ts` — same rule, adapted
 // to this repo's `.mjs` guard plumbing, test layout and canon references.
 //

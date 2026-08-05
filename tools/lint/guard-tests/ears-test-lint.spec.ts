@@ -188,6 +188,26 @@ describe('ears-test (spawned)', () => {
     expect(res.code).toBe(0)
   })
 
+  /**
+   * Review of PR #160, MINOR — consistency with the instruction-budget
+   * empty-corpus decision. Zero CLAUSES across a real spec corpus is the
+   * documented on-touch migration state (docs/specs/README.md: "No mass rewrite
+   * pass"). Zero spec FILES is the wrong-tree input problem, and a run that
+   * measured nothing must not print the reassuring message. A CI guard has no
+   * exit 2 (canon §8 admits 0 and 1), so fail-closed is exit 1.
+   */
+  it('exits 1 on a tree with no spec files at all', () => {
+    const res = runGuard('ears-test-lint.mjs', caseDir('ears-test', 'no-specs'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('no spec files')
+  })
+
+  it('still reports the on-touch state as clean when specs exist but declare no clauses', () => {
+    const res = runGuard('ears-test-lint.mjs', caseDir('ears-test', 'no-clauses'))
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('on touch')
+  })
+
   it('exits 0 on the real repo tree — the guard must be green at merge', () => {
     const res = runGuard('ears-test-lint.mjs', null, { realTree: true })
     expect(res.code).toBe(0)

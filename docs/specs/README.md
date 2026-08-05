@@ -117,7 +117,13 @@ changing one, use `do-adr-revision`.
 
 Four guards read this document. All four are **WARN**, registered in
 [`docs/ci-guardrails.md`](../ci-guardrails.md) §5 with their §4 promotion
-conditions; each exits non-zero on a finding so the signal is real.
+conditions. They differ in how a finding reaches you: `lint:spec-deletion`,
+`lint:ears-test` and `lint:ears-naming` exit non-zero on one, while
+`lint:spec-link` exits **0** with a WARN line unless it is given
+`--severity block` — which is how its CI job invokes it. That dial is the
+mechanism [`.claude/rules/design-process.md`](../../.claude/rules/design-process.md)
+describes for `stage-b`; the register (§5) is where each guard's severity is
+recorded.
 
 | Command                   | Reads                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------ |

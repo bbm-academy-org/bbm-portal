@@ -42,13 +42,19 @@
 // `EARS-3.1` ↔ `EARS-3.2` (siblings) do NOT — folding siblings together would
 // hide a real gap — and `EARS-1` never folds into `EARS-18`.
 //
-// ── The empty state is NOT a fail-open ───────────────────────────────────────
-// A tree with zero declared clauses exits 0 with an explicit note. This is not
-// the "check that never ran" class: docs/specs/README.md adopts EARS with
-// "No mass rewrite pass. Existing specs are upgraded ON TOUCH", so a spec corpus
-// with no clauses yet is the DOCUMENTED state of the migration, not a broken
-// input. The orphan direction still runs in that state — a test citing `EARS-7`
-// with no spec anywhere is a finding whether or not any spec has clauses.
+// ── Two empty states, only one of them clean ─────────────────────────────────
+// Zero CLAUSES across a real spec corpus exits 0 with an explicit note: it is
+// not the "check that never ran" class, because docs/specs/README.md adopts EARS
+// with "No mass rewrite pass. Existing specs are upgraded ON TOUCH", so an
+// un-upgraded corpus is the DOCUMENTED state of the migration. The orphan
+// direction still runs in it — a test citing `EARS-7` with no spec anywhere is a
+// finding whether or not any spec has clauses.
+// Zero spec FILES is the opposite: `docs/specs/` is a committed directory, so
+// scanning none of it means the guard was pointed at the wrong tree and cleared
+// nothing. That exits 1 (canon §8 gives a CI guard only 0 and 1 — the §2.3
+// "exit 2, not a verdict" code belongs to the CLI plane, which is why
+// instruction-budget can use it for the same class of input problem and this
+// guard cannot).
 //
 // SEVERITY: WARN — docs/ci-guardrails.md §5, job in `.github/workflows/ci.yml`
 // with `continue-on-error: true`; the script exits 1 on a finding (canon §4
@@ -253,6 +259,23 @@ async function main() {
 
   const specs = collect(root, SPEC_FILE_RE, specEarsIds)
   const tests = collect(root, TEST_FILE_RE, titleEarsIds)
+
+  // Zero CLAUSES and zero spec FILES are different states, and only the first is
+  // legitimate (review of PR #160, MINOR). `docs/specs/` is a committed
+  // directory: scanning zero files means the wrong tree, so the guard cleared
+  // nothing and must not print the reassuring on-touch message. Canon §8 gives a
+  // CI guard only exit 0 and exit 1, so fail-closed here is exit 1 — the same
+  // reasoning as instruction-budget's empty-corpus decision, adjusted for a
+  // plane that has no exit 2.
+  if (specs.scanned === 0) {
+    out.fail(
+      'no spec files found under docs/specs or docs/superpowers/specs. This run cleared ' +
+        'nothing — an input problem (wrong tree), not an un-upgraded corpus. A corpus that ' +
+        'HAS specs but no EARS clauses yet is the documented on-touch state and exits 0.',
+    )
+    return
+  }
+
   out.info(
     `${specs.scanned} spec file(s) -> ${specs.index.size} clause id(s); ` +
       `${tests.scanned} test file(s) -> ${tests.index.size} referenced id(s)`,
