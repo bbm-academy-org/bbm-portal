@@ -29,14 +29,25 @@
 // worktree, PAT, …) must be spelled out. The owner reads the dialog, they do not
 // decode it.
 //
+// CLEAN QUESTIONS ARE SILENT (review PR #150, blocker 2). The ds-platform
+// original emitted the classification paragraph on 100% of calls. Here that is
+// wrong twice over: `systemMessage` renders in the OWNER's session, right where
+// they are being asked something, so an unconditional banner is background noise
+// on exactly the calls the owner is looking at — and a reminder that fires
+// always trains its reader to skip it, the one failure a guard cannot survive.
+// So the paragraph is now the PREAMBLE to a finding: no jargon hit, no
+// restore-scope frame, no live-surface claim → no output at all. The findings
+// are listed in the banner, so the reader sees what tripped it.
+//
 // TODO(#136): severity canon promotion — WARN here is by design (a calibration
 // reminder is advice, not a verdict), but the severity canon has the final say.
 //
 // Contract: stdin — JSON PreToolUse ({session_id, cwd, tool_name, tool_input}).
-// exit 0 + `systemMessage` on stdout = WARN. Per the stack's convention
-// (shared.mjs emitWarn, review PR #99) the payload carries NO
-// `hookSpecificOutput.permissionDecision` — "allow" would pre-authorise the very
-// call being flagged. FAIL-OPEN: any parse/logic error exits 0 with no output.
+// exit 0 + `systemMessage` on stdout = WARN; exit 0 with NO output = clean.
+// Per the stack's convention (shared.mjs emitWarn, review PR #99) the payload
+// carries NO `hookSpecificOutput.permissionDecision` — "allow" would
+// pre-authorise the very call being flagged. FAIL-OPEN: any parse/logic error
+// exits 0 with no output.
 
 import { emitWarn, hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
@@ -61,7 +72,11 @@ export const JARGON_TOKENS = [
   'squash',
 ]
 
-/** The fixed calibration reminder — always emitted on a well-formed call. */
+/**
+ * The fixed classification paragraph. It is the PREAMBLE of a banner that has at
+ * least one finding to report — never emitted on its own (see the header note on
+ * review PR #150).
+ */
 export function calibrationMessage() {
   return (
     '⚠ AskUserQuestion calibration (#134): before offloading this choice, classify it. ' +
@@ -188,15 +203,23 @@ export function surfaceClaimHit(copies) {
   }
 }
 
+/** The finding names, in the order they are reported. */
+export const FINDING_JARGON = 'jargon'
+export const FINDING_RESTORE_SCOPE = 'restore-scope'
+export const FINDING_SURFACE_CLAIM = 'surface-claim'
+
 /**
  * Pure decision seam (unit-tested without FS / process): given the parsed
- * AskUserQuestion `tool_input`, return the calibration `systemMessage` — always
- * present, even for an empty or malformed input — plus the sorted, de-duplicated
- * jargon hits and the two detector verdicts. Each positive detector appends its
- * own advisory line. NEVER throws.
+ * AskUserQuestion `tool_input`, return the sorted, de-duplicated jargon hits, the
+ * two detector verdicts, the `findings` list — and `systemMessage`, which is
+ * `null` when NOTHING fired.
+ *
+ * A clean question is silent (review PR #150): the classification paragraph is
+ * the preamble of a banner that has something to report, not a greeting. The
+ * banner names its findings up front, so the owner-facing line says what tripped
+ * it before it says what to do about it. NEVER throws.
  */
 export function evaluateAskUserQuestion(toolInput, tokens = JARGON_TOKENS) {
-  let message = calibrationMessage()
   const hitSet = new Set()
   let copies = []
   try {
@@ -205,29 +228,40 @@ export function evaluateAskUserQuestion(toolInput, tokens = JARGON_TOKENS) {
       for (const hit of jargonHitsIn(copy, tokens)) hitSet.add(hit)
     }
   } catch {
-    // fail-open: a jargon-scan bug must never suppress the calibration reminder
+    // fail-open: a jargon-scan bug must never turn into a thrown hook
   }
   const jargonHits = [...hitSet].sort()
+  const restoreScope = restoreScopeHit(copies)
+  const surfaceClaim = surfaceClaimHit(copies)
+
+  const findings = []
+  if (jargonHits.length > 0) findings.push(FINDING_JARGON)
+  if (restoreScope) findings.push(FINDING_RESTORE_SCOPE)
+  if (surfaceClaim) findings.push(FINDING_SURFACE_CLAIM)
+
+  if (findings.length === 0) {
+    return { systemMessage: null, findings, jargonHits, restoreScope, surfaceClaim }
+  }
+
+  let message = `${calibrationMessage()}\nFlagged: ${findings.join(', ')}.`
   if (jargonHits.length > 0) {
     message +=
       `\n⚠ jargon lint (#134): owner-facing copy contains undefined internal jargon — ` +
       `${jargonHits.join(', ')}. Spell it out: the owner reads the dialog, they do not decode it.`
   }
-  const restoreScope = restoreScopeHit(copies)
   if (restoreScope) {
     message +=
       `\n⚠ restore/remediation-scope (#134): this frames the SCOPE of restoring an erroneously ` +
       `deleted or broken artifact as an owner menu. Undoing your own mistake is the LEAD's call — ` +
       `do a minimal-diff, faithful, FULL restore and resolve it inline.`
   }
-  const surfaceClaim = surfaceClaimHit(copies)
   if (surfaceClaim) {
     message +=
       `\n⚠ live-surface claim (#134): an option or question asserts an unverified state claim ` +
       `about a live surface (a route / page / endpoint). Verify it against SOURCE first — a wrong ` +
       `premise makes the whole question invalid.`
   }
-  return { systemMessage: message, jargonHits, restoreScope, surfaceClaim }
+  return { systemMessage: message, findings, jargonHits, restoreScope, surfaceClaim }
 }
 
 function main() {
@@ -236,7 +270,8 @@ function main() {
     const payload = readHookPayload()
     if (payload.tool_name && payload.tool_name !== 'AskUserQuestion') process.exit(0)
     const { systemMessage } = evaluateAskUserQuestion(payload.tool_input)
-    emitWarn(systemMessage)
+    // Clean question → not a word. Only a flagged one gets the banner.
+    if (systemMessage) emitWarn(systemMessage)
     process.exit(0)
   } catch {
     process.exit(0) // fail-open: never disturb a real question on a guard bug

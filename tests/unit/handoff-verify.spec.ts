@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   BRANCH_PREFIXES,
+  claimForRef,
   dedupeRefs,
   extractApprovalClaims,
   extractCompletenessClaims,
@@ -12,6 +13,7 @@ import {
   parseClaim,
   renderRow,
   renderSummary,
+  splitSegments,
   verdictFor,
   verifyHandoff,
 } from '../../tools/gh/handoff-verify.mjs'
@@ -88,12 +90,13 @@ describe('handoff-verify: a STALE handoff exits 1 and names every divergence', (
     'PR #92 смержен, ветка feat/92-hours удалена.',
     'Issue #91 закрыт, задача снята с борда.',
     'PR #77 ещё не влит — ждёт ревью.',
+    'Ветка feat/92-hours ещё не влита.',
   ].join('\n')
 
   const runner = makeRunner({
     prs: { 92: 'open', 77: 'merged' },
     issues: { 91: 'open' },
-    branches: { 'refs/remotes/origin/feat/92-hours': 'abc1234' },
+    branches: {},
     merged: [],
   })
   const result = verifyHandoff(STALE_HANDOFF, runner)
@@ -112,9 +115,13 @@ describe('handoff-verify: a STALE handoff exits 1 and names every divergence', (
     expect(rows).toContain('STALE #77 claimed=unmerged actual=merged')
   })
 
+  // Review PR #150, non-blocker 1: the old fixture RESOLVED the branch, so this
+  // case tested a claim mismatch under a not-found title. It now uses a branch
+  // that resolves nowhere — the actual `not-found → STALE` rule.
   it('treats an unresolvable branch as STALE — a premise about a vanished ref is stale by definition', () => {
-    expect(stale(result.rows).map((r) => r.ref)).toContain('feat/92-hours')
-    expect(result.rows.find((r) => r.ref === 'feat/92-hours')?.actual).toBe('unmerged')
+    const row = result.rows.find((r) => r.ref === 'feat/92-hours')
+    expect(row?.actual).toBe('not-found')
+    expect(row?.verdict).toBe('STALE')
   })
 
   it('summarises with the exact counts', () => {
@@ -159,6 +166,62 @@ describe('handoff-verify: an honest handoff exits 0', () => {
     const empty = verifyHandoff('Просто текст без ссылок и утверждений.', makeRunner())
     expect(empty.empty).toBe(true)
     expect(empty.exitCode).toBe(0)
+  })
+})
+
+describe('handoff-verify: claims are attributed per SEGMENT, not per line', () => {
+  // Review PR #150, blocker 1: with per-line attribution this very sentence —
+  // the most natural shape a handoff takes — reported STALE #134 claimed=merged
+  // and exited 1. The tool was inventing the stale premise, not catching one.
+  const MIXED = 'PR #148 смержен, issue #134 ещё открыт.'
+
+  it('an honest mixed line is PASS/PASS and exits 0', () => {
+    const result = verifyHandoff(
+      MIXED,
+      makeRunner({ prs: { 148: 'merged' }, issues: { 134: 'open' } }),
+    )
+    expect(result.rows.map(renderRow)).toEqual([
+      'PASS #148 claimed=merged actual=merged',
+      'PASS #134 claimed=open actual=open',
+    ])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('still catches the genuinely stale half of a mixed line', () => {
+    const result = verifyHandoff(
+      'PR #148 смержен, issue #134 закрыт.',
+      makeRunner({ prs: { 148: 'merged' }, issues: { 134: 'open' } }),
+    )
+    expect(stale(result.rows).map(renderRow)).toEqual(['STALE #134 claimed=closed actual=open'])
+    expect(result.exitCode).toBe(1)
+  })
+
+  it('splits on list punctuation, dashes, parens and sentence ends — but not inside a version', () => {
+    expect(splitSegments('a, b; c — d (e) f. g').map((s) => s.text.trim())).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+      'f',
+      'g',
+    ])
+    expect(splitSegments('v1.2 смержен').map((s) => s.text)).toEqual(['v1.2 смержен'])
+  })
+
+  it('a segment naming two refs pins its claim on neither — INFO, never a false STALE', () => {
+    const result = verifyHandoff(
+      '#148 и #134 смержены',
+      makeRunner({ issues: { 148: 'closed', 134: 'open' } }),
+    )
+    expect(result.rows.map((r) => r.verdict)).toEqual(['INFO', 'INFO'])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('a single-ref line still reads the claim across punctuation («#92 — не влит»)', () => {
+    expect(claimForRef(extractRefs('#92 — не влит')[0])).toBe('unmerged')
+    const result = verifyHandoff('#92 — не влит', makeRunner({ prs: { 92: 'merged' } }))
+    expect(renderRow(result.rows[0])).toBe('STALE #92 claimed=unmerged actual=merged')
   })
 })
 

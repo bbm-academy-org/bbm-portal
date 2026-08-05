@@ -29,6 +29,16 @@ function ask(question: string, options: { label?: string; description?: string }
   return { questions: [{ header: 'Выбор', question, options }] }
 }
 
+/**
+ * A genuinely clean question: an owner-visible product choice, plain Russian, no
+ * jargon token, no restore frame, no asserted claim about a live surface. This
+ * is the fixture the guard must stay SILENT on (review PR #150, blocker 2).
+ */
+const CLEAN = ask('Показываем часы за месяц одной таблицей или разбиваем по неделям?', [
+  { label: 'Одной таблицей', description: 'Весь месяц подряд, с итогом внизу.' },
+  { label: 'По неделям', description: 'Четыре блока с промежуточными итогами.' },
+])
+
 describe('collectCopy', () => {
   it('collects every owner-facing string and tolerates broken shapes', () => {
     const copies = collectCopy({
@@ -60,12 +70,10 @@ describe('jargon lint', () => {
     expect(systemMessage).toContain('jargon lint')
   })
 
-  it('clean owner-facing copy gets no jargon line', () => {
-    const { jargonHits, systemMessage } = evaluateAskUserQuestion(
-      ask('Показываем часы за месяц одной таблицей или разбиваем по неделям?'),
-    )
+  it('clean owner-facing copy gets no jargon line — and no banner at all', () => {
+    const { jargonHits, systemMessage } = evaluateAskUserQuestion(CLEAN)
     expect(jargonHits).toEqual([])
-    expect(systemMessage).not.toContain('jargon lint')
+    expect(systemMessage).toBeNull()
   })
 })
 
@@ -113,15 +121,37 @@ describe('live-surface claim detector', () => {
   })
 })
 
-describe('the calibration reminder itself', () => {
-  it('is emitted for every well-formed call, and for a malformed one too', () => {
-    for (const input of [ask('Какой тон у заголовка?'), {}, null, { questions: 'нет' }]) {
-      expect(evaluateAskUserQuestion(input).systemMessage).toContain('AskUserQuestion calibration')
+describe('the banner fires only on a finding (review PR #150)', () => {
+  it('a clean question — and a malformed input — produce NO message at all', () => {
+    for (const input of [
+      CLEAN,
+      ask('Какой тон у заголовка карточки?'),
+      {},
+      null,
+      { questions: 1 },
+    ]) {
+      const d = evaluateAskUserQuestion(input)
+      expect(d.systemMessage).toBeNull()
+      expect(d.findings).toEqual([])
     }
   })
 
-  it('names both sides of the classification: owner-visible design vs engineering', () => {
-    const { systemMessage } = evaluateAskUserQuestion(ask('Какой тон у заголовка?'))
+  it('names what was flagged, and only what was flagged', () => {
+    const jargonOnly = evaluateAskUserQuestion(ask('Делаем rebase или сохраняем историю?'))
+    expect(jargonOnly.findings).toEqual(['jargon'])
+    expect(jargonOnly.systemMessage).toContain('Flagged: jargon.')
+    expect(jargonOnly.systemMessage).not.toContain('live-surface claim')
+
+    const both = evaluateAskUserQuestion(
+      ask('Откатываем только последний коммит или всё, что page.tsx содержит?'),
+    )
+    expect(both.findings).toEqual(['restore-scope', 'surface-claim'])
+    expect(both.systemMessage).toContain('Flagged: restore-scope, surface-claim.')
+  })
+
+  it('the classification paragraph is the preamble of a flagged banner', () => {
+    const { systemMessage } = evaluateAskUserQuestion(ask('Делаем rebase или merge?'))
+    expect(systemMessage).toContain('AskUserQuestion calibration')
     expect(systemMessage).toContain('OWNER-VISIBLE DESIGN')
     expect(systemMessage).toContain('ENGINEERING')
     expect(systemMessage).toContain('never blocks')
@@ -131,19 +161,26 @@ describe('the calibration reminder itself', () => {
 describe('boundary with askuserquestion-context-guard (no duplicated verdicts)', () => {
   const bareRef = ask('Берём #107 в работу?')
 
-  it('the context guard blocks the bare `#N` question — the calibration guard does not repeat it', () => {
+  it('the context guard blocks the bare `#N` question — the calibration guard says nothing', () => {
     expect(
       decideAskUserQuestion({ toolName: 'AskUserQuestion', toolInput: bareRef, state: {} }).block,
     ).toBe(true)
-    const { jargonHits, restoreScope, surfaceClaim, systemMessage } =
-      evaluateAskUserQuestion(bareRef)
-    expect({ jargonHits, restoreScope, surfaceClaim }).toEqual({
+    // Self-containment is the context guard's jurisdiction: no finding here, so
+    // no second verdict on the same input.
+    expect(evaluateAskUserQuestion(bareRef)).toMatchObject({
+      systemMessage: null,
+      findings: [],
       jargonHits: [],
       restoreScope: false,
       surfaceClaim: false,
     })
-    // Only the calibration line: no self-containment verdict of its own.
-    expect(systemMessage.split('\n')).toHaveLength(1)
+  })
+
+  it('the clean question passes both guards in silence', () => {
+    expect(
+      decideAskUserQuestion({ toolName: 'AskUserQuestion', toolInput: CLEAN, state: {} }).block,
+    ).toBe(false)
+    expect(evaluateAskUserQuestion(CLEAN).systemMessage).toBeNull()
   })
 })
 
@@ -161,23 +198,34 @@ function runHook(input: string, extraEnv: Record<string, string> = {}) {
   return { status: res.status, stdout: res.stdout ?? '', stderr: res.stderr ?? '' }
 }
 
-const PAYLOAD = JSON.stringify({
-  tool_name: 'AskUserQuestion',
-  session_id: 'spec-session',
-  tool_input: ask('Делаем rebase или merge?'),
-})
+function payload(toolInput: unknown) {
+  return JSON.stringify({
+    tool_name: 'AskUserQuestion',
+    session_id: 'spec-session',
+    tool_input: toolInput,
+  })
+}
+
+const PAYLOAD = payload(ask('Делаем rebase или merge?'))
 
 describe('askuserquestion-calibration-guard as a process', () => {
-  it('WARNs on exit 0 and never pre-authorises the call', () => {
+  it('WARNs on a flagged question, on exit 0, never pre-authorising the call', () => {
     const res = runHook(PAYLOAD)
     expect(res.status).toBe(0)
     expect(res.stderr).toBe('')
     const out = JSON.parse(res.stdout)
     expect(out.systemMessage).toContain('AskUserQuestion calibration')
-    expect(out.systemMessage).toContain('jargon lint')
+    expect(out.systemMessage).toContain('Flagged: jargon.')
     // Stack convention (shared.mjs emitWarn, review PR #99): no permissionDecision.
     expect(out.hookSpecificOutput).toBeUndefined()
     expect(res.stdout).not.toContain('permissionDecision')
+  })
+
+  it('writes NOTHING on a clean question — the owner sees no banner', () => {
+    const res = runHook(payload(CLEAN))
+    expect(res.status).toBe(0)
+    expect(res.stdout).toBe('')
+    expect(res.stderr).toBe('')
   })
 
   it('says nothing on another tool and under the kill switch', () => {

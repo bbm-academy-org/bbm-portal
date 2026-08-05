@@ -28,11 +28,25 @@
 //     the task canon, `TYPE_TO_BRANCH`) → resolve `origin/<branch>` (or local),
 //     then the same ancestry check.
 //
-// Claim heuristic: the ref's LINE is scanned for status keywords —
-// open/closed/merged/unmerged/done (EN) and открыт/закрыт/влит/смержен/не влит
-// (RU; handoffs in this repo are written in Russian). Keyword present and
-// mismatching actual → STALE; matching → PASS; no keyword → INFO (the actual
-// state is printed for the reader).
+// Claim heuristic: status keywords — open/closed/merged/unmerged/done (EN) and
+// открыт/закрыт/влит/смержен/не влит (RU; handoffs in this repo are written in
+// Russian). Keyword present and mismatching actual → STALE; matching → PASS; no
+// keyword → INFO (the actual state is printed for the reader).
+//
+// Claim ATTRIBUTION is per SEGMENT, not per line (review PR #150, blocker 1):
+// the line is split on `,` `;` `—` `–` `·` `|` `(` `)` and sentence ends, and a
+// claim reaches only the refs inside its own segment. Per-line attribution made
+// the most natural handoff sentence — `PR #148 смержен, issue #134 ещё открыт` —
+// report `STALE #134 claimed=merged`, i.e. the tool INVENTED a stale premise on
+// an honest handoff and exited 1, inverting the whole point of the gate. Two
+// companion rules (see `claimForRef`): a segment naming ≥2 refs pins its claim on
+// none of them and they degrade to INFO (a false PASS is cheaper than a false
+// STALE in a gate that exits 1); a claim-less segment falls back to the line's
+// claim only when the line names exactly ONE ref, so «#92 — не влит» keeps
+// working. Residual ambiguity — one segment naming two refs AND two claims — is
+// deliberately NOT resolved: it degrades to INFO. Return condition (DEBT.md):
+// revisit if real handoff runs produce INFO rows that should have been caught as
+// STALE, i.e. the ≥2-refs-per-segment rule starts hiding genuine drift.
 //
 // Approval-provenance domain: a line pairing an issue-ref with an
 // owner-approval claim («owner-approved», an owner token + согласован/одобр/…)
@@ -138,15 +152,50 @@ function isApprovalClaimLine(line) {
 }
 
 /**
- * Extract every verifiable ref from the handoff text.
+ * Separators that end a claim's reach inside a line: list punctuation, dashes,
+ * parenthetical asides and sentence ends (a `.`/`!`/`?` followed by whitespace
+ * — so `v1.2` and `1.5×` stay intact).
+ */
+const SEGMENT_SPLIT_RE = /[,;—–·|()]|[.!?](?=\s|$)/g
+
+/**
+ * Split a line into claim segments, keeping each segment's offsets so a ref can
+ * be mapped to the segment it actually sits in (review PR #150, blocker 1).
+ * @param {string} line
+ * @returns {{text: string, start: number, end: number}[]}
+ */
+export function splitSegments(line) {
+  const s = String(line)
+  const segments = []
+  let start = 0
+  for (const m of s.matchAll(SEGMENT_SPLIT_RE)) {
+    segments.push({ text: s.slice(start, m.index), start, end: m.index })
+    start = m.index + m[0].length
+  }
+  segments.push({ text: s.slice(start), start, end: s.length })
+  return segments
+}
+
+/** Index of the segment covering `at`; the last segment catches the tail. */
+function segmentIndexAt(segments, at) {
+  const i = segments.findIndex((seg) => at >= seg.start && at < seg.end)
+  return i === -1 ? segments.length - 1 : i
+}
+
+/**
+ * Extract every verifiable ref from the handoff text, each carrying the SEGMENT
+ * it sits in plus the two attribution flags dedupeRefs needs (`ambiguous`,
+ * `soleOnLine`).
  * @param {string} text
- * @returns {{kind: "issue"|"pr"|"number"|"sha"|"branch", value: string|number, line: string, lineNo: number}[]}
+ * @returns {{kind: "issue"|"pr"|"number"|"sha"|"branch", value: string|number, line: string, lineNo: number, segment: string, ambiguous: boolean, soleOnLine: boolean}[]}
  */
 export function extractRefs(text) {
   const refs = []
   const lines = String(text).split(/\r?\n/)
   lines.forEach((line, i) => {
     const lineNo = i + 1
+    const segments = splitSegments(line)
+    const found = []
 
     // Issue/PR numbers: a `#`/`№`-prefixed number anywhere, or a bare number
     // directly after a "PR" / "pull request" / "issue" word. A bare number with
@@ -158,7 +207,7 @@ export function extractRefs(text) {
         : hint.startsWith('issue')
           ? 'issue'
           : 'number'
-      refs.push({ kind, value: Number(m[2]), line, lineNo })
+      found.push({ kind, value: Number(m[2]), line, lineNo, at: m.index })
     }
 
     // Branch names: <prefix>/<N>-<slug> (canon §2 / `pnpm task:worktree`).
@@ -166,7 +215,7 @@ export function extractRefs(text) {
     const branchRanges = []
     for (const m of line.matchAll(branchRe)) {
       branchRanges.push([m.index, m.index + m[0].length])
-      refs.push({ kind: 'branch', value: m[0], line, lineNo })
+      found.push({ kind: 'branch', value: m[0], line, lineNo, at: m.index })
     }
 
     // Commit SHAs: 7–40 hex, must carry a digit AND an a-f letter (heuristic —
@@ -178,7 +227,26 @@ export function extractRefs(text) {
       if (!/[a-f]/.test(tok) || !/\d/.test(tok)) continue
       const inBranch = branchRanges.some(([s, e]) => m.index >= s && m.index + tok.length <= e)
       if (inBranch) continue
-      refs.push({ kind: 'sha', value: tok, line, lineNo })
+      found.push({ kind: 'sha', value: tok, line, lineNo, at: m.index })
+    }
+
+    // Attribution inputs: which segment each ref sits in, and whether that
+    // segment holds a second ref (then no claim may be pinned on either).
+    const perSegment = new Map()
+    for (const r of found) {
+      r.segIdx = segmentIndexAt(segments, r.at)
+      perSegment.set(r.segIdx, (perSegment.get(r.segIdx) ?? 0) + 1)
+    }
+    for (const r of found) {
+      refs.push({
+        kind: r.kind,
+        value: r.value,
+        line: r.line,
+        lineNo: r.lineNo,
+        segment: segments[r.segIdx]?.text ?? r.line,
+        ambiguous: (perSegment.get(r.segIdx) ?? 0) >= 2,
+        soleOnLine: found.length === 1,
+      })
     }
   })
   return refs
@@ -224,6 +292,29 @@ export function verdictFor(claim, actual) {
 }
 
 /**
+ * Claim attributed to ONE ref occurrence (review PR #150, blocker 1). Three
+ * rules, in order:
+ *   1. the claim of the SEGMENT the ref sits in — so
+ *      `PR #148 смержен, issue #134 ещё открыт` gives merged/open, not
+ *      merged/merged;
+ *   2. a segment holding ≥2 refs pins its claim on NONE of them (→ INFO,
+ *      "here is the actual state"): a false PASS is cheaper than a false STALE
+ *      in a gate that exits 1;
+ *   3. a claim-less segment falls back to the LINE's claim only when the line
+ *      names exactly one ref — no ambiguity is possible there, and this keeps
+ *      the shapes that separate ref and claim by punctuation («#92 — не влит»)
+ *      working exactly as before.
+ * @param {ReturnType<typeof extractRefs>[number]} ref
+ * @returns {"open"|"closed"|"merged"|"unmerged"|null}
+ */
+export function claimForRef(ref) {
+  if (ref.ambiguous) return null
+  const own = parseClaim(ref.segment ?? ref.line)
+  if (own) return own
+  return ref.soleOnLine ? parseClaim(ref.line) : null
+}
+
+/**
  * Dedupe raw refs into one entry per distinct ref, each carrying the set of
  * distinct claims made about it. Claim-less occurrences are dropped when the
  * same ref also has a claimed occurrence (the claim rows subsume the INFO row);
@@ -241,7 +332,7 @@ export function dedupeRefs(refs) {
     }
     // A concrete issue/pr hint beats an unhinted `#N` for lookup ordering.
     if (entry.kind === 'number' && r.kind !== 'number') entry.kind = r.kind
-    const claim = parseClaim(r.line)
+    const claim = claimForRef(r)
     if (claim) entry.claims.add(claim)
   }
   return [...byId.values()].map((e) => ({
