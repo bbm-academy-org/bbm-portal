@@ -19,6 +19,12 @@ Duplicating any of those here would create a second source of truth that drifts.
 The items below are the gap between "the code compiles and someone approved it"
 and "this iteration is actually finished".
 
+## Scope
+
+PRs that touch code, tooling or migrations. A docs-only PR — or a prose-only
+edit to `.claude/**` — skips this gate, the same carve-out
+`.claude/skills/task-cycle/SKILL.md` stage 4 gives the review subagent.
+
 ## Mode — dispatch, never self-check
 
 The lead dispatches a **fresh-context subagent** with this file's content plus a
@@ -57,12 +63,11 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
 7. **`pnpm lint:instruction-budget`** PASS when the diff touches the always-on
    corpus (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`) — the deterministic
    half of "compact, never just append" (`.claude/skills/wrap/SKILL.md` phase 3).
-8. **Spec / ADR gate** — a new platform module or new user-facing behaviour has
-   its spec in `docs/specs/` and the owner's "go" ON THE SPEC (`task-cycle`
-   stage 1a/2); an architectural decision has an ADR in `docs/adr/`. A form of
-   any kind carries the CRUD-чек; a change to a computed/money formula carries a
-   spec plus an independent review of that spec — neither has an exemption by
-   task type.
+8. **Spec / ADR gate** — `.claude/skills/task-cycle/SKILL.md` stages 1a and 2.
+   Triggers: a new platform module, new user-facing behaviour, any added or
+   changed form, any change to a computed/money formula, any architectural
+   decision. Read the stage before ruling — it names what each trigger requires
+   and which have no exemption by task type.
 9. **Docs that describe the changed surface** — `README.md`, `deploy/README.md`,
    `tools/hooks/README.md`, or the owning skill — updated when commands, hooks,
    ops steps or conventions changed. Prose that now describes something that no
@@ -77,11 +82,11 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
     `.claude/skills/write-iteration-summary/SKILL.md`; report `N/A (deferred)`
     unless the comment is already published, in which case name its URL. It lands
     after `pnpm pr:land`, so at gate time it is normally still open.
-12. **Owner-visible change → acceptance recorded** — the stage-5 «принято» on a
-    live stand is on the issue, with the URL the owner opened and the chosen dev
-    port (`.claude/rules/parallel-sessions.md`). A screenshot or a localhost
-    render is the agent's evidence, never the acceptance. N/A for invisible
-    changes (internals, tooling, docs, backend with no UI).
+12. **Owner-visible change → acceptance recorded** —
+    `.claude/skills/task-cycle/SKILL.md` stage 5. Trigger: the change alters
+    something the owner can see. Look for the recorded «принято» and the live URL
+    on the issue; the stage says what counts as one. N/A for invisible changes
+    (internals, tooling, docs, backend with no UI).
 
 ## Output (mandatory format)
 

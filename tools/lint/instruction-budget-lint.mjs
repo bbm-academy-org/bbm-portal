@@ -11,10 +11,14 @@
 // non-zero exit once a file is over. It measures, it never edits — what to
 // relocate is a judgement call the wrap makes with the owner.
 //
-// Scope note (the ambiguity #139 had to settle): the budget covers the
-// always-on instruction/memory corpus the wrap MAINTAINS. The session
-// transcript (`~/.claude/projects/<slug>/*.jsonl`) is read-only evidence — it
-// is never rewritten, compacted or pruned by anything in this repo.
+// Scope note (the ambiguity #139 had to settle): the budget covers the four
+// ALWAYS-ON files — CLAUDE.md, AGENTS.md, every `.claude/rules/*.md`, and the
+// MEMORY.md index. Two neighbours are deliberately outside it: the lazy
+// `memory/<topic>.md` files (loaded only when the index line sends a session
+// there — they obey the same prune-before-add discipline, but what is budgeted
+// is their one-line index entry), and the session transcript
+// (`~/.claude/projects/<slug>/*.jsonl`), which is read-only evidence and is
+// never rewritten, compacted or pruned by anything in this repo.
 //
 // Usage:
 //   pnpm lint:instruction-budget          # report + exit 1 when a file is OVER

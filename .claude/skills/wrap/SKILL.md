@@ -43,22 +43,34 @@ where the work is.
 
 ```bash
 MARK='<string unique to THIS session: its issue/PR number, or a phrase from the first user turn>'
+SEGMENTS=()
 for f in "$HOME"/.claude/projects/*bbm-portal*/*.jsonl; do
-  grep -q "$MARK" "$f" || continue                                  # content match, not mtime
-  grep -qE '"type":"user"' "$f" || continue                         # a real interactive session
-  grep -qvE '"promptSource":"sdk"|"isSidechain":true' "$f" || continue
-  echo "$f"
+  grep -q "$MARK" "$f" || continue                                     # content match, not mtime
+  grep -qE '"type":"user"' "$f" || continue                            # has human-shaped turns
+  grep -qE '"promptSource":"sdk"|"isSidechain":true' "$f" && continue  # dispatched-agent / SDK log
+  SEGMENTS+=("$f")
 done
+printf '%s\n' "${SEGMENTS[@]}"   # full paths: the dir carries the slug, the basename the id
 ```
 
+- **The exclusion must be a POSITIVE test (`grep -qE … && continue`).** The
+  inverted form `grep -qvE … || continue` is a no-op: `-v` asks "is there ANY
+  line without the marker", which is true of every multi-line log, so it excludes
+  nothing. Measured on this box 2026-08-05: over 114 bbm-portal logs the inverted
+  form excluded **0**, the positive form excluded **80**.
+- **`"promptSource":"sdk"` is the discriminator that actually fires here.** All
+  25 logs in the `…-worktrees-agent-*` / `…-worktrees-<N>` dirs carry it;
+  `"isSidechain":true` appears on **no** log on this box (every line is
+  `false`) — the clause stays only for harness variants that do emit it.
 - Mtime is a **tiebreaker among content-matched candidates only** — never the
   primary selector. (A bare `ls -t | head -1` once grabbed a 30-second
   security-review sub-session with 0 human messages.)
-- **Capture the ids BEFORE dispatching phase 1.** The retro agent writes its own
-  `.jsonl` and immediately becomes newest-mtime; it must be handed fixed ids so
-  it never globs and never analyses itself.
+- **Capture the segments BEFORE dispatching phase 1.** The retro agent writes its
+  own `.jsonl` (sdk-marked, so the predicate above drops it too) and immediately
+  becomes newest-mtime; it must be handed a fixed list so it never globs and
+  never analyses itself.
 - More than one segment is normal (main tree + each worktree entered) — pass all
-  of them.
+  of them, and keep the **directory** of each: it is the slug the extractor needs.
 
 ## Phase 1 — dispatch the independent analysis sub-agent (Opus, read-only)
 
@@ -69,20 +81,40 @@ the point of the phase, so it is spelled out as conditions, not as a habit:
   shortcut — it finds what it already believes. `general-purpose` with an
   explicit `model: opus` (`tools/hooks/agent-model-guard.mjs` blocks a dispatch
   without an explicit model).
-- **Fixed session ids from phase 0**, so the analyst never globs, never picks by
-  mtime, and never lands on its own log.
+- **Fixed segments from phase 0** — directory plus id, one pair per segment — so
+  the analyst never globs, never picks by mtime, and never lands on its own log.
 - **Read-only**: it edits no file, opens no issue, touches no tracker. Proposing
   and applying are phases 2–3, and they belong to the lead + the owner.
 - **The schema or a re-dispatch**: a free-form narrative without the findings
   array is not a valid return — re-dispatch it, do not interpret it yourself.
 
-Brief it with the resolved `--session <id>` (one flag per segment), the shared
-method file, and the bundled extractor:
+Brief it with the shared method file and **one extractor run per segment phase 0
+resolved** — the digests are per-segment, and so is the brief:
 
 ```bash
-node ~/.claude/skills/wrap-init/tools/extract.mjs     --slug C--Users-sidor-repos-bbm-portal --session <id>
-node ~/.claude/skills/wrap-init/tools/transcripts.mjs --slug C--Users-sidor-repos-bbm-portal --session <id>
+OUT="${TMPDIR:-/tmp}/wrap-retro-$(date +%s)"
+for f in "${SEGMENTS[@]}"; do                       # the array phase 0 built
+  dir=$(dirname "$f"); id=$(basename "$f" .jsonl)
+  node ~/.claude/skills/wrap-init/tools/extract.mjs     --log-dir "$dir" --session "$id" --out-dir "$OUT/$id"
+  node ~/.claude/skills/wrap-init/tools/transcripts.mjs --log-dir "$dir" --session "$id" --out-dir "$OUT/$id"
+done
 ```
+
+Two properties of these tools dictate that loop, and a hardcoded slug breaks
+both:
+
+- **`--log-dir` per segment, never a fixed `--slug`.** A slug resolves to exactly
+  one dir (`~/.claude/projects/<slug>`), so a hardcoded
+  `--slug C--Users-sidor-repos-bbm-portal` cannot reach a segment that lives in a
+  `…--claude-worktrees-<N>` dir — the run exits 1 on a session id the dir does
+  not contain, and phase 0's multi-slug resolution becomes decoration.
+  `--log-dir` overrides `--slug`, so pass the segment's own directory.
+- **`--session` is single-session.** Repeating the flag does not accumulate — the
+  parser overwrites and the last one wins — hence one invocation per segment,
+  each with its own `--out-dir`, and `transcripts.mjs` run after `extract.mjs` in
+  the SAME out-dir (it reads the `index.json` that extract writes there).
+
+The brief names every `$OUT/<id>` digest dir it must read, not the log paths.
 
 It returns, per `retro-method.md`: (1) an **understanding-check**, (2) the
 **findings array** in the schema, (3) a **handoff-seed**. It edits nothing.
@@ -127,12 +159,18 @@ explicit "go" in THIS session, on THIS list:
 ## Phase 3 — apply approved + COMPACT (never just append)
 
 **What "compact" is scoped to:** the **always-on corpus this wrap maintains** —
-`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`, the `MEMORY.md` index and its
-`memory/<topic>.md` files. Every one of them is read at the START of every
-future session, so growth there is a tax the next session pays. The session
-**transcript** (`~/.claude/projects/<slug>/*.jsonl`) is _not_ in scope and is
-never rewritten, trimmed or pruned — it is read-only evidence, and the retro only
-extracts from it.
+`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md` and the `MEMORY.md` index. Every
+one of them is read at the START of every future session, so growth there is a
+tax the next session pays, and those four are exactly what
+`pnpm lint:instruction-budget` measures.
+
+Two things sit deliberately outside the measured set. The
+`memory/<topic>.md` files are **lazy** — a session loads one only when the index
+line sends it there — so they obey the same prune-before-add discipline (fold
+duplicates, delete disproven facts) but carry no per-file budget; what is
+budgeted is their one-line index entry. The session **transcript**
+(`~/.claude/projects/<slug>/*.jsonl`) is never rewritten, trimmed or pruned at
+all — it is read-only evidence, and the retro only extracts from it.
 
 - **Prune before adding** — fold duplicate memories, delete disproven ones, tighten
   any bloated instruction file, THEN write this session's durable learnings to
