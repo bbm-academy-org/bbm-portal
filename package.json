@@ -79,6 +79,9 @@
     "lint:epic-autoclose": "node tools/lint/epic-autoclose-lint.mjs",
     "lint:assignee-milestone": "node tools/lint/assignee-milestone-lint.mjs",
     "lint:product-note": "node tools/lint/product-note-lint.mjs",
+    "lint:ears-naming": "node tools/lint/ears-naming-lint.mjs",
+    "lint:ears-test": "node tools/lint/ears-test-lint.mjs",
+    "lint:spec-deletion": "node tools/lint/spec-deletion-lint.mjs",
     "ci:verify-base": "node tools/gh/verify-base-ci-green.mjs"
   },
   "dependencies": {

@@ -138,6 +138,36 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:workflow-auth
 
+  # WARN — a test title that ATTEMPTS the EARS prefix and misspells it, so the
+  # `EARS-N` grep the spec canon promises silently misses it (#157, tranche 2).
+  ears-naming:
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:ears-naming
+
+  # WARN — EARS clause ↔ test traceability, both directions: a declared clause
+  # with no test, and a test citing a clause no spec declares (#157, tranche 2).
+  ears-test:
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:ears-test
+
   # ─── Meta-job: the single aggregate status check ────────────────────────────
   # The needs-list IS the BLOCK set (canon §2.1). WARN jobs are deliberately
   # absent; PR-body guards live in pr-body-guards.yml and cannot be listed here
