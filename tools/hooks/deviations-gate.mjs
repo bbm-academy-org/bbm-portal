@@ -27,7 +27,11 @@
 
 import { readFileSync } from 'node:fs'
 
-import { extractLastAssistantText, isTerminalReport } from './completion-report-gate.mjs'
+import {
+  extractLastAssistantText,
+  hasWriteAction,
+  isEnforceableTerminalReport,
+} from './completion-report-gate.mjs'
 import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
 /** Маркер stage 7. Регистронезависимо, с допуском пробела перед двоеточием;
@@ -158,9 +162,14 @@ export function selfCertBlockMessage() {
  * либо уже ловила блок Stop-гейта. «Нет» в такой сессии это не отчёт, а
  * пропущенный разбор.
  */
-export function decideBlock({ stopHookActive, lastAssistantText, haltSignal = false }) {
+export function decideBlock({
+  stopHookActive,
+  lastAssistantText,
+  haltSignal = false,
+  writeActionSeen = false,
+}) {
   if (stopHookActive) return { block: false }
-  if (!isTerminalReport(lastAssistantText)) return { block: false }
+  if (!isEnforceableTerminalReport({ lastAssistantText, writeActionSeen })) return { block: false }
   if (!hasDeviationsLine(lastAssistantText)) return { block: true }
   if (haltSignal && hasNoDeviationsValue(lastAssistantText)) {
     return { block: true, reason: 'self-cert' }
@@ -179,6 +188,7 @@ function main() {
       stopHookActive: Boolean(payload.stop_hook_active),
       lastAssistantText: extractLastAssistantText(transcript),
       haltSignal: detectHaltSignal(transcript),
+      writeActionSeen: hasWriteAction(transcript),
     })
     if (decision.block) {
       process.stderr.write(decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage())

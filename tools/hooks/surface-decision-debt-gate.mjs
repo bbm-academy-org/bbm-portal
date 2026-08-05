@@ -34,7 +34,11 @@
 
 import { readFileSync } from 'node:fs'
 
-import { extractLastAssistantText, isTerminalReport } from './completion-report-gate.mjs'
+import {
+  extractLastAssistantText,
+  hasWriteAction,
+  isEnforceableTerminalReport,
+} from './completion-report-gate.mjs'
 import { emitWarn, hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
 /** The marker whose absence trips the gate — the `surface-decision-debt:` line
@@ -70,9 +74,9 @@ export function warnMessage() {
  * severity, so a promotion to blocking (#136) is a visible change of contract
  * and not a silent flip of a boolean's meaning.
  */
-export function decideWarn({ stopHookActive, lastAssistantText }) {
+export function decideWarn({ stopHookActive, lastAssistantText, writeActionSeen = false }) {
   if (stopHookActive) return { warn: false }
-  if (!isTerminalReport(lastAssistantText)) return { warn: false }
+  if (!isEnforceableTerminalReport({ lastAssistantText, writeActionSeen })) return { warn: false }
   if (hasDecisionDebtLine(lastAssistantText)) return { warn: false }
   return { warn: true }
 }
@@ -83,9 +87,11 @@ function main() {
     const payload = readHookPayload()
     if (payload.stop_hook_active) process.exit(0)
     if (!payload.transcript_path) process.exit(0)
+    const transcript = readFileSync(payload.transcript_path, 'utf8')
     const decision = decideWarn({
       stopHookActive: Boolean(payload.stop_hook_active),
-      lastAssistantText: extractLastAssistantText(readFileSync(payload.transcript_path, 'utf8')),
+      lastAssistantText: extractLastAssistantText(transcript),
+      writeActionSeen: hasWriteAction(transcript),
     })
     if (decision.warn) emitWarn(warnMessage())
     process.exit(0)
