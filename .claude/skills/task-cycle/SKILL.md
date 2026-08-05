@@ -110,8 +110,10 @@ implementer commissioned for its own PR does not satisfy this gate and is
 re-run by the lead. (2026-07-24: PR #72's implementer self-commissioned its
 «independent» review; the lead's re-review was still required.) On
 REQUEST_CHANGES: address every point — fix it, or reject it with reasoning in
-the thread — then re-review, looping until APPROVE. Docs-only PRs may merge on
-green CI without the subagent. Decision context goes onto the PR as comments,
+the thread — then re-review, looping until APPROVE. Before the review is
+requested, the iteration-end gate runs — dispatched, never self-checked, verdict
+`PASS` required (`.claude/skills/run-iteration-end-checklist/SKILL.md`).
+Docs-only PRs may merge on green CI without the subagent. Decision context goes onto the PR as comments,
 proactively (memory: `always-document-on-prs`).
 
 ## Stage 5 — acceptance of visible changes (blocks merge)
@@ -153,7 +155,8 @@ Then the final task report, fixed form:
 
 ## Stage 7 — close
 
-Issue closed (verify `Closes #N` actually fired) with a results comment:
+Issue closed (verify `Closes #N` actually fired) with a results comment in the
+fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`):
 artifacts, what was done, what got unblocked + the mandatory line
 **«Отклонения от конвенций: нет / \<список\>»** (significant deviation → its
 own issue; minor → a line in `DEBT.md`). **The same line is repeated in the

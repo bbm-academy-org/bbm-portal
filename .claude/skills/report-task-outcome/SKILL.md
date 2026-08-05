@@ -119,4 +119,8 @@ short question-only turns).
 
 - `.claude/skills/task-cycle/SKILL.md` — stages 5–7, the authority for this form.
 - `.claude/skills/surface-decision-debt/SKILL.md` — deriving the two marker lines.
+- `.claude/skills/write-iteration-summary/SKILL.md` — the stage-7 issue comment;
+  the durable English record this Russian owner report is deliberately not.
+- `.claude/skills/run-iteration-end-checklist/SKILL.md` — the pre-merge gate;
+  it defers the report's own shape to this file rather than re-checking it.
 - `tools/hooks/README.md` — the whole hook stack and the kill switch.
