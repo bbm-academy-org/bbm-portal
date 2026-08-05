@@ -21,6 +21,10 @@ cross-linked into epics and may reference sibling sub-tasks in the
 `bbm-academy-org/bbm-public-website` repo (the public Astro site). When asked to
 "look at the backlog" or pick up work, start here, **not** in Plane.
 
+**Tasks are created only via `pnpm issue:create`** (raw `gh issue create` is
+forbidden) — load the `task-canon` skill before any backlog work: filing,
+reformatting, linking, claiming, triaging or closing an issue.
+
 **Cross-repo boundary — file, don't build.** When work surfaces that belongs to
 `bbm-public-website` (or any sibling repo), the deliverable in a **bbm-portal**
 session is a **filed, epic-linked GitHub issue** — do **not** `cd` into, read, or

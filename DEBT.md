@@ -21,6 +21,13 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-05 `tools/gh/*` (and `tools/dev/task-worktree.mjs`, `tests/unit/gh-*`)
+      still carry Russian file headers, CLI output and test names; #144 fixed only
+      the canon path strings inside them, which is not a material edit, so the
+      on-touch translation rule (owner ruling, 2026-08-05: all project artifacts
+      are English) did not fire — return condition: translate each file the next
+      time it is materially edited (#144)
+
 - [ ] 2026-08-04 `set-board-status.mjs`: `process.exit(0)` сразу после записи
       «ГОТОВО» — на Windows-TTY запись асинхронна, тот же класс, что #132
       (обрезанный вывод при сделанной работе); лечится `return` вместо exit.
