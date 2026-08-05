@@ -129,10 +129,22 @@ background reading, not a declaration — the guard only reads these positions:
 - a spec file **edited by the PR itself**;
 - an existing `docs/specs/<linked-issue>-*.md`.
 
-The spec must also **relate** to the linked issue — by its `NNN-` filename
-prefix, by its `issue:` frontmatter, or by being edited in the same PR. A
-declared but unrelated spec is reported as background and does not satisfy the
-gate.
+The spec must also **relate** to the linked issue. Relation is established by
+any one of:
+
+- **declaration** — the linked issue's `## Spec reference` names it. An issue
+  saying "this spec governs me" _is_ the relation, which is what makes the
+  common case work: an epic sub-task governed by the parent epic's design spec,
+  whose filename and `issue:` both point at the epic, not at the sub-task;
+- the spec's **`NNN-` filename prefix** matching a linked issue;
+- the spec's **`issue:` frontmatter** matching a linked issue;
+- the PR **substantially editing** that spec (≥3 changed lines — a whitespace
+  or typo touch is not "this PR works on that spec").
+
+A spec that is merely named on a `Spec:` line but relates to none of the linked
+issues is reported as background and does not satisfy the gate. Relatedness is
+resolved **before** any status check, so a `Draft` spec belonging to someone
+else's work never produces a finding against this PR.
 
 **Escape hatch.** A PR that genuinely needs no spec writes, on a line of its
 own in the PR body:

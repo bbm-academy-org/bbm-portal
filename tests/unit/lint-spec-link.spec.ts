@@ -20,6 +20,7 @@ import {
   specRefsFromPrBody,
   specRequired,
   specStatus,
+  substantiallyEdited,
   stripCodeFences,
 } from '../../tools/lint/spec-link-lint.mjs'
 
@@ -173,6 +174,22 @@ describe('specRefsFromIssueBody — the task-canon `Spec reference` section', ()
   })
 })
 
+describe('substantiallyEdited', () => {
+  it('counts a real spec edit, not a graze', () => {
+    const files = [
+      { path: 'docs/specs/081-x.md', additions: 12, deletions: 3 },
+      { path: 'docs/specs/102-x.md', additions: 1, deletions: 1 },
+    ]
+    expect(substantiallyEdited('docs/specs/081-x.md', files)).toBe(true)
+    expect(substantiallyEdited('docs/specs/102-x.md', files)).toBe(false)
+  })
+
+  it('is false for a file the PR does not touch, and for an unsized entry', () => {
+    expect(substantiallyEdited('docs/specs/081-x.md', [])).toBe(false)
+    expect(substantiallyEdited('docs/specs/081-x.md', ['docs/specs/081-x.md'])).toBe(false)
+  })
+})
+
 describe('isRelatedSpec', () => {
   it('relates by the NNN- filename prefix of a linked issue', () => {
     expect(isRelatedSpec('docs/specs/102-x.md', {}, [102], [])).toBe(true)
@@ -185,7 +202,7 @@ describe('isRelatedSpec', () => {
     ).toBe(true)
   })
 
-  it('relates a spec the PR itself edits — the shared-spec case', () => {
+  it('relates a spec the PR itself substantially edits — the shared-spec case', () => {
     expect(
       isRelatedSpec('docs/specs/081-x.md', {}, [200], ['src/a.tsx', 'docs/specs/081-x.md']),
     ).toBe(true)
@@ -235,15 +252,15 @@ describe('specRequired', () => {
   })
 })
 
-describe('evaluateSpecLink', () => {
-  const featurePr = {
-    number: 200,
-    title: 'feat(hours): hourly rate table',
-    body: 'Closes #102',
-    files: ['src/modules/hours/table.tsx'],
-  }
-  const featureIssue = { number: 102, type: 'Feature', body: '## Spec reference\n\nnone yet' }
+const featurePr = {
+  number: 200,
+  title: 'feat(hours): hourly rate table',
+  body: 'Closes #102',
+  files: ['src/modules/hours/table.tsx'],
+}
+const featureIssue = { number: 102, type: 'Feature', body: '## Spec reference\n\nnone yet' }
 
+describe('evaluateSpecLink', () => {
   it('FLAGS a feature PR with no spec link anywhere — the acceptance case', () => {
     const res = evaluateSpecLink({
       pr: featurePr,
@@ -342,15 +359,18 @@ describe('evaluateSpecLink', () => {
     expect(res.verdict).toBe('findings')
     expect(res.findings.join('\n')).toMatch(/none of them references #102/i)
     // The unrelated mention is still reported — as a note, not silently dropped.
-    expect(res.notes.join('\n')).toMatch(/does not reference #102 — read as background/i)
+    expect(res.notes.join('\n')).toMatch(/does not reference #102[\s\S]*read as background/i)
   })
 
-  it('accepts a spec the PR edits even when its number differs from the issue', () => {
+  it('accepts a spec the PR substantially edits, even when its number differs', () => {
     const res = evaluateSpecLink({
       pr: {
         ...featurePr,
         body: 'Closes #102\n\nSpec: docs/specs/081-hours-calculator.md',
-        files: ['src/modules/hours/table.tsx', 'docs/specs/081-hours-calculator.md'],
+        files: [
+          { path: 'src/modules/hours/table.tsx', additions: 40, deletions: 2 },
+          { path: 'docs/specs/081-hours-calculator.md', additions: 12, deletions: 3 },
+        ],
       },
       issues: [featureIssue],
       tree: tree({ 'docs/specs/081-hours-calculator.md': SHIPPED }),
@@ -358,6 +378,110 @@ describe('evaluateSpecLink', () => {
     expect(res.verdict).toBe('ok')
   })
 
+  /**
+   * A whitespace or typo touch is not "this PR works on that spec". Without a
+   * floor, `prettier --write` over docs/ satisfies the gate for free.
+   */
+  it('does NOT accept a spec the PR merely grazes', () => {
+    const res = evaluateSpecLink({
+      pr: {
+        ...featurePr,
+        body: 'Closes #102',
+        files: [
+          { path: 'src/modules/hours/table.tsx', additions: 40, deletions: 2 },
+          { path: 'docs/specs/081-hours-calculator.md', additions: 1, deletions: 1 },
+        ],
+      },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/081-hours-calculator.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.findings.join('\n')).toMatch(/names no spec/i)
+  })
+})
+
+/**
+ * The dominant issue shape in this repo: an epic sub-task whose `## Spec
+ * reference` names the PARENT epic's design spec. That spec's filename carries
+ * no `NNN-` prefix for the sub-task and its `issue:` frontmatter points at the
+ * epic — so prefix and frontmatter matching both miss, and the guard used to
+ * call the issue's own declared spec "background". Reproduced on the real
+ * bodies of #136 / #139, which declare
+ * `docs/superpowers/specs/2026-08-04-platform-consolidation-design.md`.
+ */
+describe('evaluateSpecLink — epic sub-task declaring the parent epic spec', () => {
+  const EPIC_SPEC = 'docs/superpowers/specs/2026-08-04-platform-consolidation-design.md'
+  const epicSpecFile = '---\nstatus: In dev\nissue: 117\n---\n\n# Consolidation design\n'
+  const subTaskIssue = {
+    number: 136,
+    type: 'Feature',
+    body:
+      '## Context\n\nPart of epic #117.\n\n## Spec reference\n\n' +
+      `Spec \`${EPIC_SPEC}\` §11 (the CI guardrails lines); decomposition v2.\n\n` +
+      '## Acceptance criteria\n\n- [ ] x\n',
+  }
+  const subTaskPr = {
+    number: 154,
+    title: 'feat(ci): guardrails and the severity canon',
+    body: 'Closes #136',
+    files: [{ path: 'src/lib/guards.ts', additions: 90, deletions: 4 }],
+  }
+
+  it('accepts the epic spec BY DECLARATION — the issue naming it IS the relation', () => {
+    const res = evaluateSpecLink({
+      pr: subTaskPr,
+      issues: [subTaskIssue],
+      tree: tree({ [EPIC_SPEC]: epicSpecFile }),
+    })
+    expect(res.verdict).toBe('ok')
+    expect(res.findings).toEqual([])
+  })
+
+  it('accepts it declared on the PR `Spec:` line too, once the issue declares it', () => {
+    const res = evaluateSpecLink({
+      pr: { ...subTaskPr, body: `Closes #136\n\nSpec: ${EPIC_SPEC} §11` },
+      issues: [subTaskIssue],
+      tree: tree({ [EPIC_SPEC]: epicSpecFile }),
+    })
+    expect(res.verdict).toBe('ok')
+  })
+
+  it('still reads an undeclared unrelated spec as background', () => {
+    const res = evaluateSpecLink({
+      pr: { ...subTaskPr, body: 'Closes #136\n\nSpec: docs/specs/081-hours-calculator.md' },
+      issues: [{ ...subTaskIssue, body: '## Context\n\nno spec section here\n' }],
+      tree: tree({ 'docs/specs/081-hours-calculator.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.notes.join('\n')).toMatch(/read as background/i)
+  })
+
+  /**
+   * Ordering guard: a Draft spec belonging to OTHER work must not produce a
+   * "your spec is still Draft" finding — relatedness resolves first.
+   */
+  it("does not report Draft status of a spec that is not this PR's", () => {
+    const res = evaluateSpecLink({
+      pr: { ...subTaskPr, body: 'Closes #136\n\nFor context: docs/specs/081-x.md' },
+      issues: [subTaskIssue],
+      tree: tree({ [EPIC_SPEC]: epicSpecFile, 'docs/specs/081-x.md': DRAFT }),
+    })
+    expect(res.verdict).toBe('ok')
+    expect(res.findings.join('\n')).not.toMatch(/Draft/)
+  })
+
+  it("reports Draft only for the spec that IS this PR's", () => {
+    const res = evaluateSpecLink({
+      pr: subTaskPr,
+      issues: [subTaskIssue],
+      tree: tree({ [EPIC_SPEC]: '---\nstatus: Draft\nissue: 117\n---\n' }),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.findings.join('\n')).toMatch(/Draft/)
+  })
+})
+
+describe('evaluateSpecLink — escape hatch, skips, frontmatter relatedness', () => {
   it('accepts a spec related by its own `issue:` frontmatter', () => {
     const res = evaluateSpecLink({
       pr: {

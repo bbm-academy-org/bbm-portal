@@ -49,8 +49,14 @@ export const SPEC_STATUSES = ['Draft', 'In dev', 'Shipped', 'Superseded', 'Retir
 /** GitHub auto-close keywords: https://docs.github.com/en/issues */
 const CLOSE_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi
 
-/** A spec path, in either spec directory. `README.md` is the format doc, not a spec. */
+/**
+ * A spec path, in either spec directory. `README.md` is the format doc, not a
+ * spec. Two copies on purpose: the `/g` one is for `matchAll` scanning, the
+ * anchored one for single-path tests — calling `.test()` on a `/g` regex
+ * advances its `lastIndex` and makes the NEXT call lie.
+ */
 const SPEC_PATH_RE = /docs[\\/](?:superpowers[\\/])?specs[\\/][A-Za-z0-9][A-Za-z0-9._-]*\.md/g
+const IS_SPEC_PATH_RE = /^docs\/(?:superpowers\/)?specs\/[A-Za-z0-9][A-Za-z0-9._-]*\.md$/
 
 /** Conventional Commit `feat` prefix, with or without a scope / `!`. */
 const FEAT_TITLE_RE = /^feat(\([^)]*\))?!?:/i
@@ -81,6 +87,9 @@ const NEXT_HEADING_RE = /\n#{1,6}[ \t]/
 
 /** Production module code — the surface stage 1a is about. */
 const PROD_CODE_RE = /^src[\\/]/
+
+/** Changed lines below which a spec edit is a graze, not work on that spec. */
+export const MIN_SPEC_EDIT_LINES = 3
 
 // ── pure helpers (the unit-tested seam) ──────────────────────────────────────
 
@@ -149,20 +158,45 @@ export function specRefsFromIssueBody(body) {
   return extractSpecPaths(next === -1 ? rest : rest.slice(0, next))
 }
 
+/** A `gh pr view --json files` entry, or a bare path string → the path. */
+export function filePath(f) {
+  return String(f?.path ?? f).replace(/\\/g, '/')
+}
+
+/**
+ * A spec edit big enough to mean "this PR works on that spec". Without a floor,
+ * a whitespace touch — a `prettier --write` sweep over `docs/` — satisfies the
+ * gate for free. `gh` gives per-file additions/deletions; an entry with no
+ * counts (a bare path) is NOT taken as substantial, because we cannot tell.
+ */
+export function substantiallyEdited(specPath, files) {
+  const rel = String(specPath).replace(/\\/g, '/')
+  const entry = (files ?? []).find((f) => filePath(f) === rel)
+  if (!entry || typeof entry === 'string') return false
+  return Number(entry.additions ?? 0) + Number(entry.deletions ?? 0) >= MIN_SPEC_EDIT_LINES
+}
+
 /**
  * Is this spec actually about the work being reviewed? Three routes, any one
  * suffices: the `NNN-` filename prefix matches a linked issue; the spec's own
- * `issue:` frontmatter matches one; or the PR edits the spec file itself (the
- * shared-spec case — one spec covering work tracked under a later issue).
+ * `issue:` frontmatter matches one; or the PR substantially edits the spec file
+ * (the shared-spec case — one spec covering work tracked under a later issue).
+ *
+ * `editedSpecPaths` is already filtered by `substantiallyEdited` at the call
+ * site — this function does not re-decide what "edited" means.
+ *
+ * NOTE: declaration is handled by the CALLER, not here. A spec named in the
+ * linked issue's `## Spec reference` is related BY DECLARATION whatever this
+ * function says — see `evaluateSpecLink`.
  */
-export function isRelatedSpec(specPath, frontmatter, linkedIssues, touchedFiles) {
+export function isRelatedSpec(specPath, frontmatter, linkedIssues, editedSpecPaths) {
   const rel = String(specPath).replace(/\\/g, '/')
   const issues = (linkedIssues ?? []).map(Number)
   const prefix = rel.match(/\/(\d{2,4})-/)
   if (prefix && issues.includes(Number(prefix[1]))) return true
   const declared = Number(frontmatter?.issue)
   if (declared && issues.includes(declared)) return true
-  return (touchedFiles ?? []).some((f) => String(f).replace(/\\/g, '/') === rel)
+  return (editedSpecPaths ?? []).some((f) => String(f).replace(/\\/g, '/') === rel)
 }
 
 /** Spec paths mentioned in a text, normalized to forward slashes, deduplicated. */
@@ -181,7 +215,7 @@ export function extractSpecPaths(text) {
  * reason, so a skip is legible in the log instead of silent.
  */
 export function specRequired({ title, files, issues }) {
-  const changed = (files ?? []).map((f) => String(f).replace(/\\/g, '/'))
+  const changed = (files ?? []).map(filePath)
   const featureIssue = (issues ?? []).find((i) => String(i.type ?? '') === 'Feature')
   const featTitle = FEAT_TITLE_RE.test(String(title ?? ''))
   if (!featureIssue && !featTitle) {
@@ -243,22 +277,43 @@ export function evaluateSpecLink({ pr, issues, tree }) {
   // Candidate specs — ONLY from declared positions. A path mentioned loosely in
   // the prose is background reading; treating it as a declaration is how a PR
   // that cites a spec as context passed the gate without having one.
-  const touched = (pr?.files ?? []).map((f) => String(f).replace(/\\/g, '/'))
-  const candidates = []
-  const add = (paths) => {
-    for (const p of paths) if (!candidates.includes(p)) candidates.push(p)
+  //
+  // Each candidate carries the SOURCES it came from, because the source decides
+  // relatedness: a spec the linked issue itself names in `## Spec reference` is
+  // related BY DECLARATION — the issue saying "this spec governs me" IS the
+  // relation, and it is the dominant shape here (an epic sub-task declaring the
+  // parent epic's design spec, whose filename and `issue:` both point at the
+  // epic, not at the sub-task).
+  const files = pr?.files ?? []
+  const editedSpecs = files
+    .map(filePath)
+    .filter(
+      (p) => IS_SPEC_PATH_RE.test(p) && !/\/README\.md$/i.test(p) && substantiallyEdited(p, files),
+    )
+  const candidates = new Map()
+  const add = (paths, source) => {
+    for (const p of paths) {
+      if (!candidates.has(p)) candidates.set(p, new Set())
+      candidates.get(p).add(source)
+    }
   }
-  add(specRefsFromPrBody(body)) //                                a `Spec:` line in the PR body
-  for (const issue of issues ?? []) add(specRefsFromIssueBody(issue.body)) // the issue's section
-  add(extractSpecPaths(touched.join('\n'))) //                    a spec the PR itself edits
+  add(specRefsFromPrBody(body), 'pr-spec-line')
+  for (const issue of issues ?? []) add(specRefsFromIssueBody(issue.body), 'issue-declaration')
+  add(editedSpecs, 'pr-edit')
   // Implicit: the issue-numbered spec already on main.
   const known = tree.listSpecs ? tree.listSpecs() : []
   for (const n of linked) {
     const padded = String(n).padStart(3, '0')
-    add(known.filter((p) => new RegExp(`^docs/specs/${padded}-`).test(p.replace(/\\/g, '/'))))
+    add(
+      known.filter((p) => new RegExp(`^docs/specs/${padded}-`).test(p.replace(/\\/g, '/'))),
+      'issue-numbered',
+    )
   }
 
-  if (candidates.length === 0) {
+  /** Sources that establish relatedness on their own, without any name matching. */
+  const DECLARING = new Set(['issue-declaration', 'pr-edit', 'issue-numbered'])
+
+  if (candidates.size === 0) {
     findings.push(
       `PR #${pr?.number} implements a feature but names no spec. ` +
         'Declare it on a `Spec: docs/specs/NNN-<slug>.md` line in the PR body, or in the ' +
@@ -268,14 +323,29 @@ export function evaluateSpecLink({ pr, issues, tree }) {
     return { verdict: 'findings', notes, findings }
   }
 
-  let related = 0
-  for (const rel of candidates) {
+  // PASS 1 — relatedness, BEFORE any status check. A Draft/statusless spec that
+  // belongs to someone else's work must not produce a finding about this PR.
+  const mine = []
+  for (const [rel, sources] of candidates) {
+    const declared = [...sources].some((s) => DECLARING.has(s))
+    const fm = tree.exists(rel) ? parseFrontmatter(tree.read(rel)) : {}
+    if (declared || isRelatedSpec(rel, fm, linked, editedSpecs)) {
+      mine.push(rel)
+      continue
+    }
+    notes.push(
+      `spec \`${rel}\` does not reference ${linked.map((n) => `#${n}`).join(' / ')} ` +
+        "and neither the PR nor the issue declares it as governing — read as background, not as this PR's spec.",
+    )
+  }
+
+  // PASS 2 — validate only the specs that ARE this PR's.
+  for (const rel of mine) {
     if (!tree.exists(rel)) {
       findings.push(`spec \`${rel}\` is referenced but does not exist in the tree.`)
       continue
     }
-    const text = tree.read(rel)
-    const status = specStatus(text)
+    const status = specStatus(tree.read(rel))
     if (status === null) {
       findings.push(
         `spec \`${rel}\` has no \`status:\` frontmatter (docs/specs/README.md § Status model).`,
@@ -294,21 +364,14 @@ export function evaluateSpecLink({ pr, issues, tree }) {
       )
       continue
     }
-    if (!isRelatedSpec(rel, parseFrontmatter(text), linked, touched)) {
-      notes.push(
-        `spec \`${rel}\` → status \`${status}\`, but it does not reference ` +
-          `${linked.map((n) => `#${n}`).join(' / ')} — read as background, not as this PR's spec.`,
-      )
-      continue
-    }
-    related += 1
     notes.push(`spec \`${rel}\` → status \`${status}\` OK`)
   }
+  const related = mine.length
 
   // A declared spec that belongs to different work does not satisfy the gate.
   if (related === 0 && findings.length === 0) {
     findings.push(
-      `PR #${pr?.number} names ${candidates.length} spec(s), but none of them references ` +
+      `PR #${pr?.number} names ${candidates.size} spec(s), but none of them references ` +
         `${linked.map((n) => `#${n}`).join(' / ')}. Relate the spec to the issue — by its ` +
         '`NNN-` prefix, its `issue:` frontmatter, or by editing that spec in this PR.',
     )
@@ -423,7 +486,9 @@ function main() {
     number: prRes.data.number,
     title: prRes.data.title,
     body: prRes.data.body ?? '',
-    files: (prRes.data.files ?? []).map((f) => f.path ?? f),
+    // Keep the whole entry: `additions`/`deletions` decide whether a touched
+    // spec was actually worked on or merely grazed (`substantiallyEdited`).
+    files: prRes.data.files ?? [],
   }
 
   const issues = []
