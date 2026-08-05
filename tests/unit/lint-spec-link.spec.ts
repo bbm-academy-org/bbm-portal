@@ -1,0 +1,344 @@
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { describe, expect, it } from 'vitest'
+
+import {
+  SPEC_STATUSES,
+  evaluateSpecLink,
+  exitCodeFor,
+  extractClosedIssues,
+  extractSpecPaths,
+  parseFrontmatter,
+  severityFromEnv,
+  specExemptReason,
+  specRequired,
+  specStatus,
+} from '../../tools/lint/spec-link-lint.mjs'
+
+/**
+ * The gate exists because a feature PR with no spec is a feature the owner
+ * never approved (task-cycle stage 1a/2). The guard is deliberately narrow: it
+ * fires only where the task-cycle actually demands a spec — a `Feature` issue
+ * (or a `feat:` PR) that changes production module code under `src/`.
+ */
+
+/** A tree stub: only the listed spec files exist. */
+function tree(files: Record<string, string>) {
+  return {
+    exists: (p: string) => Object.prototype.hasOwnProperty.call(files, p),
+    read: (p: string) => files[p],
+    listSpecs: () => Object.keys(files),
+  }
+}
+
+const SHIPPED = '---\nstatus: Shipped\nissue: 81\n---\n\n# Spec\n'
+const DRAFT = '---\nstatus: Draft\nissue: 81\n---\n\n# Spec\n'
+
+describe('parseFrontmatter / specStatus', () => {
+  it('reads the frontmatter block of a spec', () => {
+    expect(parseFrontmatter(SHIPPED)).toEqual({ status: 'Shipped', issue: '81' })
+    expect(specStatus(SHIPPED)).toBe('Shipped')
+  })
+
+  it('returns null for a spec with no frontmatter at all', () => {
+    expect(specStatus('# Spec\n\n## Why\n')).toBe(null)
+    expect(parseFrontmatter('# Spec\n')).toEqual({})
+  })
+
+  it('keeps the multi-word ladder value intact', () => {
+    expect(specStatus('---\nstatus: In dev\n---\n')).toBe('In dev')
+    expect(SPEC_STATUSES).toEqual(['Draft', 'In dev', 'Shipped', 'Superseded', 'Retired'])
+  })
+})
+
+describe('extractClosedIssues', () => {
+  it('takes every GitHub auto-close keyword, deduplicated', () => {
+    const body = 'Closes #135\n\nAlso fixes #12 and Resolved #135.'
+    expect(extractClosedIssues(body)).toEqual([135, 12])
+  })
+
+  it('is empty for a body with no link', () => {
+    expect(extractClosedIssues('## What\n\nSome change.')).toEqual([])
+    expect(extractClosedIssues('')).toEqual([])
+  })
+})
+
+describe('specExemptReason', () => {
+  it('reads the escape hatch and its reason', () => {
+    expect(specExemptReason('spec-exempt: CMS-contract upkeep, contract lives in schemas.ts')).toBe(
+      'CMS-contract upkeep, contract lives in schemas.ts',
+    )
+  })
+
+  it('returns an empty string for a bare marker — a reasonless exemption is not an exemption', () => {
+    expect(specExemptReason('spec-exempt:')).toBe('')
+    expect(specExemptReason('spec-exempt:    ')).toBe('')
+  })
+
+  it('returns null when the marker is absent', () => {
+    expect(specExemptReason('Closes #1')).toBe(null)
+  })
+})
+
+describe('extractSpecPaths', () => {
+  it('finds spec paths in prose, backticks and links; skips README', () => {
+    const body =
+      'Spec: `docs/specs/081-hours-calculator.md` and [design](docs/superpowers/specs/2026-08-04-x.md). See docs/specs/README.md.'
+    expect(extractSpecPaths(body)).toEqual([
+      'docs/specs/081-hours-calculator.md',
+      'docs/superpowers/specs/2026-08-04-x.md',
+    ])
+  })
+
+  it('normalizes Windows separators and deduplicates', () => {
+    expect(extractSpecPaths('docs\\specs\\081-a.md docs/specs/081-a.md')).toEqual([
+      'docs/specs/081-a.md',
+    ])
+  })
+})
+
+describe('specRequired', () => {
+  const src = ['src/modules/hours/page.tsx']
+
+  it('requires a spec for a Feature issue that changes src/', () => {
+    expect(
+      specRequired({ title: 'chore: x', files: src, issues: [{ number: 1, type: 'Feature' }] })
+        .required,
+    ).toBe(true)
+  })
+
+  it('requires a spec for a `feat:` PR touching src/, whatever the issue type', () => {
+    expect(
+      specRequired({
+        title: 'feat(hours): rate table',
+        files: src,
+        issues: [{ number: 1, type: 'Task' }],
+      }).required,
+    ).toBe(true)
+  })
+
+  it('does NOT require a spec for a fix/chore PR', () => {
+    expect(
+      specRequired({
+        title: 'fix(hours): off-by-one',
+        files: src,
+        issues: [{ number: 1, type: 'Bug' }],
+      }).required,
+    ).toBe(false)
+  })
+
+  it('does NOT require a spec for a feature PR that touches no production code', () => {
+    // Tooling / docs / skills PRs carry no user-facing behavior — stage 1a does
+    // not apply to them even under a `feat:` title.
+    const r = specRequired({
+      title: 'feat: SDD package',
+      files: ['docs/specs/README.md', 'tools/lint/spec-link-lint.mjs'],
+      issues: [{ number: 135, type: 'Feature' }],
+    })
+    expect(r.required).toBe(false)
+    expect(r.reason).toMatch(/src\//)
+  })
+})
+
+describe('evaluateSpecLink', () => {
+  const featurePr = {
+    number: 200,
+    title: 'feat(hours): hourly rate table',
+    body: 'Closes #102',
+    files: ['src/modules/hours/table.tsx'],
+  }
+  const featureIssue = { number: 102, type: 'Feature', body: '## Spec reference\n\nnone yet' }
+
+  it('FLAGS a feature PR with no spec link anywhere — the acceptance case', () => {
+    const res = evaluateSpecLink({
+      pr: featurePr,
+      issues: [featureIssue],
+      tree: tree({}),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.findings.join('\n')).toMatch(/no spec/i)
+  })
+
+  it('passes when the PR body names an existing spec with a valid status', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\nSpec: `docs/specs/102-x.md`' },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/102-x.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('ok')
+    expect(res.findings).toEqual([])
+  })
+
+  it('accepts a spec named in the linked ISSUE body, not only in the PR body', () => {
+    const res = evaluateSpecLink({
+      pr: featurePr,
+      issues: [{ ...featureIssue, body: '## Spec reference\n\ndocs/specs/102-x.md §3' }],
+      tree: tree({ 'docs/specs/102-x.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('ok')
+  })
+
+  it('accepts the issue-numbered spec that already exists in the tree', () => {
+    const res = evaluateSpecLink({
+      pr: featurePr,
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/102-hours-hourly-rate-table-cleanup.md': SHIPPED }),
+    })
+    expect(res.verdict).toBe('ok')
+  })
+
+  it('flags a named spec that does not exist in the tree', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\nSpec: docs/specs/102-ghost.md' },
+      issues: [featureIssue],
+      tree: tree({}),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.findings.join('\n')).toMatch(/does not exist/i)
+  })
+
+  it('flags a spec with no status frontmatter and one with a bogus value', () => {
+    const noStatus = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\ndocs/specs/102-x.md' },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/102-x.md': '# Spec\n' }),
+    })
+    expect(noStatus.findings.join('\n')).toMatch(/no `status:`/)
+
+    const bogus = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\ndocs/specs/102-x.md' },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/102-x.md': '---\nstatus: Готово\n---\n' }),
+    })
+    expect(bogus.findings.join('\n')).toMatch(/not a ladder status/)
+  })
+
+  it('flags implementing a spec still on Draft — no owner "go" has moved it', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\ndocs/specs/102-x.md' },
+      issues: [featureIssue],
+      tree: tree({ 'docs/specs/102-x.md': DRAFT }),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.findings.join('\n')).toMatch(/Draft/)
+  })
+
+  it('skips a PR with no auto-close link at all (a different guard owns that)', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, body: 'no link here' },
+      issues: [],
+      tree: tree({}),
+    })
+    expect(res.verdict).toBe('skip')
+  })
+
+  it('honours `spec-exempt:` with a reason, and refuses a reasonless one', () => {
+    const exempt = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\nspec-exempt: CMS-contract upkeep' },
+      issues: [featureIssue],
+      tree: tree({}),
+    })
+    expect(exempt.verdict).toBe('skip')
+    expect(exempt.notes.join('\n')).toMatch(/CMS-contract upkeep/)
+
+    const bare = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Closes #102\n\nspec-exempt:' },
+      issues: [featureIssue],
+      tree: tree({}),
+    })
+    expect(bare.verdict).toBe('findings')
+    expect(bare.findings.join('\n')).toMatch(/reason/i)
+  })
+
+  it('skips a chore PR entirely', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, title: 'chore(deps): bump', body: 'Closes #102' },
+      issues: [{ number: 102, type: 'Task', body: '' }],
+      tree: tree({}),
+    })
+    expect(res.verdict).toBe('skip')
+  })
+})
+
+describe('severity — WARN today, BLOCK on promotion (#136)', () => {
+  it('defaults to WARN so findings do not fail the run yet', () => {
+    expect(severityFromEnv({})).toBe('warn')
+    expect(exitCodeFor({ verdict: 'findings' }, 'warn')).toBe(0)
+  })
+
+  it('exits non-zero on findings once promoted to block', () => {
+    expect(severityFromEnv({ LINT_SEVERITY: 'block' })).toBe('block')
+    expect(exitCodeFor({ verdict: 'findings' }, 'block')).toBe(1)
+    expect(exitCodeFor({ verdict: 'ok' }, 'block')).toBe(0)
+    expect(exitCodeFor({ verdict: 'skip' }, 'block')).toBe(0)
+  })
+})
+
+describe('end-to-end guard run (the acceptance case, on the real script)', () => {
+  /** A synthetic PR + issue served through the `gh` fixture seam. */
+  function fixtureDirs(prBody: string, specFiles: Record<string, string>) {
+    const dir = mkdtempSync(join(tmpdir(), 'spec-link-'))
+    const ghDir = join(dir, 'gh')
+    const root = join(dir, 'root')
+    mkdirSync(ghDir, { recursive: true })
+    mkdirSync(join(root, 'docs', 'specs'), { recursive: true })
+    writeFileSync(
+      join(ghDir, 'pr-view-999.json'),
+      JSON.stringify({
+        number: 999,
+        title: 'feat(hours): payout summary',
+        body: prBody,
+        files: [{ path: 'src/modules/hours/summary.tsx' }],
+      }),
+    )
+    writeFileSync(
+      join(ghDir, 'issue-view-102.json'),
+      JSON.stringify({
+        number: 102,
+        title: 'Payout summary',
+        body: '',
+        issueType: { name: 'Feature' },
+      }),
+    )
+    for (const [name, text] of Object.entries(specFiles)) {
+      writeFileSync(join(root, 'docs', 'specs', name), text)
+    }
+    return { ghDir, root }
+  }
+
+  function run(
+    prBody: string,
+    specFiles: Record<string, string>,
+    env: Record<string, string> = {},
+  ) {
+    const { ghDir, root } = fixtureDirs(prBody, specFiles)
+    return spawnSync(process.execPath, ['tools/lint/spec-link-lint.mjs', '--pr', '999'], {
+      encoding: 'utf8',
+      env: { ...process.env, LINT_GH_FIXTURE_DIR: ghDir, LINT_FIXTURE_ROOT: root, ...env },
+    })
+  }
+
+  it('catches a synthetic feature PR that links no spec — and stays WARN (exit 0) today', () => {
+    const res = run('Closes #102', {})
+    expect(res.stderr).toMatch(/names no spec/)
+    expect(res.stderr).toMatch(/WARN/)
+    expect(res.status).toBe(0)
+  })
+
+  it('the same PR fails the run once the guard is promoted to block (#136)', () => {
+    const res = run('Closes #102', {}, { LINT_SEVERITY: 'block' })
+    expect(res.stderr).toMatch(/BLOCK/)
+    expect(res.status).toBe(1)
+  })
+
+  it('passes the same PR once the spec exists with a valid status', () => {
+    const res = run('Closes #102', {
+      '102-payout-summary.md': '---\nstatus: In dev\n---\n\n# Spec\n',
+    })
+    expect(res.stdout).toMatch(/PASS/)
+    expect(res.status).toBe(0)
+  })
+})
