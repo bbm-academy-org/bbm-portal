@@ -427,6 +427,56 @@ describe('#158: write-действие в транскрипте', () => {
     expect(hasWriteAction(bash('pnpm dev:ports'))).toBe(false)
   })
 
+  // MCP-инструменты — такой же способ мутировать состояние, как Edit и `gh`:
+  // в этом окружении включены GitHub и Plane MCP. Решает хвостовой сегмент
+  // имени `mcp__<сервер>__<инструмент>`, не сервер.
+  it('MCP-инструменты с мутирующим хвостом имени считаются', () => {
+    for (const name of [
+      'mcp__plugin_github_github__issue_write',
+      'mcp__plugin_github_github__sub_issue_write',
+      'mcp__plugin_github_github__pull_request_review_write',
+      'mcp__plugin_github_github__add_issue_comment',
+      'mcp__plugin_github_github__add_reply_to_pull_request_comment',
+      'mcp__plugin_github_github__merge_pull_request',
+      'mcp__plugin_github_github__create_pull_request',
+      'mcp__plugin_github_github__update_pull_request',
+      'mcp__plugin_github_github__create_or_update_file',
+      'mcp__plugin_github_github__create_branch',
+      'mcp__plugin_github_github__delete_file',
+      'mcp__plugin_github_github__push_files',
+      'mcp__plane-pp-mcp__plane_execute',
+      'mcp__plane-pp-mcp__workspaces_add',
+      'mcp__plane-pp-mcp__relations_set',
+      'mcp__plane-pp-mcp__attach_file',
+      'mcp__plane-pp-mcp__import',
+      'mcp__ide__executeCode',
+    ]) {
+      expect(hasWriteAction(toolUse(name, {}))).toBe(true)
+    }
+  })
+
+  it('read-shaped MCP-имена не считаются', () => {
+    for (const name of [
+      'mcp__plugin_github_github__search_issues',
+      'mcp__plugin_github_github__search_code',
+      'mcp__plugin_github_github__list_issues',
+      'mcp__plugin_github_github__list_commits',
+      'mcp__plugin_github_github__get_file_contents',
+      'mcp__plugin_github_github__issue_read',
+      'mcp__plugin_github_github__pull_request_read',
+      'mcp__plane-pp-mcp__workspaces_list',
+      'mcp__plane-pp-mcp__recall',
+      'mcp__plane-pp-mcp__stale',
+      'mcp__plugin_playwright_playwright__browser_snapshot',
+      // Браузер водит страницу, а не мутирует репо/трекер: `browser_close` не
+      // должен ловиться словом «close» и превращать приёмку в write-сессию.
+      'mcp__plugin_playwright_playwright__browser_close',
+      'mcp__plugin_playwright_playwright__browser_navigate',
+    ]) {
+      expect(hasWriteAction(toolUse(name, {}))).toBe(false)
+    }
+  })
+
   it('битые строки не роняют чтение, пустой и отсутствующий транскрипт молчат', () => {
     expect(hasWriteAction(['{ битая строка', toolUse('Read')].join('\n'))).toBe(false)
     expect(hasWriteAction(['{ битая строка', toolUse('Edit', { file_path: 'a' })].join('\n'))).toBe(
@@ -486,6 +536,26 @@ describe('#158: три Stop-гейта на read-only сессии', () => {
 
   it('сессия, только раздавшая субагентов, остаётся под гейтами', () => {
     expect(gates(DISPATCHED)).toEqual({ completion: true, deviations: true, debt: true })
+  })
+
+  // Мутация через MCP — единственный write в сессии: без этого сессия, закрывшая
+  // issue через GitHub MCP, уходила из-под всех трёх гейтов на одном тексте.
+  const MCP_WROTE = [
+    toolUse('mcp__plugin_github_github__issue_write', { method: 'update', state: 'closed' }),
+    assistantSays(REPORT_NO_MARKERS),
+  ].join('\n')
+
+  const MCP_READ_ONLY = [
+    toolUse('mcp__plugin_github_github__search_issues', { query: 'repo:o/r is:open' }),
+    assistantSays(REPORT_NO_MARKERS),
+  ].join('\n')
+
+  it('мутация через MCP гейты взводит', () => {
+    expect(gates(MCP_WROTE)).toEqual({ completion: true, deviations: true, debt: true })
+  })
+
+  it('чтение через MCP гейты не взводит', () => {
+    expect(gates(MCP_READ_ONLY)).toEqual({ completion: false, deviations: false, debt: false })
   })
 
   // Fail-open: транскрипт не прочитан → проверка НЕ ДАЛА ответа → гейты молчат.

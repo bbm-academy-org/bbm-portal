@@ -160,12 +160,53 @@ export const MUTATING_COMMAND_RE = new RegExp(
   'i',
 )
 
+/**
+ * Хвостовой сегмент имени MCP-инструмента: `mcp__<сервер>__<инструмент>` →
+ * `<инструмент>`. Решает именно хвост, а не сервер: список серверов меняется
+ * от сессии к сессии, а глагол в имени инструмента — нет.
+ */
+export function mcpToolTail(name) {
+  const parts = String(name || '').split('__')
+  return parts.length > 1 ? parts[parts.length - 1] : ''
+}
+
+/**
+ * Мутирующий глагол в имени MCP-инструмента. MCP — такой же способ изменить
+ * состояние, как `Edit` и `gh`: в этом окружении включены GitHub MCP
+ * (`issue_write`, `add_issue_comment`, `merge_pull_request`, `push_files`, …) и
+ * Plane MCP (`plane_execute`, `attach_file`, …), и сессия, чья единственная
+ * мутация прошла через них, иначе уходила бы из-под всех трёх гейтов на одном
+ * тексте.
+ *
+ * Философия та же, что у белого списка shell-команд: ловится только явный
+ * глагол. Read-shaped имена (`get_*`, `list_*`, `search_*`, `*_read`) не
+ * содержат ни одного из них и не считаются. `add`/`set` требуют границу
+ * сегмента (`^add_`, `_set$`), чтобы не ловиться внутри слов.
+ */
+export const MCP_MUTATION_RE =
+  /write|create|update|delete|merge|push|edit|close|execute|import|attach|(?:^|_)add(?:$|_)|(?:^|_)set(?:$|_)/i
+
+/**
+ * Инструменты браузерной автоматизации исключены из проверки выше: они ВОДЯТ
+ * страницу, а не мутируют репо или трекер. Без исключения `browser_close`
+ * ловился бы словом «close» и превращал сессию приёмки — открыл стенд,
+ * посмотрел, закрыл — ровно в тот ложный BLOCK, который чинит #158.
+ */
+export const MCP_BROWSER_TAIL_RE = /^browser_/i
+
 /** Один блок `tool_use` — write-действие? */
 export function isWriteToolUse(name, input) {
   const tool = String(name || '')
   if (WRITE_TOOLS.has(tool) || DISPATCH_TOOLS.has(tool)) return true
-  if (!SHELL_TOOLS.has(tool)) return false
-  return MUTATING_COMMAND_RE.test(String((input && input.command) || ''))
+  if (SHELL_TOOLS.has(tool)) {
+    return MUTATING_COMMAND_RE.test(String((input && input.command) || ''))
+  }
+  if (tool.startsWith('mcp__')) {
+    const tail = mcpToolTail(tool)
+    if (MCP_BROWSER_TAIL_RE.test(tail)) return false
+    return MCP_MUTATION_RE.test(tail)
+  }
+  return false
 }
 
 /**
