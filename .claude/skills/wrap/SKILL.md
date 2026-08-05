@@ -58,10 +58,13 @@ printf '%s\n' "${SEGMENTS[@]}"   # full paths: the dir carries the slug, the bas
   line without the marker", which is true of every multi-line log, so it excludes
   nothing. Measured on this box 2026-08-05: over 114 bbm-portal logs the inverted
   form excluded **0**, the positive form excluded **80**.
-- **`"promptSource":"sdk"` is the discriminator that actually fires here.** All
-  25 logs in the `…-worktrees-agent-*` / `…-worktrees-<N>` dirs carry it;
-  `"isSidechain":true` appears on **no** log on this box (every line is
-  `false`) — the clause stays only for harness variants that do emit it.
+- **`"promptSource":"sdk"` is the discriminator that actually fires here.** Of
+  the 80 excluded logs, **27** are every log in the `…-worktrees-<N>` /
+  `…-worktrees-agent-*` dirs and **53** sit in the MAIN slug dir — a dispatched
+  agent whose cwd is the main checkout writes there too, so the marker matters
+  in the main dir most of all. `"isSidechain":true` appears on **no** log on this
+  box (every line is `false`) — the clause stays only for harness variants that
+  do emit it.
 - Mtime is a **tiebreaker among content-matched candidates only** — never the
   primary selector. (A bare `ls -t | head -1` once grabbed a 30-second
   security-review sub-session with 0 human messages.)
@@ -203,9 +206,12 @@ all — it is read-only evidence, and the retro only extracts from it.
 
 Clean working tree; merge any green, reviewed PR with `pnpm pr:land <PR>` (it
 owns the whole tail: gate → squash-merge → board `Done` → teardown → re-sweep) —
-and a PR that merges in this wrap passes
-`.claude/skills/run-iteration-end-checklist/SKILL.md` first: the wrap is not a
-bypass of the iteration gate. Each task closed here gets its closing comment in
+whether a PR merging in this wrap needs the
+independent review and the iteration-end gate is decided by the one boundary in
+`.claude/skills/task-cycle/SKILL.md` stage 4 — never re-decided here. In
+practice a wrap's own edits land on canon files (`CLAUDE.md`, `.claude/rules/**`,
+`.claude/skills/task-cycle/**`), which puts them in the gated class: a wrap is
+not a bypass of its own regulation. Each task closed here gets its closing comment in
 the fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`); each task
 left open gets the `.claude/skills/task-canon/SKILL.md` §5 stop-state comment
 instead. Reconcile **both**

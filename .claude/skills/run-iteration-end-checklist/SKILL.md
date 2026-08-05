@@ -21,9 +21,11 @@ and "this iteration is actually finished".
 
 ## Scope
 
-PRs that touch code, tooling or migrations. A docs-only PR — or a prose-only
-edit to `.claude/**` — skips this gate, the same carve-out
-`.claude/skills/task-cycle/SKILL.md` stage 4 gives the review subagent.
+Every PR outside the **review-free class defined in
+`.claude/skills/task-cycle/SKILL.md` stage 4** runs this gate — that file owns
+the boundary and this one does not restate it. A PR in that class skips the gate
+and the review subagent together; anything else, including a prose-only edit to
+the process canon, runs both.
 
 ## Mode — dispatch, never self-check
 
