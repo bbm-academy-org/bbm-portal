@@ -1,11 +1,11 @@
-# Пустая issue запрещена: постановка без скелета канона §1 — это заявка, а не
-# задача, и разбирать её приходится тому, кто будет делать.
-# Канон: .claude/rules/task-canon.md
+# A blank issue is forbidden: a statement of work without the canon's skeleton
+# (§1) is a request, not a task, and whoever picks it up has to reconstruct it.
+# Canon: .claude/skills/task-canon/SKILL.md
 blank_issues_enabled: false
 contact_links:
-  - name: Завести задачу из сессии агента
-    url: https://github.com/bbm-academy-org/bbm-portal/blob/main/.claude/rules/task-canon.md
+  - name: Filing a task from an agent session
+    url: https://github.com/bbm-academy-org/bbm-portal/blob/main/.claude/skills/task-canon/SKILL.md
     about: >-
-      Агент заводит задачу только через `pnpm issue:create` — обёртка валидирует
-      таксономию до создания, ставит задачу на борд и выставляет Status=Todo.
-      Формы ниже — путь для владельца из веб-интерфейса.
+      An agent files a task only through `pnpm issue:create` — the wrapper
+      validates the taxonomy before creation, puts the task on the board and sets
+      Status=Todo. The forms below are the owner's path from the web UI.
