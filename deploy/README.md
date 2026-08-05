@@ -83,6 +83,10 @@ service with a command override.
 
 ## First deploy (ordered)
 
+First-time provisioning only — an empty box, an empty database, no admin user.
+Steady-state updates are `pnpm deploy:prod` (below), which does not repeat any
+of this.
+
 ```bash
 cd deploy
 
@@ -108,80 +112,56 @@ docker compose -f docker-compose.prod.yml logs -f caddy   # watch cert issuance
 Steps 1-3 implicitly start the `postgres` container (the `migrate` service
 `depends_on` it). It keeps running, so step 4 reuses it.
 
-## Shipping an update
+## Shipping an update — `pnpm deploy:prod`
+
+**This file no longer describes the update procedure.** It is one command, and
+its source of truth is the skill:
 
 ```bash
-# Ship `origin/main`, never the local `main` — a stale local checkout is how prod
-# silently ends up a merge behind (2026-07-30).
-git fetch origin
-
-# Refresh the tree on the host first. `tar -xz` is ADDITIVE — it overwrites but
-# NEVER deletes files retired in the branch, so a removed source file (e.g. a
-# retired collection) lingers on the host and breaks the type-check. Wipe `src/`
-# first, then extract (env files live in deploy/, not src/, so they survive):
-ssh portal-prod-tw 'rm -rf ~/bbm-portal/src'
-git archive --format=tar.gz origin/main | ssh portal-prod-tw 'tar -xz -C ~/bbm-portal'
-
-# Record WHAT was shipped — the host has no git clone, so the sha must travel
-# with the tree. This marker is what the post-check below compares.
-git rev-parse origin/main | ssh portal-prod-tw 'cat > ~/bbm-portal/DEPLOYED_SHA'
-cd deploy
-
-# Rebuild the app image. If migrations changed, rebuild `migrate` too — it builds
-# from the SEPARATE `tooling` target, and a stale tooling image makes the migrate
-# step a SILENT no-op (logs "Done." with no "Migrating:" lines).
-docker compose -f docker-compose.prod.yml build app migrate
-
-# Apply any new migrations BEFORE the new app starts serving, THEN verify they
-# actually landed (the silent-no-op trap above):
-docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U payload -d cms -c 'SELECT name, batch FROM payload_migrations ORDER BY id;'
-
-# Roll the app. Postgres + volumes persist.
-docker compose -f docker-compose.prod.yml up -d app
-# If the Caddyfile changed, `up -d caddy` does NOT pick it up (the bind-mounted
-# config does not recreate the container, and `caddy reload` reports "config is
-# unchanged"). Use a plain restart to reload it:
-docker compose -f docker-compose.prod.yml restart caddy
-
-# Optional: re-run the seed (idempotent) if SEED_ADMIN_* changed.
-docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
+pnpm deploy:prod          # ship origin/main
+pnpm deploy:prod --dry-run
 ```
 
-## Post-check: prod == `origin/main` (mandatory, task-cycle stage 6)
+- **Procedure, gates, rollback, failure modes:**
+  [`.claude/skills/run-prod-deploy/SKILL.md`](../.claude/skills/run-prod-deploy/SKILL.md)
+- **Executable form:** [`tools/deploy/prod.mjs`](../tools/deploy/prod.mjs)
+- **Migrations rule:**
+  [`docs/runbooks/migrations-expand-contract.md`](../docs/runbooks/migrations-expand-contract.md)
 
-A deploy is not done because the commands exited 0 — it is done when prod
-carries the same commit as `origin/main`. Run this from the workstation right
-after `up -d app`; a mismatch means finish shipping, not "noted":
+The script does exactly what the hand-run sequence used to do — ship the tree,
+build `app`+`migrate`, migrate before serving, `up -d`, reload Caddy only when
+its config actually changed — plus the parts a human reliably skipped: it
+refuses a dirty tree or red CI, it proves the RUNNING container carries the
+deployed image, it smoke-tests both vhosts, and it cuts a release tag and a
+GitHub Deployment record. Keeping a second, hand-written copy of those steps
+here is precisely how the two drift apart, so there is not one.
+
+### What replaced the `DEPLOYED_SHA` marker
+
+The old post-check wrote a `DEPLOYED_SHA` file next to the shipped tree and
+compared its mtime against the app container's `Created` timestamp. That pair
+answered "was a tree extracted, and was a container created after it" — never
+"is the code answering requests the code we shipped", so a skipped or failed
+rebuild passed it.
+
+The app now reports its own build sha, baked into the image at `docker build`
+(`ARG DEPLOY_SHA` → `ENV DEPLOY_SHA`, `image: bbm-portal-app:${DEPLOY_SHA}`):
 
 ```bash
-git fetch origin
-PROD=$(ssh portal-prod-tw 'cat ~/bbm-portal/DEPLOYED_SHA')
-[ "$PROD" = "$(git rev-parse origin/main)" ] \
-  && echo "prod == origin/main ($PROD)" \
-  || echo "DRIFT: prod=$PROD origin/main=$(git rev-parse origin/main)"
-
-# The marker proves what was EXTRACTED. Prove the RUNNING app carries it too:
-# the app container must have been created AFTER the marker was written. Both
-# timestamps are read ON THE HOST, both as unix epoch — a `docker` command run
-# on the workstation would inspect the LOCAL daemon and pass falsely.
-ssh portal-prod-tw '
-  MARKER=$(stat -c %Y ~/bbm-portal/DEPLOYED_SHA)
-  APP=$(date -d "$(docker inspect -f "{{.Created}}" bbm-portal-app-1)" +%s)
-  if [ "$APP" -ge "$MARKER" ]; then
-    echo "app container newer than the shipped tree (app=$APP marker=$MARKER)"
-  else
-    echo "STALE APP: rebuild/up -d app was skipped (app=$APP marker=$MARKER)"
-  fi'
+curl -s https://cms.bbm.academy/api/health | jq -r .sha
 ```
 
-The container name is `bbm-portal-app-1` — compose project `name: bbm-portal`
-in `docker-compose.prod.yml`, not the `deploy/` directory name.
+The marker file is obsolete; a leftover `~/bbm-portal/DEPLOYED_SHA` on the box
+can be deleted.
 
-> TODO: replace the marker+timestamp pair with the app itself reporting its
-> build sha (a `/api/health` field baked in at `docker build`) — then the
-> post-check is one HTTP call and cannot be fooled by a skipped rebuild.
+### Seeding after an update
+
+The admin seed is idempotent and is NOT part of the deploy pipeline. Run it by
+hand only when `SEED_ADMIN_*` changed:
+
+```bash
+cd deploy && docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
+```
 
 ## Preview service (`preview.bbm.academy`, epic #13)
 
@@ -278,5 +258,13 @@ preview && docker compose -f docker-compose.prod.yml up -d preview`.
   `caddy_config`. They survive `down`; do not `down -v` in prod (wipes data).
 - **No published DB/app ports:** Postgres is internal-only; the app is reachable
   only through Caddy on 80/443.
-- **Rollback:** rebuild from a previous commit and `up -d app`. Migrations are
-  forward-only by policy; coordinate any `migrate:down` manually.
+- **Rollback:** `pnpm deploy:prod --rollback <sha>` brings up a retained
+  `bbm-portal-app:<sha>` image — no rebuild, no migrate, no DB change (retention
+  keeps the last 3 sha-tagged images). It is only safe while the previous code
+  still runs against the current schema, which is what
+  [`docs/runbooks/migrations-expand-contract.md`](../docs/runbooks/migrations-expand-contract.md)
+  exists to guarantee. Migrations stay forward-only; `migrate:down` is not the
+  production rollback plan.
+- **No automated database backup on this box.** `pgdata` is a single named
+  volume with no snapshot or WAL archiving. A destructive migration therefore
+  has no undo — see the canon above.
