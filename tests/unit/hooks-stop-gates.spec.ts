@@ -4,7 +4,9 @@ import {
   decideBlock as decideCompletionBlock,
   extractLastAssistantText,
   hasEyesOrNoVisualChange,
+  hasWriteAction,
   isCompletionReport,
+  isEnforceableTerminalReport,
   isTerminalReport,
 } from '../../tools/hooks/completion-report-gate.mjs'
 import {
@@ -13,11 +15,16 @@ import {
   hasDeviationsLine,
   hasNoDeviationsValue,
 } from '../../tools/hooks/deviations-gate.mjs'
+import { decideWarn } from '../../tools/hooks/surface-decision-debt-gate.mjs'
 
 /**
  * Два Stop-гейта (#91) делят один распознаватель терминального отчёта, поэтому
  * ложное срабатывание распознавателя блокировало бы остановку дважды — набор
  * кейсов ниже держит границу «отчёт о завершении» против статусов и вопросов.
+ *
+ * С #158 распознаватель двусоставный: ТЕКСТ читается как отчёт И сессия
+ * действительно совершила write-действие. Поэтому кейсы решения ниже передают
+ * `writeActionSeen: true` явно — они описывают сессию, которая работала.
  */
 
 const REPORT_NO_MARKERS = 'Готово: PR #92 смержен, issue закрыт. Всё зелёное.'
@@ -64,7 +71,11 @@ describe('распознаватель терминального отчёта',
 describe('completion-report-gate (stage 6)', () => {
   it('блокирует отчёт без «Проверить глазами» и без честной формулы', () => {
     expect(
-      decideCompletionBlock({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS }),
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }),
     ).toEqual({ block: true })
   })
 
@@ -72,6 +83,7 @@ describe('completion-report-gate (stage 6)', () => {
     expect(
       decideCompletionBlock({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: `${REPORT_NO_MARKERS}\nПроверить глазами: https://portal.bbm.academy/p/hours`,
       }).block,
     ).toBe(false)
@@ -88,14 +100,22 @@ describe('completion-report-gate (stage 6)', () => {
 
   it('loop-guard: после одного блока остановка проходит', () => {
     expect(
-      decideCompletionBlock({ stopHookActive: true, lastAssistantText: REPORT_NO_MARKERS }).block,
+      decideCompletionBlock({
+        stopHookActive: true,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }).block,
     ).toBe(false)
   })
 
   it('нет ассистентского текста — блокировать нечего (fail-open)', () => {
-    expect(decideCompletionBlock({ stopHookActive: false, lastAssistantText: null }).block).toBe(
-      false,
-    )
+    expect(
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: null,
+      }).block,
+    ).toBe(false)
   })
 })
 
@@ -103,7 +123,13 @@ describe('deviations-gate (stage 7)', () => {
   const withEyes = `${REPORT_NO_MARKERS}\nПроверить глазами: https://portal.bbm.academy/p/okr`
 
   it('блокирует отчёт без строки «Отклонения от конвенций»', () => {
-    expect(decideDeviationsBlock({ stopHookActive: false, lastAssistantText: withEyes })).toEqual({
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: withEyes,
+      }),
+    ).toEqual({
       block: true,
     })
   })
@@ -114,6 +140,7 @@ describe('deviations-gate (stage 7)', () => {
     expect(
       decideDeviationsBlock({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: `${withEyes}\nОтклонения от конвенций: нет`,
       }).block,
     ).toBe(false)
@@ -121,18 +148,30 @@ describe('deviations-gate (stage 7)', () => {
 
   it('оба гейта срабатывают на одном множестве сообщений', () => {
     const interim = '⏳ Checkpoint: PR #92 смержен в ветку, жду CI'
-    expect(decideCompletionBlock({ stopHookActive: false, lastAssistantText: interim }).block).toBe(
-      false,
-    )
-    expect(decideDeviationsBlock({ stopHookActive: false, lastAssistantText: interim }).block).toBe(
-      false,
-    )
+    expect(
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: interim,
+      }).block,
+    ).toBe(false)
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: interim,
+      }).block,
+    ).toBe(false)
   })
 
   it('loop-guard общий для обоих гейтов', () => {
-    expect(decideDeviationsBlock({ stopHookActive: true, lastAssistantText: withEyes }).block).toBe(
-      false,
-    )
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: true,
+        writeActionSeen: true,
+        lastAssistantText: withEyes,
+      }).block,
+    ).toBe(false)
   })
 })
 
@@ -162,6 +201,7 @@ describe('deviations-gate: самосертификация «нет» посл�
   it('«нет» + стоп владельца в сессии → блок', () => {
     const d = decideDeviationsBlock({
       stopHookActive: false,
+      writeActionSeen: true,
       lastAssistantText: noDeviations,
       haltSignal: true,
     })
@@ -173,6 +213,7 @@ describe('deviations-gate: самосертификация «нет» посл�
     expect(
       decideDeviationsBlock({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: noDeviations,
         haltSignal: false,
       }).block,
@@ -183,6 +224,7 @@ describe('deviations-gate: самосертификация «нет» посл�
     expect(
       decideDeviationsBlock({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: listed,
         haltSignal: true,
       }).block,
@@ -193,6 +235,7 @@ describe('deviations-gate: самосертификация «нет» посл�
     expect(
       decideDeviationsBlock({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: withEyes,
         haltSignal: true,
       }).block,
@@ -298,5 +341,183 @@ describe('чтение транскрипта', () => {
 
   it('пустой транскрипт даёт null', () => {
     expect(extractLastAssistantText('')).toBeNull()
+  })
+})
+
+/**
+ * #158 — вторая половина распознавателя: сессия, которая ничего не писала, не
+ * может отчитываться о завершении. Живой инцидент 2026-08-05: владелец спросил
+ * «про что issue #157», ответ-ориентировка неизбежно нёс слова «закрыт»,
+ * «смержен» и номера PR — оба BLOCK-гейта сработали на чистом чтении.
+ */
+
+const toolUse = (name: string, input: Record<string, unknown> = {}, id = 'a1') =>
+  JSON.stringify({
+    type: 'assistant',
+    message: { id, content: [{ type: 'tool_use', name, input }] },
+  })
+
+const assistantSays = (text: string, id = 'zz') =>
+  JSON.stringify({ type: 'assistant', message: { id, content: [{ type: 'text', text }] } })
+
+const bash = (command: string) => toolUse('Bash', { command })
+
+describe('#158: write-действие в транскрипте', () => {
+  it('инструменты записи', () => {
+    for (const name of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      expect(hasWriteAction(toolUse(name, { file_path: 'src/a.ts' }))).toBe(true)
+    }
+  })
+
+  // Лид, раздавший работу субагентам, сам не писал ни строки, но отчитывается
+  // именно он — диспетчеризация обязана считаться write-действием, иначе
+  // оркестрирующая сессия выпадает из-под всех трёх гейтов.
+  it('диспетчеризация субагента считается: писали субагенты, отчитывается лид', () => {
+    expect(hasWriteAction(toolUse('Agent', { subagent_type: 'general-purpose' }))).toBe(true)
+    expect(hasWriteAction(toolUse('Task', { prompt: 'сделай' }))).toBe(true)
+  })
+
+  it('read-only инструменты не считаются', () => {
+    for (const name of [
+      'Read',
+      'Grep',
+      'Glob',
+      'WebFetch',
+      'WebSearch',
+      'Skill',
+      'AskUserQuestion',
+    ]) {
+      expect(hasWriteAction(toolUse(name, { file_path: 'src/a.ts', pattern: 'x' }))).toBe(false)
+    }
+  })
+
+  it('мутирующие shell-команды из белого списка', () => {
+    expect(hasWriteAction(bash('git -C "C:/Users/x/repo" commit -m "fix: x"'))).toBe(true)
+    expect(hasWriteAction(bash('git push -u origin fix/158-x'))).toBe(true)
+    expect(hasWriteAction(bash('git merge --ff-only origin/main'))).toBe(true)
+    expect(hasWriteAction(bash('gh pr create --fill'))).toBe(true)
+    expect(hasWriteAction(bash('gh pr merge 159 --squash'))).toBe(true)
+    expect(hasWriteAction(bash('gh issue close 158 --repo o/r'))).toBe(true)
+    expect(hasWriteAction(bash('gh issue comment 158 --body-file x.md'))).toBe(true)
+    expect(hasWriteAction(bash('gh api --method PATCH /repos/o/r/issues/1 -f state=closed'))).toBe(
+      true,
+    )
+    expect(hasWriteAction(bash('gh api -X POST /repos/o/r/issues/1/comments'))).toBe(true)
+    expect(hasWriteAction(bash('pnpm pr:land 159'))).toBe(true)
+    expect(hasWriteAction(bash('pnpm issue:create --title x'))).toBe(true)
+    expect(hasWriteAction(bash('pnpm deploy:prod'))).toBe(true)
+    expect(hasWriteAction(toolUse('PowerShell', { command: 'git -C C:/repo push' }))).toBe(true)
+  })
+
+  it('видит мутацию во второй команде цепочки', () => {
+    expect(hasWriteAction(bash('export PATH=$X:$PATH && git -C "C:/repo" commit -m y'))).toBe(true)
+    expect(hasWriteAction(bash('git -C "C:/repo" add . ; git -C "C:/repo" push'))).toBe(true)
+  })
+
+  // Белый список консервативен намеренно: пропустить мутацию дешевле, чем
+  // записать чтение в записи и вернуть ровно тот ложный блок, который чинится.
+  it('читающие shell-команды не считаются', () => {
+    expect(hasWriteAction(bash('git -C "C:/repo" status --short'))).toBe(false)
+    expect(hasWriteAction(bash('git -C "C:/repo" log --oneline -5'))).toBe(false)
+    expect(hasWriteAction(bash('git -C "C:/repo" diff origin/main'))).toBe(false)
+    expect(hasWriteAction(bash('gh pr view 158 --json body'))).toBe(false)
+    expect(hasWriteAction(bash('gh issue list --repo o/r'))).toBe(false)
+    expect(hasWriteAction(bash('gh api /repos/o/r/pulls/158'))).toBe(false)
+    expect(hasWriteAction(bash('pnpm test:unit'))).toBe(false)
+    expect(hasWriteAction(bash('pnpm dev:ports'))).toBe(false)
+  })
+
+  it('битые строки не роняют чтение, пустой и отсутствующий транскрипт молчат', () => {
+    expect(hasWriteAction(['{ битая строка', toolUse('Read')].join('\n'))).toBe(false)
+    expect(hasWriteAction(['{ битая строка', toolUse('Edit', { file_path: 'a' })].join('\n'))).toBe(
+      true,
+    )
+    expect(hasWriteAction('')).toBe(false)
+    expect(hasWriteAction(null)).toBe(false)
+    expect(hasWriteAction(undefined)).toBe(false)
+  })
+})
+
+describe('#158: три Stop-гейта на read-only сессии', () => {
+  /** Ответ-ориентировка: только чтение, а текст неизбежно отчётной формы. */
+  const ORIENTATION = [
+    JSON.stringify({ type: 'user', message: { content: 'про что issue #157?' } }),
+    toolUse('Read', { file_path: 'docs/ci-guardrails.md' }),
+    toolUse('Grep', { pattern: 'deploy' }),
+    toolUse('Bash', { command: 'gh issue view 157 --repo o/r' }),
+    assistantSays(
+      'Issue #157 — про приёмку deploy:prod. PR #153 смержен, эпик #117 закрыт 2026-08-05.',
+    ),
+  ].join('\n')
+
+  const WROTE = [toolUse('Edit', { file_path: 'src/a.ts' }), assistantSays(REPORT_NO_MARKERS)].join(
+    '\n',
+  )
+
+  const DISPATCHED = [
+    toolUse('Agent', { subagent_type: 'general-purpose', model: 'opus' }),
+    assistantSays(REPORT_NO_MARKERS),
+  ].join('\n')
+
+  const gates = (jsonl: string) => {
+    const args = {
+      stopHookActive: false,
+      lastAssistantText: extractLastAssistantText(jsonl),
+      writeActionSeen: hasWriteAction(jsonl),
+    }
+    return {
+      completion: decideCompletionBlock(args).block,
+      deviations: decideDeviationsBlock(args).block,
+      debt: decideWarn(args).warn,
+    }
+  }
+
+  it('текст ориентировки по-прежнему читается как отчёт — ловушка ровно в этом', () => {
+    expect(isTerminalReport(extractLastAssistantText(ORIENTATION))).toBe(true)
+  })
+
+  it('read-only сессия проходит все три гейта молча', () => {
+    expect(gates(ORIENTATION)).toEqual({ completion: false, deviations: false, debt: false })
+  })
+
+  it('сессия с записью и отчётом без маркеров блокируется как раньше', () => {
+    expect(gates(WROTE)).toEqual({ completion: true, deviations: true, debt: true })
+  })
+
+  it('сессия, только раздавшая субагентов, остаётся под гейтами', () => {
+    expect(gates(DISPATCHED)).toEqual({ completion: true, deviations: true, debt: true })
+  })
+
+  // Fail-open: транскрипт не прочитан → проверка НЕ ДАЛА ответа → гейты молчат.
+  // Плата — настоящий отчёт при битом транскрипте проходит; это принято.
+  it('нечитаемый транскрипт: проверка безрезультатна → гейты молчат', () => {
+    expect(gates('')).toEqual({ completion: false, deviations: false, debt: false })
+    expect(
+      decideCompletionBlock({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS }).block,
+    ).toBe(false)
+    expect(
+      decideDeviationsBlock({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS }).block,
+    ).toBe(false)
+    expect(decideWarn({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS }).warn).toBe(
+      false,
+    )
+  })
+
+  it('полный распознаватель — один seam на все три гейта', () => {
+    expect(
+      isEnforceableTerminalReport({
+        lastAssistantText: REPORT_NO_MARKERS,
+        writeActionSeen: false,
+      }),
+    ).toBe(false)
+    expect(
+      isEnforceableTerminalReport({ lastAssistantText: REPORT_NO_MARKERS, writeActionSeen: true }),
+    ).toBe(true)
+    expect(
+      isEnforceableTerminalReport({
+        lastAssistantText: '⏳ Checkpoint: PR #92 смержен в ветку, жду CI',
+        writeActionSeen: true,
+      }),
+    ).toBe(false)
   })
 })

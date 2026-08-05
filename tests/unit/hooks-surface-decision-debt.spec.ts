@@ -49,54 +49,79 @@ describe('surface-decision-debt gate: распознавание строки', 
 
 describe('surface-decision-debt gate: решение', () => {
   it('предупреждает на терминальном отчёте без строки', () => {
-    expect(decideWarn({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS })).toEqual({
+    expect(
+      decideWarn({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }),
+    ).toEqual({
       warn: true,
     })
-    expect(decideWarn({ stopHookActive: false, lastAssistantText: REPORT_STAGE67 }).warn).toBe(true)
+    expect(
+      decideWarn({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_STAGE67,
+      }).warn,
+    ).toBe(true)
   })
 
   it('молчит, когда строка есть — и пустая, и с маршрутизацией', () => {
     expect(
       decideWarn({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: `${REPORT_STAGE67}\nsurface-decision-debt: []`,
       }).warn,
     ).toBe(false)
     expect(
       decideWarn({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: `${REPORT_STAGE67}\nsurface-decision-debt: WARN вместо BLOCK → #136`,
       }).warn,
     ).toBe(false)
   })
 
   it('loop-guard: после блока другого Stop-гейта не предупреждает', () => {
-    expect(decideWarn({ stopHookActive: true, lastAssistantText: REPORT_NO_MARKERS }).warn).toBe(
-      false,
-    )
+    expect(
+      decideWarn({
+        stopHookActive: true,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }).warn,
+    ).toBe(false)
   })
 
   it('нет ассистентского текста — предупреждать не о чем (fail-open)', () => {
-    expect(decideWarn({ stopHookActive: false, lastAssistantText: null }).warn).toBe(false)
-    expect(decideWarn({ stopHookActive: false, lastAssistantText: '' }).warn).toBe(false)
+    expect(
+      decideWarn({ stopHookActive: false, writeActionSeen: true, lastAssistantText: null }).warn,
+    ).toBe(false)
+    expect(
+      decideWarn({ stopHookActive: false, writeActionSeen: true, lastAssistantText: '' }).warn,
+    ).toBe(false)
   })
 
   it('не трогает вопрос владельцу, промежуточный статус и предложение следующего шага', () => {
     expect(
       decideWarn({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: 'PR #135 смержен. Закрывать ли issue #134?',
       }).warn,
     ).toBe(false)
     expect(
       decideWarn({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: '⏳ Checkpoint: PR #135 смержен в ветку, жду CI',
       }).warn,
     ).toBe(false)
     expect(
       decideWarn({
         stopHookActive: false,
+        writeActionSeen: true,
         lastAssistantText: 'PR #135 смержен. Предлагаю запустить /wrap.',
       }).warn,
     ).toBe(false)
@@ -106,33 +131,69 @@ describe('surface-decision-debt gate: решение', () => {
 describe('surface-decision-debt gate: композиция с двумя блокирующими гейтами', () => {
   it('срабатывает ровно на том же множестве сообщений', () => {
     const interim = '⏳ Checkpoint: PR #135 смержен в ветку, жду CI'
-    expect(decideCompletionBlock({ stopHookActive: false, lastAssistantText: interim }).block).toBe(
-      false,
-    )
-    expect(decideDeviationsBlock({ stopHookActive: false, lastAssistantText: interim }).block).toBe(
-      false,
-    )
-    expect(decideWarn({ stopHookActive: false, lastAssistantText: interim }).warn).toBe(false)
+    expect(
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: interim,
+      }).block,
+    ).toBe(false)
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: interim,
+      }).block,
+    ).toBe(false)
+    expect(
+      decideWarn({ stopHookActive: false, writeActionSeen: true, lastAssistantText: interim }).warn,
+    ).toBe(false)
 
     expect(
-      decideCompletionBlock({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS }).block,
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }).block,
     ).toBe(true)
     expect(
-      decideDeviationsBlock({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS }).block,
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }).block,
     ).toBe(true)
-    expect(decideWarn({ stopHookActive: false, lastAssistantText: REPORT_NO_MARKERS }).warn).toBe(
-      true,
-    )
+    expect(
+      decideWarn({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }).warn,
+    ).toBe(true)
   })
 
   it('отчёт stage 6/7 проходит блокирующие гейты и остаётся только с WARN', () => {
     expect(
-      decideCompletionBlock({ stopHookActive: false, lastAssistantText: REPORT_STAGE67 }).block,
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_STAGE67,
+      }).block,
     ).toBe(false)
     expect(
-      decideDeviationsBlock({ stopHookActive: false, lastAssistantText: REPORT_STAGE67 }).block,
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_STAGE67,
+      }).block,
     ).toBe(false)
-    expect(decideWarn({ stopHookActive: false, lastAssistantText: REPORT_STAGE67 }).warn).toBe(true)
+    expect(
+      decideWarn({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_STAGE67,
+      }).warn,
+    ).toBe(true)
   })
 
   it('текст предупреждения называет обе строки и не выдаёт себя за блок', () => {
