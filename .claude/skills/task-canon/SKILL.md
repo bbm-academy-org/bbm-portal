@@ -327,7 +327,7 @@ artifact itself (the script's `--help` and its file header).
 | `pnpm task:worktree <N>` / `worktree:teardown` | the worktree as the first claim signal (§4); the branch prefix is derived from Type                                   | `parallel-sessions.md`                     |
 | The `spec-issue-graph` skill                   | opening a connected set of tasks from a spec: sub-issues, edges, exactly one pickable                                 | `.claude/skills/spec-issue-graph/SKILL.md` |
 | Issue forms                                    | the owner's path from the web UI; the form sets Type and `channel:owner` itself, a blank issue is forbidden           | `.github/ISSUE_TEMPLATE/*.yml`             |
-| `.github/branch-protection.json`               | declarative protection of `main`: required check `lint-and-typecheck`, linear history, no force-push                  | the file itself                            |
+| `.github/branch-protection.json`               | declarative protection of `main`: required check `ci` (the aggregate meta-job), linear history, no force-push         | `docs/ci-guardrails.md` §2.1               |
 
 `.github/branch-protection.json` is a payload, not a state: it is applied by hand
 with

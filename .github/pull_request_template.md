@@ -8,6 +8,14 @@
 
 Closes #
 
+## Product note (RU)
+
+<!-- Две фразы продуктовым языком: что читатель теперь увидит. Для PR, который
+     никто не видит (тулинг, доки, бэкенд без UI), допустимо `none`.
+     Проверяется гардом product-note — docs/ci-guardrails.md §5. -->
+
+none
+
 ## Task-cycle checklist
 
 - [ ] Owner's "go" was given in-session on this scope (stage 2) — or this is a chore inside an already-granted scope

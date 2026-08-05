@@ -1,3 +1,8 @@
+# Severity of every job below is defined by docs/ci-guardrails.md §2.1 and is
+# READ OFF THIS FILE, not off any prose: BLOCK = no `continue-on-error` AND the
+# job is in the `ci` meta-job's needs-list; WARN = `continue-on-error: true` AND
+# absent from that list. Promotion of a WARN job to BLOCK is three edits — drop
+# the `continue-on-error` line, add the job to `needs`, update the canon's §5 row.
 name: CI
 
 on:
@@ -6,6 +11,7 @@ on:
   pull_request:
 
 jobs:
+  # BLOCK — the repo's original gate, unchanged.
   lint-and-typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -48,3 +54,110 @@ jobs:
       # the Dockerfile, which builds with no env. `next build` also typechecks.
       - name: Build (next build)
         run: pnpm build
+
+  # BLOCK — the guards' own tests. A guard whose test tier is not in the
+  # needs-list can rot silently while still reporting green (canon §5).
+  guard-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Guard specs
+        run: pnpm test:guards
+
+  # BLOCK from day 0 under the canon §3 class-1 mandate (deterministic tree
+  # check — no network, no PR metadata, no heuristics, so no false-positive class
+  # to soak for). This is what makes "a guard without a test does not get merged"
+  # mechanical rather than a convention.
+  guard-test-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:guard-test-coverage
+
+  # WARN — production changed with no test in the diff and none in the tree.
+  # Reads the PR's changed-file set through `gh`, hence the auth block
+  # (workflow-auth enforces its presence).
+  tdd-signal:
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:tdd-signal
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
+  # WARN — dev placeholder / untracked stub marker on the render surface.
+  no-stub:
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:no-stub
+
+  # WARN — meta-guard over this very file: a gh-gated job with no `permissions:`
+  # + `GH_TOKEN` goes red before it evaluates its own rule, which looks exactly
+  # like a real finding and quietly spends that guard's promotion window.
+  workflow-auth:
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:workflow-auth
+
+  # ─── Meta-job: the single aggregate status check ────────────────────────────
+  # The needs-list IS the BLOCK set (canon §2.1). WARN jobs are deliberately
+  # absent; PR-body guards live in pr-body-guards.yml and cannot be listed here
+  # at all (`needs` does not cross workflows — canon §2.1 says what to do when
+  # one of them is promoted).
+  #
+  # The job name must stay literally `ci`: it is the context named in
+  # .github/branch-protection.json, so renaming it silently unhooks the gate.
+  ci:
+    needs: [lint-and-typecheck, guard-tests, guard-test-coverage]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      # A required job must SUCCEED. `skipped` and `cancelled` are red too: a job
+      # that never ran proved nothing, and treating only `failure` as red lets a
+      # broken upstream job green the aggregate on a run where nothing was built
+      # or tested.
+      - name: Aggregate
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'skipped') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "A required job failed, was skipped, or was cancelled"; exit 1
+          fi
+          echo "All required jobs green"
