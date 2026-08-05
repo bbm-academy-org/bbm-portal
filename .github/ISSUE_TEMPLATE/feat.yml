@@ -1,5 +1,5 @@
-name: Функциональность (Feature)
-description: Новая возможность или заметное изменение поведения
+name: Feature
+description: A new capability or a noticeable change in behavior
 type: Feature
 labels:
   - channel:owner
@@ -7,35 +7,36 @@ body:
   - type: markdown
     attributes:
       value: |
-        Форма выставляет штатный тип **Feature** и лейбл `channel:owner`
-        (из веб-интерфейса задачи заводит владелец; агенты идут через
-        `pnpm issue:create`). Отдельно проставь **milestone** — его форма задать не
-        может, и `pnpm backlog:triage` его отсутствие покажет.
-        Скелет и семантика полей: `.claude/rules/task-canon.md` §1.
+        This form sets the built-in type **Feature** and the `channel:owner`
+        label (from the web UI tasks are filed by the owner; agents go through
+        `pnpm issue:create`). Set the **milestone** separately — the form cannot
+        set it, and `pnpm backlog:triage` will report it missing.
+        Field skeleton and semantics: `.claude/skills/task-canon/SKILL.md` §1.
   - type: textarea
     id: source
     attributes:
       label: Source
       description: >-
-        На основании чего задача существует — свободный текст, одна строка.
-        Например: «баг-репорт Антона в Mattermost 2026-08-04», «executive-решение
-        партнёров», «просьба коллеги на созвоне», «сам поймал при работе над #124»,
-        «обновилась зависимость payload 3.86», «изменилась миссия».
-      placeholder: баг-репорт в Mattermost 2026-08-04
+        On the basis of what this task exists — free text, one line. For
+        example: "bug report from Anton in Mattermost 2026-08-04", "executive
+        decision by the partners", "a colleague's request on a call", "caught it
+        myself while working on #124", "payload dependency bumped to 3.86", "the
+        mission changed".
+      placeholder: bug report in Mattermost 2026-08-04
     validations:
       required: true
   - type: textarea
     id: context
     attributes:
       label: Context
-      description: Почему сейчас, какую боль закрывает, откуда взялось решение. Ссылки на спеку/ADR/PRD.
+      description: Why now, what pain it closes, where the solution came from. Links to the spec/ADR/PRD.
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: Scope
-      description: 'Пустой «Out of scope» — запах: значит границы не думали.'
+      description: 'An empty "Out of scope" is a smell: the boundaries were never thought through.'
       value: |
         **In scope:**
 
@@ -51,15 +52,15 @@ body:
     attributes:
       label: Spec reference
       description: >-
-        Спека/ADR + конкретный §. Если спека не нужна по гейту task-cycle stage 1a
-        — напиши «нет спеки: <причина>». Пустым это поле не бывает.
+        Spec/ADR + the specific §. If no spec is needed per the task-cycle stage
+        1a gate, write "no spec: <reason>". This field is never empty.
     validations:
       required: true
   - type: textarea
     id: acceptance-criteria
     attributes:
       label: Acceptance criteria
-      description: Наблюдаемо и проверяемо — команда, URL, статус, файл. «Работает» критерием не является.
+      description: Observable and checkable — a command, a URL, a status, a file. "It works" is not a criterion.
       value: |
         - [ ]
     validations:
@@ -69,8 +70,9 @@ body:
     attributes:
       label: Dependencies
       description: >-
-        Человекочитаемое зеркало нативного графа. Сами связи проводятся через API
-        (sub-issue / blocked_by) — проза связью не считается (канон §3).
+        A human-readable mirror of the native graph. The links themselves are
+        drawn through the API (sub-issue / blocked_by) — prose does not count as
+        a link (canon §3).
       value: |
         **Blocked by:**
         **Blocks:**
@@ -80,6 +82,6 @@ body:
     id: notes
     attributes:
       label: Notes
-      description: Свободный текст. Stop-state-комментарии живут комментариями, не правкой тела.
+      description: Free text. Stop-state comments live as comments, not as body edits.
     validations:
       required: false

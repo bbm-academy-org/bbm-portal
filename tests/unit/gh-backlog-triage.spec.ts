@@ -20,7 +20,7 @@ import {
 /**
  * `pnpm backlog:triage` считает готовность из НАТИВНОГО графа, а не из лейбла.
  * Разбор и классификация вынесены в чистые функции — тесты гоняют их без сети.
- * Канон: `.claude/rules/task-canon.md` §2, §3, §4.
+ * Канон: `.claude/skills/task-canon/SKILL.md` §2, §3, §4.
  */
 
 describe('missingFields', () => {

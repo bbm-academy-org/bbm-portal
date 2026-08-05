@@ -1,5 +1,5 @@
-name: Дефект (Bug)
-description: Что-то сломано или ведёт себя не так, как задумано
+name: Bug
+description: Something is broken or behaves differently from what was intended
 type: Bug
 labels:
   - channel:owner
@@ -7,21 +7,22 @@ body:
   - type: markdown
     attributes:
       value: |
-        Форма выставляет штатный тип **Bug** и лейбл `channel:owner` (из
-        веб-интерфейса задачи заводит владелец; агенты идут через
-        `pnpm issue:create`). Отдельно проставь **milestone**.
-        Задача типа Bug без воспроизведения не берётся, а возвращается автору
-        (`.claude/rules/task-canon.md` §1).
+        This form sets the built-in type **Bug** and the `channel:owner` label
+        (from the web UI tasks are filed by the owner; agents go through
+        `pnpm issue:create`). Set the **milestone** separately.
+        A Bug without a reproduction is not picked up but returned to its author
+        (`.claude/skills/task-canon/SKILL.md` §1).
   - type: textarea
     id: source
     attributes:
       label: Source
       description: >-
-        На основании чего задача существует — свободный текст, одна строка.
-        Например: «баг-репорт Антона в Mattermost 2026-08-04», «executive-решение
-        партнёров», «просьба коллеги на созвоне», «сам поймал при работе над #124»,
-        «обновилась зависимость payload 3.86», «изменилась миссия».
-      placeholder: баг-репорт в Mattermost 2026-08-04
+        On the basis of what this task exists — free text, one line. For
+        example: "bug report from Anton in Mattermost 2026-08-04", "executive
+        decision by the partners", "a colleague's request on a call", "caught it
+        myself while working on #124", "payload dependency bumped to 3.86", "the
+        mission changed".
+      placeholder: bug report in Mattermost 2026-08-04
     validations:
       required: true
   - type: textarea
@@ -29,25 +30,25 @@ body:
     attributes:
       label: Context
       description: >-
-        Для дефекта Context — это воспроизведение: окружение (стенд/прод, URL,
-        браузер, версия), шаги, ожидалось, получилось.
+        For a bug, Context is the reproduction: environment (dev stand/prod, URL,
+        browser, version), steps, expected, actual.
       value: |
-        **Окружение:**
+        **Environment:**
 
-        **Шаги:**
+        **Steps:**
 
         1.
 
-        **Ожидалось:**
+        **Expected:**
 
-        **Получилось:**
+        **Actual:**
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: Scope
-      description: Что чиним и что явно НЕ чиним этой задачей (и куда это уходит).
+      description: What this task fixes and what it explicitly does NOT fix (and where that goes instead).
       value: |
         **In scope:**
 
@@ -62,14 +63,14 @@ body:
     id: spec-reference
     attributes:
       label: Spec reference
-      description: 'Спека/ADR + §, либо «нет спеки: <причина>». Пустым это поле не бывает.'
+      description: 'Spec/ADR + §, or "no spec: <reason>". This field is never empty.'
     validations:
       required: true
   - type: textarea
     id: acceptance-criteria
     attributes:
       label: Acceptance criteria
-      description: Что открыть/запустить и что увидеть, чтобы считать дефект закрытым.
+      description: What to open/run and what to see in order to call the bug closed.
       value: |
         - [ ]
     validations:
@@ -78,7 +79,7 @@ body:
     id: dependencies
     attributes:
       label: Dependencies
-      description: Зеркало нативного графа; сами связи проводятся через API (канон §3).
+      description: A mirror of the native graph; the links themselves are drawn through the API (canon §3).
       value: |
         **Blocked by:**
         **Blocks:**
@@ -88,6 +89,6 @@ body:
     id: notes
     attributes:
       label: Notes
-      description: Свободный текст, логи, ссылки на прогоны.
+      description: Free text, logs, links to runs.
     validations:
       required: false

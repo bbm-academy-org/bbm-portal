@@ -11,7 +11,7 @@
 //     подтверждается прямым GraphQL-чтением по node id (у `item-list` read-lag
 //     на только что добавленной строке).
 //
-// Канон: `.claude/rules/task-canon.md` §2 + §7.
+// Канон: `.claude/skills/task-canon/SKILL.md` §2 + §7.
 //
 // Классификатор задачи — ШТАТНОЕ поле GitHub **Type** (Bug/Feature/Task),
 // решение владельца 2026-08-04 («не надо выдумывать новые поля взамен
@@ -294,7 +294,7 @@ export function bodyError(args, readFile = (p) => readFileSync(p, 'utf8')) {
   const inline = flagValues(args, 'body', 'b')
   const files = flagValues(args, 'body-file', 'F')
   if (inline.length === 0 && files.length === 0) {
-    return 'у задачи должно быть тело — передай --body "<текст>" или --body-file <файл> (скелет: .claude/rules/task-canon.md §1).'
+    return 'у задачи должно быть тело — передай --body "<текст>" или --body-file <файл> (скелет: .claude/skills/task-canon/SKILL.md §1).'
   }
   for (const value of inline) {
     if (String(value).trim() === '') return 'тело задачи пустое (--body) — постановка не бывает пустой.'
