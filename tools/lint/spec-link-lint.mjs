@@ -24,8 +24,10 @@
 // SEVERITY: WARN. Findings are printed and the process exits 0.
 //   TODO(#136): promote per severity canon — task 7.5 owns the severity canon,
 //   the `ci` meta-job and the guard workflow. Promotion is a one-knob change:
-//   run this script with `LINT_SEVERITY=block` (or `--severity=block`) and it
-//   exits 1 on findings. Nothing else in this file needs editing.
+//   run this script with `--severity block` (or `--severity=block`, or
+//   `LINT_SEVERITY=block`) and it exits 1 on findings — the same dial as the
+//   sibling guard `stage-b-lint.mjs` (#151). Nothing else in this file needs
+//   editing.
 //
 // Run: `pnpm lint:spec-link` (PR_NUMBER from Actions, or `--pr <n>` locally).
 // Outside a PR context it exits 0 with a skip note.
@@ -320,6 +322,22 @@ export function severityFromEnv(env = {}) {
   return String(env.LINT_SEVERITY ?? '').toLowerCase() === 'block' ? 'block' : 'warn'
 }
 
+/**
+ * The same severity dial as the sibling guard `stage-b-lint.mjs` (#151): both
+ * `--severity block` and `--severity=block`, else the env, else WARN. Two
+ * guards in one directory disagreeing about their own flag is how a CI job
+ * silently runs at the wrong severity.
+ */
+export function severityFromArgv(argv = [], env = {}) {
+  const args = argv.map(String)
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i].startsWith('--severity='))
+      return args[i].slice('--severity='.length) === 'block' ? 'block' : 'warn'
+    if (args[i] === '--severity') return String(args[i + 1] ?? '') === 'block' ? 'block' : 'warn'
+  }
+  return severityFromEnv(env)
+}
+
 /** Findings fail the run only under `block`. */
 export function exitCodeFor(result, severity) {
   return result?.verdict === 'findings' && severity === 'block' ? 1 : 0
@@ -389,9 +407,7 @@ export function resolvePrNumber(argv = process.argv.slice(2), env = process.env)
 }
 
 function main() {
-  const severity = process.argv.includes('--severity=block')
-    ? 'block'
-    : severityFromEnv(process.env)
+  const severity = severityFromArgv(process.argv.slice(2), process.env)
   const prNumber = resolvePrNumber()
   if (!prNumber) {
     process.stdout.write(`${TAG} no PR context (PR_NUMBER / --pr unset) — skipping\n`)

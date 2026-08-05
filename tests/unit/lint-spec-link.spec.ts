@@ -13,6 +13,7 @@ import {
   extractSpecPaths,
   isRelatedSpec,
   parseFrontmatter,
+  severityFromArgv,
   severityFromEnv,
   specExemptReason,
   specRefsFromIssueBody,
@@ -434,6 +435,17 @@ describe('severity — WARN today, BLOCK on promotion (#136)', () => {
   it('defaults to WARN so findings do not fail the run yet', () => {
     expect(severityFromEnv({})).toBe('warn')
     expect(exitCodeFor({ verdict: 'findings' }, 'warn')).toBe(0)
+  })
+
+  /** Same dial as the sibling guard stage-b-lint.mjs (#151) — two guards in one
+   *  directory disagreeing about their own flag is how a CI job silently runs
+   *  at the wrong severity. */
+  it('reads the flag in both spellings and falls back to the env', () => {
+    expect(severityFromArgv(['--severity', 'block'], {})).toBe('block')
+    expect(severityFromArgv(['--severity=block'], {})).toBe('block')
+    expect(severityFromArgv(['--severity', 'warn'], { LINT_SEVERITY: 'block' })).toBe('warn')
+    expect(severityFromArgv([], { LINT_SEVERITY: 'block' })).toBe('block')
+    expect(severityFromArgv([], {})).toBe('warn')
   })
 
   it('exits non-zero on findings once promoted to block', () => {
