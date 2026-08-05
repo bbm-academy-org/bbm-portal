@@ -72,10 +72,14 @@ and approves what gets built.
    **`agent-proposed — UNCONFIRMED`** and stays that way until he confirms it in
    his own words. A "settled decisions" block the owner does not recognise is the
    exact failure this guards against.
-5. **Do not write acceptance scenarios or requirements.** Product acceptance
-   criteria stop at outcome language ("the participant can see last month's
-   payout without asking anyone"). The verifiable walkthrough on a real URL is
-   the spec's job, downstream, in `docs/specs/`.
+5. **Do not write acceptance scenarios, requirements or EARS clauses.** Product
+   acceptance criteria stop at outcome language ("the participant can see last
+   month's payout without asking anyone"). Downstream, `author-feature-spec`
+   restates them as testable `EARS-N` clauses and adds the verifiable
+   walkthrough on a real URL — that is the spec's job, in `docs/specs/`. Write
+   each criterion so it is **one clause away** from that form: one outcome per
+   bullet, an actor, a condition. A criterion bundling three outcomes forces the
+   spec author to guess where the clause boundaries are.
 6. **Commit** the product layer on the discovery branch. Prettier formats
    markdown in this repo — run `pnpm format:check` before handing back.
 

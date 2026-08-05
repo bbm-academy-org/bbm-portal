@@ -37,10 +37,12 @@ mockup — three owner escalations to reach the Claude.Design original.)
 ## Stage 1a — spec (new module / user-facing behavior only)
 
 A light spec in `docs/specs/` (template: `docs/specs/README.md`): requirements
-in plain language + acceptance scenarios ("how the owner verifies it works").
-The spec is the subject of the stage-2 "go": the owner approves IT, not an
-abstract plan. No EARS formalism — deferred with an explicit revisit trigger
-(see `docs/specs/README.md`). Chore/fix/CMS-contract tasks skip this stage —
+as **EARS clauses** with stable `EARS-N` ids + acceptance scenarios ("how the
+owner verifies it works") naming the clauses they exercise. The spec is the
+subject of the stage-2 "go": the owner approves IT, not an abstract plan. EARS
+was adopted by the owner 2026-08-05 (#135) for every new spec; an existing prose
+spec is upgraded on touch, never by a mass rewrite (see `docs/specs/README.md`
+§ EARS). Chore/fix/CMS-contract tasks skip this stage —
 except the two rules below, which have no exemption by task type.
 
 **CRUD-чек — mandatory for any form**, whatever the task is labelled: a task of

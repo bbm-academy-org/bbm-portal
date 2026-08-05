@@ -7,14 +7,12 @@ description: Drive spec authoring end-to-end for a new module or user-facing beh
 
 **Kind:** orchestration · **Mode:** inline (the lead runs the sequence itself).
 
-Adapted from ds-platform's skill of the same name (inventory #127) **without the
-EARS machinery**: ds dispatches a subagent to produce a three-file EARS triplet;
-here the deliverable is the single light spec of
-[`docs/specs/README.md`](../../../docs/specs/README.md), which the owner — a
-non-developer — reads in one pass. That format is the point: it is his control
-interface, and formal clause syntax would take it away from him. (The EARS
-question is open and owner-facing; see the revisit brief in
-`docs/specs/README.md`.)
+Adapted from ds-platform's skill of the same name (inventory #127). The
+deliverable here is the **single** light spec of
+[`docs/specs/README.md`](../../../docs/specs/README.md) — not ds's three-file
+triplet — but its requirements are **EARS clauses**: the owner adopted EARS for
+all specs on 2026-08-05 (see `docs/specs/README.md` § EARS). One file, formal
+clause shape, still readable in one pass.
 
 ## When this applies
 
@@ -62,10 +60,18 @@ output.
 3. **Write the spec** — `docs/specs/<issue-number>-<slug>.md`, the template and
    frontmatter of `docs/specs/README.md`, **`status: Draft`**. It is one file:
    the lead writes it directly rather than dispatching. Sections that carry the
-   weight: `## Prior decisions` (the ADRs from step 1, one line each on what
-   they constrain here) and `## Acceptance scenarios` (the owner's own
-   verification walkthrough — these become the TDD scenarios at stage 3 and the
-   live-stand script at stage 5).
+   weight:
+   - `## Prior decisions` — the ADRs from step 1, one line each on what they
+     constrain here.
+   - `## Requirements` — **EARS clauses** with stable `EARS-N` ids (the five
+     shapes are tabulated in `docs/specs/README.md` § EARS). Product language
+     inside the clause shape; ids are never renumbered, a split retires the old
+     id. Revising an existing prose spec upgrades it to EARS on that revision —
+     on touch, never as a mass rewrite pass.
+   - `## Acceptance scenarios` — the owner's own verification walkthrough, each
+     naming the `EARS-N` clauses it exercises. These become the TDD tests at
+     stage 3 (named `it('EARS-N: …')`, so requirement ↔ test is a grep) and the
+     live-stand script at stage 5.
 4. **New or reshaped UI → the stage-1b design gate.** 2–3 options of any
    fidelity to the owner before any markup; his pick is recorded in the issue and
    referenced from the spec. No pick, no markup.
@@ -104,4 +110,4 @@ output.
 - [`read-relevant-adrs`](../read-relevant-adrs/SKILL.md) · [`do-product-discovery`](../do-product-discovery/SKILL.md) — upstream.
 - [`spec-issue-graph`](../spec-issue-graph/SKILL.md) — spec → issue set.
 - [`task-cycle`](../task-cycle/SKILL.md) — the outer lifecycle; this is stage 1a.
-- `docs/specs/README.md` — the format, the status ladder, the EARS revisit.
+- `docs/specs/README.md` — the format, the status ladder, the EARS canon.

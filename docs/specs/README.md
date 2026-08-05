@@ -44,14 +44,22 @@ explicitly and why.
 
 ## Requirements
 
-Plain-language numbered list: what the thing must do. Constraints
+EARS clauses, each with a stable `EARS-N` id (see "EARS" below). Constraints
 (152-FZ, ADR-002 module boundaries, domain topology) called out explicitly.
+
+- **EARS-1.** The hours page shall show the participant's own rate for the
+  selected period.
+- **EARS-2.** WHEN the owner publishes a period, the system shall freeze every
+  submitted entry in it.
+- **EARS-3.** IF a participant has no grade, THEN the system shall show the
+  period as unavailable rather than a zero rate.
 
 ## Acceptance scenarios
 
 Numbered "how the owner verifies it works" walkthroughs: the real URL,
-what he opens, clicks, and sees. These double as the TDD test scenarios
-(task-cycle stage 3) and the stage-5 live-stand acceptance script.
+what he opens, clicks, and sees. Each names the `EARS-N` clauses it
+exercises. These double as the TDD test scenarios (task-cycle stage 3) and
+the stage-5 live-stand acceptance script.
 
 ## Out of scope
 
@@ -106,50 +114,90 @@ changing one, use `do-adr-revision`.
 
 ## Machine checks
 
-`pnpm lint:spec-link` — on a feature PR, checks that the linked issue resolves
-to a spec file, that the spec exists, and that its `status:` is a valid ladder
-value. **Severity today: WARN** (it reports and exits 0); promotion to BLOCK
-happens under the severity canon of issue #136. Escape hatch for a PR that
-genuinely needs no spec: a `spec-exempt: <reason>` line in the PR body.
+`pnpm lint:spec-link` — on a feature PR (a linked issue of type `Feature`, or a
+`feat:` title, **and** a change under `src/`), it resolves the spec, then checks
+that the file exists, that its `status:` is a valid ladder value, and that it is
+not still `Draft`. **Severity today: WARN** (it reports and exits 0); promotion
+to BLOCK happens under the severity canon of issue #136.
 
-## EARS — revisit prepared, decision PENDING OWNER DECISION
+**Where the reference has to sit.** A spec path mentioned loosely in prose is
+background reading, not a declaration — the guard only reads these positions:
 
-> **This section is a briefing for the owner, not a decision.** The decision
-> slot at the bottom is deliberately empty. Nobody but the owner fills it.
+- a **`Spec:`** (or `Spec reference:`) line in the PR body, e.g.
+  `Spec: docs/specs/102-hours-hourly-rate-table-cleanup.md §3`;
+- the linked issue's **`## Spec reference`** section (the task-canon skeleton);
+- a spec file **edited by the PR itself**;
+- an existing `docs/specs/<linked-issue>-*.md`.
 
-**What was decided before.** Issue #65 §4 (2026-07-24) deliberately did NOT
-adopt EARS clause syntax (`WHEN <trigger>, the system shall <response>`),
-per-EARS issue slicing, `it('EARS-N: …')` test naming, or the spec↔test CI
-guards. The stated reason: _their value shows up with many parallel specs,
-which this repo does not have yet._ The recorded revisit trigger was «≥3–4 live
-specs at once, and/or requirement ↔ test ↔ issue traceability starts getting
-confused».
+The spec must also **relate** to the linked issue — by its `NNN-` filename
+prefix, by its `issue:` frontmatter, or by being edited in the same PR. A
+declared but unrelated spec is reported as background and does not satisfy the
+gate.
 
-**What has changed since.** The platform consolidation (epic #117, spec
-`docs/superpowers/specs/2026-08-04-platform-consolidation-design.md`) puts
-**eight epics with specs** in flight. The original rejection's premise — "we
-don't have many parallel specs" — is the thing that changed; the trigger the
-owner himself wrote is met on its own terms.
+**Escape hatch.** A PR that genuinely needs no spec writes, on a line of its
+own in the PR body:
 
-**What the mechanism would buy.** ds-platform runs the EARS↔test traceability
-end-to-end and it is portable (inventory #127): `ears-test-lint` checks both
-directions (every `EARS-N` clause has a test; every `EARS-N`-named test maps to
-a live clause, with a per-spec deferral allowlist), `ears-naming-lint` catches
-malformed clause ids. Together they make "is this requirement actually tested?"
-a CI answer instead of a reading exercise.
+```
+spec-exempt: CMS-contract upkeep, the contract lives in schemas.ts
+```
 
-**What it would cost.** Every spec grows a formal clause layer (the current
-light format is prose the owner reads in one pass); every test name becomes
-load-bearing; two more guards enter the PR path. It is a change to the artifact
-**the owner personally signs off on** — that is why it is his call and not the
-lead's.
+The backticked form `` `spec-exempt: <reason>` `` is equally accepted. The
+reason is mandatory — a bare marker is itself a finding. Quoted forms are
+deliberately NOT matched (a blockquote `>`, a list item, an indented line, or a
+fenced block): a PR that merely discusses the hatch, or pastes a review comment
+containing it, must not exempt itself.
 
-**Lead's recommendation.** Adopt EARS **narrowly**: clause ids + the two lints
-only for specs of **platform-core modules** (the consolidation's data core,
-auth, the shared admin), keeping the light prose format for everything else.
-That gets traceability where eight parallel specs actually collide, without
-turning every UI-tweak spec into a formal document. Whatever is decided, the
-spec-link + status machinery above already lands and does not depend on it.
+## EARS — ADOPTED (owner's decision, 2026-08-05)
 
-**Owner's decision:** _empty — awaiting the owner. Fill this line with the
-verdict and its date; do not let anyone else fill it._
+**Owner's decision, 2026-08-05: EARS is adopted for all specs.** The 2026-07-24
+rejection (#65 §4) is reversed.
+
+**Why it was rejected before, and why that no longer holds.** The stated reason
+in #65 §4 was that the value of EARS shows up with many parallel specs, which
+this repo did not have. That premise is obsolete: the BBM Platform already runs
+several user-facing apps with a large functional landscape and more planned, and
+the consolidation (epic #117) puts eight epics with specs in flight. The owner's
+own recorded revisit trigger — «≥3–4 live specs at once, and/or requirement ↔
+test ↔ issue traceability starts getting confused» — is met on its own terms.
+The standard the owner set for the platform is «полноценный SDD и полное
+аккуратное покрытие документацией», and ds-platform already runs working
+EARS↔test traceability mechanics to copy rather than invent (inventory #127).
+
+### What this means in practice
+
+- **Every NEW spec is written with EARS clauses** in its `## Requirements`
+  section, per the template above.
+- **A substantively revised spec is upgraded to EARS on that revision** —
+  changing what the thing does means rewriting the clauses that describe it.
+- **No mass rewrite pass.** Existing specs are upgraded **on touch**, the same
+  way this repo handled translate-on-touch for its documents. A `Shipped` spec
+  nobody is touching keeps its prose requirements and is not a defect.
+
+### Clause form
+
+Stable ids `EARS-1`, `EARS-2`, … per spec, never renumbered — a split retires
+the old id and adds new ones, so a reference never dangles. The five standard
+shapes:
+
+| Shape        | Form                                                              |
+| ------------ | ----------------------------------------------------------------- |
+| Ubiquitous   | The `<system>` shall `<response>`.                                |
+| Event-driven | WHEN `<trigger>`, the `<system>` shall `<response>`.              |
+| State-driven | WHILE `<state>`, the `<system>` shall `<response>`.               |
+| Unwanted     | IF `<condition>`, THEN the `<system>` shall `<response>`.         |
+| Optional     | WHERE `<feature is included>`, the `<system>` shall `<response>`. |
+
+The clause is the unit of testing: the test covering `EARS-3` is named
+`it('EARS-3: …')`, so requirement ↔ test becomes a grep instead of a reading
+exercise. Keep the clauses in the owner's product language — EARS constrains the
+_sentence shape_, not the vocabulary. A spec he cannot read has failed at its
+job whatever its syntax.
+
+### Mechanics — deliberately not in this PR
+
+`ears-test-lint` (both directions: every clause has a test, and every
+`EARS-N`-named test maps to a live clause) and `ears-naming-lint` (malformed
+ids) are **not built here**. They are the **next tranche of the #136 guard
+family**: they land as WARN and promote under the severity canon in
+`docs/ci-guardrails.md` once #154 is merged. Until then the clause ↔ test link
+is checked at review time, not by CI.
