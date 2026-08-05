@@ -1,0 +1,242 @@
+# CI guardrails — severity canon and guard inventory
+
+**This is the single authoritative document for guards in this repo.** It carries the
+severity canon (what BLOCK and WARN mean, how a guard is promoted or demoted), the guard
+inventory (every guard, its severity, its promotion date or condition), and the guard
+contract (what a new guard must look like to be wired). There is no second guards README:
+a guard's source header points here, and this file points back at the source.
+
+It is deliberately **not** an ADR. An ADR records a frozen decision; this table changes
+every time a guard lands or is promoted. The decision that guards exist at all and are
+modelled on ds-platform is epic #117 / spec
+`docs/superpowers/specs/2026-08-04-platform-consolidation-design.md` §11; this file is the
+living register that decision produced (task 7.5, issue #136).
+
+## 1. What a guard is
+
+A guard is a small deterministic script that reads the repo tree or the PR's own metadata
+and exits non-zero when it finds the thing it was written to catch. Guards are inputs to
+**human** review — they nudge a reviewer to look at something, they do not review. A guard
+never rewrites code, never posts to the tracker, and never depends on a model.
+
+Two planes carry guards in this repo, and the canon covers both:
+
+| Plane           | Where it runs                               | Artifacts                             | Severity is recorded in                               |
+| --------------- | ------------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| **CI guards**   | GitHub Actions, on `pull_request` / `push`  | `tools/lint/*-lint.mjs`               | the workflow file (see §2)                            |
+| **Hook guards** | the agent's own session (Claude Code hooks) | `tools/hooks/*.mjs`, `tools/gh/*.mjs` | the hook's exit code + `.claude/settings.json` wiring |
+
+The two planes share the canon (posture, promotion, demotion) and differ only in the
+mechanics of "BLOCK" — §2.1 vs §2.2.
+
+## 2. Severity — exactly two levels
+
+**BLOCK** — the finding stops the merge. **WARN** — the finding is printed and the work
+continues. A guard is never both, and severity is never inferred from the guard's prose:
+it is read off the mechanism.
+
+### 2.1 CI guards
+
+- **BLOCK** = the job carries **no** `continue-on-error` **and** is listed in the `ci`
+  meta-job's `needs` array in `.github/workflows/ci.yml`.
+- **WARN** = the job carries `continue-on-error: true` and is **absent** from that
+  `needs` array.
+
+The `ci` meta-job is the single aggregate status check. It runs `if: always()` and treats
+`failure`, `skipped` **and** `cancelled` in `needs.*.result` as red — a job that never ran
+proves nothing, so a red upstream job must not vacuously green the aggregate.
+
+**Cross-workflow guards.** `needs` cannot span workflows, so a BLOCK guard living in
+`.github/workflows/pr-body-guards.yml` cannot be in the `ci` needs-list. There is
+currently no such guard: every guard in that workflow is WARN. Promoting one to BLOCK
+requires either moving it into `ci.yml` or teaching `pnpm pr:land`'s gate to demand its
+check-run by name — decide that at the promotion, do not leave it implied.
+
+**Branch-protection limitation (verified 2026-08-05).** `.github/branch-protection.json`
+is a declarative payload, not live state: this repo is private on GitHub Free, and
+`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection` answers
+`403 Upgrade to GitHub Pro or make this repository public`. Until the plan is upgraded or
+the repo is public, **BLOCK is enforced by the merge tooling, not by the server**: a red
+`ci` check makes `pnpm pr:land` refuse to merge (task-canon §7), and that is the whole
+barrier. The payload's `required_status_checks.contexts` is kept correct so that the
+upgrade is a single `gh api --method PUT … --input .github/branch-protection.json` away.
+
+### 2.2 Hook guards
+
+A Claude Code hook has no `needs` list; its severity is its own exit code and the hook
+event it is wired to:
+
+- **BLOCK** = the hook exits non-zero on a finding (`PreToolUse` exit 2 denies the call;
+  a `Stop`/`SubagentStop` gate exit 2 refuses the stop). The agent cannot proceed.
+- **WARN** = the hook exits 0 and emits `systemMessage` / stderr text. The agent sees the
+  nudge and decides.
+
+Every hook guard is **fail-open on malformed input** regardless of severity: a broken
+stdin payload, a missing file, or an unexpected shape exits 0. A guard that cannot read
+its input has found nothing, and a tool stack that dies because a guard tripped over its
+own plumbing is worse than the finding it was looking for.
+
+## 3. New-guard posture
+
+**A new guard lands as WARN.** No exceptions by preference, one exception by mandate:
+
+**Day-0 BLOCK mandate.** A guard may land BLOCK only if this document records the mandate
+in §5 with a reason, and the guard is in one of these classes:
+
+1. **Deterministic tree check** — the guard's only input is the checked-out repo tree; no
+   network, no PR metadata, no heuristics, no regex over prose. The false-positive class
+   is empty by construction, so the WARN soak would only prove what is already provable by
+   reading the guard. (`guard-test-coverage` is such a guard.)
+2. **Documented security mandate** — a written decision that the failure being caught is a
+   security/data-protection incident, in which case a soak period is itself the risk.
+
+Anything with a heuristic, a regex over human text, or an external API call soaks as WARN.
+
+## 4. Promotion, demotion, cadence
+
+**WARN → BLOCK** requires all four:
+
+1. **Real signal.** The guard exits non-zero on a finding. A guard that prints and always
+   exits 0 is a stub — make it fail first, then start the clock.
+2. **Age.** ≥ 4 consecutive weeks since the guard landed, or since the last substantive
+   change to its rule (a wording change to a message is not substantive; a change to what
+   it matches is).
+3. **Clean window.** In that window: zero confirmed false positives, and zero live
+   findings on `main` — including findings a WARN guard prints while exiting 0. A PR that
+   went red and was fixed by fixing the PR is a **true** positive: it counts **for**
+   promotion.
+4. **Blast radius named.** Whoever promotes states what will be blocked and who unblocks
+   it — for a PR-metadata guard, the one-line fix command; for a tree guard, the file to
+   edit.
+
+For a PR-event-gated guard the window is counted over PR runs only. Greenness on `push`
+runs is vacuous — the guard skips on a non-PR event by design.
+
+**Promotion mechanics (CI guard):** delete the `continue-on-error` line, add the job to
+the `ci` needs-list, update the job's header comment, and update this file's §5 row (new
+severity + the promotion date). Three edits, one PR, no other changes.
+
+**Promotion mechanics (hook guard):** flip the guard's finding branch from exit 0 to a
+non-zero exit, update its header comment, update its unit test (the test asserts the exit
+code — that is the severity-of-record for a hook), and update §6 here.
+
+**Demotion.** One confirmed false positive on a BLOCK guard demotes it back to WARN **in
+the same session that confirmed it**, plus an issue to fix the guard. A BLOCK guard that
+people route around is worse than a WARN guard they read: a false positive spends the
+team's trust in every guard, not just this one.
+
+**Cadence.** The whole WARN set is re-evaluated at each epic close and at each DEBT.md
+sweep (skill `do-decision-debt-followup`). Each sweep records a dated per-guard verdict —
+promoted, or left WARN with the reason — in this file's §5/§6 tables.
+
+## 5. CI guard inventory
+
+Severity-of-record is the workflow file; this table is the register that must match it,
+and `workflow-auth` + `guard-test-coverage` keep the mechanics honest.
+
+| Guard                   | Workflow             | What it catches                                                                                                             | Severity  | Since      | Promotion                                                                                                                                            |
+| ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **guard-test-coverage** | `ci.yml`             | a `tools/lint/*-lint.*` with no `tools/lint/guard-tests/<name>.spec.ts` (and the reverse — an orphaned spec)                | **BLOCK** | 2026-08-05 | day-0 mandate: deterministic tree check (§3 class 1)                                                                                                 |
+| **tdd-signal**          | `ci.yml`             | a PR that changes production source and ships no test, in a module that has no test either                                  | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                      |
+| **no-stub**             | `ci.yml`             | a user-facing dev placeholder ("set this env var"), or a `TODO`/`FIXME`/`STUB` standing in for a deliverable with no `#NNN` | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                      |
+| **workflow-auth**       | `ci.yml`             | a workflow job that reaches GitHub through `gh` without `permissions:` + `GH_TOKEN`/`PR_NUMBER` wiring                      | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                      |
+| **epic-autoclose**      | `pr-body-guards.yml` | `Closes #<epic>` on a PR whose target issue still has OPEN sub-issues — merging would auto-close a live epic                | WARN      | 2026-08-05 | earliest 2026-09-02; BLOCK also needs the cross-workflow decision in §2.1                                                                            |
+| **assignee-milestone**  | `pr-body-guards.yml` | an open PR with no assignee or no milestone — an un-triageable board row                                                    | WARN      | 2026-08-05 | earliest 2026-09-02; see §7 for why this is not a day-0 BLOCK here                                                                                   |
+| **product-note**        | `pr-body-guards.yml` | a PR touching the user-facing render surface with no `## Product note (RU)` a reader would notice                           | WARN      | 2026-08-05 | **blocked on task 7.6** (#137, release-note delivery) — a note nobody delivers is not worth blocking a merge for; promote with 7.6, not on the clock |
+| _spec-link_             | _pending_            | _task 7.4 (#135) — wired into `pr-body-guards.yml` when that branch lands_                                                  | WARN      | —          | row filled at landing                                                                                                                                |
+| _instruction-budget_    | _pending_            | _task 7.4 (#135) — wired into `ci.yml` when that branch lands_                                                              | WARN      | —          | row filled at landing                                                                                                                                |
+| _stage-b_               | _pending_            | _task 7.7 (#138) — wired into `pr-body-guards.yml` when that branch lands_                                                  | WARN      | —          | row filled at landing                                                                                                                                |
+
+The three italic rows are guards being written in parallel branches (#135, #138) against
+the contract in §8. They deliberately do not touch `ci.yml` / `pr-body-guards.yml` — the
+session that lands them wires the job and fills the row.
+
+## 6. Hook guard inventory
+
+These five landed WARN in task 7.3 (#134) with a `TODO(#136)` marker deferring the
+severity decision to this canon. The decision is recorded here; the markers are gone.
+
+| Hook guard                      | File                                                | Severity | Verdict 2026-08-05 — why, and what would promote it                                                                                                                                                                                                                        |
+| ------------------------------- | --------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **askuserquestion-calibration** | `tools/hooks/askuserquestion-calibration-guard.mjs` | WARN     | Calibration advice on a question already being asked. Blocking it would deny the owner a question — the opposite of the intent. **Permanent WARN by design**, not a promotion candidate.                                                                                   |
+| **handoff-verify**              | `tools/gh/handoff-verify.mjs`                       | WARN     | It reports staleness across several sources of truth; a false "stale" would block a legitimate handoff. Promote per §4 once a full cadence passes with zero false staleness verdicts.                                                                                      |
+| **handoff-verify-reminder**     | `tools/hooks/handoff-verify-reminder.mjs`           | WARN     | A `SessionStart` reminder. A session that cannot start is a broken session, and the reminder's whole value is that a human reads it. **Permanent WARN by design.**                                                                                                         |
+| **screenshot-path-guard**       | `tools/hooks/screenshot-path-guard.mjs`             | WARN     | Highest-value promotion candidate: the rule (a screenshot is not acceptance — task-cycle stage 5) is categorical and the detection is a path match. Promote per §4 — earliest 2026-09-02, needs a clean window with zero false denials of a legitimate `Read` of an image. |
+| **surface-decision-debt-gate**  | `tools/hooks/surface-decision-debt-gate.mjs`        | WARN     | A `Stop` gate. Promotion means an agent cannot end its turn — a wrong verdict strands the session with no way out, so this needs the clean window from §4 **and** a documented escape hatch before it can block.                                                           |
+
+## 7. Deliberate deviations from ds-platform
+
+The guard family is ported from `ds-platform` (inventory #127). Three places where this
+repo does **not** follow the source:
+
+1. **`assignee-milestone` is wired here.** In ds-platform the script and its test exist
+   with no workflow job and no package script — an orphan that documents itself as a hard
+   gate and never runs. Ported **with** wiring, and as WARN: this repo's canon (§3) has no
+   day-0 exception for "the fields are easy to set".
+2. **"A guard without a test does not merge" is mechanical here.** In ds-platform it is a
+   convention held up by review and a hand-maintained coverage list. Here it is the
+   `guard-test-coverage` guard, and it is BLOCK from day 0 (§3 class 1).
+3. **The canon covers hook guards too** (§2.2, §6). ds-platform's canon is written for CI
+   jobs only; this repo's guard mass currently sits in session hooks, so a canon that
+   ignored them would leave the larger half ungoverned.
+
+## 8. The guard contract — what a new guard must satisfy
+
+Everything here is checked by `guard-test-coverage` and `workflow-auth`, so a guard that
+follows it wires in with no rework, and one that does not goes red before review.
+
+**File layout**
+
+- Guard: `tools/lint/<name>-lint.mjs`. Plain ESM Node 22 (`.mjs`) — the repo's tooling
+  language; ESLint lints `tools/**/*.mjs` under `no-undef`.
+- Test: `tools/lint/guard-tests/<name>-lint.spec.ts` — the name mirrors the guard file
+  exactly. This pairing is what `guard-test-coverage` asserts.
+- Fixtures: `tools/lint/guard-tests/fixtures/<name>/<case>/…` — a fixture case is a small
+  fake repo tree; canned `gh` JSON goes in that case's `gh/` sub-dir.
+- Shared helpers: `tools/lint/lib/guard.mjs` (reporter, repo root, tree walk, PR-event
+  gating) and `tools/lint/lib/gh.mjs` (the `gh` seam). Do not re-implement either.
+
+**CLI shape**
+
+- Invoked as `node tools/lint/<name>-lint.mjs`, aliased as `pnpm lint:<name>` in
+  `package.json`. No arguments in CI; flags are optional and must have a default.
+- **Exit 0** = clean, or "nothing to check" (not a PR event, no PR number, the rule does
+  not apply). Say so on stdout — a silent exit 0 is indistinguishable from a stub.
+- **Exit 1** = findings, one line per finding on **stderr**, prefixed `[<name>]`, ending
+  with a summary line that names the fix.
+- Any other exit code is a bug in the guard.
+- An unexpected exception exits 1 with the stack on stderr. Fail-closed: a guard that
+  crashed did not clear anything. (Hook guards are the opposite — §2.2 — because they sit
+  in the agent's own control flow.)
+
+**Environment / seams** (all inert in production — unset means real behaviour)
+
+| Variable              | Meaning                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `LINT_FIXTURE_ROOT`   | scan this tree instead of the repo root                                                     |
+| `LINT_GH_FIXTURE_DIR` | serve `gh <kind> view <n>` from `<dir>/<kind>-view-<n>.json` instead of spawning `gh`       |
+| `GITHUB_EVENT_NAME`   | a PR-gated guard runs only when this is `pull_request`                                      |
+| `PR_NUMBER`           | the PR under test; a PR-gated guard exits 0 (skip) when it cannot resolve one               |
+| `PR_BODY`             | the event payload's body, authoritative over `gh pr view`'s `body` for that same PR         |
+| `GH_TOKEN`            | required on any step that reaches GitHub — `workflow-auth` fails the build if it is missing |
+
+`PR_BODY` exists because a `gh pr view` REST read immediately after PR creation has
+returned a stale or absent body. The event payload is always current for the event that
+triggered the run, so it wins.
+
+**Testability**
+
+The guard's decision logic is exported as a pure function and unit-tested directly; the
+CLI wrapper (`main()`) is thin and runs only when the file is the process entry point.
+The spec additionally spawns the real guard at least once against a fixture tree and
+asserts the exit code — the exit code **is** the severity, so it is tested, not assumed.
+
+**Wiring**
+
+- WARN: a job in `ci.yml` (tree guards) or `pr-body-guards.yml` (PR-metadata guards) with
+  `continue-on-error: true`, **not** in the `ci` needs-list.
+- A job reaching GitHub carries `permissions: { contents: read, pull-requests: read }`
+  (plus `issues: read` if it reads issues) and passes `GH_TOKEN` + `PR_NUMBER` on the
+  invoking step. `workflow-auth` enforces this.
+- A new row in §5 with severity, date, and promotion condition. The row is part of the
+  guard, not documentation of it.
