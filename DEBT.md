@@ -21,6 +21,23 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-05 `tools/lint/guard-test-coverage-lint.mjs`: a future helper in
+      `tools/lint/lib/` importing `guard.mjs` would be flagged `nested` with a
+      wrong remedy (false-positive class; no such helper exists today) — return
+      condition: first new file added under `tools/lint/lib/` (#136, review of
+      PR #154)
+- [ ] 2026-08-05 `tools/lint/workflow-auth-lint.mjs`: `undeclared-severity`
+      catches "neither WARN nor BLOCK" but not "both" (continue-on-error AND in
+      the needs-list = vacuous BLOCK) — return condition: first change to the
+      `ci` meta-job's needs-list or to any job's continue-on-error flag (#136,
+      review of PR #154)
+- [ ] 2026-08-05 `tools/lint/tdd-signal-lint.mjs`: substring path matching — a
+      spec that merely MENTIONS a module path counts as covering it (nothing
+      masked today; anchor needles to import statements like
+      `IMPORTS_GUARD_LIB_RE` does) — return condition: first tdd-signal finding
+      disputed as false, or the guard's WARN→BLOCK promotion review
+      (2026-09-02 window) (#136, review of PR #154)
+
 - [ ] 2026-08-05 `tools/gh/handoff-verify.mjs`: a segment naming ≥2 refs with one
       claim pins the claim on none of them and degrades to INFO (a false PASS is
       cheaper than a false STALE in a gate that exits 1) — return condition:
