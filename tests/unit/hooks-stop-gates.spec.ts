@@ -9,7 +9,9 @@ import {
 } from '../../tools/hooks/completion-report-gate.mjs'
 import {
   decideBlock as decideDeviationsBlock,
+  detectHaltSignal,
   hasDeviationsLine,
+  hasNoDeviationsValue,
 } from '../../tools/hooks/deviations-gate.mjs'
 
 /**
@@ -131,6 +133,96 @@ describe('deviations-gate (stage 7)', () => {
     expect(decideDeviationsBlock({ stopHookActive: true, lastAssistantText: withEyes }).block).toBe(
       false,
     )
+  })
+})
+
+describe('deviations-gate: самосертификация «нет» после стопа владельца', () => {
+  const withEyes = `${REPORT_NO_MARKERS}\nПроверить глазами: https://portal.bbm.academy/p/okr`
+  const noDeviations = `${withEyes}\n**Отклонения от конвенций:** нет.`
+  const listed = `${withEyes}\nОтклонения от конвенций: диспетчеризация через staging вместо прямого применения.`
+
+  it('распознаёт значение «нет» после маркера', () => {
+    expect(hasNoDeviationsValue('Отклонения от конвенций: нет')).toBe(true)
+    expect(hasNoDeviationsValue('**Отклонения от конвенций:** нет.')).toBe(true)
+    expect(hasNoDeviationsValue('Отклонения от конвенций: значимых отклонений нет')).toBe(true)
+    expect(hasNoDeviationsValue('Отклонения от конвенций: три штуки, см. ниже')).toBe(false)
+    expect(hasNoDeviationsValue(listed)).toBe(false)
+  })
+
+  it('«нет» + стоп владельца в сессии → блок', () => {
+    const d = decideDeviationsBlock({
+      stopHookActive: false,
+      lastAssistantText: noDeviations,
+      haltSignal: true,
+    })
+    expect(d.block).toBe(true)
+    expect(d.reason).toBe('self-cert')
+  })
+
+  it('«нет» в тихой сессии проходит', () => {
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        lastAssistantText: noDeviations,
+        haltSignal: false,
+      }).block,
+    ).toBe(false)
+  })
+
+  it('список отклонений после стопа проходит — loop-guard исправленного отчёта', () => {
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        lastAssistantText: listed,
+        haltSignal: true,
+      }).block,
+    ).toBe(false)
+  })
+
+  it('отсутствие строки блокирует как раньше, независимо от сигнала стопа', () => {
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        lastAssistantText: withEyes,
+        haltSignal: true,
+      }).block,
+    ).toBe(true)
+  })
+})
+
+describe('deviations-gate: распознавание стопа владельца в транскрипте', () => {
+  it('видит queued_command от человека', () => {
+    const jsonl = [
+      JSON.stringify({ type: 'user', message: { content: 'привет' } }),
+      JSON.stringify({
+        type: 'user',
+        attachment: { type: 'queued_command', origin: { kind: 'human' }, prompt: 'тормози' },
+      }),
+    ].join('\n')
+    expect(detectHaltSignal(jsonl)).toBe(true)
+  })
+
+  it('видит обычное человеческое сообщение и прошлый блок Stop-хука', () => {
+    expect(
+      detectHaltSignal(
+        JSON.stringify({ type: 'user', message: { content: 'стоп, что ты делаешь' } }),
+      ),
+    ).toBe(true)
+    expect(
+      detectHaltSignal(
+        JSON.stringify({ type: 'user', message: { content: '⛔ deviations gate (#91): …' } }),
+      ),
+    ).toBe(true)
+  })
+
+  it('тихая сессия и битые строки сигнала не дают', () => {
+    const jsonl = [
+      JSON.stringify({ type: 'user', message: { content: 'давай дальше' } }),
+      '{ битая строка',
+      JSON.stringify({ type: 'assistant', message: { id: 'a1', content: 'останови сервер' } }),
+    ].join('\n')
+    expect(detectHaltSignal(jsonl)).toBe(false)
+    expect(detectHaltSignal('')).toBe(false)
   })
 })
 

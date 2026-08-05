@@ -17,6 +17,17 @@
 // изолированный лид, ему инлайн положен; (2) read-only сессия сама никогда не
 // доберётся до порога; (3) явный opt-out `BBM_DISPATCH_GUARD_DISABLE=1`.
 //
+// ВТОРАЯ, независимая обязанность — staging gate (retro 2026-08-05, рецидив темы
+// «ceremony by task class»). A brief that tells the subagent to write drafts to
+// disk instead of applying the edit buys nothing for a reversible,
+// non-conflicting change: the lead then has to read every draft and re-apply it
+// by hand, so the pipeline costs a full extra pass and delivers zero applied
+// edits. Staging is a real answer only when the edit is irreversible, conflicts
+// with someone else's work, or the owner asked to pre-approve it — which is what
+// the explicit `STAGED:` token in the brief declares. WARN only: the two checks
+// are mutually exclusive by tool (streak counts mutations, staging inspects
+// dispatch), so at most one message is ever emitted.
+//
 // Контракт: stdin — JSON PreToolUse. WARN = exit 0 + JSON на stdout. Никогда не
 // блокирует. FAIL-OPEN.
 
@@ -94,6 +105,37 @@ export function decideDispatch({
   return { action: 'count', streak: next }
 }
 
+/** Phrasings that stage the subagent's output instead of applying it. */
+export const STAGING_RE = /do not mutate|drafts? (?:on disk|only)|no mutation|lead applies|черновик/i
+
+/** The escape hatch: staging declared, with the reason that justifies it. */
+export const STAGED_TOKEN_RE = /STAGED:\s*(irreversible|conflicting|owner-preapproval)/
+
+export function stagingWarnMessage() {
+  return (
+    '⚠ dispatch guard (#91): the agent brief stages output to disk instead of applying it. ' +
+    'A reversible, non-conflicting edit is dispatched to APPLY DIRECTLY (read → rewrite → apply); ' +
+    'staging is justified only as irreversible / conflicting / owner-requested preapproval — add ' +
+    'an explicit `STAGED: irreversible|conflicting|owner-preapproval` token to the brief or ' +
+    're-dispatch as direct-apply. (Retro 2026-08-05: a 3-stage pipeline for plain issue-text edits ' +
+    'burned ~155k tokens producing zero applied edits before the owner halted it.)'
+  )
+}
+
+/**
+ * Pure decision seam of the staging gate: warn when a dispatch brief stages its
+ * output and does not carry the explicit `STAGED:` justification token. A brief
+ * we cannot read (missing / non-string prompt) is never a violation — fail-open.
+ */
+export function decideStaging({ toolName, prompt }) {
+  if (!DISPATCH_TOOL_RE.test(toolName || '')) return { warn: false }
+  const text = typeof prompt === 'string' ? prompt : ''
+  if (!text) return { warn: false }
+  if (!STAGING_RE.test(text)) return { warn: false }
+  if (STAGED_TOKEN_RE.test(text)) return { warn: false }
+  return { warn: true }
+}
+
 function main() {
   try {
     if (hooksDisabled()) process.exit(0)
@@ -109,7 +151,15 @@ function main() {
       carveOut: isCarveOut(process.env),
     })
     if (decision.action !== 'silent') writeState(statePath, { streak: decision.streak })
-    if (decision.action === 'warn') emitWarn(warnMessage(decision.streak))
+    if (decision.action === 'warn') {
+      emitWarn(warnMessage(decision.streak))
+      process.exit(0)
+    }
+    const staging = decideStaging({
+      toolName: payload.tool_name,
+      prompt: payload.tool_input && payload.tool_input.prompt,
+    })
+    if (staging.warn) emitWarn(stagingWarnMessage())
     process.exit(0)
   } catch {
     process.exit(0) // fail-open: баг гарда не должен рушить легитимный вызов

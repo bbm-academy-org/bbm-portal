@@ -14,6 +14,13 @@
 // один блокирует по отсутствию «Проверить глазами», другой — по отсутствию
 // «Отклонения от конвенций». Отчёт с обоими маркерами проходит оба.
 //
+// SECOND DUTY (retro 2026-08-05, theme "honest-status"): the line can be present
+// and still say nothing — «Отклонения от конвенций: нет» in a session the owner
+// had to halt is a self-certification, not a report. When the transcript carries
+// an owner-halt (or an earlier Stop-gate block) the «нет» value is rejected too.
+// The «нет» value is what arms that signal, so a corrected report — which lists
+// deviations — passes on the next try instead of looping.
+//
 // Контракт Stop-хука: stdin — {session_id, transcript_path, stop_hook_active}.
 // exit 0 = остановка разрешена; exit 2 + stderr = заблокирована. Loop-guard по
 // `stop_hook_active` — блок ровно один раз. FAIL-OPEN.
@@ -35,6 +42,80 @@ export function hasDeviationsLine(text) {
   return DEVIATIONS_MARKER_RE.test(String(text || ''))
 }
 
+/**
+ * The value after the marker normalizes to "no deviations". Only the text that
+ * FOLLOWS the marker is judged — a report that lists deviations elsewhere and
+ * says «нет» nowhere must not match.
+ */
+export function hasNoDeviationsValue(text) {
+  const t = String(text || '')
+  if (/значимых\s+отклонений\s+нет/i.test(t)) return true
+  const m = t.match(DEVIATIONS_MARKER_RE)
+  if (!m) return false
+  const after = t.slice((m.index ?? 0) + m[0].length)
+  // Хвост `(?![а-яё\w])` вместо `\b`: JS-граница слова ASCII-only и после
+  // кириллического «нет» не срабатывает вовсе (та же оговорка, что у
+  // DEVIATIONS_MARKER_RE). Лукахед отсекает «нету», «нетривиально».
+  return /^\s*\**\s*нет(?![а-яё\w])/i.test(after)
+}
+
+/** Owner halt wording (RU + EN) — «тормози», «стоп», "halt". Тот же лукахед
+ * вместо `\b` по кириллической причине выше: «стоп,» ловится, «стопор» нет. */
+export const HALT_RE = /тормози|останови|прекрати|стоп(?![а-яё\w])|stop everything|halt/i
+
+/** An earlier Stop-hook block already recorded in this session's transcript. */
+export const PRIOR_STOP_BLOCK_RE = /⛔ deviations gate|⛔ completion-report gate/
+
+/** Текст человеческого сообщения; tool_result-блоки в user-записях игнорируются. */
+function humanMessageText(message) {
+  if (!message) return ''
+  const content = message.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('\n')
+}
+
+/**
+ * Сигнал «сессия шла не гладко» по JSONL-транскрипту: (i) queued_command от
+ * человека со стоп-формулировкой; (ii) обычное человеческое сообщение с ней же;
+ * (iii) уже случившийся блок Stop-гейта. Битая строка пропускается по одной.
+ *
+ * Loop-guard: сигнал (iii) сам по себе НИКОГДА не блокирует — он работает только
+ * в паре со значением «нет», а исправленный отчёт несёт список, поэтому один
+ * блок не превращается в вечный.
+ */
+export function detectHaltSignal(jsonl) {
+  for (const line of String(jsonl || '').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    if (PRIOR_STOP_BLOCK_RE.test(trimmed)) return true
+    let entry
+    try {
+      entry = JSON.parse(trimmed)
+    } catch {
+      continue // битая строка — пропускаем
+    }
+    if (!entry || typeof entry !== 'object') continue
+    const att = entry.attachment
+    if (
+      att &&
+      att.type === 'queued_command' &&
+      att.origin &&
+      att.origin.kind === 'human' &&
+      HALT_RE.test(String(att.prompt || ''))
+    ) {
+      return true
+    }
+    if (entry.type === 'user' && !entry.isMeta && HALT_RE.test(humanMessageText(entry.message))) {
+      return true
+    }
+  }
+  return false
+}
+
 export function blockMessage() {
   return (
     '⛔ deviations gate (#91): финальное сообщение читается как отчёт о завершении/закрытии ' +
@@ -45,16 +126,31 @@ export function blockMessage() {
   )
 }
 
+export function selfCertBlockMessage() {
+  return (
+    '⛔ deviations gate (#91): в сессии был стоп владельца или блок Stop-хука — «отклонений нет» ' +
+    'не проходит: перечисли, что пошло не по конвенции и чем кончилось.'
+  )
+}
+
 /**
  * Чистый seam решения: блокировать остановку только когда это не продолжение
  * после блока, финальное сообщение — терминальный отчёт (ТОТ ЖЕ
  * распознаватель, что у completion-report-gate), и строки stage 7 в нём нет.
+ *
+ * Вторая проверка (retro 2026-08-05, тема «honest-status»): строка ЕСТЬ, но
+ * самосертифицирована как «нет» — а сессия при этом была остановлена владельцем
+ * либо уже ловила блок Stop-гейта. «Нет» в такой сессии это не отчёт, а
+ * пропущенный разбор.
  */
-export function decideBlock({ stopHookActive, lastAssistantText }) {
+export function decideBlock({ stopHookActive, lastAssistantText, haltSignal = false }) {
   if (stopHookActive) return { block: false }
   if (!isTerminalReport(lastAssistantText)) return { block: false }
-  if (hasDeviationsLine(lastAssistantText)) return { block: false }
-  return { block: true }
+  if (!hasDeviationsLine(lastAssistantText)) return { block: true }
+  if (haltSignal && hasNoDeviationsValue(lastAssistantText)) {
+    return { block: true, reason: 'self-cert' }
+  }
+  return { block: false }
 }
 
 function main() {
@@ -63,12 +159,14 @@ function main() {
     const payload = readHookPayload()
     if (payload.stop_hook_active) process.exit(0)
     if (!payload.transcript_path) process.exit(0)
+    const transcript = readFileSync(payload.transcript_path, 'utf8')
     const decision = decideBlock({
       stopHookActive: Boolean(payload.stop_hook_active),
-      lastAssistantText: extractLastAssistantText(readFileSync(payload.transcript_path, 'utf8')),
+      lastAssistantText: extractLastAssistantText(transcript),
+      haltSignal: detectHaltSignal(transcript),
     })
     if (decision.block) {
-      process.stderr.write(blockMessage())
+      process.stderr.write(decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage())
       process.exit(2)
     }
     process.exit(0)

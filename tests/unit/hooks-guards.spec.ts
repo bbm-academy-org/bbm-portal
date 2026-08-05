@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { decideAgentModel } from '../../tools/hooks/agent-model-guard.mjs'
+import { decideStaging } from '../../tools/hooks/dispatch-guard.mjs'
 import {
   decideSecretEcho,
   hasSensitiveVarRef,
@@ -56,6 +57,40 @@ describe('agent-model-guard', () => {
 
   it('пустой model считается отсутствующим', () => {
     expect(decideAgentModel({ toolName: 'Agent', toolInput: { model: '   ' } }).block).toBe(true)
+  })
+})
+
+describe('dispatch-guard: staging gate', () => {
+  const staged =
+    'Read the issue bodies and write the rewritten text as drafts on disk — do not mutate ' +
+    'anything on GitHub; the lead applies them afterwards.'
+
+  it('предупреждает на брифе, который складывает результат в черновики вместо применения', () => {
+    const d = decideStaging({ toolName: 'Agent', prompt: staged })
+    expect(d.warn).toBe(true)
+  })
+
+  it('молчит, когда staging объявлен явным токеном STAGED:', () => {
+    expect(
+      decideStaging({
+        toolName: 'Agent',
+        prompt: `${staged}\nSTAGED: irreversible — the edit deletes owner-authored history.`,
+      }).warn,
+    ).toBe(false)
+    expect(
+      decideStaging({ toolName: 'Task', prompt: `${staged}\nSTAGED: owner-preapproval` }).warn,
+    ).toBe(false)
+  })
+
+  it('молчит на брифе прямого применения и на не-диспетчеризующем инструменте', () => {
+    expect(
+      decideStaging({
+        toolName: 'Agent',
+        prompt: 'Read each issue body, rewrite it and apply the edit with `gh issue edit`.',
+      }).warn,
+    ).toBe(false)
+    expect(decideStaging({ toolName: 'Edit', prompt: staged }).warn).toBe(false)
+    expect(decideStaging({ toolName: 'Agent', prompt: undefined }).warn).toBe(false)
   })
 })
 
@@ -147,6 +182,7 @@ describe('fail-open: битый stdin не даёт ненулевого код�
     'main-tree-read-guard.mjs',
     'dispatch-guard.mjs',
     'agent-model-guard.mjs',
+    'askuserquestion-context-guard.mjs',
     'secret-echo-guard.mjs',
     'merge-gate.mjs',
     'completion-report-gate.mjs',
@@ -194,6 +230,19 @@ describe('блокирующие хуки как процессы', () => {
     })
     expect(runHook('agent-model-guard.mjs', payload).status).toBe(2)
     expect(runHook('agent-model-guard.mjs', payload, { BBM_HOOKS_DISABLE: '1' }).status).toBe(0)
+  })
+
+  it('askuserquestion-context-guard возвращает 2 на коротком вопросе с голым #N', () => {
+    const blocked = runHook(
+      'askuserquestion-context-guard.mjs',
+      JSON.stringify({
+        tool_name: 'AskUserQuestion',
+        session_id: 'spec-session',
+        tool_input: { questions: [{ header: 'Порядок', question: 'Берём #107?', options: [] }] },
+      }),
+    )
+    expect(blocked.status).toBe(2)
+    expect(blocked.stderr).toContain('askuserquestion guard')
   })
 
   it('secret-echo-guard возвращает 2 на чтении .env в вывод', () => {

@@ -36,6 +36,9 @@ export const MAIN_TREE_STATE_DIR_REL = '.claude/main-tree-guard-state'
 /** Каталог per-session состояния dispatch-гарда (`{streak}`). */
 export const DISPATCH_STATE_DIR_REL = '.claude/dispatch-guard-state'
 
+/** Per-session state of the AskUserQuestion guard (`{headers: {<header>: len}}`). */
+export const ASKUSERQUESTION_STATE_DIR_REL = '.claude/askuserquestion-guard-state'
+
 /** Сравнение путей без учёта регистра и вида разделителя (Windows FS). */
 export function norm(p) {
   return String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
@@ -179,8 +182,8 @@ export const HOOKS_DISABLE_ENV = 'BBM_HOOKS_DISABLE'
 
 /**
  * Общий рубильник (ревью PR #99): `.claude/settings.json` закоммичен, то есть
- * стек включается у владельца сам и меняет поведение его сессий, а три хука
- * жёстко блокируют. Один env-выключатель уважают все девять хуков — это выход
+ * стек включается у владельца сам и меняет поведение его сессий, а четыре хука
+ * жёстко блокируют. Один env-выключатель уважают все десять хуков — это выход
  * из положения, когда гард ошибается, а чинить его прямо сейчас некогда.
  */
 export function hooksDisabled(env = process.env) {
