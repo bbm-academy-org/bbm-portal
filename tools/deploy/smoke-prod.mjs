@@ -128,6 +128,11 @@ function shaMatches(expected, reported) {
 /**
  * Verdict for one check against one observation `{ status, body }` (or
  * `{ error }` for a transport failure). Pure — this is the whole decision.
+ *
+ * @param {{ kind: string, name: string, url: string, expectStatus: number,
+ *           expectSha?: string|null, allowRedirect?: boolean }} check
+ * @param {{ status?: number, body?: string, error?: string }} observed
+ * @returns {{ ok: boolean, name: string, url: string, kind: string, detail?: string }}
  */
 export function evaluateCheck(check, observed) {
   const base = { name: check.name, url: check.url, kind: check.kind }
@@ -183,7 +188,10 @@ export function summarize(results) {
   return { ok: list.length > 0 && failed === 0, failed, total: list.length }
 }
 
-/** One line per check. Pure. */
+/**
+ * One line per check. Pure.
+ * @param {{ ok: boolean, name: string, url: string, detail?: string }} result
+ */
 export function formatResultLine({ ok, name, url, detail }) {
   const mark = ok ? '✓' : '✗'
   const tail = detail ? ` — ${detail}` : ''

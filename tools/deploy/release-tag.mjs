@@ -91,6 +91,10 @@ export function latestReleaseTag(existingTags) {
  *   deployedSha === latestReleaseSha  → skip (redeploy, empty range)
  *   latest release not an ancestor    → skip (behind / diverged — never cut backwards)
  *   otherwise                         → cut
+ *
+ * @param {{ latestReleaseSha?: string|null, deployedSha?: string,
+ *           releaseIsAncestor?: boolean }} [facts]
+ * @returns {{ cut: boolean, reason: string }}
  */
 export function shouldCutRelease({ latestReleaseSha, deployedSha, releaseIsAncestor = false } = {}) {
   if (!deployedSha) return { cut: false, reason: 'no deployed sha' }

@@ -1,0 +1,88 @@
+name: Release digest → Mattermost
+
+# The aggregated PROD release digest (task 7.6, #137), fired on a successful
+# production Deployment.
+#
+# Why it lives in CI at all: `pnpm deploy:prod` ships from the operator's
+# workstation over SSH (spec §3 decision 13) and deliberately holds no repo
+# secrets, so `secrets.MATTERMOST_RELEASE_WEBHOOK_URL` does not exist on that
+# path. What the deploy DOES do is record a GitHub Deployment + `success`
+# status — and that event fires this workflow, where the secret does live.
+#
+# The prev/new sha range is resolved by tools/ci/post-release-digest.mjs
+# (anchored on the previous RELEASE TAG, falling back to the repo root when no
+# release exists yet) and rendered + posted by tools/deploy/release-notes.mjs —
+# the one digest seam, shared with the per-PR delivery's extraction.
+#
+# `workflow_dispatch` re-fires a digest by hand (e.g. to backfill one that was
+# missed). With no `sha` input it targets the current prod deployed sha.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: >-
+          Deployed sha to build the digest for. Empty → the current prod deployed
+          sha (newest production Deployment), else HEAD.
+        required: false
+        type: string
+
+# `gh api …/deployments` (read) + the checked-out tree for `git tag --merged` /
+# `git log <prev>..<new>`; `pull-requests: read` for the per-range `gh pr view`.
+permissions:
+  contents: read
+  deployments: read
+  pull-requests: read
+
+jobs:
+  digest:
+    # Only a successful PRODUCTION deploy posts. A manual dispatch always runs
+    # (it synthesises success/production); the script re-checks in JS anyway.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      ( github.event.deployment_status.state == 'success' &&
+        github.event.deployment.environment == 'production' )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The resolver runs `git tag --merged` / `git rev-list` and the digest
+          # runs `git log <prev>..<new>`, so the full history + tags must be
+          # present — a shallow clone fails the range.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # A workflow_dispatch has no Deployment event: resolve the target sha into
+      # $GITHUB_ENV rather than interpolating it into a run: body.
+      - name: Resolve target sha (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          if [ -n "$INPUT_SHA" ]; then
+            sha="$INPUT_SHA"
+          else
+            sha="$(gh api repos/{owner}/{repo}/deployments -f environment=production -F per_page=1 --jq '.[0].sha' 2>/dev/null || true)"
+            if [ -z "$sha" ] || [ "$sha" = "null" ]; then
+              sha="$(git rev-parse HEAD)"
+            fi
+          fi
+          echo "DISPATCH_SHA=$sha" >> "$GITHUB_ENV"
+      - name: Post the aggregated release digest to Mattermost
+        env:
+          MATTERMOST_RELEASE_WEBHOOK_URL: ${{ secrets.MATTERMOST_RELEASE_WEBHOOK_URL }}
+          # This one really did ship — the PROD footer.
+          DELIVERY_ENV: prod
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # Deployment event fields through env:, never interpolated into run:.
+          # A dispatch run has no deployment payload, so the guards fall back to
+          # the synthesised success/production and the sha to DISPATCH_SHA.
+          STATE: ${{ github.event.deployment_status.state || 'success' }}
+          ENVIRONMENT: ${{ github.event.deployment.environment || 'production' }}
+          NEW_SHA: ${{ github.event.deployment.sha || env.DISPATCH_SHA }}
+        run: node tools/ci/post-release-digest.mjs
