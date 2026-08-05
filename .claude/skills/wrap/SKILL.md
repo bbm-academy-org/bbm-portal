@@ -23,35 +23,101 @@ Shared method + finding schema:
   over-correction: smallest change that kills the symptom.
 - **Understanding-check comes first**, before any edit is proposed or applied.
 
-## Phase 0 — locate THIS session log
+## Phase 0 — gates, then locate THIS session's log
 
-Newest-mtime `.jsonl` in this repo's log dir — but **skip spawned sub-sessions**
-(security-review / SDK side-channels have 0 human turns and will derail the retro).
-Pick the newest log that actually has human turns:
+**In-flight agents first.** Enumerate every agent this session dispatched and
+**wait for each to return** before dispatching the retro. A session's worst
+deviation is often surfaced by the last agent's result, so a retro launched over
+an in-flight agent analyses an incomplete session and misses exactly the tail
+that mattered. Recording an unreapable agent's id + worktree/branch/port in the
+issue's stop-state comment (`.claude/skills/task-canon/SKILL.md` §5) is the
+fallback for a harness-killed agent, never an alternative to waiting.
+
+**Then resolve the log by CONTENT, not by mtime.** The log dir **re-slugs when a
+session enters a worktree**: one session's segments live under
+`C--Users-sidor-repos-bbm-portal` _and_ under
+`C--Users-sidor-repos-bbm-portal--claude-worktrees-<N>` (and
+`…-worktrees-agent-*` for dispatched agents). Globbing only the main slug
+silently drops everything that happened inside the task's worktree — which is
+where the work is.
 
 ```bash
-D="$HOME/.claude/projects/C--Users-sidor-repos-bbm-portal"
-for f in $(ls -t "$D"/*.jsonl); do
-  # a real interactive session has at least one human user turn (not sdk/sidechain)
-  if grep -qE '"type":"user"' "$f" && grep -qvE '"promptSource":"sdk"|"isSidechain":true' "$f"; then
-    echo "$f"; break
-  fi
+MARK='<string unique to THIS session: its issue/PR number, or a phrase from the first user turn>'
+SEGMENTS=()
+for f in "$HOME"/.claude/projects/*bbm-portal*/*.jsonl; do
+  grep -q "$MARK" "$f" || continue                                     # content match, not mtime
+  grep -qE '"type":"user"' "$f" || continue                            # has human-shaped turns
+  grep -qE '"promptSource":"sdk"|"isSidechain":true' "$f" && continue  # dispatched-agent / SDK log
+  SEGMENTS+=("$f")
 done
+printf '%s\n' "${SEGMENTS[@]}"   # full paths: the dir carries the slug, the basename the id
 ```
 
-If unsure, confirm the pick by grepping the candidate for a distinctive string
-from this session before dispatching the analyst. (A bare `ls -t | head -1` once
-grabbed a 30-second security-review sub-session with 0 human messages.)
+- **The exclusion must be a POSITIVE test (`grep -qE … && continue`).** The
+  inverted form `grep -qvE … || continue` is a no-op: `-v` asks "is there ANY
+  line without the marker", which is true of every multi-line log, so it excludes
+  nothing. Measured on this box 2026-08-05: over 114 bbm-portal logs the inverted
+  form excluded **0**, the positive form excluded **80**.
+- **`"promptSource":"sdk"` is the discriminator that actually fires here.** Of
+  the 80 excluded logs, **27** are every log in the `…-worktrees-<N>` /
+  `…-worktrees-agent-*` dirs and **53** sit in the MAIN slug dir — a dispatched
+  agent whose cwd is the main checkout writes there too, so the marker matters
+  in the main dir most of all. `"isSidechain":true` appears on **no** log on this
+  box (every line is `false`) — the clause stays only for harness variants that
+  do emit it.
+- Mtime is a **tiebreaker among content-matched candidates only** — never the
+  primary selector. (A bare `ls -t | head -1` once grabbed a 30-second
+  security-review sub-session with 0 human messages.)
+- **Capture the segments BEFORE dispatching phase 1.** The retro agent writes its
+  own `.jsonl` (sdk-marked, so the predicate above drops it too) and immediately
+  becomes newest-mtime; it must be handed a fixed list so it never globs and
+  never analyses itself.
+- More than one segment is normal (main tree + each worktree entered) — pass all
+  of them, and keep the **directory** of each: it is the slug the extractor needs.
 
 ## Phase 1 — dispatch the independent analysis sub-agent (Opus, read-only)
 
-Dispatch a fresh-context Opus agent — **never self-review**. Brief it with the
-resolved `--session <id>`, the shared method file, and the bundled extractor:
+Dispatch a fresh-context Opus agent — **never self-review**. The independence is
+the point of the phase, so it is spelled out as conditions, not as a habit:
+
+- **A separate agent, always.** The lead reading its own transcript is the banned
+  shortcut — it finds what it already believes. `general-purpose` with an
+  explicit `model: opus` (`tools/hooks/agent-model-guard.mjs` blocks a dispatch
+  without an explicit model).
+- **Fixed segments from phase 0** — directory plus id, one pair per segment — so
+  the analyst never globs, never picks by mtime, and never lands on its own log.
+- **Read-only**: it edits no file, opens no issue, touches no tracker. Proposing
+  and applying are phases 2–3, and they belong to the lead + the owner.
+- **The schema or a re-dispatch**: a free-form narrative without the findings
+  array is not a valid return — re-dispatch it, do not interpret it yourself.
+
+Brief it with the shared method file and **one extractor run per segment phase 0
+resolved** — the digests are per-segment, and so is the brief:
 
 ```bash
-node ~/.claude/skills/wrap-init/tools/extract.mjs     --slug C--Users-sidor-repos-bbm-portal --session <id>
-node ~/.claude/skills/wrap-init/tools/transcripts.mjs --slug C--Users-sidor-repos-bbm-portal --session <id>
+OUT="${TMPDIR:-/tmp}/wrap-retro-$(date +%s)"
+for f in "${SEGMENTS[@]}"; do                       # the array phase 0 built
+  dir=$(dirname "$f"); id=$(basename "$f" .jsonl)
+  node ~/.claude/skills/wrap-init/tools/extract.mjs     --log-dir "$dir" --session "$id" --out-dir "$OUT/$id"
+  node ~/.claude/skills/wrap-init/tools/transcripts.mjs --log-dir "$dir" --session "$id" --out-dir "$OUT/$id"
+done
 ```
+
+Two properties of these tools dictate that loop, and a hardcoded slug breaks
+both:
+
+- **`--log-dir` per segment, never a fixed `--slug`.** A slug resolves to exactly
+  one dir (`~/.claude/projects/<slug>`), so a hardcoded
+  `--slug C--Users-sidor-repos-bbm-portal` cannot reach a segment that lives in a
+  `…--claude-worktrees-<N>` dir — the run exits 1 on a session id the dir does
+  not contain, and phase 0's multi-slug resolution becomes decoration.
+  `--log-dir` overrides `--slug`, so pass the segment's own directory.
+- **`--session` is single-session.** Repeating the flag does not accumulate — the
+  parser overwrites and the last one wins — hence one invocation per segment,
+  each with its own `--out-dir`, and `transcripts.mjs` run after `extract.mjs` in
+  the SAME out-dir (it reads the `index.json` that extract writes there).
+
+The brief names every `$OUT/<id>` digest dir it must read, not the log paths.
 
 It returns, per `retro-method.md`: (1) an **understanding-check**, (2) the
 **findings array** in the schema, (3) a **handoff-seed**. It edits nothing.
@@ -67,21 +133,68 @@ It MUST also include a **recurrence check against `foldedThemes`**
 finding, marked `recurrence`, and its remedy is escalation to a deterministic
 mechanism (hook/lint) — never another paragraph of prose.
 
-## Phase 2 — propose concrete diffs (STOP for approval)
+## Phase 2 — propose concrete diffs (MANDATORY approval gate)
 
 Present the understanding-check first (owner confirms/corrects). Then a compact
 `Finding → recurrence → Destination → Exact change` table, each mapped to its
 finding, favoring deterministic `remedy_kind` (`prose-not-enforced` →
 skill/command/hook/lint, not more prose); a `recurrence: yes` row may not be
-remedied with prose. **Stop and ask** which to apply (all / subset / none).
-Apply nothing yet.
+remedied with prose.
+
+**This gate is non-bypassable.** Nothing in phase 3 lands without the owner's
+explicit "go" in THIS session, on THIS list:
+
+- **An edit to a skill, a rule, `CLAUDE.md`/`AGENTS.md` or a hook changes how
+  every future session behaves** — that is a scope of its own, and the retro's
+  authorship of it grants no authority to apply it
+  (`.claude/skills/task-cycle/SKILL.md` stage 2: handoff / task text / config ≠
+  a "go").
+- **Approval is per item.** "Apply all" is an answer the owner gives, not a
+  default the wrap assumes from a silence or a general nod; a trimmed subset is
+  carried forward exactly as trimmed.
+- **A proposal shaped as a new issue routes through the significance threshold
+  first** (`.claude/skills/task-canon/SKILL.md` §6): above it →
+  `pnpm issue:create` with the criterion named, `--channel retro`; below it → a `DEBT.md` line with a return condition.
+  An issue proposed without a named criterion is backlog inflation.
+- Apply nothing while presenting. A previous wrap's approval covers that wrap's
+  edits only.
 
 ## Phase 3 — apply approved + COMPACT (never just append)
+
+**What "compact" is scoped to:** the **always-on corpus this wrap maintains** —
+`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md` and the `MEMORY.md` index. Every
+one of them is read at the START of every future session, so growth there is a
+tax the next session pays, and those four are exactly what
+`pnpm lint:instruction-budget` measures.
+
+Two things sit deliberately outside the measured set. The
+`memory/<topic>.md` files are **lazy** — a session loads one only when the index
+line sends it there — so they obey the same prune-before-add discipline (fold
+duplicates, delete disproven facts) but carry no per-file budget; what is
+budgeted is their one-line index entry. The session **transcript**
+(`~/.claude/projects/<slug>/*.jsonl`) is never rewritten, trimmed or pruned at
+all — it is read-only evidence, and the retro only extracts from it.
 
 - **Prune before adding** — fold duplicate memories, delete disproven ones, tighten
   any bloated instruction file, THEN write this session's durable learnings to
   `C:\Users\sidor\.claude\projects\C--Users-sidor-repos-bbm-portal\memory\` (one
   fact per file) + a one-line `MEMORY.md` index entry.
+- **Adding signal means relocating detail out**, not appending: long detail →
+  a `.claude/rules/*.md` file or a skill; a settled fact → a `memory/<topic>.md`
+  file with one index line. An append with nothing relocated is the banned
+  outcome, whatever the file's current size.
+- **Then run `pnpm lint:instruction-budget`** (`tools/lint/instruction-budget-lint.mjs`,
+  200 lines / 25 KB per file). **PASS is the exit condition of this phase** — a
+  wrap does not finish with a red budget, and a `NEAR` row is compacted now
+  rather than left for the wrap that will be over. Size the compaction in one
+  pass from the reported numbers; do not trim-and-re-measure by eye (this corpus
+  is half Cyrillic — bytes and characters differ ~2×).
+- **Land the wrap's own edits, never leave them dangling.** They are changes like
+  any other: with parallel sessions live they are worktree-first from the first
+  edit (`.claude/rules/parallel-sessions.md`) and land as a PR; files under
+  `~/.claude/projects/<slug>/memory/` are outside the repo and are saved in
+  place. Before declaring the wrap done, `git status` carries no uncommitted
+  instruction files.
 - **Tracker follow-ups** — file discovered work in the **right** tracker (see
   gotcha below): code/dev work → `gh issue create` on `bbm-academy-org/bbm-portal`;
   organizational / strategic `BBMP-*` → Plane (`--workspace bbm`). When unsure,
@@ -91,8 +204,18 @@ Apply nothing yet.
 
 ## Phase 4 — repo & tracker hygiene
 
-Clean working tree; merge any green, reviewed PR per policy (squash, delete
-branch); reconcile **both** trackers (GitHub Issues for code work, Plane for org
+Clean working tree; merge any green, reviewed PR with `pnpm pr:land <PR>` (it
+owns the whole tail: gate → squash-merge → board `Done` → teardown → re-sweep) —
+whether a PR merging in this wrap needs the
+independent review and the iteration-end gate is decided by the one boundary in
+`.claude/skills/task-cycle/SKILL.md` stage 4 — never re-decided here. In
+practice a wrap's own edits land on canon files (`CLAUDE.md`, `.claude/rules/**`,
+`.claude/skills/task-cycle/**`), which puts them in the gated class: a wrap is
+not a bypass of its own regulation. Each task closed here gets its closing comment in
+the fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`); each task
+left open gets the `.claude/skills/task-canon/SKILL.md` §5 stop-state comment
+instead. Reconcile **both**
+trackers (GitHub Issues for code work, Plane for org
 work — nothing stuck "In Progress" for finished work, results comment on close);
 file deferred/stale work. Auto-apply safe cleanups; confirm consequential ones.
 
@@ -136,9 +259,9 @@ post-process its output here, never edit the skill):
 - **Plane CLI 403 / empty result → do NOT improvise raw REST.** Load the `pp-plane`
   skill and check for a **leftover** process-wide `PLANE_SLUG` from another
   workspace silently overriding `--workspace` (that gives a false 403). NB: an
-  *inline* `PLANE_SLUG=bbm plane-pp-cli relations …` is intended — it's the
+  _inline_ `PLANE_SLUG=bbm plane-pp-cli relations …` is intended — it's the
   documented workaround for the `relations`-group `--workspace` bug; the trap is a
-  *stale exported* value, not the inline use. Read with
+  _stale exported_ value, not the inline use. Read with
   `plane-pp-cli work-items get <seq> BBMP --workspace bbm`; write via REST PATCH —
   see memory `plane-write-via-rest.md`. The recipe already exists; the failure is
   not loading it at the decision point. _(symptom: «Куда ты опять упёрся? pp-plane
