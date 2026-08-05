@@ -1,3 +1,9 @@
+---
+status: Shipped
+issue: 55
+updated: 2026-07-30
+---
+
 # Fix #55 — page-глобал с черновиком показывает `Draft` вместо `Changed`
 
 **Дата:** 2026-07-01
