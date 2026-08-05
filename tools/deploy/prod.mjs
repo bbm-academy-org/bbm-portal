@@ -838,6 +838,11 @@ ${COMPOSE} up -d app
       // Deliberately untagged: the tag that covers this sha belongs to its
       // original deploy, and re-asserting it here would claim a fresh release.
       releaseTag: null,
+      // The field that keeps this record OUT of the release digest. A rollback
+      // record is legitimately success/production, so without a distinguishing
+      // task CI would re-announce «Релиз на PROD» for the release being rolled
+      // back TO — mid-incident, to the whole team.
+      task: 'deploy:rollback',
       notesText: `rollback from ${replacedSha ? replacedSha.slice(0, 12) : 'unknown'}`,
       healthUrl: PROD_HEALTH_URL,
       cwd: process.cwd(),

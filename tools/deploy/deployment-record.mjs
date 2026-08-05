@@ -68,6 +68,7 @@ function firstNonEmptyLine(text) {
  * @param {string|null} args.notesText   aggregated release-notes digest, or null/''
  * @param {string}      args.healthUrl   prod health URL (the status `log_url`)
  * @param {string}      args.nowIso      caller-injected ISO deploy timestamp
+ * @param {string}     [args.task]       `deploy` (default) or `deploy:rollback`
  */
 export function buildDeploymentPayload({
   sha,
@@ -76,6 +77,7 @@ export function buildDeploymentPayload({
   notesText,
   healthUrl,
   nowIso,
+  task = 'deploy',
 }) {
   const shortSha = typeof sha === 'string' ? sha.slice(0, SHORT) : ''
   const tagLabel = releaseTag ?? '(untagged)'
@@ -86,6 +88,22 @@ export function buildDeploymentPayload({
     deployment: {
       ref: sha,
       environment: 'production',
+      // What KIND of deployment this is. GitHub's own default is `deploy`; we
+      // always set it explicitly so a rollback is distinguishable in the API
+      // rather than merely implied by absence.
+      //
+      // This field is load-bearing, not decorative: the `success` status of this
+      // record is what fires the Mattermost release digest
+      // (.github/workflows/release-digest.yml). A rollback record that looked
+      // like a deploy record made CI re-announce «🚀 Релиз на PROD» for the very
+      // release being rolled back TO — mid-incident, to the whole team. The
+      // digest refuses any task but `deploy` (`shouldPost`).
+      //
+      // Note what is NOT faked to achieve that: the environment stays
+      // `production` and the state stays `success`, because a rollback IS a
+      // successful change to production. Corrupting the deploy record to silence
+      // a notification would trade a wrong message for a wrong record.
+      task,
       auto_merge: false,
       required_contexts: [],
       description: truncate(stripAstral(`release ${tagLabel} @ ${shortSha}`), GH_DESCRIPTION_MAX),
@@ -140,6 +158,7 @@ export function createDeploymentRecord({
   releaseTag,
   notesText,
   healthUrl,
+  task = 'deploy',
   cwd = process.cwd(),
   run,
 }) {
@@ -153,6 +172,7 @@ export function createDeploymentRecord({
       releaseTag,
       notesText,
       healthUrl,
+      task,
       nowIso: new Date().toISOString(),
     })
 

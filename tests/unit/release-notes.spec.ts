@@ -193,6 +193,32 @@ describe('shouldPost', () => {
     expect(shouldPost({ state: 'success', environment: 'preview' })).toBe(false)
     expect(shouldPost({})).toBe(false)
   })
+
+  it('does NOT post for a ROLLBACK deployment — the incident is not a release', () => {
+    // `pnpm deploy:prod --rollback` records its own Deployment so GitHub stops
+    // asserting the sha just taken off the box. That record is also a
+    // `deployment_status: success` on `production`, so without this predicate it
+    // would fire «🚀 Релиз на PROD» re-announcing the release being rolled back
+    // TO — the worst possible message at the worst possible moment.
+    expect(
+      shouldPost({ state: 'success', environment: 'production', task: 'deploy:rollback' }),
+    ).toBe(false)
+  })
+
+  it('treats a missing task as `deploy` — GitHub’s own API default', () => {
+    // A Deployment created by any other means (or before this field was set)
+    // omits `task`, and GitHub defaults it to `deploy`. Refusing those would
+    // silently drop legitimate digests.
+    expect(shouldPost({ state: 'success', environment: 'production', task: undefined })).toBe(true)
+    expect(shouldPost({ state: 'success', environment: 'production', task: '' })).toBe(true)
+    expect(shouldPost({ state: 'success', environment: 'production', task: 'deploy' })).toBe(true)
+  })
+
+  it('refuses any other task rather than guessing', () => {
+    expect(
+      shouldPost({ state: 'success', environment: 'production', task: 'deploy:migration' }),
+    ).toBe(false)
+  })
 })
 
 describe('resolvePrevSha', () => {

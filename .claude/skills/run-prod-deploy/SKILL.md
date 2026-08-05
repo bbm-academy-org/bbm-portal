@@ -84,7 +84,9 @@ record and the digest with it.
 The smoke **settles**: `app` has no compose healthcheck, so `verify` can only
 prove the container is RUNNING, not that Next.js has finished booting behind
 Caddy. The smoke re-probes the still-red checks for up to 90 s before calling a
-deploy red. A genuinely broken deploy still goes red — a minute later.
+deploy red. That budget is **wall clock**: no new sweep starts once it is spent,
+so the worst case is 90 s plus the sweep already in flight. A genuinely broken
+deploy still goes red — a minute later.
 
 **A deploy cannot hang silently.** Every ssh channel carries keepalives (a dead
 half-open connection exits loudly in ~60s) and each streamed step runs under a
@@ -129,6 +131,14 @@ A rollback **records its own GitHub Deployment**, untagged — it ships no new
 code, and `release-*` means "what shipped". Without that record GitHub would keep
 asserting the sha you just took off the box, and the next session would read the
 broken build as "deployed".
+
+That record carries `task: deploy:rollback`, which is what keeps it **out of the
+Mattermost release digest**. It is otherwise a perfectly ordinary
+success/production Deployment, so without the task the digest would fire
+«Релиз на PROD» re-announcing the release you are rolling back TO — mid-incident,
+to the whole team. A rollback therefore posts **nothing**: silence is honest,
+where that message would not be. If the team later wants an «откат» notice it
+must be its own message shape, never the release one.
 
 An app rollback is only safe while the previous code still runs against the
 current schema — which is exactly what the expand/contract canon buys. After a

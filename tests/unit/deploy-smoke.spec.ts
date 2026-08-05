@@ -5,7 +5,6 @@ import {
   evaluateCheck,
   formatResultLine,
   parseSmokeArgs,
-  planSettle,
   runSmoke,
   summarize,
 } from '../../tools/deploy/smoke-prod.mjs'
@@ -50,7 +49,7 @@ describe('parseSmokeArgs', () => {
     expect(parsed.expectSha).toBeNull()
   })
 
-  it('reads --settle-ms, and defaults to a single pass', () => {
+  it('reads --settle-ms as a wall-clock budget, defaulting to a single pass', () => {
     expect(parseSmokeArgs([]).settleMs).toBe(0)
     expect(parseSmokeArgs(['--settle-ms', '90000']).settleMs).toBe(90000)
     expect(parseSmokeArgs(['--settle-ms', 'soon']).error).toMatch(/settle/i)
@@ -58,16 +57,77 @@ describe('parseSmokeArgs', () => {
   })
 })
 
-describe('planSettle', () => {
-  it('turns a settle budget into attempts + a fixed delay', () => {
-    expect(planSettle(0)).toEqual({ attempts: 1, delayMs: 0 })
-    expect(planSettle(90000)).toMatchObject({ attempts: 19 })
-    expect(planSettle(90000).delayMs).toBe(5000)
+describe('runSmoke — the settle budget is a real DEADLINE, not an attempt count', () => {
+  // A count of attempts is not a bound: each sweep can itself burn 6 x the HTTP
+  // timeout, so "19 attempts, 5s apart" was worst-case ~40 minutes against a
+  // blackholed host, while the docs promised 90 seconds. The budget is now wall
+  // time, and the documented bound is the real one.
+  const allRed = async () => ({ error: 'ETIMEDOUT' })
+
+  /** A fake clock the fetcher and the sleeper both advance. */
+  function clock() {
+    let t = 0
+    return {
+      now: () => t,
+      advance: (ms: number) => {
+        t += ms
+      },
+    }
+  }
+
+  it('starts no NEW attempt once the budget is spent', async () => {
+    const c = clock()
+    const slept: number[] = []
+    const res = await runSmoke({
+      expectSha: SHA,
+      fetcher: allRed,
+      settleMs: 12000,
+      intervalMs: 5000,
+      now: c.now,
+      sleep: async (ms: number) => {
+        slept.push(ms)
+        c.advance(ms)
+      },
+    })
+    expect(res.ok).toBe(false)
+    // t=0 sweep, wait->5000, sweep, wait->10000, sweep; a 4th wait would end at
+    // 15000 > 12000, so it stops. Three sweeps, two waits.
+    expect(res.attempts).toBe(3)
+    expect(slept).toEqual([5000, 5000])
   })
 
-  it('never yields fewer than one attempt', () => {
-    expect(planSettle(1).attempts).toBeGreaterThanOrEqual(1)
-    expect(planSettle(-5).attempts).toBe(1)
+  it('a SLOW sweep consumes the budget — the old attempt-count model could not see this', async () => {
+    const c = clock()
+    // Every probe burns 30s of wall clock: one sweep alone (6 checks) overruns a
+    // 90s budget. Under the attempt-count model this ran 19 sweeps.
+    const slowRed = async () => {
+      c.advance(30000)
+      return { error: 'ETIMEDOUT' }
+    }
+    const res = await runSmoke({
+      expectSha: SHA,
+      fetcher: slowRed,
+      settleMs: 90000,
+      intervalMs: 5000,
+      now: c.now,
+      sleep: async () => {},
+    })
+    expect(res.ok).toBe(false)
+    expect(res.attempts).toBe(1)
+  })
+
+  it('a zero budget is exactly one sweep', async () => {
+    const c = clock()
+    const res = await runSmoke({
+      expectSha: SHA,
+      fetcher: allRed,
+      settleMs: 0,
+      now: c.now,
+      sleep: async () => {
+        throw new Error('must not sleep with no budget')
+      },
+    })
+    expect(res.attempts).toBe(1)
   })
 })
 
@@ -232,13 +292,16 @@ describe('runSmoke — the whole matrix over an injected fetcher', () => {
       return hit ? { status: hit.status, body: hit.body ?? '' } : { error: `no route for ${url}` }
     }
     const slept: number[] = []
+    let t = 0
     const res = await runSmoke({
       expectSha: SHA,
       fetcher,
-      attempts: 3,
-      delayMs: 5000,
+      settleMs: 90000,
+      intervalMs: 5000,
+      now: () => t,
       sleep: async (ms: number) => {
         slept.push(ms)
+        t += ms
       },
     })
     expect(res.ok).toBe(true)
@@ -262,8 +325,9 @@ describe('runSmoke — the whole matrix over an injected fetcher', () => {
     const res = await runSmoke({
       expectSha: SHA,
       fetcher,
-      attempts: 2,
-      delayMs: 1,
+      settleMs: 10000,
+      intervalMs: 1,
+      now: () => 0,
       sleep: async () => {},
     })
     expect(res.ok).toBe(true)
@@ -274,17 +338,20 @@ describe('runSmoke — the whole matrix over an injected fetcher', () => {
 
   it('still gives up: a permanently red check exhausts the budget and reports RED', async () => {
     const slept: number[] = []
+    let t = 0
     const res = await runSmoke({
       expectSha: SHA,
       fetcher: fetcher({}),
-      attempts: 3,
-      delayMs: 10,
+      settleMs: 30,
+      intervalMs: 10,
+      now: () => t,
       sleep: async (ms: number) => {
         slept.push(ms)
+        t += ms
       },
     })
     expect(res.ok).toBe(false)
-    expect(slept).toHaveLength(2) // between the 3 attempts, not after the last
+    expect(slept).toHaveLength(3) // waits at t=0,10,20; a 4th would end past 30
   })
 
   it('runs EVERY check even after one fails — the operator sees the whole picture', async () => {

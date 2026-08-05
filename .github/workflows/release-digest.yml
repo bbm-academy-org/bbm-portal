@@ -38,11 +38,19 @@ permissions:
 jobs:
   digest:
     # Only a successful PRODUCTION deploy posts. A manual dispatch always runs
-    # (it synthesises success/production); the script re-checks in JS anyway.
+    # (it synthesises success/production/deploy); the script re-checks in JS anyway.
+    #
+    # `task == 'deploy'` is what keeps a ROLLBACK quiet. `deploy:prod --rollback`
+    # records its own Deployment (so GitHub stops asserting the sha just taken off
+    # the box), and that record is legitimately success/production — without this
+    # predicate it would re-announce «Релиз на PROD» for the very release being
+    # rolled back TO, mid-incident. The rollback record carries
+    # `task: deploy:rollback`.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       ( github.event.deployment_status.state == 'success' &&
-        github.event.deployment.environment == 'production' )
+        github.event.deployment.environment == 'production' &&
+        github.event.deployment.task == 'deploy' )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,5 +92,6 @@ jobs:
           # the synthesised success/production and the sha to DISPATCH_SHA.
           STATE: ${{ github.event.deployment_status.state || 'success' }}
           ENVIRONMENT: ${{ github.event.deployment.environment || 'production' }}
+          TASK: ${{ github.event.deployment.task || 'deploy' }}
           NEW_SHA: ${{ github.event.deployment.sha || env.DISPATCH_SHA }}
         run: node tools/ci/post-release-digest.mjs

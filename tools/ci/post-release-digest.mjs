@@ -44,11 +44,26 @@ const HEX_RE = /^[0-9a-f]{7,40}$/i
 
 /**
  * The deployment_status guard, in JS (mirrors the workflow `if:`). Only a
- * `success` state on `production` posts. A manual dispatch synthesises both, so
- * it flows through the same guard. Pure.
+ * `success` state on `production` for a `deploy` TASK posts. A manual dispatch
+ * synthesises all three, so it flows through the same guard. Pure.
+ *
+ * The task predicate is the one that is easy to omit and expensive to omit.
+ * `pnpm deploy:prod --rollback` records its own Deployment so GitHub stops
+ * asserting the sha just taken off the box — and that record is, correctly, a
+ * `success` status on `production`. Without this check it would fire
+ * «Релиз на PROD», re-announcing the very release being rolled back TO, to the
+ * whole team, mid-incident. The rollback record carries `task: 'deploy:rollback'`
+ * and is refused here.
+ *
+ * @param {{ state?: string, environment?: string, task?: string }} evt
+ * @returns {boolean}
  */
-export function shouldPost({ state, environment } = {}) {
-  return state === 'success' && environment === 'production'
+export function shouldPost({ state, environment, task } = {}) {
+  // A MISSING task counts as `deploy` — GitHub's own API default — so a
+  // Deployment created by any other means still gets its digest instead of
+  // being silently dropped. Anything else is refused rather than guessed at.
+  const kind = (task ?? '').trim() || 'deploy'
+  return state === 'success' && environment === 'production' && kind === 'deploy'
 }
 
 /**
@@ -157,11 +172,12 @@ async function main() {
   const state = process.env.STATE
   const environment = process.env.ENVIRONMENT
   const newSha = process.env.NEW_SHA
+  const task = process.env.TASK
 
-  if (!shouldPost({ state, environment })) {
+  if (!shouldPost({ state, environment, task })) {
     log(
       `not a successful production deploy (state=${JSON.stringify(state ?? null)}, ` +
-        `environment=${JSON.stringify(environment ?? null)}) — nothing to post.`,
+        `environment=${JSON.stringify(environment ?? null)}, task=${JSON.stringify(task ?? null)}) — nothing to post.`,
     )
     return
   }

@@ -294,6 +294,29 @@ describe('buildDeploymentPayload', () => {
     )
   })
 
+  it('marks an ordinary deploy with the `deploy` task', () => {
+    // GitHub's own default for Deployment.task is `deploy`; setting it
+    // explicitly makes the distinction from a rollback legible in the API, not
+    // merely implied by absence.
+    expect(buildDeploymentPayload({ ...base, notesText: '' }).deployment.task).toBe('deploy')
+  })
+
+  it('marks a ROLLBACK deployment with a task the digest can refuse', () => {
+    // The record is what fires the Mattermost release digest. A rollback record
+    // that looks exactly like a deploy record makes CI re-announce
+    // «🚀 Релиз на PROD» for the very release being rolled back TO — mid-incident,
+    // to the whole team. `task` is the field that keeps them distinguishable.
+    const { deployment } = buildDeploymentPayload({
+      ...base,
+      task: 'deploy:rollback',
+      notesText: '',
+    })
+    expect(deployment.task).toBe('deploy:rollback')
+    // Still production, still a success — only the TASK differs. Faking either
+    // of those would corrupt the deploy record to silence a notification.
+    expect(deployment.environment).toBe('production')
+  })
+
   it('records a null previousSha on a first deploy rather than inventing one', () => {
     const { deployment } = buildDeploymentPayload({ ...base, previousSha: null, notesText: '' })
     expect(deployment.payload.previousSha).toBeNull()
@@ -329,8 +352,10 @@ describe('buildDeploymentPayload', () => {
 describe('createDeploymentRecord — never throws, reports structurally', () => {
   it('creates the deployment then its success status', () => {
     const calls: string[][] = []
-    const run = (cmd: string, args: string[]) => {
+    const bodies: Record<string, unknown>[] = []
+    const run = (cmd: string, args: string[], opts: { input?: string } = {}) => {
       calls.push([cmd, ...args])
+      bodies.push(JSON.parse(opts.input ?? '{}'))
       return { status: 0, stdout: JSON.stringify({ id: 4242 }) }
     }
     const res = createDeploymentRecord({
@@ -341,6 +366,9 @@ describe('createDeploymentRecord — never throws, reports structurally', () => 
       run,
     })
     expect(res).toEqual({ ok: true, deploymentId: 4242 })
+    // The body travels over stdin, not argv — that is what keeps the nested
+    // `payload` object out of any shell.
+    expect(bodies[0]).toMatchObject({ task: 'deploy', environment: 'production' })
     expect(calls[0].slice(0, 4)).toEqual(['gh', 'api', '-X', 'POST'])
     expect(calls[0]).toContain('repos/{owner}/{repo}/deployments')
     expect(calls[1]).toContain('repos/{owner}/{repo}/deployments/4242/statuses')

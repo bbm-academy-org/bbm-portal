@@ -42,25 +42,8 @@ export const CMS_ORIGIN = 'https://cms.bbm.academy'
 export const PORTAL_ORIGIN = 'https://portal.bbm.academy'
 export const HEALTH_PATH = '/api/health'
 
-/** Fixed gap between settle attempts. */
+/** Gap between settle sweeps. */
 export const SETTLE_INTERVAL_MS = 5000
-
-/**
- * Turn a settle BUDGET into attempts + a fixed delay. Pure.
- *
- * Why a settle window exists at all: the `app` compose service has no
- * healthcheck, so the pipeline can only prove `State.Status == running` before
- * smoking. Between that and the first HTTP probe, Next.js may still be booting
- * and Caddy may still be holding the old upstream — a single-shot smoke
- * false-reds a deploy that is in fact fine, and the run where that would be
- * least welcome is the owner's inaugural one. The budget is bounded, so a
- * genuinely broken deploy still goes red, just a minute later.
- */
-export function planSettle(settleMs) {
-  const budget = Number(settleMs)
-  if (!Number.isFinite(budget) || budget <= 0) return { attempts: 1, delayMs: 0 }
-  return { attempts: Math.floor(budget / SETTLE_INTERVAL_MS) + 1, delayMs: SETTLE_INTERVAL_MS }
-}
 
 /** `--expect-sha <sha>` / `--dry-run` / `--timeout-ms <n>` / `--settle-ms <n>`. Pure. */
 export function parseSmokeArgs(argv) {
@@ -253,38 +236,51 @@ const defaultSleep = (ms) => new Promise((res) => setTimeout(res, ms))
  * only re-probes what is still red (a passing check is not re-asked, so the log
  * stays readable and a flaky pass cannot be un-passed).
  *
- * `fetcher` and `sleep` are injectable so the whole matrix — including the
- * settle behaviour — is unit-testable offline and instantly.
+ * `settleMs` is a WALL-CLOCK budget, not a sweep count. No new sweep starts once
+ * it is spent; a sweep already in flight runs to completion, so the true worst
+ * case is `settleMs` plus one sweep — a bound that matches what the docs promise.
+ * (As a sweep count it did not: each sweep can burn 6x the HTTP timeout, making
+ * "90 s" nearer 40 minutes against a blackholed host.)
+ *
+ * `fetcher`, `sleep` and `now` are injectable so the whole matrix — including
+ * the deadline semantics — is unit-testable offline and instantly.
  *
  * @param {{ expectSha?: string|null,
  *           fetcher?: (url: string) => Promise<{ status?: number, body?: string, error?: string }>,
- *           timeoutMs?: number, attempts?: number, delayMs?: number,
- *           sleep?: (ms: number) => Promise<unknown>,
+ *           timeoutMs?: number, settleMs?: number, intervalMs?: number,
+ *           sleep?: (ms: number) => Promise<unknown>, now?: () => number,
  *           onRetry?: (attempt: number, redCount: number) => void }} [opts]
  */
 export async function runSmoke({
   expectSha,
   fetcher,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-  attempts = 1,
-  delayMs = 0,
+  settleMs = 0,
+  intervalMs = SETTLE_INTERVAL_MS,
   sleep = defaultSleep,
+  now = () => Date.now(),
   onRetry,
 } = {}) {
   const get = fetcher || httpFetcher(timeoutMs)
   const checks = buildChecks({ expectSha })
   const results = new Array(checks.length).fill(null)
-  const total = Math.max(1, attempts)
+  const deadline = now() + Math.max(0, Number(settleMs) || 0)
 
   let attempt = 0
-  for (attempt = 1; attempt <= total; attempt++) {
+  for (;;) {
+    attempt += 1
     for (let i = 0; i < checks.length; i++) {
       if (results[i] && results[i].ok) continue
       results[i] = evaluateCheck(checks[i], await get(checks[i].url))
     }
-    if (results.every((r) => r.ok) || attempt === total) break
+    if (results.every((r) => r.ok)) break
+    // Start a new sweep only if the WAIT still fits inside the budget. The
+    // budget is wall time, not a sweep count: a sweep can itself burn 6x the
+    // HTTP timeout, so counting attempts made the real bound many times the
+    // documented one.
+    if (now() + intervalMs > deadline) break
     if (onRetry) onRetry(attempt, results.filter((r) => !r.ok).length)
-    await sleep(delayMs)
+    await sleep(intervalMs)
   }
   return { ...summarize(results), results, attempts: attempt }
 }
@@ -311,18 +307,16 @@ async function main() {
     return
   }
 
-  const { attempts, delayMs } = planSettle(parsed.settleMs)
   log(
     `[deploy:smoke] ${parsed.expectSha ? `expecting sha ${parsed.expectSha.slice(0, 12)}` : 'liveness only'}` +
-      `${attempts > 1 ? ` (settling up to ${Math.round(parsed.settleMs / 1000)}s)` : ''} …`,
+      `${parsed.settleMs > 0 ? ` (settling up to ${Math.round(parsed.settleMs / 1000)}s)` : ''} …`,
   )
   const res = await runSmoke({
     expectSha: parsed.expectSha,
     timeoutMs: parsed.timeoutMs,
-    attempts,
-    delayMs,
+    settleMs: parsed.settleMs,
     onRetry: (attempt, redCount) =>
-      log(`  … ${redCount} check(s) still red after attempt ${attempt}/${attempts} — retrying`),
+      log(`  … ${redCount} check(s) still red after sweep ${attempt} — retrying within the budget`),
   })
   for (const line of res.results) log(formatResultLine(line))
   if (!res.ok) {
