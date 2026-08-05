@@ -59,10 +59,11 @@ the PR by touched path — a non-test `*.tsx` / `*.css` under `src/` is a UI dif
 the same definition task-cycle stage 3 uses — and reports whether a valid marker
 exists in the PR body or in a linked-issue comment.
 
-**Severity: WARN.** The guard reports the violation and exits 0 today; run it as
-`pnpm lint:stage-b <PR> --severity block` and a violation exits non-zero. Mind
-the two different WARNs: here it means "exit 0 with a WARN line", while #136's
-canon means `continue-on-error` on the CI job. TODO(#136): promote per that
-canon — the workflow picks which mechanism it uses, and the CI wiring lands
-there, not here. A guard **error** (the PR cannot be read at all) is not a
+**Severity: WARN**, recorded in the guard register
+([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5). Mind the two different
+WARNs: run locally the guard reports the violation and exits 0, while in the canon WARN
+means `continue-on-error` on the CI job. The CI wiring (#136) uses both deliberately —
+the `stage-b` job passes `--severity block` so the script gives a real signal, and carries
+`continue-on-error: true` so the plane stays WARN. Promotion to BLOCK follows the canon's
+§4 clauses (earliest 2026-09-02) and is a one-line workflow change. A guard **error** (the PR cannot be read at all) is not a
 violation and always exits non-zero: a check that never ran must not look clean.

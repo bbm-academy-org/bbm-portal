@@ -57,6 +57,24 @@ const REQUIRED_SCOPES = ['contents', 'pull-requests']
 /** A bare `gh` invocation at the start of a command or after a shell separator. */
 const BARE_GH_RE = /(^|[\n;&|]\s*|\s&&\s|\s\|\|\s)gh\s/
 
+// A guard reaches GitHub either through the shared seam or by spawning the CLI
+// itself. Both count: `stage-b-lint.mjs` (#151) has its own runner, and a
+// derivation that only looked for the import would have wired it with no auth
+// block — vacuously red on every PR, which is what this guard exists to stop.
+const IMPORTS_GH_LIB_RE = /['"][^'"]*lib\/gh\.mjs['"]/
+const SPAWNS_GH_RE = /(?:spawnSync|spawn|execFile|execFileSync|execa)\(\s*['"]gh['"]/
+
+/**
+ * Pure decision seam: guard sources in, the paths that reach GitHub out.
+ * @param {{rel: string, text: string}[]} sources
+ * @returns {string[]}
+ */
+export function ghConsumerSources(sources) {
+  return sources
+    .filter(({ text }) => IMPORTS_GH_LIB_RE.test(text) || SPAWNS_GH_RE.test(text))
+    .map(({ rel }) => rel)
+}
+
 function permissionsGrant(perms) {
   if (perms === 'read-all' || perms === 'write-all') return REQUIRED_SCOPES
   if (!perms || typeof perms !== 'object') return []
@@ -171,12 +189,10 @@ async function main() {
     doc: parse(readFileSync(resolve(root, file), 'utf8')),
   }))
 
-  const ghConsumers = walkFiles(root, {
-    include: (rel) => /^tools\/lint\/[^/]+-lint\.(mjs|ts)$/.test(rel),
-  }).filter((rel) =>
-    /from\s+'\.\/lib\/gh\.mjs'|require\(['"]\.\/lib\/gh/.test(
-      readFileSync(resolve(root, rel), 'utf8'),
-    ),
+  const ghConsumers = ghConsumerSources(
+    walkFiles(root, {
+      include: (rel) => /^tools\/lint\/[^/]+-lint\.(mjs|ts)$/.test(rel),
+    }).map((rel) => ({ rel, text: readFileSync(resolve(root, rel), 'utf8') })),
   )
 
   let scriptMap = {}

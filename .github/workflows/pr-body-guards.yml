@@ -86,6 +86,34 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
+  # WARN — a UI diff with no recorded Stage-B verdict (guard from task 7.7/#138,
+  # wired here per the canon: the guard's lane deliberately did not touch this
+  # workflow). Invoked with `--severity block` ON PURPOSE: the canon's promotion
+  # clause 1 requires a REAL signal — a guard that prints and exits 0 is a stub
+  # and is not promotable — so the script exits non-zero on a violation while
+  # `continue-on-error` keeps the CI plane at WARN. Promotion is then one line.
+  stage-b:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-08-05 — canon §5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:stage-b --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
   # WARN — a user-visible change with no note the owner would read. Its promotion
   # is tied to task 7.6 (#137, release-note delivery), not to the §4 clock: a
   # note nothing delivers is not worth blocking a merge over.

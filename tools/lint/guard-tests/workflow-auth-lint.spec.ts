@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { auditWorkflows } from '../workflow-auth-lint.mjs'
+import { auditWorkflows, ghConsumerSources } from '../workflow-auth-lint.mjs'
 import { caseDir, runGuard } from './run-guard'
 
 /**
@@ -114,6 +114,39 @@ describe('auditWorkflows', () => {
   it('does not mistake a word ending in gh for the CLI', () => {
     const findings = auditWorkflows(wf({ build: { steps: [{ run: 'pnpm dev:high' }] } }), {})
     expect(findings).toEqual([])
+  })
+})
+
+/**
+ * The gh-consumer set is DERIVED from the guard sources, and `stage-b-lint.mjs`
+ * (landed by #151) showed the derivation was too narrow: it spawns `gh` through
+ * its own runner instead of importing `lib/gh.mjs`, so it would have been wired
+ * with no auth block and gone vacuously red on every PR — the exact failure this
+ * meta-guard exists to prevent.
+ */
+describe('ghConsumerSources — a guard reaches GitHub by import OR by spawning gh', () => {
+  it('detects the lib/gh.mjs import', () => {
+    expect(
+      ghConsumerSources([
+        { rel: 'tools/lint/a-lint.mjs', text: "import { ghViewJson } from './lib/gh.mjs'" },
+      ]),
+    ).toEqual(['tools/lint/a-lint.mjs'])
+  })
+
+  it('detects a guard spawning the gh binary itself', () => {
+    expect(
+      ghConsumerSources([
+        { rel: 'tools/lint/b-lint.mjs', text: "const res = spawnSync('gh', args, opts)" },
+      ]),
+    ).toEqual(['tools/lint/b-lint.mjs'])
+  })
+
+  it('leaves a pure tree guard out of the set', () => {
+    expect(
+      ghConsumerSources([
+        { rel: 'tools/lint/c-lint.mjs', text: "import { walkFiles } from './lib/guard.mjs'" },
+      ]),
+    ).toEqual([])
   })
 })
 
