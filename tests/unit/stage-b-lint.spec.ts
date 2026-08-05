@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -7,6 +10,7 @@ import {
   ghIssueArgs,
   ghPrArgs,
   isEvidence,
+  parseArgs,
   renderFiles,
   runStageBLint,
   severityFromArgv,
@@ -149,11 +153,66 @@ describe('stage-b-lint: the three sanctioned marker shapes are evidence', () => 
   })
 
   it('reads the marker through blockquote / list decoration and `StageB` casing', () => {
-    expect(extractMarkerValues('- **Stage-B:** GO')).toEqual(['GO'])
+    expect(extractMarkerValues('- **Stage-B:** GO — Антон')).toEqual(['GO — Антон'])
     expect(extractMarkerValues('> stageb: batched at #7')).toEqual(['batched at #7'])
-    expect(isEvidence('GO')).toBe(true)
+    expect(isEvidence('GO — Антон, 2026-08-05')).toBe(true)
     expect(isEvidence('TBD')).toBe(false)
     expect(isEvidence('pending owner')).toBe(false)
+  })
+
+  // Review PR #151, minor 4: a bare `GO` was evidence while a bare `N/A` was
+  // not — and the GO is the record that most needs attribution, since it stands
+  // in for a live-stand «принято» by a named person on a named day.
+  it('a bare `Stage-B: GO` is NOT evidence — the verdict names its owner', () => {
+    expect(checkStageB(pr({ body: 'Stage-B: GO', files: UI_PR_FILES })).verdict).toBe('violation')
+    expect(isEvidence('GO')).toBe(false)
+    expect(isEvidence('GO — Антон')).toBe(true)
+    expect(isEvidence('GO (Антон, 2026-08-05)')).toBe(true)
+  })
+})
+
+describe('stage-b-lint: instructions are not evidence (review PR #151, blocker 1)', () => {
+  // The realistic failure this guard would otherwise wave through: an author
+  // opens a UI PR, fills What/Why, never touches the Stage B section — and the
+  // template's own `<!-- … -->` instruction block, which spells out all three
+  // sanctioned shapes verbatim, reads as a recorded verdict.
+  // The real artifact, read from disk: the fixture and the shipped template can
+  // never drift apart, which is the whole point of this block.
+  const TEMPLATE = readFileSync(resolve(process.cwd(), '.github/pull_request_template.md'), 'utf8')
+
+  it('the repo PR template, shipped unfilled on a UI PR, does NOT pass', () => {
+    const result = checkStageB(pr({ number: 300, body: TEMPLATE, files: UI_PR_FILES }))
+    expect(result.verdict).toBe('violation')
+    expect(result.message).toContain('placeholder')
+  })
+
+  it('the same template with the placeholder line actually filled in passes', () => {
+    const filled = TEMPLATE.replace(/^Stage-B: <.*>$/m, 'Stage-B: GO — Антон, 2026-08-05')
+    expect(filled).not.toEqual(TEMPLATE)
+    expect(checkStageB(pr({ body: filled, files: UI_PR_FILES })).verdict).toBe('pass')
+  })
+
+  it('strips HTML comments and fenced code blocks before reading markers', () => {
+    expect(extractMarkerValues('<!--\nStage-B: GO — owner, date\n-->')).toEqual([])
+    expect(extractMarkerValues('```\nStage-B: GO — owner, date\n```')).toEqual([])
+    expect(extractMarkerValues('~~~md\nStage-B: batched at #7\n~~~')).toEqual([])
+    // …and still reads the real line sitting next to them.
+    expect(
+      extractMarkerValues('<!-- Stage-B: GO — example -->\nStage-B: GO — Антон, 2026-08-05'),
+    ).toEqual(['GO — Антон, 2026-08-05'])
+  })
+
+  it('a linked-issue comment that merely QUOTES the shapes is not a verdict', () => {
+    const quoting = [
+      'Напоминание по конвенции — в теле PR должно быть одно из:',
+      '```',
+      'Stage-B: GO — <owner, date>',
+      'Stage-B: batched at #<gate>',
+      '```',
+    ].join('\n')
+    expect(checkStageB(pr({ body: 'Closes #199', files: UI_PR_FILES }), [quoting]).verdict).toBe(
+      'violation',
+    )
   })
 })
 
@@ -220,6 +279,33 @@ describe('stage-b-lint: runner contract', () => {
     expect(severityFromArgv(['--severity=block'])).toBe('block')
   })
 
+  // Review PR #151, major 2: the positional split did not consume the value of
+  // `--severity`, so the two documented invocation forms — a positional PR
+  // number and the `PR_NUMBER` env fallback #136's workflow will use — could not
+  // be combined with the flag.
+  it('parses both invocation forms, with and without the flag', () => {
+    expect(parseArgs(['151'], {})).toEqual({ prNumber: '151', severity: 'warn' })
+    expect(parseArgs(['151', '--severity', 'block'], {})).toEqual({
+      prNumber: '151',
+      severity: 'block',
+    })
+    expect(parseArgs(['--severity', 'block', '151'], {})).toEqual({
+      prNumber: '151',
+      severity: 'block',
+    })
+    expect(parseArgs(['--severity=block'], { PR_NUMBER: '151' })).toEqual({
+      prNumber: '151',
+      severity: 'block',
+    })
+    // The exact command the PR body advertises for #136's workflow.
+    expect(parseArgs(['--severity', 'block'], { PR_NUMBER: '151' })).toEqual({
+      prNumber: '151',
+      severity: 'block',
+    })
+    expect(parseArgs([], {})).toEqual({ prNumber: null, severity: 'warn' })
+    expect(parseArgs(['not-a-number'], {})).toEqual({ prNumber: null, severity: 'warn' })
+  })
+
   it('always names the repo explicitly, like the other gh tooling', () => {
     expect(ghPrArgs(92)).toEqual([
       'pr',
@@ -241,11 +327,18 @@ describe('stage-b-lint: runner contract', () => {
     ])
   })
 
-  it('an unreadable PR is an error, never a silent pass', () => {
-    const result = runStageBLint({ prNumber: 999, severity: 'warn', gh: makeGh().gh })
-    expect(result.verdict).toBe('error')
-    expect(result.exitCode).toBe(1)
-    expect(result.lines.join('\n')).toContain('#999')
+  // Review PR #151, major 3: `error` deliberately does NOT follow the severity
+  // dial. A violation is a finding about the PR (WARN can absorb it); an
+  // unreadable PR means the guard did not run at all, and a guard that exits 0
+  // when it never ran is indistinguishable from a clean check. Masking that in
+  // CI is #136's `continue-on-error` decision, made at the job level.
+  it('an unreadable PR is a fatal error under EVERY severity, never a silent pass', () => {
+    for (const severity of ['warn', 'block'] as const) {
+      const result = runStageBLint({ prNumber: 999, severity, gh: makeGh().gh })
+      expect(result.verdict).toBe('error')
+      expect(result.exitCode).toBe(1)
+      expect(result.lines.join('\n')).toContain('#999')
+    }
   })
 
   it('an unreachable linked issue does not count as evidence, and is reported', () => {
