@@ -72,10 +72,13 @@ const FENCED_BLOCK_RE = /^ {0,3}(?:```|~~~)[\s\S]*?^ {0,3}(?:```|~~~)[^\n]*$/gm
  * example in a fenced code block — is never evidence; the check strips it».
  *
  * Not stripped here, and not by accident: a blockquote, a list item and an
- * indented line. Those are handled by each marker's OWN anchor, because the
- * guards disagree about them on purpose — `stage-b` accepts a bold list-item
+ * INDENTED code block. Those are handled by each marker's OWN anchor, because
+ * the guards disagree about them on purpose — `stage-b` accepts a bold list-item
  * marker (`- **Stage-B:** GO …`, the shape its PR-template section renders),
- * while `spec-deletion` and `spec-link` reject every decorated form.
+ * while `spec-deletion` and `spec-link` reject every decorated form. If you add
+ * a marker guard, that anchor is yours to write: `spec-deletion` uses
+ * `^ {0,3}` so four spaces or a tab (a markdown indented code block) quotes
+ * rather than declares.
  */
 export function stripNonEvidence(text) {
   return String(text ?? '')

@@ -97,12 +97,17 @@ export const VALID_STATUSES = ['Draft', 'In dev', 'Shipped', 'Superseded', 'Reti
  *
  * - **A reason is mandatory** (`\S` after the colon) — a bare marker justifies
  *   nothing, the same rule `spec-link`'s `spec-exempt:` hatch follows.
- * - **No list/quote decoration is accepted.** The anchor is `^\s*` and nothing
- *   else, matching the ds original. An earlier form here allowed `[-*>\s]*`,
- *   which meant a BLOCKQUOTED marker — the shape a pasted review comment takes —
- *   armed the hatch (review of PR #160, blocker). `stage-b` accepts decoration
- *   because its PR-template section renders as a bold list item; this marker has
- *   no template line and no such need.
+ * - **No list/quote decoration, and no code indentation.** The anchor is
+ *   `^ {0,3}` — up to three spaces is ordinary leading whitespace, four or more
+ *   (or a tab) is a markdown INDENTED CODE BLOCK, which quotes the marker
+ *   exactly as a fence does. Two rounds of PR #160 review got here: the first
+ *   form allowed `[-*>\s]*`, so a BLOCKQUOTED marker — the shape a pasted review
+ *   comment takes — armed the hatch (blocker); the ds `^\s*` that replaced it
+ *   still admitted the indented form (round-2 nit). `stripNonEvidence`
+ *   deliberately leaves indentation to each marker's own anchor, so this is
+ *   where it belongs. `stage-b` accepts decoration because its PR-template
+ *   section renders as a bold list item; this marker has no template line and no
+ *   such need.
  * - **The body is run through `stripNonEvidence` FIRST**, so a fenced example or
  *   the template's HTML comment is not a justification. A PR that deletes a spec
  *   is precisely the PR whose body is likely to quote this guard's own failure
@@ -111,7 +116,7 @@ export const VALID_STATUSES = ['Draft', 'In dev', 'Shipped', 'Superseded', 'Reti
  * The optional backtick is kept: `` `spec-deletion: <reason>` `` on a line of its
  * own is a genuine record, exactly as `spec-link` accepts its backticked hatch.
  */
-export const SPEC_DELETION_MARKER_RE = /^\s*`?spec-deletion:\s*\S.*$/im
+export const SPEC_DELETION_MARKER_RE = /^ {0,3}`?spec-deletion:[ \t]*\S.*$/im
 
 /** A status that sanctions accompanying deletions (escape c). */
 const RETIRE_STATUS_RE = /^(?:Superseded|Retired)$/

@@ -208,6 +208,25 @@ describe('evaluateSpecDeletion', () => {
       expect(quoted('<!--\nspec-deletion: <reason + successor>\n-->').ok).toBe(false)
     })
 
+    /**
+     * Review round 2, NIT: `^\s*` admitted a 4-space-indented line, which in
+     * markdown is an INDENTED CODE BLOCK — the shape a pasted terminal
+     * transcript takes. `stripNonEvidence` deliberately does not strip those
+     * (each marker owns its own anchor), so the anchor has to. Up to three
+     * spaces is ordinary leading whitespace and still counts.
+     */
+    it('an indented code block quoting the marker does not arm it', () => {
+      expect(quoted('Log:\n\n    spec-deletion: merged into 011-y.md\n').ok).toBe(false)
+    })
+
+    it('a tab-indented code block does not arm it either', () => {
+      expect(quoted('Log:\n\n\tspec-deletion: merged into 011-y.md\n').ok).toBe(false)
+    })
+
+    it('up to three spaces is ordinary indentation and still arms it', () => {
+      expect(quoted('   spec-deletion: merged into 011-y.md').escape).toBe('marker')
+    })
+
     it('a real marker still arms it even when the body also quotes one', () => {
       const body = [
         '```',
@@ -308,6 +327,38 @@ describe('spec-deletion (spawned)', () => {
     })
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('docs/specs/010-thing.md')
+  })
+
+  /**
+   * Review round 2, NIT: `isRetirementTransition` was well covered as a pure
+   * function, but the IO around it — `baseFileText` + the rewritten
+   * `retiredInThisPr` — had no spawned case, so the `LINT_BASE_TREE_DIR` seam
+   * was untested code wearing a test affordance. Both fixtures delete one spec
+   * and touch another; they differ ONLY in the base version of the touched one.
+   */
+  describe('escape (c) end to end, through the LINT_BASE_TREE_DIR seam', () => {
+    const wave = (name: string) => {
+      const dir = caseDir('spec-deletion', name)
+      return runGuard('spec-deletion-lint.mjs', dir, {
+        env: {
+          ...prEnv(ghDir('spec-deletion', name)),
+          LINT_DIFF_NAMESTATUS_FILE: `${dir}/diff/name-status.txt`,
+          LINT_BASE_TREE_DIR: `${dir}/base`,
+        },
+      })
+    }
+
+    it('exits 0 when the PR retires a live spec in the same diff', () => {
+      const res = wave('retired-wave')
+      expect(res.code).toBe(0)
+      expect(res.stdout).toContain('superseded-transition')
+    })
+
+    it('exits 1 when the touched spec was ALREADY retired before the PR', () => {
+      const res = wave('already-retired')
+      expect(res.code).toBe(1)
+      expect(res.stderr).toContain('docs/specs/010-thing.md')
+    })
   })
 
   /**
