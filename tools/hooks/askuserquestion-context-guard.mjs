@@ -140,7 +140,7 @@ export function hasOwnerAnswer(lines, record) {
  * position stamp of the ask being recorded, so "the answer came after the ask"
  * needs no clock.
  */
-export function decideAskUserQuestion({ toolName, toolInput, state, transcript }) {
+export function decideAskUserQuestion({ toolName, toolInput, state, transcript = '' }) {
   if (!/^AskUserQuestion$/.test(toolName || '')) return { block: false, state: state || {} }
   const questions = toolInput && typeof toolInput === 'object' ? toolInput.questions : null
   if (!Array.isArray(questions)) return { block: false, state: state || {} }

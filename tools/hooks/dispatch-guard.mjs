@@ -138,7 +138,7 @@ export function stagingWarnMessage() {
  * env opt-out and an isolated worktree session. One guard, one set of exits —
  * otherwise `BBM_DISPATCH_GUARD_DISABLE=1` would silence half of it.
  */
-export function decideStaging({ toolName, prompt, cwd, projectDir, carveOut = false }) {
+export function decideStaging({ toolName, prompt = '', cwd = '', projectDir = '', carveOut = false }) {
   if (!DISPATCH_TOOL_RE.test(toolName || '')) return { warn: false }
   if (carveOut) return { warn: false }
   if (inWorktree(cwd) || inWorktree(projectDir)) return { warn: false }
