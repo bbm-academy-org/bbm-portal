@@ -21,6 +21,21 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-05 `deploy:smoke` / `deploy:notes` have no `pre*` Node-version
+      guard (`deploy:prod` checks Node 22, the standalone entries don't) —
+      return condition: first misrun of a standalone deploy subcommand on a
+      wrong Node (#137, review of PR #155)
+- [ ] 2026-08-05 `deploy:prod --rollback <sha>` accepts any sha with no
+      ancestor/deployed-history check — an operator typo can "roll back" to an
+      arbitrary commit — return condition: first rollback in anger, or before a
+      second operator gets deploy access (#137, review of PR #155)
+- [ ] 2026-08-05 inaugural release digest walks the full release history
+      serially — return condition: digest step visibly slow (>30 s) once
+      release count grows (#137, review of PR #155)
+- [ ] 2026-08-05 migration-ledger read in `deploy:prod` hard-requires `psql`
+      on the workstation — return condition: first deploy attempt from a box
+      without psql (#137, review of PR #155)
+
 - [ ] 2026-08-05 `tools/lint/guard-test-coverage-lint.mjs`: a future helper in
       `tools/lint/lib/` importing `guard.mjs` would be flagged `nested` with a
       wrong remedy (false-positive class; no such helper exists today) — return
