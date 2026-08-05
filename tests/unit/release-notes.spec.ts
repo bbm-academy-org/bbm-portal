@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -17,6 +20,10 @@ import {
   resolvePrevSha,
   shouldPost,
 } from '../../tools/ci/post-release-digest.mjs'
+import {
+  extractNote as guardExtractNote,
+  verdict as guardVerdict,
+} from '../../tools/lint/product-note-lint.mjs'
 
 /**
  * Release notes to Mattermost (task 7.6, #137) — two channels off ONE source of
@@ -243,49 +250,65 @@ describe('buildReleaseNotesArgs', () => {
 })
 
 describe('the PR template section is the SSOT — one shape, two readers (#136 / #137)', () => {
-  // Task 7.5 (#136, PR #154) added the `## Product note (RU)` section and the
+  // Task 7.5 (#136) owns the `## Product note (RU)` section and the
   // `product-note` CI guard that makes it non-optional on a render-surface PR.
-  // 7.6 does NOT add a second section: it consumes THAT one. This test pins the
-  // template's literal shape, so if 7.5's template moves, the delivery breaks
-  // here rather than silently posting nothing.
-  const TEMPLATE_TAIL = [
-    '## Why',
-    '',
-    'Closes #',
-    '',
-    '## Product note (RU)',
-    '',
-    '<!-- Две фразы продуктовым языком: что читатель теперь увидит. Для PR, который',
-    '     никто не видит (тулинг, доки, бэкенд без UI), допустимо `none`.',
-    '     Проверяется гардом product-note — docs/ci-guardrails.md §5. -->',
-    '',
-    'PLACEHOLDER',
-    '',
-    '## Task-cycle checklist',
-    '',
-    '- [ ] Owner\'s "go" was given in-session on this scope (stage 2)',
-  ].join('\n')
+  // 7.6 adds no second section — it DELIVERS that one. So this reads the REAL
+  // template off disk: if 7.5's template ever loses or renames the section, the
+  // delivery half breaks here rather than silently posting nothing forever.
+  // Same convention as tools/lint/guard-tests/stage-b-lint.spec.ts: the REAL
+  // artifact off disk, so the shipped template and this test can never drift.
+  const template = readFileSync(resolve(process.cwd(), '.github/pull_request_template.md'), 'utf8')
 
-  it('an untouched template delivers nothing (the `none` default)', () => {
-    const body = TEMPLATE_TAIL.replace('PLACEHOLDER', 'none')
-    expect(noteIsReal(extractNote(body))).toBe(false)
+  it('the shipped template really has the section — and its default is `none`', () => {
+    // Both halves matter. `noteIsReal === false` alone would ALSO pass if the
+    // heading vanished entirely (extractNote would return ''), quietly turning
+    // this into a test of nothing. Asserting the exact extracted value pins the
+    // section's presence and its default in one shot.
+    expect(extractNote(template)).toBe('none')
+    expect(noteIsReal(extractNote(template))).toBe(false)
   })
 
-  it('a filled-in note is extracted without the authoring hint or the checklist', () => {
+  it('an untouched template delivers NOTHING to the channel', () => {
+    expect(noteIsReal(extractNote(template))).toBe(false)
+  })
+
+  it('a filled-in note in the REAL template is extracted clean', () => {
+    // Authoring hint (HTML comment), the checklist and the Stage-B block that
+    // follow must all stay out of the delivered text.
     const note = 'Редактор теперь видит черновик страницы до публикации.'
-    const body = TEMPLATE_TAIL.replace('PLACEHOLDER', note)
-    expect(extractNote(body)).toBe(note)
-    expect(noteIsReal(extractNote(body))).toBe(true)
+    const filled = template.replace(/^none$/m, note)
+    expect(extractNote(filled)).toBe(note)
+    expect(noteIsReal(extractNote(filled))).toBe(true)
+    expect(extractNote(filled)).not.toMatch(/Stage-B|Task-cycle|продуктовым языком/)
   })
 
-  it('the delivery threshold is looser than the guard’s on purpose', () => {
-    // The guard blocks a note under 40 characters — that is an AUTHORING
-    // standard, judged when the note is written. Delivery must not silently
-    // drop a short note that a human deliberately merged (the guard is WARN);
-    // refusing to POST what a reviewer accepted would hide it from the channel
-    // with no signal anywhere.
+  it('the guard and the delivery read the SAME section out of the same file', () => {
+    const note = 'Редактор теперь видит черновик страницы до публикации, до нажатия «Опубликовать».'
+    const filled = template.replace(/^none$/m, note)
+    expect(guardExtractNote(filled)).toBe(extractNote(filled))
+  })
+
+  it('the two thresholds diverge ON PURPOSE, and only in the safe direction', () => {
+    // The guard demands >=40 characters — an AUTHORING standard, applied when
+    // the note is written, on a render-surface PR. Delivery accepts any
+    // non-`none` note, because the guard ships as WARN: a short note a reviewer
+    // nonetheless merged must still reach the channel. The asymmetry is only
+    // ever "delivery is more permissive" — never the reverse, which would mean
+    // a note the guard demanded and a human wrote silently never arriving.
     const short = 'Кнопка стала видна.'
     expect(short.length).toBeLessThan(40)
-    expect(noteIsReal(short)).toBe(true)
+
+    const filled = template.replace(/^none$/m, short)
+    const guarded = guardVerdict({ files: ['src/app/(frontend)/page.tsx'], body: filled })
+    expect(guarded.ok).toBe(false) // the guard would flag it as too short…
+    expect(noteIsReal(extractNote(filled))).toBe(true) // …delivery still ships it
+
+    // And the reverse must never happen: anything the guard PASSES is
+    // necessarily deliverable.
+    const proper =
+      'Редактор теперь видит черновик страницы до публикации, до нажатия «Опубликовать».'
+    const properBody = template.replace(/^none$/m, proper)
+    expect(guardVerdict({ files: ['src/app/(frontend)/page.tsx'], body: properBody }).ok).toBe(true)
+    expect(noteIsReal(extractNote(properBody))).toBe(true)
   })
 })
