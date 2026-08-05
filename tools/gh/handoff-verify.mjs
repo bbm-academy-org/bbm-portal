@@ -70,10 +70,20 @@
 //       belong to the provenance domain above and are skipped here (no
 //       double-fire).
 // Neither WARN detector ever bumps `stale`, so a WARN-only run still exits 0.
-// SEVERITY (docs/ci-guardrails.md §6, decided 2026-08-05): WARN. It reports
-// staleness across several sources of truth, so a wrong "stale" would block a
-// legitimate handoff — a promotion candidate, but only under the canon §4
-// clauses: a full cadence with zero false staleness verdicts, judged per domain.
+// SEVERITY — this is a CLI guard (docs/ci-guardrails.md §2.3, §6.1), not a hook,
+// and it carries a severity PER FINDING CLASS, discriminated by the exit code:
+//   * STALE row            -> exit 1  = BLOCK. Acting on a contradicted premise
+//                                       is the failure this tool exists to stop.
+//                                       Demotion per canon §4 on one confirmed
+//                                       false STALE.
+//   * qualitative WARN rows -> exit 0 = WARN. Heuristics over free text with no
+//                                       checkable referent; never bump `stale`.
+//   * unreadable input      -> exit 2 = NOT a verdict (canon §2.3). Neither
+//                                       clean nor a finding — re-run correctly.
+// The exit codes are pinned by tests/unit/handoff-verify.spec.ts: for a CLI
+// guard the exit code IS the severity, so it is asserted, never asserted in
+// prose. (The first version of the canon recorded this file as a flat "WARN"
+// hook, contradicting the exit 1 below — corrected in review of PR #154.)
 //
 // Deliberately OUT of scope (differences from the ds-platform original):
 //   • the task-kind-vs-surface / PRD check — it asserts ds-platform's

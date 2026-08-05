@@ -51,7 +51,13 @@ downstream of anything.
   match on the job's name — a renamed job would otherwise read as a false green.
   Zero registered runs is _pending_, not green. The aggregate to look for is the
   `ci` meta-job (`docs/ci-guardrails.md` §2.1); the WARN guards are deliberately
-  not part of it.
+  not part of it. **But note what the gate actually reads:** it evaluates _every_
+  check-run in the rollup, WARN ones included, and it cannot see which job
+  carries `continue-on-error` — `SUCCESS`/`SKIPPED`/`NEUTRAL` pass, anything else
+  counts as failed. A WARN job whose guard fails still reports success (that is
+  what `continue-on-error` does), but a **cancelled** WARN run reads as red. That
+  is why `pr-body-guards.yml` does not cancel in-progress runs; a gate red on a
+  WARN guard's check-run is that bug, not a merge decision.
 - **The review verdict**, freshly: a `VERDICT: APPROVE` line in a PR comment,
   dated after the PR's last commit. An approval given before the last commit
   approved different code. `--require-review` narrows this to a human APPROVE;

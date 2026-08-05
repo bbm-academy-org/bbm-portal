@@ -25,8 +25,15 @@ on:
     types: [opened, edited, synchronize, reopened]
 
 concurrency:
+  # NOT cancel-in-progress. `pnpm pr:land` classifies every check-run in the PR's
+  # rollup structurally — SUCCESS/SKIPPED/NEUTRAL pass, everything else counts as
+  # failed — and it cannot see which job is `continue-on-error`. A cancelled run
+  # would therefore leave CANCELLED check-runs that block a merge these WARN
+  # guards are never supposed to block (canon §2.1). The `if:` no-op fence below
+  # is safe by contrast: SKIPPED passes the gate. These jobs are cheap, so a
+  # superseded run is left to finish rather than turned into a false verdict.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.

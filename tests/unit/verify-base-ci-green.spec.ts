@@ -50,6 +50,14 @@ describe('classifyRuns', () => {
     expect(classifyRuns([run({ status: 'queued', conclusion: null })]).verdict).toBe('pending')
   })
 
+  // Review of PR #154, finding 4: `skipped` used to read as GREEN here while the
+  // `ci` meta-job treats a skipped need as RED ("a job that never ran proves
+  // nothing"). One word must not mean two things inside one canon — a skipped
+  // base run is no evidence, so it is pending.
+  it('is pending on a skipped run — the same reading the `ci` aggregate uses', () => {
+    expect(classifyRuns([run({ conclusion: 'skipped' })]).verdict).toBe('pending')
+  })
+
   it('is pending on an empty list — a base with no run proves nothing', () => {
     expect(classifyRuns([]).verdict).toBe('pending')
   })

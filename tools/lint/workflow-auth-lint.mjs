@@ -25,9 +25,20 @@
 //       lib/gh consumer additionally carries `PR_NUMBER` (the guards read it).
 //       A bare `gh …` step names its own target, so no `PR_NUMBER` is demanded.
 //
+// Second check — DECLARED SEVERITY (canon §2.1, added in review of PR #154). In
+// the workflow that owns the `ci` aggregate, every job must be either WARN
+// (`continue-on-error: true`) or BLOCK (listed in the aggregate's needs-list). A
+// job that is neither is representable and was undetected: it shows a red X on
+// the PR while gating nothing. The `ci` job itself is exempt — it cannot be in
+// its own needs-list — and the rule does not apply to workflows with no
+// aggregate, where `needs` could not reach it anyway.
+//
 // Derived, never a literal list: the gh-consumer set comes from scanning
 // `tools/lint/` for the `./lib/gh.mjs` import, and the alias map from
-// `package.json`. A new gh-consuming guard is picked up with no edit here.
+// `package.json`. A new gh-consuming guard is picked up with no edit here. The
+// scan is deliberately flat (`tools/lint/<name>-lint.{mjs,ts}`) and that is
+// safe because `guard-test-coverage` BLOCKS a guard living anywhere else — the
+// two meta-guards share one layout assumption, and one of them enforces it.
 //
 // The guard satisfies its own rule: it touches neither `gh` nor `./lib/gh.mjs`,
 // so its own job is not gh-gated and correctly needs no auth block.
@@ -77,6 +88,28 @@ export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } =
   const findings = []
   for (const { file, doc } of workflows) {
     const jobs = doc?.jobs ?? {}
+
+    // Declared-severity check (canon §2.1). Only meaningful in the workflow that
+    // owns the `ci` aggregate: elsewhere `needs` cannot reach it, and the canon
+    // already fixes every job in pr-body-guards.yml as WARN.
+    const aggregate = jobs.ci
+    const needsList = aggregate ? [aggregate.needs ?? []].flat().map(String) : null
+    if (needsList) {
+      for (const [jobName, job] of Object.entries(jobs)) {
+        if (jobName === 'ci') continue // the aggregate cannot be in its own needs-list
+        const warn = job?.['continue-on-error'] === true
+        if (!warn && !needsList.includes(jobName)) {
+          findings.push({
+            file,
+            job: jobName,
+            kind: 'undeclared-severity',
+            detail:
+              'job is neither WARN (`continue-on-error: true`) nor BLOCK (listed in the `ci` needs-list) — it shows red on the PR while gating nothing',
+          })
+        }
+      }
+    }
+
     for (const [jobName, job] of Object.entries(jobs)) {
       const steps = Array.isArray(job?.steps) ? job.steps : []
       const gated = steps

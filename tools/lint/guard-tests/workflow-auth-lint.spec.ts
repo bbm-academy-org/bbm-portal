@@ -117,6 +117,53 @@ describe('auditWorkflows', () => {
   })
 })
 
+/**
+ * Review of PR #154, finding 2: canon §2.1 defines BLOCK and WARN, but a ci.yml
+ * job that is NEITHER `continue-on-error` NOR in the `ci` needs-list is
+ * representable — it shows a red X on the PR while gating nothing, and nothing
+ * detected it. The invariant is now mechanical.
+ */
+describe('auditWorkflows — declared severity (canon §2.1)', () => {
+  const ciDoc = (jobs: Record<string, unknown>) => [
+    { file: '.github/workflows/ci.yml', doc: { jobs } },
+  ]
+
+  it('accepts a BLOCK job (in the needs-list) and a WARN job (continue-on-error)', () => {
+    const findings = auditWorkflows(
+      ciDoc({
+        build: { steps: [{ run: 'pnpm build' }] },
+        'no-stub': { 'continue-on-error': true, steps: [{ run: 'pnpm lint:no-stub' }] },
+        ci: { needs: ['build'], steps: [{ run: 'echo ok' }] },
+      }),
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('flags the third state — neither continue-on-error nor in the needs-list', () => {
+    const findings = auditWorkflows(
+      ciDoc({
+        orphan: { steps: [{ run: 'pnpm lint:orphan' }] },
+        ci: { needs: ['build'], steps: [{ run: 'echo ok' }] },
+      }),
+    )
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'undeclared-severity', job: 'orphan' }),
+    ])
+  })
+
+  it('exempts the `ci` aggregate itself — it cannot be in its own needs-list', () => {
+    const findings = auditWorkflows(ciDoc({ ci: { needs: ['build'], steps: [] } }))
+    expect(findings).toEqual([])
+  })
+
+  it('does not apply the rule to a workflow with no `ci` aggregate', () => {
+    const findings = auditWorkflows([
+      { file: '.github/workflows/pr-body-guards.yml', doc: { jobs: { 'stage-b': { steps: [] } } } },
+    ])
+    expect(findings).toEqual([])
+  })
+})
+
 describe('workflow-auth (spawned)', () => {
   it('exits 1 on a workflow whose gh-gated job has no auth block', () => {
     const res = runGuard('workflow-auth-lint.mjs', caseDir('workflow-auth', 'unwired'))

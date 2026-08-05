@@ -31,6 +31,21 @@ export const DEFAULT_IGNORE = [
   '.claude/worktrees',
 ]
 
+/**
+ * Guard-test fixtures — fake repo trees that are INPUT under test, never repo
+ * content. Every consumer must exclude them: a fixture holds a banned stub
+ * marker, a broken workflow or a spec-shaped file on purpose, and reading one as
+ * real content turns the guard's own test data into evidence about the repo
+ * (review of PR #154, blocker 2 — fixtures were counted as live test coverage).
+ * Prettier, ESLint, tsc and vitest exclude this same path.
+ */
+export const FIXTURES_PREFIX = 'tools/lint/guard-tests/fixtures/'
+
+/** True when a repo-relative path is guard-test fixture data, not repo content. */
+export function isFixturePath(rel) {
+  return toPosix(rel).startsWith(FIXTURES_PREFIX)
+}
+
 /** Windows-safe path comparison: forward slashes, no trailing slash. */
 export function toPosix(p) {
   return String(p).replace(/\\/g, '/').replace(/\/+$/, '')

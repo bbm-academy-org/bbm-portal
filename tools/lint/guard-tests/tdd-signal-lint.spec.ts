@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyChanges, findUntested, needlesFor } from '../tdd-signal-lint.mjs'
+import { classifyChanges, findUntested, isTestSource, needlesFor } from '../tdd-signal-lint.mjs'
 import { caseDir, ghDir, runGuard } from './run-guard'
 
 /**
@@ -37,6 +37,28 @@ describe('classifyChanges', () => {
     ])
     expect(res.prod).toEqual(['tools/lint/no-stub-lint.mjs'])
     expect(res.tests).toEqual(['tools/lint/guard-tests/no-stub-lint.spec.ts'])
+  })
+
+  it('treats a fixture as neither production nor test — it is input under test', () => {
+    const res = classifyChanges([
+      'tools/lint/guard-tests/fixtures/tdd-signal/tested/tests/unit/leads-intake.spec.ts',
+      'tools/lint/guard-tests/fixtures/no-stub/dirty/src/lib/config.ts',
+    ])
+    expect(res.prod).toEqual([])
+    expect(res.tests).toEqual([])
+  })
+})
+
+describe('isTestSource — the guard must not read its own fixtures as coverage', () => {
+  it('counts real test sources', () => {
+    expect(isTestSource('tests/unit/okr-rollup.spec.ts')).toBe(true)
+    expect(isTestSource('tools/lint/guard-tests/no-stub-lint.spec.ts')).toBe(true)
+  })
+
+  it('does NOT count a fixture, even one shaped exactly like a spec', () => {
+    expect(
+      isTestSource('tools/lint/guard-tests/fixtures/tdd-signal/tested/tests/unit/x.spec.ts'),
+    ).toBe(false)
   })
 })
 
@@ -101,6 +123,18 @@ describe('tdd-signal (spawned)', () => {
     const res = runGuard('tdd-signal-lint.mjs', caseDir('tdd-signal', 'untested'))
     expect(res.code).toBe(0)
     expect(res.stdout).toContain('not a pull_request event')
+  })
+
+  // REGRESSION (review of PR #154, blocker 2): the fixture tree below contains a
+  // spec-shaped file under guard-tests/fixtures/ that imports the changed module.
+  // Counting it as coverage let a genuinely untested module pass, and measured the
+  // §4 promotion clock on evidence the guard's own fixtures manufactured.
+  it('exits 1 even when a FIXTURE references the changed module', () => {
+    const res = runGuard('tdd-signal-lint.mjs', caseDir('tdd-signal', 'fixture-only'), {
+      env: env('fixture-only'),
+    })
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('src/lib/leads/intake.ts')
   })
 
   it('exits 1 when the PR metadata cannot be read — fail closed', () => {

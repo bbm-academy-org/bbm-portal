@@ -25,6 +25,11 @@
 // On a push to `main` there is no PR and the guard exits 0 — the TDD signal only
 // means something at review time (canon §4: greenness on push runs is vacuous).
 //
+// Guard-test FIXTURES are excluded from the coverage scan (`isTestSource`): a
+// fixture is a spec-shaped file describing a fake repo, and counting one as
+// coverage let a genuinely untested module pass while the promotion clock ran on
+// evidence this guard's own fixtures manufactured (review of PR #154).
+//
 // Known blind spots, accepted to keep the false-positive rate low: coverage
 // DEPTH is not measured (any test importing the module counts); a new file added
 // beside an already-imported one passes; a test living only in an unmerged
@@ -38,6 +43,7 @@ import { resolve } from 'node:path'
 import { ghViewJson } from './lib/gh.mjs'
 import {
   isEntryPoint,
+  isFixturePath,
   isPrEvent,
   reporter,
   repoRoot,
@@ -54,9 +60,25 @@ const PROD_RE = /^(src|tools)\/.+\.(ts|tsx|mjs)$/
 const PROD_EXEMPT_RE =
   /(\.d\.ts$|^src\/payload-types\.ts$|^src\/payload-generated-schema\.ts$|^src\/migrations\/|\.config\.[mc]?[jt]sx?$)/
 
-/** Split a changed-file list into production sources and tests. */
+/**
+ * A real test source — and NOT a guard-test fixture. The exclusion is the whole
+ * point: fixtures under `tools/lint/guard-tests/fixtures/` are spec-shaped files
+ * describing a FAKE repo, so counting one as coverage made a genuinely untested
+ * module pass and measured this guard's own promotion window on evidence its
+ * fixtures manufactured (review of PR #154, blocker 2).
+ */
+export function isTestSource(rel) {
+  const p = toPosix(rel)
+  return !isFixturePath(p) && TEST_RE.test(p)
+}
+
+/**
+ * Split a changed-file list into production sources and tests. A fixture is
+ * neither: it is input under test, so changing one is not a production change
+ * and does not discharge the TDD obligation either.
+ */
 export function classifyChanges(files) {
-  const rels = files.map(toPosix)
+  const rels = files.map(toPosix).filter((p) => !isFixturePath(p))
   return {
     prod: rels.filter((p) => PROD_RE.test(p) && !TEST_RE.test(p) && !PROD_EXEMPT_RE.test(p)),
     tests: rels.filter((p) => TEST_RE.test(p)),
@@ -107,7 +129,7 @@ async function main() {
   )
   if (tests.length > 0) out.ok('PASS — the changeset ships a test alongside the production change.')
 
-  const testSources = walkFiles(root, { include: (rel) => TEST_RE.test(rel) }).map((rel) => ({
+  const testSources = walkFiles(root, { include: isTestSource }).map((rel) => ({
     path: rel,
     text: readFileSync(resolve(root, rel), 'utf8'),
   }))

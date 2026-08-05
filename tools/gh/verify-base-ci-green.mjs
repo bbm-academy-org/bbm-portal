@@ -43,9 +43,12 @@ export function classifyRuns(runs, workflow = 'CI') {
     .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
   const latest = completed[0]
   if (!latest) return { verdict: 'pending', run: null }
-  if (latest.conclusion === 'success' || latest.conclusion === 'skipped') {
-    return { verdict: 'green', run: latest }
-  }
+  // `skipped` is NOT green. The `ci` meta-job reads a skipped need as red on the
+  // same reasoning — a run that never executed proves nothing about the base —
+  // and one word must not mean two things inside one canon (canon §2.1; review
+  // of PR #154, finding 4). Pending, not red, because the caller's remedy is to
+  // look again rather than to record an inherited failure.
+  if (latest.conclusion === 'success') return { verdict: 'green', run: latest }
   if (RED_CONCLUSIONS.includes(String(latest.conclusion))) return { verdict: 'red', run: latest }
   return { verdict: 'pending', run: latest }
 }
