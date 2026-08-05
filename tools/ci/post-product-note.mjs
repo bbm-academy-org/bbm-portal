@@ -31,6 +31,22 @@
 // inventing a label taxonomy nobody maintains, i.e. a second source of truth
 // that drifts silently. Here the NOTE is the gate: write one and it ships to the
 // channel, write `none` and nothing does.
+//
+// ── Relationship to the `product-note` CI guard (task 7.5, #136) ─────────────
+// The `## Product note (RU)` section itself is 7.5's, not this task's: it and
+// `tools/lint/product-note-lint.mjs` (which makes the section non-optional on a
+// render-surface PR) landed with #136. This module deliberately does NOT add a
+// competing section — it consumes THAT one, and
+// tests/unit/release-notes.spec.ts pins the template's literal shape so a move
+// on that side breaks a test here rather than silently posting nothing.
+//
+// The two readers keep different thresholds ON PURPOSE. The guard demands ≥40
+// characters — an AUTHORING standard, applied when the note is written. Delivery
+// accepts anything that is not `none`/blank/placeholder, because the guard ships
+// as WARN: a short note that a reviewer nonetheless merged must still reach the
+// channel. Refusing to deliver what a human accepted would hide it with no
+// signal anywhere. Converging the two extractions onto one import is worth doing
+// once both are on main — noted rather than done blind across branches.
 
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

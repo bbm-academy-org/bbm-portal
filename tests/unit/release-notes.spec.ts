@@ -241,3 +241,51 @@ describe('buildReleaseNotesArgs', () => {
     expect(buildReleaseNotesArgs(null, 'new')).toEqual(['--prev-sha', 'none', '--new-sha', 'new'])
   })
 })
+
+describe('the PR template section is the SSOT — one shape, two readers (#136 / #137)', () => {
+  // Task 7.5 (#136, PR #154) added the `## Product note (RU)` section and the
+  // `product-note` CI guard that makes it non-optional on a render-surface PR.
+  // 7.6 does NOT add a second section: it consumes THAT one. This test pins the
+  // template's literal shape, so if 7.5's template moves, the delivery breaks
+  // here rather than silently posting nothing.
+  const TEMPLATE_TAIL = [
+    '## Why',
+    '',
+    'Closes #',
+    '',
+    '## Product note (RU)',
+    '',
+    '<!-- Две фразы продуктовым языком: что читатель теперь увидит. Для PR, который',
+    '     никто не видит (тулинг, доки, бэкенд без UI), допустимо `none`.',
+    '     Проверяется гардом product-note — docs/ci-guardrails.md §5. -->',
+    '',
+    'PLACEHOLDER',
+    '',
+    '## Task-cycle checklist',
+    '',
+    '- [ ] Owner\'s "go" was given in-session on this scope (stage 2)',
+  ].join('\n')
+
+  it('an untouched template delivers nothing (the `none` default)', () => {
+    const body = TEMPLATE_TAIL.replace('PLACEHOLDER', 'none')
+    expect(noteIsReal(extractNote(body))).toBe(false)
+  })
+
+  it('a filled-in note is extracted without the authoring hint or the checklist', () => {
+    const note = 'Редактор теперь видит черновик страницы до публикации.'
+    const body = TEMPLATE_TAIL.replace('PLACEHOLDER', note)
+    expect(extractNote(body)).toBe(note)
+    expect(noteIsReal(extractNote(body))).toBe(true)
+  })
+
+  it('the delivery threshold is looser than the guard’s on purpose', () => {
+    // The guard blocks a note under 40 characters — that is an AUTHORING
+    // standard, judged when the note is written. Delivery must not silently
+    // drop a short note that a human deliberately merged (the guard is WARN);
+    // refusing to POST what a reviewer accepted would hide it from the channel
+    // with no signal anywhere.
+    const short = 'Кнопка стала видна.'
+    expect(short.length).toBeLessThan(40)
+    expect(noteIsReal(short)).toBe(true)
+  })
+})
