@@ -79,8 +79,10 @@ GitHub comment. The second names where each deviation was routed (its own issue
 All three share ONE recognizer of "a completion report" (defined in
 `completion-report-gate.mjs`): a completion verb plus an issue/PR reference,
 minus negations, and excluding a short question to the owner, an interim
-checkpoint («⏳», «жду CI»), and a proposal of the next step. So a real report
-meets all three, and a checkpoint meets none. Points 1, 3 and 4 have no
+checkpoint («⏳», «жду CI»), and a proposal of the next step — **and** the session
+must carry at least one write action in its transcript (#158), so a read-only
+answer that merely talks about a merged PR trips nothing. So a real report meets
+all three, and a checkpoint meets none. Points 1, 3 and 4 have no
 mechanical check — they are on you. `BBM_HOOKS_DISABLE=1` kills the whole stack;
 using it to get a report past a gate is itself a deviation to surface.
 
