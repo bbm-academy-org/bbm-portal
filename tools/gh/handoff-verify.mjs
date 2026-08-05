@@ -70,8 +70,10 @@
 //       belong to the provenance domain above and are skipped here (no
 //       double-fire).
 // Neither WARN detector ever bumps `stale`, so a WARN-only run still exits 0.
-// TODO(#136): severity canon promotion — decide per domain whether WARN becomes
-// a blocking verdict once the severity canon lands.
+// SEVERITY (docs/ci-guardrails.md §6, decided 2026-08-05): WARN. It reports
+// staleness across several sources of truth, so a wrong "stale" would block a
+// legitimate handoff — a promotion candidate, but only under the canon §4
+// clauses: a full cadence with zero false staleness verdicts, judged per domain.
 //
 // Deliberately OUT of scope (differences from the ds-platform original):
 //   • the task-kind-vs-surface / PRD check — it asserts ds-platform's

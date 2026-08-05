@@ -15,7 +15,10 @@
 // a third blocker on a discipline the repo has not yet practised would turn
 // every honest report into a loop. Promotion to BLOCK is a canon decision, not
 // a code tweak.
-// TODO(#136): severity canon promotion
+// SEVERITY (docs/ci-guardrails.md §6, decided 2026-08-05): WARN. Promotion means
+// an agent cannot end its turn, and a wrong verdict then strands the session with
+// no way out — so this one needs the canon §4 clean window AND a documented
+// escape hatch before it can block, not just the clock.
 //
 // COMPOSITION: this gate REUSES the terminal-report recognizer of
 // `completion-report-gate.mjs` — the same seam `deviations-gate.mjs` imports.

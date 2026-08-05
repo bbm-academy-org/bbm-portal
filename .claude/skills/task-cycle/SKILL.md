@@ -90,8 +90,9 @@ blocked-by task (memory: `fix-root-cause-not-workarounds`). **TDD — hard rule
 for platform-module code:** no production module code without a failing test
 first; derive tests from the spec's acceptance scenarios where a spec exists.
 (The CMS mirror is covered by the site's contract test — unchanged.) Before
-pushing, check CI is green on `main`, so an inherited red is not mistaken for
-your own.
+pushing, run `pnpm ci:verify-base` (exit 0 green / 1 red / 2 pending): an
+inherited red on `main` must not be mistaken for your own, and on exit 1 the
+command prints the disclaimer to paste into the PR body.
 
 **UI diff** (`*.css`, view-layer `*.tsx`): load the `frontend-design` skill
 BEFORE writing markup, and list explicitly the states the prototype does not

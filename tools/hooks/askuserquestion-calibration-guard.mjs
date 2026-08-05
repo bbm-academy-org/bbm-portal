@@ -39,8 +39,10 @@
 // restore-scope frame, no live-surface claim → no output at all. The findings
 // are listed in the banner, so the reader sees what tripped it.
 //
-// TODO(#136): severity canon promotion — WARN here is by design (a calibration
-// reminder is advice, not a verdict), but the severity canon has the final say.
+// SEVERITY (docs/ci-guardrails.md §6, decided 2026-08-05): WARN, PERMANENTLY,
+// by design — not a promotion candidate. Blocking here would deny the owner a
+// question that is already being asked, which is the opposite of what the guard
+// wants. Its value is entirely in the reader seeing the calibration note.
 //
 // Contract: stdin — JSON PreToolUse ({session_id, cwd, tool_name, tool_input}).
 // exit 0 + `systemMessage` on stdout = WARN; exit 0 with NO output = clean.
