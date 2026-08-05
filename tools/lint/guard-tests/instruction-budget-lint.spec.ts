@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AGGREGATE_BUDGET,
+  AGGREGATE_SLOTS,
   BUDGET,
   NEAR_RATIO,
   collectTargets,
@@ -154,10 +156,76 @@ describe('formatReport', () => {
     expect(report.text).toContain('compact')
   })
 
-  it('reports an empty corpus as PASS with an explicit note', () => {
+  /**
+   * #157. An empty corpus used to be a PASS with a note — a fail-open: a run
+   * that measured nothing cleared nothing, and «a check that never ran must not
+   * look clean» (canon §2.3 / .claude/rules/design-process.md). CLAUDE.md and
+   * AGENTS.md are not optional files; measuring zero of them means the guard
+   * was pointed at the wrong tree, not that the tree is within budget.
+   */
+  it('reports an empty corpus as an ERROR, not a pass (exit 2)', () => {
     const report = formatReport([])
-    expect(report.verdict).toBe('PASS')
+    expect(report.verdict).toBe('EMPTY')
+    expect(report.exitCode).toBe(2)
     expect(report.text).toContain('no always-on files found')
+  })
+})
+
+/**
+ * #157, second delta: the per-file budget alone is a loophole — six files each
+ * at 199 lines pass individually while the session pays for 1194. The aggregate
+ * cap closes it, and is DERIVED from the per-file limit rather than invented:
+ * the corpus is designed to have four slots (CLAUDE.md, AGENTS.md, the MEMORY.md
+ * index, and `.claude/rules/` AS A WHOLE), so the cap is four per-file budgets.
+ * Treating the rules directory as one slot is the point — otherwise adding a
+ * rule file would raise the ceiling it is supposed to be constrained by.
+ */
+describe('aggregate corpus budget', () => {
+  const row = (path: string, lines: number, bytes: number) => ({
+    path,
+    lines,
+    bytes,
+    chars: bytes,
+    status: 'PASS' as const,
+    over: [] as string[],
+  })
+
+  it('derives the cap from the per-file budget and the slot count', () => {
+    expect(AGGREGATE_SLOTS).toBe(4)
+    expect(AGGREGATE_BUDGET.lines).toBe(BUDGET.lines * AGGREGATE_SLOTS)
+    expect(AGGREGATE_BUDGET.bytes).toBe(BUDGET.bytes * AGGREGATE_SLOTS)
+  })
+
+  it('fails on the corpus SUM even though every single file passes', () => {
+    const rows = Array.from({ length: 5 }, (_, i) => row(`f${i}.md`, BUDGET.lines - 1, 1000))
+    const report = formatReport(rows)
+    expect(rows.every((r) => r.status === 'PASS')).toBe(true)
+    expect(report.verdict).toBe('FAIL')
+    expect(report.exitCode).toBe(1)
+    expect(report.text).toContain('TOTAL')
+    expect(report.text).toContain('corpus')
+  })
+
+  it('fails on the corpus byte sum too, not only on lines', () => {
+    const rows = Array.from({ length: 5 }, (_, i) => row(`f${i}.md`, 10, BUDGET.bytes - 1))
+    const report = formatReport(rows)
+    expect(report.verdict).toBe('FAIL')
+    expect(report.exitCode).toBe(1)
+  })
+
+  it('stays PASS while the corpus is inside the cap, and always prints the total', () => {
+    const report = formatReport([row('CLAUDE.md', 80, 4499), row('AGENTS.md', 140, 15428)])
+    expect(report.verdict).toBe('PASS')
+    expect(report.exitCode).toBe(0)
+    expect(report.text).toContain('TOTAL')
+    expect(report.text).toContain('220 lines')
+  })
+
+  it('names the corpus in the NEAR tier before it fails', () => {
+    const near = Math.ceil(AGGREGATE_BUDGET.lines * NEAR_RATIO)
+    const report = formatReport([row('CLAUDE.md', near, 1000)])
+    expect(report.verdict).toBe('PASS')
+    expect(report.text).toContain('corpus')
   })
 })
 

@@ -138,6 +138,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:workflow-auth
 
+  # WARN on the CI plane — the always-on agent context (CLAUDE.md, AGENTS.md,
+  # .claude/rules/*.md) past its per-file budget, or the whole corpus past the
+  # aggregate cap. Wired by #157; no epic-7 task wired it, and wiring is what
+  # starts the §4 clock for this plane (earliest promotion 2026-09-02).
+  #
+  # Two planes, deliberately different severities for the same script: as a CLI
+  # guard it is BLOCK by exit code (canon §6.1, day-0 §3 class-1 mandate — a
+  # deterministic tree check), while the new CI job soaks as WARN like every
+  # other freshly wired job. It needs no `--severity block` flag (the pattern
+  # stage-b and spec-link follow): those two default to exit 0 on a finding and
+  # the flag buys them a real signal; this one has exited 1 since day 0, so the
+  # flag would be a no-op dial that could only ever weaken it.
+  #
+  # The MEMORY.md index lives outside git and is simply absent here — the guard
+  # skips what does not exist, so CI measures the repo files only.
+  instruction-budget:
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:instruction-budget
+
   # WARN — a test title that ATTEMPTS the EARS prefix and misspells it, so the
   # `EARS-N` grep the spec canon promises silently misses it (#157, tranche 2).
   ears-naming:
