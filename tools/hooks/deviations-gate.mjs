@@ -42,29 +42,44 @@ export function hasDeviationsLine(text) {
   return DEVIATIONS_MARKER_RE.test(String(text || ''))
 }
 
+/** Значение строки stage 7, нормализующееся в «отклонений нет». Хвост
+ * `(?![а-яё\w])` вместо `\b`: JS-граница слова ASCII-only и после кириллического
+ * «нет» не срабатывает вовсе (та же оговорка, что у DEVIATIONS_MARKER_RE).
+ * Лукахед отсекает «нету», «нетривиально». */
+export const NO_DEVIATIONS_VALUE_RE =
+  /^(?:нет(?![а-яё\w])|значимых\s+отклонений\s+нет(?![а-яё\w])|нет\s+значимых)/i
+
 /**
- * The value after the marker normalizes to "no deviations". Only the text that
- * FOLLOWS the marker is judged — a report that lists deviations elsewhere and
- * says «нет» nowhere must not match.
+ * The value after the marker normalizes to "no deviations". ONLY the text that
+ * follows the marker is judged — both branches (review PR #148, refs #149):
+ * «значимых отклонений нет» said about something else earlier in the report must
+ * not overrule a stage-7 line that actually lists deviations.
  */
 export function hasNoDeviationsValue(text) {
   const t = String(text || '')
-  if (/значимых\s+отклонений\s+нет/i.test(t)) return true
   const m = t.match(DEVIATIONS_MARKER_RE)
   if (!m) return false
-  const after = t.slice((m.index ?? 0) + m[0].length)
-  // Хвост `(?![а-яё\w])` вместо `\b`: JS-граница слова ASCII-only и после
-  // кириллического «нет» не срабатывает вовсе (та же оговорка, что у
-  // DEVIATIONS_MARKER_RE). Лукахед отсекает «нету», «нетривиально».
-  return /^\s*\**\s*нет(?![а-яё\w])/i.test(after)
+  const value = t.slice((m.index ?? 0) + m[0].length).replace(/^\s*\**\s*/, '')
+  return NO_DEVIATIONS_VALUE_RE.test(value)
 }
 
-/** Owner halt wording (RU + EN) — «тормози», «стоп», "halt". Тот же лукахед
- * вместо `\b` по кириллической причине выше: «стоп,» ловится, «стопор» нет. */
-export const HALT_RE = /тормози|останови|прекрати|стоп(?![а-яё\w])|stop everything|halt/i
+/**
+ * Owner halt wording (RU + EN). Two corrections from review PR #148 (refs #149):
+ * the Cyrillic-safe `(?![а-яё\w])` lookahead instead of `\b`, and phrase
+ * precision — a bare «останови» is the routine «останови стенд», not a halt of
+ * the session, so the verb is required to name the work itself.
+ */
+export const HALT_RE =
+  /тормози(?![а-яё\w])|прекрати\s+работу|останови(?:те)?\s+(?:вс[её]|работу)|стоп(?![а-яё\w])|stop everything|halt everything/i
 
-/** An earlier Stop-hook block already recorded in this session's transcript. */
-export const PRIOR_STOP_BLOCK_RE = /⛔ deviations gate|⛔ completion-report gate/
+/**
+ * An earlier Stop-hook block, and ONLY as harness feedback. Review PR #148: the
+ * bare marker armed the signal whenever a session merely READ these hook files —
+ * their own source text lands in a tool_result line verbatim. The «Stop hook
+ * feedback» frame is what distinguishes a block that actually happened.
+ */
+export const PRIOR_STOP_BLOCK_RE =
+  /Stop hook feedback[\s\S]{0,200}?⛔ (?:deviations|completion-report) gate/
 
 /** Текст человеческого сообщения; tool_result-блоки в user-записях игнорируются. */
 function humanMessageText(message) {

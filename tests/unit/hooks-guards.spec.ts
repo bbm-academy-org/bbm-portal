@@ -92,6 +92,37 @@ describe('dispatch-guard: staging gate', () => {
     expect(decideStaging({ toolName: 'Edit', prompt: staged }).warn).toBe(false)
     expect(decideStaging({ toolName: 'Agent', prompt: undefined }).warn).toBe(false)
   })
+
+  // Ревью PR #148 (refs #149): «do not mutate» это ЛЮБОЙ read-only бриф, а не
+  // признак staging. Признаком остаётся только сам черновик на диске.
+  it('ловит фразу остановленного пайплайна и не ловит read-only бриф разведчика', () => {
+    expect(
+      decideStaging({ toolName: 'Agent', prompt: 'drafts on disk only; the lead applies them' })
+        .warn,
+    ).toBe(true)
+    expect(
+      decideStaging({ toolName: 'Agent', prompt: 'Do NOT mutate anything on GitHub' }).warn,
+    ).toBe(false)
+  })
+
+  // Те же carve-out'ы, что у streak-половины: изолированная сессия и рубильник.
+  it('молчит в worktree-сессии и при явном opt-out', () => {
+    expect(
+      decideStaging({
+        toolName: 'Agent',
+        prompt: staged,
+        cwd: 'C:/Users/sidor/repos/bbm-portal/.claude/worktrees/133',
+      }).warn,
+    ).toBe(false)
+    expect(
+      decideStaging({
+        toolName: 'Agent',
+        prompt: staged,
+        projectDir: 'C:/Users/sidor/repos/bbm-portal/.claude/worktrees/133',
+      }).warn,
+    ).toBe(false)
+    expect(decideStaging({ toolName: 'Agent', prompt: staged, carveOut: true }).warn).toBe(false)
+  })
 })
 
 describe('secret-echo-guard', () => {
