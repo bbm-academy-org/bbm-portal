@@ -152,6 +152,15 @@ merges itself: `gh pr merge --squash --delete-branch` (memory:
 under someone else's commits, read what landed before merging. After the deploy
 — **postcheck: the commit deployed on prod == `origin/main` HEAD** (recipe in
 `deploy/README.md`); on a mismatch, finish shipping it, don't just report it.
+
+**Documentation DoD (#135):** a feature is done when it has **code + tests +
+spec + a user-facing instruction in the KB** (`bbm-kb`) — "how a person uses
+this", in the owner's language, not a changelog. Missing instruction = the
+feature is not done: file it as a blocked-by issue against `bbm-kb` before the
+final report and name it there. Invisible work (internals, refactors, tooling)
+carries no KB instruction; the spec and tests still apply. A spec that changed
+behavior gets its `status:` moved in the same PR (`docs/specs/README.md`).
+
 Then the final task report, fixed form:
 
 1. What changed — in product language.
@@ -164,8 +173,10 @@ Then the final task report, fixed form:
 ## Stage 7 — close
 
 Issue closed (verify `Closes #N` actually fired) with a results comment in the
-fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`):
-artifacts, what was done, what got unblocked + the mandatory line
+fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`): artifacts
+(spec + KB instruction named by link — the stage-6 documentation DoD is
+verified here, not assumed), what was done, what got unblocked + the mandatory
+line
 **«Отклонения от конвенций: нет / \<список\>»** (significant deviation → its
 own issue; minor → a line in `DEBT.md`). **The same line is repeated in the
 session's final report** — that is where the Stop gate
