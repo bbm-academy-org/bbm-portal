@@ -120,8 +120,9 @@ independent review above, plus the iteration-end gate before the review is
 requested (dispatched, never self-checked, verdict `PASS` required —
 `.claude/skills/run-iteration-end-checklist/SKILL.md`). A canon edit changes how
 every future session behaves; that is exactly why it does not count as docs.
-This boundary is defined here and nowhere else — other files point at it. Decision context goes onto the PR as comments,
-proactively (memory: `always-document-on-prs`).
+This boundary is defined here and nowhere else — other files point at it.
+Decision context goes onto the PR as comments, proactively (memory:
+`always-document-on-prs`).
 
 ## Stage 5 — acceptance of visible changes (blocks merge)
 

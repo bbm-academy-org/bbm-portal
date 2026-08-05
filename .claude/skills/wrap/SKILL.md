@@ -183,7 +183,7 @@ all — it is read-only evidence, and the retro only extracts from it.
   a `.claude/rules/*.md` file or a skill; a settled fact → a `memory/<topic>.md`
   file with one index line. An append with nothing relocated is the banned
   outcome, whatever the file's current size.
-- **Then run `pnpm lint:instruction-budget`** (`tools/lint/instruction-budget.mjs`,
+- **Then run `pnpm lint:instruction-budget`** (`tools/lint/instruction-budget-lint.mjs`,
   200 lines / 25 KB per file). **PASS is the exit condition of this phase** — a
   wrap does not finish with a red budget, and a `NEAR` row is compacted now
   rather than left for the wrap that will be over. Size the compaction in one

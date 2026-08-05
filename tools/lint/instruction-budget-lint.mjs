@@ -20,6 +20,16 @@
 // (`~/.claude/projects/<slug>/*.jsonl`), which is read-only evidence and is
 // never rewritten, compacted or pruned by anything in this repo.
 //
+// Severity — CLI guard, `docs/ci-guardrails.md` §2.3, where the exit code IS the
+// severity: 0 = clean or NEAR-only, 1 = a BLOCK-class finding (a file over
+// budget), 2 = input unreadable, which is not a verdict (a caller that reads 2
+// as "clean" has skipped the check). It lands BLOCK on day 0 under the §3
+// mandate, class 1 — deterministic tree check: the only inputs are files in the
+// checked-out tree plus the memory index, there is no network, no PR metadata,
+// no heuristic and no regex over prose, so the false-positive class is empty by
+// construction. Recorded in §6.1; promotion/demotion clauses are §4. Wiring this
+// into `ci.yml` belongs to task 7.4 (#135) — see the §5 row.
+//
 // Usage:
 //   pnpm lint:instruction-budget          # report + exit 1 when a file is OVER
 //   pnpm lint:instruction-budget --json   # machine-readable report
@@ -135,14 +145,18 @@ export function collectTargets({
  * Render the report. A single OVER file fails the run; NEAR is informational —
  * it is the signal to compact while compaction is still cheap.
  *
+ * An unreadable target is NOT a pass: the guard cleared nothing, so it exits 2
+ * (`docs/ci-guardrails.md` §2.3 — a CLI guard fails closed). A real finding
+ * outranks it: one file over budget is exit 1 even if another was unreadable.
+ *
  * @param {ReturnType<typeof evaluateFile>[]} results
  * @param {string[]} [skipped]
- * @returns {{verdict:'PASS'|'FAIL', exitCode:number, text:string, results:any[]}}
+ * @returns {{verdict:'PASS'|'FAIL'|'UNREADABLE', exitCode:number, text:string, results:any[]}}
  */
 export function formatReport(results, skipped = []) {
   const rows = Array.isArray(results) ? results : []
   const failed = rows.filter((r) => r.status === 'OVER')
-  const verdict = failed.length > 0 ? 'FAIL' : 'PASS'
+  const verdict = failed.length > 0 ? 'FAIL' : skipped.length > 0 ? 'UNREADABLE' : 'PASS'
 
   const lines = [`instruction budget — ${BUDGET.lines} lines / ${BUDGET.bytes} bytes per file`, '']
 
@@ -169,6 +183,11 @@ export function formatReport(results, skipped = []) {
         'file or a skill; a settled fact → a `memory/<topic>.md` file + one index line), then ' +
         're-run. Appending without relocating is the banned outcome.',
     )
+  } else if (verdict === 'UNREADABLE') {
+    lines.push(
+      `VERDICT: UNREADABLE — ${skipped.length} target(s) could not be read, so this run ` +
+        'cleared nothing. Not a pass and not a finding (exit 2): fix the input and re-run.',
+    )
   } else {
     const near = rows.filter((r) => r.status === 'NEAR')
     lines.push(
@@ -176,7 +195,8 @@ export function formatReport(results, skipped = []) {
     )
   }
 
-  return { verdict, exitCode: verdict === 'FAIL' ? 1 : 0, text: lines.join('\n'), results: rows }
+  const exitCode = verdict === 'FAIL' ? 1 : verdict === 'UNREADABLE' ? 2 : 0
+  return { verdict, exitCode, text: lines.join('\n'), results: rows }
 }
 
 /**

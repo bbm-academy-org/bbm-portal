@@ -179,7 +179,7 @@ describe('runBudgetLint', () => {
     expect(report.results[1].status).toBe('OVER')
   })
 
-  it('never throws on an unreadable file — the gate degrades to a skip', () => {
+  it('never throws on an unreadable file, and never calls it a pass (exit 2)', () => {
     const report = runBudgetLint({
       repoRoot: '/repo',
       home: '/home',
@@ -189,7 +189,25 @@ describe('runBudgetLint', () => {
       },
       listRules: () => [],
     })
-    expect(report.verdict).toBe('PASS')
+    expect(report.verdict).toBe('UNREADABLE')
+    expect(report.exitCode).toBe(2)
     expect(report.text).toContain('unreadable')
+  })
+
+  it('lets a real finding outrank an unreadable target — exit 1 wins over exit 2', () => {
+    const files: Record<string, string> = { '/repo/AGENTS.md': filled(BUDGET.lines + 5) }
+    const report = runBudgetLint({
+      repoRoot: '/repo',
+      home: '/home',
+      exists: () => true,
+      readFile: (p: string) => {
+        const content = files[key(p)]
+        if (content === undefined) throw new Error('EACCES')
+        return content
+      },
+      listRules: () => [],
+    })
+    expect(report.verdict).toBe('FAIL')
+    expect(report.exitCode).toBe(1)
   })
 })
