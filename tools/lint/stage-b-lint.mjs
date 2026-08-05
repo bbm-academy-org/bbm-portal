@@ -50,6 +50,8 @@
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { stripNonEvidence } from './lib/guard.mjs'
+
 const TAG = '[stage-b]'
 
 export const REPO = 'bbm-academy-org/bbm-portal'
@@ -71,18 +73,17 @@ export const EXEMPT_RE =
 /** The `Stage-B:` line, anywhere in a body/comment, through list/quote decoration. */
 const MARKER_RE = /^[ \t>*_-]*stage-?b\s*:\s*(.+?)\s*$/gim
 
-/**
- * Text that TALKS ABOUT the marker but does not record one: HTML comments and
- * fenced code blocks. Stripped before extraction (review PR #151, blocker 1).
- *
- * This is not cosmetic. The PR template's own instruction block lives inside
- * `<!-- … -->` and spells out all three sanctioned shapes verbatim, so without
- * this the realistic failure — an author fills What/Why and never touches the
- * Stage B section — read as a recorded owner GO. Same class on the issue-comment
- * path: a handoff or a review note quoting the shapes in a fence became evidence.
- */
-const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g
-const FENCED_BLOCK_RE = /^ {0,3}(?:```|~~~)[\s\S]*?^ {0,3}(?:```|~~~)[^\n]*$/gm
+// Text that TALKS ABOUT the marker but does not record one — HTML comments and
+// fenced code blocks — is stripped before extraction (review PR #151, blocker 1).
+// The stripper itself now lives in `lib/guard.mjs` as `stripNonEvidence`, shared
+// with `spec-link` and `spec-deletion`, because the rule is one rule and three
+// copies drift (review PR #160: `spec-deletion` shipped without it).
+//
+// This is not cosmetic. The PR template's own instruction block lives inside
+// `<!-- … -->` and spells out all three sanctioned shapes verbatim, so without
+// this the realistic failure — an author fills What/Why and never touches the
+// Stage B section — read as a recorded owner GO. Same class on the issue-comment
+// path: a handoff or a review note quoting the shapes in a fence became evidence.
 
 /**
  * `GO — Антон, 2026-08-05` — the owner's live verdict. The attribution tail is
@@ -120,7 +121,7 @@ export function renderFiles(paths) {
  */
 export function extractMarkerValues(text) {
   if (!text) return []
-  const semantic = String(text).replace(HTML_COMMENT_RE, '').replace(FENCED_BLOCK_RE, '')
+  const semantic = stripNonEvidence(text)
   return [...semantic.matchAll(MARKER_RE)].map((m) => (m[1] ?? '').replace(/^[\s*_]+/, '').trim())
 }
 

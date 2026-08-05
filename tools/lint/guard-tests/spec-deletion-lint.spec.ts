@@ -6,6 +6,7 @@ import {
   VALID_STATUSES,
   evaluateSpecDeletion,
   frontmatterField,
+  isRetirementTransition,
   parseNameStatus,
   sweepSpecStatus,
 } from '../spec-deletion-lint.mjs'
@@ -165,14 +166,94 @@ describe('evaluateSpecDeletion', () => {
     expect(verdict.escape).toBe('marker')
   })
 
+  it('accepts the backticked form, as `spec-link`s sibling hatch does', () => {
+    expect(evaluateSpecDeletion(deleted, [], '`spec-deletion: merged into 011-y.md`').ok).toBe(true)
+  })
+
   it('rejects a bare marker with no reason', () => {
     expect(evaluateSpecDeletion(deleted, [], 'spec-deletion:').ok).toBe(false)
+  })
+
+  /**
+   * Review of PR #160, blocker. A PR that deletes a spec is exactly the PR whose
+   * body is likely to CONTAIN the guard's own failure text — pasted in a fence,
+   * quoted from a review comment, or left in the template's HTML comment. Text
+   * that merely talks about the hatch must never arm it: `.claude/rules/
+   * design-process.md` states the rule for `stage-b`, and `spec-link` fixed the
+   * same class in PR #151 blocker 1. This guard shipped without it.
+   */
+  describe('text that merely QUOTES the marker never arms the hatch', () => {
+    const quoted = (body: string) => evaluateSpecDeletion(deleted, [], body)
+
+    it('a fenced example does not arm it', () => {
+      const body = ['## What', '', '```', 'spec-deletion: <reason + successor>', '```', ''].join(
+        '\n',
+      )
+      expect(quoted(body).ok).toBe(false)
+    })
+
+    it('a tilde-fenced example does not arm it', () => {
+      expect(quoted('~~~md\nspec-deletion: merged into 011-y.md\n~~~').ok).toBe(false)
+    })
+
+    it('a blockquoted marker — a pasted review comment — does not arm it', () => {
+      expect(quoted('> spec-deletion: merged into 011-y.md').ok).toBe(false)
+    })
+
+    it('a list-item marker does not arm it', () => {
+      expect(quoted('- spec-deletion: merged into 011-y.md').ok).toBe(false)
+    })
+
+    it('the marker inside an HTML comment does not arm it', () => {
+      expect(quoted('<!--\nspec-deletion: <reason + successor>\n-->').ok).toBe(false)
+    })
+
+    it('a real marker still arms it even when the body also quotes one', () => {
+      const body = [
+        '```',
+        'spec-deletion: <reason + successor>',
+        '```',
+        '',
+        'spec-deletion: folded into 011-y.md',
+      ].join('\n')
+      expect(quoted(body).escape).toBe('marker')
+    })
   })
 
   it('accepts a documented retirement wave — a Superseded/Retired transition in the same PR', () => {
     const verdict = evaluateSpecDeletion(deleted, ['docs/specs/011-y.md'], '')
     expect(verdict.ok).toBe(true)
     expect(verdict.escape).toBe('superseded-transition')
+  })
+})
+
+/**
+ * Review of PR #160, MAJOR: escape (c) promised a TRANSITION and delivered
+ * "carries a retired status". A PR that fixes a typo in a spec retired months
+ * ago, and separately `git rm`s a different one, must not be read as a
+ * documented retirement wave.
+ */
+describe('isRetirementTransition', () => {
+  const fm = (status: string) => `---\nstatus: ${status}\n---\n\n# X\n`
+
+  it('is a transition when the PR moves a live spec to Superseded', () => {
+    expect(isRetirementTransition(fm('Shipped'), fm('Superseded'))).toBe(true)
+  })
+
+  it('is a transition for Retired too', () => {
+    expect(isRetirementTransition(fm('In dev'), fm('Retired'))).toBe(true)
+  })
+
+  it('is NOT a transition when the spec was already Superseded before the PR', () => {
+    expect(isRetirementTransition(fm('Superseded'), fm('Superseded'))).toBe(false)
+  })
+
+  it('is NOT a transition when the head status is not a retirement', () => {
+    expect(isRetirementTransition(fm('Draft'), fm('Shipped'))).toBe(false)
+  })
+
+  it('is NOT a transition when the base version cannot be read — fail closed', () => {
+    expect(isRetirementTransition(null, fm('Superseded'))).toBe(false)
   })
 })
 
@@ -215,6 +296,31 @@ describe('spec-deletion (spawned)', () => {
   it('exits 0 on a status-clean tree outside a PR event', () => {
     const res = runGuard('spec-deletion-lint.mjs', caseDir('spec-deletion', 'clean'))
     expect(res.code).toBe(0)
+  })
+
+  it('exits 1 when a fenced example is the only thing resembling the marker', () => {
+    const dir = caseDir('spec-deletion', 'deleted-quoted-marker')
+    const res = runGuard('spec-deletion-lint.mjs', dir, {
+      env: {
+        ...prEnv(ghDir('spec-deletion', 'deleted-quoted-marker')),
+        LINT_DIFF_NAMESTATUS_FILE: `${dir}/diff/name-status.txt`,
+      },
+    })
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('docs/specs/010-thing.md')
+  })
+
+  /**
+   * Review of PR #160, MINOR: zero spec FILES is the wrong-tree input problem,
+   * not a clean sweep — the same argument the instruction-budget empty-corpus
+   * decision rests on. A CI guard has no exit 2 (canon §8 admits 0 and 1 only),
+   * so fail-closed here means exit 1 with a message that is not a finding about
+   * any spec.
+   */
+  it('exits 1 on a tree with no spec files at all — it cleared nothing', () => {
+    const res = runGuard('spec-deletion-lint.mjs', caseDir('spec-deletion', 'no-specs'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('no spec files')
   })
 
   it('exits 0 on the real repo tree — the sweep must be green at merge', () => {

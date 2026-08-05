@@ -20,9 +20,13 @@
 //      (b) MARKER — the PR body carries `spec-deletion: <reason + successor>`,
 //          an explicit greppable justification. A bare marker is itself a
 //          finding (same rule `spec-link`'s `spec-exempt:` hatch follows).
-//      (c) RETIREMENT WAVE — the same PR modifies another spec/ADR into
+//      (c) RETIREMENT WAVE — the same PR TRANSITIONS another spec/ADR into
 //          `status: Superseded` / `Retired`, so the removals are documented
-//          collateral of a recorded retirement.
+//          collateral of a recorded retirement. It is a transition, not a
+//          status: the base version is read too, so a spec retired months ago
+//          that this PR touches for a typo does not arm the escape (review of
+//          PR #160; ds has the looser semantics and describes them honestly,
+//          this port's header had promised the stricter one).
 // 2. STATUS SWEEP (tree, EVERY run — including a non-PR one). «Every spec file
 //    carries an explicit `status:`», it is one of the five ladder values, and
 //    `Superseded` names an existing successor. This is the repo-wide sweep #157
@@ -43,6 +47,8 @@
 //   LINT_FIXTURE_ROOT         scan this tree instead of the repo root
 //   LINT_DIFF_NAMESTATUS_FILE serve a canned `git diff --name-status` instead of git
 //   LINT_DIFF_BASE            diff base, default `origin/main`
+//   LINT_BASE_TREE_DIR        serve the BASE version of a file from a fixture tree
+//                             instead of `git show <base>:<path>` (escape c)
 //   LINT_GH_FIXTURE_DIR       serve `gh pr view` from canned JSON (lib/gh.mjs)
 //   PR_BODY / PR_NUMBER / GITHUB_EVENT_NAME   the usual PR-event wiring
 //
@@ -69,6 +75,7 @@ import {
   repoRoot,
   resolvePrNumber,
   runMain,
+  stripNonEvidence,
   toPosix,
   walkFiles,
 } from './lib/guard.mjs'
@@ -84,8 +91,27 @@ export const SPEC_STATUS_PATH_RE = /^docs\/(?:specs|superpowers\/specs)\/(?!READ
 /** The status ladder, in the order docs/specs/README.md lists it. */
 export const VALID_STATUSES = ['Draft', 'In dev', 'Shipped', 'Superseded', 'Retired']
 
-/** The explicit body justification: a reason is mandatory. */
-export const SPEC_DELETION_MARKER_RE = /^\s*[-*>\s]*`?spec-deletion:\s*\S.*$/im
+/**
+ * The explicit body justification. Three deliberate constraints, each one a
+ * failure this guard is supposed to catch rather than commit:
+ *
+ * - **A reason is mandatory** (`\S` after the colon) — a bare marker justifies
+ *   nothing, the same rule `spec-link`'s `spec-exempt:` hatch follows.
+ * - **No list/quote decoration is accepted.** The anchor is `^\s*` and nothing
+ *   else, matching the ds original. An earlier form here allowed `[-*>\s]*`,
+ *   which meant a BLOCKQUOTED marker — the shape a pasted review comment takes —
+ *   armed the hatch (review of PR #160, blocker). `stage-b` accepts decoration
+ *   because its PR-template section renders as a bold list item; this marker has
+ *   no template line and no such need.
+ * - **The body is run through `stripNonEvidence` FIRST**, so a fenced example or
+ *   the template's HTML comment is not a justification. A PR that deletes a spec
+ *   is precisely the PR whose body is likely to quote this guard's own failure
+ *   text; without the strip, the hatch fired with nobody deciding anything.
+ *
+ * The optional backtick is kept: `` `spec-deletion: <reason>` `` on a line of its
+ * own is a genuine record, exactly as `spec-link` accepts its backticked hatch.
+ */
+export const SPEC_DELETION_MARKER_RE = /^\s*`?spec-deletion:\s*\S.*$/im
 
 /** A status that sanctions accompanying deletions (escape c). */
 const RETIRE_STATUS_RE = /^(?:Superseded|Retired)$/
@@ -164,6 +190,31 @@ export function sweepSpecStatus(files) {
   return findings
 }
 
+/**
+ * A TRANSITION into a retired status, not merely "carries one". `baseText` is
+ * the file as of the diff base (`null` when it could not be read).
+ *
+ * Escape (c) exists for a documented retirement WAVE, so it must be armed by the
+ * act of retiring something in this PR — not by a spec retired months ago that
+ * this PR happens to touch for a typo. The first cut read the working tree only
+ * and therefore accepted the latter, while the header promised the former
+ * (review of PR #160, MAJOR: a port-header overclaim inherited from ds).
+ *
+ * Fail-closed on an unreadable base: an escape that cannot be confirmed is not
+ * granted.
+ *
+ * @param {string|null} baseText
+ * @param {string} headText
+ * @returns {boolean}
+ */
+export function isRetirementTransition(baseText, headText) {
+  const head = frontmatterField(headText, 'status')
+  if (!head || !RETIRE_STATUS_RE.test(head)) return false
+  if (baseText === null || baseText === undefined) return false
+  const base = frontmatterField(baseText, 'status')
+  return !(base && RETIRE_STATUS_RE.test(base))
+}
+
 export function isDeletion(status) {
   return String(status).charAt(0) === 'D'
 }
@@ -212,7 +263,7 @@ export function evaluateSpecDeletion(entries, retiredInThisPr, prBody) {
     .map((e) => toPosix(e.path))
 
   if (offenders.length === 0) return { ok: true, offenders: [], escape: null }
-  if (SPEC_DELETION_MARKER_RE.test(String(prBody ?? ''))) {
+  if (SPEC_DELETION_MARKER_RE.test(stripNonEvidence(prBody))) {
     return { ok: true, offenders, escape: 'marker' }
   }
   if ((retiredInThisPr ?? []).length > 0) {
@@ -252,19 +303,37 @@ function readNameStatus(root) {
   })
 }
 
-/** Spec/ADR files this PR modified into a retired status (escape c). */
+/**
+ * The file as of the diff base. Seam `LINT_BASE_TREE_DIR` serves it from a
+ * fixture dir (a second fake tree holding the "before" versions); unset, it is
+ * `git show <base>:<path>`. `null` when it cannot be read — the file did not
+ * exist in the base, or git is unavailable.
+ */
+function baseFileText(root, rel) {
+  const seam = process.env.LINT_BASE_TREE_DIR
+  try {
+    if (seam) return readFileSync(resolve(seam, rel), 'utf8')
+    const base = process.env.LINT_DIFF_BASE ?? 'origin/main'
+    return execFileSync('git', ['show', `${base}:${rel}`], { cwd: root, encoding: 'utf8' })
+  } catch {
+    return null
+  }
+}
+
+/** Spec/ADR files this PR TRANSITIONED into a retired status (escape c). */
 function retiredInThisPr(root, entries) {
   const out = []
   for (const e of entries) {
     if (isDeletion(e.status) || String(e.status).charAt(0) === 'A') continue
     const rel = toPosix(e.path)
     if (!RETIREABLE_PATH_RE.test(rel)) continue
+    let headText
     try {
-      const status = frontmatterField(readFileSync(resolve(root, rel), 'utf8'), 'status')
-      if (status && RETIRE_STATUS_RE.test(status)) out.push(rel)
+      headText = readFileSync(resolve(root, rel), 'utf8')
     } catch {
-      // absent from the tree — no transition can be confirmed
+      continue // absent from the tree — no transition can be confirmed
     }
+    if (isRetirementTransition(baseFileText(root, rel), headText)) out.push(rel)
   }
   return out
 }
@@ -276,6 +345,20 @@ async function main() {
 
   // ── class 2: the status sweep, on every run ────────────────────────────────
   const corpus = readSpecCorpus(root)
+  // Zero spec files is not a clean sweep — it is the wrong tree. `docs/specs/`
+  // is a committed directory of this repo, so measuring nothing means the guard
+  // cleared nothing, and a check that never ran must not look clean. Canon §8
+  // gives a CI guard only exit 0 and exit 1, so fail-closed here is exit 1 with
+  // a message that is not a finding about any spec (review of PR #160, MINOR —
+  // the same argument as instruction-budget's empty-corpus decision).
+  if (corpus.length === 0) {
+    out.fail(
+      'no spec files found under docs/specs or docs/superpowers/specs. This run cleared ' +
+        'nothing — it is an input problem (wrong tree), not a clean corpus. Not a finding ' +
+        'about any spec: fix the invocation and re-run.',
+    )
+    return
+  }
   for (const f of sweepSpecStatus(corpus)) {
     findings.push(`${f.reason.padEnd(28)} ${f.path}  ->  ${f.detail}`)
   }
@@ -283,12 +366,14 @@ async function main() {
 
   // ── class 1: the deletion check, on a PR event only ────────────────────────
   const prNumber = resolvePrNumber()
+  let deletionChecked = false
   if (!isPrEvent() || !prNumber) {
     out.info(
       `not a pull_request event with a resolvable PR (event=${process.env.GITHUB_EVENT_NAME ?? 'unset'}, ` +
         `pr=${prNumber || 'unset'}) — the deletion class needs a diff, skipping it`,
     )
   } else {
+    deletionChecked = true
     let entries
     try {
       entries = parseNameStatus(readNameStatus(root))
@@ -321,7 +406,14 @@ async function main() {
   }
 
   if (findings.length === 0) {
-    out.ok('every spec carries a ladder status, and no decision record is deleted.')
+    // The success line names only what was actually checked: on a non-PR run the
+    // deletion class did not execute, and asserting it clean would be a claim
+    // about a check that never ran (review of PR #160, nit).
+    out.ok(
+      deletionChecked
+        ? 'every spec carries a ladder status, and no decision record is deleted.'
+        : 'every spec carries a ladder status (deletion class not run — see above).',
+    )
   }
   for (const f of findings) out.finding(f)
   out.fail(
