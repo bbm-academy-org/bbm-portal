@@ -71,7 +71,8 @@ export function warnMessage() {
  * gates use), and the `surface-decision-debt:` line is absent from it.
  *
  * Returns `{warn}` rather than `{block}` on purpose — the shape names the
- * severity, so a promotion to blocking (#136) is a visible change of contract
+ * severity, so a promotion to blocking (docs/ci-guardrails.md §4) is a visible
+ * change of contract
  * and not a silent flip of a boolean's meaning.
  */
 export function decideWarn({ stopHookActive, lastAssistantText, writeActionSeen = false }) {

@@ -74,7 +74,7 @@ GitHub comment. The second names where each deviation was routed (its own issue
 | -------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tools/hooks/completion-report-gate.mjs`     | **BLOCK** | point 2 missing — neither «Проверить глазами:» nor the honest no-visual formula                                                                                                       |
 | `tools/hooks/deviations-gate.mjs`            | **BLOCK** | the «Отклонения от конвенций:» line missing; **also** a «нет» value in a session that had an owner halt or an earlier Stop-gate block — a halted session cannot self-certify as clean |
-| `tools/hooks/surface-decision-debt-gate.mjs` | **WARN**  | the `surface-decision-debt:` line missing (systemMessage only; the stop proceeds — promotion is #136)                                                                                 |
+| `tools/hooks/surface-decision-debt-gate.mjs` | **WARN**  | the `surface-decision-debt:` line missing (systemMessage only; the stop proceeds — promotion per `docs/ci-guardrails.md` §4/§6)                                                       |
 
 All three share ONE recognizer of "a completion report" (defined in
 `completion-report-gate.mjs`): a completion verb plus an issue/PR reference,

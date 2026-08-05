@@ -38,9 +38,9 @@
 // the job is `continue-on-error`, so an unreadable PR shows in the job log
 // rather than blocking — acceptable only while the guard is WARN.
 //
-// NOT WIRED INTO CI HERE, deliberately: `.github/workflows/ci.yml` and the guard
-// workflow are owned by #136, which is in flight in parallel. Run locally before
-// merge: `pnpm lint:stage-b <PR>`.
+// CI: the `stage-b` job of `.github/workflows/pr-body-guards.yml` (wired by #136
+// after this guard landed — the two ran in parallel, so the wiring is not in this
+// file’s history). Run locally before merge: `pnpm lint:stage-b <PR>`.
 //
 // Pattern source: ds-platform `tools/lint/stage-b-lint.ts` (adapted — bbm has no
 // design-system package, no spec frontmatter and no `pr:preflight` runner, so

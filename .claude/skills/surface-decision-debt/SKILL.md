@@ -68,8 +68,10 @@ surface-decision-debt: <[] | по одному пункту на отклоне�
   where it landed: `#N` / `DEBT.md` / "written off: \<why\>". `[]` when the
   first line says «нет». Checked by
   `tools/hooks/surface-decision-debt-gate.mjs` as a **WARN** — it prints a
-  systemMessage and lets the stop through (promotion to BLOCK is a canon
-  decision, tracked in #136).
+  systemMessage and lets the stop through. Promotion to BLOCK follows
+  `docs/ci-guardrails.md` §4, and §6 records what this gate needs first: the
+  clean window **and** a documented escape hatch, because a wrong verdict on a
+  `Stop` gate strands the session with no way out.
 
 Both lines are `[]`/«нет» only for a genuinely deviation-free task. `[]` next to
 a prose paragraph describing a deviation is invalid output — the empty list

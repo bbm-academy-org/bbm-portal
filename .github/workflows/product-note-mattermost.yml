@@ -10,7 +10,7 @@ name: Product note → Mattermost
 # an internal-only PR opts out. There is no label gate here (unlike the ds
 # original): this repo's PRs carry no labels, so the NOTE is the gate.
 #
-# The `## Product note (RU)` section itself belongs to task 7.5 (#136), together
+# The `## Product note (RU)` section itself landed with task 7.5 (#136), together
 # with the `product-note` CI guard that makes it non-optional on a render-surface
 # PR. That guard is the AUTHORING half; this workflow is the DELIVERY half. Both
 # read the same section — 7.6 adds no second one.
