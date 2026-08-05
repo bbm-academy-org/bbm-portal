@@ -40,6 +40,22 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        # Baked into the image as ENV DEPLOY_SHA and reported by GET /api/health
+        # (#137). `pnpm deploy:prod` writes DEPLOY_SHA into `deploy/.env` on the
+        # box before building; compose interpolates it from there.
+        DEPLOY_SHA: ${DEPLOY_SHA:-}
+    # SHA-tagged image (#137) — the two properties the old untagged build could
+    # not provide:
+    #   • rollback without a rebuild: the previous release's image is still on
+    #     the box under its own tag, so `up -d` a prior sha is seconds, not a
+    #     15-minute rebuild on a 2 vCPU box (`pnpm deploy:prod --rollback <sha>`);
+    #   • verifiable identity: `docker inspect …app-1 --format {{.Config.Image}}`
+    #     names the deployed commit, so the deploy script can refuse to print a
+    #     success line the box does not back.
+    # `:local` is the fallback for a hand-run `docker compose build` with no
+    # DEPLOY_SHA — retention (`pnpm deploy:prod`) never prunes that tag.
+    image: bbm-portal-app:${DEPLOY_SHA:-local}
     restart: unless-stopped
     env_file:
       - .env.prod
