@@ -38,6 +38,8 @@
  * unit-testable; the middleware wires it from NODE_ENV at the edge.
  */
 
+import { HEALTH_PATH } from './health'
+
 export type AllowlistMode = 'production' | 'development'
 
 /** NODE_ENV → allowlist mode: strict host sets only for a real prod build. */
@@ -101,14 +103,23 @@ function isAuthPath(pathname: string): boolean {
 
 /**
  * Framework infrastructure that both surfaces need: /_next/* (static chunks,
- * image optimizer, RSC/HMR plumbing) and the favicon. Forgetting these is the
+ * image optimizer, RSC/HMR plumbing), the favicon, and `/api/health` — the
+ * deploy pipeline's build-identity probe (#137). Forgetting these is the
  * named pitfall of spec 060 req.3 — a broken admin AND a broken dashboard.
  * They pass on any KNOWN host; on unknown hosts default-deny still applies.
  * Development additionally needs the error-overlay/devtools endpoints
  * (`/__nextjs...`).
+ *
+ * `/api/health` is here rather than on the CMS list (where `/api/*` would
+ * already cover it) because the deploy smoke asks EVERY public vhost for its
+ * sha: proving `portal.bbm.academy` routes into the deployed container is a
+ * separate fact from proving `cms.bbm.academy` does, and assuming one from the
+ * other is exactly the class of assumption the smoke exists to kill. The match
+ * is exact — `/api/healthz` and `/api/health/anything` are not infrastructure.
  */
 function isFrameworkPath(pathname: string, mode: AllowlistMode): boolean {
   if (pathname.startsWith('/_next/') || pathname === '/favicon.ico') return true
+  if (pathname === HEALTH_PATH) return true
   return mode === 'development' && pathname.startsWith('/__nextjs')
 }
 
