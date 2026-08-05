@@ -444,15 +444,44 @@ describe('#158: write-действие в транскрипте', () => {
       'mcp__plugin_github_github__create_branch',
       'mcp__plugin_github_github__delete_file',
       'mcp__plugin_github_github__push_files',
-      'mcp__plane-pp-mcp__plane_execute',
       'mcp__plane-pp-mcp__workspaces_add',
       'mcp__plane-pp-mcp__relations_set',
       'mcp__plane-pp-mcp__attach_file',
       'mcp__plane-pp-mcp__import',
-      'mcp__ide__executeCode',
     ]) {
       expect(hasWriteAction(toolUse(name, {}))).toBe(true)
     }
+  })
+
+  // Ревью PR #159 (BLOCKER): `plane_execute` — ДИСПЕТЧЕР. Глагол «execute» в
+  // имени не говорит ничего: через него идут и `states.list`, и
+  // `work-items.create`. Слово в имени ловило все обращения к Plane, включая
+  // чистое чтение, — ровно тот ложный BLOCK, который чинит #158. Судится
+  // операция: хвост `endpoint_id` после последней точки.
+  it('диспетчер plane_execute судится по endpoint_id, не по имени', () => {
+    const exec = (endpoint_id?: string) =>
+      hasWriteAction(toolUse('mcp__plane-pp-mcp__plane_execute', { endpoint_id }))
+    expect(exec('work-items.create')).toBe(true)
+    expect(exec('work-items.partial-update')).toBe(true)
+    expect(exec('issues.destroy')).toBe(true)
+    expect(exec('cycles.add-work-item-to-cycle')).toBe(true)
+    expect(exec('states.list')).toBe(false)
+    expect(exec('users.list')).toBe(false)
+    expect(exec('issues.get-workspace-work-item')).toBe(false)
+    expect(exec('work-items.search-2')).toBe(false)
+    // Ловушка существительного: `attach` сидит в ИМЕНИ РЕСУРСА, а операция —
+    // чтение. Поэтому судится только хвост после точки.
+    expect(exec('issue-attachments.list')).toBe(false)
+    // Нет аргумента — улики нет, консервативно молчим.
+    expect(exec(undefined)).toBe(false)
+  })
+
+  // Записанный write-off ревью PR #159: глагол `execute` убран из имён целиком,
+  // поэтому `mcp__ide__executeCode` больше не считается. Пропущенная мутация
+  // стоит одного несработавшего гейта — цена ложного BLOCK выше.
+  it('write-off: исполнители без разбираемых аргументов не считаются', () => {
+    expect(hasWriteAction(toolUse('mcp__ide__executeCode', { code: 'print(1)' }))).toBe(false)
+    expect(hasWriteAction(toolUse('mcp__plane-pp-mcp__sql', { query: 'select 1' }))).toBe(false)
   })
 
   it('read-shaped MCP-имена не считаются', () => {
@@ -475,6 +504,39 @@ describe('#158: write-действие в транскрипте', () => {
     ]) {
       expect(hasWriteAction(toolUse(name, {}))).toBe(false)
     }
+  })
+
+  // Ревью PR #159 (MAJOR): белый список бежал по всей строке команды, а `\n`
+  // считался началом команды — тело heredoc'а или кавычки, лишь УПОМИНАЮЩИЕ
+  // «git commit», делали сессию пишущей. Семантика: цитата не команда, но
+  // настоящая мутация в той же строке ловиться обязана.
+  it('упоминание команды в кавычках и в heredoc не считается', () => {
+    expect(hasWriteAction(bash("cat > /tmp/notes.md <<'EOF'\ngit commit -m x\nEOF"))).toBe(false)
+    expect(hasWriteAction(bash('echo "инструкция: git commit -m x"'))).toBe(false)
+    expect(hasWriteAction(bash("echo 'см. gh pr merge 159'"))).toBe(false)
+    expect(hasWriteAction(bash('gh pr view 159 --json body\n# потом gh pr merge 159'))).toBe(false)
+    // Оборванный heredoc (обрезанный транскрипт) — тело всё равно не команда.
+    expect(hasWriteAction(bash("cat > f <<'EOF'\ngit commit -m x"))).toBe(false)
+    // Читающая команда, чей аргумент цитирует мутацию через перевод строки —
+    // ровно случай из ревью PR #159.
+    expect(hasWriteAction(bash('gh pr view 1 --json body -q "see:\ngit commit -m x"'))).toBe(false)
+  })
+
+  it('настоящая мутация рядом с цитатой ловится', () => {
+    expect(hasWriteAction(bash('echo "git commit" && git -C "C:/repo" push'))).toBe(true)
+    expect(hasWriteAction(bash('git -C "$W" commit -q -m "$(cat <<\'EOF\'\nfix: x\nEOF\n)"'))).toBe(
+      true,
+    )
+    // Комментарий к PR — сам по себе мутация, даже если его тело цитирует команду.
+    expect(
+      hasWriteAction(bash('gh pr comment 159 --body "$(cat <<\'EOF\'\nсм. git commit\nEOF\n)"')),
+    ).toBe(true)
+    // Настоящая команда ПОСЛЕ терминатора heredoc'а: вырезается тело, не хвост.
+    expect(
+      hasWriteAction(
+        bash("cat <<'EOF' > notes\nзаметка про gh pr merge\nEOF\ngit -C x commit -m y"),
+      ),
+    ).toBe(true)
   })
 
   it('битые строки не роняют чтение, пустой и отсутствующий транскрипт молчат', () => {

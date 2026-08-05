@@ -161,6 +161,37 @@ export const MUTATING_COMMAND_RE = new RegExp(
 )
 
 /**
+ * Убирает из строки команды всё, что КОМАНДОЙ НЕ ЯВЛЯЕТСЯ: тела heredoc'ов и
+ * содержимое кавычек.
+ *
+ * Ревью PR #159 (MAJOR): белый список бежал по всей строке, а `\n` считался
+ * началом команды — поэтому текст, лишь УПОМИНАЮЩИЙ «git commit» (тело
+ * коммит-сообщения, body PR-комментария с инструкциями), зачислял сессию в
+ * пишущие. Это тот же ложный BLOCK, ради которого заведён #158.
+ *
+ * Выбранная семантика: цитата — не команда, но настоящая мутация в той же
+ * строке ловиться обязана. Поэтому вырезается только СОДЕРЖИМОЕ, а разделители
+ * остаются: `git -C "$W" commit` → `git -C "" commit` по-прежнему совпадает, а
+ * `gh pr comment … --body "$(cat <<'EOF' … EOF)"` остаётся мутацией по своему
+ * глаголу, что бы ни лежало в теле.
+ *
+ * Порядок важен: heredoc'и первыми (их тело может нести непарные кавычки),
+ * двойные кавычки раньше одинарных (`-m "don't"`). Оборванный heredoc —
+ * обрезанный транскрипт — режется до конца строки: тело командой не было.
+ */
+export function stripNonCommandText(command) {
+  let s = String(command || '')
+  const HEREDOC_BODY_RE = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2(?![\w-])/g
+  const HEREDOC_UNTERMINATED_RE = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1([^\n]*)\n[\s\S]*$/
+  // Заменяется на ОСТАТОК строки-открывашки, а не на плейсхолдер с `<<`:
+  // плейсхолдер сам подходил под правило оборванного heredoc'а и съедал
+  // настоящую команду ПОСЛЕ терминатора (`… EOF\ngit -C x commit`).
+  s = s.replace(HEREDOC_BODY_RE, (_m, _q, _d, rest) => rest)
+  s = s.replace(HEREDOC_UNTERMINATED_RE, (_m, _q, _d, rest) => rest)
+  return s.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/'[^']*'/g, "''")
+}
+
+/**
  * Хвостовой сегмент имени MCP-инструмента: `mcp__<сервер>__<инструмент>` →
  * `<инструмент>`. Решает именно хвост, а не сервер: список серверов меняется
  * от сессии к сессии, а глагол в имени инструмента — нет.
@@ -184,7 +215,32 @@ export function mcpToolTail(name) {
  * сегмента (`^add_`, `_set$`), чтобы не ловиться внутри слов.
  */
 export const MCP_MUTATION_RE =
-  /write|create|update|delete|merge|push|edit|close|execute|import|attach|(?:^|_)add(?:$|_)|(?:^|_)set(?:$|_)/i
+  /write|create|update|delete|destroy|remove|merge|push|edit|close|import|attach|(?:^|_)add(?:$|_)|(?:^|_)set(?:$|_)/i
+
+/**
+ * ДИСПЕТЧЕРЫ: инструменты, которые исполняют ПРОИЗВОЛЬНЫЙ вызов API. Глагол в
+ * их имени не говорит ничего — через `plane_execute` идут и `states.list`, и
+ * `work-items.create`, поэтому слово «execute» в имени зачисляло в пишущие ЛЮБОЕ
+ * обращение к Plane, включая чистое чтение (ревью PR #159). Мутабельность живёт
+ * в АРГУМЕНТАХ, там её и надо смотреть; глагол `execute` из имён убран вовсе.
+ */
+export const MCP_DISPATCHER_TAILS = new Set(['plane_execute'])
+
+/**
+ * Операция диспетчера — хвост `endpoint_id` ПОСЛЕ ПОСЛЕДНЕЙ ТОЧКИ
+ * (`work-items.create` → `create`). Именно хвост, а не весь идентификатор:
+ * `issue-attachments.list` — чтение, но `attach` сидит в имени ресурса и
+ * зачислил бы его в записи.
+ */
+export const MCP_OPERATION_MUTATION_RE =
+  /create|update|patch|delete|destroy|remove|merge|archive|upload|import|(?:^|[-_])(?:add|set)(?:$|[-_])/i
+
+/** Мутирующий вызов диспетчера. Нет аргумента — нет улики → false. */
+export function isMutatingMcpDispatch(input) {
+  const id = String((input && (input.endpoint_id || input.endpointId)) || '')
+  if (!id) return false
+  return MCP_OPERATION_MUTATION_RE.test(id.slice(id.lastIndexOf('.') + 1))
+}
 
 /**
  * Инструменты браузерной автоматизации исключены из проверки выше: они ВОДЯТ
@@ -199,11 +255,12 @@ export function isWriteToolUse(name, input) {
   const tool = String(name || '')
   if (WRITE_TOOLS.has(tool) || DISPATCH_TOOLS.has(tool)) return true
   if (SHELL_TOOLS.has(tool)) {
-    return MUTATING_COMMAND_RE.test(String((input && input.command) || ''))
+    return MUTATING_COMMAND_RE.test(stripNonCommandText(input && input.command))
   }
   if (tool.startsWith('mcp__')) {
     const tail = mcpToolTail(tool)
     if (MCP_BROWSER_TAIL_RE.test(tail)) return false
+    if (MCP_DISPATCHER_TAILS.has(tail)) return isMutatingMcpDispatch(input)
     return MCP_MUTATION_RE.test(tail)
   }
   return false
