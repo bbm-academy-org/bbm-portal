@@ -113,6 +113,31 @@ function log(msg) {
   process.stdout.write(`[release-tag] ${msg}\n`)
 }
 
+/**
+ * The tag a DURABLE deploy record may honestly name for `deployedSha`, given the
+ * result of `cutDeployRelease`. Pure.
+ *
+ * The tempting shortcut — `gh release list --limit 1` at record time — names the
+ * newest tag in the REPO, which is a DIFFERENT tag whenever this run did not cut
+ * one (a redeploy, a diverged range, a failed `gh release create`). The record
+ * would then permanently assert that a sha shipped under a release it was never
+ * part of. An untagged record is recoverable; a wrong one is not — so anything
+ * short of proof yields null.
+ *
+ * @param {{ cut?: boolean, tag?: string, reason?: string, latestTag?: string|null,
+ *           latestReleaseSha?: string|null }|null} release
+ * @param {string} deployedSha
+ * @returns {string|null}
+ */
+export function releaseTagForRecord(release, deployedSha) {
+  if (!release || typeof release !== 'object') return null
+  if (release.cut && release.tag) return release.tag
+  if (release.latestTag && release.latestReleaseSha && release.latestReleaseSha === deployedSha) {
+    return release.latestTag
+  }
+  return null
+}
+
 /** Today in the `YYYY.MM.DD` shape the tag uses (UTC — one clock for all boxes). */
 function todayDateStr(now = new Date()) {
   const yyyy = now.getUTCFullYear()
@@ -139,7 +164,7 @@ export function cutDeployRelease({ targetSha, cwd = process.cwd(), now = new Dat
   try {
     if (!targetSha || !SHA_RE.test(targetSha)) {
       log(`⚠ needs an explicit target sha, got: ${targetSha ?? '(none)'} — skipping (green).`)
-      return { cut: false, reason: 'no valid target sha' }
+      return { cut: false, reason: 'no valid target sha', latestTag: null, latestReleaseSha: null }
     }
 
     // The deploy fetches origin/main but not tags — make the release tags present
@@ -152,7 +177,7 @@ export function cutDeployRelease({ targetSha, cwd = process.cwd(), now = new Dat
     const tagRes = exec('git', ['tag', '-l', 'release-*'])
     if (tagRes.status !== 0) {
       log(`⚠ \`git tag -l\` failed — skipping (green): ${(tagRes.stderr || '').trim()}`)
-      return { cut: false, reason: 'git tag -l failed' }
+      return { cut: false, reason: 'git tag -l failed', latestTag: null, latestReleaseSha: null }
     }
     const existingTags = (tagRes.stdout || '').split(/\r?\n/).filter(Boolean)
     const latestTag = latestReleaseTag(existingTags)
@@ -163,7 +188,7 @@ export function cutDeployRelease({ targetSha, cwd = process.cwd(), now = new Dat
       const shaRes = exec('git', ['rev-list', '-n', '1', latestTag])
       if (shaRes.status !== 0) {
         log(`⚠ could not resolve ${latestTag} — skipping (green): ${(shaRes.stderr || '').trim()}`)
-        return { cut: false, reason: `cannot resolve ${latestTag}` }
+        return { cut: false, reason: `cannot resolve ${latestTag}`, latestTag, latestReleaseSha: null }
       }
       latestReleaseSha = (shaRes.stdout || '').trim()
     }
@@ -184,7 +209,7 @@ export function cutDeployRelease({ targetSha, cwd = process.cwd(), now = new Dat
     })
     if (!decision.cut) {
       log(`no release cut — ${decision.reason}.`)
-      return { cut: false, reason: decision.reason }
+      return { cut: false, reason: decision.reason, latestTag, latestReleaseSha }
     }
 
     const tag = nextReleaseTag(existingTags, todayDateStr(now))
@@ -202,13 +227,13 @@ export function cutDeployRelease({ targetSha, cwd = process.cwd(), now = new Dat
     ])
     if (rel.status !== 0) {
       log(`⚠ \`gh release create ${tag}\` failed — skipping (green): ${(rel.stderr || '').trim()}`)
-      return { cut: false, reason: 'gh release create failed' }
+      return { cut: false, reason: 'gh release create failed', latestTag, latestReleaseSha }
     }
     log(`cut release ${tag} at ${targetSha.slice(0, 12)} (${decision.reason}).`)
-    return { cut: true, tag, reason: decision.reason }
+    return { cut: true, tag, reason: decision.reason, latestTag, latestReleaseSha }
   } catch (e) {
     // Belt and braces: never fail a deploy that already succeeded.
     log(`⚠ unexpected error, skipping (green): ${e?.message ?? String(e)}`)
-    return { cut: false, reason: 'unexpected error' }
+    return { cut: false, reason: 'unexpected error', latestTag: null, latestReleaseSha: null }
   }
 }

@@ -59,21 +59,32 @@ returns the pipe's exit code and turns a red deploy green. Use
 The pipeline, in order — it is fail-closed and stops at the first red step,
 printing a rollback pointer:
 
-| Stage      | What it does                                                                                      | Refuses when                                        |
-| ---------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| pre-flight | clean tree · target = `origin/main` sha · green CI for that sha                                   | dirty tree · red or still-running CI · no CI at all |
-| ship       | `git archive <sha>` → ssh → `rm -rf src && tar -xz`                                               | ssh/tar non-zero                                    |
-| stack      | build `app`+`migrate` → migrate → `up -d`                                                         | any compose step non-zero                           |
-| caddy      | compares the shipped `Caddyfile` with the running bind mount, restarts only if stale, re-compares | still stale after the restart                       |
-| verify     | polls until `bbm-portal-app-1` runs `bbm-portal-app:<sha>`                                        | the container carries any other image               |
-| retention  | keeps the last 3 sha-tagged app images                                                            | —                                                   |
-| smoke      | `deploy:smoke --expect-sha` over BOTH vhosts                                                      | any check red                                       |
-| release    | cuts `release-YYYY.MM.DD-<n>` at the deployed sha                                                 | non-fatal — warns only                              |
-| record     | GitHub `Deployment(production, sha)` + `success`                                                  | non-fatal — warns only                              |
+| Stage                                                             | What it does                                                                                      | Refuses when                                        |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| pre-flight                                                        | clean tree · target = `origin/main` sha · green CI for that sha                                   | dirty tree · red or still-running CI · no CI at all |
+| ship                                                              | `git archive <sha>` → ssh → `rm -rf src && tar -xz`                                               | ssh/tar non-zero                                    |
+| stack                                                             | build `app`+`migrate` → migrate → `up -d`                                                         | any compose step non-zero                           |
+| caddy                                                             | compares the shipped `Caddyfile` with the running bind mount, restarts only if stale, re-compares | still stale after the restart                       |
+| verify                                                            | polls until `bbm-portal-app-1` runs `bbm-portal-app:<sha>`                                        | the container carries any other image               |
+| smoke                                                             | `deploy:smoke --expect-sha` over BOTH vhosts, settling up to 90 s                                 | any check still red at the end of the budget        |
+| _below here prod is proven serving — nothing may fail the deploy_ |                                                                                                   |                                                     |
+| release                                                           | cuts `release-YYYY.MM.DD-<n>` at the deployed sha                                                 | non-fatal — warns only                              |
+| record                                                            | GitHub `Deployment(production, sha)` + `success`                                                  | non-fatal — warns only                              |
+| retention                                                         | keeps the last 3 sha-tagged app images                                                            | non-fatal — warns only                              |
 
-The last two are **non-fatal by contract**: they run after prod is already
-serving the new code, so a `gh` hiccup warns and the deploy exit code stays 0.
-Never read such a warning as a failed deploy.
+The split is **positional**: everything before the smoke can still leave prod in
+a state nobody described; everything after it cannot, so it is non-fatal by
+contract — a `gh`/host hiccup warns and the deploy exit code stays 0. Never read
+such a warning as a failed deploy. Retention is the case that forced the rule:
+image housekeeping (a host without `grep -P`, a `pipefail` exit from a filter
+that matched nothing) once printed DEPLOY FAILED — with a rollback pointer — for
+a deploy that was already serving correctly, and cost the smoke, the tag, the
+record and the digest with it.
+
+The smoke **settles**: `app` has no compose healthcheck, so `verify` can only
+prove the container is RUNNING, not that Next.js has finished booting behind
+Caddy. The smoke re-probes the still-red checks for up to 90 s before calling a
+deploy red. A genuinely broken deploy still goes red — a minute later.
 
 **A deploy cannot hang silently.** Every ssh channel carries keepalives (a dead
 half-open connection exits loudly in ~60s) and each streamed step runs under a
@@ -94,6 +105,9 @@ state-changing commands at a box you cannot observe.
 - `curl -s https://cms.bbm.academy/api/health | jq -r .sha` == the deployed sha.
   The smoke already asserted this on both vhosts; this is the over-HTTP re-check
   you can paste to the owner.
+- The Deployment record carries the previously-deployed sha in its payload
+  (`previousSha`) — that is the value to hand `--rollback` if this release turns
+  out bad, without reading image tags off the box.
 - The Deployment record's `success` status fires
   `.github/workflows/release-digest.yml`, which posts the aggregated Russian
   product digest to Mattermost. **Read the posted message, not the HTTP 200.**
@@ -110,6 +124,11 @@ pnpm deploy:prod --rollback <sha>   # up -d a retained image; NO rebuild, NO mig
 The target image must still be on the box (retention keeps the last 3). If it
 has been pruned, roll **forward** instead: get the good commit onto
 `origin/main` and run `pnpm deploy:prod`.
+
+A rollback **records its own GitHub Deployment**, untagged — it ships no new
+code, and `release-*` means "what shipped". Without that record GitHub would keep
+asserting the sha you just took off the box, and the next session would read the
+broken build as "deployed".
 
 An app rollback is only safe while the previous code still runs against the
 current schema — which is exactly what the expand/contract canon buys. After a

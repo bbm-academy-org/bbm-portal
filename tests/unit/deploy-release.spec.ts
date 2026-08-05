@@ -5,6 +5,7 @@ import {
   latestReleaseTag,
   nextReleaseTag,
   parseReleaseTag,
+  releaseTagForRecord,
   shouldCutRelease,
 } from '../../tools/deploy/release-tag.mjs'
 import {
@@ -145,6 +146,40 @@ describe('shouldCutRelease', () => {
   })
 })
 
+describe('releaseTagForRecord', () => {
+  // The durable record must name the tag that belongs to the sha it records.
+  // Re-deriving it with `gh release list --limit 1` names the newest tag in the
+  // repo, which is a DIFFERENT tag whenever this run did not cut one.
+  it('is the tag this run just cut', () => {
+    expect(releaseTagForRecord({ cut: true, tag: 'release-2026.08.05-1' }, 'abc1234')).toBe(
+      'release-2026.08.05-1',
+    )
+  })
+
+  it('is the existing tag when it resolves to exactly this deployed sha', () => {
+    expect(
+      releaseTagForRecord(
+        { cut: false, latestTag: 'release-2026.08.04-2', latestReleaseSha: 'abc1234' },
+        'abc1234',
+      ),
+    ).toBe('release-2026.08.04-2')
+  })
+
+  it('is NULL when the newest tag belongs to some other sha — untagged beats wrong', () => {
+    expect(
+      releaseTagForRecord(
+        { cut: false, latestTag: 'release-2026.08.04-2', latestReleaseSha: 'deadbee' },
+        'abc1234',
+      ),
+    ).toBeNull()
+  })
+
+  it('is null for a missing or failed release result', () => {
+    expect(releaseTagForRecord(null, 'abc1234')).toBeNull()
+    expect(releaseTagForRecord({ cut: false, reason: 'git tag -l failed' }, 'abc1234')).toBeNull()
+  })
+})
+
 describe('cutDeployRelease — I/O seam (injected runner, never shells out)', () => {
   const sha = 'f'.repeat(40)
 
@@ -218,6 +253,7 @@ describe('cutDeployRelease — I/O seam (injected runner, never shells out)', ()
 describe('buildDeploymentPayload', () => {
   const base = {
     sha: 'a'.repeat(40),
+    previousSha: 'e'.repeat(40),
     releaseTag: 'release-2026.08.05-1',
     healthUrl: 'https://cms.bbm.academy/api/health',
     nowIso: '2026-08-05T12:00:00.000Z',
@@ -234,6 +270,9 @@ describe('buildDeploymentPayload', () => {
         releaseTag: 'release-2026.08.05-1',
         notes: 'Что вошло: часы.',
         deployedAt: base.nowIso,
+        // The rollback pointer: what this deploy REPLACED. Without it a later
+        // reader knows what is live but not what to roll back to.
+        previousSha: base.previousSha,
       },
     })
     expect(deployment.description).toBe(`release release-2026.08.05-1 @ ${'a'.repeat(12)}`)
@@ -253,6 +292,11 @@ describe('buildDeploymentPayload', () => {
     expect(buildDeploymentPayload({ ...base, notesText: '' }).status.description).toBe(
       'release release-2026.08.05-1',
     )
+  })
+
+  it('records a null previousSha on a first deploy rather than inventing one', () => {
+    const { deployment } = buildDeploymentPayload({ ...base, previousSha: null, notesText: '' })
+    expect(deployment.payload.previousSha).toBeNull()
   })
 
   it('records an untagged deploy rather than failing', () => {

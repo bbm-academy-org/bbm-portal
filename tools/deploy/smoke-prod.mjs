@@ -42,7 +42,27 @@ export const CMS_ORIGIN = 'https://cms.bbm.academy'
 export const PORTAL_ORIGIN = 'https://portal.bbm.academy'
 export const HEALTH_PATH = '/api/health'
 
-/** `--expect-sha <sha>` / `--dry-run` / `--timeout-ms <n>`. Pure. */
+/** Fixed gap between settle attempts. */
+export const SETTLE_INTERVAL_MS = 5000
+
+/**
+ * Turn a settle BUDGET into attempts + a fixed delay. Pure.
+ *
+ * Why a settle window exists at all: the `app` compose service has no
+ * healthcheck, so the pipeline can only prove `State.Status == running` before
+ * smoking. Between that and the first HTTP probe, Next.js may still be booting
+ * and Caddy may still be holding the old upstream — a single-shot smoke
+ * false-reds a deploy that is in fact fine, and the run where that would be
+ * least welcome is the owner's inaugural one. The budget is bounded, so a
+ * genuinely broken deploy still goes red, just a minute later.
+ */
+export function planSettle(settleMs) {
+  const budget = Number(settleMs)
+  if (!Number.isFinite(budget) || budget <= 0) return { attempts: 1, delayMs: 0 }
+  return { attempts: Math.floor(budget / SETTLE_INTERVAL_MS) + 1, delayMs: SETTLE_INTERVAL_MS }
+}
+
+/** `--expect-sha <sha>` / `--dry-run` / `--timeout-ms <n>` / `--settle-ms <n>`. Pure. */
 export function parseSmokeArgs(argv) {
   const args = Array.isArray(argv) ? argv : []
   const valueOf = (flag) => {
@@ -55,15 +75,20 @@ export function parseSmokeArgs(argv) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return { error: `--timeout-ms must be a positive number, got ${JSON.stringify(timeoutRaw)}` }
   }
+  const settleRaw = valueOf('--settle-ms')
+  const settleMs = settleRaw === undefined ? 0 : Number(settleRaw)
+  if (!Number.isFinite(settleMs) || settleMs < 0) {
+    return { error: `--settle-ms must be a non-negative number, got ${JSON.stringify(settleRaw)}` }
+  }
 
-  if (!args.includes('--expect-sha')) return { expectSha: null, dryRun, timeoutMs }
+  if (!args.includes('--expect-sha')) return { expectSha: null, dryRun, timeoutMs, settleMs }
   const expectSha = valueOf('--expect-sha')
   if (!expectSha || !SHA_RE.test(expectSha)) {
     return {
       error: `--expect-sha needs a git sha (7–40 hex chars), got ${JSON.stringify(expectSha ?? null)}`,
     }
   }
-  return { expectSha: expectSha.toLowerCase(), dryRun, timeoutMs }
+  return { expectSha: expectSha.toLowerCase(), dryRun, timeoutMs, settleMs }
 }
 
 /**
@@ -217,18 +242,51 @@ function httpFetcher(timeoutMs) {
   }
 }
 
+const defaultSleep = (ms) => new Promise((res) => setTimeout(res, ms))
+
 /**
- * Run every check (no early exit) and aggregate. `fetcher` is injectable so the
- * whole matrix is unit-testable offline.
+ * Run every check (no early exit within a sweep) and aggregate, optionally
+ * re-probing the still-red checks until they settle or the budget runs out.
+ *
+ * Two properties matter and are both tested: a sweep never short-circuits on the
+ * first failure (the operator sees the whole picture, not a sliver), and a retry
+ * only re-probes what is still red (a passing check is not re-asked, so the log
+ * stays readable and a flaky pass cannot be un-passed).
+ *
+ * `fetcher` and `sleep` are injectable so the whole matrix — including the
+ * settle behaviour — is unit-testable offline and instantly.
+ *
+ * @param {{ expectSha?: string|null,
+ *           fetcher?: (url: string) => Promise<{ status?: number, body?: string, error?: string }>,
+ *           timeoutMs?: number, attempts?: number, delayMs?: number,
+ *           sleep?: (ms: number) => Promise<unknown>,
+ *           onRetry?: (attempt: number, redCount: number) => void }} [opts]
  */
-export async function runSmoke({ expectSha, fetcher, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+export async function runSmoke({
+  expectSha,
+  fetcher,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  attempts = 1,
+  delayMs = 0,
+  sleep = defaultSleep,
+  onRetry,
+} = {}) {
   const get = fetcher || httpFetcher(timeoutMs)
   const checks = buildChecks({ expectSha })
-  const results = []
-  for (const check of checks) {
-    results.push(evaluateCheck(check, await get(check.url)))
+  const results = new Array(checks.length).fill(null)
+  const total = Math.max(1, attempts)
+
+  let attempt = 0
+  for (attempt = 1; attempt <= total; attempt++) {
+    for (let i = 0; i < checks.length; i++) {
+      if (results[i] && results[i].ok) continue
+      results[i] = evaluateCheck(checks[i], await get(checks[i].url))
+    }
+    if (results.every((r) => r.ok) || attempt === total) break
+    if (onRetry) onRetry(attempt, results.filter((r) => !r.ok).length)
+    await sleep(delayMs)
   }
-  return { ...summarize(results), results }
+  return { ...summarize(results), results, attempts: attempt }
 }
 
 function log(msg) {
@@ -253,10 +311,19 @@ async function main() {
     return
   }
 
+  const { attempts, delayMs } = planSettle(parsed.settleMs)
   log(
-    `[deploy:smoke] ${parsed.expectSha ? `expecting sha ${parsed.expectSha.slice(0, 12)}` : 'liveness only'} …`,
+    `[deploy:smoke] ${parsed.expectSha ? `expecting sha ${parsed.expectSha.slice(0, 12)}` : 'liveness only'}` +
+      `${attempts > 1 ? ` (settling up to ${Math.round(parsed.settleMs / 1000)}s)` : ''} …`,
   )
-  const res = await runSmoke({ expectSha: parsed.expectSha, timeoutMs: parsed.timeoutMs })
+  const res = await runSmoke({
+    expectSha: parsed.expectSha,
+    timeoutMs: parsed.timeoutMs,
+    attempts,
+    delayMs,
+    onRetry: (attempt, redCount) =>
+      log(`  … ${redCount} check(s) still red after attempt ${attempt}/${attempts} — retrying`),
+  })
   for (const line of res.results) log(formatResultLine(line))
   if (!res.ok) {
     process.stderr.write(`[deploy:smoke] RED — ${res.failed}/${res.total} check(s) failed\n`)

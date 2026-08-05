@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   DEPLOY_STAGES,
   IMAGE_RETENTION,
+  NON_FATAL_STAGES,
   buildDeployScript,
   buildRetentionScript,
   buildShipCommand,
@@ -295,11 +296,44 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
       'deployStack',
       'applyCaddy',
       'verifyRunningSha',
-      'prune',
       'smoke',
       'cutRelease',
       'recordDeployment',
+      'prune',
     ])
+  })
+
+  it('prunes AFTER the smoke — destructive housekeeping never precedes the proof', async () => {
+    const { steps, order } = stubs()
+    await runDeploy(steps)
+    expect(order.indexOf('smoke')).toBeLessThan(order.indexOf('prune'))
+  })
+
+  it.each(NON_FATAL_STAGES)(
+    'a failing `%s` does NOT fail a deploy already serving',
+    async (stage) => {
+      // Everything after the smoke runs when prod is already verified serving the
+      // new image. Image retention in particular is housekeeping: a host without
+      // `grep -P`, or a pipefail exit from a filter that matched nothing, must
+      // never print DEPLOY FAILED for a deploy that succeeded.
+      const { steps } = stubs({
+        [stage]: vi.fn(async () => {
+          throw new Error(`${stage} blew up`)
+        }),
+      })
+      await expect(runDeploy(steps)).resolves.toMatchObject({ sha: SHA })
+    },
+  )
+
+  it('a failing cutRelease still lets the Deployment record (and the digest) happen', async () => {
+    const { steps } = stubs({
+      cutRelease: vi.fn(async () => {
+        throw new Error('gh release create 403')
+      }),
+    })
+    await runDeploy(steps)
+    expect(steps.recordDeployment).toHaveBeenCalled()
+    expect(steps.prune).toHaveBeenCalled()
   })
 
   it('DEPLOY_STAGES is that same order — the doc and the code cannot drift', () => {
@@ -329,8 +363,8 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
       }),
     })
     await expect(runDeploy(steps)).rejects.toThrow(/deployed sha/)
-    expect(steps.prune).not.toHaveBeenCalled()
     expect(steps.smoke).not.toHaveBeenCalled()
+    expect(steps.prune).not.toHaveBeenCalled()
     expect(steps.cutRelease).not.toHaveBeenCalled()
     expect(steps.recordDeployment).not.toHaveBeenCalled()
   })
@@ -346,10 +380,27 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
     expect(steps.deployStack).not.toHaveBeenCalled()
   })
 
-  it('passes the previously-deployed sha to the record, for the digest range', async () => {
-    const { steps } = stubs()
+  it('threads the previous sha AND the actual release result into the record', async () => {
+    // `readPrevSha` was dead code while the record re-derived everything itself.
+    // The previous sha is the rollback pointer a later reader needs, and the
+    // release comes from the cut that just ran — not from a fresh `gh release
+    // list`, which names the wrong tag whenever the cut was skipped.
+    const release = { cut: true, tag: 'release-2026.08.05-1', reason: 'x' }
+    const { steps } = stubs({ cutRelease: vi.fn(async () => release) })
     await runDeploy(steps)
-    expect(steps.recordDeployment).toHaveBeenCalledWith(OTHER, SHA)
+    expect(steps.recordDeployment).toHaveBeenCalledWith({ prevSha: OTHER, sha: SHA, release })
+  })
+
+  it('records even when the release cut returned nothing to record', async () => {
+    const { steps } = stubs({
+      cutRelease: vi.fn(async () => ({ cut: false, reason: 'empty range' })),
+    })
+    await runDeploy(steps)
+    expect(steps.recordDeployment).toHaveBeenCalledWith({
+      prevSha: OTHER,
+      sha: SHA,
+      release: { cut: false, reason: 'empty range' },
+    })
   })
 })
 

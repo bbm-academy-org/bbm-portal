@@ -5,6 +5,7 @@ import {
   evaluateCheck,
   formatResultLine,
   parseSmokeArgs,
+  planSettle,
   runSmoke,
   summarize,
 } from '../../tools/deploy/smoke-prod.mjs'
@@ -47,6 +48,26 @@ describe('parseSmokeArgs', () => {
     const parsed = parseSmokeArgs([])
     expect(parsed.error).toBeUndefined()
     expect(parsed.expectSha).toBeNull()
+  })
+
+  it('reads --settle-ms, and defaults to a single pass', () => {
+    expect(parseSmokeArgs([]).settleMs).toBe(0)
+    expect(parseSmokeArgs(['--settle-ms', '90000']).settleMs).toBe(90000)
+    expect(parseSmokeArgs(['--settle-ms', 'soon']).error).toMatch(/settle/i)
+    expect(parseSmokeArgs(['--settle-ms', '-1']).error).toMatch(/settle/i)
+  })
+})
+
+describe('planSettle', () => {
+  it('turns a settle budget into attempts + a fixed delay', () => {
+    expect(planSettle(0)).toEqual({ attempts: 1, delayMs: 0 })
+    expect(planSettle(90000)).toMatchObject({ attempts: 19 })
+    expect(planSettle(90000).delayMs).toBe(5000)
+  })
+
+  it('never yields fewer than one attempt', () => {
+    expect(planSettle(1).attempts).toBeGreaterThanOrEqual(1)
+    expect(planSettle(-5).attempts).toBe(1)
   })
 })
 
@@ -192,6 +213,78 @@ describe('runSmoke — the whole matrix over an injected fetcher', () => {
     expect(res.results.filter((r) => !r.ok).map((r) => r.url)).toEqual([
       'https://portal.bbm.academy/api/health',
     ])
+  })
+
+  it('SETTLES: an app that has not swapped yet on the first probe still passes', async () => {
+    // `app` has no compose healthcheck, so the pipeline can only prove
+    // `State.Status == running` before smoking. Between that and the first
+    // HTTP probe, Next.js may still be booting and Caddy may still hold the old
+    // upstream — a single-shot smoke false-reds a deploy that is fine. The
+    // owner's inaugural run is exactly when that would be least welcome.
+    let call = 0
+    const fetcher = async (url: string) => {
+      if (url.endsWith('/api/health')) {
+        call += 1
+        // Both health URLs fail on the first sweep, then report the new sha.
+        return call <= 2 ? { status: 502, body: 'Bad Gateway' } : { status: 200, body: healthBody }
+      }
+      const hit = (greenTable as Record<string, { status: number; body?: string }>)[url]
+      return hit ? { status: hit.status, body: hit.body ?? '' } : { error: `no route for ${url}` }
+    }
+    const slept: number[] = []
+    const res = await runSmoke({
+      expectSha: SHA,
+      fetcher,
+      attempts: 3,
+      delayMs: 5000,
+      sleep: async (ms: number) => {
+        slept.push(ms)
+      },
+    })
+    expect(res.ok).toBe(true)
+    expect(slept).toEqual([5000])
+  })
+
+  it('only RE-probes the checks that are still red', async () => {
+    const seen: string[] = []
+    let call = 0
+    const fetcher = async (url: string) => {
+      seen.push(url)
+      if (url === 'https://cms.bbm.academy/api/health') {
+        call += 1
+        return call === 1
+          ? { status: 200, body: JSON.stringify({ sha: 'c'.repeat(40) }) }
+          : { status: 200, body: healthBody }
+      }
+      const hit = (greenTable as Record<string, { status: number; body?: string }>)[url]
+      return hit ? { status: hit.status, body: hit.body ?? '' } : { error: `no route for ${url}` }
+    }
+    const res = await runSmoke({
+      expectSha: SHA,
+      fetcher,
+      attempts: 2,
+      delayMs: 1,
+      sleep: async () => {},
+    })
+    expect(res.ok).toBe(true)
+    // 6 on the first sweep, then ONLY the one that was red.
+    expect(seen).toHaveLength(7)
+    expect(seen[6]).toBe('https://cms.bbm.academy/api/health')
+  })
+
+  it('still gives up: a permanently red check exhausts the budget and reports RED', async () => {
+    const slept: number[] = []
+    const res = await runSmoke({
+      expectSha: SHA,
+      fetcher: fetcher({}),
+      attempts: 3,
+      delayMs: 10,
+      sleep: async (ms: number) => {
+        slept.push(ms)
+      },
+    })
+    expect(res.ok).toBe(false)
+    expect(slept).toHaveLength(2) // between the 3 attempts, not after the last
   })
 
   it('runs EVERY check even after one fails — the operator sees the whole picture', async () => {

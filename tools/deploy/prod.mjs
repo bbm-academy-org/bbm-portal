@@ -23,10 +23,11 @@
 //   caddy       compare the running bind mount with the shipped Caddyfile,
 //               restart only if stale, then re-compare
 //   verify      the RUNNING container carries bbm-portal-app:<sha>
-//   retention   keep the last 3 sha-tagged app images (never the :local tag)
 //   smoke       deploy:smoke --expect-sha <sha>          (both vhosts, over HTTPS)
+//   ---- everything below is NON-FATAL: prod is proven serving by here ----
 //   release     cut release-YYYY.MM.DD-<n> at the deployed sha
 //   record      GitHub Deployment(production, sha) + success  → fires the digest
+//   retention   keep the last 3 sha-tagged app images (never the :local tag)
 //
 // FAIL-CLOSED. It refuses a dirty tree, a sha whose CI is red or still running,
 // and a box whose running container does not carry the deployed image. It stops
@@ -34,6 +35,15 @@
 // hand", and it never cuts a release or records a Deployment for a deploy that
 // did not pass its own gates. Idempotent: archive overwrite, `up -d`, and
 // Payload's `migrate` are all no-ops when already current.
+//
+// The fatal/non-fatal split is POSITIONAL: everything before the smoke can still
+// leave prod in a state nobody described, everything after it cannot. Retention
+// is the case that forced the rule — housekeeping whose failure once printed
+// DEPLOY FAILED for a deploy that was already serving correctly.
+//
+// `--rollback` records its own GitHub Deployment (no release tag): a rollback
+// changes what is deployed, so leaving the record asserting the sha we just
+// took off the box would make every later reader wrong.
 //
 // Every decision lives in a pure exported seam; the pipeline itself is an
 // ordered list of injected steps, so the abort behaviour is unit-tested without
@@ -48,7 +58,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createDeploymentRecord } from './deployment-record.mjs'
-import { cutDeployRelease } from './release-tag.mjs'
+import { cutDeployRelease, releaseTagForRecord } from './release-tag.mjs'
 
 // ── configuration ────────────────────────────────────────────────────────────
 
@@ -63,6 +73,14 @@ const APP_IMAGE_REPO = 'bbm-portal-app'
 /** Sha-tagged app images kept on the box — the fast rollback path. */
 export const IMAGE_RETENTION = 3
 
+/**
+ * How long the smoke may keep re-probing before calling a deploy red. The `app`
+ * service has no healthcheck, so nothing upstream can prove readiness — only
+ * liveness. Bounded on purpose: this buys a booting app a minute, not a broken
+ * one an alibi.
+ */
+export const SMOKE_SETTLE_MS = 90000
+
 /** The health URL the Deployment record points its `log_url` at. */
 export const PROD_HEALTH_URL = 'https://cms.bbm.academy/api/health'
 
@@ -74,11 +92,27 @@ export const DEPLOY_STAGES = [
   'deployStack',
   'applyCaddy',
   'verifyRunningSha',
-  'prune',
   'smoke',
   'cutRelease',
   'recordDeployment',
+  'prune',
 ]
+
+/**
+ * The stages that run AFTER prod is verified serving the new image, and are
+ * therefore non-fatal by contract: a failure warns and the deploy exit code
+ * stays 0.
+ *
+ * The invariant is deliberately positional — "everything after the smoke is
+ * non-fatal" — rather than a per-stage judgment call. `prune` was the stage that
+ * proved why: image retention is pure housekeeping (a host without `grep -P`, or
+ * a `pipefail` exit from a filter that matched nothing) yet, sitting between the
+ * verify and the smoke, its failure printed DEPLOY FAILED with a rollback
+ * pointer for a deploy that was already serving correctly — and cost the smoke,
+ * the release tag, the Deployment record and the digest with it. It now runs
+ * last: destructive housekeeping never precedes the proof.
+ */
+export const NON_FATAL_STAGES = ['cutRelease', 'recordDeployment', 'prune']
 
 const SHA_RE = /^[0-9a-f]{7,40}$/i
 
@@ -510,6 +544,26 @@ function fetchCheckRuns(sha) {
     .map((l) => JSON.parse(l))
 }
 
+/**
+ * The currently-deployed sha, read off the RUNNING container's image tag — the
+ * box is its own deploy record, there is no marker file. Never throws: a missing
+ * answer only costs the digest range and the record's rollback pointer, and
+ * neither is worth blocking a deploy over.
+ */
+async function readDeployedSha() {
+  try {
+    const img = await sshCapture(
+      PROD_SSH,
+      `docker inspect ${APP_CONTAINER} --format '{{.Config.Image}}' 2>/dev/null || echo absent`,
+    )
+    const m = img.trim().match(new RegExp(`^${APP_IMAGE_REPO}:([0-9a-f]{7,40})$`, 'i'))
+    return m ? m[1] : null
+  } catch (e) {
+    console.log(`  ⚠ could not read the deployed sha (${e.message}).`)
+    return null
+  }
+}
+
 // ── the pipeline ─────────────────────────────────────────────────────────────
 
 /**
@@ -518,17 +572,33 @@ function fetchCheckRuns(sha) {
  * and no Deployment record — is unit-tested without a VPS.
  */
 export async function runDeploy(steps) {
+  const warn = steps.log ?? ((m) => console.log(m))
+  const nonFatal = async (label, fn) => {
+    try {
+      return await fn()
+    } catch (e) {
+      warn(
+        `  ⚠ ${label} failed AFTER a verified-serving deploy — NOT failing the deploy: ` +
+          `${e?.message ?? String(e)}`,
+      )
+      return null
+    }
+  }
+
+  // ── fatal: anything here can still leave prod in a state nobody described ──
   const sha = await steps.preflight()
   const prevSha = await steps.readPrevSha()
   await steps.ship(sha)
   await steps.deployStack(sha)
   await steps.applyCaddy()
   await steps.verifyRunningSha(sha)
-  await steps.prune()
   await steps.smoke(sha)
-  await steps.cutRelease(sha)
-  await steps.recordDeployment(prevSha, sha)
-  return { sha, prevSha }
+
+  // ── non-fatal: prod is proven serving; nothing below may fail the deploy ──
+  const release = await nonFatal('cutRelease', () => steps.cutRelease(sha))
+  await nonFatal('recordDeployment', () => steps.recordDeployment({ prevSha, sha, release }))
+  await nonFatal('prune', () => steps.prune())
+  return { sha, prevSha, release }
 }
 
 /** Spawn the smoke as its own process, so `pnpm deploy:smoke` and the pipeline
@@ -537,7 +607,16 @@ function runSmokeProcess(sha) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(
       process.execPath,
-      [join(import.meta.dirname, 'smoke-prod.mjs'), '--expect-sha', sha],
+      [
+        join(import.meta.dirname, 'smoke-prod.mjs'),
+        '--expect-sha',
+        sha,
+        // `app` has no compose healthcheck, so `verifyRunningSha` can only prove
+        // the container is RUNNING — Next.js may still be booting behind it.
+        // Bounded settle window: a real failure still goes red, just later.
+        '--settle-ms',
+        String(SMOKE_SETTLE_MS),
+      ],
       { stdio: 'inherit' },
     )
     child.on('error', reject)
@@ -578,19 +657,9 @@ function productionSteps() {
     // its own deploy record, no marker file. Non-fatal: the digest range is the
     // only consumer, and a missing anchor must never block a deploy.
     async readPrevSha() {
-      try {
-        const img = await sshCapture(
-          PROD_SSH,
-          `docker inspect ${APP_CONTAINER} --format '{{.Config.Image}}' 2>/dev/null || echo absent`,
-        )
-        const m = img.trim().match(new RegExp(`^${APP_IMAGE_REPO}:([0-9a-f]{7,40})$`, 'i'))
-        const prev = m ? m[1] : null
-        console.log(`  ↩ previously deployed: ${prev ? prev.slice(0, 12) : 'none / untagged'}`)
-        return prev
-      } catch (e) {
-        console.log(`  ⚠ could not read the previous sha (${e.message}) — digest range disabled.`)
-        return null
-      }
+      const prev = await readDeployedSha()
+      console.log(`  ↩ previously deployed: ${prev ? prev.slice(0, 12) : 'none / untagged'}`)
+      return prev
     },
 
     async ship(sha) {
@@ -665,19 +734,19 @@ function productionSteps() {
       return res
     },
 
-    async recordDeployment(prevSha, sha) {
+    // The release tag comes from the cut that JUST ran, not from a fresh
+    // `gh release list --limit 1`: that names the newest tag in the repo, which
+    // is a different tag whenever this run did not cut one — and a durable
+    // record asserting the wrong release is worse than an untagged one.
+    async recordDeployment({ prevSha, sha, release }) {
       step('Record the deploy as a GitHub Deployment (this fires the digest)')
-      let releaseTag = null
-      try {
-        const arr = JSON.parse(
-          localCap('gh', ['release', 'list', '--limit', '1', '--json', 'tagName']) || '[]',
-        )
-        releaseTag = arr?.[0]?.tagName ?? null
-      } catch (e) {
-        console.log(`  ⚠ could not resolve the latest release tag (recording untagged): ${e.message}`)
+      const releaseTag = releaseTagForRecord(release, sha)
+      if (release && !release.cut && releaseTag === null) {
+        console.log(`  ↷ recording untagged (no release covers this sha: ${release.reason})`)
       }
       const res = createDeploymentRecord({
         sha,
+        previousSha: prevSha,
         releaseTag,
         // The digest text itself is composed in CI from the deployment event
         // (tools/ci/post-release-digest.mjs) — the workstation has no webhook.
@@ -700,10 +769,13 @@ async function dryRun() {
   console.log(`\n[deployStack]\n${buildDeployScript(sha)}`)
   console.log(`[applyCaddy]\n${buildCaddyComparisonScript()}`)
   console.log(`[verifyRunningSha]\n${buildVerifyScript(sha)}`)
-  console.log(`\n[prune]\n${buildRetentionScript()}`)
-  console.log(`[smoke] node tools/deploy/smoke-prod.mjs --expect-sha ${sha}`)
+  console.log(
+    `[smoke] node tools/deploy/smoke-prod.mjs --expect-sha ${sha} --settle-ms ${SMOKE_SETTLE_MS}`,
+  )
+  console.log('\n-- everything below is NON-FATAL (prod is proven serving by here) --')
   console.log('[cutRelease] release-YYYY.MM.DD-<n> at the deployed sha')
   console.log('[recordDeployment] gh api POST repos/{owner}/{repo}/deployments (+ success status)')
+  console.log(`\n[prune]\n${buildRetentionScript()}`)
   console.log('\n✓ dry run complete — the pre-flight gates above are the real ones.')
 }
 
@@ -719,6 +791,9 @@ async function rollback(shaArg) {
   }
 
   step(`App-only rollback → ${APP_IMAGE_REPO}:${sha.slice(0, 12)}`)
+  // Read what is live BEFORE we replace it: this becomes the rollback's own
+  // `previousSha`, i.e. the sha someone would roll FORWARD to.
+  const replacedSha = await readDeployedSha()
   const present = await sshCapture(
     PROD_SSH,
     `if docker image inspect ${APP_IMAGE_REPO}:${sha} >/dev/null 2>&1; then echo PRESENT; else echo MISSING; fi`,
@@ -748,6 +823,30 @@ ${COMPOSE} up -d app
 
   step('Prod smoke (--expect-sha)')
   await runSmokeProcess(sha)
+
+  // A rollback CHANGES what is deployed, so it must change the durable record
+  // too — otherwise GitHub keeps asserting the sha we just took off the box,
+  // and the next session reads "deployed: <the broken build>". No release is
+  // cut: a rollback ships no new code, and `release-*` means "what shipped".
+  // The record is non-fatal here for the same reason as in the deploy path —
+  // the box is already back on the good image before this runs.
+  step('Record the rollback as a GitHub Deployment')
+  try {
+    const res = createDeploymentRecord({
+      sha,
+      previousSha: replacedSha,
+      // Deliberately untagged: the tag that covers this sha belongs to its
+      // original deploy, and re-asserting it here would claim a fresh release.
+      releaseTag: null,
+      notesText: `rollback from ${replacedSha ? replacedSha.slice(0, 12) : 'unknown'}`,
+      healthUrl: PROD_HEALTH_URL,
+      cwd: process.cwd(),
+    })
+    if (res.ok) ok(`GitHub Deployment recorded (#${res.deploymentId})`)
+    else console.log(`  ⚠ could not record the rollback (it already succeeded): ${res.error}`)
+  } catch (e) {
+    console.log(`  ⚠ could not record the rollback (it already succeeded): ${e?.message ?? e}`)
+  }
 
   console.log(
     `\n✓ ROLLBACK OK — the app is back on ${sha.slice(0, 12)}.` +

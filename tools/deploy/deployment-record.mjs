@@ -62,12 +62,21 @@ function firstNonEmptyLine(text) {
  *
  * @param {object}      args
  * @param {string}      args.sha         deployed commit sha (the Deployment `ref`)
+ * @param {string|null} args.previousSha  what this deploy REPLACED — the rollback
+ *                                        pointer a later reader needs
  * @param {string|null} args.releaseTag  release tag shipped, or null (untagged)
  * @param {string|null} args.notesText   aggregated release-notes digest, or null/''
  * @param {string}      args.healthUrl   prod health URL (the status `log_url`)
  * @param {string}      args.nowIso      caller-injected ISO deploy timestamp
  */
-export function buildDeploymentPayload({ sha, releaseTag, notesText, healthUrl, nowIso }) {
+export function buildDeploymentPayload({
+  sha,
+  previousSha = null,
+  releaseTag,
+  notesText,
+  healthUrl,
+  nowIso,
+}) {
   const shortSha = typeof sha === 'string' ? sha.slice(0, SHORT) : ''
   const tagLabel = releaseTag ?? '(untagged)'
   const notes = notesText ?? ''
@@ -84,6 +93,10 @@ export function buildDeploymentPayload({ sha, releaseTag, notesText, healthUrl, 
         releaseTag: releaseTag ?? null,
         notes,
         deployedAt: nowIso,
+        // The rollback pointer: the sha this deploy replaced. Without it the
+        // record says what is live but not what to go back to, and the answer
+        // is otherwise only readable off the box's image tags.
+        previousSha: previousSha ?? null,
       },
     },
     status: {
@@ -123,6 +136,7 @@ function ghApiPost(exec, path, body) {
  */
 export function createDeploymentRecord({
   sha,
+  previousSha = null,
   releaseTag,
   notesText,
   healthUrl,
@@ -135,6 +149,7 @@ export function createDeploymentRecord({
   try {
     const { deployment, status } = buildDeploymentPayload({
       sha,
+      previousSha,
       releaseTag,
       notesText,
       healthUrl,
