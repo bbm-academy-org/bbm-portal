@@ -6,8 +6,10 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_E2E_PORT,
   E2eTargetError,
+  needsPortPreflight,
   portConflictMessage,
   resolveE2eTarget,
+  usesLocalWebServer,
 } from '../helpers/base-url'
 
 /**
@@ -16,11 +18,13 @@ import {
  * Захардкоженный дефолтный localhost-origin в спеках и в playwright.config.ts
  * делал сюиту незапускаемой рядом с чужим стендом, а `reuseExistingServer: true` —
  * ОПАСНОЙ: сюита молча цеплялась к чужому listener'у на дефолтном порту и
- * сеяла/удаляла пользователей в общей dev-БД под чужой приёмкой. Отсюда три
+ * сеяла/удаляла пользователей в общей dev-БД под чужой приёмкой. Отсюда четыре
  * инварианта, которые проверяются ниже:
  *   1) базовый URL резолвится ровно один раз, из E2E_BASE_URL / E2E_PORT;
  *   2) reuseExistingServer включается ТОЛЬКО когда цель названа явно;
- *   3) ни одна спека/хелпер e2e-контура не называет origin сама.
+ *   3) ни одна спека/хелпер e2e-контура не называет origin сама;
+ *   4) проба порта выполняется только в главном процессе — worker перечитывает
+ *      конфиг, когда порт уже занят НАШИМ ЖЕ сервером (ревью PR #172).
  */
 
 describe('resolveE2eTarget — дефолт', () => {
@@ -29,6 +33,7 @@ describe('resolveE2eTarget — дефолт', () => {
     expect(target.baseURL).toBe(`http://localhost:${DEFAULT_E2E_PORT}`)
     expect(target.port).toBe(3000)
     expect(target.explicit).toBe(false)
+    expect(target.local).toBe(true)
     // Ключевой инвариант задачи: без явно названного порта переиспользование
     // чужого стенда запрещено.
     expect(target.reuseExistingServer).toBe(false)
@@ -47,6 +52,7 @@ describe('resolveE2eTarget — E2E_PORT', () => {
     expect(target.baseURL).toBe('http://localhost:3005')
     expect(target.port).toBe(3005)
     expect(target.explicit).toBe(true)
+    expect(target.local).toBe(true)
     expect(target.reuseExistingServer).toBe(true)
   })
 
@@ -73,6 +79,27 @@ describe('resolveE2eTarget — E2E_BASE_URL', () => {
   it('падает на неразбираемом URL', () => {
     expect(() => resolveE2eTarget({ E2E_BASE_URL: 'not a url' })).toThrow(/E2E_BASE_URL/)
   })
+
+  // Ревью PR #172: `new URL('localhost:3005')` разбирается — как протокол
+  // `localhost:` — и раньше уезжал дальше с портом 0, вопреки докблоку резолвера.
+  it.each(['localhost:3005', 'ws://localhost:3005', 'file:///tmp/stand'])(
+    'падает на не-http(s) значении %s',
+    (value) => {
+      expect(() => resolveE2eTarget({ E2E_BASE_URL: value })).toThrow(E2eTargetError)
+      expect(() => resolveE2eTarget({ E2E_BASE_URL: value })).toThrow(/http:\/\/ or https:\/\//)
+    },
+  )
+
+  it.each(['http://localhost:3005', 'http://127.0.0.1:3005', 'http://[::1]:3005'])(
+    'считает %s локальной целью',
+    (value) => {
+      expect(resolveE2eTarget({ E2E_BASE_URL: value }).local).toBe(true)
+    },
+  )
+
+  it('считает внешний origin нелокальной целью', () => {
+    expect(resolveE2eTarget({ E2E_BASE_URL: 'https://portal.bbm.academy' }).local).toBe(false)
+  })
 })
 
 describe('resolveE2eTarget — обе переменные', () => {
@@ -89,6 +116,47 @@ describe('resolveE2eTarget — обе переменные', () => {
     expect(() =>
       resolveE2eTarget({ E2E_BASE_URL: 'http://localhost:3005', E2E_PORT: '3006' }),
     ).toThrow(/E2E_BASE_URL[\s\S]*E2E_PORT|E2E_PORT[\s\S]*E2E_BASE_URL/)
+  })
+})
+
+describe('usesLocalWebServer', () => {
+  it('дефолтный запуск — локальный сервер поднимаем мы', () => {
+    expect(usesLocalWebServer({}, resolveE2eTarget({}))).toBe(true)
+  })
+
+  it('PORTAL_E2E_BASE_URL — режим задеплоенного стенда, локального сервера нет', () => {
+    const env = { PORTAL_E2E_BASE_URL: 'https://portal.bbm.academy' }
+    expect(usesLocalWebServer(env, resolveE2eTarget(env))).toBe(false)
+  })
+
+  it('нелокальный E2E_BASE_URL — тоже нет: иначе webServer унёс бы PORT=443', () => {
+    const env = { E2E_BASE_URL: 'https://stand.example' }
+    expect(usesLocalWebServer(env, resolveE2eTarget(env))).toBe(false)
+  })
+})
+
+describe('needsPortPreflight — регрессия из ревью PR #172', () => {
+  it('в главном процессе дефолтного запуска проба нужна', () => {
+    expect(needsPortPreflight({}, resolveE2eTarget({}))).toBe(true)
+  })
+
+  it('в worker-процессе пробы НЕТ — порт там занят нашим же webServer', () => {
+    // Playwright перечитывает playwright.config.ts в каждом worker'е уже ПОСЛЕ
+    // старта своего webServer. Проба на верхнем уровне видела бы занятый порт и
+    // роняла бы всю сюиту сообщением про чужой стенд — при свободном 3000.
+    // TEST_WORKER_INDEX выставлен только в worker'е, это и есть шов.
+    const env = { TEST_WORKER_INDEX: '0' }
+    expect(needsPortPreflight(env, resolveE2eTarget(env))).toBe(false)
+  })
+
+  it('при явно названной цели пробы нет — оператор отвечает за свой порт', () => {
+    const env = { E2E_PORT: '3005' }
+    expect(needsPortPreflight(env, resolveE2eTarget(env))).toBe(false)
+  })
+
+  it('в режиме задеплоенного стенда пробы нет', () => {
+    const env = { PORTAL_E2E_BASE_URL: 'https://portal.bbm.academy' }
+    expect(needsPortPreflight(env, resolveE2eTarget(env))).toBe(false)
   })
 })
 

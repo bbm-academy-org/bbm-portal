@@ -6,7 +6,12 @@ import { defineConfig, devices } from '@playwright/test'
  */
 import 'dotenv/config'
 
-import { portConflictMessage, resolveE2eTarget } from './tests/helpers/base-url'
+import {
+  needsPortPreflight,
+  portConflictMessage,
+  resolveE2eTarget,
+  usesLocalWebServer,
+} from './tests/helpers/base-url'
 import { probePortFree } from './tools/dev/dev-ports.mjs'
 
 /**
@@ -18,11 +23,11 @@ import { probePortFree } from './tools/dev/dev-ports.mjs'
  * RELATIVE paths and inherit it via `use.baseURL` — no spec spells its own origin. */
 const target = resolveE2eTarget(process.env)
 
-/* The deployed-stand suites (tests/e2e/portal-prod, hours-prod) target the remote
- * origins in PORTAL_E2E_BASE_URL/CMS_E2E_BASE_URL — when that mode is active,
- * don't boot (or require) the local dev server. All other e2e specs run without
- * these vars set and keep the local webServer as before. */
-const remoteMode = Boolean(process.env.PORTAL_E2E_BASE_URL)
+/* Is a local dev server ours to boot? No for the deployed-stand suites
+ * (tests/e2e/portal-prod, hours-prod — PORTAL_E2E_BASE_URL/CMS_E2E_BASE_URL), and
+ * no for any E2E_BASE_URL that is not on this machine: booting `next dev` to
+ * "help" a remote origin only produces diagnostics about the wrong problem. */
+const localWebServer = usesLocalWebServer(process.env, target)
 
 /* Refuse to run against a stand nobody named (#169). With parallel sessions on one
  * box, a listener on the DEFAULT port is most likely another session's acceptance
@@ -31,8 +36,12 @@ const remoteMode = Boolean(process.env.PORTAL_E2E_BASE_URL)
  * responsibility for that port and IS reused (see `reuseExistingServer` below), so
  * this pre-flight guards only the default. Playwright would fail here on its own
  * too, but its message advises exactly the fix that caused this bug
- * ("set reuseExistingServer: true"). */
-if (!remoteMode && !target.explicit && !(await probePortFree(target.port))) {
+ * ("set reuseExistingServer: true").
+ *
+ * `needsPortPreflight` — not a bare `if` — because Playwright re-imports this file
+ * in every worker process, by which time the port is held by OUR OWN webServer;
+ * see its docblock in tests/helpers/base-url.ts (review of PR #172). */
+if (needsPortPreflight(process.env, target) && !(await probePortFree(target.port))) {
   throw new Error(portConflictMessage(target.port))
 }
 
@@ -61,9 +70,8 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: 'chromium' },
     },
   ],
-  webServer: remoteMode
-    ? undefined
-    : {
+  webServer: localWebServer
+    ? {
         command: 'pnpm dev',
         /* `next dev` reads PORT — the same boot form `pnpm dev:ports` prints.
          * `pnpm dev -- -p <n>` does NOT work here (the `--` reaches Next as a path). */
@@ -73,5 +81,6 @@ export default defineConfig({
          * refused if the default port was taken. */
         reuseExistingServer: target.reuseExistingServer,
         url: target.baseURL,
-      },
+      }
+    : undefined,
 })

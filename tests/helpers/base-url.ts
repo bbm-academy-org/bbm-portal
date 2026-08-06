@@ -11,22 +11,24 @@
  * against the shared dev DB under someone else's acceptance.
  *
  * The parameter, in precedence order:
- *   E2E_BASE_URL   full origin, e.g. `http://localhost:3005` (wins)
+ *   E2E_BASE_URL   full http(s) origin, e.g. `http://localhost:3005` (wins)
  *   E2E_PORT       port on localhost, e.g. `3005` (take one with `pnpm dev:ports`)
  *   neither        localhost on DEFAULT_E2E_PORT — a DEFAULT, not a claim
  *
  * The reuse policy is derived, not configured separately: `reuseExistingServer`
  * is true exactly when the target was named explicitly. Naming a port is the
  * operator asserting "this stand is mine"; saying nothing is not. Hence the
- * default run refuses to attach to whatever answers on 3000 and fails with
- * `portConflictMessage()` instead.
+ * default run refuses to attach to whatever answers on the default port and
+ * fails with `portConflictMessage()` instead.
  *
  * Consumers: `playwright.config.ts` (baseURL + webServer) and, through the
  * Playwright `baseURL` option, every spec/helper via RELATIVE paths. Specs must
  * not re-derive an origin of their own — that would be a second source of truth.
  *
  * Pure and dependency-free on purpose: unit-tested in
- * `tests/unit/e2e-base-url.spec.ts`, no network, no `node:` imports.
+ * `tests/unit/e2e-base-url.spec.ts`, no network, no `node:` imports. The port
+ * probe itself lives in `playwright.config.ts`; WHETHER to probe, and whether a
+ * local `webServer` exists at all, are decided here — those are rules, not I/O.
  */
 
 /** Where `next dev` lands with no PORT — a fallback, never an assertion of ownership. */
@@ -44,13 +46,19 @@ export interface E2eTarget {
   port: number
   /** The target was named via E2E_BASE_URL / E2E_PORT rather than defaulted. */
   explicit: boolean
+  /** The target lives on THIS machine — i.e. a local `next dev` could serve it. */
+  local: boolean
   /** Playwright `webServer.reuseExistingServer` — true only for an explicit target. */
   reuseExistingServer: boolean
 }
 
 type Env = Record<string, string | undefined>
 
+/** The only schemes a Next dev stand speaks; doubles as the scheme→port table. */
 const DEFAULT_SCHEME_PORT: Record<string, number> = { 'http:': 80, 'https:': 443 }
+
+/** Hostnames that resolve to this machine, in the forms `new URL().hostname` yields. */
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 /** Trimmed value, or undefined for unset/blank — a blank env var is not a target. */
 function read(env: Env, key: string): string | undefined {
@@ -92,14 +100,32 @@ export function resolveE2eTarget(env: Env = process.env): E2eTarget {
           `Expected something like http://localhost:3005.`,
       )
     }
-    const port = url.port === '' ? (DEFAULT_SCHEME_PORT[url.protocol] ?? 0) : Number(url.port)
+    // `new URL('localhost:3005')` PARSES — as protocol `localhost:` — so a bare
+    // host:port (the likeliest operator typo) would otherwise sail through with
+    // port 0 and reach `use.baseURL` / `webServer` intact. This check is what
+    // makes the docblock's "throws on a malformed configuration" true.
+    const schemePort = DEFAULT_SCHEME_PORT[url.protocol]
+    if (schemePort === undefined) {
+      throw new E2eTargetError(
+        `E2E_BASE_URL must be an http:// or https:// URL, got protocol ` +
+          `"${url.protocol}" in ${JSON.stringify(rawBase)}. A bare host:port parses as a ` +
+          `protocol, not a URL — write http://localhost:3005, or use E2E_PORT=3005.`,
+      )
+    }
+    const port = url.port === '' ? schemePort : Number(url.port)
     if (wantedPort !== undefined && wantedPort !== port) {
       throw new E2eTargetError(
         `E2E_BASE_URL and E2E_PORT disagree: ${baseURL} resolves to port ${port}, ` +
           `E2E_PORT says ${wantedPort}. Set one of them, not a contradicting pair.`,
       )
     }
-    return { baseURL, port, explicit: true, reuseExistingServer: true }
+    return {
+      baseURL,
+      port,
+      explicit: true,
+      local: LOCAL_HOSTNAMES.has(url.hostname),
+      reuseExistingServer: true,
+    }
   }
 
   if (wantedPort !== undefined) {
@@ -107,6 +133,7 @@ export function resolveE2eTarget(env: Env = process.env): E2eTarget {
       baseURL: `http://localhost:${wantedPort}`,
       port: wantedPort,
       explicit: true,
+      local: true,
       reuseExistingServer: true,
     }
   }
@@ -115,8 +142,44 @@ export function resolveE2eTarget(env: Env = process.env): E2eTarget {
     baseURL: `http://localhost:${DEFAULT_E2E_PORT}`,
     port: DEFAULT_E2E_PORT,
     explicit: false,
+    local: true,
     reuseExistingServer: false,
   }
+}
+
+/**
+ * Whether `playwright.config.ts` should define a local `webServer` at all.
+ *
+ * No for the deployed-stand suites (`PORTAL_E2E_BASE_URL`), and no whenever the
+ * target simply is not on this machine: with a remote `E2E_BASE_URL` the config
+ * would still describe a `webServer` carrying `PORT=443`, so the moment the
+ * remote stand stopped answering Playwright would try to boot `next dev` on port
+ * 443 and report a failure that has nothing to do with the real cause.
+ */
+export function usesLocalWebServer(env: Env, target: E2eTarget): boolean {
+  if (read(env, 'PORTAL_E2E_BASE_URL') !== undefined) return false
+  return target.local
+}
+
+/**
+ * Whether the port pre-flight should run in THIS process.
+ *
+ * Playwright re-imports the config file in every worker process (worker/
+ * workerMain.js → deserializeConfig → common/configLoader.js → requireOrImport),
+ * so a probe written on the config's top level runs AGAIN after Playwright has
+ * started its own `webServer`. By then the port is busy — held by our own dev
+ * server — and an ungated probe aborts the whole default run while blaming a
+ * foreign stand: the exact false positive that teaches operators to ignore the
+ * "never kill a listener you did not start" rule (review of PR #172).
+ * `TEST_WORKER_INDEX` is set only inside workers, so it is the seam.
+ *
+ * The gate also disposes of the probe's TOCTOU window: the only process that
+ * probes is the one that then starts the server.
+ */
+export function needsPortPreflight(env: Env, target: E2eTarget): boolean {
+  if (env.TEST_WORKER_INDEX !== undefined) return false
+  if (!usesLocalWebServer(env, target)) return false
+  return !target.explicit
 }
 
 /**
