@@ -1,38 +1,41 @@
 #!/usr/bin/env node
-// bbm-portal — `pnpm pr:land <pr>`: хвост закрытия PR одной командой (#130).
+// bbm-portal — `pnpm pr:land <pr>`: the PR closing tail in one command (#130).
 //
-// Почему: после мержа остаётся многошаговый хвост (снять свою PR-строку с
-// борда, поставить Done каждой `Closes #N`, разобрать ворктри, пересвести
-// остатки) — и именно он забывается чаще всего, потому что задача «уже
-// сделана». Хвост здесь один детерминированный вызов, без ослабления гейта:
+// Why: after the merge a multi-step tail remains (drop your own PR row from the
+// board, set Done on every `Closes #N`, tear the worktree down, re-sweep the
+// leftovers) — and it is exactly the part that gets forgotten most often,
+// because the task is "already done". Here the tail is one deterministic call,
+// with no weakening of the gate:
 //
-//   1. gate        — PR открыт и не draft, нет конфликта, есть `Closes #N`,
-//                    ревью подтверждено, все check-run'ы по ТЕКУЩЕМУ head SHA
-//                    зелёные (ограниченный поллинг), head не сдвинулся;
+//   1. gate        — the PR is open and not a draft, no conflict, a `Closes #N`
+//                    is present, review is confirmed, every check-run on the
+//                    CURRENT head SHA is green (bounded polling), head has not
+//                    moved;
 //   2. merge       — `gh pr merge <N> --squash --delete-branch
-//                    --match-head-commit <тот же SHA>`;
-//   3. board-clear — снять СВОЮ PR-строку с борда. НЕ фатально: мерж уже
-//                    приземлился, провал здесь — строка отчёта, не откат;
-//   4. board-done  — `Status=Done` каждой связанной `Closes #N`;
-//   5. teardown    — `pnpm worktree:teardown <N>`, если ворктри есть на диске;
-//   6. re-sweep    — открытые PR + head-ветки на origin, одной строкой.
+//                    --match-head-commit <the same SHA>`;
+//   3. board-clear — drop YOUR OWN PR row from the board. NOT fatal: the merge
+//                    has already landed, a failure here is a report line, not a
+//                    rollback;
+//   4. board-done  — `Status=Done` on every linked `Closes #N`;
+//   5. teardown    — `pnpm worktree:teardown <N>`, if the worktree is on disk;
+//   6. re-sweep    — open PRs + head branches on origin, in one line.
 //
-// Первая упавшая стадия останавливает хвост, печатает имя стадии и одну строку
-// «что доделать руками» (канон §7).
+// The first failing stage stops the tail, prints the stage name and one line of
+// "what to finish by hand" (canon §7).
 //
-// Ревью-гейт БЛОКИРУЮЩИЙ и по умолчанию включён, но засчитывает ту форму
-// ревью, которая в этом репо реально существует: единственный человек с
-// правами и есть автор PR (сам себе APPROVE он поставить не может), а ревьюер —
-// субагент, оставляющий комментарий. Поэтому годится либо человеческий APPROVE,
-// либо комментарий со строкой `VERDICT: APPROVE`, созданный ПОСЛЕ последнего
-// коммита PR (одобрение старше кода относится к другому коду — та же логика,
-// что у head-пиннинга). `--require-review` сужает до человеческого APPROVE;
-// `--no-review-gate "<причина>"` снимает гейт с обязательной записанной
-// причиной. Приёмка владельца (stage 5) — отдельное требование, и напоминание о
-// ней печатается всегда: гейт её проверить не может.
+// The review gate is BLOCKING and on by default, but it accepts the form of
+// review that actually exists in this repo: the only human with the rights IS
+// the PR author (they cannot APPROVE their own PR), and the reviewer is a
+// subagent leaving a comment. So either a human APPROVE counts, or a comment
+// carrying a `VERDICT: APPROVE` line created AFTER the PR's last commit (an
+// approval older than the code is about different code — the same logic as head
+// pinning). `--require-review` narrows this to a human APPROVE;
+// `--no-review-gate "<reason>"` lifts the gate with a mandatory recorded reason.
+// Owner acceptance (stage 5) is a separate requirement, and the reminder about
+// it is printed always: the gate cannot check it.
 //
-// Exit codes: 0 = хвост пройден; 1 = стадия упала (RED); 2 = таймаут гейта;
-// 3 = ошибка использования/резолвинга; 4 = запуск из ворктри.
+// Exit codes: 0 = the tail passed; 1 = a stage failed (RED); 2 = gate timeout;
+// 3 = usage/resolution error; 4 = launched from a worktree.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -49,14 +52,15 @@ import {
 
 const TAG = '[pr:land]'
 
-// ── чистые сеймы (юнит-тестируются в tests/unit/gh-pr-land.spec.ts) ─────────
+// ── pure seams (unit-tested in tests/unit/gh-pr-land.spec.ts) ────────────────
 
-/** Канонический порядок стадий — контракт, который проверяет тест. */
+/** The canonical stage order — a contract the test verifies. */
 export const STAGES = ['gate', 'merge', 'board-clear', 'board-done', 'teardown', 're-sweep']
 
 /**
- * Кандидаты в номера ворктри: связанные `Closes #N` плюс номер из имени ветки
- * `<type>/<N>-<slug>` (ворктри именуются номером задачи, не PR).
+ * Worktree-number candidates: the linked `Closes #N` plus the number in the
+ * branch name `<type>/<N>-<slug>` (worktrees are named by the task number, not
+ * by the PR number).
  */
 export function issueCandidates(closingIssueNumbers, branch) {
   const out = []
@@ -69,51 +73,52 @@ export function issueCandidates(closingIssueNumbers, branch) {
   return out
 }
 
-/** Одна строка «что доделать руками» на упавшую стадию. */
+/** One line of "what to finish by hand" per failed stage. */
 export function stageRemedy(stage, pr) {
   switch (stage) {
     case 'gate':
-      return `разберись с причиной RED выше; НЕ мержи руками — почини и повтори \`pnpm pr:land ${pr}\`.`
+      return `sort out the cause of the RED above; do NOT merge by hand — fix it and re-run \`pnpm pr:land ${pr}\`.`
     case 'merge':
-      return `посмотри вывод gh выше и повтори \`pnpm pr:land ${pr}\` (гейт переподтвердит перед повтором).`
+      return `read the gh output above and re-run \`pnpm pr:land ${pr}\` (the gate re-confirms first; if the merge did land, the re-run resumes the tail instead of merging again).`
     case 'board-clear':
-      return `мерж прошёл — PR-строку с борда снять не удалось (не фатально); удали её руками, если висит мёртвой.`
+      return `the merge landed — the PR row could not be dropped from the board (not fatal); delete it by hand if it hangs there dead.`
     case 'board-done':
-      return `мерж прошёл — доделай руками: \`pnpm board:status <issue> Done\`, затем \`pnpm worktree:teardown <N>\`.`
+      return `the merge landed — finish by hand: \`pnpm board:status <issue> Done\`, then \`pnpm worktree:teardown <N>\`.`
     case 'teardown':
-      return `мерж прошёл — доделай руками: \`pnpm worktree:teardown <N>\` (его вывод выше называет держателя).`
+      return `the merge landed — finish by hand: \`pnpm worktree:teardown <N>\` (its output above names the holder).`
     case 're-sweep':
-      return `мерж прошёл — пересведи руками: \`gh pr list\` + \`git ls-remote --heads origin\`.`
+      return `the merge landed — re-sweep by hand: \`gh pr list\` + \`git ls-remote --heads origin\`.`
     default:
-      return `повтори \`pnpm pr:land ${pr}\`.`
+      return `re-run \`pnpm pr:land ${pr}\`.`
   }
 }
 
 /**
- * Нормализовать код выхода ребёнка: ненулевой числовой проходит как есть,
- * 0/null/undefined схлопываются в 1 — убитый сигналом ребёнок НИКОГДА не должен
- * читаться как успех.
+ * Normalise a child's exit code: a non-zero number passes through as is,
+ * 0/null/undefined collapse to 1 — a child killed by a signal must NEVER read
+ * as success.
  */
 export function failCode(status) {
   return typeof status === 'number' && status !== 0 ? status : 1
 }
 
-/** Запуск из ворктри — это лид-сайд-команда основного чекаута. */
+/** Running from a worktree — this is a lead-side command of the main checkout. */
 export function isWorktreeCwd(cwd) {
   return /[\\/]\.claude[\\/]worktrees[\\/]/.test(String(cwd ?? '') + '/')
 }
 
 export function cwdGuardMessage(cwd) {
   return (
-    `отказ: команда запущена из ворктри (${cwd}). \`pr:land\` мержит и разбирает ворктри — ` +
-    `запускать её из ворктри значит пилить сук, на котором сидишь. Перейди в основной чекаут.`
+    `refused: the command was launched from a worktree (${cwd}). \`pr:land\` merges and tears ` +
+    `worktrees down — running it from inside one means sawing off the branch you sit on. ` +
+    `Switch to the main checkout.`
   )
 }
 
 /**
- * Структурная классификация check-run'ов. Разбор ТОЛЬКО по полям status /
- * conclusion / state — совпадение по названию джобы даёт ложный зелёный при
- * первом же переименовании.
+ * Structural classification of check-runs. Parsed ONLY by the status /
+ * conclusion / state fields — matching on a job's name yields a false green at
+ * the first rename.
  * @returns {{verdict:'green'|'pending'|'red', pending:string[], failed:string[]}}
  */
 export function classifyChecks(rollup) {
@@ -121,7 +126,7 @@ export function classifyChecks(rollup) {
   const pending = []
   const failed = []
   for (const entry of list) {
-    const name = entry?.name ?? entry?.context ?? '(без имени)'
+    const name = entry?.name ?? entry?.context ?? '(unnamed)'
     if (entry?.__typename === 'StatusContext' || entry?.state !== undefined) {
       const state = String(entry.state ?? '').toUpperCase()
       if (state === 'PENDING' || state === 'EXPECTED' || state === '') pending.push(name)
@@ -134,29 +139,29 @@ export function classifyChecks(rollup) {
       continue
     }
     const conclusion = String(entry?.conclusion ?? '').toUpperCase()
-    // SKIPPED/NEUTRAL — законный «нечего делать» (path-фильтры); CANCELLED и
-    // всё остальное — красное: отменённый прогон ничего не доказал.
+    // SKIPPED/NEUTRAL — a legitimate "nothing to do" (path filters); CANCELLED
+    // and everything else is red: a cancelled run proved nothing.
     if (!['SUCCESS', 'SKIPPED', 'NEUTRAL'].includes(conclusion)) {
-      failed.push(`${name} (${conclusion || 'без вывода'})`)
+      failed.push(`${name} (${conclusion || 'no conclusion'})`)
     }
   }
   if (failed.length > 0) return { verdict: 'red', pending, failed }
-  // Ноль зарегистрированных прогонов — это не «зелено», а «ещё не приехали»:
-  // ждём в пределах таймаута, по его истечении стадия станет RED.
+  // Zero registered runs is not "green" but "they have not arrived yet": we
+  // wait within the timeout, after which the stage turns RED.
   if (pending.length > 0 || list.length === 0) return { verdict: 'pending', pending, failed }
   return { verdict: 'green', pending, failed }
 }
 
 /**
- * Вердикт ревьюера-субагента из комментариев PR. У нас ревью приезжает
- * комментарием, а не GitHub-review (единственный человек с правами — автор PR,
- * сам себе APPROVE он поставить не может), поэтому проверяемым артефактом
- * служит строка `VERDICT: APPROVE` в теле комментария.
+ * The subagent reviewer's verdict, read from the PR comments. Here review
+ * arrives as a comment rather than as a GitHub review (the only human with the
+ * rights is the PR author, who cannot APPROVE their own PR), so the checkable
+ * artifact is a `VERDICT: APPROVE` line in a comment body.
  *
- * Свежесть обязательна: одобрение, выданное до последнего коммита, относится к
- * другому коду — ровно та же логика, что у head-пиннинга проверок.
+ * Freshness is mandatory: an approval issued before the last commit is about
+ * different code — exactly the same logic as head pinning for the checks.
  * @param {{body?:string, createdAt?:string}[]} comments
- * @param {string|null} headCommittedDate  дата последнего коммита PR
+ * @param {string|null} headCommittedDate  the date of the PR's last commit
  * @returns {{ok:true, at:string}|{ok:false, reason:'none'|'stale'|'changes', at?:string}}
  */
 export function findAgentApproval(comments, headCommittedDate) {
@@ -177,7 +182,7 @@ export function findAgentApproval(comments, headCommittedDate) {
   return { ok: true, at: latest.iso }
 }
 
-/** Дата последнего коммита PR — база для проверки свежести ревью. */
+/** The PR's last commit date — the baseline for the review freshness check. */
 export function headCommittedDate(pr) {
   const commits = pr?.commits
   if (!Array.isArray(commits) || commits.length === 0) return null
@@ -185,94 +190,94 @@ export function headCommittedDate(pr) {
 }
 
 /**
- * Не-CI-условия гейта. Возвращает список причин RED (пустой = ок) и отдельно
- * нефатальные замечания.
+ * The non-CI gate conditions. Returns the list of RED reasons (empty = ok) and,
+ * separately, the non-fatal remarks.
  * @param {object} pr
  * @param {{requireReview?:boolean, reviewGate?:boolean}} [opts]
- *   requireReview — засчитывать ТОЛЬКО человеческий APPROVE;
- *   reviewGate    — по умолчанию true: годится человеческий APPROVE ИЛИ свежий
- *                   `VERDICT: APPROVE` ревьюера-субагента. false — только WARN.
+ *   requireReview — count ONLY a human APPROVE;
+ *   reviewGate    — true by default: a human APPROVE OR a fresh
+ *                   `VERDICT: APPROVE` from the subagent reviewer counts.
+ *                   false — WARN only.
  */
 export function gateConditions(pr, { requireReview = false, reviewGate = true } = {}) {
   const red = []
   const warn = []
   const state = String(pr?.state ?? '').toUpperCase()
-  if (state !== 'OPEN') red.push(`PR не открыт (state=${state || 'неизвестно'})`)
-  if (pr?.isDraft) red.push('PR в состоянии draft')
+  if (state !== 'OPEN') red.push(`the PR is not open (state=${state || 'unknown'})`)
+  if (pr?.isDraft) red.push('the PR is a draft')
   if (String(pr?.mergeable ?? '').toUpperCase() === 'CONFLICTING') {
-    red.push('PR конфликтует с базой — обнови ветку')
+    red.push('the PR conflicts with its base — update the branch')
   }
   const closes = (pr?.closingIssuesReferences ?? []).map((r) => r?.number).filter(Boolean)
   if (closes.length === 0) {
-    red.push('в теле PR нет `Closes #N` — без него board-done некуда ставить Done')
+    red.push('the PR body carries no `Closes #N` — without it board-done has nowhere to set Done')
   }
 
   const humanApproved = String(pr?.reviewDecision ?? '').toUpperCase() === 'APPROVED'
   const agent = findAgentApproval(pr?.comments, headCommittedDate(pr))
   const AGENT_REASON = {
-    none: 'ни одного комментария со строкой `VERDICT: APPROVE`',
-    stale: 'последний `VERDICT: APPROVE` старше последнего коммита — он про другой код',
-    changes: 'последний вердикт ревьюера — `REQUEST_CHANGES`',
+    none: 'not a single comment carries a `VERDICT: APPROVE` line',
+    stale: 'the last `VERDICT: APPROVE` is older than the last commit — it is about different code',
+    changes: "the reviewer's latest verdict is `REQUEST_CHANGES`",
   }
   if (requireReview) {
-    if (!humanApproved) red.push('нет человеческого APPROVE-ревью (--require-review)')
+    if (!humanApproved) red.push('no human APPROVE review (--require-review)')
   } else if (reviewGate) {
     if (!humanApproved && !agent.ok) {
       red.push(
-        `ревью не подтверждено: ${AGENT_REASON[agent.reason]}. ` +
-          `Запусти ревью (субагент bbm-reviewer, task-cycle stage 4) либо, если класс работы ` +
-          `ревью не требует, укажи причину: --no-review-gate "<причина>"`,
+        `review is not confirmed: ${AGENT_REASON[agent.reason]}. ` +
+          `Run the review (the bbm-reviewer subagent, task-cycle stage 4) or, if this class of ` +
+          `work needs no review, state the reason: --no-review-gate "<reason>"`,
       )
     }
   } else if (!humanApproved && !agent.ok) {
-    warn.push(`ревью-гейт отключён вручную, а подтверждения нет: ${AGENT_REASON[agent.reason]}`)
+    warn.push(`the review gate was lifted by hand and there is no confirmation: ${AGENT_REASON[agent.reason]}`)
   }
 
-  // Приёмка владельца (stage 5) — отдельное от ревью требование, поэтому
-  // напоминание печатается ВСЕГДА: при APPROVE о ней иначе не напомнит никто.
+  // Owner acceptance (stage 5) is a requirement separate from review, so the
+  // reminder is printed ALWAYS: on an APPROVE nothing else would recall it.
   warn.push(
-    'task-cycle stage 5: для изменений, видимых владельцу, мерж идёт только после записанной ' +
-      'приёмки на живом стенде — гейт этого не проверяет',
+    'task-cycle stage 5: for owner-visible changes the merge happens only after a recorded ' +
+      'acceptance on a live stand — the gate does not check this',
   )
   if (String(pr?.mergeStateStatus ?? '').toUpperCase() === 'BEHIND') {
-    warn.push('ветка отстала от базы (mergeStateStatus=BEHIND) — при strict-проверках мерж откажет')
+    warn.push('the branch is behind its base (mergeStateStatus=BEHIND) — under strict checks the merge will refuse')
   }
   return { red, warn, closes }
 }
 
-export const USAGE = `Использование: pnpm pr:land <pr#> [флаги]
+export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
 
-  Хвост закрытия PR одной командой: гейт → мерж → снятие PR-строки с борда →
-  Status=Done каждой \`Closes #N\` → teardown ворктри → пересводка. Первая
-  упавшая стадия останавливает хвост и печатает, что доделать руками.
+  The PR closing tail in one command: gate → merge → drop the PR row from the
+  board → Status=Done on every \`Closes #N\` → worktree teardown → re-sweep. The
+  first failing stage stops the tail and prints what to finish by hand.
 
-  Гейт: PR открыт и не draft, нет конфликта, есть \`Closes #N\`, ревью
-  подтверждено, все проверки по ТЕКУЩЕМУ head SHA зелёные. Тот же SHA уходит в
-  \`gh pr merge --match-head-commit\`, поэтому коммит, приземлившийся во время
-  ожидания, мерж отвергнет, а не пропустит.
+  Gate: the PR is open and not a draft, no conflict, a \`Closes #N\` is present,
+  review is confirmed, every check on the CURRENT head SHA is green. That same
+  SHA goes into \`gh pr merge --match-head-commit\`, so a commit that lands while
+  we wait makes the merge refuse rather than ride in unchecked.
 
-  Ревью по умолчанию засчитывается двумя способами: человеческий APPROVE ИЛИ
-  комментарий ревьюера со строкой \`VERDICT: APPROVE\`, созданный ПОСЛЕ
-  последнего коммита PR.
+  Review counts in two ways by default: a human APPROVE OR a reviewer comment
+  carrying a \`VERDICT: APPROVE\` line created AFTER the PR's last commit.
 
-  Флаги:
-    --timeout <сек>            ожидание проверок, по умолчанию 900
-    --interval <сек>           период опроса, по умолчанию 20
-    --require-review           засчитывать только человеческий APPROVE
-    --no-review-gate "<причина>"  снять ревью-гейт; причина обязательна и печатается
+  Flags:
+    --timeout <sec>            wait for the checks, 900 by default
+    --interval <sec>           poll period, 20 by default
+    --require-review           count only a human APPROVE
+    --no-review-gate "<reason>"  lift the review gate; the reason is mandatory and printed
 
-  Exit codes: 0 — хвост пройден; 1 — стадия упала; 2 — таймаут гейта;
-  3 — ошибка использования; 4 — запуск из ворктри.
+  Exit codes: 0 — the tail passed; 1 — a stage failed; 2 — gate timeout;
+  3 — usage error; 4 — launched from a worktree.
 `
 
-/** Разбор флагов `pr:land`. */
+/** Flag parsing for `pr:land`. */
 export function parseFlags(argv) {
   const list = argv ?? []
   if (list.includes('--help') || list.includes('-h')) return { ok: true, help: true }
   const rawPr = list[0]
   const pr = Number(rawPr)
   if (!rawPr || !Number.isInteger(pr) || pr <= 0) {
-    return { ok: false, error: `недопустимый номер PR: «${rawPr ?? ''}»` }
+    return { ok: false, error: `invalid PR number: «${rawPr ?? ''}»` }
   }
   const opts = {
     pr,
@@ -286,27 +291,27 @@ export function parseFlags(argv) {
     const a = list[i]
     if (a === '--require-review') opts.requireReview = true
     else if (a === '--no-review-gate') {
-      // Причина обязательна: снятие гейта без записанного основания — это и
-      // есть тихий обход, ради которого гейты потом объявляют бесполезными.
+      // The reason is mandatory: lifting the gate with no recorded grounds IS
+      // the silent bypass for whose sake gates are later called useless.
       const reason = list[++i]
       if (!reason || reason.startsWith('--')) {
-        return { ok: false, error: '--no-review-gate требует причину: --no-review-gate "<причина>"' }
+        return { ok: false, error: '--no-review-gate requires a reason: --no-review-gate "<reason>"' }
       }
       opts.reviewGate = false
       opts.reviewGateWaiver = reason
     } else if (a === '--timeout') opts.timeout = Number(list[++i])
     else if (a === '--interval') opts.interval = Number(list[++i])
-    else return { ok: false, error: `неизвестный флаг «${a}»` }
+    else return { ok: false, error: `unknown flag «${a}»` }
   }
   for (const key of ['timeout', 'interval']) {
     if (!Number.isFinite(opts[key]) || opts[key] <= 0) {
-      return { ok: false, error: `--${key} должен быть положительным числом секунд` }
+      return { ok: false, error: `--${key} must be a positive number of seconds` }
     }
   }
   return { ok: true, ...opts }
 }
 
-// ── импуративные раннеры (инжектируются в тестах) ────────────────────────────
+// ── imperative runners (injected in tests) ───────────────────────────────────
 
 const PR_FIELDS =
   'state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,' +
@@ -317,12 +322,12 @@ function runViewPr(pr) {
 }
 
 /**
- * Мерж, привязанный к тому же SHA, который прошёл гейт. Без
- * `--match-head-commit` пиннинг был бы только на чтении: между зелёным гейтом
- * (а он может ждать до 900 с) и `gh pr merge` в ветку успевает приземлиться
- * коммит — и приземлится он не проверенным ничем. В репо с параллельными
- * сессиями это не теоретический сценарий; GitHub отвергнет мерж сам, если head
- * сдвинулся.
+ * The merge, pinned to the same SHA that passed the gate. Without
+ * `--match-head-commit` the pinning would only exist on the read side: between
+ * a green gate (which may wait up to 900 s) and `gh pr merge` a commit has time
+ * to land on the branch — and it would land unchecked by anything. In a repo
+ * with parallel sessions this is not a hypothetical; GitHub itself refuses the
+ * merge if head has moved.
  */
 function runMerge(pr, sha) {
   const args = ['pr', 'merge', String(pr), '--squash', '--delete-branch']
@@ -375,13 +380,13 @@ function sleepSync(seconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000)
 }
 
-// ── гейт ─────────────────────────────────────────────────────────────────────
+// ── the gate ─────────────────────────────────────────────────────────────────
 
 /**
- * Ограниченный поллинг гейта. Head пинится: если за время ожидания приехал
- * новый коммит, зелёный старого SHA ничего не доказывает — это RED. Тот же SHA
- * уезжает наружу и дальше в `gh pr merge --match-head-commit`, иначе пиннинг
- * остался бы обещанием на чтении.
+ * The gate's bounded polling. Head is pinned: if a new commit arrived while we
+ * waited, a green on the old SHA proves nothing — that is RED. The same SHA
+ * leaves the function and goes on into `gh pr merge --match-head-commit`,
+ * otherwise the pinning would remain a promise made on the read side only.
  * @returns {{verdict:'green'|'red'|'timeout', reasons:string[], warn:string[], closes:number[], branch:string|null, sha:string|null}}
  */
 export function runGate(pr, { timeout, interval, requireReview = false, reviewGate = true }, io = {}) {
@@ -415,34 +420,35 @@ export function runGate(pr, { timeout, interval, requireReview = false, reviewGa
     if (pinnedSha === null) pinnedSha = sha
     else if (sha !== pinnedSha) {
       return out('red', [
-        `head сдвинулся во время ожидания (${pinnedSha} → ${sha}) — проверки не о том коде`,
+        `head moved while we waited (${pinnedSha} → ${sha}) — the checks are about different code`,
       ])
     }
 
     const checks = classifyChecks(data.statusCheckRollup)
-    if (checks.verdict === 'red') return out('red', [`красные проверки: ${checks.failed.join(', ')}`])
+    if (checks.verdict === 'red') return out('red', [`red checks: ${checks.failed.join(', ')}`])
     if (checks.verdict === 'green') return out('green', [])
 
     lastPending = checks.pending
     if (now() >= deadline) {
       return out('timeout', [
-        `проверки не завершились за ${timeout} с (в ожидании: ${lastPending.join(', ') || 'ни одна проверка не зарегистрирована'})`,
+        `the checks did not finish within ${timeout} s (waiting on: ${lastPending.join(', ') || 'not a single check registered'})`,
       ])
     }
     process.stdout.write(
-      `${TAG} гейт: ждём ${lastPending.length || 'регистрации'} проверк(и/у)… ` +
-        `следующая проба через ${interval} с\n`,
+      `${TAG} gate: waiting on ${lastPending.length || 'registration of the'} check(s)… ` +
+        `next probe in ${interval} s\n`,
     )
     sleep(interval)
   }
 }
 
-// ── оркестрация ──────────────────────────────────────────────────────────────
+// ── orchestration ────────────────────────────────────────────────────────────
 
 /**
- * Шесть стадий хвоста. Каждая стадия — свой отдельный вызов (никаких пайпов:
- * в пайпе shell видит код последней команды, а не гейта). Раннеры
- * инжектируются, чтобы тест прогонял все ветки без подпроцессов.
+ * The six stages of the tail. Every stage is its own separate call (no pipes:
+ * in a pipe the shell sees the exit code of the last command, not the gate's).
+ * The runners are injected so the test can drive every branch without
+ * subprocesses.
  */
 export function landPr(opts, io = {}) {
   const { pr } = opts
@@ -461,76 +467,76 @@ export function landPr(opts, io = {}) {
 
   const report = []
   const printReport = () => {
-    log(`${TAG} ── хвост закрытия PR #${pr} ──\n`)
+    log(`${TAG} ── closing tail of PR #${pr} ──\n`)
     for (const line of report) log(`${TAG}   ${line}\n`)
   }
   const fail = (stage, code, detail) => {
-    report.push(`${stage}: ПРОВАЛ${detail ? ` (${detail})` : ''}`)
+    report.push(`${stage}: FAILED${detail ? ` (${detail})` : ''}`)
     printReport()
-    err(`стадия «${stage}» упала на PR #${pr}${detail ? ` — ${detail}` : ''}. Что делать: ${stageRemedy(stage, pr)}`)
+    err(`stage «${stage}» failed on PR #${pr}${detail ? ` — ${detail}` : ''}. What to do: ${stageRemedy(stage, pr)}`)
     return exit(code)
   }
 
-  // 1. Гейт.
+  // 1. The gate.
   const g = gate(opts)
-  for (const w of g.warn ?? []) err(`гейт, замечание: ${w}`)
+  for (const w of g.warn ?? []) err(`gate, remark: ${w}`)
   if (g.verdict === 'timeout') return fail('gate', 2, g.reasons.join('; '))
   if (g.verdict !== 'green') return fail('gate', 1, g.reasons.join('; '))
-  report.push('gate: ОК (проверки зелёные, head зафиксирован)')
+  report.push('gate: OK (checks green, head pinned)')
 
   const issues = (g.closes ?? []).filter((n) => Number.isInteger(n) && n > 0)
 
-  // 2. Мерж — привязанный к тому же SHA, который прошёл гейт.
+  // 2. The merge — pinned to the same SHA that passed the gate.
   const mergeRes = merge(pr, g.sha)
-  if (mergeRes.error) return fail('merge', 3, `не удалось запустить gh pr merge: ${mergeRes.error.message}`)
+  if (mergeRes.error) return fail('merge', 3, `could not launch gh pr merge: ${mergeRes.error.message}`)
   if (mergeRes.status !== 0) return fail('merge', failCode(mergeRes.status))
   const sha = mergedSha(pr)
   report.push(
-    `merge: ОК (squash${g.sha ? `, head закреплён ${String(g.sha).slice(0, 12)}` : ''}` +
+    `merge: OK (squash${g.sha ? `, head pinned at ${String(g.sha).slice(0, 12)}` : ''}` +
       `${sha ? `, ${String(sha).slice(0, 12)}` : ''})`,
   )
 
-  // 3. board-clear — НЕ фатально: мерж уже приземлился.
+  // 3. board-clear — NOT fatal: the merge has already landed.
   const clear = clearBoardItem(pr)
-  if (clear.status === 'deleted') report.push('board-clear: ОК (PR-строка снята с борда)')
-  else if (clear.status === 'absent') report.push('board-clear: пропуск (PR не стоял на борде)')
-  else report.push(`board-clear: ЗАМЕЧАНИЕ (не фатально — ${clear.detail ?? 'неизвестная ошибка'})`)
+  if (clear.status === 'deleted') report.push('board-clear: OK (PR row dropped from the board)')
+  else if (clear.status === 'absent') report.push('board-clear: skip (the PR was not on the board)')
+  else report.push(`board-clear: WARNING (not fatal — ${clear.detail ?? 'unknown error'})`)
 
   // 4. board-done.
   if (issues.length === 0) {
-    report.push('board-done: пропуск (у PR нет связанных `Closes #N`)')
+    report.push('board-done: skip (the PR has no linked `Closes #N`)')
   } else {
     for (const issue of issues) {
       const res = boardDone(issue)
-      if (res.error) return fail('board-done', 3, `не удалось запустить board:status: ${res.error.message}`)
-      if (res.status !== 0) return fail('board-done', failCode(res.status), `задача #${issue}`)
+      if (res.error) return fail('board-done', 3, `could not launch board:status: ${res.error.message}`)
+      if (res.status !== 0) return fail('board-done', failCode(res.status), `issue #${issue}`)
     }
-    report.push(`board-done: ОК (#${issues.join(', #')} → Done)`)
+    report.push(`board-done: OK (#${issues.join(', #')} → Done)`)
   }
 
-  // 5. teardown ворктри.
+  // 5. worktree teardown.
   const candidates = issueCandidates(issues, g.branch)
   const present = candidates.filter((n) => worktreeExists(n))
   if (present.length === 0) {
-    report.push(`teardown: пропуск (на диске нет .claude/worktrees/{${candidates.join(',') || '-'}})`)
+    report.push(`teardown: skip (nothing on disk at .claude/worktrees/{${candidates.join(',') || '-'}})`)
   } else {
     for (const n of present) {
       const res = teardown(n)
-      if (res.error) return fail('teardown', 3, `не удалось запустить worktree:teardown: ${res.error.message}`)
+      if (res.error) return fail('teardown', 3, `could not launch worktree:teardown: ${res.error.message}`)
       if (res.status !== 0) return fail('teardown', failCode(res.status), `.claude/worktrees/${n}`)
     }
-    report.push(`teardown: ОК (.claude/worktrees/{${present.join(',')}})`)
+    report.push(`teardown: OK (.claude/worktrees/{${present.join(',')}})`)
   }
 
-  // 6. Пересводка.
+  // 6. The re-sweep.
   const prs = listOpenPrs()
-  if (prs.status !== 0) return fail('re-sweep', 1, '`gh pr list` не отработал')
+  if (prs.status !== 0) return fail('re-sweep', 1, '`gh pr list` did not work')
   const branches = listRemoteBranches()
-  if (branches.status !== 0) return fail('re-sweep', 1, '`git ls-remote --heads origin` не отработал')
-  report.push(`re-sweep: ОК (открытых PR: ${prs.count}; head-веток на origin: ${branches.count})`)
+  if (branches.status !== 0) return fail('re-sweep', 1, '`git ls-remote --heads origin` did not work')
+  report.push(`re-sweep: OK (open PRs: ${prs.count}; head branches on origin: ${branches.count})`)
 
   printReport()
-  log(`${TAG} хвост закрытия PR #${pr} ПРОЙДЕН.\n`)
+  log(`${TAG} the closing tail of PR #${pr} PASSED.\n`)
   return exit(0)
 }
 
@@ -551,8 +557,8 @@ function main() {
   }
   if (parsed.reviewGateWaiver) {
     process.stdout.write(
-      `${TAG} ревью-гейт СНЯТ вручную. Причина: ${parsed.reviewGateWaiver}\n` +
-        `${TAG} это записывается в вывод сессии намеренно — снятие гейта должно быть видно.\n`,
+      `${TAG} the review gate was LIFTED by hand. Reason: ${parsed.reviewGateWaiver}\n` +
+        `${TAG} this is recorded into the session output deliberately — lifting a gate must be visible.\n`,
     )
   }
   landPr(parsed)
