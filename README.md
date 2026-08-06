@@ -16,10 +16,12 @@
 
 ## Prerequisites
 
-**Node 22 is required** — pinned by [`.nvmrc`](./.nvmrc) (`22.17.0`), the
+**Node 22 is required** — pinned by [`.nvmrc`](./.nvmrc) (`22.23.2`), the
 `Dockerfile`, and CI. With a version manager just run `nvm use` / `fnm use` in the
 repo root to select it automatically. `engine-strict=true` (in `.npmrc`) makes
-`pnpm install` **fail loudly** on the wrong Node major, and the Node-22-sensitive
+`pnpm install` **fail loudly** on any Node that does not satisfy `engines.node`
+(`^22.22.1` — the floor tracks the strictest `engines` requirement in the
+lockfile, today `lint-staged`), and the Node-22-sensitive
 scripts (`migrate*`, `dev`, `build`, `test*`, `seed*`) run a preflight
 ([`scripts/require-node.mjs`](./scripts/require-node.mjs)) that exits early with a
 clear "use Node 22" message before any deep crash. In particular,
