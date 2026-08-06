@@ -9,8 +9,10 @@
 // Why 3000–3009 and not a wider range: the dev Zitadel has redirect URIs
 // registered ONLY for those ten ports. A stand outside the range boots fine and
 // then dies at login with `400 invalid_request` — a slow, confusing failure. The
-// range is therefore a hard ceiling, not a convenience. (Restoring it in the
-// provisioning default: issue #93.)
+// range is therefore a hard ceiling, not a convenience. The registration side is
+// generated from the same bounds by infra/dev-stand/idp/provision.sh (#93):
+// widening the range means editing PORT_MAX here AND DEV_PORT_MAX there —
+// tests/unit/idp-provision-redirect-uris.spec.ts fails if only one moves.
 //
 // Usage:
 //   pnpm dev:ports            # prints PORT=<n> + the boot line

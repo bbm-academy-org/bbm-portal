@@ -7,10 +7,10 @@ and #63.
 
 ## What this is (two layers)
 
-| Layer | Files | In git? | Scope |
-|---|---|---|---|
-| Portable contract | `compose.core.yml`, `.env.example`, this README | yes | same for everyone |
-| Per-machine recipe | `.env` (copied from `.env.example`) | no (gitignored) | your machine |
+| Layer              | Files                                           | In git?         | Scope             |
+| ------------------ | ----------------------------------------------- | --------------- | ----------------- |
+| Portable contract  | `compose.core.yml`, `.env.example`, this README | yes             | same for everyone |
+| Per-machine recipe | `.env` (copied from `.env.example`)             | no (gitignored) | your machine      |
 
 `compose.core.yml` is a plain `docker compose` project with a **fixed name**
 (`bbm-portal-dev`) so its containers and named volume stay namespaced
@@ -25,12 +25,12 @@ the portal auth gate (#59, ADR-002) — see [`idp/bootstrap.md`](./idp/bootstrap
 
 ### Services & ports
 
-| Service | Container port | Host port (bbm-portal-dev) | Published? |
-|---|---|---|---|
-| `postgres` | 5432 | `${POSTGRES_PORT}` = **5444** | yes |
-| `idp` (Zitadel core) | 8080 | — (in-network `idp:8080`) | no |
-| `idp-login` (Login V2 UI) | 3000 | — (in-network `idp-login:3000`) | no |
-| `idp-proxy` (Caddy, issuer origin) | `${IDP_PORT}` | `${IDP_PORT}` = **9180** | yes |
+| Service                            | Container port | Host port (bbm-portal-dev)      | Published? |
+| ---------------------------------- | -------------- | ------------------------------- | ---------- |
+| `postgres`                         | 5432           | `${POSTGRES_PORT}` = **5444**   | yes        |
+| `idp` (Zitadel core)               | 8080           | — (in-network `idp:8080`)       | no         |
+| `idp-login` (Login V2 UI)          | 3000           | — (in-network `idp-login:3000`) | no         |
+| `idp-proxy` (Caddy, issuer origin) | `${IDP_PORT}`  | `${IDP_PORT}` = **9180**        | yes        |
 
 Only **two** host ports are published. `IDP_PORT` is **9180** because the shared
 TrueNAS box already binds **9080** for the co-hosted `ds-platform` stand — the
@@ -41,9 +41,10 @@ No MinIO/Redis/Mailpit/SMS/Unleash — the portal needs the IdP only; media stay
 on Timeweb S3.
 
 The issuer origin is `http://${IDP_EXTERNAL_DOMAIN}:${IDP_PORT}`
-(`http://truenas.local:9180` on the reference recipe). The OIDC **redirect URI**
-is the app's own callback on the dev machine — `http://localhost:3000/auth/callback`
-— **not** the Zitadel host.
+(`http://truenas.local:9180` on the reference recipe). The OIDC **redirect URIs**
+are the app's own callbacks on the dev machine — **not** the Zitadel host — and
+cover the whole `pnpm dev:ports` range (3000–3009 × `localhost`/`127.0.0.1` ×
+both callback paths); see [`idp/bootstrap.md`](./idp/bootstrap.md) §6.
 
 ## Where it runs (owner's scheme)
 
@@ -92,13 +93,13 @@ ssh truenas "sudo docker ps"
 Real values live in a **per-machine** `.env.local`, gitignored and **never**
 committed (the repo carries only `.env.example` with `CHANGE_ME` placeholders):
 
-| Where | What | Note |
-|---|---|---|
-| `~/.bbm-portal/.env.local` | the durable secret source | the launcher ships it as the box compose `.env` on each sync |
-| `~/bbm-portal-dev-stand/.env` | the box compose `.env` | auto-loaded by compose; re-provisioned from `.env.local` on sync |
-| `~/.bbm-portal/idp-bootstrap-pat.txt` | the `bbm-bootstrap` org-owner PAT | **outside** the synced dir so `dev:up` never wipes it |
-| `/var/lib/bbm-portal/idp-login-client.pat` | the PAT the `idp-login` container mounts | daemon-host path, outside the synced dir |
-| `~/.bbm-portal/CREDENTIALS.dev.txt` | human-readable console-admin + test-user creds | outside the synced dir |
+| Where                                      | What                                           | Note                                                             |
+| ------------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------- |
+| `~/.bbm-portal/.env.local`                 | the durable secret source                      | the launcher ships it as the box compose `.env` on each sync     |
+| `~/bbm-portal-dev-stand/.env`              | the box compose `.env`                         | auto-loaded by compose; re-provisioned from `.env.local` on sync |
+| `~/.bbm-portal/idp-bootstrap-pat.txt`      | the `bbm-bootstrap` org-owner PAT              | **outside** the synced dir so `dev:up` never wipes it            |
+| `/var/lib/bbm-portal/idp-login-client.pat` | the PAT the `idp-login` container mounts       | daemon-host path, outside the synced dir                         |
+| `~/.bbm-portal/CREDENTIALS.dev.txt`        | human-readable console-admin + test-user creds | outside the synced dir                                           |
 
 **The PAT is kept out of sync scope on purpose:** `dev:up` wipes+replaces the
 synced stand dir every time, so a PAT placed inside it would be destroyed — and a

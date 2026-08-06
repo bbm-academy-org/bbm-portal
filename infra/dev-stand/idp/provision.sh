@@ -23,6 +23,8 @@
 # Usage:
 #   IDP_BASE_URL=http://truenas.local:9180 PAT="$(cat pat.txt)" ./provision.sh
 #   ./provision.sh --base-url http://truenas.local:9180 --pat-file ./idp-pat.txt
+#   ./provision.sh --print-redirect-uris   # print the redirect-URI set and exit
+#                                          # (no IdP, no PAT, no mutation)
 #
 # Requires: bash, curl, jq. Run it on Linux/macOS (the TrueNAS box, CI, a
 # container) — NOT from a Windows-native jq.
@@ -39,12 +41,62 @@ PAT_VALUE="${PAT:-}"
 PAT_FILE=""
 PROJECT_NAME="${IDP_PROJECT_NAME:-bbm-portal-dev}"
 APP_NAME="${IDP_APP_NAME:-bbm-portal-dev}"
-# Redirect URIs: the app runs on the owner's dev machine (localhost:3000), NOT on
-# the Zitadel host — so the callback is localhost even on the truenas.local recipe.
-# P2b (#59) wires Auth.js (next-auth v5), whose default callback is
-# /api/auth/callback/zitadel; the historical /auth/callback (ds-platform BFF
-# convention) is kept registered for continuity. Both are registered by default.
-REDIRECT_URIS="${IDP_REDIRECT_URIS:-http://localhost:3000/api/auth/callback/zitadel,http://localhost:3000/auth/callback}"
+# Redirect URIs: the app runs on the owner's dev machine (localhost), NOT on the
+# Zitadel host — so the callback is localhost even on the truenas.local recipe.
+#
+# The set is GENERATED, never hand-listed. Parallel sessions take a dev-stand port
+# out of 3000–3009 (`pnpm dev:ports`; the same ceiling and the reason for it live
+# in tools/dev/dev-ports.mjs and .claude/rules/parallel-sessions.md), and a stand
+# on a port that is not registered here boots fine and only then dies at login
+# with `400 invalid_request`. Widening the range is a one-line change to the
+# DEV_PORT_MAX default below (#93).
+#
+# Three axes — 10 ports × 2 hosts × 2 paths = 40 URIs:
+#   ports  3000…3009              the dev-stand range (`pnpm dev:ports`)
+#   hosts  localhost, 127.0.0.1   the browser may be pointed at either
+#   paths  /api/auth/callback/zitadel   the Auth.js (next-auth v5) default that
+#                                       P2b (#59) wires
+#          /auth/callback               the historical ds-platform BFF convention,
+#                                       kept registered for continuity
+DEV_PORT_MIN="${IDP_DEV_PORT_MIN:-3000}"
+DEV_PORT_MAX="${IDP_DEV_PORT_MAX:-3009}"
+DEV_HOSTS="${IDP_DEV_HOSTS:-localhost,127.0.0.1}"
+CALLBACK_PATHS="${IDP_CALLBACK_PATHS:-/api/auth/callback/zitadel,/auth/callback}"
+
+# The cartesian product port × host × path, comma-joined — the format the rest of
+# the script (and IDP_REDIRECT_URIS) speaks.
+generate_redirect_uris() {
+  local port host path
+  local out=() hosts=() paths=()
+  IFS=',' read -r -a hosts <<< "$DEV_HOSTS"
+  IFS=',' read -r -a paths <<< "$CALLBACK_PATHS"
+  for ((port = DEV_PORT_MIN; port <= DEV_PORT_MAX; port++)); do
+    for host in "${hosts[@]}"; do
+      for path in "${paths[@]}"; do
+        out+=("http://${host}:${port}${path}")
+      done
+    done
+  done
+  local IFS=','
+  printf '%s' "${out[*]}"
+}
+
+# IDP_REDIRECT_URIS (comma-separated) replaces the generated set wholesale.
+REDIRECT_URIS="${IDP_REDIRECT_URIS:-$(generate_redirect_uris)}"
+# Fail fast on a degenerate set (e.g. IDP_DEV_PORT_MIN > IDP_DEV_PORT_MAX, or an
+# empty IDP_DEV_HOSTS): an empty array here would be PUT to the app and wipe every
+# registered redirect URI — precisely the outage #93 exists to prevent.
+if [[ -z "$REDIRECT_URIS" ]]; then
+  echo "ERROR: refusing to continue with an EMPTY redirect-URI set." >&2
+  echo "  ports ${DEV_PORT_MIN}..${DEV_PORT_MAX}, hosts '${DEV_HOSTS}', paths '${CALLBACK_PATHS}'" >&2
+  echo "  (writing it would delete every redirect URI registered on the app)" >&2
+  exit 4
+fi
+# KNOWN DIVERGENCE (#93, read-only audit 2026-08-06): the LIVE dev app carries 20
+# post-logout URIs — 3000–3009 × localhost/127.0.0.1, registered by hand — while
+# this default is still the single port, so a full run WOULD narrow that set.
+# Out of scope for #93 (redirect URIs only); until it is closed, a live re-provision
+# is a supervised operation, not a routine one.
 POST_LOGOUT_URIS="${IDP_POST_LOGOUT_URIS:-http://localhost:3000}"
 # Project roles to seed, comma-separated. `portal_admin` is a placeholder the P2b
 # gate can adopt or replace; projectRoleCheck stays OFF so login works without it.
@@ -57,6 +109,7 @@ TEST_USERNAME="${IDP_TEST_USERNAME:-bbm-test}"
 TEST_EMAIL="${IDP_TEST_EMAIL:-bbm-test@bbm.local}"
 TEST_PASSWORD="${IDP_TEST_USER_PASSWORD:-}"
 
+PRINT_URIS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url) BASE_URL="$2"; shift 2 ;;
@@ -64,9 +117,16 @@ while [[ $# -gt 0 ]]; do
     --pat-file) PAT_FILE="$2"; shift 2 ;;
     --project-name) PROJECT_NAME="$2"; shift 2 ;;
     --app-name) APP_NAME="$2"; shift 2 ;;
+    --print-redirect-uris) PRINT_URIS=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# Dry inspection of the generated set: no IdP, no PAT, no curl/jq, no mutation.
+if [[ "$PRINT_URIS" == "1" ]]; then
+  printf '%s\n' "$REDIRECT_URIS" | tr ',' '\n'
+  exit 0
+fi
 
 [[ -n "$PAT_FILE" ]] && PAT_VALUE="$(tr -d '\r\n' < "$PAT_FILE")"
 : "${BASE_URL:?set IDP_BASE_URL or --base-url (e.g. http://truenas.local:9180)}"
