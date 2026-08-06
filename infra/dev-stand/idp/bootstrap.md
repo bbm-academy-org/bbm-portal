@@ -130,8 +130,8 @@ curl -s http://truenas.local:9180/.well-known/openid-configuration | jq -r .issu
 `idp/provision.sh` creates (or converges) the `bbm-portal-dev` project, the
 web/OIDC application (`authorization_code` + `refresh_token`, BASIC auth, dev-mode
 http redirect URIs), the project-role assertion, a seed role, the Login V2 feature
-+ baseUri, the `IAM_LOGIN_CLIENT` grant, closes public self-registration, and —
-when `IDP_TEST_USER_PASSWORD` is set — a human test user (`bbm-test`, email
+with its baseUri, the `IAM_LOGIN_CLIENT` grant, closes public self-registration,
+and — when `IDP_TEST_USER_PASSWORD` is set — a human test user (`bbm-test`, email
 pre-verified, password **permanent** / change NOT required). Re-running converges;
 it never duplicates.
 
@@ -161,21 +161,34 @@ ssh truenas 'cd ~/bbm-portal-dev-stand && \
 
 The app (on the dev machine) reads these from its repo-root `.env`:
 
-| Key | Source | Secret? |
-|---|---|---|
-| `IDP_ISSUER` | `http://truenas.local:9180` (bare origin) | no |
-| `IDP_CLIENT_ID` | provision.sh output | no |
-| `IDP_CLIENT_SECRET` | provision.sh output (on create) | **yes** |
-| `IDP_PROJECT_ID` | provision.sh output | no |
-| `IDP_REDIRECT_URI` | `http://localhost:3000/api/auth/callback/zitadel` | no |
-| `AUTH_SECRET` | `openssl rand -hex 32` (Auth.js session/JWT) | **yes** |
-| `IDP_SERVICE_TOKEN` | the `bbm-bootstrap` PAT | **yes** |
+| Key                 | Source                                            | Secret? |
+| ------------------- | ------------------------------------------------- | ------- |
+| `IDP_ISSUER`        | `http://truenas.local:9180` (bare origin)         | no      |
+| `IDP_CLIENT_ID`     | provision.sh output                               | no      |
+| `IDP_CLIENT_SECRET` | provision.sh output (on create)                   | **yes** |
+| `IDP_PROJECT_ID`    | provision.sh output                               | no      |
+| `IDP_REDIRECT_URI`  | `http://localhost:3000/api/auth/callback/zitadel` | no      |
+| `AUTH_SECRET`       | `openssl rand -hex 32` (Auth.js session/JWT)      | **yes** |
+| `IDP_SERVICE_TOKEN` | the `bbm-bootstrap` PAT                           | **yes** |
 
 **Callback path: `/api/auth/callback/zitadel`** on `http://localhost:3000` — the
 Auth.js/next-auth v5 default the P2b gate (#59) wires. `provision.sh` registers it
 by default (alongside the historical ds-platform `/auth/callback`, kept for
 continuity). If a future task wires a different callback route, re-run
 `provision.sh` with `IDP_REDIRECT_URIS=<new uri>` to register it.
+
+**Not one port — the whole 3000–3009 range.** Parallel sessions each take a dev
+port with `pnpm dev:ports`, so the default redirect-URI set is _generated_: ten
+ports × `localhost`/`127.0.0.1` × both callback paths = 40 URIs, matching the live
+app exactly, so a re-provision never narrows it (#93). Inspect the set without
+touching the IdP:
+
+```bash
+./provision.sh --print-redirect-uris
+```
+
+Widening the range is one variable (`DEV_PORT_MAX` in `provision.sh`, kept in step
+with `PORT_MAX` in `tools/dev/dev-ports.mjs`).
 
 ## 7. Browsable admin Console (operator-only)
 
