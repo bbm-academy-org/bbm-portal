@@ -142,6 +142,37 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
+  # WARN — a deleted spec/ADR, plus the repo-wide spec status sweep that rides
+  # along in the same script (#157, tranche 2). It lives HERE rather than in
+  # ci.yml because the sanctioned escape is a `spec-deletion:` line in the PR
+  # body: a PR that adds the marker must be able to clear the check without
+  # re-running the build matrix, which is what this workflow's `edited` trigger
+  # is for. `fetch-depth: 0` is required — the deletion class diffs against
+  # `origin/main`, and the default shallow checkout has no such ref, which the
+  # guard would (correctly, canon §8) report as fail-closed rather than clean.
+  spec-deletion:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:spec-deletion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
   # WARN — a user-visible change with no note the owner would read. Its promotion
   # is tied to task 7.6 (#137, release-note delivery), not to the §4 clock: a
   # note nothing delivers is not worth blocking a merge over.

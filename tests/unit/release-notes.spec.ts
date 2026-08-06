@@ -276,7 +276,7 @@ describe('buildReleaseNotesArgs', () => {
 })
 
 describe('the PR template section is the SSOT — one shape, two readers (#136 / #137)', () => {
-  // Task 7.5 (#136) owns the `## Product note (RU)` section and the
+  // Task 7.5 (#136) landed the `## Product note (RU)` section and the
   // `product-note` CI guard that makes it non-optional on a render-surface PR.
   // 7.6 adds no second section — it DELIVERS that one. So this reads the REAL
   // template off disk: if 7.5's template ever loses or renames the section, the

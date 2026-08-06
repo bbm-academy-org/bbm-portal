@@ -52,6 +52,17 @@ Entry format:
       `IMPORTS_GUARD_LIB_RE` does) — return condition: first tdd-signal finding
       disputed as false, or the guard's WARN→BLOCK promotion review
       (2026-09-02 window) (#136, review of PR #154)
+- [ ] 2026-08-05 `package.json` `format:check` / `lint-staged` globs are
+      `{ts,tsx,css,md,json,yml,yaml}` per tree, so **no `.mjs` is ever
+      prettier-checked** — the whole `tools/**` tooling layer (every guard, every
+      hook, the gh scripts) is unformatted-by-omission in CI. PREDATES this PR:
+      the glob has never covered `.mjs`; #157 only made it visible by adding four
+      guards. Not fixed there deliberately — widening the glob reformats every
+      existing `.mjs` in one sweep, which belongs in its own diff, not inside a
+      guard PR. Return condition: the next PR that touches `package.json`'s
+      script block for any reason, or the 2026-09-02 guard-promotion sweep —
+      whichever comes first (#157, review round 2 of PR #160 + iteration-end
+      gate note b)
 
 - [ ] 2026-08-05 `tools/gh/handoff-verify.mjs`: a segment naming ≥2 refs with one
       claim pins the claim on none of them and degrades to INFO (a false PASS is

@@ -90,8 +90,7 @@ Rules:
   spec is wrong, correct it in place while it is `Draft`/`In dev`; if it is
   obsolete, set `Superseded` (naming the successor) or `Retired`. A rename is
   fine — a deletion is not. This rule and the `superseded_by:` requirement are
-  prose today: the `spec-deletion` guard and the repo-wide status sweep that
-  would enforce them are guard tranche 2, tracked in **#157**.
+  checked by `pnpm lint:spec-deletion` — see "Machine checks" below.
 - **`Shipped` is not a freeze.** Changing an already-shipped behavior updates
   the existing spec (status goes back to `In dev` for the duration of the
   change, then to `Shipped`) — it does not spawn a second spec for the same
@@ -115,6 +114,30 @@ Before authoring, load the ADRs with the `read-relevant-adrs` skill; before
 changing one, use `do-adr-revision`.
 
 ## Machine checks
+
+Four guards read this document. All four are **WARN**, registered in
+[`docs/ci-guardrails.md`](../ci-guardrails.md) §5 with their §4 promotion
+conditions. They differ in how a finding reaches you: `lint:spec-deletion`,
+`lint:ears-test` and `lint:ears-naming` exit non-zero on one, while
+`lint:spec-link` exits **0** with a WARN line unless it is given
+`--severity block` — which is how its CI job invokes it. That dial is the
+mechanism [`.claude/rules/design-process.md`](../../.claude/rules/design-process.md)
+describes for `stage-b`; the register (§5) is where each guard's severity is
+recorded.
+
+| Command                   | Reads                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `pnpm lint:spec-link`     | a feature PR resolves to a spec that exists, has a ladder `status:`, and is past `Draft` (below) |
+| `pnpm lint:spec-deletion` | the "Status model" rules: no spec/ADR is `git rm`-ed, and every spec carries a valid `status:`   |
+| `pnpm lint:ears-test`     | clause ↔ test traceability both ways: no uncovered `EARS-N`, no test citing an undeclared one    |
+| `pnpm lint:ears-naming`   | a test title that ATTEMPTS the `EARS-N:` prefix and misspells it                                 |
+
+`lint:spec-deletion` sweeps `docs/specs/` and `docs/superpowers/specs/`; ADRs are
+covered by its deletion rule but not by the status sweep, because ADRs record
+status as `**Status:** Accepted` body prose (`docs/adr/README.md`), not this
+ladder. `lint:ears-test` reads clause ids from a spec's `## Requirements`
+section only — the acceptance scenarios NAME the clauses they exercise, and a
+pointer is not a second declaration.
 
 `pnpm lint:spec-link` — on a feature PR (a linked issue of type `Feature`, or a
 `feat:` title, **and** a change under `src/`), it resolves the spec, then checks
@@ -210,11 +233,8 @@ exercise. Keep the clauses in the owner's product language — EARS constrains t
 _sentence shape_, not the vocabulary. A spec he cannot read has failed at its
 job whatever its syntax.
 
-### Mechanics — deliberately not in this PR
+### Mechanics
 
-`ears-test-lint` (both directions: every clause has a test, and every
-`EARS-N`-named test maps to a live clause) and `ears-naming-lint` (malformed
-ids) are **not built here**. They are guard tranche 2, tracked in **#157**:
-they land WARN against the guard contract in
-[`docs/ci-guardrails.md`](../ci-guardrails.md) §8 and promote under its §4
-clauses. Until then the clause ↔ test link is checked at review time, not by CI.
+`pnpm lint:ears-test` and `pnpm lint:ears-naming` (guard tranche 2, #157) check
+the clause ↔ test link — see "Machine checks" above for what each one reads and
+what it does not.

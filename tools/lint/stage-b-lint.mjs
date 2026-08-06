@@ -38,9 +38,9 @@
 // the job is `continue-on-error`, so an unreadable PR shows in the job log
 // rather than blocking — acceptable only while the guard is WARN.
 //
-// NOT WIRED INTO CI HERE, deliberately: `.github/workflows/ci.yml` and the guard
-// workflow are owned by #136, which is in flight in parallel. Run locally before
-// merge: `pnpm lint:stage-b <PR>`.
+// CI: the `stage-b` job of `.github/workflows/pr-body-guards.yml` (wired by #136
+// after this guard landed — the two ran in parallel, so the wiring is not in this
+// file’s history). Run locally before merge: `pnpm lint:stage-b <PR>`.
 //
 // Pattern source: ds-platform `tools/lint/stage-b-lint.ts` (adapted — bbm has no
 // design-system package, no spec frontmatter and no `pr:preflight` runner, so
@@ -49,6 +49,8 @@
 
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+
+import { stripNonEvidence } from './lib/guard.mjs'
 
 const TAG = '[stage-b]'
 
@@ -71,18 +73,17 @@ export const EXEMPT_RE =
 /** The `Stage-B:` line, anywhere in a body/comment, through list/quote decoration. */
 const MARKER_RE = /^[ \t>*_-]*stage-?b\s*:\s*(.+?)\s*$/gim
 
-/**
- * Text that TALKS ABOUT the marker but does not record one: HTML comments and
- * fenced code blocks. Stripped before extraction (review PR #151, blocker 1).
- *
- * This is not cosmetic. The PR template's own instruction block lives inside
- * `<!-- … -->` and spells out all three sanctioned shapes verbatim, so without
- * this the realistic failure — an author fills What/Why and never touches the
- * Stage B section — read as a recorded owner GO. Same class on the issue-comment
- * path: a handoff or a review note quoting the shapes in a fence became evidence.
- */
-const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g
-const FENCED_BLOCK_RE = /^ {0,3}(?:```|~~~)[\s\S]*?^ {0,3}(?:```|~~~)[^\n]*$/gm
+// Text that TALKS ABOUT the marker but does not record one — HTML comments and
+// fenced code blocks — is stripped before extraction (review PR #151, blocker 1).
+// The stripper itself now lives in `lib/guard.mjs` as `stripNonEvidence`, shared
+// with `spec-link` and `spec-deletion`, because the rule is one rule and three
+// copies drift (review PR #160: `spec-deletion` shipped without it).
+//
+// This is not cosmetic. The PR template's own instruction block lives inside
+// `<!-- … -->` and spells out all three sanctioned shapes verbatim, so without
+// this the realistic failure — an author fills What/Why and never touches the
+// Stage B section — read as a recorded owner GO. Same class on the issue-comment
+// path: a handoff or a review note quoting the shapes in a fence became evidence.
 
 /**
  * `GO — Антон, 2026-08-05` — the owner's live verdict. The attribution tail is
@@ -120,7 +121,7 @@ export function renderFiles(paths) {
  */
 export function extractMarkerValues(text) {
   if (!text) return []
-  const semantic = String(text).replace(HTML_COMMENT_RE, '').replace(FENCED_BLOCK_RE, '')
+  const semantic = stripNonEvidence(text)
   return [...semantic.matchAll(MARKER_RE)].map((m) => (m[1] ?? '').replace(/^[\s*_]+/, '').trim())
 }
 

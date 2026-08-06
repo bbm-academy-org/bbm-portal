@@ -51,6 +51,41 @@ export function toPosix(p) {
   return String(p).replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
+/** An HTML comment — the PR template's own instructions live in one. */
+const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g
+/** A fenced block, backtick or tilde, with up to three leading spaces. */
+const FENCED_BLOCK_RE = /^ {0,3}(?:```|~~~)[\s\S]*?^ {0,3}(?:```|~~~)[^\n]*$/gm
+
+/**
+ * Drop the regions of a PR body / issue comment that TALK ABOUT a marker
+ * without recording one: HTML comments and fenced code blocks. Every guard in
+ * this family that reads a marker out of human text runs its body through this
+ * FIRST — `stage-b` (the `Stage-B:` verdict), `spec-link` (the `spec-exempt:`
+ * hatch) and `spec-deletion` (the `spec-deletion:` justification).
+ *
+ * This lives here rather than in each guard because the rule is one rule, and
+ * three copies drift: it was fixed in `stage-b` (review of PR #151, blocker 1),
+ * fixed in `spec-link`, and then shipped MISSING in `spec-deletion` (review of
+ * PR #160, blocker) — an escape hatch armed by a fenced example of itself,
+ * which silently disabled the guard's whole deletion class. The canon states
+ * the rule for the reader: `.claude/rules/design-process.md` — «a quoted
+ * example in a fenced code block — is never evidence; the check strips it».
+ *
+ * Not stripped here, and not by accident: a blockquote, a list item and an
+ * INDENTED code block. Those are handled by each marker's OWN anchor, because
+ * the guards disagree about them on purpose — `stage-b` accepts a bold list-item
+ * marker (`- **Stage-B:** GO …`, the shape its PR-template section renders),
+ * while `spec-deletion` and `spec-link` reject every decorated form. If you add
+ * a marker guard, that anchor is yours to write: `spec-deletion` uses
+ * `^ {0,3}` so four spaces or a tab (a markdown indented code block) quotes
+ * rather than declares.
+ */
+export function stripNonEvidence(text) {
+  return String(text ?? '')
+    .replace(HTML_COMMENT_RE, '')
+    .replace(FENCED_BLOCK_RE, '')
+}
+
 /**
  * The tree the guard scans. TEST SEAM `LINT_FIXTURE_ROOT` points it at a fixture
  * repo; unset, it resolves to this repo's root (tools/lint/lib -> three up).

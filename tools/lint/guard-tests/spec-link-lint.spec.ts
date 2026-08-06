@@ -118,6 +118,46 @@ describe('stripCodeFences', () => {
   it('leaves inline backticks alone', () => {
     expect(stripCodeFences('use `spec-exempt: x` here')).toBe('use `spec-exempt: x` here')
   })
+
+  /**
+   * PR #160 moved the rule into `lib/guard.mjs` as `stripNonEvidence`, shared
+   * with `stage-b` and `spec-deletion`. That WIDENED this guard — the old
+   * implementation was backtick-fences-only — and the widening was intended, so
+   * it is pinned here rather than left as an accident of delegation. Every case
+   * below is a body that TALKS ABOUT a declaration without making one, and all
+   * three consumers (`specExemptReason`, `specRefsFromPrBody`,
+   * `specRefsFromIssueBody`) inherit the stricter reading.
+   */
+  it('removes HTML comments — the PR template keeps its own instructions in one', () => {
+    expect(stripCodeFences('a\n<!--\nspec-exempt: x\n-->\nb')).toBe('a\n\nb')
+  })
+
+  it('removes tilde fences and up-to-3-space-indented fences', () => {
+    expect(stripCodeFences('a\n~~~md\nspec-exempt: x\n~~~\nb')).toBe('a\n\nb')
+    expect(stripCodeFences('a\n  ```\n  spec-exempt: x\n  ```\nb')).toBe('a\n\nb')
+  })
+})
+
+describe('the widened stripping, through the consumers that inherit it', () => {
+  it('does not read a `spec-exempt:` hatch out of an HTML comment', () => {
+    expect(specExemptReason('<!--\nspec-exempt: CMS-contract upkeep\n-->')).toBeNull()
+  })
+
+  it('still reads a genuine hatch that sits beside a commented example', () => {
+    expect(
+      specExemptReason('<!-- spec-exempt: <reason> -->\nspec-exempt: CMS-contract upkeep'),
+    ).toBe('CMS-contract upkeep')
+  })
+
+  it('does not read a `Spec:` declaration out of an HTML comment', () => {
+    expect(specRefsFromPrBody('<!--\nSpec: docs/specs/081-hours-calculator.md\n-->')).toEqual([])
+  })
+
+  it('does not read a `Spec reference` section out of a tilde fence', () => {
+    expect(
+      specRefsFromIssueBody('~~~md\n## Spec reference\n\ndocs/specs/081-hours-calculator.md\n~~~'),
+    ).toEqual([])
+  })
 })
 
 describe('extractSpecPaths', () => {

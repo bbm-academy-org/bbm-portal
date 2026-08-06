@@ -42,7 +42,13 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { ghViewJson } from './lib/gh.mjs'
-import { isEntryPoint, reporter, repoRoot, resolvePrNumber as envPrNumber } from './lib/guard.mjs'
+import {
+  isEntryPoint,
+  reporter,
+  repoRoot,
+  resolvePrNumber as envPrNumber,
+  stripNonEvidence,
+} from './lib/guard.mjs'
 
 /** The spec status ladder — canon: `docs/specs/README.md` § Status model. */
 export const SPEC_STATUSES = ['Draft', 'In dev', 'Shipped', 'Superseded', 'Retired']
@@ -123,9 +129,17 @@ export function extractClosedIssues(body) {
   return out
 }
 
-/** Drop fenced code blocks — anything shown as a code sample is not a declaration. */
+/**
+ * Drop the regions that merely TALK ABOUT a declaration — fenced code blocks and
+ * HTML comments. Delegates to the shared `stripNonEvidence` in `lib/guard.mjs`:
+ * the rule is one rule, and it had three copies until the review of PR #160
+ * found the third (`spec-deletion`) had shipped without it. Strictly stricter
+ * than the previous fences-only form — a marker inside a multi-line HTML comment
+ * (the shape the PR template uses for its own instructions) is now correctly not
+ * a declaration either.
+ */
 export function stripCodeFences(text) {
-  return String(text ?? '').replace(/^```[\s\S]*?^```[ \t]*$/gm, '')
+  return stripNonEvidence(text)
 }
 
 /**

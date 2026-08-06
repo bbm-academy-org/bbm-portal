@@ -34,8 +34,9 @@ import {
  * comments` return.
  *
  * AC3 of #138: «a synthetic UI PR without the marker does not pass». That is the
- * `red: UI diff, no marker` case — verdict `violation`, and exit 1 once the
- * severity is promoted to BLOCK (#136).
+ * `red: UI diff, no marker` case — verdict `violation`, and exit 1 whenever the
+ * caller asks for a real signal (`--severity block`, which is how the CI job
+ * invokes it — docs/ci-guardrails.md §5).
  */
 
 /** A synthetic `gh pr view --json number,body,files` payload. */
@@ -279,7 +280,7 @@ describe('stage-b-lint: what counts as a UI diff', () => {
 })
 
 describe('stage-b-lint: runner contract', () => {
-  it('severity defaults to WARN until #136 promotes it, and `--severity block` overrides', () => {
+  it('severity defaults to WARN, and `--severity block` overrides', () => {
     expect(severityFromArgv([])).toBe('warn')
     expect(severityFromArgv(['--severity', 'block'])).toBe('block')
     expect(severityFromArgv(['--severity=block'])).toBe('block')
@@ -287,7 +288,7 @@ describe('stage-b-lint: runner contract', () => {
 
   // Review PR #151, major 2: the positional split did not consume the value of
   // `--severity`, so the two documented invocation forms — a positional PR
-  // number and the `PR_NUMBER` env fallback #136's workflow will use — could not
+  // number and the `PR_NUMBER` env fallback the CI job uses — could not
   // be combined with the flag.
   it('parses both invocation forms, with and without the flag', () => {
     expect(parseArgs(['151'], {})).toEqual({ prNumber: '151', severity: 'warn' })
@@ -303,7 +304,7 @@ describe('stage-b-lint: runner contract', () => {
       prNumber: '151',
       severity: 'block',
     })
-    // The exact command the PR body advertises for #136's workflow.
+    // The exact command the PR body advertises for the CI job.
     expect(parseArgs(['--severity', 'block'], { PR_NUMBER: '151' })).toEqual({
       prNumber: '151',
       severity: 'block',
@@ -337,7 +338,7 @@ describe('stage-b-lint: runner contract', () => {
   // dial. A violation is a finding about the PR (WARN can absorb it); an
   // unreadable PR means the guard did not run at all, and a guard that exits 0
   // when it never ran is indistinguishable from a clean check. Masking that in
-  // CI is #136's `continue-on-error` decision, made at the job level.
+  // CI is the `continue-on-error` decision, made at the job level (canon §5).
   it('an unreadable PR is a fatal error under EVERY severity, never a silent pass', () => {
     for (const severity of ['warn', 'block'] as const) {
       const result = runStageBLint({ prNumber: 999, severity, gh: makeGh().gh })
