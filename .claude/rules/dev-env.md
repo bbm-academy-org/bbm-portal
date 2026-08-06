@@ -1,6 +1,6 @@
 # Dev env — этот Windows-бокс
 
-- **Node 22 обязателен** (`engines: ^22.17.0`, engine-strict). Системный Node
+- **Node 22 обязателен** (`engines: ^22.22.1`, engine-strict). Системный Node
   тут новее, поэтому в каждой bash-сессии первым делом:
   `export PATH="$LOCALAPPDATA/node22:$PATH"` — портативная сборка лежит в
   `%LOCALAPPDATA%\node22`. На Node 23/24 ломается tsx-лоадер Payload
