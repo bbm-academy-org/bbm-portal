@@ -1,20 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  CHECKPOINT_SCRIPT,
   DEPLOY_STAGES,
   IMAGE_RETENTION,
   NON_FATAL_STAGES,
+  ROLLBACK_STAGES,
+  buildCheckpointScript,
   buildDeployScript,
   buildRetentionScript,
   buildShipCommand,
   buildVerifyScript,
   caddyNeedsRestart,
   classifyCheckRuns,
+  formatCheckpointFailure,
+  formatDryRunPlan,
   parseRollbackSha,
   preflightVerdict,
   createStallWatchdog,
   formatStallMessage,
   runDeploy,
+  runRollback,
   verifyVerdict,
 } from '../../tools/deploy/prod.mjs'
 
@@ -243,6 +249,52 @@ describe('buildRetentionScript', () => {
   })
 })
 
+// ── pre-migrate checkpoint (#156) ────────────────────────────────────────────
+
+describe('buildCheckpointScript', () => {
+  it('runs the backup script the `bbm` ops repo installed on the box', () => {
+    const script = buildCheckpointScript()
+    expect(CHECKPOINT_SCRIPT).toBe('/home/deploy/portal-backup/backup-portal.sh')
+    expect(script).toContain(`bash ${CHECKPOINT_SCRIPT}`)
+  })
+
+  it('REFUSES when the script is absent — a missing checkpoint is not "no changes"', () => {
+    // The whole value of this stage is that it fails BEFORE the migrate. A box
+    // where the ops repo never installed (or someone removed) the script must
+    // abort the deploy, not sail past it silently.
+    const script = buildCheckpointScript()
+    expect(script).toMatch(/\[ ! -f/)
+    expect(script).toMatch(/exit 1/)
+    expect(script.indexOf('exit 1')).toBeLessThan(script.indexOf(`bash ${CHECKPOINT_SCRIPT}`))
+  })
+})
+
+describe('formatCheckpointFailure', () => {
+  it('states that nothing was migrated and points at the `bbm` runbook', () => {
+    const msg = formatCheckpointFailure('checkpoint on portal-prod-tw exited 1')
+    expect(msg).toMatch(/checkpoint on portal-prod-tw exited 1/)
+    expect(msg).toMatch(/NOTHING was migrated/i)
+    // The script and its cron are owned by the `bbm` ops repo — this repo points
+    // there rather than restating the procedure (path is the contract).
+    expect(msg).toContain('bbm')
+    expect(msg).toContain('infra/portal/README.md')
+  })
+})
+
+describe('formatDryRunPlan', () => {
+  const plan = formatDryRunPlan(SHA)
+
+  it('prints the checkpoint plan like every other remote step', () => {
+    expect(plan).toContain('[checkpoint]')
+    expect(plan).toContain(CHECKPOINT_SCRIPT)
+  })
+
+  it('shows the checkpoint before the stack — the order it really runs in', () => {
+    expect(plan.indexOf('[checkpoint]')).toBeGreaterThan(plan.indexOf('[ship]'))
+    expect(plan.indexOf('[checkpoint]')).toBeLessThan(plan.indexOf('[deployStack]'))
+  })
+})
+
 // ── rollback ─────────────────────────────────────────────────────────────────
 
 describe('parseRollbackSha', () => {
@@ -273,6 +325,7 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
         return OTHER
       }),
       ship: make('ship'),
+      checkpoint: make('checkpoint'),
       deployStack: make('deployStack'),
       applyCaddy: make('applyCaddy'),
       verifyRunningSha: make('verifyRunningSha'),
@@ -293,6 +346,7 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
       'preflight',
       'readPrevSha',
       'ship',
+      'checkpoint',
       'deployStack',
       'applyCaddy',
       'verifyRunningSha',
@@ -307,6 +361,33 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
     const { steps, order } = stubs()
     await runDeploy(steps)
     expect(order.indexOf('smoke')).toBeLessThan(order.indexOf('prune'))
+  })
+
+  it('checkpoints the database BEFORE the stage that migrates it', async () => {
+    // #156 acceptance: `deploy:prod` takes (or verifies) a checkpoint before
+    // running migrations. Ordered after `ship` so the box already carries the
+    // tree, and before `deployStack` — the stage that applies the migration.
+    const { steps, order } = stubs()
+    await runDeploy(steps)
+    expect(order.indexOf('checkpoint')).toBeGreaterThan(order.indexOf('ship'))
+    expect(order.indexOf('checkpoint')).toBeLessThan(order.indexOf('deployStack'))
+    expect(DEPLOY_STAGES.indexOf('checkpoint')).toBe(DEPLOY_STAGES.indexOf('deployStack') - 1)
+  })
+
+  it('a failing checkpoint aborts — nothing migrates without a fresh dump', async () => {
+    // Fail-closed, and fatal by contract: this stage sits above the
+    // "prod is proven serving" line precisely because it protects the migrate.
+    const { steps } = stubs({
+      checkpoint: vi.fn(async () => {
+        throw new Error('checkpoint on portal-prod-tw exited 1')
+      }),
+    })
+    await expect(runDeploy(steps)).rejects.toThrow(/checkpoint/i)
+    expect(steps.deployStack).not.toHaveBeenCalled()
+    expect(steps.applyCaddy).not.toHaveBeenCalled()
+    expect(steps.smoke).not.toHaveBeenCalled()
+    expect(steps.cutRelease).not.toHaveBeenCalled()
+    expect(steps.recordDeployment).not.toHaveBeenCalled()
   })
 
   it.each(NON_FATAL_STAGES)(
@@ -401,6 +482,79 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
       sha: SHA,
       release: { cut: false, reason: 'empty range' },
     })
+  })
+})
+
+describe('runRollback — an app swap, not a schema change', () => {
+  function stubs(overrides: Record<string, unknown> = {}) {
+    const order: string[] = []
+    const make = (name: string) =>
+      vi.fn(async () => {
+        order.push(name)
+      })
+    const steps = {
+      resolveTarget: vi.fn(async () => {
+        order.push('resolveTarget')
+        return SHA
+      }),
+      readPrevSha: vi.fn(async () => {
+        order.push('readPrevSha')
+        return OTHER
+      }),
+      ensureImagePresent: make('ensureImagePresent'),
+      swapImage: make('swapImage'),
+      verifyRunningSha: make('verifyRunningSha'),
+      smoke: make('smoke'),
+      recordRollback: make('recordRollback'),
+      // Present so the assertion below is about behaviour, not about a typo:
+      // if a future edit wires the checkpoint into the rollback path, this spy
+      // records it.
+      checkpoint: make('checkpoint'),
+      log: () => {},
+      ...overrides,
+    }
+    return { steps, order }
+  }
+
+  it('takes NO checkpoint — a rollback runs no migration to protect', async () => {
+    const { steps } = stubs()
+    await runRollback(steps)
+    expect(steps.checkpoint).not.toHaveBeenCalled()
+    expect(ROLLBACK_STAGES).not.toContain('checkpoint')
+    // …because it runs no migrating stage either: `up -d app` on a retained
+    // image, no rebuild, no `migrate`, no DB touch.
+    expect(ROLLBACK_STAGES).not.toContain('deployStack')
+  })
+
+  it('runs its stages in the documented order', async () => {
+    const { steps, order } = stubs()
+    await runRollback(steps)
+    expect(order).toEqual(ROLLBACK_STAGES)
+  })
+
+  it('a red smoke aborts the rollback before any record is written', async () => {
+    const { steps } = stubs({
+      smoke: vi.fn(async () => {
+        throw new Error('prod smoke RED')
+      }),
+    })
+    await expect(runRollback(steps)).rejects.toThrow(/smoke/i)
+    expect(steps.recordRollback).not.toHaveBeenCalled()
+  })
+
+  it('records the rollback with the sha it REPLACED as the previous one', async () => {
+    const { steps } = stubs()
+    await runRollback(steps)
+    expect(steps.recordRollback).toHaveBeenCalledWith({ prevSha: OTHER, sha: SHA })
+  })
+
+  it('a failing record does not fail a rollback that already took', async () => {
+    const { steps } = stubs({
+      recordRollback: vi.fn(async () => {
+        throw new Error('gh api 403')
+      }),
+    })
+    await expect(runRollback(steps)).resolves.toMatchObject({ sha: SHA })
   })
 })
 
