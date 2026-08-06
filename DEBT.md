@@ -79,7 +79,10 @@ Entry format:
       same holds for `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` —
       materially edited by the retro-hooks PR, but the whole-file translation was
       deliberately kept out of that PR to keep the behavioral diff reviewable;
-      same return condition applies to them.
+      same return condition applies to them. Worked off 2026-08-06 (#142) for
+      `tools/gh/pr-land.mjs` + `tests/unit/gh-pr-land.spec.ts`, translated in
+      their own no-behaviour-change commit ahead of the fix; the rest of the set
+      still stands.
 
 - [ ] 2026-08-04 `set-board-status.mjs`: `process.exit(0)` сразу после записи
       «ГОТОВО» — на Windows-TTY запись асинхронна, тот же класс, что #132

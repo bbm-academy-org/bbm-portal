@@ -23,8 +23,19 @@ same head SHA the gate cleared (`gh pr merge --match-head-commit`), so a commit
 that lands between the green gate and the merge cannot ride in unchecked — which
 in a repo with parallel sessions is a routine event, not a thought experiment.
 
-Run it from the MAIN checkout, not from a worktree: `--delete-branch` cannot
-delete a branch a worktree is holding.
+Run it from the MAIN checkout, not from a worktree — `pr:land` tears worktrees
+down, so from inside one it would saw off the branch it sits on; it refuses with
+exit 4.
+
+**A landed merge never reads as a failure (#142).** `--delete-branch` also
+deletes the LOCAL branch, and that always fails while a worktree holds it — the
+norm here. So the merge stage is judged by the PR's state read back, not by the
+exit code alone: a non-zero exit on a PR that IS merged is a `merge-cleanup:
+WARNING`, and the tail carries on to the board. The local branch is deleted by
+`pnpm worktree:teardown <N>`, which owns it. And the tail is re-runnable — on an
+already-MERGED PR the gate and the merge are skipped and the run resumes at the
+first unfinished stage, so a tail that aborted halfway is finished by re-running
+the same command, not by hand.
 
 ## What must never be done instead
 

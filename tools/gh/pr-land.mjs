@@ -23,6 +23,15 @@
 // The first failing stage stops the tail, prints the stage name and one line of
 // "what to finish by hand" (canon §7).
 //
+// Two properties keep a landed merge from reading as a failure (#142):
+//   — the merge stage is judged by the PR's state read back, not by the exit
+//     code alone. `--delete-branch` also deletes the LOCAL branch, which always
+//     fails while a worktree holds it (the norm here), so a non-zero exit on a
+//     PR that IS merged becomes a warning: the local branch belongs to stage 5;
+//   — the tail is re-runnable. On a PR that is already MERGED stages 1–2 are
+//     skipped and the run resumes at the first unfinished stage; stages 3–6 are
+//     idempotent by construction.
+//
 // The review gate is BLOCKING and on by default, but it accepts the form of
 // review that actually exists in this repo: the only human with the rights IS
 // the PR author (they cannot APPROVE their own PR), and the reviewer is a
@@ -91,6 +100,30 @@ export function stageRemedy(stage, pr) {
     default:
       return `re-run \`pnpm pr:land ${pr}\`.`
   }
+}
+
+/**
+ * What `gh pr merge`'s exit code actually means, cross-checked against the PR's
+ * state read back afterwards (#142).
+ *
+ * One exit code covers three operations: the remote merge, the deletion of the
+ * remote branch, and the deletion of the LOCAL branch. The last one fails
+ * whenever a worktree holds that branch — which in this repo is the norm, not
+ * an edge case (`.claude/rules/parallel-sessions.md`). Reading a non-zero exit
+ * as "the merge failed" therefore reports a landed merge as a failure, aborts
+ * the tail before the board is updated, and sends the caller back to re-merge a
+ * PR that is already merged.
+ *
+ * The state read back is the arbiter, and only in the permissive direction: a
+ * state we could not read leaves the failure a failure, because an unverifiable
+ * merge is not a merge.
+ * @param {number|null|undefined} status  the child's exit code
+ * @param {string|null} stateAfter        the PR's state after the call, uppercase
+ * @returns {'merged'|'merged-dirty'|'failed'}
+ */
+export function classifyMergeResult(status, stateAfter) {
+  if (status === 0) return 'merged'
+  return String(stateAfter ?? '').toUpperCase() === 'MERGED' ? 'merged-dirty' : 'failed'
 }
 
 /**
@@ -260,6 +293,12 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
   Review counts in two ways by default: a human APPROVE OR a reviewer comment
   carrying a \`VERDICT: APPROVE\` line created AFTER the PR's last commit.
 
+  Re-runnable: on a PR that is already MERGED the gate and the merge are skipped
+  and the tail resumes at the first unfinished stage. A \`gh pr merge\` that exits
+  non-zero only because the LOCAL branch could not be deleted (a worktree holds
+  it — the norm here) is a warning, not a failed merge: that branch is deleted by
+  \`pnpm worktree:teardown <N>\`.
+
   Flags:
     --timeout <sec>            wait for the checks, 900 by default
     --interval <sec>           poll period, 20 by default
@@ -335,9 +374,30 @@ function runMerge(pr, sha) {
   return spawnSync('gh', args, { stdio: 'inherit' })
 }
 
-function runMergedSha(pr) {
-  const res = ghJson(['pr', 'view', String(pr), '--json', 'mergeCommit'])
-  return res.ok ? (res.data?.mergeCommit?.oid ?? null) : null
+/**
+ * A cheap read of everything the tail needs to know about a PR independently of
+ * the gate: is it merged, what does it close, which branch is it on. Serves two
+ * callers — the pre-flight probe (is there anything left to gate and merge?) and
+ * the post-merge verification (did the merge land despite a non-zero exit?).
+ * @returns {{ok:true, state:string, closes:number[], branch:string|null, mergeCommit:string|null}|{ok:false, error:string}}
+ */
+function runPrState(pr) {
+  const res = ghJson([
+    'pr',
+    'view',
+    String(pr),
+    '--json',
+    'state,closingIssuesReferences,headRefName,mergeCommit',
+  ])
+  if (!res.ok) return { ok: false, error: res.error }
+  const data = res.data ?? {}
+  return {
+    ok: true,
+    state: String(data.state ?? '').toUpperCase(),
+    closes: (data.closingIssuesReferences ?? []).map((r) => r?.number).filter(Boolean),
+    branch: data.headRefName ?? null,
+    mergeCommit: data.mergeCommit?.oid ?? null,
+  }
 }
 
 function runClearPrBoardItem(pr) {
@@ -449,12 +509,19 @@ export function runGate(pr, { timeout, interval, requireReview = false, reviewGa
  * in a pipe the shell sees the exit code of the last command, not the gate's).
  * The runners are injected so the test can drive every branch without
  * subprocesses.
+ *
+ * The tail is re-runnable (#142). Stages 1–2 are the only ones that are not
+ * repeatable by nature, so they are skipped outright on a PR that is already
+ * MERGED; stages 3–6 are idempotent on their own (an absent board row, a Done
+ * that is already Done, a worktree that is no longer on disk, a read-only
+ * sweep). That is what makes a second `pr:land` finish the tail instead of
+ * demanding a merge that already happened.
  */
 export function landPr(opts, io = {}) {
   const { pr } = opts
   const gate = io.gate ?? ((o) => runGate(pr, o))
   const merge = io.merge ?? runMerge
-  const mergedSha = io.mergedSha ?? runMergedSha
+  const prState = io.prState ?? runPrState
   const clearBoardItem = io.clearBoardItem ?? runClearPrBoardItem
   const boardDone = io.boardDone ?? runBoardDone
   const worktreeExists = io.worktreeExists ?? defaultWorktreeExists
@@ -477,24 +544,65 @@ export function landPr(opts, io = {}) {
     return exit(code)
   }
 
-  // 1. The gate.
-  const g = gate(opts)
-  for (const w of g.warn ?? []) err(`gate, remark: ${w}`)
-  if (g.verdict === 'timeout') return fail('gate', 2, g.reasons.join('; '))
-  if (g.verdict !== 'green') return fail('gate', 1, g.reasons.join('; '))
-  report.push('gate: OK (checks green, head pinned)')
+  const onlyIssues = (list) => (list ?? []).filter((n) => Number.isInteger(n) && n > 0)
+  const short = (s) => (s ? String(s).slice(0, 12) : null)
 
-  const issues = (g.closes ?? []).filter((n) => Number.isInteger(n) && n > 0)
+  // 0. Pre-flight: is there anything left to gate and merge at all? A PR whose
+  //    merge landed but whose tail aborted must be resumable — the gate would
+  //    otherwise read it as «not open» and send the caller back to a merge that
+  //    already happened. A probe that cannot be read is NOT treated as "already
+  //    merged": we fall through to the gate, which reports the failure properly.
+  const before = prState(pr)
+  const alreadyMerged = before.ok && before.state === 'MERGED'
 
-  // 2. The merge — pinned to the same SHA that passed the gate.
-  const mergeRes = merge(pr, g.sha)
-  if (mergeRes.error) return fail('merge', 3, `could not launch gh pr merge: ${mergeRes.error.message}`)
-  if (mergeRes.status !== 0) return fail('merge', failCode(mergeRes.status))
-  const sha = mergedSha(pr)
-  report.push(
-    `merge: OK (squash${g.sha ? `, head pinned at ${String(g.sha).slice(0, 12)}` : ''}` +
-      `${sha ? `, ${String(sha).slice(0, 12)}` : ''})`,
-  )
+  let issues
+  let branch
+
+  if (alreadyMerged) {
+    report.push(`gate: skip (PR #${pr} is already MERGED — there is nothing left to gate)`)
+    report.push(
+      `merge: skip (already merged${before.mergeCommit ? `, ${short(before.mergeCommit)}` : ''}) — ` +
+        `resuming the tail from the first unfinished stage`,
+    )
+    issues = onlyIssues(before.closes)
+    branch = before.branch
+  } else {
+    // 1. The gate.
+    const g = gate(opts)
+    for (const w of g.warn ?? []) err(`gate, remark: ${w}`)
+    if (g.verdict === 'timeout') return fail('gate', 2, g.reasons.join('; '))
+    if (g.verdict !== 'green') return fail('gate', 1, g.reasons.join('; '))
+    report.push('gate: OK (checks green, head pinned)')
+
+    issues = onlyIssues(g.closes)
+    branch = g.branch
+
+    // 2. The merge — pinned to the same SHA that passed the gate.
+    const mergeRes = merge(pr, g.sha)
+    if (mergeRes.error) {
+      return fail('merge', 3, `could not launch gh pr merge: ${mergeRes.error.message}`)
+    }
+    // The remote merge and the local cleanup share one exit code — read the PR
+    // back to tell them apart instead of trusting the code alone (#142).
+    const after = prState(pr)
+    const outcome = classifyMergeResult(mergeRes.status, after.ok ? after.state : null)
+    if (outcome === 'failed') return fail('merge', failCode(mergeRes.status))
+    const sha = after.ok ? after.mergeCommit : null
+    report.push(
+      `merge: OK (squash${g.sha ? `, head pinned at ${short(g.sha)}` : ''}` +
+        `${sha ? `, ${short(sha)}` : ''})`,
+    )
+    if (outcome === 'merged-dirty') {
+      // NOT a stage failure: what is left undone is local, and the local branch
+      // belongs to `worktree:teardown` (stage 5 below), not to `gh pr merge`.
+      const detail =
+        '`gh pr merge --delete-branch` exited non-zero AFTER the remote merge landed — ' +
+        'local cleanup did not finish. A local branch held by a worktree is the norm here ' +
+        '(`.claude/rules/parallel-sessions.md`); `pnpm worktree:teardown <N>` owns deleting it.'
+      report.push(`merge-cleanup: WARNING (not fatal — ${detail})`)
+      err(`merge cleanup, remark: ${detail}`)
+    }
+  }
 
   // 3. board-clear — NOT fatal: the merge has already landed.
   const clear = clearBoardItem(pr)
@@ -515,7 +623,7 @@ export function landPr(opts, io = {}) {
   }
 
   // 5. worktree teardown.
-  const candidates = issueCandidates(issues, g.branch)
+  const candidates = issueCandidates(issues, branch)
   const present = candidates.filter((n) => worktreeExists(n))
   if (present.length === 0) {
     report.push(`teardown: skip (nothing on disk at .claude/worktrees/{${candidates.join(',') || '-'}})`)
