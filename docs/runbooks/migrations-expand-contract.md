@@ -76,7 +76,9 @@ ships.
   rollback plan: it is not exercised, and the deploy pipeline never calls it.
   Fixing a bad migration in prod means rolling **forward** with a new migration.
 - **There IS a backup, and a deploy takes a fresh one before it migrates**
-  (#156). Two independent layers, neither owned by this repo's code:
+  (#156). This bullet is the single place in THIS repo that states the numbers;
+  `deploy/README.md` and the deploy skill point here. Two layers:
+
   - _Nightly, off-box._ A cron on `portal-prod-tw` at **23:30 UTC** runs
     `/home/deploy/portal-backup/backup-portal.sh`: `pg_dump` of the `cms`
     database (gzip) plus a tar of the host-only env files, pushed with `rclone`
@@ -84,28 +86,42 @@ ships.
     locally the script prunes before it writes, so the box cannot fill up.
     Freshness is watched by an independent probe on `mon-prod-tw` with a Grafana
     alert, so a silently-dead cron surfaces as an alert rather than as an empty
-    bucket on the day you need it.
+    bucket on the day you need it. These artifacts are keyed by calendar **day**
+    (`postgres-YYYYMMDD.sql.gz`), so each run overwrites the day's previous one.
   - _Per deploy._ `pnpm deploy:prod` runs that same script as its `checkpoint`
     stage, **after `ship` and before `stack`** — i.e. before any migration is
-    applied. It is fail-closed: script missing on the box, or a non-zero exit,
-    and the deploy stops with nothing migrated
-    ([`tools/deploy/prod.mjs`](../../tools/deploy/prod.mjs)).
+    applied — and then **pins** the dump it produced under a key of its own,
+    `checkpoints/pre-migrate-<UTC timestamp>-<sha12>.sql.gz`. The pin is the
+    point: without it tonight's cron (or a second deploy the same day) would
+    overwrite the day-keyed dump that protected this migration, and the recovery
+    point would be gone by morning. Pinned objects live in the same bucket, so
+    the nightly's recursive `rclone delete … --min-age 30d` gives them the **same
+    30-day retention** with no extra machinery. The stage is fail-closed: script
+    missing, non-zero exit, no freshly-written dump, or a failed pin, and the
+    deploy stops with nothing migrated
+    ([`tools/deploy/prod.mjs`](../../tools/deploy/prod.mjs)). Only the dump is
+    pinned — the env tar holds secrets, barely changes between deploys, and the
+    nightly copy restores alongside it.
 
   **Owner of the mechanism: the `bbm` ops repo, `infra/portal/README.md`** (the
   install/reinstall runbook and the restore procedure; strategy in
   `infra/backups.md`, scripts in `infra/portal/scripts/`). Restore is a rehearsed
   procedure, not a hope: the drill ran on **2026-08-06** and the dump restored
-  cleanly (93 tables, real row counts). Repair or reinstall the script THERE —
-  this repo calls it, it does not own it.
+  cleanly (93 tables, real row counts). A pinned checkpoint is restored the same
+  way as any other object in the bucket, by its key. Repair or reinstall the
+  script THERE — this repo calls it, it does not own it, and everything the
+  script writes goes to `/home/deploy/portal-backup/data/backup.log` rather than
+  to the deploy's terminal.
 
-  **The honest caveat:** a daily snapshot is not PITR. Between two nightly runs
-  the worst-case loss window is **~24h**, and nothing here replays WAL. What the
-  pre-migrate checkpoint buys is that this window is **zero for damage a
-  migration causes** — the class a deploy can cause — because the dump is taken
-  minutes before the migration runs. It does not make a destructive migration
-  cheap: recovering from one still means a restore with everything written since
-  the checkpoint gone. So the rule above stands, and a contracting migration
-  remains an owner-decision, not an agent-decision.
+  **The honest caveat:** a daily snapshot is not PITR. For ordinary damage —
+  a bad write, an accidental delete — the worst case is still **~24h** back to
+  the last nightly, and nothing here replays WAL. What the checkpoint closes is
+  the **migration** case, the one a deploy itself can cause: that dump is taken
+  minutes before the migration and survives 30 days. It does not make a
+  destructive migration cheap — recovering still means a restore with everything
+  written since the checkpoint gone, and the app down while it runs. So the rule
+  above stands, and a contracting migration remains an owner-decision, not an
+  agent-decision.
 
 ## Before a deploy — the migration check
 

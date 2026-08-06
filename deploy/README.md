@@ -265,16 +265,13 @@ preview && docker compose -f docker-compose.prod.yml up -d preview`.
   [`docs/runbooks/migrations-expand-contract.md`](../docs/runbooks/migrations-expand-contract.md)
   exists to guarantee. Migrations stay forward-only; `migrate:down` is not the
   production rollback plan.
-- **Database backups: nightly off-box, plus one per deploy.** A cron at 23:30
-  UTC runs `/home/deploy/portal-backup/backup-portal.sh` — `pg_dump` of `cms`
-  (gzip) + a tar of the host-only env files → `rclone` to the Timeweb S3 bucket
-  `bbm-portal-backups` (30-day S3 retention; the local copy is pruned before each
-  write). Freshness is monitored from `mon-prod-tw` with a Grafana alert.
-  `pnpm deploy:prod` runs the same script as its fail-closed `checkpoint` stage
-  before any migration. The script, its cron and the restore procedure are owned
-  by the **`bbm` ops repo, `infra/portal/README.md`** (strategy: `infra/backups.md`)
-  — install and repair happen there, not here. Restore was rehearsed on
-  2026-08-06. `pgdata` itself is still a single named volume with no WAL
-  archiving: a daily snapshot is not PITR, so up to ~24h can be lost between
-  snapshots — the pre-migrate checkpoint closes that window only for
-  migration-caused damage. The canon above is still the rule.
+- **Database backups: nightly off-box, plus a pinned one per deploy.** The box
+  runs `/home/deploy/portal-backup/backup-portal.sh` — from cron nightly, and
+  from `pnpm deploy:prod`'s fail-closed `checkpoint` stage before any migration.
+  Mechanism, retention and the honest caveat are stated once, in
+  [`docs/runbooks/migrations-expand-contract.md`](../docs/runbooks/migrations-expand-contract.md);
+  the script itself is owned by the **`bbm` ops repo, `infra/portal/README.md`**
+  — install and repair happen there, not here. What matters at the host level:
+  `pgdata` is still a single named volume with no WAL archiving, so a snapshot is
+  not PITR, and the backup writes into `deploy@`'s `$HOME`, not into `/var` (no
+  root on this box).

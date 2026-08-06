@@ -19,7 +19,8 @@
 // Pipeline:
 //   pre-flight  clean tree · target = origin/main's sha · green CI for that sha
 //   ship        git archive <sha> → ssh (no registry; the box has no git clone)
-//   checkpoint  run the box's backup script → fresh dump BEFORE any migration
+//   checkpoint  the box's backup script → a fresh dump BEFORE any migration,
+//               pinned under this deploy's own S3 key (30d, nothing overwrites it)
 //   stack       build app+migrate → migrate → up -d      (migrate before serving)
 //   caddy       compare the running bind mount with the shipped Caddyfile,
 //               restart only if stale, then re-compare
@@ -250,35 +251,94 @@ export function buildShipCommand() {
 // ── pure seams: the pre-migrate checkpoint (#156) ────────────────────────────
 
 /**
- * The backup script the `bbm` ops repo installs on this box (BBMP-60). It is
- * the SAME script the nightly cron runs at 23:30 UTC: pg_dump of `cms` (gzip) +
- * a tar of the host-only env files, pushed off-box to the Timeweb S3 bucket
- * `bbm-portal-backups`. Owning repo: `bbm`, `infra/portal/README.md` — this
- * pipeline calls it, it does not re-implement it.
+ * Where the `bbm` ops repo installs the backup machinery on this box (BBMP-60).
+ * The script is the SAME one the nightly cron runs at 23:30 UTC: pg_dump of
+ * `cms` (gzip) + a tar of the host-only env files, pushed off-box to the Timeweb
+ * S3 bucket in `.s3-backup.env`. Owning repo: `bbm`, `infra/portal/README.md` —
+ * this pipeline calls it, it does not re-implement it.
  */
-export const CHECKPOINT_SCRIPT = '/home/deploy/portal-backup/backup-portal.sh'
+const CHECKPOINT_DIR = '/home/deploy/portal-backup'
+export const CHECKPOINT_SCRIPT = `${CHECKPOINT_DIR}/backup-portal.sh`
+/** Where the ops script sends ALL of its output (`exec >> "$LOG" 2>&1`). */
+export const CHECKPOINT_LOG = `${CHECKPOINT_DIR}/data/backup.log`
+/** Prefix of the per-deploy recovery point this stage pins in the bucket. */
+export const CHECKPOINT_S3_PREFIX = 'checkpoints/pre-migrate-'
+/** Seconds between heartbeat lines while the (silent) ops script runs. */
+export const CHECKPOINT_KEEPALIVE_S = 30
 
 /**
- * Run that script on demand, right before the migrate. The existence check is
- * the point: `bash <missing file>` and a box where the ops repo never installed
- * (or someone removed) the script must both read as FAILED, never as "nothing
- * to do". Everything else is fail-closed for free — a non-zero exit propagates
- * through `set -euo pipefail` and the ssh exit code.
+ * Take the checkpoint, then PIN it under a key of this deploy's own.
+ *
+ * Three things this wrapper adds to "just run the ops script", each because of
+ * something the ops script does that is right for a nightly and wrong for a
+ * per-deploy recovery point:
+ *
+ *  • **A distinct S3 key.** `backup-portal.sh` names its artifact by calendar
+ *    DAY (`postgres-YYYYMMDD.sql.gz`) and copies it to a flat key, so the 23:30
+ *    nightly — or a second deploy the same day — OVERWRITES the dump that
+ *    protected this migration, and the local copy is deleted prune-first. A
+ *    checkpoint that expires the same evening cannot back the claim this stage
+ *    makes, so the dump is copied to `checkpoints/pre-migrate-<UTC>-<sha12>`.
+ *    Retention comes for free: the nightly's `rclone delete twcs:$S3_BUCKET/
+ *    --min-age 30d` is recursive over the bucket, so the prefix inherits the
+ *    same 30 days. Only the dump is pinned — the env tar holds secrets, changes
+ *    across deploys essentially never, and the nightly's copy restores with it.
+ *  • **A heartbeat.** The ops script does `exec >> "$LOG" 2>&1`: the ssh channel
+ *    sees zero bytes for the whole run, so the pipeline's inactivity watchdog
+ *    would degenerate into a hard wall-clock timeout and `kill` a backup
+ *    mid-flight. The keepalive loop makes silence mean what the watchdog thinks
+ *    it means — a dead channel.
+ *  • **An artifact assertion.** `[ -f <script> ]` plus exit 0 is also what a
+ *    zero-byte script scores. The post-condition worth checking is that a dump
+ *    with a FRESH mtime now exists.
+ *
+ * `rclone` is user-local (`~/.local/bin`), which a non-interactive ssh PATH does
+ * not carry — the ops script self-heals that for itself, so ours must too.
  */
-export function buildCheckpointScript() {
-  return `if [ ! -f ${CHECKPOINT_SCRIPT} ]; then
+export function buildCheckpointScript(sha) {
+  const shortSha = String(sha ?? '').slice(0, 12)
+  return `export PATH="$HOME/.local/bin:$PATH"
+if [ ! -f ${CHECKPOINT_SCRIPT} ]; then
   echo "checkpoint script MISSING on the box: ${CHECKPOINT_SCRIPT}" >&2
   exit 1
 fi
+# The script logs to ${CHECKPOINT_LOG}, not to us — beat so that silence on this
+# channel keeps meaning "the channel died", which is what the watchdog reads.
+( while :; do sleep ${CHECKPOINT_KEEPALIVE_S}; echo "[checkpoint] backup-portal.sh still running (its output goes to ${CHECKPOINT_LOG})"; done ) &
+keepalive=$!
+trap 'kill "$keepalive" 2>/dev/null || true' EXIT
 bash ${CHECKPOINT_SCRIPT}
+kill "$keepalive" 2>/dev/null || true
+trap - EXIT
+
+dump=$(find ${CHECKPOINT_DIR}/data -maxdepth 1 -type f -name 'postgres-*.sql.gz' -mmin -15 | sort | tail -1)
+if [ -z "$dump" ]; then
+  echo "checkpoint exited 0 but left no fresh dump in ${CHECKPOINT_DIR}/data — see ${CHECKPOINT_LOG}" >&2
+  exit 1
+fi
+
+# Pin it under this deploy's own key, so neither tonight's cron nor a second
+# deploy today can overwrite the recovery point for THIS migration.
+s3env=${CHECKPOINT_DIR}/.s3-backup.env
+if [ ! -f "$s3env" ]; then
+  echo "cannot pin the checkpoint: $s3env is missing — see ${CHECKPOINT_LOG}" >&2
+  exit 1
+fi
+set -a; . "$s3env"; set +a
+: "\${S3_BUCKET:?not set in $s3env}"
+key="${CHECKPOINT_S3_PREFIX}$(date -u +%Y%m%dT%H%M%SZ)-${shortSha}.sql.gz"
+rclone copyto "$dump" "twcs:$S3_BUCKET/$key"
+echo "[checkpoint] recovery point pinned: $key"
 `
 }
 
 /**
- * The abort message for a red checkpoint. Two jobs: say plainly that no
- * migration ran (so nobody goes looking for a half-migrated schema), and route
- * the operator to the repo that OWNS the script — reinstalling it is an ops-repo
- * procedure, and restating it here would create a second source of truth. Pure.
+ * The abort message for a red checkpoint. Three jobs: say plainly that no
+ * migration ran (so nobody goes looking for a half-migrated schema), name the
+ * log the reason is actually in — the ops script redirects everything into it,
+ * so the ssh channel carries no diagnostics at all — and route the operator to
+ * the repo that OWNS the script, since reinstalling it is an ops-repo procedure
+ * and restating it here would create a second source of truth. Pure.
  */
 export function formatCheckpointFailure(detail) {
   return (
@@ -286,6 +346,9 @@ export function formatCheckpointFailure(detail) {
     '  NOTHING was migrated and the stack was not touched — the box still serves the\n' +
     '  previous image. This gate is fail-closed on purpose: a migration applied\n' +
     '  without a fresh dump has no undo, and migrations here are forward-only.\n' +
+    `  The reason is on the box, in ${CHECKPOINT_LOG} — the script redirects ALL of\n` +
+    '  its output there, so nothing of it reached this terminal:\n' +
+    `      ssh ${PROD_SSH} tail -40 ${CHECKPOINT_LOG}\n` +
     `  The script (${CHECKPOINT_SCRIPT}) and its nightly cron belong to the \`bbm\`\n` +
     '  ops repo — reinstall or repair it per infra/portal/README.md there, confirm\n' +
     '  it exits 0 on the box, then re-run the deploy.'
@@ -434,6 +497,16 @@ export function sshBaseArgs(host) {
  *  a 2 vCPU box legitimately goes minutes between lines; nothing else does. */
 export const STALL_BUDGET_BUILD_MS = 10 * 60 * 1000
 export const STALL_BUDGET_DEFAULT_MS = 2 * 60 * 1000
+
+/**
+ * The checkpoint's budget, stated rather than inherited. The stage produces no
+ * output of its own (the ops script logs to a file on the box), so its
+ * `buildCheckpointScript` heartbeat is the ONLY thing feeding the watchdog:
+ * this budget is therefore "several missed beats", not "how long a backup may
+ * take". Inheriting the 2-minute default here would have made the watchdog a
+ * hard timeout that kills a backup mid-flight.
+ */
+export const STALL_BUDGET_CHECKPOINT_MS = 3 * 60 * 1000
 
 /**
  * The loud STALLED message. A tripped watchdog proves only that the LOCAL
@@ -662,7 +735,7 @@ export async function runDeploy(steps) {
   const sha = await steps.preflight()
   const prevSha = await steps.readPrevSha()
   await steps.ship(sha)
-  await steps.checkpoint()
+  await steps.checkpoint(sha)
   await steps.deployStack(sha)
   await steps.applyCaddy()
   await steps.verifyRunningSha(sha)
@@ -747,15 +820,18 @@ function productionSteps() {
     // that runs in the very next stage. The nightly cron already gives the box a
     // ≤24h-old dump; this narrows the window a MIGRATION-caused loss could open
     // to zero, which is the one class of damage a deploy itself can cause.
-    async checkpoint() {
+    async checkpoint(sha) {
       step('Checkpoint: fresh DB dump on the box BEFORE anything migrates')
       const t = Date.now()
       try {
-        await sshScript(PROD_SSH, buildCheckpointScript(), { label: 'pre-migrate checkpoint' })
+        await sshScript(PROD_SSH, buildCheckpointScript(sha), {
+          label: 'pre-migrate checkpoint',
+          stallBudgetMs: STALL_BUDGET_CHECKPOINT_MS,
+        })
       } catch (e) {
         die(formatCheckpointFailure(e?.message ?? String(e)))
       }
-      ok('checkpoint taken (pg_dump + env tar → Timeweb S3)', t)
+      ok('checkpoint taken and pinned under its own S3 key', t)
     },
 
     async deployStack(sha) {
@@ -857,7 +933,7 @@ export function formatDryRunPlan(sha) {
   return [
     `\n▶ DRY RUN — nothing below is executed (target ${sha.slice(0, 12)})`,
     `\n[ship] ssh ${PROD_SSH} '${buildShipCommand()}'  < git archive ${sha.slice(0, 12)}`,
-    `\n[checkpoint]\n${buildCheckpointScript()}`,
+    `\n[checkpoint]\n${buildCheckpointScript(sha)}`,
     `[deployStack]\n${buildDeployScript(sha)}`,
     `[applyCaddy]\n${buildCaddyComparisonScript()}`,
     `[verifyRunningSha]\n${buildVerifyScript(sha)}`,
@@ -982,7 +1058,10 @@ ${COMPOSE} up -d app
         cwd: process.cwd(),
       })
       if (res.ok) ok(`GitHub Deployment recorded (#${res.deploymentId})`)
-      else console.log(`  ⚠ could not record the rollback (it already succeeded): ${res.error}`)
+      // One wording for one class of failure: a returned error and a thrown one
+      // both surface through `makeNonFatal`, instead of the two different lines
+      // the inline version used to print depending on how `gh` failed.
+      else throw new Error(res.error)
     },
   }
 }

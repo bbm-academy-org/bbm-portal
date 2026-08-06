@@ -21,15 +21,15 @@ Entry format:
 
 <!-- entries below this line -->
 
-- [ ] 2026-08-06 `release-digest.yml` "Resolve target sha" step: `gh api … -f
-    environment=production -F per_page=1` turns the request into a POST
-      (create-a-deployment), which 403s under `deployments: read`; the error
-      JSON lands on stdout, so `$sha` is polluted and the `git rev-parse HEAD`
-      fallback never fires — a `workflow_dispatch` backfill WITHOUT an explicit
-      `sha` input always skips green. Workaround: pass the sha explicitly (that
-      path is verified working, 2026-08-06). Return condition: next edit to
-      `release-digest.yml`, or the first backfill dispatch that needs the
-      empty-sha path (#137, first live digest run)
+- [ ] 2026-08-06 `release-digest.yml` "Resolve target sha" step: the
+      `gh api … -f environment=production -F per_page=1` call turns the request
+      into a POST (create-a-deployment), which 403s under `deployments: read`;
+      the error JSON lands on stdout, so `$sha` is polluted and the
+      `git rev-parse HEAD` fallback never fires — a `workflow_dispatch` backfill
+      WITHOUT an explicit `sha` input always skips green. Workaround: pass the
+      sha explicitly (that path is verified working, 2026-08-06). Return
+      condition: next edit to `release-digest.yml`, or the first backfill
+      dispatch that needs the empty-sha path (#137, first live digest run)
 
 - [ ] 2026-08-05 `deploy:smoke` / `deploy:notes` have no `pre*` Node-version
       guard (`deploy:prod` checks Node 22, the standalone entries don't) —
