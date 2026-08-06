@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   STAGES,
   classifyChecks,
+  classifyMergeResult,
   cwdGuardMessage,
   failCode,
   findAgentApproval,
@@ -65,6 +66,32 @@ describe('classifyChecks', () => {
         { name: 'b', status: 'COMPLETED', conclusion: 'FAILURE' },
       ]).verdict,
     ).toBe('red')
+  })
+})
+
+/**
+ * Regression (#142). `gh pr merge --delete-branch` does three things behind one
+ * exit code: it merges remotely, deletes the remote branch, then deletes the
+ * LOCAL branch. The last one always fails when a worktree holds that branch —
+ * the norm in this repo (`.claude/rules/parallel-sessions.md`). So the exit code
+ * on its own cannot tell a failed merge from a landed one with leftover local
+ * cleanup; the PR's own state read back afterwards can.
+ */
+describe('classifyMergeResult', () => {
+  it('exit 0 is a clean merge', () => {
+    expect(classifyMergeResult(0, 'OPEN')).toBe('merged')
+  })
+
+  it('a non-zero exit on a PR that is nevertheless MERGED is local-cleanup fallout', () => {
+    expect(classifyMergeResult(1, 'MERGED')).toBe('merged-dirty')
+  })
+
+  it('a non-zero exit on a PR that is still open is a real merge failure', () => {
+    expect(classifyMergeResult(1, 'OPEN')).toBe('failed')
+  })
+
+  it('a non-zero exit with an unreadable state fails — an unverifiable merge is not a merge', () => {
+    expect(classifyMergeResult(1, null)).toBe('failed')
   })
 })
 
@@ -342,10 +369,36 @@ describe('landPr — stage order and aborts', () => {
     branch: 'chore/130-x',
     sha: 'deadbeef',
   })
+  /** The real sequence of state probes: OPEN before the merge, MERGED after it. */
+  const openThenMerged = () => {
+    let calls = 0
+    return () => ({
+      ok: true,
+      state: calls++ === 0 ? 'OPEN' : 'MERGED',
+      closes: [130],
+      branch: 'chore/130-x',
+      mergeCommit: 'abcdef1234567890',
+    })
+  }
+  const mergedPr = () => ({
+    ok: true,
+    state: 'MERGED',
+    closes: [130],
+    branch: 'chore/130-x',
+    mergeCommit: 'abcdef1234567890',
+  })
+  const openPr = () => ({
+    ok: true,
+    state: 'OPEN',
+    closes: [130],
+    branch: 'chore/130-x',
+    mergeCommit: null,
+  })
+
   const okRunners = (over = {}) => ({
     gate: greenGate,
     merge: () => ({ status: 0 }),
-    mergedSha: () => 'abcdef1234567890',
+    prState: openThenMerged(),
     clearBoardItem: () => ({ status: 'deleted', detail: 'PVTI_x' }),
     boardDone: () => ({ status: 0 }),
     worktreeExists: () => false,
@@ -443,9 +496,81 @@ describe('landPr — stage order and aborts', () => {
 
   it('a failed merge does not let the board move', () => {
     const boardDone = vi.fn()
-    const res = drive({ merge: () => ({ status: 1 }), boardDone })
+    const res = drive({ merge: () => ({ status: 1 }), prState: openPr, boardDone })
     expect(boardDone).not.toHaveBeenCalled()
     expect(res.code).toBe(1)
+  })
+
+  /**
+   * Regression (#142), scenario 1. On the first live run (merge of PR #141) the
+   * remote merge landed and `gh pr merge --delete-branch` still exited non-zero,
+   * because a worktree held the local branch. The stage was reported FAILED, the
+   * tail aborted before board-done, and the board was left stale — while the
+   * remedy line offered a re-merge of a PR that was already merged.
+   */
+  it('a non-zero merge whose PR really did land is a warning, not a stage failure', () => {
+    const boardDone = vi.fn(() => ({ status: 0 }))
+    const res = drive({ merge: () => ({ status: 1 }), boardDone })
+    expect(res.code).toBe(0)
+    expect(boardDone).toHaveBeenCalledWith(130)
+    expect(res.log).toMatch(/merge-cleanup: WARNING/)
+  })
+
+  it('the cleanup warning names `worktree:teardown` as the owner of the local branch', () => {
+    expect(drive({ merge: () => ({ status: 1 }) }).err).toMatch(/worktree:teardown/)
+  })
+
+  it('a merge failure the state probe cannot read fails the stage — unverifiable is not merged', () => {
+    const boardDone = vi.fn()
+    const res = drive({
+      merge: () => ({ status: 1 }),
+      prState: () => ({ ok: false, error: 'gh crashed' }),
+      boardDone,
+    })
+    expect(res.code).toBe(1)
+    expect(boardDone).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Regression (#142), scenario 2. After that aborted run the tail had to be
+   * finished by hand: re-running `pr:land` dead-ended, because the gate reads a
+   * MERGED PR as "not open". A repeat run must resume from the first stage that
+   * never finished instead of demanding a merge that already happened.
+   */
+  it('an already-MERGED PR skips gate and merge and finishes the remaining stages', () => {
+    const gate = vi.fn(greenGate)
+    const merge = vi.fn(() => ({ status: 0 }))
+    const boardDone = vi.fn(() => ({ status: 0 }))
+    const res = drive({ prState: mergedPr, gate, merge, boardDone })
+    expect(gate).not.toHaveBeenCalled()
+    expect(merge).not.toHaveBeenCalled()
+    expect(boardDone).toHaveBeenCalledWith(130)
+    expect(res.code).toBe(0)
+    expect(res.log).toMatch(/gate: skip/)
+    expect(res.log).toMatch(/merge: skip/)
+  })
+
+  it('a resumed run takes the Closes numbers and the branch from the merged PR itself', () => {
+    const boardDone = vi.fn(() => ({ status: 0 }))
+    const teardown = vi.fn(() => ({ status: 0 }))
+    drive({
+      prState: () => ({
+        ok: true,
+        state: 'MERGED',
+        closes: [131],
+        branch: 'chore/131-x',
+        mergeCommit: 'abcdef1234567890',
+      }),
+      boardDone,
+      worktreeExists: () => true,
+      teardown,
+    })
+    expect(boardDone).toHaveBeenCalledWith(131)
+    expect(teardown).toHaveBeenCalledWith(131)
+  })
+
+  it('an unreadable pre-flight state probe does not block the normal path', () => {
+    expect(drive({ prState: () => ({ ok: false, error: 'gh crashed' }) }).code).toBe(0)
   })
 
   it('a failed board-clear is not fatal — the merge has already landed', () => {
