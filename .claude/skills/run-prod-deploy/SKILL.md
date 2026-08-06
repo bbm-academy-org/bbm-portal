@@ -63,6 +63,7 @@ printing a rollback pointer:
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | pre-flight                                                        | clean tree · target = `origin/main` sha · green CI for that sha                                   | dirty tree · red or still-running CI · no CI at all |
 | ship                                                              | `git archive <sha>` → ssh → `rm -rf src && tar -xz`                                               | ssh/tar non-zero                                    |
+| checkpoint                                                        | runs the box's backup script → fresh dump BEFORE anything migrates                                | the script is missing on the box · non-zero exit    |
 | stack                                                             | build `app`+`migrate` → migrate → `up -d`                                                         | any compose step non-zero                           |
 | caddy                                                             | compares the shipped `Caddyfile` with the running bind mount, restarts only if stale, re-compares | still stale after the restart                       |
 | verify                                                            | polls until `bbm-portal-app-1` runs `bbm-portal-app:<sha>`                                        | the container carries any other image               |
@@ -80,6 +81,17 @@ image housekeeping (a host without `grep -P`, a `pipefail` exit from a filter
 that matched nothing) once printed DEPLOY FAILED — with a rollback pointer — for
 a deploy that was already serving correctly, and cost the smoke, the tag, the
 record and the digest with it.
+
+The **checkpoint** stage (#156) runs `/home/deploy/portal-backup/backup-portal.sh`
+on the box — the SAME script the nightly 23:30 UTC cron runs: `pg_dump` of `cms`
+(gzip) + a tar of the host-only env files → Timeweb S3 `bbm-portal-backups`
+(30-day retention; ~55 KB, seconds). It is **fatal by contract** because it
+protects the migrate in the very next stage: a missing script or a non-zero exit
+means DEPLOY FAILED with nothing migrated, and the fix is to repair the script
+where it lives — the **`bbm` ops repo, `infra/portal/README.md`** (restore
+procedure and reinstall are there too; rehearsed 2026-08-06). A daily snapshot is
+not PITR — the ~24h window between nightly runs is real — but the checkpoint
+makes that window zero for damage a MIGRATION causes.
 
 The smoke **settles**: `app` has no compose healthcheck, so `verify` can only
 prove the container is RUNNING, not that Next.js has finished booting behind
@@ -140,10 +152,16 @@ to the whole team. A rollback therefore posts **nothing**: silence is honest,
 where that message would not be. If the team later wants an «откат» notice it
 must be its own message shape, never the release one.
 
+A rollback runs **no** checkpoint stage: it applies no migration, so there is
+nothing for one to protect (`ROLLBACK_STAGES` in `tools/deploy/prod.mjs`).
+
 An app rollback is only safe while the previous code still runs against the
 current schema — which is exactly what the expand/contract canon buys. After a
-contracting migration it is NOT safe, and there is no automated DB backup on
-this box today. That is why a contracting migration is an owner-decision.
+contracting migration it is NOT safe: the DB backup that exists (nightly dump +
+the pre-migrate checkpoint, see the checkpoint stage above) makes a **restore**
+possible, but a restore is not a rollback — everything written since the
+checkpoint is gone, and the app is down while it runs. That is why a contracting
+migration is an owner-decision.
 
 ## Failure modes
 
@@ -160,6 +178,10 @@ this box today. That is why a contracting migration is an owner-decision.
   this class; remove it on the box by hand.
 - **A `--dry-run` refusing on a dirty tree** — that is the gate working, not a
   bug. Commit or stash.
+- **A red checkpoint** — the backup script is missing or failing on the box.
+  Nothing migrated, prod still serves the previous image. Repair it per the `bbm`
+  ops repo's `infra/portal/README.md` and re-run; there is deliberately **no**
+  flag to skip it.
 
 ## Related
 

@@ -75,12 +75,37 @@ ships.
 - **Forward-only.** `pnpm migrate:down` exists but is not the production
   rollback plan: it is not exercised, and the deploy pipeline never calls it.
   Fixing a bad migration in prod means rolling **forward** with a new migration.
-- **There is no automated database backup on this box today.** ds-platform takes
-  a pgbackrest checkpoint before every migrate; bbm-portal has a single
-  `pgdata` named volume and no backup automation. Until that gap is closed, a
-  destructive migration has **no undo at all** — which is the strongest possible
-  argument for the rule above, and the reason a contracting migration is an
-  owner-decision, not an agent-decision.
+- **There IS a backup, and a deploy takes a fresh one before it migrates**
+  (#156). Two independent layers, neither owned by this repo's code:
+  - _Nightly, off-box._ A cron on `portal-prod-tw` at **23:30 UTC** runs
+    `/home/deploy/portal-backup/backup-portal.sh`: `pg_dump` of the `cms`
+    database (gzip) plus a tar of the host-only env files, pushed with `rclone`
+    to the Timeweb S3 bucket `bbm-portal-backups`. **Retention:** 30 days in S3;
+    locally the script prunes before it writes, so the box cannot fill up.
+    Freshness is watched by an independent probe on `mon-prod-tw` with a Grafana
+    alert, so a silently-dead cron surfaces as an alert rather than as an empty
+    bucket on the day you need it.
+  - _Per deploy._ `pnpm deploy:prod` runs that same script as its `checkpoint`
+    stage, **after `ship` and before `stack`** — i.e. before any migration is
+    applied. It is fail-closed: script missing on the box, or a non-zero exit,
+    and the deploy stops with nothing migrated
+    ([`tools/deploy/prod.mjs`](../../tools/deploy/prod.mjs)).
+
+  **Owner of the mechanism: the `bbm` ops repo, `infra/portal/README.md`** (the
+  install/reinstall runbook and the restore procedure; strategy in
+  `infra/backups.md`, scripts in `infra/portal/scripts/`). Restore is a rehearsed
+  procedure, not a hope: the drill ran on **2026-08-06** and the dump restored
+  cleanly (93 tables, real row counts). Repair or reinstall the script THERE —
+  this repo calls it, it does not own it.
+
+  **The honest caveat:** a daily snapshot is not PITR. Between two nightly runs
+  the worst-case loss window is **~24h**, and nothing here replays WAL. What the
+  pre-migrate checkpoint buys is that this window is **zero for damage a
+  migration causes** — the class a deploy can cause — because the dump is taken
+  minutes before the migration runs. It does not make a destructive migration
+  cheap: recovering from one still means a restore with everything written since
+  the checkpoint gone. So the rule above stands, and a contracting migration
+  remains an owner-decision, not an agent-decision.
 
 ## Before a deploy — the migration check
 
