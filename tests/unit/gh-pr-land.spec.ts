@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   STAGES,
   classifyChecks,
+  classifyMergeResult,
   cwdGuardMessage,
   failCode,
   findAgentApproval,
@@ -17,33 +18,33 @@ import {
 } from '../../tools/gh/pr-land.mjs'
 
 /**
- * `pnpm pr:land` — хвост закрытия PR. Все стадии инжектируются, поэтому тест
- * прогоняет их порядок и обрывы без единого подпроцесса и без сети.
- * Канон: `.claude/skills/task-canon/SKILL.md` §7.
+ * `pnpm pr:land` — the PR closing tail. Every stage is injected, so the test
+ * drives their order and their aborts with no subprocess and no network.
+ * Canon: `.claude/skills/task-canon/SKILL.md` §7.
  */
 
 describe('classifyChecks', () => {
-  it('все завершённые успехом — зелено', () => {
+  it('everything completed successfully is green', () => {
     expect(
       classifyChecks([{ name: 'ci', status: 'COMPLETED', conclusion: 'SUCCESS' }]).verdict,
     ).toBe('green')
   })
 
-  it('незавершённый прогон — ждём, а не «зелено»', () => {
+  it('an unfinished run means wait, not «green»', () => {
     expect(classifyChecks([{ name: 'ci', status: 'IN_PROGRESS' }]).verdict).toBe('pending')
   })
 
-  it('ноль зарегистрированных прогонов зелёным не считается', () => {
+  it('zero registered runs does not count as green', () => {
     expect(classifyChecks([]).verdict).toBe('pending')
   })
 
-  it('CANCELLED — красное: отменённый прогон ничего не доказал', () => {
+  it('CANCELLED is red: a cancelled run proved nothing', () => {
     const res = classifyChecks([{ name: 'ci', status: 'COMPLETED', conclusion: 'CANCELLED' }])
     expect(res.verdict).toBe('red')
     expect(res.failed[0]).toMatch(/CANCELLED/)
   })
 
-  it('SKIPPED и NEUTRAL — законный «нечего делать»', () => {
+  it('SKIPPED and NEUTRAL are a legitimate «nothing to do»', () => {
     expect(
       classifyChecks([
         { name: 'a', status: 'COMPLETED', conclusion: 'SKIPPED' },
@@ -52,13 +53,13 @@ describe('classifyChecks', () => {
     ).toBe('green')
   })
 
-  it('разбирает и StatusContext-строки по полю state', () => {
+  it('parses StatusContext rows by their state field too', () => {
     expect(classifyChecks([{ context: 'legacy', state: 'FAILURE' }]).verdict).toBe('red')
     expect(classifyChecks([{ context: 'legacy', state: 'PENDING' }]).verdict).toBe('pending')
     expect(classifyChecks([{ context: 'legacy', state: 'SUCCESS' }]).verdict).toBe('green')
   })
 
-  it('красное перебивает ожидание — ждать нечего', () => {
+  it('red beats pending — there is nothing left to wait for', () => {
     expect(
       classifyChecks([
         { name: 'a', status: 'IN_PROGRESS' },
@@ -68,18 +69,49 @@ describe('classifyChecks', () => {
   })
 })
 
+/**
+ * Regression (#142). `gh pr merge --delete-branch` does three things behind one
+ * exit code: it merges remotely, deletes the remote branch, then deletes the
+ * LOCAL branch. The last one always fails when a worktree holds that branch —
+ * the norm in this repo (`.claude/rules/parallel-sessions.md`). So the exit code
+ * on its own cannot tell a failed merge from a landed one with leftover local
+ * cleanup; the PR's own state read back afterwards can.
+ */
+describe('classifyMergeResult', () => {
+  it('exit 0 is a clean merge', () => {
+    expect(classifyMergeResult(0, 'OPEN')).toBe('merged')
+  })
+
+  it('a non-zero exit on a PR that is nevertheless MERGED is local-cleanup fallout', () => {
+    expect(classifyMergeResult(1, 'MERGED')).toBe('merged-dirty')
+  })
+
+  it('a non-zero exit on a PR that is still open is a real merge failure', () => {
+    expect(classifyMergeResult(1, 'OPEN')).toBe('failed')
+  })
+
+  it('a non-zero exit with an unreadable state fails — an unverifiable merge is not a merge', () => {
+    expect(classifyMergeResult(1, null)).toBe('failed')
+  })
+
+  it('a gh killed by a signal (status null) whose merge landed is still local-cleanup fallout', () => {
+    expect(classifyMergeResult(null, 'MERGED')).toBe('merged-dirty')
+    expect(classifyMergeResult(null, 'OPEN')).toBe('failed')
+  })
+})
+
 describe('findAgentApproval', () => {
   const HEAD = '2026-08-04T12:00:00Z'
 
-  it('свежий VERDICT: APPROVE засчитывается', () => {
+  it('a fresh VERDICT: APPROVE counts', () => {
     const res = findAgentApproval(
-      [{ body: 'ревью…\n\nVERDICT: APPROVE', createdAt: '2026-08-04T12:30:00Z' }],
+      [{ body: 'review…\n\nVERDICT: APPROVE', createdAt: '2026-08-04T12:30:00Z' }],
       HEAD,
     )
     expect(res.ok).toBe(true)
   })
 
-  it('APPROVE старше последнего коммита — протух: он про другой код', () => {
+  it('an APPROVE older than the last commit is stale: it is about different code', () => {
     const res = findAgentApproval(
       [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-04T11:00:00Z' }],
       HEAD,
@@ -87,7 +119,7 @@ describe('findAgentApproval', () => {
     expect(res).toMatchObject({ ok: false, reason: 'stale' })
   })
 
-  it('последний вердикт REQUEST_CHANGES перебивает более ранний APPROVE', () => {
+  it('a later REQUEST_CHANGES overrides an earlier APPROVE', () => {
     const res = findAgentApproval(
       [
         { body: 'VERDICT: APPROVE', createdAt: '2026-08-04T12:10:00Z' },
@@ -98,13 +130,13 @@ describe('findAgentApproval', () => {
     expect(res).toMatchObject({ ok: false, reason: 'changes' })
   })
 
-  it('обычные комментарии вердиктом не считаются', () => {
-    expect(
-      findAgentApproval([{ body: 'выглядит ок, мержим', createdAt: HEAD }], HEAD),
-    ).toMatchObject({ ok: false, reason: 'none' })
+  it('an ordinary comment does not count as a verdict', () => {
+    expect(findAgentApproval([{ body: 'looks ok, merging', createdAt: HEAD }], HEAD)).toMatchObject(
+      { ok: false, reason: 'none' },
+    )
   })
 
-  it('без даты последнего коммита свежесть не проверяется, но APPROVE нужен', () => {
+  it('without a last-commit date freshness is not checked, but an APPROVE is still required', () => {
     expect(
       findAgentApproval([{ body: 'VERDICT: APPROVE', createdAt: '2020-01-01T00:00:00Z' }], null).ok,
     ).toBe(true)
@@ -113,13 +145,13 @@ describe('findAgentApproval', () => {
 })
 
 describe('headCommittedDate', () => {
-  it('берёт дату ПОСЛЕДНЕГО коммита PR', () => {
+  it('takes the date of the PR’s LAST commit', () => {
     expect(headCommittedDate({ commits: [{ committedDate: 'a' }, { committedDate: 'b' }] })).toBe(
       'b',
     )
   })
 
-  it('на пустом списке коммитов возвращает null, а не падает', () => {
+  it('returns null on an empty commit list instead of throwing', () => {
     expect(headCommittedDate({})).toBeNull()
   })
 })
@@ -134,27 +166,27 @@ describe('gateConditions', () => {
     closingIssuesReferences: [{ number: 130 }],
   }
 
-  it('исправный PR причин для RED не даёт', () => {
+  it('a healthy PR yields no RED reasons', () => {
     expect(gateConditions(ok).red).toEqual([])
   })
 
-  it('закрытый, draft и конфликтующий PR — RED', () => {
-    expect(gateConditions({ ...ok, state: 'MERGED' }).red[0]).toMatch(/не открыт/)
+  it('a closed, a draft and a conflicting PR are all RED', () => {
+    expect(gateConditions({ ...ok, state: 'MERGED' }).red[0]).toMatch(/not open/)
     expect(gateConditions({ ...ok, isDraft: true }).red[0]).toMatch(/draft/)
-    expect(gateConditions({ ...ok, mergeable: 'CONFLICTING' }).red[0]).toMatch(/конфликтует/)
+    expect(gateConditions({ ...ok, mergeable: 'CONFLICTING' }).red[0]).toMatch(/conflicts/)
   })
 
-  it('без `Closes #N` — RED: board-done будет некуда ставить Done', () => {
+  it('no `Closes #N` is RED: board-done would have nowhere to set Done', () => {
     expect(gateConditions({ ...ok, closingIssuesReferences: [] }).red[0]).toMatch(/Closes #N/)
   })
 
-  it('без всякого ревью — RED по умолчанию, с указанием, как это закрыть', () => {
+  it('no review at all is RED by default, and says how to close that', () => {
     const res = gateConditions({ ...ok, reviewDecision: '' })
-    expect(res.red[0]).toMatch(/ревью не подтверждено/)
+    expect(res.red[0]).toMatch(/review is not confirmed/)
     expect(res.red[0]).toMatch(/--no-review-gate/)
   })
 
-  it('комментарий ревьюера-субагента засчитывается наравне с человеческим APPROVE', () => {
+  it('a subagent reviewer’s comment counts on a par with a human APPROVE', () => {
     const res = gateConditions({
       ...ok,
       reviewDecision: '',
@@ -164,17 +196,17 @@ describe('gateConditions', () => {
     expect(res.red).toEqual([])
   })
 
-  it('протухший вердикт субагента не спасает — RED', () => {
+  it('a stale subagent verdict does not save the PR — RED', () => {
     const res = gateConditions({
       ...ok,
       reviewDecision: '',
       commits: [{ committedDate: '2026-08-04T12:00:00Z' }],
       comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-04T11:00:00Z' }],
     })
-    expect(res.red[0]).toMatch(/старше последнего коммита/)
+    expect(res.red[0]).toMatch(/older than the last commit/)
   })
 
-  it('с --require-review комментарий субагента не засчитывается', () => {
+  it('with --require-review a subagent comment does not count', () => {
     const res = gateConditions(
       {
         ...ok,
@@ -183,20 +215,20 @@ describe('gateConditions', () => {
       },
       { requireReview: true },
     )
-    expect(res.red[0]).toMatch(/человеческого APPROVE/)
+    expect(res.red[0]).toMatch(/human APPROVE/)
   })
 
-  it('снятый гейт не краснеет, но расхождение остаётся в замечаниях', () => {
+  it('a lifted gate does not go red, but the gap stays in the remarks', () => {
     const res = gateConditions({ ...ok, reviewDecision: '' }, { reviewGate: false })
     expect(res.red).toEqual([])
-    expect(res.warn.join('\n')).toMatch(/ревью-гейт отключён вручную/)
+    expect(res.warn.join('\n')).toMatch(/review gate was lifted by hand/)
   })
 
-  it('про приёмку владельца напоминает ВСЕГДА, даже при APPROVE', () => {
+  it('the owner-acceptance reminder is printed ALWAYS, even on an APPROVE', () => {
     expect(gateConditions(ok).warn.join('\n')).toMatch(/stage 5/)
   })
 
-  it('отставшая от базы ветка — замечание', () => {
+  it('a branch behind its base is a remark', () => {
     expect(gateConditions({ ...ok, mergeStateStatus: 'BEHIND' }).warn.join('\n')).toMatch(/BEHIND/)
   })
 })
@@ -217,7 +249,7 @@ describe('runGate', () => {
     },
   })
 
-  it('зелёные проверки — зелёный гейт, номера Closes и SHA прокинуты дальше', () => {
+  it('green checks give a green gate; the Closes numbers and the SHA are passed on', () => {
     const res = runGate(
       1,
       { timeout: 10, interval: 1, requireReview: false },
@@ -229,7 +261,7 @@ describe('runGate', () => {
     expect(res.sha).toBe('aaa')
   })
 
-  it('ждёт незавершённые проверки и берёт зелёный со второй пробы', () => {
+  it('waits out unfinished checks and takes the green on the second probe', () => {
     const responses = [pr({ statusCheckRollup: [{ name: 'ci', status: 'IN_PROGRESS' }] }), pr()]
     const sleep = vi.fn()
     const res = runGate(
@@ -241,7 +273,7 @@ describe('runGate', () => {
     expect(sleep).toHaveBeenCalledOnce()
   })
 
-  it('сдвиг head во время ожидания — RED: зелёный старого SHA ничего не значит', () => {
+  it('head moving while we wait is RED: a green on the old SHA means nothing', () => {
     const responses = [
       pr({ statusCheckRollup: [{ name: 'ci', status: 'IN_PROGRESS' }] }),
       pr({ headRefOid: 'bbb' }),
@@ -252,12 +284,12 @@ describe('runGate', () => {
       { viewPr: () => responses.shift()!, sleep: () => {}, now: () => 0 },
     )
     expect(res.verdict).toBe('red')
-    expect(res.reasons[0]).toMatch(/head сдвинулся/)
-    // наружу отдаётся ЗАКРЕПЛЁННЫЙ SHA, а не последний прочитанный
+    expect(res.reasons[0]).toMatch(/head moved/)
+    // the PINNED SHA is what leaves the function, not the last one read
     expect(res.sha).toBe('aaa')
   })
 
-  it('истёкший таймаут — отдельный вердикт, не «зелено» и не «красно»', () => {
+  it('an expired timeout is its own verdict, neither «green» nor «red»', () => {
     let t = 0
     const res = runGate(
       1,
@@ -271,69 +303,69 @@ describe('runGate', () => {
     expect(res.verdict).toBe('timeout')
   })
 
-  it('недоступный PR — RED с текстом ошибки gh', () => {
+  it('an unreachable PR is RED, carrying gh’s error text', () => {
     const res = runGate(
       1,
       { timeout: 1, interval: 1, requireReview: false },
-      { viewPr: () => ({ ok: false, error: 'gh упал' }) },
+      { viewPr: () => ({ ok: false, error: 'gh crashed' }) },
     )
     expect(res.verdict).toBe('red')
-    expect(res.reasons[0]).toBe('gh упал')
+    expect(res.reasons[0]).toBe('gh crashed')
   })
 })
 
 describe('issueCandidates', () => {
-  it('берёт номера из Closes и из имени ветки, без дублей', () => {
+  it('takes the numbers from Closes and from the branch name, without duplicates', () => {
     expect(issueCandidates([130], 'chore/130-kanon')).toEqual([130])
     expect(issueCandidates([130], 'chore/131-other')).toEqual([130, 131])
   })
 
-  it('на ветке без номера не выдумывает кандидатов', () => {
+  it('invents no candidates on a branch that carries no number', () => {
     expect(issueCandidates([], 'main')).toEqual([])
   })
 })
 
 describe('failCode', () => {
-  it('ненулевой код ребёнка проходит как есть', () => {
+  it('a child’s non-zero code passes through as is', () => {
     expect(failCode(4)).toBe(4)
   })
 
-  it('убитый сигналом ребёнок (null) никогда не читается как успех', () => {
+  it('a child killed by a signal (null) never reads as success', () => {
     expect(failCode(null)).toBe(1)
     expect(failCode(0)).toBe(1)
   })
 })
 
 describe('isWorktreeCwd', () => {
-  it('узнаёт ворктри в обоих видах разделителя', () => {
+  it('recognises a worktree with either separator', () => {
     expect(isWorktreeCwd('C:\\repo\\.claude\\worktrees\\130')).toBe(true)
     expect(isWorktreeCwd('/c/repo/.claude/worktrees/130')).toBe(true)
   })
 
-  it('основной чекаут ворктри не считает', () => {
+  it('does not take the main checkout for a worktree', () => {
     expect(isWorktreeCwd('C:\\Users\\sidor\\repos\\bbm-portal')).toBe(false)
   })
 
-  it('текст отказа объясняет, почему нельзя', () => {
-    expect(cwdGuardMessage('X')).toMatch(/основной чекаут/)
+  it('the refusal text explains why it is not allowed', () => {
+    expect(cwdGuardMessage('X')).toMatch(/main checkout/)
   })
 })
 
 describe('parseFlags', () => {
-  it('разбирает номер PR и флаги с дефолтами', () => {
+  it('parses the PR number and the flags with their defaults', () => {
     expect(parseFlags(['12'])).toMatchObject({ ok: true, pr: 12, timeout: 900, interval: 20 })
     expect(parseFlags(['12', '--require-review'])).toMatchObject({ requireReview: true })
     expect(parseFlags(['12', '--timeout', '60'])).toMatchObject({ timeout: 60 })
   })
 
-  it('падает на неверном номере, неизвестном флаге и нечисловом таймауте', () => {
-    expect(parseFlags(['х'])).toMatchObject({ ok: false })
+  it('fails on a bad number, an unknown flag and a non-numeric timeout', () => {
+    expect(parseFlags(['x!'])).toMatchObject({ ok: false })
     expect(parseFlags(['12', '--force'])).toMatchObject({ ok: false })
-    expect(parseFlags(['12', '--timeout', 'скоро'])).toMatchObject({ ok: false })
+    expect(parseFlags(['12', '--timeout', 'soon'])).toMatchObject({ ok: false })
   })
 })
 
-describe('landPr — порядок стадий и обрывы', () => {
+describe('landPr — stage order and aborts', () => {
   const greenGate = () => ({
     verdict: 'green',
     reasons: [],
@@ -342,10 +374,36 @@ describe('landPr — порядок стадий и обрывы', () => {
     branch: 'chore/130-x',
     sha: 'deadbeef',
   })
+  /** The real sequence of state probes: OPEN before the merge, MERGED after it. */
+  const openThenMerged = () => {
+    let calls = 0
+    return () => ({
+      ok: true,
+      state: calls++ === 0 ? 'OPEN' : 'MERGED',
+      closes: [130],
+      branch: 'chore/130-x',
+      mergeCommit: 'abcdef1234567890',
+    })
+  }
+  const mergedPr = () => ({
+    ok: true,
+    state: 'MERGED',
+    closes: [130],
+    branch: 'chore/130-x',
+    mergeCommit: 'abcdef1234567890',
+  })
+  const openPr = () => ({
+    ok: true,
+    state: 'OPEN',
+    closes: [130],
+    branch: 'chore/130-x',
+    mergeCommit: null,
+  })
+
   const okRunners = (over = {}) => ({
     gate: greenGate,
     merge: () => ({ status: 0 }),
-    mergedSha: () => 'abcdef1234567890',
+    prState: openThenMerged(),
     clearBoardItem: () => ({ status: 'deleted', detail: 'PVTI_x' }),
     boardDone: () => ({ status: 0 }),
     worktreeExists: () => false,
@@ -355,8 +413,8 @@ describe('landPr — порядок стадий и обрывы', () => {
     ...over,
   })
 
-  // landPr всегда уходит через exit(); в тесте exit бросает, чтобы выполнение
-  // остановилось ровно там же, где остановился бы процесс.
+  // landPr always leaves through exit(); in the test exit throws, so execution
+  // stops exactly where the process would have stopped.
   const drive = (over = {}) => {
     const log: string[] = []
     const err: string[] = []
@@ -380,11 +438,11 @@ describe('landPr — порядок стадий и обрывы', () => {
     return { log: log.join(''), err: err.join('\n'), code }
   }
 
-  it('канонический порядок стадий зафиксирован', () => {
+  it('the canonical stage order is pinned', () => {
     expect(STAGES).toEqual(['gate', 'merge', 'board-clear', 'board-done', 'teardown', 're-sweep'])
   })
 
-  it('полный зелёный проход отчитывается по всем стадиям и выходит 0', () => {
+  it('a fully green run reports every stage and exits 0', () => {
     const res = drive()
     expect(res.code).toBe(0)
     for (const stage of [
@@ -400,22 +458,22 @@ describe('landPr — порядок стадий и обрывы', () => {
   })
 
   /**
-   * Регрессия: гейт пинил head только на чтении, а `gh pr merge` шёл без
-   * привязки — коммит, приземлившийся за время ожидания (до 900 с), уезжал в
-   * main непроверенным. SHA обязан доехать до команды мержа.
+   * Regression: the gate pinned head only on the read side while `gh pr merge`
+   * went unpinned — a commit that landed during the wait (up to 900 s) rode
+   * into main unchecked. The SHA must reach the merge command.
    */
-  it('в мерж уходит ровно тот SHA, который прошёл гейт', () => {
+  it('exactly the SHA that passed the gate goes into the merge', () => {
     const merge = vi.fn(() => ({ status: 0 }))
     drive({ merge })
     expect(merge).toHaveBeenCalledWith(7, 'deadbeef')
   })
 
-  it('красный гейт останавливает хвост ДО мержа', () => {
+  it('a red gate stops the tail BEFORE the merge', () => {
     const merge = vi.fn()
     const res = drive({
       gate: () => ({
         verdict: 'red',
-        reasons: ['красные проверки'],
+        reasons: ['red checks'],
         warn: [],
         closes: [],
         branch: null,
@@ -424,15 +482,15 @@ describe('landPr — порядок стадий и обрывы', () => {
     })
     expect(merge).not.toHaveBeenCalled()
     expect(res.code).toBe(1)
-    expect(res.err).toMatch(/стадия «gate» упала/)
+    expect(res.err).toMatch(/stage «gate» failed/)
   })
 
-  it('таймаут гейта отличается от RED кодом выхода', () => {
+  it('a gate timeout differs from a RED by its exit code', () => {
     expect(
       drive({
         gate: () => ({
           verdict: 'timeout',
-          reasons: ['не дождались'],
+          reasons: ['did not make it'],
           warn: [],
           closes: [],
           branch: null,
@@ -441,49 +499,154 @@ describe('landPr — порядок стадий и обрывы', () => {
     ).toBe(2)
   })
 
-  it('провал мержа не даёт двигать борд', () => {
+  it('a failed merge does not let the board move', () => {
     const boardDone = vi.fn()
-    const res = drive({ merge: () => ({ status: 1 }), boardDone })
+    const res = drive({ merge: () => ({ status: 1 }), prState: openPr, boardDone })
     expect(boardDone).not.toHaveBeenCalled()
     expect(res.code).toBe(1)
   })
 
-  it('провал board-clear не фатален — мерж уже приземлился', () => {
-    const res = drive({ clearBoardItem: () => ({ status: 'error', detail: 'нет прав' }) })
+  /**
+   * Regression (#142), scenario 1. On the first live run (merge of PR #141) the
+   * remote merge landed and `gh pr merge --delete-branch` still exited non-zero,
+   * because a worktree held the local branch. The stage was reported FAILED, the
+   * tail aborted before board-done, and the board was left stale — while the
+   * remedy line offered a re-merge of a PR that was already merged.
+   */
+  it('a non-zero merge whose PR really did land is a warning, not a stage failure', () => {
+    const boardDone = vi.fn(() => ({ status: 0 }))
+    const res = drive({ merge: () => ({ status: 1 }), boardDone })
     expect(res.code).toBe(0)
-    expect(res.log).toMatch(/board-clear: ЗАМЕЧАНИЕ/)
+    expect(boardDone).toHaveBeenCalledWith(130)
+    expect(res.log).toMatch(/merge-cleanup: WARNING/)
   })
 
-  it('провал board-done обрывает хвост и подсказывает ручную команду', () => {
+  it('the cleanup warning sends the operator to `git branch -D`, naming the branch', () => {
+    const res = drive({ merge: () => ({ status: 1 }) })
+    // `worktree:teardown` KEEPS a squash-merged branch (worktree-teardown.mjs,
+    // `cleanupBranch` deletes only what main already contains), so naming it as
+    // the remedy would print advice that does not work.
+    expect(res.err).toMatch(/git branch -D chore\/130-x/)
+    expect(res.err).toMatch(/KEEPS this branch/)
+  })
+
+  it('on a cleanup warning the LATER stages still run — the tail is not silently short', () => {
+    const clearBoardItem = vi.fn(() => ({ status: 'deleted', detail: 'PVTI_x' }))
+    const teardown = vi.fn(() => ({ status: 0 }))
+    const listRemoteBranches = vi.fn(() => ({ status: 0, count: 1 }))
+    const res = drive({
+      merge: () => ({ status: 1 }),
+      worktreeExists: () => true,
+      clearBoardItem,
+      teardown,
+      listRemoteBranches,
+    })
+    expect(clearBoardItem).toHaveBeenCalledWith(7)
+    expect(teardown).toHaveBeenCalledWith(130)
+    expect(listRemoteBranches).toHaveBeenCalled()
+    expect(res.log).toMatch(/re-sweep: OK/)
+    expect(res.code).toBe(0)
+  })
+
+  it('a cleanup warning does not let the report claim this run merged the pinned SHA', () => {
+    // `merged-dirty` also covers a parallel session merging a NEWER head, which
+    // is exactly what --match-head-commit refuses; the pinned-SHA claim belongs
+    // to the clean path only (review of PR #161).
+    const dirty = drive({ merge: () => ({ status: 1 }) })
+    expect(dirty.log).not.toContain('merge: OK (squash')
+    expect(dirty.log).toMatch(/the PR is MERGED as abcdef123456/)
+    expect(drive().log).toMatch(/head pinned at deadbeef/)
+  })
+
+  it('a merge failure the state probe cannot read fails the stage — unverifiable is not merged', () => {
+    const boardDone = vi.fn()
+    const res = drive({
+      merge: () => ({ status: 1 }),
+      prState: () => ({ ok: false, error: 'gh crashed' }),
+      boardDone,
+    })
+    expect(res.code).toBe(1)
+    expect(boardDone).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Regression (#142), scenario 2. After that aborted run the tail had to be
+   * finished by hand: re-running `pr:land` dead-ended, because the gate reads a
+   * MERGED PR as "not open". A repeat run must resume from the first stage that
+   * never finished instead of demanding a merge that already happened.
+   */
+  it('an already-MERGED PR skips gate and merge and finishes the remaining stages', () => {
+    const gate = vi.fn(greenGate)
+    const merge = vi.fn(() => ({ status: 0 }))
+    const boardDone = vi.fn(() => ({ status: 0 }))
+    const res = drive({ prState: mergedPr, gate, merge, boardDone })
+    expect(gate).not.toHaveBeenCalled()
+    expect(merge).not.toHaveBeenCalled()
+    expect(boardDone).toHaveBeenCalledWith(130)
+    expect(res.code).toBe(0)
+    expect(res.log).toMatch(/gate: skip/)
+    expect(res.log).toMatch(/merge: skip/)
+  })
+
+  it('a resumed run takes the Closes numbers and the branch from the merged PR itself', () => {
+    const boardDone = vi.fn(() => ({ status: 0 }))
+    const teardown = vi.fn(() => ({ status: 0 }))
+    drive({
+      prState: () => ({
+        ok: true,
+        state: 'MERGED',
+        closes: [131],
+        branch: 'chore/131-x',
+        mergeCommit: 'abcdef1234567890',
+      }),
+      boardDone,
+      worktreeExists: () => true,
+      teardown,
+    })
+    expect(boardDone).toHaveBeenCalledWith(131)
+    expect(teardown).toHaveBeenCalledWith(131)
+  })
+
+  it('an unreadable pre-flight state probe does not block the normal path', () => {
+    expect(drive({ prState: () => ({ ok: false, error: 'gh crashed' }) }).code).toBe(0)
+  })
+
+  it('a failed board-clear is not fatal — the merge has already landed', () => {
+    const res = drive({ clearBoardItem: () => ({ status: 'error', detail: 'no rights' }) })
+    expect(res.code).toBe(0)
+    expect(res.log).toMatch(/board-clear: WARNING/)
+  })
+
+  it('a failed board-done aborts the tail and names the manual command', () => {
     const res = drive({ boardDone: () => ({ status: 1 }) })
     expect(res.code).toBe(1)
     expect(res.err).toMatch(/pnpm board:status/)
   })
 
-  it('без связанных Closes стадия board-done громко пропускается', () => {
+  it('with no linked Closes the board-done stage is skipped loudly', () => {
     const res = drive({
       gate: () => ({ verdict: 'green', reasons: [], warn: [], closes: [], branch: 'chore/9-x' }),
     })
-    expect(res.log).toMatch(/board-done: пропуск/)
+    expect(res.log).toMatch(/board-done: skip/)
   })
 
-  it('teardown запускается только при существующем ворктри', () => {
+  it('teardown runs only when the worktree exists', () => {
     const teardown = vi.fn(() => ({ status: 0 }))
     drive({ worktreeExists: (n: number) => n === 130, teardown })
     expect(teardown).toHaveBeenCalledWith(130)
   })
 
-  it('упавшая пересводка тоже обрывает хвост', () => {
+  it('a failed re-sweep aborts the tail as well', () => {
     expect(drive({ listOpenPrs: () => ({ status: 1, count: null }) }).code).toBe(1)
   })
 })
 
 describe('stageRemedy', () => {
-  it('на каждую стадию даёт непустую подсказку', () => {
+  it('gives a non-empty hint for every stage', () => {
     for (const stage of STAGES) expect(stageRemedy(stage, 7).length).toBeGreaterThan(10)
   })
 
-  it('после мержа подсказка не предлагает «просто повторить»', () => {
-    expect(stageRemedy('board-done', 7)).toMatch(/мерж прошёл/)
+  it('after the merge the hint does not offer «just retry»', () => {
+    expect(stageRemedy('board-done', 7)).toMatch(/the merge landed/)
   })
 })

@@ -79,7 +79,30 @@ Entry format:
       same holds for `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` —
       materially edited by the retro-hooks PR, but the whole-file translation was
       deliberately kept out of that PR to keep the behavioral diff reviewable;
-      same return condition applies to them.
+      same return condition applies to them. Worked off 2026-08-06 (#142) for
+      `tools/gh/pr-land.mjs` + `tests/unit/gh-pr-land.spec.ts`, translated in
+      their own no-behaviour-change commit ahead of the fix; the rest of the set
+      still stands.
+
+- [ ] 2026-08-06 `pnpm pr:land <n>` on an ALREADY-MERGED PR resumes the tail with
+      no gate in front of it (#142): a mistyped number moves the board of whatever
+      that PR closes and runs `worktree:teardown` for its issue numbers. Accepted
+      because the gate never protected a merged PR either — it refused it outright —
+      and the blast radius is bounded (a Done set on a Done, teardown behind an
+      existence check, a read-only sweep). Return condition: a real run moves the
+      wrong issue's board row, or the resume path grows a stage that is not
+      idempotent — then gate the resume on the `Closes #N` of the PR matching the
+      worktree/branch the caller is in (review of PR #161)
+- [ ] 2026-08-06 `tools/dev/worktree-teardown.mjs` `cleanupBranch()` never deletes
+      a branch merged by `--squash`: it tests `git merge-base --is-ancestor`, which
+      a squash merge never satisfies, so every landed task branch is kept and
+      accumulates locally (`chore/dev-stand-contract`, `docs/108-…`, `feat/13-…`,
+      `fix/48-…` are all merged and all still present). `pr:land` now tells the
+      truth about this instead of promising teardown will do it (#142). Return
+      condition: teach teardown to recognise a squash merge (e.g. `git cherry` or
+      `--is-ancestor` against the PR's merge commit) so the remedy stops being
+      manual — a behaviour change to a destructive tool, hence its own task, not a
+      rider on #142 (review of PR #161)
 
 - [ ] 2026-08-04 `set-board-status.mjs`: `process.exit(0)` сразу после записи
       «ГОТОВО» — на Windows-TTY запись асинхронна, тот же класс, что #132
