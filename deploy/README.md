@@ -265,6 +265,13 @@ preview && docker compose -f docker-compose.prod.yml up -d preview`.
   [`docs/runbooks/migrations-expand-contract.md`](../docs/runbooks/migrations-expand-contract.md)
   exists to guarantee. Migrations stay forward-only; `migrate:down` is not the
   production rollback plan.
-- **No automated database backup on this box.** `pgdata` is a single named
-  volume with no snapshot or WAL archiving. A destructive migration therefore
-  has no undo — see the canon above.
+- **Database backups: nightly off-box, plus a pinned one per deploy.** The box
+  runs `/home/deploy/portal-backup/backup-portal.sh` — from cron nightly, and
+  from `pnpm deploy:prod`'s fail-closed `checkpoint` stage before any migration.
+  Mechanism, retention and the honest caveat are stated once, in
+  [`docs/runbooks/migrations-expand-contract.md`](../docs/runbooks/migrations-expand-contract.md);
+  the script itself is owned by the **`bbm` ops repo, `infra/portal/README.md`**
+  — install and repair happen there, not here. What matters at the host level:
+  `pgdata` is still a single named volume with no WAL archiving, so a snapshot is
+  not PITR, and the backup writes into `deploy@`'s `$HOME`, not into `/var` (no
+  root on this box).
