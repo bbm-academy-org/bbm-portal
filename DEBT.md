@@ -21,6 +21,15 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-06 `.claude/**` sits outside `format:check`'s globs while
+      lint-staged prettier DOES reformat it on commit — canon files get
+      formatted by the hook but are never checked in CI, so a hook-bypassing
+      commit can land unformatted canon and the next toucher inherits a noisy
+      diff (bit PR #172: the hook silently reformatted a line of
+      `parallel-sessions.md`) — return condition: next edit to the
+      `format:check` globs or the next surprise-reformat incident (#169,
+      gate of PR #172)
+
 - [ ] 2026-08-06 `.claude/rules/dev-env.md` was touched by PR #166 (new
       Russian STOP bullet added) without the translate-on-touch pass the task
       canon prescribes for the legacy Russian corpus — deliberate: a lone
