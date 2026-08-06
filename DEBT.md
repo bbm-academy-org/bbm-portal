@@ -21,6 +21,17 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-06 `tools/hooks/worktree-path-guard.mjs` blocks Edit/Write when the
+      session's launch worktree no longer exists on disk: `decideEscapeBlock` reads
+      the worktree name out of `cwd` and treats every other path under the main
+      root as "the shared checkout", so a session whose own worktree was removed
+      cannot write into ANY worktree — including the one holding its live PR —
+      while `EnterWorktree` also refuses (it lstats the dangling launch dir). The
+      guard's target is an escape into the SHARED checkout, and that case still
+      works; the writes went through the shell instead, nothing touched the shared
+      tree. Return condition: next Edit/Write block inside a live worktree, or the
+      next edit to `tools/hooks/worktree-path-guard.mjs` (#169, rework of PR #172)
+
 - [ ] 2026-08-06 `release-digest.yml` "Resolve target sha" step: the
       `gh api … -f environment=production -F per_page=1` call turns the request
       into a POST (create-a-deployment), which 403s under `deployments: read`;
