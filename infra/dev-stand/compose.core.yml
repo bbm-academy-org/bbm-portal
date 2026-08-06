@@ -184,7 +184,7 @@ services:
   # for the ds-platform stand, so bbm-portal remaps to 9180), not only the 9080
   # default where host==container happened to coincide. Image pinned.
   idp-proxy:
-    image: caddy:2.8-alpine
+    image: caddy:2.11-alpine
     restart: unless-stopped
     environment:
       IDP_EXTERNAL_DOMAIN: ${IDP_EXTERNAL_DOMAIN:-localhost}
