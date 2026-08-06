@@ -30,10 +30,14 @@ import { expectNoNulls, expectSubset } from '../helpers/parity'
  *
  * Local-only: needs the dev DB + the sibling fixtures checkout; skipped without
  * them. The dev server is provided by playwright.config.ts `webServer`.
+ *
+ * The REST prefix is RELATIVE (#169): the `request` fixture resolves it against
+ * Playwright's `baseURL`, resolved once in tests/helpers/base-url.ts from
+ * E2E_BASE_URL / E2E_PORT — the spec never names an origin.
  */
 
 const CONTENT = DEFAULT_CONTENT_DIR
-const REST = 'http://localhost:3000/api'
+const REST = '/api'
 const hasFixtures = existsSync(CONTENT)
 
 const getJson = async (request: APIRequestContext, route: string): Promise<unknown> => {

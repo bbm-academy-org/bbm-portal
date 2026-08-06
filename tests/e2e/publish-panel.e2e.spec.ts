@@ -96,7 +96,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
       })
     })
 
-    await page.goto('http://localhost:3000/admin')
+    await page.goto('/admin')
 
     const status = page.locator('[data-testid="sync-status"]')
     await expect(status).toHaveAttribute('data-status', 'in-sync')
@@ -153,7 +153,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
       })
     })
 
-    await page.goto('http://localhost:3000/admin')
+    await page.goto('/admin')
 
     const status = page.locator('[data-testid="sync-status"]')
     // The published content IS live, so the underlying drift state is still
@@ -200,7 +200,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
       })
     })
 
-    await page.goto('http://localhost:3000/admin')
+    await page.goto('/admin')
 
     const status = page.locator('[data-testid="sync-status"]')
     await expect(status).toHaveAttribute('data-status', 'failed')
@@ -240,7 +240,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
       })
     })
 
-    await page.goto('http://localhost:3000/admin')
+    await page.goto('/admin')
 
     const status = page.locator('[data-testid="sync-status"]')
     await expect(status).toHaveAttribute('data-status', 'building')
@@ -286,7 +286,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
       })
     })
 
-    await page.goto('http://localhost:3000/admin')
+    await page.goto('/admin')
 
     // The published content is live (in-sync) AND there are pending drafts. The
     // green banner is suppressed (#50) but data-status stays "in-sync".
@@ -409,7 +409,7 @@ test.describe('Publish to site panel — drift model (#46)', () => {
       })
     })
 
-    await page.goto('http://localhost:3000/admin')
+    await page.goto('/admin')
 
     const status = page.locator('[data-testid="sync-status"]')
 
