@@ -93,6 +93,11 @@ describe('classifyMergeResult', () => {
   it('a non-zero exit with an unreadable state fails — an unverifiable merge is not a merge', () => {
     expect(classifyMergeResult(1, null)).toBe('failed')
   })
+
+  it('a gh killed by a signal (status null) whose merge landed is still local-cleanup fallout', () => {
+    expect(classifyMergeResult(null, 'MERGED')).toBe('merged-dirty')
+    expect(classifyMergeResult(null, 'OPEN')).toBe('failed')
+  })
 })
 
 describe('findAgentApproval', () => {
@@ -516,8 +521,41 @@ describe('landPr — stage order and aborts', () => {
     expect(res.log).toMatch(/merge-cleanup: WARNING/)
   })
 
-  it('the cleanup warning names `worktree:teardown` as the owner of the local branch', () => {
-    expect(drive({ merge: () => ({ status: 1 }) }).err).toMatch(/worktree:teardown/)
+  it('the cleanup warning sends the operator to `git branch -D`, naming the branch', () => {
+    const res = drive({ merge: () => ({ status: 1 }) })
+    // `worktree:teardown` KEEPS a squash-merged branch (worktree-teardown.mjs,
+    // `cleanupBranch` deletes only what main already contains), so naming it as
+    // the remedy would print advice that does not work.
+    expect(res.err).toMatch(/git branch -D chore\/130-x/)
+    expect(res.err).toMatch(/KEEPS this branch/)
+  })
+
+  it('on a cleanup warning the LATER stages still run — the tail is not silently short', () => {
+    const clearBoardItem = vi.fn(() => ({ status: 'deleted', detail: 'PVTI_x' }))
+    const teardown = vi.fn(() => ({ status: 0 }))
+    const listRemoteBranches = vi.fn(() => ({ status: 0, count: 1 }))
+    const res = drive({
+      merge: () => ({ status: 1 }),
+      worktreeExists: () => true,
+      clearBoardItem,
+      teardown,
+      listRemoteBranches,
+    })
+    expect(clearBoardItem).toHaveBeenCalledWith(7)
+    expect(teardown).toHaveBeenCalledWith(130)
+    expect(listRemoteBranches).toHaveBeenCalled()
+    expect(res.log).toMatch(/re-sweep: OK/)
+    expect(res.code).toBe(0)
+  })
+
+  it('a cleanup warning does not let the report claim this run merged the pinned SHA', () => {
+    // `merged-dirty` also covers a parallel session merging a NEWER head, which
+    // is exactly what --match-head-commit refuses; the pinned-SHA claim belongs
+    // to the clean path only (review of PR #161).
+    const dirty = drive({ merge: () => ({ status: 1 }) })
+    expect(dirty.log).not.toContain('merge: OK (squash')
+    expect(dirty.log).toMatch(/the PR is MERGED as abcdef123456/)
+    expect(drive().log).toMatch(/head pinned at deadbeef/)
   })
 
   it('a merge failure the state probe cannot read fails the stage — unverifiable is not merged', () => {

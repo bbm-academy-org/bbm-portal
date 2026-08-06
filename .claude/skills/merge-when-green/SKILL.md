@@ -31,11 +31,22 @@ exit 4.
 deletes the LOCAL branch, and that always fails while a worktree holds it — the
 norm here. So the merge stage is judged by the PR's state read back, not by the
 exit code alone: a non-zero exit on a PR that IS merged is a `merge-cleanup:
-WARNING`, and the tail carries on to the board. The local branch is deleted by
-`pnpm worktree:teardown <N>`, which owns it. And the tail is re-runnable — on an
-already-MERGED PR the gate and the merge are skipped and the run resumes at the
-first unfinished stage, so a tail that aborted halfway is finished by re-running
-the same command, not by hand.
+WARNING`, and the tail carries on to the board. And the tail is re-runnable — on
+an already-MERGED PR the gate and the merge are skipped and the run resumes at
+the first unfinished stage, so a tail that aborted halfway is finished by
+re-running the same command, not by hand.
+
+**Nothing in the tail deletes that local branch — you do.**
+`pnpm worktree:teardown <N>` removes the worktree, but it deletes a branch only
+when `main` already contains it (`tools/dev/worktree-teardown.mjs`,
+`cleanupBranch`), and `pr:land` merges with `--squash`, which never produces
+such a branch. Teardown therefore takes its `keep` path and warns. That is a
+deliberate safety property, not a bug — it is the same check that stops teardown
+from throwing away unpushed commits. Once the merge is confirmed:
+
+```bash
+git branch -D <branch>
+```
 
 ## What must never be done instead
 

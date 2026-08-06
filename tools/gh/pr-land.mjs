@@ -27,7 +27,9 @@
 //   — the merge stage is judged by the PR's state read back, not by the exit
 //     code alone. `--delete-branch` also deletes the LOCAL branch, which always
 //     fails while a worktree holds it (the norm here), so a non-zero exit on a
-//     PR that IS merged becomes a warning: the local branch belongs to stage 5;
+//     PR that IS merged becomes a warning. No stage of this tail deletes that
+//     branch either — teardown keeps a squash-merged one on purpose — so the
+//     warning sends the operator to `git branch -D` and says so plainly;
 //   — the tail is re-runnable. On a PR that is already MERGED stages 1–2 are
 //     skipped and the run resumes at the first unfinished stage; stages 3–6 are
 //     idempotent by construction.
@@ -211,7 +213,8 @@ export function findAgentApproval(comments, headCommittedDate) {
   const latest = verdicts[verdicts.length - 1]
   if (latest.verdict !== 'APPROVE') return { ok: false, reason: 'changes', at: latest.iso }
   const head = Date.parse(headCommittedDate ?? '')
-  if (Number.isFinite(head) && latest.at < head) return { ok: false, reason: 'stale', at: latest.iso }
+  if (Number.isFinite(head) && latest.at < head)
+    return { ok: false, reason: 'stale', at: latest.iso }
   return { ok: true, at: latest.iso }
 }
 
@@ -264,7 +267,9 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
       )
     }
   } else if (!humanApproved && !agent.ok) {
-    warn.push(`the review gate was lifted by hand and there is no confirmation: ${AGENT_REASON[agent.reason]}`)
+    warn.push(
+      `the review gate was lifted by hand and there is no confirmation: ${AGENT_REASON[agent.reason]}`,
+    )
   }
 
   // Owner acceptance (stage 5) is a requirement separate from review, so the
@@ -274,7 +279,9 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
       'acceptance on a live stand — the gate does not check this',
   )
   if (String(pr?.mergeStateStatus ?? '').toUpperCase() === 'BEHIND') {
-    warn.push('the branch is behind its base (mergeStateStatus=BEHIND) — under strict checks the merge will refuse')
+    warn.push(
+      'the branch is behind its base (mergeStateStatus=BEHIND) — under strict checks the merge will refuse',
+    )
   }
   return { red, warn, closes }
 }
@@ -296,8 +303,12 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
   Re-runnable: on a PR that is already MERGED the gate and the merge are skipped
   and the tail resumes at the first unfinished stage. A \`gh pr merge\` that exits
   non-zero only because the LOCAL branch could not be deleted (a worktree holds
-  it — the norm here) is a warning, not a failed merge: that branch is deleted by
-  \`pnpm worktree:teardown <N>\`.
+  it — the norm here) is a warning, not a failed merge.
+
+  That local branch is then yours to delete: \`worktree:teardown\` removes the
+  worktree but KEEPS the branch, because it only deletes one that main already
+  contains and a squash merge never produces such a branch. Once the merge is
+  confirmed — \`git branch -D <branch>\`.
 
   Flags:
     --timeout <sec>            wait for the checks, 900 by default
@@ -334,7 +345,10 @@ export function parseFlags(argv) {
       // the silent bypass for whose sake gates are later called useless.
       const reason = list[++i]
       if (!reason || reason.startsWith('--')) {
-        return { ok: false, error: '--no-review-gate requires a reason: --no-review-gate "<reason>"' }
+        return {
+          ok: false,
+          error: '--no-review-gate requires a reason: --no-review-gate "<reason>"',
+        }
       }
       opts.reviewGate = false
       opts.reviewGateWaiver = reason
@@ -433,7 +447,10 @@ function runListOpenPrs() {
 function runListRemoteBranches() {
   const res = spawnSync('git', ['ls-remote', '--heads', 'origin'], { encoding: 'utf8' })
   if (res.error || res.status !== 0) return { status: failCode(res.status), count: null }
-  return { status: 0, count: (res.stdout ?? '').split(/\r?\n/).filter((l) => l.trim() !== '').length }
+  return {
+    status: 0,
+    count: (res.stdout ?? '').split(/\r?\n/).filter((l) => l.trim() !== '').length,
+  }
 }
 
 function sleepSync(seconds) {
@@ -449,7 +466,11 @@ function sleepSync(seconds) {
  * otherwise the pinning would remain a promise made on the read side only.
  * @returns {{verdict:'green'|'red'|'timeout', reasons:string[], warn:string[], closes:number[], branch:string|null, sha:string|null}}
  */
-export function runGate(pr, { timeout, interval, requireReview = false, reviewGate = true }, io = {}) {
+export function runGate(
+  pr,
+  { timeout, interval, requireReview = false, reviewGate = true },
+  io = {},
+) {
   const viewPr = io.viewPr ?? runViewPr
   const sleep = io.sleep ?? sleepSync
   const now = io.now ?? (() => Date.now())
@@ -516,6 +537,13 @@ export function runGate(pr, { timeout, interval, requireReview = false, reviewGa
  * that is already Done, a worktree that is no longer on disk, a read-only
  * sweep). That is what makes a second `pr:land` finish the tail instead of
  * demanding a merge that already happened.
+ *
+ * The trade that buys it, named rather than hidden: the resume path services ANY
+ * merged PR with no gate in front of it, so a mistyped number moves the board of
+ * whatever that PR closes. The gate never protected a merged PR in the first
+ * place — it refused it outright — and the damage is bounded (a Done set on a
+ * Done, a teardown behind an existence check, a read-only sweep). Tracked in
+ * DEBT.md with a return condition (review of PR #161).
  */
 export function landPr(opts, io = {}) {
   const { pr } = opts
@@ -540,7 +568,9 @@ export function landPr(opts, io = {}) {
   const fail = (stage, code, detail) => {
     report.push(`${stage}: FAILED${detail ? ` (${detail})` : ''}`)
     printReport()
-    err(`stage «${stage}» failed on PR #${pr}${detail ? ` — ${detail}` : ''}. What to do: ${stageRemedy(stage, pr)}`)
+    err(
+      `stage «${stage}» failed on PR #${pr}${detail ? ` — ${detail}` : ''}. What to do: ${stageRemedy(stage, pr)}`,
+    )
     return exit(code)
   }
 
@@ -588,17 +618,36 @@ export function landPr(opts, io = {}) {
     const outcome = classifyMergeResult(mergeRes.status, after.ok ? after.state : null)
     if (outcome === 'failed') return fail('merge', failCode(mergeRes.status))
     const sha = after.ok ? after.mergeCommit : null
-    report.push(
-      `merge: OK (squash${g.sha ? `, head pinned at ${short(g.sha)}` : ''}` +
-        `${sha ? `, ${short(sha)}` : ''})`,
-    )
+    if (outcome === 'merged') {
+      report.push(
+        `merge: OK (squash${g.sha ? `, head pinned at ${short(g.sha)}` : ''}` +
+          `${sha ? `, ${short(sha)}` : ''})`,
+      )
+    } else {
+      // merged-dirty: this run's `gh pr merge` did NOT report success, so it is
+      // not ours to claim that it merged the SHA we pinned. The same outcome
+      // covers a parallel session merging a NEWER head — which is precisely what
+      // `--match-head-commit` refuses. All that is established here is that the
+      // PR is merged now (review of PR #161).
+      report.push(
+        `merge: OK (the PR is MERGED${sha ? ` as ${short(sha)}` : ''}; this run's ` +
+          `\`gh pr merge\` exited non-zero — see merge-cleanup)`,
+      )
+    }
     if (outcome === 'merged-dirty') {
-      // NOT a stage failure: what is left undone is local, and the local branch
-      // belongs to `worktree:teardown` (stage 5 below), not to `gh pr merge`.
+      // NOT a stage failure: what is left undone is LOCAL, and no stage of this tail deletes it:
+      // `worktree:teardown` removes the worktree but deliberately keeps the
+      // branch, because it only deletes one that main already contains and a
+      // squash merge never produces such a branch
+      // (`tools/dev/worktree-teardown.mjs`, `cleanupBranch`). Saying otherwise
+      // would print a remedy that does not work (review of PR #161).
       const detail =
         '`gh pr merge --delete-branch` exited non-zero AFTER the remote merge landed — ' +
-        'local cleanup did not finish. A local branch held by a worktree is the norm here ' +
-        '(`.claude/rules/parallel-sessions.md`); `pnpm worktree:teardown <N>` owns deleting it.'
+        'the LOCAL branch was not deleted. A local branch held by a worktree is the norm ' +
+        'here (`.claude/rules/parallel-sessions.md`). Mind what does NOT finish the job: ' +
+        '`pnpm worktree:teardown <N>` removes the worktree but KEEPS this branch (it only ' +
+        'deletes a branch main already contains, and a squash merge never makes one). ' +
+        `Once the merge is confirmed, delete it yourself: \`git branch -D ${branch ?? '<branch>'}\`.`
       report.push(`merge-cleanup: WARNING (not fatal — ${detail})`)
       err(`merge cleanup, remark: ${detail}`)
     }
@@ -616,7 +665,8 @@ export function landPr(opts, io = {}) {
   } else {
     for (const issue of issues) {
       const res = boardDone(issue)
-      if (res.error) return fail('board-done', 3, `could not launch board:status: ${res.error.message}`)
+      if (res.error)
+        return fail('board-done', 3, `could not launch board:status: ${res.error.message}`)
       if (res.status !== 0) return fail('board-done', failCode(res.status), `issue #${issue}`)
     }
     report.push(`board-done: OK (#${issues.join(', #')} → Done)`)
@@ -626,11 +676,14 @@ export function landPr(opts, io = {}) {
   const candidates = issueCandidates(issues, branch)
   const present = candidates.filter((n) => worktreeExists(n))
   if (present.length === 0) {
-    report.push(`teardown: skip (nothing on disk at .claude/worktrees/{${candidates.join(',') || '-'}})`)
+    report.push(
+      `teardown: skip (nothing on disk at .claude/worktrees/{${candidates.join(',') || '-'}})`,
+    )
   } else {
     for (const n of present) {
       const res = teardown(n)
-      if (res.error) return fail('teardown', 3, `could not launch worktree:teardown: ${res.error.message}`)
+      if (res.error)
+        return fail('teardown', 3, `could not launch worktree:teardown: ${res.error.message}`)
       if (res.status !== 0) return fail('teardown', failCode(res.status), `.claude/worktrees/${n}`)
     }
     report.push(`teardown: OK (.claude/worktrees/{${present.join(',')}})`)
@@ -640,7 +693,8 @@ export function landPr(opts, io = {}) {
   const prs = listOpenPrs()
   if (prs.status !== 0) return fail('re-sweep', 1, '`gh pr list` did not work')
   const branches = listRemoteBranches()
-  if (branches.status !== 0) return fail('re-sweep', 1, '`git ls-remote --heads origin` did not work')
+  if (branches.status !== 0)
+    return fail('re-sweep', 1, '`git ls-remote --heads origin` did not work')
   report.push(`re-sweep: OK (open PRs: ${prs.count}; head branches on origin: ${branches.count})`)
 
   printReport()
