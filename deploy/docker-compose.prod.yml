@@ -126,7 +126,13 @@ services:
       - tools
 
   caddy:
-    image: caddy:2-alpine
+    # Pinned to a concrete MINOR (#165), not the floating `2-alpine` major: a
+    # floating tag upgrades prod's TLS terminator as a side effect of any image
+    # pull, with no PR and no release-notes read. `2.11-alpine` is what the box
+    # already runs (v2.11.4), so the pin is a no-op for the running container —
+    # and Renovate now proposes 2.12 as a reviewable PR, the way it already does
+    # for the dev stand's `caddy:2.11-alpine` (PR #122).
+    image: caddy:2.11-alpine
     restart: unless-stopped
     ports:
       - '80:80'
