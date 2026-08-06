@@ -20,5 +20,8 @@
   каждом из двух источников диапазона: `DEV_PORT_MAX` в `provision.sh` и
   `PORT_MAX` в [`tools/dev/dev-ports.mjs`](../../tools/dev/dev-ports.mjs); что
   они совпадают, держит `tests/unit/idp-provision-redirect-uris.spec.ts`.
+- **Но полный прогон `provision.sh` СЕЙЧАС разрушителен:** `postLogoutRedirectUris`
+  он сузит с живых 20 до 1 и сломает sign-out на девяти портах из десяти. До
+  закрытия #170 скрипт целиком не запускать — только `--print-redirect-uris`.
 - Параллельные сессии, worktree и правила по чужим listener'ам:
   [`parallel-sessions.md`](./parallel-sessions.md).

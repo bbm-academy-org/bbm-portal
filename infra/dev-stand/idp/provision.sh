@@ -83,6 +83,15 @@ generate_redirect_uris() {
 
 # IDP_REDIRECT_URIS (comma-separated) replaces the generated set wholesale.
 REDIRECT_URIS="${IDP_REDIRECT_URIS:-$(generate_redirect_uris)}"
+# Fail fast on a degenerate set (e.g. IDP_DEV_PORT_MIN > IDP_DEV_PORT_MAX, or an
+# empty IDP_DEV_HOSTS): an empty array here would be PUT to the app and wipe every
+# registered redirect URI — precisely the outage #93 exists to prevent.
+if [[ -z "$REDIRECT_URIS" ]]; then
+  echo "ERROR: refusing to continue with an EMPTY redirect-URI set." >&2
+  echo "  ports ${DEV_PORT_MIN}..${DEV_PORT_MAX}, hosts '${DEV_HOSTS}', paths '${CALLBACK_PATHS}'" >&2
+  echo "  (writing it would delete every redirect URI registered on the app)" >&2
+  exit 4
+fi
 # KNOWN DIVERGENCE (#93, read-only audit 2026-08-06): the LIVE dev app carries 20
 # post-logout URIs — 3000–3009 × localhost/127.0.0.1, registered by hand — while
 # this default is still the single port, so a full run WOULD narrow that set.

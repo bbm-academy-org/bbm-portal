@@ -40,11 +40,25 @@ const PATHS = ['/api/auth/callback/zitadel', '/auth/callback']
  */
 const hasBash = spawnSync('bash', ['-c', 'exit 0']).error === undefined
 
-function printRedirectUris(env: Record<string, string> = {}): string[] {
-  const res = spawnSync('bash', [SCRIPT, '--print-redirect-uris'], {
+/**
+ * The seam is hermetic: every `IDP_*` key is stripped from the inherited
+ * environment, so a developer who has exported `IDP_REDIRECT_URIS` /
+ * `IDP_DEV_PORT_MAX` for a real provisioning run does not get a spuriously red
+ * suite. Only the per-case overrides below reach the script.
+ */
+const AMBIENT_ENV = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('IDP_')),
+) as NodeJS.ProcessEnv
+
+function runPrintRedirectUris(env: Record<string, string> = {}) {
+  return spawnSync('bash', [SCRIPT, '--print-redirect-uris'], {
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...AMBIENT_ENV, ...env },
   })
+}
+
+function printRedirectUris(env: Record<string, string> = {}): string[] {
+  const res = runPrintRedirectUris(env)
   expect(res.status, res.stderr).toBe(0)
   return res.stdout.trim().split('\n')
 }
@@ -65,6 +79,12 @@ describe.skipIf(!hasBash)('provision.sh — redirect URI default', () => {
     const uris = printRedirectUris()
 
     expect(uris).toHaveLength((PORT_MAX - PORT_MIN + 1) * HOSTS.length * PATHS.length)
+    // The literal is a deliberate tripwire, NOT a duplicate of the line above.
+    // The registration in the LIVE dev IdP is a manual act; widening the prober
+    // range in tools/dev/dev-ports.mjs must therefore break a test loudly, so the
+    // widening cannot ship without someone re-registering the new URIs (that
+    // exact drift is incident #93). Bumping this number is the reminder — do it
+    // in the same commit that re-registers the range.
     expect(uris).toHaveLength(40)
     for (let port = PORT_MIN; port <= PORT_MAX; port += 1) {
       expect(uris.filter((u) => u.includes(`:${port}/`))).toHaveLength(4)
@@ -77,6 +97,16 @@ describe.skipIf(!hasBash)('provision.sh — redirect URI default', () => {
     expect(uris).toHaveLength(48)
     expect(uris).toContain('http://localhost:3011/api/auth/callback/zitadel')
     expect(uris).toContain('http://127.0.0.1:3011/auth/callback')
+  })
+
+  it('refuses to continue with an empty generated set', () => {
+    // A degenerate range must not print an empty set and exit 0: on a real run
+    // that array is PUT to the app and wipes every registered redirect URI.
+    const res = runPrintRedirectUris({ IDP_DEV_PORT_MAX: '2999' })
+
+    expect(res.status).not.toBe(0)
+    expect(res.stdout.trim()).toBe('')
+    expect(res.stderr).toMatch(/EMPTY redirect-URI set/)
   })
 
   it('lets IDP_REDIRECT_URIS replace the generated set wholesale', () => {

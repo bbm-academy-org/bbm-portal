@@ -140,6 +140,14 @@ it never duplicates.
 > the context of the user"), so a forced first-login change makes the gate
 > impossible to complete. The password is set permanent from the start.
 
+> **STOP — a full run is destructive today (#170).** The redirect-URI default is
+> generated and converges (step 6), but `POST_LOGOUT_URIS` still defaults to the
+> single `http://localhost:3000`, so a run collapses the live 20-URI post-logout
+> set to 1 and breaks sign-out on nine of the ten dev ports. Until **#170** lands,
+> do not run the command below unsupervised — inspect with
+> `./provision.sh --print-redirect-uris`, or pass `IDP_POST_LOGOUT_URIS` with the
+> full live set.
+
 ```bash
 ssh truenas 'cd ~/bbm-portal-dev-stand/idp && \
   IDP_BASE_URL=http://truenas.local:9180 \
