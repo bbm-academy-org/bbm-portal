@@ -21,6 +21,14 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-06 `.claude/rules/dev-env.md` was touched by PR #166 (new
+      Russian STOP bullet added) without the translate-on-touch pass the task
+      canon prescribes for the legacy Russian corpus — deliberate: a lone
+      English bullet in an all-Russian file reads worse, and translating a
+      canon rules file is not a redirect-URI chore's business — return
+      condition: next task that substantively reworks `dev-env.md` translates
+      the whole file (#166, review round 2)
+
 - [ ] 2026-08-06 `release-digest.yml` "Resolve target sha" step: the
       `gh api … -f environment=production -F per_page=1` call turns the request
       into a POST (create-a-deployment), which 403s under `deployments: read`;
