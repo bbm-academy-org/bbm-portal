@@ -85,6 +85,19 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
+# Build identity (#137). `GET /api/health` reports this value, which is what
+# `pnpm deploy:smoke --expect-sha <sha>` compares against — the truthful-success
+# gate that replaced the old DEPLOYED_SHA marker + container-timestamp pair.
+# Baked in at build time, so it is a property of the IMAGE: it cannot be changed
+# by whoever restarts the container, and a rollback to an older SHA-tagged image
+# reports the OLD sha, which is exactly what makes the rollback verifiable.
+# Declared LAST, after every COPY, so the per-deploy sha invalidates only this
+# one cheap ENV layer and never the expensive build/copy layers above.
+# Empty by default: an image built without the arg reports `sha: null`, and a
+# smoke expecting a sha then fails closed.
+ARG DEPLOY_SHA=
+ENV DEPLOY_SHA=$DEPLOY_SHA
+
 EXPOSE 3000
 
 ENV PORT 3000

@@ -1,3 +1,9 @@
+---
+status: Shipped
+issue: 100
+updated: 2026-07-31
+---
+
 # Верификация часов в Mattermost — spec (issue #100)
 
 Источники и artifact passports:

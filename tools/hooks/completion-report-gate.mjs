@@ -18,6 +18,16 @@
 // отчёта»: второй Stop-гейт (`deviations-gate.mjs`) импортирует те же seam'ы,
 // поэтому оба гейта срабатывают ровно на одном и том же множестве сообщений.
 //
+// ВТОРАЯ ПОЛОВИНА РАСПОЗНАВАТЕЛЯ (#158, стоп владельца 2026-08-05): текста мало.
+// Read-only сессия-ориентировка («про что issue #157?») неизбежно несёт слова
+// «закрыт», «смержен» и номера PR — оба BLOCK-гейта срабатывали на чистом
+// чтении, и сессия шла перевыпускать отчёт о работе, которой не делала.
+// Первопричина: сессии, не совершившей ни одного write-действия, НЕЧЕГО
+// объявлять завершённым. Сигнал берётся из транскрипта, который Stop-хук и так
+// получает: `hasWriteAction()` ищет в нём хотя бы одно write-действие, а
+// `isEnforceableTerminalReport()` — тот самый общий seam — соединяет обе
+// половины. Все три Stop-гейта ходят через него.
+//
 // Контракт Stop-хука: stdin — {session_id, transcript_path, stop_hook_active}.
 // exit 0 = остановка разрешена; exit 2 + stderr = остановка заблокирована,
 // текст уходит модели. Loop-guard: при `stop_hook_active` никогда не exit 2 —
@@ -111,6 +121,193 @@ export function isTerminalReport(text) {
   return isCompletionReport(text)
 }
 
+/** Инструменты, само использование которых — запись. */
+export const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+
+/**
+ * Диспетчеризация субагента. Лид, раздавший работу, сам мог не тронуть ни
+ * строки — но писали ЕГО субагенты, а отчитывается за них он: оркестрирующая
+ * сессия обязана ОСТАВАТЬСЯ под гейтами, иначе из-под них выпадает ровно тот
+ * класс сессий, ради которых форма отчёта и заводилась.
+ */
+export const DISPATCH_TOOLS = new Set(['Agent', 'Task'])
+
+/** Инструменты оболочки: решает не имя, а сама команда. */
+export const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
+
+/** Начало команды: старт строки либо разделитель цепочки (`&&`, `;`, `|`). */
+const COMMAND_START = String.raw`(?:^|[\n;&|(])\s*`
+
+/**
+ * Консервативный белый список мутирующих shell-команд. Список НАМЕРЕННО узкий:
+ * цена пропущенной мутации — один не сработавший гейт, цена лишней записи в
+ * список — возврат ровно того ложного блока, который чинит #158. Поэтому
+ * распознаются только команды, у которых мутация написана в самом глаголе, и
+ * только в начале сегмента команды (`gh api` — только с явным мутирующим
+ * методом; `git -C <path>` учтён: в этом репо это каноничная форма).
+ */
+export const MUTATING_COMMAND_RE = new RegExp(
+  COMMAND_START +
+    '(?:' +
+    [
+      String.raw`git\s+(?:-C\s+(?:"[^"]*"|'[^']*'|\S+)\s+)?(?:commit|push|merge)(?![\w:-])`,
+      String.raw`gh\s+pr\s+(?:create|merge|edit|close|comment)(?![\w:-])`,
+      String.raw`gh\s+issue\s+(?:create|edit|close|comment)(?![\w:-])`,
+      String.raw`gh\s+api\s[^\n;|&]*?(?:--method[=\s]|-X\s)\s*(?:POST|PUT|PATCH|DELETE)(?![\w:-])`,
+      String.raw`pnpm\s+(?:pr:land|issue:create|board:status|deploy(?::[\w-]+)?)(?![\w:-])`,
+    ].join('|') +
+    ')',
+  'i',
+)
+
+/**
+ * Убирает из строки команды всё, что КОМАНДОЙ НЕ ЯВЛЯЕТСЯ: тела heredoc'ов и
+ * содержимое кавычек.
+ *
+ * Ревью PR #159 (MAJOR): белый список бежал по всей строке, а `\n` считался
+ * началом команды — поэтому текст, лишь УПОМИНАЮЩИЙ «git commit» (тело
+ * коммит-сообщения, body PR-комментария с инструкциями), зачислял сессию в
+ * пишущие. Это тот же ложный BLOCK, ради которого заведён #158.
+ *
+ * Выбранная семантика: цитата — не команда, но настоящая мутация в той же
+ * строке ловиться обязана. Поэтому вырезается только СОДЕРЖИМОЕ, а разделители
+ * остаются: `git -C "$W" commit` → `git -C "" commit` по-прежнему совпадает, а
+ * `gh pr comment … --body "$(cat <<'EOF' … EOF)"` остаётся мутацией по своему
+ * глаголу, что бы ни лежало в теле.
+ *
+ * Порядок важен: heredoc'и первыми (их тело может нести непарные кавычки),
+ * двойные кавычки раньше одинарных (`-m "don't"`). Оборванный heredoc —
+ * обрезанный транскрипт — режется до конца строки: тело командой не было.
+ */
+export function stripNonCommandText(command) {
+  let s = String(command || '')
+  const HEREDOC_BODY_RE = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2(?![\w-])/g
+  const HEREDOC_UNTERMINATED_RE = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1([^\n]*)\n[\s\S]*$/
+  // Заменяется на ОСТАТОК строки-открывашки, а не на плейсхолдер с `<<`:
+  // плейсхолдер сам подходил под правило оборванного heredoc'а и съедал
+  // настоящую команду ПОСЛЕ терминатора (`… EOF\ngit -C x commit`).
+  s = s.replace(HEREDOC_BODY_RE, (_m, _q, _d, rest) => rest)
+  s = s.replace(HEREDOC_UNTERMINATED_RE, (_m, _q, _d, rest) => rest)
+  return s.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/'[^']*'/g, "''")
+}
+
+/**
+ * Хвостовой сегмент имени MCP-инструмента: `mcp__<сервер>__<инструмент>` →
+ * `<инструмент>`. Решает именно хвост, а не сервер: список серверов меняется
+ * от сессии к сессии, а глагол в имени инструмента — нет.
+ */
+export function mcpToolTail(name) {
+  const parts = String(name || '').split('__')
+  return parts.length > 1 ? parts[parts.length - 1] : ''
+}
+
+/**
+ * Мутирующий глагол в имени MCP-инструмента. MCP — такой же способ изменить
+ * состояние, как `Edit` и `gh`: в этом окружении включены GitHub MCP
+ * (`issue_write`, `add_issue_comment`, `merge_pull_request`, `push_files`, …) и
+ * Plane MCP (`plane_execute`, `attach_file`, …), и сессия, чья единственная
+ * мутация прошла через них, иначе уходила бы из-под всех трёх гейтов на одном
+ * тексте.
+ *
+ * Философия та же, что у белого списка shell-команд: ловится только явный
+ * глагол. Read-shaped имена (`get_*`, `list_*`, `search_*`, `*_read`) не
+ * содержат ни одного из них и не считаются. `add`/`set` требуют границу
+ * сегмента (`^add_`, `_set$`), чтобы не ловиться внутри слов.
+ */
+export const MCP_MUTATION_RE =
+  /write|create|update|delete|destroy|remove|merge|push|edit|close|import|attach|(?:^|_)add(?:$|_)|(?:^|_)set(?:$|_)/i
+
+/**
+ * ДИСПЕТЧЕРЫ: инструменты, которые исполняют ПРОИЗВОЛЬНЫЙ вызов API. Глагол в
+ * их имени не говорит ничего — через `plane_execute` идут и `states.list`, и
+ * `work-items.create`, поэтому слово «execute» в имени зачисляло в пишущие ЛЮБОЕ
+ * обращение к Plane, включая чистое чтение (ревью PR #159). Мутабельность живёт
+ * в АРГУМЕНТАХ, там её и надо смотреть; глагол `execute` из имён убран вовсе.
+ */
+export const MCP_DISPATCHER_TAILS = new Set(['plane_execute'])
+
+/**
+ * Операция диспетчера — хвост `endpoint_id` ПОСЛЕ ПОСЛЕДНЕЙ ТОЧКИ
+ * (`work-items.create` → `create`). Именно хвост, а не весь идентификатор:
+ * `issue-attachments.list` — чтение, но `attach` сидит в имени ресурса и
+ * зачислил бы его в записи.
+ */
+export const MCP_OPERATION_MUTATION_RE =
+  /create|update|patch|delete|destroy|remove|merge|archive|upload|import|(?:^|[-_])(?:add|set)(?:$|[-_])/i
+
+/** Мутирующий вызов диспетчера. Нет аргумента — нет улики → false. */
+export function isMutatingMcpDispatch(input) {
+  const id = String((input && (input.endpoint_id || input.endpointId)) || '')
+  if (!id) return false
+  return MCP_OPERATION_MUTATION_RE.test(id.slice(id.lastIndexOf('.') + 1))
+}
+
+/**
+ * Инструменты браузерной автоматизации исключены из проверки выше: они ВОДЯТ
+ * страницу, а не мутируют репо или трекер. Без исключения `browser_close`
+ * ловился бы словом «close» и превращал сессию приёмки — открыл стенд,
+ * посмотрел, закрыл — ровно в тот ложный BLOCK, который чинит #158.
+ */
+export const MCP_BROWSER_TAIL_RE = /^browser_/i
+
+/** Один блок `tool_use` — write-действие? */
+export function isWriteToolUse(name, input) {
+  const tool = String(name || '')
+  if (WRITE_TOOLS.has(tool) || DISPATCH_TOOLS.has(tool)) return true
+  if (SHELL_TOOLS.has(tool)) {
+    return MUTATING_COMMAND_RE.test(stripNonCommandText(input && input.command))
+  }
+  if (tool.startsWith('mcp__')) {
+    const tail = mcpToolTail(tool)
+    if (MCP_BROWSER_TAIL_RE.test(tail)) return false
+    if (MCP_DISPATCHER_TAILS.has(tail)) return isMutatingMcpDispatch(input)
+    return MCP_MUTATION_RE.test(tail)
+  }
+  return false
+}
+
+/**
+ * В транскрипте есть хотя бы одно write-действие. Единственное место, где эта
+ * проверка живёт: оба других Stop-гейта импортируют её отсюда.
+ *
+ * Отсутствие ответа = `false` = гейты молчат. Это тот же FAIL-OPEN, что и у
+ * остального стека: нечитаемый транскрипт не даёт улики, а гейт блокирует
+ * только распознанное нарушение. Плата — настоящий отчёт при битом транскрипте
+ * пройдёт молча; принято сознательно (#158).
+ */
+export function hasWriteAction(jsonl) {
+  const text = String(jsonl || '')
+  if (!text) return false
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    // Дешёвый префильтр: JSON.parse только строк, где вообще есть tool_use.
+    if (!trimmed || !trimmed.includes('"tool_use"')) continue
+    let entry
+    try {
+      entry = JSON.parse(trimmed)
+    } catch {
+      continue // битая строка — пропускаем по одной, а не роняем чтение
+    }
+    const content = entry && entry.message && entry.message.content
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      if (!block || block.type !== 'tool_use') continue
+      if (isWriteToolUse(block.name, block.input)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * ПОЛНЫЙ распознаватель, через который ходят ВСЕ ТРИ Stop-гейта: текст читается
+ * как терминальный отчёт И сессия действительно что-то сделала. Один seam, а не
+ * три копии условия, — гейты не могут разъехаться (#158).
+ */
+export function isEnforceableTerminalReport({ lastAssistantText, writeActionSeen = false }) {
+  if (!writeActionSeen) return false
+  return isTerminalReport(lastAssistantText)
+}
+
 /** Пункт stage 6 присутствует: либо «Проверить глазами:», либо честная формула. */
 export function hasEyesOrNoVisualChange(text) {
   const t = String(text || '')
@@ -167,12 +364,12 @@ export function blockMessage() {
 
 /**
  * Чистый seam решения: блокировать остановку только когда это не продолжение
- * после блока, финальное сообщение — терминальный отчёт, и маркера stage 6 в
- * нём нет.
+ * после блока, финальное сообщение — терминальный отчёт СЕССИИ, КОТОРАЯ ПИСАЛА
+ * (#158), и маркера stage 6 в нём нет.
  */
-export function decideBlock({ stopHookActive, lastAssistantText }) {
+export function decideBlock({ stopHookActive, lastAssistantText, writeActionSeen = false }) {
   if (stopHookActive) return { block: false }
-  if (!isTerminalReport(lastAssistantText)) return { block: false }
+  if (!isEnforceableTerminalReport({ lastAssistantText, writeActionSeen })) return { block: false }
   if (hasEyesOrNoVisualChange(lastAssistantText)) return { block: false }
   return { block: true }
 }
@@ -183,9 +380,11 @@ function main() {
     const payload = readHookPayload()
     if (payload.stop_hook_active) process.exit(0)
     if (!payload.transcript_path) process.exit(0)
+    const transcript = readFileSync(payload.transcript_path, 'utf8')
     const decision = decideBlock({
       stopHookActive: Boolean(payload.stop_hook_active),
-      lastAssistantText: extractLastAssistantText(readFileSync(payload.transcript_path, 'utf8')),
+      lastAssistantText: extractLastAssistantText(transcript),
+      writeActionSeen: hasWriteAction(transcript),
     })
     if (decision.block) {
       process.stderr.write(blockMessage())

@@ -1,0 +1,2 @@
+D	docs/specs/010-thing.md
+M	src/lib/x.ts

@@ -1,3 +1,9 @@
+---
+status: Shipped
+issue: 59
+updated: 2026-07-30
+---
+
 # OKR dashboard — Zitadel OIDC gate (P2b) — spec (issue #59)
 
 ## Why

@@ -1,0 +1,82 @@
+name: Maintenance and documentation (Task)
+description: Infrastructure, refactoring, tooling, dependencies, documentation — no new user-facing functionality
+type: Task
+labels:
+  - channel:owner
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form sets the built-in type **Task** and the `channel:owner` label.
+        Type Task covers both maintenance and documentation: the organization has
+        no separate Docs type and there is no reason to create one. A docs-only
+        change may use a `docs/<N>-<slug>` branch by hand (canon §2). Set the
+        **milestone** separately.
+  - type: textarea
+    id: source
+    attributes:
+      label: Source
+      description: >-
+        On the basis of what this task exists — free text, one line. For
+        example: "bug report from Anton in Mattermost 2026-08-04", "executive
+        decision by the partners", "a colleague's request on a call", "caught it
+        myself while working on #124", "payload dependency bumped to 3.86", "the
+        mission changed".
+      placeholder: bug report in Mattermost 2026-08-04
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why now, what pain it closes, where the solution came from.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: 'An empty "Out of scope" is a smell: the boundaries were never thought through.'
+      value: |
+        **In scope:**
+
+        -
+
+        **Out of scope:**
+
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: spec-reference
+    attributes:
+      label: Spec reference
+      description: 'Spec/ADR + §, or "no spec: <reason>". This field is never empty.'
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Observable and checkable — a command, a file, the status of a run.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: A mirror of the native graph; the links themselves are drawn through the API (canon §3).
+      value: |
+        **Blocked by:**
+        **Blocks:**
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Free text.
+    validations:
+      required: false

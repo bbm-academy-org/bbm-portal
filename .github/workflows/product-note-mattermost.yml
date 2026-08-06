@@ -1,0 +1,56 @@
+name: Product note → Mattermost
+
+# Deterministic delivery of a merged PR's «Product note (RU)» to the team's
+# Mattermost channel (task 7.6, #137). No agent in the delivery path: the source
+# of truth is the PR body, rendered by tools/ci/post-product-note.mjs.
+#
+# Secret-optional by design: the job is not blocked on the webhook being
+# provisioned — with MATTERMOST_RELEASE_WEBHOOK_URL unset the script logs and
+# skips green. It also skips green when the note is `none`/absent, which is how
+# an internal-only PR opts out. There is no label gate here (unlike the ds
+# original): this repo's PRs carry no labels, so the NOTE is the gate.
+#
+# The `## Product note (RU)` section itself landed with task 7.5 (#136), together
+# with the `product-note` CI guard that makes it non-optional on a render-surface
+# PR. That guard is the AUTHORING half; this workflow is the DELIVERY half. Both
+# read the same section — 7.6 adds no second one.
+#
+# Environment marker: every delivered message carries an explicit footer, driven
+# by DELIVERY_ENV. A merge into main does NOT reach production here — the deploy
+# is a separate manual step — so the merge-triggered note is marked accordingly
+# and the script refuses (exit 1) if the marker is unset or unknown.
+#
+# Injection safety: the PR body/title/url are passed through `env:`, never
+# interpolated into a shell `run:` string, so a `$(...)`/backtick in a body
+# cannot be executed. The webhook JSON is built with JSON.stringify.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+# The event payload already carries body/title/url — no `gh` call, no
+# `pull-requests` scope needed. Least privilege.
+permissions:
+  contents: read
+
+jobs:
+  deliver:
+    # Only merged PRs; a closed-without-merge PR delivers nothing.
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Post the product note to Mattermost
+        env:
+          MATTERMOST_RELEASE_WEBHOOK_URL: ${{ secrets.MATTERMOST_RELEASE_WEBHOOK_URL }}
+          # Merged into main = it will ship with the next `pnpm deploy:prod`,
+          # not "it is live". The footer says exactly that.
+          DELIVERY_ENV: dev
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: node tools/ci/post-product-note.mjs

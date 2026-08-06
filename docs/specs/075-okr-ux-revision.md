@@ -1,3 +1,9 @@
+---
+status: Shipped
+issue: 75
+updated: 2026-07-27
+---
+
 # OKR-дашборд: ревизия вёрстки и UX — spec (issue #75)
 
 ## Why

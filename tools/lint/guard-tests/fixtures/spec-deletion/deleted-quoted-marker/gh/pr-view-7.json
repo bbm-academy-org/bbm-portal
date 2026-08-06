@@ -1,0 +1,3 @@
+{
+  "body": "## What\n\nRemoved a spec. The guard told me to write:\n\n```\nspec-deletion: <reason + successor>\n```\n\n> spec-deletion: quoted from a review comment\n\n- spec-deletion: and as a list item\n\n<!--\nspec-deletion: and in the template comment\n-->\n\nCloses #157\n"
+}

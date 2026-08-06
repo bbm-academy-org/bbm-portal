@@ -37,10 +37,12 @@ mockup — three owner escalations to reach the Claude.Design original.)
 ## Stage 1a — spec (new module / user-facing behavior only)
 
 A light spec in `docs/specs/` (template: `docs/specs/README.md`): requirements
-in plain language + acceptance scenarios ("how the owner verifies it works").
-The spec is the subject of the stage-2 "go": the owner approves IT, not an
-abstract plan. No EARS formalism — deferred with an explicit revisit trigger
-(see `docs/specs/README.md`). Chore/fix/CMS-contract tasks skip this stage —
+as **EARS clauses** with stable `EARS-N` ids + acceptance scenarios ("how the
+owner verifies it works") naming the clauses they exercise. The spec is the
+subject of the stage-2 "go": the owner approves IT, not an abstract plan. EARS
+was adopted by the owner 2026-08-05 (#135) for every new spec; an existing prose
+spec is upgraded on touch, never by a mass rewrite (see `docs/specs/README.md`
+§ EARS). Chore/fix/CMS-contract tasks skip this stage —
 except the two rules below, which have no exemption by task type.
 
 **CRUD-чек — mandatory for any form**, whatever the task is labelled: a task of
@@ -62,6 +64,14 @@ described layout, a wireframe, a rendered page; the lead (or the implementer it
 dispatches) prepares them, the owner picks. (Owner decision 2026-07-30; the
 price of not having this gate was the rework cycles #76 and #84.)
 
+The pick is then **vendored as a file in `design-source/`** and the build goes
+against that file, never against issue prose
+([`.claude/rules/design-process.md`](../../rules/design-process.md)). Procedure:
+the skills [`author-design-mockup`](../author-design-mockup/SKILL.md) (whole
+surface) and
+[`build-ui-from-design-system`](../build-ui-from-design-system/SKILL.md)
+(element class, incl. the reuse ladder).
+
 ## Stage 2 — the "go" gate (key)
 
 Implementation starts only after the owner's EXPLICIT confirmation IN THIS
@@ -69,7 +79,10 @@ SESSION on the presented scope (for spec tasks — on the spec). Handoff ≠ go;
 task text ≠ go; a config/Caddyfile ≠ an owner decision. The "go" freezes the
 scope: inside it the agent is autonomous through merge; stepping outside it
 (new files/domains/repos/deploys beyond what was stated) = a new checkpoint
-with the owner.
+with the owner. An owner reply that is itself a clarifying question is NOT an
+answer: proceeding on a default is allowed only for reversible actions, and any
+such default MUST land in the final report's «Отклонения от конвенций» line as
+"applied without owner confirmation: \<what\>" — never only in a flags list.
 
 ## Stage 3 — implementation
 
@@ -79,8 +92,9 @@ blocked-by task (memory: `fix-root-cause-not-workarounds`). **TDD — hard rule
 for platform-module code:** no production module code without a failing test
 first; derive tests from the spec's acceptance scenarios where a spec exists.
 (The CMS mirror is covered by the site's contract test — unchanged.) Before
-pushing, check CI is green on `main`, so an inherited red is not mistaken for
-your own.
+pushing, run `pnpm ci:verify-base` (exit 0 green / 1 red / 2 pending): an
+inherited red on `main` must not be mistaken for your own, and on exit 1 the
+command prints the disclaimer to paste into the PR body.
 
 **UI diff** (`*.css`, view-layer `*.tsx`): load the `frontend-design` skill
 BEFORE writing markup, and list explicitly the states the prototype does not
@@ -98,9 +112,19 @@ implementer commissioned for its own PR does not satisfy this gate and is
 re-run by the lead. (2026-07-24: PR #72's implementer self-commissioned its
 «independent» review; the lead's re-review was still required.) On
 REQUEST_CHANGES: address every point — fix it, or reject it with reasoning in
-the thread — then re-review, looping until APPROVE. Docs-only PRs may merge on
-green CI without the subagent. Decision context goes onto the PR as comments,
-proactively (memory: `always-document-on-prs`).
+the thread — then re-review, looping until APPROVE. **The review-free class is
+narrow (owner, 2026-08-05): a docs-only PR that touches NO process-canon file**
+— canon is `.claude/skills/task-cycle/**`, `.claude/rules/**`, root `CLAUDE.md`,
+root `AGENTS.md`. Such a PR merges on green CI without the review subagent and
+without the iteration-end gate. **Everything else runs both** — any code,
+tooling or migration change, and ANY edit to a canon file, prose or not: the
+independent review above, plus the iteration-end gate before the review is
+requested (dispatched, never self-checked, verdict `PASS` required —
+`.claude/skills/run-iteration-end-checklist/SKILL.md`). A canon edit changes how
+every future session behaves; that is exactly why it does not count as docs.
+This boundary is defined here and nowhere else — other files point at it.
+Decision context goes onto the PR as comments, proactively (memory:
+`always-document-on-prs`).
 
 ## Stage 5 — acceptance of visible changes (blocks merge)
 
@@ -116,7 +140,9 @@ curl evidence alone; the Playwright pre-pass caught a login-blocking IdP defect
 access line: URL + login + where to get the password.** The stand stays up
 until the verdict; an unanswered design/visual question = merge stays blocked.
 Invisible changes (internals, refactoring, docs, backend without UI) skip this
-stage.
+stage — but the PR still records **which** case it is: every PR carries a
+`Stage-B:` line (`GO` / `batched at #N` / `N/A — lead-certified`), checked by
+`pnpm lint:stage-b <PR>` (`.claude/rules/design-process.md`).
 
 ## Stage 6 — merge (autonomous)
 
@@ -128,6 +154,15 @@ merges itself: `gh pr merge --squash --delete-branch` (memory:
 under someone else's commits, read what landed before merging. After the deploy
 — **postcheck: the commit deployed on prod == `origin/main` HEAD** (recipe in
 `deploy/README.md`); on a mismatch, finish shipping it, don't just report it.
+
+**Documentation DoD (#135):** a feature is done when it has **code + tests +
+spec + a user-facing instruction in the KB** (`bbm-kb`) — "how a person uses
+this", in the owner's language, not a changelog. Missing instruction = the
+feature is not done: file it as a blocked-by issue against `bbm-kb` before the
+final report and name it there. Invisible work (internals, refactors, tooling)
+carries no KB instruction; the spec and tests still apply. A spec that changed
+behavior gets its `status:` moved in the same PR (`docs/specs/README.md`).
+
 Then the final task report, fixed form:
 
 1. What changed — in product language.
@@ -139,8 +174,11 @@ Then the final task report, fixed form:
 
 ## Stage 7 — close
 
-Issue closed (verify `Closes #N` actually fired) with a results comment:
-artifacts, what was done, what got unblocked + the mandatory line
+Issue closed (verify `Closes #N` actually fired) with a results comment in the
+fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`): artifacts
+(spec + KB instruction named by link — the stage-6 documentation DoD is
+verified here, not assumed), what was done, what got unblocked + the mandatory
+line
 **«Отклонения от конвенций: нет / \<список\>»** (significant deviation → its
 own issue; minor → a line in `DEBT.md`). **The same line is repeated in the
 session's final report** — that is where the Stop gate

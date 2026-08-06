@@ -5,6 +5,14 @@
 "go" → TDD → review → live-stand acceptance → merge → close). Handoff / task
 text / config ≠ the owner's "go".
 
+**Path is the contract.** A skill, rule or spec is loaded by READING its file —
+`.claude/skills/<name>/SKILL.md`, `.claude/rules/<name>.md`, `docs/…`. Every
+reference to one names that path; retelling its content somewhere else creates a
+second source of truth, and the copy is always the one that drifts. A file that
+must point at another points: path plus what lives there, never a paraphrase.
+Where two files do disagree, the one that owns the subject wins and the other is
+the bug.
+
 **Parallel sessions are the norm here — read the rules before touching a branch
 or a port.** The session's work branch lives in its OWN worktree
 (`pnpm task:worktree <N>`), never in the shared checkout; the dev port is taken
@@ -20,6 +28,10 @@ The day-to-day backlog for **this repo** lives in **GitHub Issues** on
 cross-linked into epics and may reference sibling sub-tasks in the
 `bbm-academy-org/bbm-public-website` repo (the public Astro site). When asked to
 "look at the backlog" or pick up work, start here, **not** in Plane.
+
+**Tasks are created only via `pnpm issue:create`** (raw `gh issue create` is
+forbidden) — load the `task-canon` skill before any backlog work: filing,
+reformatting, linking, claiming, triaging or closing an issue.
 
 **Cross-repo boundary — file, don't build.** When work surfaces that belongs to
 `bbm-public-website` (or any sibling repo), the deliverable in a **bbm-portal**

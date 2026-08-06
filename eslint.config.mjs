@@ -23,15 +23,51 @@ const eslintConfig = [
       ],
     },
   },
+  // Node CLI tooling (`tools/**`) — plain .mjs, не код приложения: Next/browser
+  // правила ему не нужны и раньше вся папка была просто исключена из линта.
+  // Ровно это и пропустило в main #132: `item is not defined` в успешной ветке
+  // `board:status` синтаксически валиден, живёт в редко исполняемой строке лога
+  // и вылезает только в рантайме — ПОСЛЕ прошедшей мутации. Поэтому папка
+  // линтуется одним правилом, ловящим весь класс: `no-undef`.
+  {
+    files: ['tools/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      // `globals` не является прямой зависимостью репо, поэтому список
+      // node-глобалей задан явно — ровно то, чем пользуются наши скрипты.
+      globals: Object.fromEntries(
+        [
+          'process',
+          'console',
+          'Buffer',
+          'URL',
+          'URLSearchParams',
+          'TextEncoder',
+          'TextDecoder',
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+          'structuredClone',
+          'fetch',
+          'AbortController',
+          'globalThis',
+        ].map((name) => [name, 'readonly']),
+      ),
+    },
+    rules: { 'no-undef': 'error' },
+  },
   {
     ignores: [
       '.next/',
+      // Fake repo trees fed to the CI guards as input under test
+      // (docs/ci-guardrails.md §8) — a fixture carries a banned stub marker or a
+      // broken workflow ON PURPOSE, so linting it would fight the assertion.
+      'tools/lint/guard-tests/fixtures/',
       'src/payload-types.ts',
       'src/payload-generated-schema.ts',
       'src/migrations/',
-      // Node CLI tooling (dev-stand launcher) — plain .mjs node scripts, not app
-      // code; linted by their own runtime, out of the Next/browser lint scope.
-      'tools/',
     ],
   },
 ]

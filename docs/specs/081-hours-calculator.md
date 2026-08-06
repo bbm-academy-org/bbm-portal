@@ -1,3 +1,9 @@
+---
+status: Shipped
+issue: 81
+updated: 2026-07-30
+---
+
 # Калькулятор самооценки часов — spec (issue #81)
 
 Источник: ТЗ владельца `bbm/outputs/2026-07-29-bbm-portal-hours-calculator-brief.md`

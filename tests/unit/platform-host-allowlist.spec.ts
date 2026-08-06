@@ -265,3 +265,35 @@ describe('evaluateRequest — development mode (dev ergonomics, spec 060 req.5)'
     }
   })
 })
+
+describe('evaluateRequest — /api/health is infrastructure, not a surface (#137)', () => {
+  // The deploy smoke (`pnpm deploy:smoke --expect-sha`) asks EVERY public vhost
+  // for its build sha: that is what proves each vhost really routes into the
+  // freshly deployed container, rather than trusting one host and assuming the
+  // rest. So /api/health passes on any KNOWN host — like /_next/* and the
+  // favicon — while default-deny on unknown hosts is untouched.
+  it('passes on both public surfaces in production', () => {
+    expect(evaluateRequest('cms.bbm.academy', '/api/health', 'production')).toBe('pass')
+    expect(evaluateRequest('portal.bbm.academy', '/api/health', 'production')).toBe('pass')
+    expect(evaluateRequest('app', '/api/health', 'production')).toBe('pass')
+  })
+
+  it('passes on the dev origin', () => {
+    expect(evaluateRequest('localhost:3000', '/api/health', 'development')).toBe('pass')
+  })
+
+  it('is NOT a hole in default-deny — an unknown host still 404s', () => {
+    expect(evaluateRequest('unknown.example.com', '/api/health', 'production')).toBe('not-found')
+    expect(evaluateRequest(null, '/api/health', 'production')).toBe('not-found')
+    expect(evaluateRequest('unknown.example.com', '/api/health', 'development')).toBe('not-found')
+  })
+
+  it('does not widen to lookalikes — only the exact path is infrastructure', () => {
+    // `/api/healthz` on the portal host has no surface: the platform allowlist
+    // is /p/* + /api/auth/*, and this is neither.
+    expect(evaluateRequest('portal.bbm.academy', '/api/healthz', 'production')).toBe('not-found')
+    expect(evaluateRequest('portal.bbm.academy', '/api/health/deep', 'production')).toBe(
+      'not-found',
+    )
+  })
+})

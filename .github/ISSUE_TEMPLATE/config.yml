@@ -1,0 +1,11 @@
+# A blank issue is forbidden: a statement of work without the canon's skeleton
+# (§1) is a request, not a task, and whoever picks it up has to reconstruct it.
+# Canon: .claude/skills/task-canon/SKILL.md
+blank_issues_enabled: false
+contact_links:
+  - name: Filing a task from an agent session
+    url: https://github.com/bbm-academy-org/bbm-portal/blob/main/.claude/skills/task-canon/SKILL.md
+    about: >-
+      An agent files a task only through `pnpm issue:create` — the wrapper
+      validates the taxonomy before creation, puts the task on the board and sets
+      Status=Todo. The forms below are the owner's path from the web UI.
