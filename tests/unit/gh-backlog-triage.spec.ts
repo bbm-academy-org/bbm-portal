@@ -28,7 +28,7 @@ describe('missingFields', () => {
     issueType: { name: 'Task' },
     labels: [{ name: 'channel:owner' }],
     body: '**Source:** баг-репорт в Mattermost 2026-08-04',
-    milestone: { title: 'Консолидация платформы' },
+    milestone: { title: 'Platform consolidation' },
     assignees: [{ login: 'sidorovanthon' }],
   }
 

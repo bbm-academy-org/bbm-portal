@@ -47,7 +47,7 @@ const OK_ARGS = [
   '--source',
   'сам поймал при работе над #130',
   '--milestone',
-  'Консолидация платформы',
+  'Platform consolidation',
 ]
 
 describe('partitionArgs', () => {
@@ -243,7 +243,7 @@ describe('milestoneError', () => {
   })
 
   it('называет постоянный fallback в тексте ошибки', () => {
-    expect(milestoneError([])).toMatch(/Платформа: эксплуатация и упрочнение/)
+    expect(milestoneError([])).toMatch(/Platform: operations and hardening/)
   })
 })
 
