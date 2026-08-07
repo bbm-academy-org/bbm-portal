@@ -46,22 +46,30 @@ APP_NAME="${IDP_APP_NAME:-bbm-portal-dev}"
 # Zitadel host — so the callback is localhost even on the truenas.local recipe.
 #
 # Both URI sets are GENERATED, never hand-listed. Parallel sessions take a
-# dev-stand port out of 3000–3009 (`pnpm dev:ports`; the same ceiling and the
-# reason for it live in tools/dev/dev-ports.mjs and .claude/rules/parallel-sessions.md),
-# and a stand on a port that is not registered here boots fine and only then dies
-# at login with `400 invalid_request`. Widening the range is a one-line change to
-# the DEV_PORT_MAX default below (#93).
+# dev-stand port out of the dev-stand range (`pnpm dev:ports`; the range, its
+# ceiling and the reason for it live in tools/dev/dev-ports.mjs and
+# .claude/rules/parallel-sessions.md), and a stand on a port that is not
+# registered here boots fine and only then dies at login with
+# `400 invalid_request`.
 #
-# Axes — the port × host pair is shared, the path axis is per set:
-#   ports  3000…3009              the dev-stand range (`pnpm dev:ports`)
-#   hosts  localhost, 127.0.0.1   the browser may be pointed at either
+# WIDENING THE RANGE IS NOT A ONE-LINER. Bumping DEV_PORT_MAX below is one of
+# several edits that have to land together, plus a supervised re-provision —
+# the full checklist lives in ONE place, infra/dev-stand/idp/bootstrap.md §6
+# ("Not one port — the whole dev-stand range"). Do not restate it here: a second
+# copy is what let this file claim "one line" while the docs said four (#93, #170).
+#
+# Axes — the port × host pair is shared, the path axis is per set. Counts are
+# deliberately NOT written here (they are derived from the range; bootstrap.md §6
+# owns them):
+#   ports  DEV_PORT_MIN…DEV_PORT_MAX  the dev-stand range (`pnpm dev:ports`)
+#   hosts  localhost, 127.0.0.1       the browser may be pointed at either
 #   paths  /api/auth/callback/zitadel   the Auth.js (next-auth v5) default that
 #                                       P2b (#59) wires
 #          /auth/callback               the historical ds-platform BFF convention,
 #                                       kept registered for continuity
-# → redirect URIs   10 × 2 × 2 = 40
-# → post-logout URIs 10 × 2     = 20   (a bare origin: sign-out lands on the app
-#                                       root, so this set has no path axis)
+# → redirect URIs    ports × hosts × paths
+# → post-logout URIs ports × hosts          (a bare origin: sign-out lands on the
+#                                            app root, so this set has no path axis)
 DEV_PORT_MIN="${IDP_DEV_PORT_MIN:-3000}"
 DEV_PORT_MAX="${IDP_DEV_PORT_MAX:-3009}"
 DEV_HOSTS="${IDP_DEV_HOSTS:-localhost,127.0.0.1}"
@@ -107,8 +115,8 @@ require_nonempty_uris() {
 REDIRECT_URIS="${IDP_REDIRECT_URIS:-$(generate_uris "$CALLBACK_PATHS")}"
 require_nonempty_uris "redirect-URI" "$REDIRECT_URIS" "$CALLBACK_PATHS"
 # Step 3 PUTs the WHOLE oidc_config, so this set is as destructive as the redirect
-# one: a single-port default narrows the live 20-URI post-logout set to 1 and
-# sign-out stops redirecting on nine dev ports of ten (#170, the trap #93's audit
+# one: a single-port default narrows the live post-logout set to that one port and
+# sign-out stops redirecting on every other dev port (#170, the trap #93's audit
 # found). Same generator, same axes, same bounds — minus the path axis.
 POST_LOGOUT_URIS="${IDP_POST_LOGOUT_URIS:-$(generate_uris "")}"
 require_nonempty_uris "post-logout-URI" "$POST_LOGOUT_URIS" ""
@@ -124,6 +132,18 @@ TEST_EMAIL="${IDP_TEST_EMAIL:-bbm-test@bbm.local}"
 TEST_PASSWORD="${IDP_TEST_USER_PASSWORD:-}"
 
 PRINT_SET=""
+# The print flags are mutually exclusive and say so. Silently last-winning would
+# hand back ONE set with exit 0 for a request for both — and that output is what
+# gets diffed against the live app, where a missing set reads as an empty one.
+_want_print() {
+  local want="$1" flag="$2"
+  if [[ -n "$PRINT_SET" && "$PRINT_SET" != "$want" ]]; then
+    echo "ERROR: one print flag at a time (${flag} conflicts with the ${PRINT_SET} set)." >&2
+    exit 2
+  fi
+  PRINT_SET="$want"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url) BASE_URL="$2"; shift 2 ;;
@@ -131,8 +151,8 @@ while [[ $# -gt 0 ]]; do
     --pat-file) PAT_FILE="$2"; shift 2 ;;
     --project-name) PROJECT_NAME="$2"; shift 2 ;;
     --app-name) APP_NAME="$2"; shift 2 ;;
-    --print-redirect-uris) PRINT_SET="redirect"; shift ;;
-    --print-post-logout-uris) PRINT_SET="post-logout"; shift ;;
+    --print-redirect-uris) _want_print "redirect" "$1"; shift ;;
+    --print-post-logout-uris) _want_print "post-logout" "$1"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -401,8 +421,9 @@ echo "# registered redirect URIs (P2b sets IDP_REDIRECT_URI to the app callback)
 echo "$REDIRECT_JSON" | jq -r '.[]' | while IFS= read -r _uri; do
   echo "#   ${_uri}" >&2
 done
-echo "# IDP_REDIRECT_URI=$(echo "$REDIRECT_JSON" | jq -r '.[0]')" >&2
 echo "# registered post-logout URIs ($(echo "$LOGOUT_JSON" | jq -r 'length') bare origins):" >&2
 echo "$LOGOUT_JSON" | jq -r '.[]' | while IFS= read -r _uri; do
   echo "#   ${_uri}" >&2
 done
+# The copy-paste hint goes LAST, after both lists — not sandwiched between them.
+echo "# IDP_REDIRECT_URI=$(echo "$REDIRECT_JSON" | jq -r '.[0]')" >&2

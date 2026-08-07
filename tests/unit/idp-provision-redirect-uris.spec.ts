@@ -100,8 +100,9 @@ describe.skipIf(!hasBash)('provision.sh — redirect URI default', () => {
     // The registration in the LIVE dev IdP is a manual act; widening the prober
     // range in tools/dev/dev-ports.mjs must therefore break a test loudly, so the
     // widening cannot ship without someone re-registering the new URIs (that
-    // exact drift is incident #93). Bumping this number is the reminder — do it
-    // in the same commit that re-registers the range.
+    // exact drift is incident #93). Bumping this number is the reminder — the
+    // rest of the checklist it belongs to is step 3 of
+    // infra/dev-stand/idp/bootstrap.md §6 "Widening the range".
     expect(uris).toHaveLength(40)
     for (let port = PORT_MIN; port <= PORT_MAX; port += 1) {
       expect(uris.filter((u) => u.includes(`:${port}/`))).toHaveLength(4)
@@ -150,7 +151,8 @@ describe.skipIf(!hasBash)('provision.sh — post-logout URI default', () => {
     expect(uris).toHaveLength((PORT_MAX - PORT_MIN + 1) * HOSTS.length)
     // Same deliberate tripwire as the redirect set above, for the same reason:
     // the live registration is a manual act, so widening the prober range must
-    // break loudly rather than silently leave the IdP behind (#93, #170).
+    // break loudly rather than silently leave the IdP behind (#93, #170). It is
+    // step 4 of the same checklist — infra/dev-stand/idp/bootstrap.md §6.
     expect(uris).toHaveLength(20)
     for (let port = PORT_MIN; port <= PORT_MAX; port += 1) {
       expect(uris.filter((u) => u.endsWith(`:${port}`))).toHaveLength(2)
@@ -190,5 +192,18 @@ describe.skipIf(!hasBash)('provision.sh — post-logout URI default', () => {
   it('keeps the two print flags disjoint — neither prints the other set', () => {
     expect(printRedirectUris().every((u) => u.includes('/callback'))).toBe(true)
     expect(printPostLogoutUris().some((u) => u.includes('/callback'))).toBe(false)
+  })
+
+  it('refuses both print flags at once instead of silently last-winning', () => {
+    // Asking for both and being handed one set with exit 0 is the shape that
+    // gets diffed against the live app and read as "the other set is empty".
+    const res = spawnSync('bash', [SCRIPT, '--print-redirect-uris', '--print-post-logout-uris'], {
+      encoding: 'utf8',
+      env: AMBIENT_ENV,
+    })
+
+    expect(res.status).not.toBe(0)
+    expect(res.stdout.trim()).toBe('')
+    expect(res.stderr).toMatch(/one print flag at a time/)
   })
 })

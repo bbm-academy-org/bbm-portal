@@ -15,17 +15,15 @@
   берётся через `pnpm dev:ports`, стенд поднимается как `PORT=<n> pnpm dev` (не
   `pnpm dev -- -p <n>`).
 - **Диапазон в дефолте provisioning:** `infra/dev-stand/idp/provision.sh`
-  генерирует из одних и тех же границ оба набора — 40 redirect URI и 20
-  post-logout URI (голые origin'ы, порт × хост) — поэтому переprovisioning ни
-  один из них не сужает (#93, #170). Наборы печатаются без обращения к IdP:
-  `--print-redirect-uris` и `--print-post-logout-uris`. **Расширение диапазона —
-  четыре правки, не одна:** `DEV_PORT_MAX` в `provision.sh`, `PORT_MAX` в
-  [`tools/dev/dev-ports.mjs`](../../tools/dev/dev-ports.mjs), плюс оба
-  литерала-счётчика (`40` и `20`) в
-  `tests/unit/idp-provision-redirect-uris.spec.ts`. Тот же тест держит равенство
-  границ и специально валится на несдвинутых литералах. Все четыре — одним
-  коммитом, и следом supervised-прогон `provision.sh`, иначе новые порты есть в
-  репо, но не в Zitadel.
+  генерирует из одних и тех же границ оба набора — redirect URI (порт × хост ×
+  callback-путь) и post-logout URI (порт × хост, голые origin'ы), — поэтому
+  переprovisioning ни один из них не сужает (#93, #170). Печать без обращения к
+  IdP: `--print-redirect-uris` и `--print-post-logout-uris` (по одному флагу за
+  раз, оба сразу — ошибка). **Расширение диапазона — не одна строка**, и полный
+  чеклист правок (плюс supervised-прогон в конце) намеренно живёт в одном месте:
+  [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
+  §6, «Widening the range — the whole checklist». Числа наборов здесь не
+  дублируются: их канон — таблица в том же §6.
 - **Полный прогон `provision.sh` — операция по живому IdP:** он идемпотентен и
   больше не сужает URI, но пишет в живой dev-Zitadel (роли, login-политика,
   loginV2, тестовый юзер). Запускать осознанно, а не «на всякий случай».

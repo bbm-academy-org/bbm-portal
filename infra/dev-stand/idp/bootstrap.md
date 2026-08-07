@@ -141,9 +141,9 @@ it never duplicates.
 > impossible to complete. The password is set permanent from the start.
 
 > **Both URI sets converge, neither narrows (#93, #170).** The redirect-URI set
-> (40) and the post-logout set (20 bare origins) are generated from the same
-> port × host bounds the live app carries, so a full run leaves both as they are.
-> Step 6 shows how to inspect either set without touching the IdP.
+> and the post-logout set (bare origins) are generated from the same port × host
+> bounds the live app carries, so a full run leaves both as they are. Step 6 has
+> the counts, the print flags and the widening checklist.
 
 ```bash
 ssh truenas 'cd ~/bbm-portal-dev-stand/idp && \
@@ -182,31 +182,51 @@ by default (alongside the historical ds-platform `/auth/callback`, kept for
 continuity). If a future task wires a different callback route, re-run
 `provision.sh` with `IDP_REDIRECT_URIS=<new uri>` to register it.
 
-**Not one port — the whole 3000–3009 range.** Parallel sessions each take a dev
+**Not one port — the whole dev-stand range.** Parallel sessions each take a dev
 port with `pnpm dev:ports`, so both URI sets are _generated_ from the same bounds,
 matching the live app exactly, so a re-provision never narrows either one (#93,
 #170):
 
-| Set                                     | Axes                                      | Count |
-| --------------------------------------- | ----------------------------------------- | ----- |
-| `redirectUris`                          | ports × `localhost`/`127.0.0.1` × 2 paths | 40    |
-| `postLogoutRedirectUris` (bare origins) | ports × `localhost`/`127.0.0.1`           | 20    |
+| Set                                     | Axes                                      | Count today |
+| --------------------------------------- | ----------------------------------------- | ----------- |
+| `redirectUris`                          | ports × `localhost`/`127.0.0.1` × 2 paths | 40          |
+| `postLogoutRedirectUris` (bare origins) | ports × `localhost`/`127.0.0.1`           | 20          |
 
-Inspect either set without touching the IdP:
+"Today" = ports **3000–3009**. This table is the canonical statement of the two
+counts: `provision.sh` and `.claude/rules/dev-env.md` deliberately describe the
+_axes_ and point here rather than repeat a number, because a number repeated in
+four files is a number that will disagree with itself after the next widening
+(it already did — the header of `provision.sh` said "one line" while this file
+said "four edits").
+
+Inspect either set without touching the IdP (one flag at a time — passing both is
+an error, not a last-wins):
 
 ```bash
 ./provision.sh --print-redirect-uris
 ./provision.sh --print-post-logout-uris
 ```
 
-**Widening the range is four edits, not one.** `DEV_PORT_MAX` in `provision.sh`
-and `PORT_MAX` in `tools/dev/dev-ports.mjs` (the two sources of the range, which
-a unit test holds equal), plus both count tripwires in
-`tests/unit/idp-provision-redirect-uris.spec.ts` — the literal `40` for the
-redirect set and `20` for the post-logout one, deliberately hard-coded so the
-widening cannot ship silently. All four in one commit, followed by a supervised
-`provision.sh` run that registers the new URIs on the live dev IdP: until that
-run, the widened range exists in the repo and not in Zitadel.
+### Widening the range — the whole checklist
+
+Bumping the ceiling is **not** a one-liner. Everything below lands in ONE commit,
+and the live IdP is only correct after the run at the end:
+
+1. `DEV_PORT_MAX` in `provision.sh` — the generator's ceiling.
+2. `PORT_MAX` in `tools/dev/dev-ports.mjs` — the prober's ceiling; a unit test
+   holds the two equal, so a lone edit fails loudly.
+3. The redirect tripwire in `tests/unit/idp-provision-redirect-uris.spec.ts` —
+   the literal `40`, hard-coded on purpose so a widening cannot ship without
+   someone looking at the live registration.
+4. The post-logout tripwire in the same spec — the literal `20`, same purpose.
+5. The two counts and the range in **the table above** — the only prose copy of
+   those numbers left. Anything else that quotes the range (`CLAUDE.md`,
+   `.claude/rules/dev-env.md`, `.claude/rules/parallel-sessions.md`) speaks of
+   `3000–3009` as the port range, not as a URI count: `rg -n '3000' --glob '!node_modules'`
+   is the sweep that finds them.
+6. Then a **supervised `provision.sh` run** against the dev IdP — until it runs,
+   the widened range exists in the repo and not in Zitadel, which is exactly the
+   drift #93 was filed for.
 
 ## 7. Browsable admin Console (operator-only)
 
