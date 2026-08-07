@@ -318,6 +318,22 @@ describe('mapOkrTree', () => {
     expect(warnings.length).toBeGreaterThanOrEqual(5)
   })
 
+  it('reports an unknown state ONCE, not once per groupOf call (#80)', () => {
+    // groupOf runs four times per issue (active filter, counts, unit.filter,
+    // toTask), so before the fix a single unknown state produced four identical
+    // strings — and the footer rendered four <li> under the SAME React key.
+    const mod = module_({ name: 'KR 1.2 · Готовый 1 урок' })
+    const broken = issue({ name: 'Задача с чужим state', state: 's-unknown' })
+    const src = sourceOf([slice(DSG1, 'O1 · Врачи', [mod], { [mod.id]: [broken] })])
+
+    const { warnings } = mapOkrTree({ source: src, metrics: {}, now: NOW })
+    expect(warnings.filter((w) => w.includes('Неизвестный state'))).toEqual([
+      `Неизвестный state у DSG1-${broken.sequence_id} — учтён как незакрытый`,
+    ])
+    // the footer keys by the warning text itself, so the whole list must be unique
+    expect(warnings).toEqual([...new Set(warnings)])
+  })
+
   it('warns about modules violating the kr_id naming convention', () => {
     const mod = module_({ name: 'Просто модуль без префикса' })
     const src = sourceOf([slice(DSG5, 'O5 · Частные лица', [mod], { [mod.id]: [] })])
