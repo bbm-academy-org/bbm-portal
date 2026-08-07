@@ -21,6 +21,23 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-07 supervised infra-script runs must ship the script from a
+      pinned commit (`git show origin/main:<path> | ssh <box> bash -s -- …`),
+      never `scp` from a working tree: the #93 AC-verification run scp'd the
+      main checkout BEFORE it was fast-forwarded to the just-merged #179, so the
+      OLD destructive default ran against the live dev IdP and collapsed
+      `postLogoutRedirectUris` 20 → 1 for ~3 minutes (restored, evidence on
+      #93). The recipe in `infra/dev-stand/idp/bootstrap.md` §6 still says
+      nothing about pinning — return condition: the next supervised
+      `provision.sh` run, or the next time any repo script is shipped to a
+      remote box for execution (#93)
+
+- [ ] 2026-08-07 `provision.sh`: `IDP_DEV_HOSTS=','` yields origins with empty
+      hosts (`http://:3000`) — pre-existing input-validation hole, orthogonal to
+      #170's diff, flagged as nit 5 of PR #179's review and deliberately not
+      fixed there — return condition: the next task that touches
+      `generate_uris` or adds host-axis configuration (#170)
+
 - [ ] 2026-08-07 agent-opened PRs trip the `assignee-milestone` guard on every
       open: `gh pr create` sets neither assignee nor milestone, so each
       implementer patches both by hand and re-runs the job (bit #178 and #179 on
