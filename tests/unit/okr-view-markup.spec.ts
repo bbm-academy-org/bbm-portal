@@ -458,12 +458,27 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // inner one keeps the title itself off zero.
     const main = /\.okr-kr__main\s*\{([^}]*)\}/.exec(css)
     expect(main, '.okr-kr__main rule missing').not.toBeNull()
-    // The lead column (chevron + its gap) is a variable, so the two floors below
-    // cannot drift apart; `var()` on a name that no longer exists computes to
-    // `auto` and silently restores the defect, so pin the declaration too.
-    expect(main![1], '--kr-lead must be declared where both floors read it').toMatch(
-      /--kr-lead:\s*\d+px/,
+    // The lead column both floors subtract must be DERIVED from the two lengths
+    // it is made of — and those two must be the ones actually applied to the
+    // chevron column and to the gap. A literal `22px` would keep matching after
+    // someone resized the chevron to 16px, and both floors would be off by the
+    // difference on every KR row while the test stayed green.
+    expect(main![1], '--kr-chev must be declared, not inlined').toMatch(/--kr-chev:\s*[\d.]+px/)
+    expect(main![1], '--kr-gap must be declared, not inlined').toMatch(/--kr-gap:\s*[\d.]+px/)
+    expect(main![1], '--kr-lead must be derived from them, not written out').toMatch(
+      /--kr-lead:\s*calc\(var\(--kr-chev\) \+ var\(--kr-gap\)\)/,
     )
+    expect(main![1], 'the gap the lead counts must be the gap actually applied').toContain(
+      'gap: var(--kr-gap)',
+    )
+    const chev = /\n\.okr-kr__chev\s*\{([^}]*)\}/.exec(css)
+    expect(chev, '.okr-kr__chev rule missing').not.toBeNull()
+    expect(chev![1], 'the chevron column must be the width the lead counts').toContain(
+      'flex: 0 0 var(--kr-chev)',
+    )
+    // `var()` on a name that no longer exists is invalid-at-computed-value-time,
+    // which for min-width means the initial `auto` — the pre-fix defect, silently.
+    // The asserts above are what keeps that name alive.
     expect(main![1], 'the outer floor is the wrap trigger').toMatch(
       /min-width:\s*min\(100%,\s*calc\(14ch \+ var\(--kr-lead\)\)\)/,
     )
@@ -472,9 +487,14 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
       /min-width:\s*auto/,
     )
 
-    // `min(…)`, not a bare 14ch: below the floor the row is narrower than the
-    // heading's minimum, and a hard floor would bring back a horizontal overflow
-    // inside `.okr-card{overflow:hidden}` — the defect #76 removed.
+    // The inner floor is DEFENSIVE and does not bind in today's markup: as the
+    // only growing child beside a `flex:0 0` chevron, `.okr-kr__t` always gets
+    // `main − lead` and never reaches its own minimum. It is pinned anyway, so
+    // that a second flexible child in `.okr-kr__main` cannot reintroduce the
+    // collapse — and so that nobody "tidies" it back to the `min-width:0` that
+    // permitted it. `min(…)`, not a bare 14ch: on a row narrower than the floor
+    // a hard value would bring back the horizontal overflow inside
+    // `.okr-card{overflow:hidden}` that #76 removed.
     const title = /\.okr-kr__t\s*\{([^}]*)\}/.exec(css)
     expect(title, '.okr-kr__t rule missing').not.toBeNull()
     expect(title![1]).toMatch(/min-width:\s*min\(calc\(100% - var\(--kr-lead\)\),\s*14ch\)/)
