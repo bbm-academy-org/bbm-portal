@@ -21,6 +21,14 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-07 agent-opened PRs trip the `assignee-milestone` guard on every
+      open: `gh pr create` sets neither assignee nor milestone, so each
+      implementer patches both by hand and re-runs the job (bit #178 and #179 on
+      the same day). Root fix is a create-side wrapper (or a `pr:land`-style
+      tail) copying assignee + milestone from the linked issue — return
+      condition: the guard trips on one more agent-opened PR despite the
+      dispatch brief carrying the `--assignee`/`--milestone` instruction (#80)
+
 - [ ] 2026-08-06 `.claude/**` sits outside `format:check`'s globs while
       lint-staged prettier DOES reformat it on commit — canon files get
       formatted by the hook but are never checked in CI, so a hook-bypassing
