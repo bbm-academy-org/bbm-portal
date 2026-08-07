@@ -6,7 +6,7 @@
 //     попадания задачи в бэклог, штатного поля под это у GitHub нет. Класс
 //     задачи живёт в штатном Type, а происхождение — свободным текстом в строке
 //     `**Source:**` тела (оба — решения владельца 2026-08-04);
-//   • постоянный fallback-milestone «Платформа: эксплуатация и упрочнение» для
+//   • постоянный fallback-milestone «Platform: operations and hardening» для
 //     процессных/эксплуатационных задач, не попадающих ни в одну тему (канон §2).
 //   • проверяет наличие org Issue Types Bug/Feature/Task (создать их из репо
 //     нельзя — это org-настройка; отсутствие докладывается, а не чинится).
@@ -225,7 +225,7 @@ function main() {
       '-f',
       `title=${FALLBACK_MILESTONE}`,
       '-f',
-      'description=Процессные и эксплуатационные задачи, не относящиеся ни к одной продуктовой теме',
+      'description=Process and operations tasks that fit no product theme',
     ])
     if (!res.ok) die(res.error)
     out(`создан milestone «${FALLBACK_MILESTONE}»`)

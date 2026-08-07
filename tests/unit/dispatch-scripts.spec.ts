@@ -117,7 +117,7 @@ describe('dispatch:brief — gatherState', () => {
     title: 'Port the dispatch scripts',
     body: '## Acceptance criteria\n- [ ] `tools/gh/dispatch-probe.mjs` exists\n',
     issueType: { name: 'Task' },
-    milestone: { title: 'Платформа: эксплуатация и упрочнение' },
+    milestone: { title: 'Platform: operations and hardening' },
   }
 
   it('seeds title, type, milestone and path tokens from gh, and the repo root from git', () => {
@@ -139,7 +139,7 @@ describe('dispatch:brief — gatherState', () => {
     })
     expect(state.title).toBe('Port the dispatch scripts')
     expect(state.issueType).toBe('Task')
-    expect(state.milestone).toBe('Платформа: эксплуатация и упрочнение')
+    expect(state.milestone).toBe('Platform: operations and hardening')
     expect(state.seededFiles).toEqual(['tools/gh/dispatch-probe.mjs'])
     expect(state.repoRoot).toBe('C:/repo')
     // targets our repo explicitly, never the ambient default
