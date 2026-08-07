@@ -15,13 +15,16 @@
   берётся через `pnpm dev:ports`, стенд поднимается как `PORT=<n> pnpm dev` (не
   `pnpm dev -- -p <n>`).
 - **Диапазон в дефолте provisioning:** `infra/dev-stand/idp/provision.sh`
-  генерирует те же 40 URI (`--print-redirect-uris` печатает набор без обращения
-  к IdP), поэтому переprovisioning их не сужает. Расширение — по одной строке в
-  каждом из двух источников диапазона: `DEV_PORT_MAX` в `provision.sh` и
-  `PORT_MAX` в [`tools/dev/dev-ports.mjs`](../../tools/dev/dev-ports.mjs); что
-  они совпадают, держит `tests/unit/idp-provision-redirect-uris.spec.ts`.
-- **Но полный прогон `provision.sh` СЕЙЧАС разрушителен:** `postLogoutRedirectUris`
-  он сузит с живых 20 до 1 и сломает sign-out на девяти портах из десяти. До
-  закрытия #170 скрипт целиком не запускать — только `--print-redirect-uris`.
+  генерирует из одних и тех же границ оба набора — 40 redirect URI и 20
+  post-logout URI (голые origin'ы, порт × хост) — поэтому переprovisioning ни
+  один из них не сужает (#93, #170). Наборы печатаются без обращения к IdP:
+  `--print-redirect-uris` и `--print-post-logout-uris`. Расширение — по одной
+  строке в каждом из двух источников диапазона: `DEV_PORT_MAX` в `provision.sh`
+  и `PORT_MAX` в [`tools/dev/dev-ports.mjs`](../../tools/dev/dev-ports.mjs); что
+  они совпадают и что оба набора висят на этих границах, держит
+  `tests/unit/idp-provision-redirect-uris.spec.ts`.
+- **Полный прогон `provision.sh` — операция по живому IdP:** он идемпотентен и
+  больше не сужает URI, но пишет в живой dev-Zitadel (роли, login-политика,
+  loginV2, тестовый юзер). Запускать осознанно, а не «на всякий случай».
 - Параллельные сессии, worktree и правила по чужим listener'ам:
   [`parallel-sessions.md`](./parallel-sessions.md).

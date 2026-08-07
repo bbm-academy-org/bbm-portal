@@ -140,13 +140,10 @@ it never duplicates.
 > the context of the user"), so a forced first-login change makes the gate
 > impossible to complete. The password is set permanent from the start.
 
-> **STOP — a full run is destructive today (#170).** The redirect-URI default is
-> generated and converges (step 6), but `POST_LOGOUT_URIS` still defaults to the
-> single `http://localhost:3000`, so a run collapses the live 20-URI post-logout
-> set to 1 and breaks sign-out on nine of the ten dev ports. Until **#170** lands,
-> do not run the command below unsupervised — inspect with
-> `./provision.sh --print-redirect-uris`, or pass `IDP_POST_LOGOUT_URIS` with the
-> full live set.
+> **Both URI sets converge, neither narrows (#93, #170).** The redirect-URI set
+> (40) and the post-logout set (20 bare origins) are generated from the same
+> port × host bounds the live app carries, so a full run leaves both as they are.
+> Step 6 shows how to inspect either set without touching the IdP.
 
 ```bash
 ssh truenas 'cd ~/bbm-portal-dev-stand/idp && \
@@ -186,17 +183,24 @@ continuity). If a future task wires a different callback route, re-run
 `provision.sh` with `IDP_REDIRECT_URIS=<new uri>` to register it.
 
 **Not one port — the whole 3000–3009 range.** Parallel sessions each take a dev
-port with `pnpm dev:ports`, so the default redirect-URI set is _generated_: ten
-ports × `localhost`/`127.0.0.1` × both callback paths = 40 URIs, matching the live
-app exactly, so a re-provision never narrows it (#93). Inspect the set without
-touching the IdP:
+port with `pnpm dev:ports`, so both URI sets are _generated_ from the same bounds,
+matching the live app exactly, so a re-provision never narrows either one (#93,
+#170):
+
+| Set                                     | Axes                                      | Count |
+| --------------------------------------- | ----------------------------------------- | ----- |
+| `redirectUris`                          | ports × `localhost`/`127.0.0.1` × 2 paths | 40    |
+| `postLogoutRedirectUris` (bare origins) | ports × `localhost`/`127.0.0.1`           | 20    |
+
+Inspect either set without touching the IdP:
 
 ```bash
 ./provision.sh --print-redirect-uris
+./provision.sh --print-post-logout-uris
 ```
 
 Widening the range is one variable (`DEV_PORT_MAX` in `provision.sh`, kept in step
-with `PORT_MAX` in `tools/dev/dev-ports.mjs`).
+with `PORT_MAX` in `tools/dev/dev-ports.mjs`) — it widens both sets at once.
 
 ## 7. Browsable admin Console (operator-only)
 

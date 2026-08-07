@@ -23,8 +23,9 @@
 # Usage:
 #   IDP_BASE_URL=http://truenas.local:9180 PAT="$(cat pat.txt)" ./provision.sh
 #   ./provision.sh --base-url http://truenas.local:9180 --pat-file ./idp-pat.txt
-#   ./provision.sh --print-redirect-uris   # print the redirect-URI set and exit
-#                                          # (no IdP, no PAT, no mutation)
+#   ./provision.sh --print-redirect-uris      # print the redirect-URI set and exit
+#   ./provision.sh --print-post-logout-uris   # print the post-logout-URI set and exit
+#                                             # (both: no IdP, no PAT, no mutation)
 #
 # Requires: bash, curl, jq. Run it on Linux/macOS (the TrueNAS box, CI, a
 # container) — NOT from a Windows-native jq.
@@ -44,32 +45,39 @@ APP_NAME="${IDP_APP_NAME:-bbm-portal-dev}"
 # Redirect URIs: the app runs on the owner's dev machine (localhost), NOT on the
 # Zitadel host — so the callback is localhost even on the truenas.local recipe.
 #
-# The set is GENERATED, never hand-listed. Parallel sessions take a dev-stand port
-# out of 3000–3009 (`pnpm dev:ports`; the same ceiling and the reason for it live
-# in tools/dev/dev-ports.mjs and .claude/rules/parallel-sessions.md), and a stand
-# on a port that is not registered here boots fine and only then dies at login
-# with `400 invalid_request`. Widening the range is a one-line change to the
-# DEV_PORT_MAX default below (#93).
+# Both URI sets are GENERATED, never hand-listed. Parallel sessions take a
+# dev-stand port out of 3000–3009 (`pnpm dev:ports`; the same ceiling and the
+# reason for it live in tools/dev/dev-ports.mjs and .claude/rules/parallel-sessions.md),
+# and a stand on a port that is not registered here boots fine and only then dies
+# at login with `400 invalid_request`. Widening the range is a one-line change to
+# the DEV_PORT_MAX default below (#93).
 #
-# Three axes — 10 ports × 2 hosts × 2 paths = 40 URIs:
+# Axes — the port × host pair is shared, the path axis is per set:
 #   ports  3000…3009              the dev-stand range (`pnpm dev:ports`)
 #   hosts  localhost, 127.0.0.1   the browser may be pointed at either
 #   paths  /api/auth/callback/zitadel   the Auth.js (next-auth v5) default that
 #                                       P2b (#59) wires
 #          /auth/callback               the historical ds-platform BFF convention,
 #                                       kept registered for continuity
+# → redirect URIs   10 × 2 × 2 = 40
+# → post-logout URIs 10 × 2     = 20   (a bare origin: sign-out lands on the app
+#                                       root, so this set has no path axis)
 DEV_PORT_MIN="${IDP_DEV_PORT_MIN:-3000}"
 DEV_PORT_MAX="${IDP_DEV_PORT_MAX:-3009}"
 DEV_HOSTS="${IDP_DEV_HOSTS:-localhost,127.0.0.1}"
 CALLBACK_PATHS="${IDP_CALLBACK_PATHS:-/api/auth/callback/zitadel,/auth/callback}"
 
-# The cartesian product port × host × path, comma-joined — the format the rest of
-# the script (and IDP_REDIRECT_URIS) speaks.
-generate_redirect_uris() {
+# generate_uris <paths-csv>  ->  the cartesian product port × host × path,
+# comma-joined — the format the rest of the script (and IDP_REDIRECT_URIS /
+# IDP_POST_LOGOUT_URIS) speaks. An EMPTY paths-csv means one empty path, i.e.
+# bare origins — that is the post-logout shape, not an empty set.
+generate_uris() {
+  local paths_csv="$1"
   local port host path
   local out=() hosts=() paths=()
   IFS=',' read -r -a hosts <<< "$DEV_HOSTS"
-  IFS=',' read -r -a paths <<< "$CALLBACK_PATHS"
+  IFS=',' read -r -a paths <<< "$paths_csv"
+  [[ ${#paths[@]} -eq 0 ]] && paths=('')
   for ((port = DEV_PORT_MIN; port <= DEV_PORT_MAX; port++)); do
     for host in "${hosts[@]}"; do
       for path in "${paths[@]}"; do
@@ -81,23 +89,29 @@ generate_redirect_uris() {
   printf '%s' "${out[*]}"
 }
 
-# IDP_REDIRECT_URIS (comma-separated) replaces the generated set wholesale.
-REDIRECT_URIS="${IDP_REDIRECT_URIS:-$(generate_redirect_uris)}"
 # Fail fast on a degenerate set (e.g. IDP_DEV_PORT_MIN > IDP_DEV_PORT_MAX, or an
 # empty IDP_DEV_HOSTS): an empty array here would be PUT to the app and wipe every
-# registered redirect URI — precisely the outage #93 exists to prevent.
-if [[ -z "$REDIRECT_URIS" ]]; then
-  echo "ERROR: refusing to continue with an EMPTY redirect-URI set." >&2
-  echo "  ports ${DEV_PORT_MIN}..${DEV_PORT_MAX}, hosts '${DEV_HOSTS}', paths '${CALLBACK_PATHS}'" >&2
-  echo "  (writing it would delete every redirect URI registered on the app)" >&2
+# URI registered on it in that slot — precisely the outage #93 / #170 exist to
+# prevent.
+require_nonempty_uris() {
+  local label="$1" value="$2" paths_csv="$3"
+  [[ -n "$value" ]] && return 0
+  echo "ERROR: refusing to continue with an EMPTY ${label} set." >&2
+  echo "  ports ${DEV_PORT_MIN}..${DEV_PORT_MAX}, hosts '${DEV_HOSTS}', paths '${paths_csv}'" >&2
+  echo "  (writing it would delete every ${label} registered on the app)" >&2
   exit 4
-fi
-# KNOWN DIVERGENCE (#93, read-only audit 2026-08-06): the LIVE dev app carries 20
-# post-logout URIs — 3000–3009 × localhost/127.0.0.1, registered by hand — while
-# this default is still the single port, so a full run WOULD narrow that set.
-# Out of scope for #93 (redirect URIs only); until it is closed, a live re-provision
-# is a supervised operation, not a routine one.
-POST_LOGOUT_URIS="${IDP_POST_LOGOUT_URIS:-http://localhost:3000}"
+}
+
+# IDP_REDIRECT_URIS / IDP_POST_LOGOUT_URIS (comma-separated) each replace their
+# generated set wholesale.
+REDIRECT_URIS="${IDP_REDIRECT_URIS:-$(generate_uris "$CALLBACK_PATHS")}"
+require_nonempty_uris "redirect-URI" "$REDIRECT_URIS" "$CALLBACK_PATHS"
+# Step 3 PUTs the WHOLE oidc_config, so this set is as destructive as the redirect
+# one: a single-port default narrows the live 20-URI post-logout set to 1 and
+# sign-out stops redirecting on nine dev ports of ten (#170, the trap #93's audit
+# found). Same generator, same axes, same bounds — minus the path axis.
+POST_LOGOUT_URIS="${IDP_POST_LOGOUT_URIS:-$(generate_uris "")}"
+require_nonempty_uris "post-logout-URI" "$POST_LOGOUT_URIS" ""
 # Project roles to seed, comma-separated. `portal_admin` is a placeholder the P2b
 # gate can adopt or replace; projectRoleCheck stays OFF so login works without it.
 SEED_ROLE="${IDP_SEED_ROLE:-portal_admin}"
@@ -109,7 +123,7 @@ TEST_USERNAME="${IDP_TEST_USERNAME:-bbm-test}"
 TEST_EMAIL="${IDP_TEST_EMAIL:-bbm-test@bbm.local}"
 TEST_PASSWORD="${IDP_TEST_USER_PASSWORD:-}"
 
-PRINT_URIS=0
+PRINT_SET=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url) BASE_URL="$2"; shift 2 ;;
@@ -117,16 +131,19 @@ while [[ $# -gt 0 ]]; do
     --pat-file) PAT_FILE="$2"; shift 2 ;;
     --project-name) PROJECT_NAME="$2"; shift 2 ;;
     --app-name) APP_NAME="$2"; shift 2 ;;
-    --print-redirect-uris) PRINT_URIS=1; shift ;;
+    --print-redirect-uris) PRINT_SET="redirect"; shift ;;
+    --print-post-logout-uris) PRINT_SET="post-logout"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
-# Dry inspection of the generated set: no IdP, no PAT, no curl/jq, no mutation.
-if [[ "$PRINT_URIS" == "1" ]]; then
-  printf '%s\n' "$REDIRECT_URIS" | tr ',' '\n'
-  exit 0
-fi
+# Dry inspection of a generated set: no IdP, no PAT, no curl/jq, no mutation. The
+# two flags stay disjoint — each prints exactly the set the app is PUT in that
+# slot, so a diff against the live app is a straight comparison.
+case "$PRINT_SET" in
+  redirect)    printf '%s\n' "$REDIRECT_URIS"    | tr ',' '\n'; exit 0 ;;
+  post-logout) printf '%s\n' "$POST_LOGOUT_URIS" | tr ',' '\n'; exit 0 ;;
+esac
 
 [[ -n "$PAT_FILE" ]] && PAT_VALUE="$(tr -d '\r\n' < "$PAT_FILE")"
 : "${BASE_URL:?set IDP_BASE_URL or --base-url (e.g. http://truenas.local:9180)}"
@@ -385,3 +402,7 @@ echo "$REDIRECT_JSON" | jq -r '.[]' | while IFS= read -r _uri; do
   echo "#   ${_uri}" >&2
 done
 echo "# IDP_REDIRECT_URI=$(echo "$REDIRECT_JSON" | jq -r '.[0]')" >&2
+echo "# registered post-logout URIs ($(echo "$LOGOUT_JSON" | jq -r 'length') bare origins):" >&2
+echo "$LOGOUT_JSON" | jq -r '.[]' | while IFS= read -r _uri; do
+  echo "#   ${_uri}" >&2
+done
