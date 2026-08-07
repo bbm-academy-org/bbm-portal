@@ -199,8 +199,14 @@ Inspect either set without touching the IdP:
 ./provision.sh --print-post-logout-uris
 ```
 
-Widening the range is one variable (`DEV_PORT_MAX` in `provision.sh`, kept in step
-with `PORT_MAX` in `tools/dev/dev-ports.mjs`) — it widens both sets at once.
+**Widening the range is four edits, not one.** `DEV_PORT_MAX` in `provision.sh`
+and `PORT_MAX` in `tools/dev/dev-ports.mjs` (the two sources of the range, which
+a unit test holds equal), plus both count tripwires in
+`tests/unit/idp-provision-redirect-uris.spec.ts` — the literal `40` for the
+redirect set and `20` for the post-logout one, deliberately hard-coded so the
+widening cannot ship silently. All four in one commit, followed by a supervised
+`provision.sh` run that registers the new URIs on the live dev IdP: until that
+run, the widened range exists in the repo and not in Zitadel.
 
 ## 7. Browsable admin Console (operator-only)
 

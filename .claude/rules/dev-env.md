@@ -18,11 +18,14 @@
   генерирует из одних и тех же границ оба набора — 40 redirect URI и 20
   post-logout URI (голые origin'ы, порт × хост) — поэтому переprovisioning ни
   один из них не сужает (#93, #170). Наборы печатаются без обращения к IdP:
-  `--print-redirect-uris` и `--print-post-logout-uris`. Расширение — по одной
-  строке в каждом из двух источников диапазона: `DEV_PORT_MAX` в `provision.sh`
-  и `PORT_MAX` в [`tools/dev/dev-ports.mjs`](../../tools/dev/dev-ports.mjs); что
-  они совпадают и что оба набора висят на этих границах, держит
-  `tests/unit/idp-provision-redirect-uris.spec.ts`.
+  `--print-redirect-uris` и `--print-post-logout-uris`. **Расширение диапазона —
+  четыре правки, не одна:** `DEV_PORT_MAX` в `provision.sh`, `PORT_MAX` в
+  [`tools/dev/dev-ports.mjs`](../../tools/dev/dev-ports.mjs), плюс оба
+  литерала-счётчика (`40` и `20`) в
+  `tests/unit/idp-provision-redirect-uris.spec.ts`. Тот же тест держит равенство
+  границ и специально валится на несдвинутых литералах. Все четыре — одним
+  коммитом, и следом supervised-прогон `provision.sh`, иначе новые порты есть в
+  репо, но не в Zitadel.
 - **Полный прогон `provision.sh` — операция по живому IdP:** он идемпотентен и
   больше не сужает URI, но пишет в живой dev-Zitadel (роли, login-политика,
   loginV2, тестовый юзер). Запускать осознанно, а не «на всякий случай».
