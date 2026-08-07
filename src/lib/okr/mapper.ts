@@ -247,8 +247,9 @@ export function mapOkrTree({ source, metrics, now }: BuildInput): MappedTree {
   // Goal% (§3 p.4): unweighted mean of in-period objectives; q4 and undefined objectives stay out.
   const pct = avg(objectives.filter((o) => !o.q4).map((o) => o.pct))
 
-  // #80: `groupOf` writes a warning on every call and runs four times per issue
-  // (active filter, counts, unit.filter, toTask), so one unknown state produced
+  // #80: `groupOf` writes a warning on every call and runs several times per
+  // issue (active filter, counts, unit.filter, and the action/task rows — four
+  // calls for a root issue), so one unknown state produced
   // four identical strings. The footer keys its <li> by the warning text, which
   // turned that into duplicate React keys. Deduping the output keeps the fix off
   // the call sites — restructuring the mapper is explicitly out of scope.
