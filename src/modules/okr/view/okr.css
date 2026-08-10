@@ -137,6 +137,11 @@ body:has(.okr-root) {
   color: var(--paper);
   margin: 14px 0 28px;
   text-wrap: balance;
+  /* Inert until a single word is wider than the container — at 320px the
+     longest headline word (34px Unbounded) is what floored the whole document
+     at 360px and scrolled the page sideways (#181). Same idiom as
+     .okr-card__t below. */
+  overflow-wrap: anywhere;
 }
 .okr-hero__prog {
   display: flex;
@@ -327,6 +332,18 @@ body:has(.okr-root) {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+/* Tag + health badge as one left-hand group (was an inline style in
+   components.tsx). It is a single flex item of .okr-card__row, so the row can
+   never break BETWEEN tag and badge — the group must wrap internally: nowrap
+   tag + badge together floor at 270px against the 252px card content box at a
+   320px viewport, which is the .okr-card overflow #181 fixes. Wrapping is
+   inert while both fit on one line, so wider viewports render as before. */
+.okr-card__flags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 .okr-card__t {
   font: 800 18px/1.28 var(--display-font);

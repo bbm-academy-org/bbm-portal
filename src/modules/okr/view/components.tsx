@@ -296,7 +296,7 @@ export function ObjectiveCard({ objective, wide }: { objective: OkrObjective; wi
     <article className={`okr-card ${missionClass}`}>
       <div className="okr-card__head">
         <div className="okr-card__row">
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+          <span className="okr-card__flags">
             {wide && <span className="okr-tag">На стыке обеих миссий</span>}
             <Badge health={objective.health} />
           </span>
