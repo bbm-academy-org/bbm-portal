@@ -460,20 +460,36 @@ summary.okr-kr__head:hover {
   padding-inline: 8px;
   width: calc(100% + 16px);
 }
-/* min-width:auto (not 0) is the wrap trigger. Flex line breaking uses the
-   hypothetical main size, which `min-width:0` pins at 0 — the cluster would
-   then never wrap and the row would overflow instead. With the content-based
-   minimum the line breaks exactly when the title's own minimum can no longer
-   sit beside the cluster; while it can, the column grows past that minimum and
-   the declaration is inert. That minimum is the chevron plus a single character,
-   because `.okr-kr__t` breaks `anywhere` — the row therefore stays on one line
-   for as long as it physically can, and reflows only instead of clipping. */
+/* The wrap trigger for the whole row, and it has to live HERE — one level above
+   the heading it protects (#79). Flex line breaking reads the hypothetical main
+   size of `.okr-kr__main`, so that is the only element `.okr-kr__head` ever asks
+   about; a floor on the heading inside it is invisible to the decision. The two
+   values this used to be are both non-triggers: `min-width:0` pins the
+   hypothetical size at 0, and `auto` resolves it to the content-based minimum —
+   the chevron plus a SINGLE character, because `.okr-kr__t` breaks `anywhere`.
+   Either way the line never breaks, `.okr-kr__meta` stays put, and the heading
+   is what gives way: measured on a live stand at 375px, «Кол-во регистраций на
+   вебинарах» rendered 20.9px wide and 291.5px tall — a column of one letter.
+   An explicit floor makes the algorithm break the line exactly when 14ch of
+   heading can no longer sit beside the cluster. `min(100%,…)` keeps the floor
+   from exceeding the row itself, so it can never re-introduce the horizontal
+   overflow `.okr-card{overflow:hidden}` would clip (the defect #76 removed). */
 .okr-kr__main {
+  /* The lead column both floors below subtract: the chevron plus the flex gap
+     beside it (22px today). DERIVED, not written out — and the two lengths it
+     is derived from are the ones actually applied to that column and that gap,
+     three lines down and on `.okr-kr__chev`. A literal `22px` would survive
+     someone resizing the chevron to 16px and quietly start lying, and the floor
+     would then be off by the difference on every KR row. */
+  --kr-chev: 12px;
+  --kr-gap: 10px;
+  --kr-lead: calc(var(--kr-chev) + var(--kr-gap));
+
   flex: 1;
-  min-width: auto;
+  min-width: min(100%, calc(14ch + var(--kr-lead)));
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--kr-gap);
   font: 600 13.5px/1.35 var(--body-font);
 }
 /* Shrinkable and self-wrapping: on the second line the cluster gets the whole
@@ -487,7 +503,10 @@ summary.okr-kr__head:hover {
   min-width: 0;
 }
 .okr-kr__chev {
-  flex: 0 0 12px;
+  /* The width half of `--kr-lead` — see `.okr-kr__main`. Kept in the flow even
+     on an action-less row (`visibility:hidden`, components.tsx), so the lead
+     column is 22px on EVERY KR row and the floors need no per-row exception. */
+  flex: 0 0 var(--kr-chev);
   height: 1.35em;
   display: flex;
   align-items: center;
@@ -503,9 +522,27 @@ summary.okr-kr__head:hover {
 details[open] > summary .okr-kr__chev {
   transform: rotate(90deg);
 }
+/* DEFENSIVE — today this floor never binds, and the geometry does not rest on
+   it. `.okr-kr__t` is the only growing child of `.okr-kr__main` beside a
+   `flex:0 0` chevron, so it always receives exactly `main − var(--kr-lead)` and
+   never descends to its own minimum; with `min-width:0` here the rendered
+   layout would be identical. It is here for the day `.okr-kr__main` gains a
+   second flexible child — then this is what keeps the heading off zero, which
+   is precisely what the `min-width:0` it replaces permitted.
+
+   Do not mistake it for the fix. The wrap trigger is the floor on
+   `.okr-kr__main` above, one level up; a floor at THIS level cannot break the
+   row's line, because `.okr-kr__head` never asks about this element. That is
+   the mistake #79 exists to document: the naive one-liner put a floor only here
+   and the heading went 24 → 46px while `.okr-kr__meta` still refused to wrap.
+   If the row misbehaves again, the level to look at is the one above.
+
+   Subtracting the lead column (rather than a bare `min(100%,14ch)`) keeps the
+   floor inside the space actually left for the heading, so it can never push
+   the chevron out of `.okr-kr__main`. */
 .okr-kr__t {
   flex: 1;
-  min-width: 0;
+  min-width: min(calc(100% - var(--kr-lead)), 14ch);
   color: var(--ink-2);
   overflow-wrap: anywhere;
 }

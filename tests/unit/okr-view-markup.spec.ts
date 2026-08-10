@@ -357,12 +357,11 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // wide screens stay pixel-identical; it only right-aligns the second line.
     expect(head![1]).toContain('justify-content: flex-end')
 
-    // The wrap trigger: with `min-width:0` the title column's hypothetical size
-    // is 0, the cluster never wraps and the row overflows instead. `auto` makes
-    // the flex algorithm break the line exactly when the title's own minimum
-    // can no longer sit beside the cluster.
+    // The wrap trigger is the floor on `.okr-kr__main` (pinned in its own test
+    // below, issue #79): with `min-width:0` the title column's hypothetical size
+    // is 0, the cluster never wraps and the row overflows instead.
     const main = /\.okr-kr__main\s*\{([^}]*)\}/.exec(css)
-    expect(main![1]).toContain('min-width: auto')
+    expect(main, '.okr-kr__main rule missing').not.toBeNull()
     expect(main![1]).not.toContain('min-width: 0')
 
     // The cluster itself must be able to shrink and wrap on that second line.
@@ -445,6 +444,63 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     expect(title, '.okr-act__t rule missing').not.toBeNull()
     expect(title![1]).toMatch(/min-width:\s*min\(100%,\s*\d+ch\)/)
     expect(title![1]).not.toContain('min-width: 0')
+  })
+
+  it('floors the KR heading on both flex levels so the cluster wraps (issue #79)', () => {
+    // Measured on `main` at 375px: the KR headings rendered as vertical columns
+    // ~20px wide and up to 583px tall. The KR row is a *nested* flex, and that
+    // is the whole difference from `.okr-act__t`: the line break is decided by
+    // `.okr-kr__head` from the hypothetical size of `.okr-kr__main`, while the
+    // title's own floor only ever reaches the inside of `.okr-kr__main`. With
+    // the floor on the inner element alone the heading widened 24 → 46px and
+    // `.okr-kr__meta` still never moved to its own line (PR #78's reviewer).
+    // So the outer element carries the floor that triggers the wrap, and the
+    // inner one keeps the title itself off zero.
+    const main = /\.okr-kr__main\s*\{([^}]*)\}/.exec(css)
+    expect(main, '.okr-kr__main rule missing').not.toBeNull()
+    // The lead column both floors subtract must be DERIVED from the two lengths
+    // it is made of — and those two must be the ones actually applied to the
+    // chevron column and to the gap. A literal `22px` would keep matching after
+    // someone resized the chevron to 16px, and both floors would be off by the
+    // difference on every KR row while the test stayed green.
+    expect(main![1], '--kr-chev must be declared, not inlined').toMatch(/--kr-chev:\s*[\d.]+px/)
+    expect(main![1], '--kr-gap must be declared, not inlined').toMatch(/--kr-gap:\s*[\d.]+px/)
+    expect(main![1], '--kr-lead must be derived from them, not written out').toMatch(
+      /--kr-lead:\s*calc\(var\(--kr-chev\) \+ var\(--kr-gap\)\)/,
+    )
+    expect(main![1], 'the gap the lead counts must be the gap actually applied').toContain(
+      'gap: var(--kr-gap)',
+    )
+    const chev = /\n\.okr-kr__chev\s*\{([^}]*)\}/.exec(css)
+    expect(chev, '.okr-kr__chev rule missing').not.toBeNull()
+    expect(chev![1], 'the chevron column must be the width the lead counts').toContain(
+      'flex: 0 0 var(--kr-chev)',
+    )
+    // `var()` on a name that no longer exists is invalid-at-computed-value-time,
+    // which for min-width means the initial `auto` — the pre-fix defect, silently.
+    // The asserts above are what keeps that name alive.
+    expect(main![1], 'the outer floor is the wrap trigger').toMatch(
+      /min-width:\s*min\(100%,\s*calc\(14ch \+ var\(--kr-lead\)\)\)/,
+    )
+    expect(main![1]).not.toContain('min-width: 0')
+    expect(main![1], 'the content-based minimum is a single character — never a floor').not.toMatch(
+      /min-width:\s*auto/,
+    )
+
+    // The inner floor is DEFENSIVE and does not bind in today's markup: as the
+    // only growing child beside a `flex:0 0` chevron, `.okr-kr__t` always gets
+    // `main − lead` and never reaches its own minimum. It is pinned anyway, so
+    // that a second flexible child in `.okr-kr__main` cannot reintroduce the
+    // collapse — and so that nobody "tidies" it back to the `min-width:0` that
+    // permitted it. `min(…)`, not a bare 14ch: on a row narrower than the floor
+    // a hard value would bring back the horizontal overflow inside
+    // `.okr-card{overflow:hidden}` that #76 removed.
+    const title = /\.okr-kr__t\s*\{([^}]*)\}/.exec(css)
+    expect(title, '.okr-kr__t rule missing').not.toBeNull()
+    expect(title![1]).toMatch(/min-width:\s*min\(calc\(100% - var\(--kr-lead\)\),\s*14ch\)/)
+    expect(title![1], 'the zeroed minimum is what collapsed the heading').not.toContain(
+      'min-width: 0',
+    )
   })
 
   it('keeps every action-state chip above the WCAG AA threshold', () => {
