@@ -338,7 +338,10 @@ body:has(.okr-root) {
    never break BETWEEN tag and badge — the group must wrap internally: nowrap
    tag + badge together floor at 270px against the 252px card content box at a
    320px viewport, which is the .okr-card overflow #181 fixes. Wrapping is
-   inert while both fit on one line, so wider viewports render as before. */
+   inert while both fit on one line, so wider viewports render as before.
+   Kept as its own container rather than flattened into the row: the row's
+   space-between would spread tag and badge apart the moment it gains a
+   second child, and the soon-card already puts a bare badge there. */
 .okr-card__flags {
   display: inline-flex;
   align-items: center;
