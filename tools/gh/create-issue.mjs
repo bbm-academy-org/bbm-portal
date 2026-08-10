@@ -31,7 +31,7 @@
 // `gh issue create` дословно, его флаги здесь не переизобретаются):
 //   pnpm issue:create --title "<t>" --body-file <f> --type Task \
 //     --channel agent --source "сам поймал при работе над #130" \
-//     --milestone "Платформа: эксплуатация и упрочнение"
+//     --milestone "Platform: operations and hardening"
 //   pnpm issue:create --no-todo --title …    # добавить на борд, Status не трогать
 //
 // Управляющие флаги (потребляются здесь, в gh НЕ уходят): `--no-todo`,

@@ -163,8 +163,8 @@ There is one chain and no translation tables, with Type as the primary:
 to create one — the task type stays `Task`.
 
 **A milestone is mandatory.** A milestone is a long-lived theme, not a spec and
-not an epic. There is currently one product theme — «Консолидация платформы»; the
-permanent fallback **«Платформа: эксплуатация и упрочнение»**, for process and
+not an epic. There is currently one product theme — "Platform consolidation"; the
+permanent fallback **"Platform: operations and hardening"**, for process and
 operations tasks that fit no theme, is created by `pnpm taxonomy:bootstrap
 --apply` (which also creates the `channel:*` labels). A task without a milestone
 is not created.

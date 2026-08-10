@@ -12,7 +12,9 @@ import {
 /**
  * Диапазон 3000–3009 — не удобство, а потолок: redirect URI dev-Zitadel
  * зарегистрированы только на эти десять портов, вне их логин даёт
- * 400 invalid_request (#90, восстановление дефолта — #93).
+ * 400 invalid_request (#90). Регистрацию генерирует
+ * infra/dev-stand/idp/provision.sh из тех же границ (#93) — совпадение двух
+ * источников держит tests/unit/idp-provision-redirect-uris.spec.ts.
  */
 
 describe('portSequence', () => {

@@ -67,7 +67,7 @@ export const CHANNEL_LABELS = [
 export const ISSUE_TYPES = ['Bug', 'Feature', 'Task']
 
 /** Постоянный fallback-milestone для процессных/эксплуатационных задач. */
-export const FALLBACK_MILESTONE = 'Платформа: эксплуатация и упрочнение'
+export const FALLBACK_MILESTONE = 'Platform: operations and hardening'
 
 /**
  * Type → префикс ветки и Conventional-Commit-типа (канон §2). `docs/` остаётся

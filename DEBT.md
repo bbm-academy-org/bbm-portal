@@ -21,6 +21,48 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-07 supervised infra-script runs must ship the script from a
+      pinned commit (`git show origin/main:<path> | ssh <box> bash -s -- …`),
+      never `scp` from a working tree: the #93 AC-verification run scp'd the
+      main checkout BEFORE it was fast-forwarded to the just-merged #179, so the
+      OLD destructive default ran against the live dev IdP and collapsed
+      `postLogoutRedirectUris` 20 → 1 for ~3 minutes (restored, evidence on
+      #93). The recipe in `infra/dev-stand/idp/bootstrap.md` §6 still says
+      nothing about pinning — return condition: the next supervised
+      `provision.sh` run, or the next time any repo script is shipped to a
+      remote box for execution (#93)
+
+- [ ] 2026-08-07 `provision.sh`: `IDP_DEV_HOSTS=','` yields origins with empty
+      hosts (`http://:3000`) — pre-existing input-validation hole, orthogonal to
+      #170's diff, flagged as nit 5 of PR #179's review and deliberately not
+      fixed there — return condition: the next task that touches
+      `generate_uris` or adds host-axis configuration (#170)
+
+- [ ] 2026-08-07 agent-opened PRs trip the `assignee-milestone` guard on every
+      open: `gh pr create` sets neither assignee nor milestone, so each
+      implementer patches both by hand and re-runs the job (bit #178 and #179 on
+      the same day). Root fix is a create-side wrapper (or a `pr:land`-style
+      tail) copying assignee + milestone from the linked issue — return
+      condition: the guard trips on one more agent-opened PR despite the
+      dispatch brief carrying the `--assignee`/`--milestone` instruction (#80)
+
+- [ ] 2026-08-06 `.claude/**` sits outside `format:check`'s globs while
+      lint-staged prettier DOES reformat it on commit — canon files get
+      formatted by the hook but are never checked in CI, so a hook-bypassing
+      commit can land unformatted canon and the next toucher inherits a noisy
+      diff (bit PR #172: the hook silently reformatted a line of
+      `parallel-sessions.md`) — return condition: next edit to the
+      `format:check` globs or the next surprise-reformat incident (#169,
+      gate of PR #172)
+
+- [ ] 2026-08-06 `.claude/rules/dev-env.md` was touched by PR #166 (new
+      Russian STOP bullet added) without the translate-on-touch pass the task
+      canon prescribes for the legacy Russian corpus — deliberate: a lone
+      English bullet in an all-Russian file reads worse, and translating a
+      canon rules file is not a redirect-URI chore's business — return
+      condition: next task that substantively reworks `dev-env.md` translates
+      the whole file (#166, review round 2)
+
 - [ ] 2026-08-06 `tools/hooks/worktree-path-guard.mjs` blocks Edit/Write when the
       session's launch worktree no longer exists on disk: `decideEscapeBlock` reads
       the worktree name out of `cwd` and treats every other path under the main

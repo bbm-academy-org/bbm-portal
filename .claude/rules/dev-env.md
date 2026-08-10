@@ -10,10 +10,22 @@
   использовать: cwd между вызовами дрейфует, и команда уезжает в чужой
   worktree. Каждая git-команда явно называет своё дерево.
 - **Порты dev-стенда: 3000–3009.** Redirect URI в dev-Zitadel зарегистрированы
-  вручную только на этот диапазон; стенд на другом порту поднимется, но логин
-  упадёт с `400 invalid_request`. Порт берётся через `pnpm dev:ports`, стенд
-  поднимается как `PORT=<n> pnpm dev` (не `pnpm dev -- -p <n>`).
-- **Диапазон не в дефолте provisioning:** `infra/dev-stand/idp/provision.sh`
-  при следующем прогоне откатит регистрацию к одному порту — issue #93.
+  ровно на этот диапазон (× `localhost`/`127.0.0.1` × оба callback-пути); стенд
+  на другом порту поднимется, но логин упадёт с `400 invalid_request`. Порт
+  берётся через `pnpm dev:ports`, стенд поднимается как `PORT=<n> pnpm dev` (не
+  `pnpm dev -- -p <n>`).
+- **Диапазон в дефолте provisioning:** `infra/dev-stand/idp/provision.sh`
+  генерирует из одних и тех же границ оба набора — redirect URI (порт × хост ×
+  callback-путь) и post-logout URI (порт × хост, голые origin'ы), — поэтому
+  переprovisioning ни один из них не сужает (#93, #170). Печать без обращения к
+  IdP: `--print-redirect-uris` и `--print-post-logout-uris` (по одному флагу за
+  раз, оба сразу — ошибка). **Расширение диапазона — не одна строка**, и полный
+  чеклист правок (плюс supervised-прогон в конце) намеренно живёт в одном месте:
+  [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
+  §6, «Widening the range — the whole checklist». Числа наборов здесь не
+  дублируются: их канон — таблица в том же §6.
+- **Полный прогон `provision.sh` — операция по живому IdP:** он идемпотентен и
+  больше не сужает URI, но пишет в живой dev-Zitadel (роли, login-политика,
+  loginV2, тестовый юзер). Запускать осознанно, а не «на всякий случай».
 - Параллельные сессии, worktree и правила по чужим listener'ам:
   [`parallel-sessions.md`](./parallel-sessions.md).
