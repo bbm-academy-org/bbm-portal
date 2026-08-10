@@ -21,6 +21,17 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-10 the `/p/okr` surface still has no vendored design source in
+      `design-source/` after another touch (#181, a geometry-only fix like
+      #79/#180 before it): the design-process rule back-fills a pre-#138 surface
+      "on first touch", but the original is a Claude.Design canvas only the
+      owner can export, and the owner declined to engage with the back-fill
+      question in-session (2026-08-10). Geometry fixes measure against live-stand
+      reference numbers (PR #180 / PR #188 comments), so nothing was built from
+      prose — return condition: the first task that changes the OKR surface's
+      DESIGN (layout/palette/composition) rather than its geometry vendors the
+      canvas before building (#181)
+
 - [ ] 2026-08-07 supervised infra-script runs must ship the script from a
       pinned commit (`git show origin/main:<path> | ssh <box> bash -s -- …`),
       never `scp` from a working tree: the #93 AC-verification run scp'd the

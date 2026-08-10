@@ -296,6 +296,29 @@ describe('objective card markup (spec 075 req.2)', () => {
     expect(textOutsideLinks(heading)).toContain(data.title)
     expectPlaneIconLink(heading, data.planeUrl, data.title)
   })
+
+  it('groups the mission tag and the health badge into one wrappable unit (#181)', () => {
+    // Same shape as `.okr-kr__meta` on the KR row: as ONE flex item of
+    // `.okr-card__row` the pair can never break BETWEEN tag and badge, so the
+    // group must be a class the stylesheet can teach to wrap internally —
+    // an inline style here is what let the bridge card overflow at 320px.
+    const host = render(React.createElement(ObjectiveCard, { objective: objective(), wide: true }))
+    const flags = host.querySelector('.okr-card__row > .okr-card__flags')!
+    expect(flags, '.okr-card__flags group missing').not.toBeNull()
+    expect(flags.querySelector('.okr-tag'), 'the mission tag belongs to the group').not.toBeNull()
+    expect(
+      flags.querySelector('.okr-badge'),
+      'the health badge belongs to the group',
+    ).not.toBeNull()
+    expect((flags as HTMLElement).getAttribute('style'), 'styling lives in okr.css').toBeNull()
+  })
+
+  it('keeps the badge inside that group on a lane card (no tag)', () => {
+    const host = render(React.createElement(ObjectiveCard, { objective: objective() }))
+    const flags = host.querySelector('.okr-card__row > .okr-card__flags')!
+    expect(flags.querySelector('.okr-tag')).toBeNull()
+    expect(flags.querySelector('.okr-badge')).not.toBeNull()
+  })
 })
 
 describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
@@ -399,12 +422,24 @@ describe('OKR stylesheet contract (spec 075 req.3, req.5)', () => {
     // Only `anywhere` lowers min-content: a long Plane id or URL in a title
     // would otherwise keep the column wide and be cut off by the card. It also
     // sharpens the row's wrap trigger. Visually identical for ordinary text.
-    for (const sel of ['.okr-kr__t', '.okr-act__t', '.okr-card__t']) {
+    // `.okr-hero__title` joined the list in #181: its longest word at 34px
+    // Unbounded floored the whole document at 360px and scrolled the page
+    // sideways at a 320px viewport.
+    for (const sel of ['.okr-kr__t', '.okr-act__t', '.okr-card__t', '.okr-hero__title']) {
       const rule = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`).exec(css)
       expect(rule, `${sel} rule missing`).not.toBeNull()
       expect(rule![1], `${sel} must break anywhere`).toContain('overflow-wrap: anywhere')
     }
     expect(css).not.toContain('overflow-wrap: break-word')
+  })
+
+  it('lets the tag+badge group wrap internally instead of flooring the card (#181)', () => {
+    // The group's single-line min-content (nowrap tag + badge, 270px) is wider
+    // than the 252px card content box at a 320px viewport; `flex-wrap: wrap`
+    // is what lets the badge drop to a second line. Inert while both fit.
+    const flags = /\.okr-card__flags\s*\{([^}]*)\}/.exec(css)
+    expect(flags, '.okr-card__flags rule missing').not.toBeNull()
+    expect(flags![1]).toContain('flex-wrap: wrap')
   })
 
   it('keeps the border-box hover trick working across the wrap', () => {
