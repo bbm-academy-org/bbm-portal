@@ -21,6 +21,18 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-11 `decideEscapeBlock` still calls a session isolated whenever its
+      `cwd` matches the worktree pattern, so a session that OWNS the main
+      checkout and merely `cd`-ed into `.claude/worktrees/<N>` is blocked from a
+      legitimate shared-checkout write (cwd `<main>/.claude/worktrees/79`,
+      target `<main>/DEBT.md` → block), and the message then advises writing
+      into worktree 79 — the mirror image of #187's false positives. Telling that
+      session from a genuine worktree session needs true session identity, which
+      `cwd` cannot carry; #187's approved design explicitly rejected inferring it,
+      so the residual class is routed rather than fixed — return condition: first
+      Edit/Write block of a legitimate shared-checkout write from a session that
+      owns the main checkout (mirror of #187; PR #189 review blocker 2)
+
 - [ ] 2026-08-10 the `/p/okr` surface still has no vendored design source in
       `design-source/` after another touch (#181, a geometry-only fix like
       #79/#180 before it): the design-process rule back-fills a pre-#138 surface
@@ -73,21 +85,6 @@ Entry format:
       canon rules file is not a redirect-URI chore's business — return
       condition: next task that substantively reworks `dev-env.md` translates
       the whole file (#166, review round 2)
-
-- [x] 2026-08-06 `tools/hooks/worktree-path-guard.mjs` blocks Edit/Write when the
-      session's launch worktree no longer exists on disk: `decideEscapeBlock` reads
-      the worktree name out of `cwd` and treats every other path under the main
-      root as "the shared checkout", so a session whose own worktree was removed
-      cannot write into ANY worktree — including the one holding its live PR —
-      while `EnterWorktree` also refuses (it lstats the dangling launch dir). The
-      guard's target is an escape into the SHARED checkout, and that case still
-      works; the writes went through the shell instead, nothing touched the shared
-      tree. Return condition: next Edit/Write block inside a live worktree, or the
-      next edit to `tools/hooks/worktree-path-guard.mjs` (#169, rework of PR #172).
-      **Promoted to #187** (2026-08-10: the return condition fired — a
-      main-checkout session was misclassified after a Bash `cd` and blocked from
-      editing `worktrees/169/DEBT.md` during the landing of PR #172); the line
-      closes with #187's fixing PR
 
 - [ ] 2026-08-06 `release-digest.yml` "Resolve target sha" step: the
       `gh api … -f environment=production -F per_page=1` call turns the request
