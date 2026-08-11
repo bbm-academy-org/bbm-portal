@@ -1,4 +1,7 @@
 // @vitest-environment node
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -83,5 +86,48 @@ describe('buildPlatformDrizzleConfig', () => {
     expect(() => buildPlatformDrizzleConfig({ DATABASE_URL: CMS_URL })).toThrow(
       PLATFORM_DATABASE_URL_VAR,
     )
+  })
+})
+
+/**
+ * The committed SQL, checked as SQL.
+ *
+ * Live-run finding (dev Postgres, 2026-08-11): `pnpm platform:migrate` died with
+ * 42P06 duplicate_schema on the very first migration. The cause is the ledger's
+ * own location — `migrations.schema: 'core'` means drizzle's migrator has to
+ * CREATE the `core` schema itself, to hold `__drizzle_migrations`, BEFORE it
+ * applies migration 0000. drizzle-kit generates a bare `CREATE SCHEMA "core";`,
+ * which then hits a schema that already exists, and the run aborts with zero
+ * migrations applied.
+ *
+ * So the schema-creating statement must be idempotent. That is not only a fix
+ * for the ledger ordering: `platform:db:ensure`, a partially-applied run, or a
+ * database restored from a dump can each present the same already-there schema.
+ *
+ * The assertion is over EVERY generated migration rather than over 0000 alone,
+ * because the hand-edit is the point of fragility — `platform:migrate:generate`
+ * re-emits the bare form, so a regenerated file must be re-patched and this test
+ * is what says so.
+ */
+describe('the generated migrations', () => {
+  const dir = resolve(process.cwd(), PLATFORM_MIGRATIONS_DIR)
+  const sqlFiles = readdirSync(dir).filter((name) => name.endsWith('.sql'))
+
+  it('ships the initial migration', () => {
+    expect(sqlFiles).toContain('0000_create_core_schema.sql')
+  })
+
+  it('creates the `core` schema idempotently — the migrator creates it first', () => {
+    const sql = readFileSync(resolve(dir, '0000_create_core_schema.sql'), 'utf8')
+    expect(sql).toMatch(/CREATE SCHEMA IF NOT EXISTS "core"/i)
+  })
+
+  it('never emits a bare CREATE SCHEMA — drizzle-kit does, and it must be patched', () => {
+    for (const name of sqlFiles) {
+      const sql = readFileSync(resolve(dir, name), 'utf8')
+      expect(sql, `${name} carries a non-idempotent CREATE SCHEMA`).not.toMatch(
+        /CREATE SCHEMA(?!\s+IF NOT EXISTS)/i,
+      )
+    }
   })
 })

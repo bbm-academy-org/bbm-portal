@@ -44,6 +44,22 @@ two things it did — and refuses every input where "create a database" could me
 something else: a non-postgres scheme, a missing or non-identifier database name,
 the maintenance database itself, or `cms`.
 
+### A generated `CREATE SCHEMA` must be patched to `IF NOT EXISTS`
+
+`drizzle-kit generate` emits a bare `CREATE SCHEMA "core";`, and applying that is
+a guaranteed **42P06 duplicate_schema** here — because our ledger lives at
+`core.__drizzle_migrations`, so the migrator creates the `core` schema itself, to
+hold the ledger, _before_ it applies migration 0000. (Found on the dev stand,
+2026-08-11: the run aborted with zero migrations applied.) The same idempotence
+is what lets a migration re-run against a database where a partial run or a
+restore already left the schema in place.
+
+So `0000_create_core_schema.sql` is hand-patched to `CREATE SCHEMA IF NOT EXISTS
+"core";`. **Re-generating it re-emits the bare form** — patch it again.
+`tests/unit/platform-db-config.spec.ts` asserts no migration in this directory
+carries a non-idempotent `CREATE SCHEMA`, so a forgotten patch goes red in CI
+rather than on prod.
+
 ## Files
 
 ```
