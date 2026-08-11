@@ -186,6 +186,46 @@ describe('worktree-path-guard', () => {
     ).toEqual({ block: false, inWorktreeSession: true })
   })
 
+  // #187: защищаемый класс — ОБЩИЙ чекаут, а не «свой worktree». Сессию
+  // опознавать по cwd нельзя: cwd дрейфует (Bash `cd`), а запуск мог случиться
+  // в worktree, которого уже нет. Классифицируется ЦЕЛЬ.
+  it('пропускает путь в ЧУЖОЙ worktree (инцидент 2: cwd уехал по Bash `cd`)', () => {
+    expect(
+      decideEscapeBlock({
+        toolName: 'Edit',
+        toolInput: { file_path: `${MAIN}/.claude/worktrees/169/DEBT.md` },
+        cwd: `${MAIN}/.claude/worktrees/79`,
+      }),
+    ).toEqual({ block: false, inWorktreeSession: true })
+  })
+
+  it('пропускает запись в worktree, когда worktree запуска уже удалён (инцидент 1)', () => {
+    expect(
+      decideEscapeBlock({
+        toolName: 'Write',
+        toolInput: { file_path: `${WORKTREE}/src/app/page.tsx` },
+        cwd: `${MAIN}/.claude/worktrees/172-снесён`,
+      }),
+    ).toEqual({ block: false, inWorktreeSession: true })
+  })
+
+  it('защита сохранена: любой файл общего чекаута вне .claude/worktrees/ блокируется', () => {
+    expect(
+      decideEscapeBlock({
+        toolName: 'Edit',
+        toolInput: { file_path: `${MAIN}/DEBT.md` },
+        cwd: WORKTREE,
+      }).block,
+    ).toBe(true)
+    expect(
+      decideEscapeBlock({
+        toolName: 'Edit',
+        toolInput: { file_path: `${MAIN}\\.claude\\rules\\dev-env.md` },
+        cwd: WORKTREE,
+      }).block,
+    ).toBe(true)
+  })
+
   it('не блокирует, когда сессия не в worktree', () => {
     expect(
       decideEscapeBlock({

@@ -8,6 +8,15 @@
 //    пишет в общий чекаут. Оттуда чужая параллельная сессия сметает правку в
 //    свой PR, а любой «зелёный», увиденный там, относится к чужому чекауту
 //    (`.claude/rules/parallel-sessions.md`). Ловится в момент выдачи пути.
+//    Защищаемый класс — ОБЩИЙ чекаут, и классифицируется ЦЕЛЬ, а не сессия
+//    (#187). Прежняя редакция выводила «свой worktree» из cwd и блокировала всё
+//    под основным корнем, кроме него: два ложных срабатывания — сессия, чей
+//    worktree запуска удалён (писать нельзя было НИ В ОДИН worktree), и
+//    сессия основного чекаута, которую Bash `cd` в `worktrees/79` заставил
+//    считать себя изолированной и запретил правку в `worktrees/169`. cwd
+//    дрейфует и потому не удостоверяет личность; путь под
+//    `<mainRoot>/.claude/worktrees/` — это ЧЬЁ-ТО изолированное дерево, а не
+//    общий чекаут, и не блокируется никогда.
 //
 // 2. Write-WARN (exit 0 + systemMessage). Первая запись в основное дерево в
 //    НЕизолированной сессии при живой параллели: предупреждение один раз плюс
@@ -43,12 +52,12 @@ import {
 
 export function escapeBlockMessage(filePath, mainRoot, worktreeName) {
   return (
-    `BLOCKED (#91): '${filePath}' — абсолютный путь в ОБЩЕЕ основное дерево, но эта сессия ` +
-    `изолирована в worktree.\n` +
-    `Побег из worktree пишет в общий чекаут: чужая параллельная сессия сметёт правку в свой PR, ` +
+    `BLOCKED (#91): '${filePath}' — абсолютный путь в ОБЩИЙ основной чекаут (вне ` +
+    `'${mainRoot}\\.claude\\worktrees\\'), а cwd этой сессии стоит в worktree.\n` +
+    `Побег в общий чекаут: чужая параллельная сессия сметёт правку в свой PR, ` +
     `а «зелёный» там относится к чужому чекауту (.claude/rules/parallel-sessions.md).\n` +
-    `Используй путь своего worktree: относительный от корня worktree либо префикс ` +
-    `'${mainRoot}\\.claude\\worktrees\\${worktreeName}\\…'.\n`
+    `Пиши в worktree: относительный путь от его корня либо префикс ` +
+    `'${mainRoot}\\.claude\\worktrees\\${worktreeName}\\…' (путь в ЛЮБОЙ worktree гард пропускает).\n`
   )
 }
 
@@ -63,9 +72,13 @@ export function writeWarnMessage(liveCount) {
 }
 
 /**
- * Чистый seam пункта 1: абсолютный путь из worktree-сессии, уводящий в основное
- * дерево. Возвращает `{block:false}` либо `{block:true, mainRoot, worktreeName}`.
+ * Чистый seam пункта 1: абсолютный путь из worktree-сессии, уводящий в ОБЩИЙ
+ * чекаут. Возвращает `{block:false}` либо `{block:true, mainRoot, worktreeName}`.
  * Решение не зависит ни от флага, ни от FS — только от cwd и пути.
+ *
+ * Классифицируется цель, а не сессия (#187): блокируется путь под основным
+ * корнем и ВНЕ `<mainRoot>/.claude/worktrees/`. Любой путь внутри worktrees —
+ * чьё-то изолированное дерево, общему чекауту он не угрожает и проходит.
  */
 export function decideEscapeBlock({ toolName, toolInput, cwd }) {
   if (!/^(Edit|Write|MultiEdit)$/.test(toolName || '')) return { block: false }
@@ -74,10 +87,10 @@ export function decideEscapeBlock({ toolName, toolInput, cwd }) {
   const m = String(cwd).match(/^(.*)[\\/]\.claude[\\/]worktrees[\\/]([^\\/]+)/)
   if (!m) return { block: false, inWorktreeSession: false }
   const mainRoot = m[1]
-  const worktreeRoot = `${m[1]}/.claude/worktrees/${m[2]}`
+  const worktreesRoot = `${m[1]}/.claude/worktrees`
   const underMain = isUnder(filePath, norm(mainRoot))
-  const underWorktree = isUnder(filePath, norm(worktreeRoot))
-  if (underMain && !underWorktree) {
+  const underAnyWorktree = isUnder(filePath, norm(worktreesRoot))
+  if (underMain && !underAnyWorktree) {
     return { block: true, mainRoot, worktreeName: m[2] }
   }
   return { block: false, inWorktreeSession: true }
