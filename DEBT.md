@@ -24,8 +24,8 @@ Entry format:
 - [ ] 2026-08-11 `decideEscapeBlock` still calls a session isolated whenever its
       `cwd` matches the worktree pattern, so a session that OWNS the main
       checkout and merely `cd`-ed into `.claude/worktrees/<N>` is blocked from a
-      legitimate shared-checkout write (`{cwd:'<main>/.claude/worktrees/79',
-    file_path:'<main>/DEBT.md'}` → block), and the message then advises writing
+      legitimate shared-checkout write (cwd `<main>/.claude/worktrees/79`,
+      target `<main>/DEBT.md` → block), and the message then advises writing
       into worktree 79 — the mirror image of #187's false positives. Telling that
       session from a genuine worktree session needs true session identity, which
       `cwd` cannot carry; #187's approved design explicitly rejected inferring it,
