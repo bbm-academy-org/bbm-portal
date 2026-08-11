@@ -112,6 +112,21 @@ module.exports = {
         pathNot: '^src/lib/platform/db/schema/$1/',
       },
     },
+    {
+      name: 'route-layer-must-not-import-tables',
+      comment:
+        'ADR-002/ADR-004 §6 (#125): the route layer never holds a table handle. ' +
+        '`module-must-not-import-foreign-tables` keys on ^src/(lib|modules)/<module>/ and ' +
+        '`cms-must-not-import-platform-db` deliberately omits the (platform) route group, so ' +
+        'without this rule a page under src/app/(platform)/ could import ANY module\'s tables ' +
+        'directly and both other rules would stay green — the invariant would be stated but not ' +
+        'enforced. A route renders; it asks a module for data through the module\'s API, and the ' +
+        'module talks to its own tables. Hence no per-module exception here: unlike the rule ' +
+        'above, there is no module name a route legitimately owns.',
+      severity: 'error',
+      from: { path: '^src/app/' },
+      to: { path: '^src/lib/platform/db/schema/[^/]+/' },
+    },
   ],
   options: {
     doNotFollow: { path: 'node_modules' },

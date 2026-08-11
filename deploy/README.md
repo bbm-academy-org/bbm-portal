@@ -178,13 +178,38 @@ commands and day-to-day handling:
 [`src/lib/platform/db/README.md`](../src/lib/platform/db/README.md). What follows
 here is only what is true at the **host** level.
 
+### One-time upgrade step on an EXISTING install — do this before the first deploy
+
+`deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
+deploy wipes `src/` and deliberately leaves `deploy/` alone), and **no deploy can
+add a line to it for you**. A box installed before this change therefore has no
+`PLATFORM_DATABASE_URL`, and the `migrate` service reads its environment from
+that file.
+
+```bash
+ssh portal-prod-tw
+cd ~/bbm-portal/deploy
+# same credentials and host as DATABASE_URL — only the database name differs
+grep '^DATABASE_URL=' .env.prod        # copy it, swap /cms for /platform
+echo 'PLATFORM_DATABASE_URL=postgres://payload:<the same password>@postgres:5432/platform' >> .env.prod
+```
+
+`pnpm deploy:prod` **checks this for you** before it touches anything: its first
+remote stage (`verifyRemoteEnv`) greps `.env.prod` for every variable the release
+needs and aborts with the remedy if one is missing — before the tree is shipped,
+before the checkpoint is taken, before anything migrates. Without that gate the
+same omission would surface much later and much worse: the stack stage runs under
+`bash -euo pipefail`, so the platform migration would abort _after_ the dump and
+Payload's migration and _before_ `up -d`.
+
 Three consequences at the host level:
 
-- **Nothing to provision by hand.** `POSTGRES_DB` in `.env.postgres` still names
-  `cms` only. The `platform` database is created on first migrate by
-  `pnpm platform:db:ensure` (which `pnpm platform:migrate` runs first), so a
-  fresh `pgdata` volume needs no hand-run `psql` — the same pattern the dev
-  Zitadel uses for its own `zitadel` database.
+- **Nothing to provision inside Postgres by hand** (as distinct from the env line
+  above). `POSTGRES_DB` in `.env.postgres` still names `cms` only. The `platform`
+  database itself is created on first migrate by `pnpm platform:db:ensure` (which
+  `pnpm platform:migrate` runs first), so a fresh `pgdata` volume needs no
+  hand-run `psql` — the same pattern the dev Zitadel uses for its own `zitadel`
+  database.
 - **`pnpm deploy:prod` applies both pipelines** in its `deployStack` stage, and
   prints both ledgers afterwards. That stage runs **after** `checkpoint`, so a
   platform migration is protected by exactly the same fail-closed dump gate as a
@@ -200,8 +225,16 @@ that script left** under this deploy's own S3 key,
 from the nightly's recursive `rclone delete … --min-age 30d`, i.e. **30 days**;
 the stage never deletes anything itself.
 
+> **The pinned key gained a `-<dump-filename>` suffix** (it used to end
+> `-<sha12>.sql.gz`), because one deploy can now pin more than one dump. If the
+> ops repo's `restore-portal.sh` parses that key, `sidorovanthon/bbm#112` must
+> cover the new shape — confirm it there rather than assuming.
+
 The pin is a loop over `*.sql.gz`, not a single newest file, precisely so the
 second dump appears in the recovery point the moment the box starts producing it.
+Coverage is then reported **per database, matched on the dump's filename** — not
+by counting files, which any stray second dump would satisfy while `platform`
+stayed uncovered.
 **The box script currently dumps `cms` only.** Extending it to dump `platform`
 too — and the matching restore runbook — is owned by the **`bbm` ops repo**
 (`infra/portal/README.md`) and **tracked there** as `sidorovanthon/bbm#112`,

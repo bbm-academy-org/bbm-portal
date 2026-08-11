@@ -26,6 +26,39 @@ pnpm platform:db:ensure          # the ensure step alone (idempotent)
 All four carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
 like the Payload `migrate*` scripts next to them in `package.json`.
 
+`platform:migrate:status` exits **non-zero** on an UNREACHABLE or ORPHAN
+migration (see below) and 0 on a merely pending one — pending is a normal state,
+the other two are the tree and the database disagreeing about history.
+
+### Where `PLATFORM_DATABASE_URL` is read from
+
+`.env` in the repo root, and the process environment — in that order of loading,
+with the **environment winning**:
+
+- `tools/platform/*.mjs` (`db:ensure`, `migrate:status`) load `.env` through
+  `tools/platform/load-env.mjs`, which wraps Node 22's `process.loadEnvFile()`.
+  It does not overwrite an already-set variable, so
+  `PLATFORM_DATABASE_URL=… pnpm platform:migrate` still points one command at
+  another stand.
+- `drizzle-kit` bundles `dotenv/config` and reads the same `.env` by itself.
+
+A missing `.env` is normal (prod and CI have none) and is not an error; a missing
+**value** is, and every command fails closed naming the variable.
+
+### After a rebase that reorders migrations: regenerate, don't re-merge
+
+drizzle applies a migration only when its timestamp is **strictly newer** than
+the newest one already in the ledger. So a migration generated in one worktree
+before — but merged after — one generated in another is **never applied**, and
+`drizzle-kit migrate` exits 0 the whole time. In a repo where parallel worktrees
+are the norm ([`.claude/rules/parallel-sessions.md`](../../../../.claude/rules/parallel-sessions.md)),
+that is a live hazard, not a curiosity.
+
+`pnpm platform:migrate:status` names this state **UNREACHABLE** and exits
+non-zero rather than showing an eternally-pending row. The fix is always the
+same: delete the stranded migration and re-run `platform:migrate:generate` on top
+of current `main`.
+
 `platform:migrate` runs the ensure step (`tools/platform/ensure-database.mjs`)
 first, so a database that does not exist yet is not an error you have to handle
 by hand — on a fresh `pgdata` volume, in dev or in prod alike. It is idempotent

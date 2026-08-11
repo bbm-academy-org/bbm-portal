@@ -1,16 +1,24 @@
+import { spawnSync } from 'node:child_process'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import {
   CHECKPOINT_DUMP_GLOB,
   CHECKPOINT_EXPECTED_DATABASES,
+  CHECKPOINT_EXPECTED_DUMPS,
   CHECKPOINT_KEEPALIVE_S,
   CHECKPOINT_LOG,
   CHECKPOINT_SCRIPT,
   DEPLOY_STAGES,
+  REQUIRED_PROD_ENV_VARS,
+  buildEnvPreflightScript,
+  formatEnvPreflightFailure,
   STALL_BUDGET_CHECKPOINT_MS,
   IMAGE_RETENTION,
   NON_FATAL_STAGES,
   ROLLBACK_STAGES,
+  buildCaddyComparisonScript,
+  buildCaddyRestartScript,
   buildCheckpointScript,
   buildDeployScript,
   buildRetentionScript,
@@ -357,6 +365,25 @@ describe('buildCheckpointScript', () => {
     expect(script).toMatch(/WARNING/)
   })
 
+  it('decides coverage PER DATABASE, never by counting files', () => {
+    // Review finding: counting `pinned -lt 2` claims databases but measures
+    // files, so any second fresh *.sql.gz — a manual dump, a retry artifact, a
+    // future `zitadel` dump — silences the warning while `platform` is still
+    // uncovered. That is the exact gap the warning exists to expose.
+    expect(script).not.toMatch(/\$pinned["' ]*-lt/)
+    for (const { database, markers } of CHECKPOINT_EXPECTED_DUMPS) {
+      expect(script).toContain(`covered_${database}`)
+      for (const marker of markers) expect(script).toContain(marker)
+    }
+  })
+
+  it('says the coverage is matched by FILENAME, not verified against the server', () => {
+    // The dump→database naming contract belongs to the ops repo; until it is
+    // fixed there, a filename match is a heuristic and must read as one.
+    expect(script).toMatch(/filename/i)
+    expect(script).toContain('bbm#112')
+  })
+
   it('PINS the dump under a per-deploy S3 key so the nightly cannot overwrite it', () => {
     // `backup-portal.sh` names its artifact by calendar DAY
     // (postgres-YYYYMMDD.sql.gz) and pushes it to a flat key, so the 23:30 UTC
@@ -402,12 +429,68 @@ describe('formatCheckpointFailure', () => {
   })
 })
 
+describe('every generated remote script is valid bash', () => {
+  // These strings are executed on the box by `bash --norc -euo pipefail -c`, so
+  // a syntax error is discovered mid-deploy and nowhere else. Cheap to prevent:
+  // the checkpoint stage now contains a `while read` + here-string, the first
+  // non-trivial control flow in this family.
+  const scripts: Array<[string, string]> = [
+    ['buildEnvPreflightScript', buildEnvPreflightScript()],
+    ['buildCheckpointScript', buildCheckpointScript(SHA)],
+    ['buildDeployScript', buildDeployScript(SHA)],
+    ['buildVerifyScript', buildVerifyScript(SHA)],
+    ['buildCaddyComparisonScript', buildCaddyComparisonScript()],
+    ['buildCaddyRestartScript', buildCaddyRestartScript()],
+    ['buildRetentionScript', buildRetentionScript()],
+  ]
+
+  it.each(scripts)('%s parses under `bash -n`', (_name, script) => {
+    const res = spawnSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+    if (res.error) return // no bash on this machine — skip rather than fail
+    expect(res.stderr.trim()).toBe('')
+    expect(res.status).toBe(0)
+  })
+})
+
+describe('buildEnvPreflightScript / formatEnvPreflightFailure', () => {
+  const script = buildEnvPreflightScript()
+
+  it('requires the connection strings the `migrate` service reads from .env.prod', () => {
+    expect(REQUIRED_PROD_ENV_VARS).toContain('DATABASE_URL')
+    expect(REQUIRED_PROD_ENV_VARS).toContain('PLATFORM_DATABASE_URL')
+    for (const name of REQUIRED_PROD_ENV_VARS) expect(script).toContain(name)
+  })
+
+  it('matches an assignment at line start — a mention in a comment is not a value', () => {
+    expect(script).toMatch(/grep -q ['"]\^/)
+    expect(script).toContain('.env.prod')
+  })
+
+  it('fails the step rather than reporting a state it did not verify', () => {
+    expect(script).toMatch(/exit 1/)
+    expect(script).toMatch(/-f .*\.env\.prod|! -f/)
+  })
+
+  it('the abort names the remedy and states nothing was touched', () => {
+    const msg = formatEnvPreflightFailure('PLATFORM_DATABASE_URL missing')
+    expect(msg).toContain('PLATFORM_DATABASE_URL missing')
+    expect(msg).toMatch(/nothing was shipped|NOTHING/i)
+    expect(msg).toContain('deploy/.env.prod')
+    expect(msg).toContain('deploy/README.md')
+  })
+})
+
 describe('formatDryRunPlan', () => {
   const plan = formatDryRunPlan(SHA)
 
   it('prints the checkpoint plan like every other remote step', () => {
     expect(plan).toContain('[checkpoint]')
     expect(plan).toContain(CHECKPOINT_SCRIPT)
+  })
+
+  it('shows the env preflight first among the remote steps', () => {
+    expect(plan).toContain('[verifyRemoteEnv]')
+    expect(plan.indexOf('[verifyRemoteEnv]')).toBeLessThan(plan.indexOf('[ship]'))
   })
 
   it('shows the checkpoint before the stack — the order it really runs in', () => {
@@ -445,6 +528,7 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
         order.push('readPrevSha')
         return OTHER
       }),
+      verifyRemoteEnv: make('verifyRemoteEnv'),
       ship: make('ship'),
       checkpoint: make('checkpoint'),
       deployStack: make('deployStack'),
@@ -466,6 +550,7 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
     expect(order).toEqual([
       'preflight',
       'readPrevSha',
+      'verifyRemoteEnv',
       'ship',
       'checkpoint',
       'deployStack',
@@ -495,6 +580,37 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
     expect(DEPLOY_STAGES.indexOf('checkpoint')).toBe(DEPLOY_STAGES.indexOf('deployStack') - 1)
     // The sha names the recovery point it pins, so it must reach the stage.
     expect(steps.checkpoint).toHaveBeenCalledWith(SHA)
+  })
+
+  // ── the box's env contract (#125, review blocker 2) ────────────────────────
+
+  it('verifies the box env BEFORE anything on the box is touched', async () => {
+    // The `migrate` service gets PLATFORM_DATABASE_URL from `deploy/.env.prod`,
+    // which is host-only and will not carry it until an operator adds it. Under
+    // `bash -euo pipefail` the platform-migrate line would then abort the stack
+    // stage AFTER the checkpoint and Payload's migration and BEFORE `up -d` —
+    // a failed deploy of the repo's own fail-closed pipeline, needing an
+    // operator on the box to recover. So the check runs before `ship`: nothing
+    // is shipped, nothing is dumped, nothing is migrated.
+    const { steps, order } = stubs()
+    await runDeploy(steps)
+    expect(order.indexOf('verifyRemoteEnv')).toBeLessThan(order.indexOf('ship'))
+    expect(order.indexOf('verifyRemoteEnv')).toBeLessThan(order.indexOf('checkpoint'))
+    expect(DEPLOY_STAGES.indexOf('verifyRemoteEnv')).toBeLessThan(DEPLOY_STAGES.indexOf('ship'))
+  })
+
+  it('a missing var on the box aborts before the tree is even shipped', async () => {
+    const { steps, order } = stubs({
+      verifyRemoteEnv: vi.fn(async () => {
+        order.push('verifyRemoteEnv')
+        throw new Error('PLATFORM_DATABASE_URL missing from deploy/.env.prod')
+      }),
+    })
+    await expect(runDeploy(steps)).rejects.toThrow('PLATFORM_DATABASE_URL')
+    expect(order).toEqual(['preflight', 'readPrevSha', 'verifyRemoteEnv'])
+    expect(steps.ship).not.toHaveBeenCalled()
+    expect(steps.checkpoint).not.toHaveBeenCalled()
+    expect(steps.deployStack).not.toHaveBeenCalled()
   })
 
   it('a failing checkpoint aborts — nothing migrates without a fresh dump', async () => {

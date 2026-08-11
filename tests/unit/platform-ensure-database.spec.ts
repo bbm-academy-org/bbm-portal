@@ -66,6 +66,16 @@ describe('deriveMaintenanceTarget', () => {
     expect(target.error).toMatch(/cms/)
   })
 
+  it('refuses `cms` and the maintenance DB whatever their case', () => {
+    // Postgres identifiers are case-sensitive once quoted, so `CMS` really would
+    // be a different database — but the header claims this tool never so much as
+    // names Payload's in a DDL statement, and a case-sensitive compare makes the
+    // code disagree with that claim. Refuse the whole class.
+    for (const name of ['CMS', 'Cms', 'POSTGRES', 'Postgres']) {
+      expect(deriveMaintenanceTarget(`postgres://payload:pw@postgres:5432/${name}`).ok).toBe(false)
+    }
+  })
+
   it('refuses a database name that is not a plain identifier', () => {
     expect(deriveMaintenanceTarget('postgres://u:p@h:5432/plat form').ok).toBe(false)
     expect(deriveMaintenanceTarget('postgres://u:p@h:5432/plat%22form').ok).toBe(false)

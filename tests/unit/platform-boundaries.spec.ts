@@ -61,6 +61,20 @@ describe('module-must-not-import-foreign-tables', () => {
   })
 })
 
+describe('route-layer-must-not-import-tables', () => {
+  it('FAILS when a route file imports a module’s tables directly', () => {
+    // The hole review major 5 found: `module-must-not-import-foreign-tables`
+    // keys on `^src/(lib|modules)/<module>/`, and `cms-must-not-import-platform-db`
+    // deliberately omits the (platform) route group — so nothing stopped
+    // `src/app/(platform)/hours/page.tsx` from holding a table handle, which is
+    // the very invariant ADR-004 §6 states as machine-enforced. The view layer
+    // has no business with a table at all, so the rule needs no `$1` exception.
+    const { code, output } = cruiseFixture('route-imports-tables')
+    expect(output).toContain('route-layer-must-not-import-tables')
+    expect(code).not.toBe(0)
+  })
+})
+
 describe('cms-must-not-import-platform-db', () => {
   it('FAILS when CMS-side code opens the platform database', () => {
     const { code, output } = cruiseFixture('cms-imports-platform-db')

@@ -26,6 +26,8 @@
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { loadDotEnv } from './load-env.mjs'
+
 /** The database every Postgres server has, used only to issue CREATE DATABASE. */
 export const MAINTENANCE_DATABASE = 'postgres'
 
@@ -82,7 +84,11 @@ export function deriveMaintenanceTarget(connectionString) {
       error: `refusing to create a database whose name is not a plain identifier: ${JSON.stringify(database)}`,
     }
   }
-  if (database === MAINTENANCE_DATABASE) {
+  // Case-insensitive: `"CMS"` really would be a distinct database in Postgres,
+  // but this tool's contract is that it never names Payload's in a DDL statement
+  // at all, and a case-sensitive compare would let the whole class through.
+  const normalized = database.toLowerCase()
+  if (normalized === MAINTENANCE_DATABASE) {
     return {
       ok: false,
       error:
@@ -90,7 +96,7 @@ export function deriveMaintenanceTarget(connectionString) {
         'it always exists, so this is a misconfigured PLATFORM_DATABASE_URL, not a bootstrap',
     }
   }
-  if (database === PAYLOAD_DATABASE) {
+  if (normalized === PAYLOAD_DATABASE) {
     return {
       ok: false,
       error:
@@ -119,6 +125,8 @@ export function formatEnsureOutcome({ database, created, host }) {
 // ── the live half ────────────────────────────────────────────────────────────
 
 async function main() {
+  // `.env` first, the environment wins (see ./load-env.mjs).
+  loadDotEnv()
   const target = deriveMaintenanceTarget(process.env.PLATFORM_DATABASE_URL)
   if (!target.ok) {
     console.error(

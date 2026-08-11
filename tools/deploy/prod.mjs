@@ -18,6 +18,8 @@
 //
 // Pipeline:
 //   pre-flight  clean tree · target = origin/main's sha · green CI for that sha
+//   box env     deploy/.env.prod carries every var this release reads (#125) —
+//               first, because it changes nothing and the box is host-only
 //   ship        git archive <sha> → ssh (no registry; the box has no git clone)
 //   checkpoint  the box's backup script → a fresh dump BEFORE any migration,
 //               pinned under this deploy's own S3 key (30d, nothing overwrites it)
@@ -90,6 +92,7 @@ export const PROD_HEALTH_URL = 'https://cms.bbm.academy/api/health'
 export const DEPLOY_STAGES = [
   'preflight',
   'readPrevSha',
+  'verifyRemoteEnv',
   'ship',
   'checkpoint',
   'deployStack',
@@ -207,7 +210,9 @@ export function preflightVerdict({ dirty, head, originMain, checkRuns, skipCi = 
     )
   }
   if (!originMain || !SHA_RE.test(originMain)) {
-    errors.push(`could not resolve origin/main to a sha (got ${JSON.stringify(originMain ?? null)})`)
+    errors.push(
+      `could not resolve origin/main to a sha (got ${JSON.stringify(originMain ?? null)})`,
+    )
   }
   if (head && originMain && head !== originMain) {
     warnings.push(
@@ -248,6 +253,71 @@ export function buildShipCommand() {
   return `rm -rf ${REMOTE_TREE}/src && mkdir -p ${REMOTE_TREE} && tar -xz -C ${REMOTE_TREE}`
 }
 
+// ── pure seams: the box's env contract (#125) ────────────────────────────────
+
+/**
+ * Variables the `migrate` service must find in the box's `deploy/.env.prod`.
+ *
+ * That file is host-only (gitignored, never shipped — `buildShipCommand` wipes
+ * `src/` and deliberately leaves `deploy/` alone), so a release that starts
+ * reading a NEW variable finds it missing on the first deploy after the merge,
+ * every time. `PLATFORM_DATABASE_URL` is the first such variable this repo has
+ * ever added, which is why this gate did not exist before.
+ */
+export const REQUIRED_PROD_ENV_VARS = ['DATABASE_URL', 'PLATFORM_DATABASE_URL']
+
+/**
+ * Assert the box's env file carries every variable the shipped code needs.
+ *
+ * Anchored `^NAME=` rather than a bare substring: the file is full of comments,
+ * and a variable named in one is not a variable that is set. The value itself is
+ * never read, printed, or checked for plausibility — this stage proves presence,
+ * and reading secrets over the deploy channel would be a needless exposure.
+ */
+export function buildEnvPreflightScript() {
+  const envFile = `${COMPOSE_DIR}/.env.prod`
+  return `if [ ! -f ${envFile} ]; then
+  echo "MISSING FILE: ${envFile}" >&2
+  exit 1
+fi
+missing=""
+for name in ${REQUIRED_PROD_ENV_VARS.join(' ')}; do
+  if ! grep -q "^$name=" ${envFile}; then
+    missing="$missing $name"
+  fi
+done
+if [ -n "$missing" ]; then
+  echo "MISSING in ${envFile}:$missing" >&2
+  exit 1
+fi
+echo "[env] ${envFile} carries: ${REQUIRED_PROD_ENV_VARS.join(' ')}"
+`
+}
+
+/**
+ * The abort message for a box whose env file is behind the code. Pure.
+ *
+ * Positioned before `ship`, so the honest first line is that the box is exactly
+ * as it was. Without this gate the same defect surfaced much later and much
+ * worse: the stack stage runs under `bash -euo pipefail`, so a `platform:migrate`
+ * that exits 1 aborts AFTER the checkpoint and Payload's migration and BEFORE
+ * `up -d` — prod still serving the old image, but mid-way through a deploy, with
+ * recovery needing an operator on the box.
+ */
+export function formatEnvPreflightFailure(detail) {
+  return (
+    `the box's env file is behind the code: ${detail}\n` +
+    '  NOTHING was shipped, dumped or migrated — the box is exactly as it was.\n' +
+    '  This deploy needs a variable that the host-only env file does not carry yet.\n' +
+    `  Add it on the box, then re-run:\n` +
+    `      ssh ${PROD_SSH}\n` +
+    `      # append the missing line(s) to ~/bbm-portal/deploy/.env.prod\n` +
+    '  The names, their values and the upgrade step are in deploy/README.md\n' +
+    '  (§ Platform database) and deploy/.env.prod.example. `deploy/.env.prod` is\n' +
+    '  host-only by design — no deploy can create it for you.'
+  )
+}
+
 // ── pure seams: the pre-migrate checkpoint (#156) ────────────────────────────
 
 /**
@@ -280,13 +350,31 @@ export const CHECKPOINT_KEEPALIVE_S = 30
 export const CHECKPOINT_DUMP_GLOB = '*.sql.gz'
 
 /**
- * The databases a full checkpoint is expected to cover, in the order they were
- * introduced. Used only to WARN: `platform` is not dumped by the box script yet
- * (that change is tracked in the `bbm` ops repo), and hard-failing on it here
- * would block every deploy until an unrelated repo merges. A named warning keeps
- * the gap visible without making this repo hostage to the other one.
+ * The databases a full checkpoint is expected to cover, and the filename
+ * fragments that identify each one's dump.
+ *
+ * Coverage is decided PER DATABASE, by matching the pinned dumps' basenames —
+ * not by counting files. Counting was the first shape and it measured the wrong
+ * thing: `pinned >= 2` is satisfied by any second fresh `*.sql.gz` (a manual
+ * dump, a retry artifact, a future `zitadel` dump) while `platform` is still
+ * uncovered, which silences the warning exactly when it is true.
+ *
+ * `cms`'s marker list carries `postgres-` because that is what today's
+ * `backup-portal.sh` names its artifact — the dump→database naming contract is
+ * the ops repo's to fix (`sidorovanthon/bbm#112`), so a filename match is a
+ * heuristic here and the printed line says so rather than claiming the server
+ * was consulted.
+ *
+ * Used only to WARN: `platform` is not dumped by the box script yet, and
+ * hard-failing would block every deploy until an unrelated repo merges.
  */
-export const CHECKPOINT_EXPECTED_DATABASES = ['cms', 'platform']
+export const CHECKPOINT_EXPECTED_DUMPS = [
+  { database: 'cms', markers: ['cms', 'postgres-'] },
+  { database: 'platform', markers: ['platform'] },
+]
+
+/** The database names of {@link CHECKPOINT_EXPECTED_DUMPS}, in the same order. */
+export const CHECKPOINT_EXPECTED_DATABASES = CHECKPOINT_EXPECTED_DUMPS.map((d) => d.database)
 
 /**
  * Take the checkpoint, then PIN it under a key of this deploy's own.
@@ -353,23 +441,37 @@ set -a; . "$s3env"; set +a
 : "\${S3_BUCKET:?not set in $s3env}"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 pinned=0
+${CHECKPOINT_EXPECTED_DUMPS.map((d) => `covered_${d.database}=0`).join('\n')}
 while IFS= read -r dump; do
   [ -n "$dump" ] || continue
-  key="${CHECKPOINT_S3_PREFIX}$stamp-${shortSha}-$(basename "$dump")"
+  base=$(basename "$dump")
+  key="${CHECKPOINT_S3_PREFIX}$stamp-${shortSha}-$base"
   rclone copyto "$dump" "twcs:$S3_BUCKET/$key"
   echo "[checkpoint] recovery point pinned: $key"
   pinned=$((pinned + 1))
+${CHECKPOINT_EXPECTED_DUMPS.map(
+  (d) =>
+    `  case "$base" in ${d.markers.map((m) => `*${m}*`).join('|')}) covered_${d.database}=1 ;; esac`,
+).join('\n')}
 done <<< "$dumps"
 
-# Coverage, reported rather than enforced. The dump artifacts are produced by
-# backup-portal.sh, which is owned by the \`bbm\` ops repo — teaching it to dump
-# \`platform\` alongside \`cms\` is tracked THERE. Until that lands prod yields one
-# dump, and hard-failing here would block every deploy on another repo's merge.
-echo "[checkpoint] $pinned fresh dump(s) pinned; expected coverage: ${CHECKPOINT_EXPECTED_DATABASES.join(' ')}"
-if [ "$pinned" -lt ${CHECKPOINT_EXPECTED_DATABASES.length} ]; then
-  echo "[checkpoint] WARNING: $pinned dump(s) for ${CHECKPOINT_EXPECTED_DATABASES.length} expected databases (${CHECKPOINT_EXPECTED_DATABASES.join(', ')})."
+# Coverage, reported rather than enforced, and decided PER DATABASE — counting
+# files would let any second fresh dump silence the warning while \`platform\` is
+# still uncovered. The match is on the FILENAME: the dump artifacts come from
+# backup-portal.sh, owned by the \`bbm\` ops repo, and the dump->database naming
+# contract is being fixed there (bbm#112) together with dumping \`platform\` at
+# all. Until that lands, hard-failing here would block every deploy on another
+# repo's merge.
+echo "[checkpoint] $pinned fresh dump(s) pinned; coverage matched by filename (naming contract: bbm#112)"
+uncovered=""
+${CHECKPOINT_EXPECTED_DUMPS.map(
+  (d) =>
+    `[ "$covered_${d.database}" -eq 1 ] && echo "[checkpoint] covered: ${d.database}" || uncovered="$uncovered ${d.database}"`,
+).join('\n')}
+if [ -n "$uncovered" ]; then
+  echo "[checkpoint] WARNING: no pinned dump looks like:$uncovered"
   echo "[checkpoint] WARNING: a migration touching an un-dumped database is NOT protected by this checkpoint."
-  echo "[checkpoint] WARNING: extending backup-portal.sh is tracked in the bbm ops repo (infra/portal/README.md)."
+  echo "[checkpoint] WARNING: extending backup-portal.sh is tracked in the bbm ops repo (infra/portal/README.md, bbm#112)."
 fi
 `
 }
@@ -528,7 +630,10 @@ echo 'retained tags:'; docker images ${APP_IMAGE_REPO} --format '  {{.Tag}} ({{.
 /** Validate a `--rollback <sha>` argument. Pure. */
 export function parseRollbackSha(arg) {
   if (typeof arg !== 'string' || !SHA_RE.test(arg)) {
-    return { ok: false, error: `--rollback needs a git sha (7-40 hex chars), got: ${arg ?? '(none)'}` }
+    return {
+      ok: false,
+      error: `--rollback needs a git sha (7-40 hex chars), got: ${arg ?? '(none)'}`,
+    }
   }
   return { ok: true, sha: arg.toLowerCase() }
 }
@@ -786,6 +891,7 @@ export async function runDeploy(steps) {
   // ── fatal: anything here can still leave prod in a state nobody described ──
   const sha = await steps.preflight()
   const prevSha = await steps.readPrevSha()
+  await steps.verifyRemoteEnv()
   await steps.ship(sha)
   await steps.checkpoint(sha)
   await steps.deployStack(sha)
@@ -822,7 +928,9 @@ function runSmokeProcess(sha) {
     child.on('close', (code) =>
       code === 0
         ? resolvePromise()
-        : reject(new Error(`prod smoke RED (exit ${code}) — the new build is not serving correctly`)),
+        : reject(
+            new Error(`prod smoke RED (exit ${code}) — the new build is not serving correctly`),
+          ),
     )
   })
 }
@@ -859,6 +967,18 @@ function productionSteps() {
       const prev = await readDeployedSha()
       console.log(`  ↩ previously deployed: ${prev ? prev.slice(0, 12) : 'none / untagged'}`)
       return prev
+    },
+
+    // Fatal, and first among the box-touching stages: it reads one host-only
+    // file and changes nothing, so failing here leaves prod untouched.
+    async verifyRemoteEnv() {
+      step('Box env: does deploy/.env.prod carry what this release reads?')
+      try {
+        await sshScript(PROD_SSH, buildEnvPreflightScript(), { label: 'box env preflight' })
+      } catch (e) {
+        die(formatEnvPreflightFailure(e?.message ?? String(e)))
+      }
+      ok('the box carries every required variable')
     },
 
     async ship(sha) {
@@ -972,7 +1092,8 @@ function productionSteps() {
         cwd: process.cwd(),
       })
       if (res.ok) ok(`GitHub Deployment recorded (#${res.deploymentId})`)
-      else console.log(`  ⚠ could not record the Deployment (deploy already succeeded): ${res.error}`)
+      else
+        console.log(`  ⚠ could not record the Deployment (deploy already succeeded): ${res.error}`)
     },
   }
 }
@@ -984,7 +1105,8 @@ function productionSteps() {
 export function formatDryRunPlan(sha) {
   return [
     `\n▶ DRY RUN — nothing below is executed (target ${sha.slice(0, 12)})`,
-    `\n[ship] ssh ${PROD_SSH} '${buildShipCommand()}'  < git archive ${sha.slice(0, 12)}`,
+    `\n[verifyRemoteEnv]\n${buildEnvPreflightScript()}`,
+    `[ship] ssh ${PROD_SSH} '${buildShipCommand()}'  < git archive ${sha.slice(0, 12)}`,
     `\n[checkpoint]\n${buildCheckpointScript(sha)}`,
     `[deployStack]\n${buildDeployScript(sha)}`,
     `[applyCaddy]\n${buildCaddyComparisonScript()}`,
@@ -1151,6 +1273,10 @@ async function main() {
 // Run main only when invoked directly, so the pure seams import cleanly in tests.
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : ''
 const selfPath = resolve(fileURLToPath(import.meta.url))
-if (invokedPath && invokedPath === selfPath && import.meta.url === pathToFileURL(invokedPath).href) {
+if (
+  invokedPath &&
+  invokedPath === selfPath &&
+  import.meta.url === pathToFileURL(invokedPath).href
+) {
   main().catch((err) => die(err?.stack || err?.message || String(err), { rollbackHint: true }))
 }
