@@ -21,6 +21,18 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-11 `decideEscapeBlock` still calls a session isolated whenever its
+      `cwd` matches the worktree pattern, so a session that OWNS the main
+      checkout and merely `cd`-ed into `.claude/worktrees/<N>` is blocked from a
+      legitimate shared-checkout write (`{cwd:'<main>/.claude/worktrees/79',
+    file_path:'<main>/DEBT.md'}` → block), and the message then advises writing
+      into worktree 79 — the mirror image of #187's false positives. Telling that
+      session from a genuine worktree session needs true session identity, which
+      `cwd` cannot carry; #187's approved design explicitly rejected inferring it,
+      so the residual class is routed rather than fixed — return condition: first
+      Edit/Write block of a legitimate shared-checkout write from a session that
+      owns the main checkout (mirror of #187; PR #189 review blocker 2)
+
 - [ ] 2026-08-10 the `/p/okr` surface still has no vendored design source in
       `design-source/` after another touch (#181, a geometry-only fix like
       #79/#180 before it): the design-process rule back-fills a pre-#138 surface
