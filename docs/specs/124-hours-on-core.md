@@ -101,7 +101,9 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   `@bbm.academy` email stays on `member` and is not duplicated as an alias.
 - **EARS-18.** The member module's public API shall resolve a member by
   (`kind`, `value`) across `member_alias` **and** by the canonical
-  `@bbm.academy` email on `member` (virtual kind `email`), and shall list a
+  `@bbm.academy` email on `member` (virtual kind `email`), normalizing the
+  lookup input the same way the unique index normalizes storage
+  (`lower(btrim(value))` — «Dobroyar» finds `dobroyar`), and shall list a
   member's aliases — the recognition contract for consumers such as
   meeting-transcript processing («dobroyar» → the member's name).
 - **EARS-19.** WHILE no admin UI exists (until `/p/admin`, epic #112), aliases
@@ -156,8 +158,11 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   today's in-process mutex (081 §13): full mutual exclusion of hours mutations,
   so the shipped read-validate-write logic keeps its guarantees (no double
   publish batch, no date-edit recompute racing a save, no lost upsert). The
-  uniqueness constraints of EARS-4/5/6 remain as the structural backstop
-  beneath the lock.
+  lock is **per mutation**, and network I/O stays outside any transaction: the
+  spec-100 delivery loop remains N+1 separate mutations with the Mattermost
+  call between them — never one transaction holding the module lock across
+  HTTP. The uniqueness constraints of EARS-4/5/6 remain as the structural
+  backstop beneath the lock.
 - **EARS-20.** IF a database constraint fires (open-period uniqueness,
   assessment key, publication uniqueness, member email/slug, alias
   uniqueness), THEN the user shall receive the same readable refusal message
@@ -165,12 +170,15 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   закрой его.») — never a raw constraint error or a 500. The
   constraint→message mapping is part of the implementation's test surface.
 - **EARS-21.** Every list the module renders or publishes shall carry an
-  explicit `ORDER BY` reproducing today's insertion order: rows get a
-  monotonic sort key (identity PK assigned in JSON-array order by the import;
-  new rows append). This covers the participants table (081 §19), the summary,
-  and the publication preview/delivery order (spec 100 req. 2/10 — delivery
-  addresses messages **by index**, so order is a correctness property, not
-  cosmetics).
+  explicit `ORDER BY` reproducing today's insertion order. `hours_period` and
+  `hours_participant` get an explicit integer `sort_key` column (their PKs
+  cannot carry order: period ids are preserved uuids, and participant PKs
+  follow the member seed, not the JSON array), populated from the JSON array
+  position by the import; `hours_assessment` orders by its identity PK
+  assigned in array order; new rows append after the current maximum. This
+  covers the participants table (081 §19), the summary, and the publication
+  preview/delivery order (spec 100 req. 2/10 — delivery addresses messages
+  **by index**, so order is a correctness property, not cosmetics).
 - **EARS-22.** The `preview_fingerprint` digest input shall be pinned to
   exactly today's serialized shape (`{period, rows}` with the legacy
   participant fields: `email`, `name`, `role`, `fork_min`, `fork_max`,
@@ -219,9 +227,9 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   — snapshot numbers digit-for-digit, ids, timestamps and array order
   preserved (EARS-21 sort keys) — matching participants to `member` rows by
   normalized email, and shall abort with nothing written on any email that has
-  no `member` row. It shall refuse a non-empty target (re-run =
-  documented truncate-and-retry of the hours+member tables, valid only inside
-  the window).
+  no `member` row. It shall refuse non-empty **`hours_*` tables** (the member
+  seed legitimately runs first); re-run = documented truncate-and-retry of the
+  hours+member tables, valid only inside the window.
 - **EARS-14.** `member` shall be seeded once, before the import, from a
   consolidated dataset (~11 people) prepared by hand with the owner from the
   existing systems (`team.yaml`, `hours.json` participants, Zitadel accounts),
