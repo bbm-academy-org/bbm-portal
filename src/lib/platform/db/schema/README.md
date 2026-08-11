@@ -3,7 +3,9 @@
 Layout (#125). The shape is not cosmetic: it is what makes "a module does not
 touch another module's tables" a **path rule** in
 [`.dependency-cruiser.cjs`](../../../../../.dependency-cruiser.cjs) rather than a
-convention nobody can check.
+convention nobody can check. The decision, and why the rule is a group match
+rather than one pair per module, is
+[ADR-004 §6](../../../../../docs/adr/004-platform-persistence-foundation.md).
 
 ```
 schema/

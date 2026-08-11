@@ -1,26 +1,18 @@
 # Platform database — `platform` / schema `core`
 
-The platform's own persistence layer (#125), and its own migration pipeline.
-Canon for the decision: `docs/superpowers/specs/2026-08-04-platform-consolidation-design.md`
-§4 «Ядро core»; module boundaries: [ADR-002](../../../../docs/adr/002-repository-and-module-strategy.md).
+How to work the platform's persistence layer (#125). **This file is the operating
+manual, not the decision record.** Every decision below — the separate `platform`
+database and its second connection string, the exact drizzle pins and the re-pin
+rule on a Payload upgrade, the pipeline's separation table, the idempotent
+`CREATE SCHEMA`, the ensure step, the table-ownership boundaries and the
+snapshot-before-migrate arrangement — is recorded once, with its alternatives and
+its consequences, in
+[**ADR-004**](../../../../docs/adr/004-platform-persistence-foundation.md). Read
+that for _why_; read this for _what to run_.
 
-## Two databases, two pipelines, no overlap
-
-|                    | Payload / CMS                | Platform                              |
-| ------------------ | ---------------------------- | ------------------------------------- |
-| database           | `cms`                        | `platform`                            |
-| schema             | `public`                     | `core`                                |
-| connection string  | `DATABASE_URL`               | `PLATFORM_DATABASE_URL`               |
-| migrations live in | `src/migrations`             | `src/lib/platform/db/migrations`      |
-| ledger table       | `payload_migrations`         | `core.__drizzle_migrations`           |
-| driven by          | `pnpm migrate` (Payload CLI) | `pnpm platform:migrate` (drizzle-kit) |
-
-Both databases sit in the **same** Postgres container — dev and prod alike. That
-is the only thing they share. `schemaFilter: ['core']` keeps drizzle-kit from
-even looking at anything else, and there is deliberately **no** fallback from
-`PLATFORM_DATABASE_URL` to `DATABASE_URL`: a fallback would run our migrations
-against Payload's database, and the failure would show up as damage rather than
-as an error.
+Also binding: [ADR-002](../../../../docs/adr/002-repository-and-module-strategy.md)
+(module boundaries), and the consolidation spec
+`docs/superpowers/specs/2026-08-04-platform-consolidation-design.md` §4 «Ядро core».
 
 ## Commands
 
@@ -34,31 +26,22 @@ pnpm platform:db:ensure          # the ensure step alone (idempotent)
 All four carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
 like the Payload `migrate*` scripts next to them in `package.json`.
 
-**The ensure step** (`tools/platform/ensure-database.mjs`) is why dev and prod
-bootstrap identically. A Postgres container creates exactly one database from
-`POSTGRES_DB`, so the second one has to be created by somebody; the dev Zitadel
-already solves this the same way, creating its own `zitadel` database on first
-boot. The step connects to the maintenance database derived from
-`PLATFORM_DATABASE_URL`, runs at most one `CREATE DATABASE`, logs which of the
-two things it did — and refuses every input where "create a database" could mean
-something else: a non-postgres scheme, a missing or non-identifier database name,
-the maintenance database itself, or `cms`.
+`platform:migrate` runs the ensure step (`tools/platform/ensure-database.mjs`)
+first, so a database that does not exist yet is not an error you have to handle
+by hand — on a fresh `pgdata` volume, in dev or in prod alike. It is idempotent
+and prints which of the two things it did. Why it exists rather than a line in a
+compose file: ADR-004 §5.
 
-### A generated `CREATE SCHEMA` must be patched to `IF NOT EXISTS`
+### After `platform:migrate:generate`: patch a generated `CREATE SCHEMA`
 
-`drizzle-kit generate` emits a bare `CREATE SCHEMA "core";`, and applying that is
-a guaranteed **42P06 duplicate_schema** here — because our ledger lives at
-`core.__drizzle_migrations`, so the migrator creates the `core` schema itself, to
-hold the ledger, _before_ it applies migration 0000. (Found on the dev stand,
-2026-08-11: the run aborted with zero migrations applied.) The same idempotence
-is what lets a migration re-run against a database where a partial run or a
-restore already left the schema in place.
+drizzle-kit emits a bare `CREATE SCHEMA "core";`. **Applying that here is a
+guaranteed 42P06 `duplicate_schema`** — ADR-004 §4 has the mechanism and the live
+run that found it. Patch every such statement to `CREATE SCHEMA IF NOT EXISTS
+"core";` before committing the migration.
 
-So `0000_create_core_schema.sql` is hand-patched to `CREATE SCHEMA IF NOT EXISTS
-"core";`. **Re-generating it re-emits the bare form** — patch it again.
-`tests/unit/platform-db-config.spec.ts` asserts no migration in this directory
-carries a non-idempotent `CREATE SCHEMA`, so a forgotten patch goes red in CI
-rather than on prod.
+`tests/unit/platform-db-config.spec.ts` asserts that no migration in this
+directory carries a non-idempotent `CREATE SCHEMA`, so a forgotten patch goes red
+in CI rather than on a fresh database.
 
 ## Files
 
@@ -82,20 +65,22 @@ work (#124 and the follow-ups in epic #111); the initial migration creates the
 
 ## Boundaries
 
-Two rules in [`.dependency-cruiser.cjs`](../../../../.dependency-cruiser.cjs)
-make the separation machine-checked (`pnpm boundaries`):
+`pnpm boundaries` enforces two rules from
+[`.dependency-cruiser.cjs`](../../../../.dependency-cruiser.cjs) —
+`cms-must-not-import-platform-db` and `module-must-not-import-foreign-tables`
+(ADR-004 §6 states them and why they are shaped that way).
 
-- **`cms-must-not-import-platform-db`** — CMS-side code may not open this
-  database.
-- **`module-must-not-import-foreign-tables`** — a module may import table files
-  from `schema/<its own name>/` only. See [`schema/README.md`](./schema/README.md)
-  for why the directory layout is what makes this expressible, and
-  `tests/unit/platform-boundaries.spec.ts` for the fixtures that prove
-  `pnpm boundaries` really goes red.
+What that means when writing code here: put a module's tables in
+`schema/<module>/`, import tables only from the directory bearing your own
+module's name, and use the flat `schema/core.ts` handle for the schema itself.
+[`schema/README.md`](./schema/README.md) has the layout;
+`tests/unit/platform-boundaries.spec.ts` has the fixtures that prove
+`pnpm boundaries` really goes red.
 
 ## Production
 
 `pnpm deploy:prod` applies **both** pipelines, in its `deployStack` stage — which
 runs after the fail-closed `checkpoint`, so neither schema can advance without a
-fresh dump behind it. Backups, retention and the cross-repo dependency:
-[`deploy/README.md`](../../../../deploy/README.md) → _Platform database_.
+fresh dump behind it (ADR-004 §7). Backups, retention and the cross-repo
+dependency: [`deploy/README.md`](../../../../deploy/README.md) → _Platform
+database_.

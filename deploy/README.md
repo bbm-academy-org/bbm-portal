@@ -167,13 +167,16 @@ cd deploy && docker compose -f docker-compose.prod.yml --profile tools run --rm 
 
 ## Platform database (`platform`, schema `core`) — #125
 
-The `postgres` container holds **two** databases from this task on. Payload keeps
-`cms` (schema `public`, ledger `payload_migrations`); the platform gets
-`platform` (schema `core`, ledger `core.__drizzle_migrations`) with a **second
-connection string**, `PLATFORM_DATABASE_URL` in `.env.prod`. Same container, same
-credentials, different database name — the Payload adapter is untouched. The
-pipeline itself, its commands and the reasoning are documented once, next to the
-code: [`src/lib/platform/db/README.md`](../src/lib/platform/db/README.md).
+The `postgres` container holds **two** databases from this task on: Payload's
+`cms`, and the platform's `platform` reached through a **second connection
+string**, `PLATFORM_DATABASE_URL` in `.env.prod`. Same container, same
+credentials, different database name — the Payload adapter is untouched.
+
+The decision and its alternatives:
+[**ADR-004**](../docs/adr/004-platform-persistence-foundation.md). The pipeline's
+commands and day-to-day handling:
+[`src/lib/platform/db/README.md`](../src/lib/platform/db/README.md). What follows
+here is only what is true at the **host** level.
 
 Three consequences at the host level:
 
@@ -201,8 +204,9 @@ The pin is a loop over `*.sql.gz`, not a single newest file, precisely so the
 second dump appears in the recovery point the moment the box starts producing it.
 **The box script currently dumps `cms` only.** Extending it to dump `platform`
 too — and the matching restore runbook — is owned by the **`bbm` ops repo**
-(`infra/portal/README.md`) and **tracked there**; the same issue covers the
-off-site backup of both databases. Until it lands, the checkpoint stage prints a
+(`infra/portal/README.md`) and **tracked there** as `sidorovanthon/bbm#112`,
+which also covers the off-site backup of both databases. Until it lands, the
+checkpoint stage prints a
 named `WARNING` on every deploy saying how many dumps it pinned against how many
 databases it expects, so the gap is visible in the deploy log rather than
 discovered during a restore.
