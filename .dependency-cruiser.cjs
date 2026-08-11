@@ -71,6 +71,47 @@ module.exports = {
       },
       to: { path: '^src/(lib/hours|modules/hours)' },
     },
+    {
+      name: 'cms-must-not-import-platform-db',
+      comment:
+        'ADR-002/ADR-003 (#125): the CMS side may not open the PLATFORM database. Payload owns ' +
+        'the `cms` database through its own adapter; src/lib/platform/db is the only door to the ' +
+        'separate `platform` database and its `core` schema (spec 2026-08-04 §4). Same from-set ' +
+        'as the two rules above — the (platform) route group is deliberately absent, since that ' +
+        'is where the platform surfaces legitimately live.',
+      severity: 'error',
+      from: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',
+      },
+      to: { path: '^src/lib/platform/db' },
+    },
+    {
+      name: 'module-must-not-import-foreign-tables',
+      comment:
+        'ADR-002 (#125, spec 2026-08-04 §4): «модуль не импортирует внутренности чужого модуля и ' +
+        'не трогает чужие таблицы напрямую». A module owns the tables under the schema directory ' +
+        'that BEARS ITS NAME (src/lib/platform/db/schema/<module>/) and reaches every other ' +
+        "module's data through that module's API, never through its tables. Expressed as a group " +
+        'match rather than as one pair of rules per module — unlike the okr/hours pairs above, ' +
+        'this rule has to hold for modules that do not exist yet (member, hours tables land with ' +
+        'their product cycles, #124). src/lib/platform/ is excluded from the from-set so the ' +
+        'schema files may reference each other and the shared schema/core.ts handle (which sits ' +
+        'flat, outside any module directory, and is therefore not matched by the to-set at all). ' +
+        'The `$1` in the to-set is dependency-cruiser group matching — it carries the module name ' +
+        'captured in `from.path` into the exception. NUMBERED, not named: the implementation ' +
+        '(src/utl/regex-util.mjs, replaceGroupPlaceholders) substitutes `$1`, `$2`, … only, so a ' +
+        '`$<module>` placeholder would never be replaced and the rule would fire on every module ' +
+        'touching its OWN tables.',
+      severity: 'error',
+      from: {
+        path: '^src/(?:lib|modules)/([^/]+)/',
+        pathNot: '^src/lib/platform/',
+      },
+      to: {
+        path: '^src/lib/platform/db/schema/[^/]+/',
+        pathNot: '^src/lib/platform/db/schema/$1/',
+      },
+    },
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
