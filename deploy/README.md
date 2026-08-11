@@ -37,6 +37,7 @@ All commands below run **from the `deploy/` directory on the host**.
    ```bash
    cp .env.prod.example .env.prod          # app + migrate
    # edit: PAYLOAD_SECRET (openssl rand -hex 32), DATABASE_URL,
+   #       PLATFORM_DATABASE_URL (same credentials, database `platform`),
    #       S3 keys (terraform output portal_media_*), SEED_ADMIN_*.
 
    cp .env.postgres.example .env.postgres  # postgres container only
@@ -48,7 +49,8 @@ All commands below run **from the `deploy/` directory on the host**.
    #       header value `users API-Key <key>` (see Preview service below).
    ```
 
-   `DATABASE_URL` host is the compose service name `postgres`, not localhost.
+   `DATABASE_URL` host is the compose service name `postgres`, not localhost —
+   and so is `PLATFORM_DATABASE_URL`'s (see _Platform database_ below).
 
 4. **The code on the host.** Org policy disables repo deploy keys, so the box
    has no `git` clone. Ship the committed tree as an archive from a workstation
@@ -163,6 +165,48 @@ hand only when `SEED_ADMIN_*` changed:
 cd deploy && docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
 ```
 
+## Platform database (`platform`, schema `core`) — #125
+
+The `postgres` container holds **two** databases from this task on. Payload keeps
+`cms` (schema `public`, ledger `payload_migrations`); the platform gets
+`platform` (schema `core`, ledger `core.__drizzle_migrations`) with a **second
+connection string**, `PLATFORM_DATABASE_URL` in `.env.prod`. Same container, same
+credentials, different database name — the Payload adapter is untouched. The
+pipeline itself, its commands and the reasoning are documented once, next to the
+code: [`src/lib/platform/db/README.md`](../src/lib/platform/db/README.md).
+
+Three consequences at the host level:
+
+- **Nothing to provision by hand.** `POSTGRES_DB` in `.env.postgres` still names
+  `cms` only. The `platform` database is created on first migrate by
+  `pnpm platform:db:ensure` (which `pnpm platform:migrate` runs first), so a
+  fresh `pgdata` volume needs no hand-run `psql` — the same pattern the dev
+  Zitadel uses for its own `zitadel` database.
+- **`pnpm deploy:prod` applies both pipelines** in its `deployStack` stage, and
+  prints both ledgers afterwards. That stage runs **after** `checkpoint`, so a
+  platform migration is protected by exactly the same fail-closed dump gate as a
+  Payload one.
+- **The checkpoint must cover BOTH databases.** See below.
+
+### Backups must cover both databases
+
+`pnpm deploy:prod`'s `checkpoint` stage does not dump anything itself: it runs
+`/home/deploy/portal-backup/backup-portal.sh` and then **pins every fresh dump
+that script left** under this deploy's own S3 key,
+`checkpoints/pre-migrate-<UTC>-<sha12>-<dump-filename>`. Retention is inherited
+from the nightly's recursive `rclone delete … --min-age 30d`, i.e. **30 days**;
+the stage never deletes anything itself.
+
+The pin is a loop over `*.sql.gz`, not a single newest file, precisely so the
+second dump appears in the recovery point the moment the box starts producing it.
+**The box script currently dumps `cms` only.** Extending it to dump `platform`
+too — and the matching restore runbook — is owned by the **`bbm` ops repo**
+(`infra/portal/README.md`) and **tracked there**; the same issue covers the
+off-site backup of both databases. Until it lands, the checkpoint stage prints a
+named `WARNING` on every deploy saying how many dumps it pinned against how many
+databases it expects, so the gap is visible in the deploy log rather than
+discovered during a restore.
+
 ## Preview service (`preview.bbm.academy`, epic #13)
 
 The `preview` service is the Astro SSR live-preview origin: it renders a single
@@ -274,4 +318,5 @@ preview && docker compose -f docker-compose.prod.yml up -d preview`.
   — install and repair happen there, not here. What matters at the host level:
   `pgdata` is still a single named volume with no WAL archiving, so a snapshot is
   not PITR, and the backup writes into `deploy@`'s `$HOME`, not into `/var` (no
-  root on this box).
+  root on this box). Since #125 there are **two** databases to cover — see
+  _Platform database_ above.
