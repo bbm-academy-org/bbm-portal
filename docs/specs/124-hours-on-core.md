@@ -38,7 +38,12 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   on core; `member` is seeded once, by hand, with consolidated data from the
   existing systems (~11 people ± 2) — no automated merge machinery; the fate of
   `team.yaml` after mastership moves to `core.member` is deferred (trigger:
-  epic #113).
+  epic #113); `member` carries a list of **aliases** — the person's accounts and
+  ids in external systems (phone, Telegram, Instagram, Mattermost id/email,
+  Zoom id, personal email, …) for recognition cases such as meeting transcripts
+  («dobroyar» → Игорь Пирогов); field-level **edit audit** is wanted but lands
+  as a separate task adopting the ds-platform spec-010 mechanics, out of this
+  spec's scope.
 
 ## Requirements
 
@@ -72,6 +77,21 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   (`period`, `status`, `started_at`, `published_at`, `preview_fingerprint`)
   with the per-member message batch as a `jsonb` snapshot column — the batch is
   a write-once delivery artifact, never queried relationally.
+- **EARS-17.** The member module shall own a `member_alias` table
+  (`schema/member/`): surrogate PK, FK to `member`, `kind` (open-set text —
+  e.g. `phone`, `telegram`, `instagram`, `mattermost_id`, `mattermost_email`,
+  `zoom_id`, `email_personal`), `value` (stored trimmed; lowercased for
+  email-like and handle-like kinds), optional `note`; unique on
+  (`kind`, `value`); a member may hold several aliases of the same kind. The
+  canonical `@bbm.academy` email stays on `member` and is not duplicated as an
+  alias.
+- **EARS-18.** The member module's public API shall resolve a member by
+  (`kind`, `value`) and list a member's aliases — the recognition contract for
+  consumers such as meeting-transcript processing («dobroyar» → the member's
+  name).
+- **EARS-19.** WHERE no admin UI exists yet (until `/p/admin`, epic #112),
+  aliases shall be populated by the manual seed and maintained through the
+  owner-run SQL escape hatch; this cycle adds no alias UI.
 
 ### Module behavior
 
@@ -112,7 +132,8 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   nothing written) on any email that has no `member` row.
 - **EARS-14.** `member` shall be seeded once, before the import, from a
   consolidated dataset (~11 people) prepared by hand with the owner from the
-  existing systems (`team.yaml`, `hours.json` participants, Zitadel accounts).
+  existing systems (`team.yaml`, `hours.json` participants, Zitadel accounts),
+  including the known aliases per person (EARS-17).
   The dataset shall NOT be committed to the repository (personal + salary
   adjacency); it is applied on the box at cutover. Fork/grade values come from
   production `hours.json` automatically during the import, not from the manual
@@ -128,12 +149,13 @@ migration off JSON — **with no product change**: the owner's decision in sessi
 
 ### CRUD check (task-cycle stage 1a — forms unchanged, storage semantics restated)
 
-| Form                     | Create                                                        | Read                                       | Update                                                          | Delete                                                     |
-| ------------------------ | ------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------- | ---------------------------------------------------------- |
-| Participant (admin)      | upsert by email; unknown email also creates `member` (EARS-9) | table on `/p/hours` (member ∪ hours attrs) | «Изменить» pre-fills; email read-only                           | **not supported** (deliberate, 081 §16) — SQL escape hatch |
-| Period (admin)           | label + dates; ≥1 weekday                                     | list with status                           | label/dates always, with recompute (081 §24); open/close/reopen | only while no assessments (081 §16)                        |
-| Assessment (participant) | self-only save in open period                                 | summary table, all logged-in               | re-save while open re-freezes snapshots                         | **not supported** (deliberate — history is the product)    |
-| Publication (admin)      | preview → publish per spec 100                                | panel state                                | re-publish per spec 100 rules                                   | **not supported** (delivery record)                        |
+| Form                       | Create                                                        | Read                                       | Update                                                          | Delete                                                     |
+| -------------------------- | ------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------- | ---------------------------------------------------------- |
+| Participant (admin)        | upsert by email; unknown email also creates `member` (EARS-9) | table on `/p/hours` (member ∪ hours attrs) | «Изменить» pre-fills; email read-only                           | **not supported** (deliberate, 081 §16) — SQL escape hatch |
+| Period (admin)             | label + dates; ≥1 weekday                                     | list with status                           | label/dates always, with recompute (081 §24); open/close/reopen | only while no assessments (081 §16)                        |
+| Assessment (participant)   | self-only save in open period                                 | summary table, all logged-in               | re-save while open re-freezes snapshots                         | **not supported** (deliberate — history is the product)    |
+| Publication (admin)        | preview → publish per spec 100                                | panel state                                | re-publish per spec 100 rules                                   | **not supported** (delivery record)                        |
+| Alias (no form this cycle) | seed / SQL escape hatch (EARS-19)                             | member module API (EARS-18)                | SQL escape hatch                                                | SQL escape hatch                                           |
 
 ## Acceptance scenarios
 
@@ -160,6 +182,10 @@ migration off JSON — **with no product change**: the owner's decision in sessi
 6. **Failure honesty.** With `PLATFORM_DATABASE_URL` deliberately broken on a
    dev stand, `/p/hours` says data is unavailable instead of rendering zeros or
    falling back to JSON. (EARS-12)
+7. **Alias resolution.** The owner names a known external handle (e.g. the
+   Mattermost login «dobroyar»); the agent runs the member-module lookup
+   against the production database and returns the right person's name — the
+   recognition contract works on seeded data. (EARS-14, EARS-17, EARS-18)
 
 ## Out of scope
 
@@ -167,7 +193,12 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   locking — separate tasks if ever (owner, 2026-08-11).
 - `/p/admin` and replacing `HOURS_ADMIN_EMAILS` with a claim gate — epic #112.
 - `membership`, `event_log`, `outbox` tables and any propagation — epics #111
-  tail / #113; this spec creates only `member` and the hours tables.
+  tail / #113; this spec creates only `member` (+ `member_alias`) and the hours
+  tables.
+- Field-level edit audit of `core` tables — separate task **#201** (owner,
+  2026-08-11): adopt the ds-platform spec-010 «Universal edit audit» mechanics
+  (generic PL/pgSQL trigger + append-only partitioned ledger + `SET LOCAL`
+  actor GUCs + PD masking + CI coverage lint) rather than reinventing them.
 - The fate of `team.yaml` after `core.member` becomes the operational master —
   deferred, trigger: epic #113.
 - Executing the implementation and the cutover — follow-up tasks opened from
