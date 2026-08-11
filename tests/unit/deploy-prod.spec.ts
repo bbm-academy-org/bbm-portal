@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  CHECKPOINT_DUMP_GLOB,
+  CHECKPOINT_EXPECTED_DATABASES,
   CHECKPOINT_KEEPALIVE_S,
   CHECKPOINT_LOG,
   CHECKPOINT_SCRIPT,
@@ -197,6 +199,29 @@ describe('buildDeployScript', () => {
     expect(script).toMatch(/docker compose -f docker-compose\.prod\.yml build app migrate/)
     expect(script).toMatch(/docker compose -f docker-compose\.prod\.yml up -d/)
   })
+
+  // ── the platform database (#125) ───────────────────────────────────────────
+
+  it('applies the PLATFORM migrations too — the `core` schema is deployed, not hand-run', () => {
+    // The second database (spec 2026-08-04 §4) has its own pipeline. If the
+    // deploy did not run it, `core` would only ever advance when somebody
+    // remembered to — which is the state this task exists to end.
+    expect(script).toContain('pnpm platform:migrate')
+  })
+
+  it('runs the platform migrations INSIDE the checkpoint-protected window', () => {
+    // `checkpoint` is a whole stage earlier in the pipeline, and everything in
+    // this script therefore runs after it. The ordering below is what makes that
+    // true of the platform migrate as well — it must not be bolted onto a later
+    // stage where no fresh dump protects it.
+    expect(DEPLOY_STAGES.indexOf('checkpoint')).toBeLessThan(DEPLOY_STAGES.indexOf('deployStack'))
+    expect(script.indexOf('pnpm platform:migrate')).toBeLessThan(script.indexOf('up -d'))
+  })
+
+  it('reads the platform migration ledger from the `core` schema, not payload_migrations', () => {
+    expect(script).toContain('core.__drizzle_migrations')
+    expect(script).toContain('payload_migrations')
+  })
 })
 
 describe('buildVerifyScript / verifyVerdict', () => {
@@ -293,9 +318,43 @@ describe('buildCheckpointScript', () => {
     // `[ -f <script> ]` plus exit 0 also passes for a zero-byte script. The
     // stage's whole claim is "a fresh dump exists before we migrate", so it
     // checks the artifact's mtime, not the exit code.
-    expect(script).toMatch(/-name 'postgres-\*\.sql\.gz'/)
+    expect(script).toMatch(new RegExp(`-name '${CHECKPOINT_DUMP_GLOB.replace('*', '\\*')}'`))
     expect(script).toMatch(/-mmin -\d+/)
     expect(script).toMatch(/no fresh dump/i)
+  })
+
+  // ── two databases, one checkpoint (#125) ───────────────────────────────────
+
+  it('pins EVERY fresh dump, not just the newest one', () => {
+    // Until #125 the box produced exactly one artifact and this stage pinned
+    // `… | sort | tail -1`. The `platform` database makes that a silent
+    // half-checkpoint: the newest file wins and the other database's dump is
+    // dropped on the floor. The glob is therefore database-agnostic and the pin
+    // is a LOOP.
+    expect(CHECKPOINT_DUMP_GLOB).toBe('*.sql.gz')
+    expect(script).not.toMatch(/\|\s*tail -1/)
+    expect(script).toMatch(/while .*read/)
+  })
+
+  it('names the cross-repo dependency instead of dumping anything itself', () => {
+    // `backup-portal.sh` belongs to the `bbm` ops repo and today dumps `cms`
+    // only; extending it to `platform` is tracked there. This stage must not
+    // grow its own pg_dump — it would become a second, drifting implementation
+    // of the backup contract.
+    expect(script).not.toContain('pg_dump')
+    expect(script).toContain('bbm')
+  })
+
+  it('WARNS, loudly and by name, about a database the box did not dump', () => {
+    // Loose on purpose: prod carries no `platform` dump until the bbm-side
+    // change lands, and hard-failing here would block every deploy in the
+    // meantime. A named warning is the honest middle — the deploy proceeds, and
+    // nobody can later claim the gap was invisible.
+    expect(CHECKPOINT_EXPECTED_DATABASES).toEqual(['cms', 'platform'])
+    for (const database of CHECKPOINT_EXPECTED_DATABASES) {
+      expect(script).toContain(database)
+    }
+    expect(script).toMatch(/WARNING/)
   })
 
   it('PINS the dump under a per-deploy S3 key so the nightly cannot overwrite it', () => {
@@ -306,7 +365,7 @@ describe('buildCheckpointScript', () => {
     // recovery point outlive the day.
     expect(script).toContain('rclone copyto')
     expect(script).toContain('checkpoints/pre-migrate-')
-    expect(script).toContain(`${SHA.slice(0, 12)}.sql.gz`)
+    expect(script).toContain(SHA.slice(0, 12))
     expect(script).toMatch(/date -u \+%Y%m%dT%H%M%SZ/)
     // Same remote and credentials file the ops repo's own restore-portal.sh uses.
     expect(script).toContain('twcs:')

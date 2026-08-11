@@ -252,10 +252,10 @@ export function buildShipCommand() {
 
 /**
  * Where the `bbm` ops repo installs the backup machinery on this box (BBMP-60).
- * The script is the SAME one the nightly cron runs at 23:30 UTC: pg_dump of
- * `cms` (gzip) + a tar of the host-only env files, pushed off-box to the Timeweb
- * S3 bucket in `.s3-backup.env`. Owning repo: `bbm`, `infra/portal/README.md` —
- * this pipeline calls it, it does not re-implement it.
+ * The script is the SAME one the nightly cron runs at 23:30 UTC: pg_dump (gzip)
+ * + a tar of the host-only env files, pushed off-box to the Timeweb S3 bucket in
+ * `.s3-backup.env`. Owning repo: `bbm`, `infra/portal/README.md` — this pipeline
+ * calls it, it does not re-implement it.
  */
 const CHECKPOINT_DIR = '/home/deploy/portal-backup'
 export const CHECKPOINT_SCRIPT = `${CHECKPOINT_DIR}/backup-portal.sh`
@@ -265,6 +265,28 @@ export const CHECKPOINT_LOG = `${CHECKPOINT_DIR}/data/backup.log`
 export const CHECKPOINT_S3_PREFIX = 'checkpoints/pre-migrate-'
 /** Seconds between heartbeat lines while the (silent) ops script runs. */
 export const CHECKPOINT_KEEPALIVE_S = 30
+
+/**
+ * Which dump artifacts this stage pins. Database-AGNOSTIC on purpose (#125).
+ *
+ * Until the platform database existed the box produced exactly one file,
+ * `postgres-YYYYMMDD.sql.gz`, and this stage matched that name. It cannot any
+ * more: `backup-portal.sh` (owned by the `bbm` ops repo) is being extended to
+ * dump `platform` alongside `cms`, and a name-specific glob would silently pin
+ * whichever file the extension happened to name last — a half-checkpoint that
+ * reports success. Everything fresh in the data directory is pinned instead, so
+ * the bbm-side change lands without touching this file.
+ */
+export const CHECKPOINT_DUMP_GLOB = '*.sql.gz'
+
+/**
+ * The databases a full checkpoint is expected to cover, in the order they were
+ * introduced. Used only to WARN: `platform` is not dumped by the box script yet
+ * (that change is tracked in the `bbm` ops repo), and hard-failing on it here
+ * would block every deploy until an unrelated repo merges. A named warning keeps
+ * the gap visible without making this repo hostage to the other one.
+ */
+export const CHECKPOINT_EXPECTED_DATABASES = ['cms', 'platform']
 
 /**
  * Take the checkpoint, then PIN it under a key of this deploy's own.
@@ -311,14 +333,17 @@ bash ${CHECKPOINT_SCRIPT}
 kill "$keepalive" 2>/dev/null || true
 trap - EXIT
 
-dump=$(find ${CHECKPOINT_DIR}/data -maxdepth 1 -type f -name 'postgres-*.sql.gz' -mmin -15 | sort | tail -1)
-if [ -z "$dump" ]; then
+dumps=$(find ${CHECKPOINT_DIR}/data -maxdepth 1 -type f -name '${CHECKPOINT_DUMP_GLOB}' -mmin -15 | sort)
+if [ -z "$dumps" ]; then
   echo "checkpoint exited 0 but left no fresh dump in ${CHECKPOINT_DIR}/data — see ${CHECKPOINT_LOG}" >&2
   exit 1
 fi
 
-# Pin it under this deploy's own key, so neither tonight's cron nor a second
-# deploy today can overwrite the recovery point for THIS migration.
+# Pin EVERY fresh dump under this deploy's own key prefix, so neither tonight's
+# cron nor a second deploy today can overwrite the recovery point for THIS
+# migration. A loop, not \`tail -1\`: the box produces one artifact per database
+# now that \`platform\` exists alongside \`cms\`, and taking only the newest would
+# be a half-checkpoint that still reports success.
 s3env=${CHECKPOINT_DIR}/.s3-backup.env
 if [ ! -f "$s3env" ]; then
   echo "cannot pin the checkpoint: $s3env is missing — see ${CHECKPOINT_LOG}" >&2
@@ -326,9 +351,26 @@ if [ ! -f "$s3env" ]; then
 fi
 set -a; . "$s3env"; set +a
 : "\${S3_BUCKET:?not set in $s3env}"
-key="${CHECKPOINT_S3_PREFIX}$(date -u +%Y%m%dT%H%M%SZ)-${shortSha}.sql.gz"
-rclone copyto "$dump" "twcs:$S3_BUCKET/$key"
-echo "[checkpoint] recovery point pinned: $key"
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+pinned=0
+while IFS= read -r dump; do
+  [ -n "$dump" ] || continue
+  key="${CHECKPOINT_S3_PREFIX}$stamp-${shortSha}-$(basename "$dump")"
+  rclone copyto "$dump" "twcs:$S3_BUCKET/$key"
+  echo "[checkpoint] recovery point pinned: $key"
+  pinned=$((pinned + 1))
+done <<< "$dumps"
+
+# Coverage, reported rather than enforced. The dump artifacts are produced by
+# backup-portal.sh, which is owned by the \`bbm\` ops repo — teaching it to dump
+# \`platform\` alongside \`cms\` is tracked THERE. Until that lands prod yields one
+# dump, and hard-failing here would block every deploy on another repo's merge.
+echo "[checkpoint] $pinned fresh dump(s) pinned; expected coverage: ${CHECKPOINT_EXPECTED_DATABASES.join(' ')}"
+if [ "$pinned" -lt ${CHECKPOINT_EXPECTED_DATABASES.length} ]; then
+  echo "[checkpoint] WARNING: $pinned dump(s) for ${CHECKPOINT_EXPECTED_DATABASES.length} expected databases (${CHECKPOINT_EXPECTED_DATABASES.join(', ')})."
+  echo "[checkpoint] WARNING: a migration touching an un-dumped database is NOT protected by this checkpoint."
+  echo "[checkpoint] WARNING: extending backup-portal.sh is tracked in the bbm ops repo (infra/portal/README.md)."
+fi
 `
 }
 
@@ -368,6 +410,13 @@ export function formatCheckpointFailure(detail) {
  *  • `docker compose run` attaches the container's stdin by default. Over an ssh
  *    channel that means it EATS the rest of this script and bash exits 0 —
  *    every following line silently skipped. Hence `</dev/null`.
+ *
+ * TWO migration pipelines run here, in the same protected window (#125). Payload
+ * owns the `cms` database and its `payload_migrations` ledger; the platform owns
+ * the `platform` database and the `core` schema, with a drizzle ledger of its
+ * own (`core.__drizzle_migrations`). They share nothing but this stage — and
+ * this stage runs AFTER `checkpoint`, so neither can advance a schema that has
+ * no fresh dump behind it.
  */
 export function buildDeployScript(sha) {
   return `cd ${COMPOSE_DIR}
@@ -376,10 +425,13 @@ export function buildDeployScript(sha) {
 { { [ -f .env ] && grep -v '^DEPLOY_SHA=' .env; } || true; printf 'DEPLOY_SHA=%s\\n' '${sha}'; } > .env.next && mv .env.next .env
 echo '-- build app + migrate (bbm-portal-app:${sha.slice(0, 12)}...) --'
 ${COMPOSE} build app migrate
-echo '-- migrate (Payload; idempotent) --'
+echo '-- migrate (Payload / cms; idempotent) --'
 ${COMPOSE} --profile tools run --build --rm migrate </dev/null
-echo '-- migration ledger --'
+echo '-- migrate (platform / core schema; idempotent) --'
+${COMPOSE} --profile tools run --rm migrate pnpm platform:migrate </dev/null
+echo '-- migration ledgers --'
 ${COMPOSE} exec -T postgres psql -U payload -d cms -c 'SELECT name, batch FROM payload_migrations ORDER BY id DESC LIMIT 5;'
+${COMPOSE} exec -T postgres psql -U payload -d platform -c 'SELECT id, created_at FROM core.__drizzle_migrations ORDER BY id DESC LIMIT 5;'
 echo '-- up -d --'
 ${COMPOSE} up -d
 `
