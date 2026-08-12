@@ -11,9 +11,10 @@ on:
   pull_request:
 
 jobs:
-  # BLOCK — the repo's original gate, unchanged.
+  # BLOCK — the repo's original gate, unchanged. The only heavy job: it carries
+  # `next build` (plus the unit tier), which does not fit the 1.5 GiB light lane.
   lint-and-typecheck:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, heavy, ci]
     steps:
       - uses: actions/checkout@v4
 
@@ -58,7 +59,7 @@ jobs:
   # BLOCK — the guards' own tests. A guard whose test tier is not in the
   # needs-list can rot silently while still reporting green (canon §5).
   guard-tests:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -75,7 +76,7 @@ jobs:
   # to soak for). This is what makes "a guard without a test does not get merged"
   # mechanical rather than a convention.
   guard-test-coverage:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -91,7 +92,7 @@ jobs:
   # (workflow-auth enforces its presence).
   tdd-signal:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read
@@ -111,7 +112,7 @@ jobs:
   # WARN — dev placeholder / untracked stub marker on the render surface.
   no-stub:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -127,7 +128,7 @@ jobs:
   # like a real finding and quietly spends that guard's promotion window.
   workflow-auth:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -155,7 +156,7 @@ jobs:
   # skips what does not exist, so CI measures the repo files only.
   instruction-budget:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -170,7 +171,7 @@ jobs:
   # `EARS-N` grep the spec canon promises silently misses it (#157, tranche 2).
   ears-naming:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -185,7 +186,7 @@ jobs:
   # with no test, and a test citing a clause no spec declares (#157, tranche 2).
   ears-test:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -207,7 +208,7 @@ jobs:
   ci:
     needs: [lint-and-typecheck, guard-tests, guard-test-coverage]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:
       # A required job must SUCCEED. `skipped` and `cancelled` are red too: a job
       # that never ran proved nothing, and treating only `failure` as red lets a

@@ -42,7 +42,7 @@ jobs:
     # A title-only edit changes no guard input — skip those runs entirely.
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read
@@ -68,7 +68,7 @@ jobs:
   assignee-milestone:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read
@@ -95,7 +95,7 @@ jobs:
   stage-b:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read
@@ -123,7 +123,7 @@ jobs:
   spec-link:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read
@@ -153,7 +153,7 @@ jobs:
   spec-deletion:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read
@@ -179,7 +179,7 @@ jobs:
   product-note:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5, promotion tied to #137
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read

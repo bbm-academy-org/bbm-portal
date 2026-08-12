@@ -51,7 +51,12 @@ jobs:
       ( github.event.deployment_status.state == 'success' &&
         github.event.deployment.environment == 'production' &&
         github.event.deployment.task == 'deploy' )
-    runs-on: ubuntu-latest
+    # `notify` is the pool's dedicated notification lane (#202): its manager
+    # policy trusts deployment_status/workflow_dispatch/push only — never
+    # pull_request — which is what lets a secret-bearing workflow run on the
+    # shared pool at all (REPOSITORY-ONBOARDING «Least-privilege notification
+    # webhook»).
+    runs-on: [self-hosted, linux, x64, bbm-ci, node22, notify, ci]
     steps:
       - uses: actions/checkout@v4
         with:
