@@ -197,14 +197,23 @@ jobs:
             echo "| Guard | Outcome |"
             echo "| --- | --- |"
           } >> "$GITHUB_STEP_SUMMARY"
+          # Why a guard step can be `skipped` at all, and the two causes are not
+          # the same news: either the shared install failed (its findings would
+          # have been fabricated — see the fence on the guard steps), or the RUN
+          # was cancelled, which after the concurrency block above is the routine
+          # case on every new commit. Blaming setup for a cancellation would send
+          # the reader to debug an install that was fine.
           if [ "${{ steps.install.outcome }}" != "success" ]; then
+            skipped_label="did not run (setup failed)"
             echo "::notice title=Guards did not run::the shared \`pnpm install\` did not succeed, so no guard evaluated its rule. Nothing below is a finding, and none of it counts towards a §4 promotion window."
+          else
+            skipped_label="did not run (run cancelled)"
           fi
           row() {
             case "$2" in
               success) label="clean" ;;
-              skipped) label="did not run (setup failed)" ;;
-              cancelled) label="cancelled" ;;
+              skipped) label="$skipped_label" ;;
+              cancelled) label="cancelled mid-run" ;;
               *)
                 label="FINDING"
                 echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."

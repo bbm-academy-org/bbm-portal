@@ -134,17 +134,26 @@ started, not immunity from cancellation. Those runs sit on superseded SHAs and s
 the head rollup, so the gate is unaffected; do not read a `cancelled` run on an old SHA as
 a bug in this wiring.
 
-**`ci.yml` DOES cancel per PR, and the asymmetry is deliberate.** Its concurrency group is
-`ci-<PR number, or the ref on a push>` with `cancel-in-progress` gated on
-`github.event_name == 'pull_request'`, so a new commit cancels that PR's superseded run
-while a `main` push is never cancelled. The two workflows are cancelled at different
-moments, which is the whole difference: a cancellation in `ci.yml` is always caused by a
-new commit, so the `CANCELLED` check-runs land on the SUPERSEDED sha — and nothing reads a
-stale sha's checks (the `ci` aggregate judges only its own run, and `pnpm pr:land` reads
-the rollup of the CURRENT head, turning red anyway if head moved while it waited). The
-paragraph above is about `CANCELLED` check-runs on a STILL-CURRENT head, which is what
-cancelling the WARN workflow would produce, since that one also re-runs on a body `edited`
-with no new commit.
+**`ci.yml` DOES cancel a superseded PR commit, and the asymmetry is deliberate.** Its
+concurrency group is `ci-${{ github.event.pull_request.number || github.run_id }}` and
+`cancel-in-progress` is gated on `pull_request` **and** `action == 'synchronize'`. Both
+narrowings exist because of the pending-run rule stated just above, and each is load-bearing
+(review of PR #206):
+
+- **`github.run_id`, not `github.ref`, for pushes.** A shared `ci-refs/heads/main` group
+  would let a _queued_ `main` run be cancelled when a third push arrives — and
+  `tools/gh/verify-base-ci-green.mjs` counts `cancelled` among its RED conclusions, so
+  `pnpm ci:verify-base` would report "`main` is already broken" to every session that runs
+  it at task-cycle stage 3. A unique group per push means main runs never share a group and
+  nothing supersedes them.
+- **`synchronize` only.** `reopened` fires on the SAME head sha, so cancelling there would
+  leave `CANCELLED` check-runs on a STILL-CURRENT head — precisely the class the paragraph
+  above forbids, and the reason `pr-body-guards.yml` never cancels at all.
+
+What is left is safe for one reason: a `synchronize` cancellation is always caused by a new
+commit, so its `CANCELLED` check-runs land on the SUPERSEDED sha, and nothing reads a stale
+sha (the `ci` aggregate judges only its own run, and `pnpm pr:land` reads the rollup of the
+CURRENT head, turning red anyway if head moved while it waited).
 
 **A job that is neither is a bug, and is checked.** This one stayed at job level after
 #205, because it is the level at which a job can be orphaned. A `ci.yml` job with no
@@ -252,8 +261,13 @@ so dropping the step's fence is by itself what puts the guard in front of the ag
 A guard in `pr-body-guards.yml` is the exception, and the same one as before batching: that
 workflow is out of the aggregate's reach, so promoting one of its steps means first taking
 the §2.1 cross-workflow decision (move the step into `ci.yml`'s batch, or teach
-`pnpm pr:land` to demand this workflow's check-run by name). Dropping a step's
-`continue-on-error` there changes nothing on its own — the job is `continue-on-error` too.
+`pnpm pr:land` to demand this workflow's check-run by name). **Do not drop the step's
+`continue-on-error` before that decision is taken.** Since #206 removed the job-level flag
+there, dropping a step's fence no longer changes nothing: it does not put the guard in
+front of the `ci` aggregate, but it DOES fail the batch job, and `pr:land` reads that
+check-run structurally as a block. The guard would become a de-facto blocker with its
+severity recorded in neither §2.1 nor §5 — the exact undeclared state this canon exists to
+make impossible. Take the decision first, then record the new severity in §5.
 
 **Promotion mechanics (hook guard):** flip the guard's finding branch from exit 0 to a
 non-zero exit, update its header comment, update its unit test (the test asserts the exit

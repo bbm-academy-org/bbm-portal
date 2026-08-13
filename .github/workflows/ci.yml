@@ -31,20 +31,29 @@ on:
   pull_request:
 
 concurrency:
-  # A new push to a PR cancels that PR's superseded run; a `main` push is NEVER
-  # cancelled (the group falls back to `github.ref` there and the flag evaluates
-  # to false). This is safe here while `pr-body-guards.yml` deliberately keeps
-  # `cancel-in-progress: false`, because the two workflows would be cancelled at
-  # different moments. A cancellation HERE is always caused by a new commit, so
-  # the CANCELLED check-runs land on the SUPERSEDED sha — and nothing reads a
-  # stale sha's checks: the `ci` aggregate judges only its own run, and
-  # `pnpm pr:land` reads the rollup of the CURRENT head (and turns red anyway if
-  # head moved while it waited). The canon §2.1 concern is CANCELLED check-runs
-  # sitting on a STILL-CURRENT head — which is exactly what cancelling the WARN
-  # workflow would produce, since it also re-runs on a body `edited` with no new
-  # commit. Same flag, two different blast radii.
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # A new COMMIT on a PR cancels that PR's superseded run. Nothing else cancels,
+  # and both halves of that are deliberate (review of PR #206):
+  #
+  #   — a `main` push gets a UNIQUE group (`github.run_id`), so main runs never
+  #     share a group and there is nothing to supersede. Grouping them by
+  #     `github.ref` would NOT have been safe: GitHub cancels a PENDING run when
+  #     another pending run enters the group whatever `cancel-in-progress` says
+  #     (see §2.1), and on this pool a run has been observed queued 18m56s — so
+  #     two merges inside one window would leave a CANCELLED run on `main`, which
+  #     `tools/gh/verify-base-ci-green.mjs` counts as RED and would announce to
+  #     every session as "main is already broken";
+  #   — the flag is narrowed to `synchronize`. `reopened` fires on the SAME head
+  #     sha, and cancelling there would leave CANCELLED check-runs on a
+  #     STILL-CURRENT head — the exact class `pnpm pr:land` reads as a block, and
+  #     the reason `pr-body-guards.yml` never cancels at all (canon §2.1).
+  #
+  # What makes the remaining case safe: a `synchronize` cancellation is always
+  # caused by a new commit, so its CANCELLED check-runs land on the SUPERSEDED
+  # sha, and nothing reads a stale sha — the `ci` aggregate judges only its own
+  # run, and `pr:land` reads the rollup of the CURRENT head (turning red anyway
+  # if head moved while it waited).
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}
 
 jobs:
   # BLOCK — the repo's original gate, unchanged. The only heavy job: it carries
@@ -220,14 +229,23 @@ jobs:
             echo "| Guard | Outcome |"
             echo "| --- | --- |"
           } >> "$GITHUB_STEP_SUMMARY"
+          # Why a guard step can be `skipped` at all, and the two causes are not
+          # the same news: either the shared install failed (its findings would
+          # have been fabricated — see the fence on the guard steps), or the RUN
+          # was cancelled, which after the concurrency block above is the routine
+          # case on every new commit. Blaming setup for a cancellation would send
+          # the reader to debug an install that was fine.
           if [ "${{ steps.install.outcome }}" != "success" ]; then
+            skipped_label="did not run (setup failed)"
             echo "::notice title=Guards did not run::the shared \`pnpm install\` did not succeed, so no guard evaluated its rule. Nothing below is a finding, and none of it counts towards a §4 promotion window."
+          else
+            skipped_label="did not run (run cancelled)"
           fi
           row() {
             case "$2" in
               success) label="clean" ;;
-              skipped) label="did not run (setup failed)" ;;
-              cancelled) label="cancelled" ;;
+              skipped) label="$skipped_label" ;;
+              cancelled) label="cancelled mid-run" ;;
               *)
                 label="FINDING"
                 echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."
