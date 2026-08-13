@@ -22,8 +22,8 @@
 // `--severity block` (or `STAGE_B_SEVERITY=block`) makes the same violation exit
 // 1. Note the two WARNs are different mechanisms: HERE it means "exit 0 with a
 // WARN line", while in #136's canon WARN means `continue-on-error: true` on the
-// CI job. DECIDED in #136 (canon docs/ci-guardrails.md §5, row `stage-b`): the
-// `stage-b` job in .github/workflows/pr-body-guards.yml passes `--severity
+// CI wiring. DECIDED in #136 (canon docs/ci-guardrails.md §5, row `stage-b`):
+// the `stage-b` step in .github/workflows/pr-body-guards.yml passes `--severity
 // block` and carries `continue-on-error: true`. The script therefore gives a
 // REAL signal (canon §4 clause 1: a guard that prints and exits 0 is a stub and
 // is not promotable) while the CI plane keeps it WARN. Promotion is then a
@@ -34,11 +34,11 @@
 // it exits 1 under every severity, by design. A violation is a finding about the
 // PR, which WARN may absorb; an unreadable PR means the guard never ran, and a
 // guard that exits 0 when it never ran is indistinguishable from a clean check.
-// Masking THAT is a job-level `continue-on-error` decision, and #136 made it:
-// the job is `continue-on-error`, so an unreadable PR shows in the job log
-// rather than blocking — acceptable only while the guard is WARN.
+// Masking THAT is a `continue-on-error` decision, and #136 made it: the wiring
+// is `continue-on-error`, so an unreadable PR shows in the log rather than
+// blocking — acceptable only while the guard is WARN.
 //
-// CI: the `stage-b` job of `.github/workflows/pr-body-guards.yml` (wired by #136
+// CI: the `stage-b` step of `.github/workflows/pr-body-guards.yml` (wired by #136
 // after this guard landed — the two ran in parallel, so the wiring is not in this
 // file’s history). Run locally before merge: `pnpm lint:stage-b <PR>`.
 //

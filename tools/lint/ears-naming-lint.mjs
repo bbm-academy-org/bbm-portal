@@ -28,8 +28,9 @@
 // FIXTURES_PREFIX note exists for), and guards are tooling that carries no EARS
 // clause anyway. A single file may opt out with `ears-naming-ok: <reason>`.
 //
-// SEVERITY: WARN — `docs/ci-guardrails.md` §5, job in `.github/workflows/ci.yml`
-// with `continue-on-error: true`. The script itself exits 1 on a finding (canon
+// SEVERITY: WARN — `docs/ci-guardrails.md` §5, a step of the guard batch job in
+// `.github/workflows/ci.yml` with `continue-on-error: true`. The script itself
+// exits 1 on a finding (canon
 // §4 clause 1: a guard that prints and exits 0 is a stub and is not promotable).
 // Promotion per §4, earliest 2026-09-02.
 //

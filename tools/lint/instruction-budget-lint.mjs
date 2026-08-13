@@ -39,11 +39,12 @@
 // no regex over prose, so the false-positive class is empty by construction.
 // Recorded in §6.1; promotion/demotion clauses are §4.
 //
-// CI: wired into `.github/workflows/ci.yml` by #157 as a WARN job
-// (`continue-on-error: true`, absent from the `ci` needs-list), which starts its
-// §4 promotion clock for the CI plane — earliest 2026-09-02. The two planes are
-// deliberately different: the CLI plane stays BLOCK by exit code (§6.1), while
-// the CI plane soaks as WARN like every other newly wired job. Unlike `stage-b`
+// CI: wired into `.github/workflows/ci.yml` by #157, which starts its §4
+// promotion clock for the CI plane — earliest 2026-09-02. It is a WARN STEP
+// (`continue-on-error: true`) of that file's guard batch job since #205; before
+// then it was a WARN job of its own. The two planes are deliberately different:
+// the CLI plane stays BLOCK by exit code (§6.1), while the CI plane soaks as
+// WARN like every other newly wired guard. Unlike `stage-b`
 // and `spec-link`, this guard needs no `--severity block` flag: those two default
 // to exit 0 on a finding and the flag buys them a real signal, whereas this one
 // has exited 1 on a finding since day 0.

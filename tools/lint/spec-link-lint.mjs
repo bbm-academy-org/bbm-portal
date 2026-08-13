@@ -23,13 +23,13 @@
 //
 // SEVERITY: WARN, registered in docs/ci-guardrails.md §5. Mind the canon's two
 //   WARNs: run locally the guard reports and exits 0, while in the canon WARN
-//   means `continue-on-error` on the CI job. The `spec-link` job in
+//   means `continue-on-error` on the CI wiring. The `spec-link` step in
 //   `pr-body-guards.yml` uses both deliberately — it passes `--severity block`
 //   so the script gives a REAL signal (canon §4 promotion clause 1: a guard that
 //   prints and always exits 0 is a stub and is not promotable) while
 //   `continue-on-error: true` keeps the CI plane at WARN. Promotion to BLOCK
-//   follows the canon's §4 clauses (earliest 2026-09-02) and is the three-edit
-//   change described there — nothing in this file needs editing for it.
+//   follows the canon's §4 clauses (earliest 2026-09-02) and is the change
+//   described there — nothing in this file needs editing for it.
 //
 // Run: `pnpm lint:spec-link` (PR_NUMBER from Actions, or `--pr <n>` locally).
 // Outside a PR context it exits 0 with a skip note.

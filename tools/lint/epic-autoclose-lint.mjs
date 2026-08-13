@@ -3,7 +3,7 @@
 //
 // Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05; earliest
 // promotion 2026-09-02, and a promotion to BLOCK additionally needs the
-// cross-workflow decision recorded in canon §2.1 (this job lives in
+// cross-workflow decision recorded in canon §2.1 (this guard lives in
 // pr-body-guards.yml, which cannot be in the `ci` needs-list).
 //
 // Why it exists: GitHub closes every issue named by a `Closes #N` line the

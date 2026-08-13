@@ -140,7 +140,14 @@ Entry format:
       catches "neither WARN nor BLOCK" but not "both" (continue-on-error AND in
       the needs-list = vacuous BLOCK) — return condition: first change to the
       `ci` meta-job's needs-list or to any job's continue-on-error flag (#136,
-      review of PR #154)
+      review of PR #154).
+      **Return condition FIRED 2026-08-13 (#205)** — the needs-list changed and
+      the per-guard jobs became steps of one batch job. Left open, with a bigger
+      blast radius to weigh at the fix: `continue-on-error: true` on the `ci.yml`
+      `guards` job would now vacuously mask EIGHT guards including the two BLOCK
+      ones, and nothing detects it. The guard reads jobs only, so it also cannot
+      see step-level severity at all — the check to add is "a needs-listed job
+      must not be `continue-on-error`", which covers both shapes.
 - [ ] 2026-08-05 `tools/lint/tdd-signal-lint.mjs`: substring path matching — a
       spec that merely MENTIONS a module path counts as covering it (nothing
       masked today; anchor needles to import statements like

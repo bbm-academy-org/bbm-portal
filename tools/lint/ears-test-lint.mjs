@@ -56,8 +56,9 @@
 // instruction-budget can use it for the same class of input problem and this
 // guard cannot).
 //
-// SEVERITY: WARN — docs/ci-guardrails.md §5, job in `.github/workflows/ci.yml`
-// with `continue-on-error: true`; the script exits 1 on a finding (canon §4
+// SEVERITY: WARN — docs/ci-guardrails.md §5, a step of the guard batch job in
+// `.github/workflows/ci.yml` with `continue-on-error: true`; the script exits 1
+// on a finding (canon §4
 // clause 1). Promotion per §4, earliest 2026-09-02.
 //
 // Run: `pnpm lint:ears-test`. Findings: stderr + exit 1. Clean: stdout + exit 0.

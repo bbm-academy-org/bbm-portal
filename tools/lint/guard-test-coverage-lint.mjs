@@ -4,7 +4,8 @@
 // Canon: docs/ci-guardrails.md §5. Severity: BLOCK from day 0 under the §3
 // class-1 mandate (deterministic tree check — the only input is the checked-out
 // tree, so there is no false-positive class to soak for). BLOCK means: no
-// `continue-on-error` on the job, and the job IS in the `ci` meta-job needs-list.
+// `continue-on-error` on its step, inside a batch job that IS in the `ci`
+// meta-job needs-list (canon §2.1; the guards became steps of one job in #205).
 //
 // Why it exists: in ds-platform "a guard without a test does not get merged" is
 // a convention, held up by review plus a hand-maintained coverage list in a

@@ -1,8 +1,22 @@
-# Severity of every job below is defined by docs/ci-guardrails.md §2.1 and is
-# READ OFF THIS FILE, not off any prose: BLOCK = no `continue-on-error` AND the
-# job is in the `ci` meta-job's needs-list; WARN = `continue-on-error: true` AND
-# absent from that list. Promotion of a WARN job to BLOCK is three edits — drop
-# the `continue-on-error` line, add the job to `needs`, update the canon's §5 row.
+# Severity of every guard below is defined by docs/ci-guardrails.md §2.1 and is
+# READ OFF THIS FILE, not off any prose. Since #205 the guards are STEPS of one
+# batch job rather than a job each, so severity is read at STEP level:
+#   BLOCK = a plain step (no `continue-on-error`) in a job that IS in the `ci`
+#           meta-job's needs-list — its failure fails the job and the aggregate;
+#   WARN  = a step carrying `continue-on-error: true` — it can never fail its job.
+# Promotion of a WARN guard to BLOCK is now ONE edit here (drop that step's
+# `continue-on-error`) plus the canon's §5 row: the batch job is already in the
+# needs-list, so there is no `needs` change to make.
+#
+# Why one job (#205): each guard used to own a job, and on the self-hosted pool
+# the per-job checkout + `pnpm install` cost far more than the guards themselves.
+# The batch installs once and runs the guards sequentially.
+#
+# Every guard step carries an `id:` and `if: ${{ !cancelled() }}` so a failed
+# BLOCK step does not hide the remaining guards' findings, and the final
+# aggregation step turns each WARN outcome into a `::warning::` annotation plus a
+# step-summary row. WARN findings must stay VISIBLE — the canon's §4 promotion
+# clock is counted off them, and `continue-on-error` alone would bury them.
 name: CI
 
 on:
@@ -55,40 +69,15 @@ jobs:
       - name: Build (next build)
         run: pnpm build
 
-  # BLOCK — the guards' own tests. A guard whose test tier is not in the
-  # needs-list can rot silently while still reporting green (canon §5).
-  guard-tests:
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - name: Guard specs
-        run: pnpm test:guards
-
-  # BLOCK from day 0 under the canon §3 class-1 mandate (deterministic tree
-  # check — no network, no PR metadata, no heuristics, so no false-positive class
-  # to soak for). This is what makes "a guard without a test does not get merged"
-  # mechanical rather than a convention.
-  guard-test-coverage:
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:guard-test-coverage
-
-  # WARN — production changed with no test in the diff and none in the tree.
-  # Reads the PR's changed-file set through `gh`, hence the auth block
-  # (workflow-auth enforces its presence).
-  tdd-signal:
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+  # The light guard batch (#205) — one checkout + one install for all eight tree
+  # guards. The job itself carries NO `continue-on-error` and IS in the `ci`
+  # needs-list, which is what lets a BLOCK step below reach the aggregate; the
+  # WARN steps are fenced individually so they never can.
+  #
+  # `permissions:` sits on the job (a job-level block fully REPLACES a
+  # workflow-level one) because one of the steps reaches GitHub through `gh`;
+  # `workflow-auth` enforces the pair plus the step's GH_TOKEN + PR_NUMBER.
+  guards:
     runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
@@ -100,104 +89,129 @@ jobs:
         with:
           node-version: 22
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:tdd-signal
+
+      # BLOCK — the guards' own tests. A guard whose test tier is not blocking
+      # can rot silently while still reporting green (canon §5).
+      - name: guard-tests — the guards' own specs
+        id: guard-tests
+        if: ${{ !cancelled() }}
+        run: pnpm test:guards
+
+      # BLOCK from day 0 under the canon §3 class-1 mandate (deterministic tree
+      # check — no network, no PR metadata, no heuristics, so no false-positive
+      # class to soak for). This is what makes "a guard without a test does not
+      # get merged" mechanical rather than a convention.
+      - name: guard-test-coverage — every guard has its spec
+        id: guard-test-coverage
+        if: ${{ !cancelled() }}
+        run: pnpm lint:guard-test-coverage
+
+      # WARN — production changed with no test in the diff and none in the tree.
+      # Reads the PR's changed-file set through `gh`, hence the auth env below
+      # (workflow-auth enforces its presence, and the job's `permissions:`).
+      - name: tdd-signal — production change with no test
+        id: tdd-signal
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+        run: pnpm lint:tdd-signal
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
-  # WARN — dev placeholder / untracked stub marker on the render surface.
-  no-stub:
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:no-stub
+      # WARN — dev placeholder / untracked stub marker on the render surface.
+      - name: no-stub — placeholder on the render surface
+        id: no-stub
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+        run: pnpm lint:no-stub
 
-  # WARN — meta-guard over this very file: a gh-gated job with no `permissions:`
-  # + `GH_TOKEN` goes red before it evaluates its own rule, which looks exactly
-  # like a real finding and quietly spends that guard's promotion window.
-  workflow-auth:
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:workflow-auth
+      # WARN — meta-guard over this very file: a gh-gated job with no
+      # `permissions:` + `GH_TOKEN` goes red before it evaluates its own rule,
+      # which looks exactly like a real finding and quietly spends that guard's
+      # promotion window.
+      - name: workflow-auth — gh-gated jobs carry their auth block
+        id: workflow-auth
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+        run: pnpm lint:workflow-auth
 
-  # WARN on the CI plane — the always-on agent context (CLAUDE.md, AGENTS.md,
-  # .claude/rules/*.md) past its per-file budget, or the whole corpus past the
-  # aggregate cap. Wired by #157; no epic-7 task wired it, and wiring is what
-  # starts the §4 clock for this plane (earliest promotion 2026-09-02).
-  #
-  # Two planes, deliberately different severities for the same script: as a CLI
-  # guard it is BLOCK by exit code (canon §6.1, day-0 §3 class-1 mandate — a
-  # deterministic tree check), while the new CI job soaks as WARN like every
-  # other freshly wired job. It needs no `--severity block` flag (the pattern
-  # stage-b and spec-link follow): those two default to exit 0 on a finding and
-  # the flag buys them a real signal; this one has exited 1 since day 0, so the
-  # flag would be a no-op dial that could only ever weaken it.
-  #
-  # The MEMORY.md index lives outside git and is simply absent here — the guard
-  # skips what does not exist, so CI measures the repo files only.
-  instruction-budget:
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:instruction-budget
+      # WARN on the CI plane — the always-on agent context (CLAUDE.md, AGENTS.md,
+      # .claude/rules/*.md) past its per-file budget, or the whole corpus past the
+      # aggregate cap. Wired by #157; no epic-7 task wired it, and wiring is what
+      # starts the §4 clock for this plane (earliest promotion 2026-09-02).
+      #
+      # Two planes, deliberately different severities for the same script: as a
+      # CLI guard it is BLOCK by exit code (canon §6.1, day-0 §3 class-1 mandate —
+      # a deterministic tree check), while on the CI plane it soaks as WARN like
+      # every other freshly wired guard. It needs no `--severity block` flag (the
+      # pattern stage-b and spec-link follow): those two default to exit 0 on a
+      # finding and the flag buys them a real signal; this one has exited 1 since
+      # day 0, so the flag would be a no-op dial that could only ever weaken it.
+      #
+      # The MEMORY.md index lives outside git and is simply absent here — the
+      # guard skips what does not exist, so CI measures the repo files only.
+      - name: instruction-budget — always-on context size
+        id: instruction-budget
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+        run: pnpm lint:instruction-budget
 
-  # WARN — a test title that ATTEMPTS the EARS prefix and misspells it, so the
-  # `EARS-N` grep the spec canon promises silently misses it (#157, tranche 2).
-  ears-naming:
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:ears-naming
+      # WARN — a test title that ATTEMPTS the EARS prefix and misspells it, so the
+      # `EARS-N` grep the spec canon promises silently misses it (#157, tranche 2).
+      - name: ears-naming — misspelled EARS test prefix
+        id: ears-naming
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+        run: pnpm lint:ears-naming
 
-  # WARN — EARS clause ↔ test traceability, both directions: a declared clause
-  # with no test, and a test citing a clause no spec declares (#157, tranche 2).
-  ears-test:
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:ears-test
+      # WARN — EARS clause ↔ test traceability, both directions: a declared clause
+      # with no test, and a test citing a clause no spec declares (#157, tranche 2).
+      - name: ears-test — EARS clause ↔ test traceability
+        id: ears-test
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+        run: pnpm lint:ears-test
+
+      # A WARN step is green at the job level by construction, so without this the
+      # finding would exist only as a line buried in a collapsed step log. The §4
+      # promotion clock ("zero live findings in the window") is counted off these
+      # annotations, so they are part of the guard, not decoration. `always()` —
+      # the table must appear even when a BLOCK step above failed.
+      - name: WARN guard outcomes
+        if: always()
+        run: |
+          {
+            echo "### WARN guard outcomes"
+            echo
+            echo "| Guard | Outcome |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          row() {
+            echo "| \`$1\` | $2 |" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$2" != "success" ] && [ "$2" != "skipped" ]; then
+              echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."
+            fi
+            return 0
+          }
+          row tdd-signal "${{ steps.tdd-signal.outcome }}"
+          row no-stub "${{ steps.no-stub.outcome }}"
+          row workflow-auth "${{ steps.workflow-auth.outcome }}"
+          row instruction-budget "${{ steps.instruction-budget.outcome }}"
+          row ears-naming "${{ steps.ears-naming.outcome }}"
+          row ears-test "${{ steps.ears-test.outcome }}"
 
   # ─── Meta-job: the single aggregate status check ────────────────────────────
-  # The needs-list IS the BLOCK set (canon §2.1). WARN jobs are deliberately
-  # absent; PR-body guards live in pr-body-guards.yml and cannot be listed here
-  # at all (`needs` does not cross workflows — canon §2.1 says what to do when
-  # one of them is promoted).
+  # The needs-list IS the BLOCK set (canon §2.1). Since #205 it names the light
+  # guard BATCH rather than the individual BLOCK guards — the BLOCK/WARN split now
+  # lives on the steps inside that job. WARN guards are still deliberately unable
+  # to reach here; PR-body guards live in pr-body-guards.yml and cannot be listed
+  # here at all (`needs` does not cross workflows — canon §2.1 says what to do
+  # when one of them is promoted).
   #
   # The job name must stay literally `ci`: it is the context named in
   # .github/branch-protection.json, so renaming it silently unhooks the gate.
   ci:
-    needs: [lint-and-typecheck, guard-tests, guard-test-coverage]
+    needs: [lint-and-typecheck, guards]
     if: always()
     runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     steps:

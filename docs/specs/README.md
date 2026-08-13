@@ -144,7 +144,7 @@ pointer is not a second declaration.
 that the file exists, that its `status:` is a valid ladder value, and that it is
 not still `Draft`. **Severity: WARN**, registered in the guard register
 ([`docs/ci-guardrails.md`](../ci-guardrails.md) §5). In CI it runs as the
-`spec-link` job of `pr-body-guards.yml`, invoked with `--severity block` so the
+`spec-link` step of `pr-body-guards.yml`, invoked with `--severity block` so the
 script gives a real signal while `continue-on-error` keeps the plane at WARN;
 promotion to BLOCK follows the canon's §4 clauses (earliest 2026-09-02).
 

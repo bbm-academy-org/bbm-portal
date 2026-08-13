@@ -52,7 +52,7 @@
 //   LINT_GH_FIXTURE_DIR       serve `gh pr view` from canned JSON (lib/gh.mjs)
 //   PR_BODY / PR_NUMBER / GITHUB_EVENT_NAME   the usual PR-event wiring
 //
-// SEVERITY: WARN — docs/ci-guardrails.md §5, job in
+// SEVERITY: WARN — docs/ci-guardrails.md §5, a step of the batch job in
 // `.github/workflows/pr-body-guards.yml` with `continue-on-error: true`; the
 // script exits 1 on a finding (canon §4 clause 1 — a guard that prints and exits
 // 0 is a stub and is not promotable). Promotion per §4, earliest 2026-09-02.

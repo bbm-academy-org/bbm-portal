@@ -5,10 +5,25 @@
 # build matrix. Folding `edited` into ci.yml was rejected: the `ci` aggregate
 # treats a skipped need as red (see ci.yml), so a body-only edit would poison it.
 #
-# Severity: every job here is WARN (canon docs/ci-guardrails.md §2.1). `needs`
-# does not cross workflows, so a job in this file can never be in ci.yml's
+# Since #205 the six guards are STEPS of one batch job rather than a job each:
+# on the self-hosted pool the per-job checkout + `pnpm install` cost far more
+# than the guards themselves. The `edited` trigger and the concurrency block
+# below are unchanged and remain the reason this workflow stays separate.
+#
+# Severity: every guard here is WARN (canon docs/ci-guardrails.md §2.1). `needs`
+# does not cross workflows, so nothing in this file can ever be in ci.yml's
 # needs-list — promoting one to BLOCK needs the decision recorded in canon §2.1
 # (move it into ci.yml, or teach `pnpm pr:land` to demand its check-run by name).
+#
+# WARN is recorded TWICE here, and both are load-bearing. Each guard STEP carries
+# `continue-on-error: true` so a finding never fails the batch; the JOB carries it
+# too so that a failure in the shared setup (checkout, install) cannot turn this
+# WARN-only plane into a red check-run — `pnpm pr:land` classifies check-runs
+# structurally and cannot see step-level severity. Per-job wiring gave the setup
+# that protection for free; the batch has to state it. Each guard step also has an
+# `id:` and `if: ${{ !cancelled() }}` so one guard's finding does not hide the
+# next guard's, and the final step surfaces every WARN outcome as a `::warning::`
+# annotation plus a step-summary row (the §4 promotion clock is counted off them).
 #
 # Body reliability: each step passes `PR_BODY` from the event payload rather than
 # letting the guard read it back through `gh pr view`. The payload is always
@@ -16,7 +31,7 @@
 # creation has returned a stale or absent body — and a retry cannot fix that
 # class, because a stale read still succeeds.
 #
-# Auth: every job carries `permissions:` and every step `GH_TOKEN` + `PR_NUMBER`
+# Auth: the job carries `permissions:` and every step `GH_TOKEN` + `PR_NUMBER`
 # (the workflow-auth guard in ci.yml fails the build if one is missing).
 name: PR body guards
 
@@ -36,124 +51,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.
-  # Needs `issues: read` on top of the usual pair for the sub-issues endpoint.
-  epic-autoclose:
-    # A title-only edit changes no guard input — skip those runs entirely.
+  pr-body-guards:
+    # A title-only edit changes no guard input — skip those runs entirely. The
+    # fence stays at JOB level (canon §8): one skipped check-run passes the merge
+    # gate, where six skipped steps inside a green job would just burn a runner.
     if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
+    continue-on-error: true # WARN plane — canon §5; see the header for why job AND step
     runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
       pull-requests: read
+      # `issues: read` on top of the usual pair: epic-autoclose reads the
+      # sub-issues endpoint, and stage-b / spec-link read linked issues.
       issues: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:epic-autoclose
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-
-  # WARN — an open PR row with no assignee or no milestone cannot be triaged.
-  # It reads PR fields rather than the body, so it re-runs on a push
-  # (`synchronize`) rather than on the field edit itself; the fix is one line and
-  # the job is WARN, so a stale red is a nudge, not a barrier.
-  assignee-milestone:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:assignee-milestone
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-
-  # WARN — a UI diff with no recorded Stage-B verdict (guard from task 7.7/#138,
-  # wired here per the canon: the guard's lane deliberately did not touch this
-  # workflow). Invoked with `--severity block` ON PURPOSE: the canon's promotion
-  # clause 1 requires a REAL signal — a guard that prints and exits 0 is a stub
-  # and is not promotable — so the script exits non-zero on a violation while
-  # `continue-on-error` keeps the CI plane at WARN. Promotion is then one line.
-  stage-b:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:stage-b --severity block
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-
-  # WARN — a feature PR with no spec behind it (guard from task 7.4/#135). Reads
-  # the PR body AND each linked issue's `## Spec reference`, so it needs
-  # `issues: read` on top of the usual pair. Invoked with `--severity block` for
-  # the same reason as stage-b: the canon's promotion clause 1 requires a REAL
-  # signal, so the script exits non-zero on a finding while `continue-on-error`
-  # keeps the plane at WARN.
-  spec-link:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:spec-link --severity block
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-
-  # WARN — a deleted spec/ADR, plus the repo-wide spec status sweep that rides
-  # along in the same script (#157, tranche 2). It lives HERE rather than in
-  # ci.yml because the sanctioned escape is a `spec-deletion:` line in the PR
-  # body: a PR that adds the marker must be able to clear the check without
-  # re-running the build matrix, which is what this workflow's `edited` trigger
-  # is for. `fetch-depth: 0` is required — the deletion class diffs against
-  # `origin/main`, and the default shallow checkout has no such ref, which the
-  # guard would (correctly, canon §8) report as fail-closed rather than clean.
-  spec-deletion:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
+      # `fetch-depth: 0` is required by spec-deletion — the deletion class diffs
+      # against `origin/main`, and the default shallow checkout has no such ref,
+      # which the guard would (correctly, canon §8) report as fail-closed rather
+      # than clean. One checkout serves all six guards, so it is taken deep.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -162,31 +77,118 @@ jobs:
         with:
           node-version: 22
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:spec-deletion
+
+      # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.
+      - name: epic-autoclose — Closes on an epic with open sub-issues
+        id: epic-autoclose
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5
+        run: pnpm lint:epic-autoclose
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
-  # WARN — a user-visible change with no note the owner would read. Its promotion
-  # is tied to task 7.6 (#137, release-note delivery), not to the §4 clock: a
-  # note nothing delivers is not worth blocking a merge over.
-  product-note:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, promotion tied to #137
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:product-note
+      # WARN — an open PR row with no assignee or no milestone cannot be triaged.
+      # It reads PR fields rather than the body, so it re-runs on a push
+      # (`synchronize`) rather than on the field edit itself; the fix is one line
+      # and it is WARN, so a stale red is a nudge, not a barrier.
+      - name: assignee-milestone — an un-triageable PR row
+        id: assignee-milestone
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5
+        run: pnpm lint:assignee-milestone
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
+
+      # WARN — a UI diff with no recorded Stage-B verdict (guard from task
+      # 7.7/#138, wired here per the canon: the guard's lane deliberately did not
+      # touch this workflow). Invoked with `--severity block` ON PURPOSE: the
+      # canon's promotion clause 1 requires a REAL signal — a guard that prints
+      # and exits 0 is a stub and is not promotable — so the script exits non-zero
+      # on a violation while `continue-on-error` keeps the CI plane at WARN.
+      # Promotion is then still one line.
+      - name: stage-b — UI diff with no Stage-B verdict
+        id: stage-b
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5
+        run: pnpm lint:stage-b --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+      # WARN — a feature PR with no spec behind it (guard from task 7.4/#135).
+      # Reads the PR body AND each linked issue's `## Spec reference`, hence the
+      # job's `issues: read`. Invoked with `--severity block` for the same reason
+      # as stage-b: the canon's promotion clause 1 requires a REAL signal, so the
+      # script exits non-zero on a finding while `continue-on-error` keeps the
+      # plane at WARN.
+      - name: spec-link — a feature PR with no spec
+        id: spec-link
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5
+        run: pnpm lint:spec-link --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+      # WARN — a deleted spec/ADR, plus the repo-wide spec status sweep that rides
+      # along in the same script (#157, tranche 2). It lives HERE rather than in
+      # ci.yml because the sanctioned escape is a `spec-deletion:` line in the PR
+      # body: a PR that adds the marker must be able to clear the check without
+      # re-running the build matrix, which is what this workflow's `edited`
+      # trigger is for. Its `fetch-depth: 0` requirement is served by the shared
+      # checkout above.
+      - name: spec-deletion — deleted spec/ADR + spec status sweep
+        id: spec-deletion
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
+        run: pnpm lint:spec-deletion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+      # WARN — a user-visible change with no note the owner would read. Its
+      # promotion is tied to task 7.6 (#137, release-note delivery), not to the
+      # §4 clock: a note nothing delivers is not worth blocking a merge over.
+      - name: product-note — user-visible change with no note
+        id: product-note
+        if: ${{ !cancelled() }}
+        continue-on-error: true # WARN since 2026-08-05 — canon §5, promotion tied to #137
+        run: pnpm lint:product-note
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+      # Every guard here is WARN, so the job is green whatever they find and the
+      # findings would otherwise live only inside collapsed step logs. The §4
+      # promotion clock ("zero live findings in the window") is counted off these
+      # annotations, so surfacing them is part of the guard, not decoration.
+      - name: WARN guard outcomes
+        if: always()
+        run: |
+          {
+            echo "### WARN guard outcomes (PR body)"
+            echo
+            echo "| Guard | Outcome |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          row() {
+            echo "| \`$1\` | $2 |" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$2" != "success" ] && [ "$2" != "skipped" ]; then
+              echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."
+            fi
+            return 0
+          }
+          row epic-autoclose "${{ steps.epic-autoclose.outcome }}"
+          row assignee-milestone "${{ steps.assignee-milestone.outcome }}"
+          row stage-b "${{ steps.stage-b.outcome }}"
+          row spec-link "${{ steps.spec-link.outcome }}"
+          row spec-deletion "${{ steps.spec-deletion.outcome }}"
+          row product-note "${{ steps.product-note.outcome }}"
