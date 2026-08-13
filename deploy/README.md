@@ -37,6 +37,7 @@ All commands below run **from the `deploy/` directory on the host**.
    ```bash
    cp .env.prod.example .env.prod          # app + migrate
    # edit: PAYLOAD_SECRET (openssl rand -hex 32), DATABASE_URL,
+   #       PLATFORM_DATABASE_URL (same credentials, database `platform`),
    #       S3 keys (terraform output portal_media_*), SEED_ADMIN_*.
 
    cp .env.postgres.example .env.postgres  # postgres container only
@@ -48,7 +49,8 @@ All commands below run **from the `deploy/` directory on the host**.
    #       header value `users API-Key <key>` (see Preview service below).
    ```
 
-   `DATABASE_URL` host is the compose service name `postgres`, not localhost.
+   `DATABASE_URL` host is the compose service name `postgres`, not localhost —
+   and so is `PLATFORM_DATABASE_URL`'s (see _Platform database_ below).
 
 4. **The code on the host.** Org policy disables repo deploy keys, so the box
    has no `git` clone. Ship the committed tree as an archive from a workstation
@@ -163,6 +165,85 @@ hand only when `SEED_ADMIN_*` changed:
 cd deploy && docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
 ```
 
+## Platform database (`platform`, schema `core`) — #125
+
+The `postgres` container holds **two** databases from this task on: Payload's
+`cms`, and the platform's `platform` reached through a **second connection
+string**, `PLATFORM_DATABASE_URL` in `.env.prod`. Same container, same
+credentials, different database name — the Payload adapter is untouched.
+
+The decision and its alternatives:
+[**ADR-004**](../docs/adr/004-platform-persistence-foundation.md). The pipeline's
+commands and day-to-day handling:
+[`src/lib/platform/db/README.md`](../src/lib/platform/db/README.md). What follows
+here is only what is true at the **host** level.
+
+### One-time upgrade step on an EXISTING install — do this before the first deploy
+
+`deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
+deploy wipes `src/` and deliberately leaves `deploy/` alone), and **no deploy can
+add a line to it for you**. A box installed before this change therefore has no
+`PLATFORM_DATABASE_URL`, and the `migrate` service reads its environment from
+that file.
+
+```bash
+ssh portal-prod-tw
+cd ~/bbm-portal/deploy
+# same credentials and host as DATABASE_URL — only the database name differs
+grep '^DATABASE_URL=' .env.prod        # copy it, swap /cms for /platform
+echo 'PLATFORM_DATABASE_URL=postgres://payload:<the same password>@postgres:5432/platform' >> .env.prod
+```
+
+`pnpm deploy:prod` **checks this for you** before it touches anything: its first
+remote stage (`verifyRemoteEnv`) greps `.env.prod` for every variable the release
+needs and aborts with the remedy if one is missing — before the tree is shipped,
+before the checkpoint is taken, before anything migrates. Without that gate the
+same omission would surface much later and much worse: the stack stage runs under
+`bash -euo pipefail`, so the platform migration would abort _after_ the dump and
+Payload's migration and _before_ `up -d`.
+
+Three consequences at the host level:
+
+- **Nothing to provision inside Postgres by hand** (as distinct from the env line
+  above). `POSTGRES_DB` in `.env.postgres` still names `cms` only. The `platform`
+  database itself is created on first migrate by `pnpm platform:db:ensure` (which
+  `pnpm platform:migrate` runs first), so a fresh `pgdata` volume needs no
+  hand-run `psql` — the same pattern the dev Zitadel uses for its own `zitadel`
+  database.
+- **`pnpm deploy:prod` applies both pipelines** in its `deployStack` stage, and
+  prints both ledgers afterwards. That stage runs **after** `checkpoint`, so a
+  platform migration is protected by exactly the same fail-closed dump gate as a
+  Payload one.
+- **The checkpoint must cover BOTH databases.** See below.
+
+### Backups must cover both databases
+
+`pnpm deploy:prod`'s `checkpoint` stage does not dump anything itself: it runs
+`/home/deploy/portal-backup/backup-portal.sh` and then **pins every fresh dump
+that script left** under this deploy's own S3 key,
+`checkpoints/pre-migrate-<UTC>-<sha12>-<dump-filename>`. Retention is inherited
+from the nightly's recursive `rclone delete … --min-age 30d`, i.e. **30 days**;
+the stage never deletes anything itself.
+
+> **The pinned key gained a `-<dump-filename>` suffix** (it used to end
+> `-<sha12>.sql.gz`), because one deploy can now pin more than one dump. If the
+> ops repo's `restore-portal.sh` parses that key, `sidorovanthon/bbm#112` must
+> cover the new shape — confirm it there rather than assuming.
+
+The pin is a loop over `*.sql.gz`, not a single newest file, precisely so the
+second dump appears in the recovery point the moment the box starts producing it.
+Coverage is then reported **per database, matched on the dump's filename** — not
+by counting files, which any stray second dump would satisfy while `platform`
+stayed uncovered.
+**The box script currently dumps `cms` only.** Extending it to dump `platform`
+too — and the matching restore runbook — is owned by the **`bbm` ops repo**
+(`infra/portal/README.md`) and **tracked there** as `sidorovanthon/bbm#112`,
+which also covers the off-site backup of both databases. Until it lands, the
+checkpoint stage prints a
+named `WARNING` on every deploy saying how many dumps it pinned against how many
+databases it expects, so the gap is visible in the deploy log rather than
+discovered during a restore.
+
 ## Preview service (`preview.bbm.academy`, epic #13)
 
 The `preview` service is the Astro SSR live-preview origin: it renders a single
@@ -274,4 +355,5 @@ preview && docker compose -f docker-compose.prod.yml up -d preview`.
   — install and repair happen there, not here. What matters at the host level:
   `pgdata` is still a single named volume with no WAL archiving, so a snapshot is
   not PITR, and the backup writes into `deploy@`'s `$HOME`, not into `/var` (no
-  root on this box).
+  root on this box). Since #125 there are **two** databases to cover — see
+  _Platform database_ above.

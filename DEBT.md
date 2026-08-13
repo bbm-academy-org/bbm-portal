@@ -21,6 +21,26 @@ Entry format:
 
 <!-- entries below this line -->
 
+- [ ] 2026-08-11 spec §11 defers `audit-coverage` (a guard that every `core` table
+      carries its audit columns) to «эпик 1, при создании схемы и миграций» — #125
+      created the schema and the first migration, so the trigger fired, but the
+      migration creates `CREATE SCHEMA` and NOTHING else: there is not one table
+      for the guard to have an opinion about, and a guard written against zero
+      tables would be green by vacuum and unreviewable. Recorded rather than
+      built — return condition: the first product table lands in `core` (#124 or
+      the hours migration), which is also the first moment the guard's rule can
+      be stated concretely (PR #190 review major 7)
+
+- [ ] 2026-08-11 spec §11 defers `migration-index` (a generated index of
+      migrations with their purpose) to the same «при создании схемы и миграций»
+      trigger, fired by #125. Deferred for the same reason at a smaller scale —
+      the repo holds exactly ONE platform migration, and an index of one entry is
+      a file that only ever costs a review. `pnpm platform:migrate:status` already
+      answers the question the index exists for (what is applied, what is not,
+      what can never be) — return condition: the third platform migration, or the
+      first time a migration's purpose is not obvious from its tag (PR #190
+      review major 7)
+
 - [ ] 2026-08-11 `decideEscapeBlock` still calls a session isolated whenever its
       `cwd` matches the worktree pattern, so a session that OWNS the main
       checkout and merely `cd`-ed into `.claude/worktrees/<N>` is blocked from a
