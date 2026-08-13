@@ -15,15 +15,27 @@
 # needs-list — promoting one to BLOCK needs the decision recorded in canon §2.1
 # (move it into ci.yml, or teach `pnpm pr:land` to demand its check-run by name).
 #
-# WARN is recorded TWICE here, and both are load-bearing. Each guard STEP carries
-# `continue-on-error: true` so a finding never fails the batch; the JOB carries it
-# too so that a failure in the shared setup (checkout, install) cannot turn this
-# WARN-only plane into a red check-run — `pnpm pr:land` classifies check-runs
-# structurally and cannot see step-level severity. Per-job wiring gave the setup
-# that protection for free; the batch has to state it. Each guard step also has an
-# `id:` and `if: ${{ !cancelled() }}` so one guard's finding does not hide the
-# next guard's, and the final step surfaces every WARN outcome as a `::warning::`
-# annotation plus a step-summary row (the §4 promotion clock is counted off them).
+# WARN is recorded on the STEP, and ONLY on the step — that is the level that
+# actually keeps this workflow's check-run green. `continue-on-error: true` on a
+# JOB masks the failure in the workflow-RUN conclusion only; the job's own
+# check-run stays `failure`, and `pnpm pr:land` reads check-runs. Falsified
+# against this repo's own history in review of PR #206: runs 31461862024 and
+# 31457291073, whose six jobs each carried job-level `continue-on-error: true`,
+# both concluded `success` as runs while leaving `failure` check-runs on the head
+# sha. So the flag was moved to the steps and NOT kept on the job.
+#
+# The consequence, named rather than hidden: a failure of the shared checkout or
+# install DOES redden this job's check-run, and `pr:land` reads it as a block.
+# That is fail-closed plumbing, not a WARN-plane violation — a check that never
+# ran must not look clean — and it is what the per-guard jobs did before #205 too.
+#
+# Each guard step also has an `id:` and
+# `if: ${{ !cancelled() && steps.install.outcome == 'success' }}`: the first
+# clause keeps one guard's finding from hiding the next guard's, the second keeps
+# a broken install from fabricating six "findings" for rules nothing evaluated.
+# The final step surfaces every WARN outcome as a `::warning::` annotation plus a
+# step-summary row (the §4 promotion clock is counted off them) and reports a
+# skipped guard as «did not run» rather than as a finding.
 #
 # Body reliability: each step passes `PR_BODY` from the event payload rather than
 # letting the guard read it back through `gh pr view`. The payload is always
@@ -56,7 +68,10 @@ jobs:
     # fence stays at JOB level (canon §8): one skipped check-run passes the merge
     # gate, where six skipped steps inside a green job would just burn a runner.
     if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN plane — canon §5; see the header for why job AND step
+    # NO job-level `continue-on-error`: it would green only the workflow-run
+    # conclusion, never this job's check-run (see the header). WARN lives on the
+    # steps, which is what leaves this job — and therefore its check-run —
+    # `success` when a guard finds something.
     runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
     permissions:
       contents: read
@@ -76,12 +91,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: pnpm install --frozen-lockfile
+      - id: install
+        run: pnpm install --frozen-lockfile
 
       # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.
       - name: epic-autoclose — Closes on an epic with open sub-issues
         id: epic-autoclose
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5
         run: pnpm lint:epic-autoclose
         env:
@@ -95,7 +111,7 @@ jobs:
       # and it is WARN, so a stale red is a nudge, not a barrier.
       - name: assignee-milestone — an un-triageable PR row
         id: assignee-milestone
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5
         run: pnpm lint:assignee-milestone
         env:
@@ -112,7 +128,7 @@ jobs:
       # Promotion is then still one line.
       - name: stage-b — UI diff with no Stage-B verdict
         id: stage-b
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5
         run: pnpm lint:stage-b --severity block
         env:
@@ -128,7 +144,7 @@ jobs:
       # plane at WARN.
       - name: spec-link — a feature PR with no spec
         id: spec-link
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5
         run: pnpm lint:spec-link --severity block
         env:
@@ -145,7 +161,7 @@ jobs:
       # checkout above.
       - name: spec-deletion — deleted spec/ADR + spec status sweep
         id: spec-deletion
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
         run: pnpm lint:spec-deletion
         env:
@@ -158,7 +174,7 @@ jobs:
       # §4 clock: a note nothing delivers is not worth blocking a merge over.
       - name: product-note — user-visible change with no note
         id: product-note
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, promotion tied to #137
         run: pnpm lint:product-note
         env:
@@ -170,6 +186,8 @@ jobs:
       # findings would otherwise live only inside collapsed step logs. The §4
       # promotion clock ("zero live findings in the window") is counted off these
       # annotations, so surfacing them is part of the guard, not decoration.
+      # Plumbing, not a guard: no `continue-on-error` on purpose — a job whose
+      # findings report broke has not reported its findings (canon §2.1).
       - name: WARN guard outcomes
         if: always()
         run: |
@@ -179,11 +197,20 @@ jobs:
             echo "| Guard | Outcome |"
             echo "| --- | --- |"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.install.outcome }}" != "success" ]; then
+            echo "::notice title=Guards did not run::the shared \`pnpm install\` did not succeed, so no guard evaluated its rule. Nothing below is a finding, and none of it counts towards a §4 promotion window."
+          fi
           row() {
-            echo "| \`$1\` | $2 |" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$2" != "success" ] && [ "$2" != "skipped" ]; then
-              echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."
-            fi
+            case "$2" in
+              success) label="clean" ;;
+              skipped) label="did not run (setup failed)" ;;
+              cancelled) label="cancelled" ;;
+              *)
+                label="FINDING"
+                echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."
+                ;;
+            esac
+            echo "| \`$1\` | $label |" >> "$GITHUB_STEP_SUMMARY"
             return 0
           }
           row epic-autoclose "${{ steps.epic-autoclose.outcome }}"

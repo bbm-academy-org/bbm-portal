@@ -35,7 +35,7 @@ import {
  *
  * AC3 of #138: «a synthetic UI PR without the marker does not pass». That is the
  * `red: UI diff, no marker` case — verdict `violation`, and exit 1 whenever the
- * caller asks for a real signal (`--severity block`, which is how the CI job
+ * caller asks for a real signal (`--severity block`, which is how the CI step
  * invokes it — docs/ci-guardrails.md §5).
  */
 

@@ -120,7 +120,7 @@ Four guards read this document. All four are **WARN**, registered in
 conditions. They differ in how a finding reaches you: `lint:spec-deletion`,
 `lint:ears-test` and `lint:ears-naming` exit non-zero on one, while
 `lint:spec-link` exits **0** with a WARN line unless it is given
-`--severity block` — which is how its CI job invokes it. That dial is the
+`--severity block` — which is how its CI step invokes it. That dial is the
 mechanism [`.claude/rules/design-process.md`](../../.claude/rules/design-process.md)
 describes for `stage-b`; the register (§5) is where each guard's severity is
 recorded.

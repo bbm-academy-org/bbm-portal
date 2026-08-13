@@ -58,21 +58,51 @@ whose own severity is fixed by the needs-list:
   can never reach the aggregate — whichever job it sits in.
 
 The job-level reading is what the `undeclared-severity` check still reads (below), and it
-is what makes the `ci.yml` batch job BLOCK-capable at all. `pr-body-guards.yml`'s batch job
-carries `continue-on-error: true` at **both** levels on purpose: every guard in it is WARN,
-and the job-level line keeps a failure of the shared checkout/install from turning a
-WARN-only plane into a red check-run the merge gate reads structurally (next paragraph but
-one). Per-job wiring gave the setup that protection for free; a batch has to state it.
+is what makes the `ci.yml` batch job BLOCK-capable at all.
 
-Batching adds two obligations, both mechanical:
+**The step is the only level that greens a check-run — verified, not assumed.**
+`continue-on-error: true` on a **job** masks the failure in the **workflow-run**
+conclusion only; the job's own **check-run stays `failure`**, and `pnpm pr:land` reads
+check-runs. This was falsified against this repo's own history in review of PR #206: runs
+`31461862024` and `31457291073` of `pr-body-guards.yml`, whose six jobs each carried
+job-level `continue-on-error: true`, both concluded `success` as runs while leaving
+`failure` check-runs on the head SHA. The pre-#205 wiring therefore never gave WARN
+findings the protection it was believed to give — they have been showing red check-runs all
+along. What does work is the **step**-level flag: it leaves the _job_ conclusion `success`,
+and the job is the check-run. So the flag sits on the guard steps and on neither batch job.
+
+**Consequence, named rather than hidden.** A checkout or install failure in either batch
+job legitimately reddens that job's check-run, and `pr:land` reads it as a block. That is
+**fail-closed plumbing, not a WARN-plane violation** — a check that never ran must not look
+clean (the same principle as §2.3's exit 2 and §8's exit contract) — and it is exactly what
+the per-guard jobs did before #205.
+
+**The BLOCK/WARN reading is about GUARD steps.** A batch job also contains plumbing:
+`checkout`, `setup-node`, `pnpm install`, and the closing `WARN guard outcomes` step. By
+§2.1's letter those are BLOCK in `ci.yml` (plain steps in a needs-listed job), and that is
+the wanted reading, not an undeclared severity: a job whose setup or whose findings report
+broke has cleared nothing and reported nothing. They carry no `continue-on-error` on
+purpose.
+
+Batching adds three obligations, all mechanical:
 
 - **A WARN step must announce itself.** `continue-on-error` makes the step green at the job
   level, so a finding would otherwise live only inside a collapsed step log. Each batch job
   ends with an `if: always()` aggregation step that writes a WARN outcome table to
   `$GITHUB_STEP_SUMMARY` and emits one `::warning::` annotation per finding. §4's clean
   window is counted off those annotations — without them the promotion clock has no input.
-- **A BLOCK step must not silence the rest.** Every guard step carries
-  `if: ${{ !cancelled() }}`, so the guards after a failed one still run and still report.
+- **A BLOCK step must not silence the rest.** Every guard step carries `!cancelled()`, so
+  the guards after a failed one still run and still report.
+- **A guard that never ran is neither clean nor a finding.** The same fence carries
+  `steps.install.outcome == 'success'`. Without that clause a broken install lets every
+  guard step run, fail on the missing `node_modules`, and be annotated as a finding of a
+  rule it never evaluated — eight fabricated entries in `ci.yml`, six in
+  `pr-body-guards.yml`, fed straight into the clock §4 counts (review of PR #206). With it
+  the guard steps are `skipped`, and the aggregation step reports «did not run» plus one
+  `::notice::` for the whole job instead of a table of phantom findings.
+
+The full guard-step fence is therefore
+`if: ${{ !cancelled() && steps.install.outcome == 'success' }}`.
 
 The `ci` meta-job is the single aggregate status check. It runs `if: always()` and treats
 `failure`, `skipped` **and** `cancelled` in `needs.*.result` as red — a job that never ran
@@ -86,15 +116,23 @@ check-run by name — decide that at the promotion, do not leave it implied.
 
 **A WARN check-run can still be read as red by the merge gate.** `pnpm pr:land` classifies
 **every** check-run in the PR's rollup structurally — `SUCCESS`/`SKIPPED`/`NEUTRAL` pass,
-anything else counts as failed — and it sees neither job-level nor step-level
-`continue-on-error`. That is exactly why WARN lives on the step: a WARN finding must leave
-its batch job green, or the merge gate reads it as a block the canon says WARN never
-imposes. The `if:` no-op fence in `pr-body-guards.yml` is therefore safe
+anything else counts as failed — and it cannot see a `continue-on-error` at any level. That
+is exactly why WARN has to live on the step: only there does the flag keep the JOB's
+conclusion `success`, and the job is what becomes the check-run the gate reads. The `if:`
+no-op fence in `pr-body-guards.yml` is therefore safe
 (`SKIPPED` passes), but a **cancelled** run is not: `cancel-in-progress` on the WARN
 workflow would leave `CANCELLED` check-runs that block a merge the canon says WARN never
 blocks. That is why `pr-body-guards.yml` sets `cancel-in-progress: false` — the WARN
 workflow is cheap, and a superseded run finishing is preferable to a cancelled one being
 read as a verdict. Do not re-enable it without changing the gate first.
+
+That flag is only half the mechanism, though. GitHub also cancels a **pending** run when
+another pending run enters the same concurrency group, whatever `cancel-in-progress` says —
+observed on PR #206 itself, where two `PR body guards` runs completed as `cancelled` on a
+saturated pool. `cancel-in-progress: false` buys protection for a run that has already
+started, not immunity from cancellation. Those runs sit on superseded SHAs and stay out of
+the head rollup, so the gate is unaffected; do not read a `cancelled` run on an old SHA as
+a bug in this wiring.
 
 **`ci.yml` DOES cancel per PR, and the asymmetry is deliberate.** Its concurrency group is
 `ci-<PR number, or the ref on a push>` with `cancel-in-progress` gated on
@@ -197,12 +235,19 @@ Anything with a heuristic, a regex over human text, or an external API call soak
 For a PR-event-gated guard the window is counted over PR runs only. Greenness on `push`
 runs is vacuous — the guard skips on a non-PR event by design.
 
-**Promotion mechanics (CI guard):** delete the guard **step's** `continue-on-error` line,
-update that step's comment, and update this file's §5 row (new severity + the promotion
-date). Two edits, one PR, no other changes. Since #205 there is no `needs` edit to make:
-the `ci.yml` batch job is already in the needs-list, so dropping the step's fence is by
-itself what puts the guard in front of the aggregate. Do not add the promoted guard to the
-WARN outcome table — that table is the WARN set.
+**Promotion mechanics (CI guard):** four edits, one PR, no other changes.
+
+1. Delete the guard **step's** `continue-on-error` line.
+2. Update that step's comment.
+3. **Remove that guard's row from its job's `WARN guard outcomes` step.** Every WARN guard
+   is already in that table, so the edit is a removal, not an addition — leaving the row
+   makes a now-BLOCK guard annotate «WARN does not fail the build» about itself, and makes
+   the table, which §2.1 and §8 declare to be the WARN set, factually wrong (review of
+   PR #206).
+4. Update this file's §5 row (new severity + the promotion date).
+
+There is no `needs` edit: since #205 the `ci.yml` batch job is already in the needs-list,
+so dropping the step's fence is by itself what puts the guard in front of the aggregate.
 
 A guard in `pr-body-guards.yml` is the exception, and the same one as before batching: that
 workflow is out of the aggregate's reach, so promoting one of its steps means first taking
@@ -342,8 +387,10 @@ repo does **not** follow the source:
 
 ## 8. The guard contract — what a new guard must satisfy
 
-Everything here is checked by `guard-test-coverage` and `workflow-auth`, so a guard that
-follows it wires in with no rework, and one that does not goes red before review.
+Almost everything here is checked by `guard-test-coverage` and `workflow-auth`, so a guard
+that follows it wires in with no rework, and one that does not goes red before review. The
+one clause that is still convention rather than mechanism is named where it appears below,
+and is tracked in #207.
 
 **File layout**
 
@@ -413,9 +460,13 @@ asserts the exit code — the exit code **is** the severity, so it is tested, no
 
 - WARN: a **step** in the batch job of `ci.yml` (tree guards) or `pr-body-guards.yml`
   (PR-metadata guards). A new guard adds a step, never a job (#205). The step carries
-  `continue-on-error: true`, `if: ${{ !cancelled() }}`, an `id:`, and a matching row in
-  that job's closing `WARN guard outcomes` step — a WARN finding that is not annotated
-  there is invisible, and §4's clean window cannot be counted off it.
+  `continue-on-error: true`, `if: ${{ !cancelled() && steps.install.outcome == 'success' }}`,
+  an `id:`, and a matching row in that job's closing `WARN guard outcomes` step — a WARN
+  finding that is not annotated there is invisible, and §4's clean window cannot be counted
+  off it. **That last clause is convention, not yet mechanism:** nothing today detects a
+  WARN step with no row, so a forgotten row yields a silently vacuous promotion window.
+  Mechanising it is **#207**, folded into teaching `workflow-auth` step-level severity —
+  do not treat the row as enforced until then.
 - A step reaching GitHub needs `permissions: { contents: read, pull-requests: read }` on
   its **job** (plus `issues: read` if it reads issues) and `GH_TOKEN` + `PR_NUMBER` in the
   step's own `env`. `workflow-auth` enforces this. Both batch jobs already grant the

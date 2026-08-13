@@ -4,19 +4,25 @@
 #   BLOCK = a plain step (no `continue-on-error`) in a job that IS in the `ci`
 #           meta-job's needs-list — its failure fails the job and the aggregate;
 #   WARN  = a step carrying `continue-on-error: true` — it can never fail its job.
-# Promotion of a WARN guard to BLOCK is now ONE edit here (drop that step's
-# `continue-on-error`) plus the canon's §5 row: the batch job is already in the
-# needs-list, so there is no `needs` change to make.
+# Promotion of a WARN guard to BLOCK is four edits, enumerated in the canon's §4
+# — two of them here (drop that step's `continue-on-error`, drop its row from the
+# `WARN guard outcomes` step below), plus the step's comment and the canon's §5
+# row. There is no `needs` change to make: the batch job is already in the list.
 #
 # Why one job (#205): each guard used to own a job, and on the self-hosted pool
 # the per-job checkout + `pnpm install` cost far more than the guards themselves.
 # The batch installs once and runs the guards sequentially.
 #
-# Every guard step carries an `id:` and `if: ${{ !cancelled() }}` so a failed
-# BLOCK step does not hide the remaining guards' findings, and the final
-# aggregation step turns each WARN outcome into a `::warning::` annotation plus a
-# step-summary row. WARN findings must stay VISIBLE — the canon's §4 promotion
-# clock is counted off them, and `continue-on-error` alone would bury them.
+# Every guard step carries an `id:` and
+# `if: ${{ !cancelled() && steps.install.outcome == 'success' }}`. The first
+# clause keeps a failed BLOCK step from hiding the guards after it; the second
+# keeps a BROKEN INSTALL from fabricating findings — without it every guard would
+# run against a missing `node_modules`, fail, and be annotated as a finding of a
+# rule it never evaluated, poisoning the §4 clock this file just made
+# load-bearing (review of PR #206). The final aggregation step turns each WARN
+# outcome into a `::warning::` annotation plus a step-summary row, and reports a
+# skipped guard as «did not run» rather than as a finding. WARN findings must
+# stay VISIBLE — `continue-on-error` alone would bury them in a collapsed log.
 name: CI
 
 on:
@@ -104,13 +110,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: pnpm install --frozen-lockfile
+      - id: install
+        run: pnpm install --frozen-lockfile
 
       # BLOCK — the guards' own tests. A guard whose test tier is not blocking
       # can rot silently while still reporting green (canon §5).
       - name: guard-tests — the guards' own specs
         id: guard-tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test:guards
 
       # BLOCK from day 0 under the canon §3 class-1 mandate (deterministic tree
@@ -119,7 +126,7 @@ jobs:
       # get merged" mechanical rather than a convention.
       - name: guard-test-coverage — every guard has its spec
         id: guard-test-coverage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm lint:guard-test-coverage
 
       # WARN — production changed with no test in the diff and none in the tree.
@@ -127,7 +134,7 @@ jobs:
       # (workflow-auth enforces its presence, and the job's `permissions:`).
       - name: tdd-signal — production change with no test
         id: tdd-signal
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
         run: pnpm lint:tdd-signal
         env:
@@ -137,7 +144,7 @@ jobs:
       # WARN — dev placeholder / untracked stub marker on the render surface.
       - name: no-stub — placeholder on the render surface
         id: no-stub
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
         run: pnpm lint:no-stub
 
@@ -147,7 +154,7 @@ jobs:
       # promotion window.
       - name: workflow-auth — gh-gated jobs carry their auth block
         id: workflow-auth
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
         run: pnpm lint:workflow-auth
 
@@ -168,7 +175,7 @@ jobs:
       # guard skips what does not exist, so CI measures the repo files only.
       - name: instruction-budget — always-on context size
         id: instruction-budget
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
         run: pnpm lint:instruction-budget
 
@@ -176,7 +183,7 @@ jobs:
       # `EARS-N` grep the spec canon promises silently misses it (#157, tranche 2).
       - name: ears-naming — misspelled EARS test prefix
         id: ears-naming
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
         run: pnpm lint:ears-naming
 
@@ -184,7 +191,7 @@ jobs:
       # with no test, and a test citing a clause no spec declares (#157, tranche 2).
       - name: ears-test — EARS clause ↔ test traceability
         id: ears-test
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
         run: pnpm lint:ears-test
 
@@ -193,6 +200,17 @@ jobs:
       # promotion clock ("zero live findings in the window") is counted off these
       # annotations, so they are part of the guard, not decoration. `always()` —
       # the table must appear even when a BLOCK step above failed.
+      #
+      # This step is PLUMBING of the batch job, not a guard, and deliberately
+      # carries no `continue-on-error`: by §2.1's letter that makes it BLOCK, and
+      # that is the wanted reading — a job whose findings report broke has not
+      # reported its findings, and must not look clean (canon §2.1, "the
+      # BLOCK/WARN reading is about guard steps").
+      #
+      # It reports three distinct states, because a guard that NEVER RAN is not a
+      # clean guard and is not a finding either: `skipped` means the shared
+      # install failed above, and counting that as a finding is exactly the
+      # fabricated-red class §4 forbids (review of PR #206).
       - name: WARN guard outcomes
         if: always()
         run: |
@@ -202,11 +220,20 @@ jobs:
             echo "| Guard | Outcome |"
             echo "| --- | --- |"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.install.outcome }}" != "success" ]; then
+            echo "::notice title=Guards did not run::the shared \`pnpm install\` did not succeed, so no guard evaluated its rule. Nothing below is a finding, and none of it counts towards a §4 promotion window."
+          fi
           row() {
-            echo "| \`$1\` | $2 |" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$2" != "success" ] && [ "$2" != "skipped" ]; then
-              echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."
-            fi
+            case "$2" in
+              success) label="clean" ;;
+              skipped) label="did not run (setup failed)" ;;
+              cancelled) label="cancelled" ;;
+              *)
+                label="FINDING"
+                echo "::warning title=WARN guard: $1::$1 reported a finding (outcome: $2). WARN does not fail the build — canon docs/ci-guardrails.md §2.1 — but the §4 promotion clock counts it. Open the step's log."
+                ;;
+            esac
+            echo "| \`$1\` | $label |" >> "$GITHUB_STEP_SUMMARY"
             return 0
           }
           row tdd-signal "${{ steps.tdd-signal.outcome }}"

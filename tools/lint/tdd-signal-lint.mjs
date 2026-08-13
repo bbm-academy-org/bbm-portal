@@ -146,8 +146,8 @@ async function main() {
   out.fail(
     `${untested.length} production file(s) changed with no test in the diff and no test in the tree. ` +
       'task-cycle stage 3: no production module code without a failing test first. If this is ' +
-      'genuinely test-exempt (pure types, config, generated), the WARN can be left — the job is ' +
-      'continue-on-error. Canon: docs/ci-guardrails.md §5.',
+      'genuinely test-exempt (pure types, config, generated), the WARN can be left — this ' +
+      "guard's CI step is continue-on-error. Canon: docs/ci-guardrails.md §5.",
   )
 }
 

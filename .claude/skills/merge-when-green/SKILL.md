@@ -77,12 +77,17 @@ downstream of anything.
   needs-listed `guards` batch job, plus the `pr-body-guards.yml` batch job
   sitting outside the needs-list (§2.1 owns the mechanics). **But note what the
   gate actually reads:** it evaluates _every_ check-run in the rollup, WARN ones
-  included, and it cannot see which job or step carries `continue-on-error` —
+  included, and it cannot see a `continue-on-error` at any level —
   `SUCCESS`/`SKIPPED`/`NEUTRAL` pass, anything else counts as failed. A WARN
-  finding still reports success (that is what `continue-on-error` does at either
-  level), but a **cancelled** WARN run reads as red. That
-  is why `pr-body-guards.yml` does not cancel in-progress runs; a gate red on a
-  WARN guard's check-run is that bug, not a merge decision.
+  finding still reports success, but only because the flag is on the **step**:
+  step-level `continue-on-error` keeps the job — and therefore its check-run —
+  green, while job-level only greens the workflow-run conclusion and leaves the
+  check-run `failure` (falsified against this repo's own runs in review of PR
+  #206; mechanics in §2.1). A **cancelled** WARN run reads as red, which is why
+  `pr-body-guards.yml` does not cancel in-progress runs; a gate red on a WARN
+  guard's check-run is that bug, not a merge decision. A red batch job whose
+  guards never ran (broken checkout/install) is neither — that is fail-closed
+  plumbing, and the fix is to fix the setup.
 - **The review verdict**, freshly: a `VERDICT: APPROVE` line in a PR comment,
   dated after the PR's last commit. An approval given before the last commit
   approved different code. `--require-review` narrows this to a human APPROVE;
