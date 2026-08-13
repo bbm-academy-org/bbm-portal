@@ -72,12 +72,15 @@ downstream of anything.
 - **CI**, structurally: every check-run's `status`/`conclusion` fields, never a
   match on the job's name — a renamed job would otherwise read as a false green.
   Zero registered runs is _pending_, not green. The aggregate to look for is the
-  `ci` meta-job (`docs/ci-guardrails.md` §2.1); the WARN guards are deliberately
-  not part of it. **But note what the gate actually reads:** it evaluates _every_
-  check-run in the rollup, WARN ones included, and it cannot see which job
-  carries `continue-on-error` — `SUCCESS`/`SKIPPED`/`NEUTRAL` pass, anything else
-  counts as failed. A WARN job whose guard fails still reports success (that is
-  what `continue-on-error` does), but a **cancelled** WARN run reads as red. That
+  `ci` meta-job (`docs/ci-guardrails.md` §2.1); WARN severity is kept out of it
+  by mechanism — since #205, step-level `continue-on-error` inside the
+  needs-listed `guards` batch job, plus the `pr-body-guards.yml` batch job
+  sitting outside the needs-list (§2.1 owns the mechanics). **But note what the
+  gate actually reads:** it evaluates _every_ check-run in the rollup, WARN ones
+  included, and it cannot see which job or step carries `continue-on-error` —
+  `SUCCESS`/`SKIPPED`/`NEUTRAL` pass, anything else counts as failed. A WARN
+  finding still reports success (that is what `continue-on-error` does at either
+  level), but a **cancelled** WARN run reads as red. That
   is why `pr-body-guards.yml` does not cancel in-progress runs; a gate red on a
   WARN guard's check-run is that bug, not a merge decision.
 - **The review verdict**, freshly: a `VERDICT: APPROVE` line in a PR comment,
