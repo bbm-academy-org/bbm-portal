@@ -148,6 +148,8 @@ Entry format:
       ones, and nothing detects it. The guard reads jobs only, so it also cannot
       see step-level severity at all — the check to add is "a needs-listed job
       must not be `continue-on-error`", which covers both shapes.
+      **Promoted to issue #207** (task-canon §6: merge-gate integrity risk after
+      the blast-radius growth); this line closes when #207's PR lands.
 - [ ] 2026-08-05 `tools/lint/tdd-signal-lint.mjs`: substring path matching — a
       spec that merely MENTIONS a module path counts as covering it (nothing
       masked today; anchor needles to import statements like

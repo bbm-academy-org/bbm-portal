@@ -62,8 +62,10 @@ exists in the PR body or in a linked-issue comment.
 **Severity: WARN**, recorded in the guard register
 ([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5). Mind the two different
 WARNs: run locally the guard reports the violation and exits 0, while in the canon WARN
-means `continue-on-error` on the CI job. The CI wiring (#136) uses both deliberately —
-the `stage-b` job passes `--severity block` so the script gives a real signal, and carries
-`continue-on-error: true` so the plane stays WARN. Promotion to BLOCK follows the canon's
-§4 clauses (earliest 2026-09-02) and is a one-line workflow change. A guard **error** (the PR cannot be read at all) is not a
+means `continue-on-error` on the CI plane. The CI wiring (#136, batched by #205) uses both
+deliberately — the `stage-b` step in `pr-body-guards.yml`'s batch job passes
+`--severity block` so the script gives a real signal, while step-level
+`continue-on-error: true` keeps the plane WARN. Promotion to BLOCK follows the canon's
+§4 clauses (earliest 2026-09-02); the mechanics and the cross-workflow decision it needs
+live in [`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §2.1/§4. A guard **error** (the PR cannot be read at all) is not a
 violation and always exits non-zero: a check that never ran must not look clean.
