@@ -96,6 +96,18 @@ blocks. That is why `pr-body-guards.yml` sets `cancel-in-progress: false` — th
 workflow is cheap, and a superseded run finishing is preferable to a cancelled one being
 read as a verdict. Do not re-enable it without changing the gate first.
 
+**`ci.yml` DOES cancel per PR, and the asymmetry is deliberate.** Its concurrency group is
+`ci-<PR number, or the ref on a push>` with `cancel-in-progress` gated on
+`github.event_name == 'pull_request'`, so a new commit cancels that PR's superseded run
+while a `main` push is never cancelled. The two workflows are cancelled at different
+moments, which is the whole difference: a cancellation in `ci.yml` is always caused by a
+new commit, so the `CANCELLED` check-runs land on the SUPERSEDED sha — and nothing reads a
+stale sha's checks (the `ci` aggregate judges only its own run, and `pnpm pr:land` reads
+the rollup of the CURRENT head, turning red anyway if head moved while it waited). The
+paragraph above is about `CANCELLED` check-runs on a STILL-CURRENT head, which is what
+cancelling the WARN workflow would produce, since that one also re-runs on a body `edited`
+with no new commit.
+
 **A job that is neither is a bug, and is checked.** This one stayed at job level after
 #205, because it is the level at which a job can be orphaned. A `ci.yml` job with no
 `continue-on-error` that is also absent from the needs-list would look blocking on the PR

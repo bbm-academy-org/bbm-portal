@@ -24,6 +24,22 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  # A new push to a PR cancels that PR's superseded run; a `main` push is NEVER
+  # cancelled (the group falls back to `github.ref` there and the flag evaluates
+  # to false). This is safe here while `pr-body-guards.yml` deliberately keeps
+  # `cancel-in-progress: false`, because the two workflows would be cancelled at
+  # different moments. A cancellation HERE is always caused by a new commit, so
+  # the CANCELLED check-runs land on the SUPERSEDED sha — and nothing reads a
+  # stale sha's checks: the `ci` aggregate judges only its own run, and
+  # `pnpm pr:land` reads the rollup of the CURRENT head (and turns red anyway if
+  # head moved while it waited). The canon §2.1 concern is CANCELLED check-runs
+  # sitting on a STILL-CURRENT head — which is exactly what cancelling the WARN
+  # workflow would produce, since it also re-runs on a body `edited` with no new
+  # commit. Same flag, two different blast radii.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # BLOCK — the repo's original gate, unchanged. The only heavy job: it carries
   # `next build` (plus the unit tier), which does not fit the 1.5 GiB light lane.
