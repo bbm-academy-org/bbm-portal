@@ -50,7 +50,7 @@ jobs:
     # Delivery lane: this workflow is reachable from push/deployment_status/
     # workflow_dispatch only, never `pull_request` — that separation is what
     # keeps MATTERMOST_RELEASE_WEBHOOK_URL out of reach of a fork PR, and it
-    # matters more now that the repo is heading for public visibility (#214).
+    # matters more now that the repo is public (#214) — anyone can open one.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
