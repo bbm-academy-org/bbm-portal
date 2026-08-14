@@ -99,10 +99,25 @@ All commands below run **from the `deploy/` directory on the host**.
      `~/.ssh/authorized_keys` on the box. The private half never leaves the
      machine that made it, and no existing operator has to surrender theirs.
 
-   Verify with `ssh portal-prod-tw docker ps`. If `ssh portal-prod-tw` fails to
-   resolve on a machine that used to work, that block has gone missing from
-   `~/.ssh/config` (the key and the `known_hosts` entry persist) — restore it
-   from `~/.bbm-portal/prod-access.md`. Don't conclude "no access" and escalate.
+   Verify with `ssh portal-prod-tw docker ps`. If `ssh portal-prod-tw` stops
+   resolving on a machine that used to work, that block has gone missing from
+   `~/.ssh/config` (the key and the `known_hosts` entry normally persist). Two
+   cases, and this runbook cannot tell them apart for you:
+
+   - **This machine has `~/.bbm-portal/prod-access.md`** — rewrite the stanza
+     from it and you are done.
+   - **It does not** (a fresh machine, or the record was never written here) —
+     the values are **not** recoverable from this repository. Get them from the
+     owner out of band, and write the record down while you have it.
+
+   Either way, don't conclude "no access" and escalate.
+
+   **Where that record lives durably.** `~/.bbm-portal/prod-access.md` is a
+   per-machine working copy, not an archive — one laptop's disk is no place for
+   the only copy of the coordinates. Their durable home is the private **`bbm`
+   ops repo**, the same repo that owns `infra/portal/README.md` and
+   `restore-portal.sh` (see _Backups_ below); the per-machine file is a
+   convenience copy of what is recorded there.
 
 > **Node version:** the image bakes Node 22 (`Dockerfile`), so the Payload
 > migrate tsx-loader gotcha that bites Node 23/24 on the dev host does **not**
