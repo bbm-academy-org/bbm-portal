@@ -45,9 +45,12 @@ permissions:
 
 jobs:
   deliver:
-    # `notify` policy lane: deployment_status/workflow_dispatch/push only,
-    # never pull_request — see the manager policy for this repo (#202).
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, notify, ci]
+    # Delivery lane: this workflow is reachable from push/deployment_status/
+    # workflow_dispatch only, never `pull_request` — that separation is what
+    # keeps MATTERMOST_RELEASE_WEBHOOK_URL out of reach of a fork PR, and it
+    # matters more now that the repo is heading for public visibility (#214).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

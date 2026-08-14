@@ -51,12 +51,14 @@ jobs:
       ( github.event.deployment_status.state == 'success' &&
         github.event.deployment.environment == 'production' &&
         github.event.deployment.task == 'deploy' )
-    # `notify` is the pool's dedicated notification lane (#202): its manager
-    # policy trusts deployment_status/workflow_dispatch/push only — never
-    # pull_request — which is what lets a secret-bearing workflow run on the
-    # shared pool at all (REPOSITORY-ONBOARDING «Least-privilege notification
-    # webhook»).
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, notify, ci]
+    # The trigger set above (deployment_status/workflow_dispatch, never
+    # pull_request) is the whole containment story for the one real secret this
+    # repo has: a fork PR cannot reach a workflow it cannot trigger. That was
+    # the pool's manager policy (#202); with the pool gone it is now a property
+    # of this file alone, so the trigger list is load-bearing — widening it to
+    # `pull_request` would hand MATTERMOST_RELEASE_WEBHOOK_URL to any forker.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
