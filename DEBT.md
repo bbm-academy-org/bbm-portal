@@ -227,6 +227,25 @@ Entry format:
       или ближайшая правка `prepare`. Всплыло при работе над #214, чинится в
       worktree-тулинге (#90)
 
+- [ ] 2026-08-14 `.github/branch-protection.json` and the live protection on `main`
+      drift independently: editing the file does not touch the branch, and editing
+      the protection in the GitHub UI does not touch the file. Nothing detects the
+      divergence — a guard could diff the payload against
+      `GET …/branches/main/protection` on every PR. Low stakes while both are
+      changed by hand in the same motion, which is what #216 did. Return condition:
+      the first time the two are found out of sync, or the next edit to either
+      (#216)
+
+- [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
+      branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
+      `refs/remotes/origin/docs/ci-guardrails.md`, not found, and reported `STALE`.
+      A false STALE is worse than no row — the gate the verifier feeds tells the
+      session to reconcile a premise that was never wrong, and a reader who learns
+      the rows can be wrong stops trusting the real ones. Fix: reject candidates
+      carrying a file extension, or test `git cat-file -e HEAD:<path>` before the
+      ref lookup. Return condition: the next false STALE, or the next edit to the
+      verifier (#150)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_

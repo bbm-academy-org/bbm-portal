@@ -78,20 +78,40 @@ read as a verdict. Do not re-enable it without changing the gate first.
 rather than reviewed. The `ci` aggregate itself is the one exemption — it cannot be in its
 own needs-list.
 
-**Branch-protection limitation (raised 2026-08-05, blocker removed 2026-08-14).**
-`.github/branch-protection.json` is a declarative payload, not live state. Until
-2026-08-14 it could not become live at all: on GitHub Free a **private** repo answers
-`403 Upgrade to GitHub Pro or make this repository public` to
-`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection`. The repo went
-public that day (#214), which satisfies that error's own escape clause — the API now
-answers `404 Branch not protected`, i.e. "allowed, just not applied yet".
+**Branch protection — live since 2026-08-14 (#216).** `.github/branch-protection.json` is
+a declarative payload; `main` now carries it as server-side protection. The table below
+is what the API returns when the protection is **read back**, which is how it was
+verified — a `PUT` exiting 0 is not evidence that the branch ended up in the intended
+state.
 
-So the limitation is now a **gap, not a constraint**: `main` is still unprotected and
-**BLOCK is still enforced by the merge tooling rather than by the server** — a red `ci`
-check makes `pnpm pr:land` refuse to merge (task-canon §7), and that remains the whole
-barrier — but nothing external prevents closing it. Applying the payload is tracked as
-#216; it stays a single `gh api --method PUT … --input .github/branch-protection.json`,
-and its `required_status_checks.contexts` is kept correct for exactly that moment.
+| Setting                                  | Live value                                           | What it actually buys                                                                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `required_status_checks.contexts`        | `["ci"]`, bound to app `github-actions` (id `15368`) | the `ci` meta-job of `ci.yml` is the single required check — which is the reason that job's name may never change (the file says so at the job itself)            |
+| `required_status_checks.strict`          | `true`                                               | a PR must be up to date with `main` to merge. `pnpm pr:land` already refuses on `mergeStateStatus=BEHIND`, so the gate reports it instead of failing at the merge |
+| `enforce_admins`                         | `true`                                               | the rules bind the repo's only admin too; without it the floor is advisory and the one account that can bypass it is the one that opens every PR                  |
+| `required_linear_history`                | `true`                                               | squash-merge only — which is exactly what `pnpm pr:land` performs                                                                                                 |
+| `allow_force_pushes` / `allow_deletions` | `false`                                              | `main` cannot be rewritten or deleted                                                                                                                             |
+| `required_conversation_resolution`       | `true`                                               | unresolved review threads block a merge. The reviewer subagent posts a plain PR comment rather than review threads, so the normal review path is unaffected       |
+| `required_pull_request_reviews`          | absent                                               | deliberate, not an omission — task-canon §7: the only human with permissions is the PR author and cannot APPROVE his own PR                                       |
+
+**Why the gap existed.** Until 2026-08-14 the payload could not become live at all: on
+GitHub Free a **private** repo answers `403 Upgrade to GitHub Pro or make this repository
+public` to `GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection`. The repo
+went public that day (#214), satisfying that error's own escape clause, and #216 applied
+the payload the same day. In between, the state was a gap rather than a constraint.
+
+**BLOCK now has two enforcers, and they are not the same plane.** The server refuses a
+merge whose `ci` check is not green. `pnpm pr:land` refuses for that reason **and** for a
+missing `VERDICT: APPROVE` comment newer than the last commit (task-canon §7) — a rule
+the server knows nothing about. WARN guards stay invisible to the server either way: they
+are absent from the `ci` needs-list, so promoting one to BLOCK remains the three-edit
+change described above and needs no protection change, because the required context is
+`ci` in both cases.
+
+**The file and the branch drift independently.** Editing `branch-protection.json` does not
+touch `main`, and editing the protection through the GitHub UI does not touch the file.
+After changing either, re-apply and read back. Nothing reconciles them automatically
+today — recorded in `DEBT.md`.
 
 ### 2.1.1 Secret-bearing workflows and PR events
 
