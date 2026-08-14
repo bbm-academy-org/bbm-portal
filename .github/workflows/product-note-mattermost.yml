@@ -5,14 +5,17 @@ name: Product note → Mattermost
 # of truth is the PR body, rendered by tools/ci/post-product-note.mjs.
 #
 # Trigger (#202): `push` to main, NOT `pull_request: closed`. A workflow that
-# carries a long-lived secret must never be reachable from a PR event — that was
-# enforced twice over while this repo ran on the shared BBM runner pool (a
-# manager policy on top of this trigger list), and since #214 took the pool away
-# the trigger list is the ONLY thing enforcing it. Widening it to `pull_request`
-# would hand MATTERMOST_RELEASE_WEBHOOK_URL to any fork. A merge into main IS a
-# push of the squash/merge commit, so the merged PR is recovered from the pushed
-# sha via `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct push that
-# belongs to no merged PR delivers nothing and skips green.
+# carries a long-lived secret must never be reachable from a PR event — enforced
+# twice over while this repo ran on the shared BBM runner pool (a manager policy
+# on top of this trigger list); since #214 took the pool away, this list is the
+# only enforcement left. The mechanism is NOT "a fork would read the secret":
+# GitHub withholds secrets from a fork's `pull_request` run by itself. What
+# would actually break containment is `pull_request_target` (base-repo context,
+# secrets present, fork-controlled code) or a `pull_request` from a same-repo
+# branch, which does receive secrets. A merge into main IS a push of the
+# squash/merge commit, so the merged PR is recovered from the pushed sha via
+# `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct push that belongs to
+# no merged PR delivers nothing and skips green.
 #
 # Secret-optional by design: the job is not blocked on the webhook being
 # provisioned — with MATTERMOST_RELEASE_WEBHOOK_URL unset the script logs and
@@ -47,10 +50,10 @@ permissions:
 
 jobs:
   deliver:
-    # Delivery lane: this workflow is reachable from `push` alone (see the `on:`
-    # block above), never `pull_request` — that separation is what keeps
-    # MATTERMOST_RELEASE_WEBHOOK_URL out of reach of a fork PR, and it matters
-    # more now that the repo is public (#214) — anyone can open one.
+    # Delivery lane: reachable from `push` alone (see the `on:` block above),
+    # never a PR event. Why that matters, precisely, is in the file header —
+    # the hazard is `pull_request_target` and same-repo `pull_request`, not a
+    # fork, which GitHub already denies secrets.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

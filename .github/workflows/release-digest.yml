@@ -51,12 +51,19 @@ jobs:
       ( github.event.deployment_status.state == 'success' &&
         github.event.deployment.environment == 'production' &&
         github.event.deployment.task == 'deploy' )
-    # The trigger set above (deployment_status/workflow_dispatch, never
-    # pull_request) is the whole containment story for the one real secret this
-    # repo has: a fork PR cannot reach a workflow it cannot trigger. That was
-    # the pool's manager policy (#202); with the pool gone it is now a property
-    # of this file alone, so the trigger list is load-bearing — widening it to
-    # `pull_request` would hand MATTERMOST_RELEASE_WEBHOOK_URL to any forker.
+    # The trigger set above (deployment_status/workflow_dispatch, never any PR
+    # event) is the containment story for the one real secret this repo has.
+    # Two layers used to enforce it — the pool's manager policy (#202) and this
+    # list; since #214 removed the pool, this list is the only one left.
+    #
+    # Be precise about the mechanism, because the obvious reading is wrong:
+    # GitHub already withholds secrets from a **fork's** `pull_request` run, so
+    # a forker does not get MATTERMOST_RELEASE_WEBHOOK_URL even if a PR event
+    # were added here. The two real hazards are `pull_request_target`, which
+    # runs in the BASE repo's context WITH secrets while checking out
+    # fork-controlled code, and a plain `pull_request` from a same-repo branch,
+    # which does receive secrets. So: never `pull_request_target` anywhere in
+    # this repo, and no PR event on a job that carries this secret.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

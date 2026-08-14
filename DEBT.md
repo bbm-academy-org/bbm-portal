@@ -224,7 +224,8 @@ Entry format:
       сообщил его владельцу. Лечится проверкой на worktree перед вызовом
       `simple-git-hooks` в `prepare` — return condition: первый случай, когда
       сессия из-за этого сообщения пропустит проверки «раз хука всё равно нет»,
-      или ближайшая правка `prepare` (#214)
+      или ближайшая правка `prepare`. Всплыло при работе над #214, чинится в
+      worktree-тулинге (#90)
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
