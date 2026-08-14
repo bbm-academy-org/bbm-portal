@@ -83,27 +83,49 @@ describe('Codex hook payload compatibility', () => {
     ).toEqual({ block: false, inWorktreeSession: true })
   })
 
-  it('normalizes spawn_agent into the existing Agent model contract', () => {
+  it('normalizes full-history spawn_agent calls to the inherited-model fork exemption', () => {
+    for (const forkTurns of [undefined, 'all']) {
+      const inherited = normalizeHookPayload({
+        tool_name: 'spawn_agent',
+        tool_input: {
+          task_name: 'review',
+          message: 'Review the change.',
+          ...(forkTurns ? { fork_turns: forkTurns } : {}),
+        },
+      })
+      expect(inherited.tool_name).toBe('Agent')
+      expect(inherited.tool_input).toMatchObject({
+        subagent_type: 'fork',
+        prompt: 'Review the change.',
+      })
+      expect(
+        decideAgentModel({ toolName: inherited.tool_name, toolInput: inherited.tool_input }).block,
+      ).toBe(false)
+    }
+  })
+
+  it('requires an explicit model only for non-full-history spawn_agent calls', () => {
+    const explicit = normalizeHookPayload({
+      tool_name: 'spawn_agent',
+      tool_input: {
+        task_name: 'review',
+        message: 'Review the change.',
+        fork_turns: 'none',
+        model: 'gpt-5.6-sol',
+      },
+    })
+    expect(explicit.tool_input.subagent_type).toBe('review')
+    expect(
+      decideAgentModel({ toolName: explicit.tool_name, toolInput: explicit.tool_input }).block,
+    ).toBe(false)
+
     const missing = normalizeHookPayload({
       tool_name: 'spawn_agent',
-      tool_input: { task_name: 'review', message: 'Review the change.' },
-    })
-    expect(missing.tool_name).toBe('Agent')
-    expect(missing.tool_input).toMatchObject({
-      subagent_type: 'review',
-      prompt: 'Review the change.',
+      tool_input: { task_name: 'review', message: 'Review the change.', fork_turns: '3' },
     })
     expect(
       decideAgentModel({ toolName: missing.tool_name, toolInput: missing.tool_input }).block,
     ).toBe(true)
-
-    const explicit = normalizeHookPayload({
-      tool_name: 'spawn_agent',
-      tool_input: { task_name: 'review', message: 'Review the change.', model: 'gpt-5.6-sol' },
-    })
-    expect(
-      decideAgentModel({ toolName: explicit.tool_name, toolInput: explicit.tool_input }).block,
-    ).toBe(false)
   })
 
   it('normalizes Codex shell calls while keeping read-only classification fail-open', () => {
@@ -370,5 +392,38 @@ describe('repository-local Codex hooks', () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('')
     expect(result.stderr).toBe('')
+  })
+
+  it('routes spawn_agent through the configured model guard with valid Codex semantics', () => {
+    const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
+    const group = hooks.hooks.PreToolUse.find(
+      (candidate: { matcher?: string }) => candidate.matcher === 'Agent|Task',
+    )
+    expect(group.hooks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ command: expect.stringContaining('agent-model-guard.mjs') }),
+      ]),
+    )
+
+    const run = (tool_input: Record<string, unknown>) =>
+      spawnSync(process.execPath, ['tools/hooks/agent-model-guard.mjs'], {
+        cwd: repoRoot,
+        input: JSON.stringify({
+          hook_event_name: 'PreToolUse',
+          tool_name: 'spawn_agent',
+          tool_input,
+        }),
+        encoding: 'utf8',
+      })
+
+    expect(run({ task_name: 'review', message: 'Review.' }).status).toBe(0)
+    expect(
+      run({
+        task_name: 'review',
+        message: 'Review.',
+        fork_turns: 'none',
+        model: 'gpt-5.6-sol',
+      }).status,
+    ).toBe(0)
   })
 })

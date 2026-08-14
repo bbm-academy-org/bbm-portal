@@ -231,11 +231,15 @@ export function normalizeHookPayload(payload) {
       file_paths: filePaths,
     }
   } else if (toolName === 'spawn_agent') {
+    const forkTurns = sourceInput.fork_turns
+    const fullHistory = forkTurns == null || String(forkTurns).toLowerCase() === 'all'
     normalizedName = 'Agent'
     toolInput = {
       ...sourceInput,
       prompt: sourceInput.prompt || sourceInput.message || '',
-      subagent_type: sourceInput.subagent_type || sourceInput.task_name || '',
+      subagent_type: fullHistory
+        ? 'fork'
+        : sourceInput.subagent_type || sourceInput.task_name || '',
     }
   } else if (['shell_command', 'exec_command', 'shell'].includes(toolName)) {
     normalizedName = 'Bash'

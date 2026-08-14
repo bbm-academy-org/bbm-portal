@@ -42,4 +42,41 @@ describe('generated Codex skills bridge', () => {
 
     expect(() => ensureSkillsBridge(root)).toThrow(/refusing to replace/i)
   })
+
+  it('rejects a case-only different target on a case-sensitive filesystem', () => {
+    const { root } = fixture()
+    ensureSkillsBridge(root)
+    const verifyWithDeps = verifySkillsBridge as unknown as (
+      root: string,
+      deps: Record<string, unknown>,
+    ) => unknown
+
+    expect(() =>
+      verifyWithDeps(root, {
+        platform: 'linux',
+        realpath: (path: string) =>
+          path.includes('.agents') ? '/repo/.CLAUDE/skills' : '/repo/.claude/skills',
+        stat: (path: string) =>
+          path.includes('.agents') ? { dev: 1, ino: 2 } : { dev: 1, ino: 1 },
+      }),
+    ).toThrow(/points to/i)
+  })
+
+  it('accepts case-only path spelling when Windows reports the same filesystem identity', () => {
+    const { root } = fixture()
+    const expected = ensureSkillsBridge(root)
+    const verifyWithDeps = verifySkillsBridge as unknown as (
+      root: string,
+      deps: Record<string, unknown>,
+    ) => typeof expected
+
+    expect(
+      verifyWithDeps(root, {
+        platform: 'win32',
+        realpath: (path: string) =>
+          path.includes('.agents') ? 'C:\\repo\\.CLAUDE\\skills' : 'C:\\repo\\.claude\\skills',
+        stat: () => ({ dev: 1, ino: 1 }),
+      }),
+    ).toEqual(expected)
+  })
 })

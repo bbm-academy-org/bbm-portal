@@ -77,9 +77,13 @@ but uses an available Codex model instead of passing an unsupported Claude id:
 | Mechanical search and inventory                 | `bbm-explorer` / Sonnet                    | `gpt-5.6-terra` |
 | Implementation, architecture, gates, and review | `general-purpose` or `bbm-reviewer` / Opus | `gpt-5.6-sol`   |
 
-Pass the canonical agent brief in the Codex dispatch message and always set the
-mapped model explicitly. The mapping is a harness adapter, not a change to the
-task lifecycle; update it when the available Codex model catalog changes.
+Pass the canonical agent brief in the Codex dispatch message. A full-history
+fork (`fork_turns` omitted or `"all"`) inherits the parent model and must not
+carry a model override; the adapter maps it to the existing inherited-model
+`fork` exemption. To use one of the explicit mappings above, set `fork_turns`
+to `"none"` or a positive turn count and pass the mapped model. The mapping is
+a harness adapter, not a change to the task lifecycle; update it when the
+available Codex model catalog changes.
 
 Generated state under `.claude/codex-write-state/` and
 `.claude/hook-session-registry/` is git-ignored and safe to delete between

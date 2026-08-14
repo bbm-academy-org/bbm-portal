@@ -1,13 +1,35 @@
 #!/usr/bin/env node
 
-import { lstatSync, mkdirSync, readdirSync, realpathSync, symlinkSync } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, realpathSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
-function samePath(left, right) {
+export function samePath(left, right, platform = process.platform) {
   const normalize = (path) => String(path).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-  return normalize(left) === normalize(right)
+  if (platform === 'win32') return normalize(left) === normalize(right)
+  const exact = (path) => String(path).replace(/\/+$/, '')
+  return exact(left) === exact(right)
+}
+
+function hasUsableIdentity(stat) {
+  if (!stat || stat.dev == null || stat.ino == null) return false
+  const isZero = (value) => value === 0 || value === 0n
+  return !isZero(stat.dev) || !isZero(stat.ino)
+}
+
+export function sameFilesystemTarget(leftPath, rightPath, leftReal, rightReal, deps = {}) {
+  const stat = deps.stat || statSync
+  try {
+    const left = stat(leftPath)
+    const right = stat(rightPath)
+    if (hasUsableIdentity(left) && hasUsableIdentity(right)) {
+      return left.dev === right.dev && left.ino === right.ino
+    }
+  } catch {
+    // Fall back to realpath spelling when a filesystem does not expose identity.
+  }
+  return samePath(leftReal, rightReal, deps.platform || process.platform)
 }
 
 function skillNames(canonical) {
@@ -24,18 +46,19 @@ function skillNames(canonical) {
     .sort()
 }
 
-export function verifySkillsBridge(root) {
+export function verifySkillsBridge(root, deps = {}) {
   const canonical = resolve(root, '.claude', 'skills')
   const bridge = resolve(root, '.agents', 'skills')
+  const realpath = deps.realpath || realpathSync
   let canonicalReal
   let bridgeReal
   try {
-    canonicalReal = realpathSync(canonical)
-    bridgeReal = realpathSync(bridge)
+    canonicalReal = realpath(canonical)
+    bridgeReal = realpath(bridge)
   } catch (error) {
     throw new Error(`Codex skills bridge is missing or unreadable: ${error.message}`)
   }
-  if (!samePath(canonicalReal, bridgeReal)) {
+  if (!sameFilesystemTarget(canonical, bridge, canonicalReal, bridgeReal, deps)) {
     throw new Error(`Codex skills bridge points to '${bridgeReal}', expected '${canonicalReal}'.`)
   }
   const skills = skillNames(canonical)
