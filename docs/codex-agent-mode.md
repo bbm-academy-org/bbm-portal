@@ -20,6 +20,11 @@ a directory symlink elsewhere. Codex follows linked skill folders while scanning
 does not require Developer Mode or administrator privileges. The setup command
 refuses to replace an unrelated real directory.
 
+The canonical `pnpm format:check` accepts checkout-native LF or CRLF endings via
+Prettier's `endOfLine: auto` policy. It still rejects substantive formatting
+differences; this avoids rewriting the repository merely because Windows Git
+materialized tracked text with CRLF.
+
 Repository hooks live in `.codex/hooks.json`. Codex hooks are enabled by
 default, but repository hooks run only after the project layer and the exact
 hook definitions are trusted. A change to `.codex/hooks.json` changes the trust
