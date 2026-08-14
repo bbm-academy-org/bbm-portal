@@ -67,11 +67,11 @@ All commands below run **from the `deploy/` directory on the host**.
    tree (`infra/dev-stand/README.md` → _Secrets — per-machine, outside the synced
    dir_):
 
-   | Where                          | What                                                                                        |
-   | ------------------------------ | ------------------------------------------------------------------------------------------- |
-   | `~/.bbm-portal/prod-access.md` | the operator's durable record: host address, login user, which key, where the key came from |
-   | `~/.ssh/config`                | the live `Host portal-prod-tw` stanza the tooling actually resolves                         |
-   | `~/.ssh/portal-prod-tw`        | the private key itself, mode `600` (`icacls` on Windows)                                    |
+   | Where                          | What                                                                                                      |
+   | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+   | `~/.bbm-portal/prod-access.md` | the operator's per-machine **working copy**: host address, login user, which key, where the key came from |
+   | `~/.ssh/config`                | the live `Host portal-prod-tw` stanza the tooling actually resolves                                       |
+   | `~/.ssh/portal-prod-tw`        | the private key itself, mode `600` (`icacls` on Windows)                                                  |
 
    **Setting up a new machine** from this runbook alone: read the values out of
    `~/.bbm-portal/prod-access.md` (or get them from the owner — they are not
@@ -116,8 +116,10 @@ All commands below run **from the `deploy/` directory on the host**.
    per-machine working copy, not an archive — one laptop's disk is no place for
    the only copy of the coordinates. Their durable home is the private **`bbm`
    ops repo**, the same repo that owns `infra/portal/README.md` and
-   `restore-portal.sh` (see _Backups_ below); the per-machine file is a
-   convenience copy of what is recorded there.
+   `restore-portal.sh` (see _Backups_ below); the per-machine file is a working
+   copy of what **belongs** there. Whether that record exists yet is a question
+   for the ops repo, not an assumption to act on — creating it under
+   `infra/portal/` is tracked there as ops-repo issue 148.
 
 > **Node version:** the image bakes Node 22 (`Dockerfile`), so the Payload
 > migrate tsx-loader gotcha that bites Node 23/24 on the dev host does **not**
