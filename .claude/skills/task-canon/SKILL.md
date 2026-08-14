@@ -183,12 +183,12 @@ be a second source of truth, and the first one to drift.
 single pass together with reformatting the issues that carry them; until then
 `pnpm backlog:triage` lists the carriers in its «Гигиена полей» section.
 
-| Label                                              | Fate                                                                                                          |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `bug` (3), `enhancement` (11), `documentation` (3) | the issues get Type `Bug` / `Feature` / `Task` and the labels are deleted — otherwise one class has two names |
-| `duplicate`, `invalid`, `wontfix`                  | deleted: these are close reasons, not task properties (`gh issue close --reason not planned` + a comment)     |
-| `good first issue`, `help wanted`                  | deleted: a private repo with a single owner and agents, there are no external contributors                    |
-| `question`                                         | deleted: a question to the owner is not a backlog task                                                        |
+| Label                                              | Fate                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bug` (3), `enhancement` (11), `documentation` (3) | the issues get Type `Bug` / `Feature` / `Task` and the labels are deleted — otherwise one class has two names                                                                                                                                                                |
+| `duplicate`, `invalid`, `wontfix`                  | deleted: these are close reasons, not task properties (`gh issue close --reason not planned` + a comment)                                                                                                                                                                    |
+| `good first issue`, `help wanted`                  | deleted: the backlog is worked by one owner and his agents, and these two labels are a recruiting signal we do not send. The repo went public on 2026-08-14 (#214) — visibility changed, the staffing did not; revisit only if outside contribution is ever actually invited |
+| `question`                                         | deleted: a question to the owner is not a backlog task                                                                                                                                                                                                                       |
 
 The assignee defaults to `@me` — a mark of who filed the task, not an assignment
 and **not** a busy signal: there are exactly two claim signals and both are in §4
