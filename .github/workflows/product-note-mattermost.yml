@@ -4,16 +4,15 @@ name: Product note → Mattermost
 # Mattermost channel (task 7.6, #137). No agent in the delivery path: the source
 # of truth is the PR body, rendered by tools/ci/post-product-note.mjs.
 #
-# Trigger (#202): `push` to main, NOT `pull_request: closed`. A workflow that
-# carries a long-lived secret must never be reachable from a PR event — enforced
-# twice over while this repo ran on the shared BBM runner pool (a manager policy
-# on top of this trigger list); since #214 took the pool away, this list is the
-# only enforcement left. The mechanism is NOT "a fork would read the secret":
-# GitHub withholds secrets from a fork's `pull_request` run by itself. What
-# would actually break containment is `pull_request_target` (base-repo context,
-# secrets present, fork-controlled code) or a `pull_request` from a same-repo
-# branch, which does receive secrets. A merge into main IS a push of the
-# squash/merge commit, so the merged PR is recovered from the pushed sha via
+# Trigger (#202): `push` to main, NOT `pull_request: closed`. This job reads
+# MATTERMOST_RELEASE_WEBHOOK_URL, so it must never be reachable from a PR event;
+# the rule and the actual mechanism behind it — the intuitive "a fork would read
+# it" is the wrong reason — are in docs/ci-guardrails.md §2.1.1, which owns a
+# rule binding both secret-bearing workflows. Since #214 removed the runner pool
+# that enforced it a second time, this trigger list is the only enforcement left.
+#
+# A merge into main IS a push of the squash/merge commit, so the merged PR is
+# recovered from the pushed sha via
 # `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct push that belongs to
 # no merged PR delivers nothing and skips green.
 #
@@ -51,9 +50,7 @@ permissions:
 jobs:
   deliver:
     # Delivery lane: reachable from `push` alone (see the `on:` block above),
-    # never a PR event. Why that matters, precisely, is in the file header —
-    # the hazard is `pull_request_target` and same-repo `pull_request`, not a
-    # fork, which GitHub already denies secrets.
+    # never a PR event — docs/ci-guardrails.md §2.1.1 for why.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -93,6 +93,31 @@ barrier — but nothing external prevents closing it. Applying the payload is tr
 #216; it stays a single `gh api --method PUT … --input .github/branch-protection.json`,
 and its `required_status_checks.contexts` is kept correct for exactly that moment.
 
+### 2.1.1 Secret-bearing workflows and PR events
+
+This repo has exactly one long-lived secret, `MATTERMOST_RELEASE_WEBHOOK_URL`, used by
+`product-note-mattermost.yml` and `release-digest.yml`. **The rule: a job that can read
+it is never reachable from a pull-request event.** Neither of those two files owns this
+rule — it binds both — so it lives here and they point at it.
+
+The mechanism matters, because the intuitive version of it is false and was written into
+this repo's comments until #214 corrected it:
+
+| Trigger                                            | Secrets available?        | Verdict                                                                                      |
+| -------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| `pull_request` from a **fork**                     | **no** — GitHub withholds | not the hazard people assume; a forker cannot read the webhook even if a PR event were added |
+| `pull_request` from a **branch in this repo**      | **yes**                   | real residual: any collaborator's branch would receive it                                    |
+| `pull_request_target` + checkout of the PR head    | **yes**, in base context  | the genuine hazard — base-repo permissions running fork-controlled code                      |
+| `push` / `deployment_status` / `workflow_dispatch` | yes                       | fine: none of them is attacker-triggerable here                                              |
+
+Note the third row's precision: `pull_request_target` alone is not a leak. It becomes one
+when combined with checking out the pull request's head. This repo uses that trigger
+nowhere, which is the invariant worth preserving.
+
+Until #214 this rule had two enforcers — the self-hosted pool's manager policy (#202) plus
+each workflow's trigger list. The pool is gone; the trigger lists are the only enforcement
+left, which is why widening one is a security change and not a convenience edit.
+
 ### 2.2 Hook guards
 
 A Claude Code hook has no `needs` list; its severity is its own exit code and the hook
