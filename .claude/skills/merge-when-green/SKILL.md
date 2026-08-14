@@ -81,8 +81,11 @@ downstream of anything.
   is why `pr-body-guards.yml` does not cancel in-progress runs; a gate red on a
   WARN guard's check-run is that bug, not a merge decision.
 - **The review verdict**, freshly: a `VERDICT: APPROVE` line in a PR comment,
-  dated after the PR's last commit. An approval given before the last commit
-  approved different code. `--require-review` narrows this to a human APPROVE;
+  dated after the last commit that changed the PR's own diff. An approval given
+  before that commit approved different code. A `gh pr update-branch` merge
+  commit is the one exception, and a structural one — it only re-bases the
+  branch, so it does not send you back for a re-review (#222).
+  `--require-review` narrows this to a human APPROVE;
   `--no-review-gate "<reason>"` lifts it and prints the reason as the record.
 
 ## Before the gate: is the base even green?
@@ -98,7 +101,7 @@ so a reviewer can tell an inherited red from one this PR introduced.
 ## Failure modes this replaces
 
 - Merging on "the checks looked green" instead of on an exit code.
-- Merging on an APPROVE that predates the last commit.
+- Merging on an APPROVE that predates the last commit that changed the diff.
 - Piping the gate and reading the pipe's exit status.
 - Merging from inside a worktree and leaving the branch, the board row and the
   worktree behind because the tail died at its first stage.

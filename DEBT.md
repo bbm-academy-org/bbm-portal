@@ -265,8 +265,21 @@ Entry format:
       judgement call, not a patch: either compare the verdict against the last
       commit that touched the DIFF rather than the last commit on the branch, or
       teach the gate to recognise an update-branch merge commit as review-neutral.
-      Return condition: the first time a session re-runs a review purely because of
-      an update-branch, or the next edit to `findAgentApproval` (#216)
+      Return condition fired the same afternoon: **promoted to #222 and fixed
+      there** (the second design — `isBaseMergeCommit` / `reviewBaselineDate`);
+      this line goes at the next sweep (#216 → #222)
+
+- [ ] 2026-08-14 `isBaseMergeCommit` in `tools/gh/pr-land.mjs` (#222) recognises a
+      base merge structurally — two parents, the first being the PR's previous
+      commit, the second absent from the PR's own commits — and a merge whose
+      CONFLICTS were resolved by hand fits that shape while carrying edits of its
+      own, so such edits would ride past the review gate. Not reachable through
+      the flow the fix serves: `gh pr update-branch` refuses to merge on conflict,
+      and a hand merge of `main` into a PR head is not how this repo updates a
+      branch (`.claude/rules/parallel-sessions.md`). Closing it needs a tree
+      comparison against a clean 3-way merge, which no single GitHub read
+      answers. Return condition: the first hand-resolved merge commit pushed to a
+      PR head, or the next edit to `isBaseMergeCommit` (#222)
 
 - [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
       branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as

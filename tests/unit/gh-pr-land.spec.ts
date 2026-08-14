@@ -8,13 +8,15 @@ import {
   failCode,
   findAgentApproval,
   gateConditions,
-  headCommittedDate,
+  isBaseMergeCommit,
   isWorktreeCwd,
   issueCandidates,
   landPr,
   parseFlags,
+  reviewBaselineDate,
   runGate,
   stageRemedy,
+  withCommitParents,
 } from '../../tools/gh/pr-land.mjs'
 
 /**
@@ -144,15 +146,131 @@ describe('findAgentApproval', () => {
   })
 })
 
-describe('headCommittedDate', () => {
-  it('takes the date of the PR’s LAST commit', () => {
-    expect(headCommittedDate({ commits: [{ committedDate: 'a' }, { committedDate: 'b' }] })).toBe(
+/**
+ * #222. `main` carries `required_status_checks.strict` since #216, so
+ * `gh pr update-branch` sits on the critical path of every raced merge — and it
+ * appends a merge commit to the head branch. Measuring review freshness against
+ * the last commit ON THE BRANCH therefore staled the reviewer's verdict for a
+ * commit that changed no reviewed line.
+ *
+ * The baseline is the last commit that changed the PR's OWN diff: trailing
+ * base-merge commits are stepped over, everything else is not. The direction
+ * that must not be bought away — a real commit after the approval — is pinned
+ * here and in `gateConditions` below.
+ */
+const commit = (oid: string, committedDate: string, parents?: string[]) => ({
+  oid,
+  committedDate,
+  ...(parents ? { parents } : {}),
+})
+
+describe('isBaseMergeCommit', () => {
+  const own = new Set(['a', 'b', 'm'])
+
+  it('two parents, the first being the previous PR commit and the second coming from outside', () => {
+    expect(isBaseMergeCommit(commit('m', 't', ['b', 'mainTip']), commit('b', 't'), own)).toBe(true)
+  })
+
+  it('an ordinary single-parent commit is never a base merge', () => {
+    expect(isBaseMergeCommit(commit('m', 't', ['b']), commit('b', 't'), own)).toBe(false)
+  })
+
+  it('a merge whose second parent IS a commit of this PR brings unreviewed code — not neutral', () => {
+    // `git merge some-other-branch`: that branch's commits are not reachable from
+    // the base, so GitHub lists them among the PR's own — and they ride into the
+    // squash.
+    expect(isBaseMergeCommit(commit('m', 't', ['b', 'a']), commit('b', 't'), own)).toBe(false)
+  })
+
+  it('a merge that does not sit on top of the PR’s own line is not recognised', () => {
+    expect(isBaseMergeCommit(commit('m', 't', ['mainTip', 'b']), commit('b', 't'), own)).toBe(false)
+  })
+
+  it('without parent data nothing is recognised — the conservative direction', () => {
+    expect(isBaseMergeCommit(commit('m', 't'), commit('b', 't'), own)).toBe(false)
+  })
+
+  it('an octopus merge is not an update-branch merge', () => {
+    expect(isBaseMergeCommit(commit('m', 't', ['b', 'x', 'y']), commit('b', 't'), own)).toBe(false)
+  })
+})
+
+describe('reviewBaselineDate', () => {
+  it('with no parent data it is the LAST commit’s date — the old, strict behaviour', () => {
+    expect(reviewBaselineDate({ commits: [{ committedDate: 'a' }, { committedDate: 'b' }] })).toBe(
       'b',
     )
   })
 
   it('returns null on an empty commit list instead of throwing', () => {
-    expect(headCommittedDate({})).toBeNull()
+    expect(reviewBaselineDate({})).toBeNull()
+  })
+
+  it('steps over a trailing update-branch merge', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('a', '2026-08-14T10:00:00Z', ['base']),
+          commit('b', '2026-08-14T11:00:00Z', ['a']),
+          commit('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+        ],
+      }),
+    ).toBe('2026-08-14T11:00:00Z')
+  })
+
+  it('steps over a RUN of them — two sessions racing in a row', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          commit('m1', '2026-08-14T15:00:00Z', ['b', 'mainX']),
+          commit('m2', '2026-08-14T16:00:00Z', ['m1', 'mainY']),
+        ],
+      }),
+    ).toBe('2026-08-14T11:00:00Z')
+  })
+
+  it('a REAL commit on top of an update-branch merge is the baseline', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          commit('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+          commit('c', '2026-08-14T17:00:00Z', ['m']),
+        ],
+      }),
+    ).toBe('2026-08-14T17:00:00Z')
+  })
+
+  it('a merge that pulls in another branch of its own is NOT stepped over', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          commit('z', '2026-08-14T14:00:00Z', ['b']),
+          commit('m', '2026-08-14T15:00:00Z', ['b', 'z']),
+        ],
+      }),
+    ).toBe('2026-08-14T15:00:00Z')
+  })
+
+  it('the first commit is never stepped over — a PR is never zero-commit', () => {
+    expect(reviewBaselineDate({ commits: [commit('m', '2026-08-14T15:00:00Z', ['x', 'y'])] })).toBe(
+      '2026-08-14T15:00:00Z',
+    )
+  })
+})
+
+describe('withCommitParents', () => {
+  it('stamps the parents onto the commits gh pr view cannot carry them on', () => {
+    const data = withCommitParents({ commits: [{ oid: 'a' }, { oid: 'm' }] }, { m: ['a', 'main'] })
+    expect(data.commits[1]).toMatchObject({ oid: 'm', parents: ['a', 'main'] })
+    expect(data.commits[0].parents).toBeUndefined()
+  })
+
+  it('an unavailable parent map leaves the payload untouched — freshness stays strict', () => {
+    const data = { commits: [{ oid: 'a' }] }
+    expect(withCommitParents(data, null)).toBe(data)
   })
 })
 
@@ -204,6 +322,37 @@ describe('gateConditions', () => {
       comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-04T11:00:00Z' }],
     })
     expect(res.red[0]).toMatch(/older than the last commit/)
+  })
+
+  /**
+   * #222, both directions of the same rule, at the level the gate is actually
+   * read at.
+   */
+  it('an update-branch merge after the APPROVE does not stale it — no re-review for a merge commit', () => {
+    const res = gateConditions({
+      ...ok,
+      reviewDecision: '',
+      commits: [
+        commit('b', '2026-08-14T12:00:00Z', ['base']),
+        commit('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+      ],
+      comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-14T12:30:00Z' }],
+    })
+    expect(res.red).toEqual([])
+  })
+
+  it('a REAL commit after the APPROVE is still RED, update-branch merge or not', () => {
+    const res = gateConditions({
+      ...ok,
+      reviewDecision: '',
+      commits: [
+        commit('b', '2026-08-14T12:00:00Z', ['base']),
+        commit('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+        commit('c', '2026-08-14T16:00:00Z', ['m']),
+      ],
+      comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-14T12:30:00Z' }],
+    })
+    expect(res.red.join('\n')).toMatch(/older than the last commit/)
   })
 
   it('with --require-review a subagent comment does not count', () => {

@@ -38,9 +38,11 @@
 // review that actually exists in this repo: the only human with the rights IS
 // the PR author (they cannot APPROVE their own PR), and the reviewer is a
 // subagent leaving a comment. So either a human APPROVE counts, or a comment
-// carrying a `VERDICT: APPROVE` line created AFTER the PR's last commit (an
-// approval older than the code is about different code — the same logic as head
-// pinning). `--require-review` narrows this to a human APPROVE;
+// carrying a `VERDICT: APPROVE` line created AFTER the last commit that changed
+// the PR's OWN diff (an approval older than the code is about different code —
+// the same logic as head pinning). A `gh pr update-branch` merge commit is NOT
+// such a commit and does not restart that clock (#222) — see
+// `isBaseMergeCommit`. `--require-review` narrows this to a human APPROVE;
 // `--no-review-gate "<reason>"` lifts the gate with a mandatory recorded reason.
 // Owner acceptance (stage 5) is a separate requirement, and the reminder about
 // it is printed always: the gate cannot check it.
@@ -54,6 +56,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import {
+  REPO,
   buildDeleteItemMutation,
   buildPrProjectItemsQuery,
   ghGraphqlResult,
@@ -193,13 +196,14 @@ export function classifyChecks(rollup) {
  * rights is the PR author, who cannot APPROVE their own PR), so the checkable
  * artifact is a `VERDICT: APPROVE` line in a comment body.
  *
- * Freshness is mandatory: an approval issued before the last commit is about
- * different code — exactly the same logic as head pinning for the checks.
+ * Freshness is mandatory: an approval issued before the last commit that
+ * changed the code is about different code — exactly the same logic as head
+ * pinning for the checks.
  * @param {{body?:string, createdAt?:string}[]} comments
- * @param {string|null} headCommittedDate  the date of the PR's last commit
+ * @param {string|null} baselineDate  `reviewBaselineDate(pr)`
  * @returns {{ok:true, at:string}|{ok:false, reason:'none'|'stale'|'changes', at?:string}}
  */
-export function findAgentApproval(comments, headCommittedDate) {
+export function findAgentApproval(comments, baselineDate) {
   const verdicts = []
   for (const c of Array.isArray(comments) ? comments : []) {
     const m = /^VERDICT:\s*(APPROVE|REQUEST_CHANGES)\b/m.exec(String(c?.body ?? ''))
@@ -212,17 +216,87 @@ export function findAgentApproval(comments, headCommittedDate) {
   verdicts.sort((a, b) => a.at - b.at)
   const latest = verdicts[verdicts.length - 1]
   if (latest.verdict !== 'APPROVE') return { ok: false, reason: 'changes', at: latest.iso }
-  const head = Date.parse(headCommittedDate ?? '')
+  const head = Date.parse(baselineDate ?? '')
   if (Number.isFinite(head) && latest.at < head)
     return { ok: false, reason: 'stale', at: latest.iso }
   return { ok: true, at: latest.iso }
 }
 
-/** The PR's last commit date — the baseline for the review freshness check. */
-export function headCommittedDate(pr) {
+/**
+ * Is this commit a base merge — `main` merged INTO the PR head, which is what
+ * `gh pr update-branch` appends (#222)? Such a commit changes not one line the
+ * reviewer read: it only moves the branch onto a newer base, and the squash that
+ * lands carries the PR's own diff either way. Since #216 `main` requires strict
+ * status checks, so this command is on the critical path of every raced merge —
+ * letting it stale the verdict buys a full re-review for nothing.
+ *
+ * Three structural conditions, all of them load-bearing, and no matching on
+ * commit messages (a message is renamed the first time anyone touches it):
+ *
+ *   1. exactly two parents — an ordinary commit has one, an octopus merge more;
+ *   2. the FIRST parent is the PR's previous commit — the merge sits on top of
+ *      the PR's own line, rather than the line being merged into something else;
+ *   3. the SECOND parent is NOT one of the PR's own commits. This is the clause
+ *      that keeps the gate honest, and it is exact rather than approximate:
+ *      GitHub lists as «the PR's commits» everything reachable from head but not
+ *      from the base, so a parent that is absent from that list is by
+ *      construction already contained in the base — it adds nothing to the
+ *      squash. Merge a SIBLING branch into your PR instead and its tip IS in the
+ *      list, the merge is not recognised, and the verdict goes stale as it
+ *      should.
+ *
+ * Not covered, deliberately: a merge whose conflicts were resolved by hand can
+ * carry edits of its own, and those edits are structurally indistinguishable
+ * from a clean merge here (DEBT.md, 2026-08-14). `gh pr update-branch` never
+ * makes one — it refuses to merge on conflict.
+ * @param {{oid?:string, parents?:string[]}} commit
+ * @param {{oid?:string}} previous  the commit before it in the PR's list
+ * @param {Set<string>} prCommitOids  the oids of the PR's own commits
+ */
+export function isBaseMergeCommit(commit, previous, prCommitOids) {
+  const parents = commit?.parents
+  if (!Array.isArray(parents) || parents.length !== 2) return false
+  if (!previous?.oid || parents[0] !== previous.oid) return false
+  return !prCommitOids.has(parents[1])
+}
+
+/**
+ * The date the review verdict is measured against: the last commit that changed
+ * the PR's OWN diff. Trailing base merges are stepped over — a run of them, too,
+ * since two races in a row produce two (#222).
+ *
+ * Every unknown resolves towards the STRICT answer: with no parent data (the
+ * enrichment call failed, or `gh` stopped carrying it) nothing is stepped over
+ * and this is exactly the old «last commit on the branch» rule. The first commit
+ * is never stepped over either — a PR with no commit of its own has no diff to
+ * approve.
+ */
+export function reviewBaselineDate(pr) {
   const commits = pr?.commits
   if (!Array.isArray(commits) || commits.length === 0) return null
-  return commits[commits.length - 1]?.committedDate ?? null
+  const oids = new Set(commits.map((c) => c?.oid).filter(Boolean))
+  let i = commits.length - 1
+  while (i > 0 && isBaseMergeCommit(commits[i], commits[i - 1], oids)) i--
+  return commits[i]?.committedDate ?? null
+}
+
+/**
+ * Stamp commit parents onto the PR payload. `gh pr view --json commits` carries
+ * every field the gate needs except the one `isBaseMergeCommit` is built on, so
+ * the parents come from a second read (`runCommitParents`). No map — no stamp,
+ * and the freshness rule stays at its strict default.
+ * @param {object} data  the `gh pr view` payload
+ * @param {Record<string,string[]>|null} parentsByOid
+ */
+export function withCommitParents(data, parentsByOid) {
+  if (!parentsByOid || !Array.isArray(data?.commits)) return data
+  return {
+    ...data,
+    commits: data.commits.map((c) => {
+      const parents = parentsByOid[c?.oid]
+      return Array.isArray(parents) ? { ...c, parents } : c
+    }),
+  }
 }
 
 /**
@@ -250,10 +324,12 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
   }
 
   const humanApproved = String(pr?.reviewDecision ?? '').toUpperCase() === 'APPROVED'
-  const agent = findAgentApproval(pr?.comments, headCommittedDate(pr))
+  const agent = findAgentApproval(pr?.comments, reviewBaselineDate(pr))
   const AGENT_REASON = {
     none: 'not a single comment carries a `VERDICT: APPROVE` line',
-    stale: 'the last `VERDICT: APPROVE` is older than the last commit — it is about different code',
+    stale:
+      'the last `VERDICT: APPROVE` is older than the last commit that changed the PR’s own diff — ' +
+      'it is about different code (a `gh pr update-branch` merge does not count, #222)',
     changes: "the reviewer's latest verdict is `REQUEST_CHANGES`",
   }
   if (requireReview) {
@@ -307,7 +383,9 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
   we wait makes the merge refuse rather than ride in unchecked.
 
   Review counts in two ways by default: a human APPROVE OR a reviewer comment
-  carrying a \`VERDICT: APPROVE\` line created AFTER the PR's last commit.
+  carrying a \`VERDICT: APPROVE\` line created AFTER the last commit that changed
+  the PR's own diff. A \`gh pr update-branch\` merge commit changes none of it, so
+  it does not stale the verdict (#222); any other commit does.
 
   Re-runnable: on a PR that is already MERGED the gate and the merge are skipped
   and the tail resumes at the first unfinished stage. A \`gh pr merge\` that exits
@@ -379,8 +457,34 @@ const PR_FIELDS =
   'state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,' +
   'headRefName,headRefOid,statusCheckRollup,comments,commits'
 
+/**
+ * Commit parents — the one fact the gate needs and `gh pr view --json commits`
+ * does not carry (its per-commit fields are oid / dates / message / authors).
+ * The REST listing of a PR's commits does carry them, and it lists exactly the
+ * PR's own commits, which is what makes `isBaseMergeCommit`'s third clause
+ * exact.
+ *
+ * Never fatal: a failed or unreadable call returns null, the payload goes
+ * un-stamped and review freshness falls back to «the last commit on the branch».
+ * The page size matches the 100 commits `gh pr view` itself reads.
+ * @returns {Record<string,string[]>|null}
+ */
+function runCommitParents(pr) {
+  const res = ghJson(['api', `repos/${REPO}/pulls/${pr}/commits?per_page=100`])
+  if (!res.ok || !Array.isArray(res.data)) return null
+  const out = {}
+  for (const c of res.data) {
+    if (typeof c?.sha === 'string') {
+      out[c.sha] = (c.parents ?? []).map((p) => p?.sha).filter((sha) => typeof sha === 'string')
+    }
+  }
+  return out
+}
+
 function runViewPr(pr) {
-  return ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS])
+  const res = ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS])
+  if (!res.ok) return res
+  return { ok: true, data: withCommitParents(res.data, runCommitParents(pr)) }
 }
 
 /**
