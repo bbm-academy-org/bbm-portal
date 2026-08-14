@@ -85,6 +85,20 @@ All commands below run **from the `deploy/` directory on the host**.
      IdentitiesOnly yes
    ```
 
+   **The key is not a value — it cannot be read out of a chat, so obtaining it
+   is an out-of-band step the repo cannot automate:**
+
+   - **You already have it** (a machine that used to work, or a copy the owner
+     handed over out of band): put it at `~/.ssh/portal-prod-tw` and tighten the
+     permissions — `chmod 600` on Unix, `icacls` on Windows stripping inheritance
+     and leaving only your own account. OpenSSH refuses a key any other principal
+     can read.
+   - **You have none:** generate a fresh pair **on your own machine**
+     (`ssh-keygen -t ed25519 -f ~/.ssh/portal-prod-tw`), send the owner the
+     **`.pub`** half only, and ask him to append it to the deploy account's
+     `~/.ssh/authorized_keys` on the box. The private half never leaves the
+     machine that made it, and no existing operator has to surrender theirs.
+
    Verify with `ssh portal-prod-tw docker ps`. If `ssh portal-prod-tw` fails to
    resolve on a machine that used to work, that block has gone missing from
    `~/.ssh/config` (the key and the `known_hosts` entry persist) — restore it
