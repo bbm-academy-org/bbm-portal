@@ -13,8 +13,8 @@ as a single `docker compose` stack:
 - **`migrate`** — profiled one-off tooling job (migrations + admin seed).
 
 Public endpoint: **`https://cms.bbm.academy`** — admin `/admin`, REST `/api`,
-GraphQL `/api/graphql`. DNS `cms.bbm.academy → 201.51.28.190` already resolves,
-so Caddy provisions the certificate automatically on first start.
+GraphQL `/api/graphql`. DNS `cms.bbm.academy` already resolves to this host, so
+Caddy provisions the certificate automatically on first start.
 
 All commands below run **from the `deploy/` directory on the host**.
 
@@ -58,11 +58,37 @@ All commands below run **from the `deploy/` directory on the host**.
    or wire a CI image-push later. The "update" flow below assumes the tree is
    refreshed the same way (not `git pull`).
 
-5. **SSH access to the host.** Alias `portal-prod-tw` → `201.51.28.190`, user
-   `deploy`, key `~/.ssh/portal-prod-tw`. If `ssh portal-prod-tw` fails to resolve,
-   the `Host portal-prod-tw` block has gone missing from `~/.ssh/config` (the key
-   and the `known_hosts` entry persist) — restore it by copying another `*-prod-tw`
-   block and swapping host/IP/key. Don't conclude "no access" and escalate.
+5. **SSH access to the host.** Everything here — and `pnpm deploy:prod`
+   (`tools/deploy/prod.mjs`, override `BBM_PROD_SSH`) — reaches the box through
+   the SSH alias **`portal-prod-tw`** and nothing else. **The coordinates behind
+   that alias are deliberately not in this repository** (public since 2026-08-14,
+   #218): the procedure is public, the address / login user / key are not. They
+   live per-machine, the same way the dev stand keeps its own values outside the
+   tree (`infra/dev-stand/README.md` → _Secrets — per-machine, outside the synced
+   dir_):
+
+   | Where                          | What                                                                                        |
+   | ------------------------------ | ------------------------------------------------------------------------------------------- |
+   | `~/.bbm-portal/prod-access.md` | the operator's durable record: host address, login user, which key, where the key came from |
+   | `~/.ssh/config`                | the live `Host portal-prod-tw` stanza the tooling actually resolves                         |
+   | `~/.ssh/portal-prod-tw`        | the private key itself, mode `600` (`icacls` on Windows)                                    |
+
+   **Setting up a new machine** from this runbook alone: read the values out of
+   `~/.bbm-portal/prod-access.md` (or get them from the owner — they are not
+   recoverable from the repo), then write the stanza into `~/.ssh/config`:
+
+   ```
+   Host portal-prod-tw
+     HostName <host address>
+     User <login user>
+     IdentityFile ~/.ssh/portal-prod-tw
+     IdentitiesOnly yes
+   ```
+
+   Verify with `ssh portal-prod-tw docker ps`. If `ssh portal-prod-tw` fails to
+   resolve on a machine that used to work, that block has gone missing from
+   `~/.ssh/config` (the key and the `known_hosts` entry persist) — restore it
+   from `~/.bbm-portal/prod-access.md`. Don't conclude "no access" and escalate.
 
 > **Node version:** the image bakes Node 22 (`Dockerfile`), so the Payload
 > migrate tsx-loader gotcha that bites Node 23/24 on the dev host does **not**
@@ -256,8 +282,8 @@ server-to-server over the internal compose network
 (`PAYLOAD_API_URL=http://app:3000`, set inline in compose), authenticated with a
 **Users API key** carried in `.env.preview` (the only secret). Caddy serves it at
 `preview.bbm.academy` with a CSP `frame-ancestors https://cms.bbm.academy` so only
-the Payload admin can embed it. DNS `preview.bbm.academy → 201.51.28.190` already
-resolves, so Caddy auto-provisions the cert on first start.
+the Payload admin can embed it. DNS `preview.bbm.academy` already resolves to
+this host, so Caddy auto-provisions the cert on first start.
 
 **1. Issue the preview token (one-time):** use a **dedicated** `preview@bbm.academy`
 user (not a human admin's account) and give it a **self-chosen** API key.

@@ -1,7 +1,7 @@
 ---
 status: Shipped
 issue: 60
-updated: 2026-07-30
+updated: 2026-08-14
 ---
 
 # Portal prod domain + OKR deploy (P3) — spec (issue #60)
@@ -24,9 +24,11 @@ P2b принят: OKR-дашборд живёт за Zitadel-гейтом на d
 
 ## Requirements
 
-1. **DNS — СДЕЛАНО (владелец, 2026-07-27).** A-запись `portal.bbm.academy` →
-   `201.51.28.190` заведена и резолвится (проверено nslookup). Осталось только
-   убедиться, что Caddy выпустил сертификат при деплое.
+1. **DNS — СДЕЛАНО (владелец, 2026-07-27).** A-запись `portal.bbm.academy`
+   заведена и резолвится на прод-хост `portal-prod-tw` (проверено nslookup).
+   Осталось только убедиться, что Caddy выпустил сертификат при деплое. Сам
+   адрес хоста в репозитории не хранится (#218) — координаты алиаса
+   `portal-prod-tw` лежат вне дерева, см. `deploy/README.md` § Prerequisites.
 
 2. **Caddy site block для `portal.bbm.academy`** в `deploy/Caddyfile`:
    `reverse_proxy app:3000`, LE-сертификат автоматически. **Layer-2-решение
