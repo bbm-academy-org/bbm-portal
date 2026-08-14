@@ -236,6 +236,17 @@ Entry format:
       the first time the two are found out of sync, or the next edit to either
       (#216)
 
+- [ ] 2026-08-14 `pnpm pr:land` has no counterpart for
+      `required_conversation_resolution`, which went live on `main` with #216. The
+      gate reads `mergeStateStatus` only for `BEHIND`; an unresolved inline review
+      thread leaves the PR `BLOCKED`, so the gate reports green and the server
+      refuses the merge — the same shape of surprise that BEHIND was fixed for in
+      this PR. Not fixed here because the normal review path posts plain PR
+      comments, which create no threads, so today the case is reachable only when a
+      human leaves an inline comment. Fix: treat `BLOCKED` as RED with a message
+      naming the unresolved threads. Return condition: the first inline review
+      thread on any PR, or the next edit to `gateConditions` (#216)
+
 - [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
       branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
       `refs/remotes/origin/docs/ci-guardrails.md`, not found, and reported `STALE`.

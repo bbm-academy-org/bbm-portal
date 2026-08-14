@@ -84,15 +84,24 @@ is what the API returns when the protection is **read back**, which is how it wa
 verified — a `PUT` exiting 0 is not evidence that the branch ended up in the intended
 state.
 
-| Setting                                  | Live value                                           | What it actually buys                                                                                                                                             |
-| ---------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `required_status_checks.contexts`        | `["ci"]`, bound to app `github-actions` (id `15368`) | the `ci` meta-job of `ci.yml` is the single required check — which is the reason that job's name may never change (the file says so at the job itself)            |
-| `required_status_checks.strict`          | `true`                                               | a PR must be up to date with `main` to merge. `pnpm pr:land` already refuses on `mergeStateStatus=BEHIND`, so the gate reports it instead of failing at the merge |
-| `enforce_admins`                         | `true`                                               | the rules bind the repo's only admin too; without it the floor is advisory and the one account that can bypass it is the one that opens every PR                  |
-| `required_linear_history`                | `true`                                               | squash-merge only — which is exactly what `pnpm pr:land` performs                                                                                                 |
-| `allow_force_pushes` / `allow_deletions` | `false`                                              | `main` cannot be rewritten or deleted                                                                                                                             |
-| `required_conversation_resolution`       | `true`                                               | unresolved review threads block a merge. The reviewer subagent posts a plain PR comment rather than review threads, so the normal review path is unaffected       |
-| `required_pull_request_reviews`          | absent                                               | deliberate, not an omission — task-canon §7: the only human with permissions is the PR author and cannot APPROVE his own PR                                       |
+| Setting                                  | Live value                                           | What it actually buys                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `required_status_checks.contexts`        | `["ci"]`, bound to app `github-actions` (id `15368`) | the `ci` meta-job of `ci.yml` is the single required check — which is the reason that job's name may never change (the file says so at the job itself)                                                                                                                                                       |
+| `required_status_checks.strict`          | `true`                                               | a PR must be up to date with `main` to merge. This is why `pnpm pr:land` counts `mergeStateStatus=BEHIND` as RED — it was a remark until #216, which was correct only while the merge could still succeed                                                                                                    |
+| `enforce_admins`                         | `true`                                               | the rules bind the repo's only admin too; without it the floor is advisory and the one account that can bypass it is the one that opens every PR                                                                                                                                                             |
+| `required_linear_history`                | `true`                                               | squash-merge only — which is exactly what `pnpm pr:land` performs                                                                                                                                                                                                                                            |
+| `allow_force_pushes` / `allow_deletions` | `false`                                              | `main` cannot be rewritten or deleted                                                                                                                                                                                                                                                                        |
+| `required_conversation_resolution`       | `true`                                               | unresolved review threads block a merge. The reviewer subagent posts a plain PR comment rather than review threads, so the normal review path is unaffected — but nothing in `pnpm pr:land` checks for unresolved threads, so an inline review comment left open blocks the merge with no gate warning first |
+| `required_pull_request_reviews`          | absent                                               | deliberate, not an omission — task-canon §7: the only human with permissions is the PR author and cannot APPROVE his own PR                                                                                                                                                                                  |
+| `block_creations` / `lock_branch`        | `false`                                              | `main` accepts new commits through PRs and is not read-only                                                                                                                                                                                                                                                  |
+| `allow_fork_syncing`                     | `false`                                              | matters only now that the repo is public and forkable; a fork cannot sync into this branch                                                                                                                                                                                                                   |
+| `required_signatures`                    | `false`                                              | not in the payload and not enabled — commit signing is not set up on the operator's box, so requiring it would wedge every merge                                                                                                                                                                             |
+
+**Verified, not assumed.** A direct push to `main` was attempted on 2026-08-14 with a
+commit whose tree was identical to `main`'s, and the server rejected it:
+`GH006: Protected branch update failed … Required status check "ci" is expected`.
+`main` stayed at `cce6631`. That is the acceptance evidence #216 asked for — the read-back
+above proves the settings exist, this proves they bite.
 
 **Why the gap existed.** Until 2026-08-14 the payload could not become live at all: on
 GitHub Free a **private** repo answers `403 Upgrade to GitHub Pro or make this repository
@@ -102,11 +111,26 @@ the payload the same day. In between, the state was a gap rather than a constrai
 
 **BLOCK now has two enforcers, and they are not the same plane.** The server refuses a
 merge whose `ci` check is not green. `pnpm pr:land` refuses for that reason **and** for a
-missing `VERDICT: APPROVE` comment newer than the last commit (task-canon §7) — a rule
-the server knows nothing about. WARN guards stay invisible to the server either way: they
-are absent from the `ci` needs-list, so promoting one to BLOCK remains the three-edit
-change described above and needs no protection change, because the required context is
-`ci` in both cases.
+missing `VERDICT: APPROVE` comment newer than the last commit (task-canon §7) — a rule the
+server knows nothing about. WARN guards stay invisible to the server either way, because
+the required context is `ci` and they are absent from its needs-list. What promotion costs
+now depends on which workflow the guard lives in:
+
+| Guard's home                                | Promoting it to BLOCK                                                                                                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                                    | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                  |
+| `pr-body-guards.yml` (all six guards today) | `needs` cannot cross workflows, so pick one: move the job into `ci.yml`, teach `pnpm pr:land` to demand its check-run by name, or — new since #216 — add its own context to the payload and re-apply it |
+
+That third option did not exist while `main` was unprotected. It is the only one of the
+three that makes the server itself the enforcer, and the only one that requires a
+protection change; the "Cross-workflow guards" paragraph above lists the other two.
+
+**Break-glass.** `enforce_admins: true` plus a required `ci` context means that when
+GitHub Actions itself is degraded, nothing merges — no account can override it, which is
+the point and also the risk. The escape is to remove the protection, merge, and re-apply
+the payload: `gh api --method DELETE …/branches/main/protection`, then the `PUT` above.
+Both halves are one command; the failure mode to avoid is doing the first and forgetting
+the second, which is exactly the drift recorded in `DEBT.md`.
 
 **The file and the branch drift independently.** Editing `branch-protection.json` does not
 touch `main`, and editing the protection through the GitHub UI does not touch the file.
