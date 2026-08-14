@@ -243,13 +243,18 @@ Entry format:
       `required_conversation_resolution` — slips past, and the gate reports green
       while the server refuses. Reachable today only via a human inline comment:
       the reviewer subagent posts plain PR comments, which create no threads. The
-      structural fix is to allow-list the states that may merge instead
-      (`CLEAN`/`HAS_HOOKS`/`UNSTABLE` pass, the rest RED) — deliberately NOT done
-      in one pass here, because `UNKNOWN` is transient (GitHub has not finished
-      computing mergeability) and must map to «poll again», not RED; getting that
-      wrong wedges every merge, which makes this a design change to the gate on the
-      critical path, not a three-line edit. Return condition: the first inline
-      review thread on any PR, or the next edit to `gateConditions` (#216)
+      structural fix is a THREE-way classification, not a two-way allow-list —
+      merge / refuse / poll again. Whoever picks this up must not map
+      `BLOCKED → RED`: `BLOCKED` is the normal state of a PR whose required `ci`
+      check has not gone green YET, and `pr:land` is designed to be launched into
+      exactly that state and wait it out (`--timeout`), so reddening it would abort
+      the gate before the wait it exists to perform. Observed on this very PR:
+      `BLOCKED` with `lint-and-typecheck` pending, `CLEAN` minutes later. `UNKNOWN`
+      is transient for the same reason — GitHub has not finished computing
+      mergeability. So this is a design change to the gate on the critical path of
+      every merge, not a three-line edit — which is why it is routed rather than
+      rushed in. Return condition: the first inline review thread on any PR, or the
+      next edit to `gateConditions` (#216)
 
 - [ ] 2026-08-14 `strict: true` on `main` (#216) put `gh pr update-branch` on the
       critical path of any raced merge, and that command invalidates the review
