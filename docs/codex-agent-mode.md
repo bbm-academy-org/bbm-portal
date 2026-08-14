@@ -61,6 +61,21 @@ advisory paths do not have a safe exact mapping:
 Do not infer safety from either missing advisory. Worktree isolation and manual
 context monitoring remain required by the repository instructions.
 
+## Subagent model mapping
+
+Canonical skills and `.claude/agents/*.md` name Claude-specific profiles and
+model ids. Codex preserves their role, independence, and explicit-model rule,
+but uses an available Codex model instead of passing an unsupported Claude id:
+
+| Canonical role                                  | Claude wording                             | Codex mapping   |
+| ----------------------------------------------- | ------------------------------------------ | --------------- |
+| Mechanical search and inventory                 | `bbm-explorer` / Sonnet                    | `gpt-5.6-terra` |
+| Implementation, architecture, gates, and review | `general-purpose` or `bbm-reviewer` / Opus | `gpt-5.6-sol`   |
+
+Pass the canonical agent brief in the Codex dispatch message and always set the
+mapped model explicitly. The mapping is a harness adapter, not a change to the
+task lifecycle; update it when the available Codex model catalog changes.
+
 Generated state under `.claude/codex-write-state/` and
 `.claude/hook-session-registry/` is git-ignored and safe to delete between
 sessions. `BBM_HOOKS_DISABLE=1` remains the emergency kill switch for the whole
