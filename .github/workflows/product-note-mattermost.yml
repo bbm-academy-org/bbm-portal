@@ -4,13 +4,15 @@ name: Product note → Mattermost
 # Mattermost channel (task 7.6, #137). No agent in the delivery path: the source
 # of truth is the PR body, rendered by tools/ci/post-product-note.mjs.
 #
-# Trigger (#202): `push` to main, NOT `pull_request: closed`. This workflow runs
-# on the shared BBM runner pool in the dedicated `notify` lane, and a manager
-# policy that exposes a secret-bearing workflow must never trust PR events
-# (REPOSITORY-ONBOARDING «Least-privilege notification webhook»). A merge into
-# main IS a push of the squash/merge commit, so the merged PR is recovered from
-# the pushed sha via `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct
-# push that belongs to no merged PR delivers nothing and skips green.
+# Trigger (#202): `push` to main, NOT `pull_request: closed`. A workflow that
+# carries a long-lived secret must never be reachable from a PR event — that was
+# enforced twice over while this repo ran on the shared BBM runner pool (a
+# manager policy on top of this trigger list), and since #214 took the pool away
+# the trigger list is the ONLY thing enforcing it. Widening it to `pull_request`
+# would hand MATTERMOST_RELEASE_WEBHOOK_URL to any fork. A merge into main IS a
+# push of the squash/merge commit, so the merged PR is recovered from the pushed
+# sha via `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct push that
+# belongs to no merged PR delivers nothing and skips green.
 #
 # Secret-optional by design: the job is not blocked on the webhook being
 # provisioned — with MATTERMOST_RELEASE_WEBHOOK_URL unset the script logs and
