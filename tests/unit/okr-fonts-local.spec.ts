@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -21,12 +21,26 @@ import { describe, expect, it } from 'vitest'
 
 const VIEW_DIR = join(__dirname, '..', '..', 'src', 'modules', 'okr', 'view')
 
-/** Module specifiers of static imports, re-exports, `require()` and `import()`. */
+/**
+ * Module specifiers of static imports, re-exports, `require()` and `import()`.
+ *
+ * Anchored on the `from` / `import(` / `require(` keyword and never on the
+ * statement it belongs to: an import of five families wraps its clause across
+ * lines at `printWidth: 100`, and a pattern that walked from `import` to `from`
+ * without crossing a newline stopped seeing exactly that — the single most
+ * likely way this defect returns, since the surface already uses three families.
+ * `\s*` spans newlines; keep it that way.
+ *
+ * The trade is deliberate: prose that quotes `from 'next/font/google'` inside a
+ * comment will trip this. That fails CLOSED — noisy, and fixed by rewording —
+ * whereas parsing cleverly enough to exclude comments risks failing OPEN, which
+ * is the whole failure mode this file exists to not have.
+ */
 function specifiers(source: string): string[] {
   const out: string[] = []
   const patterns = [
-    /(?:^|\n)\s*(?:import|export)\b[^;\n]*?\bfrom\s*['"]([^'"]+)['"]/g,
-    /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g,
+    /\bfrom\s*['"]([^'"]+)['"]/g,
+    /\bimport\s*['"]([^'"]+)['"]/g,
     /\b(?:require|import)\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
   ]
   for (const re of patterns) {
@@ -35,10 +49,14 @@ function specifiers(source: string): string[] {
   return out
 }
 
+/** Every source under the view, RECURSIVELY — a `view/parts/` must not escape. */
 function viewSources(): Array<{ name: string; source: string }> {
-  return readdirSync(VIEW_DIR, { withFileTypes: true })
+  return readdirSync(VIEW_DIR, { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
-    .map((e) => ({ name: e.name, source: readFileSync(join(VIEW_DIR, e.name), 'utf8') }))
+    .map((e) => {
+      const full = join(e.parentPath, e.name)
+      return { name: relative(VIEW_DIR, full), source: readFileSync(full, 'utf8') }
+    })
 }
 
 describe('OKR fonts are vendored, not fetched at build time (#219)', () => {
@@ -74,10 +92,25 @@ describe('OKR fonts are vendored, not fetched at build time (#219)', () => {
 
     // The `src` paths are strings the loader resolves, not imports — no
     // dependency graph sees them — so the files they name are checked here.
+    // Both loader shapes count: `src: './fonts/x.woff2'` and the array form
+    // `src: [{ path: './fonts/x.woff2', … }]`. Matching only the first made this
+    // loop run zero times against the second, and "every referenced file
+    // exists" was then vacuously true over an empty set.
+    const referenced = [...source.matchAll(/(?:src|path):\s*['"]\.\/fonts\/([^'"]+)['"]/g)].map(
+      (m) => m[1],
+    )
+    // A parse that finds nothing must fail, not pass quietly: zero matches means
+    // the loader call changed shape and this assertion has stopped guarding.
+    expect(
+      referenced.length,
+      'no ./fonts/ reference could be parsed out of OkrLayout — the loader call changed shape ' +
+        'and this check is no longer looking at anything',
+    ).toBeGreaterThan(0)
+
     const vendored = readdirSync(join(VIEW_DIR, 'fonts'))
-    for (const m of source.matchAll(/src:\s*'\.\/fonts\/([^']+)'/g)) {
-      expect(vendored, `OkrLayout points at ./fonts/${m[1]}, which is not committed`).toContain(
-        m[1],
+    for (const name of referenced) {
+      expect(vendored, `OkrLayout points at ./fonts/${name}, which is not committed`).toContain(
+        name,
       )
     }
   })
