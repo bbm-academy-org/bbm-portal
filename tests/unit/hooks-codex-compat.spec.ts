@@ -359,11 +359,12 @@ describe('repository-local Codex hooks', () => {
     expect(commands).toHaveLength(20)
     for (const hook of commands) {
       expect(hook.commandWindows).not.toMatch(/^powershell(?:\.exe)?\s/i)
+      expect(hook.commandWindows).toMatch(/;\s*exit \$LASTEXITCODE$/)
     }
   })
 
   it.runIf(process.platform === 'win32')(
-    'executes every Windows hook override through the active PowerShell',
+    'executes every Windows hook override and preserves exit codes through active PowerShell',
     () => {
       const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
       const commands = Object.values(hooks.hooks)
@@ -371,22 +372,25 @@ describe('repository-local Codex hooks', () => {
         .flatMap((group) => group.hooks)
       const shimRoot = mkdtempSync(resolve(tmpdir(), 'bbm-codex-node-shim-'))
       const shimCalls = resolve(shimRoot, 'calls.log')
+      const nodeShim = resolve(shimRoot, 'node.cmd')
       const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
+      const runHook = (command: string) =>
+        spawnSync(command, {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            [pathKey]: `${shimRoot};${process.env[pathKey] ?? ''}`,
+          },
+          input: '{}\n',
+          shell: 'powershell.exe',
+        })
 
-      writeFileSync(resolve(shimRoot, 'node.cmd'), '@echo call>>"%~dp0calls.log"\r\n@exit /b 0\r\n')
+      writeFileSync(nodeShim, '@echo call>>"%~dp0calls.log"\r\n@exit /b 0\r\n')
 
       try {
         for (const hook of commands) {
-          const result = spawnSync(hook.commandWindows, {
-            cwd: repoRoot,
-            encoding: 'utf8',
-            env: {
-              ...process.env,
-              [pathKey]: `${shimRoot};${process.env[pathKey] ?? ''}`,
-            },
-            input: '{}\n',
-            shell: 'powershell.exe',
-          })
+          const result = runHook(hook.commandWindows)
 
           expect(
             result.status,
@@ -394,6 +398,13 @@ describe('repository-local Codex hooks', () => {
           ).toBe(0)
         }
         expect(readFileSync(shimCalls, 'utf8').trim().split(/\r?\n/)).toHaveLength(commands.length)
+
+        writeFileSync(nodeShim, '@exit /b 2\r\n')
+        const blocked = runHook(commands[0].commandWindows)
+        expect(
+          blocked.status,
+          `${commands[0].commandWindows}\nstdout: ${blocked.stdout}\nstderr: ${blocked.stderr}`,
+        ).toBe(2)
       } finally {
         rmSync(shimRoot, { recursive: true, force: true })
       }
