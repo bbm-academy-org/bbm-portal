@@ -263,7 +263,10 @@ describe('reviewBaselineDate', () => {
 
 describe('withCommitParents', () => {
   it('stamps the parents onto the commits gh pr view cannot carry them on', () => {
-    const data = withCommitParents({ commits: [{ oid: 'a' }, { oid: 'm' }] }, { m: ['a', 'main'] })
+    const data = withCommitParents(
+      { commits: [{ oid: 'a' }, { oid: 'm' }] },
+      { m: ['a', 'main'] },
+    ) as { commits: { oid: string; parents?: string[] }[] }
     expect(data.commits[1]).toMatchObject({ oid: 'm', parents: ['a', 'main'] })
     expect(data.commits[0].parents).toBeUndefined()
   })
