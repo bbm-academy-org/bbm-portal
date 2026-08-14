@@ -384,7 +384,16 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
   if (state !== 'OPEN') red.push(`the PR is not open (state=${state || 'unknown'})`)
   if (pr?.isDraft) red.push('the PR is a draft')
   if (String(pr?.mergeable ?? '').toUpperCase() === 'CONFLICTING') {
-    red.push('the PR conflicts with its base — update the branch')
+    // The warning lives HERE, not only in the skill: GitHub puts a «Resolve
+    // conflicts» button on the PR page at exactly this moment, and a merge made
+    // in that web editor is the one shape `isBaseMergeCommit` cannot see through
+    // (its COVERAGE BOUNDARY). A rule in a skill is read when the skill is
+    // loaded; this line is read by the session standing in front of the trap.
+    red.push(
+      'the PR conflicts with its base — resolve it in your worktree, not with GitHub’s ' +
+        '«Resolve conflicts» button (it bypasses the review-freshness gate, #222), then ' +
+        'update the branch and expect a re-review',
+    )
   }
   const closes = (pr?.closingIssuesReferences ?? []).map((r) => r?.number).filter(Boolean)
   if (closes.length === 0) {

@@ -496,6 +496,20 @@ describe('gateConditions', () => {
     expect(gateConditions({ ...ok, mergeable: 'CONFLICTING' }).red[0]).toMatch(/conflicts/)
   })
 
+  /**
+   * Round-2 review of PR #226. The web conflict editor is the one merge the
+   * freshness gate cannot see through (`isBaseMergeCommit`, COVERAGE BOUNDARY),
+   * and GitHub offers that button on the PR page at exactly the moment this RED
+   * fires. A skill file is read when it is loaded; this string is read by the
+   * session that is standing in front of the trap.
+   */
+  it('the conflict RED names the button the session is about to be offered', () => {
+    const red = gateConditions({ ...ok, mergeable: 'CONFLICTING' }).red.join('\n')
+    expect(red).toMatch(/Resolve conflicts/)
+    expect(red).toMatch(/worktree/)
+    expect(red).toMatch(/re-review/)
+  })
+
   it('no `Closes #N` is RED: board-done would have nowhere to set Done', () => {
     expect(gateConditions({ ...ok, closingIssuesReferences: [] }).red[0]).toMatch(/Closes #N/)
   })
