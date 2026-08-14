@@ -78,14 +78,20 @@ read as a verdict. Do not re-enable it without changing the gate first.
 rather than reviewed. The `ci` aggregate itself is the one exemption — it cannot be in its
 own needs-list.
 
-**Branch-protection limitation (verified 2026-08-05).** `.github/branch-protection.json`
-is a declarative payload, not live state: this repo is private on GitHub Free, and
-`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection` answers
-`403 Upgrade to GitHub Pro or make this repository public`. Until the plan is upgraded or
-the repo is public, **BLOCK is enforced by the merge tooling, not by the server**: a red
-`ci` check makes `pnpm pr:land` refuse to merge (task-canon §7), and that is the whole
-barrier. The payload's `required_status_checks.contexts` is kept correct so that the
-upgrade is a single `gh api --method PUT … --input .github/branch-protection.json` away.
+**Branch-protection limitation (raised 2026-08-05, blocker removed 2026-08-14).**
+`.github/branch-protection.json` is a declarative payload, not live state. Until
+2026-08-14 it could not become live at all: on GitHub Free a **private** repo answers
+`403 Upgrade to GitHub Pro or make this repository public` to
+`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection`. The repo went
+public that day (#214), which satisfies that error's own escape clause — the API now
+answers `404 Branch not protected`, i.e. "allowed, just not applied yet".
+
+So the limitation is now a **gap, not a constraint**: `main` is still unprotected and
+**BLOCK is still enforced by the merge tooling rather than by the server** — a red `ci`
+check makes `pnpm pr:land` refuse to merge (task-canon §7), and that remains the whole
+barrier — but nothing external prevents closing it. Applying the payload is tracked as
+#216; it stays a single `gh api --method PUT … --input .github/branch-protection.json`,
+and its `required_status_checks.contexts` is kept correct for exactly that moment.
 
 ### 2.2 Hook guards
 
