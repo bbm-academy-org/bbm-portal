@@ -183,12 +183,12 @@ be a second source of truth, and the first one to drift.
 single pass together with reformatting the issues that carry them; until then
 `pnpm backlog:triage` lists the carriers in its «Гигиена полей» section.
 
-| Label                                              | Fate                                                                                                          |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `bug` (3), `enhancement` (11), `documentation` (3) | the issues get Type `Bug` / `Feature` / `Task` and the labels are deleted — otherwise one class has two names |
-| `duplicate`, `invalid`, `wontfix`                  | deleted: these are close reasons, not task properties (`gh issue close --reason not planned` + a comment)     |
-| `good first issue`, `help wanted`                  | deleted: a private repo with a single owner and agents, there are no external contributors                    |
-| `question`                                         | deleted: a question to the owner is not a backlog task                                                        |
+| Label                                              | Fate                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bug` (3), `enhancement` (11), `documentation` (3) | the issues get Type `Bug` / `Feature` / `Task` and the labels are deleted — otherwise one class has two names                                                                                                                                                                |
+| `duplicate`, `invalid`, `wontfix`                  | deleted: these are close reasons, not task properties (`gh issue close --reason not planned` + a comment)                                                                                                                                                                    |
+| `good first issue`, `help wanted`                  | deleted: the backlog is worked by one owner and his agents, and these two labels are a recruiting signal we do not send. The repo went public on 2026-08-14 (#214) — visibility changed, the staffing did not; revisit only if outside contribution is ever actually invited |
+| `question`                                         | deleted: a question to the owner is not a backlog task                                                                                                                                                                                                                       |
 
 The assignee defaults to `@me` — a mark of who filed the task, not an assignment
 and **not** a busy signal: there are exactly two claim signals and both are in §4
@@ -332,7 +332,11 @@ artifact itself (the script's `--help` and its file header).
 `.github/branch-protection.json` is a payload, not a state: it is applied by hand
 with
 `gh api --method PUT repos/bbm-academy-org/bbm-portal/branches/main/protection --input .github/branch-protection.json`,
-and on the current GitHub plan it may not apply at all.
+and as of 2026-08-14 it has not been applied — `main` is unprotected. It is no
+longer blocked from applying, though: the plan limitation that used to reject the
+call outright ended when the repo went public (#214), and closing the gap is
+tracked as #216. The live state and what changed is owned by
+[`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md) §2.1, not restated here.
 
 **Review is not required by server-side protection, but it is required by a
 gate.** A mandatory APPROVE review is not enabled in the payload: the only human

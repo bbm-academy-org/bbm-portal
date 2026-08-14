@@ -215,6 +215,18 @@ Entry format:
       данных. Лечится вызовом rmdir с обычным `winPath` — return condition: первый
       реальный заход в robocopy-фолбэк (teardown упал с exit 1 на long-path) (#90)
 
+- [ ] 2026-08-14 `pnpm install` в свежем worktree печатает
+      `[ERROR] Was not able to set git hooks … ENOTDIR: mkdir '<wt>/.git/hooks'`:
+      `simple-git-hooks` не знает, что в worktree `.git` — файл, а хуки живут в
+      общем каталоге основного чекаута. Хук на деле РАБОТАЕТ (lint-staged
+      отработал на первом же коммите в worktree 214), то есть сообщение ложное, но
+      читается как «хука нет» — в этой сессии я на нём построил неверный вывод и
+      сообщил его владельцу. Лечится проверкой на worktree перед вызовом
+      `simple-git-hooks` в `prepare` — return condition: первый случай, когда
+      сессия из-за этого сообщения пропустит проверки «раз хука всё равно нет»,
+      или ближайшая правка `prepare`. Всплыло при работе над #214, чинится в
+      worktree-тулинге (#90)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_

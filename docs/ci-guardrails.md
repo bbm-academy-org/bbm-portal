@@ -78,14 +78,45 @@ read as a verdict. Do not re-enable it without changing the gate first.
 rather than reviewed. The `ci` aggregate itself is the one exemption — it cannot be in its
 own needs-list.
 
-**Branch-protection limitation (verified 2026-08-05).** `.github/branch-protection.json`
-is a declarative payload, not live state: this repo is private on GitHub Free, and
-`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection` answers
-`403 Upgrade to GitHub Pro or make this repository public`. Until the plan is upgraded or
-the repo is public, **BLOCK is enforced by the merge tooling, not by the server**: a red
-`ci` check makes `pnpm pr:land` refuse to merge (task-canon §7), and that is the whole
-barrier. The payload's `required_status_checks.contexts` is kept correct so that the
-upgrade is a single `gh api --method PUT … --input .github/branch-protection.json` away.
+**Branch-protection limitation (raised 2026-08-05, blocker removed 2026-08-14).**
+`.github/branch-protection.json` is a declarative payload, not live state. Until
+2026-08-14 it could not become live at all: on GitHub Free a **private** repo answers
+`403 Upgrade to GitHub Pro or make this repository public` to
+`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection`. The repo went
+public that day (#214), which satisfies that error's own escape clause — the API now
+answers `404 Branch not protected`, i.e. "allowed, just not applied yet".
+
+So the limitation is now a **gap, not a constraint**: `main` is still unprotected and
+**BLOCK is still enforced by the merge tooling rather than by the server** — a red `ci`
+check makes `pnpm pr:land` refuse to merge (task-canon §7), and that remains the whole
+barrier — but nothing external prevents closing it. Applying the payload is tracked as
+#216; it stays a single `gh api --method PUT … --input .github/branch-protection.json`,
+and its `required_status_checks.contexts` is kept correct for exactly that moment.
+
+### 2.1.1 Secret-bearing workflows and PR events
+
+This repo has exactly one long-lived secret, `MATTERMOST_RELEASE_WEBHOOK_URL`, used by
+`product-note-mattermost.yml` and `release-digest.yml`. **The rule: a job that can read
+it is never reachable from a pull-request event.** Neither of those two files owns this
+rule — it binds both — so it lives here and they point at it.
+
+The mechanism matters, because the intuitive version of it is false and was written into
+this repo's comments until #214 corrected it:
+
+| Trigger                                            | Secrets available?        | Verdict                                                                                      |
+| -------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| `pull_request` from a **fork**                     | **no** — GitHub withholds | not the hazard people assume; a forker cannot read the webhook even if a PR event were added |
+| `pull_request` from a **branch in this repo**      | **yes**                   | real residual: any collaborator's branch would receive it                                    |
+| `pull_request_target` + checkout of the PR head    | **yes**, in base context  | the genuine hazard — base-repo permissions running fork-controlled code                      |
+| `push` / `deployment_status` / `workflow_dispatch` | yes                       | fine: none of them is attacker-triggerable here                                              |
+
+Note the third row's precision: `pull_request_target` alone is not a leak. It becomes one
+when combined with checking out the pull request's head. This repo uses that trigger
+nowhere, which is the invariant worth preserving.
+
+Until #214 this rule had two enforcers — the self-hosted pool's manager policy (#202) plus
+each workflow's trigger list. The pool is gone; the trigger lists are the only enforcement
+left, which is why widening one is a security change and not a convenience edit.
 
 ### 2.2 Hook guards
 

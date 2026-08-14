@@ -42,7 +42,8 @@ jobs:
     # A title-only edit changes no guard input — skip those runs entirely.
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -53,6 +54,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:epic-autoclose
         env:
@@ -67,7 +69,8 @@ jobs:
   assignee-milestone:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -77,6 +80,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:assignee-milestone
         env:
@@ -93,7 +97,8 @@ jobs:
   stage-b:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -104,6 +109,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:stage-b --severity block
         env:
@@ -120,7 +126,8 @@ jobs:
   spec-link:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -131,6 +138,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:spec-link --severity block
         env:
@@ -149,7 +157,8 @@ jobs:
   spec-deletion:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -161,6 +170,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:spec-deletion
         env:
@@ -174,7 +184,8 @@ jobs:
   product-note:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5, promotion tied to #137
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, light, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -184,6 +195,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:product-note
         env:
