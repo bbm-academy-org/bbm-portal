@@ -83,10 +83,25 @@ downstream of anything.
 - **The review verdict**, freshly: a `VERDICT: APPROVE` line in a PR comment,
   dated after the last commit that changed the PR's own diff. An approval given
   before that commit approved different code. A `gh pr update-branch` merge
-  commit is the one exception, and a structural one — it only re-bases the
-  branch, so it does not send you back for a re-review (#222).
-  `--require-review` narrows this to a human APPROVE;
+  commit is the one exception, and a narrow one — GitHub builds and signs it
+  server-side, and it only re-bases the branch, so it does not send you back for
+  a re-review (#222). `--require-review` narrows this to a human APPROVE;
   `--no-review-gate "<reason>"` lifts it and prints the reason as the record.
+
+## The branch is BEHIND — and the update conflicts
+
+`main` requires strict status checks, so a BEHIND branch is a RED gate and the
+update is not optional. `gh pr update-branch <pr>` is the whole procedure while
+it works, and it is free of review cost by design.
+
+**When it refuses because the update conflicts, what you do next changes the
+review situation.** The fallback is your own `git fetch && git merge origin/main`
+in the worktree, resolving by hand — and those resolutions are code nobody
+reviewed. The gate treats that merge as what it is: a commit of yours, made on
+your machine, which stales the verdict and sends the PR back for a fresh review.
+That is not the gate misfiring — dropping the other side's hunk while resolving
+is a real change of behaviour. Budget the re-review; do not go looking for a way
+around it.
 
 ## Before the gate: is the base even green?
 

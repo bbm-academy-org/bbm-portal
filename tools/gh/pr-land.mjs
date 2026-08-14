@@ -230,26 +230,36 @@ export function findAgentApproval(comments, baselineDate) {
  * status checks, so this command is on the critical path of every raced merge —
  * letting it stale the verdict buys a full re-review for nothing.
  *
- * Three structural conditions, all of them load-bearing, and no matching on
- * commit messages (a message is renamed the first time anyone touches it):
+ * FOUR conditions, all of them load-bearing, and no matching on commit messages
+ * (a message is renamed the first time anyone touches it):
  *
  *   1. exactly two parents — an ordinary commit has one, an octopus merge more;
  *   2. the FIRST parent is the PR's previous commit — the merge sits on top of
  *      the PR's own line, rather than the line being merged into something else;
- *   3. the SECOND parent is NOT one of the PR's own commits. This is the clause
- *      that keeps the gate honest, and it is exact rather than approximate:
- *      GitHub lists as «the PR's commits» everything reachable from head but not
- *      from the base, so a parent that is absent from that list is by
- *      construction already contained in the base — it adds nothing to the
+ *   3. the SECOND parent is NOT one of the PR's own commits. Exact rather than
+ *      approximate: GitHub lists as «the PR's commits» everything reachable from
+ *      head but not from the base, so a parent that is absent from that list is
+ *      by construction already contained in the base — it adds nothing to the
  *      squash. Merge a SIBLING branch into your PR instead and its tip IS in the
  *      list, the merge is not recognised, and the verdict goes stale as it
- *      should.
+ *      should. The argument assumes the list is COMPLETE, which is why
+ *      `parseCommitFacts` refuses a page that might be truncated;
+ *   4. GitHub created the commit itself — see `parseCommitFacts`. Shape alone is
+ *      not enough, and this is the clause the review of PR #226 was right to
+ *      demand. `gh pr update-branch` refuses when the update conflicts, and the
+ *      fallback is then `git merge origin/main` + resolve BY HAND — routine
+ *      here, since nearly every PR appends to `DEBT.md`. That commit has exactly
+ *      the shape of clauses 1–3 while carrying resolution hunks no reviewer saw,
+ *      and stepping over it is precisely the weakening #222 forbids. Provenance
+ *      is what separates them: GitHub builds the update-branch merge server-side
+ *      and signs it with its own key, and a merge made on a laptop cannot forge
+ *      that. Verified on live API data, not assumed (PR #226 comments).
  *
- * Not covered, deliberately: a merge whose conflicts were resolved by hand can
- * carry edits of its own, and those edits are structurally indistinguishable
- * from a clean merge here (DEBT.md, 2026-08-14). `gh pr update-branch` never
- * makes one — it refuses to merge on conflict.
- * @param {{oid?:string, parents?:string[]}} commit
+ * The path that is NOT covered is the safe one: a hand-resolved merge (and an
+ * `update-branch --rebase`, which rewrites the commits) simply fails the test,
+ * the verdict goes stale, and the review is re-run — the old cost, never the
+ * unreviewed hunk.
+ * @param {{oid?:string, parents?:string[], githubCreated?:boolean}} commit
  * @param {{oid?:string}} previous  the commit before it in the PR's list
  * @param {Set<string>} prCommitOids  the oids of the PR's own commits
  */
@@ -257,7 +267,8 @@ export function isBaseMergeCommit(commit, previous, prCommitOids) {
   const parents = commit?.parents
   if (!Array.isArray(parents) || parents.length !== 2) return false
   if (!previous?.oid || parents[0] !== previous.oid) return false
-  return !prCommitOids.has(parents[1])
+  if (prCommitOids.has(parents[1])) return false
+  return commit.githubCreated === true
 }
 
 /**
@@ -280,21 +291,63 @@ export function reviewBaselineDate(pr) {
   return commits[i]?.committedDate ?? null
 }
 
+/** GitHub's own committer identity on a commit it created server-side. */
+const GITHUB_COMMITTER_EMAIL = 'noreply@github.com'
+
+/** Page size of the commits read, and the ceiling `gh pr view` itself reads. */
+const COMMITS_PAGE_SIZE = 100
+
 /**
- * Stamp commit parents onto the PR payload. `gh pr view --json commits` carries
- * every field the gate needs except the one `isBaseMergeCommit` is built on, so
- * the parents come from a second read (`runCommitParents`). No map — no stamp,
- * and the freshness rule stays at its strict default.
- * @param {object} data  the `gh pr view` payload
- * @param {Record<string,string[]>|null} parentsByOid
+ * The two facts `isBaseMergeCommit` needs and `gh pr view --json commits` does
+ * not carry, read off the REST listing of a PR's commits: the parents, and
+ * whether GITHUB created the commit rather than a person.
+ *
+ * Provenance is the pair «committed by `GitHub <noreply@github.com>`» AND «the
+ * signature verifies», and it needs both halves. The committer identity alone is
+ * two lines of `git -c user.email=…` away for anyone; the signature is GitHub's
+ * own key, applied only by commits GitHub itself builds — and `noreply@github.com`
+ * is not an address a user can hold, so no human key can verify against it.
+ * Live-checked before it was built on (PR #226 comments): a `gh pr update-branch`
+ * merge comes back `GitHub <noreply@github.com>` + `verification.verified: true`,
+ * a laptop `git merge` as the developer, unsigned.
+ *
+ * A page that could be truncated is refused WHOLE rather than trusted in part:
+ * clause 3 reads «absent from the PR's own commits» as «already in the base»,
+ * and on a partial list that inference is simply false. 100 rows is both the
+ * page size and the ceiling `gh pr view --json commits` itself reads, so a full
+ * page is indistinguishable from a truncated one and buys nothing.
+ * @param {unknown} rows  the parsed body of `GET /repos/…/pulls/<n>/commits`
+ * @returns {Record<string,{parents:string[], githubCreated:boolean}>|null}
  */
-export function withCommitParents(data, parentsByOid) {
-  if (!parentsByOid || !Array.isArray(data?.commits)) return data
+export function parseCommitFacts(rows) {
+  if (!Array.isArray(rows) || rows.length >= COMMITS_PAGE_SIZE) return null
+  const out = {}
+  for (const row of rows) {
+    if (typeof row?.sha !== 'string') continue
+    const committer = row?.commit?.committer
+    out[row.sha] = {
+      parents: (row.parents ?? []).map((p) => p?.sha).filter((sha) => typeof sha === 'string'),
+      githubCreated:
+        String(committer?.email ?? '').toLowerCase() === GITHUB_COMMITTER_EMAIL &&
+        row?.commit?.verification?.verified === true,
+    }
+  }
+  return out
+}
+
+/**
+ * Stamp those facts onto the PR payload. No map — no stamp, and the freshness
+ * rule stays at its strict default.
+ * @param {object} data  the `gh pr view` payload
+ * @param {Record<string,{parents:string[], githubCreated:boolean}>|null} factsByOid
+ */
+export function withCommitFacts(data, factsByOid) {
+  if (!factsByOid || !Array.isArray(data?.commits)) return data
   return {
     ...data,
     commits: data.commits.map((c) => {
-      const parents = parentsByOid[c?.oid]
-      return Array.isArray(parents) ? { ...c, parents } : c
+      const facts = factsByOid[c?.oid]
+      return facts ? { ...c, ...facts } : c
     }),
   }
 }
@@ -458,33 +511,41 @@ const PR_FIELDS =
   'headRefName,headRefOid,statusCheckRollup,comments,commits'
 
 /**
- * Commit parents — the one fact the gate needs and `gh pr view --json commits`
- * does not carry (its per-commit fields are oid / dates / message / authors).
- * The REST listing of a PR's commits does carry them, and it lists exactly the
- * PR's own commits, which is what makes `isBaseMergeCommit`'s third clause
- * exact.
+ * The REST listing of a PR's commits — the read that carries parents and
+ * provenance, and that lists exactly the PR's own commits, which is what makes
+ * `isBaseMergeCommit`'s third clause exact.
  *
  * Never fatal: a failed or unreadable call returns null, the payload goes
  * un-stamped and review freshness falls back to «the last commit on the branch».
- * The page size matches the 100 commits `gh pr view` itself reads.
- * @returns {Record<string,string[]>|null}
  */
-function runCommitParents(pr) {
-  const res = ghJson(['api', `repos/${REPO}/pulls/${pr}/commits?per_page=100`])
-  if (!res.ok || !Array.isArray(res.data)) return null
-  const out = {}
-  for (const c of res.data) {
-    if (typeof c?.sha === 'string') {
-      out[c.sha] = (c.parents ?? []).map((p) => p?.sha).filter((sha) => typeof sha === 'string')
-    }
-  }
-  return out
+function runCommitFacts(pr) {
+  const res = ghJson(['api', `repos/${REPO}/pulls/${pr}/commits?per_page=${COMMITS_PAGE_SIZE}`])
+  return res.ok ? parseCommitFacts(res.data) : null
 }
 
-function runViewPr(pr) {
-  const res = ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS])
+/**
+ * The facts are keyed by HEAD SHA and read at most once per SHA per run: the
+ * gate re-reads the PR on every probe of its polling loop (up to the whole
+ * `--timeout` window), and the parents of commits already in the payload do not
+ * change while we wait — so this stays one extra call per `pr:land`, not one per
+ * probe. A head that MOVES is a different key and is read again, never served
+ * the previous head's answer; the cache lives as long as the process, which is
+ * one command.
+ * @param {number} pr
+ * @param {{view?:Function, facts?:Function, cache?:Map<string,object|null>}} [io]
+ */
+const COMMIT_FACTS_CACHE = new Map()
+
+export function runViewPr(pr, io = {}) {
+  const view = io.view ?? (() => ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS]))
+  const facts = io.facts ?? (() => runCommitFacts(pr))
+  const cache = io.cache ?? COMMIT_FACTS_CACHE
+
+  const res = view()
   if (!res.ok) return res
-  return { ok: true, data: withCommitParents(res.data, runCommitParents(pr)) }
+  const key = `${pr}:${res.data?.headRefOid ?? '?'}`
+  if (!cache.has(key)) cache.set(key, facts())
+  return { ok: true, data: withCommitFacts(res.data, cache.get(key)) }
 }
 
 /**

@@ -345,8 +345,9 @@ form of review is different — a reviewer subagent's comment carrying the line
 `VERDICT: APPROVE`, and `pnpm pr:land` blocks the merge until such a comment
 **newer than the last commit that changed the PR's own diff** exists (a human
 APPROVE counts too). A `gh pr update-branch` merge commit is not such a commit —
-it moves the branch onto a newer base and changes no reviewed line, so it does
-not stale the verdict (#222, `isBaseMergeCommit`); every other commit does. To
+GitHub builds and signs it server-side and it changes no reviewed line, so it
+does not stale the verdict (#222, `isBaseMergeCommit`); every other commit does,
+including a merge of `main` you make and resolve yourself. To
 narrow it to a human one — `--require-review`; to lift it — only
 `--no-review-gate "<reason>"`, where the reason is mandatory and gets printed.
 The owner's acceptance (stage 5) is not checked by the gate: a reminder about it
