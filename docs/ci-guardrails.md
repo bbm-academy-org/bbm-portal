@@ -112,7 +112,7 @@ the payload the same day. In between, the state was a gap rather than a constrai
 
 **BLOCK now has two enforcers, and they are not the same plane.** The server refuses a
 merge whose `ci` check is not green. `pnpm pr:land` refuses for that reason **and** for a
-missing `VERDICT: APPROVE` comment newer than the last commit (task-canon §7) — a rule the
+missing `VERDICT: APPROVE` comment newer than the code it approves (task-canon §7) — a rule the
 server knows nothing about. WARN guards stay invisible to the server either way, because
 the required context is `ci` and they are absent from its needs-list. What promotion costs
 now depends on which workflow the guard lives in:

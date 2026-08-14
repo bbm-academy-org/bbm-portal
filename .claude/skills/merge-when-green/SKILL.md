@@ -81,9 +81,36 @@ downstream of anything.
   is why `pr-body-guards.yml` does not cancel in-progress runs; a gate red on a
   WARN guard's check-run is that bug, not a merge decision.
 - **The review verdict**, freshly: a `VERDICT: APPROVE` line in a PR comment,
-  dated after the PR's last commit. An approval given before the last commit
-  approved different code. `--require-review` narrows this to a human APPROVE;
+  dated after the last commit that changed the PR's own diff. An approval given
+  before that commit approved different code. A `gh pr update-branch` merge
+  commit is the one exception, and a narrow one — GitHub builds and signs it
+  server-side, and it only re-bases the branch, so it does not send you back for
+  a re-review (#222). `--require-review` narrows this to a human APPROVE;
   `--no-review-gate "<reason>"` lifts it and prints the reason as the record.
+
+## The branch is BEHIND — and the update conflicts
+
+`main` requires strict status checks, so a BEHIND branch is a RED gate and the
+update is not optional. `gh pr update-branch <pr>` is the whole procedure while
+it works, and it is free of review cost by design.
+
+**When it refuses because the update conflicts, what you do next changes the
+review situation.** The fallback is your own `git fetch && git merge origin/main`
+in the worktree, resolving by hand — and those resolutions are code nobody
+reviewed. The gate treats that merge as what it is: a commit of yours, made on
+your machine, which stales the verdict and sends the PR back for a fresh review.
+That is not the gate misfiring — dropping the other side's hunk while resolving
+is a real change of behaviour. Budget the re-review; do not go looking for a way
+around it.
+
+**GitHub will offer you one, and it is not an escape hatch.** The «Resolve
+conflicts» button on the PR page appears at exactly this moment, and a merge
+committed through that web editor is indistinguishable to the gate from a clean
+`update-branch` one — same two parents, same GitHub committer, same valid
+signature — so it passes the freshness check while carrying content you typed
+(`DEBT.md`, 2026-08-14; the boundary is stated in `isBaseMergeCommit`'s JSDoc).
+Nothing stops you mechanically. Resolve in your worktree instead, and if you did
+use the editor, re-request the review by hand: the gate cannot ask for you.
 
 ## Before the gate: is the base even green?
 
@@ -98,7 +125,7 @@ so a reviewer can tell an inherited red from one this PR introduced.
 ## Failure modes this replaces
 
 - Merging on "the checks looked green" instead of on an exit code.
-- Merging on an APPROVE that predates the last commit.
+- Merging on an APPROVE that predates the last commit that changed the diff.
 - Piping the gate and reading the pipe's exit status.
 - Merging from inside a worktree and leaving the branch, the board row and the
   worktree behind because the tail died at its first stage.
