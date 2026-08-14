@@ -306,16 +306,36 @@ describe('reviewBaselineDate', () => {
    * that base — and `main`'s tip is not reachable from the base, so GitHub lists
    * it among the PR's own commits and clause 3 refuses the skip by itself.
    */
-  it('a stacked PR (base ≠ main) is not stepped over', () => {
+  it('a stacked PR (base ≠ main) is not stepped over — refused by clause 3', () => {
+    // Ordered so the merge DOES sit on top of the PR's own line (clause 2
+    // passes); what refuses it is `mainTip` being among the PR's own commits.
     expect(
       reviewBaselineDate({
         commits: [
+          commit('mainTip', '2026-08-14T10:00:00Z', ['x']),
           commit('b', '2026-08-14T11:00:00Z', ['featureBase']),
-          commit('mainTip', '2026-08-14T12:00:00Z', ['x']),
           ghMerge('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
         ],
       }),
     ).toBe('2026-08-14T15:00:00Z')
+  })
+
+  /**
+   * Round-2 review of PR #226: the JSDoc asserts that `gh pr update-branch
+   * --rebase` is covered by clause 1, so the assertion gets a test. A rebase
+   * REWRITES the PR's commits server-side instead of merging — GitHub-created,
+   * fresh dates, but single-parent — and single-parent commits are never stepped
+   * over, so the verdict goes stale and the review is re-run.
+   */
+  it('an update-branch --rebase rewrite is not stepped over: rebased commits have one parent', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          { ...commit('b2', '2026-08-14T16:00:00Z', ['newBase']), githubCreated: true },
+          { ...commit('c2', '2026-08-14T16:00:01Z', ['b2']), githubCreated: true },
+        ],
+      }),
+    ).toBe('2026-08-14T16:00:01Z')
   })
 
   it('a merge that pulls in another branch of its own is NOT stepped over', () => {

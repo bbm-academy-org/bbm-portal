@@ -255,10 +255,25 @@ export function findAgentApproval(comments, baselineDate) {
  *      and signs it with its own key, and a merge made on a laptop cannot forge
  *      that. Verified on live API data, not assumed (PR #226 comments).
  *
- * The path that is NOT covered is the safe one: a hand-resolved merge (and an
- * `update-branch --rebase`, which rewrites the commits) simply fails the test,
- * the verdict goes stale, and the review is re-run — the old cost, never the
- * unreviewed hunk.
+ * COVERAGE BOUNDARY — read this before trusting the predicate (round-2 review of
+ * PR #226). What it covers: a `gh pr update-branch` merge is recognised; a LOCAL
+ * `git merge origin/main`, hand-resolved or not, is refused by clause 4; an
+ * `update-branch --rebase` is refused by clause 1, since it rewrites the commits
+ * instead of merging and leaves them single-parent. Those all fail towards
+ * strictness — the verdict goes stale and the review is re-run.
+ *
+ * What it does NOT cover: a merge committed through GitHub's WEB conflict editor
+ * («Resolve conflicts» → «Commit merge»), which is offered on the PR page at
+ * exactly the moment `update-branch` refuses. GitHub builds that one server-side
+ * too, so it carries the same two parents, the same base tip as the second, the
+ * same `GitHub <noreply@github.com>` committer and the same valid signature —
+ * all four clauses pass — while the editor lets a human type arbitrary content
+ * into the merged file. NO field of the read this gate makes separates the two;
+ * telling them apart needs the merge's TREE compared against a clean 3-way merge
+ * of its parents. Known hole, routed in `DEBT.md` with a return condition, and
+ * `.claude/skills/merge-when-green/SKILL.md` tells sessions not to take that
+ * button. Do not restate this boundary as «the uncovered paths are safe» — one
+ * of them is not.
  * @param {{oid?:string, parents?:string[], githubCreated?:boolean}} commit
  * @param {{oid?:string}} previous  the commit before it in the PR's list
  * @param {Set<string>} prCommitOids  the oids of the PR's own commits

@@ -275,6 +275,29 @@ Entry format:
       there** (the second design — `isBaseMergeCommit` / `reviewBaselineDate`);
       this line goes at the next sweep (#216 → #222)
 
+- [ ] 2026-08-14 `isBaseMergeCommit` (`tools/gh/pr-land.mjs`, #222) cannot tell a
+      `gh pr update-branch` merge from one committed through GitHub's **web
+      conflict editor** («Resolve conflicts» → «Commit merge»), and the second one
+      carries whatever a human typed into the merged file. GitHub builds both
+      server-side, so both come back with two parents, the base tip as the second,
+      committer `GitHub <noreply@github.com>` and a valid signature — all four
+      clauses pass. Confirmed from GitHub's own docs, not inferred: «GitHub will
+      automatically use GPG to sign commits you make using the web interface» plus
+      «click Commit merge. This merges the entire base branch into your head
+      branch». The button is offered on the PR page at exactly the moment
+      `update-branch` refuses, so it sits one click off the path this fix serves;
+      `.claude/skills/merge-when-green/SKILL.md` now says not to take it, which is
+      prose, not a guard. Separating the two needs CONTENT, not provenance —
+      the merge's tree against a clean 3-way merge of its parents
+      (`git merge-tree`), i.e. a fetch plus local git on the critical path of every
+      merge; the cheaper `compare(base…merge)` variant was costed and refused
+      because its false «dirty» rate is highest exactly in this repo's common raced
+      case (two PRs appending to `DEBT.md` shift each other's hunk headers), which
+      would disable the fix where it is needed most. Priced and declined, not
+      overlooked. Return condition: the first time a session resolves a conflict in
+      the web editor on any PR (its own action, so it is known at the time), or the
+      next edit to `isBaseMergeCommit` (#222, round-2 review of PR #226)
+
 - [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
       branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
       `refs/remotes/origin/docs/ci-guardrails.md`, not found, and reported `STALE`.

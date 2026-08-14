@@ -103,6 +103,15 @@ That is not the gate misfiring — dropping the other side's hunk while resolvin
 is a real change of behaviour. Budget the re-review; do not go looking for a way
 around it.
 
+**GitHub will offer you one, and it is not an escape hatch.** The «Resolve
+conflicts» button on the PR page appears at exactly this moment, and a merge
+committed through that web editor is indistinguishable to the gate from a clean
+`update-branch` one — same two parents, same GitHub committer, same valid
+signature — so it passes the freshness check while carrying content you typed
+(`DEBT.md`, 2026-08-14; the boundary is stated in `isBaseMergeCommit`'s JSDoc).
+Nothing stops you mechanically. Resolve in your worktree instead, and if you did
+use the editor, re-request the review by hand: the gate cannot ask for you.
+
 ## Before the gate: is the base even green?
 
 ```bash
