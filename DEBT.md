@@ -227,6 +227,57 @@ Entry format:
       или ближайшая правка `prepare`. Всплыло при работе над #214, чинится в
       worktree-тулинге (#90)
 
+- [ ] 2026-08-14 `.github/branch-protection.json` and the live protection on `main`
+      drift independently: editing the file does not touch the branch, and editing
+      the protection in the GitHub UI does not touch the file. Nothing detects the
+      divergence — a guard could diff the payload against
+      `GET …/branches/main/protection` on every PR. Low stakes while both are
+      changed by hand in the same motion, which is what #216 did. Return condition:
+      the first time the two are found out of sync, or the next edit to either
+      (#216)
+
+- [ ] 2026-08-14 `gateConditions` in `tools/gh/pr-land.mjs` still inspects
+      `mergeStateStatus` value by value (only `BEHIND` today), so every state the
+      now-live protection can produce has to be remembered one at a time. `BLOCKED`
+      — what an unresolved inline review thread produces under
+      `required_conversation_resolution` — slips past, and the gate reports green
+      while the server refuses. Reachable today only via a human inline comment:
+      the reviewer subagent posts plain PR comments, which create no threads. The
+      structural fix is a THREE-way classification, not a two-way allow-list —
+      merge / refuse / poll again. Whoever picks this up must not map
+      `BLOCKED → RED`: `BLOCKED` is the normal state of a PR whose required `ci`
+      check has not gone green YET, and `pr:land` is designed to be launched into
+      exactly that state and wait it out (`--timeout`), so reddening it would abort
+      the gate before the wait it exists to perform. Observed on this very PR:
+      `BLOCKED` with `lint-and-typecheck` pending, `CLEAN` minutes later. `UNKNOWN`
+      is transient for the same reason — GitHub has not finished computing
+      mergeability. So this is a design change to the gate on the critical path of
+      every merge, not a three-line edit — which is why it is routed rather than
+      rushed in. Return condition: the first inline review thread on any PR, or the
+      next edit to `gateConditions` (#216)
+
+- [ ] 2026-08-14 `strict: true` on `main` (#216) put `gh pr update-branch` on the
+      critical path of any raced merge, and that command invalidates the review
+      verdict: it adds a merge commit, which moves `commits[last].committedDate`,
+      which makes `findAgentApproval` rule the existing `VERDICT: APPROVE` stale.
+      The result is a mandatory re-review of a merge commit that changed no
+      reviewed line — cost paid in full every time two sessions race. Fix is a
+      judgement call, not a patch: either compare the verdict against the last
+      commit that touched the DIFF rather than the last commit on the branch, or
+      teach the gate to recognise an update-branch merge commit as review-neutral.
+      Return condition: the first time a session re-runs a review purely because of
+      an update-branch, or the next edit to `findAgentApproval` (#216)
+
+- [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
+      branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
+      `refs/remotes/origin/docs/ci-guardrails.md`, not found, and reported `STALE`.
+      A false STALE is worse than no row — the gate the verifier feeds tells the
+      session to reconcile a premise that was never wrong, and a reader who learns
+      the rows can be wrong stops trusting the real ones. Fix: reject candidates
+      carrying a file extension, or test `git cat-file -e HEAD:<path>` before the
+      ref lookup. Return condition: the next false STALE, or the next edit to the
+      verifier (#150)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_

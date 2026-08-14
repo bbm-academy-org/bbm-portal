@@ -332,11 +332,11 @@ artifact itself (the script's `--help` and its file header).
 `.github/branch-protection.json` is a payload, not a state: it is applied by hand
 with
 `gh api --method PUT repos/bbm-academy-org/bbm-portal/branches/main/protection --input .github/branch-protection.json`,
-and as of 2026-08-14 it has not been applied — `main` is unprotected. It is no
-longer blocked from applying, though: the plan limitation that used to reject the
-call outright ended when the repo went public (#214), and closing the gap is
-tracked as #216. The live state and what changed is owned by
-[`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md) §2.1, not restated here.
+and re-applying it is how the file and the live protection are reconciled after
+either one is edited. **Whether it is currently applied, and what its live values
+are, is owned by [`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md) §2.1**
+and is deliberately not restated here — this file has already gone stale behind
+that state once (#216).
 
 **Review is not required by server-side protection, but it is required by a
 gate.** A mandatory APPROVE review is not enabled in the payload: the only human

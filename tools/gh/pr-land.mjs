@@ -278,9 +278,16 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
     'task-cycle stage 5: for owner-visible changes the merge happens only after a recorded ' +
       'acceptance on a live stand — the gate does not check this',
   )
+  // RED since #216, a remark before it. `main` now carries
+  // `required_status_checks.strict: true` (docs/ci-guardrails.md §2.1), so BEHIND
+  // is not a warning that the merge might refuse — the server WILL refuse it with
+  // GH006. A remark would let this gate report green and then fail at the merge
+  // call, which is the single outcome the gate exists to prevent.
   if (String(pr?.mergeStateStatus ?? '').toUpperCase() === 'BEHIND') {
-    warn.push(
-      'the branch is behind its base (mergeStateStatus=BEHIND) — under strict checks the merge will refuse',
+    red.push(
+      'the branch is behind its base (mergeStateStatus=BEHIND) and `main` requires strict ' +
+        'status checks — the server will refuse this merge. Update the branch ' +
+        '(`gh pr update-branch <pr#>`) and let CI re-run on the new head',
     )
   }
   return { red, warn, closes }
@@ -292,7 +299,9 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
   board → Status=Done on every \`Closes #N\` → worktree teardown → re-sweep. The
   first failing stage stops the tail and prints what to finish by hand.
 
-  Gate: the PR is open and not a draft, no conflict, a \`Closes #N\` is present,
+  Gate: the PR is open and not a draft, no conflict, not behind its base
+  (\`main\` requires strict status checks since #216, so BEHIND is a refusal at
+  the server), a \`Closes #N\` is present,
   review is confirmed, every check on the CURRENT head SHA is green. That same
   SHA goes into \`gh pr merge --match-head-commit\`, so a commit that lands while
   we wait makes the merge refuse rather than ride in unchecked.

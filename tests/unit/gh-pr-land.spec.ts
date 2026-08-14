@@ -228,8 +228,15 @@ describe('gateConditions', () => {
     expect(gateConditions(ok).warn.join('\n')).toMatch(/stage 5/)
   })
 
-  it('a branch behind its base is a remark', () => {
-    expect(gateConditions({ ...ok, mergeStateStatus: 'BEHIND' }).warn.join('\n')).toMatch(/BEHIND/)
+  // Was a remark until #216. `main` now carries `required_status_checks.strict`,
+  // so BEHIND is no longer a hint that the merge MIGHT refuse — the server will
+  // refuse it. A remark would let the gate report green and then fail at the
+  // merge call, which is the one outcome the gate exists to prevent.
+  it('a branch behind its base is RED, not a remark: under strict checks the server refuses', () => {
+    const res = gateConditions({ ...ok, mergeStateStatus: 'BEHIND' })
+    expect(res.red.join('\n')).toMatch(/BEHIND/)
+    expect(res.red.join('\n')).toMatch(/update the branch/i)
+    expect(res.warn.join('\n')).not.toMatch(/BEHIND/)
   })
 })
 
