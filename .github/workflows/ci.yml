@@ -10,6 +10,18 @@ on:
     branches: [main]
   pull_request:
 
+# Least-privilege floor for the whole workflow (#220). `contents: read` is all a
+# job needs to check out, install and run a tree-local guard or the test tier —
+# which is every job here except `tdd-signal`, the one that reads PR metadata
+# through `gh`.
+#
+# A job-level `permissions:` block REPLACES this one, it does not merge with it:
+# any job that declares its own must list EVERY scope it needs, `contents: read`
+# included. `tdd-signal` below already does. Widen there, never here — raising
+# this floor hands the extra scope to every job in the file.
+permissions:
+  contents: read
+
 jobs:
   # BLOCK — the repo's original gate, unchanged. The heaviest job by far: it
   # carries `next build` on top of the unit tier, hence its own timeout budget.

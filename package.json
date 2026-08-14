@@ -2,6 +2,7 @@
   "name": "bbm-portal",
   "version": "1.0.0",
   "description": "Payload CMS content backend for the BBM Academy public website; seed of the future BBM portal",
+  "private": true,
   "license": "UNLICENSED",
   "type": "module",
   "packageManager": "pnpm@10.7.0",

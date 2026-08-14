@@ -278,6 +278,21 @@ Entry format:
       ref lookup. Return condition: the next false STALE, or the next edit to the
       verifier (#150)
 
+- [ ] 2026-08-14 #220 added a top-level `permissions: contents: read` floor to `ci.yml`
+      and `pr-body-guards.yml`, but NOTHING enforces that a workflow has one. A workflow
+      added tomorrow with no top-level block silently inherits the repo default
+      (`default_workflow_permissions: read` — read on every scope) and reproduces exactly
+      the gap #220 was filed to close, with no guard noticing. `workflow-auth` is the
+      natural home — it already parses every workflow and already resolves permissions the
+      way GitHub does (job block else workflow block) — but today it only audits gh-GATED
+      jobs, so a workflow of nothing but tree-local jobs is invisible to it. Not built in
+      #220 deliberately: a new finding class in a guard is its own deliverable with its own
+      spec fixtures and `guard-tests` spec (§8), and smuggling it into a posture PR would
+      ship an untested rule on the meta-guard that polices every other workflow — return
+      condition: the next workflow file added under `.github/workflows/`, or the
+      `workflow-auth` WARN→BLOCK promotion review (2026-09-02 window), whichever comes
+      first (#220, review of PR #223)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_

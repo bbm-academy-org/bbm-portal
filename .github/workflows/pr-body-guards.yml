@@ -35,6 +35,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
+# Least-privilege floor for the whole workflow (#220). Every job below already
+# declares its own `permissions:` block, and a job-level block REPLACES this one
+# rather than merging with it — so this floor changes nothing for the jobs that
+# exist today. It is here for the next job added to this file: without it a job
+# that forgets its block inherits the org/repo default instead of the minimum.
+permissions:
+  contents: read
+
 jobs:
   # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.
   # Needs `issues: read` on top of the usual pair for the sub-issues endpoint.
