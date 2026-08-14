@@ -236,16 +236,32 @@ Entry format:
       the first time the two are found out of sync, or the next edit to either
       (#216)
 
-- [ ] 2026-08-14 `pnpm pr:land` has no counterpart for
-      `required_conversation_resolution`, which went live on `main` with #216. The
-      gate reads `mergeStateStatus` only for `BEHIND`; an unresolved inline review
-      thread leaves the PR `BLOCKED`, so the gate reports green and the server
-      refuses the merge — the same shape of surprise that BEHIND was fixed for in
-      this PR. Not fixed here because the normal review path posts plain PR
-      comments, which create no threads, so today the case is reachable only when a
-      human leaves an inline comment. Fix: treat `BLOCKED` as RED with a message
-      naming the unresolved threads. Return condition: the first inline review
-      thread on any PR, or the next edit to `gateConditions` (#216)
+- [ ] 2026-08-14 `gateConditions` in `tools/gh/pr-land.mjs` still inspects
+      `mergeStateStatus` value by value (only `BEHIND` today), so every state the
+      now-live protection can produce has to be remembered one at a time. `BLOCKED`
+      — what an unresolved inline review thread produces under
+      `required_conversation_resolution` — slips past, and the gate reports green
+      while the server refuses. Reachable today only via a human inline comment:
+      the reviewer subagent posts plain PR comments, which create no threads. The
+      structural fix is to allow-list the states that may merge instead
+      (`CLEAN`/`HAS_HOOKS`/`UNSTABLE` pass, the rest RED) — deliberately NOT done
+      in one pass here, because `UNKNOWN` is transient (GitHub has not finished
+      computing mergeability) and must map to «poll again», not RED; getting that
+      wrong wedges every merge, which makes this a design change to the gate on the
+      critical path, not a three-line edit. Return condition: the first inline
+      review thread on any PR, or the next edit to `gateConditions` (#216)
+
+- [ ] 2026-08-14 `strict: true` on `main` (#216) put `gh pr update-branch` on the
+      critical path of any raced merge, and that command invalidates the review
+      verdict: it adds a merge commit, which moves `commits[last].committedDate`,
+      which makes `findAgentApproval` rule the existing `VERDICT: APPROVE` stale.
+      The result is a mandatory re-review of a merge commit that changed no
+      reviewed line — cost paid in full every time two sessions race. Fix is a
+      judgement call, not a patch: either compare the verdict against the last
+      commit that touched the DIFF rather than the last commit on the branch, or
+      teach the gate to recognise an update-branch merge commit as review-neutral.
+      Return condition: the first time a session re-runs a review purely because of
+      an update-branch, or the next edit to `findAgentApproval` (#216)
 
 - [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
       branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
