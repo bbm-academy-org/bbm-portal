@@ -6,19 +6,19 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/write-evidence-recorder.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs')",
             "timeout": 10
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/session-flag-writer.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/session-flag-writer.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/session-flag-writer.mjs')",
             "timeout": 15
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/gh/session-bootstrap.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/gh/session-bootstrap.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/gh/session-bootstrap.mjs')",
             "timeout": 30
           }
         ]
@@ -30,25 +30,25 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/session-flag-writer.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/session-flag-writer.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/session-flag-writer.mjs')",
             "timeout": 15
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/write-evidence-recorder.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs')",
             "timeout": 10
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/handoff-verify-reminder.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/handoff-verify-reminder.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/handoff-verify-reminder.mjs')",
             "timeout": 10
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/context-budget.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/context-budget.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/context-budget.mjs')",
             "timeout": 15
           }
         ]
@@ -61,7 +61,7 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/worktree-path-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/worktree-path-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/worktree-path-guard.mjs')",
             "timeout": 10
           }
         ]
@@ -72,7 +72,7 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/main-tree-read-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/main-tree-read-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/main-tree-read-guard.mjs')",
             "timeout": 10
           }
         ]
@@ -83,7 +83,7 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/dispatch-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/dispatch-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/dispatch-guard.mjs')",
             "timeout": 10
           }
         ]
@@ -94,7 +94,7 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/agent-model-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/agent-model-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/agent-model-guard.mjs')",
             "timeout": 10
           }
         ]
@@ -105,13 +105,13 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/askuserquestion-context-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/askuserquestion-context-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/askuserquestion-context-guard.mjs')",
             "timeout": 10
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/askuserquestion-calibration-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/askuserquestion-calibration-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/askuserquestion-calibration-guard.mjs')",
             "timeout": 10
           }
         ]
@@ -122,7 +122,7 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/screenshot-path-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/screenshot-path-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/screenshot-path-guard.mjs')",
             "timeout": 10
           }
         ]
@@ -133,13 +133,13 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/secret-echo-guard.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/secret-echo-guard.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/secret-echo-guard.mjs')",
             "timeout": 10
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/merge-gate.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/merge-gate.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/merge-gate.mjs')",
             "timeout": 10
           }
         ]
@@ -152,7 +152,7 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/write-evidence-recorder.mjs\"",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs')\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs')",
             "timeout": 10
           }
         ]
@@ -164,19 +164,19 @@
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-stop-adapter.mjs\" completion",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') completion\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') completion",
             "timeout": 10
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-stop-adapter.mjs\" deviations",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') deviations\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') deviations",
             "timeout": 10
           },
           {
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-stop-adapter.mjs\" debt",
-            "commandWindows": "powershell -NoProfile -Command \"$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') debt\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') debt",
             "timeout": 10
           }
         ]

@@ -350,6 +350,57 @@ describe('Codex hook payload compatibility', () => {
 })
 
 describe('repository-local Codex hooks', () => {
+  it('keeps every Windows hook override as a native PowerShell snippet', () => {
+    const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
+    const commands = Object.values(hooks.hooks)
+      .flatMap((groups: unknown) => groups as Array<{ hooks: Array<Record<string, string>> }>)
+      .flatMap((group) => group.hooks)
+
+    expect(commands).toHaveLength(20)
+    for (const hook of commands) {
+      expect(hook.commandWindows).not.toMatch(/^powershell(?:\.exe)?\s/i)
+    }
+  })
+
+  it.runIf(process.platform === 'win32')(
+    'executes every Windows hook override through the active PowerShell',
+    () => {
+      const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
+      const commands = Object.values(hooks.hooks)
+        .flatMap((groups: unknown) => groups as Array<{ hooks: Array<Record<string, string>> }>)
+        .flatMap((group) => group.hooks)
+      const shimRoot = mkdtempSync(resolve(tmpdir(), 'bbm-codex-node-shim-'))
+      const shimCalls = resolve(shimRoot, 'calls.log')
+      const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
+
+      writeFileSync(resolve(shimRoot, 'node.cmd'), '@echo call>>"%~dp0calls.log"\r\n@exit /b 0\r\n')
+
+      try {
+        for (const hook of commands) {
+          const result = spawnSync(hook.commandWindows, {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              [pathKey]: `${shimRoot};${process.env[pathKey] ?? ''}`,
+            },
+            input: '{}\n',
+            shell: 'powershell.exe',
+          })
+
+          expect(
+            result.status,
+            `${hook.commandWindows}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
+          ).toBe(0)
+        }
+        expect(readFileSync(shimCalls, 'utf8').trim().split(/\r?\n/)).toHaveLength(commands.length)
+      } finally {
+        rmSync(shimRoot, { recursive: true, force: true })
+      }
+    },
+    30_000,
+  )
+
   it('configures all five event families and resolves commands from git root', () => {
     const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
     expect(Object.keys(hooks.hooks)).toEqual(
