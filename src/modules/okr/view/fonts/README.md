@@ -8,8 +8,8 @@ these bytes at runtime already — vendoring moves only the _build_ input.
 
 They live here, beside their sole importer, rather than in `public/` or a shared
 asset root, because `next/font/local` resolves `src` **relative to the importing
-file** and the OKR module is the only consumer; a module-local path keeps the
-dependency visible to `depcruise` instead of hiding it behind a public URL.
+file** and the OKR module is the only consumer — co-located, they move or die
+with the module that uses them.
 
 They are **not** in `design-source/`: that directory holds the design _of a
 surface_ (the owner-approved mockup a build is measured against,
