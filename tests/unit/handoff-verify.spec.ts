@@ -242,6 +242,107 @@ describe('handoff-verify: claims are attributed per SEGMENT, not per line', () =
   })
 })
 
+describe('handoff-verify: ref and file token text never becomes a claim', () => {
+  it.each([
+    '#149, docs/open.md',
+    '#149; docs/closed.md',
+    '#149 — docs/merged.md',
+    '#149, docs/unmerged.md',
+    '#149 docs/open.md',
+  ])('does not infer issue state from a file token in %s', (input) => {
+    const result = verifyHandoff(input, makeRunner({ issues: { 149: 'closed' } }))
+
+    expect(result.rows.map(renderRow)).toEqual(['INFO #149 claimed=- actual=closed'])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it.each([
+    ['owner/open', 'closed'],
+    ['owner/closed', 'open'],
+    ['owner/repo-merged', 'open'],
+  ] as const)('does not infer issue state from qualified ref token %s#149', (repo, actual) => {
+    const result = verifyHandoff(
+      `${repo}#149`,
+      makeRunner({ repositories: { [repo]: { issues: { 149: actual } } } }),
+    )
+
+    expect(result.rows.map(renderRow)).toEqual([`INFO ${repo}#149 claimed=- actual=${actual}`])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('does not infer approval provenance from a qualified ref token', () => {
+    expect(extractApprovalClaims('owner/approved#149')).toEqual([])
+
+    const runner = makeRunner({
+      repositories: { 'owner/approved': { issues: { 149: 'open' } } },
+    })
+    const result = verifyHandoff('owner/approved#149', runner)
+
+    expect(result.rows.map(renderRow)).toEqual(['INFO owner/approved#149 claimed=- actual=open'])
+    expect(result.warn).toBe(0)
+    expect(runner.calls.filter((args) => args[args.length - 1] === 'body,comments')).toEqual([])
+  })
+
+  it.each(['feat/237-open', 'feat/237-owner-approved'])(
+    'does not infer a claim from branch token %s',
+    (branch) => {
+      const runner = makeRunner({
+        branches: { [`refs/remotes/origin/${branch}`]: 'abc1234' },
+        merged: ['abc1234'],
+      })
+      const result = verifyHandoff(branch, runner)
+
+      expect(result.rows.map(renderRow)).toEqual([`INFO ${branch} claimed=- actual=merged`])
+      expect(result.warn).toBe(0)
+      expect(extractOwnerDirectiveClaims(branch)).toEqual([])
+    },
+  )
+
+  it('keeps explicit status prose next to masked file and qualified ref tokens', () => {
+    expect(
+      verifyHandoff(
+        '#149 docs/closed.md is open',
+        makeRunner({ issues: { 149: 'open' } }),
+      ).rows.map(renderRow),
+    ).toEqual(['PASS #149 claimed=open actual=open'])
+
+    const input = 'owner/open#149 is closed'
+    const result = verifyHandoff(
+      input,
+      makeRunner({ repositories: { 'owner/open': { issues: { 149: 'closed' } } } }),
+    )
+    expect(result.rows.map(renderRow)).toEqual(['PASS owner/open#149 claimed=closed actual=closed'])
+    expect(extractRefs(input)[0]).toMatchObject({ line: input, segment: input })
+  })
+
+  it('keeps explicit owner approval next to a masked qualified ref token', () => {
+    const runner = makeRunner({
+      repositories: {
+        'owner/open': {
+          issues: { 149: 'open' },
+          provenance: { 149: { body: 'Stage 2: GO', comments: [] } },
+        },
+      },
+    })
+    const result = verifyHandoff('Owner-approved owner/open#149', runner)
+
+    expect(result.rows.map(renderRow)).toEqual([
+      'INFO owner/open#149 claimed=- actual=open',
+      'PASS owner/open#149 claimed=owner-approved actual=owner-quoted',
+    ])
+  })
+
+  it('keeps a multi-ref segment ambiguous after masking tokens', () => {
+    const result = verifyHandoff(
+      '#148 #149 docs/open.md are closed',
+      makeRunner({ issues: { 148: 'closed', 149: 'closed' } }),
+    )
+
+    expect(result.rows.map((row) => row.verdict)).toEqual(['INFO', 'INFO'])
+    expect(result.exitCode).toBe(0)
+  })
+})
+
 describe('handoff-verify: a ref that no longer resolves is STALE', () => {
   it('gh 404 on both issue and PR → not-found → STALE', () => {
     const result = verifyHandoff('Issue #4242 закрыт.', makeRunner())
