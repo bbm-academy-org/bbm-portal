@@ -325,6 +325,22 @@ describe('bootstrap-taxonomy — plan', () => {
     expect(lines.join('\n')).toMatch(/⚠.*renovate\.json.*4.*7/)
   })
 
+  it('reports a non-numeric renovate.json pin as drift without adding a number prefix', () => {
+    const check = checkRenovateMilestonePin([{ title: DEPENDENCIES_MILESTONE, number: 4 }], {
+      milestone: '4',
+    })
+    expect(check).toMatchObject({ status: 'drift', pinned: null, expected: 4 })
+
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/pinned \(not a number\), live #4/)
+    expect(lines.join('\n')).not.toContain('#(not a number)')
+  })
+
   it('makes a missing milestone impossible to check rather than drift', () => {
     const check = checkRenovateMilestonePin([{ title: FALLBACK_MILESTONE, number: 1 }], {
       milestone: 4,
@@ -339,6 +355,39 @@ describe('bootstrap-taxonomy — plan', () => {
     })
     expect(lines.join('\n')).toMatch(/cannot check/)
     expect(lines.join('\n')).not.toMatch(/drifted/)
+  })
+
+  it('renders a non-numeric pin plainly when the live milestone is unavailable', () => {
+    const check = checkRenovateMilestonePin([{ title: FALLBACK_MILESTONE, number: 1 }], {
+      milestone: 'four',
+    })
+    expect(check).toMatchObject({ status: 'unknown', pinned: null, expected: null })
+
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones([{ title: FALLBACK_MILESTONE, state: 'open' }]),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toContain(
+      'cannot check milestone pin «Dependencies» in renovate.json (not a number): the milestone itself does not exist yet',
+    )
+    expect(lines.join('\n')).not.toContain('#(not a number)')
+  })
+
+  it('reports an unreadable or malformed renovate.json separately from an unpinned config', () => {
+    const check = checkRenovateMilestonePin([{ title: DEPENDENCIES_MILESTONE, number: 4 }], null)
+    expect(check).toMatchObject({ status: 'unavailable', pinned: null, expected: 4 })
+
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/renovate\.json could not be read or parsed/)
+    expect(lines.join('\n')).toMatch(/assignees and milestone settings are unusable/)
+    expect(lines.join('\n')).not.toMatch(/has no milestone key/)
   })
 
   it('makes renovate.json without a milestone key unpinned rather than drift', () => {
@@ -356,6 +405,7 @@ describe('bootstrap-taxonomy — plan', () => {
     })
     expect(lines.join('\n')).toMatch(/⚠.*no pinned number/)
     expect(lines.join('\n')).not.toMatch(/drifted/)
+    expect(lines.join('\n')).not.toMatch(/could not be read or parsed/)
   })
 
   it('reports a missing org Issue Type instead of repairing it here', () => {
