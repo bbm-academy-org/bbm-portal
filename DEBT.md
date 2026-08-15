@@ -330,6 +330,22 @@ Entry format:
       must run `pnpm test:e2e` as acceptance evidence, or any move to run e2e in CI
       (observed in #232 / PR #234, diff touched no runtime code)
 
+- [ ] 2026-08-15 `pnpm lint:stage-b` classifies a PR as a UI diff **by path** — a
+      non-test `*.tsx` / `*.css` under `src/` — so an **asset-only** change to a
+      visual surface is invisible to it. PR #246 replaces the three vendored
+      `/p/okr` WOFF2 binaries, which is exactly a change to how that page renders,
+      and the `stage-b` check went green without ever looking for a marker. The
+      blind spot is worst where it is least affordable: an asset regression is
+      silent by nature — a wrongly-subsetted font does not error, it draws tofu,
+      which is the same reason #230 was filed as an issue rather than a debt line.
+      Widening the classifier is not one line (it has to say which asset types
+      under which paths count as visual, without turning every `README.md` in a
+      module into a UI diff), and doing it inside a font PR would put an untested
+      rule change into a guard that gates acceptance — return condition: the next
+      task that changes a visual surface WITHOUT touching a `*.tsx` or `*.css`, or
+      the `stage-b` WARN→BLOCK promotion review (2026-09-02 window), whichever
+      comes first (#230, iteration-end gate of PR #246)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_
