@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -112,6 +113,77 @@ describe('OKR fonts are vendored, not fetched at build time (#219)', () => {
       expect(vendored, `OkrLayout points at ./fonts/${name}, which is not committed`).toContain(
         name,
       )
+    }
+  })
+})
+
+/**
+ * Regression lock for #230 — the binaries are the ones the provenance table
+ * describes.
+ *
+ * #230 subsetted these three files to latin + cyrillic + seven named extras.
+ * That halves the preloaded bytes, and it is also the one change to them that
+ * can fail SILENTLY: a wrongly-subsetted face throws no error, it renders a
+ * blank box for some Cyrillic codepoint nobody happened to look at. Re-running
+ * the build recipe with a different flag set, or dropping in a file from
+ * somewhere else, produces exactly that — a plausible-looking binary nobody
+ * diffed.
+ *
+ * Verifying the coverage itself would mean parsing WOFF2 (brotli-compressed
+ * table directory) in the test, which is a font library's job and not worth a
+ * dependency here. So the check is pinned one level up: the vendored bytes must
+ * be the exact bytes whose `cmap` WAS verified, and README.md's provenance table
+ * is where that digest is recorded. This makes that table executable rather than
+ * decorative — swap a binary without re-running the verification and updating
+ * its row, and this fails.
+ */
+describe('vendored OKR font binaries match their provenance record (#230)', () => {
+  const FONTS_DIR = join(VIEW_DIR, 'fonts')
+
+  /** `| \`Name.woff2\` | build … | … | <upstream sha> | <vendored sha> |` */
+  function recordedDigests(): Map<string, string> {
+    const readme = readFileSync(join(FONTS_DIR, 'README.md'), 'utf8')
+    const out = new Map<string, string>()
+    for (const line of readme.split('\n')) {
+      if (!line.startsWith('|')) continue
+      const cells = line
+        .split('|')
+        .slice(1, -1)
+        .map((c) => c.trim())
+      const name = cells[0]?.replace(/`/g, '')
+      if (!name?.endsWith('.woff2')) continue
+      // The LAST 64-hex cell on the row is the vendored digest; the upstream
+      // digest of the TTF this was built from sits in the cell before it.
+      const digests = cells.map((c) => c.replace(/`/g, '')).filter((c) => /^[0-9a-f]{64}$/.test(c))
+      const vendored = digests.at(-1)
+      expect(
+        digests.length,
+        `README row for ${name} must record both the upstream and the vendored SHA-256`,
+      ).toBe(2)
+      out.set(name, vendored as string)
+    }
+    return out
+  }
+
+  it('every committed .woff2 has a provenance row', () => {
+    const committed = readdirSync(FONTS_DIR).filter((f) => f.endsWith('.woff2'))
+    expect(committed.length, 'the fonts directory must contain vendored binaries').toBeGreaterThan(
+      0,
+    )
+    expect([...recordedDigests().keys()].sort()).toEqual(committed.sort())
+  })
+
+  it('every committed .woff2 hashes to the digest its row records', () => {
+    for (const [name, expected] of recordedDigests()) {
+      const actual = createHash('sha256')
+        .update(readFileSync(join(FONTS_DIR, name)))
+        .digest('hex')
+      expect(
+        actual,
+        `${name} is not the binary README.md describes. If you rebuilt it, re-run the ` +
+          'coverage verification (no codepoint the surface renders may be lost) and update ' +
+          'its provenance row — do not just paste the new digest in.',
+      ).toBe(expected)
     }
   })
 })
