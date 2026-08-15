@@ -197,6 +197,7 @@ export function formatPlan({ labels, milestones, missingTypes, renovatePin = nul
   }
   if (renovatePin) {
     const pin = renovatePin.pinned === null ? '(not a number)' : `#${renovatePin.pinned}`
+    const pinInParentheses = renovatePin.pinned === null ? pin : `(${pin})`
     if (renovatePin.status === 'ok') {
       lines.push(`already present: milestone pin «${renovatePin.title}» in renovate.json — ${pin}`)
     } else if (renovatePin.status === 'drift') {
@@ -216,7 +217,7 @@ export function formatPlan({ labels, milestones, missingTypes, renovatePin = nul
       )
     } else {
       lines.push(
-        `cannot check milestone pin «${renovatePin.title}» in renovate.json (${pin}): the milestone itself does not exist yet`,
+        `cannot check milestone pin «${renovatePin.title}» in renovate.json ${pinInParentheses}: the milestone itself does not exist yet`,
       )
     }
   }
