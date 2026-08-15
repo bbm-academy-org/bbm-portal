@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  checkRenovateMilestonePin,
   formatPlan,
   missingIssueTypes,
   planLabels,
-  planMilestone,
+  planMilestones,
   CHANNEL_LABEL_SPECS,
 } from '../../tools/gh/bootstrap-taxonomy.mjs'
 import {
+  DEPENDENCIES_MILESTONE,
   FALLBACK_MILESTONE,
+  PERMANENT_MILESTONES,
   KNOWN,
   buildBoardItemsPageQuery,
   buildDeleteItemMutation,
@@ -237,20 +240,125 @@ describe('bootstrap-taxonomy — план', () => {
   it('план никогда не содержит удалений — судьба старых лейблов за задачей 7.2', () => {
     const labels = planLabels([{ name: 'enhancement', color: 'a2eeef', description: '' }])
     expect(Object.keys(labels)).toEqual(['create', 'update', 'keep'])
-    const lines = formatPlan({ labels, milestone: { create: false }, missingTypes: [] })
+    const lines = formatPlan({
+      labels,
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+    })
     expect(lines.join('\n')).not.toMatch(/удалить|delete/i)
   })
 
-  it('milestone заводится только когда его нет ни в одном состоянии', () => {
-    expect(planMilestone([]).create).toBe(true)
-    expect(planMilestone([{ title: FALLBACK_MILESTONE, state: 'closed' }]).create).toBe(false)
+  it('постоянный набор milestone заводится целиком, когда нет ни одного', () => {
+    const plan = planMilestones([])
+    expect(plan.create.map((m) => m.title)).toEqual([FALLBACK_MILESTONE, DEPENDENCIES_MILESTONE])
+    expect(plan.keep).toEqual([])
+  })
+
+  it('существующий milestone не трогается ни в одном состоянии, включая closed', () => {
+    const plan = planMilestones([
+      { title: FALLBACK_MILESTONE, state: 'closed' },
+      { title: DEPENDENCIES_MILESTONE, state: 'open' },
+    ])
+    expect(plan.create).toEqual([])
+    expect(plan.keep.map((m) => m.title)).toEqual([FALLBACK_MILESTONE, DEPENDENCIES_MILESTONE])
+  })
+
+  it('заводит только недостающий из постоянного набора', () => {
+    const plan = planMilestones([{ title: FALLBACK_MILESTONE, state: 'open' }])
+    expect(plan.create.map((m) => m.title)).toEqual([DEPENDENCIES_MILESTONE])
+    expect(plan.keep.map((m) => m.title)).toEqual([FALLBACK_MILESTONE])
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: plan,
+      missingTypes: [],
+    })
+    expect(lines.join('\n')).toMatch(new RegExp(`СОЗДАТЬ milestone «${DEPENDENCIES_MILESTONE}»`))
+    expect(lines.join('\n')).toMatch(new RegExp(`уже есть: milestone «${FALLBACK_MILESTONE}»`))
+  })
+
+  it('«изменений не требуется», когда весь постоянный набор на месте', () => {
+    const lines = formatPlan({
+      labels: planLabels(CHANNEL_LABEL_SPECS),
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+    })
+    expect(lines).toContain('изменений не требуется')
+  })
+
+  it('пин renovate.json, совпадающий с живым номером, — это OK', () => {
+    const check = checkRenovateMilestonePin(
+      [
+        { title: FALLBACK_MILESTONE, number: 1 },
+        { title: DEPENDENCIES_MILESTONE, number: 4 },
+      ],
+      { milestone: 4 },
+    )
+    expect(check.status).toBe('ok')
+    expect(check.expected).toBe(4)
+    const lines = formatPlan({
+      labels: planLabels(CHANNEL_LABEL_SPECS),
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).not.toMatch(/⚠/)
+    expect(lines).toContain('изменений не требуется')
+  })
+
+  it('пин, указывающий на другой номер, — дрейф с ожидаемым номером в строке', () => {
+    const check = checkRenovateMilestonePin([{ title: DEPENDENCIES_MILESTONE, number: 7 }], {
+      milestone: 4,
+    })
+    expect(check.status).toBe('drift')
+    expect(check.pinned).toBe(4)
+    expect(check.expected).toBe(7)
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/⚠.*renovate\.json.*4.*7/)
+  })
+
+  it('milestone ещё не заведён — это «проверить нельзя», а не дрейф', () => {
+    const check = checkRenovateMilestonePin([{ title: FALLBACK_MILESTONE, number: 1 }], {
+      milestone: 4,
+    })
+    expect(check.status).toBe('unknown')
+    expect(check.expected).toBeNull()
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones([{ title: FALLBACK_MILESTONE, state: 'open' }]),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/проверить нельзя/)
+    expect(lines.join('\n')).not.toMatch(/дрейф/)
+  })
+
+  it('renovate.json без ключа milestone — это «не закреплён», а не дрейф', () => {
+    const check = checkRenovateMilestonePin([{ title: DEPENDENCIES_MILESTONE, number: 4 }], {
+      extends: ['config:recommended'],
+    })
+    expect(check.status).toBe('unpinned')
+    expect(check.pinned).toBeNull()
+    expect(check.expected).toBe(4)
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/⚠.*не закреплён/)
+    expect(lines.join('\n')).not.toMatch(/дрейф/)
   })
 
   it('отсутствующий org Issue Type докладывается, а не чинится отсюда', () => {
     expect(missingIssueTypes([{ name: 'Task' }])).toEqual(['Bug', 'Feature'])
     const lines = formatPlan({
       labels: { create: [], update: [], keep: [] },
-      milestone: { create: false },
+      milestones: planMilestones(PERMANENT_MILESTONES),
       missingTypes: ['Bug'],
     })
     expect(lines.join('\n')).toMatch(/настройках организации/)

@@ -13,6 +13,11 @@ must point at another points: path plus what lives there, never a paraphrase.
 Where two files do disagree, the one that owns the subject wins and the other is
 the bug.
 
+Codex discovers those same canonical skill bodies through the generated,
+git-ignored `.agents/skills` bridge. Run `pnpm codex:setup`; do not add copied
+skill bodies under `.agents/`. Setup and hook trust are documented in
+[`docs/codex-agent-mode.md`](docs/codex-agent-mode.md).
+
 **Parallel sessions are the norm here — read the rules before touching a branch
 or a port.** The session's work branch lives in its OWN worktree
 (`pnpm task:worktree <N>`), never in the shared checkout; the dev port is taken

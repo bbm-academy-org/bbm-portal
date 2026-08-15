@@ -69,6 +69,27 @@ export const ISSUE_TYPES = ['Bug', 'Feature', 'Task']
 /** Постоянный fallback-milestone для процессных/эксплуатационных задач. */
 export const FALLBACK_MILESTONE = 'Platform: operations and hardening'
 
+/** Постоянный milestone для PR автоматического обновления зависимостей. */
+export const DEPENDENCIES_MILESTONE = 'Dependencies'
+
+/**
+ * ПОСТОЯННЫЕ milestone репо: темы, которые не закрываются никогда, и потому на
+ * них можно ссылаться из конфигов номером (`renovate.json`) и именем
+ * (`issue:create`). Их заводит `pnpm taxonomy:bootstrap --apply`; тематические
+ * (продуктовые) milestone сюда не попадают — они закрываются вместе с темой.
+ */
+export const PERMANENT_MILESTONES = [
+  {
+    title: FALLBACK_MILESTONE,
+    description: 'Process and operations tasks that fit no product theme',
+  },
+  {
+    title: DEPENDENCIES_MILESTONE,
+    description:
+      'PRs from the automated dependency-update routine (Renovate). A permanent theme: never closed, so its number can be pinned in renovate.json.',
+  },
+]
+
 /**
  * Type → префикс ветки и Conventional-Commit-типа (канон §2). `docs/` остаётся
  * ручным префиксом для docs-only изменений: отдельного org-типа Docs нет, а

@@ -4,13 +4,17 @@ name: Product note → Mattermost
 # Mattermost channel (task 7.6, #137). No agent in the delivery path: the source
 # of truth is the PR body, rendered by tools/ci/post-product-note.mjs.
 #
-# Trigger (#202): `push` to main, NOT `pull_request: closed`. This workflow runs
-# on the shared BBM runner pool in the dedicated `notify` lane, and a manager
-# policy that exposes a secret-bearing workflow must never trust PR events
-# (REPOSITORY-ONBOARDING «Least-privilege notification webhook»). A merge into
-# main IS a push of the squash/merge commit, so the merged PR is recovered from
-# the pushed sha via `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct
-# push that belongs to no merged PR delivers nothing and skips green.
+# Trigger (#202): `push` to main, NOT `pull_request: closed`. This job reads
+# MATTERMOST_RELEASE_WEBHOOK_URL, so it must never be reachable from a PR event;
+# the rule and the actual mechanism behind it — the intuitive "a fork would read
+# it" is the wrong reason — are in docs/ci-guardrails.md §2.1.1, which owns a
+# rule binding both secret-bearing workflows. Since #214 removed the runner pool
+# that enforced it a second time, this trigger list is the only enforcement left.
+#
+# A merge into main IS a push of the squash/merge commit, so the merged PR is
+# recovered from the pushed sha via
+# `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct push that belongs to
+# no merged PR delivers nothing and skips green.
 #
 # Secret-optional by design: the job is not blocked on the webhook being
 # provisioned — with MATTERMOST_RELEASE_WEBHOOK_URL unset the script logs and
@@ -45,9 +49,10 @@ permissions:
 
 jobs:
   deliver:
-    # `notify` policy lane: deployment_status/workflow_dispatch/push only,
-    # never pull_request — see the manager policy for this repo (#202).
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, notify, ci]
+    # Delivery lane: reachable from `push` alone (see the `on:` block above),
+    # never a PR event — docs/ci-guardrails.md §2.1.1 for why.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
