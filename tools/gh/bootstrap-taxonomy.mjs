@@ -99,12 +99,20 @@ export function planLabels(existing, specs = CHANNEL_LABEL_SPECS) {
 }
 
 /**
+ * Спека постоянного milestone — то, чем он заводится, а не то, чем его вернул
+ * GitHub. Именованной её делает `planMilestones`: без typedef `@returns` пришлось
+ * бы расширить до `object[]`, и вызывающий код (в том числе юнит-тест) потерял бы
+ * `.title` под `noImplicitAny`.
+ * @typedef {{title: string, description: string}} MilestoneSpec
+ */
+
+/**
  * План по ПОСТОЯННЫМ milestone: каких из набора не хватает. Существующий (в
  * любом состоянии, включая `closed`) не трогается — закрытие темы это решение
  * владельца, а не дрейф, который инструмент откатывает.
  * @param {{title:string,state?:string}[]} existing
- * @param {{title:string,description:string}[]} [specs]
- * @returns {{create:object[], keep:object[]}}
+ * @param {MilestoneSpec[]} [specs]
+ * @returns {{create: MilestoneSpec[], keep: MilestoneSpec[]}}
  */
 export function planMilestones(existing, specs = PERMANENT_MILESTONES) {
   const byTitle = new Map((existing ?? []).map((m) => [m?.title, m]))
