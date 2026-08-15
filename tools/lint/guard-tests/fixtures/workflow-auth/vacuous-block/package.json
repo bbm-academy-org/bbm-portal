@@ -1,0 +1,1 @@
+{ "scripts": { "lint:no-stub": "node tools/lint/no-stub-lint.mjs" } }

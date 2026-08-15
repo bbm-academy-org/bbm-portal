@@ -330,6 +330,32 @@ Entry format:
       must run `pnpm test:e2e` as acceptance evidence, or any move to run e2e in CI
       (observed in #232 / PR #234, diff touched no runtime code)
 
+- [ ] 2026-08-15 `tools/lint/workflow-auth-lint.mjs` recognises a guard step by its
+      `run:` line, so a guard invoked through a **composite action** (`uses:`) is
+      invisible to `unaggregated-warn-step` — the step could carry
+      `continue-on-error: true` with no aggregation row and the guard would say
+      nothing. Deliberately not built in #207: closing it means resolving the
+      composite's own `action.yml`, which is a different rule class with its own
+      fixture shape, and no composite action exists in this repo today — so it
+      would ship an untested rule on the meta-guard that polices every other
+      workflow, for a shape nothing produces. Recorded in the guard header and
+      `docs/ci-guardrails.md` §8 as a known limit, but prose does not fire and a
+      return condition does — return condition: the first composite action added
+      under `.github/`, or the `workflow-auth` WARN→BLOCK promotion review
+      (2026-09-02 window), whichever comes first (#207, round-2 review of PR #245)
+
+- [ ] 2026-08-15 the same guard-step detection misses a **matrix-interpolated**
+      invocation: `run: pnpm lint:${{ matrix.guard }}` resolves to a guard only at
+      runtime, so a matrix job running every guard as a WARN step would be exempt
+      from `unaggregated-warn-step` entirely — the one shape where the rule matters
+      most, since a matrix is how you would batch guards in the first place. Not a
+      false positive but a silent hole, and it is adjacent to the batch collapse
+      (#205 / PR #206) this whole check exists to make safe to re-attempt. Found by
+      the round-2 reviewer of PR #245 while stress-testing the alias matcher —
+      return condition: the first `.github/workflows/**` job that invokes a guard
+      through a matrix or any other expression, or the same 2026-09-02 promotion
+      review (#207, round-2 review of PR #245)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_
