@@ -16,6 +16,18 @@ docs/specs/081-hours-calculator.md
 # PR #241 (#240).
 pnpm-lock.yaml
 
+# src/payload-types.ts is written by `payload generate:types`, and Payload
+# regenerates it on EVERY dev-server boot. Prettier and Payload disagree about
+# how to print it, so a prettier-formatted committed copy means every stand start
+# rewrites all 2115 lines and leaves the tree dirty in a file that ALSO changes
+# legitimately when collections change — a session cannot tell the stand's noise
+# from its own work, and "regenerated types" is a plausible enough diff to be
+# committed by accident (#229, owner's scope amendment 2026-08-14). The delta is
+# pure formatting: prettier applied to Payload's own output reproduces the old
+# committed file byte for byte. The generator owns its output; committing what it
+# writes makes the boot a no-op. Same shape as `pnpm-lock.yaml` above (#240).
+src/payload-types.ts
+
 # Guard-test fixtures are fake repo trees fed to the CI guards
 # (docs/ci-guardrails.md §8): their content is the INPUT under test — a
 # deliberately malformed workflow, a PR body with a missing section, a source

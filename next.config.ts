@@ -11,6 +11,18 @@ const nextConfig: NextConfig = {
   // can ship a minimal self-contained server. Without this, output tracing is
   // skipped and the runner stage's `COPY .next/standalone` finds nothing.
   output: 'standalone',
+  // Next rewrites its own guidance block into `AGENTS.md` on EVERY `next dev`
+  // start (`next/dist/server/lib/generate-agent-files.js`). Off here, and the
+  // reason is ownership rather than tidiness: `AGENTS.md` is part of this repo's
+  // always-on instruction corpus — the set `pnpm lint:instruction-budget`
+  // measures — so leaving it on hands a framework write access to agent canon,
+  // with content that can change on any upgrade without passing a review. The
+  // block's own text argues that committing it "keeps the tree clean", which is
+  // backwards here: canon lives in `.claude/`, and a tool-managed block inside
+  // it is the second source of truth CLAUDE.md bans. The one useful thing it
+  // said — read the version-matched docs bundled in the `next` package — is now
+  // stated by us, in `AGENTS.md`, under our own review. (#229)
+  agentRules: false,
   images: {
     localPatterns: [
       {
