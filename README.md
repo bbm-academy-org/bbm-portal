@@ -124,3 +124,4 @@ the storage adapter adds no DB columns.
 - `src/app/(payload)/` — Payload admin + REST/GraphQL routes
 - `src/app/(frontend)/` — Next.js frontend routes (portal surfaces grow here)
 - `docs/payload-collections-spec.md` — target content model, 1:1 with the site contract
+- `docs/codex-agent-mode.md` — Codex skills bridge, hook trust, and compatibility boundary
