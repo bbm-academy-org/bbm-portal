@@ -11,6 +11,7 @@ import {
 } from '../../tools/dev/task-worktree.mjs'
 import {
   branchDeletionDecision,
+  branchDatabaseTeardownPlan,
   classifyTeardownScope,
   classifyTeardownTarget,
   normPath,
@@ -204,5 +205,28 @@ describe('classifyTeardownTarget', () => {
     expect(classifyTeardownTarget('/repo/.claude/worktrees/nope', [], () => false)).toBe(
       'unresolvable',
     )
+  })
+})
+
+describe('branchDatabaseTeardownPlan', () => {
+  it('tears down the matching platform_<N> database for a numeric task worktree', () => {
+    const plan = branchDatabaseTeardownPlan('200', '/repo/.claude/worktrees/200', '/repo')
+
+    expect(plan).toEqual({ action: 'drop', taskId: '200' })
+  })
+
+  it('fails closed when the numeric argument and worktree basename disagree', () => {
+    expect(() => branchDatabaseTeardownPlan('200', '/repo/.claude/worktrees/201', '/repo')).toThrow(
+      /mismatch/i,
+    )
+  })
+
+  it('skips database teardown for non-numeric ad-hoc worktree paths', () => {
+    expect(
+      branchDatabaseTeardownPlan('scratch', '/repo/.claude/worktrees/scratch', '/repo'),
+    ).toEqual({
+      action: 'skip',
+      reason: 'not a numeric task worktree',
+    })
   })
 })
