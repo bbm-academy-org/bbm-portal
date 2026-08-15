@@ -343,8 +343,15 @@ gate.** A mandatory APPROVE review is not enabled in the payload: the only human
 with permissions is the PR author, and he cannot APPROVE his own PR. Our checkable
 form of review is different — a reviewer subagent's comment carrying the line
 `VERDICT: APPROVE`, and `pnpm pr:land` blocks the merge until such a comment
-**newer than the last commit** exists (a human APPROVE counts too). To narrow it
-to a human one — `--require-review`; to lift it — only
+**newer than the last commit that changed the PR's own diff** exists (a human
+APPROVE counts too). A `gh pr update-branch` merge commit is not such a commit —
+GitHub builds and signs it server-side and it changes no reviewed line, so it
+does not stale the verdict (#222, `isBaseMergeCommit`); every other commit does,
+including a merge of `main` you make and resolve yourself — with one exception
+the gate cannot see: a merge committed through GitHub's web conflict editor
+(«Resolve conflicts»), a known hole routed in [`DEBT.md`](../../../DEBT.md) and
+warned about in [`merge-when-green`](../merge-when-green/SKILL.md). To
+narrow it to a human one — `--require-review`; to lift it — only
 `--no-review-gate "<reason>"`, where the reason is mandatory and gets printed.
 The owner's acceptance (stage 5) is not checked by the gate: a reminder about it
 is printed on every run.

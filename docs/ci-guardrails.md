@@ -112,7 +112,7 @@ the payload the same day. In between, the state was a gap rather than a constrai
 
 **BLOCK now has two enforcers, and they are not the same plane.** The server refuses a
 merge whose `ci` check is not green. `pnpm pr:land` refuses for that reason **and** for a
-missing `VERDICT: APPROVE` comment newer than the last commit (task-canon §7) — a rule the
+missing `VERDICT: APPROVE` comment newer than the code it approves (task-canon §7) — a rule the
 server knows nothing about. WARN guards stay invisible to the server either way, because
 the required context is `ci` and they are absent from its needs-list. What promotion costs
 now depends on which workflow the guard lives in:
@@ -294,6 +294,18 @@ not a clean corpus. On the CI plane that is **exit 1** — §8 gives a CI guard 
 so fail-closed is the only honest code available. `instruction-budget` answers the same
 class with **exit 2** (§6.1, empty corpus) because it is a §2.3 CLI guard, where "not a
 verdict" exists. Same rule, two codes, because the planes differ — not an inconsistency.
+
+**The permissions floor every job in this table runs under (#220).** Both workflows named
+in the Workflow column now declare a top-level `permissions: contents: read`. That is the
+floor, not the grant: a job-level `permissions:` block **replaces** the workflow-level one
+rather than merging with it, so a job needing more lists every scope it needs, its own
+`contents: read` included. Only gh-reaching jobs do — `tdd-signal` in `ci.yml`, and all six
+jobs in `pr-body-guards.yml`. Before #220 the jobs that declare nothing inherited the repo
+default (`default_workflow_permissions: read`, i.e. read on every scope); the floor drops
+the scopes none of them uses. `workflow-auth` already reads permissions the way GitHub
+resolves them (the job's own block, else the workflow's) and so audits the effective grant,
+but it audits it **only for gh-gated jobs** — nothing checks that a workflow declares a
+top-level floor at all, which is a routed DEBT.md line, not a guard that exists today.
 
 `instruction-budget` is the one guard that appears in BOTH inventories, deliberately: the
 same script is a §2.3 CLI guard (BLOCK by exit code — §6.1) and a §2.1 CI job (WARN,
