@@ -12,11 +12,7 @@ import type {
 } from './types'
 
 export type PublicationEligibilityStatus =
-  | 'eligible'
-  | 'open'
-  | 'empty'
-  | 'published'
-  | 'incomplete'
+  'eligible' | 'open' | 'empty' | 'published' | 'incomplete'
 
 export interface PublicationEligibility {
   status: PublicationEligibilityStatus

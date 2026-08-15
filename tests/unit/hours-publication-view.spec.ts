@@ -165,8 +165,7 @@ async function mount(Component: Panel, props: PanelProps) {
 
 function buttonByText(container: ParentNode, label: RegExp): HTMLButtonElement | undefined {
   return [...container.querySelectorAll('button')].find((button) => label.test(text(button))) as
-    | HTMLButtonElement
-    | undefined
+    HTMLButtonElement | undefined
 }
 
 describe('Mattermost verification panel — collapsed/preview states', () => {
