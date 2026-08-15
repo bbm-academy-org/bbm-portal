@@ -2,11 +2,13 @@
 // bbm-portal — deliver a merged PR's «Product note (RU)» section to Mattermost
 // (task 7.6, #137; port of ds-platform `tools/ci/post-product-note.mjs`).
 //
-// Driven by `.github/workflows/product-note-mattermost.yml` on a merged
-// `pull_request` into main. The PR body, title and URL arrive through the
-// process ENV — never interpolated into a shell string — so a `$(...)` or a
-// backtick in a body cannot be executed, and the webhook JSON is built with
-// `JSON.stringify`.
+// Driven by `.github/workflows/product-note-mattermost.yml` on a `push` to
+// main (#202: the workflow resolves the merged PR behind the pushed sha —
+// it carries a long-lived secret and must not be reachable from PR events;
+// since #214 that trigger list is the only thing enforcing it). The PR
+// body, title and URL arrive through the process ENV — never interpolated
+// into a shell string — so a `$(...)` or a backtick in a body cannot be
+// executed, and the webhook JSON is built with `JSON.stringify`.
 //
 // This file also owns the extraction seams the aggregated PROD digest reuses
 // (`tools/deploy/release-notes.mjs`), so a note can never read one way in the

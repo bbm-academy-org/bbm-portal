@@ -13,8 +13,8 @@ as a single `docker compose` stack:
 - **`migrate`** — profiled one-off tooling job (migrations + admin seed).
 
 Public endpoint: **`https://cms.bbm.academy`** — admin `/admin`, REST `/api`,
-GraphQL `/api/graphql`. DNS `cms.bbm.academy → 201.51.28.190` already resolves,
-so Caddy provisions the certificate automatically on first start.
+GraphQL `/api/graphql`. DNS `cms.bbm.academy` already resolves to this host, so
+Caddy provisions the certificate automatically on first start.
 
 All commands below run **from the `deploy/` directory on the host**.
 
@@ -37,6 +37,7 @@ All commands below run **from the `deploy/` directory on the host**.
    ```bash
    cp .env.prod.example .env.prod          # app + migrate
    # edit: PAYLOAD_SECRET (openssl rand -hex 32), DATABASE_URL,
+   #       PLATFORM_DATABASE_URL (same credentials, database `platform`),
    #       S3 keys (terraform output portal_media_*), SEED_ADMIN_*.
 
    cp .env.postgres.example .env.postgres  # postgres container only
@@ -48,7 +49,8 @@ All commands below run **from the `deploy/` directory on the host**.
    #       header value `users API-Key <key>` (see Preview service below).
    ```
 
-   `DATABASE_URL` host is the compose service name `postgres`, not localhost.
+   `DATABASE_URL` host is the compose service name `postgres`, not localhost —
+   and so is `PLATFORM_DATABASE_URL`'s (see _Platform database_ below).
 
 4. **The code on the host.** Org policy disables repo deploy keys, so the box
    has no `git` clone. Ship the committed tree as an archive from a workstation
@@ -56,11 +58,68 @@ All commands below run **from the `deploy/` directory on the host**.
    or wire a CI image-push later. The "update" flow below assumes the tree is
    refreshed the same way (not `git pull`).
 
-5. **SSH access to the host.** Alias `portal-prod-tw` → `201.51.28.190`, user
-   `deploy`, key `~/.ssh/portal-prod-tw`. If `ssh portal-prod-tw` fails to resolve,
-   the `Host portal-prod-tw` block has gone missing from `~/.ssh/config` (the key
-   and the `known_hosts` entry persist) — restore it by copying another `*-prod-tw`
-   block and swapping host/IP/key. Don't conclude "no access" and escalate.
+5. **SSH access to the host.** Everything here — and `pnpm deploy:prod`
+   (`tools/deploy/prod.mjs`, override `BBM_PROD_SSH`) — reaches the box through
+   the SSH alias **`portal-prod-tw`** and nothing else. **The coordinates behind
+   that alias are deliberately not in this repository** (public since 2026-08-14,
+   #218): the procedure is public, the address / login user / key are not. They
+   live per-machine, the same way the dev stand keeps its own values outside the
+   tree (`infra/dev-stand/README.md` → _Secrets — per-machine, outside the synced
+   dir_):
+
+   | Where                          | What                                                                                                      |
+   | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+   | `~/.bbm-portal/prod-access.md` | the operator's per-machine **working copy**: host address, login user, which key, where the key came from |
+   | `~/.ssh/config`                | the live `Host portal-prod-tw` stanza the tooling actually resolves                                       |
+   | `~/.ssh/portal-prod-tw`        | the private key itself, mode `600` (`icacls` on Windows)                                                  |
+
+   **Setting up a new machine** from this runbook alone: read the values out of
+   `~/.bbm-portal/prod-access.md` (or get them from the owner — they are not
+   recoverable from the repo), then write the stanza into `~/.ssh/config`:
+
+   ```
+   Host portal-prod-tw
+     HostName <host address>
+     User <login user>
+     IdentityFile ~/.ssh/portal-prod-tw
+     IdentitiesOnly yes
+   ```
+
+   **The key is not a value — it cannot be read out of a chat, so obtaining it
+   is an out-of-band step the repo cannot automate:**
+
+   - **You already have it** (a machine that used to work, or a copy the owner
+     handed over out of band): put it at `~/.ssh/portal-prod-tw` and tighten the
+     permissions — `chmod 600` on Unix, `icacls` on Windows stripping inheritance
+     and leaving only your own account. OpenSSH refuses a key any other principal
+     can read.
+   - **You have none:** generate a fresh pair **on your own machine**
+     (`ssh-keygen -t ed25519 -f ~/.ssh/portal-prod-tw`), send the owner the
+     **`.pub`** half only, and ask him to append it to the deploy account's
+     `~/.ssh/authorized_keys` on the box. The private half never leaves the
+     machine that made it, and no existing operator has to surrender theirs.
+
+   Verify with `ssh portal-prod-tw docker ps`. If `ssh portal-prod-tw` stops
+   resolving on a machine that used to work, that block has gone missing from
+   `~/.ssh/config` (the key and the `known_hosts` entry normally persist). Two
+   cases, and this runbook cannot tell them apart for you:
+
+   - **This machine has `~/.bbm-portal/prod-access.md`** — rewrite the stanza
+     from it and you are done.
+   - **It does not** (a fresh machine, or the record was never written here) —
+     the values are **not** recoverable from this repository. Get them from the
+     owner out of band, and write the record down while you have it.
+
+   Either way, don't conclude "no access" and escalate.
+
+   **Where that record lives durably.** `~/.bbm-portal/prod-access.md` is a
+   per-machine working copy, not an archive — one laptop's disk is no place for
+   the only copy of the coordinates. Their durable home is the private **`bbm`
+   ops repo**, the same repo that owns `infra/portal/README.md` and
+   `restore-portal.sh` (see _Backups_ below); the per-machine file is a working
+   copy of what **belongs** there. Whether that record exists yet is a question
+   for the ops repo, not an assumption to act on — creating it under
+   `infra/portal/` is tracked there as ops-repo issue 148.
 
 > **Node version:** the image bakes Node 22 (`Dockerfile`), so the Payload
 > migrate tsx-loader gotcha that bites Node 23/24 on the dev host does **not**
@@ -163,6 +222,85 @@ hand only when `SEED_ADMIN_*` changed:
 cd deploy && docker compose -f docker-compose.prod.yml --profile tools run --rm migrate pnpm seed:admin
 ```
 
+## Platform database (`platform`, schema `core`) — #125
+
+The `postgres` container holds **two** databases from this task on: Payload's
+`cms`, and the platform's `platform` reached through a **second connection
+string**, `PLATFORM_DATABASE_URL` in `.env.prod`. Same container, same
+credentials, different database name — the Payload adapter is untouched.
+
+The decision and its alternatives:
+[**ADR-004**](../docs/adr/004-platform-persistence-foundation.md). The pipeline's
+commands and day-to-day handling:
+[`src/lib/platform/db/README.md`](../src/lib/platform/db/README.md). What follows
+here is only what is true at the **host** level.
+
+### One-time upgrade step on an EXISTING install — do this before the first deploy
+
+`deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
+deploy wipes `src/` and deliberately leaves `deploy/` alone), and **no deploy can
+add a line to it for you**. A box installed before this change therefore has no
+`PLATFORM_DATABASE_URL`, and the `migrate` service reads its environment from
+that file.
+
+```bash
+ssh portal-prod-tw
+cd ~/bbm-portal/deploy
+# same credentials and host as DATABASE_URL — only the database name differs
+grep '^DATABASE_URL=' .env.prod        # copy it, swap /cms for /platform
+echo 'PLATFORM_DATABASE_URL=postgres://payload:<the same password>@postgres:5432/platform' >> .env.prod
+```
+
+`pnpm deploy:prod` **checks this for you** before it touches anything: its first
+remote stage (`verifyRemoteEnv`) greps `.env.prod` for every variable the release
+needs and aborts with the remedy if one is missing — before the tree is shipped,
+before the checkpoint is taken, before anything migrates. Without that gate the
+same omission would surface much later and much worse: the stack stage runs under
+`bash -euo pipefail`, so the platform migration would abort _after_ the dump and
+Payload's migration and _before_ `up -d`.
+
+Three consequences at the host level:
+
+- **Nothing to provision inside Postgres by hand** (as distinct from the env line
+  above). `POSTGRES_DB` in `.env.postgres` still names `cms` only. The `platform`
+  database itself is created on first migrate by `pnpm platform:db:ensure` (which
+  `pnpm platform:migrate` runs first), so a fresh `pgdata` volume needs no
+  hand-run `psql` — the same pattern the dev Zitadel uses for its own `zitadel`
+  database.
+- **`pnpm deploy:prod` applies both pipelines** in its `deployStack` stage, and
+  prints both ledgers afterwards. That stage runs **after** `checkpoint`, so a
+  platform migration is protected by exactly the same fail-closed dump gate as a
+  Payload one.
+- **The checkpoint must cover BOTH databases.** See below.
+
+### Backups must cover both databases
+
+`pnpm deploy:prod`'s `checkpoint` stage does not dump anything itself: it runs
+`/home/deploy/portal-backup/backup-portal.sh` and then **pins every fresh dump
+that script left** under this deploy's own S3 key,
+`checkpoints/pre-migrate-<UTC>-<sha12>-<dump-filename>`. Retention is inherited
+from the nightly's recursive `rclone delete … --min-age 30d`, i.e. **30 days**;
+the stage never deletes anything itself.
+
+> **The pinned key gained a `-<dump-filename>` suffix** (it used to end
+> `-<sha12>.sql.gz`), because one deploy can now pin more than one dump. If the
+> ops repo's `restore-portal.sh` parses that key, `sidorovanthon/bbm#112` must
+> cover the new shape — confirm it there rather than assuming.
+
+The pin is a loop over `*.sql.gz`, not a single newest file, precisely so the
+second dump appears in the recovery point the moment the box starts producing it.
+Coverage is then reported **per database, matched on the dump's filename** — not
+by counting files, which any stray second dump would satisfy while `platform`
+stayed uncovered.
+**The box script currently dumps `cms` only.** Extending it to dump `platform`
+too — and the matching restore runbook — is owned by the **`bbm` ops repo**
+(`infra/portal/README.md`) and **tracked there** as `sidorovanthon/bbm#112`,
+which also covers the off-site backup of both databases. Until it lands, the
+checkpoint stage prints a
+named `WARNING` on every deploy saying how many dumps it pinned against how many
+databases it expects, so the gap is visible in the deploy log rather than
+discovered during a restore.
+
 ## Preview service (`preview.bbm.academy`, epic #13)
 
 The `preview` service is the Astro SSR live-preview origin: it renders a single
@@ -175,8 +313,8 @@ server-to-server over the internal compose network
 (`PAYLOAD_API_URL=http://app:3000`, set inline in compose), authenticated with a
 **Users API key** carried in `.env.preview` (the only secret). Caddy serves it at
 `preview.bbm.academy` with a CSP `frame-ancestors https://cms.bbm.academy` so only
-the Payload admin can embed it. DNS `preview.bbm.academy → 201.51.28.190` already
-resolves, so Caddy auto-provisions the cert on first start.
+the Payload admin can embed it. DNS `preview.bbm.academy` already resolves to
+this host, so Caddy auto-provisions the cert on first start.
 
 **1. Issue the preview token (one-time):** use a **dedicated** `preview@bbm.academy`
 user (not a human admin's account) and give it a **self-chosen** API key.
@@ -274,4 +412,5 @@ preview && docker compose -f docker-compose.prod.yml up -d preview`.
   — install and repair happen there, not here. What matters at the host level:
   `pgdata` is still a single named volume with no WAL archiving, so a snapshot is
   not PITR, and the backup writes into `deploy@`'s `$HOME`, not into `/var` (no
-  root on this box).
+  root on this box). Since #125 there are **two** databases to cover — see
+  _Platform database_ above.

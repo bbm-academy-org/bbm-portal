@@ -163,11 +163,15 @@ There is one chain and no translation tables, with Type as the primary:
 to create one — the task type stays `Task`.
 
 **A milestone is mandatory.** A milestone is a long-lived theme, not a spec and
-not an epic. There is currently one product theme — "Platform consolidation"; the
-permanent fallback **"Platform: operations and hardening"**, for process and
-operations tasks that fit no theme, is created by `pnpm taxonomy:bootstrap
---apply` (which also creates the `channel:*` labels). A task without a milestone
-is not created.
+not an epic. There is currently one product theme — "Platform consolidation".
+Beside the themes stand the **permanent milestones**, which are never closed and
+can therefore be referenced from configuration by name and by number: the
+fallback **"Platform: operations and hardening"**, for process and operations
+tasks that fit no theme, and **"Dependencies"**, which carries the PRs of the
+automated dependency-update routine (pinned by number in `renovate.json`). The
+set is owned by `tools/gh/bootstrap-taxonomy.mjs` and created by `pnpm
+taxonomy:bootstrap --apply` (which also creates the `channel:*` labels). A task
+without a milestone is not created.
 
 **Structural labels** (orthogonal to the taxonomy, they do not replace it):
 `epic` — an umbrella issue; `consolidation` — the thematic marker of the
@@ -183,12 +187,12 @@ be a second source of truth, and the first one to drift.
 single pass together with reformatting the issues that carry them; until then
 `pnpm backlog:triage` lists the carriers in its «Гигиена полей» section.
 
-| Label                                              | Fate                                                                                                          |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `bug` (3), `enhancement` (11), `documentation` (3) | the issues get Type `Bug` / `Feature` / `Task` and the labels are deleted — otherwise one class has two names |
-| `duplicate`, `invalid`, `wontfix`                  | deleted: these are close reasons, not task properties (`gh issue close --reason not planned` + a comment)     |
-| `good first issue`, `help wanted`                  | deleted: a private repo with a single owner and agents, there are no external contributors                    |
-| `question`                                         | deleted: a question to the owner is not a backlog task                                                        |
+| Label                                              | Fate                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bug` (3), `enhancement` (11), `documentation` (3) | the issues get Type `Bug` / `Feature` / `Task` and the labels are deleted — otherwise one class has two names                                                                                                                                                                |
+| `duplicate`, `invalid`, `wontfix`                  | deleted: these are close reasons, not task properties (`gh issue close --reason not planned` + a comment)                                                                                                                                                                    |
+| `good first issue`, `help wanted`                  | deleted: the backlog is worked by one owner and his agents, and these two labels are a recruiting signal we do not send. The repo went public on 2026-08-14 (#214) — visibility changed, the staffing did not; revisit only if outside contribution is ever actually invited |
+| `question`                                         | deleted: a question to the owner is not a backlog task                                                                                                                                                                                                                       |
 
 The assignee defaults to `@me` — a mark of who filed the task, not an assignment
 and **not** a busy signal: there are exactly two claim signals and both are in §4
@@ -323,7 +327,7 @@ artifact itself (the script's `--help` and its file header).
 | `pnpm board:status <issue> <status>`           | half of the claim (§4) and `Done` after a merge: `Closes #N` does not move the board column                           | `tools/gh/set-board-status.mjs`            |
 | `pnpm pr:land <pr>`                            | the PR closing tail in one command; the first failing stage stops the tail                                            | `tools/gh/pr-land.mjs`                     |
 | `pnpm backlog:triage`                          | readiness from the native graph, field hygiene, edges without a rationale, mega-blockers, claim-signal reconciliation | `tools/gh/backlog-triage.mjs`              |
-| `pnpm taxonomy:bootstrap [--apply]`            | creates the `channel:*` labels and the fallback milestone; deletes nothing                                            | `tools/gh/bootstrap-taxonomy.mjs`          |
+| `pnpm taxonomy:bootstrap [--apply]`            | creates the `channel:*` labels and the permanent milestones; deletes nothing                                          | `tools/gh/bootstrap-taxonomy.mjs`          |
 | `pnpm task:worktree <N>` / `worktree:teardown` | the worktree as the first claim signal (§4); the branch prefix is derived from Type                                   | `parallel-sessions.md`                     |
 | The `spec-issue-graph` skill                   | opening a connected set of tasks from a spec: sub-issues, edges, exactly one pickable                                 | `.claude/skills/spec-issue-graph/SKILL.md` |
 | Issue forms                                    | the owner's path from the web UI; the form sets Type and `channel:owner` itself, a blank issue is forbidden           | `.github/ISSUE_TEMPLATE/*.yml`             |
@@ -332,15 +336,26 @@ artifact itself (the script's `--help` and its file header).
 `.github/branch-protection.json` is a payload, not a state: it is applied by hand
 with
 `gh api --method PUT repos/bbm-academy-org/bbm-portal/branches/main/protection --input .github/branch-protection.json`,
-and on the current GitHub plan it may not apply at all.
+and re-applying it is how the file and the live protection are reconciled after
+either one is edited. **Whether it is currently applied, and what its live values
+are, is owned by [`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md) §2.1**
+and is deliberately not restated here — this file has already gone stale behind
+that state once (#216).
 
 **Review is not required by server-side protection, but it is required by a
 gate.** A mandatory APPROVE review is not enabled in the payload: the only human
 with permissions is the PR author, and he cannot APPROVE his own PR. Our checkable
 form of review is different — a reviewer subagent's comment carrying the line
 `VERDICT: APPROVE`, and `pnpm pr:land` blocks the merge until such a comment
-**newer than the last commit** exists (a human APPROVE counts too). To narrow it
-to a human one — `--require-review`; to lift it — only
+**newer than the last commit that changed the PR's own diff** exists (a human
+APPROVE counts too). A `gh pr update-branch` merge commit is not such a commit —
+GitHub builds and signs it server-side and it changes no reviewed line, so it
+does not stale the verdict (#222, `isBaseMergeCommit`); every other commit does,
+including a merge of `main` you make and resolve yourself — with one exception
+the gate cannot see: a merge committed through GitHub's web conflict editor
+(«Resolve conflicts»), a known hole routed in [`DEBT.md`](../../../DEBT.md) and
+warned about in [`merge-when-green`](../merge-when-green/SKILL.md). To
+narrow it to a human one — `--require-review`; to lift it — only
 `--no-review-gate "<reason>"`, where the reason is mandatory and gets printed.
 The owner's acceptance (stage 5) is not checked by the gate: a reminder about it
 is printed on every run.
