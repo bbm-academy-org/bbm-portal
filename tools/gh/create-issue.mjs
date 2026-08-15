@@ -1,44 +1,43 @@
 #!/usr/bin/env node
-// bbm-portal — `pnpm issue:create`: единственный путь заведения задачи (#130).
+// bbm-portal — `pnpm issue:create`: the only path for creating an issue (#130).
 //
-// Почему обёртка, а не `gh issue create`:
-//   • сырой `gh issue create` создаёт issue с любым набором полей — и мусор
-//     попадает в бэклог раньше, чем кто-нибудь это заметит. Здесь валидация
-//     fail-closed ДО первого gh-вызова: нарушение таксономии = issue НЕ создана
-//     вообще, а не создана-и-потом-чинится;
-//   • «Item added → Todo» на борде срабатывает с задержкой, поэтому строка
-//     ставится на борд явно, статус Todo выставляется явно, и наличие строки
-//     подтверждается прямым GraphQL-чтением по node id (у `item-list` read-lag
-//     на только что добавленной строке).
+// Why a wrapper instead of `gh issue create`:
+//   • raw `gh issue create` accepts any set of fields, so malformed work reaches
+//     the backlog before anyone notices. Validation here fails closed BEFORE the
+//     first gh call: a taxonomy violation means no issue was created at all,
+//     instead of creating one and repairing it afterwards;
+//   • the board's «Item added → Todo» automation is delayed, so the item is added
+//     explicitly, Todo is set explicitly, and a direct GraphQL node-id read
+//     confirms the item (`item-list` has read lag for newly added rows).
 //
-// Канон: `.claude/skills/task-canon/SKILL.md` §2 + §7.
+// Canon: `.claude/skills/task-canon/SKILL.md` §2 + §7.
 //
-// Классификатор задачи — ШТАТНОЕ поле GitHub **Type** (Bug/Feature/Task),
-// решение владельца 2026-08-04 («не надо выдумывать новые поля взамен
-// существующих»).
+// Issue classification uses GitHub's NATIVE **Type** field (Bug/Feature/Task),
+// per the owner's 2026-08-04 ruling: do not invent replacements for existing
+// fields.
 //
-// Происхождение задачи — ДВА измерения, и их легко перепутать (решение
-// владельца 2026-08-04, там же):
-//   • `--channel` — КАК задача попала в бэклог, кто завёл её в трекер. Закрытый
-//     список из четырёх, становится лейблом `channel:*`. Служит порядку;
-//   • `--source`  — НА ОСНОВАНИИ ЧЕГО она существует. СВОБОДНЫЙ текст, первой
-//     строкой тела. Enum'а тут быть не может: «баг-репорт в Mattermost»,
-//     «executive-решение партнёров», «сам поймал при работе над #124»,
-//     «обновилось приложение», «изменилась миссия» — пространство открытое, а
-//     закрытый список выродился бы в «99% owner», то есть в ноль информации.
+// Issue provenance has TWO dimensions that are easy to confuse (same owner
+// ruling from 2026-08-04):
+//   • `--channel` — HOW the issue entered the backlog, who put it in the tracker.
+//     A closed list of four values stored as a `channel:*` label. It maintains order;
+//   • `--source`  — WHAT WARRANTS the issue's existence. FREE text stored as the
+//     first body line. This cannot be an enum: «bug report in Mattermost»,
+//     «executive decision by the partners», «found while working on #124»,
+//     «the application changed», «the mission changed» — the space is open, and
+//     a closed list would collapse into «99% owner», which conveys nothing.
 //
-// Использование (тонкий passthrough — всё после управляющих флагов уходит в
-// `gh issue create` дословно, его флаги здесь не переизобретаются):
+// Usage (a thin passthrough: after this wrapper consumes its control flags,
+// everything else reaches `gh issue create` verbatim; its flags are not reinvented):
 //   pnpm issue:create --title "<t>" --body-file <f> --type Task \
-//     --channel agent --source "сам поймал при работе над #130" \
+//     --channel agent --source "found while working on #130" \
 //     --milestone "Platform: operations and hardening"
-//   pnpm issue:create --no-todo --title …    # добавить на борд, Status не трогать
+//   pnpm issue:create --no-todo --title …    # add to the board without touching Status
 //
-// Управляющие флаги (потребляются здесь, в gh НЕ уходят): `--no-todo`,
-// `--channel`, `--source`, `--body`/`--body-file` (тело пересобирается).
+// Control flags (consumed here and NOT passed to gh): `--no-todo`, `--channel`,
+// `--source`, `--body`/`--body-file` (the body is rebuilt).
 //
-// Exit codes: 0 = issue создана, добавлена на борд и подтверждена;
-// 1 = ошибка валидации / gh / подтверждения.
+// Exit codes: 0 = the issue was created, added to the board and confirmed;
+// 1 = validation / gh / confirmation error.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -64,10 +63,10 @@ import {
 
 const TAG = '[issue:create]'
 
-// ── чистые сеймы (юнит-тестируются в tests/unit/gh-create-issue.spec.ts) ─────
+// ── pure seams (unit-tested in tests/unit/gh-create-issue.spec.ts) ───────────
 
 /**
- * Разделить argv на свои управляющие флаги и passthrough в gh.
+ * Split argv into this wrapper's control flags and the passthrough to gh.
  * @returns {{ setTodo: boolean, passthrough: string[] }}
  */
 export function partitionArgs(argv) {
@@ -84,9 +83,9 @@ export function partitionArgs(argv) {
 }
 
 /**
- * Достать значение флага во всех формах, которые принимает gh: `--flag V`,
- * `--flag=V`, `-f V`, `-fV`. Возвращает ВСЕ найденные значения по порядку —
- * повтор флага тоже сигнал (gh уважает последний, а нам важно заметить).
+ * Read a flag value in every form accepted by gh: `--flag V`, `--flag=V`,
+ * `-f V`, `-fV`. Returns EVERY value in order: a repeated flag is a signal too
+ * (gh honours the last one, while the wrapper needs to notice the repetition).
  * @param {string[]|null|undefined} args
  * @param {string} longName
  * @param {string|null} [shortName]
@@ -110,7 +109,7 @@ export function flagValues(args, longName, shortName = null) {
   return values
 }
 
-/** Все значения `--label` / `-l`, включая списки через запятую. */
+/** Every `--label` / `-l` value, including comma-separated lists. */
 export function collectLabels(args) {
   const out = []
   for (const raw of flagValues(args, 'label', 'l')) {
@@ -122,14 +121,14 @@ export function collectLabels(args) {
   return out
 }
 
-/** Есть ли `--repo`/`-R` в passthrough — борд привязан к репо, оверрайд запрещён. */
+/** Whether passthrough carries `--repo`/`-R`; the board is repo-bound, so overrides are forbidden. */
 export function hasRepoOverride(args) {
   return (args ?? []).some(
     (a) => a === '--repo' || a.startsWith('--repo=') || a === '-R' || a.startsWith('-R'),
   )
 }
 
-/** Короткие значения канала: `--channel owner` == `--channel channel:owner`. */
+/** Short channel values: `--channel owner` == `--channel channel:owner`. */
 export function normalizeChannel(value) {
   const v = String(value ?? '').trim()
   if (v === '') return ''
@@ -137,9 +136,9 @@ export function normalizeChannel(value) {
 }
 
 /**
- * Ровно один `channel:*` — канал попадания задачи в бэклог. Принимается и
- * флагом `--channel owner`, и лейблом `--label channel:owner`: обёртку зовут и
- * руками, и из скилла, а расходиться в двух формах записи ей незачем.
+ * Exactly one `channel:*` identifies how the issue entered the backlog. Accept
+ * both `--channel owner` and `--label channel:owner`: callers use the wrapper
+ * manually and from the skill, and the two representations must not diverge.
  */
 export function channelError(args) {
   const taxonomy = CHANNEL_LABELS.join(' | ')
@@ -151,20 +150,20 @@ export function channelError(args) {
   const unique = [...new Set(found)]
   if (unique.length === 0) {
     return (
-      `у каждой задачи ровно один канал попадания в бэклог — передай --channel <${short}>. ` +
-      `Это НЕ происхождение (оно свободным текстом в --source), а «кто завёл задачу в трекер».`
+      `every issue has exactly one backlog-entry channel — pass --channel <${short}>. ` +
+      `This is NOT provenance (that is free text in --source); it is who put the issue in the tracker.`
     )
   }
   if (unique.length > 1) {
-    return `допустим ровно ОДИН канал, получено: ${unique.join(', ')} (таксономия: ${taxonomy}).`
+    return `exactly ONE channel is allowed; received: ${unique.join(', ')} (taxonomy: ${taxonomy}).`
   }
   if (!CHANNEL_LABELS.includes(unique[0])) {
-    return `неизвестный канал «${unique[0]}» — должен быть одним из: ${taxonomy}.`
+    return `unknown channel «${unique[0]}» — it must be one of: ${taxonomy}.`
   }
   return null
 }
 
-/** Единственный канал из argv (после валидации). */
+/** The single channel in argv (after validation). */
 export function resolveChannel(args) {
   const found = [
     ...flagValues(args, 'channel').map(normalizeChannel),
@@ -174,46 +173,45 @@ export function resolveChannel(args) {
 }
 
 /**
- * Обязательное происхождение — СВОБОДНЫЙ текст (решение владельца 2026-08-04).
- * Enum'а тут быть не может: «баг-репорт Х в Mattermost», «executive-решение
- * партнёров от 2026-07-30», «сам поймал при работе над #124», «обновление
- * зависимости payload 3.86» — пространство источников открытое, и именно этот
- * контекст теряется первым.
+ * Required provenance is FREE text (owner ruling, 2026-08-04). It cannot be an
+ * enum: «X's bug report in Mattermost», «the partners' executive decision from
+ * 2026-07-30», «found while working on #124», «Payload 3.86 dependency update» —
+ * the source space is open, and this context is the first thing an enum loses.
  */
 export function sourceTextError(args) {
   const found = flagValues(args, 'source').map((v) => String(v).trim())
   if (found.length === 0 || found.every((v) => v === '')) {
     return (
-      `у каждой задачи есть происхождение — передай --source "<на основании чего>". ` +
-      `Свободный текст, например: «баг-репорт Антона в Mattermost 2026-08-04», ` +
-      `«executive-решение партнёров», «сам поймал при работе над #124», «ретро сессии 2026-08-01».`
+      `every issue needs provenance — pass --source "<what warrants it>". ` +
+      `Use free text, for example: «Anton's bug report in Mattermost, 2026-08-04», ` +
+      `«executive decision by the partners», «found while working on #124», «2026-08-01 session retro».`
     )
   }
-  if (found.length > 1) return `допустим ровно ОДИН --source, получено ${found.length}.`
+  if (found.length > 1) return `exactly ONE --source is allowed; received ${found.length}.`
   return null
 }
 
 /**
- * Строка `**Source:**` собирается тулингом, а не пишется в тело руками — иначе
- * их стало бы два и они бы разошлись.
+ * Tooling builds the `**Source:**` line instead of accepting one in the body;
+ * otherwise two copies could exist and drift apart.
  */
 export function sourceLineError(bodyText) {
   if (!/^\s*\*\*Source:\*\*/im.test(String(bodyText ?? ''))) return null
   return (
-    'в теле уже есть строка **Source:** — не пиши её руками, происхождение задаётся ' +
-    'флагом --source, обёртка сама поставит строку первой.'
+    'the body already contains a **Source:** line — do not write it manually; provenance is ' +
+    'provided through --source and the wrapper adds the line first.'
   )
 }
 
-/** Итоговое тело: строка Source первой, затем то, что написал вызывающий. */
+/** Final body: the Source line first, followed by the caller's text. */
 export function composeBody(sourceText, bodyText) {
   return `**Source:** ${String(sourceText).trim()}\n\n${String(bodyText ?? '').trim()}\n`
 }
 
 /**
- * Убрать из passthrough флаги тела и наши собственные — тело уезжает в gh
- * переписанным (через временный файл, чтобы не упереться в лимит длины
- * командной строки Windows), а `--channel`/`--source` gh не знает.
+ * Remove body flags and this wrapper's own flags from passthrough. The rebuilt
+ * body reaches gh through a temporary file to avoid the Windows command-line
+ * length limit, while gh knows nothing about `--channel`/`--source`.
  */
 export function stripConsumedFlags(args) {
   const out = []
@@ -223,7 +221,7 @@ export function stripConsumedFlags(args) {
   for (let i = 0; i < list.length; i++) {
     const a = list[i]
     if (withValue.has(a)) {
-      i++ // проглотить значение
+      i++ // consume the value
       continue
     }
     if (prefixes.some((p) => a.startsWith(p))) continue
@@ -234,86 +232,87 @@ export function stripConsumedFlags(args) {
 }
 
 /**
- * `kind:*`-лейблов в этом репо нет: класс задачи живёт в штатном поле Type
- * (решение владельца 2026-08-04). Отдельная ошибка вместо молчаливого
- * пропуска — иначе привычка из ds-platform завела бы вторую классификацию.
+ * This repo has no `kind:*` labels: issue class lives in the native Type field
+ * (owner ruling, 2026-08-04). An explicit error beats a silent skip; otherwise
+ * habits carried over from ds-platform would create a second classification.
  */
 export function kindLabelError(args) {
   const kinds = collectLabels(args).filter((l) => l.startsWith('kind:'))
   if (kinds.length > 0) {
     return (
-      `kind:*-лейблы в этом репо упразднены (${kinds.join(', ')}) — класс задачи задаётся ` +
-      `штатным полем Type: --type ${ISSUE_TYPES.join('|')}.`
+      `kind:* labels were retired in this repo (${kinds.join(', ')}) — issue class is set through ` +
+      `the native Type field: --type ${ISSUE_TYPES.join('|')}.`
     )
   }
   const sources = collectLabels(args).filter((l) => l.startsWith('source:'))
   if (sources.length > 0) {
     return (
-      `source:*-лейблы упразднены (${sources.join(', ')}): происхождение — свободный текст ` +
-      `в --source, канал попадания в бэклог — --channel <owner|spec|retro|agent>.`
+      `source:* labels were retired (${sources.join(', ')}): provenance is free text in --source, ` +
+      `and backlog-entry channel is --channel <owner|spec|retro|agent>.`
     )
   }
   return null
 }
 
-/** Ровно один валидный `--type`. */
+/** Exactly one valid `--type`. */
 export function typeError(args) {
   const taxonomy = ISSUE_TYPES.join(' | ')
   const found = flagValues(args, 'type').map((v) => String(v).trim())
   if (found.length === 0) {
-    return `у каждой задачи ровно один штатный тип — передай --type <тип>, один из: ${taxonomy}.`
+    return `every issue has exactly one native type — pass --type <type>, one of: ${taxonomy}.`
   }
   if (found.length > 1) {
-    return `допустим ровно ОДИН --type, получено: ${found.join(', ')}.`
+    return `exactly ONE --type is allowed; received: ${found.join(', ')}.`
   }
   if (!ISSUE_TYPES.includes(found[0])) {
-    return `неизвестный тип «${found[0]}» — должен быть одним из: ${taxonomy} (org Issue Types).`
+    return `unknown type «${found[0]}» — it must be one of: ${taxonomy} (org Issue Types).`
   }
   return null
 }
 
-/** Непустой `--milestone`. */
+/** A non-empty `--milestone`. */
 export function milestoneError(args) {
   const found = flagValues(args, 'milestone', 'm')
     .map((v) => String(v).trim())
     .filter((v) => v !== '')
   if (found.length === 0) {
     return (
-      `у каждой задачи есть milestone — передай --milestone <тема>; постоянный fallback для ` +
-      `процессных/эксплуатационных задач: «${FALLBACK_MILESTONE}».`
+      `every issue needs a milestone — pass --milestone <theme>; the permanent fallback for ` +
+      `process and operations work is «${FALLBACK_MILESTONE}».`
     )
   }
   return null
 }
 
 /**
- * Непустое тело. `--body-file` требует чтения файла, поэтому читатель
- * инжектируется — тест гоняет гейт без файловой системы.
+ * A non-empty body. `--body-file` requires a file read, so the reader is
+ * injected and tests can drive the gate without a filesystem.
  */
 export function bodyError(args, readFile = (p) => readFileSync(p, 'utf8')) {
   const inline = flagValues(args, 'body', 'b')
   const files = flagValues(args, 'body-file', 'F')
   if (inline.length === 0 && files.length === 0) {
-    return 'у задачи должно быть тело — передай --body "<текст>" или --body-file <файл> (скелет: .claude/skills/task-canon/SKILL.md §1).'
+    return 'an issue needs a body — pass --body "<text>" or --body-file <file> (skeleton: .claude/skills/task-canon/SKILL.md §1).'
   }
   for (const value of inline) {
-    if (String(value).trim() === '') return 'тело задачи пустое (--body) — постановка не бывает пустой.'
+    if (String(value).trim() === '')
+      return 'the issue body is empty (--body) — a task statement cannot be empty.'
   }
   for (const file of files) {
     let content
     try {
       content = readFile(String(file))
     } catch (e) {
-      return `не удалось прочитать файл тела «${file}»: ${e?.message ?? e}`
+      return `could not read body file «${file}»: ${e?.message ?? e}`
     }
     if (String(content).trim() === '') {
-      return `файл тела «${file}» пуст — постановка не бывает пустой.`
+      return `body file «${file}» is empty — a task statement cannot be empty.`
     }
   }
   return null
 }
 
-/** Собрать текст тела из passthrough (для нефатальных проверок скелета). */
+/** Assemble the body text from passthrough (for non-fatal skeleton checks). */
 export function readBodyText(args, readFile = (p) => readFileSync(p, 'utf8')) {
   const parts = []
   for (const value of flagValues(args, 'body', 'b')) parts.push(String(value))
@@ -321,24 +320,18 @@ export function readBodyText(args, readFile = (p) => readFileSync(p, 'utf8')) {
     try {
       parts.push(String(readFile(String(file))))
     } catch {
-      /* bodyError уже отчитается */
+      /* bodyError reports this */
     }
   }
   return parts.join('\n')
 }
 
 /**
- * Секции канона §1. Разбор терпим к уровню заголовка: `pnpm issue:create`
- * пишет `##`, а issue-формы GitHub рендерят поля как `###` — обе формы
- * канонические, и парсер задачника обязан читать обе.
+ * Canon §1 sections. Parsing tolerates heading depth: `pnpm issue:create`
+ * writes `##`, while GitHub issue forms render fields as `###`. Both forms are
+ * canonical, and the task parser must read both.
  */
-export const CANON_SECTIONS = [
-  'Context',
-  'Scope',
-  'Spec reference',
-  'Acceptance criteria',
-  'Notes',
-]
+export const CANON_SECTIONS = ['Context', 'Scope', 'Spec reference', 'Acceptance criteria', 'Notes']
 
 export function hasSection(body, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -350,27 +343,27 @@ export function hasSourceLine(body) {
 }
 
 /**
- * Нефатальные замечания по скелету тела. НЕ гейт: канон §7 перечисляет ровно
- * четыре fail-closed-условия, и пятое, придуманное тулингом, было бы
- * ужесточением канона мимо владельца. `Acceptance criteria` не требуется у
- * эпика — его критерий это закрытые дети (§1).
+ * Non-fatal remarks about the body skeleton. This is NOT a gate: canon §7 names
+ * exactly four fail-closed conditions, and a fifth invented by tooling would
+ * tighten the canon without the owner. An epic does not require
+ * `Acceptance criteria`; its criterion is that all children are closed (§1).
  */
 export function skeletonWarnings(body, labels = []) {
   const warnings = []
   const isEpic = (labels ?? []).includes('epic')
-  if (!hasSourceLine(body)) warnings.push('нет строки **Source:** (канон §1)')
+  if (!hasSourceLine(body)) warnings.push('missing **Source:** line (canon §1)')
   for (const section of CANON_SECTIONS) {
     if (section === 'Notes') continue
     if (section === 'Acceptance criteria' && isEpic) continue
-    if (!hasSection(body, section)) warnings.push(`нет секции «${section}» (канон §1)`)
+    if (!hasSection(body, section)) warnings.push(`missing «${section}» section (canon §1)`)
   }
   return warnings
 }
 
 /**
- * Схлопнуть повторяющиеся `--label`: канал приходит и флагом `--channel`, и
- * лейблом, поэтому один и тот же `channel:*` иначе уезжает в gh дважды.
- * Порядок первых вхождений сохраняется; прочие флаги не трогаются.
+ * Collapse repeated `--label` values: the channel arrives both as a `--channel`
+ * flag and as a label, so the same `channel:*` would otherwise reach gh twice.
+ * Preserve first-occurrence order and leave every other flag untouched.
  */
 export function dedupeLabelFlags(args) {
   const out = []
@@ -400,12 +393,12 @@ export function dedupeLabelFlags(args) {
   return out
 }
 
-/** Есть ли уже `--assignee`/`-a`? */
+/** Whether `--assignee`/`-a` is already present. */
 export function hasAssignee(args) {
   return flagValues(args, 'assignee', 'a').length > 0
 }
 
-/** Дописать `--assignee @me`, если явного нет. Явный никогда не перетирается. */
+/** Add `--assignee @me` when none is explicit. Never overwrite an explicit value. */
 export function ensureAssigneeFlag(args) {
   const list = [...(args ?? [])]
   if (hasAssignee(list)) return list
@@ -413,14 +406,14 @@ export function ensureAssigneeFlag(args) {
 }
 
 /**
- * Все гейты по порядку. Первая ошибка — та, что выводится: сообщать пять
- * нарушений разом бесполезно, чинят их всё равно по одному.
+ * Every gate in order. Report the first error only: listing five violations at
+ * once does not help because callers still repair them one at a time.
  */
 export function validationError(args, readFile) {
   if (hasRepoOverride(args)) {
     return (
-      `--repo/-R запрещён: обёртка жёстко привязана к ${REPO}, потому что борд Project ` +
-      `${PROJECT_NUMBER} привязан к репо. Убери флаг.`
+      `--repo/-R is forbidden: the wrapper is pinned to ${REPO} because Project ` +
+      `${PROJECT_NUMBER} is bound to that repo. Remove the flag.`
     )
   }
   return (
@@ -436,12 +429,12 @@ export function validationError(args, readFile) {
 }
 
 /**
- * Дополнить ошибку `gh issue create` подсказкой, когда причина — отсутствующий
- * лейбл таксономии. Обёртка объявлена единственным путём заведения задач, а до
- * `taxonomy:bootstrap --apply` лейблов `channel:*` в репо нет — без подсказки
- * первая же попытка упирается в невнятное «could not add label».
+ * Add a hint to a `gh issue create` error when a taxonomy label is missing. The
+ * wrapper is the only issue-creation path, but `channel:*` labels do not exist
+ * before `taxonomy:bootstrap --apply`; without the hint the very first attempt
+ * stops at an opaque «could not add label».
  * @param {string} stderr
- * @param {string[]} labels  лейблы, которые уехали в gh
+ * @param {string[]} labels labels sent to gh
  * @returns {string}
  */
 export function enrichCreateError(stderr, labels) {
@@ -450,24 +443,24 @@ export function enrichCreateError(stderr, labels) {
   const channels = (labels ?? []).filter((l) => String(l).startsWith('channel:'))
   if (channels.length === 0) return text
   return (
-    `${text}\n  Похоже, лейбла ${channels.join(', ')} в репо ещё нет. Таксономия заводится ` +
-    `один раз: pnpm taxonomy:bootstrap (сухой прогон) → pnpm taxonomy:bootstrap --apply`
+    `${text}\n  It looks like ${channels.join(', ')} does not exist in the repo yet. Bootstrap the ` +
+    `taxonomy once: pnpm taxonomy:bootstrap (dry run) → pnpm taxonomy:bootstrap --apply`
   )
 }
 
-/** URL созданной issue из stdout `gh issue create`. */
+/** Created issue URL from `gh issue create` stdout. */
 export function extractIssueUrl(stdout) {
   const m = (stdout ?? '').match(/https?:\/\/\S*\/issues\/(\d+)\b/)
   return m ? m[0] : null
 }
 
-/** Номер issue из её URL. */
+/** Issue number from its URL. */
 export function issueNumberFromUrl(url) {
   const m = (url ?? '').match(/\/issues\/(\d+)\b/)
   return m ? Number(m[1]) : null
 }
 
-// ── импуративная часть ───────────────────────────────────────────────────────
+// ── imperative part ─────────────────────────────────────────────────────────
 
 function out(msg) {
   process.stdout.write(`${TAG} ${msg}\n`)
@@ -479,28 +472,28 @@ function die(msg) {
 }
 
 export const USAGE =
-  `Использование: pnpm issue:create [--no-todo] --title "<t>" --body-file <f> \\\n` +
+  `Usage: pnpm issue:create [--no-todo] --title "<t>" --body-file <f> \\\n` +
   `    --type ${ISSUE_TYPES.join('|')} --channel <owner|spec|retro|agent> \\\n` +
-  `    --source "<на основании чего>" --milestone "<тема>"\n\n` +
-  `  Тонкая обёртка над \`gh issue create\` (его флаги идут дословно), которая ещё и\n` +
-  `  ставит задачу на борд «${PROJECT_TITLE}» (Project ${PROJECT_NUMBER}), выставляет Status=Todo\n` +
-  `  и подтверждает строку прямым GraphQL-чтением. --no-todo: добавить без Status.\n\n` +
-  `  Два измерения происхождения, не путать:\n` +
-  `    --channel  КАК задача попала в бэклог (кто завёл её в трекер) — закрытый список,\n` +
-  `               становится лейблом channel:*;\n` +
-  `    --source   НА ОСНОВАНИИ ЧЕГО она существует — свободный текст, становится строкой\n` +
-  `               «**Source:**» первой строкой тела. Например: «баг-репорт Антона в\n` +
-  `               Mattermost 2026-08-04», «executive-решение партнёров», «сам поймал при\n` +
-  `               работе над #124», «обновление зависимости payload 3.86».\n\n` +
-  `  Обязательно (fail-closed, ДО любого gh-вызова):\n` +
-  `    • ровно один --channel: ${CHANNEL_LABELS.join(' | ')};\n` +
-  `    • непустой --source (строку **Source:** в теле писать руками нельзя);\n` +
-  `    • ровно один --type: ${ISSUE_TYPES.join(' | ')} (штатное поле GitHub);\n` +
-  `    • непустой --milestone (fallback «${FALLBACK_MILESTONE}»);\n` +
-  `    • непустое тело (--body или --body-file), скелет — канон §1.\n` +
-  `  Assignee по умолчанию @me. --repo/-R запрещён.\n\n` +
-  `  Таксономия заводится один раз: pnpm taxonomy:bootstrap --apply.\n` +
-  `  Exit codes: 0 — задача создана и подтверждена на борде; 1 — ошибка.\n`
+  `    --source "<what warrants it>" --milestone "<theme>"\n\n` +
+  `  A thin wrapper around \`gh issue create\` (its flags pass through verbatim) that also\n` +
+  `  adds the issue to the «${PROJECT_TITLE}» board (Project ${PROJECT_NUMBER}), sets Status=Todo,\n` +
+  `  and confirms the item with a direct GraphQL read. --no-todo adds it without Status.\n\n` +
+  `  Two provenance dimensions — do not confuse them:\n` +
+  `    --channel  HOW the issue entered the backlog (who put it in the tracker) — a closed list\n` +
+  `               stored as a channel:* label;\n` +
+  `    --source   WHAT WARRANTS its existence — free text stored as the first body line,\n` +
+  `               «**Source:**». Examples: «Anton's bug report in Mattermost, 2026-08-04»,\n` +
+  `               «executive decision by the partners», «found while working on #124»,\n` +
+  `               «Payload 3.86 dependency update».\n\n` +
+  `  Required (fail-closed, BEFORE any gh call):\n` +
+  `    • exactly one --channel: ${CHANNEL_LABELS.join(' | ')};\n` +
+  `    • a non-empty --source (do not write **Source:** manually in the body);\n` +
+  `    • exactly one --type: ${ISSUE_TYPES.join(' | ')} (native GitHub field);\n` +
+  `    • a non-empty --milestone (fallback «${FALLBACK_MILESTONE}»);\n` +
+  `    • a non-empty body (--body or --body-file), following canon §1's skeleton.\n` +
+  `  The default assignee is @me. --repo/-R is forbidden.\n\n` +
+  `  Bootstrap the taxonomy once: pnpm taxonomy:bootstrap --apply.\n` +
+  `  Exit codes: 0 — issue created and confirmed on the board; 1 — error.\n`
 
 function main() {
   const argv = process.argv.slice(2)
@@ -515,30 +508,30 @@ function main() {
 
   const { setTodo, passthrough } = partitionArgs(argv)
 
-  // 0. Гейты — все до первого gh-вызова. Нарушение = issue не создана вовсе.
+  // 0. Gates — all before the first gh call. A violation means no issue was created.
   const error = validationError(passthrough)
   if (error) die(error)
 
-  // Тело собирается здесь: строка **Source:** первой, затем текст вызывающего.
-  // Уезжает во временный файл, а не в `--body`, чтобы длинное тело не упёрлось
-  // в лимит длины командной строки Windows.
+  // Build the body here: the **Source:** line first, then the caller's text.
+  // Send it through a temporary file instead of `--body` so a long body does
+  // not hit the Windows command-line length limit.
   const channel = resolveChannel(passthrough)
   const sourceText = flagValues(passthrough, 'source')[0]
   const body = composeBody(sourceText, readBodyText(passthrough))
   for (const w of skeletonWarnings(body, [channel, ...collectLabels(passthrough)])) {
-    process.stderr.write(`${TAG} замечание (не блокирует): ${w}\n`)
+    process.stderr.write(`${TAG} remark (non-blocking): ${w}\n`)
   }
 
   const bodyDir = mkdtempSync(join(tmpdir(), 'bbm-issue-'))
   const bodyFile = join(bodyDir, 'body.md')
   writeFileSync(bodyFile, body, 'utf8')
-  // Уборка вешается на 'exit', а не на try/finally: почти все выходы отсюда
-  // идут через die() → process.exit, а он finally не исполняет.
+  // Attach cleanup to 'exit', not try/finally: almost every exit here goes
+  // through die() → process.exit, which does not execute finally.
   process.on('exit', () => {
     try {
       rmSync(bodyDir, { recursive: true, force: true })
     } catch {
-      /* временный каталог — не повод ронять команду */
+      /* a temporary directory is not a reason to fail the command */
     }
   })
 
@@ -552,18 +545,18 @@ function main() {
     ]),
   )
 
-  // 1. Создание. `--repo` пинится ПОСЛЕ passthrough: gh уважает последний, так
-  //    что даже если оверрайд просочится, issue приземлится в нашем репо.
-  out('создаю задачу…')
+  // 1. Creation. Pin `--repo` AFTER passthrough: gh honours the last value, so
+  //    even a leaked override cannot make the issue land outside this repo.
+  out('creating the issue…')
   const created = ghResult(['issue', 'create', ...augmented, '--repo', REPO])
   if (!created.ok) die(enrichCreateError(created.error, collectLabels(augmented)))
   const url = extractIssueUrl(created.stdout)
-  if (!url) die(`не нашёл URL созданной задачи в выводе gh:\n${created.stdout.trim()}`)
+  if (!url) die(`could not find the created issue URL in gh output:\n${created.stdout.trim()}`)
   const issueNumber = issueNumberFromUrl(url)
-  if (!issueNumber) die(`не смог разобрать номер задачи из URL: ${url}`)
-  out(`создана #${issueNumber} — ${url}`)
+  if (!issueNumber) die(`could not parse the issue number from its URL: ${url}`)
+  out(`created #${issueNumber} — ${url}`)
 
-  // 2. Постановка на борд — item-add возвращает авторитетный id строки.
+  // 2. Board placement — item-add returns the authoritative item id.
   const added = ghJson([
     'project',
     'item-add',
@@ -577,58 +570,59 @@ function main() {
   ])
   if (!added.ok) {
     die(
-      `${added.error}\n  Задача #${issueNumber} СОЗДАНА, но НЕ на борде — доставь вручную: ` +
+      `${added.error}\n  Issue #${issueNumber} WAS CREATED but is NOT on the board — add it manually: ` +
         `gh project item-add ${PROJECT_NUMBER} --owner ${OWNER} --url ${url}`,
     )
   }
   const itemId = added.data?.id
   if (!itemId) {
     die(
-      `gh project item-add не вернул id строки (ответ: ${JSON.stringify(added.data)}); ` +
-        `задача #${issueNumber} существует, но НЕ на борде — доставь вручную.`,
+      `gh project item-add returned no item id (response: ${JSON.stringify(added.data)}); ` +
+        `issue #${issueNumber} exists but is NOT on the board — add it manually.`,
     )
   }
-  out(`поставлена на борд — строка ${itemId}`)
+  out(`added to the board — item ${itemId}`)
 
-  // 3. Status=Todo — id резолвятся ЖИВЬЁМ (задокументированные KNOWN остаются
-  //    кросс-чеком), той же функцией, что использует `board:status`.
+  // 3. Status=Todo — resolve ids LIVE (documented KNOWN values remain a
+  //    cross-check) through the same function used by `board:status`.
   if (setTodo) {
     const target = resolveBoardStatusTarget(issueNumber, 'Todo')
     if (!target.ok) {
-      die(`${target.error}\n  Почини вручную: pnpm board:status ${issueNumber} Todo`)
+      die(`${target.error}\n  Repair manually: pnpm board:status ${issueNumber} Todo`)
     }
-    for (const w of target.warnings) process.stderr.write(`${TAG} замечание: ${w}\n`)
+    for (const w of target.warnings) process.stderr.write(`${TAG} remark: ${w}\n`)
     const mutated = ghGraphqlResult(
       buildStatusMutation(target.projectId, target.itemId, target.fieldId, target.optionId),
     )
     if (!mutated.ok) {
-      die(`${mutated.error}\n  Почини вручную: pnpm board:status ${issueNumber} Todo`)
+      die(`${mutated.error}\n  Repair manually: pnpm board:status ${issueNumber} Todo`)
     }
     out('Status = Todo')
   }
 
-  // 4. Подтверждение прямым node-чтением (обходит read-lag `item-list`).
+  // 4. Confirmation through a direct node read (bypasses `item-list` read lag).
   const readback = ghGraphqlResult(buildNodeQuery(itemId))
-  if (!readback.ok) die(`${readback.error}\n  Сверь вручную: pnpm board:status ${issueNumber} Todo`)
+  if (!readback.ok)
+    die(`${readback.error}\n  Check manually: pnpm board:status ${issueNumber} Todo`)
   const check = parseNodeReadback(readback.data, issueNumber, { expectTodo: setTodo })
   if (!check.ok) {
     die(
-      `подтверждение борда не прошло: ${check.reason} (строка ${itemId}); ` +
-        `почини: pnpm board:status ${issueNumber} Todo`,
+      `board confirmation failed: ${check.reason} (item ${itemId}); ` +
+        `repair it: pnpm board:status ${issueNumber} Todo`,
     )
   }
 
   out(
-    `ГОТОВО — подтверждено на борде.\n` +
-      `  задача = #${issueNumber}\n` +
+    `DONE — confirmed on the board.\n` +
+      `  issue  = #${issueNumber}\n` +
       `  url    = ${url}\n` +
-      `  строка = ${itemId}\n` +
-      `  статус = ${check.status ?? '(не задан)'}`,
+      `  item   = ${itemId}\n` +
+      `  status = ${check.status ?? '(not set)'}`,
   )
   process.exit(0)
 }
 
-// main запускается только при прямом вызове — чистые сеймы импортируются
-// тестом без единого подпроцесса.
+// Run main only on direct invocation; tests import pure seams without starting
+// a single subprocess.
 const invokedPath = process.argv[1]
 if (invokedPath && import.meta.url === pathToFileURL(invokedPath).href) main()
