@@ -32,6 +32,14 @@ import {
 
 type GhState = 'open' | 'closed' | 'merged'
 
+const LOCAL_REPO = 'bbm-academy-org/bbm-portal'
+
+type GhRepoData = {
+  issues?: Record<number, GhState>
+  prs?: Record<number, GhState>
+  provenance?: Record<number, { body?: string; comments?: { body: string }[] }>
+}
+
 /**
  * Fake gh/git runner. `issues`/`prs` map a number to its state; `provenance`
  * maps an issue number to the `gh issue view --json body,comments` payload;
@@ -41,6 +49,7 @@ function makeRunner({
   issues = {} as Record<number, GhState>,
   prs = {} as Record<number, GhState>,
   provenance = {} as Record<number, { body?: string; comments?: { body: string }[] }>,
+  repositories = {} as Record<string, GhRepoData>,
   branches = {} as Record<string, string>,
   merged = [] as string[],
 } = {}) {
@@ -52,12 +61,16 @@ function makeRunner({
       const kind = args[0]
       const n = Number(args[2])
       const fields = args[args.length - 1]
+      const repoAt = args.indexOf('--repo')
+      const repo = repoAt === -1 ? LOCAL_REPO : args[repoAt + 1]
+      const repoData: GhRepoData =
+        repo === LOCAL_REPO ? { issues, prs, provenance } : (repositories[repo] ?? {})
       if (fields === 'body,comments') {
-        const p = provenance[n]
+        const p = repoData.provenance?.[n]
         if (!p) return { status: 1, stdout: '', stderr: 'not found' }
         return { status: 0, stdout: JSON.stringify(p), stderr: '' }
       }
-      const state = kind === 'pr' ? prs[n] : issues[n]
+      const state = kind === 'pr' ? repoData.prs?.[n] : repoData.issues?.[n]
       if (!state) return { status: 1, stdout: '', stderr: 'not found' }
       return { status: 0, stdout: JSON.stringify({ state: state.toUpperCase() }), stderr: '' }
     },
@@ -229,6 +242,107 @@ describe('handoff-verify: claims are attributed per SEGMENT, not per line', () =
   })
 })
 
+describe('handoff-verify: ref and file token text never becomes a claim', () => {
+  it.each([
+    '#149, docs/open.md',
+    '#149; docs/closed.md',
+    '#149 — docs/merged.md',
+    '#149, docs/unmerged.md',
+    '#149 docs/open.md',
+  ])('does not infer issue state from a file token in %s', (input) => {
+    const result = verifyHandoff(input, makeRunner({ issues: { 149: 'closed' } }))
+
+    expect(result.rows.map(renderRow)).toEqual(['INFO #149 claimed=- actual=closed'])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it.each([
+    ['owner/open', 'closed'],
+    ['owner/closed', 'open'],
+    ['owner/repo-merged', 'open'],
+  ] as const)('does not infer issue state from qualified ref token %s#149', (repo, actual) => {
+    const result = verifyHandoff(
+      `${repo}#149`,
+      makeRunner({ repositories: { [repo]: { issues: { 149: actual } } } }),
+    )
+
+    expect(result.rows.map(renderRow)).toEqual([`INFO ${repo}#149 claimed=- actual=${actual}`])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('does not infer approval provenance from a qualified ref token', () => {
+    expect(extractApprovalClaims('owner/approved#149')).toEqual([])
+
+    const runner = makeRunner({
+      repositories: { 'owner/approved': { issues: { 149: 'open' } } },
+    })
+    const result = verifyHandoff('owner/approved#149', runner)
+
+    expect(result.rows.map(renderRow)).toEqual(['INFO owner/approved#149 claimed=- actual=open'])
+    expect(result.warn).toBe(0)
+    expect(runner.calls.filter((args) => args[args.length - 1] === 'body,comments')).toEqual([])
+  })
+
+  it.each(['feat/237-open', 'feat/237-owner-approved'])(
+    'does not infer a claim from branch token %s',
+    (branch) => {
+      const runner = makeRunner({
+        branches: { [`refs/remotes/origin/${branch}`]: 'abc1234' },
+        merged: ['abc1234'],
+      })
+      const result = verifyHandoff(branch, runner)
+
+      expect(result.rows.map(renderRow)).toEqual([`INFO ${branch} claimed=- actual=merged`])
+      expect(result.warn).toBe(0)
+      expect(extractOwnerDirectiveClaims(branch)).toEqual([])
+    },
+  )
+
+  it('keeps explicit status prose next to masked file and qualified ref tokens', () => {
+    expect(
+      verifyHandoff(
+        '#149 docs/closed.md is open',
+        makeRunner({ issues: { 149: 'open' } }),
+      ).rows.map(renderRow),
+    ).toEqual(['PASS #149 claimed=open actual=open'])
+
+    const input = 'owner/open#149 is closed'
+    const result = verifyHandoff(
+      input,
+      makeRunner({ repositories: { 'owner/open': { issues: { 149: 'closed' } } } }),
+    )
+    expect(result.rows.map(renderRow)).toEqual(['PASS owner/open#149 claimed=closed actual=closed'])
+    expect(extractRefs(input)[0]).toMatchObject({ line: input, segment: input })
+  })
+
+  it('keeps explicit owner approval next to a masked qualified ref token', () => {
+    const runner = makeRunner({
+      repositories: {
+        'owner/open': {
+          issues: { 149: 'open' },
+          provenance: { 149: { body: 'Stage 2: GO', comments: [] } },
+        },
+      },
+    })
+    const result = verifyHandoff('Owner-approved owner/open#149', runner)
+
+    expect(result.rows.map(renderRow)).toEqual([
+      'INFO owner/open#149 claimed=- actual=open',
+      'PASS owner/open#149 claimed=owner-approved actual=owner-quoted',
+    ])
+  })
+
+  it('keeps a multi-ref segment ambiguous after masking tokens', () => {
+    const result = verifyHandoff(
+      '#148 #149 docs/open.md are closed',
+      makeRunner({ issues: { 148: 'closed', 149: 'closed' } }),
+    )
+
+    expect(result.rows.map((row) => row.verdict)).toEqual(['INFO', 'INFO'])
+    expect(result.exitCode).toBe(0)
+  })
+})
+
 describe('handoff-verify: a ref that no longer resolves is STALE', () => {
   it('gh 404 on both issue and PR → not-found → STALE', () => {
     const result = verifyHandoff('Issue #4242 закрыт.', makeRunner())
@@ -248,6 +362,143 @@ describe('handoff-verify: ref extraction', () => {
     expect(extractRefs('ветка chore/134-handoff-verify').map((r) => r.value)).toEqual([
       'chore/134-handoff-verify',
     ])
+  })
+
+  it('does not treat a documentation file path as a branch ref', () => {
+    const runner = makeRunner()
+    const result = verifyHandoff('Guardrail reference: docs/ci-guardrails.md', runner)
+
+    expect(result.rows).toEqual([])
+    expect(result.exitCode).toBe(0)
+    expect(runner.calls.filter((args) => args[0] === 'rev-parse')).toEqual([])
+  })
+
+  it('does not treat the canonical prefix of a nested documentation path as a branch ref', () => {
+    const runner = makeRunner()
+    const result = verifyHandoff(
+      'ADR reference: docs/adr/002-repository-and-module-strategy.md',
+      runner,
+    )
+
+    expect(result.rows).toEqual([])
+    expect(result.exitCode).toBe(0)
+    expect(runner.calls.filter((args) => args[0] === 'rev-parse')).toEqual([])
+  })
+
+  it('does not overlap a qualified repo ref with a canonical-prefix branch candidate', () => {
+    const runner = makeRunner({
+      repositories: { 'docs/foo': { issues: { 149: 'open' } } },
+    })
+    const result = verifyHandoff('docs/foo#149 is open', runner)
+
+    expect(result.rows.map(renderRow)).toEqual(['PASS docs/foo#149 claimed=open actual=open'])
+    expect(
+      runner.calls.filter((args) => ['rev-parse', 'cat-file', 'merge-base'].includes(args[0])),
+    ).toEqual([])
+  })
+
+  it.each([
+    ['foo/abc1234#1 is open', 'foo/abc1234'],
+    ['abc1234/foo#1 is open', 'abc1234/foo'],
+  ])('does not overlap qualified repo %s with a SHA candidate', (input, repo) => {
+    const runner = makeRunner({
+      repositories: { [repo]: { issues: { 1: 'open' } } },
+    })
+    const result = verifyHandoff(input, runner)
+
+    expect(result.rows.map(renderRow)).toEqual([`PASS ${repo}#1 claimed=open actual=open`])
+    expect(
+      runner.calls.filter((args) => ['rev-parse', 'cat-file', 'merge-base'].includes(args[0])),
+    ).toEqual([])
+  })
+
+  it.each([
+    'docs/specs/abc1234.md',
+    'docs/specs/file-abc1234.md',
+    'fix/path/abc1234.ts',
+    'docs\\specs\\abc1234.md',
+    'abc1234.md',
+  ])('does not extract refs from extension-bearing file token %s', (path) => {
+    const runner = makeRunner()
+    const result = verifyHandoff(`File reference: ${path}`, runner)
+
+    expect(result.rows).toEqual([])
+    expect(result.exitCode).toBe(0)
+    expect(runner.calls).toEqual([])
+  })
+
+  it.each([
+    'docs/guide.md#149',
+    'docs/guide#149.md',
+    'https://example.test/docs/guide.md#149',
+    'guide.md#149',
+    'docs\\guide.md#149',
+    'guide.md?issue=#149',
+  ])('gives file-like token %s precedence over GitHub number parsing', (path) => {
+    const runner = makeRunner()
+    const result = verifyHandoff(`File reference: ${path}`, runner)
+
+    expect(result.rows).toEqual([])
+    expect(result.exitCode).toBe(0)
+    expect(runner.calls).toEqual([])
+  })
+
+  it('keeps file-like GitHub shapes out of approval-claim extraction', () => {
+    for (const path of [
+      'docs/guide.md#149',
+      'docs/guide#149.md',
+      'guide.md#149',
+      'docs\\guide.md#149',
+    ]) {
+      expect(extractApprovalClaims(`Owner-approved ${path}`)).toEqual([])
+    }
+
+    const runner = makeRunner()
+    verifyHandoff('Owner-approved docs/guide.md#149', runner)
+    expect(runner.calls).toEqual([])
+  })
+
+  it('preserves refs separated from a file token by segment punctuation without whitespace', () => {
+    for (const input of ['#149,docs/foo.md', 'docs/foo.md,#149']) {
+      const issueRunner = makeRunner({ issues: { 149: 'open' } })
+      expect(verifyHandoff(input, issueRunner).rows.map(renderRow)).toEqual([
+        'INFO #149 claimed=- actual=open',
+      ])
+    }
+
+    const foreignRunner = makeRunner({
+      repositories: { 'sidorovanthon/bbm': { issues: { 149: 'open' } } },
+    })
+    expect(
+      verifyHandoff('sidorovanthon/bbm#149;docs/foo.md', foreignRunner).rows.map(renderRow),
+    ).toEqual(['INFO sidorovanthon/bbm#149 claimed=- actual=open'])
+
+    for (const input of ['abc1234;docs/foo.md', 'abc1234—docs/foo.md', 'docs/foo.md;abc1234']) {
+      const shaRunner = makeRunner({ merged: ['abc1234'] })
+      expect(verifyHandoff(input, shaRunner).rows.map(renderRow)).toEqual([
+        'INFO abc1234 claimed=- actual=merged',
+      ])
+    }
+  })
+
+  it('preserves extension-free repo refs and standalone refs adjacent to file paths', () => {
+    const qualifiedRunner = makeRunner({
+      repositories: { 'docs/guide': { issues: { 149: 'open' } } },
+    })
+    expect(verifyHandoff('docs/guide#149 is open', qualifiedRunner).rows.map(renderRow)).toEqual([
+      'PASS docs/guide#149 claimed=open actual=open',
+    ])
+
+    const issueRunner = makeRunner({ issues: { 149: 'open' } })
+    expect(
+      verifyHandoff('File: docs/guide.md; issue #149 is open', issueRunner).rows.map(renderRow),
+    ).toEqual(['PASS #149 claimed=open actual=open'])
+
+    const shaRunner = makeRunner({ merged: ['abc1234'] })
+    expect(
+      verifyHandoff('File: docs/guide.md; commit abc1234 is merged', shaRunner).rows.map(renderRow),
+    ).toEqual(['PASS abc1234 claimed=merged actual=merged'])
+    expect(shaRunner.calls.some((args) => args[0] === 'cat-file')).toBe(true)
   })
 
   it('takes a sha only when it looks like one, and never inside a branch token', () => {
@@ -309,6 +560,31 @@ describe('handoff-verify: owner-approval provenance', () => {
     expect(extractApprovalClaims('VERDICT: APPROVE по PR #92')).toEqual([])
     expect(extractApprovalClaims('Владелец одобрил #92').map((c) => c.issue)).toEqual([92])
   })
+  it('resolves a foreign-repo approval claim only against that repository', () => {
+    const runner = makeRunner({
+      issues: { 149: 'closed' },
+      provenance: { 149: { body: 'No owner decision here.', comments: [] } },
+      repositories: {
+        'sidorovanthon/bbm': {
+          issues: { 149: 'open' },
+          provenance: { 149: { body: 'Stage 2: GO', comments: [] } },
+        },
+      },
+    })
+
+    const result = verifyHandoff('Owner-approved: sidorovanthon/bbm#149', runner)
+    const approval = result.rows.find((row) => row.claim === 'owner-approved')
+    expect(approval).toMatchObject({
+      verdict: 'PASS',
+      ref: 'sidorovanthon/bbm#149',
+      actual: 'owner-quoted',
+    })
+    expect(
+      runner.calls
+        .filter((args) => args[0] === 'issue' || args[0] === 'pr')
+        .map((args) => args[args.indexOf('--repo') + 1]),
+    ).toEqual(['sidorovanthon/bbm', 'sidorovanthon/bbm'])
+  })
 })
 
 describe('handoff-verify: non-blocking WARN detectors', () => {
@@ -362,6 +638,37 @@ describe('handoff-verify: gh invocation convention', () => {
     verifyHandoff('#92 смержен', runner)
     const views = runner.calls.filter((c) => c[1] === 'view').map((c) => c[0])
     expect(views).toEqual(['issue', 'pr'])
+  })
+  it('resolves a qualified issue in its named repo and labels the row with that repo', () => {
+    const runner = makeRunner({
+      issues: { 149: 'closed' },
+      repositories: { 'sidorovanthon/bbm': { issues: { 149: 'open' } } },
+    })
+    const result = verifyHandoff('sidorovanthon/bbm#149 is open', runner)
+
+    expect(result.rows.map(renderRow)).toEqual([
+      'PASS sidorovanthon/bbm#149 claimed=open actual=open',
+    ])
+    expect(runner.calls[0]).toContain('sidorovanthon/bbm')
+    expect(runner.calls.flat()).not.toContain(LOCAL_REPO)
+  })
+
+  it('keeps equal issue numbers from local and foreign repos as distinct lookups', () => {
+    const runner = makeRunner({
+      issues: { 149: 'closed' },
+      repositories: { 'sidorovanthon/bbm': { issues: { 149: 'open' } } },
+    })
+    const result = verifyHandoff('#149 is closed; sidorovanthon/bbm#149 is open', runner)
+
+    expect(result.rows.map(renderRow)).toEqual([
+      'PASS #149 claimed=closed actual=closed',
+      'PASS sidorovanthon/bbm#149 claimed=open actual=open',
+    ])
+    expect(
+      runner.calls
+        .filter((args) => args[0] === 'issue')
+        .map((args) => args[args.indexOf('--repo') + 1]),
+    ).toEqual([LOCAL_REPO, 'sidorovanthon/bbm'])
   })
 })
 

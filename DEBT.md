@@ -365,19 +365,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-14-6327d2f70c -->
 
-- [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
-      branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
-      `refs/remotes/origin/docs/ci-guardrails.md`, not found, and reported `STALE`.
-      A false STALE is worse than no row — the gate the verifier feeds tells the
-      session to reconcile a premise that was never wrong, and a reader who learns
-      the rows can be wrong stops trusting the real ones. Fix: reject candidates
-      carrying a file extension, or test `git cat-file -e HEAD:<path>` before the
-      ref lookup. Return condition: the next false STALE, or the next edit to the
-      verifier (#150). **Return condition FIRED and promoted 2026-08-15: a false
-      `STALE` plus a NEW subclass — `sidorovanthon/bbm#149` resolved against THIS
-      repo, so the row reported bbm-portal #149's state instead → #237.** This line
-      goes at the sweep after #237 closes.
-
 <!-- debt-entry-end: 2026-08-14-a50a7e5e21 -->
 
 - [ ] 2026-08-14 #220 added a top-level `permissions: contents: read` floor to `ci.yml`
