@@ -323,6 +323,31 @@ Entry format:
       `workflow-auth` WARN→BLOCK promotion review (2026-09-02 window), whichever comes
       first (#220, review of PR #223)
 
+- [ ] 2026-08-15 `next dev` re-injects a `<!-- BEGIN:nextjs-agent-rules -->` block
+      into `AGENTS.md` on every start, and the block is not in the committed file.
+      Any session that raises the dev stand therefore gets a dirty tree it did not
+      author, in a file that is process canon — and the injected text itself claims
+      that committing it "keeps the tree clean", which is the opposite of what the
+      repo wants (canon lives in `.claude/`, not in a tool-managed block). Reverted
+      by hand in #232 to keep that PR's diff scoped; not fixed there because the
+      fix is a Next config / ignore decision of its own and #232 was tooling +
+      config. Not an issue by §6: not user-visible, no production risk, blocks no
+      deliverable — return condition: the third session that has to revert it by
+      hand, or the next task that legitimately edits `AGENTS.md` (#232, PR #234)
+
+- [ ] 2026-08-15 the e2e suite's `test.beforeAll` hook budget is 30 s, which is
+      shorter than Next dev's FIRST compile of `/admin` on this box: a cold run of
+      `pnpm test:e2e` fails `admin.e2e.spec.ts` and `publish-panel.e2e.spec.ts` on
+      `"beforeAll" hook timeout of 30000ms exceeded` while waiting for
+      `#field-email`, then leaves 16 skipped and 7 not run. Nothing is wrong with
+      the product — a warmed stand passes — but the suite's first red of the day is
+      routinely noise, and task-cycle stage 5 makes a green Playwright pass the
+      precondition for inviting the owner to any UI flow, so noise there is
+      expensive. CI does not cover it (`ci.yml` runs `test:unit` only), which is why
+      it stays invisible between sessions — return condition: the next task that
+      must run `pnpm test:e2e` as acceptance evidence, or any move to run e2e in CI
+      (observed in #232 / PR #234, diff touched no runtime code)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_
