@@ -43,15 +43,31 @@
 //
 // Fourth check — UNAGGREGATED WARN STEP (#207, from review of PR #206). In a
 // batch job the severity moves from the job to the STEP: a guard step carries
-// `continue-on-error: true`, and its finding reaches a reader only through a row
-// in that job's WARN-outcomes aggregation step (the step that reads
-// `steps.<id>.outcome`). A WARN step with no row is invisible twice over — the
-// finding is swallowed by `continue-on-error` and no annotation is emitted — so
-// §4's clean promotion window gets counted off a table that does not include it.
-// Only GUARD steps are held to this (a `run:` reaching a `tools/lint/*-lint.*`
-// by path or through its `pnpm lint:<name>` alias); a non-guard step is free to
-// tolerate its own failure. A WARN guard step with no `id:` is the same finding:
-// no row can reference it at all.
+// `continue-on-error: true`, and its finding reaches a reader only if some other
+// step of the same job reads `steps.<id>.outcome`. A WARN step nothing reads is
+// invisible twice over — the finding is swallowed by `continue-on-error` and no
+// annotation is emitted — so §4's clean promotion window gets counted off a
+// table that does not include it. Canon: docs/ci-guardrails.md §8, «Wiring
+// convention for a batch job».
+//
+// Only GUARD steps are held to this (a `run:` INVOKING a `tools/lint/*-lint.*`
+// in command position, by path or through its `pnpm lint:<name>` alias); a
+// non-guard step is free to tolerate its own failure, and a command that merely
+// names a guard path is not invoking one. A WARN guard step with no `id:` is the
+// same finding: nothing can reference it at all.
+//
+// "Reads the outcome" is deliberately as wide as GitHub's own notion, because a
+// narrower one produced three false positives on legitimate workflows (review of
+// PR #245): the reference counts in a `run:` body, in an `if:` gate, and in a
+// `uses:` step's `with:`/`env:` inputs — a `uses:` aggregator such as
+// `actions/github-script` has no `run:` at all — and in either syntax,
+// `steps.<id>.outcome` or `steps['<id>'].outcome`. `.conclusion` is NOT accepted
+// in its place: `continue-on-error` rewrites it to `success`, so a table built
+// on it reports nothing. KNOWN LIMIT: a guard invoked through `uses:` (a
+// composite action wrapping it) is not recognised as a guard step, so a WARN
+// step of that shape is a false negative. Closing it means resolving the
+// action's own definition — a different rule class, deliberately not built until
+// a composite action exists in this repo.
 //
 // Derived, never a literal list: the gh-consumer set comes from scanning
 // `tools/lint/` for the `./lib/gh.mjs` import, and the alias map from
@@ -84,12 +100,59 @@ const BARE_GH_RE = /(^|[\n;&|]\s*|\s&&\s|\s\|\|\s)gh\s/
 const IMPORTS_GH_LIB_RE = /['"][^'"]*lib\/gh\.mjs['"]/
 const SPAWNS_GH_RE = /(?:spawnSync|spawn|execFile|execFileSync|execa)\(\s*['"]gh['"]/
 
-/** A guard invoked by path — the flat layout §8 enforces and both meta-guards assume. */
+/** A guard path — the flat layout §8 enforces and both meta-guards assume. */
 const GUARD_PATH_RE = /tools\/lint\/[A-Za-z0-9_-]+-lint\.(?:mjs|ts)\b/
-/** The aggregation step reads `steps.<id>.outcome` — `.conclusion` is masked by continue-on-error. */
-const STEP_OUTCOME_RE = /steps\.[A-Za-z0-9_-]+\.outcome/
+/**
+ * A guard path in COMMAND position: at the start of the command or after a shell
+ * separator, optionally behind a runner word (`node`, `npx`, `tsx`, `pnpm exec`,
+ * a `cross-env` prefix ending in one of them). A command that merely NAMES the
+ * path — `git diff --name-only | grep tools/lint/no-stub-lint.mjs` — does not
+ * invoke a guard and must not be read as one (review of PR #245, minor 1).
+ */
+const GUARD_INVOKED_RE = new RegExp(
+  String.raw`(?:^|[\n;&|(]\s*|\s&&\s|\s\|\|\s)` +
+    String.raw`(?:[^\n;&|]*?\b(?:node|npx|tsx|pnpm|npm|yarn)\b[^\n;&|]*?)?` +
+    String.raw`(?:\.\/)?tools\/lint\/[A-Za-z0-9_-]+-lint\.(?:mjs|ts)\b`,
+)
+/**
+ * A reference to a step's OUTCOME — the value `continue-on-error` does not mask
+ * (unlike `.conclusion`, which it rewrites to `success`). Both syntaxes GitHub
+ * accepts: the property form and the index form (review of PR #245, blocker 1).
+ */
+const STEP_OUTCOME_RE = /steps(?:\.[A-Za-z0-9_-]+|\[\s*['"][^'"]+['"]\s*\])\.outcome/
+const outcomeRefRe = (id) =>
+  new RegExp(String.raw`steps(?:\.${escapeRe(id)}|\[\s*['"]${escapeRe(id)}['"]\s*\])\.outcome`)
 
-const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/** `continue-on-error: ${{ … }}` — legal, but the file then declares no severity. */
+const isExpression = (v) => typeof v === 'string' && v.includes('${{')
+
+function escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Every string a step can carry that GitHub evaluates as an expression context:
+ * the shell body, the `if:` gate, and — for a `uses:` step, which has no `run:`
+ * at all — its `with:` inputs (`actions/github-script`'s `script`, an input
+ * passed to a composite action). Read as one blob: this asks "does this step
+ * reference that outcome anywhere GitHub would evaluate it", not "where".
+ */
+function stepExpressionText(step) {
+  const parts = []
+  for (const key of ['run', 'if', 'name']) {
+    if (typeof step?.[key] === 'string') parts.push(step[key])
+  }
+  const collect = (value, depth = 0) => {
+    if (depth > 4) return
+    if (typeof value === 'string') parts.push(value)
+    else if (Array.isArray(value)) value.forEach((v) => collect(v, depth + 1))
+    else if (value && typeof value === 'object')
+      Object.values(value).forEach((v) => collect(v, depth + 1))
+  }
+  collect(step?.with)
+  collect(step?.env)
+  return parts.join('\n')
+}
 
 /**
  * Pure decision seam: guard sources in, the paths that reach GitHub out.
@@ -120,25 +183,30 @@ function permissionsGrant(perms) {
  * @returns {{ file: string, job: string, kind: string, detail: string }[]}
  */
 export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } = {}) {
+  // A package-manager alias in command position. The trailing lookahead — not
+  // `\b` — is what keeps `pnpm lint:css` from resolving through the script named
+  // `lint`: `\b` sits happily at the `:` and matched the shorter name (review of
+  // PR #245, minor 4). The name is escaped: a script name is data here.
+  const aliasRe = (name) =>
+    new RegExp(String.raw`(?:^|[\s;&|(])(?:pnpm|npm|yarn)\s+(?:run\s+|exec\s+)?${escapeRe(name)}(?=\s|$|[;&|)])`)
+
   const consumerHit = (cmd) => {
     if (ghConsumers.some((p) => cmd.includes(p) || cmd.includes(p.replace(/\.mjs$/, ''))))
       return true
     for (const [name, body] of Object.entries(scriptMap)) {
-      const invoked = new RegExp(`\\b(pnpm|npm run|yarn)\\s+(run\\s+)?${name}\\b`)
-      if (invoked.test(cmd) && ghConsumers.some((p) => String(body).includes(p))) return true
+      if (aliasRe(name).test(cmd) && ghConsumers.some((p) => String(body).includes(p))) return true
     }
     return false
   }
 
-  // A step is a GUARD step when its command reaches a `tools/lint/<name>-lint.*`
-  // — by path, or through the `pnpm lint:<name>` alias that resolves to one.
-  // Derived from package.json exactly like the gh-consumer set above, so a new
-  // guard is covered with no edit here.
+  // A step is a GUARD step when its command INVOKES a `tools/lint/<name>-lint.*`
+  // — by path in command position, or through the `pnpm lint:<name>` alias that
+  // resolves to one. Derived from package.json exactly like the gh-consumer set
+  // above, so a new guard is covered with no edit here.
   const guardStep = (cmd) => {
-    if (GUARD_PATH_RE.test(cmd)) return true
+    if (GUARD_INVOKED_RE.test(cmd)) return true
     for (const [name, body] of Object.entries(scriptMap)) {
-      const invoked = new RegExp(`\\b(pnpm|npm run|yarn)\\s+(run\\s+)?${escapeRe(name)}\\b`)
-      if (invoked.test(cmd) && GUARD_PATH_RE.test(String(body))) return true
+      if (aliasRe(name).test(cmd) && GUARD_PATH_RE.test(String(body))) return true
     }
     return false
   }
@@ -155,8 +223,20 @@ export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } =
     if (needsList) {
       for (const [jobName, job] of Object.entries(jobs)) {
         if (jobName === 'ci') continue // the aggregate cannot be in its own needs-list
-        const warn = job?.['continue-on-error'] === true
+        const flag = job?.['continue-on-error']
+        const warn = flag === true
         const listed = needsList.includes(jobName)
+        if (isExpression(flag)) {
+          // Neither state is readable off the file, which is what §2.1 requires
+          // — and under a `=== true` reading such a job escaped both checks.
+          findings.push({
+            file,
+            job: jobName,
+            kind: 'undeclared-severity',
+            detail: `job's \`continue-on-error\` is an expression (\`${String(flag).trim()}\`) — severity is then decided at runtime, so the file declares neither WARN nor BLOCK; use a literal \`true\` or drop the key`,
+          })
+          continue
+        }
         if (!warn && !listed) {
           findings.push({
             file,
@@ -183,20 +263,28 @@ export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } =
     // swallowed silently. Applies to every workflow — the batch shape is not
     // specific to the one that owns the `ci` aggregate.
     for (const [jobName, job] of Object.entries(jobs)) {
-      const runSteps = (Array.isArray(job?.steps) ? job.steps : []).filter(
-        (step) => typeof step?.run === 'string',
-      )
-      const warnSteps = runSteps.filter(
-        (step) => step['continue-on-error'] === true && guardStep(step.run),
+      const steps = Array.isArray(job?.steps) ? job.steps : []
+      // An expression-valued flag counts: the step may be WARN at runtime, and
+      // then its finding is swallowed exactly the same way (PR #245, minor 3).
+      const warnSteps = steps.filter(
+        (step) =>
+          typeof step?.run === 'string' &&
+          (step['continue-on-error'] === true || isExpression(step['continue-on-error'])) &&
+          guardStep(step.run),
       )
       if (warnSteps.length === 0) continue
 
-      // The aggregation step is identified by what it DOES — reading
-      // `steps.<id>.outcome` — not by its name, which is a convention. A WARN
+      // "Surfaced" is read the way GITHUB reads it: any OTHER step of the job
+      // referencing the outcome in an expression context — a `run:` body, an
+      // `if:` gate, or a `uses:` step's `with:`/`env:` inputs (a `uses:`
+      // aggregator such as `actions/github-script` has no `run:` at all). The
+      // aggregator is still identified by what it DOES, never by its `name:`;
+      // widening the surface is what the review of PR #245 corrected. A WARN
       // guard step is never its own aggregator.
-      const aggregation = runSteps
-        .filter((step) => !warnSteps.includes(step) && STEP_OUTCOME_RE.test(step.run))
-        .map((step) => step.run)
+      const aggregation = steps
+        .filter((step) => !warnSteps.includes(step))
+        .map(stepExpressionText)
+        .filter((text) => STEP_OUTCOME_RE.test(text))
         .join('\n')
 
       for (const step of warnSteps) {
@@ -206,16 +294,16 @@ export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } =
             file,
             job: jobName,
             kind: 'unaggregated-warn-step',
-            detail: `WARN guard step (${label}) carries no \`id:\`, so no row in the WARN-outcomes step can read its \`outcome\``,
+            detail: `WARN guard step (${label}) carries no \`id:\`, so nothing in the job can read its \`outcome\``,
           })
           continue
         }
-        if (!new RegExp(`steps\\.${escapeRe(step.id)}\\.outcome`).test(aggregation)) {
+        if (!outcomeRefRe(step.id).test(aggregation)) {
           findings.push({
             file,
             job: jobName,
             kind: 'unaggregated-warn-step',
-            detail: `WARN guard step \`${step.id}\` (${label}) has no row reading \`steps.${step.id}.outcome\` in this job's WARN-outcomes aggregation step — its finding is swallowed by \`continue-on-error\` and never annotated`,
+            detail: `WARN guard step \`${step.id}\` (${label}) — no other step in this job reads \`steps.${step.id}.outcome\`, so its finding is swallowed by \`continue-on-error\` and never annotated`,
           })
         }
       }
@@ -314,9 +402,10 @@ async function main() {
       '`GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` + `PR_NUMBER: ${{ github.event.pull_request.number }}`; ' +
       'without it the job goes red before it evaluates its own rule. Severity (canon §2.1): a job is ' +
       'WARN (`continue-on-error: true`, absent from the `ci` needs-list) or BLOCK (needs-listed, no ' +
-      '`continue-on-error`) — never both, never neither; and a WARN guard STEP in a batch job carries ' +
-      "an `id:` plus a row reading `steps.<id>.outcome` in that job's WARN-outcomes step. " +
-      'Canon: docs/ci-guardrails.md §2.1 + §8.',
+      '`continue-on-error`) — never both, never neither, and never an expression. A WARN guard STEP ' +
+      'in a batch job carries an `id:` and some other step of that job reads `steps.<id>.outcome` — ' +
+      "in a `run:`, an `if:` or a `uses:` step's `with:`. Canon: docs/ci-guardrails.md §2.1 (job " +
+      'severity) + §8 «Wiring convention for a batch job» (step severity).',
   )
 }
 
