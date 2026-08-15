@@ -21,6 +21,7 @@ const packageConfig = JSON.parse(
 const prettierConfig = JSON.parse(
   readFileSync(resolve(repoRoot, '.prettierrc.json'), 'utf8'),
 ) as Record<string, unknown>
+const ciWorkflow = readFileSync(resolve(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
 
 const formatCheckGlobs = (script: string) =>
   [...script.matchAll(/"([^"]+)"/g)].map((match) => match[1])
@@ -89,7 +90,7 @@ describe('format-check and pre-commit policy', () => {
     } finally {
       rmSync(fixtureDir, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   it('keeps format:check and lint-staged Prettier globs identical', () => {
     expect(() =>
@@ -154,6 +155,52 @@ describe('format-check and pre-commit policy', () => {
     } finally {
       rmSync(fixtureRepo, { recursive: true, force: true })
     }
+  })
+
+  it('formats staged Markdown and JSON files at the repository root', async () => {
+    const fixtureRepo = mkdtempSync(join(tmpdir(), 'bbm-lint-staged-root-policy-'))
+    const markdown = resolve(fixtureRepo, 'README.md')
+    const json = resolve(fixtureRepo, 'fixture.json')
+
+    try {
+      copyFileSync(resolve(repoRoot, '.prettierignore'), resolve(fixtureRepo, '.prettierignore'))
+      writeFileSync(markdown, '# Root fixture\n', 'utf8')
+      writeFileSync(json, '{}\n', 'utf8')
+
+      git(fixtureRepo, ['init', '--quiet'])
+      git(fixtureRepo, ['config', 'user.name', 'Format Policy Test'])
+      git(fixtureRepo, ['config', 'user.email', 'format-policy@example.invalid'])
+      git(fixtureRepo, ['add', '.'])
+      git(fixtureRepo, ['commit', '--quiet', '--no-verify', '-m', 'fixture baseline'])
+
+      writeFileSync(markdown, '# Root fixture\n\n-   item\n', 'utf8')
+      writeFileSync(json, '{"fixture":true}\n', 'utf8')
+      git(fixtureRepo, ['add', 'README.md', 'fixture.json'])
+
+      const success = await lintStaged({
+        concurrent: false,
+        config: packageConfig['lint-staged'],
+        cwd: fixtureRepo,
+        quiet: true,
+        stash: false,
+      })
+
+      expect(success).toBe(true)
+      expect(git(fixtureRepo, ['show', ':README.md'])).toBe('# Root fixture\n\n- item\n')
+      expect(git(fixtureRepo, ['show', ':fixture.json'])).toBe('{ "fixture": true }\n')
+    } finally {
+      rmSync(fixtureRepo, { recursive: true, force: true })
+    }
+  })
+
+  it('checks generator-owned Payload types in blocking CI', () => {
+    expect(
+      packageConfig.scripts['generate:types:check'],
+      'generated Payload types need a byte-drift check',
+    ).toBe('pnpm generate:types && git diff --exit-code -- src/payload-types.ts')
+    expect(ciWorkflow, 'blocking CI must run the generated Payload types check').toContain(
+      'run: pnpm generate:types:check',
+    )
   })
 
   it.each([
