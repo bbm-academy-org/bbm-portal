@@ -6,8 +6,13 @@
 //     попадания задачи в бэклог, штатного поля под это у GitHub нет. Класс
 //     задачи живёт в штатном Type, а происхождение — свободным текстом в строке
 //     `**Source:**` тела (оба — решения владельца 2026-08-04);
-//   • постоянный fallback-milestone «Platform: operations and hardening» для
-//     процессных/эксплуатационных задач, не попадающих ни в одну тему (канон §2).
+//   • ПОСТОЯННЫЕ milestone (`PERMANENT_MILESTONES` в `./lib/gh.mjs`) — темы,
+//     которые не закрываются никогда: fallback «Platform: operations and
+//     hardening» для процессных/эксплуатационных задач, не попадающих ни в одну
+//     тему (канон §2), и «Dependencies» для PR автоматического обновления
+//     зависимостей. Постоянство здесь — не украшение: на такой milestone
+//     ссылаются извне именем (`issue:create`) и НОМЕРОМ (`renovate.json`), а
+//     номер закрывшейся темы протухает молча.
 //   • проверяет наличие org Issue Types Bug/Feature/Task (создать их из репо
 //     нельзя — это org-настройка; отсутствие докладывается, а не чинится).
 //
@@ -26,8 +31,8 @@ import { pathToFileURL } from 'node:url'
 
 import {
   CHANNEL_LABELS,
-  FALLBACK_MILESTONE,
   ISSUE_TYPES,
+  PERMANENT_MILESTONES,
   OWNER,
   REPO,
   ghJson,
@@ -93,10 +98,23 @@ export function planLabels(existing, specs = CHANNEL_LABEL_SPECS) {
   return { create, update, keep }
 }
 
-/** Нужен ли fallback-milestone. Существующий (в любом состоянии) не трогается. */
-export function planMilestone(existing, title = FALLBACK_MILESTONE) {
-  const found = (existing ?? []).find((m) => m?.title === title)
-  return found ? { create: false, existing: found } : { create: true, existing: null }
+/**
+ * План по ПОСТОЯННЫМ milestone: каких из набора не хватает. Существующий (в
+ * любом состоянии, включая `closed`) не трогается — закрытие темы это решение
+ * владельца, а не дрейф, который инструмент откатывает.
+ * @param {{title:string,state?:string}[]} existing
+ * @param {{title:string,description:string}[]} [specs]
+ * @returns {{create:object[], keep:object[]}}
+ */
+export function planMilestones(existing, specs = PERMANENT_MILESTONES) {
+  const byTitle = new Map((existing ?? []).map((m) => [m?.title, m]))
+  const create = []
+  const keep = []
+  for (const spec of specs) {
+    if (byTitle.has(spec.title)) keep.push(spec)
+    else create.push(spec)
+  }
+  return { create, keep }
 }
 
 /** Каких org Issue Types не хватает. Завести их из репо нельзя — только доложить. */
@@ -106,13 +124,13 @@ export function missingIssueTypes(existing, required = ISSUE_TYPES) {
 }
 
 /** План человекочитаемой строкой на каждое действие. */
-export function formatPlan({ labels, milestone, missingTypes }) {
+export function formatPlan({ labels, milestones, missingTypes }) {
   const lines = []
   for (const l of labels.create) lines.push(`СОЗДАТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
   for (const l of labels.update) lines.push(`ОБНОВИТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
   for (const l of labels.keep) lines.push(`уже есть: ${l.name}`)
-  if (milestone.create) lines.push(`СОЗДАТЬ milestone «${FALLBACK_MILESTONE}»`)
-  else lines.push(`уже есть: milestone «${FALLBACK_MILESTONE}»`)
+  for (const m of milestones.create) lines.push(`СОЗДАТЬ milestone «${m.title}» — ${m.description}`)
+  for (const m of milestones.keep) lines.push(`уже есть: milestone «${m.title}»`)
   for (const t of missingTypes) {
     lines.push(`⚠ org Issue Type «${t}» отсутствует — заводится в настройках организации ${OWNER}, не отсюда`)
   }
@@ -135,7 +153,9 @@ export const USAGE = `Использование: pnpm taxonomy:bootstrap [--app
 
   Идемпотентно доводит таксономию репо ${REPO} до канона §2:
     • четыре лейбла channel:* (${CHANNEL_LABELS.join(', ')});
-    • постоянный fallback-milestone «${FALLBACK_MILESTONE}»;
+    • постоянные milestone (${PERMANENT_MILESTONES.map((m) => `«${m.title}»`).join(', ')})
+      — темы, которые не закрываются никогда, поэтому на них можно ссылаться
+      извне именем и номером;
     • проверяет наличие org Issue Types ${ISSUE_TYPES.join('/')} — завести их из
       репо нельзя, это настройка организации, поэтому отсутствие докладывается.
 
@@ -175,11 +195,11 @@ function main() {
   const orgTypes = typesRes.ok ? (typesRes.data?.data?.organization?.issueTypes?.nodes ?? []) : []
 
   const labels = planLabels(labelsRes.data)
-  const milestone = planMilestone(milestonesRes.data)
+  const milestones = planMilestones(milestonesRes.data)
   const missingTypes = missingIssueTypes(orgTypes)
 
   out(apply ? 'план (применяется):' : 'СУХОЙ ПРОГОН — план (примени с `--apply`):')
-  for (const line of formatPlan({ labels, milestone, missingTypes })) out(`  ${line}`)
+  for (const line of formatPlan({ labels, milestones, missingTypes })) out(`  ${line}`)
 
   if (!apply) {
     out('ничего не изменено.')
@@ -216,19 +236,19 @@ function main() {
     if (!res.ok) die(res.error)
     out(`обновлён лейбл ${spec.name}`)
   }
-  if (milestone.create) {
+  for (const spec of milestones.create) {
     const res = ghResult([
       'api',
       '--method',
       'POST',
       `repos/${REPO}/milestones`,
       '-f',
-      `title=${FALLBACK_MILESTONE}`,
+      `title=${spec.title}`,
       '-f',
-      'description=Process and operations tasks that fit no product theme',
+      `description=${spec.description}`,
     ])
     if (!res.ok) die(res.error)
-    out(`создан milestone «${FALLBACK_MILESTONE}»`)
+    out(`создан milestone «${spec.title}»`)
   }
 
   out('ГОТОВО — таксономия приведена к плану (ничего не удалено).')
