@@ -215,12 +215,15 @@ export function extractRefs(text) {
     const lineNo = i + 1
     const segments = splitSegments(line)
     const found = []
+    const qualifiedNumberRanges = []
 
     // Issue/PR numbers: a `#`/`№`-prefixed number anywhere, or a bare number
     // directly after a "PR" / "pull request" / "issue" word. A bare number with
     // neither is NOT a ref (too many false positives — ports, dates, counts).
     for (const m of line.matchAll(numRe())) {
       const hint = (m.groups?.hint ?? '').toLowerCase()
+      const repo = m.groups?.repo
+      if (repo) qualifiedNumberRanges.push([m.index, m.index + m[0].length])
       const kind =
         hint.startsWith('pr') || hint.startsWith('pull')
           ? 'pr'
@@ -230,7 +233,7 @@ export function extractRefs(text) {
       found.push({
         kind,
         value: Number(m.groups?.number),
-        repo: m.groups?.repo ?? REPO,
+        repo: repo ?? REPO,
         line,
         lineNo,
         at: m.index,
@@ -241,8 +244,14 @@ export function extractRefs(text) {
     const branchRe = new RegExp(`\\b(?:${BRANCH_PREFIXES.join('|')})/[a-z0-9][a-z0-9._-]*`, 'g')
     const branchRanges = []
     for (const m of line.matchAll(branchRe)) {
-      branchRanges.push([m.index, m.index + m[0].length])
-      if (/\.[a-z0-9]+$/i.test(m[0])) continue
+      const end = m.index + m[0].length
+      branchRanges.push([m.index, end])
+      const insideQualifiedNumber = qualifiedNumberRanges.some(
+        ([start, rangeEnd]) => m.index >= start && end <= rangeEnd,
+      )
+      // Otherwise a nested path such as `docs/adr/...` becomes the shorter,
+      // unrelated branch `docs/adr`; qualified issue refs own their whole token.
+      if (line[end] === '/' || insideQualifiedNumber || /\.[a-z0-9]+$/i.test(m[0])) continue
       found.push({ kind: 'branch', value: m[0], line, lineNo, at: m.index })
     }
 
@@ -254,7 +263,10 @@ export function extractRefs(text) {
       const tok = m[0]
       if (!/[a-f]/.test(tok) || !/\d/.test(tok)) continue
       const inBranch = branchRanges.some(([s, e]) => m.index >= s && m.index + tok.length <= e)
-      if (inBranch) continue
+      const inQualifiedNumber = qualifiedNumberRanges.some(
+        ([s, e]) => m.index >= s && m.index + tok.length <= e,
+      )
+      if (inBranch || inQualifiedNumber) continue
       found.push({ kind: 'sha', value: tok, line, lineNo, at: m.index })
     }
 
