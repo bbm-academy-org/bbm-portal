@@ -8,13 +8,17 @@ import {
   failCode,
   findAgentApproval,
   gateConditions,
-  headCommittedDate,
+  isBaseMergeCommit,
   isWorktreeCwd,
   issueCandidates,
   landPr,
+  parseCommitFacts,
   parseFlags,
+  reviewBaselineDate,
   runGate,
+  runViewPr,
   stageRemedy,
+  withCommitFacts,
 } from '../../tools/gh/pr-land.mjs'
 
 /**
@@ -144,15 +148,331 @@ describe('findAgentApproval', () => {
   })
 })
 
-describe('headCommittedDate', () => {
-  it('takes the date of the PR’s LAST commit', () => {
-    expect(headCommittedDate({ commits: [{ committedDate: 'a' }, { committedDate: 'b' }] })).toBe(
+/**
+ * #222. `main` carries `required_status_checks.strict` since #216, so
+ * `gh pr update-branch` sits on the critical path of every raced merge — and it
+ * appends a merge commit to the head branch. Measuring review freshness against
+ * the last commit ON THE BRANCH therefore staled the reviewer's verdict for a
+ * commit that changed no reviewed line.
+ *
+ * The baseline is the last commit that changed the PR's OWN diff: trailing
+ * base-merge commits are stepped over, everything else is not. The direction
+ * that must not be bought away — a real commit after the approval — is pinned
+ * here and in `gateConditions` below.
+ */
+const commit = (oid: string, committedDate: string, parents?: string[]) => ({
+  oid,
+  committedDate,
+  ...(parents ? { parents } : {}),
+})
+
+/**
+ * The same, created SERVER-SIDE by GitHub — what `gh pr update-branch` produces,
+ * and the only merge shape the gate is allowed to step over (review of PR #226,
+ * blocker 1).
+ */
+const ghMerge = (oid: string, committedDate: string, parents: string[]) => ({
+  ...commit(oid, committedDate, parents),
+  githubCreated: true,
+})
+
+describe('isBaseMergeCommit', () => {
+  const own = new Set(['a', 'b', 'm'])
+
+  it('two parents, the first being the previous PR commit and the second coming from outside', () => {
+    expect(isBaseMergeCommit(ghMerge('m', 't', ['b', 'mainTip']), commit('b', 't'), own)).toBe(true)
+  })
+
+  /**
+   * Review of PR #226, blocker 1 — the path that put this whole clause here.
+   * When `gh pr update-branch` refuses because the update conflicts (routine
+   * here: nearly every PR appends to DEBT.md), the fallback is `git merge
+   * origin/main` + resolve by hand. That commit has EXACTLY the shape of an
+   * update-branch merge — parents `[previous head, main tip]` — while carrying
+   * hand-written resolution hunks nobody reviewed. Only provenance separates the
+   * two, so provenance is a clause and not a comment.
+   */
+  it('a hand-resolved merge has the right shape and is refused anyway: GitHub did not create it', () => {
+    expect(isBaseMergeCommit(commit('m', 't', ['b', 'mainTip']), commit('b', 't'), own)).toBe(false)
+  })
+
+  it('an ordinary single-parent commit is never a base merge', () => {
+    expect(isBaseMergeCommit(ghMerge('m', 't', ['b']), commit('b', 't'), own)).toBe(false)
+  })
+
+  it('a merge whose second parent IS a commit of this PR brings unreviewed code — not neutral', () => {
+    // `git merge some-other-branch`: that branch's commits are not reachable from
+    // the base, so GitHub lists them among the PR's own — and they ride into the
+    // squash. Also covers a sibling PR merged into this head through the web UI,
+    // which IS created by GitHub and so passes the provenance clause.
+    expect(isBaseMergeCommit(ghMerge('m', 't', ['b', 'a']), commit('b', 't'), own)).toBe(false)
+  })
+
+  it('a merge that does not sit on top of the PR’s own line is not recognised', () => {
+    expect(isBaseMergeCommit(ghMerge('m', 't', ['mainTip', 'b']), commit('b', 't'), own)).toBe(
+      false,
+    )
+  })
+
+  it('without parent data nothing is recognised — the conservative direction', () => {
+    expect(isBaseMergeCommit({ oid: 'm', githubCreated: true }, commit('b', 't'), own)).toBe(false)
+  })
+
+  it('an octopus merge is not an update-branch merge', () => {
+    expect(isBaseMergeCommit(ghMerge('m', 't', ['b', 'x', 'y']), commit('b', 't'), own)).toBe(false)
+  })
+})
+
+describe('reviewBaselineDate', () => {
+  it('with no parent data it is the LAST commit’s date — the old, strict behaviour', () => {
+    expect(reviewBaselineDate({ commits: [{ committedDate: 'a' }, { committedDate: 'b' }] })).toBe(
       'b',
     )
   })
 
   it('returns null on an empty commit list instead of throwing', () => {
-    expect(headCommittedDate({})).toBeNull()
+    expect(reviewBaselineDate({})).toBeNull()
+  })
+
+  it('steps over a trailing update-branch merge', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('a', '2026-08-14T10:00:00Z', ['base']),
+          commit('b', '2026-08-14T11:00:00Z', ['a']),
+          ghMerge('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+        ],
+      }),
+    ).toBe('2026-08-14T11:00:00Z')
+  })
+
+  it('steps over a RUN of them — two sessions racing in a row', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          ghMerge('m1', '2026-08-14T15:00:00Z', ['b', 'mainX']),
+          ghMerge('m2', '2026-08-14T16:00:00Z', ['m1', 'mainY']),
+        ],
+      }),
+    ).toBe('2026-08-14T11:00:00Z')
+  })
+
+  it('a REAL commit on top of an update-branch merge is the baseline', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          ghMerge('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+          commit('c', '2026-08-14T17:00:00Z', ['m']),
+        ],
+      }),
+    ).toBe('2026-08-14T17:00:00Z')
+  })
+
+  /**
+   * Review of PR #226, blocker 1: the conflicting-update fallback. The gate must
+   * send this back for a re-review — the resolution hunks are real, unreviewed
+   * code.
+   */
+  it('a HAND-resolved merge of main into head is not stepped over', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          commit('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+        ],
+      }),
+    ).toBe('2026-08-14T15:00:00Z')
+  })
+
+  /** Review of PR #226, minor 3: the trailing-run licence must not reach past a real commit. */
+  it('a real commit SANDWICHED between two update-branch merges is not stepped over', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          ghMerge('m1', '2026-08-14T13:00:00Z', ['b', 'mainX']),
+          commit('c', '2026-08-14T14:00:00Z', ['m1']),
+          ghMerge('m2', '2026-08-14T16:00:00Z', ['c', 'mainY']),
+        ],
+      }),
+    ).toBe('2026-08-14T14:00:00Z')
+  })
+
+  /**
+   * Review of PR #226, minor 3: a STACKED PR, whose base is another feature
+   * branch. `main` merged into such a head really does change the diff against
+   * that base — and `main`'s tip is not reachable from the base, so GitHub lists
+   * it among the PR's own commits and clause 3 refuses the skip by itself.
+   */
+  it('a stacked PR (base ≠ main) is not stepped over — refused by clause 3', () => {
+    // Ordered so the merge DOES sit on top of the PR's own line (clause 2
+    // passes); what refuses it is `mainTip` being among the PR's own commits.
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('mainTip', '2026-08-14T10:00:00Z', ['x']),
+          commit('b', '2026-08-14T11:00:00Z', ['featureBase']),
+          ghMerge('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+        ],
+      }),
+    ).toBe('2026-08-14T15:00:00Z')
+  })
+
+  /**
+   * Round-2 review of PR #226: the JSDoc asserts that `gh pr update-branch
+   * --rebase` is covered by clause 1, so the assertion gets a test. A rebase
+   * REWRITES the PR's commits server-side instead of merging — GitHub-created,
+   * fresh dates, but single-parent — and single-parent commits are never stepped
+   * over, so the verdict goes stale and the review is re-run.
+   */
+  it('an update-branch --rebase rewrite is not stepped over: rebased commits have one parent', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          { ...commit('b2', '2026-08-14T16:00:00Z', ['newBase']), githubCreated: true },
+          { ...commit('c2', '2026-08-14T16:00:01Z', ['b2']), githubCreated: true },
+        ],
+      }),
+    ).toBe('2026-08-14T16:00:01Z')
+  })
+
+  it('a merge that pulls in another branch of its own is NOT stepped over', () => {
+    expect(
+      reviewBaselineDate({
+        commits: [
+          commit('b', '2026-08-14T11:00:00Z', ['base']),
+          commit('z', '2026-08-14T14:00:00Z', ['b']),
+          ghMerge('m', '2026-08-14T15:00:00Z', ['b', 'z']),
+        ],
+      }),
+    ).toBe('2026-08-14T15:00:00Z')
+  })
+
+  it('the first commit is never stepped over — a PR is never zero-commit', () => {
+    expect(reviewBaselineDate({ commits: [commit('m', '2026-08-14T15:00:00Z', ['x', 'y'])] })).toBe(
+      '2026-08-14T15:00:00Z',
+    )
+  })
+})
+
+/**
+ * The REST row shape `GET /repos/…/pulls/<n>/commits` returns. Provenance is
+ * verified on real data: a `gh pr update-branch` merge comes back as committer
+ * `GitHub <noreply@github.com>` with `verification.verified: true` (GitHub signs
+ * it with its own key), a local `git merge` as the developer's own identity,
+ * unsigned.
+ */
+const restRow = (sha: string, parents: string[], over: Record<string, unknown> = {}) => ({
+  sha,
+  parents: parents.map((p) => ({ sha: p })),
+  commit: {
+    committer: { name: 'GitHub', email: 'noreply@github.com' },
+    verification: { verified: true, reason: 'valid' },
+    ...over,
+  },
+})
+
+describe('parseCommitFacts', () => {
+  it('maps every commit to its parents and to who created it', () => {
+    expect(parseCommitFacts([restRow('m', ['b', 'main'])])).toEqual({
+      m: { parents: ['b', 'main'], githubCreated: true },
+    })
+  })
+
+  it('a commit committed by a person is not GitHub-created, signed or not', () => {
+    const local = restRow('m', ['b', 'main'], {
+      committer: { name: 'Anton', email: 'a@anticodeguy.com' },
+      verification: { verified: false, reason: 'unsigned' },
+    })
+    expect(parseCommitFacts([local])?.m.githubCreated).toBe(false)
+  })
+
+  it('GitHub’s committer identity without a valid signature proves nothing — that half is forgeable', () => {
+    const forged = restRow('m', ['b', 'main'], {
+      verification: { verified: false, reason: 'unsigned' },
+    })
+    expect(parseCommitFacts([forged])?.m.githubCreated).toBe(false)
+  })
+
+  it('a signature by someone else does not make a commit GitHub’s', () => {
+    const signedByHuman = restRow('m', ['b', 'main'], {
+      committer: { name: 'Anton', email: 'a@anticodeguy.com' },
+      verification: { verified: true, reason: 'valid' },
+    })
+    expect(parseCommitFacts([signedByHuman])?.m.githubCreated).toBe(false)
+  })
+
+  /**
+   * Review of PR #226, minor 2. Clause 3 reads «absent from the PR's own
+   * commits» as «contained in the base», which is only exact while the list is
+   * COMPLETE. A full page may be a truncated one, and there is no way to tell
+   * from here — so a full page buys nothing and is refused outright.
+   */
+  it('a page that may be truncated is refused whole — the exactness argument needs the full list', () => {
+    const page = Array.from({ length: 100 }, (_, i) => restRow(`c${i}`, ['x']))
+    expect(parseCommitFacts(page)).toBeNull()
+    expect(parseCommitFacts(page.slice(0, 99))).not.toBeNull()
+  })
+
+  it('an unreadable body yields no facts at all', () => {
+    expect(parseCommitFacts(null)).toBeNull()
+    expect(parseCommitFacts('nonsense')).toBeNull()
+  })
+})
+
+describe('withCommitFacts', () => {
+  it('stamps the facts onto the commits gh pr view cannot carry them on', () => {
+    const data = withCommitFacts(
+      { commits: [{ oid: 'a' }, { oid: 'm' }] },
+      { m: { parents: ['a', 'main'], githubCreated: true } },
+    ) as { commits: { oid: string; parents?: string[]; githubCreated?: boolean }[] }
+    expect(data.commits[1]).toMatchObject({ oid: 'm', parents: ['a', 'main'], githubCreated: true })
+    expect(data.commits[0].parents).toBeUndefined()
+  })
+
+  it('an unavailable fact map leaves the payload untouched — freshness stays strict', () => {
+    const data = { commits: [{ oid: 'a' }] }
+    expect(withCommitFacts(data, null)).toBe(data)
+  })
+})
+
+/** Review of PR #226, minor 1 and minor 4: the wiring itself, and its cost. */
+describe('runViewPr', () => {
+  const view = (oid: string) => () => ({ ok: true, data: { headRefOid: oid, commits: [{ oid }] } })
+  const facts = () => ({ ['h1']: { parents: ['b', 'main'], githubCreated: true } })
+
+  it('a failed PR read passes straight through — nothing is stamped onto an error', () => {
+    const res = runViewPr(7, {
+      view: () => ({ ok: false, error: 'gh crashed' }),
+      facts,
+      cache: new Map(),
+    })
+    expect(res).toMatchObject({ ok: false, error: 'gh crashed' })
+  })
+
+  it('stamps the facts onto a successful read', () => {
+    const res = runViewPr(7, { view: view('h1'), facts, cache: new Map() })
+    expect(res.data.commits[0]).toMatchObject({ oid: 'h1', githubCreated: true })
+  })
+
+  /**
+   * `runViewPr` is called on EVERY probe of the gate's polling loop (up to the
+   * whole `--timeout` window), and the parents of commits already in the payload
+   * do not change while we wait. Keyed by head SHA, so a head that moves is read
+   * again rather than served a stale answer.
+   */
+  it('reads the facts once per head SHA, not once per poll', () => {
+    const spy = vi.fn(facts)
+    const cache = new Map()
+    const io = { view: view('h1'), facts: spy, cache }
+    runViewPr(7, io)
+    runViewPr(7, io)
+    runViewPr(7, io)
+    expect(spy).toHaveBeenCalledTimes(1)
+    runViewPr(7, { view: view('h2'), facts: spy, cache })
+    expect(spy).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -174,6 +494,20 @@ describe('gateConditions', () => {
     expect(gateConditions({ ...ok, state: 'MERGED' }).red[0]).toMatch(/not open/)
     expect(gateConditions({ ...ok, isDraft: true }).red[0]).toMatch(/draft/)
     expect(gateConditions({ ...ok, mergeable: 'CONFLICTING' }).red[0]).toMatch(/conflicts/)
+  })
+
+  /**
+   * Round-2 review of PR #226. The web conflict editor is the one merge the
+   * freshness gate cannot see through (`isBaseMergeCommit`, COVERAGE BOUNDARY),
+   * and GitHub offers that button on the PR page at exactly the moment this RED
+   * fires. A skill file is read when it is loaded; this string is read by the
+   * session that is standing in front of the trap.
+   */
+  it('the conflict RED names the button the session is about to be offered', () => {
+    const red = gateConditions({ ...ok, mergeable: 'CONFLICTING' }).red.join('\n')
+    expect(red).toMatch(/Resolve conflicts/)
+    expect(red).toMatch(/worktree/)
+    expect(red).toMatch(/re-review/)
   })
 
   it('no `Closes #N` is RED: board-done would have nowhere to set Done', () => {
@@ -206,6 +540,37 @@ describe('gateConditions', () => {
     expect(res.red[0]).toMatch(/older than the last commit/)
   })
 
+  /**
+   * #222, both directions of the same rule, at the level the gate is actually
+   * read at.
+   */
+  it('an update-branch merge after the APPROVE does not stale it — no re-review for a merge commit', () => {
+    const res = gateConditions({
+      ...ok,
+      reviewDecision: '',
+      commits: [
+        commit('b', '2026-08-14T12:00:00Z', ['base']),
+        ghMerge('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+      ],
+      comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-14T12:30:00Z' }],
+    })
+    expect(res.red).toEqual([])
+  })
+
+  it('a REAL commit after the APPROVE is still RED, update-branch merge or not', () => {
+    const res = gateConditions({
+      ...ok,
+      reviewDecision: '',
+      commits: [
+        commit('b', '2026-08-14T12:00:00Z', ['base']),
+        ghMerge('m', '2026-08-14T15:00:00Z', ['b', 'mainTip']),
+        commit('c', '2026-08-14T16:00:00Z', ['m']),
+      ],
+      comments: [{ body: 'VERDICT: APPROVE', createdAt: '2026-08-14T12:30:00Z' }],
+    })
+    expect(res.red.join('\n')).toMatch(/older than the last commit/)
+  })
+
   it('with --require-review a subagent comment does not count', () => {
     const res = gateConditions(
       {
@@ -228,8 +593,15 @@ describe('gateConditions', () => {
     expect(gateConditions(ok).warn.join('\n')).toMatch(/stage 5/)
   })
 
-  it('a branch behind its base is a remark', () => {
-    expect(gateConditions({ ...ok, mergeStateStatus: 'BEHIND' }).warn.join('\n')).toMatch(/BEHIND/)
+  // Was a remark until #216. `main` now carries `required_status_checks.strict`,
+  // so BEHIND is no longer a hint that the merge MIGHT refuse — the server will
+  // refuse it. A remark would let the gate report green and then fail at the
+  // merge call, which is the one outcome the gate exists to prevent.
+  it('a branch behind its base is RED, not a remark: under strict checks the server refuses', () => {
+    const res = gateConditions({ ...ok, mergeStateStatus: 'BEHIND' })
+    expect(res.red.join('\n')).toMatch(/BEHIND/)
+    expect(res.red.join('\n')).toMatch(/update the branch/i)
+    expect(res.warn.join('\n')).not.toMatch(/BEHIND/)
   })
 })
 

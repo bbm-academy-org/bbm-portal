@@ -4,6 +4,18 @@ name: Product note → Mattermost
 # Mattermost channel (task 7.6, #137). No agent in the delivery path: the source
 # of truth is the PR body, rendered by tools/ci/post-product-note.mjs.
 #
+# Trigger (#202): `push` to main, NOT `pull_request: closed`. This job reads
+# MATTERMOST_RELEASE_WEBHOOK_URL, so it must never be reachable from a PR event;
+# the rule and the actual mechanism behind it — the intuitive "a fork would read
+# it" is the wrong reason — are in docs/ci-guardrails.md §2.1.1, which owns a
+# rule binding both secret-bearing workflows. Since #214 removed the runner pool
+# that enforced it a second time, this trigger list is the only enforcement left.
+#
+# A merge into main IS a push of the squash/merge commit, so the merged PR is
+# recovered from the pushed sha via
+# `GET /repos/{owner}/{repo}/commits/{sha}/pulls`; a direct push that belongs to
+# no merged PR delivers nothing and skips green.
+#
 # Secret-optional by design: the job is not blocked on the webhook being
 # provisioned — with MATTERMOST_RELEASE_WEBHOOK_URL unset the script logs and
 # skips green. It also skips green when the note is `none`/absent, which is how
@@ -20,37 +32,64 @@ name: Product note → Mattermost
 # is a separate manual step — so the merge-triggered note is marked accordingly
 # and the script refuses (exit 1) if the marker is unset or unknown.
 #
-# Injection safety: the PR body/title/url are passed through `env:`, never
-# interpolated into a shell `run:` string, so a `$(...)`/backtick in a body
-# cannot be executed. The webhook JSON is built with JSON.stringify.
+# Injection safety: the PR body/title/url reach the script through variable
+# assignment from `gh api` output and `env:`/`export`, never interpolated into
+# a shell `run:` command line, so a `$(...)`/backtick in a body cannot be
+# executed. The webhook JSON is built with JSON.stringify.
 
 on:
-  pull_request:
+  push:
     branches: [main]
-    types: [closed]
 
-# The event payload already carries body/title/url — no `gh` call, no
-# `pull-requests` scope needed. Least privilege.
+# `pull-requests: read` is new with the push trigger: the event payload no
+# longer carries the PR, so the resolve step reads it back by sha.
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   deliver:
-    # Only merged PRs; a closed-without-merge PR delivers nothing.
-    if: github.event.pull_request.merged == true
+    # Delivery lane: reachable from `push` alone (see the `on:` block above),
+    # never a PR event — docs/ci-guardrails.md §2.1.1 for why.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # A push of a merged PR carries that PR's merge_commit_sha as its head.
+      # `merged_at != null` keeps a commit that merely APPEARS in some open PR
+      # from being mistaken for a merge.
+      - name: Resolve the merged PR behind this push
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          pr_number="$(gh api "repos/$GH_REPO/commits/$SHA/pulls" \
+            --jq "[.[] | select(.merge_commit_sha == \"$SHA\" and .merged_at != null)][0].number // empty")"
+          if [ -z "$pr_number" ]; then
+            echo "No merged PR behind $SHA — direct push, nothing to deliver."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "number=$pr_number" >> "$GITHUB_OUTPUT"
       - name: Post the product note to Mattermost
+        if: steps.pr.outputs.found == 'true'
         env:
           MATTERMOST_RELEASE_WEBHOOK_URL: ${{ secrets.MATTERMOST_RELEASE_WEBHOOK_URL }}
           # Merged into main = it will ship with the next `pnpm deploy:prod`,
           # not "it is live". The footer says exactly that.
           DELIVERY_ENV: dev
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: node tools/ci/post-product-note.mjs
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          PR_BODY="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq '.body // ""')"
+          PR_TITLE="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq '.title')"
+          PR_URL="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq '.html_url')"
+          export PR_BODY PR_TITLE PR_URL
+          node tools/ci/post-product-note.mjs

@@ -10,10 +10,24 @@ on:
     branches: [main]
   pull_request:
 
+# Least-privilege floor for the whole workflow (#220). `contents: read` is all a
+# job needs to check out, install and run a tree-local guard or the test tier —
+# which is every job here except `tdd-signal`, the one that reads PR metadata
+# through `gh`.
+#
+# A job-level `permissions:` block REPLACES this one, it does not merge with it:
+# any job that declares its own must list EVERY scope it needs, `contents: read`
+# included. `tdd-signal` below already does. Widen there, never here — raising
+# this floor hands the extra scope to every job in the file.
+permissions:
+  contents: read
+
 jobs:
-  # BLOCK — the repo's original gate, unchanged.
+  # BLOCK — the repo's original gate, unchanged. The heaviest job by far: it
+  # carries `next build` on top of the unit tier, hence its own timeout budget.
   lint-and-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +73,7 @@ jobs:
   # needs-list can rot silently while still reporting green (canon §5).
   guard-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -76,6 +91,7 @@ jobs:
   # mechanical rather than a convention.
   guard-test-coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -92,6 +108,7 @@ jobs:
   tdd-signal:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -112,6 +129,7 @@ jobs:
   no-stub:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -128,6 +146,7 @@ jobs:
   workflow-auth:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -156,6 +175,7 @@ jobs:
   instruction-budget:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -171,6 +191,7 @@ jobs:
   ears-naming:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -186,6 +207,7 @@ jobs:
   ears-test:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -208,6 +230,7 @@ jobs:
     needs: [lint-and-typecheck, guard-tests, guard-test-coverage]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       # A required job must SUCCEED. `skipped` and `cancelled` are red too: a job
       # that never ran proved nothing, and treating only `failure` as red lets a

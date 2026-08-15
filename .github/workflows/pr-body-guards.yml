@@ -35,6 +35,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
+# Least-privilege floor for the whole workflow (#220). Every job below already
+# declares its own `permissions:` block, and a job-level block REPLACES this one
+# rather than merging with it — so this floor changes nothing for the jobs that
+# exist today. It is here for the next job added to this file: without it a job
+# that forgets its block inherits the org/repo default instead of the minimum.
+permissions:
+  contents: read
+
 jobs:
   # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.
   # Needs `issues: read` on top of the usual pair for the sub-issues endpoint.
@@ -43,6 +51,7 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -69,6 +78,7 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -96,6 +106,7 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -124,6 +135,7 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -154,6 +166,7 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -180,6 +193,7 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-08-05 — canon §5, promotion tied to #137
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
