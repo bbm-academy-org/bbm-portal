@@ -114,7 +114,10 @@ Entry format:
       WITHOUT an explicit `sha` input always skips green. Workaround: pass the
       sha explicitly (that path is verified working, 2026-08-06). Return
       condition: next edit to `release-digest.yml`, or the first backfill
-      dispatch that needs the empty-sha path (#137, first live digest run)
+      dispatch that needs the empty-sha path (#137, first live digest run).
+      **Return condition FIRED and promoted 2026-08-15: `cce6631` (#215) edited
+      this workflow without the fix → #236.** This line goes at the sweep after
+      #236 closes.
 
 - [ ] 2026-08-05 `deploy:smoke` / `deploy:notes` have no `pre*` Node-version
       guard (`deploy:prod` checks Node 22, the standalone entries don't) —
@@ -136,11 +139,6 @@ Entry format:
       wrong remedy (false-positive class; no such helper exists today) — return
       condition: first new file added under `tools/lint/lib/` (#136, review of
       PR #154)
-- [ ] 2026-08-05 `tools/lint/workflow-auth-lint.mjs`: `undeclared-severity`
-      catches "neither WARN nor BLOCK" but not "both" (continue-on-error AND in
-      the needs-list = vacuous BLOCK) — return condition: first change to the
-      `ci` meta-job's needs-list or to any job's continue-on-error flag (#136,
-      review of PR #154)
 - [ ] 2026-08-05 `tools/lint/tdd-signal-lint.mjs`: substring path matching — a
       spec that merely MENTIONS a module path counts as covering it (nothing
       masked today; anchor needles to import statements like
@@ -177,7 +175,13 @@ Entry format:
       same return condition applies to them. Worked off 2026-08-06 (#142) for
       `tools/gh/pr-land.mjs` + `tests/unit/gh-pr-land.spec.ts`, translated in
       their own no-behaviour-change commit ahead of the fix; the rest of the set
-      still stands.
+      still stands. **Return condition FIRED and promoted 2026-08-15: `39973aa`
+      (#234) materially edited `tools/gh/bootstrap-taxonomy.mjs` and
+      `tools/gh/lib/gh.mjs` without translating either — the SECOND recorded miss
+      of this trigger, which is the signal that an on-touch rule is not
+      self-enforcing here. The six remaining `tools/gh` files are now one bounded
+      task, #238.** The `tools/hooks/*` half of this line is NOT in #238's scope
+      and keeps its existing trigger. This line goes at the sweep after #238 closes.
 
 - [ ] 2026-08-06 `pnpm pr:land <n>` on an ALREADY-MERGED PR resumes the tail with
       no gate in front of it (#142): a mistyped number moves the board of whatever
@@ -262,19 +266,6 @@ Entry format:
       PR, or the next edit that touches `mergeStateStatus` handling itself (#216,
       re-deferred in #222)
 
-- [ ] 2026-08-14 `strict: true` on `main` (#216) put `gh pr update-branch` on the
-      critical path of any raced merge, and that command invalidates the review
-      verdict: it adds a merge commit, which moves `commits[last].committedDate`,
-      which makes `findAgentApproval` rule the existing `VERDICT: APPROVE` stale.
-      The result is a mandatory re-review of a merge commit that changed no
-      reviewed line — cost paid in full every time two sessions race. Fix is a
-      judgement call, not a patch: either compare the verdict against the last
-      commit that touched the DIFF rather than the last commit on the branch, or
-      teach the gate to recognise an update-branch merge commit as review-neutral.
-      Return condition fired the same afternoon: **promoted to #222 and fixed
-      there** (the second design — `isBaseMergeCommit` / `reviewBaselineDate`);
-      this line goes at the next sweep (#216 → #222)
-
 - [ ] 2026-08-14 `isBaseMergeCommit` (`tools/gh/pr-land.mjs`, #222) cannot tell a
       `gh pr update-branch` merge from one committed through GitHub's **web
       conflict editor** («Resolve conflicts» → «Commit merge»), and the second one
@@ -306,7 +297,10 @@ Entry format:
       the rows can be wrong stops trusting the real ones. Fix: reject candidates
       carrying a file extension, or test `git cat-file -e HEAD:<path>` before the
       ref lookup. Return condition: the next false STALE, or the next edit to the
-      verifier (#150)
+      verifier (#150). **Return condition FIRED and promoted 2026-08-15: a false
+      `STALE` plus a NEW subclass — `sidorovanthon/bbm#149` resolved against THIS
+      repo, so the row reported bbm-portal #149's state instead → #237.** This line
+      goes at the sweep after #237 closes.
 
 - [ ] 2026-08-14 #220 added a top-level `permissions: contents: read` floor to `ci.yml`
       and `pr-body-guards.yml`, but NOTHING enforces that a workflow has one. A workflow
@@ -322,18 +316,6 @@ Entry format:
       condition: the next workflow file added under `.github/workflows/`, or the
       `workflow-auth` WARN→BLOCK promotion review (2026-09-02 window), whichever comes
       first (#220, review of PR #223)
-
-- [ ] 2026-08-15 `next dev` re-injects a `<!-- BEGIN:nextjs-agent-rules -->` block
-      into `AGENTS.md` on every start, and the block is not in the committed file.
-      Any session that raises the dev stand therefore gets a dirty tree it did not
-      author, in a file that is process canon — and the injected text itself claims
-      that committing it "keeps the tree clean", which is the opposite of what the
-      repo wants (canon lives in `.claude/`, not in a tool-managed block). Reverted
-      by hand in #232 to keep that PR's diff scoped; not fixed there because the
-      fix is a Next config / ignore decision of its own and #232 was tooling +
-      config. Not an issue by §6: not user-visible, no production risk, blocks no
-      deliverable — return condition: the third session that has to revert it by
-      hand, or the next task that legitimately edits `AGENTS.md` (#232, PR #234)
 
 - [ ] 2026-08-15 the e2e suite's `test.beforeAll` hook budget is 30 s, which is
       shorter than Next dev's FIRST compile of `/admin` on this box: a cold run of
@@ -351,6 +333,33 @@ Entry format:
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_
+
+_(Swept 2026-08-15 (#239, owner-requested full tech-debt sweep). 35 open lines in,
+32 out. **Deleted as dead — three:** the 2026-08-05 `workflow-auth`
+"undeclared-severity catches neither but not both" line, which had already been
+promoted to the open #207 and was a second copy of it; the 2026-08-14
+`strict: true` / `update-branch` line, fixed in #222 (`isBaseMergeCommit`) and
+itself saying it goes at the next sweep; the 2026-08-15 `next dev` /
+`AGENTS.md` line, which duplicates the open #229 — #229 owns the fix and this
+sweep, not #229's PR, removes the line. **Promoted — three,** each marked in
+place and to be deleted at the sweep after its issue closes: the
+`release-digest.yml` empty-sha backfill → #236 (trigger fired: `cce6631`/#215
+edited the workflow without the fix); `handoff-verify` false rows → #237 (a false
+`STALE` plus a new wrong-repo subclass, both observed live on this session's own
+handoff); the Russian `tools/gh` CLI surfaces → #238 (trigger fired in
+`39973aa`/#234 and was missed for the second time, so an on-touch rule became a
+bounded task). **Written off — none.** **Kept — the remaining 29,** every trigger
+re-checked against the repo rather than assumed. Four checks that could plausibly
+have fired and did not: only one platform migration exists
+(`0000_create_core_schema.sql`), so neither `audit-coverage` nor
+`migration-index` has a trigger; no file has been added under `tools/lint/lib/`
+since #154 created both of the two there; the `assignee-milestone` guard passed
+on all eight agent-opened PRs from #213 to #234, so its "trips one more time"
+trigger has not fired; and #227 was SSH hardening, not a `deploy:prod --rollback`,
+so the rollback-ancestor trigger has not fired either. Also considered and left
+alone: #230 (OKR font subsetting) does not fire the `/p/okr` `design-source`
+back-fill trigger, which asks for a change to the surface's DESIGN — layout,
+palette, composition — and subsetting changes none of them.)_
 
 _(Swept 2026-08-05 (/wrap, retro of the 7.2 session): the 2026-07-31
 `frontend-design` line closed as fixed — the skill is now registered and
