@@ -107,6 +107,27 @@ const assertOnce = (text: string, needle: string) => {
   expect(countOccurrences(text, needle)).toBe(1)
 }
 
+const assertSingleLine = (text: string, line: string) => {
+  expect(text.split('\n').filter((candidate) => candidate.trim() === line).length).toBe(1)
+}
+
+const singleLineOffset = (text: string, line: string) => {
+  let offset = 0
+  let found: number | null = null
+
+  for (const candidate of text.split('\n')) {
+    if (candidate.trim() === line) {
+      expect(found, line).toBeNull()
+      found = offset
+    }
+
+    offset += candidate.length + 1
+  }
+
+  expect(found, line).not.toBeNull()
+  return found!
+}
+
 const assertBefore = (text: string, first: string, second: string) => {
   expect(text.indexOf(first)).toBeGreaterThanOrEqual(0)
   expect(text.indexOf(second)).toBeGreaterThanOrEqual(0)
@@ -127,10 +148,12 @@ const assertHistoryAfterAppendMarker = (text: string, note: string) => {
 }
 
 const assertAppendMarkerContract = (text: string) => {
-  assertOnce(text, activeStartMarker)
-  assertOnce(text, appendMarker)
-  assertBefore(text, activeStartMarker, appendMarker)
-  expect(text.slice(text.indexOf(appendMarker))).not.toContain('\n- [ ] ')
+  assertSingleLine(text, activeStartMarker)
+  assertSingleLine(text, appendMarker)
+  const activeStart = singleLineOffset(text, activeStartMarker)
+  const appendStart = singleLineOffset(text, appendMarker)
+  expect(activeStart).toBeLessThan(appendStart)
+  expect(text.slice(appendStart)).not.toContain('\n- [ ] ')
 }
 
 const makeRepo = (initialDebt: string) => {
@@ -204,18 +227,72 @@ const mergeBothOrders = ({
 }
 
 const parseActiveRegion = (text: string) => {
-  const start = text.indexOf(activeStartMarker)
-  const end = text.indexOf(appendMarker)
+  const normalized = text.replace(/\r\n/g, '\n')
+  const start = singleLineOffset(normalized, activeStartMarker)
+  const end = singleLineOffset(normalized, appendMarker)
   expect(start).toBeGreaterThanOrEqual(0)
   expect(end).toBeGreaterThan(start)
 
-  return text
+  const blocks: string[] = []
+  let current: string[] = []
+
+  for (const line of normalized
     .slice(start + activeStartMarker.length, end)
     .trim()
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean)
+    .split('\n')) {
+    if (line.startsWith('- [ ] ')) {
+      if (current.length > 0) blocks.push(current.join('\n').trim())
+      current = [line]
+      continue
+    }
+
+    if (line.startsWith('<!-- debt-entry-end: ') && current.length === 0) {
+      current = [line]
+      continue
+    }
+
+    if (current.length > 0) current.push(line)
+  }
+
+  if (current.length > 0) blocks.push(current.join('\n').trim())
+
+  return blocks.filter(Boolean)
 }
+
+const lineCount = (text: string, line: string) =>
+  text.split('\n').filter((candidate) => candidate.trim() === line).length
+
+const collectAddedDebtAnchorIds = (cwd: string) => {
+  const shallow = git(cwd, ['rev-parse', '--is-shallow-repository']).stdout.trim()
+
+  if (shallow !== 'false') {
+    throw new Error(
+      'DEBT.md anchor history check requires full git history; configure actions/checkout with fetch-depth: 0',
+    )
+  }
+
+  const log = git(cwd, [
+    'log',
+    '--format=',
+    '--patch',
+    '--no-ext-diff',
+    '--unified=0',
+    'HEAD',
+    '--',
+    'DEBT.md',
+  ]).stdout
+  const ids = new Set<string>()
+
+  for (const line of log.split('\n')) {
+    const match = /^\+<!-- debt-entry-end: ([a-z0-9-]+) -->$/.exec(line)
+    if (match) ids.add(match[1]!)
+  }
+
+  return [...ids].sort()
+}
+
+const missingHistoricalAnchors = (cwd: string, debt: string) =>
+  collectAddedDebtAnchorIds(cwd).filter((id) => lineCount(debt, endAnchor(id)) !== 1)
 
 describe('DEBT.md merge protocol', () => {
   it('keeps two concurrent active appends in both merge orders', () => {
@@ -279,6 +356,7 @@ describe('DEBT.md merge protocol', () => {
     const debt = readFileSync(resolve(process.cwd(), 'DEBT.md'), 'utf8')
 
     assertAppendMarkerContract(debt)
+    expect(missingHistoricalAnchors(process.cwd(), debt)).toEqual([])
 
     const activeBlocks = parseActiveRegion(debt)
     const anchors = new Set<string>()
@@ -288,8 +366,25 @@ describe('DEBT.md merge protocol', () => {
 
       expect(matches.length, block).toBe(1)
       expect(block.endsWith(matches[0]![0]), block).toBe(true)
+      expect(block.startsWith('- [ ] ') || block === matches[0]![0], block).toBe(true)
       expect(anchors.has(matches[0]![1]), matches[0]![1]).toBe(false)
       anchors.add(matches[0]![1])
+    }
+  })
+
+  it('detects a sweep that deletes an anchor together with its body from repository history', () => {
+    const root = makeRepo(renderDebt([activeBlock(baseBody, 'lost-anchor')]))
+    const withoutBodyOrAnchor = renderDebt([])
+
+    try {
+      writeFileSync(join(root, 'DEBT.md'), withoutBodyOrAnchor, 'utf8')
+      git(root, ['commit', '-am', 'delete debt body and anchor'])
+
+      expect(missingHistoricalAnchors(root, readFileSync(join(root, 'DEBT.md'), 'utf8'))).toEqual([
+        'lost-anchor',
+      ])
+    } finally {
+      rmSync(root, { force: true, recursive: true })
     }
   })
 

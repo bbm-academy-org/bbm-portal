@@ -32,6 +32,7 @@ infra/dev-stand/**/*.sh text eol=lf
 # спека падала локально ровно так с момента появления.
 tools/**/*.mjs text eol=lf
 
-# DEBT.md is an append-only ledger: concurrent branches that add distinct
-# entry blocks should keep both blocks instead of forcing a hand-resolved merge.
+# DEBT.md uses immutable per-entry end anchors plus one permanent append marker;
+# that shape makes Git's built-in union driver safe for concurrent active appends
+# and for sweep-delete + append merges on GitHub/server-side merges.
 /DEBT.md merge=union
