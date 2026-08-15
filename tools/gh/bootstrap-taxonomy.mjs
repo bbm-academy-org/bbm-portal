@@ -6,8 +6,15 @@
 //     попадания задачи в бэклог, штатного поля под это у GitHub нет. Класс
 //     задачи живёт в штатном Type, а происхождение — свободным текстом в строке
 //     `**Source:**` тела (оба — решения владельца 2026-08-04);
-//   • постоянный fallback-milestone «Platform: operations and hardening» для
-//     процессных/эксплуатационных задач, не попадающих ни в одну тему (канон §2).
+//   • ПОСТОЯННЫЕ milestone (`PERMANENT_MILESTONES` в `./lib/gh.mjs`) — темы,
+//     которые не закрываются никогда: fallback «Platform: operations and
+//     hardening» для процессных/эксплуатационных задач, не попадающих ни в одну
+//     тему (канон §2), и «Dependencies» для PR автоматического обновления
+//     зависимостей. Постоянство здесь — не украшение: на такой milestone
+//     ссылаются извне именем (`issue:create`) и НОМЕРОМ (`renovate.json`), а
+//     номер закрывшейся темы протухает молча.
+//   • сверяет закреплённый в `renovate.json` НОМЕР с живым номером «Dependencies»
+//     и докладывает расхождение строкой `⚠` — конфиг при этом не правится;
 //   • проверяет наличие org Issue Types Bug/Feature/Task (создать их из репо
 //     нельзя — это org-настройка; отсутствие докладывается, а не чинится).
 //
@@ -22,12 +29,14 @@
 // Exit codes: 0 = состояние соответствует плану (или план напечатан);
 // 1 = ошибка gh при применении.
 
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 import {
   CHANNEL_LABELS,
-  FALLBACK_MILESTONE,
+  DEPENDENCIES_MILESTONE,
   ISSUE_TYPES,
+  PERMANENT_MILESTONES,
   OWNER,
   REPO,
   ghJson,
@@ -93,10 +102,62 @@ export function planLabels(existing, specs = CHANNEL_LABEL_SPECS) {
   return { create, update, keep }
 }
 
-/** Нужен ли fallback-milestone. Существующий (в любом состоянии) не трогается. */
-export function planMilestone(existing, title = FALLBACK_MILESTONE) {
-  const found = (existing ?? []).find((m) => m?.title === title)
-  return found ? { create: false, existing: found } : { create: true, existing: null }
+/**
+ * Спека постоянного milestone — то, чем он заводится, а не то, чем его вернул
+ * GitHub. Именованной её делает `planMilestones`: без typedef `@returns` пришлось
+ * бы расширить до `object[]`, и вызывающий код (в том числе юнит-тест) потерял бы
+ * `.title` под `noImplicitAny`.
+ * @typedef {{title: string, description: string}} MilestoneSpec
+ */
+
+/**
+ * План по ПОСТОЯННЫМ milestone: каких из набора не хватает. Существующий (в
+ * любом состоянии, включая `closed`) не трогается — закрытие темы это решение
+ * владельца, а не дрейф, который инструмент откатывает.
+ * @param {{title:string,state?:string}[]} existing
+ * @param {MilestoneSpec[]} [specs]
+ * @returns {{create: MilestoneSpec[], keep: MilestoneSpec[]}}
+ */
+export function planMilestones(existing, specs = PERMANENT_MILESTONES) {
+  const byTitle = new Map((existing ?? []).map((m) => [m?.title, m]))
+  const create = []
+  const keep = []
+  for (const spec of specs) {
+    if (byTitle.has(spec.title)) keep.push(spec)
+    else create.push(spec)
+  }
+  return { create, keep }
+}
+
+/**
+ * Итог сверки пина `renovate.json` с живым номером milestone.
+ * `status`: `ok` — пин совпадает; `drift` — пин указывает не туда (ожидаемый
+ * номер в `expected`); `unknown` — milestone ещё не заведён, сверять не с чем;
+ * `unpinned` — ключа `milestone` в конфиге нет вовсе.
+ * @typedef {{status:'ok'|'drift'|'unknown'|'unpinned', pinned:number|null,
+ *            expected:number|null, title:string}} RenovatePinCheck
+ */
+
+/**
+ * Сверить номер, закреплённый в `renovate.json`, с живым номером постоянного
+ * milestone. Renovate принимает milestone только НОМЕРОМ, а номер пересозданной
+ * темы меняется молча — отсюда и сверка (почему тема постоянная, см. JSDoc
+ * `PERMANENT_MILESTONES` в `./lib/gh.mjs`). Это ОТЧЁТ: ни конфиг, ни milestone
+ * тут не правятся.
+ * @param {{title:string,number?:number}[]} existing milestone как их вернул GitHub
+ * @param {Record<string, unknown>|null|undefined} renovateConfig разобранный renovate.json
+ * @param {string} [title]
+ * @returns {RenovatePinCheck}
+ */
+export function checkRenovateMilestonePin(existing, renovateConfig, title = DEPENDENCIES_MILESTONE) {
+  const live = (existing ?? []).find((m) => m?.title === title)
+  const expected = typeof live?.number === 'number' ? live.number : null
+  const raw = renovateConfig?.milestone
+  if (raw === undefined || raw === null) return { status: 'unpinned', pinned: null, expected, title }
+  const pinned = typeof raw === 'number' ? raw : null
+  if (expected === null) return { status: 'unknown', pinned, expected: null, title }
+  if (pinned === expected) return { status: 'ok', pinned, expected, title }
+  return { status: 'drift', pinned, expected, title }
 }
 
 /** Каких org Issue Types не хватает. Завести их из репо нельзя — только доложить. */
@@ -105,16 +166,42 @@ export function missingIssueTypes(existing, required = ISSUE_TYPES) {
   return required.filter((t) => !names.has(t))
 }
 
-/** План человекочитаемой строкой на каждое действие. */
-export function formatPlan({ labels, milestone, missingTypes }) {
+/**
+ * План человекочитаемой строкой на каждое действие.
+ * @param {{labels:{create:object[],update:object[],keep:object[]},
+ *          milestones:{create:MilestoneSpec[],keep:MilestoneSpec[]},
+ *          missingTypes:string[], renovatePin?:RenovatePinCheck|null}} input
+ * @returns {string[]}
+ */
+export function formatPlan({ labels, milestones, missingTypes, renovatePin = null }) {
   const lines = []
   for (const l of labels.create) lines.push(`СОЗДАТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
   for (const l of labels.update) lines.push(`ОБНОВИТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
   for (const l of labels.keep) lines.push(`уже есть: ${l.name}`)
-  if (milestone.create) lines.push(`СОЗДАТЬ milestone «${FALLBACK_MILESTONE}»`)
-  else lines.push(`уже есть: milestone «${FALLBACK_MILESTONE}»`)
+  for (const m of milestones.create) lines.push(`СОЗДАТЬ milestone «${m.title}» — ${m.description}`)
+  for (const m of milestones.keep) lines.push(`уже есть: milestone «${m.title}»`)
   for (const t of missingTypes) {
     lines.push(`⚠ org Issue Type «${t}» отсутствует — заводится в настройках организации ${OWNER}, не отсюда`)
+  }
+  if (renovatePin) {
+    const pin = renovatePin.pinned ?? '(не число)'
+    if (renovatePin.status === 'ok') {
+      lines.push(`уже есть: пин milestone «${renovatePin.title}» в renovate.json — №${pin}`)
+    } else if (renovatePin.status === 'drift') {
+      lines.push(
+        `⚠ пин milestone «${renovatePin.title}» в renovate.json — дрейф: там №${pin}, живой номер №${renovatePin.expected}; ` +
+          `renovate.json правится руками, инструмент только докладывает`,
+      )
+    } else if (renovatePin.status === 'unpinned') {
+      lines.push(
+        `⚠ ключа milestone в renovate.json нет — номер темы «${renovatePin.title}» ` +
+          `(живой: ${renovatePin.expected === null ? 'тема ещё не заведена' : `№${renovatePin.expected}`}) нигде не закреплён`,
+      )
+    } else {
+      lines.push(
+        `пин milestone «${renovatePin.title}» в renovate.json (№${pin}) проверить нельзя: сам milestone ещё не заведён`,
+      )
+    }
   }
   if (lines.every((l) => l.startsWith('уже есть'))) lines.push('изменений не требуется')
   return lines
@@ -126,6 +213,19 @@ function out(msg) {
   process.stdout.write(`${TAG} ${msg}\n`)
 }
 
+/**
+ * Прочитать и разобрать `renovate.json` из корня репо. Нечитаемый/битый конфиг —
+ * не повод валить заводку таксономии: сверка пина тогда просто не найдёт ключа.
+ * @returns {Record<string, unknown>|null}
+ */
+function readRenovateConfig() {
+  try {
+    return JSON.parse(readFileSync(new URL('../../renovate.json', import.meta.url), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
 function die(msg) {
   process.stderr.write(`${TAG} ${msg}\n`)
   process.exit(1)
@@ -135,7 +235,9 @@ export const USAGE = `Использование: pnpm taxonomy:bootstrap [--app
 
   Идемпотентно доводит таксономию репо ${REPO} до канона §2:
     • четыре лейбла channel:* (${CHANNEL_LABELS.join(', ')});
-    • постоянный fallback-milestone «${FALLBACK_MILESTONE}»;
+    • постоянные milestone (${PERMANENT_MILESTONES.map((m) => `«${m.title}»`).join(', ')})
+      — темы, которые не закрываются никогда, поэтому на них можно ссылаться
+      извне именем и номером;
     • проверяет наличие org Issue Types ${ISSUE_TYPES.join('/')} — завести их из
       репо нельзя, это настройка организации, поэтому отсутствие докладывается.
 
@@ -175,11 +277,12 @@ function main() {
   const orgTypes = typesRes.ok ? (typesRes.data?.data?.organization?.issueTypes?.nodes ?? []) : []
 
   const labels = planLabels(labelsRes.data)
-  const milestone = planMilestone(milestonesRes.data)
+  const milestones = planMilestones(milestonesRes.data)
   const missingTypes = missingIssueTypes(orgTypes)
+  const renovatePin = checkRenovateMilestonePin(milestonesRes.data, readRenovateConfig())
 
   out(apply ? 'план (применяется):' : 'СУХОЙ ПРОГОН — план (примени с `--apply`):')
-  for (const line of formatPlan({ labels, milestone, missingTypes })) out(`  ${line}`)
+  for (const line of formatPlan({ labels, milestones, missingTypes, renovatePin })) out(`  ${line}`)
 
   if (!apply) {
     out('ничего не изменено.')
@@ -216,19 +319,19 @@ function main() {
     if (!res.ok) die(res.error)
     out(`обновлён лейбл ${spec.name}`)
   }
-  if (milestone.create) {
+  for (const spec of milestones.create) {
     const res = ghResult([
       'api',
       '--method',
       'POST',
       `repos/${REPO}/milestones`,
       '-f',
-      `title=${FALLBACK_MILESTONE}`,
+      `title=${spec.title}`,
       '-f',
-      'description=Process and operations tasks that fit no product theme',
+      `description=${spec.description}`,
     ])
     if (!res.ok) die(res.error)
-    out(`создан milestone «${FALLBACK_MILESTONE}»`)
+    out(`создан milestone «${spec.title}»`)
   }
 
   out('ГОТОВО — таксономия приведена к плану (ничего не удалено).')

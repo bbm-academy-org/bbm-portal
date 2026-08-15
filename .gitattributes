@@ -11,6 +11,17 @@ infra/dev-stand/idp/provision.sh text eol=lf
 infra/dev-stand/idp/Caddyfile text eol=lf
 infra/dev-stand/**/*.sh text eol=lf
 
+# Vendored font binaries (#219, src/modules/okr/view/fonts/) — явно binary:
+# `-text -diff -merge`. Git определяет бинарность эвристикой по первым 8000
+# байтам, и на Windows-чекауте с core.autocrlf=true ошибка эвристики означает
+# CRLF-подстановку внутри woff2 — файл доедет до Docker-сборки битым, а
+# `next/font/local` упадёт на парсинге шрифта уже в проде. Здесь это не
+# эвристика, а объявление.
+*.woff2 binary
+*.woff binary
+*.ttf binary
+*.otf binary
+
 # Node-скрипты тулинга (#91, #130) должны оставаться LF по другой причине: они
 # начинаются с шебанга, а vitest импортирует их чистые сеймы в юнит-тестах. На
 # CRLF-чекауте (Windows, core.autocrlf=true) шебанг доезжает до vite-обёртки

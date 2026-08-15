@@ -1,0 +1,186 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/write-evidence-recorder.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/session-flag-writer.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/session-flag-writer.mjs'); exit $LASTEXITCODE",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/gh/session-bootstrap.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/gh/session-bootstrap.mjs'); exit $LASTEXITCODE",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/session-flag-writer.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/session-flag-writer.mjs'); exit $LASTEXITCODE",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/write-evidence-recorder.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/handoff-verify-reminder.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/handoff-verify-reminder.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/context-budget.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/context-budget.mjs'); exit $LASTEXITCODE",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/worktree-path-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/worktree-path-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/main-tree-read-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/main-tree-read-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/dispatch-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/dispatch-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/agent-model-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/agent-model-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion|request_user_input",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/askuserquestion-context-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/askuserquestion-context-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/askuserquestion-calibration-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/askuserquestion-calibration-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*__browser_(take_screenshot|pdf_save)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/screenshot-path-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/screenshot-path-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/secret-echo-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/secret-echo-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/merge-gate.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/merge-gate.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/write-evidence-recorder.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/write-evidence-recorder.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-stop-adapter.mjs\" completion",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') completion; exit $LASTEXITCODE",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-stop-adapter.mjs\" deviations",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') deviations; exit $LASTEXITCODE",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-stop-adapter.mjs\" debt",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-stop-adapter.mjs') debt; exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

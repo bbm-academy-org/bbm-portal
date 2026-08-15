@@ -51,12 +51,14 @@ jobs:
       ( github.event.deployment_status.state == 'success' &&
         github.event.deployment.environment == 'production' &&
         github.event.deployment.task == 'deploy' )
-    # `notify` is the pool's dedicated notification lane (#202): its manager
-    # policy trusts deployment_status/workflow_dispatch/push only — never
-    # pull_request — which is what lets a secret-bearing workflow run on the
-    # shared pool at all (REPOSITORY-ONBOARDING «Least-privilege notification
-    # webhook»).
-    runs-on: [self-hosted, linux, x64, bbm-ci, node22, notify, ci]
+    # This job reads MATTERMOST_RELEASE_WEBHOOK_URL, so the trigger set above
+    # (deployment_status/workflow_dispatch, never any PR event) is load-bearing
+    # and widening it is a security change. Rule and mechanism — including why
+    # "a fork would read it" is the WRONG reason — live in
+    # docs/ci-guardrails.md §2.1.1, which owns a rule binding both
+    # secret-bearing workflows.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:

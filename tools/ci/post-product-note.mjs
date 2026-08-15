@@ -4,7 +4,8 @@
 //
 // Driven by `.github/workflows/product-note-mattermost.yml` on a `push` to
 // main (#202: the workflow resolves the merged PR behind the pushed sha —
-// its pool policy carries a secret and must not trust PR events). The PR
+// it carries a long-lived secret and must not be reachable from PR events;
+// since #214 that trigger list is the only thing enforcing it). The PR
 // body, title and URL arrive through the process ENV — never interpolated
 // into a shell string — so a `$(...)` or a backtick in a body cannot be
 // executed, and the webhook JSON is built with `JSON.stringify`.
