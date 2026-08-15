@@ -215,6 +215,139 @@ Entry format:
       данных. Лечится вызовом rmdir с обычным `winPath` — return condition: первый
       реальный заход в robocopy-фолбэк (teardown упал с exit 1 на long-path) (#90)
 
+- [ ] 2026-08-14 `pnpm install` в свежем worktree печатает
+      `[ERROR] Was not able to set git hooks … ENOTDIR: mkdir '<wt>/.git/hooks'`:
+      `simple-git-hooks` не знает, что в worktree `.git` — файл, а хуки живут в
+      общем каталоге основного чекаута. Хук на деле РАБОТАЕТ (lint-staged
+      отработал на первом же коммите в worktree 214), то есть сообщение ложное, но
+      читается как «хука нет» — в этой сессии я на нём построил неверный вывод и
+      сообщил его владельцу. Лечится проверкой на worktree перед вызовом
+      `simple-git-hooks` в `prepare` — return condition: первый случай, когда
+      сессия из-за этого сообщения пропустит проверки «раз хука всё равно нет»,
+      или ближайшая правка `prepare`. Всплыло при работе над #214, чинится в
+      worktree-тулинге (#90)
+
+- [ ] 2026-08-14 `.github/branch-protection.json` and the live protection on `main`
+      drift independently: editing the file does not touch the branch, and editing
+      the protection in the GitHub UI does not touch the file. Nothing detects the
+      divergence — a guard could diff the payload against
+      `GET …/branches/main/protection` on every PR. Low stakes while both are
+      changed by hand in the same motion, which is what #216 did. Return condition:
+      the first time the two are found out of sync, or the next edit to either
+      (#216)
+
+- [ ] 2026-08-14 `gateConditions` in `tools/gh/pr-land.mjs` still inspects
+      `mergeStateStatus` value by value (only `BEHIND` today), so every state the
+      now-live protection can produce has to be remembered one at a time. `BLOCKED`
+      — what an unresolved inline review thread produces under
+      `required_conversation_resolution` — slips past, and the gate reports green
+      while the server refuses. Reachable today only via a human inline comment:
+      the reviewer subagent posts plain PR comments, which create no threads. The
+      structural fix is a THREE-way classification, not a two-way allow-list —
+      merge / refuse / poll again. Whoever picks this up must not map
+      `BLOCKED → RED`: `BLOCKED` is the normal state of a PR whose required `ci`
+      check has not gone green YET, and `pr:land` is designed to be launched into
+      exactly that state and wait it out (`--timeout`), so reddening it would abort
+      the gate before the wait it exists to perform. Observed on this very PR:
+      `BLOCKED` with `lint-and-typecheck` pending, `CLEAN` minutes later. `UNKNOWN`
+      is transient for the same reason — GitHub has not finished computing
+      mergeability. So this is a design change to the gate on the critical path of
+      every merge, not a three-line edit — which is why it is routed rather than
+      rushed in. Return condition «the next edit to `gateConditions`» FIRED in #222,
+      which edited the `findAgentApproval` call site and the stale-verdict message —
+      and the three-way classification was deliberately still not made there, because
+      #222 declares it out of scope and a redesign of the merge gate is not a thing to
+      smuggle into a freshness fix. Explicitly re-deferred, with a trigger that no
+      longer fires on any edit to the function: the first inline review thread on any
+      PR, or the next edit that touches `mergeStateStatus` handling itself (#216,
+      re-deferred in #222)
+
+- [ ] 2026-08-14 `strict: true` on `main` (#216) put `gh pr update-branch` on the
+      critical path of any raced merge, and that command invalidates the review
+      verdict: it adds a merge commit, which moves `commits[last].committedDate`,
+      which makes `findAgentApproval` rule the existing `VERDICT: APPROVE` stale.
+      The result is a mandatory re-review of a merge commit that changed no
+      reviewed line — cost paid in full every time two sessions race. Fix is a
+      judgement call, not a patch: either compare the verdict against the last
+      commit that touched the DIFF rather than the last commit on the branch, or
+      teach the gate to recognise an update-branch merge commit as review-neutral.
+      Return condition fired the same afternoon: **promoted to #222 and fixed
+      there** (the second design — `isBaseMergeCommit` / `reviewBaselineDate`);
+      this line goes at the next sweep (#216 → #222)
+
+- [ ] 2026-08-14 `isBaseMergeCommit` (`tools/gh/pr-land.mjs`, #222) cannot tell a
+      `gh pr update-branch` merge from one committed through GitHub's **web
+      conflict editor** («Resolve conflicts» → «Commit merge»), and the second one
+      carries whatever a human typed into the merged file. GitHub builds both
+      server-side, so both come back with two parents, the base tip as the second,
+      committer `GitHub <noreply@github.com>` and a valid signature — all four
+      clauses pass. Confirmed from GitHub's own docs, not inferred: «GitHub will
+      automatically use GPG to sign commits you make using the web interface» plus
+      «click Commit merge. This merges the entire base branch into your head
+      branch». The button is offered on the PR page at exactly the moment
+      `update-branch` refuses, so it sits one click off the path this fix serves;
+      `.claude/skills/merge-when-green/SKILL.md` now says not to take it, which is
+      prose, not a guard. Separating the two needs CONTENT, not provenance —
+      the merge's tree against a clean 3-way merge of its parents
+      (`git merge-tree`), i.e. a fetch plus local git on the critical path of every
+      merge; the cheaper `compare(base…merge)` variant was costed and refused
+      because its false «dirty» rate is highest exactly in this repo's common raced
+      case (two PRs appending to `DEBT.md` shift each other's hunk headers), which
+      would disable the fix where it is needed most. Priced and declined, not
+      overlooked. Return condition: the first time a session resolves a conflict in
+      the web editor on any PR (its own action, so it is known at the time), or the
+      next edit to `isBaseMergeCommit` (#222, round-2 review of PR #226)
+
+- [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
+      branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
+      `refs/remotes/origin/docs/ci-guardrails.md`, not found, and reported `STALE`.
+      A false STALE is worse than no row — the gate the verifier feeds tells the
+      session to reconcile a premise that was never wrong, and a reader who learns
+      the rows can be wrong stops trusting the real ones. Fix: reject candidates
+      carrying a file extension, or test `git cat-file -e HEAD:<path>` before the
+      ref lookup. Return condition: the next false STALE, or the next edit to the
+      verifier (#150)
+
+- [ ] 2026-08-14 #220 added a top-level `permissions: contents: read` floor to `ci.yml`
+      and `pr-body-guards.yml`, but NOTHING enforces that a workflow has one. A workflow
+      added tomorrow with no top-level block silently inherits the repo default
+      (`default_workflow_permissions: read` — read on every scope) and reproduces exactly
+      the gap #220 was filed to close, with no guard noticing. `workflow-auth` is the
+      natural home — it already parses every workflow and already resolves permissions the
+      way GitHub does (job block else workflow block) — but today it only audits gh-GATED
+      jobs, so a workflow of nothing but tree-local jobs is invisible to it. Not built in
+      #220 deliberately: a new finding class in a guard is its own deliverable with its own
+      spec fixtures and `guard-tests` spec (§8), and smuggling it into a posture PR would
+      ship an untested rule on the meta-guard that polices every other workflow — return
+      condition: the next workflow file added under `.github/workflows/`, or the
+      `workflow-auth` WARN→BLOCK promotion review (2026-09-02 window), whichever comes
+      first (#220, review of PR #223)
+
+- [ ] 2026-08-15 `next dev` re-injects a `<!-- BEGIN:nextjs-agent-rules -->` block
+      into `AGENTS.md` on every start, and the block is not in the committed file.
+      Any session that raises the dev stand therefore gets a dirty tree it did not
+      author, in a file that is process canon — and the injected text itself claims
+      that committing it "keeps the tree clean", which is the opposite of what the
+      repo wants (canon lives in `.claude/`, not in a tool-managed block). Reverted
+      by hand in #232 to keep that PR's diff scoped; not fixed there because the
+      fix is a Next config / ignore decision of its own and #232 was tooling +
+      config. Not an issue by §6: not user-visible, no production risk, blocks no
+      deliverable — return condition: the third session that has to revert it by
+      hand, or the next task that legitimately edits `AGENTS.md` (#232, PR #234)
+
+- [ ] 2026-08-15 the e2e suite's `test.beforeAll` hook budget is 30 s, which is
+      shorter than Next dev's FIRST compile of `/admin` on this box: a cold run of
+      `pnpm test:e2e` fails `admin.e2e.spec.ts` and `publish-panel.e2e.spec.ts` on
+      `"beforeAll" hook timeout of 30000ms exceeded` while waiting for
+      `#field-email`, then leaves 16 skipped and 7 not run. Nothing is wrong with
+      the product — a warmed stand passes — but the suite's first red of the day is
+      routinely noise, and task-cycle stage 5 makes a green Playwright pass the
+      precondition for inviting the owner to any UI flow, so noise there is
+      expensive. CI does not cover it (`ci.yml` runs `test:unit` only), which is why
+      it stays invisible between sessions — return condition: the next task that
+      must run `pnpm test:e2e` as acceptance evidence, or any move to run e2e in CI
+      (observed in #232 / PR #234, diff touched no runtime code)
+
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
 written off.)_

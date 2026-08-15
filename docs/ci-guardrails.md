@@ -78,14 +78,90 @@ read as a verdict. Do not re-enable it without changing the gate first.
 rather than reviewed. The `ci` aggregate itself is the one exemption — it cannot be in its
 own needs-list.
 
-**Branch-protection limitation (verified 2026-08-05).** `.github/branch-protection.json`
-is a declarative payload, not live state: this repo is private on GitHub Free, and
-`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection` answers
-`403 Upgrade to GitHub Pro or make this repository public`. Until the plan is upgraded or
-the repo is public, **BLOCK is enforced by the merge tooling, not by the server**: a red
-`ci` check makes `pnpm pr:land` refuse to merge (task-canon §7), and that is the whole
-barrier. The payload's `required_status_checks.contexts` is kept correct so that the
-upgrade is a single `gh api --method PUT … --input .github/branch-protection.json` away.
+**Branch protection — live since 2026-08-14 (#216).** `.github/branch-protection.json` is
+a declarative payload; `main` now carries it as server-side protection. The table below
+is what the API returns when the protection is **read back**, which is how it was
+verified — a `PUT` exiting 0 is not evidence that the branch ended up in the intended
+state.
+
+| Setting                                  | Live value                                           | What it actually buys                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `required_status_checks.contexts`        | `["ci"]`, bound to app `github-actions` (id `15368`) | the `ci` meta-job of `ci.yml` is the single required check — which is the reason that job's name may never change (the file says so at the job itself)                                                                                                                                                       |
+| `required_status_checks.strict`          | `true`                                               | a PR must be up to date with `main` to merge. This is why `pnpm pr:land` counts `mergeStateStatus=BEHIND` as RED — it was a remark until #216, which was correct only while the merge could still succeed                                                                                                    |
+| `enforce_admins`                         | `true`                                               | the rules bind the repo's only admin too; without it the floor is advisory and the one account that can bypass it is the one that opens every PR                                                                                                                                                             |
+| `required_linear_history`                | `true`                                               | squash-merge only — which is exactly what `pnpm pr:land` performs                                                                                                                                                                                                                                            |
+| `allow_force_pushes` / `allow_deletions` | `false`                                              | `main` cannot be rewritten or deleted                                                                                                                                                                                                                                                                        |
+| `required_conversation_resolution`       | `true`                                               | unresolved review threads block a merge. The reviewer subagent posts a plain PR comment rather than review threads, so the normal review path is unaffected — but nothing in `pnpm pr:land` checks for unresolved threads, so an inline review comment left open blocks the merge with no gate warning first |
+| `required_pull_request_reviews`          | absent                                               | deliberate, not an omission — task-canon §7: the only human with permissions is the PR author and cannot APPROVE his own PR                                                                                                                                                                                  |
+| `lock_branch`                            | `false`                                              | `main` is not read-only                                                                                                                                                                                                                                                                                      |
+| `block_creations`                        | `false`                                              | **inert under this config** — it blocks the CREATION of refs matching the pattern and only bites when `restrictions` is set, which it is not (`restrictions: null`). Listed so a reader does not mistake `false` for a deliberate permission we granted                                                      |
+| `allow_fork_syncing`                     | `false`                                              | **inert under this config** — it governs pulling upstream changes into a **locked** branch, and `lock_branch` is `false`. It is not a control over what a fork can do to `main`; forks cannot write here regardless                                                                                          |
+| `required_signatures`                    | `false`                                              | not in the payload and not enabled — commit signing is not set up on the operator's box, so requiring it would wedge every merge                                                                                                                                                                             |
+
+**Verified, not assumed.** A direct push to `main` was attempted on 2026-08-14 with a
+commit whose tree was identical to `main`'s, and the server rejected it:
+`GH006: Protected branch update failed … Required status check "ci" is expected`.
+`main` stayed at `cce6631`. That is the acceptance evidence #216 asked for — the read-back
+above proves the settings exist, this proves they bite.
+
+**Why the gap existed.** Until 2026-08-14 the payload could not become live at all: on
+GitHub Free a **private** repo answers `403 Upgrade to GitHub Pro or make this repository
+public` to `GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection`. The repo
+went public that day (#214), satisfying that error's own escape clause, and #216 applied
+the payload the same day. In between, the state was a gap rather than a constraint.
+
+**BLOCK now has two enforcers, and they are not the same plane.** The server refuses a
+merge whose `ci` check is not green. `pnpm pr:land` refuses for that reason **and** for a
+missing `VERDICT: APPROVE` comment newer than the code it approves (task-canon §7) — a rule the
+server knows nothing about. WARN guards stay invisible to the server either way, because
+the required context is `ci` and they are absent from its needs-list. What promotion costs
+now depends on which workflow the guard lives in:
+
+| Guard's home                                | Promoting it to BLOCK                                                                                                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                                    | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                  |
+| `pr-body-guards.yml` (all six guards today) | `needs` cannot cross workflows, so pick one: move the job into `ci.yml`, teach `pnpm pr:land` to demand its check-run by name, or — new since #216 — add its own context to the payload and re-apply it |
+
+That third option did not exist while `main` was unprotected. It is the only one of the
+three that makes the server itself the enforcer, and the only one that requires a
+protection change; the "Cross-workflow guards" paragraph above lists the other two.
+
+**Break-glass.** `enforce_admins: true` plus a required `ci` context means that when
+GitHub Actions itself is degraded, nothing merges — no account can override it, which is
+the point and also the risk. The escape is to remove the protection, merge, and re-apply
+the payload: `gh api --method DELETE …/branches/main/protection`, then the `PUT` above.
+Both halves are one command; the failure mode to avoid is doing the first and forgetting
+the second, which is exactly the drift recorded in `DEBT.md`.
+
+**The file and the branch drift independently.** Editing `branch-protection.json` does not
+touch `main`, and editing the protection through the GitHub UI does not touch the file.
+After changing either, re-apply and read back. Nothing reconciles them automatically
+today — recorded in `DEBT.md`.
+
+### 2.1.1 Secret-bearing workflows and PR events
+
+This repo has exactly one long-lived secret, `MATTERMOST_RELEASE_WEBHOOK_URL`, used by
+`product-note-mattermost.yml` and `release-digest.yml`. **The rule: a job that can read
+it is never reachable from a pull-request event.** Neither of those two files owns this
+rule — it binds both — so it lives here and they point at it.
+
+The mechanism matters, because the intuitive version of it is false and was written into
+this repo's comments until #214 corrected it:
+
+| Trigger                                            | Secrets available?        | Verdict                                                                                      |
+| -------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| `pull_request` from a **fork**                     | **no** — GitHub withholds | not the hazard people assume; a forker cannot read the webhook even if a PR event were added |
+| `pull_request` from a **branch in this repo**      | **yes**                   | real residual: any collaborator's branch would receive it                                    |
+| `pull_request_target` + checkout of the PR head    | **yes**, in base context  | the genuine hazard — base-repo permissions running fork-controlled code                      |
+| `push` / `deployment_status` / `workflow_dispatch` | yes                       | fine: none of them is attacker-triggerable here                                              |
+
+Note the third row's precision: `pull_request_target` alone is not a leak. It becomes one
+when combined with checking out the pull request's head. This repo uses that trigger
+nowhere, which is the invariant worth preserving.
+
+Until #214 this rule had two enforcers — the self-hosted pool's manager policy (#202) plus
+each workflow's trigger list. The pool is gone; the trigger lists are the only enforcement
+left, which is why widening one is a security change and not a convenience edit.
 
 ### 2.2 Hook guards
 
@@ -218,6 +294,18 @@ not a clean corpus. On the CI plane that is **exit 1** — §8 gives a CI guard 
 so fail-closed is the only honest code available. `instruction-budget` answers the same
 class with **exit 2** (§6.1, empty corpus) because it is a §2.3 CLI guard, where "not a
 verdict" exists. Same rule, two codes, because the planes differ — not an inconsistency.
+
+**The permissions floor every job in this table runs under (#220).** Both workflows named
+in the Workflow column now declare a top-level `permissions: contents: read`. That is the
+floor, not the grant: a job-level `permissions:` block **replaces** the workflow-level one
+rather than merging with it, so a job needing more lists every scope it needs, its own
+`contents: read` included. Only gh-reaching jobs do — `tdd-signal` in `ci.yml`, and all six
+jobs in `pr-body-guards.yml`. Before #220 the jobs that declare nothing inherited the repo
+default (`default_workflow_permissions: read`, i.e. read on every scope); the floor drops
+the scopes none of them uses. `workflow-auth` already reads permissions the way GitHub
+resolves them (the job's own block, else the workflow's) and so audits the effective grant,
+but it audits it **only for gh-gated jobs** — nothing checks that a workflow declares a
+top-level floor at all, which is a routed DEBT.md line, not a guard that exists today.
 
 `instruction-budget` is the one guard that appears in BOTH inventories, deliberately: the
 same script is a §2.3 CLI guard (BLOCK by exit code — §6.1) and a §2.1 CI job (WARN,
