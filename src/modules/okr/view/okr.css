@@ -2,7 +2,8 @@
    OKR dashboard — прототип deploy/index.html (дизайн-система bbm.academy,
    BOLD «ПОП» · палитра «Лагуна»), перенесённый в компоненты роута.
    Токены заинлайнены из bbm-public-website/src/styles/tokens.css
-   (AA-затемнённые значения). Шрифты — next/font (см. layout.tsx).
+   (AA-затемнённые значения). Шрифты — next/font/local, файлы лежат в
+   ./fonts/ (см. OkrLayout.tsx и ./fonts/README.md).
    ============================================================================ */
 
 /* Фон холста поверхности OKR. Раньше его красил `body` в platform.css на всю
