@@ -130,6 +130,10 @@ describe('format-check and pre-commit policy', () => {
         `${JSON.stringify({ private: true }, null, 2)}\n`,
         'utf8',
       )
+      copyFileSync(
+        resolve(repoRoot, 'lint-staged.config.mjs'),
+        resolve(fixtureRepo, 'lint-staged.config.mjs'),
+      )
       copyFileSync(resolve(repoRoot, '.prettierignore'), resolve(fixtureRepo, '.prettierignore'))
       writeFileSync(lockfile, "lockfileVersion: '9.0'\n\npackages: {}\n", 'utf8')
 
@@ -148,7 +152,6 @@ describe('format-check and pre-commit policy', () => {
       })
 
       const success = await lintStaged({
-        config: createLintStagedConfig(fixtureRepo),
         cwd: fixtureRepo,
         quiet: true,
         stash: false,
@@ -172,6 +175,10 @@ describe('format-check and pre-commit policy', () => {
     const json = resolve(fixtureRepo, 'fixture.json')
 
     try {
+      copyFileSync(
+        resolve(repoRoot, 'lint-staged.config.mjs'),
+        resolve(fixtureRepo, 'lint-staged.config.mjs'),
+      )
       copyFileSync(resolve(repoRoot, '.prettierignore'), resolve(fixtureRepo, '.prettierignore'))
       writeFileSync(markdown, '# Root fixture\n', 'utf8')
       writeFileSync(json, '{}\n', 'utf8')
@@ -187,7 +194,6 @@ describe('format-check and pre-commit policy', () => {
       git(fixtureRepo, ['add', 'README.md', 'fixture.json'])
 
       const success = await lintStaged({
-        config: createLintStagedConfig(fixtureRepo),
         cwd: fixtureRepo,
         quiet: true,
         stash: false,
