@@ -1,12 +1,12 @@
 # Reverse proxy + automatic Let's Encrypt TLS for the portal.
-# DNS already maps cms.bbm.academy -> 201.51.28.190, so Caddy provisions and
+# DNS already points cms.bbm.academy at this host, so Caddy provisions and
 # renews the certificate automatically on first start (HTTP-01/TLS-ALPN-01).
 cms.bbm.academy {
 	reverse_proxy app:3000
 }
 
 # Astro SSR live-preview origin (epic #13 / bbm-public-website#114). DNS
-# preview.bbm.academy -> 201.51.28.190 already resolves, so Caddy auto-provisions
+# preview.bbm.academy already resolves to this host, so Caddy auto-provisions
 # the LE cert on first start. Proxies to the `preview` container on 4321.
 # The CSP `frame-ancestors` lets ONLY the Payload admin (cms.bbm.academy) embed
 # this origin in its live-preview iframe, and bars every other site from framing
@@ -17,7 +17,7 @@ preview.bbm.academy {
 }
 
 # BBM Platform surface (issue #60 / spec 060, ADR-003). DNS
-# portal.bbm.academy -> 201.51.28.190 already resolves (owner, 2026-07-27), so
+# portal.bbm.academy already resolves to this host (owner, 2026-07-27), so
 # Caddy auto-provisions the LE cert on first start. Proxies into the SAME app
 # container as cms.bbm.academy — deliberately NO path matching here (spec 060
 # req.2): the host->surface allowlist in the Next middleware (Layer 1,
