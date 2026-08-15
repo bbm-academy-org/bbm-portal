@@ -1,0 +1,38 @@
+name: CI
+on: pull_request
+jobs:
+  # A batch job that DOES surface every WARN step, in the three shapes GitHub
+  # treats as reading an outcome (review of PR #245, blocker 1): an `if:` gate,
+  # a `uses:` step's `with:` body, and the index syntax inside a `run:`.
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - id: no-stub
+        continue-on-error: true
+        run: pnpm lint:no-stub
+      - id: ears-naming
+        continue-on-error: true
+        run: pnpm lint:ears-naming
+      - id: instruction-budget
+        continue-on-error: true
+        run: node tools/lint/instruction-budget-lint.mjs
+      - name: Annotate no-stub
+        if: ${{ !cancelled() && steps.no-stub.outcome == 'failure' }}
+        run: echo "::warning::no-stub reported a finding"
+      - name: Annotate ears-naming
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if ('${{ steps.ears-naming.outcome }}' === 'failure') {
+              core.warning('ears-naming reported a finding')
+            }
+      - name: Annotate instruction-budget
+        run: |
+          if [ "${{ steps['instruction-budget'].outcome }}" = "failure" ]; then
+            echo "::warning::instruction-budget reported a finding"
+          fi
+  ci:
+    needs: [guards]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
