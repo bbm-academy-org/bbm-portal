@@ -163,11 +163,15 @@ There is one chain and no translation tables, with Type as the primary:
 to create one — the task type stays `Task`.
 
 **A milestone is mandatory.** A milestone is a long-lived theme, not a spec and
-not an epic. There is currently one product theme — "Platform consolidation"; the
-permanent fallback **"Platform: operations and hardening"**, for process and
-operations tasks that fit no theme, is created by `pnpm taxonomy:bootstrap
---apply` (which also creates the `channel:*` labels). A task without a milestone
-is not created.
+not an epic. There is currently one product theme — "Platform consolidation".
+Beside the themes stand the **permanent milestones**, which are never closed and
+can therefore be referenced from configuration by name and by number: the
+fallback **"Platform: operations and hardening"**, for process and operations
+tasks that fit no theme, and **"Dependencies"**, which carries the PRs of the
+automated dependency-update routine (pinned by number in `renovate.json`). The
+set is owned by `tools/gh/bootstrap-taxonomy.mjs` and created by `pnpm
+taxonomy:bootstrap --apply` (which also creates the `channel:*` labels). A task
+without a milestone is not created.
 
 **Structural labels** (orthogonal to the taxonomy, they do not replace it):
 `epic` — an umbrella issue; `consolidation` — the thematic marker of the
@@ -323,7 +327,7 @@ artifact itself (the script's `--help` and its file header).
 | `pnpm board:status <issue> <status>`           | half of the claim (§4) and `Done` after a merge: `Closes #N` does not move the board column                           | `tools/gh/set-board-status.mjs`            |
 | `pnpm pr:land <pr>`                            | the PR closing tail in one command; the first failing stage stops the tail                                            | `tools/gh/pr-land.mjs`                     |
 | `pnpm backlog:triage`                          | readiness from the native graph, field hygiene, edges without a rationale, mega-blockers, claim-signal reconciliation | `tools/gh/backlog-triage.mjs`              |
-| `pnpm taxonomy:bootstrap [--apply]`            | creates the `channel:*` labels and the fallback milestone; deletes nothing                                            | `tools/gh/bootstrap-taxonomy.mjs`          |
+| `pnpm taxonomy:bootstrap [--apply]`            | creates the `channel:*` labels and the permanent milestones; deletes nothing                                          | `tools/gh/bootstrap-taxonomy.mjs`          |
 | `pnpm task:worktree <N>` / `worktree:teardown` | the worktree as the first claim signal (§4); the branch prefix is derived from Type                                   | `parallel-sessions.md`                     |
 | The `spec-issue-graph` skill                   | opening a connected set of tasks from a spec: sub-issues, edges, exactly one pickable                                 | `.claude/skills/spec-issue-graph/SKILL.md` |
 | Issue forms                                    | the owner's path from the web UI; the form sets Type and `channel:owner` itself, a blank issue is forbidden           | `.github/ISSUE_TEMPLATE/*.yml`             |
