@@ -272,6 +272,45 @@ describe('handoff-verify: ref extraction', () => {
     expect(runner.calls.filter((args) => args[0] === 'rev-parse')).toEqual([])
   })
 
+  it('does not treat the canonical prefix of a nested documentation path as a branch ref', () => {
+    const runner = makeRunner()
+    const result = verifyHandoff(
+      'ADR reference: docs/adr/002-repository-and-module-strategy.md',
+      runner,
+    )
+
+    expect(result.rows).toEqual([])
+    expect(result.exitCode).toBe(0)
+    expect(runner.calls.filter((args) => args[0] === 'rev-parse')).toEqual([])
+  })
+
+  it('does not overlap a qualified repo ref with a canonical-prefix branch candidate', () => {
+    const runner = makeRunner({
+      repositories: { 'docs/foo': { issues: { 149: 'open' } } },
+    })
+    const result = verifyHandoff('docs/foo#149 is open', runner)
+
+    expect(result.rows.map(renderRow)).toEqual(['PASS docs/foo#149 claimed=open actual=open'])
+    expect(
+      runner.calls.filter((args) => ['rev-parse', 'cat-file', 'merge-base'].includes(args[0])),
+    ).toEqual([])
+  })
+
+  it.each([
+    ['foo/abc1234#1 is open', 'foo/abc1234'],
+    ['abc1234/foo#1 is open', 'abc1234/foo'],
+  ])('does not overlap qualified repo %s with a SHA candidate', (input, repo) => {
+    const runner = makeRunner({
+      repositories: { [repo]: { issues: { 1: 'open' } } },
+    })
+    const result = verifyHandoff(input, runner)
+
+    expect(result.rows.map(renderRow)).toEqual([`PASS ${repo}#1 claimed=open actual=open`])
+    expect(
+      runner.calls.filter((args) => ['rev-parse', 'cat-file', 'merge-base'].includes(args[0])),
+    ).toEqual([])
+  })
+
   it('takes a sha only when it looks like one, and never inside a branch token', () => {
     expect(extractRefs('коммит f3c5c18 в ветке feat/92-hours').map((r) => r.value)).toEqual([
       'feat/92-hours',
