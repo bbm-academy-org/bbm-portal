@@ -333,6 +333,133 @@ describe('auditWorkflows — WARN step aggregation (#207)', () => {
       expect.objectContaining({ kind: 'unaggregated-warn-step', job: 'guards' }),
     ])
   })
+
+  /**
+   * Review of PR #245, blocker 1. "Surfaced" means what GITHUB treats as reading
+   * an outcome, not only a `run:` body — three legitimate shapes were flagged.
+   * Each of these workflows genuinely annotates its WARN step's finding.
+   */
+  it('accepts an annotate step gated by `if: steps.<id>.outcome` — no `run:` mention needed', () => {
+    const findings = auditWorkflows(
+      batch([
+        warnStep('no-stub', 'no-stub'),
+        {
+          name: 'annotate no-stub',
+          if: "steps.no-stub.outcome == 'failure'",
+          run: 'echo "::warning::no-stub reported a finding"',
+        },
+      ]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('accepts a `uses:` aggregator — actions/github-script reading the outcome in `with`', () => {
+    const findings = auditWorkflows(
+      batch([
+        warnStep('no-stub', 'no-stub'),
+        {
+          name: 'WARN guard outcomes',
+          uses: 'actions/github-script@v7',
+          with: { script: "core.warning('${{ steps.no-stub.outcome }}')" },
+        },
+      ]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([])
+  })
+
+  it("accepts GitHub's index syntax — steps['<id>'].outcome", () => {
+    const findings = auditWorkflows(
+      batch([
+        warnStep('no-stub', 'no-stub'),
+        { name: 'agg', run: 'echo "${{ steps[\'no-stub\'].outcome }}"' },
+      ]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([])
+  })
+
+  /** Review of PR #245, minor 1 — a command that merely NAMES a guard path. */
+  it('leaves a step that only mentions a guard path alone — it does not invoke one', () => {
+    const findings = auditWorkflows(
+      batch([
+        {
+          id: 'changed',
+          'continue-on-error': true,
+          run: 'git diff --name-only | grep tools/lint/no-stub-lint.mjs || true',
+        },
+      ]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([])
+  })
+
+  /** Review of PR #245, minor 4 — `\b` after a `:` made `pnpm lint:css` match the script `lint`. */
+  it('does not resolve `pnpm lint:css` through the script named `lint`', () => {
+    const findings = auditWorkflows(
+      batch([{ id: 'css', 'continue-on-error': true, run: 'pnpm lint:css' }]),
+      {
+        scriptMap: { lint: 'node tools/lint/no-stub-lint.mjs', 'lint:css': 'stylelint "**/*.css"' },
+      },
+    )
+    expect(findings).toEqual([])
+  })
+
+  /** Review of PR #245, minor 3 — an expression-valued flag is a runtime WARN too. */
+  it('holds a WARN step whose continue-on-error is an expression to the same rule', () => {
+    const findings = auditWorkflows(
+      batch([
+        {
+          id: 'no-stub',
+          'continue-on-error': "${{ github.event_name == 'pull_request' }}",
+          run: 'pnpm lint:no-stub',
+        },
+      ]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'unaggregated-warn-step', job: 'guards' }),
+    ])
+  })
+})
+
+/**
+ * Review of PR #245, minor 3. `continue-on-error: ${{ … }}` is legal YAML and
+ * legal Actions: the flag's value is only known at runtime, so the file no
+ * longer DECLARES a severity — which is what §2.1 requires it to do. Under the
+ * `=== true` reading it escaped both job checks at once.
+ */
+describe('auditWorkflows — an expression is not a declared severity (#207)', () => {
+  const ciDoc = (jobs: Record<string, unknown>) => [
+    { file: '.github/workflows/ci.yml', doc: { jobs } },
+  ]
+
+  it('flags an expression-valued continue-on-error on a needs-listed job', () => {
+    const findings = auditWorkflows(
+      ciDoc({
+        guards: { 'continue-on-error': "${{ github.event_name == 'push' }}", steps: [] },
+        ci: { needs: ['guards'], steps: [] },
+      }),
+    )
+    expect(findings).toEqual([
+      expect.objectContaining({
+        kind: 'undeclared-severity',
+        job: 'guards',
+        detail: expect.stringContaining('expression'),
+      }),
+    ])
+  })
+
+  it('flags it on a job absent from the needs-list too — the severity is still unreadable', () => {
+    const findings = auditWorkflows(
+      ciDoc({
+        orphan: { 'continue-on-error': '${{ inputs.soft }}', steps: [] },
+        ci: { needs: ['build'], steps: [] },
+      }),
+    )
+    expect(findings.map((f) => f.kind)).toEqual(['undeclared-severity'])
+  })
 })
 
 describe('workflow-auth (spawned)', () => {
@@ -352,6 +479,12 @@ describe('workflow-auth (spawned)', () => {
     const res = runGuard('workflow-auth-lint.mjs', caseDir('workflow-auth', 'warn-step-no-row'))
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('unaggregated-warn-step')
+  })
+
+  it('exits 0 on a batch job that surfaces its WARN steps through `if:` and `uses:` (#245 review)', () => {
+    const res = runGuard('workflow-auth-lint.mjs', caseDir('workflow-auth', 'warn-step-surfaced'))
+    expect(res.stderr).toBe('')
+    expect(res.code).toBe(0)
   })
 
   it('exits 0 against the REAL repo tree — this repo wires its own guard jobs', () => {
