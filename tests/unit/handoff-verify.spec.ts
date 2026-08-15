@@ -311,6 +311,95 @@ describe('handoff-verify: ref extraction', () => {
     ).toEqual([])
   })
 
+  it.each([
+    'docs/specs/abc1234.md',
+    'docs/specs/file-abc1234.md',
+    'fix/path/abc1234.ts',
+    'docs\\specs\\abc1234.md',
+    'abc1234.md',
+  ])('does not extract refs from extension-bearing file token %s', (path) => {
+    const runner = makeRunner()
+    const result = verifyHandoff(`File reference: ${path}`, runner)
+
+    expect(result.rows).toEqual([])
+    expect(result.exitCode).toBe(0)
+    expect(runner.calls).toEqual([])
+  })
+
+  it.each([
+    'docs/guide.md#149',
+    'docs/guide#149.md',
+    'https://example.test/docs/guide.md#149',
+    'guide.md#149',
+    'docs\\guide.md#149',
+    'guide.md?issue=#149',
+  ])('gives file-like token %s precedence over GitHub number parsing', (path) => {
+    const runner = makeRunner()
+    const result = verifyHandoff(`File reference: ${path}`, runner)
+
+    expect(result.rows).toEqual([])
+    expect(result.exitCode).toBe(0)
+    expect(runner.calls).toEqual([])
+  })
+
+  it('keeps file-like GitHub shapes out of approval-claim extraction', () => {
+    for (const path of [
+      'docs/guide.md#149',
+      'docs/guide#149.md',
+      'guide.md#149',
+      'docs\\guide.md#149',
+    ]) {
+      expect(extractApprovalClaims(`Owner-approved ${path}`)).toEqual([])
+    }
+
+    const runner = makeRunner()
+    verifyHandoff('Owner-approved docs/guide.md#149', runner)
+    expect(runner.calls).toEqual([])
+  })
+
+  it('preserves refs separated from a file token by segment punctuation without whitespace', () => {
+    for (const input of ['#149,docs/foo.md', 'docs/foo.md,#149']) {
+      const issueRunner = makeRunner({ issues: { 149: 'open' } })
+      expect(verifyHandoff(input, issueRunner).rows.map(renderRow)).toEqual([
+        'INFO #149 claimed=- actual=open',
+      ])
+    }
+
+    const foreignRunner = makeRunner({
+      repositories: { 'sidorovanthon/bbm': { issues: { 149: 'open' } } },
+    })
+    expect(
+      verifyHandoff('sidorovanthon/bbm#149;docs/foo.md', foreignRunner).rows.map(renderRow),
+    ).toEqual(['INFO sidorovanthon/bbm#149 claimed=- actual=open'])
+
+    for (const input of ['abc1234;docs/foo.md', 'abc1234—docs/foo.md', 'docs/foo.md;abc1234']) {
+      const shaRunner = makeRunner({ merged: ['abc1234'] })
+      expect(verifyHandoff(input, shaRunner).rows.map(renderRow)).toEqual([
+        'INFO abc1234 claimed=- actual=merged',
+      ])
+    }
+  })
+
+  it('preserves extension-free repo refs and standalone refs adjacent to file paths', () => {
+    const qualifiedRunner = makeRunner({
+      repositories: { 'docs/guide': { issues: { 149: 'open' } } },
+    })
+    expect(verifyHandoff('docs/guide#149 is open', qualifiedRunner).rows.map(renderRow)).toEqual([
+      'PASS docs/guide#149 claimed=open actual=open',
+    ])
+
+    const issueRunner = makeRunner({ issues: { 149: 'open' } })
+    expect(
+      verifyHandoff('File: docs/guide.md; issue #149 is open', issueRunner).rows.map(renderRow),
+    ).toEqual(['PASS #149 claimed=open actual=open'])
+
+    const shaRunner = makeRunner({ merged: ['abc1234'] })
+    expect(
+      verifyHandoff('File: docs/guide.md; commit abc1234 is merged', shaRunner).rows.map(renderRow),
+    ).toEqual(['PASS abc1234 claimed=merged actual=merged'])
+    expect(shaRunner.calls.some((args) => args[0] === 'cat-file')).toBe(true)
+  })
+
   it('takes a sha only when it looks like one, and never inside a branch token', () => {
     expect(extractRefs('коммит f3c5c18 в ветке feat/92-hours').map((r) => r.value)).toEqual([
       'feat/92-hours',
