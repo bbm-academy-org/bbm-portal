@@ -34,4 +34,4 @@ tools/**/*.mjs text eol=lf
 
 # DEBT.md is an append-only ledger: concurrent branches that add distinct
 # entry blocks should keep both blocks instead of forcing a hand-resolved merge.
-DEBT.md merge=union
+/DEBT.md merge=union

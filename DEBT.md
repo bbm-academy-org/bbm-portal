@@ -15,11 +15,11 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
 - **Append-only order:** add new active entries at the end of the active-entry
   block, below existing active entries and above historical sweep notes. Do not
   reorder existing entries during ordinary task work.
-- **Merge semantics:** root `.gitattributes` sets `DEBT.md merge=union`, so two
-  branches that append different entry blocks keep both blocks instead of
-  conflicting. The tradeoff is that Git can keep a duplicate if two branches add
-  the same text; a sweep removes or promotes duplicates like any other stale
-  bookkeeping.
+- **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
+  two branches that append different root-ledger entry blocks keep both blocks
+  instead of conflicting. The tradeoff is that Git can keep a duplicate if two
+  branches add the same text; a sweep removes or promotes duplicates like any
+  other stale bookkeeping.
 - **Why not newest-first:** putting new entries at the top would still make
   concurrent branches edit the same top hunk. It helps sweep ergonomics, not the
   merge-conflict root cause, so this file stays append-only with the union
