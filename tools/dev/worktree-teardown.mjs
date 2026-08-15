@@ -35,9 +35,9 @@
 // (fail loud — a typo must never masquerade as a clean teardown).
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, resolve, win32 } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const IS_WIN = process.platform === 'win32'
@@ -122,6 +122,47 @@ export function classifyTeardownTarget(absPath, registeredPaths, exists = exists
 export function branchDeletionDecision(branch, isMergedIntoMain) {
   if (!branch) return 'detached'
   return isMergedIntoMain ? 'delete' : 'keep'
+}
+
+function envNamesBranchDatabase(envContents, taskId) {
+  const expected = `platform_${taskId}`
+  for (const line of String(envContents ?? '').split(/\r?\n/)) {
+    const match = /^PLATFORM_DATABASE_URL=(.*)$/.exec(line.trim())
+    if (!match) continue
+    const value = match[1].trim().replace(/^['"]|['"]$/g, '')
+    try {
+      return new URL(value).pathname.replace(/^\//, '').toLowerCase() === expected
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+export function branchDatabaseTeardownPlan(rawArg, absPath, root, localEnvContents = '') {
+  const numericArg = /^[1-9][0-9]*$/.test(String(rawArg ?? '')) ? String(rawArg) : null
+  const container = normPath(join(root ?? '', '.claude', 'worktrees'))
+  const target = normPath(absPath)
+  const rel = target.startsWith(`${container}/`) ? target.slice(container.length + 1) : ''
+  const firstSegment = rel.split('/')[0] ?? ''
+  const pathId = /^[1-9][0-9]*$/.test(firstSegment)
+    ? firstSegment
+    : /^[1-9][0-9]*$/.test(basename(absPath))
+      ? basename(absPath)
+      : null
+
+  if (numericArg && pathId && numericArg !== pathId) {
+    throw new Error(`numeric task id mismatch: argument ${numericArg}, worktree path ${pathId}`)
+  }
+  const taskId = numericArg ?? pathId
+  if (!taskId) return { action: 'skip', reason: 'not a numeric task worktree' }
+  if (!envNamesBranchDatabase(localEnvContents, taskId)) {
+    return {
+      action: 'skip',
+      reason: `no local PLATFORM_DATABASE_URL marker for platform_${taskId}`,
+    }
+  }
+  return { action: 'drop', taskId }
 }
 
 // ── impure CLI ───────────────────────────────────────────────────────────────
@@ -279,6 +320,30 @@ function probeWorkingTree(absPath) {
     : { state: 'dirty', detail: res.stdout.trimEnd() }
 }
 
+function scriptRepoRoot() {
+  return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+}
+
+function dropBranchDatabaseBeforeWorktreeRemoval(taskId, absPath) {
+  const script = join(scriptRepoRoot(), 'tools', 'platform', 'branch-database.mjs')
+  const envWithoutPlatformUrl = { ...process.env }
+  delete envWithoutPlatformUrl.PLATFORM_DATABASE_URL
+  return run(process.execPath, [script, 'drop', taskId, '--env-root', absPath], {
+    cwd: existsSync(absPath) ? absPath : scriptRepoRoot(),
+    env: envWithoutPlatformUrl,
+  })
+}
+
+function readLocalEnv(absPath) {
+  const path = join(absPath, '.env')
+  if (!existsSync(path)) return ''
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
 function main() {
   const args = process.argv.slice(2)
   let keepBranch = false
@@ -373,6 +438,27 @@ function main() {
   }
   if (tree.state === 'not-a-worktree') {
     out(`'${absPath}' is no longer a git worktree (deregistered leftover) — purging the directory.`)
+  }
+
+  let dbPlan
+  try {
+    dbPlan = branchDatabaseTeardownPlan(positional[0], absPath, root, readLocalEnv(absPath))
+  } catch (err) {
+    die(`cannot decide branch database teardown safely: ${err?.message ?? String(err)}`, 1)
+  }
+  if (dbPlan.action === 'drop') {
+    const db = dropBranchDatabaseBeforeWorktreeRemoval(dbPlan.taskId, absPath)
+    if (db.status !== 0) {
+      die(
+        `branch database teardown for platform_${dbPlan.taskId} failed; refusing to remove the worktree ` +
+          `and claim cleanup succeeded.\n${(db.stdout + db.stderr).trim()}`,
+        1,
+      )
+    }
+    out(`branch database platform_${dbPlan.taskId} removed (or already absent).`)
+    if (db.stdout.trim()) out(db.stdout.trim())
+  } else {
+    out(`branch database teardown skipped: ${dbPlan.reason}.`)
   }
 
   const branch = resolveWorktreeBranch(root, absPath)

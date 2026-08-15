@@ -1,57 +1,25 @@
 #!/usr/bin/env node
 // bbm-portal — `pnpm platform:db:ensure`: create the `platform` database if it
 // is missing, idempotently (#125).
-//
-//   pnpm platform:db:ensure          create it if absent, then exit
-//   pnpm platform:migrate            runs this first, then drizzle-kit migrate
-//
-// WHY this exists rather than a compose change. The `platform` database lives in
-// the SAME Postgres instance as `cms` (spec 2026-08-04 §4), and a Postgres
-// container creates exactly one database from POSTGRES_DB — the second one has
-// to be created by somebody. The dev Zitadel already solves it the same way: it
-// connects as the superuser and creates its own `zitadel` database on first
-// boot. Doing it here means dev and prod bootstrap through ONE code path, and a
-// fresh `pgdata` volume needs no hand-run psql on either side.
-//
-// FAIL-CLOSED and narrow on purpose. It connects to the maintenance database
-// derived from PLATFORM_DATABASE_URL, runs at most one `CREATE DATABASE`, and
-// refuses every input where that could mean something else: a non-postgres
-// scheme, a missing database name, a name that is not a plain identifier, the
-// maintenance database itself, or `cms` — Payload's database, which this tool
-// must never so much as name in a DDL statement.
-//
-// It never drops, never migrates and never touches a schema; `drizzle-kit
-// migrate` owns everything from `CREATE SCHEMA "core"` onwards.
 
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { loadDotEnv } from './load-env.mjs'
+import { loadPlatformToolEnv } from './load-env.mjs'
 
-/** The database every Postgres server has, used only to issue CREATE DATABASE. */
 export const MAINTENANCE_DATABASE = 'postgres'
-
-/** Payload's database. Naming it here is always a mistake — see the header. */
 export const PAYLOAD_DATABASE = 'cms'
+export const PLATFORM_DATABASE = 'platform'
+export const BRANCH_DATABASE_RE = /^platform_([1-9][0-9]*)$/
 
-/** Plain, unquoted-safe Postgres identifier. Anything else is refused. */
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_$]*$/
 
-/** Quote an identifier for DDL. The name is validated first; this is belt-and-braces. */
+// DDL cannot bind identifiers as parameters; every database name must pass this
+// regex before it can reach CREATE/DROP.
 export function quoteIdentifier(name) {
   return `"${String(name).replace(/"/g, '""')}"`
 }
 
-/**
- * Split a platform connection string into "the database to ensure" and "the
- * connection to ensure it from". Pure; never throws — a bad string comes back as
- * `{ ok: false, error }` so the caller prints one diagnostic instead of a stack.
- *
- * The maintenance URL is the SAME string with only the path swapped, so
- * credentials, port and query parameters (`sslmode`, …) are carried over
- * verbatim rather than re-assembled — re-assembly is how a `sslmode=require`
- * quietly goes missing between two connections to the same server.
- */
 export function deriveMaintenanceTarget(connectionString) {
   const raw = typeof connectionString === 'string' ? connectionString.trim() : ''
   if (!raw) {
@@ -72,8 +40,8 @@ export function deriveMaintenanceTarget(connectionString) {
     }
   }
 
-  // `pathname` keeps its percent-encoding; a database name that needed any is
-  // not a plain identifier and is refused below anyway.
+  // Keep pathname encoding intact: a name that needed decoding is not a plain
+  // identifier and must fail closed below.
   const database = url.pathname.replace(/^\//, '')
   if (!database) {
     return { ok: false, error: `no database name in the connection string (${raw})` }
@@ -84,9 +52,9 @@ export function deriveMaintenanceTarget(connectionString) {
       error: `refusing to create a database whose name is not a plain identifier: ${JSON.stringify(database)}`,
     }
   }
-  // Case-insensitive: `"CMS"` really would be a distinct database in Postgres,
-  // but this tool's contract is that it never names Payload's in a DDL statement
-  // at all, and a case-sensitive compare would let the whole class through.
+
+  // Case-insensitive refusal is intentional: quoted "CMS" would be distinct in
+  // Postgres, but this tool's contract is to never name Payload's DB in DDL.
   const normalized = database.toLowerCase()
   if (normalized === MAINTENANCE_DATABASE) {
     return {
@@ -105,6 +73,8 @@ export function deriveMaintenanceTarget(connectionString) {
     }
   }
 
+  // Swap only the path, preserving credentials, port and query params such as
+  // sslmode; rebuilding URLs is how maintenance connections silently drift.
   const maintenance = new URL(url.toString())
   maintenance.pathname = `/${MAINTENANCE_DATABASE}`
   return {
@@ -115,18 +85,81 @@ export function deriveMaintenanceTarget(connectionString) {
   }
 }
 
-/** The one line this tool prints on success. Pure — it always says what it DID. */
 export function formatEnsureOutcome({ database, created, host }) {
   return created
     ? `  ✓ database ${database} CREATED on ${host}`
     : `  ✓ database ${database} already exists on ${host} — nothing to do`
 }
 
-// ── the live half ────────────────────────────────────────────────────────────
+export function assertDroppableBranchDatabaseName(database, taskId) {
+  const task = String(taskId ?? '').trim()
+  const match = BRANCH_DATABASE_RE.exec(String(database ?? ''))
+  if (!match || match[1] !== task) {
+    throw new Error(
+      `refusing to drop database ${JSON.stringify(database)}: only platform_<numeric-task-id> ` +
+        `derived from this worktree (${task || 'missing task id'}) may be dropped`,
+    )
+  }
+  return true
+}
+
+export function formatDropOutcome({ database, existed, host }) {
+  return existed
+    ? `  ✓ database ${database} DROPPED on ${host}`
+    : `  ✓ database ${database} already absent on ${host} — nothing to do`
+}
+
+export async function ensureDatabase(connectionString, { Client } = {}) {
+  const target = deriveMaintenanceTarget(connectionString)
+  if (!target.ok) throw new Error(target.error)
+
+  const ClientImpl = Client ?? (await import('pg')).Client
+  const client = new ClientImpl({ connectionString: target.maintenanceUrl })
+  await client.connect()
+  try {
+    const { rowCount } = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [
+      target.database,
+    ])
+    const created = rowCount === 0
+    // This is the full live scope of the ensure seam: one optional CREATE
+    // DATABASE, no schemas and no migrations.
+    if (created) await client.query(`CREATE DATABASE ${quoteIdentifier(target.database)}`)
+    return { database: target.database, created, host: target.host }
+  } finally {
+    await client.end()
+  }
+}
+
+export async function dropBranchDatabase(connectionString, taskId, { Client } = {}) {
+  const target = deriveMaintenanceTarget(connectionString)
+  if (!target.ok) throw new Error(target.error)
+  // Drop is narrower than ensure: only the exact branch DB derived from the task
+  // id can pass, never shared `platform` and never Payload `cms`.
+  assertDroppableBranchDatabaseName(target.database, taskId)
+
+  const ClientImpl = Client ?? (await import('pg')).Client
+  const client = new ClientImpl({ connectionString: target.maintenanceUrl })
+  await client.connect()
+  try {
+    const { rowCount } = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [
+      target.database,
+    ])
+    const existed = rowCount > 0
+    if (existed) {
+      await client.query(
+        'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
+        [target.database],
+      )
+      await client.query(`DROP DATABASE ${quoteIdentifier(target.database)}`)
+    }
+    return { database: target.database, existed, host: target.host }
+  } finally {
+    await client.end()
+  }
+}
 
 async function main() {
-  // `.env` first, the environment wins (see ./load-env.mjs).
-  loadDotEnv()
+  loadPlatformToolEnv()
   const target = deriveMaintenanceTarget(process.env.PLATFORM_DATABASE_URL)
   if (!target.ok) {
     console.error(
@@ -137,25 +170,8 @@ async function main() {
     process.exit(1)
   }
 
-  // Imported lazily so the pure seams above stay importable in tests without pg.
-  const { Client } = await import('pg')
-  const client = new Client({ connectionString: target.maintenanceUrl })
-  await client.connect()
-  try {
-    const { rowCount } = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [
-      target.database,
-    ])
-    const created = rowCount === 0
-    if (created) {
-      // No parameter binding is possible in DDL, hence the identifier validation
-      // in deriveMaintenanceTarget — the name reached here only if it matched
-      // IDENTIFIER_RE.
-      await client.query(`CREATE DATABASE ${quoteIdentifier(target.database)}`)
-    }
-    console.log(formatEnsureOutcome({ database: target.database, created, host: target.host }))
-  } finally {
-    await client.end()
-  }
+  const outcome = await ensureDatabase(process.env.PLATFORM_DATABASE_URL)
+  console.log(formatEnsureOutcome(outcome))
 }
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : ''
