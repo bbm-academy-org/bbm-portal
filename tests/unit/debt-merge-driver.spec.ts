@@ -240,18 +240,31 @@ const parseActiveRegion = (text: string) => {
     .slice(start + activeStartMarker.length, end)
     .trim()
     .split('\n')) {
+    if (line.trim() === '') continue
+
     if (line.startsWith('- [ ] ')) {
       if (current.length > 0) blocks.push(current.join('\n').trim())
       current = [line]
       continue
     }
 
-    if (line.startsWith('<!-- debt-entry-end: ') && current.length === 0) {
-      current = [line]
+    if (line.startsWith('<!-- debt-entry-end: ')) {
+      if (current.length === 0) {
+        blocks.push(line)
+      } else {
+        current.push(line)
+        blocks.push(current.join('\n').trim())
+        current = []
+      }
       continue
     }
 
-    if (current.length > 0) current.push(line)
+    if (current.length > 0) {
+      current.push(line)
+      continue
+    }
+
+    throw new Error('DEBT.md active text after anchor must start a new bullet')
   }
 
   if (current.length > 0) blocks.push(current.join('\n').trim())
@@ -370,6 +383,18 @@ describe('DEBT.md merge protocol', () => {
       expect(anchors.has(matches[0]![1]), matches[0]![1]).toBe(false)
       anchors.add(matches[0]![1])
     }
+  })
+
+  it('parses each active body with its closing anchor and rejects text after an anchor', () => {
+    expect(parseActiveRegion(renderDebt([activeBlock(baseBody, 'base-entry')]))).toEqual([
+      activeBlock(baseBody, 'base-entry'),
+    ])
+    expect(parseActiveRegion(renderDebt([endAnchor('swept-entry')]))).toEqual([
+      endAnchor('swept-entry'),
+    ])
+    expect(() =>
+      parseActiveRegion(renderDebt([`${activeBlock(baseBody, 'base-entry')}\nstray continuation`])),
+    ).toThrow('DEBT.md active text after anchor must start a new bullet')
   })
 
   it('detects a sweep that deletes an anchor together with its body from repository history', () => {
