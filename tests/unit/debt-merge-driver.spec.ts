@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -73,8 +73,18 @@ describe('DEBT.md merge driver', () => {
         ].join('\n'),
         'utf8',
       )
+      mkdirSync(join(root, 'nested'))
+      writeFileSync(
+        join(root, 'nested', 'DEBT.md'),
+        '# nested debt is not the root ledger\n',
+        'utf8',
+      )
 
-      git(root, ['add', '.gitattributes', 'DEBT.md'])
+      expect(git(root, ['check-attr', 'merge', '--', 'DEBT.md', 'nested/DEBT.md']).stdout).toBe(
+        ['DEBT.md: merge: union', 'nested/DEBT.md: merge: unspecified', ''].join('\n'),
+      )
+
+      git(root, ['add', '.gitattributes', 'DEBT.md', 'nested/DEBT.md'])
       git(root, ['commit', '-m', 'base'])
 
       git(root, ['checkout', '-b', 'alpha'])
