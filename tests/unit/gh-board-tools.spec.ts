@@ -369,7 +369,9 @@ describe('bootstrap-taxonomy — plan', () => {
       missingTypes: [],
       renovatePin: check,
     })
-    expect(lines.join('\n')).toContain('(not a number)')
+    expect(lines.join('\n')).toContain(
+      'cannot check milestone pin «Dependencies» in renovate.json (not a number): the milestone itself does not exist yet',
+    )
     expect(lines.join('\n')).not.toContain('#(not a number)')
   })
 
