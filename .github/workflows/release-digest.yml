@@ -81,7 +81,10 @@ jobs:
           if [ -n "$INPUT_SHA" ]; then
             sha="$INPUT_SHA"
           else
-            sha="$(gh api repos/{owner}/{repo}/deployments -f environment=production -F per_page=1 --jq '.[0].sha' 2>/dev/null || true)"
+            # Field flags default `gh api` to POST; explicit GET keeps this a read.
+            if ! sha="$(gh api --method GET repos/{owner}/{repo}/deployments -f environment=production -F per_page=1 --jq '.[0].sha' 2>/dev/null)"; then
+              sha=""
+            fi
             if [ -z "$sha" ] || [ "$sha" = "null" ]; then
               sha="$(git rev-parse HEAD)"
             fi
