@@ -30,6 +30,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `tests/unit/debt-merge-driver.spec.ts` verifies that every DEBT.md
+          # anchor ever added still exists, so the blocking unit-test job needs
+          # full history rather than the default shallow checkout.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 

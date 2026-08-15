@@ -31,3 +31,8 @@ infra/dev-stand/**/*.sh text eol=lf
 # `tools/dev/*.mjs` + `tools/hooks/*.mjs` уже пропустили `tools/ops/` — его
 # спека падала локально ровно так с момента появления.
 tools/**/*.mjs text eol=lf
+
+# DEBT.md uses immutable per-entry end anchors plus one permanent append marker;
+# that shape makes Git's built-in union driver safe for concurrent active appends
+# and for sweep-delete + append merges on GitHub/server-side merges.
+/DEBT.md merge=union
