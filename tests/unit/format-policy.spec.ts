@@ -7,11 +7,11 @@ import lintStaged from 'lint-staged'
 import { check, getFileInfo } from 'prettier'
 import { describe, expect, it } from 'vitest'
 
-type LintStagedTask = string | string[]
+import { createLintStagedConfig, prettierGlobs, stylelintGlob } from '../../lint-staged.config.mjs'
 
 type PackageConfig = {
   scripts: Record<string, string>
-  'lint-staged': Record<string, LintStagedTask>
+  'lint-staged'?: unknown
 }
 
 const repoRoot = resolve(import.meta.dirname, '..', '..')
@@ -25,14 +25,6 @@ const ciWorkflow = readFileSync(resolve(repoRoot, '.github', 'workflows', 'ci.ym
 
 const formatCheckGlobs = (script: string) =>
   [...script.matchAll(/"([^"]+)"/g)].map((match) => match[1])
-
-const lintStagedPrettierGlobs = (config: Record<string, LintStagedTask>) =>
-  Object.entries(config)
-    .filter(([, task]) => {
-      const commands = Array.isArray(task) ? task : [task]
-      return commands.some((command) => command.startsWith('prettier '))
-    })
-    .map(([glob]) => glob)
 
 const assertAlignedPrettierPolicy = (checked: string[], written: string[]) => {
   const checkedSet = new Set(checked)
@@ -93,10 +85,14 @@ describe('format-check and pre-commit policy', () => {
   }, 20_000)
 
   it('keeps format:check and lint-staged Prettier globs identical', () => {
+    expect(
+      packageConfig['lint-staged'],
+      'lint-staged policy must live only in lint-staged.config.mjs',
+    ).toBeUndefined()
     expect(() =>
       assertAlignedPrettierPolicy(
         formatCheckGlobs(packageConfig.scripts['format:check']),
-        lintStagedPrettierGlobs(packageConfig['lint-staged']),
+        prettierGlobs,
       ),
     ).not.toThrow()
   })
@@ -108,6 +104,20 @@ describe('format-check and pre-commit policy', () => {
     expect(() => assertAlignedPrettierPolicy([...aligned, oneSidedGlob], aligned)).toThrow(
       `Prettier policy divergence: format:check-only=[${oneSidedGlob}]`,
     )
+  })
+
+  it('limits stylelint writes to the blocking lint:css surface', () => {
+    const config = createLintStagedConfig(repoRoot)
+
+    expect(formatCheckGlobs(packageConfig.scripts['lint:css'])).toEqual([stylelintGlob])
+    expect(
+      config([resolve(repoRoot, 'outside.css')]),
+      'stylelint must not write CSS that pnpm lint:css never verifies',
+    ).toEqual([])
+    expect(config([resolve(repoRoot, 'src', 'inside.css')])).toEqual([
+      `stylelint --fix "${resolve(repoRoot, 'src', 'inside.css')}"`,
+      `prettier --write "${resolve(repoRoot, 'src', 'inside.css')}"`,
+    ])
   })
 
   it('leaves staged pnpm-lock.yaml bytes untouched when lint-staged runs', async () => {
@@ -138,8 +148,7 @@ describe('format-check and pre-commit policy', () => {
       })
 
       const success = await lintStaged({
-        concurrent: false,
-        config: packageConfig['lint-staged'],
+        config: createLintStagedConfig(fixtureRepo),
         cwd: fixtureRepo,
         quiet: true,
         stash: false,
@@ -178,8 +187,7 @@ describe('format-check and pre-commit policy', () => {
       git(fixtureRepo, ['add', 'README.md', 'fixture.json'])
 
       const success = await lintStaged({
-        concurrent: false,
-        config: packageConfig['lint-staged'],
+        config: createLintStagedConfig(fixtureRepo),
         cwd: fixtureRepo,
         quiet: true,
         stash: false,

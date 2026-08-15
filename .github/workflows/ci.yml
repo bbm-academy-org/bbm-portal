@@ -58,6 +58,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Generated Payload types match config
+        run: pnpm generate:types:check
+
       # ADR-002: machine-enforced module boundaries of the modular monolith
       - name: Module boundaries (dependency-cruiser)
         run: pnpm boundaries
