@@ -137,19 +137,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-06-9c4363b31b -->
 
-- [ ] 2026-08-06 `release-digest.yml` "Resolve target sha" step: the
-      `gh api … -f environment=production -F per_page=1` call turns the request
-      into a POST (create-a-deployment), which 403s under `deployments: read`;
-      the error JSON lands on stdout, so `$sha` is polluted and the
-      `git rev-parse HEAD` fallback never fires — a `workflow_dispatch` backfill
-      WITHOUT an explicit `sha` input always skips green. Workaround: pass the
-      sha explicitly (that path is verified working, 2026-08-06). Return
-      condition: next edit to `release-digest.yml`, or the first backfill
-      dispatch that needs the empty-sha path (#137, first live digest run).
-      **Return condition FIRED and promoted 2026-08-15: `cce6631` (#215) edited
-      this workflow without the fix → #236.** This line goes at the sweep after
-      #236 closes.
-
 <!-- debt-entry-end: 2026-08-06-620bacd10f -->
 
 - [ ] 2026-08-05 `deploy:smoke` / `deploy:notes` have no `pre*` Node-version
