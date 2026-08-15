@@ -1,0 +1,26 @@
+name: CI
+on: pull_request
+jobs:
+  # The batch shape: severity lives on the STEP, and a WARN step's finding
+  # surfaces only through its row in the aggregation step. `ears-naming` has no
+  # row — its finding is swallowed whole (#207).
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - id: no-stub
+        continue-on-error: true
+        run: pnpm lint:no-stub
+      - id: ears-naming
+        continue-on-error: true
+        run: pnpm lint:ears-naming
+      - name: WARN guard outcomes
+        if: ${{ !cancelled() }}
+        run: |
+          if [ "${{ steps.no-stub.outcome }}" = "failure" ]; then
+            echo "::warning::no-stub reported a finding"
+          fi
+  ci:
+    needs: [guards]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

@@ -197,11 +197,161 @@ describe('auditWorkflows — declared severity (canon §2.1)', () => {
   })
 })
 
+/**
+ * #207, first half. The `undeclared-severity` rule above covers the THIRD state
+ * (neither WARN nor BLOCK). The FOURTH is a job that is BOTH: listed in the `ci`
+ * needs-list — where it reads as a gate — while `continue-on-error: true` means
+ * its failure can no longer redden the aggregate. A vacuous BLOCK, and with the
+ * batch shape one such flag masks every guard in the job at once.
+ */
+describe('auditWorkflows — vacuous BLOCK (#207)', () => {
+  const ciDoc = (jobs: Record<string, unknown>) => [
+    { file: '.github/workflows/ci.yml', doc: { jobs } },
+  ]
+
+  it('flags a needs-listed job that also carries continue-on-error', () => {
+    const findings = auditWorkflows(
+      ciDoc({
+        guards: { 'continue-on-error': true, steps: [{ run: 'pnpm lint:no-stub' }] },
+        ci: { needs: ['guards'], steps: [{ run: 'echo ok' }] },
+      }),
+    )
+    expect(findings).toEqual([expect.objectContaining({ kind: 'vacuous-block', job: 'guards' })])
+  })
+
+  it('reports the fourth state ONCE — it is not also an undeclared severity', () => {
+    const findings = auditWorkflows(
+      ciDoc({
+        guards: { 'continue-on-error': true, steps: [] },
+        ci: { needs: ['guards'], steps: [] },
+      }),
+    )
+    expect(findings.map((f) => f.kind)).toEqual(['vacuous-block'])
+  })
+
+  it('accepts a real BLOCK job — needs-listed and no continue-on-error', () => {
+    const findings = auditWorkflows(
+      ciDoc({
+        guards: { steps: [{ run: 'pnpm test:guards' }] },
+        ci: { needs: ['guards'], steps: [] },
+      }),
+    )
+    expect(findings).toEqual([])
+  })
+})
+
+/**
+ * #207, second half (review of PR #206, MAJOR 4). In a batch job the severity
+ * moved from the job to the STEP: a guard step carries `continue-on-error: true`
+ * and its finding surfaces only through a row in the job's WARN-outcomes
+ * aggregation step. A step with no row is invisible — the finding is swallowed
+ * and §4's promotion window is counted off a table that omits it.
+ */
+describe('auditWorkflows — WARN step aggregation (#207)', () => {
+  const AGG = {
+    name: 'WARN guard outcomes',
+    run: 'if [ "${{ steps.no-stub.outcome }}" = "failure" ]; then echo "::warning::no-stub"; fi',
+  }
+  const warnStep = (id: string, script: string) => ({
+    id,
+    'continue-on-error': true,
+    run: `pnpm lint:${script}`,
+  })
+  const batch = (steps: unknown[]) => [
+    { file: '.github/workflows/ci.yml', doc: { jobs: { guards: { steps } } } },
+  ]
+  const SCRIPTS = {
+    'lint:no-stub': 'node tools/lint/no-stub-lint.mjs',
+    'lint:ears-naming': 'node tools/lint/ears-naming-lint.mjs',
+  }
+
+  it('accepts a batch job whose every WARN step has a row', () => {
+    const findings = auditWorkflows(batch([warnStep('no-stub', 'no-stub'), AGG]), {
+      scriptMap: SCRIPTS,
+    })
+    expect(findings).toEqual([])
+  })
+
+  it('flags a WARN step the aggregation step never reads', () => {
+    const findings = auditWorkflows(
+      batch([warnStep('no-stub', 'no-stub'), warnStep('ears-naming', 'ears-naming'), AGG]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([
+      expect.objectContaining({
+        kind: 'unaggregated-warn-step',
+        detail: expect.stringContaining('ears-naming'),
+      }),
+    ])
+  })
+
+  it('flags a WARN guard step with no `id:` — no row can ever reference it', () => {
+    const findings = auditWorkflows(
+      batch([{ 'continue-on-error': true, run: 'pnpm lint:no-stub' }, AGG]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([
+      expect.objectContaining({
+        kind: 'unaggregated-warn-step',
+        detail: expect.stringContaining('id'),
+      }),
+    ])
+  })
+
+  it('flags every WARN step when the job has no aggregation step at all', () => {
+    const findings = auditWorkflows(
+      batch([warnStep('no-stub', 'no-stub'), warnStep('ears-naming', 'ears-naming')]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings.map((f) => f.kind)).toEqual([
+      'unaggregated-warn-step',
+      'unaggregated-warn-step',
+    ])
+  })
+
+  it('leaves a non-guard continue-on-error step alone — the rule is about guard steps', () => {
+    const findings = auditWorkflows(batch([{ 'continue-on-error': true, run: 'rm -rf tmp' }]), {
+      scriptMap: SCRIPTS,
+    })
+    expect(findings).toEqual([])
+  })
+
+  it('demands no row from a plain (BLOCK) guard step in the same batch job', () => {
+    const findings = auditWorkflows(
+      batch([{ id: 'guard-tests', run: 'pnpm test:guards' }, warnStep('no-stub', 'no-stub'), AGG]),
+      { scriptMap: SCRIPTS },
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('recognises a guard invoked by path, not only through its pnpm alias', () => {
+    const findings = auditWorkflows(
+      batch([{ id: 'orphan', 'continue-on-error': true, run: 'node tools/lint/no-stub-lint.mjs' }]),
+      {},
+    )
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'unaggregated-warn-step', job: 'guards' }),
+    ])
+  })
+})
+
 describe('workflow-auth (spawned)', () => {
   it('exits 1 on a workflow whose gh-gated job has no auth block', () => {
     const res = runGuard('workflow-auth-lint.mjs', caseDir('workflow-auth', 'unwired'))
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('missing-permission')
+  })
+
+  it('exits 1 on a needs-listed job carrying continue-on-error (#207)', () => {
+    const res = runGuard('workflow-auth-lint.mjs', caseDir('workflow-auth', 'vacuous-block'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('vacuous-block')
+  })
+
+  it('exits 1 on a WARN guard step with no row in the aggregation step (#207)', () => {
+    const res = runGuard('workflow-auth-lint.mjs', caseDir('workflow-auth', 'warn-step-no-row'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('unaggregated-warn-step')
   })
 
   it('exits 0 against the REAL repo tree — this repo wires its own guard jobs', () => {
