@@ -144,6 +144,25 @@ export const BRANCH_PREFIXES = [...new Set([...Object.values(TYPE_TO_BRANCH), 'd
 const numRe = () =>
   /(?:(?<repo>[a-z0-9_.-]+\/[a-z0-9_.-]+))?(?:\b(?<hint>PRs?|pull requests?|issues?)\s*[#№]?\s*|[#№])(?<number>\d{1,6})\b/gi
 
+// An extension-bearing token is a file reference before shape-only GitHub,
+// branch and SHA heuristics run. Its range includes any suffix and stops at
+// claim-segment punctuation so an adjacent ref remains independent.
+const fileTokenRe = () => /(?=[^\s,;—–·|()]*\.[a-z0-9]+\b)[^\s,;—–·|()]+/gi
+
+function fileTokenRanges(line) {
+  return [...String(line).matchAll(fileTokenRe())].map((m) => [m.index, m.index + m[0].length])
+}
+
+function overlapsAnyRange(start, end, ranges) {
+  return ranges.some(([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart)
+}
+
+function numberMatches(line, fileRanges = fileTokenRanges(line)) {
+  return [...String(line).matchAll(numRe())].filter(
+    (m) => !overlapsAnyRange(m.index, m.index + m[0].length, fileRanges),
+  )
+}
+
 function numberRefLabel(repo, n) {
   return repo === REPO ? `#${n}` : `${repo}#${n}`
 }
@@ -216,11 +235,12 @@ export function extractRefs(text) {
     const segments = splitSegments(line)
     const found = []
     const qualifiedNumberRanges = []
+    const fileRanges = fileTokenRanges(line)
 
     // Issue/PR numbers: a `#`/`№`-prefixed number anywhere, or a bare number
     // directly after a "PR" / "pull request" / "issue" word. A bare number with
     // neither is NOT a ref (too many false positives — ports, dates, counts).
-    for (const m of line.matchAll(numRe())) {
+    for (const m of numberMatches(line, fileRanges)) {
       const hint = (m.groups?.hint ?? '').toLowerCase()
       const repo = m.groups?.repo
       if (repo) qualifiedNumberRanges.push([m.index, m.index + m[0].length])
@@ -249,9 +269,10 @@ export function extractRefs(text) {
       const insideQualifiedNumber = qualifiedNumberRanges.some(
         ([start, rangeEnd]) => m.index >= start && end <= rangeEnd,
       )
+      const insideFileToken = overlapsAnyRange(m.index, end, fileRanges)
       // Otherwise a nested path such as `docs/adr/...` becomes the shorter,
       // unrelated branch `docs/adr`; qualified issue refs own their whole token.
-      if (line[end] === '/' || insideQualifiedNumber || /\.[a-z0-9]+$/i.test(m[0])) continue
+      if (line[end] === '/' || insideQualifiedNumber || insideFileToken) continue
       found.push({ kind: 'branch', value: m[0], line, lineNo, at: m.index })
     }
 
@@ -266,7 +287,8 @@ export function extractRefs(text) {
       const inQualifiedNumber = qualifiedNumberRanges.some(
         ([s, e]) => m.index >= s && m.index + tok.length <= e,
       )
-      if (inBranch || inQualifiedNumber) continue
+      const inFileToken = overlapsAnyRange(m.index, m.index + tok.length, fileRanges)
+      if (inBranch || inQualifiedNumber || inFileToken) continue
       found.push({ kind: 'sha', value: tok, line, lineNo, at: m.index })
     }
 
@@ -401,7 +423,7 @@ export function extractApprovalClaims(text) {
     .split(/\r?\n/)
     .forEach((line, i) => {
       if (!isApprovalClaimLine(line)) return
-      for (const m of line.matchAll(numRe())) {
+      for (const m of numberMatches(line)) {
         const issue = Number(m.groups?.number)
         const repo = m.groups?.repo ?? REPO
         const id = `${repo}#${issue}`
@@ -568,7 +590,7 @@ export function extractOwnerDirectiveClaims(text) {
     .forEach((line, i) => {
       // The provenance domain verifies issue-ref-tied approval claims against
       // the issue itself — skip those lines so one claim never fires twice.
-      if (isApprovalClaimLine(line) && [...line.matchAll(numRe())].length > 0) return
+      if (isApprovalClaimLine(line) && numberMatches(line).length > 0) return
       const norm = line.replace(/ё/g, 'е').replace(/Ё/g, 'Е')
       for (const re of OWNER_DIRECTIVE_PATTERNS) {
         const m = norm.match(re)
