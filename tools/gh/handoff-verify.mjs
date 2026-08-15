@@ -4,7 +4,7 @@
 // Why: a handoff is a HYPOTHESIS, not a fact — `.claude/skills/task-cycle/SKILL.md`
 // stage 1 says so in prose, and `.claude/skills/wrap/SKILL.md` Phase 5 asks the
 // emitting session to gate its own handoff text. Prose does not hold: the next
-// session inherits «PR смержен, issue закрыт» and builds on top of a premise
+// session inherits «PR merged, issue closed» and builds on top of a premise
 // that stopped being true hours earlier. This script makes the check
 // deterministic — for every ref a handoff NAMES it fetches the ACTUAL state
 // from `gh` / git ancestry and compares it against the handoff's own claim on
@@ -28,28 +28,27 @@
 //     the task canon, `TYPE_TO_BRANCH`) → resolve `origin/<branch>` (or local),
 //     then the same ancestry check.
 //
-// Claim heuristic: status keywords — open/closed/merged/unmerged/done (EN) and
-// открыт/закрыт/влит/смержен/не влит (RU; handoffs in this repo are written in
-// Russian). Keyword present and mismatching actual → STALE; matching → PASS; no
+// Claim heuristic: status keywords in English and legacy Russian handoffs.
+// Keyword present and mismatching actual → STALE; matching → PASS; no
 // keyword → INFO (the actual state is printed for the reader).
 //
 // Claim ATTRIBUTION is per SEGMENT, not per line (review PR #150, blocker 1):
 // the line is split on `,` `;` `—` `–` `·` `|` `(` `)` and sentence ends, and a
 // claim reaches only the refs inside its own segment. Per-line attribution made
-// the most natural handoff sentence — `PR #148 смержен, issue #134 ещё открыт` —
+// the natural handoff sentence `PR #148 merged, issue #134 still open` used to
 // report `STALE #134 claimed=merged`, i.e. the tool INVENTED a stale premise on
 // an honest handoff and exited 1, inverting the whole point of the gate. Two
 // companion rules (see `claimForRef`): a segment naming ≥2 refs pins its claim on
 // none of them and they degrade to INFO (a false PASS is cheaper than a false
 // STALE in a gate that exits 1); a claim-less segment falls back to the line's
-// claim only when the line names exactly ONE ref, so «#92 — не влит» keeps
+// claim only when the line names exactly ONE ref, so «#92 — not merged» keeps
 // working. Residual ambiguity — one segment naming two refs AND two claims — is
 // deliberately NOT resolved: it degrades to INFO. Return condition (DEBT.md):
 // revisit if real handoff runs produce INFO rows that should have been caught as
 // STALE, i.e. the ≥2-refs-per-segment rule starts hiding genuine drift.
 //
 // Approval-provenance domain: a line pairing an issue-ref with an
-// owner-approval claim («owner-approved», an owner token + согласован/одобр/…)
+// owner-approval claim («owner-approved», an owner token + an approval stem)
 // is verified against the issue's ACTUAL provenance (`gh issue view --json
 // body,comments`): a quotable owner turn (a `Stage-N: GO` marker of the
 // task-cycle go-gate, or an owner token with a quoted span «…»/"…") → PASS;
@@ -59,13 +58,14 @@
 //
 // Qualitative-text domains (non-blocking WARN, pure text scans — no gh/git):
 //   (A) COMPLETENESS CLAIMS — a phrase asserting a set is complete/empty/drained
-//       («backlog empty», «всё закрыто», …) is not ref-checkable, so each
+//       («backlog empty», «everything closed», …) is not ref-checkable, so each
 //       distinct phrase yields a WARN row + a stderr hint to re-derive the set
 //       (`pnpm backlog:triage`) before acting on it.
 //   (B) UNQUOTED OWNER-DIRECTIVE FRAMING — free text claiming owner direction
-//       («Owner-directed», «владелец дал го», …) while the handoff carries NO
+//       («Owner-directed», «the owner gave the go-ahead», …) while the handoff carries NO
 //       verbatim owner quote (heuristic: a «…» span anywhere, or an attribution
-//       line — `Owner quote` / `цитата` — carrying a quoted "…" span) yields a
+//       line — `Owner quote` / its legacy Russian equivalent — carrying a quoted
+//       "…" span) yields a
 //       WARN row naming the unquoted claim. Issue-ref-tied approval claims
 //       belong to the provenance domain above and are skipped here (no
 //       double-fire).
@@ -177,13 +177,16 @@ function numberRefLabel(repo, n) {
 
 /** Owner token on a line (EN/RU), ignoring the CODEOWNERS false positive. */
 function hasOwnerToken(line) {
-  return /владел|owner/i.test(String(line).replace(/CODEOWNERS/gi, ''))
+  return /\u0432\u043b\u0430\u0434\u0435\u043b|owner/i.test(
+    String(line).replace(/CODEOWNERS/gi, ''),
+  )
 }
 
 /**
  * TIGHT approval-claim predicate shared by the issue-ref-tied provenance domain
  * and the free-text owner-directive domain: `owner-approved`/`owner approved`,
- * or an owner token (владел/owner, not CODEOWNERS) plus an approval stem on the
+ * or an owner token (including legacy Russian, but not CODEOWNERS) plus an
+ * approval stem on the
  * same line. Deliberately does NOT fire on a bare `APPROVE` / `approved` line
  * without an owner token — a `VERDICT: APPROVE` from the review subagent
  * (`pr:land` review gate) is not an owner decision.
@@ -192,8 +195,11 @@ function isApprovalClaimLine(line) {
   return (
     /owner[-\s]approved/i.test(line) ||
     // NB: Cyrillic stems are matched BARE — JS \b/\w are ASCII-only, so a stem
-    // with a suffix («согласовал» vs «согласован») must not be anchored.
-    (hasOwnerToken(line) && /согласова|одобр|утвержд|подтвердил|выбрал|дал\s+го|approved?/i.test(line))
+    // with a suffix must not be anchored.
+    (hasOwnerToken(line) &&
+      /\u0441\u043e\u0433\u043b\u0430\u0441\u043e\u0432\u0430|\u043e\u0434\u043e\u0431\u0440|\u0443\u0442\u0432\u0435\u0440\u0436\u0434|\u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u043b|\u0432\u044b\u0431\u0440\u0430\u043b|\u0434\u0430\u043b\s+\u0433\u043e|approved?/i.test(
+        line,
+      ))
   )
 }
 
@@ -339,18 +345,30 @@ function claimLineAt(line, lineNo, refs) {
 
 /**
  * Parse the status CLAIM a line makes about the refs on it.
- * Order matters: negated-merge forms («не влит», "not merged") must win over
+ * Order matters: negated-merge forms (including legacy Russian, and "not merged") must win over
  * their positive substrings.
  * @param {string} line
  * @returns {"open"|"closed"|"merged"|"unmerged"|null}
  */
 export function parseClaim(line) {
   // NB: JS \b / \w are ASCII-only — Cyrillic stems are matched bare.
-  const l = String(line).toLowerCase().replace(/ё/g, 'е')
-  if (/\bunmerged\b|\bnot\s+merged\b|не\s+(?:влит|смерж|замерж|смердж)/.test(l)) return 'unmerged'
-  if (/\bmerged\b|смерж|замерж|смердж|влит|приземл/.test(l)) return 'merged'
-  if (/\bclosed\b|\bdone\b|закрыт/.test(l)) return 'closed'
-  if (/\bopen(?:ed)?\b|открыт/.test(l)) return 'open'
+  const l = String(line)
+    .toLowerCase()
+    .replace(/\u0451/g, '\u0435')
+  if (
+    /\bunmerged\b|\bnot\s+merged\b|\u043d\u0435\s+(?:\u0432\u043b\u0438\u0442|\u0441\u043c\u0435\u0440\u0436|\u0437\u0430\u043c\u0435\u0440\u0436|\u0441\u043c\u0435\u0440\u0434\u0436)/.test(
+      l,
+    )
+  )
+    return 'unmerged'
+  if (
+    /\bmerged\b|\u0441\u043c\u0435\u0440\u0436|\u0437\u0430\u043c\u0435\u0440\u0436|\u0441\u043c\u0435\u0440\u0434\u0436|\u0432\u043b\u0438\u0442|\u043f\u0440\u0438\u0437\u0435\u043c\u043b/.test(
+      l,
+    )
+  )
+    return 'merged'
+  if (/\bclosed\b|\bdone\b|\u0437\u0430\u043a\u0440\u044b\u0442/.test(l)) return 'closed'
+  if (/\bopen(?:ed)?\b|\u043e\u0442\u043a\u0440\u044b\u0442/.test(l)) return 'open'
   return null
 }
 
@@ -380,14 +398,14 @@ export function verdictFor(claim, actual) {
  * Claim attributed to ONE ref occurrence (review PR #150, blocker 1). Three
  * rules, in order:
  *   1. the claim of the SEGMENT the ref sits in — so
- *      `PR #148 смержен, issue #134 ещё открыт` gives merged/open, not
+ *      `PR #148 merged, issue #134 still open` gives merged/open, not
  *      merged/merged;
  *   2. a segment holding ≥2 refs pins its claim on NONE of them (→ INFO,
  *      "here is the actual state"): a false PASS is cheaper than a false STALE
  *      in a gate that exits 1;
  *   3. a claim-less segment falls back to the LINE's claim only when the line
  *      names exactly one ref — no ambiguity is possible there, and this keeps
- *      the shapes that separate ref and claim by punctuation («#92 — не влит»)
+ *      the shapes that separate ref and claim by punctuation («#92 — not merged»)
  *      working exactly as before.
  * @param {ReturnType<typeof extractRefs>[number]} ref
  * @returns {"open"|"closed"|"merged"|"unmerged"|null}
@@ -525,7 +543,7 @@ export function verifyApprovalClaims(claims, runner) {
 // deliberately CONSERVATIVE (false positives are the named risk); one claim per
 // line (first matching pattern), deduped by phrase text across the handoff.
 
-/** Matched against the lowercased, ё→е-normalized line. Order: specific first. */
+/** Matched against a lowercased line with the legacy Russian yo normalized. Specific first. */
 const COMPLETENESS_PATTERNS = [
   /\bbacklog\s+(?:is\s+)?empty\b/,
   /\bfully\s+drained\b/,
@@ -533,12 +551,12 @@ const COMPLETENESS_PATTERNS = [
   /\bnothing\s+(?:left|open|remaining)\b/,
   /\bepic\s+complete\b/,
   // NB: JS \b / \w are ASCII-only — Cyrillic stems are matched bare; bare stems
-  // also cover the safe inflections (вычищено/вычищены, закрыт(а/о/ы)).
-  /бэклог\s+пуст/,
-  /все\s+вычищен/,
-  /все\s+задачи\s+закрыт/,
-  /хвост\s+пуст/,
-  /полностью\s+закрыт/,
+  // also cover safe inflections in legacy Russian handoffs.
+  /\u0431\u044d\u043a\u043b\u043e\u0433\s+\u043f\u0443\u0441\u0442/,
+  /\u0432\u0441\u0435\s+\u0432\u044b\u0447\u0438\u0449\u0435\u043d/,
+  /\u0432\u0441\u0435\s+\u0437\u0430\u0434\u0430\u0447\u0438\s+\u0437\u0430\u043a\u0440\u044b\u0442/,
+  /\u0445\u0432\u043e\u0441\u0442\s+\u043f\u0443\u0441\u0442/,
+  /\u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e\s+\u0437\u0430\u043a\u0440\u044b\u0442/,
 ]
 
 /**
@@ -552,7 +570,7 @@ export function extractCompletenessClaims(text) {
   String(text)
     .split(/\r?\n/)
     .forEach((line, i) => {
-      const l = line.toLowerCase().replace(/ё/g, 'е')
+      const l = line.toLowerCase().replace(/\u0451/g, '\u0435')
       for (const re of COMPLETENESS_PATTERNS) {
         const m = l.match(re)
         if (!m) continue
@@ -576,7 +594,12 @@ export function verifyCompletenessClaims(claims) {
   const rows = []
   const hints = []
   for (const c of claims) {
-    rows.push({ verdict: 'WARN', ref: `L${c.lineNo}`, claim: 'set-complete', actual: 'not-ref-checkable' })
+    rows.push({
+      verdict: 'WARN',
+      ref: `L${c.lineNo}`,
+      claim: 'set-complete',
+      actual: 'not-ref-checkable',
+    })
     hints.push(
       `${TAG} completeness claim '${c.phrase}' is not ref-checkable — run \`pnpm backlog:triage\` before acting on it.`,
     )
@@ -585,19 +608,20 @@ export function verifyCompletenessClaims(claims) {
 }
 
 // ── unquoted owner-directive domain (Detector B — non-blocking WARN) ─────────
-// Free text claiming owner direction («Owner-directed», «владелец дал го») is
+// Free text claiming owner direction («Owner-directed», including its legacy
+// Russian equivalents) is
 // UNCONFIRMED agent framing unless the handoff carries a verbatim owner quote.
 // Issue-ref-tied approval claims are the provenance domain above (verified
 // against issue provenance) and are skipped here — no double-fire.
 
-/** Matched against the ё→е-normalized line (case-insensitive). */
+/** Matched against a line with the legacy Russian yo normalized (case-insensitive). */
 const OWNER_DIRECTIVE_PATTERNS = [
   /owner[-\s]directed/i,
   /owner[-\s]approved/i,
-  /по\s+указанию\s+владельца/i,
-  /одобрен[оаы]?\s+владельцем/i,
-  /владелец\s+(?:дал\s+)?(?:го|добро|согласовал|утвердил)/i,
-  /го\s+(?:получено|от\s+владельца)/i,
+  /\u043f\u043e\s+\u0443\u043a\u0430\u0437\u0430\u043d\u0438\u044e\s+\u0432\u043b\u0430\u0434\u0435\u043b\u044c\u0446\u0430/i,
+  /\u043e\u0434\u043e\u0431\u0440\u0435\u043d[\u043e\u0430\u044b]?\s+\u0432\u043b\u0430\u0434\u0435\u043b\u044c\u0446\u0435\u043c/i,
+  /\u0432\u043b\u0430\u0434\u0435\u043b\u0435\u0446\s+(?:\u0434\u0430\u043b\s+)?(?:\u0433\u043e|\u0434\u043e\u0431\u0440\u043e|\u0441\u043e\u0433\u043b\u0430\u0441\u043e\u0432\u0430\u043b|\u0443\u0442\u0432\u0435\u0440\u0434\u0438\u043b)/i,
+  /\u0433\u043e\s+(?:\u043f\u043e\u043b\u0443\u0447\u0435\u043d\u043e|\u043e\u0442\s+\u0432\u043b\u0430\u0434\u0435\u043b\u044c\u0446\u0430)/i,
 ]
 
 /**
@@ -617,7 +641,7 @@ export function extractOwnerDirectiveClaims(text, refs = extractRefs(text)) {
       // The provenance domain verifies issue-ref-tied approval claims against
       // the issue itself — skip those lines so one claim never fires twice.
       if (isApprovalClaimLine(claimLine) && numberMatches(line).length > 0) return
-      const norm = claimLine.replace(/ё/g, 'е').replace(/Ё/g, 'Е')
+      const norm = claimLine.replace(/\u0451/g, '\u0435').replace(/\u0401/g, '\u0415')
       for (const re of OWNER_DIRECTIVE_PATTERNS) {
         const m = norm.match(re)
         if (m) {
@@ -633,7 +657,7 @@ export function extractOwnerDirectiveClaims(text, refs = extractRefs(text)) {
  * Verbatim-owner-quote evidence heuristic (documented + deliberately simple):
  * TRUE when the handoff carries a «…» span ANYWHERE (the house style for owner
  * quotes — see the rules files), or an attribution line (`Owner quote` /
- * `цитата`) carrying a "…" / “…” span.
+ * its legacy Russian equivalent) carrying a "…" / “…” span.
  * @param {string} text
  * @returns {boolean}
  */
@@ -641,7 +665,8 @@ export function hasOwnerQuoteEvidence(text) {
   const s = String(text)
   if (/«[^«»]+»/.test(s)) return true
   for (const line of s.split(/\r?\n/)) {
-    if (/owner\s+quote|цитат/i.test(line) && /"[^"]+"|“[^“”]+”/.test(line)) return true
+    if (/owner\s+quote|\u0446\u0438\u0442\u0430\u0442/i.test(line) && /"[^"]+"|“[^“”]+”/.test(line))
+      return true
   }
   return false
 }
@@ -658,9 +683,19 @@ export function verifyOwnerDirectiveClaims(claims, quoteEvidence) {
   const hints = []
   for (const c of claims) {
     if (quoteEvidence) {
-      rows.push({ verdict: 'PASS', ref: `L${c.lineNo}`, claim: 'owner-directive', actual: 'owner-quote-present' })
+      rows.push({
+        verdict: 'PASS',
+        ref: `L${c.lineNo}`,
+        claim: 'owner-directive',
+        actual: 'owner-quote-present',
+      })
     } else {
-      rows.push({ verdict: 'WARN', ref: `L${c.lineNo}`, claim: 'owner-directive', actual: 'no-owner-quote' })
+      rows.push({
+        verdict: 'WARN',
+        ref: `L${c.lineNo}`,
+        claim: 'owner-directive',
+        actual: 'no-owner-quote',
+      })
       hints.push(
         `${TAG} '${c.phrase}' (line ${c.lineNo}) claims owner direction but the handoff carries no verbatim owner quote («…» / attributed "…") — treat it as UNCONFIRMED agent framing and reconcile with the owner before executing.`,
       )
@@ -810,7 +845,7 @@ export function renderSummary({ rows, stale, warn }) {
 export function verifyHandoff(text, runner) {
   const refs = extractRefs(text)
   // The text-only detectors are pure scans — they run even on a ref-less
-  // handoff (a «бэклог пуст» handoff with zero refs is exactly the dangerous
+  // handoff (a «backlog empty» handoff with zero refs is exactly the dangerous
   // case).
   const completeness = verifyCompletenessClaims(extractCompletenessClaims(text))
   const directive = verifyOwnerDirectiveClaims(
@@ -869,7 +904,9 @@ function main() {
 
   const result = verifyHandoff(text, runner)
   if (result.empty) {
-    process.stdout.write(`${TAG} no extractable refs (#N / PR N / sha / branch) found — nothing to verify.\n`)
+    process.stdout.write(
+      `${TAG} no extractable refs (#N / PR N / sha / branch) found — nothing to verify.\n`,
+    )
     process.exit(0)
   }
   for (const row of result.rows) process.stdout.write(`${renderRow(row)}\n`)

@@ -222,7 +222,9 @@ describe('dispatch:brief — renderBrief', () => {
     expect(brief).toContain('pnpm test:unit')
     expect(brief).toContain('Closes #134')
     expect(brief).toContain('Return contract (≤30 lines)')
-    expect(brief).toContain('Отклонения от конвенций')
+    expect(brief).toContain(
+      '\u041e\u0442\u043a\u043b\u043e\u043d\u0435\u043d\u0438\u044f \u043e\u0442 \u043a\u043e\u043d\u0432\u0435\u043d\u0446\u0438\u0439',
+    )
     expect(brief).toContain('pnpm dispatch:brief-check 134')
   })
 

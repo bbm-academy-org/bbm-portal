@@ -18,9 +18,11 @@ import {
 } from '../../tools/gh/backlog-triage.mjs'
 
 /**
- * `pnpm backlog:triage` считает готовность из НАТИВНОГО графа, а не из лейбла.
- * Разбор и классификация вынесены в чистые функции — тесты гоняют их без сети.
- * Канон: `.claude/skills/task-canon/SKILL.md` §2, §3, §4.
+ * `pnpm backlog:triage` derives readiness from the NATIVE graph, not a label.
+ * Parsing and classification are pure functions, so the suite needs no network.
+ * Canon: `.claude/skills/task-canon/SKILL.md` §2, §3, §4.
+ * Russian input fixtures remain intentionally: existing task bodies in that
+ * language are still valid input even though the agent-facing CLI is English.
  */
 
 describe('missingFields', () => {
@@ -32,128 +34,127 @@ describe('missingFields', () => {
     assignees: [{ login: 'sidorovanthon' }],
   }
 
-  it('на полностью заполненной задаче молчит', () => {
+  it('stays quiet on a fully populated issue', () => {
     expect(missingFields(clean)).toEqual([])
   })
 
-  it('требует штатный Type, а не kind-лейбл', () => {
-    expect(missingFields({ ...clean, issueType: null })).toContain('нет Type')
+  it('requires the native Type instead of a kind label', () => {
+    expect(missingFields({ ...clean, issueType: null })).toContain('missing Type')
     expect(missingFields({ ...clean, issueType: { name: 'Epic' } })).toContainEqual(
-      expect.stringMatching(/неизвестный Type/),
+      expect.stringMatching(/unknown Type/),
     )
   })
 
-  it('ловит упразднённые kind:*-лейблы', () => {
+  it('catches retired kind:* labels', () => {
     const res = missingFields({
       ...clean,
       labels: [{ name: 'channel:owner' }, { name: 'kind:feat' }],
     })
-    expect(res).toContainEqual(expect.stringMatching(/упразднённые kind/))
+    expect(res).toContainEqual(expect.stringMatching(/retired kind/))
   })
 
-  it('ловит дефолтные лейблы GitHub и адресует их миграции 7.2', () => {
+  it('catches default GitHub labels and points them to migration 7.2', () => {
     const res = missingFields({
       ...clean,
       labels: [{ name: 'channel:owner' }, { name: 'enhancement' }],
     })
-    expect(res).toContainEqual(expect.stringMatching(/дефолтные лейблы GitHub.*7\.2/))
+    expect(res).toContainEqual(expect.stringMatching(/default GitHub labels.*7\.2/))
   })
 
-  it('требует ровно один channel:* из таксономии', () => {
-    expect(missingFields({ ...clean, labels: [] })).toContain('нет channel:*')
+  it('requires exactly one channel:* from the taxonomy', () => {
+    expect(missingFields({ ...clean, labels: [] })).toContain('missing channel:*')
     expect(
       missingFields({ ...clean, labels: [{ name: 'channel:owner' }, { name: 'channel:agent' }] }),
-    ).toContainEqual(expect.stringMatching(/несколько channel/))
+    ).toContainEqual(expect.stringMatching(/multiple channel/))
     expect(missingFields({ ...clean, labels: [{ name: 'channel:луна' }] })).toContainEqual(
-      expect.stringMatching(/неизвестный channel/),
+      expect.stringMatching(/unknown channel/),
     )
   })
 
-  it('требует непустую строку **Source:** в теле — это отдельное измерение', () => {
+  it('requires a non-empty **Source:** body line as a separate dimension', () => {
     expect(missingFields({ ...clean, body: '## Context' })).toContain(
-      'нет непустой строки **Source:**',
+      'missing non-empty **Source:** line',
     )
     expect(missingFields({ ...clean, body: '**Source:**' })).toContain(
-      'нет непустой строки **Source:**',
+      'missing non-empty **Source:** line',
     )
   })
 
-  it('ловит упразднённые source:*-лейблы', () => {
+  it('catches retired source:* labels', () => {
     expect(
       missingFields({ ...clean, labels: [{ name: 'channel:owner' }, { name: 'source:owner' }] }),
-    ).toContainEqual(expect.stringMatching(/упразднённые source/))
+    ).toContainEqual(expect.stringMatching(/retired source/))
   })
 
-  it('требует milestone и assignee', () => {
-    expect(missingFields({ ...clean, milestone: null })).toContain('нет milestone')
-    expect(missingFields({ ...clean, assignees: [] })).toContain('нет assignee')
+  it('requires a milestone and assignee', () => {
+    expect(missingFields({ ...clean, milestone: null })).toContain('missing milestone')
+    expect(missingFields({ ...clean, assignees: [] })).toContain('missing assignee')
   })
 
-  it('принимает лейблы как строки — форма ответа gh не единственная', () => {
+  it('accepts labels as strings because gh has more than one response shape', () => {
     expect(missingFields({ ...clean, labels: ['channel:owner'] })).toEqual([])
   })
 })
 
 describe('sourceLineText', () => {
   /**
-   * Происхождение — свободный текст, поэтому проверяется только наличие и
-   * непустота. Тело приезжает в двух формах: `pnpm issue:create` пишет
-   * `**Source:** …`, issue-формы GitHub рендерят секцию `### Source`.
+   * Provenance is free text, so only presence and non-emptiness are checked.
+   * Bodies arrive in two forms: `pnpm issue:create` writes `**Source:** …`,
+   * while GitHub issue forms render a `### Source` section.
    */
-  it('читает строку, которую пишет обёртка', () => {
+  it('reads the line written by the wrapper', () => {
     expect(sourceLineText('**Source:** баг-репорт в Mattermost\n\n## Context')).toBe(
       'баг-репорт в Mattermost',
     )
   })
 
-  it('читает секцию, которую рендерит issue-форма', () => {
+  it('reads the section rendered by an issue form', () => {
     expect(sourceLineText('### Source\n\nexecutive-решение партнёров\n\n### Context\n\nx')).toBe(
       'executive-решение партнёров',
     )
   })
 
-  it('читает секцию Source, даже если она последняя в теле', () => {
+  it('reads the Source section even when it is last in the body', () => {
     expect(sourceLineText('### Context\n\nx\n\n### Source\n\nсам поймал при работе над #124')).toBe(
       'сам поймал при работе над #124',
     )
   })
 
-  it('незаполненное поле формы происхождением не считает', () => {
+  it('does not count an unfilled form field as provenance', () => {
     expect(sourceLineText('### Source\n\n_No response_\n\n### Context')).toBeNull()
     expect(sourceLineText('**Source:**')).toBeNull()
     expect(sourceLineText('## Context')).toBeNull()
   })
 
   /**
-   * Регрессия: в отступах стоял `\s`, который включает `\n`, — пустая строка
-   * `**Source:**` захватывала следующий абзац, и НЕзаполненное поле читалось
-   * как заполненное.
+   * Regression: indentation used `\s`, which includes `\n`, so an empty
+   * `**Source:**` line captured the next paragraph and read as populated.
    */
-  it('пустая строка Source не захватывает следующий абзац', () => {
+  it('does not let an empty Source line capture the next paragraph', () => {
     expect(sourceLineText('**Source:**\n\nобычный текст')).toBeNull()
     expect(sourceLineText('**Source:**   \n\n## Context')).toBeNull()
   })
 
-  it('невынутая угловая заглушка скелета §1 источником не считается', () => {
+  it("does not treat canon §1's unfilled angle-bracket placeholder as provenance", () => {
     expect(sourceLineText('**Source:** <на основании чего задача существует>')).toBeNull()
   })
 })
 
 describe('parseRefsWithRationale', () => {
-  it('разбирает ссылку с rationale через тире', () => {
+  it('parses a reference with rationale after a dash', () => {
     expect(parseRefsWithRationale('#131 — схема задаётся там')).toEqual([
       { number: 131, rationale: 'схема задаётся там' },
     ])
   })
 
-  it('разбирает несколько ссылок, часть без rationale', () => {
+  it('parses multiple references, some without rationale', () => {
     expect(parseRefsWithRationale('#1 — почему, #2')).toEqual([
       { number: 1, rationale: 'почему' },
       { number: 2, rationale: null },
     ])
   })
 
-  it('на плейсхолдерах не выдумывает рёбер', () => {
+  it('does not invent edges from placeholders', () => {
     for (const p of ['', 'нет', '—', 'none', '_No response_']) {
       expect(parseRefsWithRationale(p)).toEqual([])
     }
@@ -161,16 +162,16 @@ describe('parseRefsWithRationale', () => {
 })
 
 describe('isPlaceholder', () => {
-  it('считает пустышкой незаполненный HTML-комментарий шаблона', () => {
+  it('treats an unfilled HTML template comment as a placeholder', () => {
     expect(isPlaceholder('<!-- сюда ссылки -->')).toBe(true)
   })
 
-  it('считает пустышкой невынутую угловую заглушку скелета канона §1', () => {
+  it("treats canon §1's unfilled angle-bracket value as a placeholder", () => {
     expect(isPlaceholder('<на основании чего задача существует — свободный текст>')).toBe(true)
     expect(isPlaceholder('<конкретный deliverable>')).toBe(true)
   })
 
-  it('осмысленный текст пустышкой не считает', () => {
+  it('does not treat meaningful text as a placeholder', () => {
     expect(isPlaceholder('#12 — причина')).toBe(false)
     expect(isPlaceholder('баг-репорт <Антона> в Mattermost')).toBe(false)
   })
@@ -184,19 +185,19 @@ describe('parseDependenciesSection', () => {
     '**Blocks:** #140, #141',
   ].join('\n')
 
-  it('читает рёбра и rationale из секции Dependencies', () => {
+  it('reads edges and rationale from the Dependencies section', () => {
     const deps = parseDependenciesSection(body)
     expect(deps.blockedBy).toEqual([{ number: 131, rationale: 'контракт БД задаётся там' }])
     expect(deps.blocks).toEqual([140, 141])
   })
 
-  it('читает и списочную форму строки (issue-формы рендерят по-своему)', () => {
+  it('also reads the list-item form rendered by issue forms', () => {
     expect(parseDependenciesSection('- **Blocked by:** #7').blockedBy).toEqual([
       { number: 7, rationale: null },
     ])
   })
 
-  it('на пустой секции рёбер не выдумывает', () => {
+  it('does not invent edges from an empty section', () => {
     expect(parseDependenciesSection('**Blocked by:** нет\n**Blocks:**')).toEqual({
       blockedBy: [],
       blocks: [],
@@ -205,74 +206,74 @@ describe('parseDependenciesSection', () => {
 })
 
 describe('parseProseBlockers', () => {
-  it('видит прозовую зависимость вне секции Dependencies', () => {
+  it('sees a prose dependency outside the Dependencies section', () => {
     expect(parseProseBlockers('Эта задача зависит от #99, пока он не сделан.')).toEqual([99])
   })
 
-  it('иерархия блокером НЕ считается — родитель, эпик, «связано», «преемник»', () => {
+  it('does NOT treat hierarchy as blocking: parent, epic, related, successor', () => {
     expect(parseProseBlockers('Часть эпика #117, зависит от него организационно')).toEqual([])
     expect(parseProseBlockers('Связано с #12, зависит от общего контекста')).toEqual([])
     expect(parseProseBlockers('Преемник #40 — зависит от его выводов')).toEqual([])
   })
 
-  it('не дублирует то, что уже стоит строкой Blocked by', () => {
+  it('does not duplicate an existing Blocked by line', () => {
     expect(parseProseBlockers('**Blocked by:** #131 — причина')).toEqual([])
   })
 })
 
 describe('mentionsIssue', () => {
-  it('ловит и `#N`, и ссылку', () => {
+  it('recognises both `#N` and a link', () => {
     expect(mentionsIssue('см. #131', 131)).toBe(true)
     expect(mentionsIssue('https://github.com/o/r/issues/131', 131)).toBe(true)
   })
 
-  it('не считает #1310 упоминанием #131', () => {
+  it('does not count #1310 as a mention of #131', () => {
     expect(mentionsIssue('#1310', 131)).toBe(false)
   })
 })
 
 describe('evaluateRationale', () => {
-  it('находит rationale строкой ребра в заблокированной задаче', () => {
+  it("finds rationale on the blocked issue's edge line", () => {
     const body = '**Blocked by:** #131 — контракт БД задаётся там'
     expect(evaluateRationale(140, 131, body, null)).toBe('present')
   })
 
-  it('голая ссылка без объяснения — ребро без rationale (provenance-orphan)', () => {
+  it('treats a bare link as an edge without rationale (provenance-orphan)', () => {
     expect(evaluateRationale(140, 131, '**Blocked by:** #131', null)).toBe('absent')
   })
 
-  it('засчитывает объяснение на стороне блокера', () => {
+  it('counts an explanation on the blocker side', () => {
     expect(
       evaluateRationale(140, 131, 'нет упоминаний', 'этим блокируется #140, пока нет схемы'),
     ).toBe('present')
   })
 
-  it('без обоих текстов честно говорит «не проверено», а не «нет»', () => {
+  it('returns unknown honestly when neither body is available', () => {
     expect(evaluateRationale(140, 131, null, null)).toBe('unknown')
   })
 })
 
 describe('classify', () => {
-  const issue = { number: 140, title: 'задача', labels: [] }
+  const issue = { number: 140, title: 'issue', labels: [] }
 
-  it('без рёбер задача берётся', () => {
+  it('makes an issue takeable when it has no edges', () => {
     expect(classify(issue, []).blocked).toBe(false)
   })
 
-  it('открытый блокер блокирует', () => {
+  it('lets an open blocker block', () => {
     const t = classify(issue, [{ number: 131, source: 'native', open: true, rationale: 'present' }])
     expect(t.blocked).toBe(true)
     expect(t.blockers).toHaveLength(1)
   })
 
-  it('закрытый блокер уже не блокер', () => {
+  it('does not let a closed blocker block', () => {
     expect(
       classify(issue, [{ number: 131, source: 'native', open: false, rationale: 'present' }])
         .blocked,
     ).toBe(false)
   })
 
-  it('нативное ребро побеждает прозовое по тому же номеру — граф это граф', () => {
+  it('makes a native edge beat prose for the same number because the graph is authoritative', () => {
     const t = classify(issue, [
       { number: 131, source: 'prose', open: true, rationale: 'absent' },
       { number: 131, source: 'native', open: true, rationale: 'present' },
@@ -282,12 +283,12 @@ describe('classify', () => {
   })
 
   /**
-   * Регрессия: готовность считалась и по прозе, из-за чего задача с правильно
-   * заполненным телом и непроведённым ребром выпадала из берущихся, а шаг 6
-   * скилла `spec-issue-graph` давал ложный зелёный. Канон §3: проза связью не
-   * считается.
+   * Regression: readiness also counted prose, so an issue with a correctly
+   * filled body but a missing graph edge disappeared from the takeable set and
+   * step 6 of `spec-issue-graph` returned a false green. Canon §3: prose is not
+   * a relation.
    */
-  it('прозовое ребро БЕЗ нативного не блокирует — проза связью не считается', () => {
+  it('does not let a prose-only edge block because prose is not a relation', () => {
     const t = classify(issue, [{ number: 131, source: 'prose', open: true, rationale: 'present' }])
     expect(t.blocked).toBe(false)
     expect(t.blockers).toEqual([])
@@ -298,25 +299,25 @@ describe('classify', () => {
 describe('findMirrorDrift', () => {
   const body = ['## Dependencies', '', '**Blocked by:** #131 — контракт БД задаётся там'].join('\n')
 
-  it('строка в теле без ребра в графе — расхождение вида mirror', () => {
+  it('classifies a body line without a graph edge as mirror drift', () => {
     expect(findMirrorDrift(body, [])).toEqual([{ number: 131, source: 'mirror' }])
   })
 
-  it('ребро в графе без строки в теле — расхождение вида graph-only', () => {
-    expect(findMirrorDrift('пустое тело', [131])).toEqual([{ number: 131, source: 'graph-only' }])
+  it('classifies a graph edge without a body line as graph-only drift', () => {
+    expect(findMirrorDrift('empty body', [131])).toEqual([{ number: 131, source: 'graph-only' }])
   })
 
-  it('когда тело и граф сходятся, расхождений нет', () => {
+  it('reports no drift when body and graph agree', () => {
     expect(findMirrorDrift(body, [131])).toEqual([])
   })
 
-  it('проза вне секции Dependencies отмечается отдельным видом', () => {
+  it('marks prose outside Dependencies as its own drift kind', () => {
     expect(findMirrorDrift('Эта задача зависит от #99.', [])).toEqual([
       { number: 99, source: 'prose' },
     ])
   })
 
-  it('одно и то же упоминание не считается дважды', () => {
+  it('does not count the same mention twice', () => {
     expect(findMirrorDrift(`${body}\nтакже зависит от #131`, [])).toEqual([
       { number: 131, source: 'mirror' },
     ])
@@ -332,16 +333,16 @@ describe('findMegaBlockers', () => {
     blockers: [{ number: blocker, source: 'native', open: true, rationale: 'present' }],
   })
 
-  it('находит узел, блокирующий ≥5 задач', () => {
+  it('finds a node that blocks at least five issues', () => {
     const triaged = [1, 2, 3, 4, 5].map((n) => blockedBy(n, 99))
     expect(findMegaBlockers(triaged)).toEqual([{ number: 99, blocked: [1, 2, 3, 4, 5], count: 5 }])
   })
 
-  it('четыре задачи мега-блокером ещё не делают', () => {
+  it('does not make four issues a mega-blocker yet', () => {
     expect(findMegaBlockers([1, 2, 3, 4].map((n) => blockedBy(n, 99)))).toEqual([])
   })
 
-  it('сортирует по убыванию охвата', () => {
+  it('sorts by descending reach', () => {
     const triaged = [
       ...[1, 2, 3, 4, 5].map((n) => blockedBy(n, 99)),
       ...[6, 7, 8, 9, 10, 11].map((n) => blockedBy(n, 88)),
@@ -350,59 +351,59 @@ describe('findMegaBlockers', () => {
   })
 })
 
-describe('detectClaimState — два сигнала клейма (канон §4)', () => {
+describe('detectClaimState — the two claim signals (canon §4)', () => {
   const base = { number: 130, hasWorktree: false, hasBranch: false, boardStatus: null, ageMs: 0 }
 
-  it('ворктри + In Progress — claim полон', () => {
+  it('makes worktree + In Progress a complete claim', () => {
     expect(detectClaimState({ ...base, hasWorktree: true, boardStatus: 'In Progress' }).kind).toBe(
       'in-flight',
     )
   })
 
-  it('ворктри есть, статуса нет → правды больше у ворктри, чинится борд', () => {
+  it('trusts the worktree when status is absent and points to the board repair', () => {
     const state = detectClaimState({ ...base, hasWorktree: true, boardStatus: 'Todo' })
     expect(state.kind).toBe('board-lags')
     expect(state.message).toMatch(/pnpm board:status 130 "In Progress"/)
   })
 
-  it('статус есть, ворктри и ветки нет → claim протух, но снимает его человек', () => {
+  it('makes status without a worktree or branch stale but leaves release to a human', () => {
     const state = detectClaimState({
       ...base,
       boardStatus: 'In Progress',
       ageMs: 3 * 24 * 3600 * 1000,
     })
     expect(state.kind).toBe('stale-claim')
-    expect(state.message).toMatch(/3д/)
-    expect(state.message).toMatch(/лид\/владелец, не скрипт/)
+    expect(state.message).toMatch(/3d/)
+    expect(state.message).toMatch(/lead\/owner.*not the script/)
   })
 
-  it('статус есть, ворктри нет, но ветка на origin есть — работа вне этой машины', () => {
+  it('recognises work outside this machine from status plus an origin branch', () => {
     expect(detectClaimState({ ...base, boardStatus: 'In Progress', hasBranch: true }).kind).toBe(
       'branch-only',
     )
   })
 
-  it('ни одного сигнала — задача свободна', () => {
+  it('makes an issue free when neither signal exists', () => {
     expect(detectClaimState({ ...base, boardStatus: 'Todo' }).kind).toBe('free')
   })
 })
 
 describe('formatAge', () => {
-  it('масштабирует единицу под величину', () => {
-    expect(formatAge(30_000)).toBe('<1м')
-    expect(formatAge(34 * 60_000)).toBe('34м')
-    expect(formatAge(2 * 3600_000)).toBe('2ч')
-    expect(formatAge(3 * 24 * 3600_000)).toBe('3д')
+  it('scales the unit with the magnitude', () => {
+    expect(formatAge(30_000)).toBe('<1m')
+    expect(formatAge(34 * 60_000)).toBe('34m')
+    expect(formatAge(2 * 3600_000)).toBe('2h')
+    expect(formatAge(3 * 24 * 3600_000)).toBe('3d')
   })
 
-  it('нечисловой возраст не притворяется нулём', () => {
+  it('does not pretend a non-numeric age is zero', () => {
     expect(formatAge(NaN)).toBe('?')
     expect(formatAge(null)).toBe('?')
   })
 })
 
-describe('расхождение claim без даты обновления', () => {
-  it('протухший claim без даты отчитывается «?», а не «простой <1м»', () => {
+describe('claim drift without an update date', () => {
+  it('reports «?» rather than «idle <1m» for a stale claim without a date', () => {
     const state = detectClaimState({
       number: 130,
       hasWorktree: false,
@@ -411,60 +412,60 @@ describe('расхождение claim без даты обновления', ()
       ageMs: null,
     })
     expect(state.kind).toBe('stale-claim')
-    expect(state.message).toMatch(/простой \?/)
+    expect(state.message).toMatch(/idle \?/)
   })
 })
 
 describe('formatReport', () => {
   const model = {
     generatedAt: '2026-08-04T00:00:00.000Z',
-    takeable: [{ number: 1, title: 'берётся' }],
-    inFlight: [{ number: 2, title: 'в работе', claim: 'ворктри + In Progress' }],
+    takeable: [{ number: 1, title: 'takeable' }],
+    inFlight: [{ number: 2, title: 'in flight', claim: 'worktree + In Progress' }],
     blocked: [
       {
         number: 3,
-        title: 'ждёт',
+        title: 'waiting',
         blockers: [{ number: 1, source: 'native', open: true, rationale: 'absent' }],
       },
     ],
-    claimIssues: [{ number: 4, message: 'ворктри есть, статуса нет' }],
-    epics: [{ number: 5, title: 'зонтик' }],
-    hygiene: [{ number: 6, missing: ['нет Type'] }],
+    claimIssues: [{ number: 4, message: 'worktree exists, status missing' }],
+    epics: [{ number: 5, title: 'umbrella' }],
+    hygiene: [{ number: 6, missing: ['missing Type'] }],
     mirrorDrift: [{ number: 3, blocker: 1, source: 'mirror' }],
     orphanEdges: [{ blocked: 3, blocker: 1 }],
     megaBlockers: [{ number: 1, blocked: [3], count: 1 }],
-    warnings: ['борд не прочитался'],
+    warnings: ['board read failed'],
   }
 
-  it('печатает все секции контракта с их счётчиками', () => {
+  it('prints every contract section with its count', () => {
     const report = formatReport(model)
     for (const heading of [
-      '## Берущиеся (1)',
-      '## В работе (1)',
-      '## Расхождения claim (1)',
-      '## Заблокированные (1)',
-      '## Зеркало Dependencies разошлось с графом (1)',
-      '## Рёбра без rationale (1)',
-      '## Мега-блокеры (1)',
-      '## Эпики (1)',
-      '## Гигиена полей (1)',
-      '## Предупреждения (1)',
+      '## Takeable (1)',
+      '## In flight (1)',
+      '## Claim drift (1)',
+      '## Blocked (1)',
+      '## Dependencies mirror drift (1)',
+      '## Edges without rationale (1)',
+      '## Mega-blockers (1)',
+      '## Epics (1)',
+      '## Field hygiene (1)',
+      '## Warnings (1)',
     ]) {
       expect(report).toContain(heading)
     }
   })
 
-  it('помечает ребро без rationale как повод оспорить, а не как факт', () => {
-    expect(formatReport(model)).toMatch(/⚠ rationale не записан/)
-    expect(formatReport(model)).toMatch(/повод оспорить ребро/)
+  it('marks an edge without rationale as grounds to challenge rather than fact', () => {
+    expect(formatReport(model)).toMatch(/⚠ rationale not recorded/)
+    expect(formatReport(model)).toMatch(/grounds to challenge the edge/)
   })
 
-  it('пустой список берущихся не выдаёт за пустой бэклог', () => {
+  it('does not present an empty takeable list as an empty backlog', () => {
     const report = formatReport({ ...model, takeable: [] })
-    expect(report).toMatch(/пустой список берущихся ≠ пустой бэклог/)
+    expect(report).toMatch(/an empty takeable list ≠ an empty backlog/)
   })
 
-  it('без предупреждений секции предупреждений нет', () => {
-    expect(formatReport({ ...model, warnings: [] })).not.toContain('## Предупреждения')
+  it('omits the Warnings section when there are no warnings', () => {
+    expect(formatReport({ ...model, warnings: [] })).not.toContain('## Warnings')
   })
 })

@@ -204,26 +204,21 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-05-05b8797876 -->
 
-- [ ] 2026-08-05 `tools/gh/*` (plus `tools/dev/task-worktree.mjs`, `tests/unit/gh-*`
-      and the `.claude/skills/spec-issue-graph/SKILL.md` body) still carry Russian
-      file headers, CLI output, test names and prose; #144 fixed only the canon
-      path strings inside them, which is not a material edit, so the on-touch
-      translation rule (owner ruling, 2026-08-05: all project artifacts are
-      English) did not fire — return condition: translate each file the next
-      time it is materially edited (#144). Extended 2026-08-05 (retro PR): the
-      same holds for `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` —
-      materially edited by the retro-hooks PR, but the whole-file translation was
-      deliberately kept out of that PR to keep the behavioral diff reviewable;
-      same return condition applies to them. Worked off 2026-08-06 (#142) for
-      `tools/gh/pr-land.mjs` + `tests/unit/gh-pr-land.spec.ts`, translated in
-      their own no-behaviour-change commit ahead of the fix; the rest of the set
-      still stands. **Return condition FIRED and promoted 2026-08-15: `39973aa`
-      (#234) materially edited `tools/gh/bootstrap-taxonomy.mjs` and
-      `tools/gh/lib/gh.mjs` without translating either — the SECOND recorded miss
-      of this trigger, which is the signal that an on-touch rule is not
-      self-enforcing here. The six remaining `tools/gh` files are now one bounded
-      task, #238.** The `tools/hooks/*` half of this line is NOT in #238's scope
-      and keeps its existing trigger. This line goes at the sweep after #238 closes.
+- [ ] 2026-08-05 legacy Russian agent-tool prose remains in
+      `tools/gh/lib/gh.mjs`, `tools/dev/task-worktree.mjs`, and
+      `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` (owner ruling,
+      2026-08-05: all project artifacts are English) — return condition:
+      translate each file in its own no-behaviour-change commit before the next
+      material edit. Worked off 2026-08-06 (#142) for `tools/gh/pr-land.mjs` and
+      its spec. Worked off 2026-08-16 (#238) for the six remaining agent-facing
+      `tools/gh` CLI files (`create-issue`, `backlog-triage`,
+      `bootstrap-taxonomy`, `set-board-status`, `handoff-verify`,
+      `dispatch-brief`), their matching test prose, and
+      `.claude/skills/spec-issue-graph/SKILL.md`; legacy Russian parser fixtures
+      remain only as intentional compatibility data. `tools/gh/lib/gh.mjs` was
+      also materially edited by `39973aa` (#234) and missed the trigger, but was
+      outside #238's enumerated six-file scope; the hooks likewise keep their
+      existing trigger.
 
 <!-- debt-entry-end: 2026-08-05-61162d4aea -->
 

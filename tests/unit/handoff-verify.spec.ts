@@ -101,7 +101,9 @@ const stale = <T extends { verdict: string }>(rows: T[]) =>
 
 describe('handoff-verify: a STALE handoff exits 1 and names every divergence', () => {
   // The recurring failure this gate exists for: the emitting session wrote
-  // «смержен / закрыт», the world moved on, the inheriting session built on it.
+  // If a handoff says «merged / closed» and the world moves on, the inheriting
+  // session builds on a stale premise. Legacy Russian inputs remain intentional
+  // compatibility fixtures even though the agent-facing tool source is English.
   const STALE_HANDOFF = [
     '## Current task',
     'PR #92 смержен, ветка feat/92-hours удалена.',
@@ -127,7 +129,8 @@ describe('handoff-verify: a STALE handoff exits 1 and names every divergence', (
     const rows = stale(result.rows).map(renderRow)
     expect(rows).toContain('STALE #92 claimed=merged actual=open')
     expect(rows).toContain('STALE #91 claimed=closed actual=open')
-    // «не влит» must beat its own «влит» substring, so a merged PR claimed
+    // The legacy Russian «not merged» form must beat its own positive substring,
+    // so a merged PR claimed
     // unmerged is caught too.
     expect(rows).toContain('STALE #77 claimed=unmerged actual=merged')
   })
@@ -235,7 +238,7 @@ describe('handoff-verify: claims are attributed per SEGMENT, not per line', () =
     expect(result.exitCode).toBe(0)
   })
 
-  it('a single-ref line still reads the claim across punctuation («#92 — не влит»)', () => {
+  it('a single-ref line still reads a legacy Russian claim across punctuation', () => {
     expect(claimForRef(extractRefs('#92 — не влит')[0])).toBe('unmerged')
     const result = verifyHandoff('#92 — не влит', makeRunner({ prs: { 92: 'merged' } }))
     expect(renderRow(result.rows[0])).toBe('STALE #92 claimed=unmerged actual=merged')

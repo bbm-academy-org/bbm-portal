@@ -1,33 +1,33 @@
 #!/usr/bin/env node
-// bbm-portal — `pnpm taxonomy:bootstrap`: идемпотентная заводка таксономии (#130).
+// bbm-portal — `pnpm taxonomy:bootstrap`: idempotent taxonomy bootstrap (#130).
 //
-// Что заводит:
-//   • четыре лейбла `channel:*` — единственная кастомная таксономия репо: канал
-//     попадания задачи в бэклог, штатного поля под это у GitHub нет. Класс
-//     задачи живёт в штатном Type, а происхождение — свободным текстом в строке
-//     `**Source:**` тела (оба — решения владельца 2026-08-04);
-//   • ПОСТОЯННЫЕ milestone (`PERMANENT_MILESTONES` в `./lib/gh.mjs`) — темы,
-//     которые не закрываются никогда: fallback «Platform: operations and
-//     hardening» для процессных/эксплуатационных задач, не попадающих ни в одну
-//     тему (канон §2), и «Dependencies» для PR автоматического обновления
-//     зависимостей. Постоянство здесь — не украшение: на такой milestone
-//     ссылаются извне именем (`issue:create`) и НОМЕРОМ (`renovate.json`), а
-//     номер закрывшейся темы протухает молча.
-//   • сверяет закреплённый в `renovate.json` НОМЕР с живым номером «Dependencies»
-//     и докладывает расхождение строкой `⚠` — конфиг при этом не правится;
-//   • проверяет наличие org Issue Types Bug/Feature/Task (создать их из репо
-//     нельзя — это org-настройка; отсутствие докладывается, а не чинится).
+// What it bootstraps:
+//   • four `channel:*` labels — the repo's only custom taxonomy, recording how
+//     an issue entered the backlog because GitHub has no native field for it.
+//     Issue class lives in native Type, while provenance is free text in the
+//     body's `**Source:**` line (both per owner rulings from 2026-08-04);
+//   • PERMANENT milestones (`PERMANENT_MILESTONES` in `./lib/gh.mjs`) — themes
+//     that never close: «Platform: operations and hardening» as the fallback for
+//     process/operations issues outside a product theme (canon §2), and
+//     «Dependencies» for automated dependency-update PRs. Permanence is not
+//     decoration: external callers reference such milestones by NAME
+//     (`issue:create`) and NUMBER (`renovate.json`), while a closed theme's
+//     number silently becomes stale;
+//   • compares the NUMBER pinned in `renovate.json` with the live «Dependencies»
+//     number and reports drift with a `⚠` line without editing the config;
+//   • checks for org Issue Types Bug/Feature/Task. A repo cannot create them;
+//     missing types are reported rather than repaired.
 //
-// Чего НЕ делает намеренно: ничего не удаляет. Судьба дефолтных лейблов GitHub
-// (`bug`, `enhancement`, `documentation`, `duplicate`, …) — миграция задачи 7.2,
-// и она идёт вместе с переоформлением задач, которые их носят. Скрипт, который
-// сносит лейбл раньше миграции, обесцвечивает открытый бэклог.
+// Deliberate non-goal: delete nothing. Migration 7.2 decides the fate of default
+// GitHub labels (`bug`, `enhancement`, `documentation`, `duplicate`, …) together
+// with the issues that carry them. Deleting a label before migration strips
+// information from the open backlog.
 //
-// По умолчанию — СУХОЙ ПРОГОН: печатает план и выходит. Запись только по явному
-// `--apply`. Так лид может прочитать план до того, как что-то поедет в облако.
+// The default is a DRY RUN that prints the plan and exits. Writes require an
+// explicit `--apply`, so the lead can read the plan before anything changes.
 //
-// Exit codes: 0 = состояние соответствует плану (или план напечатан);
-// 1 = ошибка gh при применении.
+// Exit codes: 0 = state matches the plan (or the plan was printed);
+// 1 = gh failed while applying it.
 
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -46,38 +46,38 @@ import {
 const TAG = '[taxonomy:bootstrap]'
 
 /**
- * Цвет и описание каждого channel-лейбла — таксономия читается глазами тоже.
- * Канал отвечает на «кто завёл задачу в трекер», а НЕ на «на основании чего она
- * существует»: второе — свободный текст в строке `**Source:**` тела.
+ * Colour and description for each channel label; humans read the taxonomy too.
+ * Channel answers «who put the issue in the tracker», NOT «what warrants its
+ * existence»; the latter is free text in the body's `**Source:**` line.
  */
 export const CHANNEL_LABEL_SPECS = [
   {
     name: 'channel:owner',
     color: '0e8a16',
-    description: 'Канал: задачу завёл или запросил владелец',
+    description: 'Channel: created or requested by the owner',
   },
   {
     name: 'channel:spec',
     color: '1d76db',
-    description: 'Канал: открыта механически из спеки или ADR (issue-граф)',
+    description: 'Channel: opened mechanically from a spec or ADR (issue graph)',
   },
   {
     name: 'channel:retro',
     color: 'fbca04',
-    description: 'Канал: пришла из ретро, /wrap или разбора инцидента',
+    description: 'Channel: came from a retro, /wrap or incident review',
   },
   {
     name: 'channel:agent',
     color: 'd4c5f9',
-    description: 'Канал: инициатива агента',
+    description: 'Channel: agent initiative',
   },
 ]
 
-// ── чистые сеймы (юнит-тестируются в tests/unit/gh-board-tools.spec.ts) ──
+// ── pure seams (unit-tested in tests/unit/gh-board-tools.spec.ts) ────────────
 
 /**
- * План по лейблам: что создать, что обновить (описание/цвет разошлись), что
- * оставить как есть. Ничего не удаляет — удаления в этом инструменте нет.
+ * Label plan: what to create, update (description/colour drift), or keep.
+ * Deletes nothing; this tool has no delete path.
  * @param {{name:string,color?:string,description?:string}[]} existing
  * @returns {{create:object[], update:object[], keep:object[]}}
  */
@@ -103,17 +103,17 @@ export function planLabels(existing, specs = CHANNEL_LABEL_SPECS) {
 }
 
 /**
- * Спека постоянного milestone — то, чем он заводится, а не то, чем его вернул
- * GitHub. Именованной её делает `planMilestones`: без typedef `@returns` пришлось
- * бы расширить до `object[]`, и вызывающий код (в том числе юнит-тест) потерял бы
- * `.title` под `noImplicitAny`.
+ * A permanent milestone spec is what creates the milestone, not GitHub's return
+ * shape. `planMilestones` gives it a name: without this typedef, `@returns`
+ * would widen to `object[]` and callers (including unit tests) would lose
+ * `.title` under `noImplicitAny`.
  * @typedef {{title: string, description: string}} MilestoneSpec
  */
 
 /**
- * План по ПОСТОЯННЫМ milestone: каких из набора не хватает. Существующий (в
- * любом состоянии, включая `closed`) не трогается — закрытие темы это решение
- * владельца, а не дрейф, который инструмент откатывает.
+ * Plan for PERMANENT milestones: which members of the set are missing. An
+ * existing milestone in any state, including `closed`, is left alone; closing a
+ * theme is an owner decision, not drift for tooling to revert.
  * @param {{title:string,state?:string}[]} existing
  * @param {MilestoneSpec[]} [specs]
  * @returns {{create: MilestoneSpec[], keep: MilestoneSpec[]}}
@@ -130,44 +130,49 @@ export function planMilestones(existing, specs = PERMANENT_MILESTONES) {
 }
 
 /**
- * Итог сверки пина `renovate.json` с живым номером milestone.
- * `status`: `ok` — пин совпадает; `drift` — пин указывает не туда (ожидаемый
- * номер в `expected`); `unknown` — milestone ещё не заведён, сверять не с чем;
- * `unpinned` — ключа `milestone` в конфиге нет вовсе.
+ * Result of comparing the `renovate.json` pin with the live milestone number.
+ * `status`: `ok` — pin matches; `drift` — pin points elsewhere (expected number
+ * in `expected`); `unknown` — the milestone does not exist yet, so comparison is
+ * impossible; `unpinned` — the config has no `milestone` key at all.
  * @typedef {{status:'ok'|'drift'|'unknown'|'unpinned', pinned:number|null,
  *            expected:number|null, title:string}} RenovatePinCheck
  */
 
 /**
- * Сверить номер, закреплённый в `renovate.json`, с живым номером постоянного
- * milestone. Renovate принимает milestone только НОМЕРОМ, а номер пересозданной
- * темы меняется молча — отсюда и сверка (почему тема постоянная, см. JSDoc
- * `PERMANENT_MILESTONES` в `./lib/gh.mjs`). Это ОТЧЁТ: ни конфиг, ни milestone
- * тут не правятся.
- * @param {{title:string,number?:number}[]} existing milestone как их вернул GitHub
- * @param {Record<string, unknown>|null|undefined} renovateConfig разобранный renovate.json
+ * Compare the number pinned in `renovate.json` with the live permanent
+ * milestone number. Renovate accepts a milestone only by NUMBER, while a
+ * recreated theme silently gets a different number; hence this check (for why
+ * the theme is permanent, see `PERMANENT_MILESTONES` in `./lib/gh.mjs`). This is
+ * a REPORT: neither config nor milestone is edited here.
+ * @param {{title:string,number?:number}[]} existing milestones returned by GitHub
+ * @param {Record<string, unknown>|null|undefined} renovateConfig parsed renovate.json
  * @param {string} [title]
  * @returns {RenovatePinCheck}
  */
-export function checkRenovateMilestonePin(existing, renovateConfig, title = DEPENDENCIES_MILESTONE) {
+export function checkRenovateMilestonePin(
+  existing,
+  renovateConfig,
+  title = DEPENDENCIES_MILESTONE,
+) {
   const live = (existing ?? []).find((m) => m?.title === title)
   const expected = typeof live?.number === 'number' ? live.number : null
   const raw = renovateConfig?.milestone
-  if (raw === undefined || raw === null) return { status: 'unpinned', pinned: null, expected, title }
+  if (raw === undefined || raw === null)
+    return { status: 'unpinned', pinned: null, expected, title }
   const pinned = typeof raw === 'number' ? raw : null
   if (expected === null) return { status: 'unknown', pinned, expected: null, title }
   if (pinned === expected) return { status: 'ok', pinned, expected, title }
   return { status: 'drift', pinned, expected, title }
 }
 
-/** Каких org Issue Types не хватает. Завести их из репо нельзя — только доложить. */
+/** Missing org Issue Types. A repo cannot create them; it can only report them. */
 export function missingIssueTypes(existing, required = ISSUE_TYPES) {
   const names = new Set((existing ?? []).map((t) => t?.name))
   return required.filter((t) => !names.has(t))
 }
 
 /**
- * План человекочитаемой строкой на каждое действие.
+ * Plan with one human-readable line per action.
  * @param {{labels:{create:object[],update:object[],keep:object[]},
  *          milestones:{create:MilestoneSpec[],keep:MilestoneSpec[]},
  *          missingTypes:string[], renovatePin?:RenovatePinCheck|null}} input
@@ -175,47 +180,51 @@ export function missingIssueTypes(existing, required = ISSUE_TYPES) {
  */
 export function formatPlan({ labels, milestones, missingTypes, renovatePin = null }) {
   const lines = []
-  for (const l of labels.create) lines.push(`СОЗДАТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
-  for (const l of labels.update) lines.push(`ОБНОВИТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
-  for (const l of labels.keep) lines.push(`уже есть: ${l.name}`)
-  for (const m of milestones.create) lines.push(`СОЗДАТЬ milestone «${m.title}» — ${m.description}`)
-  for (const m of milestones.keep) lines.push(`уже есть: milestone «${m.title}»`)
+  for (const l of labels.create)
+    lines.push(`CREATE label ${l.name} (#${l.color}) — ${l.description}`)
+  for (const l of labels.update)
+    lines.push(`UPDATE label ${l.name} (#${l.color}) — ${l.description}`)
+  for (const l of labels.keep) lines.push(`already present: ${l.name}`)
+  for (const m of milestones.create) lines.push(`CREATE milestone «${m.title}» — ${m.description}`)
+  for (const m of milestones.keep) lines.push(`already present: milestone «${m.title}»`)
   for (const t of missingTypes) {
-    lines.push(`⚠ org Issue Type «${t}» отсутствует — заводится в настройках организации ${OWNER}, не отсюда`)
+    lines.push(
+      `⚠ org Issue Type «${t}» is missing — create it in ${OWNER}'s organization settings, not here`,
+    )
   }
   if (renovatePin) {
-    const pin = renovatePin.pinned ?? '(не число)'
+    const pin = renovatePin.pinned ?? '(not a number)'
     if (renovatePin.status === 'ok') {
-      lines.push(`уже есть: пин milestone «${renovatePin.title}» в renovate.json — №${pin}`)
+      lines.push(`already present: milestone pin «${renovatePin.title}» in renovate.json — #${pin}`)
     } else if (renovatePin.status === 'drift') {
       lines.push(
-        `⚠ пин milestone «${renovatePin.title}» в renovate.json — дрейф: там №${pin}, живой номер №${renovatePin.expected}; ` +
-          `renovate.json правится руками, инструмент только докладывает`,
+        `⚠ milestone pin «${renovatePin.title}» in renovate.json has drifted: pinned #${pin}, live #${renovatePin.expected}; ` +
+          `renovate.json is edited manually and this tool only reports`,
       )
     } else if (renovatePin.status === 'unpinned') {
       lines.push(
-        `⚠ ключа milestone в renovate.json нет — номер темы «${renovatePin.title}» ` +
-          `(живой: ${renovatePin.expected === null ? 'тема ещё не заведена' : `№${renovatePin.expected}`}) нигде не закреплён`,
+        `⚠ renovate.json has no milestone key — theme «${renovatePin.title}» has no pinned number ` +
+          `(live: ${renovatePin.expected === null ? 'theme not created yet' : `#${renovatePin.expected}`})`,
       )
     } else {
       lines.push(
-        `пин milestone «${renovatePin.title}» в renovate.json (№${pin}) проверить нельзя: сам milestone ещё не заведён`,
+        `cannot check milestone pin «${renovatePin.title}» in renovate.json (#${pin}): the milestone itself does not exist yet`,
       )
     }
   }
-  if (lines.every((l) => l.startsWith('уже есть'))) lines.push('изменений не требуется')
+  if (lines.every((l) => l.startsWith('already present'))) lines.push('no changes required')
   return lines
 }
 
-// ── импуративная часть ───────────────────────────────────────────────────────
+// ── imperative part ─────────────────────────────────────────────────────────
 
 function out(msg) {
   process.stdout.write(`${TAG} ${msg}\n`)
 }
 
 /**
- * Прочитать и разобрать `renovate.json` из корня репо. Нечитаемый/битый конфиг —
- * не повод валить заводку таксономии: сверка пина тогда просто не найдёт ключа.
+ * Read and parse `renovate.json` from the repo root. An unreadable or malformed
+ * config does not abort taxonomy bootstrap; the pin check simply finds no key.
  * @returns {Record<string, unknown>|null}
  */
 function readRenovateConfig() {
@@ -231,23 +240,23 @@ function die(msg) {
   process.exit(1)
 }
 
-export const USAGE = `Использование: pnpm taxonomy:bootstrap [--apply]
+export const USAGE = `Usage: pnpm taxonomy:bootstrap [--apply]
 
-  Идемпотентно доводит таксономию репо ${REPO} до канона §2:
-    • четыре лейбла channel:* (${CHANNEL_LABELS.join(', ')});
-    • постоянные milestone (${PERMANENT_MILESTONES.map((m) => `«${m.title}»`).join(', ')})
-      — темы, которые не закрываются никогда, поэтому на них можно ссылаться
-      извне именем и номером;
-    • проверяет наличие org Issue Types ${ISSUE_TYPES.join('/')} — завести их из
-      репо нельзя, это настройка организации, поэтому отсутствие докладывается.
+  Idempotently brings ${REPO}'s taxonomy to canon §2:
+    • four channel:* labels (${CHANNEL_LABELS.join(', ')});
+    • permanent milestones (${PERMANENT_MILESTONES.map((m) => `«${m.title}»`).join(', ')})
+      — themes that never close, so external callers can reference them by name
+      and number;
+    • checks for org Issue Types ${ISSUE_TYPES.join('/')} — a repo cannot create
+      these organization settings, so missing types are reported.
 
-  Без флагов — СУХОЙ ПРОГОН: печатает план и выходит. Запись только по --apply.
+  With no flags this is a DRY RUN: it prints the plan and exits. Only --apply writes.
 
-  Ничего не удаляет и удалять не умеет: судьба дефолтных лейблов GitHub идёт
-  вместе с переоформлением задач (задача 7.2), а лейбл, снесённый раньше
-  миграции, обесцвечивает открытый бэклог.
+  It deletes nothing and has no delete path: default GitHub labels are handled
+  together with issue migration (task 7.2), because deleting a label first
+  strips information from the open backlog.
 
-  Exit codes: 0 — план напечатан или применён; 1 — ошибка gh / использования.
+  Exit codes: 0 — plan printed or applied; 1 — gh or usage error.
 `
 
 function main() {
@@ -259,12 +268,21 @@ function main() {
   const apply = argv.includes('--apply')
   for (const a of argv) {
     if (a !== '--apply') {
-      process.stderr.write(`${TAG} неизвестный флаг «${a}»\n${USAGE}`)
+      process.stderr.write(`${TAG} unknown flag «${a}»\n${USAGE}`)
       process.exit(1)
     }
   }
 
-  const labelsRes = ghJson(['label', 'list', '--repo', REPO, '--limit', '200', '--json', 'name,color,description'])
+  const labelsRes = ghJson([
+    'label',
+    'list',
+    '--repo',
+    REPO,
+    '--limit',
+    '200',
+    '--json',
+    'name,color,description',
+  ])
   if (!labelsRes.ok) die(labelsRes.error)
   const milestonesRes = ghJson(['api', `repos/${REPO}/milestones?state=all&per_page=100`])
   if (!milestonesRes.ok) die(milestonesRes.error)
@@ -281,11 +299,11 @@ function main() {
   const missingTypes = missingIssueTypes(orgTypes)
   const renovatePin = checkRenovateMilestonePin(milestonesRes.data, readRenovateConfig())
 
-  out(apply ? 'план (применяется):' : 'СУХОЙ ПРОГОН — план (примени с `--apply`):')
+  out(apply ? 'plan (applying):' : 'DRY RUN — plan (apply with `--apply`):')
   for (const line of formatPlan({ labels, milestones, missingTypes, renovatePin })) out(`  ${line}`)
 
   if (!apply) {
-    out('ничего не изменено.')
+    out('nothing changed.')
     process.exit(0)
   }
 
@@ -302,7 +320,7 @@ function main() {
       spec.description,
     ])
     if (!res.ok) die(res.error)
-    out(`создан лейбл ${spec.name}`)
+    out(`created label ${spec.name}`)
   }
   for (const spec of labels.update) {
     const res = ghResult([
@@ -317,7 +335,7 @@ function main() {
       spec.description,
     ])
     if (!res.ok) die(res.error)
-    out(`обновлён лейбл ${spec.name}`)
+    out(`updated label ${spec.name}`)
   }
   for (const spec of milestones.create) {
     const res = ghResult([
@@ -331,10 +349,10 @@ function main() {
       `description=${spec.description}`,
     ])
     if (!res.ok) die(res.error)
-    out(`создан milestone «${spec.title}»`)
+    out(`created milestone «${spec.title}»`)
   }
 
-  out('ГОТОВО — таксономия приведена к плану (ничего не удалено).')
+  out('DONE — taxonomy now matches the plan (nothing deleted).')
   process.exit(0)
 }
 

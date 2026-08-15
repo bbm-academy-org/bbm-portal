@@ -1,122 +1,124 @@
 ---
 name: spec-issue-graph
-description: Открыть набор задач из принятой спеки/ADR так, чтобы получился связный граф, а не куча плоских issue — родитель, дети нативными sub-issue, рёбра blocked_by сразу, ровно одна берущаяся задача на выходе, номера дописаны обратно в спеку. Использовать, когда спека принята и её надо превратить в задачи. Project-local; this repo only.
+description: Turn an accepted spec or ADR into a connected issue graph rather than a flat pile — parent, native sub-issues, blocked_by edges from the start, exactly one takeable issue at the end, and issue numbers written back into the spec. Use after a spec is accepted and needs to become tracked work. Project-local; this repo only.
 ---
 
-# spec-issue-graph — issue-граф из спеки
+# spec-issue-graph — issue graph from a spec
 
-Адаптация скилла `open-ears-issues` из ds-platform (инвентаризация #127) под наш
-задачник: без EARS-формализма, но с той же механикой — **нативный граф вместо
-прозы**. Канон: [`.claude/skills/task-canon/SKILL.md`](../task-canon/SKILL.md) §3.
+This adapts ds-platform's `open-ears-issues` skill (inventory #127) to this
+project's task system: without EARS formalism, but with the same mechanism — a
+**native graph instead of prose**. Canon:
+[`.claude/skills/task-canon/SKILL.md`](../task-canon/SKILL.md) §3.
 
-Симптом, ради которого скилл существует: набор из спеки приземляется как N
-плоских задач, все «берущиеся», связи описаны словами в теле. Дальше борд врёт
-(готово всё), triage врёт (блокеров нет), а порядок работ живёт только в голове
-того, кто заводил.
+The symptom this skill exists to prevent: a spec lands as N flat issues, all of
+them «takeable», with relations described only in body prose. The board then
+lies (everything is ready), triage lies (there are no blockers), and work order
+exists only in the head of whoever opened the issues.
 
-## Предусловие — без него не начинать
+## Precondition — do not start without it
 
-- Спека/ADR **принята владельцем**; состав задач согласован. Скилл открывает
-  задачи, а не придумывает объём.
-- На выходе бэклог получает **максимум одну новую берущуюся задачу**. Если
-  выходит больше — это не набор из спеки, а свалка: рёбра не проведены.
-- Кросс-репные дети (`bbm-public-website`) **заводятся** и линкуются (одна
-  организация), но здесь **не реализуются** — граница из `CLAUDE.md`.
+- The owner has **accepted the spec/ADR** and agreed on the issue set. This skill
+  opens issues; it does not invent scope.
+- The backlog gains **at most one new takeable issue** at the end. More means the
+  spec became a pile rather than a graph: edges are missing.
+- Cross-repo children (`bbm-public-website`) **are opened** and linked because
+  both repos share an organization, but they are **not implemented here** — see
+  the boundary in `CLAUDE.md`.
 
-## Шаг 1 — таксономия на месте
+## Step 1 — make sure the taxonomy exists
 
 ```bash
-pnpm taxonomy:bootstrap          # сухой прогон: что не хватает
-pnpm taxonomy:bootstrap --apply  # завести channel:*-лейблы и fallback-milestone
+pnpm taxonomy:bootstrap          # dry run: what is missing
+pnpm taxonomy:bootstrap --apply  # create channel:* labels and fallback milestone
 ```
 
-Проверить, что нужный milestone существует. Milestone — долгоживущая тема, а не
-спека: одна спека может лечь в существующую тему, и это нормально.
+Confirm the required milestone exists. A milestone is a long-lived theme, not a
+spec; one spec may belong to an existing theme, and that is normal.
 
-## Шаг 2 — родитель
+## Step 2 — the parent
 
 ```bash
-pnpm issue:create --title "<тема набора>" --body-file <файл> \
+pnpm issue:create --title "<set theme>" --body-file <file> \
   --type Task --label epic --channel spec \
-  --source "<спека/ADR, на основании которой открыт набор>" --milestone "<тема>"
+  --source "<spec/ADR that warrants this set>" --milestone "<theme>"
 ```
 
-Тип родителя — по классу его deliverable; зонтичность несёт лейбл `epic`.
-У эпика `Acceptance criteria` заменяются составом детей (канон §1).
+Choose the parent Type from its deliverable class; the `epic` label carries the
+umbrella role. An epic's child set replaces `Acceptance criteria` (canon §1).
 
-## Шаг 3 — дети, по одному на deliverable
+## Step 3 — children, one per deliverable
 
-Каждый ребёнок — через ту же обёртку, `--channel spec`, тип по классу
-работы (`Feature` / `Bug` / `Task`), тот же milestone. Тело — скелет канона §1;
-`Spec reference` называет спеку **и конкретный §**, а не файл целиком.
+Create every child through the same wrapper, with `--channel spec`, a Type that
+matches the work (`Feature` / `Bug` / `Task`), and the same milestone. The body
+follows canon §1's skeleton; `Spec reference` names the spec **and a specific
+section**, not merely the whole file.
 
-Дробление: один ребёнок = один проверяемый deliverable. Если критерии приёмки
-ребёнка не пишутся без «и ещё», это два ребёнка.
+Slicing rule: one child = one verifiable deliverable. If its acceptance criteria
+cannot be written without «and also», split it into two children.
 
-## Шаг 4 — граф, нативно (самый пропускаемый шаг)
+## Step 4 — build the native graph (the most frequently skipped step)
 
-Эндпоинты берут **numeric DB id**, а не номер задачи:
+The endpoints accept a **numeric DB id**, not an issue number:
 
 ```bash
 OWNER_REPO=bbm-academy-org/bbm-portal
 id() { gh api repos/$OWNER_REPO/issues/$1 --jq .id; }
 
-# ребёнок C становится sub-issue родителя P
+# child C becomes a sub-issue of parent P
 gh api --method POST repos/$OWNER_REPO/issues/<P>/sub_issues -F sub_issue_id=$(id <C>)
 
-# задача B заблокирована задачей A
+# issue B is blocked by issue A
 gh api --method POST repos/$OWNER_REPO/issues/<B>/dependencies/blocked_by -F issue_id=$(id <A>)
 ```
 
-Обратное ребро («blocks») GitHub выводит сам — второй раз в другую сторону не
-проводить.
+GitHub derives the reverse «blocks» edge; do not add it again in the opposite
+direction.
 
-`blocked_by` = **только техническая зависимость**: «раньше физически нельзя».
-Приоритет («сначала хотим вот это») рёбрами не выражается — он выражается
-порядком на борде. Родитель, «связано с», «преемник» блокерами не бывают.
+`blocked_by` means **technical dependency only**: work is physically impossible
+earlier. Priority («we want this first») is represented by board order, not an
+edge. A parent, «related to», and «successor» are never blockers.
 
-## Шаг 5 — rationale на каждое ребро
+## Step 5 — rationale on every edge
 
-Строка в секции `Dependencies` **заблокированной** задачи:
+Add a line to the **blocked** issue's `Dependencies` section:
 
 ```markdown
-**Blocked by:** #131 — контракт БД платформы задаётся там, до него схему писать не во что
+**Blocked by:** #131 — the platform DB contract is defined there; this schema has no target before it
 ```
 
-Ребро без rationale `pnpm backlog:triage` пометит как provenance-orphan — это
-повод оспорить ребро, а не оформительская придирка.
+`pnpm backlog:triage` marks an edge without rationale as a provenance-orphan.
+That is grounds to challenge the edge, not a formatting complaint.
 
-## Шаг 6 — проверка «одна берущаяся»
+## Step 6 — verify «exactly one takeable issue»
 
 ```bash
 pnpm backlog:triage
 ```
 
-В секции «Берущиеся» должна прибавиться **ровно одна** задача набора — голова
-критического пути. Прибавилось больше — вернуться к шагу 4: рёбра между детьми
-не проведены.
+The Takeable section must gain **exactly one** issue from the set: the critical
+path head. If it gains more, return to step 4; child-to-child edges are missing.
 
-Заодно проверить секции «Гигиена полей» (Type/channel/Source/milestone/assignee) и
-«Рёбра без rationale» — обе должны быть пусты по свежесозданным задачам.
+Also check Field hygiene (Type/channel/Source/milestone/assignee) and Edges
+without rationale. Both must be empty for the newly created issues.
 
-## Шаг 7 — номера обратно в спеку
+## Step 7 — write the numbers back into the spec
 
-В шапку спеки, тем же PR, что и сама спека (или следующим, если спека уже в
-`main`):
+Add this to the spec header in the same PR as the spec, or in the next PR if the
+spec is already on `main`:
 
 ```markdown
-- **Задачи:** #130 (родитель), #131, #132, #133
+- **Issues:** #130 (parent), #131, #132, #133
 ```
 
-Спека без номеров задач и задачи без ссылки на § спеки — две половины, которые
-через месяц никто не сведёт.
+A spec without issue numbers and issues without a link to the spec section are
+two halves nobody will reconnect a month later.
 
-## Отказные режимы — что считается провалом
+## Failure modes
 
-| Симптом                                        | Что на самом деле произошло                                           |
-| ---------------------------------------------- | --------------------------------------------------------------------- |
-| В «Берущиеся» приехало 5 задач набора          | Рёбра не проведены; граф остался в голове                             |
-| В теле «зависит от #N», в графе пусто          | Проза связью не считается — ни борд, ни triage её не видят            |
-| Ребро от ребёнка к родителю                    | Иерархия ≠ зависимость; родитель никогда не блокер                    |
-| Задачи заведены `gh issue create`              | Обошли валидацию: Type/channel/Source/milestone могли не проставиться |
-| Спека в `main`, номера задач нигде не записаны | Следующая сессия заведёт те же задачи заново                          |
+| Symptom                                               | What actually happened                                                |
+| ----------------------------------------------------- | --------------------------------------------------------------------- |
+| Five issues from the set appear under Takeable        | Edges were not added; the graph stayed in someone's head              |
+| Body says «depends on #N», while the graph is empty   | Prose is not a relation; neither the board nor triage sees it         |
+| A child-to-parent blocking edge exists                | Hierarchy ≠ dependency; the parent is never a blocker                 |
+| Issues were opened with `gh issue create`             | Validation was bypassed; Type/channel/Source/milestone may be missing |
+| Spec is on `main`, issue numbers are recorded nowhere | The next session will open the same issues again                      |

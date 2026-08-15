@@ -54,6 +54,10 @@ import { REPO, branchTypeFromIssueType } from './lib/gh.mjs'
 
 const TAG = '[dispatch:brief]'
 const MAX_BUFFER = 16 * 1024 * 1024
+// The user-facing session report stays Russian by contract even though project
+// artifacts and agent-facing instructions are English.
+const DEVIATIONS_MARKER =
+  '\u041e\u0442\u043a\u043b\u043e\u043d\u0435\u043d\u0438\u044f \u043e\u0442 \u043a\u043e\u043d\u0432\u0435\u043d\u0446\u0438\u0439: \u043d\u0435\u0442 / <\u0441\u043f\u0438\u0441\u043e\u043a>'
 
 // ── pure seams (unit-tested in tests/unit/dispatch-scripts.spec.ts) ──────────
 
@@ -263,10 +267,10 @@ ${bulletsOrPlaceholder(scopeSource, 'the files this slice touches — each one i
 ## PR
 - Conventional Commits; branch \`${branch}\`.
 - ONE \`gh pr create --body-file\` call with the full body: \`Closes #${n}\`, the repo PR template (\`.github/pull_request_template.md\`), a one-line summary.
-- Do NOT self-review and do NOT merge: the independent review is dispatched by the lead (task-cycle stage 4), and an owner-visible change also needs the owner's live-stand "принято" (stage 5).
+- Do NOT self-review and do NOT merge: the independent review is dispatched by the lead (task-cycle stage 4), and an owner-visible change also needs the owner's recorded live-stand acceptance (stage 5).
 
 ## Return contract (≤30 lines)
-Line 1: PR # + branch. Then: files changed with line counts, gate verdicts, and the mandatory line **«Отклонения от конвенций: нет / <список>»**. Heavy output (full logs, diffs, reports) goes to a scratchpad file or a PR comment — never into the reply.
+Line 1: PR # + branch. Then: files changed with line counts, gate verdicts, and the mandatory user-facing line **«${DEVIATIONS_MARKER}»**. Heavy output (full logs, diffs, reports) goes to a scratchpad file or a PR comment — never into the reply.
 
 ---
 Before dispatch: \`pnpm dispatch:brief-check ${n} <this-file>\` (asserts the brief names every path the issue's Acceptance criteria names, declares a governing skill, and carries a filled \`STAGED:\` token if it stages anything). Every \`Agent\` call names an explicit \`model\` (CLAUDE.md → Subagents and models).
