@@ -31,209 +31,277 @@ const git = (cwd: string, args: string[]) => {
   return result
 }
 
-const alphaEntry = [
-  '- [ ] 2026-08-15 branch alpha records one small deviation — return condition: alpha sweep (#247)',
-  '      alpha continuation stays inside the same readable DEBT entry block',
-  '',
-].join('\n')
-
-const betaEntry = [
-  '- [ ] 2026-08-15 branch beta records another small deviation — return condition: beta sweep (#247)',
-  '      beta continuation stays inside the same readable DEBT entry block',
-  '',
-].join('\n')
-
 const countOccurrences = (text: string, needle: string) => text.split(needle).length - 1
 
-const activeBoundaryMarker = '<!-- entries below this line -->'
+const activeStartMarker = '<!-- entries below this line -->'
+const appendMarker = '<!-- debt-append-marker -->'
 
-const removedActiveEntry = [
-  '- [ ] 2026-08-14 active entry that the sweep removes — return condition: fired trigger (#247)',
-  '      removed entry continuation stays in the same active block',
-  '',
+const endAnchor = (id: string) => `<!-- debt-entry-end: ${id} -->`
+
+const activeBlock = (body: string, id: string) => `${body}\n${endAnchor(id)}`
+
+const baseBody = [
+  '- [ ] 2026-08-14 base active entry — return condition: baseline sweep (#247)',
+  '      base continuation stays inside the same readable DEBT entry block',
 ].join('\n')
 
-const keptActiveEntry = [
+const alphaBody = [
+  '- [ ] 2026-08-15 branch alpha records one small deviation — return condition: alpha sweep (#247)',
+  '      alpha continuation stays inside the same readable DEBT entry block',
+].join('\n')
+
+const betaBody = [
+  '- [ ] 2026-08-15 branch beta records another small deviation — return condition: beta sweep (#247)',
+  '      beta continuation stays inside the same readable DEBT entry block',
+].join('\n')
+
+const keptBody = [
   '- [ ] 2026-08-14 active entry that remains open — return condition: later trigger (#247)',
   '      kept entry continuation stays in the same active block',
-  '',
 ].join('\n')
 
-const appendedActiveEntry = [
+const removedBody = [
+  '- [ ] 2026-08-14 active entry that the sweep removes — return condition: fired trigger (#247)',
+  '      removed entry continuation stays in the same active block',
+].join('\n')
+
+const appendedBody = [
   '- [ ] 2026-08-15 append branch records new active debt — return condition: future sweep (#247)',
   '      appended entry continuation stays in the same active block',
-  '',
 ].join('\n')
 
-const historicalNote = [
-  '_(Swept 2026-08-14 (#240): old historical note stays below active entries.)_',
-  '',
-].join('\n')
+const historicalNote = '_Historical sweep note stays after the permanent append marker._'
+const sweepPromotionNote =
+  '_Sweep note records the removed active entry after the permanent append marker._'
 
-const sweepPromotionNote = [
-  '_(Swept 2026-08-15 (#247): removed the fired active entry from the active list.)_',
-  '',
-].join('\n')
-
-const realDebtLayout = () =>
+const renderDebt = (activeBlocks: string[], historicalNotes = [historicalNote]) =>
   [
     '# DEBT.md — minor convention deviations (decision-debt lite)',
     '',
-    'Rules:',
+    'Rules.',
     '',
-    activeBoundaryMarker,
+    activeStartMarker,
     '',
-    removedActiveEntry,
-    keptActiveEntry,
-    historicalNote,
+    activeBlocks.join('\n\n'),
+    '',
+    appendMarker,
+    '',
+    historicalNotes.join('\n\n'),
+    '',
   ].join('\n')
 
-const insertActiveEntryBeforeHistory = (text: string, entry: string) => {
-  const historyStart = text.indexOf('\n_(')
-  expect(historyStart).toBeGreaterThan(0)
-  return `${text.slice(0, historyStart + 1)}${entry}${text.slice(historyStart + 1)}`
+const insertBeforeAppendMarker = (text: string, block: string) => {
+  const markerIndex = text.indexOf(appendMarker)
+  expect(markerIndex).toBeGreaterThan(0)
+
+  return `${text.slice(0, markerIndex).replace(/\n*$/, '\n\n')}${block}\n\n${text.slice(markerIndex)}`
 }
 
-const deleteActiveEntryAndPromoteSweep = (text: string) => {
-  expect(text).toContain(removedActiveEntry)
-  return text.replace(removedActiveEntry, sweepPromotionNote)
+const noConflict = (text: string) => {
+  expect(text).not.toContain('<<<<<<<')
+  expect(text).not.toContain('=======')
+  expect(text).not.toContain('>>>>>>>')
 }
 
-const assertActiveBeforeHistory = (text: string, entry: string) => {
-  const entryIndex = text.indexOf(entry)
-  const historyIndex = text.indexOf('\n_(')
-  expect(entryIndex).toBeGreaterThan(text.indexOf(activeBoundaryMarker))
-  expect(historyIndex).toBeGreaterThan(0)
-  expect(entryIndex).toBeLessThan(historyIndex)
+const assertOnce = (text: string, needle: string) => {
+  expect(countOccurrences(text, needle)).toBe(1)
 }
 
-describe('DEBT.md merge driver', () => {
-  it('keeps concurrent append-only entries from two branches without a manual conflict', () => {
-    const root = mkdtempSync(join(tmpdir(), 'bbm-debt-merge-'))
+const assertBefore = (text: string, first: string, second: string) => {
+  expect(text.indexOf(first)).toBeGreaterThanOrEqual(0)
+  expect(text.indexOf(second)).toBeGreaterThanOrEqual(0)
+  expect(text.indexOf(first)).toBeLessThan(text.indexOf(second))
+}
+
+const assertReadableActiveBlock = (text: string, body: string, id: string) => {
+  assertOnce(text, body)
+  assertOnce(text, endAnchor(id))
+  expect(text).toContain(`${body}\n${endAnchor(id)}`)
+  assertBefore(text, body, endAnchor(id))
+  assertBefore(text, endAnchor(id), appendMarker)
+}
+
+const assertHistoryAfterAppendMarker = (text: string, note: string) => {
+  assertOnce(text, note)
+  assertBefore(text, appendMarker, note)
+}
+
+const assertAppendMarkerContract = (text: string) => {
+  assertOnce(text, activeStartMarker)
+  assertOnce(text, appendMarker)
+  assertBefore(text, activeStartMarker, appendMarker)
+  expect(text.slice(text.indexOf(appendMarker))).not.toContain('\n- [ ] ')
+}
+
+const makeRepo = (initialDebt: string) => {
+  const root = mkdtempSync(join(tmpdir(), 'bbm-debt-merge-'))
+
+  git(root, ['init', '--initial-branch=main'])
+  git(root, ['config', 'user.email', 'codex@example.invalid'])
+  git(root, ['config', 'user.name', 'Codex Test'])
+  git(root, ['config', 'core.autocrlf', 'false'])
+
+  writeFileSync(
+    join(root, '.gitattributes'),
+    readFileSync(resolve(process.cwd(), '.gitattributes'), 'utf8'),
+    'utf8',
+  )
+  writeFileSync(join(root, 'DEBT.md'), initialDebt, 'utf8')
+
+  git(root, ['add', '.gitattributes', 'DEBT.md'])
+  git(root, ['commit', '-m', 'base'])
+
+  return root
+}
+
+const mergeBothOrders = ({
+  branchA,
+  branchAContent,
+  branchB,
+  branchBContent,
+  initialDebt,
+}: {
+  branchA: string
+  branchAContent: string
+  branchB: string
+  branchBContent: string
+  initialDebt: string
+}) => {
+  const results: string[] = []
+
+  for (const order of [
+    [branchA, branchB],
+    [branchB, branchA],
+  ]) {
+    const root = makeRepo(initialDebt)
 
     try {
-      git(root, ['init', '--initial-branch=main'])
-      git(root, ['config', 'user.email', 'codex@example.invalid'])
-      git(root, ['config', 'user.name', 'Codex Test'])
-      git(root, ['config', 'core.autocrlf', 'false'])
-
-      writeFileSync(
-        join(root, '.gitattributes'),
-        readFileSync(resolve(process.cwd(), '.gitattributes'), 'utf8'),
-        'utf8',
-      )
-      writeFileSync(
-        join(root, 'DEBT.md'),
-        [
-          '# DEBT.md — minor convention deviations (decision-debt lite)',
-          '',
-          '<!-- entries below this line -->',
-          '',
-          '- [ ] 2026-08-14 base entry — return condition: baseline sweep (#247)',
-          '      base continuation stays inside the same readable DEBT entry block',
-          '',
-        ].join('\n'),
-        'utf8',
-      )
-      mkdirSync(join(root, 'nested'))
-      writeFileSync(
-        join(root, 'nested', 'DEBT.md'),
-        '# nested debt is not the root ledger\n',
-        'utf8',
-      )
-
-      expect(git(root, ['check-attr', 'merge', '--', 'DEBT.md', 'nested/DEBT.md']).stdout).toBe(
-        ['DEBT.md: merge: union', 'nested/DEBT.md: merge: unspecified', ''].join('\n'),
-      )
-
-      git(root, ['add', '.gitattributes', 'DEBT.md', 'nested/DEBT.md'])
-      git(root, ['commit', '-m', 'base'])
-
-      git(root, ['checkout', '-b', 'alpha'])
-      writeFileSync(join(root, 'DEBT.md'), alphaEntry, { encoding: 'utf8', flag: 'a' })
-      git(root, ['commit', '-am', 'append alpha debt'])
+      git(root, ['checkout', '-b', branchA])
+      writeFileSync(join(root, 'DEBT.md'), branchAContent, 'utf8')
+      git(root, ['commit', '-am', `${branchA} debt change`])
 
       git(root, ['checkout', 'main'])
-      git(root, ['checkout', '-b', 'beta'])
-      writeFileSync(join(root, 'DEBT.md'), betaEntry, { encoding: 'utf8', flag: 'a' })
-      git(root, ['commit', '-am', 'append beta debt'])
+      git(root, ['checkout', '-b', branchB])
+      writeFileSync(join(root, 'DEBT.md'), branchBContent, 'utf8')
+      git(root, ['commit', '-am', `${branchB} debt change`])
 
       git(root, ['checkout', 'main'])
-      git(root, ['merge', '--no-edit', 'alpha'])
+      git(root, ['merge', '--no-edit', order[0]!])
 
-      const secondMerge = runGit(root, ['merge', '--no-edit', 'beta'])
+      const secondMerge = runGit(root, ['merge', '--no-edit', order[1]!])
       expect(
         secondMerge.status,
-        `second merge should not conflict\n${secondMerge.stdout}\n${secondMerge.stderr}`,
+        `${order.join(' then ')} should not conflict\n${secondMerge.stdout}\n${secondMerge.stderr}`,
       ).toBe(0)
 
-      const mergedDebt = readFileSync(join(root, 'DEBT.md'), 'utf8')
-      expect(countOccurrences(mergedDebt, alphaEntry)).toBe(1)
-      expect(countOccurrences(mergedDebt, betaEntry)).toBe(1)
-      expect(mergedDebt).not.toContain('<<<<<<<')
-      expect(mergedDebt).not.toContain('=======')
-      expect(mergedDebt).not.toContain('>>>>>>>')
+      results.push(readFileSync(join(root, 'DEBT.md'), 'utf8'))
     } finally {
       rmSync(root, { force: true, recursive: true })
     }
+  }
+
+  return results
+}
+
+const parseActiveRegion = (text: string) => {
+  const start = text.indexOf(activeStartMarker)
+  const end = text.indexOf(appendMarker)
+  expect(start).toBeGreaterThanOrEqual(0)
+  expect(end).toBeGreaterThan(start)
+
+  return text
+    .slice(start + activeStartMarker.length, end)
+    .trim()
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+}
+
+describe('DEBT.md merge protocol', () => {
+  it('keeps two concurrent active appends in both merge orders', () => {
+    const initialDebt = renderDebt([activeBlock(baseBody, 'base-entry')])
+    const alphaBlock = activeBlock(alphaBody, 'alpha-entry')
+    const betaBlock = activeBlock(betaBody, 'beta-entry')
+    const results = mergeBothOrders({
+      branchA: 'alpha',
+      branchAContent: insertBeforeAppendMarker(initialDebt, alphaBlock),
+      branchB: 'beta',
+      branchBContent: insertBeforeAppendMarker(initialDebt, betaBlock),
+      initialDebt,
+    })
+
+    for (const mergedDebt of results) {
+      noConflict(mergedDebt)
+      assertAppendMarkerContract(mergedDebt)
+      assertReadableActiveBlock(mergedDebt, baseBody, 'base-entry')
+      assertReadableActiveBlock(mergedDebt, alphaBody, 'alpha-entry')
+      assertReadableActiveBlock(mergedDebt, betaBody, 'beta-entry')
+      assertHistoryAfterAppendMarker(mergedDebt, historicalNote)
+    }
   })
 
-  it('does not resurrect a sweep-deleted active entry when another branch appends before history', () => {
-    const root = mkdtempSync(join(tmpdir(), 'bbm-debt-sweep-append-'))
+  it('keeps a swept last-entry body deleted while preserving its anchor and a concurrent append', () => {
+    const removedId = 'removed-entry'
+    const initialDebt = renderDebt([
+      activeBlock(keptBody, 'kept-entry'),
+      activeBlock(removedBody, removedId),
+    ])
+    const sweepDebt = renderDebt(
+      [activeBlock(keptBody, 'kept-entry'), endAnchor(removedId)],
+      [historicalNote, sweepPromotionNote],
+    )
+    const appendDebt = insertBeforeAppendMarker(
+      initialDebt,
+      activeBlock(appendedBody, 'append-entry'),
+    )
+    const results = mergeBothOrders({
+      branchA: 'sweep',
+      branchAContent: sweepDebt,
+      branchB: 'append',
+      branchBContent: appendDebt,
+      initialDebt,
+    })
+
+    for (const mergedDebt of results) {
+      noConflict(mergedDebt)
+      assertAppendMarkerContract(mergedDebt)
+      expect(countOccurrences(mergedDebt, removedBody)).toBe(0)
+      assertOnce(mergedDebt, endAnchor(removedId))
+      assertReadableActiveBlock(mergedDebt, keptBody, 'kept-entry')
+      assertReadableActiveBlock(mergedDebt, appendedBody, 'append-entry')
+      assertBefore(mergedDebt, endAnchor(removedId), appendedBody)
+      assertHistoryAfterAppendMarker(mergedDebt, historicalNote)
+      assertHistoryAfterAppendMarker(mergedDebt, sweepPromotionNote)
+    }
+  })
+
+  it('the shipped DEBT.md has one append marker and unique anchors for every active block', () => {
+    const debt = readFileSync(resolve(process.cwd(), 'DEBT.md'), 'utf8')
+
+    assertAppendMarkerContract(debt)
+
+    const activeBlocks = parseActiveRegion(debt)
+    const anchors = new Set<string>()
+
+    for (const block of activeBlocks) {
+      const matches = [...block.matchAll(/<!-- debt-entry-end: ([a-z0-9-]+) -->/g)]
+
+      expect(matches.length, block).toBe(1)
+      expect(block.endsWith(matches[0]![0]), block).toBe(true)
+      expect(anchors.has(matches[0]![1]), matches[0]![1]).toBe(false)
+      anchors.add(matches[0]![1])
+    }
+  })
+
+  it('keeps the root-only merge attribute scoped to the root ledger', () => {
+    const root = makeRepo(renderDebt([activeBlock(baseBody, 'base-entry')]))
+    mkdirSync(join(root, 'nested'))
+    writeFileSync(join(root, 'nested', 'DEBT.md'), '# nested debt is not the root ledger\n', 'utf8')
 
     try {
-      git(root, ['init', '--initial-branch=main'])
-      git(root, ['config', 'user.email', 'codex@example.invalid'])
-      git(root, ['config', 'user.name', 'Codex Test'])
-      git(root, ['config', 'core.autocrlf', 'false'])
-
-      writeFileSync(
-        join(root, '.gitattributes'),
-        readFileSync(resolve(process.cwd(), '.gitattributes'), 'utf8'),
-        'utf8',
+      expect(git(root, ['check-attr', 'merge', '--', 'DEBT.md', 'nested/DEBT.md']).stdout).toBe(
+        ['DEBT.md: merge: union', 'nested/DEBT.md: merge: unspecified', ''].join('\n'),
       )
-      writeFileSync(join(root, 'DEBT.md'), realDebtLayout(), 'utf8')
-
-      git(root, ['add', '.gitattributes', 'DEBT.md'])
-      git(root, ['commit', '-m', 'base'])
-
-      git(root, ['checkout', '-b', 'sweep'])
-      writeFileSync(
-        join(root, 'DEBT.md'),
-        deleteActiveEntryAndPromoteSweep(realDebtLayout()),
-        'utf8',
-      )
-      git(root, ['commit', '-am', 'sweep fired debt'])
-
-      git(root, ['checkout', 'main'])
-      git(root, ['checkout', '-b', 'append'])
-      writeFileSync(
-        join(root, 'DEBT.md'),
-        insertActiveEntryBeforeHistory(realDebtLayout(), appendedActiveEntry),
-        'utf8',
-      )
-      git(root, ['commit', '-am', 'append new debt'])
-
-      git(root, ['checkout', 'main'])
-      git(root, ['merge', '--no-edit', 'sweep'])
-
-      const secondMerge = runGit(root, ['merge', '--no-edit', 'append'])
-      expect(
-        secondMerge.status,
-        `sweep + append merge should not conflict\n${secondMerge.stdout}\n${secondMerge.stderr}`,
-      ).toBe(0)
-
-      const mergedDebt = readFileSync(join(root, 'DEBT.md'), 'utf8')
-      expect(countOccurrences(mergedDebt, removedActiveEntry)).toBe(0)
-      expect(countOccurrences(mergedDebt, appendedActiveEntry)).toBe(1)
-      expect(countOccurrences(mergedDebt, keptActiveEntry)).toBe(1)
-      expect(countOccurrences(mergedDebt, historicalNote)).toBe(1)
-      expect(countOccurrences(mergedDebt, sweepPromotionNote)).toBe(1)
-      assertActiveBeforeHistory(mergedDebt, keptActiveEntry)
-      assertActiveBeforeHistory(mergedDebt, appendedActiveEntry)
-      expect(mergedDebt).not.toContain('<<<<<<<')
-      expect(mergedDebt).not.toContain('=======')
-      expect(mergedDebt).not.toContain('>>>>>>>')
     } finally {
       rmSync(root, { force: true, recursive: true })
     }
