@@ -17,10 +17,10 @@
 //   <emit handoff> | pnpm handoff:verify          # stdin
 //
 // What counts as an extractable ref (NL prose understanding is OUT of scope):
-//   • Issue/PR numbers: `#N`, `PR #N`, `PR N`, `issue N` → `gh issue view` /
-//     `gh pr view --json state` (open/closed/merged), always with an explicit
-//     `--repo bbm-academy-org/bbm-portal` so the answer does not depend on
-//     which worktree the session sits in (same convention as `backlog:triage`).
+//   • Issue/PR numbers: `#N`, `PR #N`, `PR N`, `issue N`, `owner/repo#N` →
+//     `gh issue view` / `gh pr view --json state` (open/closed/merged). Qualified
+//     refs resolve in the named repository; unqualified refs resolve here. Every
+//     call carries an explicit `--repo`, like `backlog:triage`.
 //   • Commit SHAs: 7–40 hex chars carrying at least one digit AND one a-f
 //     letter (heuristic vs plain numbers/words) → `git merge-base --is-ancestor
 //     <sha> origin/main` (merged/unmerged).
@@ -138,8 +138,15 @@ const GIT_MAX_BUFFER = 16 * 1024 * 1024
 export const BRANCH_PREFIXES = [...new Set([...Object.values(TYPE_TO_BRANCH), 'docs', 'refactor'])]
 
 // Issue/PR-number pattern, shared by ref extraction and approval-claim
-// extraction (fresh instance per use — /g regexes are stateful).
-const numRe = () => /(?:\b(PRs?|pull requests?|issues?)\s*[#№]?\s*|[#№])(\d{1,6})\b/gi
+// extraction (fresh instance per use — /g regexes are stateful). A directly
+// qualified `owner/repo#N` keeps that repository identity through every gh
+// resolver; an unqualified ref belongs to this repository.
+const numRe = () =>
+  /(?:(?<repo>[a-z0-9_.-]+\/[a-z0-9_.-]+))?(?:\b(?<hint>PRs?|pull requests?|issues?)\s*[#№]?\s*|[#№])(?<number>\d{1,6})\b/gi
+
+function numberRefLabel(repo, n) {
+  return repo === REPO ? `#${n}` : `${repo}#${n}`
+}
 
 /** Owner token on a line (EN/RU), ignoring the CODEOWNERS false positive. */
 function hasOwnerToken(line) {
@@ -199,7 +206,7 @@ function segmentIndexAt(segments, at) {
  * it sits in plus the two attribution flags dedupeRefs needs (`ambiguous`,
  * `soleOnLine`).
  * @param {string} text
- * @returns {{kind: "issue"|"pr"|"number"|"sha"|"branch", value: string|number, line: string, lineNo: number, segment: string, ambiguous: boolean, soleOnLine: boolean}[]}
+ * @returns {{kind: "issue"|"pr"|"number"|"sha"|"branch", value: string|number, repo?: string, line: string, lineNo: number, segment: string, ambiguous: boolean, soleOnLine: boolean}[]}
  */
 export function extractRefs(text) {
   const refs = []
@@ -213,13 +220,21 @@ export function extractRefs(text) {
     // directly after a "PR" / "pull request" / "issue" word. A bare number with
     // neither is NOT a ref (too many false positives — ports, dates, counts).
     for (const m of line.matchAll(numRe())) {
-      const hint = (m[1] ?? '').toLowerCase()
-      const kind = hint.startsWith('pr') || hint.startsWith('pull')
-        ? 'pr'
-        : hint.startsWith('issue')
-          ? 'issue'
-          : 'number'
-      found.push({ kind, value: Number(m[2]), line, lineNo, at: m.index })
+      const hint = (m.groups?.hint ?? '').toLowerCase()
+      const kind =
+        hint.startsWith('pr') || hint.startsWith('pull')
+          ? 'pr'
+          : hint.startsWith('issue')
+            ? 'issue'
+            : 'number'
+      found.push({
+        kind,
+        value: Number(m.groups?.number),
+        repo: m.groups?.repo ?? REPO,
+        line,
+        lineNo,
+        at: m.index,
+      })
     }
 
     // Branch names: <prefix>/<N>-<slug> (canon §2 / `pnpm task:worktree`).
@@ -227,6 +242,7 @@ export function extractRefs(text) {
     const branchRanges = []
     for (const m of line.matchAll(branchRe)) {
       branchRanges.push([m.index, m.index + m[0].length])
+      if (/\.[a-z0-9]+$/i.test(m[0])) continue
       found.push({ kind: 'branch', value: m[0], line, lineNo, at: m.index })
     }
 
@@ -253,6 +269,7 @@ export function extractRefs(text) {
       refs.push({
         kind: r.kind,
         value: r.value,
+        repo: r.repo,
         line: r.line,
         lineNo: r.lineNo,
         segment: segments[r.segIdx]?.text ?? r.line,
@@ -336,10 +353,13 @@ export function claimForRef(ref) {
 export function dedupeRefs(refs) {
   const byId = new Map()
   for (const r of refs) {
-    const id = r.kind === 'sha' || r.kind === 'branch' ? `${r.kind}:${r.value}` : `num:${r.value}`
+    const id =
+      r.kind === 'sha' || r.kind === 'branch'
+        ? `${r.kind}:${r.value}`
+        : `num:${r.repo ?? REPO}:${r.value}`
     let entry = byId.get(id)
     if (!entry) {
-      entry = { kind: r.kind, value: r.value, claims: new Set(), lineNo: r.lineNo }
+      entry = { kind: r.kind, value: r.value, repo: r.repo, claims: new Set(), lineNo: r.lineNo }
       byId.set(id, entry)
     }
     // A concrete issue/pr hint beats an unhinted `#N` for lookup ordering.
@@ -350,6 +370,7 @@ export function dedupeRefs(refs) {
   return [...byId.values()].map((e) => ({
     kind: e.kind,
     value: e.value,
+    repo: e.repo,
     claims: e.claims.size > 0 ? [...e.claims] : [null],
     lineNo: e.lineNo,
   }))
@@ -359,7 +380,7 @@ export function dedupeRefs(refs) {
  * Extract owner-approval CLAIMS about issue refs. A line carries an approval
  * claim when it has ≥1 issue-ref AND matches the TIGHT approval pattern.
  * @param {string} text
- * @returns {{issue: number, line: string, lineNo: number}[]} deduped per issue
+ * @returns {{issue: number, repo: string, line: string, lineNo: number}[]} deduped per repository and issue
  */
 export function extractApprovalClaims(text) {
   const claims = []
@@ -369,10 +390,12 @@ export function extractApprovalClaims(text) {
     .forEach((line, i) => {
       if (!isApprovalClaimLine(line)) return
       for (const m of line.matchAll(numRe())) {
-        const issue = Number(m[2])
-        if (seen.has(issue)) continue
-        seen.add(issue)
-        claims.push({ issue, line, lineNo: i + 1 })
+        const issue = Number(m.groups?.number)
+        const repo = m.groups?.repo ?? REPO
+        const id = `${repo}#${issue}`
+        if (seen.has(id)) continue
+        seen.add(id)
+        claims.push({ issue, repo, line, lineNo: i + 1 })
       }
     })
   return claims
@@ -386,10 +409,11 @@ export function extractApprovalClaims(text) {
  * `no-owner-provenance` otherwise; `not-found` on gh failure/404.
  * @param {Runner} runner
  * @param {number} n
+ * @param {string} [repo]
  * @returns {"owner-quoted"|"no-owner-provenance"|"not-found"}
  */
-export function resolveProvenance(runner, n) {
-  const res = runner.gh(ghViewArgs('issue', n, 'body,comments'))
+export function resolveProvenance(runner, n, repo = REPO) {
+  const res = runner.gh(ghViewArgs('issue', n, 'body,comments', repo))
   if (res.status !== 0) return 'not-found'
   let payload
   try {
@@ -420,16 +444,17 @@ export function verifyApprovalClaims(claims, runner) {
   const rows = []
   const hints = []
   for (const c of claims) {
-    const actual = resolveProvenance(runner, c.issue)
+    const actual = resolveProvenance(runner, c.issue, c.repo)
+    const ref = numberRefLabel(c.repo, c.issue)
     rows.push({
       verdict: actual === 'owner-quoted' ? 'PASS' : 'STALE',
-      ref: `#${c.issue}`,
+      ref,
       claim: 'owner-approved',
       actual,
     })
     if (actual === 'no-owner-provenance')
       hints.push(
-        `${TAG} #${c.issue} is claimed owner-approved but its provenance carries no quotable owner turn (discovery-only?) — «handoff ≠ go» (task-cycle stage 2): reconcile with the owner before building.`,
+        `${TAG} ${ref} is claimed owner-approved but its provenance carries no quotable owner turn (discovery-only?) — «handoff ≠ go» (task-cycle stage 2): reconcile with the owner before building.`,
       )
   }
   return { rows, stale: rows.filter((r) => r.verdict === 'STALE').length, hints }
@@ -591,8 +616,8 @@ export function verifyOwnerDirectiveClaims(claims, quoteEvidence) {
  * is the `backlog:triage` convention: a handoff is usually verified from a
  * session worktree, and inferring the repo from cwd is one more premise.
  */
-export function ghViewArgs(kind, n, fields) {
-  return [kind === 'pr' ? 'pr' : 'issue', 'view', String(n), '--repo', REPO, '--json', fields]
+export function ghViewArgs(kind, n, fields, repo = REPO) {
+  return [kind === 'pr' ? 'pr' : 'issue', 'view', String(n), '--repo', repo, '--json', fields]
 }
 
 /**
@@ -615,8 +640,8 @@ export function defaultRunner() {
 }
 
 /** `gh issue|pr view <n> --json state` → canonical state string or null. */
-function ghState(runner, kind, n) {
-  const res = runner.gh(ghViewArgs(kind, n, 'state'))
+function ghState(runner, kind, n, repo) {
+  const res = runner.gh(ghViewArgs(kind, n, 'state', repo))
   if (res.status !== 0) return null
   try {
     const s = String(JSON.parse(res.stdout).state ?? '').toLowerCase()
@@ -627,10 +652,10 @@ function ghState(runner, kind, n) {
 }
 
 /** Resolve a #N to its actual state, trying the hinted kind first. */
-function resolveNumber(runner, kind, n) {
+function resolveNumber(runner, kind, n, repo) {
   const order = kind === 'pr' ? ['pr', 'issue'] : ['issue', 'pr']
   for (const k of order) {
-    const s = ghState(runner, k, n)
+    const s = ghState(runner, k, n, repo)
     if (s) return s
   }
   return 'not-found'
@@ -670,16 +695,21 @@ export function verifyRefs(refs, runner) {
   const cache = new Map()
   for (const entry of dedupeRefs(refs)) {
     const cacheKey =
-      entry.kind === 'sha' || entry.kind === 'branch' ? `${entry.kind}:${entry.value}` : `num:${entry.value}`
+      entry.kind === 'sha' || entry.kind === 'branch'
+        ? `${entry.kind}:${entry.value}`
+        : `num:${entry.repo ?? REPO}:${entry.value}`
     let actual = cache.get(cacheKey)
     if (actual === undefined) {
       actual =
         entry.kind === 'sha' || entry.kind === 'branch'
           ? resolveGitRef(runner, entry.kind, entry.value)
-          : resolveNumber(runner, entry.kind, entry.value)
+          : resolveNumber(runner, entry.kind, entry.value, entry.repo ?? REPO)
       cache.set(cacheKey, actual)
     }
-    const refLabel = entry.kind === 'sha' || entry.kind === 'branch' ? String(entry.value) : `#${entry.value}`
+    const refLabel =
+      entry.kind === 'sha' || entry.kind === 'branch'
+        ? String(entry.value)
+        : numberRefLabel(entry.repo ?? REPO, entry.value)
     for (const claim of entry.claims) {
       rows.push({ verdict: verdictFor(claim, actual), ref: refLabel, claim, actual })
     }
