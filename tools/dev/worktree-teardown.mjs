@@ -35,7 +35,7 @@
 // (fail loud — a typo must never masquerade as a clean teardown).
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -124,7 +124,22 @@ export function branchDeletionDecision(branch, isMergedIntoMain) {
   return isMergedIntoMain ? 'delete' : 'keep'
 }
 
-export function branchDatabaseTeardownPlan(rawArg, absPath, root) {
+function envNamesBranchDatabase(envContents, taskId) {
+  const expected = `platform_${taskId}`
+  for (const line of String(envContents ?? '').split(/\r?\n/)) {
+    const match = /^PLATFORM_DATABASE_URL=(.*)$/.exec(line.trim())
+    if (!match) continue
+    const value = match[1].trim().replace(/^['"]|['"]$/g, '')
+    try {
+      return new URL(value).pathname.replace(/^\//, '').toLowerCase() === expected
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+export function branchDatabaseTeardownPlan(rawArg, absPath, root, localEnvContents = '') {
   const numericArg = /^[1-9][0-9]*$/.test(String(rawArg ?? '')) ? String(rawArg) : null
   const container = normPath(join(root ?? '', '.claude', 'worktrees'))
   const target = normPath(absPath)
@@ -141,6 +156,12 @@ export function branchDatabaseTeardownPlan(rawArg, absPath, root) {
   }
   const taskId = numericArg ?? pathId
   if (!taskId) return { action: 'skip', reason: 'not a numeric task worktree' }
+  if (!envNamesBranchDatabase(localEnvContents, taskId)) {
+    return {
+      action: 'skip',
+      reason: `no local PLATFORM_DATABASE_URL marker for platform_${taskId}`,
+    }
+  }
   return { action: 'drop', taskId }
 }
 
@@ -305,9 +326,22 @@ function scriptRepoRoot() {
 
 function dropBranchDatabaseBeforeWorktreeRemoval(taskId, absPath) {
   const script = join(scriptRepoRoot(), 'tools', 'platform', 'branch-database.mjs')
+  const envWithoutPlatformUrl = { ...process.env }
+  delete envWithoutPlatformUrl.PLATFORM_DATABASE_URL
   return run(process.execPath, [script, 'drop', taskId, '--env-root', absPath], {
     cwd: existsSync(absPath) ? absPath : scriptRepoRoot(),
+    env: envWithoutPlatformUrl,
   })
+}
+
+function readLocalEnv(absPath) {
+  const path = join(absPath, '.env')
+  if (!existsSync(path)) return ''
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
 }
 
 function main() {
@@ -408,7 +442,7 @@ function main() {
 
   let dbPlan
   try {
-    dbPlan = branchDatabaseTeardownPlan(positional[0], absPath, root)
+    dbPlan = branchDatabaseTeardownPlan(positional[0], absPath, root, readLocalEnv(absPath))
   } catch (err) {
     die(`cannot decide branch database teardown safely: ${err?.message ?? String(err)}`, 1)
   }

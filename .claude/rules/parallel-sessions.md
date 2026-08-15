@@ -52,14 +52,16 @@
 ForEach-Object { Stop-Process -Id $_ -Force }`. Свой — тот, который запустила
   эта сессия.
 
-## База платформы
+## Platform database
 
-- **Branch, don't share.** Для platform DB у числового worktree своя база:
-  `pnpm dev:db:branch` внутри `.claude/worktrees/<N>` создаёт `platform_<N>`,
-  пишет в локальный `.env` этого worktree `PLATFORM_DATABASE_URL=…/platform_<N>`
-  и печатает строку подключения. После этого `pnpm platform:migrate` в этом
-  worktree не трогает общую `platform` и не может упасть на Payload `cms`.
-- **Разборка убирает БД.** `pnpm worktree:teardown <N>` перед удалением worktree
-  дропает только `platform_<N>` и сообщает об этом. Если дроп не удался,
-  teardown останавливается: лучше явно оставить worktree, чем молча протечь
-  базой.
+- **Branch, don't share.** A numeric task worktree gets its own platform DB:
+  `pnpm dev:db:branch` inside `.claude/worktrees/<N>` creates `platform_<N>`,
+  writes the local worktree `.env` marker
+  `PLATFORM_DATABASE_URL=…/platform_<N>`, and prints the connection string.
+  After that, `pnpm platform:migrate` in that worktree does not touch shared
+  `platform` and cannot fall back to Payload `cms`.
+- **Teardown removes only proven branch DBs.** `pnpm worktree:teardown <N>`
+  drops `platform_<N>` before removing the worktree only when that worktree's
+  local `.env` names exactly `platform_<N>`. Without that marker it skips DB
+  cleanup and says why; if the marker exists and the drop fails, teardown stops
+  rather than claiming a clean teardown while leaking a database.

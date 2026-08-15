@@ -14,6 +14,8 @@ export const BRANCH_DATABASE_RE = /^platform_([1-9][0-9]*)$/
 
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_$]*$/
 
+// DDL cannot bind identifiers as parameters; every database name must pass this
+// regex before it can reach CREATE/DROP.
 export function quoteIdentifier(name) {
   return `"${String(name).replace(/"/g, '""')}"`
 }
@@ -38,6 +40,8 @@ export function deriveMaintenanceTarget(connectionString) {
     }
   }
 
+  // Keep pathname encoding intact: a name that needed decoding is not a plain
+  // identifier and must fail closed below.
   const database = url.pathname.replace(/^\//, '')
   if (!database) {
     return { ok: false, error: `no database name in the connection string (${raw})` }
@@ -49,6 +53,8 @@ export function deriveMaintenanceTarget(connectionString) {
     }
   }
 
+  // Case-insensitive refusal is intentional: quoted "CMS" would be distinct in
+  // Postgres, but this tool's contract is to never name Payload's DB in DDL.
   const normalized = database.toLowerCase()
   if (normalized === MAINTENANCE_DATABASE) {
     return {
@@ -67,6 +73,8 @@ export function deriveMaintenanceTarget(connectionString) {
     }
   }
 
+  // Swap only the path, preserving credentials, port and query params such as
+  // sslmode; rebuilding URLs is how maintenance connections silently drift.
   const maintenance = new URL(url.toString())
   maintenance.pathname = `/${MAINTENANCE_DATABASE}`
   return {
@@ -113,6 +121,8 @@ export async function ensureDatabase(connectionString, { Client } = {}) {
       target.database,
     ])
     const created = rowCount === 0
+    // This is the full live scope of the ensure seam: one optional CREATE
+    // DATABASE, no schemas and no migrations.
     if (created) await client.query(`CREATE DATABASE ${quoteIdentifier(target.database)}`)
     return { database: target.database, created, host: target.host }
   } finally {
@@ -123,6 +133,8 @@ export async function ensureDatabase(connectionString, { Client } = {}) {
 export async function dropBranchDatabase(connectionString, taskId, { Client } = {}) {
   const target = deriveMaintenanceTarget(connectionString)
   if (!target.ok) throw new Error(target.error)
+  // Drop is narrower than ensure: only the exact branch DB derived from the task
+  // id can pass, never shared `platform` and never Payload `cms`.
   assertDroppableBranchDatabaseName(target.database, taskId)
 
   const ClientImpl = Client ?? (await import('pg')).Client
