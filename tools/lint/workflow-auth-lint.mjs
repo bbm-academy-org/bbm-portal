@@ -33,6 +33,26 @@
 // its own needs-list — and the rule does not apply to workflows with no
 // aggregate, where `needs` could not reach it anyway.
 //
+// Third check — VACUOUS BLOCK (#207). The severity pair above has a fourth
+// state: a job that is BOTH `continue-on-error: true` AND in the needs-list. It
+// sits there looking like a gate while its failure can no longer redden the
+// aggregate, so the needs-list — which canon §2.1 declares to BE the BLOCK set —
+// becomes factually wrong. One rule covers both topologies: under the old
+// per-job shape it masks one guard, under a batch job every guard in it at once,
+// BLOCK ones included.
+//
+// Fourth check — UNAGGREGATED WARN STEP (#207, from review of PR #206). In a
+// batch job the severity moves from the job to the STEP: a guard step carries
+// `continue-on-error: true`, and its finding reaches a reader only through a row
+// in that job's WARN-outcomes aggregation step (the step that reads
+// `steps.<id>.outcome`). A WARN step with no row is invisible twice over — the
+// finding is swallowed by `continue-on-error` and no annotation is emitted — so
+// §4's clean promotion window gets counted off a table that does not include it.
+// Only GUARD steps are held to this (a `run:` reaching a `tools/lint/*-lint.*`
+// by path or through its `pnpm lint:<name>` alias); a non-guard step is free to
+// tolerate its own failure. A WARN guard step with no `id:` is the same finding:
+// no row can reference it at all.
+//
 // Derived, never a literal list: the gh-consumer set comes from scanning
 // `tools/lint/` for the `./lib/gh.mjs` import, and the alias map from
 // `package.json`. A new gh-consuming guard is picked up with no edit here. The
@@ -63,6 +83,13 @@ const BARE_GH_RE = /(^|[\n;&|]\s*|\s&&\s|\s\|\|\s)gh\s/
 // block — vacuously red on every PR, which is what this guard exists to stop.
 const IMPORTS_GH_LIB_RE = /['"][^'"]*lib\/gh\.mjs['"]/
 const SPAWNS_GH_RE = /(?:spawnSync|spawn|execFile|execFileSync|execa)\(\s*['"]gh['"]/
+
+/** A guard invoked by path — the flat layout §8 enforces and both meta-guards assume. */
+const GUARD_PATH_RE = /tools\/lint\/[A-Za-z0-9_-]+-lint\.(?:mjs|ts)\b/
+/** The aggregation step reads `steps.<id>.outcome` — `.conclusion` is masked by continue-on-error. */
+const STEP_OUTCOME_RE = /steps\.[A-Za-z0-9_-]+\.outcome/
+
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
  * Pure decision seam: guard sources in, the paths that reach GitHub out.
@@ -103,6 +130,19 @@ export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } =
     return false
   }
 
+  // A step is a GUARD step when its command reaches a `tools/lint/<name>-lint.*`
+  // — by path, or through the `pnpm lint:<name>` alias that resolves to one.
+  // Derived from package.json exactly like the gh-consumer set above, so a new
+  // guard is covered with no edit here.
+  const guardStep = (cmd) => {
+    if (GUARD_PATH_RE.test(cmd)) return true
+    for (const [name, body] of Object.entries(scriptMap)) {
+      const invoked = new RegExp(`\\b(pnpm|npm run|yarn)\\s+(run\\s+)?${escapeRe(name)}\\b`)
+      if (invoked.test(cmd) && GUARD_PATH_RE.test(String(body))) return true
+    }
+    return false
+  }
+
   const findings = []
   for (const { file, doc } of workflows) {
     const jobs = doc?.jobs ?? {}
@@ -116,13 +156,66 @@ export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } =
       for (const [jobName, job] of Object.entries(jobs)) {
         if (jobName === 'ci') continue // the aggregate cannot be in its own needs-list
         const warn = job?.['continue-on-error'] === true
-        if (!warn && !needsList.includes(jobName)) {
+        const listed = needsList.includes(jobName)
+        if (!warn && !listed) {
           findings.push({
             file,
             job: jobName,
             kind: 'undeclared-severity',
             detail:
               'job is neither WARN (`continue-on-error: true`) nor BLOCK (listed in the `ci` needs-list) — it shows red on the PR while gating nothing',
+          })
+        }
+        if (warn && listed) {
+          findings.push({
+            file,
+            job: jobName,
+            kind: 'vacuous-block',
+            detail:
+              'job is in the `ci` needs-list (BLOCK) while carrying `continue-on-error: true` — it looks like a gate but its failure can no longer redden the aggregate; drop one of the two',
+          })
+        }
+      }
+    }
+
+    // Step-level severity inside a batch job (#207): every WARN guard step needs
+    // a row in the job's WARN-outcomes aggregation step, or its finding is
+    // swallowed silently. Applies to every workflow — the batch shape is not
+    // specific to the one that owns the `ci` aggregate.
+    for (const [jobName, job] of Object.entries(jobs)) {
+      const runSteps = (Array.isArray(job?.steps) ? job.steps : []).filter(
+        (step) => typeof step?.run === 'string',
+      )
+      const warnSteps = runSteps.filter(
+        (step) => step['continue-on-error'] === true && guardStep(step.run),
+      )
+      if (warnSteps.length === 0) continue
+
+      // The aggregation step is identified by what it DOES — reading
+      // `steps.<id>.outcome` — not by its name, which is a convention. A WARN
+      // guard step is never its own aggregator.
+      const aggregation = runSteps
+        .filter((step) => !warnSteps.includes(step) && STEP_OUTCOME_RE.test(step.run))
+        .map((step) => step.run)
+        .join('\n')
+
+      for (const step of warnSteps) {
+        const label = step.name ?? step.id ?? step.run.split('\n')[0].slice(0, 40)
+        if (step.id === undefined) {
+          findings.push({
+            file,
+            job: jobName,
+            kind: 'unaggregated-warn-step',
+            detail: `WARN guard step (${label}) carries no \`id:\`, so no row in the WARN-outcomes step can read its \`outcome\``,
+          })
+          continue
+        }
+        if (!new RegExp(`steps\\.${escapeRe(step.id)}\\.outcome`).test(aggregation)) {
+          findings.push({
+            file,
+            job: jobName,
+            kind: 'unaggregated-warn-step',
+            detail: `WARN guard step \`${step.id}\` (${label}) has no row reading \`steps.${step.id}.outcome\` in this job's WARN-outcomes aggregation step — its finding is swallowed by \`continue-on-error\` and never annotated`,
           })
         }
       }
@@ -207,16 +300,23 @@ async function main() {
   )
   const findings = auditWorkflows(workflows, { ghConsumers, scriptMap })
   if (findings.length === 0) {
-    out.ok('PASS — every GitHub-reaching job carries permissions + GH_TOKEN (+ PR_NUMBER).')
+    out.ok(
+      'PASS — every GitHub-reaching job carries permissions + GH_TOKEN (+ PR_NUMBER), ' +
+        'and every job/WARN guard step declares its severity honestly.',
+    )
   }
   for (const f of findings) {
     out.finding(`${f.kind}  ${f.file} :: job \`${f.job}\`  — ${f.detail}`)
   }
   out.fail(
-    `${findings.length} auth gap(s). The canonical block: the JOB carries ` +
+    `${findings.length} finding(s). Auth: the JOB carries ` +
       '`permissions: { contents: read, pull-requests: read }` and the invoking STEP carries ' +
-      '`GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` + `PR_NUMBER: ${{ github.event.pull_request.number }}`. ' +
-      'Without it the job goes red before it evaluates its own rule. Canon: docs/ci-guardrails.md §8.',
+      '`GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` + `PR_NUMBER: ${{ github.event.pull_request.number }}`; ' +
+      'without it the job goes red before it evaluates its own rule. Severity (canon §2.1): a job is ' +
+      'WARN (`continue-on-error: true`, absent from the `ci` needs-list) or BLOCK (needs-listed, no ' +
+      '`continue-on-error`) — never both, never neither; and a WARN guard STEP in a batch job carries ' +
+      "an `id:` plus a row reading `steps.<id>.outcome` in that job's WARN-outcomes step. " +
+      'Canon: docs/ci-guardrails.md §2.1 + §8.',
   )
 }
 
