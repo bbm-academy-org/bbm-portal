@@ -209,10 +209,38 @@ describe('classifyTeardownTarget', () => {
 })
 
 describe('branchDatabaseTeardownPlan', () => {
-  it('tears down the matching platform_<N> database for a numeric task worktree', () => {
-    const plan = branchDatabaseTeardownPlan('200', '/repo/.claude/worktrees/200', '/repo')
+  it('skips a numeric task worktree that never wrote a local branch DB marker', () => {
+    const plan = branchDatabaseTeardownPlan('200', '/repo/.claude/worktrees/200', '/repo', '')
+
+    expect(plan).toEqual({
+      action: 'skip',
+      reason: 'no local PLATFORM_DATABASE_URL marker for platform_200',
+    })
+  })
+
+  it('tears down the matching platform_<N> database only when the local .env marks it', () => {
+    const plan = branchDatabaseTeardownPlan(
+      '200',
+      '/repo/.claude/worktrees/200',
+      '/repo',
+      'PLATFORM_DATABASE_URL=postgres://payload:pw@postgres:5432/platform_200\n',
+    )
 
     expect(plan).toEqual({ action: 'drop', taskId: '200' })
+  })
+
+  it('skips a numeric task worktree whose local marker names another database', () => {
+    const plan = branchDatabaseTeardownPlan(
+      '200',
+      '/repo/.claude/worktrees/200',
+      '/repo',
+      'PLATFORM_DATABASE_URL=postgres://payload:pw@postgres:5432/platform_201\n',
+    )
+
+    expect(plan).toEqual({
+      action: 'skip',
+      reason: 'no local PLATFORM_DATABASE_URL marker for platform_200',
+    })
   })
 
   it('fails closed when the numeric argument and worktree basename disagree', () => {
