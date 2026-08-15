@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  checkRenovateMilestonePin,
   formatPlan,
   missingIssueTypes,
   planLabels,
@@ -282,6 +283,75 @@ describe('bootstrap-taxonomy — план', () => {
       missingTypes: [],
     })
     expect(lines).toContain('изменений не требуется')
+  })
+
+  it('пин renovate.json, совпадающий с живым номером, — это OK', () => {
+    const check = checkRenovateMilestonePin(
+      [
+        { title: FALLBACK_MILESTONE, number: 1 },
+        { title: DEPENDENCIES_MILESTONE, number: 4 },
+      ],
+      { milestone: 4 },
+    )
+    expect(check.status).toBe('ok')
+    expect(check.expected).toBe(4)
+    const lines = formatPlan({
+      labels: planLabels(CHANNEL_LABEL_SPECS),
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).not.toMatch(/⚠/)
+    expect(lines).toContain('изменений не требуется')
+  })
+
+  it('пин, указывающий на другой номер, — дрейф с ожидаемым номером в строке', () => {
+    const check = checkRenovateMilestonePin([{ title: DEPENDENCIES_MILESTONE, number: 7 }], {
+      milestone: 4,
+    })
+    expect(check.status).toBe('drift')
+    expect(check.pinned).toBe(4)
+    expect(check.expected).toBe(7)
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/⚠.*renovate\.json.*4.*7/)
+  })
+
+  it('milestone ещё не заведён — это «проверить нельзя», а не дрейф', () => {
+    const check = checkRenovateMilestonePin([{ title: FALLBACK_MILESTONE, number: 1 }], {
+      milestone: 4,
+    })
+    expect(check.status).toBe('unknown')
+    expect(check.expected).toBeNull()
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones([{ title: FALLBACK_MILESTONE, state: 'open' }]),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/проверить нельзя/)
+    expect(lines.join('\n')).not.toMatch(/дрейф/)
+  })
+
+  it('renovate.json без ключа milestone — это «не закреплён», а не дрейф', () => {
+    const check = checkRenovateMilestonePin([{ title: DEPENDENCIES_MILESTONE, number: 4 }], {
+      extends: ['config:recommended'],
+    })
+    expect(check.status).toBe('unpinned')
+    expect(check.pinned).toBeNull()
+    expect(check.expected).toBe(4)
+    const lines = formatPlan({
+      labels: { create: [], update: [], keep: [] },
+      milestones: planMilestones(PERMANENT_MILESTONES),
+      missingTypes: [],
+      renovatePin: check,
+    })
+    expect(lines.join('\n')).toMatch(/⚠.*не закреплён/)
+    expect(lines.join('\n')).not.toMatch(/дрейф/)
   })
 
   it('отсутствующий org Issue Type докладывается, а не чинится отсюда', () => {

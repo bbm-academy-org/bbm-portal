@@ -13,6 +13,8 @@
 //     зависимостей. Постоянство здесь — не украшение: на такой milestone
 //     ссылаются извне именем (`issue:create`) и НОМЕРОМ (`renovate.json`), а
 //     номер закрывшейся темы протухает молча.
+//   • сверяет закреплённый в `renovate.json` НОМЕР с живым номером «Dependencies»
+//     и докладывает расхождение строкой `⚠` — конфиг при этом не правится;
 //   • проверяет наличие org Issue Types Bug/Feature/Task (создать их из репо
 //     нельзя — это org-настройка; отсутствие докладывается, а не чинится).
 //
@@ -27,10 +29,12 @@
 // Exit codes: 0 = состояние соответствует плану (или план напечатан);
 // 1 = ошибка gh при применении.
 
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 import {
   CHANNEL_LABELS,
+  DEPENDENCIES_MILESTONE,
   ISSUE_TYPES,
   PERMANENT_MILESTONES,
   OWNER,
@@ -125,14 +129,51 @@ export function planMilestones(existing, specs = PERMANENT_MILESTONES) {
   return { create, keep }
 }
 
+/**
+ * Итог сверки пина `renovate.json` с живым номером milestone.
+ * `status`: `ok` — пин совпадает; `drift` — пин указывает не туда (ожидаемый
+ * номер в `expected`); `unknown` — milestone ещё не заведён, сверять не с чем;
+ * `unpinned` — ключа `milestone` в конфиге нет вовсе.
+ * @typedef {{status:'ok'|'drift'|'unknown'|'unpinned', pinned:number|null,
+ *            expected:number|null, title:string}} RenovatePinCheck
+ */
+
+/**
+ * Сверить номер, закреплённый в `renovate.json`, с живым номером постоянного
+ * milestone. Renovate принимает milestone только НОМЕРОМ, а номер пересозданной
+ * темы меняется молча — отсюда и сверка (почему тема постоянная, см. JSDoc
+ * `PERMANENT_MILESTONES` в `./lib/gh.mjs`). Это ОТЧЁТ: ни конфиг, ни milestone
+ * тут не правятся.
+ * @param {{title:string,number?:number}[]} existing milestone как их вернул GitHub
+ * @param {Record<string, unknown>|null|undefined} renovateConfig разобранный renovate.json
+ * @param {string} [title]
+ * @returns {RenovatePinCheck}
+ */
+export function checkRenovateMilestonePin(existing, renovateConfig, title = DEPENDENCIES_MILESTONE) {
+  const live = (existing ?? []).find((m) => m?.title === title)
+  const expected = typeof live?.number === 'number' ? live.number : null
+  const raw = renovateConfig?.milestone
+  if (raw === undefined || raw === null) return { status: 'unpinned', pinned: null, expected, title }
+  const pinned = typeof raw === 'number' ? raw : null
+  if (expected === null) return { status: 'unknown', pinned, expected: null, title }
+  if (pinned === expected) return { status: 'ok', pinned, expected, title }
+  return { status: 'drift', pinned, expected, title }
+}
+
 /** Каких org Issue Types не хватает. Завести их из репо нельзя — только доложить. */
 export function missingIssueTypes(existing, required = ISSUE_TYPES) {
   const names = new Set((existing ?? []).map((t) => t?.name))
   return required.filter((t) => !names.has(t))
 }
 
-/** План человекочитаемой строкой на каждое действие. */
-export function formatPlan({ labels, milestones, missingTypes }) {
+/**
+ * План человекочитаемой строкой на каждое действие.
+ * @param {{labels:{create:object[],update:object[],keep:object[]},
+ *          milestones:{create:MilestoneSpec[],keep:MilestoneSpec[]},
+ *          missingTypes:string[], renovatePin?:RenovatePinCheck|null}} input
+ * @returns {string[]}
+ */
+export function formatPlan({ labels, milestones, missingTypes, renovatePin = null }) {
   const lines = []
   for (const l of labels.create) lines.push(`СОЗДАТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
   for (const l of labels.update) lines.push(`ОБНОВИТЬ лейбл ${l.name} (#${l.color}) — ${l.description}`)
@@ -142,6 +183,26 @@ export function formatPlan({ labels, milestones, missingTypes }) {
   for (const t of missingTypes) {
     lines.push(`⚠ org Issue Type «${t}» отсутствует — заводится в настройках организации ${OWNER}, не отсюда`)
   }
+  if (renovatePin) {
+    const pin = renovatePin.pinned ?? '(не число)'
+    if (renovatePin.status === 'ok') {
+      lines.push(`уже есть: пин milestone «${renovatePin.title}» в renovate.json — №${pin}`)
+    } else if (renovatePin.status === 'drift') {
+      lines.push(
+        `⚠ пин milestone «${renovatePin.title}» в renovate.json — дрейф: там №${pin}, живой номер №${renovatePin.expected}; ` +
+          `renovate.json правится руками, инструмент только докладывает`,
+      )
+    } else if (renovatePin.status === 'unpinned') {
+      lines.push(
+        `⚠ ключа milestone в renovate.json нет — номер темы «${renovatePin.title}» ` +
+          `(живой: ${renovatePin.expected === null ? 'тема ещё не заведена' : `№${renovatePin.expected}`}) нигде не закреплён`,
+      )
+    } else {
+      lines.push(
+        `пин milestone «${renovatePin.title}» в renovate.json (№${pin}) проверить нельзя: сам milestone ещё не заведён`,
+      )
+    }
+  }
   if (lines.every((l) => l.startsWith('уже есть'))) lines.push('изменений не требуется')
   return lines
 }
@@ -150,6 +211,19 @@ export function formatPlan({ labels, milestones, missingTypes }) {
 
 function out(msg) {
   process.stdout.write(`${TAG} ${msg}\n`)
+}
+
+/**
+ * Прочитать и разобрать `renovate.json` из корня репо. Нечитаемый/битый конфиг —
+ * не повод валить заводку таксономии: сверка пина тогда просто не найдёт ключа.
+ * @returns {Record<string, unknown>|null}
+ */
+function readRenovateConfig() {
+  try {
+    return JSON.parse(readFileSync(new URL('../../renovate.json', import.meta.url), 'utf8'))
+  } catch {
+    return null
+  }
 }
 
 function die(msg) {
@@ -205,9 +279,10 @@ function main() {
   const labels = planLabels(labelsRes.data)
   const milestones = planMilestones(milestonesRes.data)
   const missingTypes = missingIssueTypes(orgTypes)
+  const renovatePin = checkRenovateMilestonePin(milestonesRes.data, readRenovateConfig())
 
   out(apply ? 'план (применяется):' : 'СУХОЙ ПРОГОН — план (примени с `--apply`):')
-  for (const line of formatPlan({ labels, milestones, missingTypes })) out(`  ${line}`)
+  for (const line of formatPlan({ labels, milestones, missingTypes, renovatePin })) out(`  ${line}`)
 
   if (!apply) {
     out('ничего не изменено.')
