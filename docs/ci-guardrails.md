@@ -78,14 +78,105 @@ read as a verdict. Do not re-enable it without changing the gate first.
 rather than reviewed. The `ci` aggregate itself is the one exemption — it cannot be in its
 own needs-list.
 
-**Branch-protection limitation (verified 2026-08-05).** `.github/branch-protection.json`
-is a declarative payload, not live state: this repo is private on GitHub Free, and
-`GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection` answers
-`403 Upgrade to GitHub Pro or make this repository public`. Until the plan is upgraded or
-the repo is public, **BLOCK is enforced by the merge tooling, not by the server**: a red
-`ci` check makes `pnpm pr:land` refuse to merge (task-canon §7), and that is the whole
-barrier. The payload's `required_status_checks.contexts` is kept correct so that the
-upgrade is a single `gh api --method PUT … --input .github/branch-protection.json` away.
+**And a job that is BOTH is the same bug from the other side (#207).** A needs-listed job
+carrying `continue-on-error: true` is a **vacuous BLOCK**: it sits in the list that §2.1
+declares to BE the BLOCK set, while its failure can no longer redden the aggregate.
+`workflow-auth` fails on it too (`vacuous-block`), so the needs-list and the flags cannot
+disagree silently. The rule is written per job and therefore covers a batch job as well,
+where one such flag would mask every guard step inside it at once. **An expression** —
+`continue-on-error: ${{ … }}` — is the third way to say nothing: the value is decided at
+runtime, so the file declares neither severity, and the guard reports it as
+`undeclared-severity`.
+
+**Inside a batch job the pair above is read off the STEP, not the job**, and the
+step-level obligations that go with it (an `id:`, and another step of the job reading
+`steps.<id>.outcome`) live in §8, «Wiring convention for a batch job» — with
+`workflow-auth`'s `unaggregated-warn-step` enforcing them.
+
+**Branch protection — live since 2026-08-14 (#216).** `.github/branch-protection.json` is
+a declarative payload; `main` now carries it as server-side protection. The table below
+is what the API returns when the protection is **read back**, which is how it was
+verified — a `PUT` exiting 0 is not evidence that the branch ended up in the intended
+state.
+
+| Setting                                  | Live value                                           | What it actually buys                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `required_status_checks.contexts`        | `["ci"]`, bound to app `github-actions` (id `15368`) | the `ci` meta-job of `ci.yml` is the single required check — which is the reason that job's name may never change (the file says so at the job itself)                                                                                                                                                       |
+| `required_status_checks.strict`          | `true`                                               | a PR must be up to date with `main` to merge. This is why `pnpm pr:land` counts `mergeStateStatus=BEHIND` as RED — it was a remark until #216, which was correct only while the merge could still succeed                                                                                                    |
+| `enforce_admins`                         | `true`                                               | the rules bind the repo's only admin too; without it the floor is advisory and the one account that can bypass it is the one that opens every PR                                                                                                                                                             |
+| `required_linear_history`                | `true`                                               | squash-merge only — which is exactly what `pnpm pr:land` performs                                                                                                                                                                                                                                            |
+| `allow_force_pushes` / `allow_deletions` | `false`                                              | `main` cannot be rewritten or deleted                                                                                                                                                                                                                                                                        |
+| `required_conversation_resolution`       | `true`                                               | unresolved review threads block a merge. The reviewer subagent posts a plain PR comment rather than review threads, so the normal review path is unaffected — but nothing in `pnpm pr:land` checks for unresolved threads, so an inline review comment left open blocks the merge with no gate warning first |
+| `required_pull_request_reviews`          | absent                                               | deliberate, not an omission — task-canon §7: the only human with permissions is the PR author and cannot APPROVE his own PR                                                                                                                                                                                  |
+| `lock_branch`                            | `false`                                              | `main` is not read-only                                                                                                                                                                                                                                                                                      |
+| `block_creations`                        | `false`                                              | **inert under this config** — it blocks the CREATION of refs matching the pattern and only bites when `restrictions` is set, which it is not (`restrictions: null`). Listed so a reader does not mistake `false` for a deliberate permission we granted                                                      |
+| `allow_fork_syncing`                     | `false`                                              | **inert under this config** — it governs pulling upstream changes into a **locked** branch, and `lock_branch` is `false`. It is not a control over what a fork can do to `main`; forks cannot write here regardless                                                                                          |
+| `required_signatures`                    | `false`                                              | not in the payload and not enabled — commit signing is not set up on the operator's box, so requiring it would wedge every merge                                                                                                                                                                             |
+
+**Verified, not assumed.** A direct push to `main` was attempted on 2026-08-14 with a
+commit whose tree was identical to `main`'s, and the server rejected it:
+`GH006: Protected branch update failed … Required status check "ci" is expected`.
+`main` stayed at `cce6631`. That is the acceptance evidence #216 asked for — the read-back
+above proves the settings exist, this proves they bite.
+
+**Why the gap existed.** Until 2026-08-14 the payload could not become live at all: on
+GitHub Free a **private** repo answers `403 Upgrade to GitHub Pro or make this repository
+public` to `GET/PUT /repos/bbm-academy-org/bbm-portal/branches/main/protection`. The repo
+went public that day (#214), satisfying that error's own escape clause, and #216 applied
+the payload the same day. In between, the state was a gap rather than a constraint.
+
+**BLOCK now has two enforcers, and they are not the same plane.** The server refuses a
+merge whose `ci` check is not green. `pnpm pr:land` refuses for that reason **and** for a
+missing `VERDICT: APPROVE` comment newer than the code it approves (task-canon §7) — a rule the
+server knows nothing about. WARN guards stay invisible to the server either way, because
+the required context is `ci` and they are absent from its needs-list. What promotion costs
+now depends on which workflow the guard lives in:
+
+| Guard's home                                | Promoting it to BLOCK                                                                                                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                                    | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                  |
+| `pr-body-guards.yml` (all six guards today) | `needs` cannot cross workflows, so pick one: move the job into `ci.yml`, teach `pnpm pr:land` to demand its check-run by name, or — new since #216 — add its own context to the payload and re-apply it |
+
+That third option did not exist while `main` was unprotected. It is the only one of the
+three that makes the server itself the enforcer, and the only one that requires a
+protection change; the "Cross-workflow guards" paragraph above lists the other two.
+
+**Break-glass.** `enforce_admins: true` plus a required `ci` context means that when
+GitHub Actions itself is degraded, nothing merges — no account can override it, which is
+the point and also the risk. The escape is to remove the protection, merge, and re-apply
+the payload: `gh api --method DELETE …/branches/main/protection`, then the `PUT` above.
+Both halves are one command; the failure mode to avoid is doing the first and forgetting
+the second, which is exactly the drift recorded in `DEBT.md`.
+
+**The file and the branch drift independently.** Editing `branch-protection.json` does not
+touch `main`, and editing the protection through the GitHub UI does not touch the file.
+After changing either, re-apply and read back. Nothing reconciles them automatically
+today — recorded in `DEBT.md`.
+
+### 2.1.1 Secret-bearing workflows and PR events
+
+This repo has exactly one long-lived secret, `MATTERMOST_RELEASE_WEBHOOK_URL`, used by
+`product-note-mattermost.yml` and `release-digest.yml`. **The rule: a job that can read
+it is never reachable from a pull-request event.** Neither of those two files owns this
+rule — it binds both — so it lives here and they point at it.
+
+The mechanism matters, because the intuitive version of it is false and was written into
+this repo's comments until #214 corrected it:
+
+| Trigger                                            | Secrets available?        | Verdict                                                                                      |
+| -------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| `pull_request` from a **fork**                     | **no** — GitHub withholds | not the hazard people assume; a forker cannot read the webhook even if a PR event were added |
+| `pull_request` from a **branch in this repo**      | **yes**                   | real residual: any collaborator's branch would receive it                                    |
+| `pull_request_target` + checkout of the PR head    | **yes**, in base context  | the genuine hazard — base-repo permissions running fork-controlled code                      |
+| `push` / `deployment_status` / `workflow_dispatch` | yes                       | fine: none of them is attacker-triggerable here                                              |
+
+Note the third row's precision: `pull_request_target` alone is not a leak. It becomes one
+when combined with checking out the pull request's head. This repo uses that trigger
+nowhere, which is the invariant worth preserving.
+
+Until #214 this rule had two enforcers — the self-hosted pool's manager policy (#202) plus
+each workflow's trigger list. The pool is gone; the trigger lists are the only enforcement
+left, which is why widening one is a security change and not a convenience edit.
 
 ### 2.2 Hook guards
 
@@ -181,21 +272,21 @@ promoted, or left WARN with the reason — in this file's §5/§6 tables.
 Severity-of-record is the workflow file; this table is the register that must match it,
 and `workflow-auth` + `guard-test-coverage` keep the mechanics honest.
 
-| Guard                   | Workflow             | What it catches                                                                                                                                                                                                                                                                                                                                               | Severity  | Since      | Promotion                                                                                                                                                                                     |
-| ----------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **guard-test-coverage** | `ci.yml`             | a `tools/lint/<name>-lint.*` with no `tools/lint/guard-tests/<name>-lint.spec.ts`; also an orphaned spec, and a guard that evades the flat layout of §8 (nested dir, or no `-lint` suffix)                                                                                                                                                                    | **BLOCK** | 2026-08-05 | day-0 mandate: deterministic tree check (§3 class 1)                                                                                                                                          |
-| **tdd-signal**          | `ci.yml`             | a PR that changes production source and ships no test, in a module that has no test either                                                                                                                                                                                                                                                                    | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                                                               |
-| **no-stub**             | `ci.yml`             | a user-facing dev placeholder ("set this env var"), or a `TODO`/`FIXME`/`STUB` standing in for a deliverable with no `#NNN`                                                                                                                                                                                                                                   | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                                                               |
-| **workflow-auth**       | `ci.yml`             | a workflow job that reaches GitHub through `gh` without `permissions:` + `GH_TOKEN`/`PR_NUMBER` wiring                                                                                                                                                                                                                                                        | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                                                               |
-| **epic-autoclose**      | `pr-body-guards.yml` | `Closes #<epic>` on a PR whose target issue still has OPEN sub-issues — merging would auto-close a live epic                                                                                                                                                                                                                                                  | WARN      | 2026-08-05 | earliest 2026-09-02; BLOCK also needs the cross-workflow decision in §2.1                                                                                                                     |
-| **assignee-milestone**  | `pr-body-guards.yml` | an open PR with no assignee or no milestone — an un-triageable board row                                                                                                                                                                                                                                                                                      | WARN      | 2026-08-05 | earliest 2026-09-02; see §7 for why this is not a day-0 BLOCK here                                                                                                                            |
-| **product-note**        | `pr-body-guards.yml` | a PR touching the user-facing render surface with no `## Product note (RU)` a reader would notice                                                                                                                                                                                                                                                             | WARN      | 2026-08-05 | **blocked on task 7.6** (#137, release-note delivery) — a note nobody delivers is not worth blocking a merge for; promote with 7.6, not on the clock                                          |
-| **spec-link**           | `pr-body-guards.yml` | a feature PR (a `Feature` issue or a `feat:` title, changing `src/`) that resolves to no spec — or resolves to one that is missing, statusless, or still `Draft`                                                                                                                                                                                              | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard authored in task 7.4 (#135); wired here, invoked with `--severity block` so the script gives a real signal while the CI plane stays WARN               |
-| **instruction-budget**  | `ci.yml`             | the always-on agent context (CLAUDE.md + AGENTS.md + `.claude/rules/*.md` + the MEMORY.md index) over 200 lines / 25 KB per file, **or the corpus sum over 800 lines / 100 KB**                                                                                                                                                                               | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard landed in task 7.8 (#139) CLI-only; **wired into `ci.yml` by #157**, which is what started this plane's clock. No `--severity` flag — see §6.1 for why |
-| **stage-b**             | `pr-body-guards.yml` | a UI diff (non-test `*.tsx` / `*.css` under `src/`) with no recorded `Stage-B:` verdict in the PR body or a linked-issue comment                                                                                                                                                                                                                              | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard authored in task 7.7 (#138); wired here, invoked with `--severity block` so the script gives a real signal while the CI plane stays WARN               |
-| **ears-naming**         | `ci.yml`             | a test title that ATTEMPTS the `EARS-N:` prefix and misspells it (`ears-3:`, `EARS3:`, `EARS-3` with no colon, `EARS 3:`) — the traceability grep then silently misses it                                                                                                                                                                                     | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard tranche 2 (#157)                                                                                                                                       |
-| **ears-test**           | `ci.yml`             | an `EARS-N` clause declared in a spec's `## Requirements` that no test title cites, or a test citing a clause no spec declares (orphan), or a stale entry in the deferral allowlist; **also the wrong-tree class** — zero spec FILES scanned is exit 1, fail-closed (a corpus that HAS specs but no clauses yet is the documented on-touch state and exits 0) | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard tranche 2 (#157)                                                                                                                                       |
-| **spec-deletion**       | `pr-body-guards.yml` | a PR deleting a `.md` under `docs/specs` / `docs/superpowers/specs` / `docs/adr` with no sanctioned escape; **and** the repo-wide spec status sweep (statusless, off-ladder, `Superseded` with no live successor); **also the wrong-tree class** — zero spec FILES scanned is exit 1, fail-closed, not a clean sweep                                          | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard tranche 2 (#157). Both finding classes are WARN, so the one exit code carries one severity (§2)                                                        |
+| Guard                   | Workflow             | What it catches                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Severity  | Since      | Promotion                                                                                                                                                                                     |
+| ----------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **guard-test-coverage** | `ci.yml`             | a `tools/lint/<name>-lint.*` with no `tools/lint/guard-tests/<name>-lint.spec.ts`; also an orphaned spec, and a guard that evades the flat layout of §8 (nested dir, or no `-lint` suffix)                                                                                                                                                                                                                                                                                                                                                                                                                                     | **BLOCK** | 2026-08-05 | day-0 mandate: deterministic tree check (§3 class 1)                                                                                                                                          |
+| **tdd-signal**          | `ci.yml`             | a PR that changes production source and ships no test, in a module that has no test either                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                                                               |
+| **no-stub**             | `ci.yml`             | a user-facing dev placeholder ("set this env var"), or a `TODO`/`FIXME`/`STUB` standing in for a deliverable with no `#NNN`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses                                                                                                                                                               |
+| **workflow-auth**       | `ci.yml`             | a workflow job that reaches GitHub through `gh` without `permissions:` + `GH_TOKEN`/`PR_NUMBER` wiring; **and the severity classes of §2.1** — `undeclared-severity` (a `ci.yml` job that is neither WARN nor BLOCK), `vacuous-block` (needs-listed AND `continue-on-error: true`), `unaggregated-warn-step` (a WARN guard step in a batch job whose `steps.<id>.outcome` no other step of that job reads, an `id:`-less such step included — the obligation itself lives in §8, «Wiring convention for a batch job»); an expression-valued `continue-on-error:` is `undeclared-severity` too — it declares no severity at all | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. The two severity classes landed in #207; all four classes share the one exit code and therefore the one severity (§2)                                        |
+| **epic-autoclose**      | `pr-body-guards.yml` | `Closes #<epic>` on a PR whose target issue still has OPEN sub-issues — merging would auto-close a live epic                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | WARN      | 2026-08-05 | earliest 2026-09-02; BLOCK also needs the cross-workflow decision in §2.1                                                                                                                     |
+| **assignee-milestone**  | `pr-body-guards.yml` | an open PR with no assignee or no milestone — an un-triageable board row                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | WARN      | 2026-08-05 | earliest 2026-09-02; see §7 for why this is not a day-0 BLOCK here                                                                                                                            |
+| **product-note**        | `pr-body-guards.yml` | a PR touching the user-facing render surface with no `## Product note (RU)` a reader would notice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | WARN      | 2026-08-05 | **blocked on task 7.6** (#137, release-note delivery) — a note nobody delivers is not worth blocking a merge for; promote with 7.6, not on the clock                                          |
+| **spec-link**           | `pr-body-guards.yml` | a feature PR (a `Feature` issue or a `feat:` title, changing `src/`) that resolves to no spec — or resolves to one that is missing, statusless, or still `Draft`                                                                                                                                                                                                                                                                                                                                                                                                                                                               | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard authored in task 7.4 (#135); wired here, invoked with `--severity block` so the script gives a real signal while the CI plane stays WARN               |
+| **instruction-budget**  | `ci.yml`             | the always-on agent context (CLAUDE.md + AGENTS.md + `.claude/rules/*.md` + the MEMORY.md index) over 200 lines / 25 KB per file, **or the corpus sum over 800 lines / 100 KB**                                                                                                                                                                                                                                                                                                                                                                                                                                                | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard landed in task 7.8 (#139) CLI-only; **wired into `ci.yml` by #157**, which is what started this plane's clock. No `--severity` flag — see §6.1 for why |
+| **stage-b**             | `pr-body-guards.yml` | a UI diff (non-test `*.tsx` / `*.css` under `src/`) with no recorded `Stage-B:` verdict in the PR body or a linked-issue comment                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard authored in task 7.7 (#138); wired here, invoked with `--severity block` so the script gives a real signal while the CI plane stays WARN               |
+| **ears-naming**         | `ci.yml`             | a test title that ATTEMPTS the `EARS-N:` prefix and misspells it (`ears-3:`, `EARS3:`, `EARS-3` with no colon, `EARS 3:`) — the traceability grep then silently misses it                                                                                                                                                                                                                                                                                                                                                                                                                                                      | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard tranche 2 (#157)                                                                                                                                       |
+| **ears-test**           | `ci.yml`             | an `EARS-N` clause declared in a spec's `## Requirements` that no test title cites, or a test citing a clause no spec declares (orphan), or a stale entry in the deferral allowlist; **also the wrong-tree class** — zero spec FILES scanned is exit 1, fail-closed (a corpus that HAS specs but no clauses yet is the documented on-touch state and exits 0)                                                                                                                                                                                                                                                                  | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard tranche 2 (#157)                                                                                                                                       |
+| **spec-deletion**       | `pr-body-guards.yml` | a PR deleting a `.md` under `docs/specs` / `docs/superpowers/specs` / `docs/adr` with no sanctioned escape; **and** the repo-wide spec status sweep (statusless, off-ladder, `Superseded` with no live successor); **also the wrong-tree class** — zero spec FILES scanned is exit 1, fail-closed, not a clean sweep                                                                                                                                                                                                                                                                                                           | WARN      | 2026-08-05 | earliest 2026-09-02, §4 clauses. Guard tranche 2 (#157). Both finding classes are WARN, so the one exit code carries one severity (§2)                                                        |
 
 `spec-link` followed exactly the path `stage-b` (#138) took: its guard, its spec moved to
 `tools/lint/guard-tests/` per §8, its job in `pr-body-guards.yml`, its row here — all in
@@ -218,6 +309,18 @@ not a clean corpus. On the CI plane that is **exit 1** — §8 gives a CI guard 
 so fail-closed is the only honest code available. `instruction-budget` answers the same
 class with **exit 2** (§6.1, empty corpus) because it is a §2.3 CLI guard, where "not a
 verdict" exists. Same rule, two codes, because the planes differ — not an inconsistency.
+
+**The permissions floor every job in this table runs under (#220).** Both workflows named
+in the Workflow column now declare a top-level `permissions: contents: read`. That is the
+floor, not the grant: a job-level `permissions:` block **replaces** the workflow-level one
+rather than merging with it, so a job needing more lists every scope it needs, its own
+`contents: read` included. Only gh-reaching jobs do — `tdd-signal` in `ci.yml`, and all six
+jobs in `pr-body-guards.yml`. Before #220 the jobs that declare nothing inherited the repo
+default (`default_workflow_permissions: read`, i.e. read on every scope); the floor drops
+the scopes none of them uses. `workflow-auth` already reads permissions the way GitHub
+resolves them (the job's own block, else the workflow's) and so audits the effective grant,
+but it audits it **only for gh-gated jobs** — nothing checks that a workflow declares a
+top-level floor at all, which is a routed DEBT.md line, not a guard that exists today.
 
 `instruction-budget` is the one guard that appears in BOTH inventories, deliberately: the
 same script is a §2.3 CLI guard (BLOCK by exit code — §6.1) and a §2.1 CI job (WARN,
@@ -349,6 +452,34 @@ input must page the API first. Do not inherit the assumption silently.
 `if: github.event.action != 'edited' || github.event.changes.body != null` — a title-only
 edit changes no guard input, and a skipped check-run passes the merge gate. The workflow
 also does not cancel in-progress runs (§2.1).
+
+**Wiring convention for a batch job.** A job may run several guards as STEPS instead of
+one guard per job (the shape #205/PR #206 attempted). Severity then moves from the job to
+the step, and the §2.1 pair is read off the step: a BLOCK guard step is a plain step (its
+failure fails the job, and the job is in the `ci` needs-list), a WARN guard step carries
+`continue-on-error: true`. That flag is also what makes the WARN step's finding
+**invisible** — the step goes green and the collapsed log is the only trace — so a WARN
+guard step must additionally satisfy both of these:
+
+- it carries an **`id:`**, and
+- **some other step of the same job reads `steps.<id>.outcome`** — the aggregation step
+  that emits `::warning::` per failed guard, or a per-guard annotate step gated by
+  `if: steps.<id>.outcome == 'failure'`. The reference counts wherever GitHub evaluates
+  it: a `run:` body, an `if:` gate, or a `uses:` step's `with:` inputs (an
+  `actions/github-script` aggregator has no `run:`); either syntax, `steps.<id>.outcome`
+  or `steps['<id>'].outcome`.
+
+Read `.outcome`, never `.conclusion`: `continue-on-error` rewrites the conclusion to
+`success`, so a table built on it reports nothing, always. A WARN step with no reader is
+the defect this rule exists for — the finding is swallowed AND §4's clean promotion window
+is counted off a table the guard is missing from, which is a vacuous green rather than a
+missing annotation. **`workflow-auth` enforces this** (`unaggregated-warn-step`, §5). Its
+known limit is worth knowing before you wire one: a guard invoked through `uses:` (a
+composite action) is not recognised as a guard step at all.
+
+Promoting a batch-job step to BLOCK is therefore three edits, not two: drop its
+`continue-on-error`, **remove its row from the aggregation step** (that table is the WARN
+set), and update its §5 row.
 
 **Testability**
 

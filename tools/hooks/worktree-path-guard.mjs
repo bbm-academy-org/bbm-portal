@@ -35,7 +35,6 @@ import {
   emitWarn,
   hooksDisabled,
   inWorktree,
-  isAbsolutePath,
   isDirectRun,
   isUnder,
   liveSessionsFromFlag,
@@ -82,16 +81,22 @@ export function writeWarnMessage(liveCount) {
  */
 export function decideEscapeBlock({ toolName, toolInput, cwd }) {
   if (!/^(Edit|Write|MultiEdit)$/.test(toolName || '')) return { block: false }
-  const filePath = (toolInput && toolInput.file_path) || ''
-  if (!cwd || !filePath || !isAbsolutePath(filePath)) return { block: false }
+  const filePaths = Array.isArray(toolInput && toolInput.file_paths)
+    ? toolInput.file_paths
+    : [(toolInput && toolInput.file_path) || '']
+  if (!cwd || filePaths.length === 0) return { block: false }
   const m = String(cwd).match(/^(.*)[\\/]\.claude[\\/]worktrees[\\/]([^\\/]+)/)
   if (!m) return { block: false, inWorktreeSession: false }
   const mainRoot = m[1]
   const worktreesRoot = `${m[1]}/.claude/worktrees`
-  const underMain = isUnder(filePath, norm(mainRoot))
-  const underAnyWorktree = isUnder(filePath, norm(worktreesRoot))
-  if (underMain && !underAnyWorktree) {
-    return { block: true, mainRoot, worktreeName: m[2] }
+  for (const filePath of filePaths) {
+    if (!filePath) continue
+    const resolvedPath = targetPath({ file_path: filePath }, cwd)
+    const underMain = isUnder(resolvedPath, norm(mainRoot))
+    const underAnyWorktree = isUnder(resolvedPath, norm(worktreesRoot))
+    if (underMain && !underAnyWorktree) {
+      return { block: true, filePath: resolvedPath, mainRoot, worktreeName: m[2] }
+    }
   }
   return { block: false, inWorktreeSession: true }
 }
@@ -138,7 +143,7 @@ function main() {
     const escape = decideEscapeBlock({ toolName: tool, toolInput: payload.tool_input, cwd })
     if (escape.block) {
       process.stderr.write(
-        escapeBlockMessage(payload.tool_input.file_path, escape.mainRoot, escape.worktreeName),
+        escapeBlockMessage(escape.filePath, escape.mainRoot, escape.worktreeName),
       )
       process.exit(2)
     }

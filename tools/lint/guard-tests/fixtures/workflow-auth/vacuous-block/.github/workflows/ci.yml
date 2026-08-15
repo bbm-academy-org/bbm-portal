@@ -1,0 +1,16 @@
+name: CI
+on: pull_request
+jobs:
+  # The fourth state (#207): listed in the `ci` needs-list, so it reads as a
+  # gate — while `continue-on-error: true` means its failure never reddens the
+  # aggregate. A vacuous BLOCK.
+  guards:
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm lint:no-stub
+  ci:
+    needs: [guards]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

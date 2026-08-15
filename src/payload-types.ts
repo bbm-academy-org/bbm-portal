@@ -59,1111 +59,1109 @@ export type SupportedTimezones =
   | 'Pacific/Guam'
   | 'Pacific/Noumea'
   | 'Pacific/Auckland'
-  | 'Pacific/Fiji'
+  | 'Pacific/Fiji';
 
 export interface Config {
   auth: {
-    users: UserAuthOperations
-  }
-  blocks: {}
+    users: UserAuthOperations;
+  };
+  blocks: {};
   collections: {
-    users: User
-    media: Media
-    publicProjects: PublicProject
-    team: Team
-    leads: Lead
-    'payload-kv': PayloadKv
-    'payload-locked-documents': PayloadLockedDocument
-    'payload-preferences': PayloadPreference
-    'payload-migrations': PayloadMigration
-  }
-  collectionsJoins: {}
+    users: User;
+    media: Media;
+    publicProjects: PublicProject;
+    team: Team;
+    leads: Lead;
+    'payload-kv': PayloadKv;
+    'payload-locked-documents': PayloadLockedDocument;
+    'payload-preferences': PayloadPreference;
+    'payload-migrations': PayloadMigration;
+  };
+  collectionsJoins: {};
   collectionsSelect: {
-    users: UsersSelect<false> | UsersSelect<true>
-    media: MediaSelect<false> | MediaSelect<true>
-    publicProjects: PublicProjectsSelect<false> | PublicProjectsSelect<true>
-    team: TeamSelect<false> | TeamSelect<true>
-    leads: LeadsSelect<false> | LeadsSelect<true>
-    'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>
-    'payload-locked-documents':
-      | PayloadLockedDocumentsSelect<false>
-      | PayloadLockedDocumentsSelect<true>
-    'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>
-    'payload-migrations': PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>
-  }
+    users: UsersSelect<false> | UsersSelect<true>;
+    media: MediaSelect<false> | MediaSelect<true>;
+    publicProjects: PublicProjectsSelect<false> | PublicProjectsSelect<true>;
+    team: TeamSelect<false> | TeamSelect<true>;
+    leads: LeadsSelect<false> | LeadsSelect<true>;
+    'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
+    'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
+    'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
+    'payload-migrations': PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>;
+  };
   db: {
-    defaultIDType: number
-  }
-  fallbackLocale: null
+    defaultIDType: number;
+  };
+  fallbackLocale: null;
   globals: {
-    philosophy: Philosophy
-    contact: Contact
-    siteChrome: SiteChrome
-    pageHome: PageHome
-    pageAbout: PageAbout
-    pageContacts: PageContact
-    pageParticipate: PageParticipate
-    pagePrivacy: PagePrivacy
-    pageProjects: PageProject
-    siteBuildState: SiteBuildState
-  }
+    philosophy: Philosophy;
+    contact: Contact;
+    siteChrome: SiteChrome;
+    pageHome: PageHome;
+    pageAbout: PageAbout;
+    pageContacts: PageContact;
+    pageParticipate: PageParticipate;
+    pagePrivacy: PagePrivacy;
+    pageProjects: PageProject;
+    siteBuildState: SiteBuildState;
+  };
   globalsSelect: {
-    philosophy: PhilosophySelect<false> | PhilosophySelect<true>
-    contact: ContactSelect<false> | ContactSelect<true>
-    siteChrome: SiteChromeSelect<false> | SiteChromeSelect<true>
-    pageHome: PageHomeSelect<false> | PageHomeSelect<true>
-    pageAbout: PageAboutSelect<false> | PageAboutSelect<true>
-    pageContacts: PageContactsSelect<false> | PageContactsSelect<true>
-    pageParticipate: PageParticipateSelect<false> | PageParticipateSelect<true>
-    pagePrivacy: PagePrivacySelect<false> | PagePrivacySelect<true>
-    pageProjects: PageProjectsSelect<false> | PageProjectsSelect<true>
-    siteBuildState: SiteBuildStateSelect<false> | SiteBuildStateSelect<true>
-  }
-  locale: null
+    philosophy: PhilosophySelect<false> | PhilosophySelect<true>;
+    contact: ContactSelect<false> | ContactSelect<true>;
+    siteChrome: SiteChromeSelect<false> | SiteChromeSelect<true>;
+    pageHome: PageHomeSelect<false> | PageHomeSelect<true>;
+    pageAbout: PageAboutSelect<false> | PageAboutSelect<true>;
+    pageContacts: PageContactsSelect<false> | PageContactsSelect<true>;
+    pageParticipate: PageParticipateSelect<false> | PageParticipateSelect<true>;
+    pagePrivacy: PagePrivacySelect<false> | PagePrivacySelect<true>;
+    pageProjects: PageProjectsSelect<false> | PageProjectsSelect<true>;
+    siteBuildState: SiteBuildStateSelect<false> | SiteBuildStateSelect<true>;
+  };
+  locale: null;
   widgets: {
-    collections: CollectionsWidget
-  }
-  user: User
+    collections: CollectionsWidget;
+  };
+  user: User;
   jobs: {
-    tasks: unknown
-    workflows: unknown
-  }
+    tasks: unknown;
+    workflows: unknown;
+  };
 }
 export interface UserAuthOperations {
   forgotPassword: {
-    email: string
-    password: string
-  }
+    email: string;
+    password: string;
+  };
   login: {
-    email: string
-    password: string
-  }
+    email: string;
+    password: string;
+  };
   registerFirstUser: {
-    email: string
-    password: string
-  }
+    email: string;
+    password: string;
+  };
   unlock: {
-    email: string
-    password: string
-  }
+    email: string;
+    password: string;
+  };
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "users".
  */
 export interface User {
-  id: number
-  updatedAt: string
-  createdAt: string
-  enableAPIKey?: boolean | null
-  apiKey?: string | null
-  apiKeyIndex?: string | null
-  email: string
-  resetPasswordToken?: string | null
-  resetPasswordExpiration?: string | null
-  salt?: string | null
-  hash?: string | null
-  loginAttempts?: number | null
-  lockUntil?: string | null
+  id: number;
+  updatedAt: string;
+  createdAt: string;
+  enableAPIKey?: boolean | null;
+  apiKey?: string | null;
+  apiKeyIndex?: string | null;
+  email: string;
+  resetPasswordToken?: string | null;
+  resetPasswordExpiration?: string | null;
+  salt?: string | null;
+  hash?: string | null;
+  loginAttempts?: number | null;
+  lockUntil?: string | null;
   sessions?:
     | {
-        id: string
-        createdAt?: string | null
-        expiresAt: string
+        id: string;
+        createdAt?: string | null;
+        expiresAt: string;
       }[]
-    | null
-  password?: string | null
-  collection: 'users'
+    | null;
+  password?: string | null;
+  collection: 'users';
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "media".
  */
 export interface Media {
-  id: number
-  alt: string
-  updatedAt: string
-  createdAt: string
-  url?: string | null
-  thumbnailURL?: string | null
-  filename?: string | null
-  mimeType?: string | null
-  filesize?: number | null
-  width?: number | null
-  height?: number | null
-  focalX?: number | null
-  focalY?: number | null
+  id: number;
+  alt: string;
+  updatedAt: string;
+  createdAt: string;
+  url?: string | null;
+  thumbnailURL?: string | null;
+  filename?: string | null;
+  mimeType?: string | null;
+  filesize?: number | null;
+  width?: number | null;
+  height?: number | null;
+  focalX?: number | null;
+  focalY?: number | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "publicProjects".
  */
 export interface PublicProject {
-  id: string
-  name: string
-  tagline: string
-  direction: string
-  status: 'active' | 'launching' | 'exploring' | 'soon'
-  maturity: 'rich' | 'thin' | 'soon'
-  description?: string | null
-  disclaimer?: string | null
+  id: string;
+  name: string;
+  tagline: string;
+  direction: string;
+  status: 'active' | 'launching' | 'exploring' | 'soon';
+  maturity: 'rich' | 'thin' | 'soon';
+  description?: string | null;
+  disclaimer?: string | null;
   metrics?:
     | {
-        label?: string | null
-        value?: string | null
-        id?: string | null
+        label?: string | null;
+        value?: string | null;
+        id?: string | null;
       }[]
-    | null
-  team?: (string | Team)[] | null
+    | null;
+  team?: (string | Team)[] | null;
   media?: {
-    logo?: string | null
-  }
+    logo?: string | null;
+  };
   nextStep?: {
-    label?: string | null
-    href?: string | null
-  }
-  related?: string[] | null
-  visibility?: ('public' | 'restricted') | null
-  locale: 'ru' | 'en'
-  updatedAt: string
-  createdAt: string
-  _status?: ('draft' | 'published') | null
+    label?: string | null;
+    href?: string | null;
+  };
+  related?: string[] | null;
+  visibility?: ('public' | 'restricted') | null;
+  locale: 'ru' | 'en';
+  updatedAt: string;
+  createdAt: string;
+  _status?: ('draft' | 'published') | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "team".
  */
 export interface Team {
-  id: string
-  name: string
-  initials?: string | null
-  role?: string | null
-  bio?: string | null
-  photo?: string | null
-  projects?: (string | PublicProject)[] | null
+  id: string;
+  name: string;
+  initials?: string | null;
+  role?: string | null;
+  bio?: string | null;
+  photo?: string | null;
+  projects?: (string | PublicProject)[] | null;
   socials?:
     | {
-        label?: string | null
-        href?: string | null
-        id?: string | null
+        label?: string | null;
+        href?: string | null;
+        id?: string | null;
       }[]
-    | null
-  locale: 'ru' | 'en'
-  updatedAt: string
-  createdAt: string
-  _status?: ('draft' | 'published') | null
+    | null;
+  locale: 'ru' | 'en';
+  updatedAt: string;
+  createdAt: string;
+  _status?: ('draft' | 'published') | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "leads".
  */
 export interface Lead {
-  id: number
-  scenario: string
-  name?: string | null
-  email?: string | null
-  phone?: string | null
-  role?: string | null
-  message?: string | null
-  consent?: boolean | null
+  id: number;
+  scenario: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  message?: string | null;
+  consent?: boolean | null;
   details?:
     | {
-        [k: string]: unknown
+        [k: string]: unknown;
       }
     | unknown[]
     | string
     | number
     | boolean
-    | null
-  updatedAt: string
-  createdAt: string
+    | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
-  id: number
-  key: string
+  id: number;
+  key: string;
   data:
     | {
-        [k: string]: unknown
+        [k: string]: unknown;
       }
     | unknown[]
     | string
     | number
     | boolean
-    | null
+    | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-locked-documents".
  */
 export interface PayloadLockedDocument {
-  id: number
+  id: number;
   document?:
     | ({
-        relationTo: 'users'
-        value: number | User
+        relationTo: 'users';
+        value: number | User;
       } | null)
     | ({
-        relationTo: 'media'
-        value: number | Media
+        relationTo: 'media';
+        value: number | Media;
       } | null)
     | ({
-        relationTo: 'publicProjects'
-        value: string | PublicProject
+        relationTo: 'publicProjects';
+        value: string | PublicProject;
       } | null)
     | ({
-        relationTo: 'team'
-        value: string | Team
+        relationTo: 'team';
+        value: string | Team;
       } | null)
     | ({
-        relationTo: 'leads'
-        value: number | Lead
-      } | null)
-  globalSlug?: string | null
+        relationTo: 'leads';
+        value: number | Lead;
+      } | null);
+  globalSlug?: string | null;
   user: {
-    relationTo: 'users'
-    value: number | User
-  }
-  updatedAt: string
-  createdAt: string
+    relationTo: 'users';
+    value: number | User;
+  };
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-preferences".
  */
 export interface PayloadPreference {
-  id: number
+  id: number;
   user: {
-    relationTo: 'users'
-    value: number | User
-  }
-  key?: string | null
+    relationTo: 'users';
+    value: number | User;
+  };
+  key?: string | null;
   value?:
     | {
-        [k: string]: unknown
+        [k: string]: unknown;
       }
     | unknown[]
     | string
     | number
     | boolean
-    | null
-  updatedAt: string
-  createdAt: string
+    | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-migrations".
  */
 export interface PayloadMigration {
-  id: number
-  name?: string | null
-  batch?: number | null
-  updatedAt: string
-  createdAt: string
+  id: number;
+  name?: string | null;
+  batch?: number | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "users_select".
  */
 export interface UsersSelect<T extends boolean = true> {
-  updatedAt?: T
-  createdAt?: T
-  enableAPIKey?: T
-  apiKey?: T
-  apiKeyIndex?: T
-  email?: T
-  resetPasswordToken?: T
-  resetPasswordExpiration?: T
-  salt?: T
-  hash?: T
-  loginAttempts?: T
-  lockUntil?: T
+  updatedAt?: T;
+  createdAt?: T;
+  enableAPIKey?: T;
+  apiKey?: T;
+  apiKeyIndex?: T;
+  email?: T;
+  resetPasswordToken?: T;
+  resetPasswordExpiration?: T;
+  salt?: T;
+  hash?: T;
+  loginAttempts?: T;
+  lockUntil?: T;
   sessions?:
     | T
     | {
-        id?: T
-        createdAt?: T
-        expiresAt?: T
-      }
+        id?: T;
+        createdAt?: T;
+        expiresAt?: T;
+      };
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "media_select".
  */
 export interface MediaSelect<T extends boolean = true> {
-  alt?: T
-  updatedAt?: T
-  createdAt?: T
-  url?: T
-  thumbnailURL?: T
-  filename?: T
-  mimeType?: T
-  filesize?: T
-  width?: T
-  height?: T
-  focalX?: T
-  focalY?: T
+  alt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  url?: T;
+  thumbnailURL?: T;
+  filename?: T;
+  mimeType?: T;
+  filesize?: T;
+  width?: T;
+  height?: T;
+  focalX?: T;
+  focalY?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "publicProjects_select".
  */
 export interface PublicProjectsSelect<T extends boolean = true> {
-  id?: T
-  name?: T
-  tagline?: T
-  direction?: T
-  status?: T
-  maturity?: T
-  description?: T
-  disclaimer?: T
+  id?: T;
+  name?: T;
+  tagline?: T;
+  direction?: T;
+  status?: T;
+  maturity?: T;
+  description?: T;
+  disclaimer?: T;
   metrics?:
     | T
     | {
-        label?: T
-        value?: T
-        id?: T
-      }
-  team?: T
+        label?: T;
+        value?: T;
+        id?: T;
+      };
+  team?: T;
   media?:
     | T
     | {
-        logo?: T
-      }
+        logo?: T;
+      };
   nextStep?:
     | T
     | {
-        label?: T
-        href?: T
-      }
-  related?: T
-  visibility?: T
-  locale?: T
-  updatedAt?: T
-  createdAt?: T
-  _status?: T
+        label?: T;
+        href?: T;
+      };
+  related?: T;
+  visibility?: T;
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  _status?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "team_select".
  */
 export interface TeamSelect<T extends boolean = true> {
-  id?: T
-  name?: T
-  initials?: T
-  role?: T
-  bio?: T
-  photo?: T
-  projects?: T
+  id?: T;
+  name?: T;
+  initials?: T;
+  role?: T;
+  bio?: T;
+  photo?: T;
+  projects?: T;
   socials?:
     | T
     | {
-        label?: T
-        href?: T
-        id?: T
-      }
-  locale?: T
-  updatedAt?: T
-  createdAt?: T
-  _status?: T
+        label?: T;
+        href?: T;
+        id?: T;
+      };
+  locale?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  _status?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "leads_select".
  */
 export interface LeadsSelect<T extends boolean = true> {
-  scenario?: T
-  name?: T
-  email?: T
-  phone?: T
-  role?: T
-  message?: T
-  consent?: T
-  details?: T
-  updatedAt?: T
-  createdAt?: T
+  scenario?: T;
+  name?: T;
+  email?: T;
+  phone?: T;
+  role?: T;
+  message?: T;
+  consent?: T;
+  details?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv_select".
  */
 export interface PayloadKvSelect<T extends boolean = true> {
-  key?: T
-  data?: T
+  key?: T;
+  data?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-locked-documents_select".
  */
 export interface PayloadLockedDocumentsSelect<T extends boolean = true> {
-  document?: T
-  globalSlug?: T
-  user?: T
-  updatedAt?: T
-  createdAt?: T
+  document?: T;
+  globalSlug?: T;
+  user?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-preferences_select".
  */
 export interface PayloadPreferencesSelect<T extends boolean = true> {
-  user?: T
-  key?: T
-  value?: T
-  updatedAt?: T
-  createdAt?: T
+  user?: T;
+  key?: T;
+  value?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-migrations_select".
  */
 export interface PayloadMigrationsSelect<T extends boolean = true> {
-  name?: T
-  batch?: T
-  updatedAt?: T
-  createdAt?: T
+  name?: T;
+  batch?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "philosophy".
  */
 export interface Philosophy {
-  id: number
-  evolutionaryGoal?: string | null
-  mission?: string | null
+  id: number;
+  evolutionaryGoal?: string | null;
+  mission?: string | null;
   values?:
     | {
-        title?: string | null
-        body?: string | null
-        icon?: string | null
-        id?: string | null
+        title?: string | null;
+        body?: string | null;
+        icon?: string | null;
+        id?: string | null;
       }[]
-    | null
+    | null;
   principles?:
     | {
-        title?: string | null
-        body?: string | null
-        id?: string | null
+        title?: string | null;
+        body?: string | null;
+        id?: string | null;
       }[]
-    | null
+    | null;
   tealPillars?:
     | {
-        title?: string | null
-        body?: string | null
-        icon?: string | null
-        id?: string | null
+        title?: string | null;
+        body?: string | null;
+        icon?: string | null;
+        id?: string | null;
       }[]
-    | null
+    | null;
   roles?:
     | {
-        code?: string | null
-        icon?: string | null
-        share?: string | null
-        extra?: string | null
-        body?: string | null
-        hot?: boolean | null
-        id?: string | null
+        code?: string | null;
+        icon?: string | null;
+        share?: string | null;
+        extra?: string | null;
+        body?: string | null;
+        hot?: boolean | null;
+        id?: string | null;
       }[]
-    | null
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    | null;
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "contact".
  */
 export interface Contact {
-  id: number
-  email: string
-  phone?: string | null
+  id: number;
+  email: string;
+  phone?: string | null;
   socials?:
     | {
-        label?: string | null
-        href?: string | null
-        id?: string | null
+        label?: string | null;
+        href?: string | null;
+        id?: string | null;
       }[]
-    | null
-  legalEntity?: string | null
-  domain?: string | null
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    | null;
+  legalEntity?: string | null;
+  domain?: string | null;
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "siteChrome".
  */
 export interface SiteChrome {
-  id: number
+  id: number;
   nav?:
     | {
-        label?: string | null
-        href?: string | null
-        id?: string | null
+        label?: string | null;
+        href?: string | null;
+        id?: string | null;
       }[]
-    | null
-  loginLabel?: string | null
-  loginHref?: string | null
-  ctaLabel?: string | null
-  ctaHref?: string | null
-  footerTagline?: string | null
+    | null;
+  loginLabel?: string | null;
+  loginHref?: string | null;
+  ctaLabel?: string | null;
+  ctaHref?: string | null;
+  footerTagline?: string | null;
   footerColumns?:
     | {
-        heading?: string | null
+        heading?: string | null;
         links?:
           | {
-              label?: string | null
-              href?: string | null
-              id?: string | null
+              label?: string | null;
+              href?: string | null;
+              id?: string | null;
             }[]
-          | null
-        id?: string | null
+          | null;
+        id?: string | null;
       }[]
-    | null
-  copyright?: string | null
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    | null;
+  copyright?: string | null;
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pageHome".
  */
 export interface PageHome {
-  id: number
+  id: number;
   hero?: {
-    eyebrow?: string | null
-    sticker?: string | null
-    titleLead?: string | null
-    titleMark?: string | null
-    titleTrail?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    sticker?: string | null;
+    titleLead?: string | null;
+    titleMark?: string | null;
+    titleTrail?: string | null;
+    lead?: string | null;
     primaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
+      label?: string | null;
+      href?: string | null;
+    };
     secondaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
-    chips?: string[] | null
-    proofLabel?: string | null
+      label?: string | null;
+      href?: string | null;
+    };
+    chips?: string[] | null;
+    proofLabel?: string | null;
     proofItems?:
       | {
-          icon?: string | null
-          title?: string | null
-          body?: string | null
-          id?: string | null
+          icon?: string | null;
+          title?: string | null;
+          body?: string | null;
+          id?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   whatIs?: {
-    eyebrow?: string | null
-    title?: string | null
-    paragraphs?: string[] | null
-  }
+    eyebrow?: string | null;
+    title?: string | null;
+    paragraphs?: string[] | null;
+  };
   showcase?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     allLink?: {
-      label?: string | null
-      href?: string | null
-    }
-  }
+      label?: string | null;
+      href?: string | null;
+    };
+  };
   pathIntro?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
-  }
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+  };
   trust?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     stats?:
       | {
-          value?: string | null
-          label?: string | null
-          sub?: string | null
-          tone?: ('default' | 'teal' | 'empty') | null
-          id?: string | null
+          value?: string | null;
+          label?: string | null;
+          sub?: string | null;
+          tone?: ('default' | 'teal' | 'empty') | null;
+          id?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   contour?: {
-    eyebrow?: string | null
-    title?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
     public?: {
-      kicker?: string | null
-      title?: string | null
-      items?: string[] | null
-    }
+      kicker?: string | null;
+      title?: string | null;
+      items?: string[] | null;
+    };
     internal?: {
-      kicker?: string | null
-      title?: string | null
-      items?: string[] | null
-    }
-    boundary?: string | null
-  }
+      kicker?: string | null;
+      title?: string | null;
+      items?: string[] | null;
+    };
+    boundary?: string | null;
+  };
   faqIntro?: {
-    eyebrow?: string | null
-    title?: string | null
-  }
+    eyebrow?: string | null;
+    title?: string | null;
+  };
   faq?:
     | {
-        question?: string | null
-        answer?: string | null
-        id?: string | null
+        question?: string | null;
+        answer?: string | null;
+        id?: string | null;
       }[]
-    | null
+    | null;
   pathSteps?:
     | {
-        title?: string | null
-        body?: string | null
-        id?: string | null
+        title?: string | null;
+        body?: string | null;
+        id?: string | null;
       }[]
-    | null
+    | null;
   cta?: {
-    title?: string | null
-    lead?: string | null
+    title?: string | null;
+    lead?: string | null;
     primaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
+      label?: string | null;
+      href?: string | null;
+    };
     secondaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
-  }
-  title?: string | null
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  title?: string | null;
   seo?: {
-    title?: string | null
-    description?: string | null
-  }
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    title?: string | null;
+    description?: string | null;
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pageAbout".
  */
 export interface PageAbout {
-  id: number
+  id: number;
   intro?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     actions?:
       | {
-          label?: string | null
-          href?: string | null
-          id?: string | null
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   about?: {
     whatIs?: {
-      eyebrow?: string | null
-      title?: string | null
-      lead?: string | null
-      paragraphs?: string[] | null
-    }
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+      paragraphs?: string[] | null;
+    };
     goal?: {
-      eyebrow?: string | null
-      title?: string | null
-      lead?: string | null
-    }
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
     values?: {
-      eyebrow?: string | null
-      title?: string | null
-      lead?: string | null
-    }
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
     principles?: {
-      eyebrow?: string | null
-      title?: string | null
-      lead?: string | null
-    }
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
     approach?: {
-      eyebrow?: string | null
-      title?: string | null
-      lead?: string | null
-    }
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
     roles?: {
-      eyebrow?: string | null
-      title?: string | null
-      lead?: string | null
-    }
-    goalKicker?: string | null
-    missionKicker?: string | null
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
+    goalKicker?: string | null;
+    missionKicker?: string | null;
     approachNote?: {
-      title?: string | null
-      body?: string | null
-    }
-  }
+      title?: string | null;
+      body?: string | null;
+    };
+  };
   cta?: {
-    title?: string | null
-    lead?: string | null
+    title?: string | null;
+    lead?: string | null;
     primaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
+      label?: string | null;
+      href?: string | null;
+    };
     secondaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
-  }
-  title?: string | null
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  title?: string | null;
   seo?: {
-    title?: string | null
-    description?: string | null
-  }
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    title?: string | null;
+    description?: string | null;
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pageContacts".
  */
 export interface PageContact {
-  id: number
+  id: number;
   intro?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     actions?:
       | {
-          label?: string | null
-          href?: string | null
-          id?: string | null
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   contacts?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     boundary?: {
-      icon?: string | null
-      label?: string | null
-      value?: string | null
-    }
-    note?: string | null
-  }
+      icon?: string | null;
+      label?: string | null;
+      value?: string | null;
+    };
+    note?: string | null;
+  };
   team?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
-  }
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
+  };
   faqIntro?: {
-    eyebrow?: string | null
-    title?: string | null
-  }
+    eyebrow?: string | null;
+    title?: string | null;
+  };
   faq?:
     | {
-        question?: string | null
-        answer?: string | null
-        id?: string | null
+        question?: string | null;
+        answer?: string | null;
+        id?: string | null;
       }[]
-    | null
+    | null;
   cta?: {
-    title?: string | null
-    lead?: string | null
+    title?: string | null;
+    lead?: string | null;
     primaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
+      label?: string | null;
+      href?: string | null;
+    };
     secondaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
-  }
-  title?: string | null
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  title?: string | null;
   seo?: {
-    title?: string | null
-    description?: string | null
-  }
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    title?: string | null;
+    description?: string | null;
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pageParticipate".
  */
 export interface PageParticipate {
-  id: number
+  id: number;
   intro?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     actions?:
       | {
-          label?: string | null
-          href?: string | null
-          id?: string | null
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   participate?: {
     roles?: {
-      slug?: string | null
-      eyebrow?: string | null
-      title?: string | null
-      lead?: string | null
-    }
+      slug?: string | null;
+      eyebrow?: string | null;
+      title?: string | null;
+      lead?: string | null;
+    };
     noScript?: {
-      message?: string | null
-      linkText?: string | null
-      contactsLinkText?: string | null
-    }
+      message?: string | null;
+      linkText?: string | null;
+      contactsLinkText?: string | null;
+    };
     forms?:
       | {
-          id?: string | null
-          scenario?: string | null
-          eyebrow?: string | null
-          title?: string | null
-          lead?: string | null
+          id?: string | null;
+          scenario?: string | null;
+          eyebrow?: string | null;
+          title?: string | null;
+          lead?: string | null;
           fields?:
             | {
-                name?: string | null
-                type: 'text' | 'email' | 'tel' | 'select' | 'textarea'
-                label?: string | null
-                placeholder?: string | null
-                hint?: string | null
-                required?: boolean | null
-                full?: boolean | null
-                autocomplete?: string | null
-                validationMessage?: string | null
+                name?: string | null;
+                type: 'text' | 'email' | 'tel' | 'select' | 'textarea';
+                label?: string | null;
+                placeholder?: string | null;
+                hint?: string | null;
+                required?: boolean | null;
+                full?: boolean | null;
+                autocomplete?: string | null;
+                validationMessage?: string | null;
                 options?:
                   | {
-                      value?: string | null
-                      label?: string | null
-                      id?: string | null
+                      value?: string | null;
+                      label?: string | null;
+                      id?: string | null;
                     }[]
-                  | null
-                placeholderOption?: string | null
-                id?: string | null
+                  | null;
+                placeholderOption?: string | null;
+                id?: string | null;
               }[]
-            | null
-          consentLabelLead?: string | null
-          consentLinkText?: string | null
-          consentValidationMessage?: string | null
-          submitLabel?: string | null
+            | null;
+          consentLabelLead?: string | null;
+          consentLinkText?: string | null;
+          consentValidationMessage?: string | null;
+          submitLabel?: string | null;
           states?: {
             success?: {
-              title?: string | null
-              body?: string | null
-            }
+              title?: string | null;
+              body?: string | null;
+            };
             error?: {
-              title?: string | null
-              body?: string | null
-            }
+              title?: string | null;
+              body?: string | null;
+            };
             unavailable?: {
-              title?: string | null
-              body?: string | null
-            }
-          }
-          note?: string | null
+              title?: string | null;
+              body?: string | null;
+            };
+          };
+          note?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   cta?: {
-    title?: string | null
-    lead?: string | null
+    title?: string | null;
+    lead?: string | null;
     primaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
+      label?: string | null;
+      href?: string | null;
+    };
     secondaryCta?: {
-      label?: string | null
-      href?: string | null
-    }
-  }
-  title?: string | null
+      label?: string | null;
+      href?: string | null;
+    };
+  };
+  title?: string | null;
   seo?: {
-    title?: string | null
-    description?: string | null
-  }
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    title?: string | null;
+    description?: string | null;
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pagePrivacy".
  */
 export interface PagePrivacy {
-  id: number
+  id: number;
   intro?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     actions?:
       | {
-          label?: string | null
-          href?: string | null
-          id?: string | null
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   privacy?: {
     draftNote?: {
-      label?: string | null
-      body?: string | null
-    }
+      label?: string | null;
+      body?: string | null;
+    };
     sections?:
       | {
-          id?: string | null
-          heading?: string | null
-          paragraphs?: string[] | null
+          id?: string | null;
+          heading?: string | null;
+          paragraphs?: string[] | null;
         }[]
-      | null
+      | null;
     operator?: {
-      slug?: string | null
-      heading?: string | null
-      paragraphs?: string[] | null
-    }
+      slug?: string | null;
+      heading?: string | null;
+      paragraphs?: string[] | null;
+    };
     consent?: {
-      anchor?: string | null
-      label?: string | null
-      text?: string[] | null
-    }
-  }
-  title?: string | null
+      anchor?: string | null;
+      label?: string | null;
+      text?: string[] | null;
+    };
+  };
+  title?: string | null;
   seo?: {
-    title?: string | null
-    description?: string | null
-  }
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    title?: string | null;
+    description?: string | null;
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pageProjects".
  */
 export interface PageProject {
-  id: number
+  id: number;
   intro?: {
-    eyebrow?: string | null
-    title?: string | null
-    lead?: string | null
+    eyebrow?: string | null;
+    title?: string | null;
+    lead?: string | null;
     actions?:
       | {
-          label?: string | null
-          href?: string | null
-          id?: string | null
+          label?: string | null;
+          href?: string | null;
+          id?: string | null;
         }[]
-      | null
-  }
+      | null;
+  };
   filters?: {
-    label?: string | null
-    allLabel?: string | null
-  }
-  title?: string | null
+    label?: string | null;
+    allLabel?: string | null;
+  };
+  title?: string | null;
   seo?: {
-    title?: string | null
-    description?: string | null
-  }
-  locale: 'ru' | 'en'
-  _status?: ('draft' | 'published') | null
-  updatedAt?: string | null
-  createdAt?: string | null
+    title?: string | null;
+    description?: string | null;
+  };
+  locale: 'ru' | 'en';
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "siteBuildState".
  */
 export interface SiteBuildState {
-  id: number
-  lastPublishedAt?: string | null
-  lastDispatchAt?: string | null
-  lastDispatchError?: string | null
-  updatedAt?: string | null
-  createdAt?: string | null
+  id: number;
+  lastPublishedAt?: string | null;
+  lastDispatchAt?: string | null;
+  lastDispatchError?: string | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "philosophy_select".
  */
 export interface PhilosophySelect<T extends boolean = true> {
-  evolutionaryGoal?: T
-  mission?: T
+  evolutionaryGoal?: T;
+  mission?: T;
   values?:
     | T
     | {
-        title?: T
-        body?: T
-        icon?: T
-        id?: T
-      }
+        title?: T;
+        body?: T;
+        icon?: T;
+        id?: T;
+      };
   principles?:
     | T
     | {
-        title?: T
-        body?: T
-        id?: T
-      }
+        title?: T;
+        body?: T;
+        id?: T;
+      };
   tealPillars?:
     | T
     | {
-        title?: T
-        body?: T
-        icon?: T
-        id?: T
-      }
+        title?: T;
+        body?: T;
+        icon?: T;
+        id?: T;
+      };
   roles?:
     | T
     | {
-        code?: T
-        icon?: T
-        share?: T
-        extra?: T
-        body?: T
-        hot?: T
-        id?: T
-      }
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        code?: T;
+        icon?: T;
+        share?: T;
+        extra?: T;
+        body?: T;
+        hot?: T;
+        id?: T;
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "contact_select".
  */
 export interface ContactSelect<T extends boolean = true> {
-  email?: T
-  phone?: T
+  email?: T;
+  phone?: T;
   socials?:
     | T
     | {
-        label?: T
-        href?: T
-        id?: T
-      }
-  legalEntity?: T
-  domain?: T
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        label?: T;
+        href?: T;
+        id?: T;
+      };
+  legalEntity?: T;
+  domain?: T;
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1173,34 +1171,34 @@ export interface SiteChromeSelect<T extends boolean = true> {
   nav?:
     | T
     | {
-        label?: T
-        href?: T
-        id?: T
-      }
-  loginLabel?: T
-  loginHref?: T
-  ctaLabel?: T
-  ctaHref?: T
-  footerTagline?: T
+        label?: T;
+        href?: T;
+        id?: T;
+      };
+  loginLabel?: T;
+  loginHref?: T;
+  ctaLabel?: T;
+  ctaHref?: T;
+  footerTagline?: T;
   footerColumns?:
     | T
     | {
-        heading?: T
+        heading?: T;
         links?:
           | T
           | {
-              label?: T
-              href?: T
-              id?: T
-            }
-        id?: T
-      }
-  copyright?: T
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+        id?: T;
+      };
+  copyright?: T;
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1210,149 +1208,149 @@ export interface PageHomeSelect<T extends boolean = true> {
   hero?:
     | T
     | {
-        eyebrow?: T
-        sticker?: T
-        titleLead?: T
-        titleMark?: T
-        titleTrail?: T
-        lead?: T
+        eyebrow?: T;
+        sticker?: T;
+        titleLead?: T;
+        titleMark?: T;
+        titleTrail?: T;
+        lead?: T;
         primaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
+              label?: T;
+              href?: T;
+            };
         secondaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
-        chips?: T
-        proofLabel?: T
+              label?: T;
+              href?: T;
+            };
+        chips?: T;
+        proofLabel?: T;
         proofItems?:
           | T
           | {
-              icon?: T
-              title?: T
-              body?: T
-              id?: T
-            }
-      }
+              icon?: T;
+              title?: T;
+              body?: T;
+              id?: T;
+            };
+      };
   whatIs?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        paragraphs?: T
-      }
+        eyebrow?: T;
+        title?: T;
+        paragraphs?: T;
+      };
   showcase?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         allLink?:
           | T
           | {
-              label?: T
-              href?: T
-            }
-      }
+              label?: T;
+              href?: T;
+            };
+      };
   pathIntro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
-      }
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+      };
   trust?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         stats?:
           | T
           | {
-              value?: T
-              label?: T
-              sub?: T
-              tone?: T
-              id?: T
-            }
-      }
+              value?: T;
+              label?: T;
+              sub?: T;
+              tone?: T;
+              id?: T;
+            };
+      };
   contour?:
     | T
     | {
-        eyebrow?: T
-        title?: T
+        eyebrow?: T;
+        title?: T;
         public?:
           | T
           | {
-              kicker?: T
-              title?: T
-              items?: T
-            }
+              kicker?: T;
+              title?: T;
+              items?: T;
+            };
         internal?:
           | T
           | {
-              kicker?: T
-              title?: T
-              items?: T
-            }
-        boundary?: T
-      }
+              kicker?: T;
+              title?: T;
+              items?: T;
+            };
+        boundary?: T;
+      };
   faqIntro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-      }
+        eyebrow?: T;
+        title?: T;
+      };
   faq?:
     | T
     | {
-        question?: T
-        answer?: T
-        id?: T
-      }
+        question?: T;
+        answer?: T;
+        id?: T;
+      };
   pathSteps?:
     | T
     | {
-        title?: T
-        body?: T
-        id?: T
-      }
+        title?: T;
+        body?: T;
+        id?: T;
+      };
   cta?:
     | T
     | {
-        title?: T
-        lead?: T
+        title?: T;
+        lead?: T;
         primaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
+              label?: T;
+              href?: T;
+            };
         secondaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
-      }
-  title?: T
+              label?: T;
+              href?: T;
+            };
+      };
+  title?: T;
   seo?:
     | T
     | {
-        title?: T
-        description?: T
-      }
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        title?: T;
+        description?: T;
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1362,102 +1360,102 @@ export interface PageAboutSelect<T extends boolean = true> {
   intro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         actions?:
           | T
           | {
-              label?: T
-              href?: T
-              id?: T
-            }
-      }
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
   about?:
     | T
     | {
         whatIs?:
           | T
           | {
-              eyebrow?: T
-              title?: T
-              lead?: T
-              paragraphs?: T
-            }
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+              paragraphs?: T;
+            };
         goal?:
           | T
           | {
-              eyebrow?: T
-              title?: T
-              lead?: T
-            }
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
         values?:
           | T
           | {
-              eyebrow?: T
-              title?: T
-              lead?: T
-            }
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
         principles?:
           | T
           | {
-              eyebrow?: T
-              title?: T
-              lead?: T
-            }
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
         approach?:
           | T
           | {
-              eyebrow?: T
-              title?: T
-              lead?: T
-            }
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
         roles?:
           | T
           | {
-              eyebrow?: T
-              title?: T
-              lead?: T
-            }
-        goalKicker?: T
-        missionKicker?: T
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
+        goalKicker?: T;
+        missionKicker?: T;
         approachNote?:
           | T
           | {
-              title?: T
-              body?: T
-            }
-      }
+              title?: T;
+              body?: T;
+            };
+      };
   cta?:
     | T
     | {
-        title?: T
-        lead?: T
+        title?: T;
+        lead?: T;
         primaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
+              label?: T;
+              href?: T;
+            };
         secondaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
-      }
-  title?: T
+              label?: T;
+              href?: T;
+            };
+      };
+  title?: T;
   seo?:
     | T
     | {
-        title?: T
-        description?: T
-      }
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        title?: T;
+        description?: T;
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1467,82 +1465,82 @@ export interface PageContactsSelect<T extends boolean = true> {
   intro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         actions?:
           | T
           | {
-              label?: T
-              href?: T
-              id?: T
-            }
-      }
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
   contacts?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         boundary?:
           | T
           | {
-              icon?: T
-              label?: T
-              value?: T
-            }
-        note?: T
-      }
+              icon?: T;
+              label?: T;
+              value?: T;
+            };
+        note?: T;
+      };
   team?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
-      }
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
+      };
   faqIntro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-      }
+        eyebrow?: T;
+        title?: T;
+      };
   faq?:
     | T
     | {
-        question?: T
-        answer?: T
-        id?: T
-      }
+        question?: T;
+        answer?: T;
+        id?: T;
+      };
   cta?:
     | T
     | {
-        title?: T
-        lead?: T
+        title?: T;
+        lead?: T;
         primaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
+              label?: T;
+              href?: T;
+            };
         secondaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
-      }
-  title?: T
+              label?: T;
+              href?: T;
+            };
+      };
+  title?: T;
   seo?:
     | T
     | {
-        title?: T
-        description?: T
-      }
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        title?: T;
+        description?: T;
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1552,124 +1550,124 @@ export interface PageParticipateSelect<T extends boolean = true> {
   intro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         actions?:
           | T
           | {
-              label?: T
-              href?: T
-              id?: T
-            }
-      }
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
   participate?:
     | T
     | {
         roles?:
           | T
           | {
-              slug?: T
-              eyebrow?: T
-              title?: T
-              lead?: T
-            }
+              slug?: T;
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
+            };
         noScript?:
           | T
           | {
-              message?: T
-              linkText?: T
-              contactsLinkText?: T
-            }
+              message?: T;
+              linkText?: T;
+              contactsLinkText?: T;
+            };
         forms?:
           | T
           | {
-              id?: T
-              scenario?: T
-              eyebrow?: T
-              title?: T
-              lead?: T
+              id?: T;
+              scenario?: T;
+              eyebrow?: T;
+              title?: T;
+              lead?: T;
               fields?:
                 | T
                 | {
-                    name?: T
-                    type?: T
-                    label?: T
-                    placeholder?: T
-                    hint?: T
-                    required?: T
-                    full?: T
-                    autocomplete?: T
-                    validationMessage?: T
+                    name?: T;
+                    type?: T;
+                    label?: T;
+                    placeholder?: T;
+                    hint?: T;
+                    required?: T;
+                    full?: T;
+                    autocomplete?: T;
+                    validationMessage?: T;
                     options?:
                       | T
                       | {
-                          value?: T
-                          label?: T
-                          id?: T
-                        }
-                    placeholderOption?: T
-                    id?: T
-                  }
-              consentLabelLead?: T
-              consentLinkText?: T
-              consentValidationMessage?: T
-              submitLabel?: T
+                          value?: T;
+                          label?: T;
+                          id?: T;
+                        };
+                    placeholderOption?: T;
+                    id?: T;
+                  };
+              consentLabelLead?: T;
+              consentLinkText?: T;
+              consentValidationMessage?: T;
+              submitLabel?: T;
               states?:
                 | T
                 | {
                     success?:
                       | T
                       | {
-                          title?: T
-                          body?: T
-                        }
+                          title?: T;
+                          body?: T;
+                        };
                     error?:
                       | T
                       | {
-                          title?: T
-                          body?: T
-                        }
+                          title?: T;
+                          body?: T;
+                        };
                     unavailable?:
                       | T
                       | {
-                          title?: T
-                          body?: T
-                        }
-                  }
-              note?: T
-            }
-      }
+                          title?: T;
+                          body?: T;
+                        };
+                  };
+              note?: T;
+            };
+      };
   cta?:
     | T
     | {
-        title?: T
-        lead?: T
+        title?: T;
+        lead?: T;
         primaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
+              label?: T;
+              href?: T;
+            };
         secondaryCta?:
           | T
           | {
-              label?: T
-              href?: T
-            }
-      }
-  title?: T
+              label?: T;
+              href?: T;
+            };
+      };
+  title?: T;
   seo?:
     | T
     | {
-        title?: T
-        description?: T
-      }
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        title?: T;
+        description?: T;
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1679,60 +1677,60 @@ export interface PagePrivacySelect<T extends boolean = true> {
   intro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         actions?:
           | T
           | {
-              label?: T
-              href?: T
-              id?: T
-            }
-      }
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
   privacy?:
     | T
     | {
         draftNote?:
           | T
           | {
-              label?: T
-              body?: T
-            }
+              label?: T;
+              body?: T;
+            };
         sections?:
           | T
           | {
-              id?: T
-              heading?: T
-              paragraphs?: T
-            }
+              id?: T;
+              heading?: T;
+              paragraphs?: T;
+            };
         operator?:
           | T
           | {
-              slug?: T
-              heading?: T
-              paragraphs?: T
-            }
+              slug?: T;
+              heading?: T;
+              paragraphs?: T;
+            };
         consent?:
           | T
           | {
-              anchor?: T
-              label?: T
-              text?: T
-            }
-      }
-  title?: T
+              anchor?: T;
+              label?: T;
+              text?: T;
+            };
+      };
+  title?: T;
   seo?:
     | T
     | {
-        title?: T
-        description?: T
-      }
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        title?: T;
+        description?: T;
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1742,47 +1740,47 @@ export interface PageProjectsSelect<T extends boolean = true> {
   intro?:
     | T
     | {
-        eyebrow?: T
-        title?: T
-        lead?: T
+        eyebrow?: T;
+        title?: T;
+        lead?: T;
         actions?:
           | T
           | {
-              label?: T
-              href?: T
-              id?: T
-            }
-      }
+              label?: T;
+              href?: T;
+              id?: T;
+            };
+      };
   filters?:
     | T
     | {
-        label?: T
-        allLabel?: T
-      }
-  title?: T
+        label?: T;
+        allLabel?: T;
+      };
+  title?: T;
   seo?:
     | T
     | {
-        title?: T
-        description?: T
-      }
-  locale?: T
-  _status?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+        title?: T;
+        description?: T;
+      };
+  locale?: T;
+  _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "siteBuildState_select".
  */
 export interface SiteBuildStateSelect<T extends boolean = true> {
-  lastPublishedAt?: T
-  lastDispatchAt?: T
-  lastDispatchError?: T
-  updatedAt?: T
-  createdAt?: T
-  globalType?: T
+  lastPublishedAt?: T;
+  lastDispatchAt?: T;
+  lastDispatchError?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1790,17 +1788,18 @@ export interface SiteBuildStateSelect<T extends boolean = true> {
  */
 export interface CollectionsWidget {
   data?: {
-    [k: string]: unknown
-  }
-  width: 'full'
+    [k: string]: unknown;
+  };
+  width: 'full';
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "auth".
  */
 export interface Auth {
-  [k: string]: unknown
+  [k: string]: unknown;
 }
+
 
 declare module 'payload' {
   export interface GeneratedTypes extends Config {}

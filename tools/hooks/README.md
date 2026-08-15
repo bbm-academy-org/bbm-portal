@@ -40,6 +40,25 @@ BBM_HOOKS_DISABLE=1   # выключает ВЕСЬ стек — уважают 
 (SessionStart) печатает снапшот ≤2 KB — git/PR/board/рекомендация; never-throw,
 любая внутренняя ошибка деградирует в диагностическую строку с `exit 0`.
 
+## Codex compatibility
+
+`.codex/hooks.json` binds the critical compatible policy to Codex. `shared.mjs`
+normalizes representative Codex tool payloads (`apply_patch`, `spawn_agent`,
+and shell) before existing PreToolUse guards see them.
+`write-evidence-recorder.mjs` records stable PostToolUse write evidence, and
+`codex-stop-adapter.mjs` combines that evidence with Codex's
+`last_assistant_message` field before calling the existing three Stop decision
+seams. It does not parse the unstable Codex JSONL format to decide whether a
+session wrote. The same recorder also persists owner-halt wording from stable
+UserPromptSubmit prompts, preserving the deviations self-certification block at
+Stop. Exact advisory parity is not claimed: arbitrary shell reads do not map
+safely to Claude read tools, and Codex prompts expose no stable token count for
+the context-budget advisory. Both advisory paths stay fail-open/manual.
+
+Setup, Node 22, one-time `/hooks` trust, generated skill discovery, and the
+explicit DesignSync exclusion are documented in
+[`docs/codex-agent-mode.md`](../../docs/codex-agent-mode.md).
+
 ## Инженерный контракт
 
 - **Fail-open.** Любая внутренняя ошибка хука — `exit 0`. Баг гейта не должен

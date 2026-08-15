@@ -76,6 +76,7 @@ If a task seems to require a framework/content-source/infra change, stop and con
 2. `docs/payload-collections-spec.md` — target Payload model, 1:1 with the site contract (the implementation reference for BBMP-28).
 3. `../bbm-public-website/src/content/schemas.ts` + the seed files — the SSOT of the contract.
 4. `../bbm-public-website/AGENTS.md` — the consumer side (loader-swap invariant, typographer seam).
+5. `node_modules/next/dist/docs/` — Next's own docs, shipped inside the installed package and therefore matching the version this repo actually runs. Read them before writing Next code: this repo is on Next 16, where APIs and conventions differ from what most training data contains. (Next offers to write this pointer into the file itself; that is switched off in `next.config.ts` — see the comment there for why.)
 
 ## Task management
 
