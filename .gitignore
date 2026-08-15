@@ -9,6 +9,12 @@
 # параллельных сессий и per-session счётчики гардов.
 /.claude/parallel-sessions.flag.json
 /.claude/*-guard-state/
+/.claude/codex-write-state/
+/.claude/hook-session-registry/
+
+# Generated local bridge: Codex follows this junction/symlink to the canonical
+# project skill bodies under `.claude/skills/`.
+/.agents/skills
 
 # dependencies
 /node_modules

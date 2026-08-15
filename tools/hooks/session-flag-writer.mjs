@@ -30,11 +30,15 @@ import { resolve } from 'node:path'
 import {
   FLAG_REL,
   FRESH_WINDOW_MS,
+  HOOK_SESSION_REGISTRY_DIR_REL,
   hooksDisabled,
   isDirectRun,
   mainRepoRoot,
   readHookPayload,
+  readState,
+  stateFilePath,
   statMtimeMs,
+  writeState,
 } from './shared.mjs'
 
 /** Единый источник истины с гардами (равенство закреплено тестом). */
@@ -111,6 +115,53 @@ export function collectSessionLogs(mainRoot, deps = {}) {
   return logs
 }
 
+/** Register the stable transcript path supplied by either hook harness. */
+export function registerSessionLog(mainRoot, payload, deps = {}) {
+  try {
+    const id = payload && payload.session_id
+    const logPath = payload && payload.transcript_path
+    if (!mainRoot || !id || !logPath) return false
+    const path = stateFilePath(mainRoot, HOOK_SESSION_REGISTRY_DIR_REL, id)
+    const write = deps.writeState || writeState
+    write(path, { id, logPath })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Read registered Claude/Codex logs without depending on either JSONL shape. */
+export function collectRegisteredSessionLogs(mainRoot, deps = {}) {
+  const readdir = deps.readdir || ((p) => readdirSync(p))
+  const mtime = deps.statMtime || statMtimeMs
+  const read = deps.readState || readState
+  const dir = resolve(mainRoot, HOOK_SESSION_REGISTRY_DIR_REL)
+  let files = []
+  try {
+    files = readdir(dir).filter((file) => String(file).endsWith('.json'))
+  } catch {
+    return []
+  }
+  const logs = []
+  for (const file of files) {
+    const state = read(resolve(dir, file))
+    if (!state.id || !state.logPath) continue
+    const mtimeMs = mtime(state.logPath)
+    if (mtimeMs == null) continue
+    logs.push({ id: state.id, logPath: state.logPath, mtimeMs })
+  }
+  return logs
+}
+
+export function mergeSessionLogs(...sets) {
+  const byPath = new Map()
+  for (const log of sets.flat()) {
+    if (!log || !log.logPath) continue
+    byPath.set(log.logPath, log)
+  }
+  return [...byPath.values()]
+}
+
 function main() {
   try {
     if (hooksDisabled()) process.exit(0)
@@ -124,7 +175,12 @@ function main() {
     const mainRoot = mainRepoRoot(cwd)
     if (!mainRoot) process.exit(0)
     const selfId = payload.session_id || process.env.CLAUDE_CODE_SESSION_ID || ''
-    const live = liveSessions(collectSessionLogs(mainRoot), {
+    registerSessionLog(mainRoot, payload)
+    const logs = mergeSessionLogs(
+      collectSessionLogs(mainRoot),
+      collectRegisteredSessionLogs(mainRoot),
+    )
+    const live = liveSessions(logs, {
       nowMs: Date.now(),
       selfId,
     })

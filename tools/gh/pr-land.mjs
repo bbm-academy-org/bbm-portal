@@ -38,9 +38,11 @@
 // review that actually exists in this repo: the only human with the rights IS
 // the PR author (they cannot APPROVE their own PR), and the reviewer is a
 // subagent leaving a comment. So either a human APPROVE counts, or a comment
-// carrying a `VERDICT: APPROVE` line created AFTER the PR's last commit (an
-// approval older than the code is about different code — the same logic as head
-// pinning). `--require-review` narrows this to a human APPROVE;
+// carrying a `VERDICT: APPROVE` line created AFTER the last commit that changed
+// the PR's OWN diff (an approval older than the code is about different code —
+// the same logic as head pinning). A `gh pr update-branch` merge commit is NOT
+// such a commit and does not restart that clock (#222) — see
+// `isBaseMergeCommit`. `--require-review` narrows this to a human APPROVE;
 // `--no-review-gate "<reason>"` lifts the gate with a mandatory recorded reason.
 // Owner acceptance (stage 5) is a separate requirement, and the reminder about
 // it is printed always: the gate cannot check it.
@@ -54,6 +56,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import {
+  REPO,
   buildDeleteItemMutation,
   buildPrProjectItemsQuery,
   ghGraphqlResult,
@@ -193,13 +196,14 @@ export function classifyChecks(rollup) {
  * rights is the PR author, who cannot APPROVE their own PR), so the checkable
  * artifact is a `VERDICT: APPROVE` line in a comment body.
  *
- * Freshness is mandatory: an approval issued before the last commit is about
- * different code — exactly the same logic as head pinning for the checks.
+ * Freshness is mandatory: an approval issued before the last commit that
+ * changed the code is about different code — exactly the same logic as head
+ * pinning for the checks.
  * @param {{body?:string, createdAt?:string}[]} comments
- * @param {string|null} headCommittedDate  the date of the PR's last commit
+ * @param {string|null} baselineDate  `reviewBaselineDate(pr)`
  * @returns {{ok:true, at:string}|{ok:false, reason:'none'|'stale'|'changes', at?:string}}
  */
-export function findAgentApproval(comments, headCommittedDate) {
+export function findAgentApproval(comments, baselineDate) {
   const verdicts = []
   for (const c of Array.isArray(comments) ? comments : []) {
     const m = /^VERDICT:\s*(APPROVE|REQUEST_CHANGES)\b/m.exec(String(c?.body ?? ''))
@@ -212,17 +216,155 @@ export function findAgentApproval(comments, headCommittedDate) {
   verdicts.sort((a, b) => a.at - b.at)
   const latest = verdicts[verdicts.length - 1]
   if (latest.verdict !== 'APPROVE') return { ok: false, reason: 'changes', at: latest.iso }
-  const head = Date.parse(headCommittedDate ?? '')
+  const head = Date.parse(baselineDate ?? '')
   if (Number.isFinite(head) && latest.at < head)
     return { ok: false, reason: 'stale', at: latest.iso }
   return { ok: true, at: latest.iso }
 }
 
-/** The PR's last commit date — the baseline for the review freshness check. */
-export function headCommittedDate(pr) {
+/**
+ * Is this commit a base merge — `main` merged INTO the PR head, which is what
+ * `gh pr update-branch` appends (#222)? Such a commit changes not one line the
+ * reviewer read: it only moves the branch onto a newer base, and the squash that
+ * lands carries the PR's own diff either way. Since #216 `main` requires strict
+ * status checks, so this command is on the critical path of every raced merge —
+ * letting it stale the verdict buys a full re-review for nothing.
+ *
+ * FOUR conditions, all of them load-bearing, and no matching on commit messages
+ * (a message is renamed the first time anyone touches it):
+ *
+ *   1. exactly two parents — an ordinary commit has one, an octopus merge more;
+ *   2. the FIRST parent is the PR's previous commit — the merge sits on top of
+ *      the PR's own line, rather than the line being merged into something else;
+ *   3. the SECOND parent is NOT one of the PR's own commits. Exact rather than
+ *      approximate: GitHub lists as «the PR's commits» everything reachable from
+ *      head but not from the base, so a parent that is absent from that list is
+ *      by construction already contained in the base — it adds nothing to the
+ *      squash. Merge a SIBLING branch into your PR instead and its tip IS in the
+ *      list, the merge is not recognised, and the verdict goes stale as it
+ *      should. The argument assumes the list is COMPLETE, which is why
+ *      `parseCommitFacts` refuses a page that might be truncated;
+ *   4. GitHub created the commit itself — see `parseCommitFacts`. Shape alone is
+ *      not enough, and this is the clause the review of PR #226 was right to
+ *      demand. `gh pr update-branch` refuses when the update conflicts, and the
+ *      fallback is then `git merge origin/main` + resolve BY HAND — routine
+ *      here, since nearly every PR appends to `DEBT.md`. That commit has exactly
+ *      the shape of clauses 1–3 while carrying resolution hunks no reviewer saw,
+ *      and stepping over it is precisely the weakening #222 forbids. Provenance
+ *      is what separates them: GitHub builds the update-branch merge server-side
+ *      and signs it with its own key, and a merge made on a laptop cannot forge
+ *      that. Verified on live API data, not assumed (PR #226 comments).
+ *
+ * COVERAGE BOUNDARY — read this before trusting the predicate (round-2 review of
+ * PR #226). What it covers: a `gh pr update-branch` merge is recognised; a LOCAL
+ * `git merge origin/main`, hand-resolved or not, is refused by clause 4; an
+ * `update-branch --rebase` is refused by clause 1, since it rewrites the commits
+ * instead of merging and leaves them single-parent. Those all fail towards
+ * strictness — the verdict goes stale and the review is re-run.
+ *
+ * What it does NOT cover: a merge committed through GitHub's WEB conflict editor
+ * («Resolve conflicts» → «Commit merge»), which is offered on the PR page at
+ * exactly the moment `update-branch` refuses. GitHub builds that one server-side
+ * too, so it carries the same two parents, the same base tip as the second, the
+ * same `GitHub <noreply@github.com>` committer and the same valid signature —
+ * all four clauses pass — while the editor lets a human type arbitrary content
+ * into the merged file. NO field of the read this gate makes separates the two;
+ * telling them apart needs the merge's TREE compared against a clean 3-way merge
+ * of its parents. Known hole, routed in `DEBT.md` with a return condition, and
+ * `.claude/skills/merge-when-green/SKILL.md` tells sessions not to take that
+ * button. Do not restate this boundary as «the uncovered paths are safe» — one
+ * of them is not.
+ * @param {{oid?:string, parents?:string[], githubCreated?:boolean}} commit
+ * @param {{oid?:string}} previous  the commit before it in the PR's list
+ * @param {Set<string>} prCommitOids  the oids of the PR's own commits
+ */
+export function isBaseMergeCommit(commit, previous, prCommitOids) {
+  const parents = commit?.parents
+  if (!Array.isArray(parents) || parents.length !== 2) return false
+  if (!previous?.oid || parents[0] !== previous.oid) return false
+  if (prCommitOids.has(parents[1])) return false
+  return commit.githubCreated === true
+}
+
+/**
+ * The date the review verdict is measured against: the last commit that changed
+ * the PR's OWN diff. Trailing base merges are stepped over — a run of them, too,
+ * since two races in a row produce two (#222).
+ *
+ * Every unknown resolves towards the STRICT answer: with no parent data (the
+ * enrichment call failed, or `gh` stopped carrying it) nothing is stepped over
+ * and this is exactly the old «last commit on the branch» rule. The first commit
+ * is never stepped over either — a PR with no commit of its own has no diff to
+ * approve.
+ */
+export function reviewBaselineDate(pr) {
   const commits = pr?.commits
   if (!Array.isArray(commits) || commits.length === 0) return null
-  return commits[commits.length - 1]?.committedDate ?? null
+  const oids = new Set(commits.map((c) => c?.oid).filter(Boolean))
+  let i = commits.length - 1
+  while (i > 0 && isBaseMergeCommit(commits[i], commits[i - 1], oids)) i--
+  return commits[i]?.committedDate ?? null
+}
+
+/** GitHub's own committer identity on a commit it created server-side. */
+const GITHUB_COMMITTER_EMAIL = 'noreply@github.com'
+
+/** Page size of the commits read, and the ceiling `gh pr view` itself reads. */
+const COMMITS_PAGE_SIZE = 100
+
+/**
+ * The two facts `isBaseMergeCommit` needs and `gh pr view --json commits` does
+ * not carry, read off the REST listing of a PR's commits: the parents, and
+ * whether GITHUB created the commit rather than a person.
+ *
+ * Provenance is the pair «committed by `GitHub <noreply@github.com>`» AND «the
+ * signature verifies», and it needs both halves. The committer identity alone is
+ * two lines of `git -c user.email=…` away for anyone; the signature is GitHub's
+ * own key, applied only by commits GitHub itself builds — and `noreply@github.com`
+ * is not an address a user can hold, so no human key can verify against it.
+ * Live-checked before it was built on (PR #226 comments): a `gh pr update-branch`
+ * merge comes back `GitHub <noreply@github.com>` + `verification.verified: true`,
+ * a laptop `git merge` as the developer, unsigned.
+ *
+ * A page that could be truncated is refused WHOLE rather than trusted in part:
+ * clause 3 reads «absent from the PR's own commits» as «already in the base»,
+ * and on a partial list that inference is simply false. 100 rows is both the
+ * page size and the ceiling `gh pr view --json commits` itself reads, so a full
+ * page is indistinguishable from a truncated one and buys nothing.
+ * @param {unknown} rows  the parsed body of `GET /repos/…/pulls/<n>/commits`
+ * @returns {Record<string,{parents:string[], githubCreated:boolean}>|null}
+ */
+export function parseCommitFacts(rows) {
+  if (!Array.isArray(rows) || rows.length >= COMMITS_PAGE_SIZE) return null
+  const out = {}
+  for (const row of rows) {
+    if (typeof row?.sha !== 'string') continue
+    const committer = row?.commit?.committer
+    out[row.sha] = {
+      parents: (row.parents ?? []).map((p) => p?.sha).filter((sha) => typeof sha === 'string'),
+      githubCreated:
+        String(committer?.email ?? '').toLowerCase() === GITHUB_COMMITTER_EMAIL &&
+        row?.commit?.verification?.verified === true,
+    }
+  }
+  return out
+}
+
+/**
+ * Stamp those facts onto the PR payload. No map — no stamp, and the freshness
+ * rule stays at its strict default.
+ * @param {object} data  the `gh pr view` payload
+ * @param {Record<string,{parents:string[], githubCreated:boolean}>|null} factsByOid
+ */
+export function withCommitFacts(data, factsByOid) {
+  if (!factsByOid || !Array.isArray(data?.commits)) return data
+  return {
+    ...data,
+    commits: data.commits.map((c) => {
+      const facts = factsByOid[c?.oid]
+      return facts ? { ...c, ...facts } : c
+    }),
+  }
 }
 
 /**
@@ -242,7 +384,16 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
   if (state !== 'OPEN') red.push(`the PR is not open (state=${state || 'unknown'})`)
   if (pr?.isDraft) red.push('the PR is a draft')
   if (String(pr?.mergeable ?? '').toUpperCase() === 'CONFLICTING') {
-    red.push('the PR conflicts with its base — update the branch')
+    // The warning lives HERE, not only in the skill: GitHub puts a «Resolve
+    // conflicts» button on the PR page at exactly this moment, and a merge made
+    // in that web editor is the one shape `isBaseMergeCommit` cannot see through
+    // (its COVERAGE BOUNDARY). A rule in a skill is read when the skill is
+    // loaded; this line is read by the session standing in front of the trap.
+    red.push(
+      'the PR conflicts with its base — resolve it in your worktree, not with GitHub’s ' +
+        '«Resolve conflicts» button (it bypasses the review-freshness gate, #222), then ' +
+        'update the branch and expect a re-review',
+    )
   }
   const closes = (pr?.closingIssuesReferences ?? []).map((r) => r?.number).filter(Boolean)
   if (closes.length === 0) {
@@ -250,10 +401,12 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
   }
 
   const humanApproved = String(pr?.reviewDecision ?? '').toUpperCase() === 'APPROVED'
-  const agent = findAgentApproval(pr?.comments, headCommittedDate(pr))
+  const agent = findAgentApproval(pr?.comments, reviewBaselineDate(pr))
   const AGENT_REASON = {
     none: 'not a single comment carries a `VERDICT: APPROVE` line',
-    stale: 'the last `VERDICT: APPROVE` is older than the last commit — it is about different code',
+    stale:
+      'the last `VERDICT: APPROVE` is older than the last commit that changed the PR’s own diff — ' +
+      'it is about different code (a `gh pr update-branch` merge does not count, #222)',
     changes: "the reviewer's latest verdict is `REQUEST_CHANGES`",
   }
   if (requireReview) {
@@ -278,9 +431,16 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
     'task-cycle stage 5: for owner-visible changes the merge happens only after a recorded ' +
       'acceptance on a live stand — the gate does not check this',
   )
+  // RED since #216, a remark before it. `main` now carries
+  // `required_status_checks.strict: true` (docs/ci-guardrails.md §2.1), so BEHIND
+  // is not a warning that the merge might refuse — the server WILL refuse it with
+  // GH006. A remark would let this gate report green and then fail at the merge
+  // call, which is the single outcome the gate exists to prevent.
   if (String(pr?.mergeStateStatus ?? '').toUpperCase() === 'BEHIND') {
-    warn.push(
-      'the branch is behind its base (mergeStateStatus=BEHIND) — under strict checks the merge will refuse',
+    red.push(
+      'the branch is behind its base (mergeStateStatus=BEHIND) and `main` requires strict ' +
+        'status checks — the server will refuse this merge. Update the branch ' +
+        '(`gh pr update-branch <pr#>`) and let CI re-run on the new head',
     )
   }
   return { red, warn, closes }
@@ -292,13 +452,17 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
   board → Status=Done on every \`Closes #N\` → worktree teardown → re-sweep. The
   first failing stage stops the tail and prints what to finish by hand.
 
-  Gate: the PR is open and not a draft, no conflict, a \`Closes #N\` is present,
+  Gate: the PR is open and not a draft, no conflict, not behind its base
+  (\`main\` requires strict status checks since #216, so BEHIND is a refusal at
+  the server), a \`Closes #N\` is present,
   review is confirmed, every check on the CURRENT head SHA is green. That same
   SHA goes into \`gh pr merge --match-head-commit\`, so a commit that lands while
   we wait makes the merge refuse rather than ride in unchecked.
 
   Review counts in two ways by default: a human APPROVE OR a reviewer comment
-  carrying a \`VERDICT: APPROVE\` line created AFTER the PR's last commit.
+  carrying a \`VERDICT: APPROVE\` line created AFTER the last commit that changed
+  the PR's own diff. A \`gh pr update-branch\` merge commit changes none of it, so
+  it does not stale the verdict (#222); any other commit does.
 
   Re-runnable: on a PR that is already MERGED the gate and the merge are skipped
   and the tail resumes at the first unfinished stage. A \`gh pr merge\` that exits
@@ -370,8 +534,42 @@ const PR_FIELDS =
   'state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,' +
   'headRefName,headRefOid,statusCheckRollup,comments,commits'
 
-function runViewPr(pr) {
-  return ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS])
+/**
+ * The REST listing of a PR's commits — the read that carries parents and
+ * provenance, and that lists exactly the PR's own commits, which is what makes
+ * `isBaseMergeCommit`'s third clause exact.
+ *
+ * Never fatal: a failed or unreadable call returns null, the payload goes
+ * un-stamped and review freshness falls back to «the last commit on the branch».
+ */
+function runCommitFacts(pr) {
+  const res = ghJson(['api', `repos/${REPO}/pulls/${pr}/commits?per_page=${COMMITS_PAGE_SIZE}`])
+  return res.ok ? parseCommitFacts(res.data) : null
+}
+
+/**
+ * The facts are keyed by HEAD SHA and read at most once per SHA per run: the
+ * gate re-reads the PR on every probe of its polling loop (up to the whole
+ * `--timeout` window), and the parents of commits already in the payload do not
+ * change while we wait — so this stays one extra call per `pr:land`, not one per
+ * probe. A head that MOVES is a different key and is read again, never served
+ * the previous head's answer; the cache lives as long as the process, which is
+ * one command.
+ * @param {number} pr
+ * @param {{view?:Function, facts?:Function, cache?:Map<string,object|null>}} [io]
+ */
+const COMMIT_FACTS_CACHE = new Map()
+
+export function runViewPr(pr, io = {}) {
+  const view = io.view ?? (() => ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS]))
+  const facts = io.facts ?? (() => runCommitFacts(pr))
+  const cache = io.cache ?? COMMIT_FACTS_CACHE
+
+  const res = view()
+  if (!res.ok) return res
+  const key = `${pr}:${res.data?.headRefOid ?? '?'}`
+  if (!cache.has(key)) cache.set(key, facts())
+  return { ok: true, data: withCommitFacts(res.data, cache.get(key)) }
 }
 
 /**

@@ -39,6 +39,12 @@ export const DISPATCH_STATE_DIR_REL = '.claude/dispatch-guard-state'
 /** Per-session state of the AskUserQuestion guard (`{headers: {<header>: len}}`). */
 export const ASKUSERQUESTION_STATE_DIR_REL = '.claude/askuserquestion-guard-state'
 
+/** Stable per-session write evidence recorded from Codex PostToolUse payloads. */
+export const CODEX_WRITE_STATE_DIR_REL = '.claude/codex-write-state'
+
+/** Per-session transcript registry shared by Claude and Codex hook invocations. */
+export const HOOK_SESSION_REGISTRY_DIR_REL = '.claude/hook-session-registry'
+
 /** Сравнение путей без учёта регистра и вида разделителя (Windows FS). */
 export function norm(p) {
   return String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
@@ -192,8 +198,66 @@ export function hooksDisabled(env = process.env) {
 }
 
 /** Payload хука со stdin; любая ошибка разбора — забота вызывающего main(). */
+export function applyPatchPaths(command) {
+  const paths = []
+  for (const line of String(command || '').split(/\r?\n/)) {
+    const match = /^\*\*\*\s+(?:Add|Update|Delete) File:\s*(.+?)\s*$/.exec(line)
+    const move = /^\*\*\*\s+Move to:\s*(.+?)\s*$/.exec(line)
+    const path = (match || move)?.[1]
+    if (path && !paths.includes(path)) paths.push(path)
+  }
+  return paths
+}
+
+/**
+ * Adapt the small set of Codex canonical tool payloads to the Claude-shaped
+ * contracts consumed by the existing hook stack. Unknown payloads pass
+ * through unchanged so the stack remains fail-open as tools evolve.
+ */
+export function normalizeHookPayload(payload) {
+  if (!payload || typeof payload !== 'object') return payload
+  const toolName = String(payload.tool_name || '')
+  const sourceInput =
+    payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {}
+  let normalizedName = toolName
+  let toolInput = sourceInput
+
+  if (toolName === 'apply_patch') {
+    const filePaths = applyPatchPaths(sourceInput.command)
+    normalizedName = 'MultiEdit'
+    toolInput = {
+      ...sourceInput,
+      file_path: filePaths[0] || '',
+      file_paths: filePaths,
+    }
+  } else if (toolName === 'spawn_agent') {
+    const forkTurns = sourceInput.fork_turns
+    const fullHistory = forkTurns == null || String(forkTurns).toLowerCase() === 'all'
+    normalizedName = 'Agent'
+    toolInput = {
+      ...sourceInput,
+      prompt: sourceInput.prompt || sourceInput.message || '',
+      subagent_type: fullHistory
+        ? 'fork'
+        : sourceInput.subagent_type || sourceInput.task_name || '',
+    }
+  } else if (['shell_command', 'exec_command', 'shell'].includes(toolName)) {
+    normalizedName = 'Bash'
+  } else if (toolName === 'request_user_input') {
+    normalizedName = 'AskUserQuestion'
+  }
+
+  if (normalizedName === toolName && toolInput === sourceInput) return payload
+  return {
+    ...payload,
+    harness_tool_name: toolName,
+    tool_name: normalizedName,
+    tool_input: toolInput,
+  }
+}
+
 export function readHookPayload() {
-  return JSON.parse(readFileSync(0, 'utf8'))
+  return normalizeHookPayload(JSON.parse(readFileSync(0, 'utf8')))
 }
 
 /**
