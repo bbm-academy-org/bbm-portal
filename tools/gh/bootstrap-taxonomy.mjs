@@ -133,8 +133,9 @@ export function planMilestones(existing, specs = PERMANENT_MILESTONES) {
  * Result of comparing the `renovate.json` pin with the live milestone number.
  * `status`: `ok` — pin matches; `drift` — pin points elsewhere (expected number
  * in `expected`); `unknown` — the milestone does not exist yet, so comparison is
- * impossible; `unpinned` — the config has no `milestone` key at all.
- * @typedef {{status:'ok'|'drift'|'unknown'|'unpinned', pinned:number|null,
+ * impossible; `unpinned` — a valid config has no `milestone` key;
+ * `unavailable` — the config could not be read or parsed.
+ * @typedef {{status:'ok'|'drift'|'unknown'|'unpinned'|'unavailable', pinned:number|null,
  *            expected:number|null, title:string}} RenovatePinCheck
  */
 
@@ -156,7 +157,9 @@ export function checkRenovateMilestonePin(
 ) {
   const live = (existing ?? []).find((m) => m?.title === title)
   const expected = typeof live?.number === 'number' ? live.number : null
-  const raw = renovateConfig?.milestone
+  if (renovateConfig === null || renovateConfig === undefined)
+    return { status: 'unavailable', pinned: null, expected, title }
+  const raw = renovateConfig.milestone
   if (raw === undefined || raw === null)
     return { status: 'unpinned', pinned: null, expected, title }
   const pinned = typeof raw === 'number' ? raw : null
@@ -193,12 +196,12 @@ export function formatPlan({ labels, milestones, missingTypes, renovatePin = nul
     )
   }
   if (renovatePin) {
-    const pin = renovatePin.pinned ?? '(not a number)'
+    const pin = renovatePin.pinned === null ? '(not a number)' : `#${renovatePin.pinned}`
     if (renovatePin.status === 'ok') {
-      lines.push(`already present: milestone pin «${renovatePin.title}» in renovate.json — #${pin}`)
+      lines.push(`already present: milestone pin «${renovatePin.title}» in renovate.json — ${pin}`)
     } else if (renovatePin.status === 'drift') {
       lines.push(
-        `⚠ milestone pin «${renovatePin.title}» in renovate.json has drifted: pinned #${pin}, live #${renovatePin.expected}; ` +
+        `⚠ milestone pin «${renovatePin.title}» in renovate.json has drifted: pinned ${pin}, live #${renovatePin.expected}; ` +
           `renovate.json is edited manually and this tool only reports`,
       )
     } else if (renovatePin.status === 'unpinned') {
@@ -206,9 +209,14 @@ export function formatPlan({ labels, milestones, missingTypes, renovatePin = nul
         `⚠ renovate.json has no milestone key — theme «${renovatePin.title}» has no pinned number ` +
           `(live: ${renovatePin.expected === null ? 'theme not created yet' : `#${renovatePin.expected}`})`,
       )
+    } else if (renovatePin.status === 'unavailable') {
+      lines.push(
+        `⚠ renovate.json could not be read or parsed — its assignees and milestone settings are unusable; ` +
+          `fix the config before relying on theme «${renovatePin.title}»`,
+      )
     } else {
       lines.push(
-        `cannot check milestone pin «${renovatePin.title}» in renovate.json (#${pin}): the milestone itself does not exist yet`,
+        `cannot check milestone pin «${renovatePin.title}» in renovate.json (${pin}): the milestone itself does not exist yet`,
       )
     }
   }
@@ -224,7 +232,8 @@ function out(msg) {
 
 /**
  * Read and parse `renovate.json` from the repo root. An unreadable or malformed
- * config does not abort taxonomy bootstrap; the pin check simply finds no key.
+ * config does not abort taxonomy bootstrap; `null` lets the pin check report
+ * that state separately from a valid config with no `milestone` key.
  * @returns {Record<string, unknown>|null}
  */
 function readRenovateConfig() {
