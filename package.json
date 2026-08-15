@@ -20,6 +20,7 @@
     "dev:restart": "node tools/dev/run.mjs restart",
     "dev:config": "node tools/dev/run.mjs config",
     "dev:ports": "node tools/dev/dev-ports.mjs",
+    "dev:db:branch": "node tools/platform/branch-database.mjs create",
     "task:worktree": "node tools/dev/task-worktree.mjs",
     "worktree:teardown": "node tools/dev/worktree-teardown.mjs",
     "predeploy:prod": "node scripts/require-node.mjs",

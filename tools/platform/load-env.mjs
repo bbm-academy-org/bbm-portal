@@ -19,7 +19,8 @@
 // malformed one must degrade to "no .env" so the caller's own fail-closed check
 // produces the diagnostic instead of a stack trace from the loader.
 
-import { resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
 
 /**
  * Load `<cwd>/.env` into `process.env` if it is there.
@@ -35,4 +36,32 @@ export function loadDotEnv(cwd = process.cwd()) {
   } catch (err) {
     return { loaded: false, path, error: err?.message ?? String(err) }
   }
+}
+
+export function findPrimaryCheckoutRoot(cwd = process.cwd()) {
+  const res = spawnSync('git', ['rev-parse', '--git-common-dir'], {
+    cwd,
+    encoding: 'utf8',
+  })
+  if (res.status !== 0) return null
+
+  const commonDir = res.stdout.trim()
+  if (!commonDir) return null
+  return dirname(resolve(cwd, commonDir))
+}
+
+export function loadPlatformToolEnv(cwd = process.cwd()) {
+  const roots = [cwd]
+  const primary = findPrimaryCheckoutRoot(cwd)
+  if (primary && resolve(primary) !== resolve(cwd)) roots.push(primary)
+
+  const seen = new Set()
+  const results = []
+  for (const root of roots) {
+    const key = resolve(root).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    results.push(loadDotEnv(root))
+  }
+  return results
 }

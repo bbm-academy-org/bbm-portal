@@ -51,3 +51,15 @@
   `Get-NetTCPConnection -LocalPort <n> | Select-Object -Expand OwningProcess |
 ForEach-Object { Stop-Process -Id $_ -Force }`. Свой — тот, который запустила
   эта сессия.
+
+## База платформы
+
+- **Branch, don't share.** Для platform DB у числового worktree своя база:
+  `pnpm dev:db:branch` внутри `.claude/worktrees/<N>` создаёт `platform_<N>`,
+  пишет в локальный `.env` этого worktree `PLATFORM_DATABASE_URL=…/platform_<N>`
+  и печатает строку подключения. После этого `pnpm platform:migrate` в этом
+  worktree не трогает общую `platform` и не может упасть на Payload `cms`.
+- **Разборка убирает БД.** `pnpm worktree:teardown <N>` перед удалением worktree
+  дропает только `platform_<N>` и сообщает об этом. Если дроп не удался,
+  teardown останавливается: лучше явно оставить worktree, чем молча протечь
+  базой.
