@@ -157,6 +157,14 @@ function overlapsAnyRange(start, end, ranges) {
   return ranges.some(([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart)
 }
 
+function maskRanges(line, ranges) {
+  return ranges.reduce(
+    (masked, [start, end]) =>
+      `${masked.slice(0, start)}${' '.repeat(end - start)}${masked.slice(end)}`,
+    String(line),
+  )
+}
+
 function numberMatches(line, fileRanges = fileTokenRanges(line)) {
   return [...String(line).matchAll(numRe())].filter(
     (m) => !overlapsAnyRange(m.index, m.index + m[0].length, fileRanges),
@@ -225,7 +233,7 @@ function segmentIndexAt(segments, at) {
  * it sits in plus the two attribution flags dedupeRefs needs (`ambiguous`,
  * `soleOnLine`).
  * @param {string} text
- * @returns {{kind: "issue"|"pr"|"number"|"sha"|"branch", value: string|number, repo?: string, line: string, lineNo: number, segment: string, ambiguous: boolean, soleOnLine: boolean}[]}
+ * @returns {{kind: "issue"|"pr"|"number"|"sha"|"branch", value: string|number, repo?: string, line: string, lineNo: number, segment: string, claimLine: string, claimSegment: string, ambiguous: boolean, soleOnLine: boolean}[]}
  */
 export function extractRefs(text) {
   const refs = []
@@ -257,6 +265,7 @@ export function extractRefs(text) {
         line,
         lineNo,
         at: m.index,
+        end: m.index + m[0].length,
       })
     }
 
@@ -273,7 +282,7 @@ export function extractRefs(text) {
       // Otherwise a nested path such as `docs/adr/...` becomes the shorter,
       // unrelated branch `docs/adr`; qualified issue refs own their whole token.
       if (line[end] === '/' || insideQualifiedNumber || insideFileToken) continue
-      found.push({ kind: 'branch', value: m[0], line, lineNo, at: m.index })
+      found.push({ kind: 'branch', value: m[0], line, lineNo, at: m.index, end })
     }
 
     // Commit SHAs: 7–40 hex, must carry a digit AND an a-f letter (heuristic —
@@ -289,8 +298,12 @@ export function extractRefs(text) {
       )
       const inFileToken = overlapsAnyRange(m.index, m.index + tok.length, fileRanges)
       if (inBranch || inQualifiedNumber || inFileToken) continue
-      found.push({ kind: 'sha', value: tok, line, lineNo, at: m.index })
+      found.push({ kind: 'sha', value: tok, line, lineNo, at: m.index, end: m.index + tok.length })
     }
+
+    // Claims use a length-preserving masked view; original split offsets and
+    // diagnostic strings stay untouched.
+    const claimLine = maskRanges(line, [...fileRanges, ...found.map((r) => [r.at, r.end])])
 
     // Attribution inputs: which segment each ref sits in, and whether that
     // segment holds a second ref (then no claim may be pinned on either).
@@ -300,19 +313,28 @@ export function extractRefs(text) {
       perSegment.set(r.segIdx, (perSegment.get(r.segIdx) ?? 0) + 1)
     }
     for (const r of found) {
+      const segment = segments[r.segIdx] ?? { text: r.line, start: 0, end: r.line.length }
       refs.push({
         kind: r.kind,
         value: r.value,
         repo: r.repo,
         line: r.line,
         lineNo: r.lineNo,
-        segment: segments[r.segIdx]?.text ?? r.line,
+        segment: segment.text,
+        claimLine,
+        claimSegment: claimLine.slice(segment.start, segment.end),
         ambiguous: (perSegment.get(r.segIdx) ?? 0) >= 2,
         soleOnLine: found.length === 1,
       })
     }
   })
   return refs
+}
+
+function claimLineAt(line, lineNo, refs) {
+  return (
+    refs.find((ref) => ref.lineNo === lineNo)?.claimLine ?? maskRanges(line, fileTokenRanges(line))
+  )
 }
 
 /**
@@ -372,9 +394,9 @@ export function verdictFor(claim, actual) {
  */
 export function claimForRef(ref) {
   if (ref.ambiguous) return null
-  const own = parseClaim(ref.segment ?? ref.line)
+  const own = parseClaim(ref.claimSegment ?? ref.segment ?? ref.line)
   if (own) return own
-  return ref.soleOnLine ? parseClaim(ref.line) : null
+  return ref.soleOnLine ? parseClaim(ref.claimLine ?? ref.line) : null
 }
 
 /**
@@ -414,16 +436,18 @@ export function dedupeRefs(refs) {
  * Extract owner-approval CLAIMS about issue refs. A line carries an approval
  * claim when it has ≥1 issue-ref AND matches the TIGHT approval pattern.
  * @param {string} text
+ * @param {ReturnType<typeof extractRefs>} [refs]
  * @returns {{issue: number, repo: string, line: string, lineNo: number}[]} deduped per repository and issue
  */
-export function extractApprovalClaims(text) {
+export function extractApprovalClaims(text, refs = extractRefs(text)) {
   const claims = []
   const seen = new Set()
   String(text)
     .split(/\r?\n/)
     .forEach((line, i) => {
-      if (!isApprovalClaimLine(line)) return
-      for (const m of numberMatches(line)) {
+      const matches = numberMatches(line)
+      if (matches.length === 0 || !isApprovalClaimLine(claimLineAt(line, i + 1, refs))) return
+      for (const m of matches) {
         const issue = Number(m.groups?.number)
         const repo = m.groups?.repo ?? REPO
         const id = `${repo}#${issue}`
@@ -581,17 +605,19 @@ const OWNER_DIRECTIVE_PATTERNS = [
  * (first matching pattern); lines the provenance domain already verifies
  * (approval claim + issue ref on the same line) are excluded.
  * @param {string} text
+ * @param {ReturnType<typeof extractRefs>} [refs]
  * @returns {{phrase: string, line: string, lineNo: number}[]}
  */
-export function extractOwnerDirectiveClaims(text) {
+export function extractOwnerDirectiveClaims(text, refs = extractRefs(text)) {
   const claims = []
   String(text)
     .split(/\r?\n/)
     .forEach((line, i) => {
+      const claimLine = claimLineAt(line, i + 1, refs)
       // The provenance domain verifies issue-ref-tied approval claims against
       // the issue itself — skip those lines so one claim never fires twice.
-      if (isApprovalClaimLine(line) && numberMatches(line).length > 0) return
-      const norm = line.replace(/ё/g, 'е').replace(/Ё/g, 'Е')
+      if (isApprovalClaimLine(claimLine) && numberMatches(line).length > 0) return
+      const norm = claimLine.replace(/ё/g, 'е').replace(/Ё/g, 'Е')
       for (const re of OWNER_DIRECTIVE_PATTERNS) {
         const m = norm.match(re)
         if (m) {
@@ -787,7 +813,10 @@ export function verifyHandoff(text, runner) {
   // handoff (a «бэклог пуст» handoff with zero refs is exactly the dangerous
   // case).
   const completeness = verifyCompletenessClaims(extractCompletenessClaims(text))
-  const directive = verifyOwnerDirectiveClaims(extractOwnerDirectiveClaims(text), hasOwnerQuoteEvidence(text))
+  const directive = verifyOwnerDirectiveClaims(
+    extractOwnerDirectiveClaims(text, refs),
+    hasOwnerQuoteEvidence(text),
+  )
   const textOnlyRows = [...completeness.rows, ...directive.rows]
 
   if (refs.length === 0 && textOnlyRows.length === 0) {
@@ -798,7 +827,7 @@ export function verifyHandoff(text, runner) {
   let approval = { rows: [], stale: 0, hints: [] }
   if (refs.length > 0) {
     state = verifyRefs(refs, runner)
-    approval = verifyApprovalClaims(extractApprovalClaims(text), runner)
+    approval = verifyApprovalClaims(extractApprovalClaims(text, refs), runner)
   }
 
   const rows = [...state.rows, ...approval.rows, ...textOnlyRows]
