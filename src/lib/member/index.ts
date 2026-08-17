@@ -1,0 +1,41 @@
+/**
+ * Модуль «Реестр участников» (`core.member` + `core.member_alias`) — публичная
+ * поверхность (ADR-002 §3, ADR-004 §6, спека 124: EARS-1, EARS-2, EARS-8,
+ * EARS-9, EARS-17..19).
+ *
+ * ЭТО ЕДИНСТВЕННАЯ ДВЕРЬ. Другие модули (в первую очередь hours) импортируют
+ * только `@/lib/member`: ни `@/lib/member/repository`, ни таблицы
+ * `@/lib/platform/db/schema/member/*`. Граница машинная, а не на доверии —
+ * правила `hours-must-import-member-only-via-api` и
+ * `cms-and-okr-must-not-import-member-internals` в `.dependency-cruiser.cjs`
+ * (`pnpm boundaries`, BLOCK-джоба в CI).
+ *
+ * Каждая функция принимает необязательный executor `{ db }` (drizzle-handle или
+ * транзакция) и по умолчанию берёт `getPlatformDb()`: мутации hours идут одной
+ * транзакцией под advisory-локом (EARS-10), и создание/правка участника внутри
+ * такого сохранения должна жить в ТОЙ ЖЕ транзакции.
+ *
+ * Алиасы в этом цикле только читаются: писать их — ручной seed и SQL-хатч
+ * владельца (EARS-19), UI появится с `/p/admin` (эпик #112).
+ */
+
+export { MemberConflictError } from './errors'
+export {
+  normalizeAliasValue,
+  normalizeMemberEmail,
+  slugCandidate,
+  slugFromEmail,
+} from './normalize'
+export {
+  ensureMemberByEmail,
+  findMemberByEmail,
+  findMemberOwningAliasValue,
+  getMembersByIds,
+  listAliases,
+  listMembers,
+  resolveMember,
+  updateMemberProfile,
+} from './repository'
+export type { MemberDb, MemberDbOptions } from './repository'
+export { VIRTUAL_EMAIL_KIND } from './types'
+export type { AliasKind, AliasLookup, Member, MemberAlias } from './types'
