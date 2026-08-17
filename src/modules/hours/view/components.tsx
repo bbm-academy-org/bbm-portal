@@ -57,8 +57,7 @@ export function NotAParticipantNotice() {
 export function DataUnavailable() {
   return (
     <p className="hours-notice hours-notice--error">
-      Данные недоступны: файл модуля часов не читается. Оценки на диске не тронуты — позови
-      администратора.
+      Данные недоступны: база модуля часов не отвечает. Оценки не тронуты — позови администратора.
     </p>
   )
 }
