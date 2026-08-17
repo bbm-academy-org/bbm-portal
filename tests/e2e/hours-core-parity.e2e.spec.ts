@@ -127,8 +127,15 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
     // The saved card and the summary row are two different reads of the same
     // committed transaction — the mutation and the re-render.
     await expect(page.locator('.hours-saved')).toBeVisible({ timeout: 30_000 })
+    // The summary names the PARTICIPANT (`row.name ?? email`, 081 requires a
+    // name), never the email local part — so the row is identified by the same
+    // display name the hero shows for this session, read off the page rather
+    // than guessed from the login. Guessing broke this assertion on the dev
+    // rehearsal stand, where the test user's member name is not their email.
+    const person = (await page.locator('.hours-person').first().innerText()).trim()
+    expect(person).not.toBe('')
     const summary = page.locator('.hours-table').last()
-    await expect(summary).toContainText(idpUsername!.split('@')[0], { ignoreCase: true })
+    await expect(summary).toContainText(person)
   })
 
   test('EARS-7: the admin upserts a brand-new participant with a name only and the row appears', async ({
