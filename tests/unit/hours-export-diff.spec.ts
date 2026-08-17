@@ -36,7 +36,10 @@ describe('diffJson', () => {
     )
     expect(diff).toHaveLength(1)
     expect(diff[0].path).toBe('assessments[0].hourly_rate')
-    expect(diff[0].source).toBe('1163.0465116279069')
+    // `1163.0465116279069` and `1163.046511627907` are the SAME double; the
+    // renderer prints the shortest round-trip form, which is the form the export
+    // carries too.
+    expect(diff[0].source).toBe('1163.046511627907')
     expect(diff[0].core).toBe('1163.05')
   })
 

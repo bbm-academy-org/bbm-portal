@@ -15,8 +15,9 @@
  * транзакцией под advisory-локом (EARS-10), и создание/правка участника внутри
  * такого сохранения должна жить в ТОЙ ЖЕ транзакции.
  *
- * Алиасы в этом цикле только читаются: писать их — ручной seed и SQL-хатч
- * владельца (EARS-19), UI появится с `/p/admin` (эпик #112).
+ * Алиасов UI в этом цикле нет (EARS-19): их пишет ручной seed катовера — через
+ * `upsertMemberWithAliases`, ЭТУ дверь, а не своим SQL (`tools/platform/member-seed.ts`,
+ * EARS-14) — и владельческий SQL-хатч. Форма появится с `/p/admin` (эпик #112).
  */
 
 export { MemberConflictError } from './errors'
@@ -35,7 +36,14 @@ export {
   listMembers,
   resolveMember,
   updateMemberProfile,
+  upsertMemberWithAliases,
 } from './repository'
-export type { MemberDb, MemberDbOptions } from './repository'
+export type {
+  MemberAliasSeed,
+  MemberDb,
+  MemberDbOptions,
+  MemberSeedInput,
+  MemberUpsertOutcome,
+} from './repository'
 export { VIRTUAL_EMAIL_KIND } from './types'
 export type { AliasKind, AliasLookup, Member, MemberAlias } from './types'
