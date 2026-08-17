@@ -23,8 +23,34 @@ pnpm platform:migrate            # ensure the database exists, then apply
 pnpm platform:db:ensure          # the ensure step alone (idempotent)
 ```
 
-All four carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
-like the Payload `migrate*` scripts next to them in `package.json`.
+One-off data commands of the `/p/hours` cutover (spec 124 EARS-13/14/26/27) — the
+operating rules, the dataset shape and the never-commit rule live in
+[`docs/runbooks/hours-core-cutover.md`](../../../../docs/runbooks/hours-core-cutover.md),
+not here:
+
+```bash
+pnpm platform:member:seed  <dataset.json> [--dry-run]   # the manual member seed
+pnpm platform:hours:import <hours.json>                 # JSON → core, one transaction
+pnpm platform:hours:verify <hours.json>                 # the export-diff verdict alone
+```
+
+All of them carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
+like the Payload `migrate*` scripts next to them in `package.json`. The three
+cutover commands run through `tsx` rather than as plain `.mjs`, because they write
+through the module APIs (`@/lib/member`, `@/lib/hours/core`) instead of SQL of their
+own — see «Boundaries» below.
+
+### The integration tier runs in CI
+
+`tests/int/platform` executes against a real Postgres in the `platform-int` job of
+`.github/workflows/ci.yml`, which is in the `ci` meta-job's needs-list, i.e. it
+BLOCKS (docs/ci-guardrails.md §2.1). The job needs no `.env`: it passes
+`PLATFORM_DATABASE_URL` as an environment variable and runs `pnpm platform:migrate`
+against a `postgres:17-alpine` service — the version prod runs. Locally the same
+tier runs against this worktree's branch DB:
+`pnpm exec vitest run tests/int/platform` (see
+[`.claude/rules/parallel-sessions.md`](../../../../.claude/rules/parallel-sessions.md),
+«Platform database»).
 
 `platform:migrate:status` exits **non-zero** on an UNREACHABLE or ORPHAN
 migration (see below) and 0 on a merely pending one — pending is a normal state,
