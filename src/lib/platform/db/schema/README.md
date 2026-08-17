@@ -32,5 +32,21 @@ EARS-1/2/17, issue #255). Their module is `src/lib/member`, whose
 member module carries its own rule pair —
 `hours-must-import-member-only-via-api` and `cms-and-okr-must-not-import-member`
 — because a table rule alone does not stop a module from importing another
-module's internals (EARS-8). The hours tables land with the rest of #255.
+module's internals (EARS-8).
+
+**`hours/`** holds the four tables of the hours module (`src/lib/hours` /
+`src/modules/hours`, same spec, EARS-1/3/4/5/6): `hours_period`,
+`hours_participant`, `hours_assessment`, `hours_publication`. They reference
+`core.member`, and those two foreign keys are written **by hand in the
+migration** (`migrations/0002_hours.sql`) rather than declared in drizzle: a
+`references(() => member.id)` needs the member table OBJECT, i.e. an import of
+`schema/member/` from inside `schema/hours/` — the very thing ADR-004 §6 keeps
+out of a module. `tests/int/platform/hours-core.int.spec.ts` reads both
+constraints back out of `information_schema` (EARS-1), so the arrangement is
+asserted rather than trusted. Note the consequence for future work: a
+hand-written constraint is invisible to `platform:migrate:generate` (it diffs the
+schema files against `meta/*_snapshot.json`, never the live database), so it is
+neither dropped nor re-proposed — and it must be repeated by hand if the table is
+ever recreated.
+
 Pipeline: [`../README.md`](../README.md).
