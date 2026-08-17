@@ -1,0 +1,114 @@
+{
+  "participants": [
+    {
+      "email": "vasya.pupkin@bbm.academy",
+      "name": "Вася Пупкин",
+      "role": "Разработчик",
+      "fork_min": 300000,
+      "fork_max": 400000,
+      "grade": "III"
+    },
+    {
+      "email": "lena.testova@bbm.academy",
+      "name": "Лена Тестова",
+      "role": "Дизайнер",
+      "fork_min": 200000,
+      "fork_max": 260000,
+      "grade": "II"
+    },
+    {
+      "email": "petr.fakov@bbm.academy",
+      "name": "Пётр Фейков",
+      "role": "Продюсер",
+      "fork_min": null,
+      "fork_max": null,
+      "grade": null
+    }
+  ],
+  "periods": [
+    {
+      "id": "6b1f0a5e-1c2d-4f3a-9b8c-7d6e5f4a3b21",
+      "label": "Июнь 2026",
+      "date_from": "2026-06-01",
+      "date_to": "2026-06-30",
+      "status": "closed"
+    },
+    {
+      "id": "0c9e8d7b-6a5f-4e3d-8c2b-1a0f9e8d7c65",
+      "label": "Июль 2026",
+      "date_from": "2026-07-01",
+      "date_to": "2026-07-31",
+      "status": "open"
+    }
+  ],
+  "assessments": [
+    {
+      "period_id": "6b1f0a5e-1c2d-4f3a-9b8c-7d6e5f4a3b21",
+      "email": "vasya.pupkin@bbm.academy",
+      "hours": 148.5,
+      "method": "period",
+      "weekend_hours": 6.5,
+      "split_percent": 30,
+      "monthly_rate": 400000,
+      "hourly_rate": 1163.0465116279069,
+      "accrual": 172710,
+      "cash_amount": 120897,
+      "invest_amount": 51813,
+      "weekday_count": 22,
+      "saved_at": "2026-07-01T09:14:53.271Z"
+    },
+    {
+      "period_id": "6b1f0a5e-1c2d-4f3a-9b8c-7d6e5f4a3b21",
+      "email": "lena.testova@bbm.academy",
+      "hours": 96,
+      "method": "week",
+      "weekend_hours": 0,
+      "split_percent": 0,
+      "monthly_rate": 230000,
+      "hourly_rate": 668.6046511627907,
+      "accrual": 64186,
+      "cash_amount": 64186,
+      "invest_amount": 0,
+      "weekday_count": 22,
+      "saved_at": "2026-07-01T11:02:07.004Z"
+    },
+    {
+      "period_id": "0c9e8d7b-6a5f-4e3d-8c2b-1a0f9e8d7c65",
+      "email": "petr.fakov@bbm.academy",
+      "hours": 12.5,
+      "method": "day",
+      "weekend_hours": 2.5,
+      "split_percent": 0,
+      "monthly_rate": null,
+      "hourly_rate": null,
+      "accrual": 0,
+      "cash_amount": 0,
+      "invest_amount": 0,
+      "weekday_count": 23,
+      "saved_at": "2026-07-16T18:40:11.512Z"
+    }
+  ],
+  "publications": [
+    {
+      "period_id": "6b1f0a5e-1c2d-4f3a-9b8c-7d6e5f4a3b21",
+      "status": "published",
+      "started_at": "2026-07-02T06:00:00.000Z",
+      "published_at": "2026-07-02T06:00:12.880Z",
+      "preview_fingerprint": "3f7c1b9a2e4d5c6b",
+      "messages": [
+        {
+          "email": "vasya.pupkin@bbm.academy",
+          "text": "Июнь 2026: 148.5 ч, начислено 172 710 ₽",
+          "delivery": "sent",
+          "sent_at": "2026-07-02T06:00:07.320Z"
+        },
+        {
+          "email": "lena.testova@bbm.academy",
+          "text": "Июнь 2026: 96 ч, начислено 64 186 ₽",
+          "delivery": "sent",
+          "sent_at": "2026-07-02T06:00:12.880Z"
+        }
+      ]
+    }
+  ]
+}
