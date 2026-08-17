@@ -65,7 +65,14 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { isEntryPoint, isFixturePath, reporter, repoRoot, runMain, walkFiles } from './lib/guard.mjs'
+import {
+  isEntryPoint,
+  isFixturePath,
+  reporter,
+  repoRoot,
+  runMain,
+  walkFiles,
+} from './lib/guard.mjs'
 
 const TAG = 'ears-test'
 
@@ -88,13 +95,31 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
 /**
  * Clauses whose real test genuinely cannot be written yet, each tracked by an
  * OPEN issue: reported as a note instead of a finding, so `main` runs clean while
- * the obligation stays visible. Empty today — EARS was adopted 2026-08-05 and no
- * spec has been upgraded yet. Keep it SHORT; the stale check below makes it a
+ * the obligation stays visible. Keep it SHORT; the stale check below makes it a
  * ratchet that only tightens. Seam: `LINT_EARS_DEFERRALS` (JSON) replaces it.
  *
  * @type {Record<string, {issue: number, reason: string}>}
  */
-export const BUILTIN_DEFERRALS = {}
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `EARS-${from + i}`)
+
+/** Spec 124 (/p/hours on core), accepted 2026-08-17: clauses per owning implementation issue. */
+const HOURS_ON_CORE_DEFERRALS = {
+  255: {
+    ids: [...range(1, 12), ...range(17, 22), ...range(28, 32)],
+    reason:
+      'spec 124 implementation (member module, hours tables, repository swap) — TDD lands the tests',
+  },
+  256: {
+    ids: [...range(13, 16), ...range(25, 27)],
+    reason: 'spec 124 production cutover tooling and runbook — tests land with the cutover task',
+  },
+}
+
+export const BUILTIN_DEFERRALS = Object.fromEntries(
+  Object.entries(HOURS_ON_CORE_DEFERRALS).flatMap(([issue, { ids, reason }]) =>
+    ids.map((id) => [id, { issue: Number(issue), reason }]),
+  ),
+)
 
 /**
  * The `## Requirements` section of a spec, or '' when it declares none.
@@ -187,7 +212,7 @@ export function matches(idA, idB) {
  *           stale: {id: string, issue: number}[],
  *           deferred: {id: string, issue: number, reason: string}[]}}
  */
-export function evaluateTraceability({ specIds, testIds, deferrals = BUILTIN_DEFERRALS }) {
+export function evaluateTraceability({ specIds, testIds, deferrals = {} }) {
   const specList = [...specIds.keys()]
   const testList = [...testIds.keys()]
   const isCovered = (id) => testList.some((t) => matches(id, t))
@@ -226,7 +251,7 @@ export function evaluateTraceability({ specIds, testIds, deferrals = BUILTIN_DEF
 
 function loadDeferrals(out) {
   const raw = process.env.LINT_EARS_DEFERRALS
-  if (!raw) return BUILTIN_DEFERRALS
+  if (!raw) return process.env.LINT_FIXTURE_ROOT ? {} : BUILTIN_DEFERRALS
   try {
     return JSON.parse(raw)
   } catch (e) {
@@ -313,7 +338,7 @@ async function main() {
   out.fail(
     `${verdict.findings} traceability finding(s): ${verdict.uncovered.length} uncovered clause(s), ` +
       `${verdict.orphans.length} orphan reference(s), ${verdict.stale.length} stale deferral(s). ` +
-      'Name the clause in the test title (`it(\'EARS-N: …\')`) or declare it in the spec\'s ' +
+      "Name the clause in the test title (`it('EARS-N: …')`) or declare it in the spec's " +
       '`## Requirements` — docs/specs/README.md, "EARS — ADOPTED".',
   )
 }
