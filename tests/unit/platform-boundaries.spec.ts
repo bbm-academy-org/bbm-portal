@@ -75,6 +75,31 @@ describe('route-layer-must-not-import-tables', () => {
   })
 })
 
+describe('the member module boundary (spec 124 EARS-8)', () => {
+  it('EARS-8: FAILS when hours imports member module internals instead of its public API', () => {
+    const { code, output } = cruiseFixture('hours-imports-member-internals')
+    expect(output).toContain('hours-must-import-member-only-via-api')
+    expect(code).not.toBe(0)
+  })
+
+  it('EARS-8: allows hours the member public API (src/lib/member/index.ts)', () => {
+    const { code, output } = cruiseFixture('hours-imports-member-api')
+    expect(output).not.toContain('hours-must-import-member-only-via-api')
+    expect(code).toBe(0)
+  })
+
+  it('EARS-8: FAILS when the CMS side or the OKR module reaches for the member registry at all', () => {
+    const { code, output } = cruiseFixture('cms-and-okr-import-member')
+    expect(output).toContain('cms-and-okr-must-not-import-member')
+    // Both from-sets are exercised by the one fixture — the CMS collection and
+    // the OKR module each import the member barrel, so a rule that lost half its
+    // from-set would still leave one of these two dependencies reported.
+    expect(output).toContain('collections/Team.ts')
+    expect(output).toContain('okr/rollup.ts')
+    expect(code).not.toBe(0)
+  })
+})
+
 describe('cms-must-not-import-platform-db', () => {
   it('FAILS when CMS-side code opens the platform database', () => {
     const { code, output } = cruiseFixture('cms-imports-platform-db')

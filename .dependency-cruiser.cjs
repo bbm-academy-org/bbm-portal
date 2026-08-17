@@ -72,6 +72,38 @@ module.exports = {
       to: { path: '^src/(lib/hours|modules/hours)' },
     },
     {
+      name: 'hours-must-import-member-only-via-api',
+      comment:
+        'spec 124 EARS-8: the hours module reaches `member` data ONLY through the member module ' +
+        'public API (src/lib/member/index.ts) — never through member internals. ADR-004 §6 alone ' +
+        'is not enough here: `module-must-not-import-foreign-tables` guards the TABLE files ' +
+        '(src/lib/platform/db/schema/member/), so without this rule an import of ' +
+        '`@/lib/member/repository` would keep every boundary green while pinning hours to the ' +
+        'member module internal shape. The exception is the barrel file itself, which is exactly ' +
+        'what `@/lib/member` resolves to.',
+      severity: 'error',
+      from: { path: '^src/(lib/hours|modules/hours)' },
+      to: {
+        path: '^src/lib/member/',
+        pathNot: '^src/lib/member/index\\.ts$',
+      },
+    },
+    {
+      name: 'cms-and-okr-must-not-import-member',
+      comment:
+        'spec 124 EARS-8, the mirror half: the CMS side and the OKR module have no business with ' +
+        'the member registry AT ALL — not its internals and not its API. Same shape as ' +
+        '`cms-must-not-import-hours-internals` / `okr-must-not-import-hours-internals`: a module ' +
+        'that needs people data gets its own reviewed rule (hours has one above), rather than ' +
+        'inheriting access because the barrel happens to be importable. The (platform) route ' +
+        'group is deliberately absent from the from-set, as in every rule above.',
+      severity: 'error',
+      from: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\)|lib/okr|modules/okr)|^src/payload\\.config',
+      },
+      to: { path: '^src/lib/member' },
+    },
+    {
       name: 'cms-must-not-import-platform-db',
       comment:
         'ADR-002/ADR-003 (#125): the CMS side may not open the PLATFORM database. Payload owns ' +
