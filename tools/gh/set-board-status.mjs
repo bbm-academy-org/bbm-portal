@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 // bbm-portal — `pnpm board:status <issue> <Todo|In Progress|Done>` (#130).
 //
-// Почему отдельная команда: `Closes #N` закрывает задачу, но НЕ двигает колонку
-// Projects v2 — автоматизации «closed → Done» на нашем борде не заведено.
-// Значит, статус ставится руками, а руками — это самый забываемый шаг цикла
-// (канон §7). Плюс claim: «взял задачу» = ворктри И `In Progress` (§4), и
-// вторая половина claim'а ставится ровно этой командой.
+// Why this is a separate command: `Closes #N` closes an issue but does NOT move
+// its Projects v2 column; this board has no «closed → Done» automation. Status
+// must therefore be set explicitly, and manual board movement is the cycle's
+// most frequently forgotten step (canon §7). A claim also means worktree AND
+// `In Progress` (§4), and this command sets the claim's second half.
 //
-// Резолвинг — ОДИН targeted GraphQL-запрос по конкретной задаче: её
-// projectItems несут id строки, id проекта и поле Status с опциями. Скана всего
-// борда здесь нет намеренно: квота 5000/ч общая на все параллельные сессии.
+// Resolution uses ONE targeted GraphQL request for the specific issue: its
+// projectItems carry the item id, project id and Status field with options.
+// There is deliberately no full-board scan because the 5000/hour quota is
+// shared by every parallel session.
 //
-// Использование:
+// Usage:
 //   pnpm board:status <issue#> <Todo|In Progress|Done>
-//   pnpm board:status <issue#> --resolve        # только чтение, без мутации
+//   pnpm board:status <issue#> --resolve        # read-only, no mutation
 //
-// Exit codes: 0 = статус установлен (или отрезолвлен); 1 = ошибка.
+// Exit codes: 0 = status set (or resolved); 1 = error.
 
 import { pathToFileURL } from 'node:url'
 
@@ -30,13 +31,13 @@ import {
 
 const TAG = '[board:status]'
 
-// ── чистые сеймы (юнит-тестируются в tests/unit/gh-board-tools.spec.ts) ─────
+// ── pure seams (unit-tested in tests/unit/gh-board-tools.spec.ts) ────────────
 
 /**
- * Разобрать argv команды. Статус приходит из shell'а как ОДИН аргумент, но
- * «In Progress» с пробелом легко теряет кавычки, поэтому хвост склеивается
- * обратно: `board:status 42 In Progress` обязан работать так же, как
- * `board:status 42 "In Progress"` — иначе половина claim'ов не проставится.
+ * Parse command argv. The shell normally passes status as ONE argument, but
+ * quotes around «In Progress» are easy to lose, so join the tail back together:
+ * `board:status 42 In Progress` must behave like
+ * `board:status 42 "In Progress"`, or half the claims will not be set.
  */
 export function parseArgs(argv) {
   const list = argv ?? []
@@ -44,9 +45,9 @@ export function parseArgs(argv) {
   const rest = list.slice(1)
   const issueNumber = Number(rawIssue)
   if (!rawIssue || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    return { ok: false, error: `недопустимый номер задачи: «${rawIssue ?? ''}»` }
+    return { ok: false, error: `invalid issue number: «${rawIssue ?? ''}»` }
   }
-  if (rest.length === 0) return { ok: false, error: 'не указан статус' }
+  if (rest.length === 0) return { ok: false, error: 'status is required' }
   if (rest.length === 1 && rest[0] === '--resolve') {
     return { ok: true, issueNumber, resolveOnly: true, status: null }
   }
@@ -54,40 +55,40 @@ export function parseArgs(argv) {
   if (!VALID_STATUS.includes(status)) {
     return {
       ok: false,
-      error: `недопустимый статус «${status}». Допустимые: ${VALID_STATUS.join(', ')}`,
+      error: `invalid status «${status}». Allowed values: ${VALID_STATUS.join(', ')}`,
     }
   }
   return { ok: true, issueNumber, resolveOnly: false, status }
 }
 
-// ── импуративная часть ───────────────────────────────────────────────────────
+// ── imperative part ─────────────────────────────────────────────────────────
 
-export const USAGE = `Использование: pnpm board:status <issue#> <${VALID_STATUS.join('|')}>
-               pnpm board:status <issue#> --resolve   (только чтение, без мутации)
+export const USAGE = `Usage: pnpm board:status <issue#> <${VALID_STATUS.join('|')}>
+               pnpm board:status <issue#> --resolve   (read-only, no mutation)
 
-  Ставит Status задачи на борде «${PROJECT_TITLE}» (Project ${PROJECT_NUMBER}) одним
-  targeted GraphQL-запросом — скана всего борда здесь нет: квота 5000/ч общая на
-  все параллельные сессии.
+  Sets an issue's Status on the «${PROJECT_TITLE}» board (Project ${PROJECT_NUMBER})
+  with one targeted GraphQL request. There is no full-board scan because the
+  5000/hour quota is shared by every parallel session.
 
-  Когда нужна: \`Closes #N\` закрывает задачу, но колонку борда НЕ двигает; и
-  «In Progress» — вторая половина claim'а канона §4 (первая — ворктри).
+  Why it is needed: \`Closes #N\` closes an issue but does NOT move its board
+  column; «In Progress» is also the second half of canon §4's claim (the first
+  half is a worktree).
 
-  Статус из двух слов можно передавать без кавычек: \`board:status 42 In Progress\`.
+  The two-word status may be passed without quotes: \`board:status 42 In Progress\`.
 
-  Exit codes: 0 — статус установлен (или отрезолвлен); 1 — ошибка.
+  Exit codes: 0 — status set (or resolved); 1 — error.
 `
 
 /**
- * Весь путь команды после разбора argv: резолвинг → (кросс-чек) → мутация →
- * итоговая строка. Раннеры инжектируются, поэтому тест прогоняет успешную ветку
- * ЦЕЛИКОМ, включая формирование финального сообщения, — без сети и без мутации
- * живого борда.
+ * Full command path after argv parsing: resolution → (cross-check) → mutation →
+ * final line. Runners are injected so tests drive the successful path IN FULL,
+ * including final-message construction, without network or live-board mutation.
  *
- * Регрессия #132: раньше эта ветка жила прямо в `main()` и юнит-тестами не
- * исполнялась. В итоговой строке стояла несуществующая переменная `item`
- * (результат резолвера зовётся `target`): мутация проходила, а команда падала
- * `ReferenceError` на логе → exit 1 при СДЕЛАННОЙ работе, и `pr:land` читал
- * стадию board-done как провал.
+ * Regression #132: this path used to live directly in `main()` and was not run
+ * by unit tests. The final line referenced a nonexistent `item` variable (the
+ * resolver result is named `target`): mutation succeeded, logging threw a
+ * `ReferenceError`, and completed work exited 1, so `pr:land` read board-done as
+ * a failure.
  */
 export function runBoardStatus(parsed, io = {}) {
   const resolve = io.resolve ?? resolveBoardStatusTarget
@@ -101,36 +102,36 @@ export function runBoardStatus(parsed, io = {}) {
     err(`${TAG} ${msg}\n`)
     return exit(1)
   }
-  const warn = (msg) => err(`${TAG} замечание: ${msg}\n`)
+  const warn = (msg) => err(`${TAG} remark: ${msg}\n`)
 
-  // 1. Targeted-резолвинг — один дешёвый запрос, без скана борда. В режиме
-  //    --resolve опция не запрашивается: смысл режима — посмотреть, что есть.
+  // 1. Targeted resolution — one cheap request, no board scan. In --resolve
+  //    mode the option is not requested because the point is to inspect state.
   const target = resolve(issueNumber, resolveOnly ? VALID_STATUS[0] : status)
   if (!target.ok) return die(target.error)
 
-  // 2. Кросс-чек с задокументированными id — только WARN, побеждает резолвнутое.
+  // 2. Cross-check documented ids — WARN only; live resolution wins.
   for (const w of target.warnings ?? []) warn(w)
 
   if (resolveOnly) {
     const { project, statusField } = target
     out(
-      `${TAG} отрезолвлено (только чтение):\n` +
-        `  проект  = ${project.title} (#${project.number}) ${project.id}\n` +
-        `  поле    = Status ${statusField.id}\n` +
-        `  строка  = #${issueNumber} -> ${target.itemId}\n` +
-        `  опции   = ${(statusField.options ?? []).map((o) => `${o.name}:${o.id}`).join(', ')}\n` +
-        `  Мутации не было (--resolve).\n`,
+      `${TAG} resolved (read-only):\n` +
+        `  project = ${project.title} (#${project.number}) ${project.id}\n` +
+        `  field   = Status ${statusField.id}\n` +
+        `  item    = #${issueNumber} -> ${target.itemId}\n` +
+        `  options = ${(statusField.options ?? []).map((o) => `${o.name}:${o.id}`).join(', ')}\n` +
+        `  No mutation was made (--resolve).\n`,
     )
     return exit(0)
   }
 
-  // 3. Мутация — резолвнутыми живьём id.
+  // 3. Mutation — with live-resolved ids.
   const mutated = mutate(
     buildStatusMutation(target.projectId, target.itemId, target.fieldId, target.optionId),
   )
   if (!mutated.ok) return die(mutated.error)
 
-  out(`${TAG} ГОТОВО — задача #${issueNumber}: Status = «${status}» (строка ${target.itemId}).\n`)
+  out(`${TAG} DONE — issue #${issueNumber}: Status = «${status}» (item ${target.itemId}).\n`)
   return exit(0)
 }
 

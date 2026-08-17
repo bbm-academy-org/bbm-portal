@@ -11,6 +11,7 @@ import {
 } from '../../tools/dev/task-worktree.mjs'
 import {
   branchDeletionDecision,
+  branchDatabaseTeardownPlan,
   classifyTeardownScope,
   classifyTeardownTarget,
   normPath,
@@ -204,5 +205,56 @@ describe('classifyTeardownTarget', () => {
     expect(classifyTeardownTarget('/repo/.claude/worktrees/nope', [], () => false)).toBe(
       'unresolvable',
     )
+  })
+})
+
+describe('branchDatabaseTeardownPlan', () => {
+  it('skips a numeric task worktree that never wrote a local branch DB marker', () => {
+    const plan = branchDatabaseTeardownPlan('200', '/repo/.claude/worktrees/200', '/repo', '')
+
+    expect(plan).toEqual({
+      action: 'skip',
+      reason: 'no local PLATFORM_DATABASE_URL marker for platform_200',
+    })
+  })
+
+  it('tears down the matching platform_<N> database only when the local .env marks it', () => {
+    const plan = branchDatabaseTeardownPlan(
+      '200',
+      '/repo/.claude/worktrees/200',
+      '/repo',
+      'PLATFORM_DATABASE_URL=postgres://payload:pw@postgres:5432/platform_200\n',
+    )
+
+    expect(plan).toEqual({ action: 'drop', taskId: '200' })
+  })
+
+  it('skips a numeric task worktree whose local marker names another database', () => {
+    const plan = branchDatabaseTeardownPlan(
+      '200',
+      '/repo/.claude/worktrees/200',
+      '/repo',
+      'PLATFORM_DATABASE_URL=postgres://payload:pw@postgres:5432/platform_201\n',
+    )
+
+    expect(plan).toEqual({
+      action: 'skip',
+      reason: 'no local PLATFORM_DATABASE_URL marker for platform_200',
+    })
+  })
+
+  it('fails closed when the numeric argument and worktree basename disagree', () => {
+    expect(() => branchDatabaseTeardownPlan('200', '/repo/.claude/worktrees/201', '/repo')).toThrow(
+      /mismatch/i,
+    )
+  })
+
+  it('skips database teardown for non-numeric ad-hoc worktree paths', () => {
+    expect(
+      branchDatabaseTeardownPlan('scratch', '/repo/.claude/worktrees/scratch', '/repo'),
+    ).toEqual({
+      action: 'skip',
+      reason: 'not a numeric task worktree',
+    })
   })
 })

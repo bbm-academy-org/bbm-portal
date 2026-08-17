@@ -29,101 +29,101 @@ import {
 import { branchTypeFromIssueType, parseNodeReadback } from '../../tools/gh/lib/gh.mjs'
 
 /**
- * `pnpm issue:create` — единственный путь заведения задачи, и его валидация
- * fail-closed: нарушение таксономии обязано отменить создание ДО первого
- * gh-вызова. Все гейты — чистые функции, поэтому тестируются без сети.
- * Канон: `.claude/skills/task-canon/SKILL.md` §2 + §7.
+ * `pnpm issue:create` is the only issue-creation path, and its validation fails
+ * closed: a taxonomy violation must cancel creation BEFORE the first gh call.
+ * Every gate is a pure function, so the suite needs no network.
+ * Canon: `.claude/skills/task-canon/SKILL.md` §2 + §7.
  */
 
 const OK_ARGS = [
   '--title',
-  'что-то',
+  'something',
   '--body',
-  'тело',
+  'body',
   '--type',
   'Task',
   '--channel',
   'agent',
   '--source',
-  'сам поймал при работе над #130',
+  'found while working on #130',
   '--milestone',
   'Platform consolidation',
 ]
 
 describe('partitionArgs', () => {
-  it('снимает свои управляющие флаги, остальное отдаёт gh дословно', () => {
+  it('consumes its control flags and passes everything else to gh verbatim', () => {
     const { setTodo, passthrough } = partitionArgs(['--no-todo', '--title', 'x'])
     expect(setTodo).toBe(false)
     expect(passthrough).toEqual(['--title', 'x'])
   })
 
-  it('по умолчанию ставит Status=Todo', () => {
+  it('sets Status=Todo by default', () => {
     expect(partitionArgs(['--title', 'x']).setTodo).toBe(true)
   })
 })
 
 describe('flagValues', () => {
-  it('читает все формы записи флага, которые принимает gh', () => {
+  it('reads every flag form accepted by gh', () => {
     expect(flagValues(['--milestone', 'A'], 'milestone', 'm')).toEqual(['A'])
     expect(flagValues(['--milestone=A'], 'milestone', 'm')).toEqual(['A'])
     expect(flagValues(['-m', 'A'], 'milestone', 'm')).toEqual(['A'])
     expect(flagValues(['-mA'], 'milestone', 'm')).toEqual(['A'])
   })
 
-  it('не путает короткий флаг с длинным и не глотает чужие', () => {
+  it('does not confuse a short flag with a long one or consume unrelated flags', () => {
     expect(flagValues(['--milestone-ish', 'A'], 'milestone', 'm')).toEqual([])
     expect(flagValues(['--type', 'Task'], 'milestone', 'm')).toEqual([])
   })
 })
 
 describe('collectLabels', () => {
-  it('собирает лейблы из повторов, `=`-формы и списков через запятую', () => {
+  it('collects labels from repetitions, `=` forms and comma-separated lists', () => {
     expect(collectLabels(['--label', 'a', '-l', 'b,c', '--label=d'])).toEqual(['a', 'b', 'c', 'd'])
   })
 })
 
 describe('normalizeChannel', () => {
-  it('принимает и короткую форму, и полную', () => {
+  it('accepts both short and full forms', () => {
     expect(normalizeChannel('owner')).toBe('channel:owner')
     expect(normalizeChannel('channel:owner')).toBe('channel:owner')
     expect(normalizeChannel('  spec ')).toBe('channel:spec')
   })
 
-  it('пустое значение каналом не притворяется', () => {
+  it('does not treat an empty value as a channel', () => {
     expect(normalizeChannel('')).toBe('')
     expect(normalizeChannel(null)).toBe('')
   })
 })
 
 describe('channelError', () => {
-  it('пропускает ровно один канал во флаговой и лейбловой форме', () => {
+  it('accepts exactly one channel in flag and label form', () => {
     expect(channelError(['--channel', 'owner'])).toBeNull()
     expect(channelError(['--label', 'channel:spec'])).toBeNull()
   })
 
-  it('падает без канала и объясняет, что это НЕ происхождение', () => {
+  it('fails without a channel and explains that this is NOT provenance', () => {
     const err = channelError(['--label', 'epic'])
-    expect(err).toMatch(/ровно один канал/)
-    expect(err).toMatch(/НЕ происхождение/)
+    expect(err).toMatch(/exactly one backlog-entry channel/)
+    expect(err).toMatch(/NOT provenance/)
   })
 
-  it('падает на двух разных каналах', () => {
+  it('fails on two different channels', () => {
     expect(channelError(['--channel', 'owner', '--label', 'channel:agent'])).toMatch(
-      /ровно ОДИН канал/,
+      /exactly ONE channel/,
     )
   })
 
-  it('одно и то же значение в двух формах записи конфликтом не считает', () => {
+  it('does not treat the same value in both forms as a conflict', () => {
     expect(channelError(['--channel', 'owner', '--label', 'channel:owner'])).toBeNull()
   })
 
-  it('падает на канале вне таксономии', () => {
-    expect(channelError(['--channel', 'тётя'])).toMatch(/неизвестный канал/)
+  it('fails on a channel outside the taxonomy', () => {
+    expect(channelError(['--channel', 'outsider'])).toMatch(/unknown channel/)
   })
 })
 
 describe('resolveChannel', () => {
-  it('возвращает канонический лейбл канала', () => {
+  it('returns the canonical channel label', () => {
     expect(resolveChannel(['--channel', 'retro'])).toBe('channel:retro')
     expect(resolveChannel(['--label', 'channel:spec'])).toBe('channel:spec')
     expect(resolveChannel([])).toBeNull()
@@ -132,49 +132,51 @@ describe('resolveChannel', () => {
 
 describe('sourceTextError', () => {
   /**
-   * Происхождение — обязательный СВОБОДНЫЙ текст (решение владельца
-   * 2026-08-04): «99% задач будут запрошены оунером, пользы никакой» — enum
-   * вырождался, а контекст «на основании чего» теряется первым.
+   * Provenance is required FREE text (owner ruling, 2026-08-04): «99% of issues
+   * will be owner requests, which conveys nothing» — an enum would collapse,
+   * while the context of what warrants the issue is the first thing lost.
    */
-  it('пропускает непустой свободный текст', () => {
-    expect(sourceTextError(['--source', 'баг-репорт Антона в Mattermost 2026-08-04'])).toBeNull()
+  it('accepts non-empty free text', () => {
+    expect(sourceTextError(['--source', "Anton's bug report in Mattermost, 2026-08-04"])).toBeNull()
   })
 
-  it('падает без --source и приводит примеры формулировок', () => {
+  it('fails without --source and gives wording examples', () => {
     const err = sourceTextError([])
-    expect(err).toMatch(/есть происхождение/)
-    expect(err).toMatch(/executive-решение/)
+    expect(err).toMatch(/needs provenance/)
+    expect(err).toMatch(/executive decision/)
   })
 
-  it('пробельный --source пустым и остаётся', () => {
-    expect(sourceTextError(['--source', '   '])).toMatch(/есть происхождение/)
+  it('keeps a whitespace-only --source empty', () => {
+    expect(sourceTextError(['--source', '   '])).toMatch(/needs provenance/)
   })
 
-  it('два --source — конфликт, а не склейка', () => {
-    expect(sourceTextError(['--source', 'A', '--source', 'B'])).toMatch(/ровно ОДИН --source/)
+  it('treats two --source values as a conflict instead of joining them', () => {
+    expect(sourceTextError(['--source', 'A', '--source', 'B'])).toMatch(/exactly ONE --source/)
   })
 })
 
 describe('sourceLineError', () => {
-  it('строку **Source:** руками в тело писать нельзя — её ставит обёртка', () => {
-    expect(sourceLineError('**Source:** что-то\n\n## Context')).toMatch(/не пиши её руками/)
+  it('forbids a manual **Source:** body line because the wrapper adds it', () => {
+    expect(sourceLineError('**Source:** something\n\n## Context')).toMatch(
+      /do not write it manually/,
+    )
   })
 
-  it('тело без такой строки проходит', () => {
-    expect(sourceLineError('## Context\n\nтекст')).toBeNull()
+  it('accepts a body without that line', () => {
+    expect(sourceLineError('## Context\n\ntext')).toBeNull()
   })
 })
 
 describe('composeBody', () => {
-  it('ставит строку Source первой, тело — следом', () => {
-    expect(composeBody('баг-репорт в MM', '## Context\n\nтекст')).toBe(
-      '**Source:** баг-репорт в MM\n\n## Context\n\nтекст\n',
+  it('puts the Source line first and the body after it', () => {
+    expect(composeBody('bug report in MM', '## Context\n\ntext')).toBe(
+      '**Source:** bug report in MM\n\n## Context\n\ntext\n',
     )
   })
 })
 
 describe('stripConsumedFlags', () => {
-  it('снимает флаги тела и свои собственные, чужие оставляет', () => {
+  it('removes body and wrapper flags while preserving unrelated ones', () => {
     expect(
       stripConsumedFlags([
         '--title',
@@ -184,92 +186,92 @@ describe('stripConsumedFlags', () => {
         '--channel',
         'agent',
         '--source',
-        'текст',
+        'text',
         '--label',
         'epic',
       ]),
     ).toEqual(['--title', 'x', '--label', 'epic'])
   })
 
-  it('снимает и `=`-форму, и короткую', () => {
+  it('removes both the `=` form and the short form', () => {
     expect(
-      stripConsumedFlags(['--body=текст', '-b', 'x', '--source=y', '--milestone', 'M']),
+      stripConsumedFlags(['--body=text', '-b', 'x', '--source=y', '--milestone', 'M']),
     ).toEqual(['--milestone', 'M'])
   })
 })
 
 describe('kindLabelError', () => {
   /**
-   * kind:*-лейблов у нас нет: класс задачи — штатное поле Type (решение
-   * владельца 2026-08-04). Привычка из ds-platform должна падать громко, иначе
-   * заведётся вторая, расходящаяся классификация.
+   * There are no kind:* labels here: issue class uses the native Type field
+   * (owner ruling, 2026-08-04). A ds-platform habit must fail loudly, or a
+   * second, divergent classification will emerge.
    */
-  it('молчит, когда упразднённых лейблов нет', () => {
+  it('stays quiet when no retired label is present', () => {
     expect(kindLabelError(['--label', 'channel:agent'])).toBeNull()
   })
 
-  it('падает на любом kind:*-лейбле и указывает на --type', () => {
-    expect(kindLabelError(['--label', 'kind:feat'])).toMatch(/упразднены.*--type/s)
+  it('fails on any kind:* label and points to --type', () => {
+    expect(kindLabelError(['--label', 'kind:feat'])).toMatch(/retired.*--type/s)
   })
 
-  it('падает на старом source:*-лейбле и разводит два измерения', () => {
+  it('fails on an old source:* label and separates the two dimensions', () => {
     const err = kindLabelError(['--label', 'source:owner'])
-    expect(err).toMatch(/source:\*-лейблы упразднены/)
+    expect(err).toMatch(/source:\* labels were retired/)
     expect(err).toMatch(/--source/)
     expect(err).toMatch(/--channel/)
   })
 })
 
 describe('typeError', () => {
-  it('пропускает ровно один штатный тип', () => {
+  it('accepts exactly one native type', () => {
     for (const t of ['Bug', 'Feature', 'Task']) expect(typeError(['--type', t])).toBeNull()
   })
 
-  it('падает без типа', () => {
-    expect(typeError([])).toMatch(/ровно один штатный тип/)
+  it('fails without a type', () => {
+    expect(typeError([])).toMatch(/exactly one native type/)
   })
 
-  it('падает на неизвестном типе и на двух типах', () => {
-    expect(typeError(['--type', 'Chore'])).toMatch(/неизвестный тип/)
-    expect(typeError(['--type', 'Bug', '--type', 'Task'])).toMatch(/ровно ОДИН --type/)
+  it('fails on an unknown type and on two types', () => {
+    expect(typeError(['--type', 'Chore'])).toMatch(/unknown type/)
+    expect(typeError(['--type', 'Bug', '--type', 'Task'])).toMatch(/exactly ONE --type/)
   })
 })
 
 describe('milestoneError', () => {
-  it('требует непустое значение, а не сам факт флага', () => {
-    expect(milestoneError(['--milestone', 'Тема'])).toBeNull()
-    expect(milestoneError(['--milestone', '   '])).toMatch(/есть milestone/)
-    expect(milestoneError([])).toMatch(/есть milestone/)
+  it('requires a non-empty value, not merely the flag itself', () => {
+    expect(milestoneError(['--milestone', 'Theme'])).toBeNull()
+    expect(milestoneError(['--milestone', '   '])).toMatch(/needs a milestone/)
+    expect(milestoneError([])).toMatch(/needs a milestone/)
   })
 
-  it('называет постоянный fallback в тексте ошибки', () => {
+  it('names the permanent fallback in the error', () => {
     expect(milestoneError([])).toMatch(/Platform: operations and hardening/)
   })
 })
 
 describe('bodyError', () => {
-  it('пропускает непустое тело в любой форме', () => {
-    expect(bodyError(['--body', 'текст'])).toBeNull()
-    expect(bodyError(['--body-file', 'x.md'], () => 'текст')).toBeNull()
+  it('accepts a non-empty body in either form', () => {
+    expect(bodyError(['--body', 'text'])).toBeNull()
+    expect(bodyError(['--body-file', 'x.md'], () => 'text')).toBeNull()
   })
 
-  it('падает на отсутствующем, пустом и пробельном теле', () => {
-    expect(bodyError([])).toMatch(/должно быть тело/)
-    expect(bodyError(['--body', '   '])).toMatch(/пустое/)
-    expect(bodyError(['--body-file', 'x.md'], () => '\n\n')).toMatch(/пуст/)
+  it('fails on a missing, empty or whitespace-only body', () => {
+    expect(bodyError([])).toMatch(/needs a body/)
+    expect(bodyError(['--body', '   '])).toMatch(/body is empty/)
+    expect(bodyError(['--body-file', 'x.md'], () => '\n\n')).toMatch(/is empty/)
   })
 
-  it('падает, если файл тела не читается — молча создавать задачу нельзя', () => {
+  it('fails when the body file is unreadable instead of creating silently', () => {
     expect(
-      bodyError(['--body-file', 'нет.md'], () => {
+      bodyError(['--body-file', 'missing.md'], () => {
         throw new Error('ENOENT')
       }),
-    ).toMatch(/не удалось прочитать файл тела/)
+    ).toMatch(/could not read body file/)
   })
 })
 
 describe('hasRepoOverride', () => {
-  it('ловит --repo и -R во всех формах: борд привязан к репо', () => {
+  it('catches every --repo and -R form because the board is repo-bound', () => {
     expect(hasRepoOverride(['--repo', 'o/r'])).toBe(true)
     expect(hasRepoOverride(['--repo=o/r'])).toBe(true)
     expect(hasRepoOverride(['-R', 'o/r'])).toBe(true)
@@ -278,26 +280,26 @@ describe('hasRepoOverride', () => {
   })
 })
 
-describe('validationError — порядок гейтов', () => {
-  it('пропускает полный корректный набор', () => {
+describe('validationError — gate order', () => {
+  it('accepts the complete valid set', () => {
     expect(validationError(OK_ARGS)).toBeNull()
   })
 
-  it('оверрайд репо перебивает все прочие проверки', () => {
-    expect(validationError(['--repo', 'чужой/репо'])).toMatch(/--repo\/-R запрещён/)
+  it('makes the repo override take precedence over every other check', () => {
+    expect(validationError(['--repo', 'foreign/repo'])).toMatch(/--repo\/-R is forbidden/)
   })
 
-  it('сообщает ровно одну ошибку за раз, начиная с канала', () => {
+  it('reports exactly one error at a time, starting with the channel', () => {
     const err = validationError(['--title', 'x'])
-    expect(err).toMatch(/ровно один канал/)
+    expect(err).toMatch(/exactly one backlog-entry channel/)
     expect(err).not.toMatch(/milestone/)
   })
 
-  it('канал есть, происхождения нет — вторая по очереди ошибка', () => {
-    expect(validationError(['--channel', 'owner'])).toMatch(/есть происхождение/)
+  it('reports missing provenance second when the channel exists', () => {
+    expect(validationError(['--channel', 'owner'])).toMatch(/needs provenance/)
   })
 
-  it('на каждом отдельном нарушении возвращает непустую ошибку', () => {
+  it('returns a non-empty error for every individual violation', () => {
     const drop = (flag: string) => {
       const i = OK_ARGS.indexOf(flag)
       return [...OK_ARGS.slice(0, i), ...OK_ARGS.slice(i + 2)]
@@ -312,10 +314,10 @@ describe('validationError — порядок гейтов', () => {
 
 describe('dedupeLabelFlags', () => {
   /**
-   * Канал приходит и флагом `--channel`, и лейблом — без схлопывания один и тот
-   * же `channel:*` уезжал в gh дважды.
+   * The channel arrives as both a `--channel` flag and a label. Without
+   * collapsing duplicates, the same `channel:*` reached gh twice.
    */
-  it('схлопывает повтор одного лейбла, порядок первых вхождений сохраняя', () => {
+  it('collapses a repeated label while preserving first-occurrence order', () => {
     expect(dedupeLabelFlags(['--label', 'channel:owner', '--label', 'channel:owner'])).toEqual([
       '--label',
       'channel:owner',
@@ -325,11 +327,11 @@ describe('dedupeLabelFlags', () => {
     ).toEqual(['--label', 'epic', '--label', 'channel:spec'])
   })
 
-  it('разворачивает списки через запятую и короткую форму', () => {
+  it('expands comma-separated lists and the short form', () => {
     expect(dedupeLabelFlags(['-l', 'a,b', '--label=b'])).toEqual(['--label', 'a', '--label', 'b'])
   })
 
-  it('чужие флаги не трогает', () => {
+  it('leaves unrelated flags untouched', () => {
     expect(dedupeLabelFlags(['--title', 'x', '--label', 'a', '--milestone', 'M'])).toEqual([
       '--title',
       'x',
@@ -342,11 +344,11 @@ describe('dedupeLabelFlags', () => {
 })
 
 describe('assignee', () => {
-  it('дописывает @me, когда явного нет', () => {
+  it('adds @me when no assignee is explicit', () => {
     expect(ensureAssigneeFlag(['--title', 'x'])).toEqual(['--title', 'x', '--assignee', '@me'])
   })
 
-  it('никогда не перетирает явного assignee', () => {
+  it('never overwrites an explicit assignee', () => {
     const args = ['--assignee', 'sidorovanthon']
     expect(hasAssignee(args)).toBe(true)
     expect(ensureAssigneeFlag(args)).toEqual(args)
@@ -355,67 +357,67 @@ describe('assignee', () => {
 
 describe('skeletonWarnings', () => {
   const full = [
-    '**Source:** сам поймал при работе над #130',
+    '**Source:** found while working on #130',
     '## Context',
-    'почему',
+    'why',
     '## Scope',
     '## Spec reference',
     '## Acceptance criteria',
   ].join('\n')
 
-  it('молчит на полном скелете канона §1', () => {
+  it('stays quiet on the full canon §1 skeleton', () => {
     expect(skeletonWarnings(full)).toEqual([])
   })
 
-  it('принимает `###`-заголовки: issue-формы GitHub рендерят поля именно так', () => {
+  it('accepts `###` headings because GitHub issue forms render fields that way', () => {
     expect(skeletonWarnings(full.replace(/^## /gm, '### '))).toEqual([])
   })
 
-  it('называет каждую недостающую секцию', () => {
-    const warnings = skeletonWarnings('просто текст')
-    expect(warnings).toContain('нет строки **Source:** (канон §1)')
-    expect(warnings).toContain('нет секции «Acceptance criteria» (канон §1)')
+  it('names every missing section', () => {
+    const warnings = skeletonWarnings('plain text')
+    expect(warnings).toContain('missing **Source:** line (canon §1)')
+    expect(warnings).toContain('missing «Acceptance criteria» section (canon §1)')
   })
 
-  it('у эпика критерии приёмки не требуются — его критерий это закрытые дети', () => {
+  it('does not require acceptance criteria on an epic because closed children are its criterion', () => {
     const body = full.replace('## Acceptance criteria', '')
     expect(skeletonWarnings(body, ['epic'])).toEqual([])
-    expect(skeletonWarnings(body, [])).toContain('нет секции «Acceptance criteria» (канон §1)')
+    expect(skeletonWarnings(body, [])).toContain('missing «Acceptance criteria» section (canon §1)')
   })
 })
 
 describe('readBodyText', () => {
-  it('склеивает inline-тело и содержимое файлов', () => {
+  it('joins an inline body with file contents', () => {
     expect(readBodyText(['--body', 'A', '--body-file', 'f.md'], () => 'B')).toBe('A\nB')
   })
 })
 
-describe('разбор ответов gh', () => {
-  it('достаёт URL и номер созданной задачи', () => {
+describe('gh response parsing', () => {
+  it('extracts the created issue URL and number', () => {
     const stdout = 'https://github.com/bbm-academy-org/bbm-portal/issues/131\n'
     expect(extractIssueUrl(stdout)).toBe('https://github.com/bbm-academy-org/bbm-portal/issues/131')
     expect(issueNumberFromUrl(extractIssueUrl(stdout)!)).toBe(131)
   })
 
-  it('возвращает null, когда URL в выводе нет', () => {
+  it('returns null when the output contains no URL', () => {
     expect(extractIssueUrl('creating issue…')).toBeNull()
   })
 })
 
 describe('enrichCreateError', () => {
   /**
-   * Обёртка объявлена единственным путём заведения задач, а лейблов `source:*`
-   * в репо нет до `taxonomy:bootstrap --apply` — без подсказки первая попытка
-   * упирается в невнятное «could not add label».
+   * The wrapper is the only issue-creation path, while `source:*` labels do not
+   * exist before `taxonomy:bootstrap --apply`; without a hint the first attempt
+   * stops at an opaque «could not add label».
    */
-  it('на ошибке про лейбл указывает на taxonomy:bootstrap', () => {
+  it('points a label error to taxonomy:bootstrap', () => {
     const msg = enrichCreateError("could not add label: 'channel:agent' not found", [
       'channel:agent',
     ])
     expect(msg).toMatch(/taxonomy:bootstrap --apply/)
   })
 
-  it('чужие ошибки не обрастают посторонним советом', () => {
+  it('does not attach unrelated advice to other errors', () => {
     expect(enrichCreateError('HTTP 502', ['channel:agent'])).toBe('HTTP 502')
     expect(enrichCreateError('could not add label: epic', [])).toBe('could not add label: epic')
   })
@@ -429,7 +431,7 @@ describe('parseNodeReadback', () => {
     },
   })
 
-  it('подтверждает строку борда с ожидаемым Todo', () => {
+  it('confirms a board item with the expected Todo', () => {
     expect(parseNodeReadback(node(131, 'Todo'), 131, { expectTodo: true })).toEqual({
       ok: true,
       status: 'Todo',
@@ -437,30 +439,30 @@ describe('parseNodeReadback', () => {
     })
   })
 
-  it('ловит чужую задачу под тем же item id', () => {
+  it('catches a different issue under the same item id', () => {
     expect(parseNodeReadback(node(999, 'Todo'), 131).ok).toBe(false)
   })
 
-  it('ловит непроставленный Status, когда его ждали', () => {
+  it('catches an unset Status when one was expected', () => {
     const res = parseNodeReadback(node(131, null), 131, { expectTodo: true })
     expect(res.ok).toBe(false)
-    expect(res.reason).toMatch(/не задан/)
+    expect(res.reason).toMatch(/\u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)
   })
 
-  it('пустой node — это не «ок», а «строки нет на борде»', () => {
+  it('treats an empty node as a missing board item rather than success', () => {
     expect(parseNodeReadback({}, 131).ok).toBe(false)
   })
 })
 
 describe('branchTypeFromIssueType', () => {
-  /** Цепочка канона §2: Type → префикс ветки → тип Conventional-коммита. */
-  it('переводит штатный Type в префикс ветки', () => {
+  /** Canon §2 chain: Type → branch prefix → Conventional Commit type. */
+  it('maps the native Type to a branch prefix', () => {
     expect(branchTypeFromIssueType('Bug')).toBe('fix')
     expect(branchTypeFromIssueType('Feature')).toBe('feat')
     expect(branchTypeFromIssueType('Task')).toBe('chore')
   })
 
-  it('неизвестный или отсутствующий Type падает в безопасный chore', () => {
+  it('falls back to safe chore for an unknown or missing Type', () => {
     expect(branchTypeFromIssueType('Epic')).toBe('chore')
     expect(branchTypeFromIssueType(null)).toBe('chore')
   })

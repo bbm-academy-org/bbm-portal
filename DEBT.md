@@ -12,11 +12,33 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
 - **Mandatory sweep** on every `/wrap` and at every epic close: each line is
   either fixed, promoted to an issue, or explicitly written off — never
   silently kept.
+- **Entry end anchors are immutable:** every active debt block is followed by
+  `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
+  MUST preserve that anchor as the tombstone for Git's union merge.
+- **Permanent append marker:** add new active entries immediately before
+  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
+  sweep notes live after that marker.
+- **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
+  two branches that append different root-ledger entry blocks keep both blocks
+  instead of conflicting. Union does not guarantee relative order between two
+  concurrent appends; the invariant is structural: every body stays with its
+  anchor, every anchor stays unique, and the permanent marker remains after all
+  active blocks. The immutable anchor is the line both sides keep when a sweep
+  removes a body while another branch appends: union then has no body line to
+  resurrect, but still has a stable insertion boundary. The tradeoff is that if
+  a sweep deletes the anchor too, Git can silently resurrect the removed body;
+  preserving anchors is therefore part of the file format and is checked against
+  repository history by the unit test.
+- **Why not newest-first:** putting new entries at the top would still make
+  concurrent branches edit the same top hunk. It helps sweep ergonomics, not the
+  merge-conflict root cause, so this file stays append-only with the union
+  driver handling additive branches.
 
 Entry format:
 
 ```
 - [ ] YYYY-MM-DD <what was deviated & why> — return condition: <trigger> (#N)
+<!-- debt-entry-end: YYYY-MM-DD-stable-id -->
 ```
 
 <!-- entries below this line -->
@@ -31,6 +53,8 @@ Entry format:
       the hours migration), which is also the first moment the guard's rule can
       be stated concretely (PR #190 review major 7)
 
+<!-- debt-entry-end: 2026-08-11-8fcb3c6ffc -->
+
 - [ ] 2026-08-11 spec §11 defers `migration-index` (a generated index of
       migrations with their purpose) to the same «при создании схемы и миграций»
       trigger, fired by #125. Deferred for the same reason at a smaller scale —
@@ -40,6 +64,8 @@ Entry format:
       what can never be) — return condition: the third platform migration, or the
       first time a migration's purpose is not obvious from its tag (PR #190
       review major 7)
+
+<!-- debt-entry-end: 2026-08-11-a0f80803db -->
 
 - [ ] 2026-08-11 `decideEscapeBlock` still calls a session isolated whenever its
       `cwd` matches the worktree pattern, so a session that OWNS the main
@@ -53,6 +79,8 @@ Entry format:
       Edit/Write block of a legitimate shared-checkout write from a session that
       owns the main checkout (mirror of #187; PR #189 review blocker 2)
 
+<!-- debt-entry-end: 2026-08-11-6583582d65 -->
+
 - [ ] 2026-08-10 the `/p/okr` surface still has no vendored design source in
       `design-source/` after another touch (#181, a geometry-only fix like
       #79/#180 before it): the design-process rule back-fills a pre-#138 surface
@@ -63,6 +91,8 @@ Entry format:
       prose — return condition: the first task that changes the OKR surface's
       DESIGN (layout/palette/composition) rather than its geometry vendors the
       canvas before building (#181)
+
+<!-- debt-entry-end: 2026-08-10-caa8c9f751 -->
 
 - [ ] 2026-08-07 supervised infra-script runs must ship the script from a
       pinned commit (`git show origin/main:<path> | ssh <box> bash -s -- …`),
@@ -75,11 +105,15 @@ Entry format:
       `provision.sh` run, or the next time any repo script is shipped to a
       remote box for execution (#93)
 
+<!-- debt-entry-end: 2026-08-07-de2021c1b9 -->
+
 - [ ] 2026-08-07 `provision.sh`: `IDP_DEV_HOSTS=','` yields origins with empty
       hosts (`http://:3000`) — pre-existing input-validation hole, orthogonal to
       #170's diff, flagged as nit 5 of PR #179's review and deliberately not
       fixed there — return condition: the next task that touches
       `generate_uris` or adds host-axis configuration (#170)
+
+<!-- debt-entry-end: 2026-08-07-482a0dce22 -->
 
 - [ ] 2026-08-07 agent-opened PRs trip the `assignee-milestone` guard on every
       open: `gh pr create` sets neither assignee nor milestone, so each
@@ -89,14 +123,9 @@ Entry format:
       condition: the guard trips on one more agent-opened PR despite the
       dispatch brief carrying the `--assignee`/`--milestone` instruction (#80)
 
-- [ ] 2026-08-06 `.claude/**` sits outside `format:check`'s globs while
-      lint-staged prettier DOES reformat it on commit — canon files get
-      formatted by the hook but are never checked in CI, so a hook-bypassing
-      commit can land unformatted canon and the next toucher inherits a noisy
-      diff (bit PR #172: the hook silently reformatted a line of
-      `parallel-sessions.md`) — return condition: next edit to the
-      `format:check` globs or the next surprise-reformat incident (#169,
-      gate of PR #172)
+<!-- debt-entry-end: 2026-08-07-01f12872fe -->
+
+<!-- debt-entry-end: 2026-08-06-01cdf09cad -->
 
 - [ ] 2026-08-06 `.claude/rules/dev-env.md` was touched by PR #166 (new
       Russian STOP bullet added) without the translate-on-touch pass the task
@@ -106,45 +135,53 @@ Entry format:
       condition: next task that substantively reworks `dev-env.md` translates
       the whole file (#166, review round 2)
 
-- [ ] 2026-08-06 `release-digest.yml` "Resolve target sha" step: the
-      `gh api … -f environment=production -F per_page=1` call turns the request
-      into a POST (create-a-deployment), which 403s under `deployments: read`;
-      the error JSON lands on stdout, so `$sha` is polluted and the
-      `git rev-parse HEAD` fallback never fires — a `workflow_dispatch` backfill
-      WITHOUT an explicit `sha` input always skips green. Workaround: pass the
-      sha explicitly (that path is verified working, 2026-08-06). Return
-      condition: next edit to `release-digest.yml`, or the first backfill
-      dispatch that needs the empty-sha path (#137, first live digest run).
-      **Return condition FIRED and promoted 2026-08-15: `cce6631` (#215) edited
-      this workflow without the fix → #236.** This line goes at the sweep after
-      #236 closes.
+<!-- debt-entry-end: 2026-08-06-9c4363b31b -->
+
+<!-- debt-entry-end: 2026-08-06-620bacd10f -->
 
 - [ ] 2026-08-05 `deploy:smoke` / `deploy:notes` have no `pre*` Node-version
       guard (`deploy:prod` checks Node 22, the standalone entries don't) —
       return condition: first misrun of a standalone deploy subcommand on a
       wrong Node (#137, review of PR #155)
+
+<!-- debt-entry-end: 2026-08-05-6f37d6258d -->
+
 - [ ] 2026-08-05 `deploy:prod --rollback <sha>` accepts any sha with no
       ancestor/deployed-history check — an operator typo can "roll back" to an
       arbitrary commit — return condition: first rollback in anger, or before a
       second operator gets deploy access (#137, review of PR #155)
+
+<!-- debt-entry-end: 2026-08-05-00c2fc95bc -->
+
 - [ ] 2026-08-05 inaugural release digest walks the full release history
       serially — return condition: digest step visibly slow (>30 s) once
       release count grows (#137, review of PR #155)
+
+<!-- debt-entry-end: 2026-08-05-0a2c516a3d -->
+
 - [ ] 2026-08-05 migration-ledger read in `deploy:prod` hard-requires `psql`
       on the workstation — return condition: first deploy attempt from a box
       without psql (#137, review of PR #155)
+
+<!-- debt-entry-end: 2026-08-05-69629acc81 -->
 
 - [ ] 2026-08-05 `tools/lint/guard-test-coverage-lint.mjs`: a future helper in
       `tools/lint/lib/` importing `guard.mjs` would be flagged `nested` with a
       wrong remedy (false-positive class; no such helper exists today) — return
       condition: first new file added under `tools/lint/lib/` (#136, review of
       PR #154)
+
+<!-- debt-entry-end: 2026-08-05-e5366ddfb7 -->
+
 - [ ] 2026-08-05 `tools/lint/tdd-signal-lint.mjs`: substring path matching — a
       spec that merely MENTIONS a module path counts as covering it (nothing
       masked today; anchor needles to import statements like
       `IMPORTS_GUARD_LIB_RE` does) — return condition: first tdd-signal finding
       disputed as false, or the guard's WARN→BLOCK promotion review
       (2026-09-02 window) (#136, review of PR #154)
+
+<!-- debt-entry-end: 2026-08-05-8fa8f75d9b -->
+
 - [ ] 2026-08-05 `package.json` `format:check` / `lint-staged` globs are
       `{ts,tsx,css,md,json,yml,yaml}` per tree, so **no `.mjs` is ever
       prettier-checked** — the whole `tools/**` tooling layer (every guard, every
@@ -157,31 +194,33 @@ Entry format:
       whichever comes first (#157, review round 2 of PR #160 + iteration-end
       gate note b)
 
+<!-- debt-entry-end: 2026-08-05-39d11e3194 -->
+
 - [ ] 2026-08-05 `tools/gh/handoff-verify.mjs`: a segment naming ≥2 refs with one
       claim pins the claim on none of them and degrades to INFO (a false PASS is
       cheaper than a false STALE in a gate that exits 1) — return condition:
       revisit if real handoff runs produce INFO rows that should have been caught
       as STALE, i.e. the rule starts hiding genuine drift (#134, review of PR #150)
-- [ ] 2026-08-05 `tools/gh/*` (plus `tools/dev/task-worktree.mjs`, `tests/unit/gh-*`
-      and the `.claude/skills/spec-issue-graph/SKILL.md` body) still carry Russian
-      file headers, CLI output, test names and prose; #144 fixed only the canon
-      path strings inside them, which is not a material edit, so the on-touch
-      translation rule (owner ruling, 2026-08-05: all project artifacts are
-      English) did not fire — return condition: translate each file the next
-      time it is materially edited (#144). Extended 2026-08-05 (retro PR): the
-      same holds for `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` —
-      materially edited by the retro-hooks PR, but the whole-file translation was
-      deliberately kept out of that PR to keep the behavioral diff reviewable;
-      same return condition applies to them. Worked off 2026-08-06 (#142) for
-      `tools/gh/pr-land.mjs` + `tests/unit/gh-pr-land.spec.ts`, translated in
-      their own no-behaviour-change commit ahead of the fix; the rest of the set
-      still stands. **Return condition FIRED and promoted 2026-08-15: `39973aa`
-      (#234) materially edited `tools/gh/bootstrap-taxonomy.mjs` and
-      `tools/gh/lib/gh.mjs` without translating either — the SECOND recorded miss
-      of this trigger, which is the signal that an on-touch rule is not
-      self-enforcing here. The six remaining `tools/gh` files are now one bounded
-      task, #238.** The `tools/hooks/*` half of this line is NOT in #238's scope
-      and keeps its existing trigger. This line goes at the sweep after #238 closes.
+
+<!-- debt-entry-end: 2026-08-05-05b8797876 -->
+
+- [ ] 2026-08-05 legacy Russian agent-tool prose remains in
+      `tools/gh/lib/gh.mjs`, `tools/dev/task-worktree.mjs`, and
+      `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` (owner ruling,
+      2026-08-05: all project artifacts are English) — return condition:
+      translate each file in its own no-behaviour-change commit before the next
+      material edit. Worked off 2026-08-06 (#142) for `tools/gh/pr-land.mjs` and
+      its spec. Worked off 2026-08-16 (#238) for the six remaining agent-facing
+      `tools/gh` CLI files (`create-issue`, `backlog-triage`,
+      `bootstrap-taxonomy`, `set-board-status`, `handoff-verify`,
+      `dispatch-brief`), their matching test prose, and
+      `.claude/skills/spec-issue-graph/SKILL.md`; legacy Russian parser fixtures
+      remain only as intentional compatibility data. `tools/gh/lib/gh.mjs` was
+      also materially edited by `39973aa` (#234) and missed the trigger, but was
+      outside #238's enumerated six-file scope; the hooks likewise keep their
+      existing trigger.
+
+<!-- debt-entry-end: 2026-08-05-61162d4aea -->
 
 - [ ] 2026-08-06 `pnpm pr:land <n>` on an ALREADY-MERGED PR resumes the tail with
       no gate in front of it (#142): a mistyped number moves the board of whatever
@@ -192,6 +231,9 @@ Entry format:
       wrong issue's board row, or the resume path grows a stage that is not
       idempotent — then gate the resume on the `Closes #N` of the PR matching the
       worktree/branch the caller is in (review of PR #161)
+
+<!-- debt-entry-end: 2026-08-06-3c9d79cef1 -->
+
 - [ ] 2026-08-06 `tools/dev/worktree-teardown.mjs` `cleanupBranch()` never deletes
       a branch merged by `--squash`: it tests `git merge-base --is-ancestor`, which
       a squash merge never satisfies, so every landed task branch is kept and
@@ -203,21 +245,29 @@ Entry format:
       manual — a behaviour change to a destructive tool, hence its own task, not a
       rider on #142 (review of PR #161)
 
+<!-- debt-entry-end: 2026-08-06-fe94868264 -->
+
 - [ ] 2026-08-04 `set-board-status.mjs`: `process.exit(0)` сразу после записи
       «ГОТОВО» — на Windows-TTY запись асинхронна, тот же класс, что #132
       (обрезанный вывод при сделанной работе); лечится `return` вместо exit.
       Замечание ревью PR #141 — return condition: первый случай обрезанного
       «ГОТОВО» или ближайший рефактор runBoardStatus (#132)
 
+<!-- debt-entry-end: 2026-08-04-a2a203497d -->
+
 - [ ] 2026-08-04 Тесты `gh-board-tools`: фикстуры `parsed` собраны руками, не
       через parseArgs — дрейф CLI-контракта тесты не поймают. Замечание ревью
       PR #141 — return condition: первое изменение CLI-флагов set-board-status (#132)
+
+<!-- debt-entry-end: 2026-08-04-0cf7baa7fd -->
 
 - [ ] 2026-07-30 `worktree-teardown.mjs`: в robocopy-фолбэке финальный
       `cmd /c rmdir /s /q \\?\<путь>` — no-op (cmd.exe не понимает `\\?\`-префикс);
       первая ступень PS 5.1 отрабатывает, так что исход — честный exit 1, не потеря
       данных. Лечится вызовом rmdir с обычным `winPath` — return condition: первый
       реальный заход в robocopy-фолбэк (teardown упал с exit 1 на long-path) (#90)
+
+<!-- debt-entry-end: 2026-07-30-4ac165c83d -->
 
 - [ ] 2026-08-14 `pnpm install` в свежем worktree печатает
       `[ERROR] Was not able to set git hooks … ENOTDIR: mkdir '<wt>/.git/hooks'`:
@@ -231,6 +281,8 @@ Entry format:
       или ближайшая правка `prepare`. Всплыло при работе над #214, чинится в
       worktree-тулинге (#90)
 
+<!-- debt-entry-end: 2026-08-14-0dea1e1a7d -->
+
 - [ ] 2026-08-14 `.github/branch-protection.json` and the live protection on `main`
       drift independently: editing the file does not touch the branch, and editing
       the protection in the GitHub UI does not touch the file. Nothing detects the
@@ -239,6 +291,8 @@ Entry format:
       changed by hand in the same motion, which is what #216 did. Return condition:
       the first time the two are found out of sync, or the next edit to either
       (#216)
+
+<!-- debt-entry-end: 2026-08-14-731955ffe7 -->
 
 - [ ] 2026-08-14 `gateConditions` in `tools/gh/pr-land.mjs` still inspects
       `mergeStateStatus` value by value (only `BEHIND` today), so every state the
@@ -266,6 +320,8 @@ Entry format:
       PR, or the next edit that touches `mergeStateStatus` handling itself (#216,
       re-deferred in #222)
 
+<!-- debt-entry-end: 2026-08-14-2d19fac77b -->
+
 - [ ] 2026-08-14 `isBaseMergeCommit` (`tools/gh/pr-land.mjs`, #222) cannot tell a
       `gh pr update-branch` merge from one committed through GitHub's **web
       conflict editor** («Resolve conflicts» → «Commit merge»), and the second one
@@ -289,18 +345,9 @@ Entry format:
       the web editor on any PR (its own action, so it is known at the time), or the
       next edit to `isBaseMergeCommit` (#222, round-2 review of PR #226)
 
-- [ ] 2026-08-14 `tools/gh/handoff-verify.mjs` classifies a file path shaped like a
-      branch name as a git ref: `docs/ci-guardrails.md` in a handoff is looked up as
-      `refs/remotes/origin/docs/ci-guardrails.md`, not found, and reported `STALE`.
-      A false STALE is worse than no row — the gate the verifier feeds tells the
-      session to reconcile a premise that was never wrong, and a reader who learns
-      the rows can be wrong stops trusting the real ones. Fix: reject candidates
-      carrying a file extension, or test `git cat-file -e HEAD:<path>` before the
-      ref lookup. Return condition: the next false STALE, or the next edit to the
-      verifier (#150). **Return condition FIRED and promoted 2026-08-15: a false
-      `STALE` plus a NEW subclass — `sidorovanthon/bbm#149` resolved against THIS
-      repo, so the row reported bbm-portal #149's state instead → #237.** This line
-      goes at the sweep after #237 closes.
+<!-- debt-entry-end: 2026-08-14-6327d2f70c -->
+
+<!-- debt-entry-end: 2026-08-14-a50a7e5e21 -->
 
 - [ ] 2026-08-14 #220 added a top-level `permissions: contents: read` floor to `ci.yml`
       and `pr-body-guards.yml`, but NOTHING enforces that a workflow has one. A workflow
@@ -317,6 +364,8 @@ Entry format:
       `workflow-auth` WARN→BLOCK promotion review (2026-09-02 window), whichever comes
       first (#220, review of PR #223)
 
+<!-- debt-entry-end: 2026-08-14-f2de673c1f -->
+
 - [ ] 2026-08-15 the e2e suite's `test.beforeAll` hook budget is 30 s, which is
       shorter than Next dev's FIRST compile of `/admin` on this box: a cold run of
       `pnpm test:e2e` fails `admin.e2e.spec.ts` and `publish-panel.e2e.spec.ts` on
@@ -329,6 +378,8 @@ Entry format:
       it stays invisible between sessions — return condition: the next task that
       must run `pnpm test:e2e` as acceptance evidence, or any move to run e2e in CI
       (observed in #232 / PR #234, diff touched no runtime code)
+
+<!-- debt-entry-end: 2026-08-15-01bc69afb6 -->
 
 - [ ] 2026-08-15 `pnpm lint:stage-b` classifies a PR as a UI diff **by path** — a
       non-test `*.tsx` / `*.css` under `src/` — so an **asset-only** change to a
@@ -346,6 +397,8 @@ Entry format:
       the `stage-b` WARN→BLOCK promotion review (2026-09-02 window), whichever
       comes first (#230, iteration-end gate of PR #246)
 
+<!-- debt-entry-end: 2026-08-15-586bd87345 -->
+
 - [ ] 2026-08-15 `tools/lint/workflow-auth-lint.mjs` recognises a guard step by its
       `run:` line, so a guard invoked through a **composite action** (`uses:`) is
       invisible to `unaggregated-warn-step` — the step could carry
@@ -360,6 +413,8 @@ Entry format:
       under `.github/`, or the `workflow-auth` WARN→BLOCK promotion review
       (2026-09-02 window), whichever comes first (#207, round-2 review of PR #245)
 
+<!-- debt-entry-end: 2026-08-15-25ed97380d -->
+
 - [ ] 2026-08-15 the same guard-step detection misses a **matrix-interpolated**
       invocation: `run: pnpm lint:${{ matrix.guard }}` resolves to a guard only at
       runtime, so a matrix job running every guard as a WARN step would be exempt
@@ -371,6 +426,10 @@ Entry format:
       return condition: the first `.github/workflows/**` job that invokes a guard
       through a matrix or any other expression, or the same 2026-09-02 promotion
       review (#207, round-2 review of PR #245)
+
+<!-- debt-entry-end: 2026-08-15-51ba26ac00 -->
+
+<!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
