@@ -100,19 +100,25 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  *
  * @type {Record<string, {issue: number, reason: string}>}
  */
-const HOURS_ON_CORE_DRAFT_IDS = [
-  ...Array.from({ length: 22 }, (_, index) => `EARS-${index + 1}`),
-  ...Array.from({ length: 8 }, (_, index) => `EARS-${index + 25}`),
-]
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `EARS-${from + i}`)
+
+/** Spec 124 (/p/hours on core), accepted 2026-08-17: clauses per owning implementation issue. */
+const HOURS_ON_CORE_DEFERRALS = {
+  255: {
+    ids: [...range(1, 12), ...range(17, 22), ...range(28, 32)],
+    reason:
+      'spec 124 implementation (member module, hours tables, repository swap) — TDD lands the tests',
+  },
+  256: {
+    ids: [...range(13, 16), ...range(25, 27)],
+    reason: 'spec 124 production cutover tooling and runbook — tests land with the cutover task',
+  },
+}
 
 export const BUILTIN_DEFERRALS = Object.fromEntries(
-  HOURS_ON_CORE_DRAFT_IDS.map((id) => [
-    id,
-    {
-      issue: 124,
-      reason: 'implementation issue graph follows owner acceptance of the draft spec',
-    },
-  ]),
+  Object.entries(HOURS_ON_CORE_DEFERRALS).flatMap(([issue, { ids, reason }]) =>
+    ids.map((id) => [id, { issue: Number(issue), reason }]),
+  ),
 )
 
 /**

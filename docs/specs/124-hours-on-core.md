@@ -1,10 +1,13 @@
 ---
-status: Draft
+status: In dev
 issue: 124
-updated: 2026-08-11
+updated: 2026-08-17
 ---
 
 # /p/hours on the `core` schema — data model & migration off JSON — spec (issue #124)
+
+- **Issues:** #124 (spec task), #111 (epic), #255 (implementation), #256 (cutover); #201 (edit audit, adjacent).
+- **Owner acceptance:** Anton, session 2026-08-17 (recorded on #124).
 
 ## Why
 
@@ -327,10 +330,12 @@ migration off JSON — **with no product change**: the owner's decision in sessi
 
 ## Follow-up tasks
 
-Opened via `spec-issue-graph` once this spec has the owner's go:
+Opened via `spec-issue-graph` after the owner's acceptance (2026-08-17), both
+native sub-issues of epic #111:
 
-1. _TBD_ — implement hours-on-core: member module + hours tables + repository
-   swap behind the existing module API, TDD from the EARS clauses above.
-2. _TBD_ — production cutover: manual member seed, JSON import, freeze +
-   archive; **preconditions:** the EARS-26 dev rehearsal and #125 in
-   production; blocked by task 1.
+1. **#255** — implement hours-on-core: member module + hours tables + repository
+   swap behind the existing module API, TDD from the EARS clauses above (owns
+   EARS-1..12, 17..22, 28..32). Takeable.
+2. **#256** — production cutover: manual member seed, JSON import, freeze +
+   archive; owns EARS-13..16, 25..27; **preconditions:** the EARS-26 dev
+   rehearsal and #125 in production; blocked by #255.
