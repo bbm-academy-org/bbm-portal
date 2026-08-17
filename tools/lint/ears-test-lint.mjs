@@ -100,33 +100,34 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  *
  * @type {Record<string, {issue: number, reason: string}>}
  */
-const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `EARS-${from + i}`)
-
 /** Spec 124 (/p/hours on core), accepted 2026-08-17: clauses per owning implementation issue. */
 const HOURS_ON_CORE_DEFERRALS = {
-  255: {
-    /**
-     * All that is left of #255's deferral is **EARS-7**, the umbrella parity
-     * clause, whose named test is an E2E smoke on a live stand — it lands with
-     * the acceptance run, not with the implementation.
-     *
-     * Everything else #255 owns is now covered by a titled test, and the ids are
-     * struck off here as they land, because the ratchet only tightens: a
-     * deferral that has become covered is reported as STALE. What covers what —
-     * EARS-2/8/17..19 with the member module (`tests/int/platform/member.int.spec.ts`,
-     * the dependency-cruiser fixtures in `tests/unit/platform-boundaries.spec.ts`);
-     * EARS-1/3..6/9..12/20..22/28..31 with the hours tables and the core-backed
-     * store (`tests/int/platform/hours-core*.int.spec.ts`,
-     * `tests/unit/hours-core-refusals.spec.ts`); EARS-32 in
-     * `tests/unit/hours-actions.spec.ts`.
-     */
-    ids: ['EARS-7'],
-    reason:
-      'spec 124 EARS-7 is the umbrella parity clause — its named E2E smoke runs on the live acceptance stand',
-  },
   256: {
-    ids: [...range(13, 16), ...range(25, 27)],
-    reason: 'spec 124 production cutover tooling and runbook — tests land with the cutover task',
+    /**
+     * #255 is off this list entirely. Its last deferred clause was **EARS-7**, the
+     * umbrella parity clause, and its named E2E smoke now exists as a file
+     * (`tests/e2e/hours-core-parity.e2e.spec.ts`) — this guard scans `tests/` for
+     * `*.spec.ts` regardless of tier, so a titled E2E test counts as coverage. The
+     * smoke RUNNING on the live acceptance stand (task-cycle stage 5) is a
+     * different obligation, and this guard only ever spoke about the first one.
+     *
+     * What #256 still owns is the set of clauses whose evidence is the RUN:
+     *   EARS-15 — archive the JSON and delete its code path, which happens AFTER
+     *             the owner accepts the stand and cannot be tested before it;
+     *   EARS-25 — the rollback offer, whose evidence is a rehearsed redeploy;
+     *   EARS-26 — the dev REHEARSAL of the whole sequence. Deliberately not
+     *             satisfiable by a test of the rehearsal TOOLING: the clause is
+     *             about the run happening before the production window, so titling
+     *             a tooling test `EARS-26` would report a rehearsal nobody did.
+     *
+     * EARS-13/14/16/27 came off this list with #255 part 3, which built the
+     * mechanics they describe — `tests/int/platform/hours-import.int.spec.ts`,
+     * `tests/int/platform/member-seed.int.spec.ts`,
+     * `tests/unit/hours-export-diff.spec.ts`.
+     */
+    ids: ['EARS-15', 'EARS-25', 'EARS-26'],
+    reason:
+      'spec 124 cutover clauses whose evidence is the RUN, not the code: the archive after acceptance, the rollback offer, the dev rehearsal',
   },
 }
 
