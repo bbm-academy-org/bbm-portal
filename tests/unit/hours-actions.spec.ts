@@ -314,7 +314,7 @@ describe('сохранение оценки — только за себя (п.9
       }),
     )
     expect(state.status).toBe('error')
-    expect(state.message).toContain('не читаются')
+    expect(state.message).toContain('база модуля часов не отвечает')
     expect(store.writes).toBe(0)
   })
 })

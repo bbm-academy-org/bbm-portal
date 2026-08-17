@@ -10,8 +10,8 @@ import { HoursDataError, isHoursAdmin, readHoursDocument, sessionEmail } from '@
  * заново (п.10: гейт применяется к каждой серверной точке, а не только к
  * рендеру).
  *
- * Отдаётся сериализованный РАЗОБРАННЫЙ документ, а не сырой файл: если на диске
- * битый JSON, владелец получит внятную 500-ку, а не половину файла.
+ * Отдаётся сериализованный РАЗОБРАННЫЙ документ: если база модуля часов не
+ * отвечает, владелец получит внятную 500-ку, а не половину выгрузки.
  */
 
 export const dynamic = 'force-dynamic'
@@ -38,7 +38,7 @@ export async function GET(): Promise<Response> {
     })
   } catch (cause) {
     if (!(cause instanceof HoursDataError)) throw cause
-    return new Response('Данные модуля часов не читаются — файл не тронут.', {
+    return new Response('Данные недоступны: база модуля часов не отвечает. Оценки не тронуты.', {
       status: 500,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
