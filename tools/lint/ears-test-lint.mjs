@@ -102,10 +102,22 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  */
 const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `EARS-${from + i}`)
 
+/**
+ * Clauses the member module of #255 now COVERS, removed from its deferral above:
+ * EARS-2 (the member table and its constraints), EARS-8 (the dependency-cruiser
+ * rule pair, proved by fixtures in `tests/unit/platform-boundaries.spec.ts`),
+ * EARS-17..19 (aliases, resolution, the seed/SQL-only write path). The ratchet
+ * only tightens: a deferral that becomes covered is reported as STALE, so this
+ * subtraction is not optional bookkeeping.
+ */
+const MEMBER_MODULE_COVERED = ['EARS-2', 'EARS-8', 'EARS-17', 'EARS-18', 'EARS-19']
+
 /** Spec 124 (/p/hours on core), accepted 2026-08-17: clauses per owning implementation issue. */
 const HOURS_ON_CORE_DEFERRALS = {
   255: {
-    ids: [...range(1, 12), ...range(17, 22), ...range(28, 32)],
+    ids: [...range(1, 12), ...range(17, 22), ...range(28, 32)].filter(
+      (id) => !MEMBER_MODULE_COVERED.includes(id),
+    ),
     reason:
       'spec 124 implementation (member module, hours tables, repository swap) — TDD lands the tests',
   },
