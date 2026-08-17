@@ -1,0 +1,22 @@
+{
+  "members": [
+    {
+      "email": "vasya.pupkin@bbm.academy",
+      "name": "Вася Пупкин-Второй",
+      "role": "Тимлид",
+      "status": "inactive",
+      "timezone": "Asia/Novosibirsk",
+      "aliases": [
+        { "kind": "mattermost_id", "value": "VASYAP" },
+        { "kind": "zoom_id", "value": "vasya.zoom" }
+      ]
+    },
+    {
+      "email": "lena.testova@bbm.academy",
+      "name": "Лена Тестова",
+      "role": "Дизайнер",
+      "timezone": "Asia/Novosibirsk",
+      "aliases": [{ "kind": "mattermost_id", "value": "LenaT" }]
+    }
+  ]
+}

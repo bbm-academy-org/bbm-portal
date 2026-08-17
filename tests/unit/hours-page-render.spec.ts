@@ -1,6 +1,3 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -31,10 +28,26 @@ vi.mock('@/modules/hours/actions', () => {
   }
 })
 
-const dir = mkdtempSync(join(tmpdir(), 'bbm-hours-page-'))
-const file = join(dir, 'hours.json')
-const originalDataFile = process.env.HOURS_DATA_FILE
 const originalAdmins = process.env.HOURS_ADMIN_EMAILS
+/**
+ * Хранилище модуля часов — ин-мемори двойник (`tests/helpers/hours-store-double.ts`).
+ *
+ * С #255 (спека 124) `@/lib/hours` отдаёт хранилище на схеме `core`, и фолбэка на
+ * JSON у модуля нет (EARS-12): засеять документ временным файлом этот тир больше
+ * не может — и не должен. Предмет здесь обвязка, а документ — фикстура; таблицы,
+ * транзакция и advisory-лок проверяются в `tests/int/platform/hours-core*.int.spec.ts`.
+ */
+const store = vi.hoisted(() => ({ doc: null as unknown, writes: 0 }))
+vi.mock('@/lib/hours', async (importOriginal) => {
+  const { hoursStoreDouble } = await import('../helpers/hours-store-double')
+  return { ...(await importOriginal<typeof import('@/lib/hours')>()), ...hoursStoreDouble(store) }
+})
+
+/** Заменяет документ в хранилище (аналог прежнего `writeFileSync` фикстуры). */
+function setDocument(doc: unknown): void {
+  store.doc = { publications: [], ...(doc as object) }
+  store.writes = 0
+}
 
 const seed: HoursDocument = {
   participants: [
@@ -84,20 +97,16 @@ const seed: HoursDocument = {
 }
 
 beforeAll(() => {
-  process.env.HOURS_DATA_FILE = file
   process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
 })
 
 beforeEach(() => {
-  writeFileSync(file, JSON.stringify(seed), 'utf8')
+  setDocument(seed)
 })
 
 afterAll(() => {
-  if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-  else process.env.HOURS_DATA_FILE = originalDataFile
   if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
   else process.env.HOURS_ADMIN_EMAILS = originalAdmins
-  rmSync(dir, { recursive: true, force: true })
 })
 
 async function renderPage(params: Record<string, string> = {}): Promise<string> {
@@ -214,23 +223,19 @@ describe('страница показывает помесячную разби�
     // Кейс владельца «Май–июнь 2026» одним периодом: 21 + 22 будня. Ставка
     // часа считается по КАЖДОМУ полному месяцу, и участник обязан видеть это
     // на странице, а не только итоговую эффективную.
-    writeFileSync(
-      file,
-      JSON.stringify({
-        participants: seed.participants,
-        periods: [
-          {
-            id: 'p-may-june',
-            label: 'Май–июнь 2026',
-            date_from: '2026-05-01',
-            date_to: '2026-06-30',
-            status: 'open',
-          },
-        ],
-        assessments: [],
-      }),
-      'utf8',
-    )
+    setDocument({
+      participants: seed.participants,
+      periods: [
+        {
+          id: 'p-may-june',
+          label: 'Май–июнь 2026',
+          date_from: '2026-05-01',
+          date_to: '2026-06-30',
+          status: 'open',
+        },
+      ],
+      assessments: [],
+    })
   })
 
   it('показывает эффективную 1 163 ₽ и обе помесячные ставки', async () => {
@@ -252,23 +257,19 @@ describe('страница показывает помесячную разби�
   })
 
   it('без ставки участника денежной части на странице нет (п.9)', async () => {
-    writeFileSync(
-      file,
-      JSON.stringify({
-        participants: [],
-        periods: [
-          {
-            id: 'p-may-june',
-            label: 'Май–июнь 2026',
-            date_from: '2026-05-01',
-            date_to: '2026-06-30',
-            status: 'open',
-          },
-        ],
-        assessments: [],
-      }),
-      'utf8',
-    )
+    setDocument({
+      participants: [],
+      periods: [
+        {
+          id: 'p-may-june',
+          label: 'Май–июнь 2026',
+          date_from: '2026-05-01',
+          date_to: '2026-06-30',
+          status: 'open',
+        },
+      ],
+      assessments: [],
+    })
     const html = await renderPage()
     expect(html).toContain('нет в списке участников')
     expect(html).toContain('43 будних дня')
@@ -280,23 +281,19 @@ describe('страница показывает помесячную разби�
 
 describe('участник без вилки и грейда — режим «только часы» (issue #83 п.5)', () => {
   beforeEach(() => {
-    writeFileSync(
-      file,
-      JSON.stringify({
-        participants: [{ email: 'anton@bbm.academy', name: 'Антон' }],
-        periods: [
-          {
-            id: 'p-july',
-            label: 'Июль 2026',
-            date_from: '2026-07-01',
-            date_to: '2026-07-31',
-            status: 'open',
-          },
-        ],
-        assessments: [],
-      }),
-      'utf8',
-    )
+    setDocument({
+      participants: [{ email: 'anton@bbm.academy', name: 'Антон' }],
+      periods: [
+        {
+          id: 'p-july',
+          label: 'Июль 2026',
+          date_from: '2026-07-01',
+          date_to: '2026-07-31',
+          status: 'open',
+        },
+      ],
+      assessments: [],
+    })
   })
 
   it('денежная часть не показывается, но он участник: плашки «нет в списке» нет, сохранять можно', async () => {
@@ -315,11 +312,7 @@ describe('участник без вилки и грейда — режим «т
 
 describe('страницы без периодов (spec 102)', () => {
   beforeEach(() => {
-    writeFileSync(
-      file,
-      JSON.stringify({ participants: seed.participants, periods: [], assessments: [] }),
-      'utf8',
-    )
+    setDocument({ participants: seed.participants, periods: [], assessments: [] })
   })
 
   it.each([

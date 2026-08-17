@@ -126,7 +126,9 @@ async function guarded(run: () => Promise<HoursActionState>): Promise<HoursActio
     return await run()
   } catch (cause) {
     if (cause instanceof HoursDataError) {
-      return error('Данные модуля часов не читаются — файл не тронут, позови администратора.')
+      return error(
+        'Данные недоступны: база модуля часов не отвечает. Оценки не тронуты — позови администратора.',
+      )
     }
     throw cause
   }

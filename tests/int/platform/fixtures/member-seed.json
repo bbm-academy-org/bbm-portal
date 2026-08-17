@@ -1,0 +1,33 @@
+{
+  "members": [
+    {
+      "email": "Vasya.Pupkin@BBM.Academy",
+      "name": "Вася Пупкин",
+      "role": "Разработчик",
+      "aliases": [
+        { "kind": "mattermost_id", "value": "vasyap" },
+        { "kind": "telegram", "value": " Vasya_P ", "note": "личный" }
+      ]
+    },
+    {
+      "email": "lena.testova@bbm.academy",
+      "name": "Лена Тестова",
+      "role": "Дизайнер",
+      "timezone": "Asia/Novosibirsk",
+      "aliases": [{ "kind": "mattermost_id", "value": "LenaT" }]
+    },
+    {
+      "email": "petr.fakov@bbm.academy",
+      "name": "Пётр Фейков",
+      "role": "Продюсер"
+    },
+    {
+      "email": "nina.nevchasah@bbm.academy",
+      "name": "Нина Невчасах",
+      "role": "Методист",
+      "status": "inactive",
+      "slug": "nina-registry",
+      "aliases": [{ "kind": "email_personal", "value": "nina.nevchasah@example.test" }]
+    }
+  ]
+}

@@ -93,6 +93,57 @@ jobs:
       - name: Guard specs
         run: pnpm test:guards
 
+  # BLOCK — the platform DB integration tier (`tests/int/platform`). Until this
+  # job existed, `core` was covered by specs no CI run executed: the tier needs a
+  # live Postgres, so it stayed local (#48) and a broken migration or a lost
+  # constraint could reach `main` with every check green.
+  #
+  # `postgres:17-alpine` — the version prod and the dev stand run
+  # (deploy/docker-compose.prod.yml, infra/dev-stand/compose.core.yml). Matching it
+  # matters here specifically: this tier asserts partial unique indexes, CHECKs and
+  # the `double precision` round-trip, which is exactly the class of behaviour a
+  # major-version difference moves.
+  #
+  # Env var only, no `.env` file: `tools/platform/load-env.mjs` treats a missing
+  # `.env` as normal (prod and CI have none) and the environment wins over it
+  # anyway. Payload is not involved and no `DATABASE_URL` is set — the platform
+  # database is a SEPARATE database with no fallback onto `cms` (ADR-004 §3), and a
+  # `DATABASE_URL` here would only make that fallback look plausible.
+  #
+  # `platform:migrate` runs the ensure step first, so the empty `postgres` service
+  # gets the `platform` database created before drizzle applies the migrations.
+  platform-int:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PLATFORM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Platform migrations (ensure + drizzle)
+        run: pnpm platform:migrate
+      - name: Platform integration tier
+        run: pnpm exec vitest run --config ./vitest.config.mts tests/int/platform
+
   # BLOCK from day 0 under the canon §3 class-1 mandate (deterministic tree
   # check — no network, no PR metadata, no heuristics, so no false-positive class
   # to soak for). This is what makes "a guard without a test does not get merged"
@@ -235,7 +286,7 @@ jobs:
   # The job name must stay literally `ci`: it is the context named in
   # .github/branch-protection.json, so renaming it silently unhooks the gate.
   ci:
-    needs: [lint-and-typecheck, guard-tests, guard-test-coverage]
+    needs: [lint-and-typecheck, guard-tests, guard-test-coverage, platform-int]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

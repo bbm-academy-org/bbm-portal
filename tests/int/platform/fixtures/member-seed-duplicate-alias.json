@@ -1,0 +1,14 @@
+{
+  "members": [
+    {
+      "email": "vasya.pupkin@bbm.academy",
+      "name": "Вася Пупкин",
+      "aliases": [{ "kind": "mattermost_id", "value": "vasyap" }]
+    },
+    {
+      "email": "petr.fakov@bbm.academy",
+      "name": "Пётр Фейков",
+      "aliases": [{ "kind": "mattermost_id", "value": " VasyaP " }]
+    }
+  ]
+}
