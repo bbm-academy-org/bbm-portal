@@ -53,7 +53,7 @@ export function NotAParticipantNotice() {
   )
 }
 
-/** Плашка «данные недоступны» — битый JSON не молчит (п.17). */
+/** Плашка «данные недоступны» — недоступная база не молчит (081 п.17, спека 124 EARS-12). */
 export function DataUnavailable() {
   return (
     <p className="hours-notice hours-notice--error">
