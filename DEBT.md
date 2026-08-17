@@ -16,33 +16,8 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
   `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
   MUST preserve that anchor as the tombstone for Git's union merge.
 - **Permanent append marker:** add new active entries immediately before
-  `- [ ] 2026-08-17 `src/lib/hours/core/refusals.ts`(constraint → readable refusal,
-    EARS-20) duplicates the sentence strings that`document.ts`/`publication.ts`
-  build inline; de-duplicating means reshaping the two domain files, which #255
-  keeps behaviourally frozen — return condition: #256 (the JSON store leaves and
-  the domain files are next touched) or the first edit of any refusal text
-  (#255, PR #259)
-
-<!-- debt-entry-end: 2026-08-17-a1f0c255e1 -->
-
-- [ ] 2026-08-17 `HoursDataError` exists twice — `src/lib/hours/core/errors.ts`
-      (core store) and the frozen JSON `src/lib/hours/store.ts`, which #255 may not
-      touch (AC: JSON path untouched, removal is EARS-15) — return condition: #256
-      deletes `store.ts` (#255, PR #259)
-
-<!-- debt-entry-end: 2026-08-17-b2e1d255e2 -->
-
-- [ ] 2026-08-17 the dev-stand sign-in helper of `tests/e2e/hours-core-parity.e2e.spec.ts`
-      duplicates the one in `tests/e2e/hours-prod.e2e.spec.ts` (absolute prod origin
-      vs `baseURL` stand) — return condition: the next e2e spec that signs in, or
-      the first edit of either helper (#255, PR #259)
-
-<!-- debt-entry-end: 2026-08-17-c3d2e255e3 -->
-
-<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
-
-sweep notes live after that marker.
-
+  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
+  sweep notes live after that marker.
 - **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
   two branches that append different root-ledger entry blocks keep both blocks
   instead of conflicting. Union does not guarantee relative order between two
@@ -453,6 +428,29 @@ Entry format:
       review (#207, round-2 review of PR #245)
 
 <!-- debt-entry-end: 2026-08-15-51ba26ac00 -->
+
+- [ ] 2026-08-17 `src/lib/hours/core/refusals.ts` (constraint → readable refusal,
+      EARS-20) duplicates the sentence strings that `document.ts` /
+      `publication.ts` build inline; de-duplicating means reshaping the two domain
+      files, which #255 keeps behaviourally frozen — return condition: #256 (the
+      JSON store leaves and the domain files are next touched) or the first edit
+      of any refusal text (#255, PR #259)
+
+<!-- debt-entry-end: 2026-08-17-a1f0c255e1 -->
+
+- [ ] 2026-08-17 `HoursDataError` exists twice — `src/lib/hours/core/errors.ts`
+      (core store) and the frozen JSON `src/lib/hours/store.ts`, which #255 may not
+      touch (AC: JSON path untouched, removal is EARS-15) — return condition: #256
+      deletes `store.ts` (#255, PR #259)
+
+<!-- debt-entry-end: 2026-08-17-b2e1d255e2 -->
+
+- [ ] 2026-08-17 the dev-stand sign-in helper of `tests/e2e/hours-core-parity.e2e.spec.ts`
+      duplicates the one in `tests/e2e/hours-prod.e2e.spec.ts` (absolute prod origin
+      vs `baseURL` stand) — return condition: the next e2e spec that signs in, or
+      the first edit of either helper (#255, PR #259)
+
+<!-- debt-entry-end: 2026-08-17-c3d2e255e3 -->
 
 <!-- debt-append-marker -->
 
