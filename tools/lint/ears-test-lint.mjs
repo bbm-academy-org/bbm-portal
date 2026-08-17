@@ -102,24 +102,27 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  */
 const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `EARS-${from + i}`)
 
-/**
- * Clauses the member module of #255 now COVERS, removed from its deferral above:
- * EARS-2 (the member table and its constraints), EARS-8 (the dependency-cruiser
- * rule pair, proved by fixtures in `tests/unit/platform-boundaries.spec.ts`),
- * EARS-17..19 (aliases, resolution, the seed/SQL-only write path). The ratchet
- * only tightens: a deferral that becomes covered is reported as STALE, so this
- * subtraction is not optional bookkeeping.
- */
-const MEMBER_MODULE_COVERED = ['EARS-2', 'EARS-8', 'EARS-17', 'EARS-18', 'EARS-19']
-
 /** Spec 124 (/p/hours on core), accepted 2026-08-17: clauses per owning implementation issue. */
 const HOURS_ON_CORE_DEFERRALS = {
   255: {
-    ids: [...range(1, 12), ...range(17, 22), ...range(28, 32)].filter(
-      (id) => !MEMBER_MODULE_COVERED.includes(id),
-    ),
+    /**
+     * All that is left of #255's deferral is **EARS-7**, the umbrella parity
+     * clause, whose named test is an E2E smoke on a live stand — it lands with
+     * the acceptance run, not with the implementation.
+     *
+     * Everything else #255 owns is now covered by a titled test, and the ids are
+     * struck off here as they land, because the ratchet only tightens: a
+     * deferral that has become covered is reported as STALE. What covers what —
+     * EARS-2/8/17..19 with the member module (`tests/int/platform/member.int.spec.ts`,
+     * the dependency-cruiser fixtures in `tests/unit/platform-boundaries.spec.ts`);
+     * EARS-1/3..6/9..12/20..22/28..31 with the hours tables and the core-backed
+     * store (`tests/int/platform/hours-core*.int.spec.ts`,
+     * `tests/unit/hours-core-refusals.spec.ts`); EARS-32 in
+     * `tests/unit/hours-actions.spec.ts`.
+     */
+    ids: ['EARS-7'],
     reason:
-      'spec 124 implementation (member module, hours tables, repository swap) — TDD lands the tests',
+      'spec 124 EARS-7 is the umbrella parity clause — its named E2E smoke runs on the live acceptance stand',
   },
   256: {
     ids: [...range(13, 16), ...range(25, 27)],
