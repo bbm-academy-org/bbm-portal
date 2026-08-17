@@ -86,7 +86,20 @@ export {
   plural,
 } from './format'
 
-export { HoursDataError, mutateHoursDocument, readHoursDocument, resolveDataFile } from './store'
+/**
+ * Хранилище — схема `core` (спека 124, EARS-1, EARS-10, EARS-12). Раньше здесь
+ * стоял `./store` (JSON-документ на диске, спека 081 пп. 12–13). Подписи и
+ * семантика `HoursDataError` те же, поэтому ни `src/modules/hours`, ни страницы
+ * `/p/hours` этой сменой не задеты.
+ *
+ * `./store.ts` в этом цикле НЕ удалён и не тронут ни на байт: до приёмки катовера
+ * он остаётся ровно тем кодом, который читает прод при откате образа, и через
+ * него же импортёр катовера (#256, EARS-13) читает production `hours.json`.
+ * Отсюда он больше не экспортируется — фолбэка на JSON у модуля нет (EARS-12), а
+ * `resolveDataFile` был нужен только файловому хранилищу. Удаляет файл задача
+ * #256 (EARS-15).
+ */
+export { HoursDataError, mutateHoursDocument, readHoursDocument } from './store-core'
 
 export { emptyHoursDocument } from './types'
 export type {

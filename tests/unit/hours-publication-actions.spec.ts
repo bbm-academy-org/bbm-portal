@@ -1,7 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { buildMattermostPreview, createPublicationBatch } from '@/lib/hours'
 import type { HoursDocument, Publication } from '@/lib/hours'
@@ -9,6 +6,26 @@ import type { HoursDocument, Publication } from '@/lib/hours'
 const authState = vi.hoisted(() => ({ session: null as unknown }))
 vi.mock('@/auth', () => ({ auth: async () => authState.session }))
 vi.mock('next/cache', () => ({ revalidatePath: () => undefined }))
+
+/**
+ * Хранилище модуля часов — ин-мемори двойник (`tests/helpers/hours-store-double.ts`).
+ *
+ * С #255 (спека 124) `@/lib/hours` отдаёт хранилище на схеме `core`, и фолбэка на
+ * JSON у модуля нет (EARS-12): засеять документ временным файлом этот тир больше
+ * не может — и не должен. Предмет здесь обвязка, а документ — фикстура; таблицы,
+ * транзакция и advisory-лок проверяются в `tests/int/platform/hours-core*.int.spec.ts`.
+ */
+const store = vi.hoisted(() => ({ doc: null as unknown, writes: 0 }))
+vi.mock('@/lib/hours', async (importOriginal) => {
+  const { hoursStoreDouble } = await import('../helpers/hours-store-double')
+  return { ...(await importOriginal<typeof import('@/lib/hours')>()), ...hoursStoreDouble(store) }
+})
+
+/** Заменяет документ в хранилище (аналог прежнего `writeFileSync` фикстуры). */
+function setDocument(doc: unknown): void {
+  store.doc = { publications: [], ...(doc as object) }
+  store.writes = 0
+}
 
 interface PublicationActionState {
   status: 'idle' | 'ok' | 'error'
@@ -110,19 +127,12 @@ const seed: HoursDocument = {
   ],
 }
 
-const dir = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-actions-'))
-const file = join(dir, 'hours.json')
-const originalDataFile = process.env.HOURS_DATA_FILE
 const originalAdmins = process.env.HOURS_ADMIN_EMAILS
 const originalWebhook = process.env.MATTERMOST_HOURS_WEBHOOK_URL
 
-beforeAll(() => {
-  process.env.HOURS_DATA_FILE = file
-})
-
 beforeEach(() => {
   vi.clearAllMocks()
-  writeFileSync(file, JSON.stringify(seed), 'utf8')
+  setDocument(seed)
   process.env.HOURS_ADMIN_EMAILS = ADMIN
   process.env.MATTERMOST_HOURS_WEBHOOK_URL = WEBHOOK
   authState.session = { user: { email: ADMIN } }
@@ -130,22 +140,20 @@ beforeEach(() => {
 })
 
 afterAll(() => {
-  if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-  else process.env.HOURS_DATA_FILE = originalDataFile
   if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
   else process.env.HOURS_ADMIN_EMAILS = originalAdmins
   if (originalWebhook === undefined) delete process.env.MATTERMOST_HOURS_WEBHOOK_URL
   else process.env.MATTERMOST_HOURS_WEBHOOK_URL = originalWebhook
   vi.unstubAllGlobals()
-  rmSync(dir, { recursive: true, force: true })
 })
 
-function onDisk(): PublicationDocument {
-  return JSON.parse(readFileSync(file, 'utf8')) as PublicationDocument
+/** Документ, который сейчас лежит в хранилище. */
+function stored(): PublicationDocument {
+  return store.doc as PublicationDocument
 }
 
 function fingerprint(): string {
-  return buildMattermostPreview(onDisk(), 'p-july').preview_fingerprint
+  return buildMattermostPreview(stored(), 'p-july').preview_fingerprint
 }
 
 function publishForm(previewFingerprint: string): FormData {
@@ -295,18 +303,18 @@ describe('pure delivery transitions (spec 100 requirements 10–11)', () => {
 })
 
 describe('publish action gates (spec 100 requirements 7, 9, 11)', () => {
-  it('rejects a non-admin before secret lookup/fetch and leaves JSON byte-for-byte unchanged', async () => {
+  it('rejects a non-admin before secret lookup/fetch and leaves the document byte-for-byte unchanged', async () => {
     const publish = await publishAction()
     authState.session = { user: { email: MEMBER } }
     delete process.env.MATTERMOST_HOURS_WEBHOOK_URL
-    const before = readFileSync(file, 'utf8')
+    const before = JSON.stringify(stored())
 
     const state = await publish(IDLE, publishForm('stale'))
 
     expect(state.status).toBe('error')
     expect(state.message).toContain('администратор')
     expect(fetchMock()).not.toHaveBeenCalled()
-    expect(readFileSync(file, 'utf8')).toBe(before)
+    expect(JSON.stringify(stored())).toBe(before)
   })
 
   it('fails closed when HOURS_ADMIN_EMAILS is empty', async () => {
@@ -315,7 +323,7 @@ describe('publish action gates (spec 100 requirements 7, 9, 11)', () => {
     const state = await publish(IDLE, publishForm(fingerprint()))
     expect(state.status).toBe('error')
     expect(fetchMock()).not.toHaveBeenCalled()
-    expect(onDisk().publications ?? []).toEqual([])
+    expect(stored().publications ?? []).toEqual([])
   })
 
   it('missing MATTERMOST_HOURS_WEBHOOK_URL creates no batch and makes no request', async () => {
@@ -328,29 +336,29 @@ describe('publish action gates (spec 100 requirements 7, 9, 11)', () => {
     expect(state.status).toBe('error')
     expect(state.message).toMatch(/Mattermost|настроен|секрет/i)
     expect(fetchMock()).not.toHaveBeenCalled()
-    expect(onDisk().publications ?? []).toEqual([])
+    expect(stored().publications ?? []).toEqual([])
   })
 
   it('stale preview creates neither webhook calls nor a publications record', async () => {
     const publish = await publishAction()
     const stale = fingerprint()
-    const changed = onDisk()
+    const changed = structuredClone(stored())
     changed.assessments[0].hours = 161
-    writeFileSync(file, JSON.stringify(changed), 'utf8')
+    setDocument(changed)
 
     const state = await publish(IDLE, publishForm(stale))
 
     expect(state.status).toBe('error')
     expect(state.message).toContain('редпросмотр')
     expect(fetchMock()).not.toHaveBeenCalled()
-    expect(onDisk().publications ?? []).toEqual([])
+    expect(stored().publications ?? []).toEqual([])
   })
 })
 
 describe('publish action delivery (spec 100 requirements 8, 10–11)', () => {
   it('posts exact { text } bodies sequentially and accepts only 200 + body "ok"', async () => {
     const publish = await publishAction()
-    const preview = buildMattermostPreview(onDisk(), 'p-july')
+    const preview = buildMattermostPreview(stored(), 'p-july')
     fetchMock().mockImplementation(async () => new Response('ok', { status: 200 }))
 
     const state = await publish(IDLE, publishForm(preview.preview_fingerprint))
@@ -367,7 +375,7 @@ describe('publish action delivery (spec 100 requirements 8, 10–11)', () => {
         'text',
       ])
     }
-    const publication = onDisk().publications?.[0]
+    const publication = stored().publications?.[0]
     expect(publication?.status).toBe('published')
     expect(publication?.messages.every((message) => message.delivery === 'sent')).toBe(true)
     expect(publication?.published_at).toBeTruthy()
@@ -384,7 +392,7 @@ describe('publish action delivery (spec 100 requirements 8, 10–11)', () => {
 
     expect(state.status).toBe('error')
     expect(fetchMock()).toHaveBeenCalledTimes(1)
-    expect(onDisk().publications?.[0]).toMatchObject({
+    expect(stored().publications?.[0]).toMatchObject({
       status: 'incomplete',
       published_at: null,
       messages: [{ delivery: 'failed' }, { delivery: 'pending' }, { delivery: 'pending' }],
@@ -402,7 +410,7 @@ describe('publish action delivery (spec 100 requirements 8, 10–11)', () => {
     expect(state.status).toBe('error')
     expect(state.message).toContain('1 из 3')
     expect(fetchMock()).toHaveBeenCalledTimes(2)
-    expect(onDisk().publications?.[0]).toMatchObject({
+    expect(stored().publications?.[0]).toMatchObject({
       status: 'incomplete',
       published_at: null,
       messages: [
@@ -422,7 +430,7 @@ describe('publish action delivery (spec 100 requirements 8, 10–11)', () => {
     expect(state.status).toBe('error')
     expect(state.message).toMatch(/неизвест|0 из 3/i)
     expect(fetchMock()).toHaveBeenCalledTimes(1)
-    expect(onDisk().publications?.[0]).toMatchObject({
+    expect(stored().publications?.[0]).toMatchObject({
       status: 'incomplete',
       messages: [
         { delivery: 'unknown', sent_at: null },
@@ -454,11 +462,11 @@ describe('publish action delivery (spec 100 requirements 8, 10–11)', () => {
     expect(second.status).toBe('error')
     expect(second.message).toMatch(/попыт|отправ|публик/i)
     expect(fetchMock()).toHaveBeenCalledTimes(1)
-    expect(onDisk().publications).toHaveLength(1)
+    expect(stored().publications).toHaveLength(1)
 
     releaseFirst?.(new Response('ok', { status: 200 }))
     await expect(first).resolves.toMatchObject({ status: 'ok' })
     expect(fetchMock()).toHaveBeenCalledTimes(3)
-    expect(onDisk().publications).toHaveLength(1)
+    expect(stored().publications).toHaveLength(1)
   })
 })

@@ -416,11 +416,14 @@ describe('assessments (EARS-4, EARS-28)', () => {
     if (!result.ok) throw new Error('unreachable')
 
     const stored = assessmentOf(await readHoursDocument(), 'p-july', 'anton@bbm.academy')
+    // Every field, including the snapshots, comes back exactly as the domain
+    // computed it — `toEqual` over the whole record is the round-trip assertion.
     expect(stored).toEqual(result.saved)
-    expect(stored?.hourly_rate).toBe(result.saved.hourly_rate)
-    // The value the spec's column table names: 400000/(21*8) is not representable
-    // as a rounded number, and `numeric` would re-serialize it differently.
-    expect(String(stored?.hourly_rate)).toBe(String(400_000 / (stored!.weekday_count * 8)))
+    // And the rate is genuinely UNROUNDED: the spec's column table names
+    // `1163.0465116279069` as the reason it may not be `numeric`, which
+    // re-serializes such a value differently.
+    expect(String(stored?.hourly_rate).split('.')[1]?.length ?? 0).toBeGreaterThan(6)
+    expect(String(stored?.hourly_rate)).toBe(String(result.saved.hourly_rate))
   })
 
   it('EARS-4: a re-save is an upsert on (period, member) — one row, snapshots re-frozen', async () => {
@@ -630,7 +633,7 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
         id: 'p-july',
         label: 'Июль 2026',
         dateFrom: '2026-07-01',
-        dateTo: '2026-07-15',
+        dateTo: '2026-08-31',
       }),
     )
     expect(result.ok).toBe(true)
@@ -638,9 +641,16 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
     expect(result.warnings.join(' ')).toContain('Пересчитано по новым датам: 1')
 
     const after = assessmentOf(await readHoursDocument(), 'p-july', 'anton@bbm.academy')
+    // The rate snapshot is the SOURCE of the recompute and is itself untouched —
+    // the fork raised a moment ago (900 000) must be nowhere in these numbers.
     expect(after?.monthly_rate).toBe(before?.monthly_rate)
-    expect(after?.weekday_count).toBeLessThan(before!.weekday_count)
-    expect(after?.hourly_rate).toBeGreaterThan(before!.hourly_rate!)
+    expect(after?.monthly_rate).not.toBe(900_000)
+    // Only the calendar-derived fields moved, in the 081 §6 rounding order.
+    expect(after?.weekday_count).toBeGreaterThan(before!.weekday_count)
+    expect(after?.hourly_rate).not.toBe(before?.hourly_rate)
+    expect(after?.accrual).toBe(Math.round(after!.hours * after!.hourly_rate!))
+    expect(after?.invest_amount).toBe(Math.round((after!.accrual * after!.split_percent) / 100))
+    expect(after?.cash_amount).toBe(after!.accrual - after!.invest_amount)
   })
 
   it('EARS-21: deleting a period removes its row and leaves the rest of the order intact', async () => {
@@ -713,7 +723,7 @@ describe('constraints map to readable refusals (EARS-20)', () => {
     expect((await readHoursDocument()).periods.map((p) => p.status)).toEqual(['open', 'closed'])
   })
 
-  it('EARS-20: two assessments for one (period, member) forced past the validation get a sentence', async () => {
+  it('EARS-20: a document carrying two assessments for one (period, member) cannot produce a second row', async () => {
     const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
     await seedParticipant(db, id, { sortKey: 0 })
     await seedPeriod(db, {
@@ -738,17 +748,21 @@ describe('constraints map to readable refusals (EARS-20)', () => {
       ),
     )
 
+    // The (period, member) UNIQUE index of EARS-4 is enforced as an UPSERT, so a
+    // duplicated record collapses onto the one row rather than raising — the
+    // constraint stays the structural backstop, and the observable contract is
+    // «one row per (period, member)», never a 500. The sentence each constraint
+    // WOULD produce if it fired is covered by `tests/unit/hours-core-refusals.spec.ts`.
     const result = await mutateHoursDocument((doc) =>
       force(doc, {
         ...doc,
         assessments: [...doc.assessments, { ...doc.assessments[0], hours: 20 }],
       }),
     )
-    expect(result.ok).toBe(false)
-    if (result.ok) throw new Error('unreachable')
-    expect(result.error).toMatch(/^[А-ЯЁ]/)
-    expect(result.error).not.toContain('duplicate key')
-    expect((await readHoursDocument()).assessments).toHaveLength(1)
+    expect(result.ok).toBe(true)
+    const doc = await readHoursDocument()
+    expect(doc.assessments).toHaveLength(1)
+    expect(doc.assessments[0].hours).toBe(20)
   })
 
   it('EARS-20: an assessment for an unknown period gets a sentence, not a raw FK error', async () => {

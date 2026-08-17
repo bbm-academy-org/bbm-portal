@@ -1,8 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { HoursDataError } from '@/lib/hours'
 import type { HoursDocument } from '@/lib/hours'
 
 /**
@@ -20,9 +18,26 @@ vi.mock('@/auth', () => ({ auth: async () => authState.session }))
 // revalidatePath требует рантайма Next; кэш-инвалидация здесь не предмет теста.
 vi.mock('next/cache', () => ({ revalidatePath: () => undefined }))
 
-const dir = mkdtempSync(join(tmpdir(), 'bbm-hours-actions-'))
-const file = join(dir, 'hours.json')
-const originalDataFile = process.env.HOURS_DATA_FILE
+/**
+ * Хранилище модуля часов — ин-мемори двойник (`tests/helpers/hours-store-double.ts`).
+ *
+ * С #255 (спека 124) `@/lib/hours` отдаёт хранилище на схеме `core`, и фолбэка на
+ * JSON у модуля нет (EARS-12): засеять документ временным файлом этот тир больше
+ * не может — и не должен. Предмет здесь обвязка, а документ — фикстура; таблицы,
+ * транзакция и advisory-лок проверяются в `tests/int/platform/hours-core*.int.spec.ts`.
+ */
+const store = vi.hoisted(() => ({ doc: null as unknown, writes: 0 }))
+vi.mock('@/lib/hours', async (importOriginal) => {
+  const { hoursStoreDouble } = await import('../helpers/hours-store-double')
+  return { ...(await importOriginal<typeof import('@/lib/hours')>()), ...hoursStoreDouble(store) }
+})
+
+/** Заменяет документ в хранилище (аналог прежнего `writeFileSync` фикстуры). */
+function setDocument(doc: unknown): void {
+  store.doc = { publications: [], ...(doc as object) }
+  store.writes = 0
+}
+
 const originalAdmins = process.env.HOURS_ADMIN_EMAILS
 
 const ADMIN = 'anton@bbm.academy'
@@ -59,18 +74,8 @@ const seed: HoursDocument = {
   assessments: [],
 }
 
-beforeAll(() => {
-  process.env.HOURS_DATA_FILE = file
-})
-
-afterAll(() => {
-  if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-  else process.env.HOURS_DATA_FILE = originalDataFile
-  rmSync(dir, { recursive: true, force: true })
-})
-
 beforeEach(() => {
-  writeFileSync(file, JSON.stringify(seed), 'utf8')
+  setDocument(seed)
   process.env.HOURS_ADMIN_EMAILS = ADMIN
   authState.session = { user: { email: MEMBER } }
 })
@@ -88,8 +93,9 @@ function form(fields: Record<string, string>): FormData {
   return data
 }
 
-function onDisk(): HoursDocument {
-  return JSON.parse(readFileSync(file, 'utf8')) as HoursDocument
+/** Документ, который сейчас лежит в хранилище. */
+function stored(): HoursDocument {
+  return store.doc as HoursDocument
 }
 
 /** Все пять мутаций админки с заведомо валидными полями. */
@@ -145,17 +151,18 @@ async function adminMutations() {
 }
 
 describe('мутации админки закрыты от не-админа (п.10, сценарий 9)', () => {
-  it('участник вне HOURS_ADMIN_EMAILS получает отказ на всех пяти и ничего не меняет', async () => {
-    const before = readFileSync(file, 'utf8')
+  it('EARS-32: участник вне HOURS_ADMIN_EMAILS получает отказ на всех пяти и ничего не меняет', async () => {
+    const before = JSON.stringify(stored())
     for (const mutation of await adminMutations()) {
       const state = await mutation.run()
       expect(state.status, mutation.name).toBe('error')
       expect(state.message, mutation.name).toContain('администратор')
-      expect(readFileSync(file, 'utf8'), `${mutation.name} не должен писать на диск`).toBe(before)
+      expect(store.writes, `${mutation.name} не должен ничего записывать`).toBe(0)
+      expect(JSON.stringify(stored()), mutation.name).toBe(before)
     }
   })
 
-  it('пустая HOURS_ADMIN_EMAILS закрывает админку и самому админу (fail-closed)', async () => {
+  it('EARS-32: пустая HOURS_ADMIN_EMAILS закрывает админку и самому админу (fail-closed)', async () => {
     authState.session = { user: { email: ADMIN } }
     process.env.HOURS_ADMIN_EMAILS = ''
     for (const mutation of await adminMutations()) {
@@ -178,7 +185,7 @@ describe('мутации админки закрыты от не-админа (�
     }
   })
 
-  it('админ из allowlist те же мутации проходит (гейт не «всегда нет»)', async () => {
+  it('EARS-32: админ из allowlist те же мутации проходит (гейт не «всегда нет»)', async () => {
     authState.session = { user: { email: ' Anton@BBM.Academy ' } }
     const actions = await import('@/modules/hours/actions')
     const state = await actions.createPeriodAction(
@@ -186,7 +193,7 @@ describe('мутации админки закрыты от не-админа (�
       form({ label: 'Август 2026', dateFrom: '2026-08-01', dateTo: '2026-08-31' }),
     )
     expect(state.status).toBe('ok')
-    expect(onDisk().periods).toHaveLength(2)
+    expect(stored().periods).toHaveLength(2)
   })
 })
 
@@ -206,7 +213,7 @@ describe('заведение участника — вилка и грейд н�
       }),
     )
     expect(state.status).toBe('ok')
-    const saved = onDisk().participants.find((p) => p.email === 'new@bbm.academy')
+    const saved = stored().participants.find((p) => p.email === 'new@bbm.academy')
     expect(saved).toMatchObject({
       name: 'Новый',
       role: null,
@@ -251,7 +258,7 @@ describe('сохранение оценки — только за себя (п.9
     )
     expect(state.status).toBe('error')
     expect(state.message).toContain('только за себя')
-    expect(onDisk().assessments).toHaveLength(0)
+    expect(stored().assessments).toHaveLength(0)
   })
 
   it('email оценки берётся из сессии, а не из формы (регистр формы не важен)', async () => {
@@ -269,8 +276,8 @@ describe('сохранение оценки — только за себя (п.9
     )
     expect(state.status).toBe('ok')
     expect(state.saved?.email).toBe(MEMBER)
-    expect(onDisk().assessments).toHaveLength(1)
-    expect(onDisk().assessments[0].email).toBe(MEMBER)
+    expect(stored().assessments).toHaveLength(1)
+    expect(stored().assessments[0].email).toBe(MEMBER)
   })
 
   it('сессия без email не сохраняет ничего (п.8)', async () => {
@@ -289,11 +296,11 @@ describe('сохранение оценки — только за себя (п.9
     )
     expect(state.status).toBe('error')
     expect(state.message).toContain('email')
-    expect(onDisk().assessments).toHaveLength(0)
+    expect(stored().assessments).toHaveLength(0)
   })
 
-  it('битые данные на диске — понятный отказ, а не падение', async () => {
-    writeFileSync(file, 'не json', 'utf8')
+  it('EARS-12: нечитаемое хранилище — понятный отказ, а не падение', async () => {
+    store.doc = new HoursDataError('Данные модуля часов недоступны.')
     const actions = await import('@/modules/hours/actions')
     const state = await actions.saveAssessmentAction(
       IDLE,
@@ -308,7 +315,7 @@ describe('сохранение оценки — только за себя (п.9
     )
     expect(state.status).toBe('error')
     expect(state.message).toContain('не читаются')
-    expect(readFileSync(file, 'utf8')).toBe('не json')
+    expect(store.writes).toBe(0)
   })
 })
 
@@ -319,30 +326,26 @@ describe('сохранение оценки — только за себя (п.9
  */
 describe('правка периода с оценками — пересчёт доезжает до диска (issue #85)', () => {
   beforeEach(() => {
-    writeFileSync(
-      file,
-      JSON.stringify({
-        ...seed,
-        assessments: [
-          {
-            period_id: 'p-july',
-            email: ADMIN,
-            hours: 160,
-            method: 'period',
-            weekend_hours: 0,
-            split_percent: 30,
-            monthly_rate: 200_000,
-            hourly_rate: 200_000 / 184,
-            accrual: 173_913,
-            cash_amount: 121_739,
-            invest_amount: 52_174,
-            weekday_count: 23,
-            saved_at: '2026-08-01T09:00:00.000Z',
-          },
-        ],
-      } satisfies HoursDocument),
-      'utf8',
-    )
+    setDocument({
+      ...seed,
+      assessments: [
+        {
+          period_id: 'p-july',
+          email: ADMIN,
+          hours: 160,
+          method: 'period',
+          weekend_hours: 0,
+          split_percent: 30,
+          monthly_rate: 200_000,
+          hourly_rate: 200_000 / 184,
+          accrual: 173_913,
+          cash_amount: 121_739,
+          invest_amount: 52_174,
+          weekday_count: 23,
+          saved_at: '2026-08-01T09:00:00.000Z',
+        },
+      ],
+    } satisfies HoursDocument)
     authState.session = { user: { email: ADMIN } }
   })
 
@@ -362,17 +365,17 @@ describe('правка периода с оценками — пересчёт �
     expect(warning).toBeDefined()
     expect(warning).toContain('1')
 
-    const saved = onDisk().assessments[0]
+    const saved = stored().assessments[0]
     expect(saved.weekday_count).toBe(43)
     expect(saved.accrual).toBe(186_047)
     expect(saved.monthly_rate).toBe(200_000) // снэпшот на момент декларации (п.15)
-    expect(onDisk().periods[0].label).toBe('Май–июнь 2026')
+    expect(stored().periods[0].label).toBe('Май–июнь 2026')
   })
 
   it('удаление периода с оценками по-прежнему закрыто', async () => {
     const actions = await import('@/modules/hours/actions')
     const state = await actions.deletePeriodAction(IDLE, form({ periodId: 'p-july' }))
     expect(state.status).toBe('error')
-    expect(onDisk().periods).toHaveLength(1)
+    expect(stored().periods).toHaveLength(1)
   })
 })

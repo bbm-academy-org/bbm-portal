@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -18,6 +18,26 @@ import type {
 
 const authState = vi.hoisted(() => ({ session: null as unknown }))
 vi.mock('@/auth', () => ({ auth: async () => authState.session }))
+/**
+ * Хранилище модуля часов — ин-мемори двойник (`tests/helpers/hours-store-double.ts`).
+ *
+ * С #255 (спека 124) `@/lib/hours` отдаёт хранилище на схеме `core`, и фолбэка на
+ * JSON у модуля нет (EARS-12): засеять документ временным файлом этот тир больше
+ * не может — и не должен. Предмет здесь обвязка, а документ — фикстура; таблицы,
+ * транзакция и advisory-лок проверяются в `tests/int/platform/hours-core*.int.spec.ts`.
+ */
+const store = vi.hoisted(() => ({ doc: null as unknown, writes: 0 }))
+vi.mock('@/lib/hours', async (importOriginal) => {
+  const { hoursStoreDouble } = await import('../helpers/hours-store-double')
+  return { ...(await importOriginal<typeof import('@/lib/hours')>()), ...hoursStoreDouble(store) }
+})
+
+/** Заменяет документ в хранилище (аналог прежнего `writeFileSync` фикстуры). */
+function setDocument(doc: unknown): void {
+  store.doc = { publications: [], ...(doc as object) }
+  store.writes = 0
+}
+
 vi.mock('@/modules/hours/actions', () => {
   const idle = async () => ({ status: 'idle', message: '', warnings: [], saved: null })
   return {
@@ -368,9 +388,6 @@ describe('prototype state styling contract', () => {
 
 describe('admin page wiring', () => {
   it('passes the period selected for the summary to the inline verification panel', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-page-'))
-    const file = join(directory, 'hours.json')
-    const originalDataFile = process.env.HOURS_DATA_FILE
     const originalAdmins = process.env.HOURS_ADMIN_EMAILS
     const source = document('open')
     source.periods.push({
@@ -387,10 +404,9 @@ describe('admin page wiring', () => {
       saved_at: '2026-07-01T09:00:00.000Z',
     })
     try {
-      process.env.HOURS_DATA_FILE = file
       process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
       authState.session = { user: { email: 'anton@bbm.academy' } }
-      writeFileSync(file, JSON.stringify(source), 'utf8')
+      setDocument(source)
 
       const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
       const element = await HoursAdminPage({
@@ -402,27 +418,20 @@ describe('admin page wiring', () => {
       expect(html).toContain('1 сохранённая оценка')
       expect(html).not.toContain('2 сохранённые оценки')
     } finally {
-      if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-      else process.env.HOURS_DATA_FILE = originalDataFile
       if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
       else process.env.HOURS_ADMIN_EMAILS = originalAdmins
-      rmSync(directory, { recursive: true, force: true })
     }
   })
 
   it('passes sending state to period controls and removes reopen/edit affordances', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-lock-page-'))
-    const file = join(directory, 'hours.json')
-    const originalDataFile = process.env.HOURS_DATA_FILE
     const originalAdmins = process.env.HOURS_ADMIN_EMAILS
     const source = document('closed')
     const preview = buildMattermostPreview(source, 'p-july')
     source.publications = [storedPublication(preview, 'sending')]
     try {
-      process.env.HOURS_DATA_FILE = file
       process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
       authState.session = { user: { email: 'anton@bbm.academy' } }
-      writeFileSync(file, JSON.stringify(source), 'utf8')
+      setDocument(source)
 
       const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
       const element = await HoursAdminPage({ searchParams: Promise.resolve({}) })
@@ -439,27 +448,20 @@ describe('admin page wiring', () => {
       expect(periodItem?.querySelector('input[name="dateFrom"]')).toBeNull()
       expect(periodItem?.querySelector('input[name="dateTo"]')).toBeNull()
     } finally {
-      if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-      else process.env.HOURS_DATA_FILE = originalDataFile
       if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
       else process.env.HOURS_ADMIN_EMAILS = originalAdmins
-      rmSync(directory, { recursive: true, force: true })
     }
   })
 
   it('keeps incomplete-period repair controls while the panel requires manual reconciliation', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'bbm-hours-publication-repair-page-'))
-    const file = join(directory, 'hours.json')
-    const originalDataFile = process.env.HOURS_DATA_FILE
     const originalAdmins = process.env.HOURS_ADMIN_EMAILS
     const source = document('closed')
     const preview = buildMattermostPreview(source, 'p-july')
     source.publications = [storedPublication(preview, 'incomplete', ['sent', 'unknown'])]
     try {
-      process.env.HOURS_DATA_FILE = file
       process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
       authState.session = { user: { email: 'anton@bbm.academy' } }
-      writeFileSync(file, JSON.stringify(source), 'utf8')
+      setDocument(source)
 
       const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
       const element = await HoursAdminPage({ searchParams: Promise.resolve({}) })
@@ -476,11 +478,8 @@ describe('admin page wiring', () => {
       expect(periodItem?.querySelector('input[name="dateFrom"]')).not.toBeNull()
       expect(periodItem?.querySelector('input[name="dateTo"]')).not.toBeNull()
     } finally {
-      if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-      else process.env.HOURS_DATA_FILE = originalDataFile
       if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
       else process.env.HOURS_ADMIN_EMAILS = originalAdmins
-      rmSync(directory, { recursive: true, force: true })
     }
   })
 })
