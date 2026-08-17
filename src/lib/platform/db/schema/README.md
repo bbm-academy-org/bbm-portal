@@ -23,7 +23,14 @@ schema/
   module's tables: a barrel is a legal one-hop path from any module to any
   table, so it would defeat the rule while leaving it green.
 
-**No product tables exist yet, on purpose.** The data model of `/p/hours` and
-`member` is product work (#124 and the follow-ups in epic #111); this task ships
-the pipeline and the boundary, and the initial migration therefore creates the
-schema and nothing else. Pipeline: [`../README.md`](../README.md).
+**The first product tables live in `member/`** — `core.member` and
+`core.member_alias`, the shared people registry (spec
+[`docs/specs/124-hours-on-core.md`](../../../../../docs/specs/124-hours-on-core.md),
+EARS-1/2/17, issue #255). Their module is `src/lib/member`, whose
+`index.ts` is the ONLY door other modules use: on top of
+`module-must-not-import-foreign-tables` (which guards these table files), the
+member module carries its own rule pair —
+`hours-must-import-member-only-via-api` and `cms-and-okr-must-not-import-member`
+— because a table rule alone does not stop a module from importing another
+module's internals (EARS-8). The hours tables land with the rest of #255.
+Pipeline: [`../README.md`](../README.md).

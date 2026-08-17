@@ -92,16 +92,20 @@ migrations/          generated SQL + drizzle's journal — COMMITTED
 contains a second, unrelated drizzle inside `@payloadcms/db-postgres` that it
 must never be mistaken for.
 
-**No product tables yet, on purpose.** `member`, `hours` and the rest are product
-work (#124 and the follow-ups in epic #111); the initial migration creates the
-`core` schema and nothing else.
+**The first product tables are `member/`** (migration `0001_member`): the shared
+people registry `core.member` + `core.member_alias`, owned by `src/lib/member`
+(spec [`docs/specs/124-hours-on-core.md`](../../../../docs/specs/124-hours-on-core.md),
+issue #255). The `hours` tables and the rest of epic #111 follow; migration
+`0000` still creates the `core` schema and nothing else.
 
 ## Boundaries
 
-`pnpm boundaries` enforces two rules from
+`pnpm boundaries` enforces the table-ownership rules of
 [`.dependency-cruiser.cjs`](../../../../.dependency-cruiser.cjs) —
-`cms-must-not-import-platform-db` and `module-must-not-import-foreign-tables`
-(ADR-004 §6 states them and why they are shaped that way).
+`cms-must-not-import-platform-db`, `module-must-not-import-foreign-tables` and
+`route-layer-must-not-import-tables` (ADR-004 §6 states them and why they are
+shaped that way). A module that also needs a NEIGHBOUR's API adds its own pair
+next to them: `member` did, for `src/lib/member` (spec 124 EARS-8).
 
 What that means when writing code here: put a module's tables in
 `schema/<module>/`, import tables only from the directory bearing your own
