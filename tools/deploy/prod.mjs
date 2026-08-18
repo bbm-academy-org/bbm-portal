@@ -626,6 +626,13 @@ export function formatHoldNotice({ sha, prevSha } = {}) {
     '  The images are built and BOTH migration ledgers are advanced. NOTHING serves',
     '  the new code: prod still runs the previous image, and `hours.json` is untouched.',
     '',
+    '  ⚠ Until the LAST step below, run no `docker compose up -d` on this box — of ANY',
+    '    service. `deploy/.env` already names the new sha, and `preview` and `caddy`',
+    '    both `depends_on: app`, so bringing either one up starts the NEW image against',
+    '    an empty `core` — the exact state this hold exists to prevent. The only compose',
+    '    verbs the window uses are `--profile tools run --rm migrate …` and',
+    '    `exec -T postgres psql …`; both leave the stack down.',
+    '',
     `  Next, on the box (\`ssh ${PROD_SSH}\`, \`cd ${COMPOSE_DIR}\`) — full procedure in`,
     `  ${CUTOVER_RUNBOOK}:`,
   ]
@@ -741,6 +748,58 @@ export function parseRollbackSha(arg) {
     }
   }
   return { ok: true, sha: arg.toLowerCase() }
+}
+
+/**
+ * Which pipeline a command line asks for. Pure, and read BEFORE anything runs.
+ *
+ * Precedence is a safety property, not a style choice, and it is stated here
+ * once instead of being implied by the order of `if`s in `main()`:
+ *
+ *  • **`--dry-run` outranks everything.** Its entire contract is "touch
+ *    nothing". A version of `main()` that read `--rollback` first turned
+ *    `pnpm deploy:prod --rollback <sha> --dry-run` — an operator asking to SEE
+ *    what a rollback would do — into the real rollback, which rewrites
+ *    `deploy/.env` and `up -d app` on production with no prompt in between
+ *    (review of PR #260, BLOCKER).
+ *  • **Contradictory pairs are REFUSED, not resolved.** `--dry-run` with
+ *    `--rollback`, and `--rollback` with `--hold-before-up` (bringing a retained
+ *    image up vs. holding a fresh one back) each have two defensible readings,
+ *    and a silent winner is exactly what made the blocker invisible. The script
+ *    says which two flags disagree and exits without touching the box.
+ *
+ * @param {string[]} argv
+ * @returns {{mode: 'dry-run'|'rollback'|'deploy'|'refuse', error?: string,
+ *            holdBeforeUp?: boolean, rollbackArg?: string}}
+ */
+export function resolveMode(argv) {
+  const has = (flag) => argv.includes(flag)
+  const dryRun = has('--dry-run')
+  const rbIdx = argv.indexOf('--rollback')
+  const rollback = rbIdx !== -1
+  const holdBeforeUp = has('--hold-before-up')
+
+  const refuse = (a, b, why) => ({
+    mode: 'refuse',
+    error: `${a} and ${b} together: say which. ${why}\n  Nothing was touched.`,
+  })
+  if (dryRun && rollback) {
+    return refuse(
+      '--dry-run',
+      '--rollback',
+      'One previews and touches nothing; the other swaps the running image on production.',
+    )
+  }
+  if (rollback && holdBeforeUp) {
+    return refuse(
+      '--rollback',
+      '--hold-before-up',
+      'One brings a RETAINED image up; the other holds a fresh one back.',
+    )
+  }
+  if (dryRun) return { mode: 'dry-run', holdBeforeUp }
+  if (rollback) return { mode: 'rollback', rollbackArg: argv[rbIdx + 1] }
+  return { mode: 'deploy', holdBeforeUp }
 }
 
 // ── ssh plumbing ─────────────────────────────────────────────────────────────
@@ -1384,19 +1443,19 @@ async function rollback(shaArg) {
 }
 
 async function main() {
-  // `--rollback` is read FIRST and never combines with the hold: it is a
-  // separate pipeline that brings a RETAINED image up, which is the exact
-  // opposite of holding a fresh one back.
-  const rbIdx = process.argv.indexOf('--rollback')
-  if (rbIdx !== -1) {
-    await rollback(process.argv[rbIdx + 1])
+  // Precedence lives in `resolveMode` (pure, unit-tested), so it can never be
+  // re-decided by the order these `if`s happen to be written in.
+  const verdict = resolveMode(process.argv.slice(2))
+  if (verdict.mode === 'refuse') die(verdict.error)
+  if (verdict.mode === 'dry-run') {
+    await dryRun({ holdBeforeUp: verdict.holdBeforeUp })
     return
   }
-  const holdBeforeUp = process.argv.includes('--hold-before-up')
-  if (process.argv.includes('--dry-run')) {
-    await dryRun({ holdBeforeUp })
+  if (verdict.mode === 'rollback') {
+    await rollback(verdict.rollbackArg)
     return
   }
+  const { holdBeforeUp } = verdict
   const { sha, held } = await runDeploy(productionSteps(), { holdBeforeUp })
   if (held) {
     console.log(

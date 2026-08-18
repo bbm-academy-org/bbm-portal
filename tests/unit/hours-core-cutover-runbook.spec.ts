@@ -98,3 +98,64 @@ describe('docs/runbooks/hours-core-cutover.md', () => {
     expect(RUNBOOK).toContain('bbm-portal-app-1')
   })
 })
+
+// ── #260 review follow-ups ───────────────────────────────────────────────────
+
+describe('docs/runbooks/hours-core-cutover.md — operating hazards', () => {
+  it('forbids `docker compose up -d` of any service during the hold', () => {
+    expect(RUNBOOK).toMatch(/no `docker compose up -d`/i)
+    // The two services that drag `app` up with them via `depends_on`.
+    expect(RUNBOOK).toMatch(/preview/)
+    expect(RUNBOOK).toMatch(/caddy/)
+  })
+
+  it('EARS-25: the rollback section points at truncate-and-retry and names the form', () => {
+    // `platform:hours:import` refuses non-empty `hours_*` tables, so a rolled
+    // back window leaves the NEXT attempt dying at the import — inside the
+    // second window, not before it.
+    const from = RUNBOOK.indexOf('## Rollback')
+    const to = RUNBOOK.indexOf('## After the GO')
+    expect(from).toBeGreaterThan(-1)
+    expect(to).toBeGreaterThan(from)
+    const section = RUNBOOK.slice(from, to)
+    expect(section).toMatch(/truncate/i)
+    expect(section).toMatch(/#re-run-inside-the-window-truncate-and-retry/)
+    expect(section).toMatch(/hours-only/i)
+  })
+
+  it('says which of the two SQL forms the box-side truncate block is', () => {
+    const at = RUNBOOK.indexOf('psql -U payload -d platform -c')
+    expect(at).toBeGreaterThan(-1)
+    // The prose introducing the block must disambiguate, because the document
+    // offers two statements a few lines above it.
+    expect(RUNBOOK.slice(Math.max(0, at - 700), at)).toMatch(/hours-only form/i)
+  })
+
+  it('every `box$` block that uses a shell variable also defines it — reconnect safety', () => {
+    // A dropped SSH session over a 20-30 minute window empties `$COMPOSE` and
+    // `$TS`, and the failure is quiet: `$COMPOSE exec …` becomes bare `exec …`,
+    // and `platform-pre-import-.dump` "confirms" a file nobody wrote.
+    const blocks = [...RUNBOOK.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1])
+    const boxBlocks = blocks.filter((b) => b.includes('box$'))
+    expect(boxBlocks.length).toBeGreaterThan(3)
+    for (const block of boxBlocks) {
+      for (const name of ['COMPOSE', 'TS']) {
+        if (!block.includes(`$${name}`)) continue
+        const defines = block
+          .split('\n')
+          .some((l) => l.startsWith(`box$ ${name}=`) || l.startsWith(`box$ export ${name}=`))
+        expect(defines, `a box$ block uses $${name} without defining it`).toBe(true)
+      }
+    }
+  })
+
+  it('EARS-26: the rehearsal precondition row itself carries the record link', () => {
+    // Anchored on the ROW, not on the document: a future edit that guts the
+    // precondition table must break this, which a bare /rehearsal/i would not.
+    const row = RUNBOOK.split(/\r?\n/).find((l) => l.startsWith('|') && /rehearsal/i.test(l))
+    expect(row, 'no precondition table row mentions the rehearsal').toBeTruthy()
+    expect(row).toContain('issuecomment-5322531565')
+    expect(row).toMatch(/#255/)
+    expect(row).toMatch(/VERDICT: identical/)
+  })
+})

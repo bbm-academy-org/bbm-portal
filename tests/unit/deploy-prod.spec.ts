@@ -33,6 +33,7 @@ import {
   formatHoldNotice,
   parseRollbackSha,
   preflightVerdict,
+  resolveMode,
   createStallWatchdog,
   formatStallMessage,
   runDeploy,
@@ -1010,5 +1011,76 @@ describe('createStallWatchdog / formatStallMessage', () => {
 
   it('names the budget in minutes', () => {
     expect(formatStallMessage('x', 10 * 60 * 1000, 'h')).toContain('no output for 10m')
+  })
+})
+
+// ── flag precedence (#260 review, BLOCKER) ───────────────────────────────────
+
+describe('resolveMode — which pipeline a command line asks for', () => {
+  it('--dry-run wins over everything: a preview never touches prod', () => {
+    // The regression this pins: `--rollback <sha> --dry-run` ran the REAL
+    // rollback, whose third stage rewrites `deploy/.env` and `up -d app` on
+    // production — no prompt, no confirmation. A flag whose whole contract is
+    // "touch nothing" must be read before any flag that acts.
+    expect(resolveMode(['--dry-run'])).toMatchObject({ mode: 'dry-run' })
+    expect(resolveMode(['--dry-run', '--hold-before-up'])).toMatchObject({
+      mode: 'dry-run',
+      holdBeforeUp: true,
+    })
+  })
+
+  it('refuses --dry-run together with --rollback instead of silently picking one', () => {
+    // Both orders, because an operator's muscle memory decides the order and a
+    // silent winner is exactly what made the blocker invisible.
+    for (const argv of [
+      ['--rollback', 'a'.repeat(40), '--dry-run'],
+      ['--dry-run', '--rollback', 'a'.repeat(40)],
+    ]) {
+      const verdict = resolveMode(argv)
+      expect(verdict.mode).toBe('refuse')
+      expect(verdict.error).toMatch(/--dry-run/)
+      expect(verdict.error).toMatch(/--rollback/)
+    }
+  })
+
+  it('refuses --rollback together with --hold-before-up — opposite operations', () => {
+    const verdict = resolveMode(['--rollback', 'a'.repeat(40), '--hold-before-up'])
+    expect(verdict.mode).toBe('refuse')
+    expect(verdict.error).toMatch(/--hold-before-up/)
+  })
+
+  it('reads the rollback argument as the token after the flag', () => {
+    expect(resolveMode(['--rollback', SHA])).toMatchObject({ mode: 'rollback', rollbackArg: SHA })
+  })
+
+  it('a bare invocation is the full deploy, and --hold-before-up truncates it', () => {
+    expect(resolveMode([])).toMatchObject({ mode: 'deploy', holdBeforeUp: false })
+    expect(resolveMode(['--hold-before-up'])).toMatchObject({
+      mode: 'deploy',
+      holdBeforeUp: true,
+    })
+  })
+
+  it('ignores flags it does not know (--skip-ci-check is read elsewhere)', () => {
+    expect(resolveMode(['--skip-ci-check'])).toMatchObject({ mode: 'deploy' })
+  })
+})
+
+describe('formatHoldNotice — the compose verbs allowed while held', () => {
+  const notice = formatHoldNotice({ sha: SHA, prevSha: OTHER })
+
+  it('forbids bringing ANY service up while the hold is in force', () => {
+    // `deploy/.env` already names the new sha and the new image is built, so
+    // `up -d preview` (a documented recipe in deploy/README.md) starts `app`
+    // with it — `preview` and `caddy` both `depends_on: app`. That is the exact
+    // state the hold exists to prevent, one unrelated command away.
+    expect(notice).toMatch(/no `docker compose up -d`/i)
+    expect(notice).toMatch(/preview/)
+    expect(notice).toMatch(/caddy/)
+  })
+
+  it('names the only two compose verbs the window uses', () => {
+    expect(notice).toContain('--profile tools run --rm')
+    expect(notice).toContain('exec -T postgres')
   })
 })

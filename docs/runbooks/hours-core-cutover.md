@@ -19,13 +19,13 @@ and `tools/deploy/prod.mjs`; the expand/contract rules the migrations obey are
 Every one of these is checked BEFORE the window opens. A missing one is a reason
 to postpone, not to improvise.
 
-| #   | Precondition                                                                                                                                           | Where the evidence is                                                                                        |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| 1   | **The EARS-26 dev rehearsal ran** — seed → import → verify against a COPY of the production `hours.json`, ending in `VERDICT: identical`               | the rehearsal record linked from the plan comment on **#256**; the runs themselves are commented on **#255** |
-| 2   | **#125 is in production** — the `platform` database, `PLATFORM_DATABASE_URL` in the box's `deploy/.env.prod`, and the platform migrate in the pipeline | `deploy/.env.prod` on the box already carries `PLATFORM_DATABASE_URL` and `HOURS_DATA_FILE`                  |
-| 3   | **#255 is merged and on `origin/main`, CI green** — the deploy refuses anything else                                                                   | `preflightVerdict` in `tools/deploy/prod.mjs`                                                                |
-| 4   | **The member dataset is prepared with the owner** and sits on the box OUTSIDE `~/bbm-portal`                                                           | see [the dataset rule](#the-seed-dataset--and-the-rule-that-it-is-never-committed)                           |
-| 5   | **The owner is present** for the window and for the acceptance right after it                                                                          | the «go» comment on #256                                                                                     |
+| #   | Precondition                                                                                                                                           | Where the evidence is                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **The EARS-26 dev rehearsal ran** — seed → import → verify against a COPY of the production `hours.json`, ending in `VERDICT: identical`               | the plan comment on #256 ([issuecomment-5322531565](https://github.com/bbm-academy-org/bbm-portal/issues/256#issuecomment-5322531565)) records it; the three runs themselves are commented on **#255** |
+| 2   | **#125 is in production** — the `platform` database, `PLATFORM_DATABASE_URL` in the box's `deploy/.env.prod`, and the platform migrate in the pipeline | `deploy/.env.prod` on the box already carries `PLATFORM_DATABASE_URL` and `HOURS_DATA_FILE`                                                                                                            |
+| 3   | **#255 is merged and on `origin/main`, CI green** — the deploy refuses anything else                                                                   | `preflightVerdict` in `tools/deploy/prod.mjs`                                                                                                                                                          |
+| 4   | **The member dataset is prepared with the owner** and sits on the box OUTSIDE `~/bbm-portal`                                                           | see [the dataset rule](#the-seed-dataset--and-the-rule-that-it-is-never-committed)                                                                                                                     |
+| 5   | **The owner is present** for the window and for the acceptance right after it                                                                          | the «go» comment on #256                                                                                                                                                                               |
 
 **Why the dataset must live outside `~/bbm-portal`.** The `migrate` service builds
 with `context: ..` (`deploy/docker-compose.prod.yml`), i.e. the whole
@@ -54,8 +54,14 @@ Roughly 20–30 minutes. `docker compose stop app` takes **both**
 (`bbm-portal-app-1`) — and `preview.bbm.academy` with them (`preview` depends on
 `app`). The owner accepted that outage.
 
-Shell prompts below: `box$` runs on `portal-prod-tw` in `/home/deploy/bbm-portal/deploy`;
-`ws$` runs on the workstation in the repo checkout.
+Shell prompts below: `box$` runs on `portal-prod-tw`, `ws$` on the workstation in
+the repo checkout.
+
+**Every `box$` block is self-contained** — it re-runs its own `cd` and re-exports
+the variables it uses. That is deliberate: a dropped SSH session over a 20–30
+minute window is ordinary, and an empty `$COMPOSE` or `$TS` fails quietly in the
+worst possible way (`ls -l …platform-pre-import-.dump` "confirming" a dump nobody
+wrote). Reconnect, and re-run the block from its first line.
 
 ### 1 — Freeze the document
 
@@ -72,6 +78,7 @@ source a fixed byte sequence and the rollback a complete answer.
 ### 2 — Take the document off the box
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
 box$ docker cp bbm-portal-app-1:/data/hours/hours.json \
        /home/deploy/cutover/hours.json.pre-cutover
 box$ sha256sum /home/deploy/cutover/hours.json.pre-cutover
@@ -104,6 +111,22 @@ The run ends with the block of next commands (steps 5–8 below) and exit code 0
 It is not a failure and it is not a half-deploy: no marker is written anywhere,
 and the plain re-run in step 8 simply runs the whole pipeline again.
 
+> **From here until step 8: no `docker compose up -d` on this box — of ANY
+> service, for any reason.** The held run has already rewritten
+> `deploy/.env` to `DEPLOY_SHA=<new sha>` and built `bbm-portal-app:<new sha>`,
+> so `up -d` resolves `app` to the **new** image. Both `preview` and `caddy`
+> declare `depends_on: app`, which means the routine recipe in
+> [`deploy/README.md`](../../deploy/README.md) —
+> `docker compose -f docker-compose.prod.yml up -d preview` — starts `app` with
+> them and puts the new code in front of an empty `core`. That is precisely the
+> state the hold exists to prevent, and it is one unrelated command away.
+>
+> The only two compose verbs this window uses are
+> `--profile tools run --rm migrate …` (steps 5–7) and
+> `exec -T postgres psql …` (truncate-and-retry). Both leave the stack down.
+> The passive case is safe on its own: `restart: unless-stopped` does not
+> resurrect an explicitly stopped container, and neither does a reboot.
+
 Expected in `deploy-256.log`: the pinned checkpoint key
 (`checkpoints/pre-migrate-<UTC>-<sha12>-postgres-YYYYMMDD.sql.gz`), the
 `[checkpoint] WARNING: no pinned dump looks like: platform` line (precondition
@@ -113,6 +136,7 @@ showing the hours migrations applied.
 ### 4 — Pin a manual `platform` dump
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
 box$ TS=$(date -u +%Y%m%dT%H%M%SZ)
 box$ docker exec bbm-portal-postgres-1 pg_dump -U payload -Fc platform \
        > /home/deploy/cutover/platform-pre-import-$TS.dump
@@ -135,6 +159,8 @@ returns to if step 7 goes wrong in a way truncate-and-retry cannot fix.
 ### 5 — Seed the member registry (dry run first)
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
 box$ $COMPOSE --profile tools run --rm \
        -v /home/deploy/cutover/members.json:/tmp/members.json:ro \
        migrate pnpm platform:member:seed /tmp/members.json --dry-run
@@ -145,6 +171,8 @@ back, so the counts it prints are counts the database accepted. Then, unchanged
 except for the flag:
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
 box$ $COMPOSE --profile tools run --rm \
        -v /home/deploy/cutover/members.json:/tmp/members.json:ro \
        migrate pnpm platform:member:seed /tmp/members.json
@@ -153,6 +181,8 @@ box$ $COMPOSE --profile tools run --rm \
 ### 6 — Import the document
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
 box$ $COMPOSE --profile tools run --rm \
        -v bbm-portal_hoursdata:/data/hours:ro \
        migrate pnpm platform:hours:import /data/hours/hours.json
@@ -166,6 +196,8 @@ the document disagree.
 ### 7 — Verify, and read the verdict
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
 box$ $COMPOSE --profile tools run --rm \
        -v bbm-portal_hoursdata:/data/hours:ro \
        migrate pnpm platform:hours:verify /data/hours/hours.json
@@ -221,6 +253,7 @@ key, the seed dry-run and real summaries, the import's per-table row counts, the
 re-run (verify + smoke green).
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
 box$ shred -u /home/deploy/cutover/members.json
 box$ ls -la /home/deploy/cutover/          # the dataset must be gone
 ```
@@ -242,10 +275,21 @@ exactly the document it was serving before the window. Rows written into `core`
 during the window are consciously abandoned — the window is a maintenance window
 and every write in it is the operator's own (EARS-25).
 
+**Abandoned is not removed — clear `core` before the next attempt.**
+`platform:hours:import` refuses non-empty `hours_*` tables, so a window that was
+rolled back leaves the NEXT window dying at step 6 with a refusal, discovered
+with the owner watching instead of beforehand. Run the **hours-only** form of
+[truncate and retry](#re-run-inside-the-window-truncate-and-retry) as part of the
+rollback (the hours-plus-registry form only if the seed dataset itself was
+wrong). Doing it right after the rollback, rather than at the start of the next
+window, is what keeps `core` and the retry honest.
+
 **If the archive rename already happened** (it is PR-2's step, but if it was done
 early) restore the name FIRST, or the old image starts against a missing file:
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
 box$ APP_IMAGE=$($COMPOSE images -q app)
 box$ docker run --rm --user 0 \
        --mount type=volume,src=bbm-portal_hoursdata,dst=/data/hours \
@@ -403,9 +447,16 @@ truncate table core.hours_publication, core.hours_assessment,
 ```
 
 On the box, through the running postgres container — the database publishes no
-host port in production, so `psql` from the host is not an option:
+host port in production, so `psql` from the host is not an option. The block
+below is the **hours-only form** (the first statement above), which is what a
+re-import after a differing verdict or after a rollback needs. For the
+hours-plus-registry case — the seed dataset itself was wrong — substitute the
+**second** statement, `restart identity cascade` included; do not paste this one
+and hope.
 
 ```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
 box$ $COMPOSE exec -T postgres psql -U payload -d platform -c \
   'truncate table core.hours_publication, core.hours_assessment,
                   core.hours_participant, core.hours_period;'

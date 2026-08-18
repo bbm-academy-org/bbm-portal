@@ -62,6 +62,12 @@ included) and is what brings traffic up. The one procedure that uses it today is
 [`docs/runbooks/hours-core-cutover.md`](../../../docs/runbooks/hours-core-cutover.md);
 do not reach for it on an ordinary release.
 
+**Flag precedence is a refusal, not a winner.** `--dry-run` outranks everything —
+it is the flag whose contract is "touch nothing". Contradictory pairs are
+REFUSED rather than resolved: `--dry-run` with `--rollback`, and `--rollback`
+with `--hold-before-up`. The script names the two flags and exits without
+touching the box (`resolveMode` in `tools/deploy/prod.mjs`).
+
 Run it as its **own statement** — never `pnpm deploy:prod | tee log`. A pipe
 returns the pipe's exit code and turns a red deploy green. Use
 `> deploy.log 2>&1` and check `$?` if you want a transcript.
