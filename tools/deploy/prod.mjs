@@ -576,9 +576,13 @@ export const CUTOVER_RUNBOOK = 'docs/runbooks/hours-core-cutover.md'
  *  and a file inside the tree would be baked into the tooling image. */
 export const CUTOVER_DATASET = '/home/deploy/cutover/members.json'
 
-/** Where the JSON document is mounted from the app's named volume, read-only. */
+/** Where the archived hours document is mounted from the app's named volume,
+ *  read-only. The live JSON is gone: the 2026-08-18 cutover moved `/p/hours` onto
+ *  `core` and #256 removed the store, the `platform:hours:import` command and
+ *  `HOURS_DATA_FILE` with it. What is left on the volume is `hours.json.<date>`,
+ *  and the only thing that reads it is the verify verdict below. */
 export const HOURS_VOLUME = 'bbm-portal_hoursdata'
-const HOURS_JSON = '/data/hours/hours.json'
+const HOURS_ARCHIVE = '/data/hours/hours.json.<date>'
 
 const TOOLS_RUN = `${COMPOSE} --profile tools run --rm`
 
@@ -586,6 +590,13 @@ const TOOLS_RUN = `${COMPOSE} --profile tools run --rm`
  * What the operator runs next, in order, while the deploy is held. Exported so
  * the runbook's commands and the ones the run prints cannot drift apart — the
  * last entry is the plain re-run, which is the ONLY thing that brings traffic up.
+ *
+ * The list is one step shorter since #256: the `/p/hours` import ran once, on
+ * 2026-08-18, and the command that ran it was deleted with the JSON store — a
+ * one-liner that writes over live history has no place in a notice an operator
+ * pastes at 3am. The seed and the verdict stay: both are idempotent reads-or-
+ * upserts, and the hold itself remains the generic seam between «migrated» and
+ * «serving».
  */
 export const HOLD_NEXT_COMMANDS = [
   {
@@ -597,12 +608,10 @@ export const HOLD_NEXT_COMMANDS = [
     command: `${TOOLS_RUN} -v ${CUTOVER_DATASET}:/tmp/members.json:ro migrate pnpm platform:member:seed /tmp/members.json`,
   },
   {
-    label: 'import the document into `core` (one transaction; never writes the JSON)',
-    command: `${TOOLS_RUN} -v ${HOURS_VOLUME}:/data/hours:ro migrate pnpm platform:hours:import ${HOURS_JSON}`,
-  },
-  {
-    label: 'verify — the last line must read `VERDICT: identical` (exit 0)',
-    command: `${TOOLS_RUN} -v ${HOURS_VOLUME}:/data/hours:ro migrate pnpm platform:hours:verify ${HOURS_JSON}`,
+    label:
+      'verify `core` against the archived document — substitute the real date suffix; ' +
+      'the last line must read `VERDICT: identical` (exit 0)',
+    command: `${TOOLS_RUN} -v ${HOURS_VOLUME}:/data/hours:ro migrate pnpm platform:hours:verify ${HOURS_ARCHIVE}`,
   },
   {
     label: 'bring traffic up (full pipeline again; checkpoint + migrations are idempotent)',
@@ -616,15 +625,15 @@ export const HOLD_NEXT_COMMANDS = [
  * It is the whole point of the flag: a deploy that stops half-way and says
  * nothing is indistinguishable from a deploy that broke. This says what state
  * the box is in (built + migrated, still serving the PREVIOUS image), what the
- * next four commands are, and that the rollback is still on offer — EARS-25's
- * offer holds precisely because nothing here touched `hours.json`.
+ * next commands are, and that the app-image rollback is still on offer — nothing
+ * in a held run has brought the new code up.
  */
 export function formatHoldNotice({ sha, prevSha } = {}) {
   const rollbackTarget = prevSha ? String(prevSha).slice(0, 12) : '<previous sha>'
   const lines = [
     `\n■ HELD before \`up -d\` (--hold-before-up) — target ${String(sha ?? '').slice(0, 12)}`,
     '  The images are built and BOTH migration ledgers are advanced. NOTHING serves',
-    '  the new code: prod still runs the previous image, and `hours.json` is untouched.',
+    '  the new code: prod still runs the previous image.',
     '',
     '  ⚠ Until the LAST step below, run no `docker compose up -d` on this box — of ANY',
     '    service. `deploy/.env` already names the new sha, and `preview` and `caddy`',
@@ -645,8 +654,8 @@ export function formatHoldNotice({ sha, prevSha } = {}) {
     '  that brings traffic up.',
     '',
     `  Rollback while this hold is in force: pnpm deploy:prod --rollback ${rollbackTarget}`,
-    '  (app image only — the database is not touched and the JSON is still the source',
-    '  of truth for the previous image). After the owner accepts: forward-fix only.',
+    '  (app image only — the database is not touched). Since the /p/hours cutover was',
+    '  accepted, `core` is the master: a rollback of THAT change is no longer on offer.',
   )
   return lines.join('\n')
 }

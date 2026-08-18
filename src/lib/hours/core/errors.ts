@@ -13,11 +13,10 @@
  *    turns it back into the ordinary `{ ok: false, error }` the forms already
  *    render.
  *
- * A note on the duplicated name: `src/lib/hours/store.ts` (the JSON store) also
- * declares a `HoursDataError`, and this cycle deliberately does not touch that
- * file — the cutover task (#256) deletes it, and until then it stays the exact
- * code the rollback path runs and the import tool reads through. This class is
- * the one the module's public API exports; the duplication ends with #256.
+ * `HoursDataError` exists ONCE, here. The JSON store carried a second class of
+ * the same name until #256 deleted `src/lib/hours/store.ts` after the cutover was
+ * accepted; the frozen archive reader that survives in `tools/platform/hours-json.ts`
+ * imports THIS one through `@/lib/hours` rather than declaring its own.
  */
 
 /** The data behind the hours module is unreadable — say so out loud. */

@@ -73,8 +73,6 @@
     "platform:migrate:status": "node tools/platform/migrate-status.mjs",
     "preplatform:member:seed": "node scripts/require-node.mjs",
     "platform:member:seed": "cross-env NODE_OPTIONS=--no-deprecation tsx tools/platform/member-seed.ts",
-    "preplatform:hours:import": "node scripts/require-node.mjs",
-    "platform:hours:import": "cross-env NODE_OPTIONS=--no-deprecation tsx tools/platform/hours-import.ts",
     "preplatform:hours:verify": "node scripts/require-node.mjs",
     "platform:hours:verify": "cross-env NODE_OPTIONS=--no-deprecation tsx tools/platform/hours-verify.ts",
     "preseed:admin": "node scripts/require-node.mjs",

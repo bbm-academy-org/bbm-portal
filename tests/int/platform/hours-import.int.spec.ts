@@ -7,11 +7,20 @@ import { sql } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { readHoursDocument } from '@/lib/hours'
-import { HoursImportRefusal } from '@/lib/hours/core/import'
+import type { HoursDocument } from '@/lib/hours'
+import { HoursImportRefusal, importDocument, type HoursRowCounts } from '@/lib/hours/core/import'
+import { HOURS_LOCK_KEY } from '@/lib/hours/core/lock'
+import { takeHoursLock } from '@/lib/hours/core/persist'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
-import { importHours, readSourceDocument, verifyHours } from '../../../tools/platform/hours-import'
+import {
+  compareExports,
+  verdictLines,
+  type ExportComparison,
+} from '../../../tools/platform/hours-export-diff'
+import { readJsonDocument } from '../../../tools/platform/hours-json'
 import { parseMemberDataset, seedMembers } from '../../../tools/platform/member-seed'
+import { verifyHours } from '../../../tools/platform/hours-verify'
 import { truncateHoursTables } from './hours-core-helpers'
 
 /**
@@ -29,6 +38,15 @@ import { truncateHoursTables } from './hours-core-helpers'
  * document — three participants, a closed and an open period, a «только часы»
  * assessment with null money snapshots, an unrounded rate, and one delivered
  * publication batch. The production dataset itself is never committed (EARS-14).
+ *
+ * **Where the driver went.** Until #256 the import had a CLI
+ * (`pnpm platform:hours:import`, `tools/platform/hours-import.ts`) and this suite
+ * drove it. After the owner accepted the cutover that command was removed — `core`
+ * is the master, a second import is never wanted, and a one-liner able to write
+ * over live history is a hazard with no remaining use. The MECHANICS stayed
+ * (`@/lib/hours/core/import.ts`): they are how the production rows got there, they
+ * are the restore path from the `hours.json.<date>` archive, and this suite is now
+ * their only driver — `importFixture` below is the four lines the CLI used to wrap.
  *
  * Needs `PLATFORM_DATABASE_URL` (this worktree's branch DB — see
  * `.claude/rules/parallel-sessions.md`, "Platform database"), loaded from `.env`
@@ -63,6 +81,32 @@ async function rowCounts() {
   ) as Record<'periods' | 'participants' | 'assessments' | 'publications', number>
 }
 
+type ImportOutcome = {
+  summary: HoursRowCounts
+  comparison: ExportComparison
+  lines: string[]
+}
+
+/**
+ * Read a fixture through the frozen archive reader and import it into `core`, in
+ * ONE transaction that first takes the module advisory lock (EARS-10, EARS-13),
+ * then produce the EARS-27 verdict against what `core` would export afterwards.
+ *
+ * The post-import export is read AFTER the transaction commits, deliberately:
+ * EARS-27's question is «what would the owner download now», and the only honest
+ * answer comes from the same read path `/p/hours/admin/export` uses.
+ */
+async function importFixture(file: string): Promise<ImportOutcome> {
+  const source: HoursDocument = await readJsonDocument(file)
+  const summary = await db.transaction(async (tx) => {
+    await takeHoursLock(tx, HOURS_LOCK_KEY)
+    return importDocument(tx, source)
+  })
+  const core = await readHoursDocument()
+  const comparison = compareExports(source, core)
+  return { summary, comparison, lines: verdictLines(comparison) }
+}
+
 beforeEach(async () => {
   await truncateHoursTables(db)
   await seedMembers(
@@ -76,9 +120,9 @@ afterAll(async () => {
 
 describe('the cutover import (EARS-13)', () => {
   it('EARS-13: carries the whole document verbatim — ids, timestamps, snapshots and array order', async () => {
-    const source = await readSourceDocument(fixture('hours.json'))
+    const source = await readJsonDocument(fixture('hours.json'))
 
-    const result = await importHours(fixture('hours.json'))
+    const result = await importFixture(fixture('hours.json'))
 
     expect(result.summary).toEqual({
       periods: 2,
@@ -120,10 +164,10 @@ describe('the cutover import (EARS-13)', () => {
   })
 
   it('EARS-13: refuses non-empty hours tables, naming them, and writes nothing a second time', async () => {
-    await importHours(fixture('hours.json'))
+    await importFixture(fixture('hours.json'))
     const before = await rowCounts()
 
-    const rerun = importHours(fixture('hours.json'))
+    const rerun = importFixture(fixture('hours.json'))
     await expect(rerun).rejects.toBeInstanceOf(HoursImportRefusal)
     await expect(rerun).rejects.toThrow(/hours_period/)
 
@@ -131,7 +175,7 @@ describe('the cutover import (EARS-13)', () => {
   })
 
   it('EARS-13: aborts with the list of emails that have no member, writing nothing', async () => {
-    const run = importHours(fixture('hours-unknown-email.json'))
+    const run = importFixture(fixture('hours-unknown-email.json'))
 
     await expect(run).rejects.toBeInstanceOf(HoursImportRefusal)
     await expect(run).rejects.toThrow(/ghost\.nobody@bbm\.academy/)
@@ -148,7 +192,7 @@ describe('the cutover import (EARS-13)', () => {
   it('EARS-13: runs as ONE transaction — a constraint firing late leaves nothing behind', async () => {
     // Two open periods: the partial unique index of EARS-5 fires on the SECOND
     // period insert, after the first one has already been written.
-    await expect(importHours(fixture('hours-two-open.json'))).rejects.toThrow()
+    await expect(importFixture(fixture('hours-two-open.json'))).rejects.toThrow()
 
     expect(await rowCounts()).toEqual({
       periods: 0,
@@ -164,7 +208,7 @@ describe('the source document (EARS-16)', () => {
     const file = fixture('hours.json')
     const before = fingerprint(file)
 
-    await importHours(file)
+    await importFixture(file)
 
     expect(fingerprint(file)).toBe(before)
   })
@@ -173,7 +217,7 @@ describe('the source document (EARS-16)', () => {
     const file = fixture('hours-unknown-email.json')
     const before = fingerprint(file)
 
-    await expect(importHours(file)).rejects.toThrow()
+    await expect(importFixture(file)).rejects.toThrow()
 
     expect(fingerprint(file)).toBe(before)
   })
@@ -181,7 +225,7 @@ describe('the source document (EARS-16)', () => {
 
 describe('the cutover verdict (EARS-27)', () => {
   it('EARS-27: the import ends in VERDICT: identical on a document it carried whole', async () => {
-    const result = await importHours(fixture('hours.json'))
+    const result = await importFixture(fixture('hours.json'))
 
     expect(result.comparison.identical).toBe(true)
     expect(result.comparison.byteIdentical).toBe(true)
@@ -189,7 +233,7 @@ describe('the cutover verdict (EARS-27)', () => {
   })
 
   it('EARS-27: the standalone verify names the differing paths after a row is tampered with', async () => {
-    await importHours(fixture('hours.json'))
+    await importFixture(fixture('hours.json'))
 
     await db.execute(
       sql`update core.hours_assessment set accrual = accrual + 1, saved_at = '2026-08-17T00:00:00.000Z'

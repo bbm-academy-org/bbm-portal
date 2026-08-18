@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 
 import { normalizeEmail } from './access'
 import { formatHours } from './format'
+import { REFUSAL } from './messages'
 import type {
   Assessment,
   HoursDocument,
@@ -123,7 +124,7 @@ function eligibility(
     return {
       status: 'incomplete',
       can_publish: false,
-      reason: 'У периода уже есть незавершённая попытка публикации.',
+      reason: REFUSAL.publicationAttemptExists,
     }
   }
   if (messages.length === 0) {
@@ -151,7 +152,7 @@ function eligibility(
 export function buildMattermostPreview(doc: HoursDocument, periodId: string): PublicationPreview {
   const period = doc.periods.find((candidate) => candidate.id === periodId)
   if (!period) {
-    throw new Error('Период не найден — обнови страницу.')
+    throw new Error(REFUSAL.periodNotFound)
   }
 
   const rows = doc.assessments

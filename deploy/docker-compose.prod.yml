@@ -64,13 +64,13 @@ services:
         condition: service_healthy
     expose:
       - '3000'
-    # Hours module (#81, spec 081 req.18): the JSON document lives on a volume,
-    # NOT in the image — otherwise every redeploy would wipe the declarations.
-    # HOURS_DATA_FILE (in .env.prod) points at /data/hours/hours.json. The image
-    # creates /data/hours owned by nextjs:nodejs (uid 1001), and Docker seeds a
-    # fresh named volume from the image path including that ownership, so the
-    # non-root app process can write. Verifying the first write is an explicit
-    # acceptance step, not an assumption.
+    # Hours module: the `hoursdata` volume held the JSON document (#81, spec 081
+    # req.18) until the 2026-08-18 cutover moved `/p/hours` onto the `core` schema
+    # of the `platform` database (spec 124, #256). The app READS NOTHING from it —
+    # `HOURS_DATA_FILE` is gone and so is the store — and the mount stays only so
+    # the archived `hours.json.<date>` keeps its home on the volume and in the
+    # backups the clause requires (EARS-15). Unmounting it is a separate, later
+    # decision, taken when the archive itself is retired.
     volumes:
       - hoursdata:/data/hours
 

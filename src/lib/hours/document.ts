@@ -13,6 +13,7 @@
 
 import { countWeekdays, isValidIsoDate } from './calendar'
 import { normalizeEmail } from './access'
+import { periodAlreadyOpen, REFUSAL } from './messages'
 // Склонение по числу живёт в format.ts (там же, где METHOD_LABELS): это домен,
 // а не вью, и второй копии правила «11–14 — исключение» быть не должно.
 import { formatHoursCount, plural } from './format'
@@ -123,7 +124,7 @@ export function saveAssessment(
   now: string,
 ): MutationResult<Assessment> {
   const period = findPeriod(doc, input.periodId)
-  if (!period) return fail('Период не найден — обнови страницу.')
+  if (!period) return fail(REFUSAL.periodNotFound)
   if (period.status !== 'open') {
     return fail(`Период «${period.label}» закрыт — оценки в него больше не принимаются.`)
   }
@@ -131,10 +132,10 @@ export function saveAssessment(
   const email = normalizeEmail(input.email)
   const participant = findParticipant(doc, email)
   if (!participant) {
-    return fail('Такой участник не заведён — обратись к администратору.')
+    return fail(REFUSAL.unknownParticipant)
   }
 
-  if (!METHODS.includes(input.method)) return fail('Неизвестный способ оценки.')
+  if (!METHODS.includes(input.method)) return fail(REFUSAL.unknownMethod)
   if (!isNonNegativeNumber(input.hours)) return fail('Часы должны быть числом не меньше нуля.')
   if (!isNonNegativeNumber(input.weekendHours)) {
     return fail('Часы в выходные должны быть числом не меньше нуля.')
@@ -220,7 +221,7 @@ export function upsertParticipant(
   if (!name) return fail('Нужно имя участника.')
   const role = typeof input.role === 'string' && input.role.trim() ? input.role.trim() : null
   if (input.grade != null && !GRADES.includes(input.grade)) {
-    return fail('Грейд может быть только I, II или III.')
+    return fail(REFUSAL.unknownGrade)
   }
   if (input.forkMin != null && !isNonNegativeNumber(input.forkMin)) {
     return fail('Границы вилки должны быть числами не меньше нуля.')
@@ -368,7 +369,7 @@ export function updatePeriod(
   input: PeriodInput & { id: string },
 ): MutationResult<Period> {
   const existing = findPeriod(doc, input.id)
-  if (!existing) return fail('Период не найден — обнови страницу.')
+  if (!existing) return fail(REFUSAL.periodNotFound)
   if (isPeriodMutationLocked(doc, input.id)) {
     return fail(
       `Публикация периода «${existing.label}» уже начата — править label или даты нельзя.`,
@@ -435,7 +436,7 @@ export function updatePeriod(
 /** Удаляет период, пока по нему нет ни одной оценки (п.16). */
 export function deletePeriod(doc: HoursDocument, periodId: string): MutationResult<Period> {
   const existing = findPeriod(doc, periodId)
-  if (!existing) return fail('Период не найден — обнови страницу.')
+  if (!existing) return fail(REFUSAL.periodNotFound)
   if (doc.assessments.some((assessment) => assessment.period_id === periodId)) {
     return fail(`По периоду «${existing.label}» уже есть оценки — удалить его нельзя.`)
   }
@@ -458,14 +459,14 @@ export function setPeriodStatus(
   status: PeriodStatus,
 ): MutationResult<Period> {
   const existing = findPeriod(doc, periodId)
-  if (!existing) return fail('Период не найден — обнови страницу.')
+  if (!existing) return fail(REFUSAL.periodNotFound)
   if (status === 'open' && isPeriodMutationLocked(doc, periodId)) {
     return fail(`Публикация периода «${existing.label}» уже начата — переоткрыть его нельзя.`)
   }
   if (status === 'open') {
     const open = doc.periods.find((period) => period.status === 'open' && period.id !== periodId)
     if (open) {
-      return fail(`Уже открыт период «${open.label}» — сначала закрой его.`)
+      return fail(periodAlreadyOpen(open.label))
     }
   }
   const period: Period = { ...existing, status }

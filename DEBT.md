@@ -429,19 +429,7 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-15-51ba26ac00 -->
 
-- [ ] 2026-08-17 `src/lib/hours/core/refusals.ts` (constraint → readable refusal,
-      EARS-20) duplicates the sentence strings that `document.ts` /
-      `publication.ts` build inline; de-duplicating means reshaping the two domain
-      files, which #255 keeps behaviourally frozen — return condition: #256 (the
-      JSON store leaves and the domain files are next touched) or the first edit
-      of any refusal text (#255, PR #259)
-
 <!-- debt-entry-end: 2026-08-17-a1f0c255e1 -->
-
-- [ ] 2026-08-17 `HoursDataError` exists twice — `src/lib/hours/core/errors.ts`
-      (core store) and the frozen JSON `src/lib/hours/store.ts`, which #255 may not
-      touch (AC: JSON path untouched, removal is EARS-15) — return condition: #256
-      deletes `store.ts` (#255, PR #259)
 
 <!-- debt-entry-end: 2026-08-17-b2e1d255e2 -->
 
@@ -451,6 +439,18 @@ Entry format:
       the first edit of either helper (#255, PR #259)
 
 <!-- debt-entry-end: 2026-08-17-c3d2e255e3 -->
+
+- [ ] 2026-08-18 `src/lib/hours/core/import.ts` has no PRODUCTION caller since
+      #256 deleted `tools/platform/hours-import.ts` and the
+      `platform:hours:import` command (owner: a second import is never needed).
+      Kept rather than deleted because it is the mechanics the production rows
+      were written with and the only reviewed restore path from the
+      `hours.json.<date>` archive; its driver is now
+      `tests/int/platform/hours-import.int.spec.ts` alone, which is also EARS-13's
+      coverage — return condition: the archive is retired (the volume mount goes
+      with it), or the next task that touches `src/lib/hours/core/` (#256, PR-2)
+
+<!-- debt-entry-end: 2026-08-18-d4c3b256f1 -->
 
 <!-- debt-append-marker -->
 
@@ -491,3 +491,14 @@ available in the plugin catalog (`frontend-design:frontend-design`), which is
 exactly its return condition. Remaining lines kept: none of their return
 conditions have fired (board:status output complete twice today, no CLI-flag
 changes, no robocopy-fallback entry).)_
+
+_(Swept 2026-08-18 (#256, PR-2). **Two lines closed by the work, bodies removed,
+anchors kept:** the `HoursDataError`-twice line (`2026-08-17-b2e1d255e2`) — its
+return condition «#256 deletes `store.ts`» fired, the JSON store is gone and the
+class now exists once, in `src/lib/hours/core/errors.ts`; the refusal-sentence
+duplication line (`2026-08-17-a1f0c255e1`) — its return condition «#256, the JSON
+store leaves and the domain files are next touched» fired, and the sentences moved
+into one source, `src/lib/hours/messages.ts`, which `document.ts`,
+`publication.ts` and `core/refusals.ts` all import. The third #255 line (the e2e
+sign-in helper duplication, `2026-08-17-c3d2e255e3`) is UNTOUCHED: its trigger —
+the next e2e spec that signs in — has not fired.)_

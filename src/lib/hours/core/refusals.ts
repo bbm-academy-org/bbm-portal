@@ -12,14 +12,13 @@
  * domain would never produce. Unreachable-but-mapped is the point: reaching one
  * must still yield a sentence.
  *
- * The sentences are deliberate DUPLICATES of the ones `../document.ts` and
- * `../publication.ts` build (each is named below at its branch). The alternative —
- * exporting message builders out of the domain layer — would have meant reshaping
- * two files this cycle deliberately does not touch behaviourally; the duplication
- * is asserted against the originals by `tests/int/platform/hours-core.int.spec.ts`
- * (EARS-20) and by the domain's own unit specs, so a drift between the two shows
- * up as a red test rather than as a stale string.
+ * The sentences themselves live in `../messages.ts` and are the SAME constants the
+ * domain layer refuses with — one source, since #256. #255 shipped them copied
+ * (de-duplicating meant reshaping two files that cycle kept behaviourally frozen)
+ * and recorded the duplication in `DEBT.md`; this file no longer holds a string of
+ * its own, so a branch here can no longer drift from the branch it mirrors.
  */
+import { periodAlreadyOpen, REFUSAL } from '../messages'
 import type { HoursDocument } from '../types'
 import { pgFailure } from './errors'
 
@@ -48,49 +47,47 @@ export function refusalFor(
     // `document.ts` → setPeriodStatus: «Уже открыт период «X» — сначала закрой его.»
     case 'hours_period_single_open': {
       const label = openPeriodLabel(before, after)
-      return label
-        ? `Уже открыт период «${label}» — сначала закрой его.`
-        : 'Открытым может быть только один период — сначала закрой текущий.'
+      return label ? periodAlreadyOpen(label) : REFUSAL.onlyOnePeriodOpen
     }
     // `document.ts` → saveAssessment keeps one row per (period, participant).
     case 'hours_assessment_period_member_unique':
-      return 'Оценка за этот период уже сохранена — обнови страницу и сохрани заново.'
+      return REFUSAL.assessmentAlreadySaved
     // `publication.ts` → eligibility: one batch per period (spec 100 req. 12).
     case 'hours_publication_pkey':
-      return 'У периода уже есть незавершённая попытка публикации.'
+      return REFUSAL.publicationAttemptExists
     case 'hours_period_pkey':
-      return 'Период с таким идентификатором уже есть — обнови страницу.'
+      return REFUSAL.periodIdTaken
     case 'hours_participant_pkey':
-      return 'Этот участник уже заведён — обнови страницу.'
+      return REFUSAL.participantAlreadyExists
     // `document.ts` → findPeriod: «Период не найден — обнови страницу.»
     case 'hours_assessment_period_id_hours_period_id_fk':
     case 'hours_publication_period_id_hours_period_id_fk':
-      return 'Период не найден — обнови страницу.'
+      return REFUSAL.periodNotFound
     // `document.ts` → saveAssessment: «Такой участник не заведён…»
     case 'hours_assessment_member_id_member_id_fk':
     case 'hours_participant_member_id_member_id_fk':
-      return 'Такой участник не заведён — обратись к администратору.'
+      return REFUSAL.unknownParticipant
     // The CHECKs of the value vocabularies — `document.ts` refuses each in words.
     case 'hours_participant_grade_allowed':
-      return 'Грейд может быть только I, II или III.'
+      return REFUSAL.unknownGrade
     case 'hours_assessment_method_allowed':
-      return 'Неизвестный способ оценки.'
+      return REFUSAL.unknownMethod
     case 'hours_period_status_allowed':
-      return 'Неизвестный статус периода.'
+      return REFUSAL.unknownPeriodStatus
     case 'hours_publication_status_allowed':
-      return 'Неизвестный статус публикации.'
+      return REFUSAL.unknownPublicationStatus
     // The member registry's own constraints. `src/lib/member` normalizes and
     // refuses in words before these can fire, so hitting one means the SQL escape
     // hatch or a race — still a sentence, never a 500 (EARS-2, EARS-9).
     case 'member_email_unique':
     case 'member_email_normalized':
-      return 'Этот email уже есть в реестре участников в другом виде — позови администратора.'
+      return REFUSAL.memberEmailTaken
     case 'member_slug_unique':
-      return 'Не удалось подобрать свободный slug участника — позови администратора.'
+      return REFUSAL.memberSlugUnavailable
     case 'member_alias_kind_value_unique':
-      return 'Такой алиас уже записан за другим участником — позови администратора.'
+      return REFUSAL.memberAliasTaken
     case 'member_status_allowed':
-      return 'Недопустимый статус участника реестра.'
+      return REFUSAL.unknownMemberStatus
     default:
       return null
   }
