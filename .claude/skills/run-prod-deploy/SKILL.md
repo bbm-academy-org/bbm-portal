@@ -48,9 +48,25 @@ range being shipped, not just the last PR:
 ## Deploy
 
 ```bash
-pnpm deploy:prod              # ship origin/main
-pnpm deploy:prod --dry-run    # run the real local gates, print the remote plan, touch nothing
+pnpm deploy:prod                   # ship origin/main
+pnpm deploy:prod --dry-run         # run the real local gates, print the remote plan, touch nothing
+pnpm deploy:prod --hold-before-up  # build + checkpoint + migrate, then STOP before `up -d`
 ```
+
+`--hold-before-up` exists for **data cutovers** and for nothing else: it stops
+the pipeline after `deployStack` so an operator can load data into the freshly
+migrated schema before any traffic meets it, then prints the commands that come
+next and exits 0. It leaves no marker on the box — a plain `pnpm deploy:prod`
+afterwards runs the WHOLE pipeline again (a second, separately-keyed checkpoint
+included) and is what brings traffic up. The one procedure that uses it today is
+[`docs/runbooks/hours-core-cutover.md`](../../../docs/runbooks/hours-core-cutover.md);
+do not reach for it on an ordinary release.
+
+**Flag precedence is a refusal, not a winner.** `--dry-run` outranks everything —
+it is the flag whose contract is "touch nothing". Contradictory pairs are
+REFUSED rather than resolved: `--dry-run` with `--rollback`, and `--rollback`
+with `--hold-before-up`. The script names the two flags and exits without
+touching the box (`resolveMode` in `tools/deploy/prod.mjs`).
 
 Run it as its **own statement** — never `pnpm deploy:prod | tee log`. A pipe
 returns the pipe's exit code and turns a red deploy green. Use

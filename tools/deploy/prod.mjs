@@ -5,6 +5,8 @@
 //
 //   pnpm deploy:prod                    deploy origin/main
 //   pnpm deploy:prod --dry-run          print every gate + remote script, touch nothing
+//   pnpm deploy:prod --hold-before-up   build + migrate, then STOP before `up -d`
+//                                       (the /p/hours cutover seam, #256)
 //   pnpm deploy:prod --rollback <sha>   app-only rollback to a retained image
 //   pnpm deploy:prod --skip-ci-check    escape hatch; warns loudly
 //
@@ -119,6 +121,30 @@ export const DEPLOY_STAGES = [
  * last: destructive housekeeping never precedes the proof.
  */
 export const NON_FATAL_STAGES = ['cutRelease', 'recordDeployment', 'prune']
+
+/**
+ * `--hold-before-up`'s stage order — a TRUNCATION of {@link DEPLOY_STAGES}, not
+ * a variant of it. It stops after `deployStack`, which under the flag builds the
+ * images and advances both migration ledgers but does NOT `up -d`.
+ *
+ * Why the pipeline needs a seam here at all: spec 124 (`/p/hours` on `core`)
+ * EARS-13 fixes the cutover ordering as checkpoint → migrate → manual seed →
+ * import + verification → ONLY THEN traffic. In the normal pipeline the migrate
+ * and the `up -d` are two lines of one remote script, so there is no moment at
+ * which the schema exists and the new image is not yet serving — and the new
+ * image reads `core`, which would be empty. Holding creates that moment.
+ *
+ * The procedure that uses it (and the seed/import/verify commands the run
+ * prints) is `docs/runbooks/hours-core-cutover.md`; this file only opens the gap.
+ */
+export const HOLD_STAGES = [
+  'preflight',
+  'readPrevSha',
+  'verifyRemoteEnv',
+  'ship',
+  'checkpoint',
+  'deployStack',
+]
 
 /**
  * `--rollback`'s own stage order. It is a SEPARATE pipeline, not a variant of
@@ -520,7 +546,12 @@ export function formatCheckpointFailure(detail) {
  * this stage runs AFTER `checkpoint`, so neither can advance a schema that has
  * no fresh dump behind it.
  */
-export function buildDeployScript(sha) {
+export function buildDeployScript(sha, { holdBeforeUp = false } = {}) {
+  const up = holdBeforeUp
+    ? ''
+    : `echo '-- up -d --'
+${COMPOSE} up -d
+`
   return `cd ${COMPOSE_DIR}
 # Rewrite ONLY the DEPLOY_SHA line. This .env is compose's interpolation source;
 # a clobbering '>' would wipe any other var a future change puts here.
@@ -534,9 +565,90 @@ ${COMPOSE} --profile tools run --rm migrate pnpm platform:migrate </dev/null
 echo '-- migration ledgers --'
 ${COMPOSE} exec -T postgres psql -U payload -d cms -c 'SELECT name, batch FROM payload_migrations ORDER BY id DESC LIMIT 5;'
 ${COMPOSE} exec -T postgres psql -U payload -d platform -c 'SELECT id, created_at FROM core.__drizzle_migrations ORDER BY id DESC LIMIT 5;'
-echo '-- up -d --'
-${COMPOSE} up -d
-`
+${up}`
+}
+
+/** The runbook that OWNS the cutover procedure; this file only prints pointers. */
+export const CUTOVER_RUNBOOK = 'docs/runbooks/hours-core-cutover.md'
+
+/** Where the hand-prepared member dataset lives on the box during the window —
+ *  OUTSIDE `~/bbm-portal`, because the `migrate` service builds with context `..`
+ *  and a file inside the tree would be baked into the tooling image. */
+export const CUTOVER_DATASET = '/home/deploy/cutover/members.json'
+
+/** Where the JSON document is mounted from the app's named volume, read-only. */
+export const HOURS_VOLUME = 'bbm-portal_hoursdata'
+const HOURS_JSON = '/data/hours/hours.json'
+
+const TOOLS_RUN = `${COMPOSE} --profile tools run --rm`
+
+/**
+ * What the operator runs next, in order, while the deploy is held. Exported so
+ * the runbook's commands and the ones the run prints cannot drift apart — the
+ * last entry is the plain re-run, which is the ONLY thing that brings traffic up.
+ */
+export const HOLD_NEXT_COMMANDS = [
+  {
+    label: 'seed the registry — DRY RUN first (a real transaction, rolled back)',
+    command: `${TOOLS_RUN} -v ${CUTOVER_DATASET}:/tmp/members.json:ro migrate pnpm platform:member:seed /tmp/members.json --dry-run`,
+  },
+  {
+    label: 'seed for real (the same line without --dry-run)',
+    command: `${TOOLS_RUN} -v ${CUTOVER_DATASET}:/tmp/members.json:ro migrate pnpm platform:member:seed /tmp/members.json`,
+  },
+  {
+    label: 'import the document into `core` (one transaction; never writes the JSON)',
+    command: `${TOOLS_RUN} -v ${HOURS_VOLUME}:/data/hours:ro migrate pnpm platform:hours:import ${HOURS_JSON}`,
+  },
+  {
+    label: 'verify — the last line must read `VERDICT: identical` (exit 0)',
+    command: `${TOOLS_RUN} -v ${HOURS_VOLUME}:/data/hours:ro migrate pnpm platform:hours:verify ${HOURS_JSON}`,
+  },
+  {
+    label: 'bring traffic up (full pipeline again; checkpoint + migrations are idempotent)',
+    command: 'pnpm deploy:prod',
+  },
+]
+
+/**
+ * The block a held run prints instead of a success line. Pure.
+ *
+ * It is the whole point of the flag: a deploy that stops half-way and says
+ * nothing is indistinguishable from a deploy that broke. This says what state
+ * the box is in (built + migrated, still serving the PREVIOUS image), what the
+ * next four commands are, and that the rollback is still on offer — EARS-25's
+ * offer holds precisely because nothing here touched `hours.json`.
+ */
+export function formatHoldNotice({ sha, prevSha } = {}) {
+  const rollbackTarget = prevSha ? String(prevSha).slice(0, 12) : '<previous sha>'
+  const lines = [
+    `\n■ HELD before \`up -d\` (--hold-before-up) — target ${String(sha ?? '').slice(0, 12)}`,
+    '  The images are built and BOTH migration ledgers are advanced. NOTHING serves',
+    '  the new code: prod still runs the previous image, and `hours.json` is untouched.',
+    '',
+    '  ⚠ Until the LAST step below, run no `docker compose up -d` on this box — of ANY',
+    '    service. `deploy/.env` already names the new sha, and `preview` and `caddy`',
+    '    both `depends_on: app`, so bringing either one up starts the NEW image against',
+    '    an empty `core` — the exact state this hold exists to prevent. The only compose',
+    '    verbs the window uses are `--profile tools run --rm migrate …` and',
+    '    `exec -T postgres psql …`; both leave the stack down.',
+    '',
+    `  Next, on the box (\`ssh ${PROD_SSH}\`, \`cd ${COMPOSE_DIR}\`) — full procedure in`,
+    `  ${CUTOVER_RUNBOOK}:`,
+  ]
+  HOLD_NEXT_COMMANDS.forEach((c, i) => {
+    lines.push('', `  ${i + 1}. ${c.label}`, `     ${c.command}`)
+  })
+  lines.push(
+    '',
+    '  The last step runs from the WORKSTATION, not the box, and is the only thing',
+    '  that brings traffic up.',
+    '',
+    `  Rollback while this hold is in force: pnpm deploy:prod --rollback ${rollbackTarget}`,
+    '  (app image only — the database is not touched and the JSON is still the source',
+    '  of truth for the previous image). After the owner accepts: forward-fix only.',
+  )
+  return lines.join('\n')
 }
 
 /**
@@ -636,6 +748,58 @@ export function parseRollbackSha(arg) {
     }
   }
   return { ok: true, sha: arg.toLowerCase() }
+}
+
+/**
+ * Which pipeline a command line asks for. Pure, and read BEFORE anything runs.
+ *
+ * Precedence is a safety property, not a style choice, and it is stated here
+ * once instead of being implied by the order of `if`s in `main()`:
+ *
+ *  • **`--dry-run` outranks everything.** Its entire contract is "touch
+ *    nothing". A version of `main()` that read `--rollback` first turned
+ *    `pnpm deploy:prod --rollback <sha> --dry-run` — an operator asking to SEE
+ *    what a rollback would do — into the real rollback, which rewrites
+ *    `deploy/.env` and `up -d app` on production with no prompt in between
+ *    (review of PR #260, BLOCKER).
+ *  • **Contradictory pairs are REFUSED, not resolved.** `--dry-run` with
+ *    `--rollback`, and `--rollback` with `--hold-before-up` (bringing a retained
+ *    image up vs. holding a fresh one back) each have two defensible readings,
+ *    and a silent winner is exactly what made the blocker invisible. The script
+ *    says which two flags disagree and exits without touching the box.
+ *
+ * @param {string[]} argv
+ * @returns {{mode: 'dry-run'|'rollback'|'deploy'|'refuse', error?: string,
+ *            holdBeforeUp?: boolean, rollbackArg?: string}}
+ */
+export function resolveMode(argv) {
+  const has = (flag) => argv.includes(flag)
+  const dryRun = has('--dry-run')
+  const rbIdx = argv.indexOf('--rollback')
+  const rollback = rbIdx !== -1
+  const holdBeforeUp = has('--hold-before-up')
+
+  const refuse = (a, b, why) => ({
+    mode: 'refuse',
+    error: `${a} and ${b} together: say which. ${why}\n  Nothing was touched.`,
+  })
+  if (dryRun && rollback) {
+    return refuse(
+      '--dry-run',
+      '--rollback',
+      'One previews and touches nothing; the other swaps the running image on production.',
+    )
+  }
+  if (rollback && holdBeforeUp) {
+    return refuse(
+      '--rollback',
+      '--hold-before-up',
+      'One brings a RETAINED image up; the other holds a fresh one back.',
+    )
+  }
+  if (dryRun) return { mode: 'dry-run', holdBeforeUp }
+  if (rollback) return { mode: 'rollback', rollbackArg: argv[rbIdx + 1] }
+  return { mode: 'deploy', holdBeforeUp }
 }
 
 // ── ssh plumbing ─────────────────────────────────────────────────────────────
@@ -885,8 +1049,9 @@ function makeNonFatal(log) {
  * — a red step aborts and NOTHING downstream runs, in particular no release tag
  * and no Deployment record — is unit-tested without a VPS.
  */
-export async function runDeploy(steps) {
+export async function runDeploy(steps, { holdBeforeUp = false } = {}) {
   const nonFatal = makeNonFatal(steps.log)
+  const say = steps.log ?? ((m) => console.log(m))
 
   // ── fatal: anything here can still leave prod in a state nobody described ──
   const sha = await steps.preflight()
@@ -894,7 +1059,17 @@ export async function runDeploy(steps) {
   await steps.verifyRemoteEnv()
   await steps.ship(sha)
   await steps.checkpoint(sha)
-  await steps.deployStack(sha)
+  await steps.deployStack(sha, { holdBeforeUp })
+
+  // `--hold-before-up` (#256): stop HERE. Everything below either serves the new
+  // image or asserts that it serves correctly, and neither is true yet — the
+  // `core` schema exists but the document has not been imported into it. This is
+  // not a failure: the exit code stays 0 and the notice says what comes next.
+  if (holdBeforeUp) {
+    say(formatHoldNotice({ sha, prevSha }))
+    return { sha, prevSha, held: true }
+  }
+
   await steps.applyCaddy()
   await steps.verifyRunningSha(sha)
   await steps.smoke(sha)
@@ -1006,14 +1181,23 @@ function productionSteps() {
       ok('checkpoint taken and pinned under its own S3 key', t)
     },
 
-    async deployStack(sha) {
-      step('Box: build app+migrate → migrate → up -d')
+    async deployStack(sha, { holdBeforeUp = false } = {}) {
+      step(
+        holdBeforeUp
+          ? 'Box: build app+migrate → migrate → HOLD (no `up -d`)'
+          : 'Box: build app+migrate → migrate → up -d',
+      )
       const t = Date.now()
-      await sshScript(PROD_SSH, buildDeployScript(sha), {
+      await sshScript(PROD_SSH, buildDeployScript(sha, { holdBeforeUp }), {
         label: 'stack deploy',
         stallBudgetMs: STALL_BUDGET_BUILD_MS,
       })
-      ok('images built, migrations applied, stack up', t)
+      ok(
+        holdBeforeUp
+          ? 'images built, migrations applied, stack NOT brought up'
+          : 'images built, migrations applied, stack up',
+        t,
+      )
     },
 
     async applyCaddy() {
@@ -1102,13 +1286,19 @@ function productionSteps() {
  * The remote plan `--dry-run` prints, in the order the stages really run. Pure,
  * so a stage that exists in the pipeline but never appears in the plan is a test
  * failure rather than something an operator discovers mid-deploy. */
-export function formatDryRunPlan(sha) {
-  return [
+export function formatDryRunPlan(sha, { holdBeforeUp = false } = {}) {
+  const head = [
     `\n▶ DRY RUN — nothing below is executed (target ${sha.slice(0, 12)})`,
     `\n[verifyRemoteEnv]\n${buildEnvPreflightScript()}`,
     `[ship] ssh ${PROD_SSH} '${buildShipCommand()}'  < git archive ${sha.slice(0, 12)}`,
     `\n[checkpoint]\n${buildCheckpointScript(sha)}`,
-    `[deployStack]\n${buildDeployScript(sha)}`,
+    `[deployStack]\n${buildDeployScript(sha, { holdBeforeUp })}`,
+  ]
+  // A held plan that went on to list the caddy compare, the smoke and the
+  // release would describe a run that cannot happen under the flag.
+  if (holdBeforeUp) return [...head, formatHoldNotice({ sha, prevSha: null })].join('\n')
+  return [
+    ...head,
     `[applyCaddy]\n${buildCaddyComparisonScript()}`,
     `[verifyRunningSha]\n${buildVerifyScript(sha)}`,
     `[smoke] node tools/deploy/smoke-prod.mjs --expect-sha ${sha} --settle-ms ${SMOKE_SETTLE_MS}`,
@@ -1120,10 +1310,10 @@ export function formatDryRunPlan(sha) {
 }
 
 /** `--dry-run`: run the LOCAL gates for real, then print the remote plan. */
-async function dryRun() {
+async function dryRun({ holdBeforeUp = false } = {}) {
   const steps = productionSteps()
   const sha = await steps.preflight()
-  console.log(formatDryRunPlan(sha))
+  console.log(formatDryRunPlan(sha, { holdBeforeUp }))
   console.log('\n✓ dry run complete — the pre-flight gates above are the real ones.')
 }
 
@@ -1253,16 +1443,28 @@ async function rollback(shaArg) {
 }
 
 async function main() {
-  if (process.argv.includes('--dry-run')) {
-    await dryRun()
+  // Precedence lives in `resolveMode` (pure, unit-tested), so it can never be
+  // re-decided by the order these `if`s happen to be written in.
+  const verdict = resolveMode(process.argv.slice(2))
+  if (verdict.mode === 'refuse') die(verdict.error)
+  if (verdict.mode === 'dry-run') {
+    await dryRun({ holdBeforeUp: verdict.holdBeforeUp })
     return
   }
-  const rbIdx = process.argv.indexOf('--rollback')
-  if (rbIdx !== -1) {
-    await rollback(process.argv[rbIdx + 1])
+  if (verdict.mode === 'rollback') {
+    await rollback(verdict.rollbackArg)
     return
   }
-  const { sha } = await runDeploy(productionSteps())
+  const { holdBeforeUp } = verdict
+  const { sha, held } = await runDeploy(productionSteps(), { holdBeforeUp })
+  if (held) {
+    console.log(
+      `\n■ HELD — origin/main @ ${sha.slice(0, 12)} is built and migrated, NOT serving` +
+        ` (${((Date.now() - t0All) / 1000).toFixed(1)}s so far).` +
+        `\n  Continue with the commands printed above (${CUTOVER_RUNBOOK}).`,
+    )
+    return
+  }
   console.log(
     `\n✓ DEPLOY OK — origin/main @ ${sha.slice(0, 12)} is live` +
       ` (${((Date.now() - t0All) / 1000).toFixed(1)}s total).`,

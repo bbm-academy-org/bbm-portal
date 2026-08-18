@@ -111,23 +111,29 @@ const HOURS_ON_CORE_DEFERRALS = {
      * smoke RUNNING on the live acceptance stand (task-cycle stage 5) is a
      * different obligation, and this guard only ever spoke about the first one.
      *
-     * What #256 still owns is the set of clauses whose evidence is the RUN:
-     *   EARS-15 — archive the JSON and delete its code path, which happens AFTER
-     *             the owner accepts the stand and cannot be tested before it;
-     *   EARS-25 — the rollback offer, whose evidence is a rehearsed redeploy;
-     *   EARS-26 — the dev REHEARSAL of the whole sequence. Deliberately not
-     *             satisfiable by a test of the rehearsal TOOLING: the clause is
-     *             about the run happening before the production window, so titling
-     *             a tooling test `EARS-26` would report a rehearsal nobody did.
+     * What #256 still owns is EARS-15 — archive the JSON and delete its code
+     * path — which happens AFTER the owner accepts the live stand and therefore
+     * cannot be tested before it. It is PR-2's, and PR-2 drops this entry.
+     *
+     * EARS-25 and EARS-26 came off this list with #256 PR-1, and the shift is
+     * worth naming because the earlier note said the opposite. Their subject is
+     * still the RUN, but the run is now DRIVEN BY A COMMITTED ARTIFACT: the
+     * rollback procedure and the rehearsal precondition are written into
+     * `docs/runbooks/hours-core-cutover.md`, and `tests/unit/hours-core-cutover-
+     * runbook.spec.ts` holds that document to them (the rollback command and the
+     * archive-name restoration for EARS-25; the precondition table and its link
+     * to the rehearsal record for EARS-26). That is a weaker claim than "the
+     * rehearsal happened" and those tests say so in their own header — but it is
+     * a real one, and it is the claim this guard was ever able to make.
      *
      * EARS-13/14/16/27 came off this list with #255 part 3, which built the
      * mechanics they describe — `tests/int/platform/hours-import.int.spec.ts`,
      * `tests/int/platform/member-seed.int.spec.ts`,
      * `tests/unit/hours-export-diff.spec.ts`.
      */
-    ids: ['EARS-15', 'EARS-25', 'EARS-26'],
+    ids: ['EARS-15'],
     reason:
-      'spec 124 cutover clauses whose evidence is the RUN, not the code: the archive after acceptance, the rollback offer, the dev rehearsal',
+      'spec 124: the JSON archive + code-path removal happen only AFTER the owner accepts the stand — #256 PR-2',
   },
 }
 

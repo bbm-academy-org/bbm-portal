@@ -10,6 +10,8 @@ import {
   CHECKPOINT_LOG,
   CHECKPOINT_SCRIPT,
   DEPLOY_STAGES,
+  HOLD_STAGES,
+  HOLD_NEXT_COMMANDS,
   REQUIRED_PROD_ENV_VARS,
   buildEnvPreflightScript,
   formatEnvPreflightFailure,
@@ -28,8 +30,10 @@ import {
   classifyCheckRuns,
   formatCheckpointFailure,
   formatDryRunPlan,
+  formatHoldNotice,
   parseRollbackSha,
   preflightVerdict,
+  resolveMode,
   createStallWatchdog,
   formatStallMessage,
   runDeploy,
@@ -229,6 +233,98 @@ describe('buildDeployScript', () => {
   it('reads the platform migration ledger from the `core` schema, not payload_migrations', () => {
     expect(script).toContain('core.__drizzle_migrations')
     expect(script).toContain('payload_migrations')
+  })
+})
+
+// ── the cutover seam: `--hold-before-up` (#256, spec 124 EARS-13) ────────────
+
+describe('buildDeployScript --hold-before-up', () => {
+  const held = buildDeployScript(SHA, { holdBeforeUp: true })
+
+  it('EARS-13: holds the stack BEFORE `up -d`, so no traffic meets an empty `core`', () => {
+    // The cutover's whole ordering constraint (spec 124 EARS-13: checkpoint →
+    // migrate → seed → import + verification → only then traffic) has no seam
+    // in the normal pipeline, where `deployStack` migrates and brings the stack
+    // up in ONE remote script. Holding is that seam.
+    expect(held).not.toContain('up -d')
+    expect(buildDeployScript(SHA)).toContain('up -d')
+  })
+
+  it('still builds the images and advances BOTH migration ledgers', () => {
+    // A hold that skipped the migration would leave nothing for the import to
+    // write into: `core` must exist before `platform:hours:import` runs.
+    expect(held).toMatch(/build app migrate/)
+    expect(held).toContain('pnpm platform:migrate')
+    expect(held).toContain('core.__drizzle_migrations')
+    expect(held).toContain('payload_migrations')
+  })
+
+  it('writes DEPLOY_SHA exactly as the unheld script does', () => {
+    // The re-run that brings traffic up builds the same tag; a divergence here
+    // would make the held build unusable and cost a rebuild inside the window.
+    expect(held).toContain(`DEPLOY_SHA=%s\\n' '${SHA}'`)
+  })
+
+  it('is the ONLY difference — everything before `up -d` is byte-identical', () => {
+    const full = buildDeployScript(SHA)
+    expect(full.startsWith(held)).toBe(true)
+    expect(full.slice(held.length).trim()).toBe(
+      "echo '-- up -d --'\ndocker compose -f docker-compose.prod.yml up -d",
+    )
+  })
+})
+
+describe('formatHoldNotice / HOLD_STAGES', () => {
+  it('EARS-27: names the verify verdict the operator must read before traffic', () => {
+    const notice = formatHoldNotice({ sha: SHA, prevSha: OTHER })
+    expect(notice).toContain('platform:hours:verify')
+    expect(notice).toContain('VERDICT: identical')
+  })
+
+  it('prints the next commands in the cutover order: seed → import → verify → traffic', () => {
+    const notice = formatHoldNotice({ sha: SHA, prevSha: OTHER })
+    const order = ['platform:member:seed', 'platform:hours:import', 'platform:hours:verify']
+    let at = -1
+    for (const needle of order) {
+      const i = notice.indexOf(needle)
+      expect(i).toBeGreaterThan(at)
+      at = i
+    }
+    // The last step is the re-run WITHOUT the flag — the only thing that brings
+    // traffic up. An operator who reads only this block must still finish.
+    expect(notice.indexOf('pnpm deploy:prod')).toBeGreaterThan(at)
+    expect(HOLD_NEXT_COMMANDS.at(-1)?.command).toBe('pnpm deploy:prod')
+  })
+
+  it('EARS-25: offers the rollback while the hold is in force', () => {
+    // Nothing serves the new image yet and `hours.json` is untouched, so the
+    // previous image is still a complete answer. The notice says so rather than
+    // leaving the operator to remember it inside the window.
+    const notice = formatHoldNotice({ sha: SHA, prevSha: OTHER })
+    expect(notice).toContain(`--rollback ${OTHER.slice(0, 12)}`)
+  })
+
+  it('says plainly that prod still serves the previous image', () => {
+    expect(formatHoldNotice({ sha: SHA, prevSha: OTHER })).toMatch(/previous image/i)
+  })
+
+  it('degrades honestly when the previous sha could not be read', () => {
+    const notice = formatHoldNotice({ sha: SHA, prevSha: null })
+    expect(notice).toContain('--rollback <previous sha>')
+  })
+
+  it('points at the runbook that owns the full procedure', () => {
+    expect(formatHoldNotice({ sha: SHA, prevSha: OTHER })).toContain(
+      'docs/runbooks/hours-core-cutover.md',
+    )
+  })
+
+  it('HOLD_STAGES is a prefix of DEPLOY_STAGES ending at deployStack', () => {
+    // Held is a TRUNCATION of the pipeline, not a different one: every stage it
+    // runs is the same stage in the same order. A stage inserted before
+    // `deployStack` therefore cannot silently skip the held path.
+    expect(DEPLOY_STAGES.slice(0, HOLD_STAGES.length)).toEqual(HOLD_STAGES)
+    expect(HOLD_STAGES.at(-1)).toBe('deployStack')
   })
 })
 
@@ -438,6 +534,7 @@ describe('every generated remote script is valid bash', () => {
     ['buildEnvPreflightScript', buildEnvPreflightScript()],
     ['buildCheckpointScript', buildCheckpointScript(SHA)],
     ['buildDeployScript', buildDeployScript(SHA)],
+    ['buildDeployScript --hold-before-up', buildDeployScript(SHA, { holdBeforeUp: true })],
     ['buildVerifyScript', buildVerifyScript(SHA)],
     ['buildCaddyComparisonScript', buildCaddyComparisonScript()],
     ['buildCaddyRestartScript', buildCaddyRestartScript()],
@@ -501,6 +598,21 @@ describe('formatDryRunPlan', () => {
 
 // ── rollback ─────────────────────────────────────────────────────────────────
 
+describe('formatDryRunPlan --hold-before-up', () => {
+  const plan = formatDryRunPlan(SHA, { holdBeforeUp: true })
+
+  it('shows the HELD stack script and stops the plan there', () => {
+    expect(plan).toContain('[deployStack]')
+    expect(plan).not.toContain('[smoke]')
+    expect(plan).not.toContain('[applyCaddy]')
+  })
+
+  it('EARS-27: ends with what the operator does next, verdict included', () => {
+    expect(plan).toContain('platform:hours:verify')
+    expect(plan).toContain('VERDICT: identical')
+  })
+})
+
 describe('parseRollbackSha', () => {
   it('accepts a sha and rejects a ref name', () => {
     expect(parseRollbackSha(SHA)).toMatchObject({ ok: true, sha: SHA })
@@ -561,6 +673,56 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
       'recordDeployment',
       'prune',
     ])
+  })
+
+  it('EARS-13: --hold-before-up stops after deployStack and brings nothing up', async () => {
+    const { steps, order } = stubs()
+    const res = await runDeploy(steps, { holdBeforeUp: true })
+    expect(order).toEqual(HOLD_STAGES)
+    expect(res.held).toBe(true)
+    // Everything downstream of the hold would either serve the new image or
+    // assert that it serves correctly. Neither is true yet.
+    expect(steps.applyCaddy).not.toHaveBeenCalled()
+    expect(steps.verifyRunningSha).not.toHaveBeenCalled()
+    expect(steps.smoke).not.toHaveBeenCalled()
+    expect(steps.cutRelease).not.toHaveBeenCalled()
+    expect(steps.recordDeployment).not.toHaveBeenCalled()
+    expect(steps.prune).not.toHaveBeenCalled()
+  })
+
+  it('EARS-13: the held run passes the flag down to the stack stage', async () => {
+    const { steps } = stubs()
+    await runDeploy(steps, { holdBeforeUp: true })
+    expect(steps.deployStack).toHaveBeenCalledWith(SHA, { holdBeforeUp: true })
+  })
+
+  it('EARS-13: still checkpoints before it migrates, held or not', async () => {
+    const { steps, order } = stubs()
+    await runDeploy(steps, { holdBeforeUp: true })
+    expect(order.indexOf('checkpoint')).toBeLessThan(order.indexOf('deployStack'))
+  })
+
+  it('prints the next commands when it holds, and nothing when it does not', async () => {
+    const heldLog: string[] = []
+    const { steps: heldSteps } = stubs({ log: (m: string) => heldLog.push(m) })
+    await runDeploy(heldSteps, { holdBeforeUp: true })
+    expect(heldLog.join('\n')).toContain('VERDICT: identical')
+
+    const plainLog: string[] = []
+    const { steps: plainSteps } = stubs({ log: (m: string) => plainLog.push(m) })
+    await runDeploy(plainSteps)
+    expect(plainLog.join('\n')).not.toContain('VERDICT: identical')
+  })
+
+  it('an unheld re-run is the FULL pipeline again — that is how traffic comes up', async () => {
+    // The documented cutover ends with a plain `pnpm deploy:prod`. It repeats
+    // every stage: preflight, ship, a SECOND checkpoint (pinned under its own
+    // key, overwriting nothing), both migrations (idempotent ledgers), then
+    // `up -d`. Nothing about the held run marks the box as half-deployed.
+    const { steps, order } = stubs()
+    const res = await runDeploy(steps)
+    expect(order).toEqual(DEPLOY_STAGES)
+    expect(res.held).toBeFalsy()
   })
 
   it('prunes AFTER the smoke — destructive housekeeping never precedes the proof', async () => {
@@ -849,5 +1011,76 @@ describe('createStallWatchdog / formatStallMessage', () => {
 
   it('names the budget in minutes', () => {
     expect(formatStallMessage('x', 10 * 60 * 1000, 'h')).toContain('no output for 10m')
+  })
+})
+
+// ── flag precedence (#260 review, BLOCKER) ───────────────────────────────────
+
+describe('resolveMode — which pipeline a command line asks for', () => {
+  it('--dry-run wins over everything: a preview never touches prod', () => {
+    // The regression this pins: `--rollback <sha> --dry-run` ran the REAL
+    // rollback, whose third stage rewrites `deploy/.env` and `up -d app` on
+    // production — no prompt, no confirmation. A flag whose whole contract is
+    // "touch nothing" must be read before any flag that acts.
+    expect(resolveMode(['--dry-run'])).toMatchObject({ mode: 'dry-run' })
+    expect(resolveMode(['--dry-run', '--hold-before-up'])).toMatchObject({
+      mode: 'dry-run',
+      holdBeforeUp: true,
+    })
+  })
+
+  it('refuses --dry-run together with --rollback instead of silently picking one', () => {
+    // Both orders, because an operator's muscle memory decides the order and a
+    // silent winner is exactly what made the blocker invisible.
+    for (const argv of [
+      ['--rollback', 'a'.repeat(40), '--dry-run'],
+      ['--dry-run', '--rollback', 'a'.repeat(40)],
+    ]) {
+      const verdict = resolveMode(argv)
+      expect(verdict.mode).toBe('refuse')
+      expect(verdict.error).toMatch(/--dry-run/)
+      expect(verdict.error).toMatch(/--rollback/)
+    }
+  })
+
+  it('refuses --rollback together with --hold-before-up — opposite operations', () => {
+    const verdict = resolveMode(['--rollback', 'a'.repeat(40), '--hold-before-up'])
+    expect(verdict.mode).toBe('refuse')
+    expect(verdict.error).toMatch(/--hold-before-up/)
+  })
+
+  it('reads the rollback argument as the token after the flag', () => {
+    expect(resolveMode(['--rollback', SHA])).toMatchObject({ mode: 'rollback', rollbackArg: SHA })
+  })
+
+  it('a bare invocation is the full deploy, and --hold-before-up truncates it', () => {
+    expect(resolveMode([])).toMatchObject({ mode: 'deploy', holdBeforeUp: false })
+    expect(resolveMode(['--hold-before-up'])).toMatchObject({
+      mode: 'deploy',
+      holdBeforeUp: true,
+    })
+  })
+
+  it('ignores flags it does not know (--skip-ci-check is read elsewhere)', () => {
+    expect(resolveMode(['--skip-ci-check'])).toMatchObject({ mode: 'deploy' })
+  })
+})
+
+describe('formatHoldNotice — the compose verbs allowed while held', () => {
+  const notice = formatHoldNotice({ sha: SHA, prevSha: OTHER })
+
+  it('forbids bringing ANY service up while the hold is in force', () => {
+    // `deploy/.env` already names the new sha and the new image is built, so
+    // `up -d preview` (a documented recipe in deploy/README.md) starts `app`
+    // with it — `preview` and `caddy` both `depends_on: app`. That is the exact
+    // state the hold exists to prevent, one unrelated command away.
+    expect(notice).toMatch(/no `docker compose up -d`/i)
+    expect(notice).toMatch(/preview/)
+    expect(notice).toMatch(/caddy/)
+  })
+
+  it('names the only two compose verbs the window uses', () => {
+    expect(notice).toContain('--profile tools run --rm')
+    expect(notice).toContain('exec -T postgres')
   })
 })
