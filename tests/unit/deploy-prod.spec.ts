@@ -251,8 +251,8 @@ describe('buildDeployScript --hold-before-up', () => {
   })
 
   it('still builds the images and advances BOTH migration ledgers', () => {
-    // A hold that skipped the migration would leave nothing for the import to
-    // write into: `core` must exist before `platform:hours:import` runs.
+    // A hold that skipped the migration would leave nothing for the window's
+    // data step to write into: the schema must exist before it runs.
     expect(held).toMatch(/build app migrate/)
     expect(held).toContain('pnpm platform:migrate')
     expect(held).toContain('core.__drizzle_migrations')
@@ -281,9 +281,12 @@ describe('formatHoldNotice / HOLD_STAGES', () => {
     expect(notice).toContain('VERDICT: identical')
   })
 
-  it('prints the next commands in the cutover order: seed → import → verify → traffic', () => {
+  it('prints the next commands in window order: seed → verify → traffic', () => {
+    // The import step went with the import command itself (#256): it ran once, on
+    // 2026-08-18, and `core` has been the master since. What a held run still
+    // offers is the idempotent seed and the read-only verdict.
     const notice = formatHoldNotice({ sha: SHA, prevSha: OTHER })
-    const order = ['platform:member:seed', 'platform:hours:import', 'platform:hours:verify']
+    const order = ['platform:member:seed', 'platform:hours:verify']
     let at = -1
     for (const needle of order) {
       const i = notice.indexOf(needle)
@@ -297,9 +300,10 @@ describe('formatHoldNotice / HOLD_STAGES', () => {
   })
 
   it('EARS-25: offers the rollback while the hold is in force', () => {
-    // Nothing serves the new image yet and `hours.json` is untouched, so the
-    // previous image is still a complete answer. The notice says so rather than
-    // leaving the operator to remember it inside the window.
+    // Nothing serves the new image yet, so the previous image is still a
+    // complete answer for the APP. The notice says so rather than leaving the
+    // operator to remember it inside the window — and, since #256, says equally
+    // plainly that the /p/hours cutover itself is past its rollback window.
     const notice = formatHoldNotice({ sha: SHA, prevSha: OTHER })
     expect(notice).toContain(`--rollback ${OTHER.slice(0, 12)}`)
   })

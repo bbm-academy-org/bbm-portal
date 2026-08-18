@@ -1,5 +1,13 @@
 # Hours period #102 production cleanup
 
+> **HISTORICAL — do not run.** This procedure operated on the hours JSON document,
+> which stopped being the module's storage on 2026-08-18: `/p/hours` runs on the
+> `core` schema of the `platform` database ([`docs/specs/124-hours-on-core.md`](../specs/124-hours-on-core.md),
+> task #256), `HOURS_DATA_FILE` no longer exists, and the document survives only
+> as the `hours.json.<date>` archive on the volume. The equivalent surgery today is
+> SQL against `core.hours_*` under the module advisory lock. Kept as the record of
+> what was done to the production document.
+
 This runbook removes only period `4b741c5e-0b54-45c4-a54a-60cc4fd84936`
 and its one assessment/publication from the production hours JSON. It must run
 on `portal-prod-tw` after the change is merged and deployed. Do not use the

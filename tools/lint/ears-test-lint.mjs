@@ -98,47 +98,21 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  * the obligation stays visible. Keep it SHORT; the stale check below makes it a
  * ratchet that only tightens. Seam: `LINT_EARS_DEFERRALS` (JSON) replaces it.
  *
- * @type {Record<string, {issue: number, reason: string}>}
+ * **EMPTY today, and that is the point.** The last entry was spec 124's
+ * **EARS-15** — «archive the JSON and delete its code path» — which could not be
+ * tested before it happened: its trigger was the owner accepting a live stand.
+ * The stand was accepted on 2026-08-18, PR-2 of #256 deleted
+ * `src/lib/hours/store.ts`, `HOURS_DATA_FILE` and the import command, and
+ * `tests/unit/hours-json-store-removed.spec.ts` asserts the absence. The shape
+ * below is kept (keyed by OWNING ISSUE, ids inside) because that is how the two
+ * previous rounds of this list were written and how the next one should be.
+ *
+ * @type {Record<number, {ids: string[], reason: string}>}
  */
-/** Spec 124 (/p/hours on core), accepted 2026-08-17: clauses per owning implementation issue. */
-const HOURS_ON_CORE_DEFERRALS = {
-  256: {
-    /**
-     * #255 is off this list entirely. Its last deferred clause was **EARS-7**, the
-     * umbrella parity clause, and its named E2E smoke now exists as a file
-     * (`tests/e2e/hours-core-parity.e2e.spec.ts`) — this guard scans `tests/` for
-     * `*.spec.ts` regardless of tier, so a titled E2E test counts as coverage. The
-     * smoke RUNNING on the live acceptance stand (task-cycle stage 5) is a
-     * different obligation, and this guard only ever spoke about the first one.
-     *
-     * What #256 still owns is EARS-15 — archive the JSON and delete its code
-     * path — which happens AFTER the owner accepts the live stand and therefore
-     * cannot be tested before it. It is PR-2's, and PR-2 drops this entry.
-     *
-     * EARS-25 and EARS-26 came off this list with #256 PR-1, and the shift is
-     * worth naming because the earlier note said the opposite. Their subject is
-     * still the RUN, but the run is now DRIVEN BY A COMMITTED ARTIFACT: the
-     * rollback procedure and the rehearsal precondition are written into
-     * `docs/runbooks/hours-core-cutover.md`, and `tests/unit/hours-core-cutover-
-     * runbook.spec.ts` holds that document to them (the rollback command and the
-     * archive-name restoration for EARS-25; the precondition table and its link
-     * to the rehearsal record for EARS-26). That is a weaker claim than "the
-     * rehearsal happened" and those tests say so in their own header — but it is
-     * a real one, and it is the claim this guard was ever able to make.
-     *
-     * EARS-13/14/16/27 came off this list with #255 part 3, which built the
-     * mechanics they describe — `tests/int/platform/hours-import.int.spec.ts`,
-     * `tests/int/platform/member-seed.int.spec.ts`,
-     * `tests/unit/hours-export-diff.spec.ts`.
-     */
-    ids: ['EARS-15'],
-    reason:
-      'spec 124: the JSON archive + code-path removal happen only AFTER the owner accepts the stand — #256 PR-2',
-  },
-}
+const DEFERRALS_BY_ISSUE = {}
 
 export const BUILTIN_DEFERRALS = Object.fromEntries(
-  Object.entries(HOURS_ON_CORE_DEFERRALS).flatMap(([issue, { ids, reason }]) =>
+  Object.entries(DEFERRALS_BY_ISSUE).flatMap(([issue, { ids, reason }]) =>
     ids.map((id) => [id, { issue: Number(issue), reason }]),
   ),
 )

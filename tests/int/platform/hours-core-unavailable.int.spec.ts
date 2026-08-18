@@ -1,11 +1,7 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 
 import { HoursDataError, mutateHoursDocument, readHoursDocument } from '@/lib/hours'
-import type { HoursDocument } from '@/lib/hours'
 import { closePlatformDb } from '@/lib/platform/db/client'
 
 import { seedMember, seedParticipant, truncateHoursTables } from './hours-core-helpers'
@@ -17,29 +13,16 @@ import { seedMember, seedParticipant, truncateHoursTables } from './hours-core-h
  * `PLATFORM_DATABASE_URL` away — vitest runs suite files serially here
  * (`fileParallelism: false`), so the neighbours never see the missing variable.
  *
- * The JSON document is not merely absent from these cases: a perfectly READABLE
- * `HOURS_DATA_FILE` sits on disk holding a participant that exists nowhere in the
- * database. If a single code path still fell back to it, the assertions below
- * would see that participant instead of a refusal — which is the failure mode
- * EARS-12 exists to forbid («never fall back to the JSON file after cutover»).
+ * Until #256 this suite staged a perfectly readable JSON document at
+ * `HOURS_DATA_FILE` and proved the module ignored it. After the cutover was
+ * accepted there is nothing left to stage: the store module and the variable are
+ * both deleted, and the absence itself is pinned by
+ * `tests/unit/hours-json-store-removed.spec.ts` (EARS-15). What this file still
+ * owns is the OTHER half of EARS-12 — with the database gone, the module refuses
+ * out loud instead of degrading into zeros or an empty document.
  */
 
-const dir = mkdtempSync(join(tmpdir(), 'bbm-hours-core-nofallback-'))
-const file = join(dir, 'hours.json')
-const originalDataFile = process.env.HOURS_DATA_FILE
 const originalUrl = process.env.PLATFORM_DATABASE_URL
-
-const jsonOnly: HoursDocument = {
-  participants: [{ email: 'json-only@bbm.academy', name: 'Только в JSON' }],
-  periods: [],
-  assessments: [],
-  publications: [],
-}
-
-beforeEach(() => {
-  process.env.HOURS_DATA_FILE = file
-  writeFileSync(file, JSON.stringify(jsonOnly, null, 2), 'utf8')
-})
 
 afterEach(async () => {
   process.env.PLATFORM_DATABASE_URL = originalUrl
@@ -47,14 +30,11 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
-  if (originalDataFile === undefined) delete process.env.HOURS_DATA_FILE
-  else process.env.HOURS_DATA_FILE = originalDataFile
-  rmSync(dir, { recursive: true, force: true })
   await closePlatformDb()
 })
 
-describe('the module never reads the JSON document (EARS-12)', () => {
-  it('EARS-12: a read with the database configured ignores a readable HOURS_DATA_FILE', async () => {
+describe('the module has no JSON fallback (EARS-12)', () => {
+  it('EARS-12: a read is served by core — the module has exactly one storage', async () => {
     const { getPlatformDb } = await import('@/lib/platform/db/client')
     const db = getPlatformDb()
     await truncateHoursTables(db)

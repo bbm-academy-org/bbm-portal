@@ -12,7 +12,22 @@ and `tools/deploy/prod.mjs`; the expand/contract rules the migrations obey are
 [`migrations-expand-contract.md`](./migrations-expand-contract.md).
 
 **Owning task: #256.** The tooling was built by #255 and is documented in
-[§ The tooling](#the-tooling) below, unchanged.
+[§ The tooling](#the-tooling) below.
+
+> **STATUS: EXECUTED — 2026-08-18, accepted the same day.** The window ran
+> 02:53:41 → 03:06:28 UTC (`07ceab2` → `1612f23`), ended in `VERDICT: identical`,
+> and the owner said «принято» — the run log is
+> [issuecomment-5325406205](https://github.com/bbm-academy-org/bbm-portal/issues/256#issuecomment-5325406205)
+> and the Stage-B GO is the comment after it. Everything above
+> [§ After the GO](#after-the-go--the-remaining-ops-steps) is now the RECORD of a
+> procedure that ran, kept because a data migration nobody can reconstruct is a
+> data migration nobody can audit. Two consequences for a reader arriving later:
+>
+> - **the window sequence is not re-runnable.** The import command it drives was
+>   deleted with the JSON store in PR-2 of #256 — `core` is the master, a second
+>   import is never wanted, and the steps below name that command only as history;
+> - **there is no rollback of this change.** The «rollback stays warm» sections
+>   were true until the acceptance and are false now (EARS-25). Forward-fix only.
 
 ## Preconditions
 
@@ -22,7 +37,7 @@ to postpone, not to improvise.
 | #   | Precondition                                                                                                                                           | Where the evidence is                                                                                                                                                                                  |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1   | **The EARS-26 dev rehearsal ran** — seed → import → verify against a COPY of the production `hours.json`, ending in `VERDICT: identical`               | the plan comment on #256 ([issuecomment-5322531565](https://github.com/bbm-academy-org/bbm-portal/issues/256#issuecomment-5322531565)) records it; the three runs themselves are commented on **#255** |
-| 2   | **#125 is in production** — the `platform` database, `PLATFORM_DATABASE_URL` in the box's `deploy/.env.prod`, and the platform migrate in the pipeline | `deploy/.env.prod` on the box already carries `PLATFORM_DATABASE_URL` and `HOURS_DATA_FILE`                                                                                                            |
+| 2   | **#125 is in production** — the `platform` database, `PLATFORM_DATABASE_URL` in the box's `deploy/.env.prod`, and the platform migrate in the pipeline | `deploy/.env.prod` on the box already carried `PLATFORM_DATABASE_URL` (and, at the time, `HOURS_DATA_FILE`)                                                                                            |
 | 3   | **#255 is merged and on `origin/main`, CI green** — the deploy refuses anything else                                                                   | `preflightVerdict` in `tools/deploy/prod.mjs`                                                                                                                                                          |
 | 4   | **The member dataset is prepared with the owner** and sits on the box OUTSIDE `~/bbm-portal`                                                           | see [the dataset rule](#the-seed-dataset--and-the-rule-that-it-is-never-committed)                                                                                                                     |
 | 5   | **The owner is present** for the window and for the acceptance right after it                                                                          | the «go» comment on #256                                                                                                                                                                               |
@@ -300,43 +315,92 @@ box$ docker run --rm --user 0 \
 the master and the JSON is stale, so going back would silently drop everything
 written since. Forward-fix only (EARS-25).
 
-## After the GO — what PR-2 does
+## After the GO — the remaining ops steps
 
-Listed here so nobody does it inside the window. All of it belongs to **PR-2 of
-#256**, opened after the acceptance:
+PR-2 of #256 carried the code half of EARS-15 and is **done**:
 
-- archive the document in place on the volume as `hours.json.<date>` (EARS-15);
-- delete `src/lib/hours/store.ts` and `HOURS_DATA_FILE` from `deploy/.env.prod`
-  and the compose contract;
-- keep a frozen READ-ONLY reader under `tools/platform/` so
-  `pnpm platform:hours:verify <archive>` still works against the archive;
-- revise spec 081's «Хранение (без БД)» section to point at spec 124;
-- write the EARS-15 test and drop the last `#256` deferral from
-  `tools/lint/ears-test-lint.mjs`.
+- [x] `src/lib/hours/store.ts` deleted — the app has no JSON code path at all;
+- [x] `HOURS_DATA_FILE` removed from `.env.example`, `deploy/.env.prod.example`,
+      the compose contract and the deploy tooling;
+- [x] the frozen READ-ONLY reader kept at `tools/platform/hours-json.ts`, so
+      `pnpm platform:hours:verify <archive>` still works against the archive;
+- [x] `pnpm platform:hours:import` and `tools/platform/hours-import.ts` deleted —
+      the owner's decision, a second import is never wanted;
+- [x] spec 081's «Хранение» section now points at spec 124;
+- [x] the EARS-15 test written (`tests/unit/hours-json-store-removed.spec.ts`) and
+      the last `#256` deferral dropped from `tools/lint/ears-test-lint.mjs`.
+
+**What is left is on the box, and runs AFTER that PR is deployed** — in the order
+below, because the archive rename must not happen while an image that still reads
+the JSON could be redeployed.
+
+### Ops step 1 — archive the document in place (EARS-15)
+
+On the `bbm-portal_hoursdata` volume, keeping it on the volume and in the backups:
+
+```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
+box$ APP_IMAGE=$($COMPOSE images -q app)
+box$ docker run --rm --user 0        --mount type=volume,src=bbm-portal_hoursdata,dst=/data/hours        "$APP_IMAGE" mv /data/hours/hours.json /data/hours/hours.json.2026-08-18
+```
+
+Then confirm `core` still matches the archive, through the frozen reader:
+
+```bash
+box$ cd /home/deploy/bbm-portal/deploy
+box$ COMPOSE='docker compose -f docker-compose.prod.yml'
+box$ $COMPOSE --profile tools run --rm        -v bbm-portal_hoursdata:/data/hours:ro migrate        pnpm platform:hours:verify /data/hours/hours.json.2026-08-18
+```
+
+### Ops step 2 — drop `HOURS_DATA_FILE` from the box's `deploy/.env.prod`
+
+The app has stopped reading it; leaving it is a variable that documents a store
+that no longer exists.
+
+### Ops step 3 — shred the member dataset (EARS-14)
+
+Real names, real emails, the external handles of the whole team:
+
+```bash
+box$ shred -u /home/deploy/cutover/members.json && rmdir /home/deploy/cutover
+```
+
+`hours.json.pre-cutover` and the manual `platform` dump stay: they are the
+pre-cutover recovery artifacts, not the personal dataset.
 
 ---
 
 ## The tooling
 
-Everything below documents the three commands #255 built and the rules that come
-with them. It is reference material for the steps above.
+Everything below documents the commands #255 built and the rules that come with
+them. It is reference material for the steps above.
 
-### The three commands
+### The commands that still exist
 
 ```bash
 pnpm platform:member:seed  <dataset.json> [--dry-run]   # EARS-14
-pnpm platform:hours:import <hours.json>                 # EARS-13, EARS-16, EARS-27
-pnpm platform:hours:verify <hours.json>                 # EARS-26, EARS-27
+pnpm platform:hours:verify <archive.json>               # EARS-26, EARS-27
 ```
 
-Order is not a preference: `member` must hold every person the document names
-before the import runs, because the import **matches** participants to the
-registry and refuses to invent anybody (EARS-13). Sources:
-`tools/platform/member-seed.ts`, `tools/platform/hours-import.ts`,
-`tools/platform/hours-verify.ts` — each file's header carries the reasoning; this
+`pnpm platform:hours:import` was the third, and PR-2 of #256 deleted it together
+with the JSON store. It ran exactly once, in the window above; keeping a
+one-command path that writes a whole document over live `core` rows would be a
+hazard with no remaining use. What survives of the import is the mechanics
+(`src/lib/hours/core/import.ts`, driven by
+`tests/int/platform/hours-import.int.spec.ts`) and the frozen reader
+(`tools/platform/hours-json.ts`) — enough to restore from the archive under
+review, not enough to do it by accident. The window sections above still name the
+command because they are the record of what ran.
+
+Order mattered while the import existed: `member` had to hold every person the
+document named, because the import **matched** participants to the registry and
+refused to invent anybody (EARS-13). Sources:
+`tools/platform/member-seed.ts`, `tools/platform/hours-verify.ts`,
+`tools/platform/hours-json.ts` — each file's header carries the reasoning; this
 page carries the operating rules.
 
-Both write commands need `PLATFORM_DATABASE_URL` (the platform database, separate
+Both commands need `PLATFORM_DATABASE_URL` (the platform database, separate
 from Payload's `cms` — ADR-004 §3), read from the environment or `.env`, the
 environment winning. On the box that comes from `deploy/.env.prod`, which the
 `migrate` service loads via `env_file`.
@@ -390,10 +454,11 @@ Behaviour worth knowing before running it on a live registry:
 
 ### The import, and the verdict it ends with
 
-`platform:hours:import` reads the document **through the frozen JSON store**
-(`src/lib/hours/store.ts` — the same parser and the same email normalization the
-running app has always applied to that file), then writes it into `core` in ONE
-transaction that first takes the module advisory lock. It:
+`platform:hours:import` read the document **through the frozen JSON store**
+(then `src/lib/hours/store.ts`, whose parser lives on as
+`tools/platform/hours-json.ts` — the same parser and the same email normalization
+the running app had always applied to that file), then wrote it into `core` in ONE
+transaction that first took the module advisory lock. It:
 
 - **refuses non-empty `hours_*` tables** and writes nothing (the member seed
   legitimately ran first, so `core.member` being populated is expected);

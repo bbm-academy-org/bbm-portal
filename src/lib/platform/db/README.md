@@ -23,22 +23,28 @@ pnpm platform:migrate            # ensure the database exists, then apply
 pnpm platform:db:ensure          # the ensure step alone (idempotent)
 ```
 
-One-off data commands of the `/p/hours` cutover (spec 124 EARS-13/14/26/27) — the
+Data commands left over from the `/p/hours` cutover (spec 124 EARS-14/26/27) — the
 operating rules, the dataset shape and the never-commit rule live in
 [`docs/runbooks/hours-core-cutover.md`](../../../../docs/runbooks/hours-core-cutover.md),
 not here:
 
 ```bash
 pnpm platform:member:seed  <dataset.json> [--dry-run]   # the manual member seed
-pnpm platform:hours:import <hours.json>                 # JSON → core, one transaction
-pnpm platform:hours:verify <hours.json>                 # the export-diff verdict alone
+pnpm platform:hours:verify <archive.json>               # the export-diff verdict
 ```
 
-All of them carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
-like the Payload `migrate*` scripts next to them in `package.json`. The three
-cutover commands run through `tsx` rather than as plain `.mjs`, because they write
-through the module APIs (`@/lib/member`, `@/lib/hours/core`) instead of SQL of their
-own — see «Boundaries» below.
+`pnpm platform:hours:import` was the third and is **gone**: it ran once, in the
+2026-08-18 window, and #256 deleted it with the JSON store after the owner accepted
+the stand. `core` is the master now, so a one-command overwrite of live rows has no
+use left. The verdict command survives because the question «does `core` still hold
+the document that was imported?» outlives the import — it reads the archived
+`hours.json.<date>` through the frozen parser in `tools/platform/hours-json.ts`,
+never writing to either side (EARS-16).
+
+Both carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
+like the Payload `migrate*` scripts next to them in `package.json`, and run through
+`tsx` rather than as plain `.mjs`, because they go through the module APIs
+(`@/lib/member`, `@/lib/hours`) instead of SQL of their own — see «Boundaries» below.
 
 ### The integration tier runs in CI
 
