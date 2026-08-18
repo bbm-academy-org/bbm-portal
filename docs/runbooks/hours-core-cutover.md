@@ -457,8 +457,8 @@ Behaviour worth knowing before running it on a live registry:
 `platform:hours:import` read the document **through the frozen JSON store**
 (then `src/lib/hours/store.ts`, whose parser lives on as
 `tools/platform/hours-json.ts` — the same parser and the same email normalization
-the running app had always applied to that file), then writes it into `core` in ONE
-transaction that first takes the module advisory lock. It:
+the running app had always applied to that file), then wrote it into `core` in ONE
+transaction that first took the module advisory lock. It:
 
 - **refuses non-empty `hours_*` tables** and writes nothing (the member seed
   legitimately ran first, so `core.member` being populated is expected);

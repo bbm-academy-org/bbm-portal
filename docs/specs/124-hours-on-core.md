@@ -1,7 +1,7 @@
 ---
-status: In dev
+status: Shipped
 issue: 124
-updated: 2026-08-17
+updated: 2026-08-18
 ---
 
 # /p/hours on the `core` schema — data model & migration off JSON — spec (issue #124)

@@ -579,10 +579,15 @@ export const CUTOVER_DATASET = '/home/deploy/cutover/members.json'
 /** Where the archived hours document is mounted from the app's named volume,
  *  read-only. The live JSON is gone: the 2026-08-18 cutover moved `/p/hours` onto
  *  `core` and #256 removed the store, the `platform:hours:import` command and
- *  `HOURS_DATA_FILE` with it. What is left on the volume is `hours.json.<date>`,
- *  and the only thing that reads it is the verify verdict below. */
+ *  `HOURS_DATA_FILE` with it. What is left on the volume is the dated archive,
+ *  and the only thing that reads it is the verify verdict below.
+ *
+ *  Spelled out rather than left as a `<date>` placeholder: this string is pasted
+ *  into a terminal by an operator mid-window, and a placeholder in a pasteable
+ *  command is a typo waiting to happen. The date is the one the cutover produced
+ *  (#256); a later archive changes this line. */
 export const HOURS_VOLUME = 'bbm-portal_hoursdata'
-const HOURS_ARCHIVE = '/data/hours/hours.json.<date>'
+export const HOURS_ARCHIVE = '/data/hours/hours.json.2026-08-18'
 
 const TOOLS_RUN = `${COMPOSE} --profile tools run --rm`
 
@@ -609,8 +614,8 @@ export const HOLD_NEXT_COMMANDS = [
   },
   {
     label:
-      'verify `core` against the archived document — substitute the real date suffix; ' +
-      'the last line must read `VERDICT: identical` (exit 0)',
+      'verify `core` against the archived document (adjust the name if a later ' +
+      'archive exists); the last line must read `VERDICT: identical` (exit 0)',
     command: `${TOOLS_RUN} -v ${HOURS_VOLUME}:/data/hours:ro migrate pnpm platform:hours:verify ${HOURS_ARCHIVE}`,
   },
   {

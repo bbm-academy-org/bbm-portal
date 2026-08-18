@@ -1,7 +1,7 @@
 ---
 status: Shipped
 issue: 81
-updated: 2026-07-30
+updated: 2026-08-18
 ---
 
 # Калькулятор самооценки часов — spec (issue #81)

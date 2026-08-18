@@ -18,9 +18,16 @@ import { describe, expect, it } from 'vitest'
  * That is deliberately a weaker claim than "the rehearsal happened", and the
  * tests below say so in their names: the rehearsal record itself is the #255
  * comment thread linked from #256, not this file. Until the runbook existed
- * these clauses were deferred in `tools/lint/ears-test-lint.mjs`; the deferral
- * that remains is EARS-15, whose subject (archiving the JSON and deleting its
- * code path) happens only AFTER the owner's acceptance and belongs to PR-2.
+ * these clauses were deferred in `tools/lint/ears-test-lint.mjs`; the list is
+ * EMPTY since PR-2 of #256, whose EARS-15 test is
+ * `tests/unit/hours-json-store-removed.spec.ts`.
+ *
+ * **The window has RUN** (2026-08-18, accepted the same day), so the document
+ * these tests read is now a RECORD. That changes what may be pinned: the
+ * procedure's live parts — the banner, the preconditions, the rollback bound,
+ * the ops steps that are still ahead — yes; the exact spelling of commands that
+ * no longer exist — no, or the next honest edit of the historical section reads
+ * as a regression.
  */
 const RUNBOOK = readFileSync(
   resolve(import.meta.dirname, '../../docs/runbooks/hours-core-cutover.md'),
@@ -68,13 +75,24 @@ describe('docs/runbooks/hours-core-cutover.md', () => {
     expect(RUNBOOK).toMatch(/until the owner/i)
   })
 
-  it('EARS-13: keeps the window ordering explicit — hold, seed, import, verify, traffic', () => {
-    const order = [
-      '--hold-before-up',
-      'platform:member:seed',
-      'platform:hours:import',
-      'platform:hours:verify',
-    ]
+  it('EARS-13: says up front that the window RAN and is not re-runnable', () => {
+    // Since #256 this document is a record, not a procedure to execute: the
+    // import command it drives no longer exists. The banner is what a reader
+    // meets first, so it is what this test pins — not the retired command text
+    // further down, which is history and may be reworded freely.
+    const banner = RUNBOOK.slice(0, RUNBOOK.indexOf('## Preconditions'))
+    expect(banner).toMatch(/STATUS: EXECUTED/)
+    expect(banner).toMatch(/2026-08-18/)
+    expect(banner).toMatch(/not re-runnable/i)
+    expect(banner).toMatch(/no rollback/i)
+  })
+
+  it('EARS-13: keeps the window ordering explicit — hold, seed, verify, traffic', () => {
+    // The ordering constraint of the clause, stated with the steps that still
+    // NAME live commands. The import sat between seed and verify and is asserted
+    // by the case above instead: pinning a deleted command's spelling would make
+    // the next honest edit of the historical section look like a regression.
+    const order = ['--hold-before-up', 'platform:member:seed', 'platform:hours:verify']
     let at = -1
     for (const needle of order) {
       const i = RUNBOOK.indexOf(needle)
@@ -110,9 +128,10 @@ describe('docs/runbooks/hours-core-cutover.md — operating hazards', () => {
   })
 
   it('EARS-25: the rollback section points at truncate-and-retry and names the form', () => {
-    // `platform:hours:import` refuses non-empty `hours_*` tables, so a rolled
-    // back window leaves the NEXT attempt dying at the import — inside the
-    // second window, not before it.
+    // Historical reasoning, kept because the section is: `platform:hours:import`
+    // refused non-empty `hours_*` tables, so a rolled-back window left the NEXT
+    // attempt dying at the import — inside the second window, not before it. The
+    // command was deleted with the JSON store (#256); this asserts the record.
     const from = RUNBOOK.indexOf('## Rollback')
     const to = RUNBOOK.indexOf('## After the GO')
     expect(from).toBeGreaterThan(-1)
