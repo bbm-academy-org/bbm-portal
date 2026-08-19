@@ -119,9 +119,9 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  */
 const DEFERRALS_BY_ISSUE = {
   201: {
-    ids: ['EARS-23'],
+    ids: ['EARS-23', 'EARS-24'],
     reason:
-      'spec 201 (universal edit audit) is Draft, awaiting the owner go — its tests land with the implementation task opened from it',
+      'spec 201 (universal edit audit) declares clauses whose tests land with the implementation task opened from it — the deferral returns when that task lands its integration tests under tests/int/platform/',
   },
 }
 

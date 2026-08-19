@@ -456,8 +456,8 @@ Entry format:
       but `docs/specs/README.md` defines the ids as stable **per spec**. Spec 201
       landed as the second spec declaring `EARS-1`…`EARS-22`, and the guard reads
       all of them as covered because spec 124's tests cite those same tokens —
-      so 22 clauses with no test whatsoever report clean, and only `EARS-23` (an
-      id 124 does not use) surfaces. The guard's stale-deferral ratchet makes the
+      so 22 clauses with no test whatsoever report clean, and only `EARS-23` and
+      `EARS-24` (the two ids 124 does not use) surface. The guard's stale-deferral ratchet makes the
       honest workaround impossible too: deferring `EARS-1` would be reported
       stale. Recorded rather than fixed here because the fix is a change to the
       guard's id model (qualify a citation by its spec, e.g. `201 EARS-1:` in the
