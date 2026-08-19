@@ -106,8 +106,12 @@ on every caller remembering a wrapper.
   per table by migration, inside the **same transaction** as the mutation. The
   function shall be table-agnostic (`TG_TABLE_NAME`, `TG_RELID`,
   `to_jsonb(OLD/NEW)`), so covering a new table costs exactly one
-  `CREATE TRIGGER` line, and a new column on an already audited table is covered
-  with no code change at all.
+  `CREATE TRIGGER` line and no per-table code. A new column of an already
+  audited table is _captured_ by that same trigger without touching it, but it is
+  **not** thereby covered: under default-deny (EARS-27) its values are masked
+  until the migration that adds the column also adds its policy row, and until
+  one lands the completeness check (EARS-29, EARS-21) reports it. The trigger
+  costs no code change; the column registry does.
 - **EARS-2.** WHEN the trigger records a mutation, the platform shall store a
   JSONB diff computed as: for UPDATE — **only** the fields whose value actually
   changed, each as `{"field": {"old": …, "new": …}}`; for INSERT — the whole new
@@ -153,11 +157,19 @@ on every caller remembering a wrapper.
   audited write. The order inside the helper is therefore: BEGIN → advisory lock
   (when the caller names one) → audit context → the caller's work.
 - **EARS-7.** `app.source` shall come from the closed set
-  `portal | cli:<name> | migration | manual-dba`, where `portal` is any
-  authenticated application request, `cli:<name>` a repo-owned script (e.g.
-  `cli:member-seed`), `migration` a data-bearing migration, and `manual-dba` an
-  announced operator session that sets it by hand. `db-direct` is the trigger's
-  own fallback (EARS-8) and shall NOT be a value any caller can set.
+  `portal | system:<job> | cli:<name> | migration | manual-dba`, where `portal`
+  is any authenticated application request (a human is behind it),
+  `system:<job>` a write the application itself initiates with **no** user — an
+  outbox drain, a scheduled job, the shapes epic #113 already draws —
+  `cli:<name>` a repo-owned script (e.g. `cli:member-seed`), `migration` a
+  data-bearing migration, and `manual-dba` an announced operator session that
+  sets it by hand. `db-direct` is the trigger's own fallback (EARS-8) and shall
+  NOT be a value any caller can set. **The actor is required only where a human
+  exists:** `actor_email` shall be non-NULL for `portal` and is legitimately
+  NULL for `system:<job>`, `cli:<name>` and `migration`. `system:<job>` is
+  carried rather than dropped precisely because of EARS-26: on the marked pool
+  an app-initiated write with no user would otherwise have no legal value at
+  all, and the first scheduled writer would be refused.
 - **EARS-8.** IF a mutation reaches an audited table with no audit context set
   **from outside the application** — a `psql` session, the migration runner, a
   restore — THEN the platform shall still append the ledger row, with
@@ -203,6 +215,15 @@ on every caller remembering a wrapper.
      convention this clause exists to abolish. `.dependency-cruiser.cjs` is the
      wrong instrument here and is deliberately not used: it reasons about module
      imports, and `.transaction()` is a method call on an imported value.
+     **Named asymmetry:** `.transaction(` is a pure AST selector, while the
+     `set_config('app.…')` / `SET LOCAL app.…` half matches SQL **text** inside a
+     `Literal` / `TemplateElement` — the same string-matching brittleness EARS-20
+     cites to keep our own guard at WARN, landing here inside a BLOCK lint. It is
+     accepted for two reasons stated rather than assumed: this is the auxiliary
+     half of an auxiliary mechanism (the load-bearing one is EARS-26, on the
+     database side), and its false-positive class is one-sided — the only thing
+     it can flag is a hand-written `app.*` GUC write, which outside
+     `src/lib/platform/db/` is exactly what the clause forbids.
      Both mechanisms shall be registered in the guard canon
      (`docs/ci-guardrails.md` §5) alongside EARS-19/20, so «what enforces this» is
      answerable from the register rather than from this spec.
@@ -218,8 +239,10 @@ on every caller remembering a wrapper.
   options, so every connection the app opens announces «I am the app» before any
   statement runs — and the trigger shall use that mark to tell two unattributed
   writes apart: **IF** a mutation on an audited table arrives on an app-marked
-  connection with **no** audit context, THEN the trigger shall RAISE and the
-  write shall fail; on an unmarked connection (`psql`, the migration runner, a
+  connection with **no** audit context — meaning `app.source` is unset or
+  empty; a NULL `app.actor_email` is not itself missing context, since EARS-7
+  makes it legal for the actor-less sources — THEN the trigger shall RAISE and
+  the write shall fail; on an unmarked connection (`psql`, the migration runner, a
   restore) it degrades to `db-direct` as EARS-8 says. This is what «fail-closed»
   means in this spec, and it is deliberately narrow: the donor degrades in both
   cases, which would have recorded an app write that skipped the helper as
@@ -422,7 +445,12 @@ are still decided:
   `src/lib/platform/db/client.ts`, not per transaction — so it is a property of
   «who opened this socket», which is exactly the distinction the trigger needs
   and exactly what a `psql` session or the drizzle-kit migration runner does not
-  carry.
+  carry. **The mark lives in code and never in `PLATFORM_DATABASE_URL`:** `pg`
+  merges the parsed connection string **over** the explicit config
+  (`pg/lib/connection-parameters.js`), so an `options=` parameter in the URL
+  would both overwrite the code's mark and stamp drizzle-kit's own runner as the
+  app — after which a data-bearing migration (`source = 'migration'`) would be
+  refused by EARS-26. The environment variable carries no `options=`.
 - **`search_path` on the new functions.** The donor pins neither `search_path`
   nor `SECURITY DEFINER`, and this port adds something the donor did not have —
   a **table read inside the trigger** (the column registry), which makes name
@@ -431,6 +459,15 @@ are still decided:
   `SET search_path = pg_catalog, core` and stay `SECURITY INVOKER`: the registry
   it consults is then always ours, whatever the calling session's `search_path`
   says, and no function in this migration runs with elevated rights.
+
+**What the connection mark pulls into the delivery (EARS-26's real scope).**
+`getPlatformDb()` is the only pool, so once it is marked, **everything** writing
+through it must carry a context or be refused: the `cli:*` scripts
+(`cli:<name>`), the seeding and fixture helpers under `tests/int/platform/`, and
+any future scheduled writer (`system:<job>`). None of these is a new mechanism —
+each passes a context to the same EARS-24 helper — but they sit inside the
+implementation task's scope rather than a follow-up: a delivery that marks the
+pool without converting them turns its own test seeds into failed writes.
 
 **Order inside the migration.** Ledger + partitions → the column-policy registry
 → `core.audit_row_change()` and its helpers → the append-only trigger → the
@@ -472,7 +509,7 @@ deviations — a port is judged by whether its differences are named.
 | PD registry = a SQL function with a hardcoded `CASE`, mirrored by a TS constant, parity held by an e2e test | PD/exclusion registry = the table `core.audit_column_policy`, **default-deny**, migration-written only, completeness checked by the guard (EARS-16, EARS-27, EARS-29)               | One source instead of two plus a parity test, and EARS-18's exclusion policy shares the mechanism instead of becoming a second hardcoded list. **The property the donor's `CASE` had and a table does not:** the list cannot be emptied by a data operation — only by a reviewed migration. That is not recovered by the table shape, so it is recovered three other ways: the app role holds no write grant on the registry, an unknown column is masked rather than plaintext, and a registry that has lost rows turns CI red. The residual cost is named too: a new column on an audited table now needs its policy row in the same migration, or its values are masked until one lands. |
 | ADR-0009 retention: 5 years + crypto-shred at term (mechanism itself deferred to ds #383)                   | **Open question Q1**                                                                                                                                                                | No such contract exists in this repo. Inventing a retention term silently would be an agent taking a data-policy decision the estate has never taken.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `event_id` uuid + a partition-scoped dedup unique                                                           | Dropped                                                                                                                                                                             | It serves idempotent-replay semantics the donor's ledger needs for its other event families (`auth.*`). Trigger rows are distinct facts; porting it here would be dead columns.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `source` set `admin-ui \| portal-api \| system:<job> \| migration \| manual-dba`                            | `portal \| cli:<name> \| migration \| manual-dba`                                                                                                                                   | One app, one portal host (ADR-003 §1) — `admin-ui` vs `portal-api` has no referent here; `cli:` names our own scripts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `source` set `admin-ui \| portal-api \| system:<job> \| migration \| manual-dba`                            | `portal \| system:<job> \| cli:<name> \| migration \| manual-dba`                                                                                                                   | One app, one portal host (ADR-003 §1) — `admin-ui` vs `portal-api` has no referent here; `cli:` names our own scripts. `system:<job>` is **kept**: under EARS-26 the marked pool refuses a context-less write, so an app-initiated write with no user (outbox drain, scheduled job) needs a legal value, and this is it.                                                                                                                                                                                                                                                                                                                                                                    |
 | Attribution enforced by convention plus a unit seam; a runtime interceptor named as a future option         | Attribution is a required helper argument **plus** a handle type with no `.transaction`, **plus** an eslint rule, **plus** a database-side refusal on app connections (EARS-24..26) | A required argument alone is the donor's own convention wearing a type annotation: it binds only callers who already chose the helper. The three additions are what make it fail-closed; the last one is the only mechanism that also covers code we have not written yet.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | The trigger degrades to `db-direct` for **every** context-less write, app included                          | Degrades only for connections that are not the app's; an app connection with no context is **refused** (EARS-26)                                                                    | The donor's uniform degradation would record an app write that skipped the wrapper as `db-direct` — a false statement about the door, in the one table whose value is that it is believed. Cost, named: a missed call-site is a failed save instead of a wrong row.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Three files (`requirements` / `design` / `scenarios.feature`)                                               | One EARS spec                                                                                                                                                                       | `docs/specs/README.md` is this repo's format; `author-feature-spec` already records the same deviation for the skill it was ported from.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -561,10 +598,17 @@ do not reach.
 12. **An empty registry hides data instead of leaking it.** On a stand, an agent
     deletes every row of `core.audit_column_policy` as a superuser and edits a
     `member.name`. The ledger row records the column as `{"masked": true}` —
-    default-deny — rather than the name in the clear, and
-    `pnpm lint:audit-coverage` reports the missing policy rows and exits 1.
-    Restoring the migration-seeded rows returns the plaintext behaviour Q2 chose.
-    (EARS-16, EARS-27, EARS-29)
+    default-deny — rather than the name in the clear. Detection is credited to
+    the check that can actually see a **database-level** deletion: the EARS-21
+    integration assertion, which compares the registry in the really-migrated
+    database against `information_schema.columns`, turns red.
+    `pnpm lint:audit-coverage` stays green here on purpose — it reads migration
+    **text**, and the migrations still seed those rows. Its half of the same
+    property is performed separately: on a branch, an agent removes a seeded
+    policy row (or adds a column without one) **in the migration chain**, and
+    then `lint:audit-coverage` names the column and exits 1. Restoring both
+    returns the plaintext behaviour Q2 chose.
+    (EARS-16, EARS-21, EARS-27, EARS-29)
 
 ## Open questions for the owner
 

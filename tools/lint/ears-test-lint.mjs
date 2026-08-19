@@ -98,11 +98,13 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  * the obligation stays visible. Keep it SHORT; the stale check below makes it a
  * ratchet that only tightens. Seam: `LINT_EARS_DEFERRALS` (JSON) replaces it.
  *
- * **Today: spec 201's EARS-23 only.** That spec is `Draft` — authored for the
- * owner's go, nothing built from it yet — so none of its clauses has a test.
- * Only EARS-23 is listed because the guard's id namespace is FLAT: EARS-1..22
- * are also declared by spec 124, whose tests already cite those ids, so the
- * guard reads them as covered and a deferral for them would be reported stale.
+ * **Today: spec 201's EARS-23 and EARS-24 only.** That spec is `Draft` —
+ * authored for the owner's go, nothing built from it yet — so none of its
+ * clauses has a test. Only those two are listed because the guard's id namespace
+ * is FLAT: spec 124 declares EARS-1..22 and EARS-25..32 and its own tests cite
+ * every one of those ids, so the guard reads spec 201's clauses sharing them as
+ * covered and a deferral for them would be reported stale. EARS-23 and EARS-24
+ * are the only ids spec 124 skips.
  * That conflation is recorded as decision debt in `DEBT.md`; the entries here
  * are only the ids the guard genuinely reports uncovered.
  *
