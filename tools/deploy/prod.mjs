@@ -20,8 +20,10 @@
 //
 // Pipeline:
 //   pre-flight  clean tree · target = origin/main's sha · green CI for that sha
+//   recover     repair a tree left half-swapped by an interrupted earlier ship
+//               (~/bbm-portal.prev holds the env files, the live tree does not)
 //   box env     deploy/.env.prod carries every var this release reads (#125) —
-//               first, because it changes nothing and the box is host-only
+//               early, because it changes nothing and the box is host-only
 //   ship        git archive <sha> → ssh (no registry; the box has no git clone)
 //   checkpoint  the box's backup script → a fresh dump BEFORE any migration,
 //               pinned under this deploy's own S3 key (30d, nothing overwrites it)
@@ -94,6 +96,7 @@ export const PROD_HEALTH_URL = 'https://cms.bbm.academy/api/health'
 export const DEPLOY_STAGES = [
   'preflight',
   'readPrevSha',
+  'recoverInterruptedShip',
   'verifyRemoteEnv',
   'ship',
   'checkpoint',
@@ -140,6 +143,7 @@ export const NON_FATAL_STAGES = ['cutRelease', 'recordDeployment', 'prune']
 export const HOLD_STAGES = [
   'preflight',
   'readPrevSha',
+  'recoverInterruptedShip',
   'verifyRemoteEnv',
   'ship',
   'checkpoint',
@@ -301,20 +305,39 @@ export function preflightVerdict({ dirty, head, originMain, checkRuns, skipCi = 
  * the cutover dataset is deliberately outside `~/bbm-portal`
  * (see {@link CUTOVER_DATASET}).
  *
- * **Atomicity.** The order is: extract → carry → ASSERT `.env.prod` → swap →
- * drop the previous tree. A failed or corrupt extract, or a missing env file,
- * aborts while the live tree is still untouched (`set -eu`, and the box keeps
- * exactly what it had). The swap itself is two renames on one filesystem; if the
- * second one fails the previous tree is still whole under `~/bbm-portal.prev`,
- * the message says how to put it back, and the next run restores it
- * automatically before doing anything else.
+ * `.env.postgres` and `.env.preview` are carried but NOT asserted, deliberately:
+ * `set -e` aborts on a failed `cp`, so the only way they can be absent from the
+ * new tree is that the box never had them — a state no deploy created and none
+ * can repair. `.env.prod` is asserted because the `migrate` service cannot run
+ * without it and losing it is the one unrecoverable outcome.
+ *
+ * **Atomicity.** The order is: RECOVER → extract → carry → ASSERT `.env.prod` in
+ * the new tree → drop the old `.prev` → swap → ASSERT `.env.prod` in the live
+ * tree → drop `.prev`. Two properties hold at every point:
+ *
+ *  • **`.prev` is never removed while it may hold the only copy of the env
+ *    files.** The first `rm -rf ${prev}` stands AFTER the assert, i.e. only once
+ *    `.next` is proven to carry `deploy/.env.prod`; the second stands after the
+ *    swap and after the live tree has been asserted, and it is non-fatal (a
+ *    failing cleanup must not paint a correct deploy red — review of #267).
+ *  • **A half-swapped box repairs itself.** If the second rename breaks (a
+ *    `$HOME` that is not one filesystem degrades `mv` to copy+unlink, so the live
+ *    tree can be left PARTIALLY present), the next run's recovery statement
+ *    — {@link buildShipRecoveryScript}, which runs as its own pipeline stage
+ *    BEFORE the env pre-flight and again at the head of this script — puts the
+ *    previous tree back. The printed recovery command does the same thing by
+ *    hand, and it removes the partial tree first: a bare
+ *    `mv ~/bbm-portal.prev ~/bbm-portal` with a partial `~/bbm-portal` present
+ *    moves the previous tree INSIDE it.
+ *
+ * A failed or corrupt extract, or a missing env file, aborts while the live tree
+ * is still untouched (`set -eu`, and the box keeps exactly what it had).
  */
 export function buildShipCommand() {
   const next = `${REMOTE_TREE}.next`
   const prev = `${REMOTE_TREE}.prev`
   return `set -eu
-if [ ! -d ${REMOTE_TREE} ] && [ -d ${prev} ]; then mv ${prev} ${REMOTE_TREE}; fi
-rm -rf ${next} ${prev}
+${buildShipRecoveryScript()}rm -rf ${next}
 mkdir -p ${next}
 tar -xz -C ${next}
 mkdir -p ${next}/deploy
@@ -327,13 +350,55 @@ if [ ! -f ${next}/deploy/.env.prod ]; then
   rm -rf ${next}
   exit 1
 fi
+rm -rf ${prev}
 if [ -d ${REMOTE_TREE} ]; then mv ${REMOTE_TREE} ${prev}; fi
 if ! mv ${next} ${REMOTE_TREE}; then
-  echo "SHIP FAILED MID-SWAP: the previous tree is intact at ${prev} — restore it with: mv ${prev} ${REMOTE_TREE}" >&2
+  echo "SHIP FAILED MID-SWAP: the previous tree is intact at ${prev} — restore it with: rm -rf ${REMOTE_TREE} && mv ${prev} ${REMOTE_TREE}" >&2
+  echo "SHIP FAILED MID-SWAP: or just re-run the deploy: its first box-touching stage restores ${prev} for you" >&2
   exit 1
 fi
-rm -rf ${prev}
+if [ ! -f ${REMOTE_TREE}/deploy/.env.prod ]; then
+  echo "SHIP FAILED: the swapped-in tree has no deploy/.env.prod — the previous tree is intact at ${prev}; restore it with: rm -rf ${REMOTE_TREE} && mv ${prev} ${REMOTE_TREE}" >&2
+  exit 1
+fi
+rm -rf ${prev} || echo "[ship] warning: could not remove ${prev} — the deploy is fine, remove it by hand" >&2
 echo "[ship] ${REMOTE_TREE} replaced by the shipped tree (host-only deploy/.env* carried across)"
+`
+}
+
+/**
+ * Repair a box left half-swapped by an INTERRUPTED earlier ship. Idempotent, and
+ * a no-op on a healthy box — it is safe to run before every deploy.
+ *
+ * The state it repairs: `~/bbm-portal.prev` holds a tree with the host-only
+ * `deploy/.env.prod`, and the live `~/bbm-portal` does not (absent entirely, or
+ * present but partial — what a `mv` that degraded to copy+unlink leaves behind).
+ * `.prev` is then the authoritative copy of files that exist NOWHERE else, so the
+ * repair is "put it back", and the partial tree is removed first rather than
+ * being moved into.
+ *
+ * The condition is `.prev` HAS `deploy/.env.prod` and the live tree has NOT —
+ * not "the live tree is absent" (the shape this had before the review of #267,
+ * which missed the partial-tree case) and not "`.prev` exists" (which would
+ * overwrite a healthy live tree with a stale one whenever a cleanup failed).
+ *
+ * It runs as its OWN pipeline stage, ahead of `verifyRemoteEnv` — see
+ * {@link DEPLOY_STAGES}. That position is the point: the env pre-flight reads
+ * `~/bbm-portal/deploy/.env.prod` and aborts when it is missing, so a recovery
+ * living only inside the ship script would never be reached by `pnpm deploy:prod`
+ * and the operator would be handed the pre-flight's "your env file is behind the
+ * code" misdiagnosis for a box whose env file is intact under `.prev`.
+ */
+export function buildShipRecoveryScript() {
+  const prev = `${REMOTE_TREE}.prev`
+  return `if [ -f ${prev}/deploy/.env.prod ] && [ ! -f ${REMOTE_TREE}/deploy/.env.prod ]; then
+  echo "[recover] an earlier ship broke mid-swap: ${prev} carries deploy/.env.prod and ${REMOTE_TREE} does not — restoring the previous tree"
+  rm -rf ${REMOTE_TREE}
+  mv ${prev} ${REMOTE_TREE}
+  echo "[recover] ${REMOTE_TREE} restored from ${prev}"
+else
+  echo "[recover] nothing to repair"
+fi
 `
 }
 
@@ -352,6 +417,13 @@ export const REQUIRED_PROD_ENV_VARS = ['DATABASE_URL', 'PLATFORM_DATABASE_URL']
 
 /**
  * Assert the box's env file carries every variable the shipped code needs.
+ *
+ * It assumes the tree it reads is the tree a deploy left behind — which is why
+ * `recoverInterruptedShip` runs BEFORE it: after an interrupted swap the env file
+ * lives under `~/bbm-portal.prev`, and this script would otherwise abort through
+ * {@link formatEnvPreflightFailure}, telling the operator to append variables to
+ * a file that is intact one directory over. It stays fail-closed either way — the
+ * recovery is a separate, idempotent stage, not a fallback inside this check.
  *
  * Anchored `^NAME=` rather than a bare substring: the file is full of comments,
  * and a variable named in one is not a variable that is set. The value itself is
@@ -780,7 +852,8 @@ rm -f "$tmp"
  *
  * (`up -d caddy` does NOT recreate the container for a bind-mounted config
  * change, and `caddy reload` answers "config is unchanged" — the trap
- * `deploy/README.md` documented. A restart is the only thing that works.)
+ * `deploy/README.md` documented. See {@link buildCaddyRestartScript} for what
+ * does work now that the tree is swapped rather than overwritten.)
  */
 export function caddyNeedsRestart(comparisonOutput) {
   return !String(comparisonOutput ?? '')
@@ -789,9 +862,29 @@ export function caddyNeedsRestart(comparisonOutput) {
     .includes('caddy=match')
 }
 
+/**
+ * Put the SHIPPED `Caddyfile` in front of caddy. `--force-recreate`, not
+ * `restart` — and that is a direct consequence of extract-and-swap (#264).
+ *
+ * `docker-compose.prod.yml` bind-mounts `./Caddyfile` as a FILE. A file bind
+ * mount is resolved to an inode when the container is CREATED, so after the ship
+ * step swaps `~/bbm-portal` the running caddy container still holds the OLD
+ * file's inode: the path string is unchanged, so `up -d` sees no config change
+ * and does not recreate it, and `restart` re-execs the same process on the same
+ * mount. Before #264 the deploy extracted onto the live tree and `tar` rewrote
+ * that same inode in place, which is why a plain `restart` was enough then; with
+ * the swap it would leave `applyCaddy` comparing an unchanged container against
+ * the shipped file and failing the deploy on any Caddyfile change. `--no-deps`
+ * keeps `app` and `preview` out of it.
+ *
+ * The old inode survives the `rm -rf ~/bbm-portal.prev` that ends the ship: the
+ * container's mount holds a reference, so unlinking the directory entry leaves
+ * caddy serving from an unlinked-but-open inode until this recreate replaces it.
+ * Caddy never serves from a hole, and `.prev` cleanup never has to wait for it.
+ */
 export function buildCaddyRestartScript() {
   return `cd ${COMPOSE_DIR}
-${COMPOSE} restart caddy
+${COMPOSE} up -d --force-recreate --no-deps caddy
 `
 }
 
@@ -1039,7 +1132,21 @@ async function shipTree(sha) {
       child.on('close', (c) =>
         c === 0 ? resolvePromise() : reject(new Error(`tar extract on the box exited ${c}`)),
       )
-      createReadStream(tmp).pipe(child.stdin)
+      // The remote script has abort paths (`SHIP ABORTED`, a broken swap) that
+      // exit while the archive is still being written, and the box's tar closes
+      // stdin once it has read the whole archive. Both make this pipe fail with
+      // EPIPE. Without a handler that is an UNHANDLED stream error: the process
+      // dies with a stack trace instead of the remote message and the real exit
+      // code, which is the diagnosis the operator needs. EPIPE is therefore
+      // swallowed on purpose — `close` above is what decides the verdict — while
+      // any other read/write error is still surfaced.
+      const archive = createReadStream(tmp)
+      const note = (what) => (e) => {
+        if (e?.code !== 'EPIPE') console.error(`  ⚠ ${what}: ${e?.message ?? String(e)}`)
+      }
+      archive.on('error', note('reading the deploy archive failed'))
+      child.stdin.on('error', note('writing the archive to the box failed'))
+      archive.pipe(child.stdin)
     })
   } finally {
     await rm(tmp, { force: true })
@@ -1128,6 +1235,9 @@ export async function runDeploy(steps, { holdBeforeUp = false } = {}) {
   // ── fatal: anything here can still leave prod in a state nobody described ──
   const sha = await steps.preflight()
   const prevSha = await steps.readPrevSha()
+  // Before the env pre-flight, because the pre-flight READS the very file an
+  // interrupted swap leaves under `~/bbm-portal.prev` (#264, review of #267).
+  await steps.recoverInterruptedShip()
   await steps.verifyRemoteEnv()
   await steps.ship(sha)
   await steps.checkpoint(sha)
@@ -1216,8 +1326,17 @@ function productionSteps() {
       return prev
     },
 
-    // Fatal, and first among the box-touching stages: it reads one host-only
-    // file and changes nothing, so failing here leaves prod untouched.
+    // FIRST among the box-touching stages, and the only one before the env
+    // pre-flight that may write: it puts back a tree an interrupted earlier ship
+    // left under `~/bbm-portal.prev`. A no-op on a healthy box.
+    async recoverInterruptedShip() {
+      step('Recover: did an earlier ship break mid-swap?')
+      await sshScript(PROD_SSH, buildShipRecoveryScript(), { label: 'ship recovery' })
+      ok('the box holds one live tree')
+    },
+
+    // Fatal: it reads one host-only file and changes nothing, so failing here
+    // leaves prod untouched.
     async verifyRemoteEnv() {
       step('Box env: does deploy/.env.prod carry what this release reads?')
       try {
@@ -1279,8 +1398,12 @@ function productionSteps() {
         ok('the running mount already matches — no restart')
         return
       }
-      console.log('      shipped Caddyfile differs from the running mount — restarting caddy')
-      await sshScript(PROD_SSH, buildCaddyRestartScript(), { label: 'caddy restart' })
+      console.log(
+        '      shipped Caddyfile differs from the running mount — recreating caddy\n' +
+          '      (a file bind mount is pinned to an inode at container creation, and the\n' +
+          '      ship step swapped the tree — `restart` alone re-reads the OLD file)',
+      )
+      await sshScript(PROD_SSH, buildCaddyRestartScript(), { label: 'caddy recreate' })
       const after = await sshCapture(PROD_SSH, buildCaddyComparisonScript())
       if (caddyNeedsRestart(after)) {
         die('caddy still does not serve the shipped Caddyfile after a restart', {
@@ -1361,6 +1484,7 @@ function productionSteps() {
 export function formatDryRunPlan(sha, { holdBeforeUp = false } = {}) {
   const head = [
     `\n▶ DRY RUN — nothing below is executed (target ${sha.slice(0, 12)})`,
+    `\n[recoverInterruptedShip]\n${buildShipRecoveryScript()}`,
     `\n[verifyRemoteEnv]\n${buildEnvPreflightScript()}`,
     `[ship] ssh ${PROD_SSH} <the script below>  < git archive ${sha.slice(0, 12)}\n${buildShipCommand()}`,
     `\n[checkpoint]\n${buildCheckpointScript(sha)}`,

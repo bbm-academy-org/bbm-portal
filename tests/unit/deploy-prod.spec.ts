@@ -28,6 +28,7 @@ import {
   buildDeployScript,
   buildRetentionScript,
   buildShipCommand,
+  buildShipRecoveryScript,
   buildVerifyScript,
   caddyNeedsRestart,
   classifyCheckRuns,
@@ -215,19 +216,26 @@ describe('buildShipCommand', () => {
   type Tree = Record<string, string>
   type ShipResult = {
     status: number | null
+    stdout: string
     stderr: string
     exists: (rel: string) => boolean
     read: (rel: string) => string
+    existsAt: (rel: string) => boolean
+    readAt: (rel: string) => string
   }
 
+  type RunOpts = { corrupt?: boolean; breakSwap?: boolean }
+
   /**
-   * Run the ship command the way the box runs it — the archive on stdin, the
-   * previous tree in place — and report what `~/bbm-portal` holds afterwards.
+   * A fake `$HOME` holding the box's trees, which the ship command can be run
+   * against MORE THAN ONCE — the mid-swap failure and the next deploy that has
+   * to repair it are one scenario, not two.
    *
-   * Returns null when the machine has no bash (the same graceful skip the
-   * `bash -n` block uses), so the suite stays runnable off Linux.
+   * `breakSwap` makes the second rename fail, which is the failure the script's
+   * own `SHIP FAILED MID-SWAP` branch exists for: a `$HOME` that is not one
+   * filesystem degrades `mv` into copy+unlink, and that can break half-way.
    */
-  function ship(onBox: Tree, archive: Tree, { corrupt = false } = {}): ShipResult | null {
+  function sandbox(onBox: Tree | null, { prev }: { prev?: Tree } = {}) {
     const root = mkdtempSync(join(tmpdir(), 'bbm-ship-'))
     sandboxes.push(root)
     const put = (base: string, tree: Tree) => {
@@ -237,26 +245,57 @@ describe('buildShipCommand', () => {
         writeFileSync(file, body)
       }
     }
-    put('bbm-portal', onBox)
-    put('commit', archive)
+    if (onBox) put('bbm-portal', onBox)
+    if (prev) put('bbm-portal.prev', prev)
 
-    // A corrupt feed stands in for every way the delivery can break mid-flight
-    // (a dropped ssh, a truncated archive): tar exits non-zero, and the box
-    // must still hold the tree it had.
-    const feed = corrupt ? "printf 'this is not a tar archive'" : 'tar -cz -C "$HOME/commit" .'
-    const res = spawnSync('bash', ['-s'], {
-      cwd: root,
-      encoding: 'utf8',
-      input: `export HOME="$PWD"\n${feed} | {\n${cmd}\n}\n`,
-    })
-    if (res.error) return null // no bash on this machine — skip rather than fail
-    const at = (rel: string) => join(root, 'bbm-portal', rel)
-    return {
-      status: res.status,
-      stderr: res.stderr,
-      exists: (rel) => existsSync(at(rel)),
-      read: (rel) => readFileSync(at(rel), 'utf8'),
+    /** Run any script with $HOME pointed at this box. Null = no bash here. */
+    const runScript = (script: string, feed?: string) => {
+      const res = spawnSync('bash', ['-s'], {
+        cwd: root,
+        encoding: 'utf8',
+        input: feed
+          ? `export HOME="$PWD"\n${feed} | {\n${script}\n}\n`
+          : `export HOME="$PWD"\n${script}\n`,
+      })
+      if (res.error) return null // no bash on this machine — skip rather than fail
+      const at = (rel: string) => join(root, rel)
+      return {
+        status: res.status,
+        stdout: res.stdout,
+        stderr: res.stderr,
+        exists: (rel: string) => existsSync(at(join('bbm-portal', rel))),
+        read: (rel: string) => readFileSync(at(join('bbm-portal', rel)), 'utf8'),
+        // Anything else under the fake $HOME — `bbm-portal.prev/...` above all.
+        existsAt: (rel: string) => existsSync(at(rel)),
+        readAt: (rel: string) => readFileSync(at(rel), 'utf8'),
+      }
     }
+
+    const run = (archive: Tree, { corrupt = false, breakSwap = false }: RunOpts = {}) => {
+      rmSync(join(root, 'commit'), { recursive: true, force: true })
+      put('commit', archive)
+      // A corrupt feed stands in for every way the delivery can break mid-flight
+      // (a dropped ssh, a truncated archive): tar exits non-zero, and the box
+      // must still hold the tree it had.
+      const feed = corrupt ? "printf 'this is not a tar archive'" : 'tar -cz -C "$HOME/commit" .'
+      const script = breakSwap
+        ? cmd.replace('if ! mv ~/bbm-portal.next ~/bbm-portal; then', 'if ! false; then')
+        : cmd
+      return runScript(script, feed)
+    }
+
+    return { root, put, run, runScript }
+  }
+
+  /**
+   * Run the ship command once the way the box runs it — the archive on stdin,
+   * the previous tree in place — and report what `~/bbm-portal` holds afterwards.
+   *
+   * Returns null when the machine has no bash (the same graceful skip the
+   * `bash -n` block uses), so the suite stays runnable off Linux.
+   */
+  function ship(onBox: Tree, archive: Tree, opts: RunOpts = {}): ShipResult | null {
+    return sandbox(onBox).run(archive, opts)
   }
 
   /** The top-level directories the archive really ships, asked of git itself —
@@ -270,9 +309,10 @@ describe('buildShipCommand', () => {
       .filter(Boolean)
   }
 
-  it('replaces EVERY shipped top-level directory — a retired file cannot survive', () => {
+  it('replaces EVERY shipped top-level directory — a retired file cannot survive', (ctx) => {
     const dirs = shippedTopLevelDirs()
-    if (!dirs) return // no git here — skip rather than fail
+    // A test that never ran must report SKIPPED, not green (review of #267).
+    if (!dirs) return ctx.skip('no git on this machine')
     expect(dirs).toContain('src')
     expect(dirs).toContain('tools')
     expect(dirs).toContain('tests')
@@ -286,7 +326,7 @@ describe('buildShipCommand', () => {
     }
 
     const out = ship(onBox, archive)
-    if (!out) return
+    if (!out) return ctx.skip('no bash on this machine')
     expect(out.stderr + String(out.status)).toBe('0')
     for (const dir of dirs) {
       if (dir === 'deploy') continue
@@ -301,7 +341,7 @@ describe('buildShipCommand', () => {
     expect(out.exists('DEPLOYED_SHA')).toBe(false)
   })
 
-  it('copies ONLY the host-only deploy/.env* — a shipped file is never a candidate', () => {
+  it('copies ONLY the host-only deploy/.env* — a shipped file is never a candidate', (ctx) => {
     const out = ship(
       {
         'deploy/.env.prod': 'DATABASE_URL=x\n',
@@ -317,7 +357,7 @@ describe('buildShipCommand', () => {
         'deploy/.env.prod.example': 'DATABASE_URL=\n',
       },
     )
-    if (!out) return
+    if (!out) return ctx.skip('no bash on this machine')
     // Also proves the carry-over is warning-free: `cp -n` is non-portable and
     // coreutils >= 9 says so on stderr, which is why the copy names its files.
     expect(out.stderr + String(out.status)).toBe('0')
@@ -333,33 +373,140 @@ describe('buildShipCommand', () => {
     expect(out.read('deploy/.env.prod.example')).toBe('DATABASE_URL=\n')
   })
 
-  it('carries nothing rather than tripping over an unmatched glob', () => {
+  it('carries nothing rather than tripping over an unmatched glob', (ctx) => {
     // A box whose deploy/ holds no `.env.*` at all: the glob stays literal, and
     // the step must reach its own fail-closed assert, not die on the `for`.
     const out = ship({ 'deploy/.env': 'DEPLOY_SHA=older\n' }, { 'src/app.ts': 'new\n' })
-    if (!out) return
+    if (!out) return ctx.skip('no bash on this machine')
     expect(out.status).not.toBe(0)
     expect(out.stderr).toContain('SHIP ABORTED')
   })
 
-  it('refuses the swap when the new tree would carry no deploy/.env.prod', () => {
+  it('refuses the swap when the new tree would carry no deploy/.env.prod', (ctx) => {
     const out = ship({ 'src/app.ts': 'old\n' }, { 'src/app.ts': 'new\n' })
-    if (!out) return
+    if (!out) return ctx.skip('no bash on this machine')
     expect(out.status).not.toBe(0)
     // Fail-closed: the box still holds exactly the tree it had.
     expect(out.read('src/app.ts')).toBe('old\n')
   })
 
-  it('leaves the box its current tree when the extract fails mid-flight', () => {
+  it('leaves the box its current tree when the extract fails mid-flight', (ctx) => {
     const out = ship(
       { 'src/app.ts': 'old\n', 'deploy/.env.prod': 'DATABASE_URL=x\n' },
       { 'src/app.ts': 'new\n' },
       { corrupt: true },
     )
-    if (!out) return
+    if (!out) return ctx.skip('no bash on this machine')
     expect(out.status).not.toBe(0)
     expect(out.read('src/app.ts')).toBe('old\n')
     expect(out.read('deploy/.env.prod')).toBe('DATABASE_URL=x\n')
+  })
+
+  // ── ~/bbm-portal.prev may hold the only copy of the env files ──────────────
+  //
+  // The first shape of this step deleted `.prev` unconditionally at its head and
+  // only restored it when `~/bbm-portal` was ABSENT. A swap that broke half-way
+  // leaves the live tree PARTIALLY present, so the restore was skipped and the
+  // delete ran — destroying the only `deploy/.env.prod` on the box (review of
+  // #267, BLOCKER 1). Every test below pins the repaired ordering.
+
+  describe('buildShipRecoveryScript', () => {
+    const recovery = buildShipRecoveryScript()
+
+    it('is the FIRST thing the ship script does, and its own pipeline stage', () => {
+      // Two callers, one source: the stage (so `pnpm deploy:prod` repairs the box
+      // before `verifyRemoteEnv` reads a file that is under .prev) and the head of
+      // the ship script (so a direct ship repairs itself too).
+      expect(buildShipCommand()).toContain(recovery)
+      expect(DEPLOY_STAGES.indexOf('recoverInterruptedShip')).toBeLessThan(
+        DEPLOY_STAGES.indexOf('verifyRemoteEnv'),
+      )
+      expect(HOLD_STAGES).toContain('recoverInterruptedShip')
+    })
+
+    it('restores .prev only when it has the env file and the live tree does not', (ctx) => {
+      // (a) the mid-swap state: partial live tree, .prev holds the env files
+      const broken = sandbox(
+        { 'src/app.ts': 'half-copied\n' },
+        { prev: { 'src/app.ts': 'old\n', 'deploy/.env.prod': 'DATABASE_URL=x\n' } },
+      )
+      const repaired = broken.runScript(recovery)
+      if (!repaired) return ctx.skip('no bash on this machine')
+      expect(repaired.status).toBe(0)
+      expect(repaired.read('deploy/.env.prod')).toBe('DATABASE_URL=x\n')
+      expect(repaired.read('src/app.ts')).toBe('old\n')
+      expect(repaired.existsAt('bbm-portal.prev')).toBe(false)
+
+      // (b) a healthy box with a leftover .prev (a cleanup that failed): the live
+      // tree is NOT replaced by the stale one.
+      const healthy = sandbox(
+        { 'src/app.ts': 'live\n', 'deploy/.env.prod': 'DATABASE_URL=live\n' },
+        { prev: { 'src/app.ts': 'stale\n', 'deploy/.env.prod': 'DATABASE_URL=stale\n' } },
+      )
+      const untouched = healthy.runScript(recovery)!
+      expect(untouched.status).toBe(0)
+      expect(untouched.read('src/app.ts')).toBe('live\n')
+      expect(untouched.read('deploy/.env.prod')).toBe('DATABASE_URL=live\n')
+
+      // (c) nothing to repair at all — a no-op, not an error under `set -eu`
+      const fresh = sandbox({ 'src/app.ts': 'live\n', 'deploy/.env.prod': 'X=1\n' })
+      const noop = fresh.runScript(`set -eu\n${recovery}`)!
+      expect(noop.status).toBe(0)
+      expect(noop.stdout).toContain('nothing to repair')
+      expect(noop.read('src/app.ts')).toBe('live\n')
+    })
+  })
+
+  it('never removes ~/bbm-portal.prev before the new tree is proven', () => {
+    // Ordering is a property of the script itself, so it is asserted on the
+    // string too: the `.env.prod` assert stands before the first `rm -rf .prev`,
+    // and a second assert stands after the swap.
+    const abort = cmd.indexOf('SHIP ABORTED')
+    const dropPrev = cmd.indexOf('rm -rf ~/bbm-portal.prev')
+    expect(dropPrev).toBeGreaterThan(abort)
+    expect(cmd.lastIndexOf('deploy/.env.prod')).toBeGreaterThan(cmd.indexOf('mv ~/bbm-portal.next'))
+    // A failing cleanup must not paint a correct deploy red.
+    expect(cmd).toMatch(/rm -rf ~\/bbm-portal\.prev \|\| echo/)
+    // The printed recovery removes the partial tree first: a bare `mv` with a
+    // partial ~/bbm-portal present moves the previous tree INSIDE it.
+    expect(cmd).toContain('rm -rf ~/bbm-portal && mv ~/bbm-portal.prev ~/bbm-portal')
+  })
+
+  it('keeps .prev whole when the run aborts before the swap', (ctx) => {
+    const box = sandbox(
+      { 'src/app.ts': 'old\n', 'deploy/.env.prod': 'DATABASE_URL=x\n' },
+      { prev: { 'deploy/.env.prod': 'DATABASE_URL=x\n' } },
+    )
+    const out = box.run({ 'src/app.ts': 'new\n' }, { corrupt: true })
+    if (!out) return ctx.skip('no bash on this machine')
+    expect(out.status).not.toBe(0)
+    expect(out.readAt('bbm-portal.prev/deploy/.env.prod')).toBe('DATABASE_URL=x\n')
+    expect(out.read('deploy/.env.prod')).toBe('DATABASE_URL=x\n')
+  })
+
+  it('a swap broken between the two renames is repaired by the NEXT run', (ctx) => {
+    const box = sandbox({ 'src/app.ts': 'old\n', 'deploy/.env.prod': 'DATABASE_URL=x\n' })
+
+    const broke = box.run({ 'src/app.ts': 'new\n' }, { breakSwap: true })
+    if (!broke) return ctx.skip('no bash on this machine')
+    expect(broke.status).not.toBe(0)
+    expect(broke.stderr).toContain('SHIP FAILED MID-SWAP')
+    expect(broke.readAt('bbm-portal.prev/deploy/.env.prod')).toBe('DATABASE_URL=x\n')
+
+    // What a `mv` that degraded to copy+unlink leaves behind: a live tree that
+    // is PRESENT but partial — no deploy/, therefore no env files.
+    box.put('bbm-portal', { 'src/app.ts': 'half-copied\n' })
+
+    const again = box.run({ 'src/app.ts': 'new\n' })
+    if (!again) return ctx.skip('no bash on this machine')
+    expect(again.stderr + String(again.status)).toBe('0')
+    expect(again.stdout).toContain('[recover]')
+    // The env file survived the partial state and is in the live tree again…
+    expect(again.read('deploy/.env.prod')).toBe('DATABASE_URL=x\n')
+    // …and the run really did deploy: the tree is the new commit.
+    expect(again.read('src/app.ts')).toBe('new\n')
+    // Only once the swap succeeded AND the live tree was asserted is .prev gone.
+    expect(again.existsAt('bbm-portal.prev')).toBe(false)
   })
 })
 
@@ -526,6 +673,19 @@ describe('buildVerifyScript / verifyVerdict', () => {
     expect(verifyVerdict('', SHA).ok).toBe(false)
     // A success line the box does not back would be a lie — the whole point.
     expect(verifyVerdict(`OK image=bbm-portal-app:${OTHER} state=running`, SHA).ok).toBe(false)
+  })
+})
+
+describe('buildCaddyRestartScript', () => {
+  it('RECREATES caddy rather than restarting it — the swap moved the bind mount', () => {
+    // `./Caddyfile` is a FILE bind mount, resolved to an inode when the
+    // container is created. Since #264 the ship step swaps the whole tree, so
+    // the running container holds the OLD inode and `restart` would re-execute
+    // caddy on exactly the config it already had — `applyCaddy` would then fail
+    // the deploy on any Caddyfile change (review of #267).
+    const script = buildCaddyRestartScript()
+    expect(script).toContain('up -d --force-recreate --no-deps caddy')
+    expect(script).not.toMatch(/restart caddy/)
   })
 })
 
@@ -712,6 +872,7 @@ describe('every generated remote script is valid bash', () => {
   // non-trivial control flow in this family.
   const scripts: Array<[string, string]> = [
     ['buildShipCommand', buildShipCommand()],
+    ['buildShipRecoveryScript', buildShipRecoveryScript()],
     ['buildEnvPreflightScript', buildEnvPreflightScript()],
     ['buildCheckpointScript', buildCheckpointScript(SHA)],
     ['buildDeployScript', buildDeployScript(SHA)],
@@ -771,6 +932,11 @@ describe('formatDryRunPlan', () => {
     expect(plan.indexOf('[verifyRemoteEnv]')).toBeLessThan(plan.indexOf('[ship]'))
   })
 
+  it('shows the swap recovery ahead of the env preflight — the order it runs in', () => {
+    expect(plan).toContain('[recoverInterruptedShip]')
+    expect(plan.indexOf('[recoverInterruptedShip]')).toBeLessThan(plan.indexOf('[verifyRemoteEnv]'))
+  })
+
   it('shows the checkpoint before the stack — the order it really runs in', () => {
     expect(plan.indexOf('[checkpoint]')).toBeGreaterThan(plan.indexOf('[ship]'))
     expect(plan.indexOf('[checkpoint]')).toBeLessThan(plan.indexOf('[deployStack]'))
@@ -821,6 +987,7 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
         order.push('readPrevSha')
         return OTHER
       }),
+      recoverInterruptedShip: make('recoverInterruptedShip'),
       verifyRemoteEnv: make('verifyRemoteEnv'),
       ship: make('ship'),
       checkpoint: make('checkpoint'),
@@ -843,6 +1010,10 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
     expect(order).toEqual([
       'preflight',
       'readPrevSha',
+      // The recovery of an interrupted swap runs BEFORE the env pre-flight: the
+      // pre-flight reads `~/bbm-portal/deploy/.env.prod`, which after a broken
+      // swap lives under `~/bbm-portal.prev` (#264, review of #267).
+      'recoverInterruptedShip',
       'verifyRemoteEnv',
       'ship',
       'checkpoint',
@@ -950,7 +1121,7 @@ describe('runDeploy — stops at the first red step and records nothing', () => 
       }),
     })
     await expect(runDeploy(steps)).rejects.toThrow('PLATFORM_DATABASE_URL')
-    expect(order).toEqual(['preflight', 'readPrevSha', 'verifyRemoteEnv'])
+    expect(order).toEqual(['preflight', 'readPrevSha', 'recoverInterruptedShip', 'verifyRemoteEnv'])
     expect(steps.ship).not.toHaveBeenCalled()
     expect(steps.checkpoint).not.toHaveBeenCalled()
     expect(steps.deployStack).not.toHaveBeenCalled()
