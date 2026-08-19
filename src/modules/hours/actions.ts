@@ -324,7 +324,11 @@ export async function publishHoursToMattermostAction(
     )
     if (!created.ok) return error(created.error)
 
-    for (const [index, message] of created.saved.messages.entries()) {
+    // The array index IS the message's `position` — the column
+    // `core.hours_publication_message` is keyed on (#274, spec 201 EARS-31), and
+    // the array `load.ts` rebuilds is sorted on it and refuses a gap. Delivery
+    // therefore goes in preview order and addresses one row per outcome.
+    for (const [position, message] of created.saved.messages.entries()) {
       let delivery: 'sent' | 'failed' | 'unknown'
       try {
         const response = await fetch(webhookUrl, {
@@ -340,7 +344,7 @@ export async function publishHoursToMattermostAction(
       }
 
       const progressed = await mutateHoursDocument(actorOf(gate), (doc) =>
-        recordPublicationDelivery(doc, periodId, index, delivery, new Date().toISOString()),
+        recordPublicationDelivery(doc, periodId, position, delivery, new Date().toISOString()),
       )
       if (!progressed.ok) {
         return error(

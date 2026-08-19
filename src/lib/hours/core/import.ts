@@ -33,6 +33,7 @@ import { findMemberByEmail } from '@/lib/member'
 import { hoursAssessment } from '@/lib/platform/db/schema/hours/hours-assessment'
 import { hoursParticipant } from '@/lib/platform/db/schema/hours/hours-participant'
 import { hoursPeriod } from '@/lib/platform/db/schema/hours/hours-period'
+import { hoursPublicationMessage } from '@/lib/platform/db/schema/hours/hours-publication-message'
 import { hoursPublication } from '@/lib/platform/db/schema/hours/hours-publication'
 
 import type { HoursTx } from './db'
@@ -118,8 +119,9 @@ export async function assertHoursTablesEmpty(tx: HoursTx): Promise<void> {
  * Every email the document needs a `member` for, in first-seen order.
  *
  * Participants and assessments, because both carry a `member_id` column. NOT the
- * publication messages: a delivery record is frozen history stored as `jsonb`
- * verbatim, and its addressee may well have left the team since.
+ * publication messages: a delivery record is frozen history, carried verbatim
+ * into `core.hours_publication_message`, and its addressee may well have left the
+ * team since.
  */
 export function documentEmails(doc: HoursDocument): string[] {
   const emails: string[] = []
@@ -239,8 +241,24 @@ export async function importDocument(tx: HoursTx, doc: HoursDocument): Promise<H
       startedAt: publication.started_at,
       publishedAt: publication.published_at,
       previewFingerprint: publication.preview_fingerprint,
+      // Dual-write until the contract release (#281) drops the column — see the
+      // header of `./persist.ts` and `docs/runbooks/migrations-expand-contract.md`.
       messages: publication.messages,
     })
+    // One row per message, the array ordinal as the explicit `position` (#274,
+    // spec 201 EARS-31) — the same assignment the migration's backfill makes for
+    // the batches that were already stored, and the order delivery addresses
+    // (spec 100 req. 2/10).
+    for (const [position, message] of publication.messages.entries()) {
+      await tx.insert(hoursPublicationMessage).values({
+        periodId: publication.period_id,
+        position,
+        email: message.email,
+        text: message.text,
+        delivery: message.delivery,
+        sentAt: message.sent_at ?? null,
+      })
+    }
   }
 
   const written = await countHoursRows(tx)

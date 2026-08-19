@@ -46,7 +46,8 @@ export type IntDb = PlatformDb
  */
 export async function truncateHoursTables(db: IntDb): Promise<void> {
   await db.execute(sql`truncate table
-    core.hours_publication, core.hours_assessment, core.hours_participant, core.hours_period,
+    core.hours_publication_message, core.hours_publication, core.hours_assessment,
+    core.hours_participant, core.hours_period,
     core.member_alias, core.member
     restart identity cascade`)
 }

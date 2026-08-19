@@ -22,10 +22,10 @@
  * period deletes. Rows can then never reference a period that does not exist yet,
  * and a period is never deleted while a row still points at it.
  *
- * Nothing here deletes a participant row or a publication: neither has a delete
- * path in the product (081 §16 — participant deletion is the owner's SQL escape
- * hatch; a delivery record is history). A document that drops one silently is a
- * bug in a caller, not an instruction, and the row stays.
+ * Nothing here deletes a participant row, a publication or one of its messages:
+ * none has a delete path in the product (081 §16 — participant deletion is the
+ * owner's SQL escape hatch; a delivery record is history). A document that drops
+ * one silently is a bug in a caller, not an instruction, and the row stays.
  */
 import { and, eq, inArray } from 'drizzle-orm'
 
@@ -39,11 +39,19 @@ import type { Member } from '@/lib/member'
 import { hoursAssessment } from '@/lib/platform/db/schema/hours/hours-assessment'
 import { hoursParticipant } from '@/lib/platform/db/schema/hours/hours-participant'
 import { hoursPeriod } from '@/lib/platform/db/schema/hours/hours-period'
+import { hoursPublicationMessage } from '@/lib/platform/db/schema/hours/hours-publication-message'
 import { hoursPublication } from '@/lib/platform/db/schema/hours/hours-publication'
 
 import type { HoursTx } from './db'
 import { HoursPersistRefusal } from './errors'
-import type { Assessment, HoursDocument, Participant, Period, Publication } from '../types'
+import type {
+  Assessment,
+  HoursDocument,
+  Participant,
+  Period,
+  Publication,
+  PublicationMessage,
+} from '../types'
 
 /** The (period, member) identity of an assessment, as a map key. */
 function assessmentKey(periodId: string, email: string): string {
@@ -283,7 +291,40 @@ async function syncAssessments(
   }
 }
 
-/** Publications: the whole `jsonb` batch is rewritten as one value (EARS-6). */
+function sameMessage(a: PublicationMessage, b: PublicationMessage): boolean {
+  return (
+    a.email === b.email &&
+    a.text === b.text &&
+    a.delivery === b.delivery &&
+    (a.sent_at ?? null) === (b.sent_at ?? null)
+  )
+}
+
+/**
+ * Publications: the parent row, then the messages ROW BY ROW (#274, spec 201
+ * EARS-31 step 3).
+ *
+ * Before #274 the whole batch was one `jsonb` value rewritten whole on every
+ * delivery step, which is exactly what made `core.hours_publication`
+ * unauditable: an audited diff of that column would say «everything changed»
+ * once per delivered message. Now a delivery step updates the ONE child row at
+ * the message's `position`, and the ledger records one small diff naming
+ * `{"period_id": …, "position": …}` (EARS-4). Unchanged messages are skipped for
+ * the same reason `before` lets everything else be skipped: it was read inside
+ * THIS transaction under the module advisory lock (EARS-10), so «unchanged in
+ * the document» is «unchanged in the database».
+ *
+ * `messages` on the parent is STILL written — deliberately, and only until the
+ * contract release (#281). `docs/runbooks/migrations-expand-contract.md` lets one
+ * release expand only: while both representations are written,
+ * `pnpm deploy:prod --rollback <sha>` stays an honest button, because the
+ * previous app code still finds the array it reads. The child table is the one
+ * that is READ (`./load.ts`); the column is write-only from here on.
+ *
+ * A batch never gains or loses a message — it is frozen at creation (spec 100
+ * req. 8/12) — so a length change is a caller bug and not an instruction to
+ * delete history.
+ */
 async function upsertPublications(tx: HoursTx, before: HoursDocument, after: HoursDocument) {
   const previousByPeriod = new Map((before.publications ?? []).map((p) => [p.period_id, p]))
 
@@ -291,17 +332,41 @@ async function upsertPublications(tx: HoursTx, before: HoursDocument, after: Hou
     const previous = previousByPeriod.get(publication.period_id)
     if (previous && samePublication(previous, publication)) continue
 
+    if (previous && previous.messages.length !== publication.messages.length) {
+      throw new HoursPersistRefusal(
+        `Публикация периода ${publication.period_id} зафиксирована — число сообщений в ней изменить нельзя.`,
+      )
+    }
+
     const columns = {
       status: publication.status,
       startedAt: publication.started_at,
       publishedAt: publication.published_at,
       previewFingerprint: publication.preview_fingerprint,
+      // Dual-write until #281 contracts it away — see the header above.
       messages: publication.messages,
     }
     await tx
       .insert(hoursPublication)
       .values({ periodId: publication.period_id, ...columns })
       .onConflictDoUpdate({ target: hoursPublication.periodId, set: columns })
+
+    for (const [position, message] of publication.messages.entries()) {
+      if (previous && sameMessage(previous.messages[position], message)) continue
+      const messageColumns = {
+        email: message.email,
+        text: message.text,
+        delivery: message.delivery,
+        sentAt: message.sent_at ?? null,
+      }
+      await tx
+        .insert(hoursPublicationMessage)
+        .values({ periodId: publication.period_id, position, ...messageColumns })
+        .onConflictDoUpdate({
+          target: [hoursPublicationMessage.periodId, hoursPublicationMessage.position],
+          set: messageColumns,
+        })
+    }
   }
 }
 

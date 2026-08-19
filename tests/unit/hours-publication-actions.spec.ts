@@ -43,7 +43,7 @@ interface DeliveryApi {
   recordPublicationDelivery: (
     doc: PublicationDocument,
     periodId: string,
-    messageIndex: number,
+    position: number,
     delivery: 'sent' | 'failed' | 'unknown',
     at: string,
   ) =>

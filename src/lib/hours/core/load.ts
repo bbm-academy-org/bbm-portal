@@ -17,10 +17,11 @@
  *    own (their PK IS the period).
  *
  * Objects are rebuilt field by field rather than spread from a row, and that is
- * deliberate for `jsonb` in particular: Postgres does not preserve object key
- * order in `jsonb` (it stores keys sorted by length, then bytewise), so a message
- * read straight back out of the column would serialize as
- * `{text, email, sent_at, delivery}` and quietly break the export diff.
+ * deliberate: the legacy key order is the export contract, and a spread would
+ * serialize a publication message in the child table's column order instead. The
+ * same rule used to be about `jsonb` — Postgres stores object keys sorted by
+ * length, then bytewise — and survives the #274 normalisation unchanged, now for
+ * `core.hours_publication_message` (spec 201 EARS-31).
  *
  * `member` data is read through the member module's public API (EARS-8) — never
  * by importing `schema/member/`.
@@ -32,6 +33,7 @@ import type { Member } from '@/lib/member'
 import { hoursAssessment } from '@/lib/platform/db/schema/hours/hours-assessment'
 import { hoursParticipant } from '@/lib/platform/db/schema/hours/hours-participant'
 import { hoursPeriod } from '@/lib/platform/db/schema/hours/hours-period'
+import { hoursPublicationMessage } from '@/lib/platform/db/schema/hours/hours-publication-message'
 import { hoursPublication } from '@/lib/platform/db/schema/hours/hours-publication'
 
 import type { HoursTx } from './db'
@@ -57,32 +59,48 @@ async function membersById(tx: HoursTx, ids: number[]): Promise<Map<number, Memb
 }
 
 /**
- * The messages of one batch, rebuilt in the legacy field order.
+ * The messages of every batch, from `core.hours_publication_message` (#274,
+ * spec 201 EARS-31 step 3), keyed by period and ordered by `position`.
  *
- * The column is `jsonb` and this module wrote it, so the ARRAY order and length
- * are exactly what was stored (EARS-6). The per-message KEY order is restored
- * here, since jsonb has none.
+ * `position` is the explicit form of the array index spec 100 req. 2/10 and spec
+ * 124 EARS-21 rely on, so the legacy array is rebuilt by SORTING on it — the row
+ * order the database happens to return is never trusted. The contiguity check
+ * below is what keeps «array index» and «position» from drifting apart above this
+ * layer: every consumer of `Publication.messages` (the delivery loop, the panel,
+ * the export) may therefore keep reading the array positionally, and
+ * `recordPublicationDelivery` addresses a message by the position it is given.
+ *
+ * The per-message KEY order is restored here, exactly as it was when the batch
+ * lived in `jsonb`: it is the legacy export shape (spec 124 EARS-11) and a row
+ * spread would serialize its columns in the table's own order instead.
  */
-function readMessages(raw: unknown, periodId: string): PublicationMessage[] {
-  if (!Array.isArray(raw)) {
-    throw new HoursDataError(`Публикация периода ${periodId} хранится в неожиданном виде.`)
+async function messagesByPeriod(tx: HoursTx): Promise<Map<string, PublicationMessage[]>> {
+  const rows = await tx
+    .select()
+    .from(hoursPublicationMessage)
+    .orderBy(asc(hoursPublicationMessage.periodId), asc(hoursPublicationMessage.position))
+
+  const byPeriod = new Map<string, PublicationMessage[]>()
+  for (const row of rows) {
+    const messages = byPeriod.get(row.periodId) ?? []
+    if (row.position !== messages.length) {
+      // Unreachable while the module owns every write (a batch is created whole
+      // and only ever updated in place). Stated rather than trusted, because a
+      // gap would silently shift every later message one place to the left and
+      // delivery would then address the wrong person.
+      throw new HoursDataError(
+        `Публикация периода ${row.periodId} хранится в неожиданном виде: пропущено сообщение №${messages.length}.`,
+      )
+    }
+    messages.push({
+      email: row.email,
+      text: row.text,
+      delivery: row.delivery as PublicationDelivery,
+      sent_at: row.sentAt,
+    })
+    byPeriod.set(row.periodId, messages)
   }
-  return raw.map((entry) => {
-    const message = entry as Partial<PublicationMessage>
-    if (
-      typeof message?.email !== 'string' ||
-      typeof message?.text !== 'string' ||
-      typeof message?.delivery !== 'string'
-    ) {
-      throw new HoursDataError(`Публикация периода ${periodId} содержит повреждённое сообщение.`)
-    }
-    return {
-      email: message.email,
-      text: message.text,
-      delivery: message.delivery as PublicationDelivery,
-      sent_at: message.sent_at ?? null,
-    }
-  })
+  return byPeriod
 }
 
 /** Reads the whole document on one handle — a transaction, always (see `./db.ts`). */
@@ -103,6 +121,8 @@ export async function loadDocument(tx: HoursTx): Promise<HoursDocument> {
     .from(hoursPublication)
     .innerJoin(hoursPeriod, eq(hoursPeriod.id, hoursPublication.periodId))
     .orderBy(asc(hoursPeriod.sortKey), asc(hoursPeriod.id))
+
+  const publicationMessages = await messagesByPeriod(tx)
 
   const members = await membersById(tx, [
     ...participantRows.map((row) => row.memberId),
@@ -163,7 +183,7 @@ export async function loadDocument(tx: HoursTx): Promise<HoursDocument> {
     started_at: publication.startedAt,
     published_at: publication.publishedAt,
     preview_fingerprint: publication.previewFingerprint,
-    messages: readMessages(publication.messages, publication.periodId),
+    messages: publicationMessages.get(publication.periodId) ?? [],
   }))
 
   return { participants, periods, assessments, publications }
