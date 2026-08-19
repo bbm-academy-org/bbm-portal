@@ -470,3 +470,50 @@ describe('publish action delivery (spec 100 requirements 8, 10–11)', () => {
     expect(stored().publications).toHaveLength(1)
   })
 })
+
+/**
+ * Spec 201 EARS-25 for the publication entrypoint.
+ *
+ * `publishHoursToMattermostAction` is the one action that opens SEVERAL
+ * transactions — the batch, then one per delivered message — and each of them
+ * must carry the same session actor. A hardcoded context, or one built once and
+ * lost between the delivery steps, is what this asserts against: the session
+ * says ` Anton@BBM.Academy ` and every recorded context must read
+ * `anton@bbm.academy`, which only `sessionEmail()` inside the action's own
+ * admin gate produces (spec 124 EARS-2 — the actor joins `core.member` by
+ * equality, so an unnormalized one matches nobody).
+ */
+type RecordedContext = { actorEmail: string | null; source: string }
+
+function recordedContexts(): RecordedContext[] {
+  return ((store as { contexts?: RecordedContext[] }).contexts ?? []) as RecordedContext[]
+}
+
+describe('EARS-25: the publication action carries its session actor into every transaction', () => {
+  it('EARS-25: the batch and every delivery step record actorEmail = the normalized session email, source = portal', async () => {
+    authState.session = { user: { email: ' Anton@BBM.Academy ' } }
+    delete (store as { contexts?: RecordedContext[] }).contexts
+    const publish = await publishAction()
+    fetchMock().mockImplementation(async () => new Response('ok', { status: 200 }))
+
+    const state = await publish(IDLE, publishForm(fingerprint()))
+    expect(state.status).toBe('ok')
+
+    // One batch creation + one persisted delivery per message.
+    const contexts = recordedContexts()
+    expect(contexts).toHaveLength(4)
+    for (const context of contexts) {
+      expect(context).toEqual({ actorEmail: 'anton@bbm.academy', source: 'portal' })
+    }
+  })
+
+  it('EARS-9: a refused gate reaches no transaction at all, so no context is recorded', async () => {
+    authState.session = { user: { email: MEMBER } }
+    delete (store as { contexts?: RecordedContext[] }).contexts
+    const publish = await publishAction()
+
+    expect((await publish(IDLE, publishForm(fingerprint()))).status).toBe('error')
+    expect(recordedContexts()).toEqual([])
+    expect(fetchMock()).not.toHaveBeenCalled()
+  })
+})

@@ -23,7 +23,13 @@ type PlatformDb = ReturnType<typeof getPlatformDb>
 export type HoursTx = Pick<PlatformDb, 'select' | 'insert' | 'update' | 'delete' | 'execute'>
 
 /**
- * The platform handle, or `HoursDataError`.
+ * Fail loudly, in the module's own vocabulary, when the platform database is not
+ * configured.
+ *
+ * It no longer RETURNS a handle: since spec 201 (EARS-24) every hours read and
+ * write goes through `platformTransaction` / `platformReadTransaction`, which
+ * take the pool themselves — a module-level handle would only be a second way to
+ * reach the database, and the second way is exactly what those clauses abolish.
  *
  * `getPlatformDb()` throws a plain `Error` naming `PLATFORM_DATABASE_URL` when the
  * variable is unset (ADR-004 §3: no fallback to Payload's `DATABASE_URL`). That
@@ -31,9 +37,9 @@ export type HoursTx = Pick<PlatformDb, 'select' | 'insert' | 'update' | 'delete'
  * `HoursDataError` to say «данные недоступны» (081 §17, EARS-12), so an unset
  * variable would otherwise reach a page as a 500 instead of a sentence.
  */
-export function hoursDb(): PlatformDb {
+export function assertHoursDb(): void {
   try {
-    return getPlatformDb()
+    getPlatformDb()
   } catch (cause) {
     throw new HoursDataError(
       'Платформенная база модуля часов не настроена — позови администратора.',

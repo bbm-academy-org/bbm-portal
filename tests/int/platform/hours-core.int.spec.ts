@@ -17,12 +17,20 @@ import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import {
   assessmentOf,
+  fixtureWrite,
   participantOf,
   seedMember,
   seedParticipant,
   seedPeriod,
   truncateHoursTables,
 } from './hours-core-helpers'
+
+/**
+ * Кто пишет в этих сюитах (спека 201 EARS-7, EARS-25). `portal` + непустой
+ * actor — ровно то, что приходит из Server Action после гейта сессии; без
+ * контекста запись отклонит `core.audit_row_change()` на помеченном пуле.
+ */
+const TEST_ACTOR = { actorEmail: 'anton@bbm.academy', source: 'portal' } as const
 
 /**
  * The hours module against the REAL `core` tables (spec 124: EARS-1, EARS-3,
@@ -154,8 +162,8 @@ describe('reading the document (EARS-11, EARS-21)', () => {
   })
 
   it('EARS-11: a participant carries exactly the legacy fields — no member-only columns, no monthly_rate', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон', role: 'Продукт' })
-    await seedParticipant(db, id, { forkMin: 150_000, forkMax: 250_000, grade: 'II', sortKey: 0 })
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон', role: 'Продукт' })
+    await seedParticipant(id, { forkMin: 150_000, forkMax: 250_000, grade: 'II', sortKey: 0 })
 
     const [participant] = (await readHoursDocument()).participants
     expect(Object.keys(participant)).toEqual([
@@ -177,18 +185,18 @@ describe('reading the document (EARS-11, EARS-21)', () => {
   })
 
   it('EARS-11: a member without a hours_participant row is not in the document', async () => {
-    await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    const onlyHours = await seedMember(db, { email: 'eduard@bbm.academy', name: 'Эдуард' })
-    await seedParticipant(db, onlyHours, { sortKey: 0 })
+    await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    const onlyHours = await seedMember({ email: 'eduard@bbm.academy', name: 'Эдуард' })
+    await seedParticipant(onlyHours, { sortKey: 0 })
 
     const doc = await readHoursDocument()
     expect(doc.participants.map((p) => p.email)).toEqual(['eduard@bbm.academy'])
   })
 
   it('EARS-11: the export serialization is the legacy document byte-for-byte in key order', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон', role: null })
-    await seedParticipant(db, id, { sortKey: 0 })
-    await seedPeriod(db, { id: 'p-july', label: 'Июль 2026', from: '2026-07-01', to: '2026-07-31' })
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон', role: null })
+    await seedParticipant(id, { sortKey: 0 })
+    await seedPeriod({ id: 'p-july', label: 'Июль 2026', from: '2026-07-01', to: '2026-07-31' })
 
     const serialized = JSON.stringify(await readHoursDocument(), null, 2)
     expect(serialized).toContain('"participants"')
@@ -201,19 +209,19 @@ describe('reading the document (EARS-11, EARS-21)', () => {
   })
 
   it('EARS-21: participants come in sort_key order, periods in sort_key order, assessments by identity PK', async () => {
-    const anton = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    const eduard = await seedMember(db, { email: 'eduard@bbm.academy', name: 'Эдуард' })
+    const anton = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    const eduard = await seedMember({ email: 'eduard@bbm.academy', name: 'Эдуард' })
     // Deliberately inverted: the member ids ascend while the hours order does not.
-    await seedParticipant(db, eduard, { sortKey: 0 })
-    await seedParticipant(db, anton, { sortKey: 1 })
-    await seedPeriod(db, {
+    await seedParticipant(eduard, { sortKey: 0 })
+    await seedParticipant(anton, { sortKey: 1 })
+    await seedPeriod({
       id: 'p-august',
       label: 'Август',
       from: '2026-08-01',
       to: '2026-08-31',
       sortKey: 1,
     })
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль',
       from: '2026-07-01',
@@ -230,9 +238,9 @@ describe('reading the document (EARS-11, EARS-21)', () => {
   })
 
   it('EARS-21: a new participant and a new period append after the current maximum', async () => {
-    const anton = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await seedParticipant(db, anton, { sortKey: 7 })
-    await seedPeriod(db, {
+    const anton = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await seedParticipant(anton, { sortKey: 7 })
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль',
       from: '2026-07-01',
@@ -240,7 +248,7 @@ describe('reading the document (EARS-11, EARS-21)', () => {
       sortKey: 4,
     })
 
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       upsertParticipant(doc, {
         email: 'eduard@bbm.academy',
         name: 'Эдуард',
@@ -250,7 +258,7 @@ describe('reading the document (EARS-11, EARS-21)', () => {
         grade: null,
       }),
     )
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       createPeriod(doc, { label: 'Август', dateFrom: '2026-08-01', dateTo: '2026-08-31' }, 'p-aug'),
     )
 
@@ -265,7 +273,7 @@ describe('reading the document (EARS-11, EARS-21)', () => {
 
 describe('participants and the shared registry (EARS-3, EARS-9)', () => {
   it('EARS-9: an unknown email creates a member with a slug derived from the local part', async () => {
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       upsertParticipant(doc, {
         email: ' Anton@BBM.Academy ',
         name: 'Антон',
@@ -294,10 +302,10 @@ describe('participants and the shared registry (EARS-3, EARS-9)', () => {
   })
 
   it('EARS-9: an existing email updates name and role on the shared registry instead of creating a second member', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон', role: 'Продукт' })
-    await seedParticipant(db, id, { sortKey: 0 })
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон', role: 'Продукт' })
+    await seedParticipant(id, { sortKey: 0 })
 
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       upsertParticipant(doc, {
         email: 'anton@bbm.academy',
         name: 'Антон Сидоров',
@@ -313,13 +321,15 @@ describe('participants and the shared registry (EARS-3, EARS-9)', () => {
   })
 
   it('EARS-9: an email that is another member’s alias is refused by name, and nothing is written', async () => {
-    const igor = await seedMember(db, { email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
-    await db.execute(
-      sql`insert into core.member_alias (member_id, kind, value)
-          values (${igor}, 'email_personal', 'dobroyar@gmail.com')`,
+    const igor = await seedMember({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
+    await fixtureWrite((tx) =>
+      tx.execute(
+        sql`insert into core.member_alias (member_id, kind, value)
+            values (${igor}, 'email_personal', 'dobroyar@gmail.com')`,
+      ),
     )
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       upsertParticipant(doc, {
         email: 'dobroyar@gmail.com',
         name: 'Кто-то',
@@ -339,7 +349,7 @@ describe('participants and the shared registry (EARS-3, EARS-9)', () => {
   })
 
   it('EARS-3: fork, grade and the «только часы» nulls live on hours_participant, never on member', async () => {
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       upsertParticipant(doc, {
         email: 'anton@bbm.academy',
         name: 'Антон',
@@ -349,7 +359,7 @@ describe('participants and the shared registry (EARS-3, EARS-9)', () => {
         grade: 'II',
       }),
     )
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       upsertParticipant(doc, {
         email: 'eduard@bbm.academy',
         name: 'Эдуард',
@@ -381,12 +391,14 @@ describe('participants and the shared registry (EARS-3, EARS-9)', () => {
 
 describe('assessments (EARS-4, EARS-28)', () => {
   async function seedOpenPeriod(): Promise<number> {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await db.execute(
-      sql`insert into core.hours_participant (member_id, fork_min, fork_max, grade, sort_key)
-          values (${id}, 300000, 400000, 'III', 0)`,
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await fixtureWrite((tx) =>
+      tx.execute(
+        sql`insert into core.hours_participant (member_id, fork_min, fork_max, grade, sort_key)
+            values (${id}, 300000, 400000, 'III', 0)`,
+      ),
     )
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль 2026',
       from: '2026-07-01',
@@ -398,7 +410,7 @@ describe('assessments (EARS-4, EARS-28)', () => {
 
   it('EARS-4: a save round-trips the unrounded hourly_rate digit-for-digit', async () => {
     await seedOpenPeriod()
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       saveAssessment(
         doc,
         {
@@ -429,7 +441,7 @@ describe('assessments (EARS-4, EARS-28)', () => {
   it('EARS-4: a re-save is an upsert on (period, member) — one row, snapshots re-frozen', async () => {
     await seedOpenPeriod()
     const save = (hours: number, at: string) =>
-      mutateHoursDocument((doc) =>
+      mutateHoursDocument(TEST_ACTOR, (doc) =>
         saveAssessment(
           doc,
           {
@@ -459,7 +471,7 @@ describe('assessments (EARS-4, EARS-28)', () => {
 
   it('EARS-4: fractional hours, weekend hours and split percent survive the round-trip', async () => {
     await seedOpenPeriod()
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       saveAssessment(
         doc,
         {
@@ -483,9 +495,9 @@ describe('assessments (EARS-4, EARS-28)', () => {
   })
 
   it('EARS-28: a participant without fork and grade saves in «только часы» mode — null rate, zero money', async () => {
-    const id = await seedMember(db, { email: 'eduard@bbm.academy', name: 'Эдуард' })
-    await seedParticipant(db, id, { sortKey: 0 })
-    await seedPeriod(db, {
+    const id = await seedMember({ email: 'eduard@bbm.academy', name: 'Эдуард' })
+    await seedParticipant(id, { sortKey: 0 })
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль 2026',
       from: '2026-07-01',
@@ -493,7 +505,7 @@ describe('assessments (EARS-4, EARS-28)', () => {
       status: 'open',
     })
 
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       saveAssessment(
         doc,
         {
@@ -518,7 +530,7 @@ describe('assessments (EARS-4, EARS-28)', () => {
   })
 
   it('EARS-28: a logged-in non-participant has no participant row at all', async () => {
-    await seedMember(db, { email: 'guest@bbm.academy', name: 'Гость' })
+    await seedMember({ email: 'guest@bbm.academy', name: 'Гость' })
     const doc = await readHoursDocument()
     expect(participantOf(doc, 'guest@bbm.academy')).toBeUndefined()
   })
@@ -526,7 +538,7 @@ describe('assessments (EARS-4, EARS-28)', () => {
 
 describe('periods (EARS-5, EARS-29, EARS-30)', () => {
   it('EARS-5: text ISO dates round-trip with no timezone shift', async () => {
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       createPeriod(
         doc,
         { label: 'Январь 2026', dateFrom: '2026-01-01', dateTo: '2026-01-31' },
@@ -544,7 +556,7 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
   })
 
   it('EARS-5: a second open period is refused with today’s message and the first stays open', async () => {
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль 2026',
       from: '2026-07-01',
@@ -552,7 +564,7 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
       status: 'open',
       sortKey: 0,
     })
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-august',
       label: 'Август 2026',
       from: '2026-08-01',
@@ -560,7 +572,9 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
       sortKey: 1,
     })
 
-    const result = await mutateHoursDocument((doc) => setPeriodStatus(doc, 'p-august', 'open'))
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
+      setPeriodStatus(doc, 'p-august', 'open'),
+    )
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('unreachable')
     expect(result.error).toBe('Уже открыт период «Июль 2026» — сначала закрой его.')
@@ -570,11 +584,11 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
   })
 
   it('EARS-29: a save into a closed period is refused; reopening works while nothing else is open', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await seedParticipant(db, id, { sortKey: 0 })
-    await seedPeriod(db, { id: 'p-july', label: 'Июль 2026', from: '2026-07-01', to: '2026-07-31' })
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await seedParticipant(id, { sortKey: 0 })
+    await seedPeriod({ id: 'p-july', label: 'Июль 2026', from: '2026-07-01', to: '2026-07-31' })
 
-    const refused = await mutateHoursDocument((doc) =>
+    const refused = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       saveAssessment(
         doc,
         {
@@ -591,25 +605,29 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
     expect(refused.ok).toBe(false)
     expect((await readHoursDocument()).assessments).toHaveLength(0)
 
-    const reopened = await mutateHoursDocument((doc) => setPeriodStatus(doc, 'p-july', 'open'))
+    const reopened = await mutateHoursDocument(TEST_ACTOR, (doc) =>
+      setPeriodStatus(doc, 'p-july', 'open'),
+    )
     expect(reopened.ok).toBe(true)
     expect((await readHoursDocument()).periods[0].status).toBe('open')
   })
 
   it('EARS-30: a date change recomputes every assessment of the period from its stored monthly_rate', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await db.execute(
-      sql`insert into core.hours_participant (member_id, fork_min, fork_max, grade, sort_key)
-          values (${id}, 300000, 400000, 'III', 0)`,
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await fixtureWrite((tx) =>
+      tx.execute(
+        sql`insert into core.hours_participant (member_id, fork_min, fork_max, grade, sort_key)
+            values (${id}, 300000, 400000, 'III', 0)`,
+      ),
     )
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль 2026',
       from: '2026-07-01',
       to: '2026-07-31',
       status: 'open',
     })
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       saveAssessment(
         doc,
         {
@@ -626,9 +644,11 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
     const before = assessmentOf(await readHoursDocument(), 'p-july', 'anton@bbm.academy')
 
     // The participant's fork is raised AFTER the save: the recompute must not see it.
-    await db.execute(sql`update core.hours_participant set fork_min = 900000, fork_max = 900000`)
+    await fixtureWrite((tx) =>
+      tx.execute(sql`update core.hours_participant set fork_min = 900000, fork_max = 900000`),
+    )
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       updatePeriod(doc, {
         id: 'p-july',
         label: 'Июль 2026',
@@ -654,21 +674,21 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
   })
 
   it('EARS-21: deleting a period removes its row and leaves the rest of the order intact', async () => {
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль',
       from: '2026-07-01',
       to: '2026-07-31',
       sortKey: 0,
     })
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-august',
       label: 'Август',
       from: '2026-08-01',
       to: '2026-08-31',
       sortKey: 1,
     })
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-september',
       label: 'Сентябрь',
       from: '2026-09-01',
@@ -676,7 +696,7 @@ describe('periods (EARS-5, EARS-29, EARS-30)', () => {
       sortKey: 2,
     })
 
-    const result = await mutateHoursDocument((doc) => deletePeriod(doc, 'p-august'))
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) => deletePeriod(doc, 'p-august'))
     expect(result.ok).toBe(true)
     expect((await readHoursDocument()).periods.map((p) => p.id)).toEqual(['p-july', 'p-september'])
   })
@@ -695,7 +715,7 @@ describe('constraints map to readable refusals (EARS-20)', () => {
   }
 
   it('EARS-20: two open periods forced past the validation hit the partial unique index, not a 500', async () => {
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль 2026',
       from: '2026-07-01',
@@ -703,7 +723,7 @@ describe('constraints map to readable refusals (EARS-20)', () => {
       status: 'open',
       sortKey: 0,
     })
-    await seedPeriod(db, {
+    await seedPeriod({
       id: 'p-august',
       label: 'Август 2026',
       from: '2026-08-01',
@@ -711,7 +731,7 @@ describe('constraints map to readable refusals (EARS-20)', () => {
       sortKey: 1,
     })
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       force(doc, {
         ...doc,
         periods: doc.periods.map((period) => ({ ...period, status: 'open' as const })),
@@ -724,16 +744,16 @@ describe('constraints map to readable refusals (EARS-20)', () => {
   })
 
   it('EARS-20: a document carrying two assessments for one (period, member) cannot produce a second row', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await seedParticipant(db, id, { sortKey: 0 })
-    await seedPeriod(db, {
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await seedParticipant(id, { sortKey: 0 })
+    await seedPeriod({
       id: 'p-july',
       label: 'Июль 2026',
       from: '2026-07-01',
       to: '2026-07-31',
       status: 'open',
     })
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       saveAssessment(
         doc,
         {
@@ -753,7 +773,7 @@ describe('constraints map to readable refusals (EARS-20)', () => {
     // constraint stays the structural backstop, and the observable contract is
     // «one row per (period, member)», never a 500. The sentence each constraint
     // WOULD produce if it fired is covered by `tests/unit/hours-core-refusals.spec.ts`.
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       force(doc, {
         ...doc,
         assessments: [...doc.assessments, { ...doc.assessments[0], hours: 20 }],
@@ -766,10 +786,10 @@ describe('constraints map to readable refusals (EARS-20)', () => {
   })
 
   it('EARS-20: an assessment for an unknown period gets a sentence, not a raw FK error', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await seedParticipant(db, id, { sortKey: 0 })
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await seedParticipant(id, { sortKey: 0 })
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       force(doc, {
         ...doc,
         assessments: [
@@ -798,10 +818,10 @@ describe('constraints map to readable refusals (EARS-20)', () => {
   })
 
   it('EARS-20: an out-of-vocabulary grade forced past the validation gets a sentence', async () => {
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await seedParticipant(db, id, { sortKey: 0 })
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await seedParticipant(id, { sortKey: 0 })
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       force(doc, {
         ...doc,
         participants: doc.participants.map((participant) => ({

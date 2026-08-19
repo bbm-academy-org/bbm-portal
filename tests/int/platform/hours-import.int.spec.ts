@@ -10,8 +10,8 @@ import { readHoursDocument } from '@/lib/hours'
 import type { HoursDocument } from '@/lib/hours'
 import { HoursImportRefusal, importDocument, type HoursRowCounts } from '@/lib/hours/core/import'
 import { HOURS_LOCK_KEY } from '@/lib/hours/core/lock'
-import { takeHoursLock } from '@/lib/hours/core/persist'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
+import { platformTransaction } from '@/lib/platform/db/transaction'
 
 import {
   compareExports,
@@ -21,7 +21,7 @@ import {
 import { readJsonDocument } from '../../../tools/platform/hours-json'
 import { parseMemberDataset, seedMembers } from '../../../tools/platform/member-seed'
 import { verifyHours } from '../../../tools/platform/hours-verify'
-import { truncateHoursTables } from './hours-core-helpers'
+import { fixtureWrite, truncateHoursTables } from './hours-core-helpers'
 
 /**
  * The cutover import and its verdict (spec 124 EARS-13, EARS-16, EARS-27),
@@ -98,10 +98,17 @@ type ImportOutcome = {
  */
 async function importFixture(file: string): Promise<ImportOutcome> {
   const source: HoursDocument = await readJsonDocument(file)
-  const summary = await db.transaction(async (tx) => {
-    await takeHoursLock(tx, HOURS_LOCK_KEY)
-    return importDocument(tx, source)
-  })
+  // `cli:int-fixture` (spec 201 EARS-7), NOT a `cli:hours-import` — the import
+  // COMMAND was deleted with the JSON store (#263) and this harness is the only
+  // caller `importDocument()` has left, so naming a script that does not exist
+  // would put a lie in the ledger. `platformTransaction` takes the module
+  // advisory lock as the transaction's first statement exactly as the shipped
+  // import did (spec 124 EARS-10, EARS-13).
+  const summary = await platformTransaction(
+    { actorEmail: null, source: 'cli:int-fixture' },
+    async (tx) => importDocument(tx, source),
+    { lockKey: HOURS_LOCK_KEY },
+  )
   const core = await readHoursDocument()
   const comparison = compareExports(source, core)
   return { summary, comparison, lines: verdictLines(comparison) }
@@ -235,9 +242,11 @@ describe('the cutover verdict (EARS-27)', () => {
   it('EARS-27: the standalone verify names the differing paths after a row is tampered with', async () => {
     await importFixture(fixture('hours.json'))
 
-    await db.execute(
-      sql`update core.hours_assessment set accrual = accrual + 1, saved_at = '2026-08-17T00:00:00.000Z'
-          where id = (select min(id) from core.hours_assessment)`,
+    await fixtureWrite((tx) =>
+      tx.execute(
+        sql`update core.hours_assessment set accrual = accrual + 1, saved_at = '2026-08-17T00:00:00.000Z'
+            where id = (select min(id) from core.hours_assessment)`,
+      ),
     )
 
     const verdict = await verifyHours(fixture('hours.json'))

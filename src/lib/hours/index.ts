@@ -101,6 +101,10 @@ export {
  * `pnpm platform:hours:verify`.
  */
 export { HoursDataError, mutateHoursDocument, readHoursDocument } from './store-core'
+// Аудит-контекст мутации (спека 201 EARS-24/EARS-25) — переэкспортируется здесь,
+// чтобы вызывающему (`src/modules/hours/actions.ts`) хватало ОДНОЙ двери модуля
+// и он не тянул `@/lib/platform/db/*` напрямую.
+export type { AuditContext, AuditSource } from '@/lib/platform/db/transaction'
 
 export { emptyHoursDocument } from './types'
 export type {

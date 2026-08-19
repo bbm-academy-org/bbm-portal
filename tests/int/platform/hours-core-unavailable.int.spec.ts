@@ -7,6 +7,13 @@ import { closePlatformDb } from '@/lib/platform/db/client'
 import { seedMember, seedParticipant, truncateHoursTables } from './hours-core-helpers'
 
 /**
+ * Кто пишет в этих сюитах (спека 201 EARS-7, EARS-25). `portal` + непустой
+ * actor — ровно то, что приходит из Server Action после гейта сессии; без
+ * контекста запись отклонит `core.audit_row_change()` на помеченном пуле.
+ */
+const TEST_ACTOR = { actorEmail: 'anton@bbm.academy', source: 'portal' } as const
+
+/**
  * No JSON fallback, ever (spec 124 EARS-12).
  *
  * This spec lives in its own file because it closes the platform pool and takes
@@ -38,8 +45,8 @@ describe('the module has no JSON fallback (EARS-12)', () => {
     const { getPlatformDb } = await import('@/lib/platform/db/client')
     const db = getPlatformDb()
     await truncateHoursTables(db)
-    const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-    await seedParticipant(db, id, { sortKey: 0 })
+    const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await seedParticipant(id, { sortKey: 0 })
 
     const doc = await readHoursDocument()
     expect(doc.participants.map((participant) => participant.email)).toEqual(['anton@bbm.academy'])
@@ -57,7 +64,7 @@ describe('the module has no JSON fallback (EARS-12)', () => {
     delete process.env.PLATFORM_DATABASE_URL
 
     await expect(
-      mutateHoursDocument((doc) => ({ ok: true, doc, warnings: [], saved: null })),
+      mutateHoursDocument(TEST_ACTOR, (doc) => ({ ok: true, doc, warnings: [], saved: null })),
     ).rejects.toBeInstanceOf(HoursDataError)
   })
 

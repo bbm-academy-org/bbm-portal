@@ -27,7 +27,7 @@
  * hatch; a delivery record is history). A document that drops one silently is a
  * bug in a caller, not an instruction, and the row stays.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 
 import {
   ensureMemberByEmail,
@@ -324,9 +324,4 @@ export async function persistDocument(
   await syncAssessments(tx, before, after, memberIds)
   await upsertPublications(tx, before, after)
   await deleteRemovedPeriods(tx, before, after)
-}
-
-/** Takes the module-wide advisory lock; the FIRST statement of a mutation (EARS-10). */
-export async function takeHoursLock(tx: HoursTx, key: number): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(${key}::bigint)`)
 }

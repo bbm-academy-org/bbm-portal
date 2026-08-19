@@ -15,6 +15,7 @@ import {
   updateMemberProfile,
 } from '@/lib/member'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
+import { platformTransaction } from '@/lib/platform/db/transaction'
 
 /**
  * The member module against a REAL `core` schema (spec 124 EARS-2, EARS-17,
@@ -35,6 +36,27 @@ import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 const db = getPlatformDb()
 
 /**
+ * Кто пишет (спека 201 EARS-7, EARS-25). `getPlatformDb()` — помеченный пул
+ * приложения (EARS-26), поэтому ЛЮБАЯ запись в аудируемую таблицу отсюда обязана
+ * ехать в транзакции с аудит-контекстом; без него её отклонит
+ * `core.audit_row_change()`. Реестр правит владелец через админку часов, так что
+ * дверь тут та же, что у Server Action: `portal` + его email.
+ */
+const TEST_ACTOR = { actorEmail: 'anton@bbm.academy', source: 'portal' } as const
+
+/** Одна запись в реестр = одна транзакция под аудит-контекстом. */
+function asOwner<T>(
+  fn: (tx: Parameters<Parameters<typeof platformTransaction>[1]>[0]) => Promise<T>,
+) {
+  return platformTransaction(TEST_ACTOR, fn)
+}
+
+/** `ensureMemberByEmail` через свою транзакцию — форма, которой пишет продукт. */
+function ensureMember(input: { email: string; name: string; role?: string | null }) {
+  return asOwner((tx) => ensureMemberByEmail(input, { db: tx }))
+}
+
+/**
  * The SQLSTATE of a failed query. drizzle wraps a pg error in its own
  * `DrizzleQueryError` and puts the original on `cause`, so reading `.code` off the
  * thrown object alone finds `undefined` on every real constraint violation —
@@ -48,9 +70,11 @@ function sqlState(err: unknown): string | undefined {
 }
 
 async function seedAlias(memberId: number, kind: string, value: string, note?: string) {
-  await db.execute(
-    sql`insert into core.member_alias (member_id, kind, value, note)
-        values (${memberId}, ${kind}, ${value}, ${note ?? null})`,
+  await asOwner((tx) =>
+    tx.execute(
+      sql`insert into core.member_alias (member_id, kind, value, note)
+          values (${memberId}, ${kind}, ${value}, ${note ?? null})`,
+    ),
   )
 }
 
@@ -72,7 +96,7 @@ describe('core.member', () => {
   })
 
   it('EARS-2: a member row carries slug/email uniqueness, a checked status, active + Europe/Moscow by default', async () => {
-    const created = await ensureMemberByEmail({ email: ' Anton@BBM.Academy ', name: 'Антон' })
+    const created = await ensureMember({ email: ' Anton@BBM.Academy ', name: 'Антон' })
     expect(created).toMatchObject({
       slug: 'anton',
       email: 'anton@bbm.academy',
@@ -122,16 +146,16 @@ describe('core.member', () => {
   })
 
   it('EARS-2: ensureMemberByEmail appends a numeric suffix on slug collision instead of surfacing a constraint error', async () => {
-    const first = await ensureMemberByEmail({ email: 'anton@bbm.academy', name: 'Антон' })
-    const second = await ensureMemberByEmail({ email: 'anton@doctor.school', name: 'Антон Второй' })
-    const third = await ensureMemberByEmail({ email: 'Anton@zoom.us', name: 'Антон Третий' })
+    const first = await ensureMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    const second = await ensureMember({ email: 'anton@doctor.school', name: 'Антон Второй' })
+    const third = await ensureMember({ email: 'Anton@zoom.us', name: 'Антон Третий' })
 
     expect([first.slug, second.slug, third.slug]).toEqual(['anton', 'anton-2', 'anton-3'])
   })
 
   it('EARS-2: ensureMemberByEmail is idempotent on a known email and never renames it', async () => {
-    const created = await ensureMemberByEmail({ email: 'anton@bbm.academy', name: 'Антон' })
-    const again = await ensureMemberByEmail({ email: ' ANTON@bbm.academy ', name: 'Antoshka' })
+    const created = await ensureMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    const again = await ensureMember({ email: ' ANTON@bbm.academy ', name: 'Antoshka' })
 
     expect(again.id).toBe(created.id)
     expect(again.slug).toBe('anton')
@@ -139,8 +163,10 @@ describe('core.member', () => {
   })
 
   it('updateMemberProfile writes both name and role on the shared registry', async () => {
-    const created = await ensureMemberByEmail({ email: 'igor@bbm.academy', name: 'Игорь' })
-    const updated = await updateMemberProfile(created.id, { name: 'Игорь Пирогов', role: 'CTO' })
+    const created = await ensureMember({ email: 'igor@bbm.academy', name: 'Игорь' })
+    const updated = await asOwner((tx) =>
+      updateMemberProfile(created.id, { name: 'Игорь Пирогов', role: 'CTO' }, { db: tx }),
+    )
 
     expect(updated).toMatchObject({ id: created.id, name: 'Игорь Пирогов', role: 'CTO' })
     expect(await findMemberByEmail('IGOR@bbm.academy ')).toMatchObject({ name: 'Игорь Пирогов' })
@@ -153,7 +179,7 @@ describe('core.member', () => {
     // rollback. Asserted here rather than reasoned about, because it is also the
     // compile-time claim that a `tx` handle satisfies `MemberDb`.
     await expect(
-      db.transaction(async (tx) => {
+      platformTransaction(TEST_ACTOR, async (tx) => {
         await ensureMemberByEmail({ email: 'ghost@bbm.academy', name: 'Призрак' }, { db: tx })
         expect(await findMemberByEmail('ghost@bbm.academy', { db: tx })).not.toBeNull()
         throw new Error('the hours save failed after the member was created')
@@ -165,9 +191,9 @@ describe('core.member', () => {
   })
 
   it('listMembers and getMembersByIds return rows in a stable id order', async () => {
-    const a = await ensureMemberByEmail({ email: 'a@bbm.academy', name: 'A' })
-    const b = await ensureMemberByEmail({ email: 'b@bbm.academy', name: 'B' })
-    const c = await ensureMemberByEmail({ email: 'c@bbm.academy', name: 'C' })
+    const a = await ensureMember({ email: 'a@bbm.academy', name: 'A' })
+    const b = await ensureMember({ email: 'b@bbm.academy', name: 'B' })
+    const c = await ensureMember({ email: 'c@bbm.academy', name: 'C' })
 
     expect((await listMembers()).map((m) => m.email)).toEqual([
       'a@bbm.academy',
@@ -182,17 +208,17 @@ describe('core.member', () => {
 
 describe('core.member_alias', () => {
   it('EARS-17: the normalized expression is unique per kind — Dobroyar cannot join dobroyar', async () => {
-    const igor = await ensureMemberByEmail({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
+    const igor = await ensureMember({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
     await seedAlias(igor.id, 'mattermost_id', 'dobroyar')
 
-    const anton = await ensureMemberByEmail({ email: 'anton@bbm.academy', name: 'Антон' })
+    const anton = await ensureMember({ email: 'anton@bbm.academy', name: 'Антон' })
     await expect(seedAlias(anton.id, 'mattermost_id', ' Dobroyar ')).rejects.toSatisfy(
       (err: unknown) => sqlState(err) === '23505',
     )
   })
 
   it('EARS-17: one member may hold several aliases of the same kind, and the same value under another kind is free', async () => {
-    const igor = await ensureMemberByEmail({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
+    const igor = await ensureMember({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
     await seedAlias(igor.id, 'phone', '+79990000001')
     await seedAlias(igor.id, 'phone', '+79990000002', 'рабочий')
     await seedAlias(igor.id, 'telegram', 'dobroyar')
@@ -209,15 +235,15 @@ describe('core.member_alias', () => {
   })
 
   it('EARS-17: deleting a member cascades to its aliases', async () => {
-    const igor = await ensureMemberByEmail({ email: 'igor@bbm.academy', name: 'Игорь' })
+    const igor = await ensureMember({ email: 'igor@bbm.academy', name: 'Игорь' })
     await seedAlias(igor.id, 'zoom_id', 'zoom-igor')
-    await db.execute(sql`delete from core.member where id = ${igor.id}`)
+    await asOwner((tx) => tx.execute(sql`delete from core.member where id = ${igor.id}`))
 
     expect(await listAliases(igor.id)).toEqual([])
   })
 
   it('EARS-18: resolveMember finds a member by alias with normalized input (DoBroYar finds dobroyar)', async () => {
-    const igor = await ensureMemberByEmail({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
+    const igor = await ensureMember({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
     await seedAlias(igor.id, 'mattermost_id', 'dobroyar')
 
     expect(await resolveMember({ kind: 'mattermost_id', value: '  DoBroYar ' })).toMatchObject({
@@ -229,8 +255,8 @@ describe('core.member_alias', () => {
   })
 
   it('EARS-18: resolveMember answers the virtual kind email off the canonical member email', async () => {
-    const anton = await ensureMemberByEmail({ email: 'anton@bbm.academy', name: 'Антон' })
-    await ensureMemberByEmail({ email: 'igor@bbm.academy', name: 'Игорь' })
+    const anton = await ensureMember({ email: 'anton@bbm.academy', name: 'Антон' })
+    await ensureMember({ email: 'igor@bbm.academy', name: 'Игорь' })
 
     expect(await resolveMember({ kind: 'email', value: ' Anton@BBM.Academy ' })).toMatchObject({
       id: anton.id,
@@ -239,7 +265,7 @@ describe('core.member_alias', () => {
   })
 
   it('EARS-18: findMemberOwningAliasValue answers kind-agnostically — the email-vs-alias conflict lookup', async () => {
-    const igor = await ensureMemberByEmail({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
+    const igor = await ensureMember({ email: 'igor@bbm.academy', name: 'Игорь Пирогов' })
     await seedAlias(igor.id, 'email_personal', 'dobroyar@gmail.com')
 
     const owner = await findMemberOwningAliasValue(' DobroYar@Gmail.com ')
@@ -248,11 +274,11 @@ describe('core.member_alias', () => {
     expect(await findMemberOwningAliasValue('nobody@gmail.com')).toBeNull()
 
     await expect(
-      ensureMemberByEmail({ email: 'dobroyar@gmail.com', name: 'Кто-то' }),
+      ensureMember({ email: 'dobroyar@gmail.com', name: 'Кто-то' }),
     ).rejects.toBeInstanceOf(MemberConflictError)
-    await expect(
-      ensureMemberByEmail({ email: 'dobroyar@gmail.com', name: 'Кто-то' }),
-    ).rejects.toThrow(/Игорь Пирогов/)
+    await expect(ensureMember({ email: 'dobroyar@gmail.com', name: 'Кто-то' })).rejects.toThrow(
+      /Игорь Пирогов/,
+    )
     expect(await listMembers()).toHaveLength(1)
   })
 
