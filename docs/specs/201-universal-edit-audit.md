@@ -24,6 +24,13 @@ updated: 2026-08-19
 - **Owner ruling (2026-08-11, recorded on #201 and in spec 124):** adopt those
   mechanics, do not reinvent them. This spec is therefore a **port with named
   deviations** (§«Deviations from the donor»), not an independent design.
+- **Revision 2026-08-19 — the owner answered Q1–Q7.** The answers, and where each
+  one landed, are in §«Owner decisions (2026-08-19)»; two research memos stand
+  behind them (§«Research behind the 2026-08-19 revision»). Clause ids are stable
+  across that revision: **EARS-13, EARS-14 and EARS-18 are removed** (monthly
+  partitioning, the partition-maintenance function, the
+  `hours_publication.messages` exclusion), their ids stay gaps rather than being
+  reused, and the new clauses are **EARS-30..EARS-32**.
 
 ## Why
 
@@ -39,7 +46,7 @@ deliberately institutionalised (EARS-9, EARS-19). Today neither door leaves a
 trace of what a row looked like before.
 
 The estate already has a production-proven answer: **one generic PL/pgSQL
-row-level AFTER trigger** writing into **one append-only, partitioned ledger**,
+row-level AFTER trigger** writing into **one append-only ledger**,
 with the actor carried on transaction-scoped GUCs. Capture sits in the database,
 so it covers every door — app, script, migration, `psql` — instead of depending
 on every caller remembering a wrapper.
@@ -51,8 +58,8 @@ on every caller remembering a wrapper.
   `pnpm platform:migrate`. `PLATFORM_DATABASE_URL` has no fallback to
   `DATABASE_URL`, so nothing in this spec can reach Payload's `cms`.
 - **ADR-004 §4** — every schema-creating statement is idempotent. This spec
-  extends that posture to the object classes it introduces (functions, triggers,
-  partitions), for the same reason: a partially-applied run and a
+  extends that posture to the object classes it introduces (functions,
+  triggers), for the same reason: a partially-applied run and a
   restore-from-dump present the same already-there object.
 - **ADR-004 §6** — a module imports only its own table directory, and nothing
   under `src/app/` imports a table file. The ledger belongs to **no** module: it
@@ -107,23 +114,25 @@ on every caller remembering a wrapper.
   function shall be table-agnostic (`TG_TABLE_NAME`, `TG_RELID`,
   `to_jsonb(OLD/NEW)`), so covering a new table costs exactly one
   `CREATE TRIGGER` line and no per-table code. A new column of an already
-  audited table is _captured_ by that same trigger without touching it, but it is
-  **not** thereby covered: under default-deny (EARS-27) its values are masked
-  until the migration that adds the column also adds its policy row, and until
-  one lands the completeness check (EARS-29, EARS-21) reports it. The trigger
-  costs no code change; the column registry does.
+  audited table is _captured_ by that same trigger without touching it, but its
+  **values** are not thereby recorded: under default-deny (EARS-27) the column is
+  logged as `{"changed": true}` until the migration that adds it also adds it to
+  the trigger's value whitelist (EARS-16), and until one lands the completeness
+  check (EARS-29, EARS-21) reports it. The trigger costs no code change; the
+  whitelist argument does.
 - **EARS-2.** WHEN the trigger records a mutation, the platform shall store a
   JSONB diff computed as: for UPDATE — **only** the fields whose value actually
   changed, each as `{"field": {"old": …, "new": …}}`; for INSERT — the whole new
   row as `{"field": {"new": …}}`; for DELETE — the whole old row as
-  `{"field": {"old": …}}`. The registered per-table excluded columns (EARS-18)
-  shall be removed from the diff of **all three** operations, not only UPDATE, so
-  an excluded column's value cannot enter the ledger through an insert or a
-  delete. The bookkeeping column `updated_at` shall be excluded the same way,
+  `{"field": {"old": …}}`. A column that is **not** on the table's value
+  whitelist (EARS-16) shall appear in the diff of **all three** operations as
+  `{"field": {"changed": true}}` — never with an `old` or a `new` key — so its
+  value cannot enter the ledger through an update, an insert or a delete. The
+  bookkeeping column `updated_at` shall be dropped from the diff entirely,
   wherever it exists — today that is `core.member` alone; the other five audited
   tables carry no such column, so the rule is a standing convention for tables
   that will, not a description of the six that exist.
-- **EARS-3.** IF an UPDATE's diff is empty after those exclusions, THEN the
+- **EARS-3.** IF an UPDATE's diff records no change after those rules, THEN the
   platform shall write **no** ledger row — the trail records changes, not
   touches.
 - **EARS-4.** The trigger shall record the mutated row's primary key — read from
@@ -137,6 +146,23 @@ on every caller remembering a wrapper.
   `data.<table>.<insert|update|delete>` — lower-cased operation, unqualified
   table name — matching the donor's taxonomy so the two estates read the same
   way.
+- **EARS-31.** `core.hours_publication.messages` shall be **normalised into a
+  child table before the capture trigger is attached to `core.hours_publication`**:
+  `core.hours_publication_message (period_id → core.hours_publication, position
+integer, email text, text text, delivery text, sent_at text)`, one row per
+  message, keyed `(period_id, position)`, where `position` is the **explicit**
+  form of the array index that spec 100 (req. 2/10; spec 124 EARS-21) already
+  relies on — delivery addresses messages **by index**, and today that index
+  exists only because the jsonb array is rewritten whole on every step. After the
+  normalisation a delivery step updates **one row** and the audit records one
+  small diff naming `delivery` and `sent_at`; before it, every step rewrites the
+  whole array, so the diff would say «everything changed» once per message and
+  say nothing useful. This clause is a **prerequisite sub-task** — filed against
+  the hours module when this spec moves to `In dev` (via `spec-issue-graph`) and
+  blocking the trigger attach on `core.hours_publication`; **this spec revision
+  changes no schema and no application code.** It replaces the removed EARS-18,
+  which excluded the column instead of fixing the shape that made it
+  unauditable.
 
 ### Attribution
 
@@ -192,8 +218,10 @@ on every caller remembering a wrapper.
   be impossible. Degradation is permitted for **attribution** only (EARS-8),
   never for the append. Named consequence, stated rather than implied: an
   unwritable ledger blocks `core` writes. That is the intended trade for an
-  ~11-person, admin-rate estate where an unaudited write is the worse failure,
-  and the DEFAULT partition (EARS-13) removes its one routine cause.
+  ~11-person, admin-rate estate where an unaudited write is the worse failure.
+  The ledger is a plain table (EARS-11), so the routine cause of a failed append
+  in the partitioned design — a month with nowhere to land — does not exist here
+  at all.
 
 - **EARS-24.** The platform shall expose exactly **one** way for application code
   to open a write transaction against `platform`: a helper
@@ -257,100 +285,151 @@ on every caller remembering a wrapper.
 
 - **EARS-11.** The platform shall store audit rows in a new table
   `core.audit_event`, created by migration, with first-class columns:
-  `created_at timestamptz NOT NULL DEFAULT now()` (the mutation time and the
-  partition key), `id bigint` identity, `event_type text NOT NULL`,
-  `table_name text NOT NULL`, `actor_email text` (nullable),
-  `source text NOT NULL`, `pk jsonb NOT NULL`, `diff jsonb NOT NULL`,
-  `txid text NOT NULL` — the database's own transaction id, so every row written
-  by one save is grouped; primary key `(created_at, id)`. It shall carry indexes on
-  `(table_name, created_at DESC)` and `(actor_email, created_at DESC)` — the two
-  questions the owner actually asks: «что менялось в этой таблице» and «что делал
-  этот человек».
+  `id bigint` identity **primary key**,
+  `created_at timestamptz NOT NULL DEFAULT now()` (the mutation time),
+  `event_type text NOT NULL`, `table_name text NOT NULL`,
+  `actor_email text` (nullable), `source text NOT NULL`, `pk jsonb NOT NULL`,
+  `diff jsonb NOT NULL`, `txid text NOT NULL` — the database's own transaction
+  id, so every row written by one save is grouped. It shall be a **plain table**:
+  no partitioning, and therefore no partition key dragged into the primary key
+  (§«Rejected alternatives» carries the decision and its re-add trigger). It
+  shall carry a **BRIN** index on `created_at` — the cheap correct index for a
+  monotonically growing timestamp — plus BTREE indexes on
+  `(table_name, created_at DESC)`, `(actor_email, created_at DESC)` and
+  `(table_name, pk)`: «что менялось в этой таблице», «что делал этот человек» and
+  «вся история вот этой строки».
 - **EARS-12.** `core.audit_event` shall be **append-only, enforced by the
-  database**: a `BEFORE UPDATE OR DELETE FOR EACH ROW` trigger on the partitioned
-  parent shall raise an exception naming the operation, so a correction is a
-  compensating record and never an edit. **Known residual, closed elsewhere:**
-  `TRUNCATE` is not reachable by a row-level trigger; it is closed by privileges
-  (the application role holds no `TRUNCATE` on the table), and this spec names
-  that rather than letting the trigger imply a coverage it does not have.
-- **EARS-13.** `core.audit_event` shall be declared
-  `PARTITION BY RANGE (created_at)` with **monthly** partitions and a **DEFAULT**
-  partition. The DEFAULT partition is the correctness net, not the storage plan:
-  it exists so that a missing month can never fail a domain write (EARS-10).
-- **EARS-14.** The platform shall provide
-  `core.audit_ensure_partitions(months_ahead integer)` — idempotent, creating
-  every missing monthly partition from the current month forward — and shall run
-  it as part of `pnpm platform:migrate`, so each deploy extends the horizon and
-  the estate needs neither `pg_cron` nor `pg_partman` (neither is present in the
-  `postgres:17-alpine` image this estate runs in prod, on the dev stand and in
-  CI). Adding that call **changes the `platform:migrate` script**: today it is
-  the two steps ADR-004 §5 describes (`tools/platform/ensure-database.mjs`, then
-  `drizzle-kit migrate`); this makes it three, the new one running last. IF the
-  DEFAULT partition already holds rows for a month whose partition is being
-  created, THEN the function shall refuse that month and report it in plain
-  words, rather than let the underlying `CREATE TABLE … PARTITION OF` fail
-  obscurely — Postgres validates such a creation by scanning the DEFAULT
-  partition under an `ACCESS EXCLUSIVE` lock and aborts if it holds a row of that
-  range. (That scan is also what the routine case costs: every deploy takes a
-  brief exclusive lock on an all-but-empty DEFAULT partition, per month created.)
-  Reaching the refusal state means the horizon was exhausted, and the remedy is a
-  named manual move of those rows.
+  database in two echelons**. The load-bearing one is the privilege model
+  (EARS-30): the application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on
+  the ledger and does not own it. The second is the table's own triggers: a
+  `BEFORE UPDATE OR DELETE FOR EACH ROW` trigger **and a separate**
+  `BEFORE TRUNCATE FOR EACH STATEMENT` trigger, each raising an exception naming
+  the operation, so a correction is a compensating record and never an edit. The
+  statement-level trigger is not decoration: a row-level trigger does not fire on
+  `TRUNCATE` at all, so without it the table's most destructive operation would
+  be precisely the one the trigger echelon cannot see. The order of the two
+  echelons is itself the point — a trigger protects against a mistake, a `REVOKE`
+  against an intention, because the owner of a table switches its triggers off
+  with one `ALTER TABLE … DISABLE TRIGGER`.
+- **EARS-13, EARS-14 — removed (2026-08-19).** They declared the monthly RANGE
+  partitioning with a DEFAULT partition and the `core.audit_ensure_partitions()`
+  maintenance function called from `pnpm platform:migrate`. The owner's Q5 answer
+  removes partitioning entirely; the reasoning and the re-add trigger live in
+  §«Rejected alternatives». The ids are retired, not reused.
 - **EARS-15.** No capture trigger shall be attached to `core.audit_event` itself
   (recursion) nor to `core.__drizzle_migrations` (drizzle's own bookkeeping, not
   domain truth).
 
+- **EARS-30.** The ledger's protection shall be a **privilege** arrangement and
+  not only a trigger one: `REVOKE UPDATE, DELETE, TRUNCATE ON core.audit_event`
+  from the application role; `core.audit_event` and `core.audit_row_change()`
+  shall be owned by a role that is **not** the application role; and the trigger
+  function shall be `SECURITY DEFINER` with `SET search_path = pg_catalog, core`,
+  so the application role needs — and is granted — no direct `INSERT` on the
+  ledger at all. Writes reach `core.audit_event` through the capture trigger or
+  not at all. The migration shall state the role split in a comment, because a
+  deployment that runs everything as one superuser satisfies the letter of this
+  clause and none of its purpose — the estate's own donor canon (the PostgreSQL
+  wiki's Audit trigger 91plus) says the same thing in one line: the application
+  must not connect as a superuser and must not own the tables it audits.
+
 ### Personal data
 
-- **EARS-16.** WHERE a column's policy in the platform's column registry is
-  `masked`, the trigger shall emit it in the diff as `{"field": {"masked": true}}`
-  — with no `old` and no `new` key at all, so the fact of the change is recorded
-  and the values never are. No plaintext value of a masked column shall reach
-  `core.audit_event`. The registry shall be **data, not code**: a table
-  `core.audit_column_policy (table_name, column_name, policy)` — `plaintext` /
-  `masked` / `excluded` — written **only by migration**, so extending it is a
-  reviewable one-row diff, the coverage guard can read it, and there is no
-  SQL⇄TypeScript copy to keep in parity. The application role shall hold no
-  write privilege on it: a registry a data operation can edit is a masking policy
-  a data operation can switch off.
-- **EARS-17.** The initial PD registry shall contain `member_alias.value` and
-  `member_alias.note` — a person's phone, personal email, Telegram/Instagram
-  handles and the free-text context around them (spec 124 EARS-17).
-  `member.email`, `member.name` and `member.slug` shall be recorded in
-  plaintext: they are the corporate identity of an ~11-person team,
-  `member.email` is already the ledger's own actor column, and masking them would
-  make «кто и на что переименовал человека» — the exact question this feature
-  exists to answer — unanswerable. Owner question **Q2** below can reverse this.
-- **EARS-18.** The same registry shall carry a per-table **excluded-column**
-  policy, initially holding `hours_publication.messages`: the spec-100 delivery
-  loop rewrites that jsonb array once per message, so auditing it would store the
-  entire batch N times per publication to record a per-message `delivery` flag
-  the column itself already carries. The publication's status transitions stay
-  audited. Owner question **Q3**.
+- **EARS-16.** The diff shall carry a column's **value** only WHERE that column
+  is named on the audited table's **value whitelist**. A column that is not on it
+  shall be recorded as `{"field": {"changed": true}}` — no `old`, no `new`, no
+  masked or truncated rendering of the value, no hash — so the fact of the change
+  is in the ledger and the value never is. The whitelist shall be **part of the
+  versioned schema**, not runtime state: it is passed as the arguments of
+  `CREATE TRIGGER … EXECUTE FUNCTION core.audit_row_change('col', 'col', …)` in
+  the migration that attaches the trigger and read by the function from
+  `TG_ARGV`. There shall be **no registry table**: a column policy living in data
+  is state outside the migration chain, is one `DELETE` away from being emptied
+  by a data operation, and buys nothing here — nobody needs to change the policy
+  without a deploy. This is also the donor canon's own shape (`excluded_cols` as
+  a trigger argument in the PostgreSQL wiki's Audit trigger 91plus), inverted
+  from a blacklist to a whitelist for the reason EARS-27 states.
+- **EARS-17.** The initial whitelist shall be the **corporate identity and the
+  work data**: `member.name`, `member.email`, `member.slug`, and every column of
+  the hours tables (`hours_period`, `hours_participant`, `hours_assessment`,
+  `hours_publication`, and `hours_publication_message` once EARS-31 lands) —
+  these are what «кто и на что это поменял» is actually asked about,
+  `member.email` is already the ledger's own actor column, and recording them by
+  value is not excessive relative to the purpose of the trail.
+  `member_alias.value` and `member_alias.note` — a person's phone, personal
+  email, Telegram/Instagram handles and the free-text context around them (spec
+  124 EARS-17) — shall **not** be whitelisted, and shall therefore be recorded as
+  `{"changed": true}` and nothing else. Every column added later, on any audited
+  table, starts outside the whitelist by construction (EARS-27).
+- **EARS-18 — removed (2026-08-19).** It excluded `hours_publication.messages`
+  from the diff. The owner's Q3 answer removes the exclusion and fixes the shape
+  that made the column unauditable instead: EARS-31. The id is retired, not
+  reused.
 
-- **EARS-27.** The registry shall be **default-deny**: a column of an audited
-  table for which the registry holds **no** row shall be treated as `masked`.
-  Plaintext is therefore something a migration grants explicitly, one column at a
-  time, and never something the absence of a row grants silently. Named
-  consequence, and the reason this is the chosen shape: if the registry is empty,
-  emptied, or restored out of order, the ledger degrades to «we know what changed
-  but not to what» — a useless audit — instead of writing personal data in the
-  clear into an append-only table nothing can redact (EARS-28). The two failure
-  modes are not symmetric, and this clause picks the recoverable one.
-- **EARS-28.** Masking shall be understood as **prospective only**: it is applied
-  at write time, the ledger is append-only (EARS-12), and retention is indefinite
-  by default (Q1) — so widening the mask later protects future rows and changes
-  nothing about rows already written. IF plaintext personal data has reached the
-  ledger, THEN the platform shall offer no redaction path at delivery: the only
-  available instrument is dropping a whole monthly partition, which destroys that
-  month's audit for every table and every person rather than redacting one
-  person's data, and a per-person erasure request cannot be satisfied by it at
-  all. This clause exists so the property is decided rather than discovered: the
-  owner's answer to **Q7** below either accepts it, replaces it with a retention
-  term, or commissions a sanctioned redaction procedure as its own clause.
-  Factual note, not legal advice: 152-ФЗ places obligations on an operator of
-  personal data regarding deletion and rectification on the subject's request;
-  whether this ledger falls under them, and what that requires, is the owner's
-  call with his own counsel — no agent decides it here.
+**Why exclusion and not masking (the owner's Q2 answer, 2026-08-19).** A partial
+mask of the `a*@*.ru` kind is **not обезличивание** and removes no obligation
+under 152-ФЗ. The value is not what ties an audit row to a person — the `pk` in
+the same row is — so masking hides the _value_ and never the _attribution_, and
+with a team of ~11 the re-identification is arithmetic rather than analysis.
+Приказ Роскомнадзора № 140 (in force 2025-09-01, replacing № 996) additionally
+requires the original and the depersonalised data **not** to be stored together,
+which a diff sitting in the same database as the row it describes can never
+satisfy. The clause that actually governs the design is **ст. 5 ч. 5 152-ФЗ**:
+the content and volume of processed personal data must correspond to the declared
+purpose and excess is not allowed — and the purpose «кто, когда, какое поле
+изменил» is fully served by the fact of the change. The industry default has the
+same shape (`excluded_cols` in Audit trigger 91plus, `exclude_fields` in
+django-auditlog, `skip:` in Rails paper_trail, «do not put PII into free-form
+fields in the first place» in AWS's own guidance), and OWASP's logging cheat
+sheet lists **deletion first**, masking only as an alternative. Sources:
+§«Research behind the 2026-08-19 revision». **[ЮР]** The legal qualification —
+the basis of processing, the wording in the ЛНА, whether and how приказ № 140
+applies to purely internal depersonalisation — stays with the owner and his
+lawyer; this spec only builds so that the question has the smallest possible
+surface.
+
+- **EARS-27.** The whitelist shall be **default-deny for values**: a column of
+  an audited table that the trigger's arguments do not name shall be recorded as
+  `{"changed": true}`. Recording a value is therefore something a migration
+  grants explicitly, one column at a time, and never something an omission grants
+  silently. Named consequence, and the reason this is the chosen direction: a
+  forgotten whitelist entry degrades the ledger to «we know what changed but not
+  to what» — recoverable by a one-line migration, going forward — while a
+  forgotten exclusion writes personal data in the clear into an append-only table
+  that nothing can redact (EARS-28). The two failure modes are not symmetric, and
+  this clause picks the recoverable one.
+- **EARS-28.** Exclusion shall be understood as **prospective only**: it is
+  applied at write time and the ledger is append-only (EARS-12), so widening the
+  whitelist later starts recording values from that moment on, and narrowing it
+  later does nothing to values already written. IF a value that should not have
+  been recorded has reached the ledger, THEN the platform shall offer **no**
+  redaction path at delivery; the sanctioned redaction/erasure procedure is a
+  named follow-up (§«Out of scope»), and its trigger is the first erasure request
+  from a data subject or the first whitelist narrowing that must reach rows
+  already written. This clause exists so the property is decided rather than
+  discovered, and what makes it safe to ship today is EARS-17: declared personal
+  data does not enter the ledger in the first place, so there is nothing to
+  redact. Factual note, not legal advice: 152-ФЗ places obligations on an
+  operator of personal data around deletion and rectification on the subject's
+  request (ст. 21), and a system's own «append-only» is not a recognised
+  exception to them — **[ЮР]**, the owner's call with his counsel.
+
+- **EARS-32.** The ledger's **retention period shall be a parameter of the
+  owner's personal-data policy** — «срок хранения = <the value set in the PD
+  policy by the owner and his lawyer>» — recorded there and referenced from here,
+  never invented in this spec. The product-side answer is «as long as the product
+  lives»: at a few hundred rows a month nothing technical forces a term. What
+  forces one is legal, and from two directions at once — **ст. 5 ч. 7 152-ФЗ**
+  (personal data are stored no longer than the purpose requires and are destroyed
+  or depersonalised once it is achieved) and **РСБ.1 / РСБ.3 приказа ФСТЭК России
+  № 21** (the recorded security events **and their retention period** are
+  defined, the records are collected and kept for that period, and РСБ.7 protects
+  them from modification and unauthorised access — which is what EARS-12 and
+  EARS-30 implement). Both are **[ЮР]** items: the number, the legal basis and
+  the ЛНА wording stay with the owner and his lawyer, and no agent fills them in.
+  The engineering half of the clause is only this: once named, the term is
+  enforced by a scheduled `DELETE … WHERE created_at < …` over a table of this
+  size, and this spec ships no partition-dropping machinery for it.
 
 ### Coverage
 
@@ -378,22 +457,32 @@ on every caller remembering a wrapper.
   coverage blocks from day 0 while the allowlist-discipline half (EARS-19)
   soaks. The two check different things on purpose: the guard sees the allowlist
   and its written rationale, the test sees reality.
-- **EARS-22.** The audited set at delivery shall be exactly the `core` domain
-  tables that exist today — `member`, `member_alias`, `hours_period`,
-  `hours_participant`, `hours_assessment`, `hours_publication` — with
-  `audit_event`, `audit_column_policy` and `__drizzle_migrations` allowlisted
-  (recursion; the registry is configuration whose changes are visible in the
-  migration diff; drizzle bookkeeping).
+- **EARS-22.** Coverage shall be defined **by construction, not by
+  enumeration**: every platform domain table in `core` — the ones that exist
+  today and every one added later — shall carry the capture trigger, and a table
+  that lands without one shall turn the coverage guard (EARS-19) and the
+  integration assertion (EARS-21) red. A table shall leave the audited set only
+  through an **explicit allowlist entry carrying a written rationale**, reviewed
+  in the diff that adds it. Today's value of that rule is exactly the six `core`
+  domain tables that exist — `member`, `member_alias`, `hours_period`,
+  `hours_participant`, `hours_assessment`, `hours_publication`, joined by
+  `hours_publication_message` when EARS-31 lands — with `audit_event` and
+  `__drizzle_migrations` allowlisted (recursion; drizzle bookkeeping). The list
+  is the current value; the rule is the clause.
 
 - **EARS-29.** The coverage guard shall also assert the **completeness of the
-  column registry**: for every audited table, every column declared under
-  `src/lib/platform/db/schema/**/*.ts` shall have exactly one policy row in the
-  migration-seeded `core.audit_column_policy`, and a column with none shall be a
-  finding. The integration counterpart (EARS-21) shall make the same assertion
-  against the really-migrated database, comparing the registry to
-  `information_schema.columns`. Default-deny (EARS-27) is what makes a missing
-  row safe; this clause is what makes it **visible**, so «everything is masked
-  because the registry was never seeded» cannot pass for a working audit.
+  value whitelist**: for every audited table, every column declared under
+  `src/lib/platform/db/schema/**/*.ts` shall appear in exactly one of two places
+  in the migration chain — the trigger's whitelist arguments, or a
+  guard-readable excluded-columns list carrying a **mandatory rationale**
+  (`member_alias.value` and `member_alias.note` carry «ПДн — ст. 5 ч. 5 152-ФЗ»
+  as theirs). A column named in neither shall be a finding, and a bare or empty
+  rationale shall itself be one. The integration counterpart (EARS-21) shall make
+  the same assertion against the really-migrated database, comparing the trigger
+  arguments read from `pg_trigger.tgargs` with `information_schema.columns`.
+  Default-deny (EARS-27) is what makes an unnamed column **safe**; this clause is
+  what makes it **visible**, so «no values are recorded at all because nobody
+  updated the trigger arguments» cannot pass for a working audit.
 
 ### Reading it
 
@@ -404,8 +493,8 @@ on every caller remembering a wrapper.
 
 ## How it lands in our pipeline
 
-**One migration, hand-written SQL.** drizzle-orm 0.45 can express none of
-`PARTITION BY`, a PL/pgSQL function, or a trigger, so the migration is pure SQL:
+**One migration, hand-written SQL.** drizzle-orm 0.45 can express neither a
+PL/pgSQL function, nor a trigger, nor a grant, so the migration is pure SQL:
 `pnpm platform:migrate:generate --custom --name=universal_edit_audit` emits the
 empty migration file together with its `meta/_journal.json` entry and snapshot,
 and the SQL is written into it by hand. This is already the established shape
@@ -419,8 +508,9 @@ schema against its **own snapshot**, never against the live database, so an
 object that never entered a snapshot is invisible to it and is never dropped —
 which is precisely why the hand-written FKs of `0002` are safe. A
 `pgTable('audit_event')` stub would break that property: drizzle would then
-believe it owns a table it cannot describe (no partitioning) and emit a duplicate
-`CREATE TABLE` on the next generate. Reads therefore use the `sql` template on
+believe it owns a table whose protections it cannot describe — the ownership
+split, the revoked grants and the two append-only triggers of EARS-12/EARS-30 —
+and would happily emit a duplicate `CREATE TABLE` on the next generate. Reads therefore use the `sql` template on
 the platform handle, exactly as `tests/int/platform/*.int.spec.ts` already do.
 
 **Idempotency.** `CREATE TABLE IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`,
@@ -437,8 +527,12 @@ are still decided:
 - **The audit context (EARS-6):** issued as
   `SELECT set_config('app.actor_email', <value>, true)` — the transaction-local,
   parameterizable form, because `SET LOCAL` accepts no bind parameter — and read
-  back in the trigger with `nullif(current_setting(<name>, true), '')`. A
-  session-level `SET` is forbidden: it would outlive the transaction and stamp
+  back in the trigger with `nullif(current_setting(<name>, true), '')` — the
+  two-argument form, which returns NULL for an unset GUC instead of erroring, so
+  the trigger raises **its own** message («audit: actor context not set — call
+  set_config('app.actor_email', …, true) inside the transaction») rather than
+  Postgres's unreadable «unrecognized configuration parameter». A session-level
+  `SET` is forbidden: it would outlive the transaction and stamp
   the next borrower of that pooled connection with the previous actor.
 - **The app-connection mark (EARS-26):** a session GUC set once per physical
   connection through the pool's libpq `options` (`-c app.connection=app`) in
@@ -451,14 +545,15 @@ are still decided:
   would both overwrite the code's mark and stamp drizzle-kit's own runner as the
   app — after which a data-bearing migration (`source = 'migration'`) would be
   refused by EARS-26. The environment variable carries no `options=`.
-- **`search_path` on the new functions.** The donor pins neither `search_path`
-  nor `SECURITY DEFINER`, and this port adds something the donor did not have —
-  a **table read inside the trigger** (the column registry), which makes name
-  resolution a live question rather than an inherited one. So
-  `core.audit_row_change()` and its helpers are created with
-  `SET search_path = pg_catalog, core` and stay `SECURITY INVOKER`: the registry
-  it consults is then always ours, whatever the calling session's `search_path`
-  says, and no function in this migration runs with elevated rights.
+- **`search_path` and rights on the new functions.** The donor pins neither
+  `search_path` nor `SECURITY DEFINER`. Here both are pinned, and for the same
+  reason: the ledger is not writable by the application role at all (EARS-30), so
+  the capture trigger is `SECURITY DEFINER` — owned by the ledger's owner, not by
+  the app — and `SET search_path = pg_catalog, core` closes the search-path
+  hijack that `SECURITY DEFINER` otherwise opens. The 2026-08-19 revision is what
+  makes this clean rather than debatable: with the column policy moved into
+  `TG_ARGV` (EARS-16) the function reads no table other than the ledger it
+  writes.
 
 **What the connection mark pulls into the delivery (EARS-26's real scope).**
 `getPlatformDb()` is the only pool, so once it is marked, **everything** writing
@@ -469,13 +564,15 @@ each passes a context to the same EARS-24 helper — but they sit inside the
 implementation task's scope rather than a follow-up: a delivery that marks the
 pool without converting them turns its own test seeds into failed writes.
 
-**Order inside the migration.** Ledger + partitions → the column-policy registry
-→ `core.audit_row_change()` and its helpers → the append-only trigger → the
-per-table attach lines **last**. Nothing is retro-backfilled: the trail starts at
+**Order inside the migration.** Ledger + its indexes → `core.audit_row_change()`
+and its helpers → the ledger's own guard triggers (`BEFORE UPDATE OR DELETE` and
+`BEFORE TRUNCATE`) → the ownership and `REVOKE` statements → the per-table attach
+lines, carrying their value whitelists, **last**. Nothing is retro-backfilled: the trail starts at
 the attach, and the migration itself therefore produces no ledger rows.
 
-**Expand/contract.** Pure expand — one new table, its partitions, a registry
-table, three functions, one trigger per audited table. The previous app image
+**Expand/contract.** Pure expand — one new table with its indexes, two
+functions, the ledger's own two guard triggers, one capture trigger per audited
+table. The previous app image
 keeps writing into the audited tables perfectly well after this migration; its
 rows simply land as `source = 'db-direct'` with a NULL actor (EARS-8), which is
 the honest record of a build that does not set the context. `pnpm deploy:prod
@@ -492,8 +589,9 @@ available if the owner wants the ledger inspected before traffic moves.
 job of `.github/workflows/ci.yml` runs `postgres:17-alpine` as a service, applies
 `pnpm platform:migrate`, then runs `tests/int/platform` — and it sits in the `ci`
 meta-job's needs-list, i.e. BLOCK. Diff semantics, no-op suppression,
-append-only refusal, `db-direct` degradation, masking and trigger coverage are
-all asserted there against real Postgres. None of this is testable against a
+append-only refusal (row-level and `TRUNCATE`), the privilege echelon,
+`db-direct` degradation, the value whitelist and trigger coverage are all
+asserted there against real Postgres. None of this is testable against a
 mock: a mock would assert our opinion of what Postgres does.
 
 ## Deviations from the donor (ds-platform spec 010)
@@ -501,19 +599,19 @@ mock: a mock would assert our opinion of what Postgres does.
 Recorded the way `docs/ci-guardrails.md` §7 records the guard family's
 deviations — a port is judged by whether its differences are named.
 
-| Donor                                                                                                       | Here                                                                                                                                                                                | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Reuses an existing `audit_ledger`, packing `{table, pk, diff, source, txid}` into a `metadata` jsonb blob   | New `core.audit_event` with those as **first-class columns**                                                                                                                        | The blob was a constraint of reusing a table the feature did not own. We create the table, so a queryable, indexable shape is free.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Actor = Zitadel `sub` (`app.actor_sub`)                                                                     | Actor = normalized email (`app.actor_email`)                                                                                                                                        | This estate keys on email end to end — `HOURS_ADMIN_EMAILS`, `sessionEmail()`, spec 124 EARS-2's DB-enforced normalization. A `sub` would need a join to be readable, and we have no table mapping it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `pg_partman` 5.4.3 + the `pg_partman_bgw` background worker                                                 | `core.audit_ensure_partitions()` called by `pnpm platform:migrate`                                                                                                                  | The extension is absent from our image and adding one is a new ops surface on a single-VPS estate. Deploys are frequent enough to keep the horizon ahead of `now()`, and the DEFAULT partition is the net either way.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| PD registry = a SQL function with a hardcoded `CASE`, mirrored by a TS constant, parity held by an e2e test | PD/exclusion registry = the table `core.audit_column_policy`, **default-deny**, migration-written only, completeness checked by the guard (EARS-16, EARS-27, EARS-29)               | One source instead of two plus a parity test, and EARS-18's exclusion policy shares the mechanism instead of becoming a second hardcoded list. **The property the donor's `CASE` had and a table does not:** the list cannot be emptied by a data operation — only by a reviewed migration. That is not recovered by the table shape, so it is recovered three other ways: the app role holds no write grant on the registry, an unknown column is masked rather than plaintext, and a registry that has lost rows turns CI red. The residual cost is named too: a new column on an audited table now needs its policy row in the same migration, or its values are masked until one lands. |
-| ADR-0009 retention: 5 years + crypto-shred at term (mechanism itself deferred to ds #383)                   | **Open question Q1**                                                                                                                                                                | No such contract exists in this repo. Inventing a retention term silently would be an agent taking a data-policy decision the estate has never taken.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `event_id` uuid + a partition-scoped dedup unique                                                           | Dropped                                                                                                                                                                             | It serves idempotent-replay semantics the donor's ledger needs for its other event families (`auth.*`). Trigger rows are distinct facts; porting it here would be dead columns.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `source` set `admin-ui \| portal-api \| system:<job> \| migration \| manual-dba`                            | `portal \| system:<job> \| cli:<name> \| migration \| manual-dba`                                                                                                                   | One app, one portal host (ADR-003 §1) — `admin-ui` vs `portal-api` has no referent here; `cli:` names our own scripts. `system:<job>` is **kept**: under EARS-26 the marked pool refuses a context-less write, so an app-initiated write with no user (outbox drain, scheduled job) needs a legal value, and this is it.                                                                                                                                                                                                                                                                                                                                                                    |
-| Attribution enforced by convention plus a unit seam; a runtime interceptor named as a future option         | Attribution is a required helper argument **plus** a handle type with no `.transaction`, **plus** an eslint rule, **plus** a database-side refusal on app connections (EARS-24..26) | A required argument alone is the donor's own convention wearing a type annotation: it binds only callers who already chose the helper. The three additions are what make it fail-closed; the last one is the only mechanism that also covers code we have not written yet.                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| The trigger degrades to `db-direct` for **every** context-less write, app included                          | Degrades only for connections that are not the app's; an app connection with no context is **refused** (EARS-26)                                                                    | The donor's uniform degradation would record an app write that skipped the wrapper as `db-direct` — a false statement about the door, in the one table whose value is that it is believed. Cost, named: a missed call-site is a failed save instead of a wrong row.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Three files (`requirements` / `design` / `scenarios.feature`)                                               | One EARS spec                                                                                                                                                                       | `docs/specs/README.md` is this repo's format; `author-feature-spec` already records the same deviation for the skill it was ported from.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Coverage guard is the only coverage check                                                                   | Guard (WARN) **plus** a catalog assertion in the BLOCK `platform-int` job                                                                                                           | A text scan of migration files cannot see the database. We have a real Postgres in CI and no reason to leave the stronger check unwritten.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Donor                                                                                                       | Here                                                                                                                                                                                | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reuses an existing `audit_ledger`, packing `{table, pk, diff, source, txid}` into a `metadata` jsonb blob   | New `core.audit_event` with those as **first-class columns**                                                                                                                        | The blob was a constraint of reusing a table the feature did not own. We create the table, so a queryable, indexable shape is free.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Actor = Zitadel `sub` (`app.actor_sub`)                                                                     | Actor = normalized email (`app.actor_email`)                                                                                                                                        | This estate keys on email end to end — `HOURS_ADMIN_EMAILS`, `sessionEmail()`, spec 124 EARS-2's DB-enforced normalization. A `sub` would need a join to be readable, and we have no table mapping it.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `pg_partman` 5.4.3 + the `pg_partman_bgw` background worker                                                 | **No partitioning at all** — a plain table with a BRIN index on `created_at` (EARS-11)                                                                                              | Owner decision Q5 (2026-08-19). Not «the same idea done by hand»: partitioning itself is out. At ~500 rows a month the ledger is 3–4 orders of magnitude below PostgreSQL's own «bigger than the server's RAM» threshold, and none of the canonical trigger-audit designs partitions. §«Rejected alternatives» carries the numbers and the re-add trigger.                                                                                                                                                                                                                                              |
+| PD registry = a SQL function with a hardcoded `CASE`, mirrored by a TS constant, parity held by an e2e test | A **value whitelist passed as trigger arguments** in the migration, default-deny, completeness checked by the guard (EARS-16, EARS-27, EARS-29)                                     | Owner decision Q2 (2026-08-19), and the donor canon's own shape (`excluded_cols` in Audit trigger 91plus), inverted to a whitelist. One source, inside the versioned schema, reviewed in the PR that adds a column — no TS mirror, no parity test, and no registry **table**: a policy living in data is state outside the migration chain that one `DELETE` can empty. The residual cost is named: a new column on an audited table needs its whitelist entry in the same migration, or its values are recorded as `{"changed": true}` until one lands — which is the recoverable failure, by EARS-27. |
+| ADR-0009 retention: 5 years + crypto-shred at term (mechanism itself deferred to ds #383)                   | Retention is a **parameter of the owner's personal-data policy** (EARS-32); no crypto-shred mechanism here                                                                          | Owner decision Q1 (2026-08-19). No retention contract exists in this repo, and inventing a term would be an agent taking a data-policy decision the estate has never taken; the term is set in the PD policy by the owner and his lawyer (**[ЮР]**), and enforced from here by a plain dated `DELETE` when it exists. Crypto-shredding is additionally the wrong bet in this jurisdiction — whether destroying a key counts as destroying the data under ст. 21 is unsettled.                                                                                                                           |
+| `event_id` uuid + a partition-scoped dedup unique                                                           | Dropped                                                                                                                                                                             | It serves idempotent-replay semantics the donor's ledger needs for its other event families (`auth.*`). Trigger rows are distinct facts; porting it here would be dead columns.                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `source` set `admin-ui \| portal-api \| system:<job> \| migration \| manual-dba`                            | `portal \| system:<job> \| cli:<name> \| migration \| manual-dba`                                                                                                                   | One app, one portal host (ADR-003 §1) — `admin-ui` vs `portal-api` has no referent here; `cli:` names our own scripts. `system:<job>` is **kept**: under EARS-26 the marked pool refuses a context-less write, so an app-initiated write with no user (outbox drain, scheduled job) needs a legal value, and this is it.                                                                                                                                                                                                                                                                                |
+| Attribution enforced by convention plus a unit seam; a runtime interceptor named as a future option         | Attribution is a required helper argument **plus** a handle type with no `.transaction`, **plus** an eslint rule, **plus** a database-side refusal on app connections (EARS-24..26) | A required argument alone is the donor's own convention wearing a type annotation: it binds only callers who already chose the helper. The three additions are what make it fail-closed; the last one is the only mechanism that also covers code we have not written yet.                                                                                                                                                                                                                                                                                                                              |
+| The trigger degrades to `db-direct` for **every** context-less write, app included                          | Degrades only for connections that are not the app's; an app connection with no context is **refused** (EARS-26)                                                                    | The donor's uniform degradation would record an app write that skipped the wrapper as `db-direct` — a false statement about the door, in the one table whose value is that it is believed. Cost, named: a missed call-site is a failed save instead of a wrong row.                                                                                                                                                                                                                                                                                                                                     |
+| Three files (`requirements` / `design` / `scenarios.feature`)                                               | One EARS spec                                                                                                                                                                       | `docs/specs/README.md` is this repo's format; `author-feature-spec` already records the same deviation for the skill it was ported from.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Coverage guard is the only coverage check                                                                   | Guard (WARN) **plus** a catalog assertion in the BLOCK `platform-int` job                                                                                                           | A text scan of migration files cannot see the database. We have a real Postgres in CI and no reason to leave the stronger check unwritten.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Rejected alternatives
 
@@ -535,13 +633,34 @@ Recorded so the next session does not re-decide them from scratch.
   in EARS-1 true rather than aspirational.
 - **Payload's own version history as the mechanism.** It exists, it works, and it
   covers `cms` collections with drafts — a different database, a different
-  lifecycle, and nothing at all for `core`. Q4 keeps `cms` out of scope; this is
-  the reason that is not a gap.
+  lifecycle, and nothing at all for `core`. The owner's Q4 answer keeps `cms` out
+  of scope; this is the reason that is not a gap.
+- **Partitioning the ledger** — monthly RANGE partitions, a DEFAULT partition and
+  a `core.audit_ensure_partitions()` maintenance function, the shape this spec
+  carried until 2026-08-19 (removed EARS-13, EARS-14). Rejected on the numbers.
+  PostgreSQL's own guidance puts the threshold at «the size of the table should
+  exceed the physical memory of the database server»; practitioners name
+  50–100 GB or ~100M rows; this ledger is 3–4 orders of magnitude below that
+  (~500 rows a month → ~60k rows and ~120 MB in ten years), and none of the
+  canonical trigger-audit designs — Audit trigger 91plus, supa_audit, pgMemento —
+  partitions. The machinery is also not neutral while it waits: creating a
+  partition while a DEFAULT partition exists scans the DEFAULT under an
+  `ACCESS EXCLUSIVE` lock; a row that lands in the DEFAULT blocks the later
+  creation of its month; the partition key has to enter the primary key; and the
+  typical audit query («вся история этой строки») prunes nothing, so we would pay
+  planning over ~120 partitions for no pruning at all. The main prize —
+  `DROP PARTITION` of old periods — is the wrong instrument for retention here
+  (EARS-32) and no instrument at all for per-person erasure (EARS-28).
+  **Re-add trigger, any one of:** `core.audit_event` passes ~50 GB; a
+  retention-by-period rule appears that a dated `DELETE` can no longer serve; or
+  a routine date-range query degrades past ~1 s with its index in place. The
+  retrofit at that point is one evening — create the partitioned table,
+  `INSERT … SELECT`, rename — which is exactly why deferring it costs nothing.
 
 ## Acceptance scenarios
 
 These are the issue's acceptance criteria, made performable. Scenarios 1–4 map
-one-to-one onto the four AC checkboxes of #201; 5–12 cover the clauses those four
+one-to-one onto the four AC checkboxes of #201; 5–13 cover the clauses those four
 do not reach.
 
 1. **Attributed edit from the live stand.** The owner opens `/p/hours/admin` on a
@@ -564,131 +683,159 @@ do not reach.
    `pnpm lint:audit-coverage` names it and exits 1; allowlisting it **without** a
    rationale still exits 1; attaching the trigger turns it green. (EARS-19,
    EARS-20, EARS-22)
-5. **A touch is not a change.** Saving an admin form without altering any value
+5. **`TRUNCATE` is refused too.** An agent runs
+   `TRUNCATE core.audit_event` on the stand as the ledger's owner. It is refused
+   by the `BEFORE TRUNCATE … FOR EACH STATEMENT` trigger, with the message
+   pasted as evidence — the operation a row-level trigger would have let through
+   in silence. (EARS-12)
+6. **Append-only below the trigger — the privilege echelon.** On the stand, an
+   agent connects **as the application role** and attempts
+   `DELETE FROM core.audit_event`, `TRUNCATE core.audit_event` and a direct
+   `INSERT INTO core.audit_event`: all three are refused by Postgres with
+   `permission denied`, i.e. before any trigger runs. `\dp core.audit_event` and
+   `\df+ core.audit_row_change` are pasted, showing the missing grants, an owner
+   that is not the application role, and `SECURITY DEFINER` on the function —
+   and an ordinary edit through `/p/hours/admin` still produces its ledger row.
+   (EARS-12, EARS-30)
+7. **A touch is not a change.** Saving an admin form without altering any value
    leaves the ledger unchanged; changing one field writes exactly one row naming
    that one field. (EARS-2, EARS-3)
-6. **A deletion keeps the whole row.** Deleting a period that has no assessments
+8. **A deletion keeps the whole row.** Deleting a period that has no assessments
    — the one delete `/p/hours/admin` supports (spec 081 §16) — writes a row whose
-   diff carries **every** column of the removed row under `old`, so the deleted
-   record is reconstructable, together with its primary key read from the
-   catalog. (EARS-2, EARS-4)
-7. **Personal data never lands in plaintext.** An agent changes a
+   diff carries **every whitelisted** column of the removed row under `old`
+   (every column of `hours_period`, by EARS-17), so the deleted record is
+   reconstructable, together with its primary key read from the catalog.
+   (EARS-2, EARS-4, EARS-16)
+9. **Personal data never lands in the ledger, in any form.** An agent changes a
    `member_alias.value` (a phone number) and a `member.name` in one SQL
-   transaction. The ledger records the alias column as `{"masked": true}` with
-   the number appearing nowhere in the row, and the name change in plaintext.
-   (EARS-16, EARS-17)
-8. **The horizon and the net.** After `pnpm platform:migrate` on the stand, an
-   agent lists `core.audit_event`'s partitions: the current month and the months
-   ahead exist, plus the DEFAULT. Running migrate again changes nothing.
-   (EARS-13, EARS-14)
-9. **Coverage against reality.** The `platform-int` job is green with every
-   audited table's trigger present in `pg_trigger`; dropping one trigger locally
-   turns that job red, and `core.audit_event` itself carries no capture trigger.
-   (EARS-15, EARS-21, EARS-22)
-10. **Reading it at all.** The owner asks «что менялось по этому человеку за
+   transaction. The ledger records the alias column as `{"changed": true}` — no
+   `old`, no `new`, no mask, no hash — with the number appearing nowhere in the
+   row (checked by grepping the row's whole text for the digits), and the name
+   change with both values in the clear. (EARS-16, EARS-17, EARS-27)
+10. **A new column records nothing until it is whitelisted.** On a branch, an
+    agent adds a column to an audited table in a migration **without** adding it
+    to the trigger's whitelist arguments and edits it on the stand: the ledger
+    row carries `{"changed": true}` for it — default-deny — rather than its
+    value. `pnpm lint:audit-coverage` names the column and exits 1; naming it in
+    the whitelist arguments, or in the excluded-columns list **with** a
+    rationale, turns it green, and a bare rationale still exits 1. The
+    integration counterpart sees the same thing from `pg_trigger.tgargs` against
+    the really-migrated database. (EARS-1, EARS-27, EARS-29, EARS-21)
+11. **Coverage against reality.** The `platform-int` job is green with every
+    audited table's trigger present in `pg_trigger`; dropping one trigger locally
+    turns that job red, and `core.audit_event` itself carries no capture trigger.
+    (EARS-15, EARS-21, EARS-22)
+12. **Reading it at all.** The owner asks «что менялось по этому человеку за
     неделю». An agent answers with one query over `core.audit_event` filtered by
     `actor_email` and `table_name`, and pastes the rows into the issue. No UI is
     involved. (EARS-11, EARS-23)
-11. **An app write cannot go unattributed.** On a stand, an agent runs a build in
+13. **An app write cannot go unattributed.** On a stand, an agent runs a build in
     which one hours mutation deliberately bypasses the helper (a throwaway patch,
     not merged). The save fails with the trigger's message naming the missing
     audit context, and no ledger row claiming `db-direct` appears; reverting the
     patch makes the same save succeed and produce an attributed row. The eslint
     rule flags the same patch before it is ever run. (EARS-24, EARS-26)
-12. **An empty registry hides data instead of leaking it.** On a stand, an agent
-    deletes every row of `core.audit_column_policy` as a superuser and edits a
-    `member.name`. The ledger row records the column as `{"masked": true}` —
-    default-deny — rather than the name in the clear. Detection is credited to
-    the check that can actually see a **database-level** deletion: the EARS-21
-    integration assertion, which compares the registry in the really-migrated
-    database against `information_schema.columns`, turns red.
-    `pnpm lint:audit-coverage` stays green here on purpose — it reads migration
-    **text**, and the migrations still seed those rows. Its half of the same
-    property is performed separately: on a branch, an agent removes a seeded
-    policy row (or adds a column without one) **in the migration chain**, and
-    then `lint:audit-coverage` names the column and exits 1. Restoring both
-    returns the plaintext behaviour Q2 chose.
-    (EARS-16, EARS-21, EARS-27, EARS-29)
 
-## Open questions for the owner
+Two scenarios of the pre-revision spec are gone with their clauses: the partition
+horizon (removed EARS-13, EARS-14) and the emptied column registry (replaced by
+scenario 10, since the registry table no longer exists).
 
-Each carries the lead's recommended default. These are the product / policy
-forks; the technical ones (table shape, trigger mechanics, where the guard is
-wired) are settled above and do not need the owner's attention.
+## Owner decisions (2026-08-19)
 
-- **Q1 — Retention, and the fact that it is one-way.** How long do audit rows
-  live? **Recommended default: keep them indefinitely for now** — ~11 people at
-  admin write rates produce a trivially small ledger. But the honest version of
-  «decide later» is this: the ledger is append-only (EARS-12) and the only
-  deletion instrument is dropping a whole monthly partition, which erases that
-  month's audit **for every table and every person**. It is a retention
-  instrument, not a redaction instrument, and there is no per-person erasure path
-  at delivery (EARS-28). So the choice is between three real shapes:
-  **(a)** keep everything indefinitely and accept that; **(b)** adopt a retention
-  term now — «drop partitions older than N months», one line in the deploy path,
-  and the audit simply does not reach back further; **(c)** commission a
-  sanctioned redaction procedure — a privileged function that rewrites the `diff`
-  of named rows, which **breaks the append-only invariant on purpose** and would
-  therefore be its own clause, its own privilege grant, and would itself write a
-  ledger row recording that a redaction happened, by whom and why. My
-  recommendation is **(a) now with a named trigger for (c)**: with Q2's answer and
-  the default-deny registry, declared personal data does not enter the ledger in
-  the first place, so (c) buys little today — and the moment it is needed (the
-  mask is widened, or a person asks for erasure) it is a task, not a rewrite of
-  this design. Factual note, not legal advice: 152-ФЗ places obligations on an
-  operator of personal data around deletion and rectification on the subject's
-  request; whether this ledger falls under them is your call with counsel, and no
-  agent will make it for you.
-- **Q2 — What counts as personal data in the diff — and it is decided at write
-  time.** **Recommended default: mask only `member_alias.value` and
-  `member_alias.note`** — phone, personal email, Telegram/Instagram handles,
-  free-text notes — and keep `member.email`, `member.name`, `member.slug` in
-  plaintext, because they are the corporate identity of the team, `member.email`
-  is already the ledger's actor column, and masking them makes the audit unable to
-  answer the question it was built for. **What the earlier version of this
-  question got wrong:** widening the mask later is _not_ «one row in
-  `core.audit_column_policy` and nothing else». Masking is applied at the moment
-  the row is written (EARS-28), so a later widening protects only future rows —
-  everything already recorded in the clear stays in the clear, in a table nothing
-  can edit, for as long as Q1's answer keeps it. Narrowing the mask later is the
-  cheap direction; widening it is the one-way one. Answer Q2 as if it were
-  permanent for the rows written between now and any future change, because it
-  is.
-- **Q3 — `hours_publication.messages`.** **Recommended default: exclude it from
-  diffs.** The spec-100 delivery loop rewrites that jsonb array once per message;
-  auditing it would store the whole batch N times per publication to record a
-  flag the column already carries. Status transitions of the publication stay
-  audited either way.
-- **Q4 — Payload's `cms` database.** **Recommended default: out of scope,
-  confirmed.** ADR-004 §1/§3 make `cms` Payload's end to end and our pipeline
-  structurally unable to reach it; Payload already keeps its own version history
-  for collections with drafts; and putting our triggers on its tables would turn
-  every Payload upgrade into a platform-migration problem. If CMS edit history is
-  ever wanted, it is a separate task against Payload's own mechanics.
-- **Q5 — Partition maintenance.** **Recommended default: no cron, no
-  extension** — `core.audit_ensure_partitions(12)` runs as part of every
-  `pnpm platform:migrate`, i.e. every deploy, with the DEFAULT partition as the
-  correctness net. The alternative (`pg_cron` / `pg_partman`) adds an extension
-  and an ops surface to a single-VPS estate for a table gaining a few hundred
-  rows a month.
-- **Q6 — How wide the audited set is.** **Recommended default: all six `core`
-  domain tables that exist today** (EARS-22), `hours_assessment` included — so
-  every self-assessment save writes a row. If the owner would rather keep the
-  trail to the shared registry and the periods only, the difference is two
-  `CREATE TRIGGER` lines and two allowlist rationales.
+The owner answered Q1–Q7 on 2026-08-19, after the two research memos summarised
+below. The questions survive only as the left column: the spec above is written
+to the answers, not to the recommended defaults the earlier draft carried.
 
-- **Q7 — The remediation path for personal data that is already in the ledger.**
-  This is Q1's second half, split out because it is a data-protection decision
-  rather than a storage one, and it is the one this spec cannot take on your
-  behalf. Today the answer the design ships with is **«there isn't one»**: append
-  only, indefinite retention, and `DROP PARTITION` as a blunt month-wide instrument
-  (EARS-28). The three ways out are the (a)/(b)/(c) of Q1 — accept it, bound it
-  with a retention term, or build the sanctioned redaction procedure. **Recommended
-  default: (a) accept, with (c) filed as a follow-up whose trigger is named** —
-  the first widening of the mask set, or the first erasure request from a person,
-  whichever comes first. Saying «(a)» here is a decision, not a deferral; what
-  makes it safe to say today is that Q2 keeps declared personal data out of the
-  ledger by construction.
+| Question                                            | Decision (owner, 2026-08-19)                                                                                                                                                                                                                                                                           | Where it lives now                                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| **Q1 — Retention**                                  | The ledger lives as long as the product. The **term itself is a parameter of the owner's personal-data policy**, set there by the owner with his lawyer, not a number this spec invents; every **[ЮР]** item stays with them.                                                                          | EARS-32. No `DROP PARTITION` anywhere — that machinery is gone with EARS-13/EARS-14.                           |
+| **Q2 — Personal data in the diff**                  | **Exclude, do not mask.** A value reaches the diff only from an explicit whitelist of columns; everything else is recorded as `{"changed": true}`. Partial masking (`a*@*.ru`) is rejected: it is neither обезличивание nor protection.                                                                | EARS-16, EARS-17, EARS-27, EARS-28, EARS-29 (+ the «Why exclusion and not masking» note under §Personal data). |
+| **Q3 — `hours_publication.messages`**               | **Do not exclude it — fix the shape.** The messages are normalised into a child table `core.hours_publication_message` (one row per message, explicit `position`, per-row `delivery`/`sent_at`) as a prerequisite sub-task; a delivery step then updates one row and the audit records one small diff. | EARS-31; **EARS-18 removed**. Filed as a blocking sub-task when the spec moves to `In dev`.                    |
+| **Q4 — Payload's `cms` database**                   | **Out of scope, confirmed.**                                                                                                                                                                                                                                                                           | §Out of scope; §Rejected alternatives (Payload's own version history).                                         |
+| **Q5 — Partition maintenance**                      | **No partitioning at all** — the question dissolves with its subject. Plain table, BRIN on `created_at`, BTREE on the query columns.                                                                                                                                                                   | EARS-11; §Rejected alternatives carries the numbers and the re-add trigger; **EARS-13 and EARS-14 removed**.   |
+| **Q6 — How wide the audited set is**                | **Every platform domain table, present and future, by construction.** A new table without the trigger turns the coverage guard red; leaving the set needs an explicit, justified allowlist entry. The six tables of today are the current value of that rule, not the rule.                            | EARS-22, with EARS-19 and EARS-21 as the two checks.                                                           |
+| **Q7 — Remediation for data already in the ledger** | **Append-only stays.** The privileged redaction/erasure function becomes a **follow-up with a named trigger**: the first erasure request from a data subject, or the first whitelist narrowing that has to reach rows already written.                                                                 | EARS-28 and the follow-up bullet in §Out of scope — no longer an open question.                                |
+
+### Research behind the 2026-08-19 revision
+
+Two memos, both read in full before this revision. They are research notes, not
+legal advice; **[ЮР]** marks what stays with the owner and his lawyer.
+
+**Memo 1 — personal data in an immutable ledger (152-ФЗ).**
+
+- An audit log containing personal data is **processing** of personal data, not
+  a technical artifact: ст. 5, 18.1, 19, 21 152-ФЗ apply to it in full.
+- **Masking is not обезличивание.** Приказ РКН № 996 lost force on 2025-09-01;
+  приказ РКН № 140 (in force since then) lists four methods, none of which an
+  `a*@*.ru` mask satisfies — and № 140 additionally forbids storing the original
+  and the depersonalised data together, which a diff in the same database
+  structurally cannot honour.
+- The mask fails **structurally** before it fails legally: the audit row carries
+  the subject's key, so the value is not what identifies the person. With ~11
+  subjects, re-identification is trivial.
+- **ст. 5 ч. 5 152-ФЗ (no excess)** is the strongest argument for exclusion: the
+  purpose «кто, когда, какое поле изменил» is fully met by the fact of the
+  change, so the value itself is excess data in a second copy.
+- **ст. 5 ч. 7 152-ФЗ + РСБ.1/РСБ.3 приказа ФСТЭК № 21** demand a **defined
+  retention period** from two sides at once; РСБ.7 demands the records be
+  protected from modification and reachable only by authorised people — which is
+  what EARS-12/EARS-30 implement.
+- ст. 21 knows no «our log is append-only» exception (blocking, rectification,
+  destruction within 3/7/10/30 days depending on the ground), so a design must
+  either have nothing to delete, or own a deletion procedure. Exclusion is the
+  «nothing to delete» branch, and at 11 subjects it is an order of magnitude
+  cheaper than the alternatives.
+- Industry does the same: `excluded_cols` (Audit trigger 91plus), `exclude_fields`
+  (django-auditlog), `excluded_fields` (django-simple-history), `skip:`
+  (paper_trail), `except:` (Rails `audited`); nobody ships partial masks, and
+  automatic PII detection exists nowhere — the developer names the column.
+- If a value is ever genuinely needed for comparison, only a **keyed HMAC with
+  the secret outside the database** qualifies; a bare `sha256` of a phone number
+  is reversible by brute force and is therefore still personal data.
+
+**Memo 2 — audit-log design on Postgres 16 (market standard).**
+
+- The core of the draft is the market standard: one generic AFTER row-level
+  trigger, one ledger, jsonb diff, actor from a transaction-scoped GUC.
+- **Monthly partitioning is unjustified by 3–4 orders of magnitude** — the
+  documented threshold is «table bigger than the server's RAM», practitioners say
+  50–100 GB, and this ledger is ~500 rows a month. None of 91plus, supa_audit or
+  pgMemento partitions.
+- A DEFAULT partition is an **active risk, not a neutral hedge**: attaching a new
+  partition scans it under `ACCESS EXCLUSIVE`, and a stray row in it blocks the
+  creation of its month.
+- The retrofit later is one evening (`CREATE` partitioned, `INSERT … SELECT`,
+  rename) — which is exactly why deferring costs nothing.
+- What the draft actually under-specified: `REVOKE UPDATE, DELETE, TRUNCATE` as
+  the **primary** append-only mechanism (the trigger is second echelon — a table
+  owner disables it with one statement), a **`BEFORE TRUNCATE FOR EACH
+STATEMENT`** trigger (row-level triggers do not fire on `TRUNCATE` at all), and
+  `SECURITY DEFINER` on the trigger function.
+- Actor attribution: `SET LOCAL` / `set_config(…, true)` only — a session-level
+  `SET` leaks across a transaction pooler and attributes one person's change to
+  another; read with `current_setting(name, true)` plus an explicit `RAISE` whose
+  message a developer can act on.
+- Fail-closed attribution is **stricter than the market** (Supabase degrades) and
+  the memo supports keeping it: a row without an actor is worse than no row,
+  because it looks like coverage.
+- A jsonb array rewritten whole on every step is a **semantic** problem, not a
+  size one — the fix is normalising it into a child table, which is also the
+  root-cause fix rather than an exclusion.
+- The column policy belongs in **trigger arguments in the migration** (91plus),
+  not in a registry table: a registry is configuration living in data, outside
+  the versioned schema.
+
+Key sources (the memos carry the rest):
+
+- 152-ФЗ ст. 21 — <https://www.consultant.ru/document/cons_doc_LAW_61801/d3fe43a7c415353b17faab255bc0de92bea127da/>
+- Приказ Роскомнадзора № 140 от 19.06.2025 (обезличивание) — <https://www.consultant.ru/document/cons_doc_LAW_511184/>
+- Приказ ФСТЭК России № 21 от 18.02.2013 (раздел РСБ) — <https://fstec.ru/dokumenty/vse-dokumenty/prikazy/prikaz-fstek-rossii-ot-18-fevralya-2013-g-n-21>
+- OWASP Logging Cheat Sheet («data to exclude», deletion first) — <https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
+- PostgreSQL wiki, Audit trigger 91plus (`excluded_cols`, «your app must not own the tables it uses») — <https://wiki.postgresql.org/wiki/Audit_trigger_91plus>
+- PostgreSQL 16 docs, 5.12 Table Partitioning (threshold, DEFAULT partition lock) — <https://www.postgresql.org/docs/16/ddl-partitioning.html>
+- PostgreSQL docs, trigger functions (`TRUNCATE` is statement-level only) — <https://www.postgresql.org/docs/current/plpgsql-trigger.html>
+- Supabase, «Postgres Auditing in 150 lines of SQL» (BRIN on the timestamp, no partitioning) — <https://supabase.com/blog/postgres-audit>
+- pgEdge, session variables in Postgres (`SET LOCAL` vs `SET` under a pooler) — <https://www.pgedge.com/blog/it-depends-using-session-variables-in-postgres>
 
 ## Out of scope
 
@@ -698,15 +845,33 @@ wired) are settled above and do not need the owner's attention.
   spec creates no part of it.
 - **Any UI over the ledger.** The read path is SQL run by an agent until a real
   need appears (EARS-23) — no route, no page, no host change.
-- **Payload's `cms` database** — Q4.
+- **Payload's `cms` database** — Q4, decided 2026-08-19.
 - **Retro-backfill.** The trail starts when the triggers attach; nothing
   reconstructs history from before that moment. What came before is already
   recorded elsewhere: spec 124's cutover import verdict and the frozen
   `hours.json` archive.
-- **Encryption of masked PD values.** The donor names per-subject-key encryption
-  as a tracked follow-up; here it would need a key-management story this estate
-  does not have. Masked stays masked — the values are omitted, which is the safer
-  of the two incomplete states.
+- **The normalisation of `hours_publication.messages` itself (EARS-31).** It is a
+  prerequisite **sub-task** against the hours module, opened with
+  `spec-issue-graph` and blocking the trigger attach on
+  `core.hours_publication` — not part of this spec's own migration, and not part
+  of the PR that carries this spec.
+- **A sanctioned redaction / erasure procedure over the ledger.** A privileged
+  function that rewrites the `diff` of named rows breaks the append-only
+  invariant on purpose, so it needs its own clause, its own grant and its own
+  ledger row recording that a redaction happened, by whom and why. It is a
+  **follow-up with a named trigger** (owner's Q7, 2026-08-19): the first erasure
+  request from a data subject, or the first narrowing of the value whitelist that
+  has to reach rows already written — whichever comes first. What makes shipping
+  without it safe today is EARS-17: declared personal data never enters the
+  ledger.
+- **Hashing or encryption of excluded values.** The donor names
+  per-subject-key encryption as a tracked follow-up; here it would need a
+  key-management story this estate does not have, and a bare hash of a phone
+  number or an email is reversible by brute force and therefore still personal
+  data. Excluded stays excluded — the fact of the change without the value is
+  the safer of the two incomplete states.
+- **Partitioning the ledger.** Rejected with a named re-add trigger — see
+  §«Rejected alternatives».
 - **Promoting the coverage guard to BLOCK.** A `docs/ci-guardrails.md` §4
   promotion, earliest four weeks after the guard lands, done as its own
   three-edit PR.
