@@ -54,7 +54,7 @@ describe('hours mutations carry their actor', () => {
       upsertParticipant(doc, {
         email: 'anton@bbm.academy',
         name: 'Антон Сидоров',
-        role: 'CEO',
+        role: 'CTO',
         forkMin: 300000,
         forkMax: 500000,
         grade: 'II',
@@ -69,7 +69,13 @@ describe('hours mutations carry their actor', () => {
       source: 'portal',
       actor_email: 'anton@bbm.academy',
     })
-    expect(memberRow?.diff).toEqual({ name: { old: 'Антон', new: 'Антон Сидоров' } })
+    // Scenario 1 as the spec writes it: the owner edits a participant's ROLE —
+    // a column of the shared registry — and the diff names it with both values
+    // (EARS-17 after the 2026-08-19 revision: service data is not a contact).
+    expect(memberRow?.diff).toEqual({
+      name: { old: 'Антон', new: 'Антон Сидоров' },
+      role: { old: 'CEO', new: 'CTO' },
+    })
     // «когда» — the mutation's own moment, defaulted by the ledger itself.
     expect(Date.parse(String(memberRow?.created_at))).toBeGreaterThan(Date.now() - 60_000)
   })

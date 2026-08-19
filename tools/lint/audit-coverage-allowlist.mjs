@@ -52,15 +52,6 @@ export const AUDIT_TABLE_ALLOWLIST = {
 export const AUDIT_COLUMN_EXCLUSIONS = {
   'member_alias.value': 'ПДн — ст. 5 ч. 5 152-ФЗ',
   'member_alias.note': 'ПДн — ст. 5 ч. 5 152-ФЗ',
-  'member_alias.id': 'surrogate key of a row whose every column is ПДн-adjacent — carried in `pk`',
-  'member_alias.member_id': 'the person this ПДн belongs to — carried in `pk` of the member row',
-  'member_alias.kind':
-    'names the KIND of contact a person keeps (phone, personal email, Telegram) — ПДн-adjacent, ст. 5 ч. 5 152-ФЗ',
-  'member.id': 'surrogate key — already carried first-class in the `pk` column (EARS-11)',
-  'member.role': 'not corporate identity nor work data — outside the EARS-17 initial whitelist',
-  'member.status': 'not corporate identity nor work data — outside the EARS-17 initial whitelist',
-  'member.timezone': 'not corporate identity nor work data — outside the EARS-17 initial whitelist',
-  'member.created_at': 'row bookkeeping — the ledger carries its own `created_at` (EARS-11)',
   'member.updated_at': 'row bookkeeping — dropped from the diff entirely (EARS-2)',
 }
 
@@ -73,8 +64,8 @@ export const AUDIT_COLUMN_EXCLUSIONS = {
  * @type {Record<string, string[]>}
  */
 export const AUDIT_VALUE_WHITELIST = {
-  member: ['name', 'email', 'slug'],
-  member_alias: [],
+  member: ['id', 'slug', 'email', 'name', 'role', 'status', 'timezone', 'created_at'],
+  member_alias: ['id', 'member_id', 'kind'],
   hours_period: ['id', 'label', 'date_from', 'date_to', 'status', 'sort_key'],
   hours_participant: ['member_id', 'fork_min', 'fork_max', 'grade', 'sort_key'],
   hours_assessment: [

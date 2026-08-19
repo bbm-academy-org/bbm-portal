@@ -173,10 +173,12 @@ describe('core.audit_row_change — the value whitelist', () => {
     })
 
     const [alias] = await auditEventsFor(db, mark, 'member_alias')
+    // The service half of the row is in the clear — `kind` says WHICH channel
+    // changed. The contact itself, and the free text around it, are not.
     expect(alias.diff).toEqual({
-      id: { changed: true },
-      member_id: { changed: true },
-      kind: { changed: true },
+      id: { new: expect.any(Number) },
+      member_id: { new: memberId },
+      kind: { new: 'phone' },
       value: { changed: true },
       note: { changed: true },
     })
@@ -190,6 +192,32 @@ describe('core.audit_row_change — the value whitelist', () => {
   })
 
   it('EARS-27: default-deny — a column the trigger arguments do not name records the fact, never the value', async () => {
+    // `member_alias.value` and `.note` are the only columns of an audited table
+    // the initial whitelist withholds (EARS-17, the owner's Q2 matrix draws the
+    // line at a person's CONTACTS), so they are what default-deny is shown on.
+    const memberId = await seedMember({ email: 'igor@bbm.academy', name: 'Игорь' })
+    await platformTransaction(ACTOR, (tx) =>
+      tx.execute(
+        sql`insert into core.member_alias (member_id, kind, value, note)
+            values (${memberId}, 'telegram', 'dobroyar', 'основной')`,
+      ),
+    )
+    const mark = await auditWatermark(db)
+
+    await platformTransaction(ACTOR, (tx) =>
+      tx.execute(
+        sql`update core.member_alias set value = 'dobroyar_new', note = 'сменил'
+            where member_id = ${memberId}`,
+      ),
+    )
+
+    const [event] = await auditEventsFor(db, mark, 'member_alias')
+    expect(event.diff).toEqual({ value: { changed: true }, note: { changed: true } })
+    expect(JSON.stringify(event)).not.toContain('dobroyar')
+    expect(JSON.stringify(event)).not.toContain('сменил')
+  })
+
+  it('EARS-17: `member` service columns are recorded by value — they are not personal contacts', async () => {
     const id = await seedMember({ email: 'anna@bbm.academy', name: 'Анна', role: 'QA' })
     const mark = await auditWatermark(db)
 
@@ -198,8 +226,10 @@ describe('core.audit_row_change — the value whitelist', () => {
     )
 
     const [event] = await auditEventsFor(db, mark, 'member')
-    expect(event.diff).toEqual({ role: { changed: true }, status: { changed: true } })
-    expect(JSON.stringify(event)).not.toContain('Dev')
+    expect(event.diff).toEqual({
+      role: { old: 'QA', new: 'Dev' },
+      status: { old: 'active', new: 'inactive' },
+    })
   })
 })
 

@@ -409,24 +409,42 @@ delivery text NOT NULL, sent_at text)` with `UNIQUE (period_id, position)`
   without a deploy. This is also the donor canon's own shape (`excluded_cols` as
   a trigger argument in the PostgreSQL wiki's Audit trigger 91plus), inverted
   from a blacklist to a whitelist for the reason EARS-27 states.
-- **EARS-17.** The initial whitelist shall be the **corporate identity and the
-  work data**: `member.name`, `member.email`, `member.slug`, and the columns of
-  the hours tables (`hours_period`, `hours_participant`, `hours_assessment`, and
-  `hours_publication` / `hours_publication_message` once EARS-31 and EARS-33
-  let the trigger reach them) — these are what «кто и на что это поменял» is
-  actually asked about,
-  `member.email` is already the ledger's own actor column, and recording them by
-  value is not excessive relative to the purpose of the trail.
-  `member_alias.value` and `member_alias.note` — a person's phone, personal
-  email, Telegram/Instagram handles and the free-text context around them (spec
-  124 EARS-17) — shall **not** be whitelisted, and shall therefore be recorded as
-  `{"changed": true}` and nothing else. **«The columns of the hours tables» is
-  shorthand for the columns those tables carry at delivery, each named
-  individually in its trigger's `TG_ARGV`** — this clause grants nothing at table
-  level, and a column added to an hours table later starts outside the whitelist
-  exactly like any other (EARS-27). `hours_publication.messages` is deliberately
-  not among them: the trigger does not reach that table at all until the column
-  is gone (EARS-31, EARS-33).
+- **EARS-17.** The initial whitelist shall be **the corporate identity, the
+  service data and the work data — everything except a person's contacts**
+  (owner's Q2 matrix). Stated as the three audited groups, each column named
+  individually in its trigger's `TG_ARGV` (this clause grants nothing at table
+  level, and a column added later starts outside the whitelist exactly like any
+  other — EARS-27):
+  - **`core.member` — every column.** `id`, `slug`, `email`, `name`, `role`,
+    `status`, `timezone`, `created_at`. `role`, `status` and `timezone` are
+    **service data, not personal contacts**: «кто и на что это поменял» is asked
+    about them more often than about anything else, and recording them by value
+    is not excessive relative to the purpose of the trail (ст. 5 ч. 5 152-ФЗ).
+    `updated_at` is the one column absent and not by policy: EARS-2 drops it from
+    the diff entirely, so naming it would grant a value that can never be
+    written. `member.email` is already the ledger's own actor column.
+  - **`core.member_alias` — every column EXCEPT `value` and `note`.** Those two
+    are the person's phone, personal email, Telegram/Instagram handles and the
+    free-text context around them (spec 124 EARS-17) — the one class this clause
+    keeps out, recorded as `{"changed": true}` and nothing else. `id`,
+    `member_id` and `kind` are whitelisted: `kind` says WHICH channel changed
+    without saying what it is, which is the service half of the same row.
+  - **The hours tables — every column** of `hours_period`,
+    `hours_participant`, `hours_assessment`, and of `hours_publication` /
+    `hours_publication_message` once EARS-31 and EARS-33 let the trigger reach
+    them. `hours_publication.messages` is deliberately not among them: the
+    trigger does not reach that table at all until the column is gone (EARS-31,
+    EARS-33).
+
+  **Revision 2026-08-19 (lead decision, applied in #273):** the clause
+  previously listed only `member.name`, `member.email` and `member.slug`, which
+  contradicted acceptance scenario 1 — where the owner edits a participant's
+  **role** and expects the diff to carry its old and new value. The owner's Q2
+  matrix draws the line at personal contacts, not at «identity vs the rest», so
+  the clause is corrected in place (the spec is `In dev`; `docs/specs/README.md`
+  makes in-place correction the rule at this status) and the scenario stands as
+  written.
+
 - **EARS-18 — removed (2026-08-19).** It excluded `hours_publication.messages`
   from the diff. The owner's Q3 answer removes the exclusion and fixes the shape
   that made the column unauditable instead: EARS-31. The id is retired, not

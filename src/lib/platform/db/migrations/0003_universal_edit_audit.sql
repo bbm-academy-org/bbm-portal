@@ -256,21 +256,27 @@ CREATE OR REPLACE TRIGGER "audit_event_append_only_truncate"
 -- (`tools/lint/audit-coverage-allowlist.mjs`), visible rather than silent
 -- (EARS-22, EARS-33).
 
--- `member` — the corporate identity (EARS-17). `role`, `status`, `timezone`,
--- `id` and `created_at` are deliberately NOT whitelisted: default-deny grants a
--- value one column at a time, in a migration, and never by omission (EARS-27).
+-- `member` — corporate identity AND service data, every column by value
+-- (EARS-17, owner's Q2 matrix). `updated_at` is the one column absent, and not
+-- as a policy choice: EARS-2 drops it from the diff entirely, so naming it here
+-- would grant a value that can never be written. Each column is still listed
+-- INDIVIDUALLY — the clause grants nothing at table level, and a column added
+-- later starts outside the whitelist like any other (EARS-27).
 CREATE OR REPLACE TRIGGER "member_audit"
 	AFTER INSERT OR UPDATE OR DELETE ON "core"."member"
-	FOR EACH ROW EXECUTE FUNCTION "core"."audit_row_change"('name', 'email', 'slug');--> statement-breakpoint
+	FOR EACH ROW EXECUTE FUNCTION "core"."audit_row_change"(
+		'id', 'slug', 'email', 'name', 'role', 'status', 'timezone', 'created_at'
+	);--> statement-breakpoint
 
--- `member_alias` — NO whitelisted column at all. A person's phone, personal
--- email, Telegram/Instagram handle and the free-text context around them are
--- exactly what must not enter an append-only ledger (EARS-16, EARS-17, EARS-27;
--- ст. 5 ч. 5 152-ФЗ). Every column is therefore recorded as
--- `{"changed": true}` — the fact of the change, never the value.
+-- `member_alias` — every column EXCEPT `value` and `note`. Those two are a
+-- person's phone, personal email, Telegram/Instagram handle and the free-text
+-- context around them: the one class that must not enter an append-only ledger
+-- (EARS-16, EARS-17, EARS-27; ст. 5 ч. 5 152-ФЗ), recorded as
+-- `{"changed": true}` and nothing else. `kind` says WHICH channel changed
+-- without saying what it is, which is the service half of the same row.
 CREATE OR REPLACE TRIGGER "member_alias_audit"
 	AFTER INSERT OR UPDATE OR DELETE ON "core"."member_alias"
-	FOR EACH ROW EXECUTE FUNCTION "core"."audit_row_change"();--> statement-breakpoint
+	FOR EACH ROW EXECUTE FUNCTION "core"."audit_row_change"('id', 'member_id', 'kind');--> statement-breakpoint
 
 -- The hours tables — the work data, every column named INDIVIDUALLY (EARS-17):
 -- the clause grants nothing at table level, and a column added later starts
