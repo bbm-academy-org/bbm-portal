@@ -170,6 +170,187 @@ describe('secret-echo-guard', () => {
   })
 })
 
+/**
+ * Дампы РАЗРЕШЁННОГО окружения (#262). Симптом: 2026-08-18 субагент на проде
+ * выполнил `ssh portal-prod-tw docker compose --profile tools config` — вывод
+ * содержал каждое значение из host-only `.env.prod` и уехал в транскрипт.
+ */
+describe('secret-echo-guard: дампы разрешённого окружения (#262)', () => {
+  it('блокирует `docker compose config` в любом написании, включая инцидентную ssh-форму', () => {
+    expect(decideSecretEcho('docker compose config')).toMatchObject({
+      block: true,
+      rule: 'compose-config',
+    })
+    expect(decideSecretEcho('docker compose --profile tools config').block).toBe(true)
+    expect(decideSecretEcho('docker-compose -f deploy/docker-compose.prod.yml config').block).toBe(
+      true,
+    )
+    expect(
+      decideSecretEcho('docker compose --env-file deploy/.env.prod -f a.yml config').block,
+    ).toBe(true)
+    expect(decideSecretEcho('ssh portal-prod-tw docker compose --profile tools config').block).toBe(
+      true,
+    )
+    expect(decideSecretEcho('ssh portal-prod-tw "docker compose config"').block).toBe(true)
+  })
+
+  it('пропускает инвентарные флаги compose — они печатают имена, а не значения', () => {
+    expect(decideSecretEcho('docker compose config --services').block).toBe(false)
+    expect(decideSecretEcho('docker compose --profile tools config --profiles').block).toBe(false)
+    expect(decideSecretEcho('docker compose config --volumes').block).toBe(false)
+    expect(decideSecretEcho('ssh portal-prod-tw docker compose config --services').block).toBe(
+      false,
+    )
+  })
+
+  it('пропускает прочие подкоманды compose и редирект модели в файл', () => {
+    expect(decideSecretEcho('docker compose ps').block).toBe(false)
+    expect(decideSecretEcho('docker compose -f deploy/docker-compose.prod.yml up -d').block).toBe(
+      false,
+    )
+    expect(decideSecretEcho('docker compose config > /tmp/model.yml').block).toBe(false)
+  })
+
+  it('блокирует `docker inspect` без сужающего --format — он печатает секцию Env', () => {
+    expect(decideSecretEcho('docker inspect bbm-portal-app-1')).toMatchObject({
+      block: true,
+      rule: 'docker-inspect',
+    })
+    expect(decideSecretEcho('docker container inspect bbm-portal-app-1').block).toBe(true)
+    expect(decideSecretEcho('ssh portal-prod-tw docker inspect bbm-portal-app-1').block).toBe(true)
+    expect(decideSecretEcho("docker inspect -f '{{json .Config}}' app").block).toBe(true)
+    expect(decideSecretEcho("docker inspect --format '{{.Config.Env}}' app").block).toBe(true)
+    expect(decideSecretEcho("docker inspect -f '{{json .}}' app").block).toBe(true)
+  })
+
+  it('пропускает docker inspect с шаблоном, не тянущим Env', () => {
+    expect(decideSecretEcho("docker inspect -f '{{.State.Status}}' app").block).toBe(false)
+    expect(decideSecretEcho("docker inspect --format '{{.Config.Image}}' app").block).toBe(false)
+    expect(
+      decideSecretEcho(
+        "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' app",
+      ).block,
+    ).toBe(false)
+    expect(
+      decideSecretEcho("ssh portal-prod-tw docker inspect -f '{{.State.Running}}' app").block,
+    ).toBe(false)
+  })
+
+  it('блокирует голые env / printenv, в том числе через ssh и в конвейере', () => {
+    expect(decideSecretEcho('env')).toMatchObject({ block: true, rule: 'env-dump' })
+    expect(decideSecretEcho('env | grep -i plane').block).toBe(true)
+    expect(decideSecretEcho('printenv').block).toBe(true)
+    expect(decideSecretEcho('printenv PLANE_API_TOKEN').block).toBe(true)
+    expect(decideSecretEcho('ssh portal-prod-tw printenv').block).toBe(true)
+    expect(decideSecretEcho("ssh portal-prod-tw 'env'").block).toBe(true)
+  })
+
+  it('не трогает env-префикс перед командой и посторонние «env» в имени', () => {
+    expect(decideSecretEcho('env NODE_ENV=test pnpm test:unit').block).toBe(false)
+    expect(decideSecretEcho('env -u NODE_OPTIONS node script.mjs').block).toBe(false)
+    expect(decideSecretEcho('pnpm env use --global 22').block).toBe(false)
+    expect(decideSecretEcho('node --env-file=.env.local script.mjs').block).toBe(false)
+    expect(decideSecretEcho('env > /tmp/env.txt').block).toBe(false)
+  })
+
+  it('разворачивает ssh-обёртку и ловит чтение .env на удалённом боксе', () => {
+    expect(decideSecretEcho("ssh portal-prod-tw 'cat .env.prod'")).toMatchObject({
+      block: true,
+      rule: 'reader',
+    })
+    expect(decideSecretEcho('ssh portal-prod-tw cat bbm-portal/deploy/.env.prod').block).toBe(true)
+    expect(
+      decideSecretEcho('ssh -i ~/.ssh/id_ed25519 portal-prod-tw "cat deploy/.env.postgres"').block,
+    ).toBe(true)
+    expect(decideSecretEcho('ssh portal-prod-tw "tail -5 deploy/.env.prod"').block).toBe(true)
+    expect(decideSecretEcho("ssh portal-prod-tw 'cat deploy/.env.prod > /tmp/x'").block).toBe(false)
+    expect(decideSecretEcho('ssh portal-prod-tw docker compose ps').block).toBe(false)
+  })
+
+  it('редирект stderr не отменяет правило — stdout по-прежнему уезжает в сессию', () => {
+    expect(decideSecretEcho('docker compose config 2>/dev/null').block).toBe(true)
+    expect(decideSecretEcho('cat deploy/.env.prod 2>/dev/null').block).toBe(true)
+    expect(decideSecretEcho('ssh portal-prod-tw "docker compose config 2>/dev/null"').block).toBe(
+      true,
+    )
+    expect(decideSecretEcho('docker inspect bbm-portal-app-1 2> /dev/null').block).toBe(true)
+    expect(decideSecretEcho('env 2>/dev/null').block).toBe(true)
+  })
+
+  it('редирект stdout в терминальную цель не отменяет правило', () => {
+    expect(decideSecretEcho('docker compose config > /dev/stdout').block).toBe(true)
+    expect(decideSecretEcho('docker compose config >/dev/tty').block).toBe(true)
+    expect(decideSecretEcho('cat deploy/.env.prod > /dev/fd/1').block).toBe(true)
+    expect(decideSecretEcho('cat deploy/.env.prod >> /proc/self/fd/1').block).toBe(true)
+    expect(decideSecretEcho('cat deploy/.env.prod 1>&2').block).toBe(true)
+  })
+
+  it('редирект stdout в файл остаётся санкционированным выходом', () => {
+    expect(decideSecretEcho('cat deploy/.env.prod > /tmp/x 2>&1').block).toBe(false)
+    expect(decideSecretEcho('docker compose config 1> /tmp/model.yml').block).toBe(false)
+    expect(decideSecretEcho('docker compose config >> /tmp/model.yml').block).toBe(false)
+    expect(decideSecretEcho('docker compose config &> /tmp/model.yml').block).toBe(false)
+    expect(decideSecretEcho('env 2>/dev/null > /tmp/env.txt').block).toBe(false)
+  })
+
+  it('разворачивает docker exec / docker compose exec — дамп окружения контейнера', () => {
+    expect(decideSecretEcho('docker exec app env')).toMatchObject({
+      block: true,
+      rule: 'env-dump',
+    })
+    expect(decideSecretEcho('docker exec -it bbm-portal-app-1 printenv').block).toBe(true)
+    expect(decideSecretEcho('docker compose exec app env').block).toBe(true)
+    expect(decideSecretEcho('docker compose -f deploy/a.yml exec -T app printenv').block).toBe(true)
+    expect(decideSecretEcho('ssh portal-prod-tw "docker exec app env"').block).toBe(true)
+    expect(decideSecretEcho('docker exec -u root app cat /app/.env')).toMatchObject({
+      block: true,
+      rule: 'reader',
+    })
+  })
+
+  it('пропускает безобидную команду внутри docker exec', () => {
+    expect(decideSecretEcho('docker exec app ls').block).toBe(false)
+    expect(decideSecretEcho('docker exec -it app sh').block).toBe(false)
+    expect(decideSecretEcho('docker compose exec app ls -la /app').block).toBe(false)
+    expect(decideSecretEcho('docker exec app env > /tmp/env.txt').block).toBe(false)
+  })
+
+  it('разворачивает sudo / bash -c / sh -lc / eval', () => {
+    expect(decideSecretEcho('sudo -u root docker compose config').block).toBe(true)
+    expect(decideSecretEcho('bash -c "docker compose config"').block).toBe(true)
+    expect(decideSecretEcho("sh -lc 'cat deploy/.env.prod'").block).toBe(true)
+    expect(decideSecretEcho('eval "docker compose config"').block).toBe(true)
+    expect(decideSecretEcho('ssh portal-prod-tw \'bash -c "printenv"\'').block).toBe(true)
+    expect(decideSecretEcho('bash -c "ls -la"').block).toBe(false)
+    expect(decideSecretEcho('bash tools/x.sh').block).toBe(false)
+  })
+
+  it('пропускает флаги compose config, не печатающие значений', () => {
+    expect(decideSecretEcho('docker compose config --quiet').block).toBe(false)
+    expect(decideSecretEcho('docker compose config -q').block).toBe(false)
+    expect(decideSecretEcho('docker compose config --images').block).toBe(false)
+    expect(decideSecretEcho('docker compose config --hash=*').block).toBe(false)
+    expect(decideSecretEcho('docker compose config --hash service').block).toBe(false)
+    // `--no-interpolate` печатает сам файл — литеральные значения из него всё равно едут в вывод.
+    expect(decideSecretEcho('docker compose config --no-interpolate').block).toBe(true)
+  })
+
+  it('printenv по несекретному имени разрешён, по секретному и без имени — нет', () => {
+    expect(decideSecretEcho('printenv PATH').block).toBe(false)
+    expect(decideSecretEcho('printenv HOME').block).toBe(false)
+    expect(decideSecretEcho('printenv NODE_ENV').block).toBe(false)
+    expect(decideSecretEcho('printenv').block).toBe(true)
+    expect(decideSecretEcho('printenv PLANE_API_TOKEN').block).toBe(true)
+    expect(decideSecretEcho('printenv DB_PASSWORD').block).toBe(true)
+  })
+
+  it('разворачивает префиксную форму env вместе с её опциями', () => {
+    expect(decideSecretEcho('env -i cat deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('env -u NODE_OPTIONS cat deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('env -i NODE_ENV=test pnpm test:unit').block).toBe(false)
+  })
+})
+
 describe('merge-gate', () => {
   it('предупреждает на gh pr merge в любой форме команды', () => {
     expect(
@@ -283,5 +464,46 @@ describe('блокирующие хуки как процессы', () => {
         JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'cat deploy/.env.prod' } }),
       ).status,
     ).toBe(2)
+  })
+
+  it('secret-echo-guard возвращает 2 на инцидентной команде #262 и 0 на инвентарных флагах', () => {
+    const incident = runHook(
+      'secret-echo-guard.mjs',
+      JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: 'ssh portal-prod-tw docker compose --profile tools config' },
+      }),
+    )
+    expect(incident.status).toBe(2)
+    expect(incident.stderr).toContain('no-secret-echo')
+    expect(
+      runHook(
+        'secret-echo-guard.mjs',
+        JSON.stringify({
+          tool_name: 'Bash',
+          tool_input: { command: 'ssh portal-prod-tw docker compose config --services' },
+        }),
+      ).status,
+    ).toBe(0)
+  })
+
+  it('secret-echo-guard возвращает 2 на `docker exec … env` и на `2>/dev/null`-форме', () => {
+    for (const command of [
+      'ssh portal-prod-tw "docker exec bbm-portal-app-1 env"',
+      'ssh portal-prod-tw docker compose config 2>/dev/null',
+    ]) {
+      const run = runHook(
+        'secret-echo-guard.mjs',
+        JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
+      )
+      expect(run.status).toBe(2)
+      expect(run.stderr).toContain('no-secret-echo')
+    }
+    expect(
+      runHook(
+        'secret-echo-guard.mjs',
+        JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'docker exec app ls /app' } }),
+      ).status,
+    ).toBe(0)
   })
 })
