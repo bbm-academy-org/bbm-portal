@@ -237,13 +237,13 @@ ws$ pnpm deploy:prod
 No flag. This runs the FULL pipeline again, and every stage of it is safe to
 repeat:
 
-| Stage                  | On the re-run                                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `preflight`            | same clean tree, same `origin/main` sha, same green CI                                                                                |
-| `ship`                 | `rm -rf ~/bbm-portal/src` + re-extract of the same archive; `deploy/` untouched                                                       |
-| `checkpoint`           | a **second** dump, pinned under its own timestamped S3 key — it overwrites nothing, and it now captures `core` WITH the imported rows |
-| `deployStack`          | docker layer cache makes the build short; both migration ledgers are idempotent and report "no migrations to apply"                   |
-| `applyCaddy` → `smoke` | first run of these in this window: they are what proves prod serves the new image                                                     |
+| Stage                  | On the re-run                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `preflight`            | same clean tree, same `origin/main` sha, same green CI                                                                                                                   |
+| `ship`                 | the same archive extracted into `~/bbm-portal.next` and swapped in, host-only `deploy/.env*` carried across (#264 — `deploy/README.md` → _How the tree reaches the box_) |
+| `checkpoint`           | a **second** dump, pinned under its own timestamped S3 key — it overwrites nothing, and it now captures `core` WITH the imported rows                                    |
+| `deployStack`          | docker layer cache makes the build short; both migration ledgers are idempotent and report "no migrations to apply"                                                      |
+| `applyCaddy` → `smoke` | first run of these in this window: they are what proves prod serves the new image                                                                                        |
 
 The re-run costs one extra checkpoint (a few minutes) and buys the property that
 there is exactly one way to finish a deploy. Nothing needs to be undone first.

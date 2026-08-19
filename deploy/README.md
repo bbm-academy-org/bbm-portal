@@ -56,7 +56,9 @@ All commands below run **from the `deploy/` directory on the host**.
    has no `git` clone. Ship the committed tree as an archive from a workstation
    with repo access (`git archive --format=tar.gz <branch> | ssh … tar -xz …`),
    or wire a CI image-push later. The "update" flow below assumes the tree is
-   refreshed the same way (not `git pull`).
+   refreshed the same way (not `git pull`) — and note that a bare `tar -xz` onto
+   an existing tree cannot delete anything, which is why `pnpm deploy:prod`
+   extracts and swaps instead (_How the tree reaches the box_ below).
 
 5. **SSH access to the host.** Everything here — and `pnpm deploy:prod`
    (`tools/deploy/prod.mjs`, override `BBM_PROD_SSH`) — reaches the box through
@@ -195,6 +197,67 @@ deployed image, it smoke-tests both vhosts, and it cuts a release tag and a
 GitHub Deployment record. Keeping a second, hand-written copy of those steps
 here is precisely how the two drift apart, so there is not one.
 
+### How the tree reaches the box — extract-and-swap (#264)
+
+`tar -xz` is **additive**: it overwrites and adds, it never deletes. Extracting
+the archive onto `~/bbm-portal` therefore cannot express a DELETION — a file
+retired in the branch stays on the box forever and is still compiled, because
+the image build typechecks the whole extracted tree. That trap is real, not
+theoretical: it was first hit on 2026-07-30, and again on 2026-08-18, when a
+deploy went red on `TS2307` from two files `main` had already deleted.
+
+The ship step therefore never writes into the live tree. It:
+
+1. extracts the archive into a fresh `~/bbm-portal.next`;
+2. copies the box's host-only env files — `deploy/.env` and `deploy/.env.*`,
+   minus the `.env.*.example`s the commit ships — into its `deploy/` **by name**
+   (nothing else is copied, so a shipped compose file or Caddyfile is never even
+   a candidate for being overwritten);
+3. **asserts `deploy/.env.prod` is in the new tree** — and aborts if it is not;
+4. swaps: `mv bbm-portal bbm-portal.prev && mv bbm-portal.next bbm-portal`,
+   asserts `deploy/.env.prod` once more in the live tree, and only THEN drops
+   `.prev`.
+
+Before all of that it runs one more statement, which is also its own pipeline
+stage (`recoverInterruptedShip`, the first box-touching stage of
+`pnpm deploy:prod`): if `~/bbm-portal.prev` carries `deploy/.env.prod` and the
+live `~/bbm-portal` does not, the previous tree is put back. That is the state an
+interrupted swap leaves, and `.prev` is then the only copy of files that exist
+nowhere else.
+
+Consequences worth knowing on the host:
+
+- **The tree is exactly the shipped commit, plus the host-only `deploy/.env*`
+  files.** Anything else you leave lying around inside `~/bbm-portal` — including
+  a non-`.env` file under `deploy/` — is removed by the next deploy. Put host
+  state in a `deploy/.env*` file, or outside the tree entirely (the way the
+  backup machinery lives in `/home/deploy/portal-backup` and the cutover dataset
+  lives outside `~/bbm-portal`). Docker named volumes are unaffected — they are
+  not in the tree.
+- **Nothing is destroyed before the new tree is proven.** A broken transfer or a
+  missing `.env.prod` aborts with the box exactly as it was, and `~/bbm-portal.prev`
+  is never removed while it may hold the only copy of the host-only env files:
+  the removal stands after the assert, and the final one also after the swap.
+- **`~/bbm-portal.prev` after a failed run** means the swap itself broke: the
+  previous tree is whole. Re-running `pnpm deploy:prod` repairs it — its first
+  box-touching stage (`recoverInterruptedShip`) restores the tree before the env
+  pre-flight reads it. By hand, the equivalent is:
+
+  ```bash
+  rm -rf ~/bbm-portal && mv ~/bbm-portal.prev ~/bbm-portal
+  ```
+
+  The `rm -rf` is not optional: a swap that broke half-way can leave a PARTIAL
+  `~/bbm-portal` behind, and a bare `mv` would then move the previous tree
+  _inside_ it.
+
+- **Caddy is RECREATED, not restarted, when its config changed.** `./Caddyfile`
+  is a file bind mount, pinned to an inode when the container is created, so
+  after a swap the running caddy still holds the previous file. The pipeline's
+  `applyCaddy` stage therefore runs `up -d --force-recreate --no-deps caddy`. The
+  old inode stays alive (the container's mount holds it) until that recreate, so
+  dropping `.prev` never pulls the config out from under a running caddy.
+
 ### What replaced the `DEPLOYED_SHA` marker
 
 The old post-check wrote a `DEPLOYED_SHA` file next to the shipped tree and
@@ -238,10 +301,10 @@ here is only what is true at the **host** level.
 ### One-time upgrade step on an EXISTING install — do this before the first deploy
 
 `deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
-deploy wipes `src/` and deliberately leaves `deploy/` alone), and **no deploy can
-add a line to it for you**. A box installed before this change therefore has no
-`PLATFORM_DATABASE_URL`, and the `migrate` service reads its environment from
-that file.
+deploy carries the box's own `deploy/.env*` across the swap — _How the tree
+reaches the box_ above), and **no deploy can add a line to it for you**. A box
+installed before this change therefore has no `PLATFORM_DATABASE_URL`, and the
+`migrate` service reads its environment from that file.
 
 ```bash
 ssh portal-prod-tw
@@ -379,9 +442,11 @@ cd deploy
 docker compose -f docker-compose.prod.yml pull preview
 docker compose -f docker-compose.prod.yml up -d preview
 # The new preview.bbm.academy vhost was already added to the Caddyfile. Caddy
-# needs a RESTART to load it — `up -d caddy` won't recreate the container for a
-# bind-mounted config change, and `caddy reload` reports "config is unchanged".
-docker compose -f docker-compose.prod.yml restart caddy
+# will not pick it up on its own: `up -d caddy` won't recreate the container for
+# a bind-mounted config change, and `caddy reload` reports "config is unchanged".
+# `--force-recreate` rather than `restart`, because since #264 a deploy SWAPS the
+# whole tree — a restarted container keeps the pre-swap Caddyfile inode.
+docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps caddy
 curl -fsS -o /dev/null https://preview.bbm.academy/ && echo "preview reachable"
 docker compose -f docker-compose.prod.yml logs -f caddy   # watch cert issuance
 ```
