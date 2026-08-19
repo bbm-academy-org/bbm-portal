@@ -452,6 +452,29 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-18-d4c3b256f1 -->
 
+- [ ] 2026-08-19 `lint:ears-test` treats `EARS-N` as a FLAT, repo-wide id space,
+      but `docs/specs/README.md` defines the ids as stable **per spec**. Spec 201
+      landed as the second spec declaring `EARS-1`…`EARS-29`, while spec 124
+      declares `EARS-1`…`EARS-22` plus `EARS-25`…`EARS-32` — and 124's own tests
+      cite every one of those tokens. So the guard reads **27 of spec 201's 29**
+      clauses as covered while none of them has a test at all, and only
+      `EARS-23` and `EARS-24` (the two ids 124 skips) surface. The guard's stale-deferral ratchet makes the
+      honest workaround impossible too: deferring `EARS-1` would be reported
+      stale. Recorded rather than fixed here because the fix is a change to the
+      guard's id model (qualify a citation by its spec, e.g. `201 EARS-1:` in the
+      test title — the very ds-platform machinery §7 of `docs/ci-guardrails.md`
+      deliberately dropped for lack of a convention), which is its own task and
+      not this spec's — return condition: the #201 implementation task lands its
+      tests (the first moment the conflation would hide a REAL missing test), or
+      a third spec starts at `EARS-1`. **Part of the same fix:** ids a spec
+      RETIRES (spec 201 leaves `EARS-13`, `EARS-14` and `EARS-18` as gaps, each a
+      one-line «— removed» bullet inside `## Requirements`) must be excluded from
+      the declared set — otherwise the qualified-id fix turns three retired
+      clauses into three permanent false reds demanding tests for requirements
+      that no longer exist
+
+<!-- debt-entry-end: 2026-08-19-e7a1b201f2 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
