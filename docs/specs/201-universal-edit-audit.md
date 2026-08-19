@@ -6,8 +6,9 @@ updated: 2026-08-19
 
 # Universal edit audit for `core` tables — spec (issue #201)
 
-- **Issues:** #201 (this task), #111 (epic «ядро core»), #117 (epic 7 — the guard
-  canon this wires into). Adjacent: `docs/specs/124-hours-on-core.md` (declares
+- **Issues:** #201 (parent), #279 (spec), #273, #274, #275, #276, #277
+  (deferred), #278 (deferred). Epics: #111 («ядро core»), #117 (epic 7 — the
+  guard canon this wires into). Adjacent: `docs/specs/124-hours-on-core.md` (declares
   this work out of its own scope), #125 (the migration pipeline it lands on),
   #113 (the domain `event_log` — a different thing, see «Out of scope»).
 - **Donor.** ds-platform spec 010 «Universal edit audit».

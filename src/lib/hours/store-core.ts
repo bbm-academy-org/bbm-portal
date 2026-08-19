@@ -12,7 +12,14 @@
  *  - **Мьютекс стал БД-локом.** Мутация — одна транзакция, первая инструкция в
  *    ней `pg_advisory_xact_lock` на один фиксированный ключ модуля (`./core/lock.ts`,
  *    EARS-10). Внутрипроцессная очередь промисов перестаёт быть мьютексом в тот
- *    момент, когда с одной базой говорят два процесса.
+ *    момент, когда с одной базой говорят два процесса. Транзакцию открывает
+ *    `platformTransaction()` (спека 201 EARS-24) — она же берёт лок и она же
+ *    выставляет аудит-контекст.
+ *  - **У мутации есть автор.** `mutateHoursDocument` первым аргументом требует
+ *    `AuditContext` (спека 201 EARS-25): без него запись в `core` отклонит
+ *    триггер `core.audit_row_change()` на помеченном соединении приложения
+ *    (EARS-26). Actor приходит из сессии (`sessionEmail(session)`,
+ *    `src/modules/hours/actions.ts`), а не выдумывается здесь.
  *  - **Никакого сетевого I/O внутри транзакции.** Лок берётся НА МУТАЦИЮ: цикл
  *    доставки спеки 100 остаётся N+1 отдельными мутациями с HTTP-запросом МЕЖДУ
  *    ними (`src/modules/hours/actions.ts`), а не одной транзакцией, держащей лок
@@ -26,12 +33,18 @@
  * Фолбэка на JSON нет нигде (EARS-12): нет `PLATFORM_DATABASE_URL` или база
  * недоступна — страница скажет «данные недоступны», мутация откажет вслух.
  */
+import {
+  platformReadTransaction,
+  platformTransaction,
+  type AuditContext,
+} from '@/lib/platform/db/transaction'
+
 import type { MutationResult } from './document'
-import { hoursDb } from './core/db'
+import { assertHoursDb } from './core/db'
 import { HoursDataError, HoursPersistRefusal } from './core/errors'
 import { loadDocument } from './core/load'
 import { HOURS_LOCK_KEY } from './core/lock'
-import { persistDocument, takeHoursLock } from './core/persist'
+import { persistDocument } from './core/persist'
 import { refusalFor } from './core/refusals'
 import type { HoursDocument } from './types'
 
@@ -72,12 +85,9 @@ function asStorageError(err: unknown): unknown {
  * целиком (сводка, экспорт, отпечаток предпросмотра).
  */
 export async function readHoursDocument(): Promise<HoursDocument> {
-  const db = hoursDb()
+  assertHoursDb()
   try {
-    return await db.transaction(async (tx) => loadDocument(tx), {
-      isolationLevel: 'repeatable read',
-      accessMode: 'read only',
-    })
+    return await platformReadTransaction(async (tx) => loadDocument(tx))
   } catch (cause) {
     throw asStorageError(cause)
   }
@@ -86,28 +96,40 @@ export async function readHoursDocument(): Promise<HoursDocument> {
 /**
  * Атомарно применяет мутацию к целому документу (EARS-10). Отказ мутации ничего
  * не пишет; результат (включая warnings) возвращается вызывающему как есть.
+ *
+ * `ctx` — кто и через какую дверь пишет (спека 201 EARS-7, EARS-25). Для
+ * действия пользователя это `{ actorEmail: sessionEmail(session), source:
+ * 'portal' }`; для скрипта репозитория — `cli:<name>` с `actorEmail: null`.
  */
 export async function mutateHoursDocument<T>(
+  ctx: AuditContext,
   mutator: (doc: HoursDocument) => MutationResult<T>,
 ): Promise<MutationResult<T>> {
-  const db = hoursDb()
+  assertHoursDb()
   try {
-    return await db.transaction(async (tx) => {
-      await takeHoursLock(tx, HOURS_LOCK_KEY)
-      const before = await loadDocument(tx)
-      const result = mutator(before)
-      if (!result.ok) return result
+    return await platformTransaction(
+      ctx,
+      async (tx) => {
+        const before = await loadDocument(tx)
+        const result = mutator(before)
+        if (!result.ok) return result
 
-      try {
-        await persistDocument(tx, before, result.doc)
-      } catch (cause) {
-        if (cause instanceof HoursPersistRefusal) throw cause
-        const refusal = refusalFor(cause, before, result.doc)
-        if (refusal) throw new HoursPersistRefusal(refusal, { cause })
-        throw cause
-      }
-      return result
-    })
+        try {
+          await persistDocument(tx, before, result.doc)
+        } catch (cause) {
+          if (cause instanceof HoursPersistRefusal) throw cause
+          const refusal = refusalFor(cause, before, result.doc)
+          if (refusal) throw new HoursPersistRefusal(refusal, { cause })
+          throw cause
+        }
+        return result
+      },
+      // Спека 124 EARS-10: лок модуля — ПЕРВАЯ инструкция транзакции, аудит-
+      // контекст (спека 201 EARS-6) идёт сразу за ним. Оба transaction-scoped,
+      // так что их взаимный порядок ничего не меняет ни в одной из гарантий;
+      // «первым» остаётся лок, потому что там это несущее слово.
+      { lockKey: HOURS_LOCK_KEY },
+    )
   } catch (cause) {
     if (cause instanceof HoursPersistRefusal) return { ok: false, error: cause.refusal }
     throw asStorageError(cause)

@@ -15,7 +15,20 @@ import {
 } from '@/lib/hours'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
-import { seedMember, seedParticipant, seedPeriod, truncateHoursTables } from './hours-core-helpers'
+import {
+  fixtureWrite,
+  seedMember,
+  seedParticipant,
+  seedPeriod,
+  truncateHoursTables,
+} from './hours-core-helpers'
+
+/**
+ * Кто пишет в этих сюитах (спека 201 EARS-7, EARS-25). `portal` + непустой
+ * actor — ровно то, что приходит из Server Action после гейта сессии; без
+ * контекста запись отклонит `core.audit_row_change()` на помеченном пуле.
+ */
+const TEST_ACTOR = { actorEmail: 'anton@bbm.academy', source: 'portal' } as const
 
 /**
  * The spec-100 publication batch on `core` (spec 124: EARS-6, EARS-22, EARS-31).
@@ -33,15 +46,15 @@ const db = getPlatformDb()
 const PERIOD = 'p-july'
 
 async function seedPeriodWithTwoAssessments(): Promise<void> {
-  const anton = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон', role: 'Продукт' })
-  const eduard = await seedMember(db, {
+  const anton = await seedMember({ email: 'anton@bbm.academy', name: 'Антон', role: 'Продукт' })
+  const eduard = await seedMember({
     email: 'eduard@bbm.academy',
     name: 'Эдуард',
     role: 'Операции',
   })
-  await seedParticipant(db, anton, { forkMin: 300_000, forkMax: 400_000, grade: 'III', sortKey: 0 })
-  await seedParticipant(db, eduard, { sortKey: 1 })
-  await seedPeriod(db, {
+  await seedParticipant(anton, { forkMin: 300_000, forkMax: 400_000, grade: 'III', sortKey: 0 })
+  await seedParticipant(eduard, { sortKey: 1 })
+  await seedPeriod({
     id: PERIOD,
     label: 'Июль 2026',
     from: '2026-07-01',
@@ -50,7 +63,7 @@ async function seedPeriodWithTwoAssessments(): Promise<void> {
   })
 
   for (const email of ['anton@bbm.academy', 'eduard@bbm.academy']) {
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       saveAssessment(
         doc,
         {
@@ -65,12 +78,12 @@ async function seedPeriodWithTwoAssessments(): Promise<void> {
       ),
     )
   }
-  await mutateHoursDocument((doc) => setPeriodStatus(doc, PERIOD, 'closed'))
+  await mutateHoursDocument(TEST_ACTOR, (doc) => setPeriodStatus(doc, PERIOD, 'closed'))
 }
 
 async function startBatch(): Promise<string> {
   const preview = buildMattermostPreview(await readHoursDocument(), PERIOD)
-  const created = await mutateHoursDocument((doc) =>
+  const created = await mutateHoursDocument(TEST_ACTOR, (doc) =>
     createPublicationBatch(doc, PERIOD, preview.preview_fingerprint, '2026-08-03T09:00:00.000Z'),
   )
   if (!created.ok) throw new Error(`batch not created: ${created.error}`)
@@ -90,7 +103,7 @@ describe('the publication batch (EARS-6)', () => {
     await seedPeriodWithTwoAssessments()
     const fingerprint = await startBatch()
 
-    const second = await mutateHoursDocument((doc) =>
+    const second = await mutateHoursDocument(TEST_ACTOR, (doc) =>
       createPublicationBatch(doc, PERIOD, fingerprint, '2026-08-03T09:05:00.000Z'),
     )
     expect(second.ok).toBe(false)
@@ -112,7 +125,7 @@ describe('the publication batch (EARS-6)', () => {
     ])
     const texts = initial!.messages.map((message) => message.text)
 
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       recordPublicationDelivery(doc, PERIOD, 0, 'sent', '2026-08-03T09:01:00.000Z'),
     )
     const midway = (await readHoursDocument()).publications?.[0]
@@ -120,7 +133,7 @@ describe('the publication batch (EARS-6)', () => {
     expect(midway?.messages.map((message) => message.delivery)).toEqual(['sent', 'pending'])
     expect(midway?.messages.map((message) => message.text)).toEqual(texts)
 
-    await mutateHoursDocument((doc) =>
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
       recordPublicationDelivery(doc, PERIOD, 1, 'sent', '2026-08-03T09:02:00.000Z'),
     )
     const done = (await readHoursDocument()).publications?.[0]
@@ -155,7 +168,7 @@ describe('the publication batch (EARS-6)', () => {
     const doc = await readHoursDocument()
     expect(isPeriodMutationLocked(doc, PERIOD)).toBe(true)
 
-    const edited = await mutateHoursDocument((current) =>
+    const edited = await mutateHoursDocument(TEST_ACTOR, (current) =>
       updatePeriod(current, {
         id: PERIOD,
         label: 'Июль',
@@ -167,7 +180,7 @@ describe('the publication batch (EARS-6)', () => {
     if (edited.ok) throw new Error('unreachable')
     expect(edited.error).toContain('уже начата')
 
-    const reopened = await mutateHoursDocument((current) =>
+    const reopened = await mutateHoursDocument(TEST_ACTOR, (current) =>
       setPeriodStatus(current, PERIOD, 'open'),
     )
     expect(reopened.ok).toBe(false)
@@ -179,9 +192,11 @@ describe('the preview fingerprint (EARS-22)', () => {
     await seedPeriodWithTwoAssessments()
     const before = buildMattermostPreview(await readHoursDocument(), PERIOD).preview_fingerprint
 
-    await db.execute(
-      sql`update core.member set timezone = 'Asia/Tbilisi', status = 'inactive',
-              updated_at = now() where email = 'anton@bbm.academy'`,
+    await fixtureWrite((tx) =>
+      tx.execute(
+        sql`update core.member set timezone = 'Asia/Tbilisi', status = 'inactive',
+                updated_at = now() where email = 'anton@bbm.academy'`,
+      ),
     )
     const afterMemberOnlyTouch = buildMattermostPreview(
       await readHoursDocument(),
@@ -189,8 +204,8 @@ describe('the preview fingerprint (EARS-22)', () => {
     ).preview_fingerprint
     expect(afterMemberOnlyTouch).toBe(before)
 
-    await db.execute(
-      sql`update core.member set role = 'Технологии' where email = 'anton@bbm.academy'`,
+    await fixtureWrite((tx) =>
+      tx.execute(sql`update core.member set role = 'Технологии' where email = 'anton@bbm.academy'`),
     )
     const afterRoleChange = buildMattermostPreview(
       await readHoursDocument(),

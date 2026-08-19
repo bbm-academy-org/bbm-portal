@@ -10,6 +10,13 @@ import { requirePlatformDatabaseUrl } from '@/lib/platform/db/config'
 import { seedMember, seedParticipant, seedPeriod, truncateHoursTables } from './hours-core-helpers'
 
 /**
+ * Кто пишет в этих сюитах (спека 201 EARS-7, EARS-25). `portal` + непустой
+ * actor — ровно то, что приходит из Server Action после гейта сессии; без
+ * контекста запись отклонит `core.audit_row_change()` на помеченном пуле.
+ */
+const TEST_ACTOR = { actorEmail: 'anton@bbm.academy', source: 'portal' } as const
+
+/**
  * The module-wide advisory lock (spec 124 EARS-10) — the direct analogue of
  * today's in-process mutex (081 §13).
  *
@@ -24,9 +31,9 @@ import { seedMember, seedParticipant, seedPeriod, truncateHoursTables } from './
 const db = getPlatformDb()
 
 async function seedOpenPeriodWithParticipant(): Promise<void> {
-  const id = await seedMember(db, { email: 'anton@bbm.academy', name: 'Антон' })
-  await seedParticipant(db, id, { forkMin: 300_000, forkMax: 400_000, grade: 'III', sortKey: 0 })
-  await seedPeriod(db, {
+  const id = await seedMember({ email: 'anton@bbm.academy', name: 'Антон' })
+  await seedParticipant(id, { forkMin: 300_000, forkMax: 400_000, grade: 'III', sortKey: 0 })
+  await seedPeriod({
     id: 'p-july',
     label: 'Июль 2026',
     from: '2026-07-01',
@@ -36,7 +43,7 @@ async function seedOpenPeriodWithParticipant(): Promise<void> {
 }
 
 function save(hours: number, at: string) {
-  return mutateHoursDocument((doc) =>
+  return mutateHoursDocument(TEST_ACTOR, (doc) =>
     saveAssessment(
       doc,
       {

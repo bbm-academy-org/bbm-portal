@@ -130,6 +130,38 @@ people registry `core.member` + `core.member_alias`, owned by `src/lib/member`
 issue #255). The `hours` tables and the rest of epic #111 follow; migration
 `0000` still creates the `core` schema and nothing else.
 
+## Every write is attributed — `platformTransaction()`
+
+Since spec [`201`](../../../../docs/specs/201-universal-edit-audit.md) (#273) the
+`core` tables carry a generic capture trigger writing into the append-only ledger
+`core.audit_event`, and the pool marks every socket it opens as the
+application's. Two consequences you meet the first time you write code here:
+
+- **`getPlatformDb()` no longer hands out `.transaction(…)`.** The exported type
+  omits it. The one way to open a write transaction is
+  `platformTransaction(ctx, fn, options?)` in [`transaction.ts`](./transaction.ts),
+  whose FIRST argument is the audit context (`actorEmail`, `source`). A read-only
+  transaction is `platformReadTransaction(fn)` — no context, because
+  `access mode read only` makes an audited write impossible inside it.
+- **A statement with no context is REFUSED, not degraded.** On the app's marked
+  connection the trigger raises; on an unmarked one (`psql`, the drizzle-kit
+  migration runner, a restore) it degrades to `source = 'db-direct'` with a NULL
+  actor. So a fixture, a `cli:*` script or a seed that writes raw SQL names its
+  own source — `tests/int/platform/hours-core-helpers.ts` (`fixtureWrite`) and
+  `tools/platform/member-seed.ts` (`cli:member-seed`) are the two examples in the
+  tree.
+
+The ledger has **no drizzle table file** on purpose (spec 201, §«No drizzle table
+file for the ledger»): drizzle-kit diffs the TS schema against its own snapshot,
+and a `pgTable('audit_event')` stub would make it believe it owns a table whose
+two append-only triggers it cannot describe. Read it with the `sql` template.
+
+Coverage — which table carries the trigger, which column records a value, and the
+rationale for every absence — is one file,
+[`tools/lint/audit-coverage-allowlist.mjs`](../../../../tools/lint/audit-coverage-allowlist.mjs),
+read by `tests/int/platform/audit-coverage.int.spec.ts` today and by the
+`audit-coverage` guard (#276) when it lands.
+
 ## Boundaries
 
 `pnpm boundaries` enforces the table-ownership rules of

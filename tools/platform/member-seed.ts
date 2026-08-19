@@ -53,7 +53,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { upsertMemberWithAliases } from '@/lib/member'
 import type { MemberAliasSeed, MemberSeedInput } from '@/lib/member'
-import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
+import { closePlatformDb } from '@/lib/platform/db/client'
+import { platformTransaction } from '@/lib/platform/db/transaction'
 
 import { loadPlatformToolEnv } from './load-env.mjs'
 
@@ -188,25 +189,31 @@ export async function seedMembers(
   options?: { dryRun?: boolean },
 ): Promise<MemberSeedSummary> {
   const dryRun = options?.dryRun === true
-  const db = getPlatformDb()
   try {
-    return await db.transaction(async (tx) => {
-      const summary: MemberSeedSummary = {
-        members: { created: 0, updated: 0, unchanged: 0 },
-        aliases: { inserted: 0, present: 0 },
-        dryRun,
-      }
-      for (const member of dataset.members) {
-        const outcome = await upsertMemberWithAliases(member, { db: tx })
-        if (outcome.created) summary.members.created += 1
-        else if (outcome.profileUpdated) summary.members.updated += 1
-        else summary.members.unchanged += 1
-        summary.aliases.inserted += outcome.aliasesInserted
-        summary.aliases.present += outcome.aliasesPresent
-      }
-      if (dryRun) throw new DryRunRollback(summary)
-      return summary
-    })
+    // `cli:member-seed` (spec 201 EARS-7): a repo-owned script, no human behind
+    // the write, so `actorEmail` is legitimately null. Without a context the
+    // capture trigger refuses every statement here — the pool is app-marked
+    // (EARS-26) — so this is not decoration, it is what makes the seed run.
+    return await platformTransaction(
+      { actorEmail: null, source: 'cli:member-seed' },
+      async (tx) => {
+        const summary: MemberSeedSummary = {
+          members: { created: 0, updated: 0, unchanged: 0 },
+          aliases: { inserted: 0, present: 0 },
+          dryRun,
+        }
+        for (const member of dataset.members) {
+          const outcome = await upsertMemberWithAliases(member, { db: tx })
+          if (outcome.created) summary.members.created += 1
+          else if (outcome.profileUpdated) summary.members.updated += 1
+          else summary.members.unchanged += 1
+          summary.aliases.inserted += outcome.aliasesInserted
+          summary.aliases.present += outcome.aliasesPresent
+        }
+        if (dryRun) throw new DryRunRollback(summary)
+        return summary
+      },
+    )
   } catch (err) {
     if (err instanceof DryRunRollback) return err.summary
     throw err

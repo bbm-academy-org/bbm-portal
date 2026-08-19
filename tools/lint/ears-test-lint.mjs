@@ -98,14 +98,16 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  * the obligation stays visible. Keep it SHORT; the stale check below makes it a
  * ratchet that only tightens. Seam: `LINT_EARS_DEFERRALS` (JSON) replaces it.
  *
- * **Today: spec 201's EARS-23 and EARS-24 only.** That spec is `Draft` —
- * authored for the owner's go, nothing built from it yet — so none of its
- * clauses has a test. Only those two are listed because the guard's id namespace
- * is FLAT: spec 124 declares EARS-1..22 and EARS-25..32 and its own tests cite
- * every one of those ids, so the guard reads spec 201's clauses sharing them as
- * covered and a deferral for them would be reported stale. EARS-23 and EARS-24
- * are the only ids spec 124 skips; EARS-33 joined them when the review round of
- * 2026-08-19 added it (spec 124 stops at EARS-32).
+ * **Today: spec 201's EARS-23 only.** The list is short because the guard's id
+ * namespace is FLAT: spec 124 declares EARS-1..22 and EARS-25..32 and its own
+ * tests cite every one of those ids, so the guard reads spec 201's clauses
+ * sharing them as covered and a deferral for them would be reported stale.
+ * EARS-23, EARS-24 and EARS-33 are the only ids spec 124 skips (it stops at
+ * EARS-32), which is why they were the whole list while spec 201 was `Draft`.
+ * #273 landed EARS-24 and EARS-33 with real tests
+ * (`tests/int/platform/audit-*.int.spec.ts`), so they left the list; EARS-23 —
+ * the read path, «SQL run by an agent» — has no automated counterpart until a
+ * surface over the ledger exists.
  * That conflation is recorded as decision debt in `DEBT.md`; the entries here
  * are only the ids the guard genuinely reports uncovered.
  *
@@ -122,9 +124,9 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  */
 const DEFERRALS_BY_ISSUE = {
   201: {
-    ids: ['EARS-23', 'EARS-24', 'EARS-33'],
+    ids: ['EARS-23'],
     reason:
-      'spec 201 (universal edit audit) declares clauses whose tests land with the implementation task opened from it — the deferral returns when that task lands its integration tests under tests/int/platform/',
+      'spec 201 EARS-23 is the READ path — «SQL run by an agent, result pasted into the issue» — which has no automated counterpart by construction: there is no route, no UI and no code to assert on until a surface over the ledger exists. EARS-24 and EARS-33 left this list when #273 landed their tests under tests/int/platform/audit-*.int.spec.ts',
   },
 }
 

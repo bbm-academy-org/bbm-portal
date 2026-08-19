@@ -33,7 +33,14 @@ import {
   updatePeriod,
   upsertParticipant,
 } from '@/lib/hours'
-import type { Assessment, AssessmentMethod, Grade, MutationResult, PeriodStatus } from '@/lib/hours'
+import type {
+  Assessment,
+  AssessmentMethod,
+  AuditContext,
+  Grade,
+  MutationResult,
+  PeriodStatus,
+} from '@/lib/hours'
 
 import type { HoursActionState } from './actionState'
 
@@ -105,6 +112,19 @@ async function requireAdmin(): Promise<{ email: string } | HoursActionState> {
   return gate
 }
 
+/**
+ * Кто пишет — из сессии, которую гейт выше уже разрешил (спека 201 EARS-25).
+ *
+ * `source: 'portal'` означает «за этой записью стоит человек», и триггер
+ * `core.audit_row_change()` требует при нём непустого actor (EARS-7). Email тут
+ * — уже нормализованный `sessionEmail(session)`, тот же вид, в котором он лежит
+ * в `core.member.email` (спека 124 EARS-2), так что строка аудита джойнится к
+ * реестру равенством.
+ */
+function actorOf(gate: { email: string }): AuditContext {
+  return { actorEmail: gate.email, source: 'portal' }
+}
+
 function refresh(): void {
   revalidatePath('/p/hours')
   revalidatePath('/p/hours/admin')
@@ -148,7 +168,7 @@ export async function saveAssessmentAction(
       return error('Оценку можно сохранять только за себя.')
     }
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
       saveAssessment(
         doc,
         {
@@ -177,7 +197,7 @@ export async function saveParticipantAction(
 
     // Роль, вилка и грейд необязательны (решение владельца 2026-07-30);
     // ставка не передаётся вовсе — она вычисляется из вилки и грейда.
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
       upsertParticipant(doc, {
         email: text(formData, 'email'),
         name: text(formData, 'name'),
@@ -200,7 +220,7 @@ export async function createPeriodAction(
     const gate = await requireAdmin()
     if ('status' in gate) return gate
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
       createPeriod(
         doc,
         {
@@ -228,7 +248,7 @@ export async function updatePeriodAction(
     const gate = await requireAdmin()
     if ('status' in gate) return gate
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
       updatePeriod(doc, {
         id: text(formData, 'periodId'),
         label: text(formData, 'label'),
@@ -249,7 +269,9 @@ export async function deletePeriodAction(
     const gate = await requireAdmin()
     if ('status' in gate) return gate
 
-    const result = await mutateHoursDocument((doc) => deletePeriod(doc, text(formData, 'periodId')))
+    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
+      deletePeriod(doc, text(formData, 'periodId')),
+    )
     return toState(result, 'Период удалён.')
   })
 }
@@ -266,7 +288,7 @@ export async function setPeriodStatusAction(
     const status = text(formData, 'status') as PeriodStatus
     if (status !== 'open' && status !== 'closed') return error('Неизвестный статус периода.')
 
-    const result = await mutateHoursDocument((doc) =>
+    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
       setPeriodStatus(doc, text(formData, 'periodId'), status),
     )
     return toState(result, status === 'open' ? 'Период открыт.' : 'Период закрыт.')
@@ -297,7 +319,7 @@ export async function publishHoursToMattermostAction(
       return error('Предпросмотр устарел — обнови страницу и проверь сообщения снова.')
     }
 
-    const created = await mutateHoursDocument((doc) =>
+    const created = await mutateHoursDocument(actorOf(gate), (doc) =>
       createPublicationBatch(doc, periodId, previewFingerprint, new Date().toISOString()),
     )
     if (!created.ok) return error(created.error)
@@ -317,7 +339,7 @@ export async function publishHoursToMattermostAction(
         delivery = 'unknown'
       }
 
-      const progressed = await mutateHoursDocument((doc) =>
+      const progressed = await mutateHoursDocument(actorOf(gate), (doc) =>
         recordPublicationDelivery(doc, periodId, index, delivery, new Date().toISOString()),
       )
       if (!progressed.ok) {
