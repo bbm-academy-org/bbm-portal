@@ -98,7 +98,15 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  * the obligation stays visible. Keep it SHORT; the stale check below makes it a
  * ratchet that only tightens. Seam: `LINT_EARS_DEFERRALS` (JSON) replaces it.
  *
- * **EMPTY today, and that is the point.** The last entry was spec 124's
+ * **Today: spec 201's EARS-23 only.** That spec is `Draft` — authored for the
+ * owner's go, nothing built from it yet — so none of its clauses has a test.
+ * Only EARS-23 is listed because the guard's id namespace is FLAT: EARS-1..22
+ * are also declared by spec 124, whose tests already cite those ids, so the
+ * guard reads them as covered and a deferral for them would be reported stale.
+ * That conflation is recorded as decision debt in `DEBT.md`; the entries here
+ * are only the ids the guard genuinely reports uncovered.
+ *
+ * The previous round was spec 124's
  * **EARS-15** — «archive the JSON and delete its code path» — which could not be
  * tested before it happened: its trigger was the owner accepting a live stand.
  * The stand was accepted on 2026-08-18, PR-2 of #256 deleted
@@ -109,7 +117,13 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  *
  * @type {Record<number, {ids: string[], reason: string}>}
  */
-const DEFERRALS_BY_ISSUE = {}
+const DEFERRALS_BY_ISSUE = {
+  201: {
+    ids: ['EARS-23'],
+    reason:
+      'spec 201 (universal edit audit) is Draft, awaiting the owner go — its tests land with the implementation task opened from it',
+  },
+}
 
 export const BUILTIN_DEFERRALS = Object.fromEntries(
   Object.entries(DEFERRALS_BY_ISSUE).flatMap(([issue, { ids, reason }]) =>
