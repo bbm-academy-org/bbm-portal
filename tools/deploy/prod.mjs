@@ -288,13 +288,18 @@ export function preflightVerdict({ dirty, head, originMain, checkRuns, skipCi = 
  * the gitignored `.env.prod`, `.env.postgres` and `.env.preview` live there and
  * exist NOWHERE else (losing them is unrecoverable), and `deploy/.env` — the
  * DEPLOY_SHA line compose interpolates — is written on the box by
- * `buildDeployScript`. Everything under the box's `deploy/` is copied into the
- * new tree with `cp -an`: no-clobber, so a file the commit DOES ship (compose
- * file, Caddyfile, the `.env.*.example`s) keeps its shipped content, while
- * anything host-only survives. Nothing else on the box lives inside the tree —
- * the data are docker-managed named volumes, the backup/checkpoint machinery is
- * `/home/deploy/portal-backup`, and the cutover dataset is deliberately outside
- * `~/bbm-portal` (see MEMBER_DATASET below).
+ * `buildDeployScript`. Exactly those files cross the swap: the loop copies
+ * `deploy/.env` and `deploy/.env.*` BY NAME, skipping the `.env.*.example`s the
+ * commit itself ships. Copying the whole directory no-clobber would do the same
+ * job, but `cp -n` is documented as non-portable (coreutils >= 9 warns and
+ * points at `--update=none`, which older ones do not have) and the box's
+ * coreutils version is not a thing this pipeline should depend on. Naming the
+ * host-only files is also the stronger statement: a shipped compose file or
+ * Caddyfile is not merely "not overwritten", it is never a candidate. Nothing
+ * else on the box lives inside the tree — the data are docker-managed named
+ * volumes, the backup/checkpoint machinery is `/home/deploy/portal-backup`, and
+ * the cutover dataset is deliberately outside `~/bbm-portal`
+ * (see {@link CUTOVER_DATASET}).
  *
  * **Atomicity.** The order is: extract → carry → ASSERT `.env.prod` → swap →
  * drop the previous tree. A failed or corrupt extract, or a missing env file,
@@ -313,7 +318,10 @@ rm -rf ${next} ${prev}
 mkdir -p ${next}
 tar -xz -C ${next}
 mkdir -p ${next}/deploy
-if [ -d ${REMOTE_TREE}/deploy ]; then cp -an ${REMOTE_TREE}/deploy/. ${next}/deploy/; fi
+for f in ${REMOTE_TREE}/deploy/.env ${REMOTE_TREE}/deploy/.env.*; do
+  case "$f" in *.example) continue ;; esac
+  if [ -f "$f" ]; then cp -p "$f" ${next}/deploy/; fi
+done
 if [ ! -f ${next}/deploy/.env.prod ]; then
   echo "SHIP ABORTED: ${next}/deploy/.env.prod is missing — the box keeps its current tree, nothing was swapped" >&2
   rm -rf ${next}
@@ -325,7 +333,7 @@ if ! mv ${next} ${REMOTE_TREE}; then
   exit 1
 fi
 rm -rf ${prev}
-echo "[ship] ${REMOTE_TREE} replaced by the shipped tree (host-only deploy/ files carried across)"
+echo "[ship] ${REMOTE_TREE} replaced by the shipped tree (host-only deploy/.env* carried across)"
 `
 }
 

@@ -78,7 +78,7 @@ printing a rollback pointer:
 | Stage                                                             | What it does                                                                                      | Refuses when                                        |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | pre-flight                                                        | clean tree · target = `origin/main` sha · green CI for that sha                                   | dirty tree · red or still-running CI · no CI at all |
-| ship                                                              | `git archive <sha>` → ssh → extract into `~/bbm-portal.next`, carry `deploy/`, swap it in         | ssh/tar non-zero · no `deploy/.env.prod` to carry   |
+| ship                                                              | `git archive <sha>` → ssh → extract into `~/bbm-portal.next`, carry `deploy/.env*`, swap it in    | ssh/tar non-zero · no `deploy/.env.prod` to carry   |
 | checkpoint                                                        | box backup script → fresh dump BEFORE anything migrates, pinned under a per-deploy S3 key         | missing script · non-zero exit · no fresh dump      |
 | stack                                                             | build `app`+`migrate` → migrate → `up -d`                                                         | any compose step non-zero                           |
 | caddy                                                             | compares the shipped `Caddyfile` with the running bind mount, restarts only if stale, re-compares | still stale after the restart                       |
@@ -197,9 +197,10 @@ migration is an owner-decision.
   failure (`tar -xz` is additive, and the pipeline used to wipe only `src/`
   before extracting). Fixed in #264: the ship step now extracts into
   `~/bbm-portal.next` and swaps it in, so the tree IS the shipped commit —
-  plus the box's own `deploy/` files, carried across no-clobber. Two things
-  follow: host state kept inside `~/bbm-portal` outside `deploy/` does not
-  survive a deploy, and a leftover `~/bbm-portal.prev` means a swap broke
+  plus the box's own `deploy/.env*` files, copied across by name. Two things
+  follow: host state kept inside `~/bbm-portal` in anything but a
+  `deploy/.env*` file does not survive a deploy, and a leftover
+  `~/bbm-portal.prev` means a swap broke
   mid-flight (restore with `mv ~/bbm-portal.prev ~/bbm-portal`; the next deploy
   does it for you). `deploy/README.md` → _How the tree reaches the box_.
 - **A `--dry-run` refusing on a dirty tree** — that is the gate working, not a

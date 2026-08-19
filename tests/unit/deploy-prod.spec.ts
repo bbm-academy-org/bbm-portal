@@ -190,6 +190,9 @@ describe('buildShipCommand', () => {
 
   it('fails closed rather than swapping a tree without the host-only .env.prod', () => {
     expect(cmd).toContain('set -eu')
+    // `cp -n` / `cp -an` is documented non-portable (coreutils >= 9 warns): the
+    // copy names the host-only files instead of relying on no-clobber.
+    expect(cmd).not.toMatch(/cp -[a-z]*n/)
     expect(cmd).toMatch(/deploy\/\.env\.prod/)
     expect(cmd).toMatch(/exit 1/)
     // The assert stands BEFORE the swap: a tree that would lose the env files
@@ -298,27 +301,45 @@ describe('buildShipCommand', () => {
     expect(out.exists('DEPLOYED_SHA')).toBe(false)
   })
 
-  it('carries the host-only deploy/.env* across, and the shipped deploy/ files win', () => {
+  it('copies ONLY the host-only deploy/.env* — a shipped file is never a candidate', () => {
     const out = ship(
       {
         'deploy/.env.prod': 'DATABASE_URL=x\n',
         'deploy/.env.postgres': 'POSTGRES_USER=y\n',
         'deploy/.env.preview': 'PAYLOAD_PREVIEW_TOKEN=z\n',
         'deploy/.env': 'DEPLOY_SHA=older\n',
+        'deploy/.env.prod.example': 'STALE=1\n',
         'deploy/docker-compose.prod.yml': 'name: old\n',
       },
-      { 'deploy/docker-compose.prod.yml': 'name: new\n', 'deploy/Caddyfile': 'cms.bbm.academy\n' },
+      {
+        'deploy/docker-compose.prod.yml': 'name: new\n',
+        'deploy/Caddyfile': 'cms.bbm.academy\n',
+        'deploy/.env.prod.example': 'DATABASE_URL=\n',
+      },
     )
     if (!out) return
-    expect(out.status).toBe(0)
+    // Also proves the carry-over is warning-free: `cp -n` is non-portable and
+    // coreutils >= 9 says so on stderr, which is why the copy names its files.
+    expect(out.stderr + String(out.status)).toBe('0')
     expect(out.read('deploy/.env.prod')).toBe('DATABASE_URL=x\n')
     expect(out.read('deploy/.env.postgres')).toBe('POSTGRES_USER=y\n')
     expect(out.read('deploy/.env.preview')).toBe('PAYLOAD_PREVIEW_TOKEN=z\n')
     // compose's own interpolation source, written on the box by buildDeployScript
     expect(out.read('deploy/.env')).toBe('DEPLOY_SHA=older\n')
-    // a tracked file's shipped copy replaces the box's copy
+    // Everything the commit ships is the commit's, untouched by the copy — the
+    // `.example` is the sharp case: it matches `.env.*` but IS shipped.
     expect(out.read('deploy/docker-compose.prod.yml')).toBe('name: new\n')
     expect(out.read('deploy/Caddyfile')).toBe('cms.bbm.academy\n')
+    expect(out.read('deploy/.env.prod.example')).toBe('DATABASE_URL=\n')
+  })
+
+  it('carries nothing rather than tripping over an unmatched glob', () => {
+    // A box whose deploy/ holds no `.env.*` at all: the glob stays literal, and
+    // the step must reach its own fail-closed assert, not die on the `for`.
+    const out = ship({ 'deploy/.env': 'DEPLOY_SHA=older\n' }, { 'src/app.ts': 'new\n' })
+    if (!out) return
+    expect(out.status).not.toBe(0)
+    expect(out.stderr).toContain('SHIP ABORTED')
   })
 
   it('refuses the swap when the new tree would carry no deploy/.env.prod', () => {

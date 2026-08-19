@@ -209,22 +209,23 @@ deploy went red on `TS2307` from two files `main` had already deleted.
 The ship step therefore never writes into the live tree. It:
 
 1. extracts the archive into a fresh `~/bbm-portal.next`;
-2. copies the box's own `~/bbm-portal/deploy/` into it with `cp -an`
-   (**no-clobber**: a file the commit ships keeps its shipped content, anything
-   host-only survives);
+2. copies the box's host-only env files — `deploy/.env` and `deploy/.env.*`,
+   minus the `.env.*.example`s the commit ships — into its `deploy/` **by name**
+   (nothing else is copied, so a shipped compose file or Caddyfile is never even
+   a candidate for being overwritten);
 3. **asserts `deploy/.env.prod` is in the new tree** — and aborts if it is not;
 4. swaps: `mv bbm-portal bbm-portal.prev && mv bbm-portal.next bbm-portal`, then
    drops `.prev`.
 
 Consequences worth knowing on the host:
 
-- **The tree is exactly the shipped commit, plus host-owned `deploy/` files.**
-  Anything you leave lying around inside `~/bbm-portal` **outside `deploy/`** is
-  removed by the next deploy. Put host state under `deploy/`, or outside the
-  tree entirely (the way the backup machinery lives in
-  `/home/deploy/portal-backup` and the cutover dataset lives outside
-  `~/bbm-portal`). Docker named volumes are unaffected — they are not in the
-  tree.
+- **The tree is exactly the shipped commit, plus the host-only `deploy/.env*`
+  files.** Anything else you leave lying around inside `~/bbm-portal` — including
+  a non-`.env` file under `deploy/` — is removed by the next deploy. Put host
+  state in a `deploy/.env*` file, or outside the tree entirely (the way the
+  backup machinery lives in `/home/deploy/portal-backup` and the cutover dataset
+  lives outside `~/bbm-portal`). Docker named volumes are unaffected — they are
+  not in the tree.
 - **Nothing is destroyed before the new tree is proven.** A broken transfer or a
   missing `.env.prod` aborts with the box exactly as it was.
 - **`~/bbm-portal.prev` after a failed run** means the swap itself broke: the
@@ -274,8 +275,8 @@ here is only what is true at the **host** level.
 ### One-time upgrade step on an EXISTING install — do this before the first deploy
 
 `deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
-deploy carries the box's own `deploy/` across the swap — _How the tree reaches
-the box_ above), and **no deploy can add a line to it for you**. A box installed before this change therefore has no
+deploy carries the box's own `deploy/.env*` across the swap — _How the tree
+reaches the box_ above), and **no deploy can add a line to it for you**. A box installed before this change therefore has no
 `PLATFORM_DATABASE_URL`, and the `migrate` service reads its environment from
 that file.
 
