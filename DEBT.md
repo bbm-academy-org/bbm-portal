@@ -55,16 +55,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-11-8fcb3c6ffc -->
 
-- [ ] 2026-08-11 spec §11 defers `migration-index` (a generated index of
-      migrations with their purpose) to the same «при создании схемы и миграций»
-      trigger, fired by #125. Deferred for the same reason at a smaller scale —
-      the repo holds exactly ONE platform migration, and an index of one entry is
-      a file that only ever costs a review. `pnpm platform:migrate:status` already
-      answers the question the index exists for (what is applied, what is not,
-      what can never be) — return condition: the third platform migration, or the
-      first time a migration's purpose is not obvious from its tag (PR #190
-      review major 7)
-
 <!-- debt-entry-end: 2026-08-11-a0f80803db -->
 
 - [ ] 2026-08-11 `decideEscapeBlock` still calls a session isolated whenever its
@@ -127,14 +117,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-06-01cdf09cad -->
 
-- [ ] 2026-08-06 `.claude/rules/dev-env.md` was touched by PR #166 (new
-      Russian STOP bullet added) without the translate-on-touch pass the task
-      canon prescribes for the legacy Russian corpus — deliberate: a lone
-      English bullet in an all-Russian file reads worse, and translating a
-      canon rules file is not a redirect-URI chore's business — return
-      condition: next task that substantively reworks `dev-env.md` translates
-      the whole file (#166, review round 2)
-
 <!-- debt-entry-end: 2026-08-06-9c4363b31b -->
 
 <!-- debt-entry-end: 2026-08-06-620bacd10f -->
@@ -181,18 +163,6 @@ Entry format:
       (2026-09-02 window) (#136, review of PR #154)
 
 <!-- debt-entry-end: 2026-08-05-8fa8f75d9b -->
-
-- [ ] 2026-08-05 `package.json` `format:check` / `lint-staged` globs are
-      `{ts,tsx,css,md,json,yml,yaml}` per tree, so **no `.mjs` is ever
-      prettier-checked** — the whole `tools/**` tooling layer (every guard, every
-      hook, the gh scripts) is unformatted-by-omission in CI. PREDATES this PR:
-      the glob has never covered `.mjs`; #157 only made it visible by adding four
-      guards. Not fixed there deliberately — widening the glob reformats every
-      existing `.mjs` in one sweep, which belongs in its own diff, not inside a
-      guard PR. Return condition: the next PR that touches `package.json`'s
-      script block for any reason, or the 2026-09-02 guard-promotion sweep —
-      whichever comes first (#157, review round 2 of PR #160 + iteration-end
-      gate note b)
 
 <!-- debt-entry-end: 2026-08-05-39d11e3194 -->
 
@@ -440,38 +410,7 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-17-c3d2e255e3 -->
 
-- [ ] 2026-08-18 `src/lib/hours/core/import.ts` has no PRODUCTION caller since
-      #256 deleted `tools/platform/hours-import.ts` and the
-      `platform:hours:import` command (owner: a second import is never needed).
-      Kept rather than deleted because it is the mechanics the production rows
-      were written with and the only reviewed restore path from the
-      `hours.json.<date>` archive; its driver is now
-      `tests/int/platform/hours-import.int.spec.ts` alone, which is also EARS-13's
-      coverage — return condition: the archive is retired (the volume mount goes
-      with it), or the next task that touches `src/lib/hours/core/` (#256, PR-2)
-
 <!-- debt-entry-end: 2026-08-18-d4c3b256f1 -->
-
-- [ ] 2026-08-19 `lint:ears-test` treats `EARS-N` as a FLAT, repo-wide id space,
-      but `docs/specs/README.md` defines the ids as stable **per spec**. Spec 201
-      landed as the second spec declaring `EARS-1`…`EARS-29`, while spec 124
-      declares `EARS-1`…`EARS-22` plus `EARS-25`…`EARS-32` — and 124's own tests
-      cite every one of those tokens. So the guard reads **27 of spec 201's 29**
-      clauses as covered while none of them has a test at all, and only
-      `EARS-23` and `EARS-24` (the two ids 124 skips) surface. The guard's stale-deferral ratchet makes the
-      honest workaround impossible too: deferring `EARS-1` would be reported
-      stale. Recorded rather than fixed here because the fix is a change to the
-      guard's id model (qualify a citation by its spec, e.g. `201 EARS-1:` in the
-      test title — the very ds-platform machinery §7 of `docs/ci-guardrails.md`
-      deliberately dropped for lack of a convention), which is its own task and
-      not this spec's — return condition: the #201 implementation task lands its
-      tests (the first moment the conflation would hide a REAL missing test), or
-      a third spec starts at `EARS-1`. **Part of the same fix:** ids a spec
-      RETIRES (spec 201 leaves `EARS-13`, `EARS-14` and `EARS-18` as gaps, each a
-      one-line «— removed» bullet inside `## Requirements`) must be excluded from
-      the declared set — otherwise the qualified-id fix turns three retired
-      clauses into three permanent false reds demanding tests for requirements
-      that no longer exist
 
 <!-- debt-entry-end: 2026-08-19-e7a1b201f2 -->
 
@@ -525,3 +464,33 @@ into one source, `src/lib/hours/messages.ts`, which `document.ts`,
 `publication.ts` and `core/refusals.ts` all import. The third #255 line (the e2e
 sign-in helper duplication, `2026-08-17-c3d2e255e3`) is UNTOUCHED: its trigger —
 the next e2e spec that signs in — has not fired.)_
+
+_(Swept 2026-08-19 (`/wrap` retro of the #201 session). **Five lines promoted to
+their own issues, bodies removed, anchors kept.** Per line, what actually
+happened to its return condition:
+
+- `2026-08-11-a0f80803db` (`migration-index`) → **#285**. Return condition «the
+  third platform migration» — FIRED: the chain now holds four
+  (`0000_create_core_schema`, `0001_member`, `0002_hours`,
+  `0003_universal_edit_audit`), so it fired at `0002` and was missed once.
+- `2026-08-05-39d11e3194` (no `.mjs` is ever prettier-checked) → **#286**.
+  Return condition «the next PR that touches `package.json`'s script block» —
+  FIRED repeatedly and missed each time: `b188988` (#243), `91312c0` (#200),
+  `81e7ebc` (#255) and `3b922fd` (#256) all edited that block.
+- `2026-08-18-d4c3b256f1` (caller-less `src/lib/hours/core/import.ts`) → **#287**.
+  Return condition «the next task that touches `src/lib/hours/core/`» — FIRED
+  with `c99caaa` (#273/PR #280), the audit-capture work.
+- `2026-08-19-e7a1b201f2` (flat `EARS-N` id space) → **#288**. Promoted **ahead
+  of its trigger**: neither «the #201 implementation task lands its tests» nor
+  «a third spec starts at `EARS-1`» has happened. The promotion stands anyway
+  because the live symptom is already in the tree — `tools/lint/ears-test-lint.mjs`
+  carries a flat-key deferral allowlist as the workaround for exactly this
+  conflation, and a workaround with no owning issue is what this file's sweep
+  rule exists to end.
+- `2026-08-06-9c4363b31b` (`.claude/rules/dev-env.md` untranslated) → **#289**.
+  Return condition «the next task that substantively reworks `dev-env.md`» —
+  FIRED on 2026-08-07 with `6783739` (#170/PR #179), a 12-insertion rewrite of
+  the provisioning bullet; the file is still all-Russian.
+
+Promotion rather than a fix in place for all five: each is a bounded task with
+its own diff, and none of them belongs inside the retro's canon-file PR.)_

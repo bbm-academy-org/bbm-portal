@@ -47,7 +47,25 @@ output.
 1. **[`read-relevant-adrs`](../read-relevant-adrs/SKILL.md)** — load the ADRs
    governing the domain and cite them (`per ADR-00N §X`) in the first reply.
    Brainstorming before this is how a settled decision gets re-litigated.
-2. **Settle the product scope with the owner.** One question at a time.
+2. **Donor & benchmark pass** — mandatory, and it runs **before** a single
+   question reaches the owner. Its outcome is recorded by one line in the spec
+   body («Donor & benchmark pass: …»), so a skipped pass is visible in the file.
+   Three clauses:
+   - **Every constraint inherited from a donor spec is marked in the spec**
+     «inherited from `<donor>` / justified for us: …». A constraint you cannot
+     justify for our domain is **deleted**, not promoted into an owner question:
+     asking about it spends the owner on a requirement nobody here has.
+     _(symptom: «Предмет Q1 не понял… Она живёт вместе с проектом, столько же
+     сколько и проект».)_
+   - **An owner question is allowed only where public research cannot answer
+     it.** Law, regulation and market best practice are researched first — then,
+     and only then, what is left is asked. _(symptom: «сделай ресёрч, как это
+     правильно в соответствии с законом… Мы же не первооткрыватели тут».)_
+   - **«Exclude X from a rule because of the shape of the data» is a schema bug
+     below, never a spec parameter.** It becomes a sub-task against the schema;
+     the spec does not encode the workaround. _(symptom: «Может мы криво
+     спроектировали публикацию?… Откуда тут мусор?».)_
+3. **Settle the product scope with the owner.** One question at a time.
    **Product-scope forks are the owner's**; technical, architectural and
    sequencing calls are the lead's own — do not spend the owner's attention on
    them. `superpowers:brainstorming` is the vehicle. Do **not** chain into
@@ -57,7 +75,7 @@ output.
      unsupported.
    - Any computed or money formula in scope → the spec is mandatory **and** gets
      an independent review of the spec itself.
-3. **Write the spec** — `docs/specs/<issue-number>-<slug>.md`, the template and
+4. **Write the spec** — `docs/specs/<issue-number>-<slug>.md`, the template and
    frontmatter of `docs/specs/README.md`, **`status: Draft`**. It is one file:
    the lead writes it directly rather than dispatching. Sections that carry the
    weight:
@@ -72,14 +90,14 @@ output.
      naming the `EARS-N` clauses it exercises. These become the TDD tests at
      stage 3 (named `it('EARS-N: …')`, so requirement ↔ test is a grep) and the
      live-stand script at stage 5.
-4. **New or reshaped UI → the stage-1b design gate.** 2–3 options of any
+5. **New or reshaped UI → the stage-1b design gate.** 2–3 options of any
    fidelity to the owner before any markup; his pick is recorded in the issue and
    referenced from the spec. No pick, no markup.
-5. **Take it through the "go" (stage 2).** The owner approves the **spec**, in
+6. **Take it through the "go" (stage 2).** The owner approves the **spec**, in
    session, explicitly. On "go": flip the frontmatter to **`status: In dev`** —
    that flip is what the `spec-link` guard reads, and a spec left on `Draft`
    while its code is in review is a finding.
-6. **If the spec spawns a set of tasks**, open them with
+7. **If the spec spawns a set of tasks**, open them with
    [`spec-issue-graph`](../spec-issue-graph/SKILL.md) — native sub-issues and
    `blocked_by` edges, exactly one takeable task at the end — and write the
    issue numbers back into the spec header.
