@@ -56,7 +56,9 @@ All commands below run **from the `deploy/` directory on the host**.
    has no `git` clone. Ship the committed tree as an archive from a workstation
    with repo access (`git archive --format=tar.gz <branch> | ssh … tar -xz …`),
    or wire a CI image-push later. The "update" flow below assumes the tree is
-   refreshed the same way (not `git pull`).
+   refreshed the same way (not `git pull`) — and note that a bare `tar -xz` onto
+   an existing tree cannot delete anything, which is why `pnpm deploy:prod`
+   extracts and swaps instead (_How the tree reaches the box_ below).
 
 5. **SSH access to the host.** Everything here — and `pnpm deploy:prod`
    (`tools/deploy/prod.mjs`, override `BBM_PROD_SSH`) — reaches the box through
@@ -195,6 +197,40 @@ deployed image, it smoke-tests both vhosts, and it cuts a release tag and a
 GitHub Deployment record. Keeping a second, hand-written copy of those steps
 here is precisely how the two drift apart, so there is not one.
 
+### How the tree reaches the box — extract-and-swap (#264)
+
+`tar -xz` is **additive**: it overwrites and adds, it never deletes. Extracting
+the archive onto `~/bbm-portal` therefore cannot express a DELETION — a file
+retired in the branch stays on the box forever and is still compiled, because
+the image build typechecks the whole extracted tree. That trap is real, not
+theoretical: it was first hit on 2026-07-30, and again on 2026-08-18, when a
+deploy went red on `TS2307` from two files `main` had already deleted.
+
+The ship step therefore never writes into the live tree. It:
+
+1. extracts the archive into a fresh `~/bbm-portal.next`;
+2. copies the box's own `~/bbm-portal/deploy/` into it with `cp -an`
+   (**no-clobber**: a file the commit ships keeps its shipped content, anything
+   host-only survives);
+3. **asserts `deploy/.env.prod` is in the new tree** — and aborts if it is not;
+4. swaps: `mv bbm-portal bbm-portal.prev && mv bbm-portal.next bbm-portal`, then
+   drops `.prev`.
+
+Consequences worth knowing on the host:
+
+- **The tree is exactly the shipped commit, plus host-owned `deploy/` files.**
+  Anything you leave lying around inside `~/bbm-portal` **outside `deploy/`** is
+  removed by the next deploy. Put host state under `deploy/`, or outside the
+  tree entirely (the way the backup machinery lives in
+  `/home/deploy/portal-backup` and the cutover dataset lives outside
+  `~/bbm-portal`). Docker named volumes are unaffected — they are not in the
+  tree.
+- **Nothing is destroyed before the new tree is proven.** A broken transfer or a
+  missing `.env.prod` aborts with the box exactly as it was.
+- **`~/bbm-portal.prev` after a failed run** means the swap itself broke: the
+  previous tree is whole, restore it with `mv ~/bbm-portal.prev ~/bbm-portal`
+  (the next deploy also does this automatically before anything else).
+
 ### What replaced the `DEPLOYED_SHA` marker
 
 The old post-check wrote a `DEPLOYED_SHA` file next to the shipped tree and
@@ -238,8 +274,8 @@ here is only what is true at the **host** level.
 ### One-time upgrade step on an EXISTING install — do this before the first deploy
 
 `deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
-deploy wipes `src/` and deliberately leaves `deploy/` alone), and **no deploy can
-add a line to it for you**. A box installed before this change therefore has no
+deploy carries the box's own `deploy/` across the swap — _How the tree reaches
+the box_ above), and **no deploy can add a line to it for you**. A box installed before this change therefore has no
 `PLATFORM_DATABASE_URL`, and the `migrate` service reads its environment from
 that file.
 

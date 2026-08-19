@@ -78,7 +78,7 @@ printing a rollback pointer:
 | Stage                                                             | What it does                                                                                      | Refuses when                                        |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | pre-flight                                                        | clean tree · target = `origin/main` sha · green CI for that sha                                   | dirty tree · red or still-running CI · no CI at all |
-| ship                                                              | `git archive <sha>` → ssh → `rm -rf src && tar -xz`                                               | ssh/tar non-zero                                    |
+| ship                                                              | `git archive <sha>` → ssh → extract into `~/bbm-portal.next`, carry `deploy/`, swap it in         | ssh/tar non-zero · no `deploy/.env.prod` to carry   |
 | checkpoint                                                        | box backup script → fresh dump BEFORE anything migrates, pinned under a per-deploy S3 key         | missing script · non-zero exit · no fresh dump      |
 | stack                                                             | build `app`+`migrate` → migrate → `up -d`                                                         | any compose step non-zero                           |
 | caddy                                                             | compares the shipped `Caddyfile` with the running bind mount, restarts only if stale, re-compares | still stale after the restart                       |
@@ -193,11 +193,15 @@ migration is an owner-decision.
 - **Rolling back to a pruned sha** — roll forward instead.
 - **Believing "the commands exited 0"** — the verify + smoke stages exist
   because that was never sufficient. If you bypass them, you have no deploy.
-- **A retired file lingering on the box** — `tar -xz` is additive. The pipeline
-  wipes `src/` before extracting (the trap from 2026-07-30), but NOT `tools/`,
-  `docs/` or the repo root, and never `deploy/` (the host-only `.env.*` files
-  live there). A build failing on a file that no longer exists in the branch is
-  this class; remove it on the box by hand.
+- **A retired file lingering on the box** — the historical shape of this
+  failure (`tar -xz` is additive, and the pipeline used to wipe only `src/`
+  before extracting). Fixed in #264: the ship step now extracts into
+  `~/bbm-portal.next` and swaps it in, so the tree IS the shipped commit —
+  plus the box's own `deploy/` files, carried across no-clobber. Two things
+  follow: host state kept inside `~/bbm-portal` outside `deploy/` does not
+  survive a deploy, and a leftover `~/bbm-portal.prev` means a swap broke
+  mid-flight (restore with `mv ~/bbm-portal.prev ~/bbm-portal`; the next deploy
+  does it for you). `deploy/README.md` → _How the tree reaches the box_.
 - **A `--dry-run` refusing on a dirty tree** — that is the gate working, not a
   bug. Commit or stash.
 - **A red checkpoint** — the backup script is missing, failed, produced no fresh

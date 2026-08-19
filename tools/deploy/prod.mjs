@@ -267,16 +267,66 @@ export function preflightVerdict({ dirty, head, originMain, checkRuns, skipCi = 
 // ── pure seams: remote scripts ───────────────────────────────────────────────
 
 /**
- * The remote half of the ship step. `tar -xz` is ADDITIVE: it overwrites but
- * never deletes, so a source file retired in the branch lingers on the box and
- * breaks the build (the trap `deploy/README.md` recorded on 2026-07-30). `src/`
- * is wiped first for that reason.
+ * The remote half of the ship step: EXTRACT-AND-SWAP (#264).
  *
- * `deploy/` is deliberately NOT wiped: the host-only `.env.prod`, `.env.postgres`
- * and `.env.preview` live there and exist nowhere else.
+ * `tar -xz` is ADDITIVE — it overwrites and adds, it never deletes. Extracting
+ * onto the box's existing tree therefore cannot express a DELETION: a file
+ * retired in the branch lingers on the box forever and is still compiled by the
+ * image build (the `Dockerfile` typechecks the whole extracted tree). The
+ * previous shape wiped `src/` first and nothing else, so the trap simply moved
+ * to `tools/`, `tests/`, `docs/`, `infra/`, `scripts/` and the repo root — where
+ * it fired on 2026-08-18 (deploy of 3b922fd went red on TS2307 from two files
+ * `main` had deleted).
+ *
+ * A hand-kept wipe list would have to be revised every time a top-level entry
+ * is added, and nothing would notice when it was not. So the tree is not wiped
+ * at all: the archive is extracted into a FRESH sibling directory and that
+ * directory is swapped into place. Whatever the commit does not contain cannot
+ * be in the new tree, by construction and for every path at once.
+ *
+ * **Host-owned state crosses the swap.** `deploy/` is the box's own directory:
+ * the gitignored `.env.prod`, `.env.postgres` and `.env.preview` live there and
+ * exist NOWHERE else (losing them is unrecoverable), and `deploy/.env` — the
+ * DEPLOY_SHA line compose interpolates — is written on the box by
+ * `buildDeployScript`. Everything under the box's `deploy/` is copied into the
+ * new tree with `cp -an`: no-clobber, so a file the commit DOES ship (compose
+ * file, Caddyfile, the `.env.*.example`s) keeps its shipped content, while
+ * anything host-only survives. Nothing else on the box lives inside the tree —
+ * the data are docker-managed named volumes, the backup/checkpoint machinery is
+ * `/home/deploy/portal-backup`, and the cutover dataset is deliberately outside
+ * `~/bbm-portal` (see MEMBER_DATASET below).
+ *
+ * **Atomicity.** The order is: extract → carry → ASSERT `.env.prod` → swap →
+ * drop the previous tree. A failed or corrupt extract, or a missing env file,
+ * aborts while the live tree is still untouched (`set -eu`, and the box keeps
+ * exactly what it had). The swap itself is two renames on one filesystem; if the
+ * second one fails the previous tree is still whole under `~/bbm-portal.prev`,
+ * the message says how to put it back, and the next run restores it
+ * automatically before doing anything else.
  */
 export function buildShipCommand() {
-  return `rm -rf ${REMOTE_TREE}/src && mkdir -p ${REMOTE_TREE} && tar -xz -C ${REMOTE_TREE}`
+  const next = `${REMOTE_TREE}.next`
+  const prev = `${REMOTE_TREE}.prev`
+  return `set -eu
+if [ ! -d ${REMOTE_TREE} ] && [ -d ${prev} ]; then mv ${prev} ${REMOTE_TREE}; fi
+rm -rf ${next} ${prev}
+mkdir -p ${next}
+tar -xz -C ${next}
+mkdir -p ${next}/deploy
+if [ -d ${REMOTE_TREE}/deploy ]; then cp -an ${REMOTE_TREE}/deploy/. ${next}/deploy/; fi
+if [ ! -f ${next}/deploy/.env.prod ]; then
+  echo "SHIP ABORTED: ${next}/deploy/.env.prod is missing — the box keeps its current tree, nothing was swapped" >&2
+  rm -rf ${next}
+  exit 1
+fi
+if [ -d ${REMOTE_TREE} ]; then mv ${REMOTE_TREE} ${prev}; fi
+if ! mv ${next} ${REMOTE_TREE}; then
+  echo "SHIP FAILED MID-SWAP: the previous tree is intact at ${prev} — restore it with: mv ${prev} ${REMOTE_TREE}" >&2
+  exit 1
+fi
+rm -rf ${prev}
+echo "[ship] ${REMOTE_TREE} replaced by the shipped tree (host-only deploy/ files carried across)"
+`
 }
 
 // ── pure seams: the box's env contract (#125) ────────────────────────────────
@@ -284,8 +334,8 @@ export function buildShipCommand() {
 /**
  * Variables the `migrate` service must find in the box's `deploy/.env.prod`.
  *
- * That file is host-only (gitignored, never shipped — `buildShipCommand` wipes
- * `src/` and deliberately leaves `deploy/` alone), so a release that starts
+ * That file is host-only (gitignored, never shipped — `buildShipCommand` carries
+ * the box's `deploy/` across the swap), so a release that starts
  * reading a NEW variable finds it missing on the first deploy after the merge,
  * every time. `PLATFORM_DATABASE_URL` is the first such variable this repo has
  * ever added, which is why this gate did not exist before.
@@ -1304,7 +1354,7 @@ export function formatDryRunPlan(sha, { holdBeforeUp = false } = {}) {
   const head = [
     `\n▶ DRY RUN — nothing below is executed (target ${sha.slice(0, 12)})`,
     `\n[verifyRemoteEnv]\n${buildEnvPreflightScript()}`,
-    `[ship] ssh ${PROD_SSH} '${buildShipCommand()}'  < git archive ${sha.slice(0, 12)}`,
+    `[ship] ssh ${PROD_SSH} <the script below>  < git archive ${sha.slice(0, 12)}\n${buildShipCommand()}`,
     `\n[checkpoint]\n${buildCheckpointScript(sha)}`,
     `[deployStack]\n${buildDeployScript(sha, { holdBeforeUp })}`,
   ]

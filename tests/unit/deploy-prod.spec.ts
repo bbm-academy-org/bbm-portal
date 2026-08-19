@@ -1,6 +1,9 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 
 import {
   CHECKPOINT_DUMP_GLOB,
@@ -173,17 +176,169 @@ describe('preflightVerdict', () => {
 // ── remote scripts ───────────────────────────────────────────────────────────
 
 describe('buildShipCommand', () => {
-  it('wipes src/ before extracting — tar is additive and never deletes', () => {
-    // A file retired in the branch would otherwise linger on the box and break
-    // the build (the trap deploy/README.md documented from 2026-07-30).
-    const cmd = buildShipCommand()
-    expect(cmd).toContain('rm -rf ~/bbm-portal/src')
-    expect(cmd).toContain('tar -xz -C ~/bbm-portal')
-    expect(cmd.indexOf('rm -rf')).toBeLessThan(cmd.indexOf('tar -xz'))
+  const cmd = buildShipCommand()
+
+  it('extracts into a fresh sibling tree and swaps it in — never over the live tree', () => {
+    // `tar -xz` is additive: extracting ONTO the box's tree can only overwrite
+    // and add, so a file retired in the branch survives every deploy (the trap
+    // deploy/README.md recorded on 2026-07-30, and the red deploy of 2026-08-18
+    // that #264 came from). Extract-and-swap removes the class structurally.
+    expect(cmd).toContain('tar -xz -C ~/bbm-portal.next')
+    expect(cmd).toContain('mv ~/bbm-portal.next ~/bbm-portal')
+    expect(cmd).not.toMatch(/tar -xz -C ~\/bbm-portal(?![.\w])/)
   })
 
-  it('never touches deploy/ — the host-only env files live there', () => {
-    expect(buildShipCommand()).not.toMatch(/rm -rf[^\n]*deploy/)
+  it('fails closed rather than swapping a tree without the host-only .env.prod', () => {
+    expect(cmd).toContain('set -eu')
+    expect(cmd).toMatch(/deploy\/\.env\.prod/)
+    expect(cmd).toMatch(/exit 1/)
+    // The assert stands BEFORE the swap: a tree that would lose the env files
+    // is never moved into place.
+    expect(cmd.indexOf('.env.prod')).toBeLessThan(cmd.indexOf('mv ~/bbm-portal.next'))
+  })
+
+  // ── the same contract, executed ────────────────────────────────────────────
+  //
+  // The strings above pin the shape; the tests below run the command for real
+  // against a fixture tree under a fake $HOME, because the invariant that
+  // matters is behavioural: what the box HOLDS after the step, not what the
+  // step says.
+
+  const sandboxes: string[] = []
+  afterAll(() => {
+    for (const dir of sandboxes) rmSync(dir, { recursive: true, force: true })
+  })
+
+  type Tree = Record<string, string>
+  type ShipResult = {
+    status: number | null
+    stderr: string
+    exists: (rel: string) => boolean
+    read: (rel: string) => string
+  }
+
+  /**
+   * Run the ship command the way the box runs it — the archive on stdin, the
+   * previous tree in place — and report what `~/bbm-portal` holds afterwards.
+   *
+   * Returns null when the machine has no bash (the same graceful skip the
+   * `bash -n` block uses), so the suite stays runnable off Linux.
+   */
+  function ship(onBox: Tree, archive: Tree, { corrupt = false } = {}): ShipResult | null {
+    const root = mkdtempSync(join(tmpdir(), 'bbm-ship-'))
+    sandboxes.push(root)
+    const put = (base: string, tree: Tree) => {
+      for (const [rel, body] of Object.entries(tree)) {
+        const file = join(root, base, rel)
+        mkdirSync(dirname(file), { recursive: true })
+        writeFileSync(file, body)
+      }
+    }
+    put('bbm-portal', onBox)
+    put('commit', archive)
+
+    // A corrupt feed stands in for every way the delivery can break mid-flight
+    // (a dropped ssh, a truncated archive): tar exits non-zero, and the box
+    // must still hold the tree it had.
+    const feed = corrupt ? "printf 'this is not a tar archive'" : 'tar -cz -C "$HOME/commit" .'
+    const res = spawnSync('bash', ['-s'], {
+      cwd: root,
+      encoding: 'utf8',
+      input: `export HOME="$PWD"\n${feed} | {\n${cmd}\n}\n`,
+    })
+    if (res.error) return null // no bash on this machine — skip rather than fail
+    const at = (rel: string) => join(root, 'bbm-portal', rel)
+    return {
+      status: res.status,
+      stderr: res.stderr,
+      exists: (rel) => existsSync(at(rel)),
+      read: (rel) => readFileSync(at(rel), 'utf8'),
+    }
+  }
+
+  /** The top-level directories the archive really ships, asked of git itself —
+   *  a hand-kept constant goes stale the first time a directory is added. */
+  function shippedTopLevelDirs(): string[] | null {
+    const res = spawnSync('git', ['ls-tree', '--name-only', '-d', 'HEAD'], { encoding: 'utf8' })
+    if (res.error || res.status !== 0) return null
+    return res.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+  }
+
+  it('replaces EVERY shipped top-level directory — a retired file cannot survive', () => {
+    const dirs = shippedTopLevelDirs()
+    if (!dirs) return // no git here — skip rather than fail
+    expect(dirs).toContain('src')
+    expect(dirs).toContain('tools')
+    expect(dirs).toContain('tests')
+
+    const onBox: Tree = { DEPLOYED_SHA: 'obsolete marker\n', 'deploy/.env.prod': 'SECRET=1\n' }
+    const archive: Tree = { 'deploy/docker-compose.prod.yml': 'name: bbm-portal\n' }
+    for (const dir of dirs) {
+      if (dir === 'deploy') continue
+      onBox[`${dir}/retired-in-the-branch.ts`] = 'import "@/lib/gone"\n'
+      archive[`${dir}/still-shipped.ts`] = 'export const ok = true\n'
+    }
+
+    const out = ship(onBox, archive)
+    if (!out) return
+    expect(out.stderr + String(out.status)).toBe('0')
+    for (const dir of dirs) {
+      if (dir === 'deploy') continue
+      expect(`${dir} retired: ${out.exists(`${dir}/retired-in-the-branch.ts`)}`).toBe(
+        `${dir} retired: false`,
+      )
+      expect(`${dir} shipped: ${out.exists(`${dir}/still-shipped.ts`)}`).toBe(
+        `${dir} shipped: true`,
+      )
+    }
+    // The repo ROOT is covered too — the obsolete marker file is gone.
+    expect(out.exists('DEPLOYED_SHA')).toBe(false)
+  })
+
+  it('carries the host-only deploy/.env* across, and the shipped deploy/ files win', () => {
+    const out = ship(
+      {
+        'deploy/.env.prod': 'DATABASE_URL=x\n',
+        'deploy/.env.postgres': 'POSTGRES_USER=y\n',
+        'deploy/.env.preview': 'PAYLOAD_PREVIEW_TOKEN=z\n',
+        'deploy/.env': 'DEPLOY_SHA=older\n',
+        'deploy/docker-compose.prod.yml': 'name: old\n',
+      },
+      { 'deploy/docker-compose.prod.yml': 'name: new\n', 'deploy/Caddyfile': 'cms.bbm.academy\n' },
+    )
+    if (!out) return
+    expect(out.status).toBe(0)
+    expect(out.read('deploy/.env.prod')).toBe('DATABASE_URL=x\n')
+    expect(out.read('deploy/.env.postgres')).toBe('POSTGRES_USER=y\n')
+    expect(out.read('deploy/.env.preview')).toBe('PAYLOAD_PREVIEW_TOKEN=z\n')
+    // compose's own interpolation source, written on the box by buildDeployScript
+    expect(out.read('deploy/.env')).toBe('DEPLOY_SHA=older\n')
+    // a tracked file's shipped copy replaces the box's copy
+    expect(out.read('deploy/docker-compose.prod.yml')).toBe('name: new\n')
+    expect(out.read('deploy/Caddyfile')).toBe('cms.bbm.academy\n')
+  })
+
+  it('refuses the swap when the new tree would carry no deploy/.env.prod', () => {
+    const out = ship({ 'src/app.ts': 'old\n' }, { 'src/app.ts': 'new\n' })
+    if (!out) return
+    expect(out.status).not.toBe(0)
+    // Fail-closed: the box still holds exactly the tree it had.
+    expect(out.read('src/app.ts')).toBe('old\n')
+  })
+
+  it('leaves the box its current tree when the extract fails mid-flight', () => {
+    const out = ship(
+      { 'src/app.ts': 'old\n', 'deploy/.env.prod': 'DATABASE_URL=x\n' },
+      { 'src/app.ts': 'new\n' },
+      { corrupt: true },
+    )
+    if (!out) return
+    expect(out.status).not.toBe(0)
+    expect(out.read('src/app.ts')).toBe('old\n')
+    expect(out.read('deploy/.env.prod')).toBe('DATABASE_URL=x\n')
   })
 })
 
@@ -535,6 +690,7 @@ describe('every generated remote script is valid bash', () => {
   // the checkpoint stage now contains a `while read` + here-string, the first
   // non-trivial control flow in this family.
   const scripts: Array<[string, string]> = [
+    ['buildShipCommand', buildShipCommand()],
     ['buildEnvPreflightScript', buildEnvPreflightScript()],
     ['buildCheckpointScript', buildCheckpointScript(SHA)],
     ['buildDeployScript', buildDeployScript(SHA)],
