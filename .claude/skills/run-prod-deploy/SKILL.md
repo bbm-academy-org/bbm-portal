@@ -22,6 +22,11 @@ One VPS, `portal-prod-tw`, running one compose stack: `postgres` · `app` ·
 `cms.bbm.academy` (CMS) and `portal.bbm.academy` (platform, `/p/*`) — served by
 the **same** `app` container.
 
+Recon on that box never prints a resolved environment into the session — which
+command shapes that bans, and which stay allowed, is the guard's own list:
+[`tools/hooks/secret-echo-guard.mjs`](../../../tools/hooks/secret-echo-guard.mjs)
+(rule `no-secret-echo`; a printed secret is a rotated secret — #262).
+
 ## Before deciding to ship
 
 The deploy is not the decision; it is the execution. Check these over the WHOLE
