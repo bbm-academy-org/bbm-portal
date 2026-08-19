@@ -32,10 +32,9 @@ tokens the hooks match — they are never translated or paraphrased.
 1. **Что изменилось — продуктовым языком.** 1–3 sentences a person would
    actually notice, naming the **product entity** — the hours page, the OKR
    dashboard, the lead form — never a bare mechanism («серверный гард», «сид
-   коллекции»): «гард ЧЕГО?» must be answerable from the sentence itself. Every
-   tool/token/process term (Payload, Zitadel, `channel:spec`, Stop-хук) is
-   glossed in plain Russian on first use or dropped. Mechanism vocabulary belongs
-   at the end, in the technical tail.
+   коллекции»): «гард ЧЕГО?» must be answerable from the sentence itself. The
+   shorthand ban and the two opening lines this point starts with are the
+   «Owner-report form» section below.
 2. **«Проверить глазами: \<URL\>»** — a real URL the owner opens themselves,
    with the access line (login + where the password comes from) when the surface
    is behind auth. A screenshot is the agent's working evidence, never the
@@ -92,10 +91,11 @@ The twin of the question form below, applied to the report's **opening**. The
 **first two paragraphs of any owner-facing report carry no internal shorthand**:
 no bare issue/PR number without a gloss of what it is about, no table, file,
 module or route name, no «stage N», no `EARS-N` id, no label or token syntax.
-They open with two lines — **what we are building** and **why it matters to
-you** — in the owner's own product vocabulary. Everything internal starts only
-after those two lines, and the mechanism vocabulary still belongs in the
-technical tail.
+Every tool/token/process term (Payload, Zitadel, `channel:spec`, Stop-хук) is
+glossed in plain Russian on first use or dropped, and mechanism vocabulary waits
+for the technical tail. They open with two lines — **what we are building** and
+**why it matters to you** — in the owner's own product vocabulary; everything
+internal starts only after those two lines.
 
 _(symptom, owner 2026-08-19: «Я ничерта не понял из твоего отчёта. Можешь
 нормальным продуктовым языком разложить, что мы делаем и зачем».)_

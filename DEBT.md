@@ -466,13 +466,31 @@ sign-in helper duplication, `2026-08-17-c3d2e255e3`) is UNTOUCHED: its trigger �
 the next e2e spec that signs in — has not fired.)_
 
 _(Swept 2026-08-19 (`/wrap` retro of the #201 session). **Five lines promoted to
-their own issues, bodies removed, anchors kept:** the `migration-index` line
-(`2026-08-11-a0f80803db`) → #285; the `.mjs`-never-prettier-checked glob line
-(`2026-08-05-39d11e3194`) → #286; the caller-less `src/lib/hours/core/import.ts`
-line (`2026-08-18-d4c3b256f1`) → #287; the flat `EARS-N` id-space line
-(`2026-08-19-e7a1b201f2`) → #288; the untranslated `.claude/rules/dev-env.md`
-line (`2026-08-06-9c4363b31b`) → #289. Each of the five had its return condition
-FIRED, which is why the line could no longer be kept: a fired trigger with no
-owner is exactly the state this file's sweep rule exists to end. Promotion, not
-a fix in place, because each is a bounded task with its own diff — none of them
-belongs inside the retro's canon-file PR.)_
+their own issues, bodies removed, anchors kept.** Per line, what actually
+happened to its return condition:
+
+- `2026-08-11-a0f80803db` (`migration-index`) → **#285**. Return condition «the
+  third platform migration» — FIRED: the chain now holds four
+  (`0000_create_core_schema`, `0001_member`, `0002_hours`,
+  `0003_universal_edit_audit`), so it fired at `0002` and was missed once.
+- `2026-08-05-39d11e3194` (no `.mjs` is ever prettier-checked) → **#286**.
+  Return condition «the next PR that touches `package.json`'s script block» —
+  FIRED repeatedly and missed each time: `b188988` (#243), `91312c0` (#200),
+  `81e7ebc` (#255) and `3b922fd` (#256) all edited that block.
+- `2026-08-18-d4c3b256f1` (caller-less `src/lib/hours/core/import.ts`) → **#287**.
+  Return condition «the next task that touches `src/lib/hours/core/`» — FIRED
+  with `c99caaa` (#273/PR #280), the audit-capture work.
+- `2026-08-19-e7a1b201f2` (flat `EARS-N` id space) → **#288**. Promoted **ahead
+  of its trigger**: neither «the #201 implementation task lands its tests» nor
+  «a third spec starts at `EARS-1`» has happened. The promotion stands anyway
+  because the live symptom is already in the tree — `tools/lint/ears-test-lint.mjs`
+  carries a flat-key deferral allowlist as the workaround for exactly this
+  conflation, and a workaround with no owning issue is what this file's sweep
+  rule exists to end.
+- `2026-08-06-9c4363b31b` (`.claude/rules/dev-env.md` untranslated) → **#289**.
+  Return condition «the next task that substantively reworks `dev-env.md`» —
+  FIRED on 2026-08-07 with `6783739` (#170/PR #179), a 12-insertion rewrite of
+  the provisioning bullet; the file is still all-Russian.
+
+Promotion rather than a fix in place for all five: each is a bounded task with
+its own diff, and none of them belongs inside the retro's canon-file PR.)_
