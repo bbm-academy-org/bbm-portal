@@ -7,6 +7,7 @@ import {
   hasWriteAction,
   isCompletionReport,
   isEnforceableTerminalReport,
+  isInterimStatus,
   isTerminalReport,
 } from '../../tools/hooks/completion-report-gate.mjs'
 import {
@@ -65,6 +66,16 @@ describe('распознаватель терминального отчёта',
     expect(isTerminalReport('⏳ Checkpoint: PR #92 смержен в ветку, жду CI')).toBe(false)
     expect(isTerminalReport('PR #92 смержен. Предлагаю запустить /wrap.')).toBe(false)
     expect(isTerminalReport(REPORT_NO_MARKERS)).toBe(true)
+  })
+
+  // Ретро 2026-08-19: «Статус промежуточный» — тот же промежуточный статус, что и
+  // «промежуточный статус», только с инверсным порядком слов. Распознаватель ловил
+  // лишь прямой порядок, и инверсный чекпойнт уходил под Stop-гейты как терминальный
+  // отчёт.
+  it('видит промежуточный статус в обоих порядках слов', () => {
+    expect(isInterimStatus('Промежуточный статус: подшаг смержен, задача — нет.')).toBe(true)
+    expect(isInterimStatus('Статус промежуточный: подшаг смержен, задача — нет.')).toBe(true)
+    expect(isTerminalReport('Статус промежуточный: PR #92 смержен, задача — нет.')).toBe(false)
   })
 })
 

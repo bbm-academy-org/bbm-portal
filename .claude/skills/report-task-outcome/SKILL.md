@@ -86,6 +86,20 @@ all three, and a checkpoint meets none. Points 1, 3 and 4 have no
 mechanical check — they are on you. `BBM_HOOKS_DISABLE=1` kills the whole stack;
 using it to get a report past a gate is itself a deviation to surface.
 
+## Owner-report form (mandatory)
+
+The twin of the question form below, applied to the report's **opening**. The
+**first two paragraphs of any owner-facing report carry no internal shorthand**:
+no bare issue/PR number without a gloss of what it is about, no table, file,
+module or route name, no «stage N», no `EARS-N` id, no label or token syntax.
+They open with two lines — **what we are building** and **why it matters to
+you** — in the owner's own product vocabulary. Everything internal starts only
+after those two lines, and the mechanism vocabulary still belongs in the
+technical tail.
+
+_(symptom, owner 2026-08-19: «Я ничерта не понял из твоего отчёта. Можешь
+нормальным продуктовым языком разложить, что мы делаем и зачем».)_
+
 ## Owner-question form (mandatory)
 
 Every question — in the report and in any mid-thread checkpoint — renders as a
