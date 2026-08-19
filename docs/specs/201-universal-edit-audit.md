@@ -585,9 +585,10 @@ schema against its **own snapshot**, never against the live database, so an
 object that never entered a snapshot is invisible to it and is never dropped —
 which is precisely why the hand-written FKs of `0002` are safe. A
 `pgTable('audit_event')` stub would break that property: drizzle would then
-believe it owns a table whose protections it cannot describe — the ownership
-split, the revoked grants and the two append-only triggers of EARS-12/EARS-30 —
-and would happily emit a duplicate `CREATE TABLE` on the next generate. Reads therefore use the `sql` template on
+believe it owns a table whose protections it cannot describe — the two
+append-only triggers of EARS-12, and the ownership split and revoked grants
+EARS-30's follow-up will add on top of them — and would happily emit a duplicate
+`CREATE TABLE` on the next generate. Reads therefore use the `sql` template on
 the platform handle, exactly as `tests/int/platform/*.int.spec.ts` already do.
 
 **Idempotency.** `CREATE TABLE IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`,
