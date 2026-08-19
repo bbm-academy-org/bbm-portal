@@ -104,7 +104,8 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  * is FLAT: spec 124 declares EARS-1..22 and EARS-25..32 and its own tests cite
  * every one of those ids, so the guard reads spec 201's clauses sharing them as
  * covered and a deferral for them would be reported stale. EARS-23 and EARS-24
- * are the only ids spec 124 skips.
+ * are the only ids spec 124 skips; EARS-33 joined them when the review round of
+ * 2026-08-19 added it (spec 124 stops at EARS-32).
  * That conflation is recorded as decision debt in `DEBT.md`; the entries here
  * are only the ids the guard genuinely reports uncovered.
  *
@@ -121,7 +122,7 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  */
 const DEFERRALS_BY_ISSUE = {
   201: {
-    ids: ['EARS-23', 'EARS-24'],
+    ids: ['EARS-23', 'EARS-24', 'EARS-33'],
     reason:
       'spec 201 (universal edit audit) declares clauses whose tests land with the implementation task opened from it — the deferral returns when that task lands its integration tests under tests/int/platform/',
   },

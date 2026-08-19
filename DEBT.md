@@ -466,7 +466,12 @@ Entry format:
       deliberately dropped for lack of a convention), which is its own task and
       not this spec's — return condition: the #201 implementation task lands its
       tests (the first moment the conflation would hide a REAL missing test), or
-      a third spec starts at `EARS-1`
+      a third spec starts at `EARS-1`. **Part of the same fix:** ids a spec
+      RETIRES (spec 201 leaves `EARS-13`, `EARS-14` and `EARS-18` as gaps, each a
+      one-line «— removed» bullet inside `## Requirements`) must be excluded from
+      the declared set — otherwise the qualified-id fix turns three retired
+      clauses into three permanent false reds demanding tests for requirements
+      that no longer exist
 
 <!-- debt-entry-end: 2026-08-19-e7a1b201f2 -->
 
