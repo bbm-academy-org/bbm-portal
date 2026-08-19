@@ -343,15 +343,16 @@ decision to this canon. The decision is recorded here; the markers are gone.
 **`secret-echo` — the one BLOCK hook this register names, widened by #262.** It is a §3
 class-2 guard (documented security mandate: a printed secret is a leaked secret and is
 rotated, so a WARN soak would itself be the risk), and it therefore never appears in the
-promotion table above. Its coverage after #262 is three classes, each caught inside an
-`ssh <host> …` wrapper as well: readers of secret-looking paths (`cat .env.prod`), echo of
+promotion table above. Its coverage after #262 is three finding classes, each caught
+inside a wrapper that carries the command as a payload (`ssh <host> …`, `docker exec`,
+`sudo`, `bash -c`) as well: readers of secret-looking paths (`cat .env.prod`), echo of
 secret-named variables (`echo $PLANE_API_TOKEN`), and dumpers of the **resolved**
-environment — `docker compose config` outside the inventory-only `--services` / `--profiles`
-/ `--volumes`, `docker inspect` without a `--format` template that avoids `Env`, and bare
-`env` / `printenv`. The third class was added after the 2026-08-18 incident in which
+environment (`docker compose config`, `docker inspect`, `env` / `printenv`). The third class
+was added after the 2026-08-18 incident in which
 `ssh portal-prod-tw docker compose --profile tools config` printed the whole host-only
 `.env.prod` into an agent transcript (#262 — the rotation itself is tracked there, not
-here). Exact predicates and carve-outs live in the guard,
+here). Which spellings, flags and redirects are exempt is decided by one file and is not
+restated here — exact predicates and carve-outs live in the guard,
 [`tools/hooks/secret-echo-guard.mjs`](../tools/hooks/secret-echo-guard.mjs); the stack it is
 wired into is [`tools/hooks/README.md`](../tools/hooks/README.md).
 
