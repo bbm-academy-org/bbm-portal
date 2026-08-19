@@ -45,6 +45,7 @@ const AMBIENT = [
   'PR_BODY',
   'LINT_FIXTURE_ROOT',
   'LINT_GH_FIXTURE_DIR',
+  'LINT_AUDIT_ALLOWLIST',
 ]
 
 export function runGuard(
