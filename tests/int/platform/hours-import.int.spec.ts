@@ -98,12 +98,14 @@ type ImportOutcome = {
  */
 async function importFixture(file: string): Promise<ImportOutcome> {
   const source: HoursDocument = await readJsonDocument(file)
-  // `cli:hours-import` (spec 201 EARS-7): the cutover import is a repo-owned
-  // script with no human behind it, and `platformTransaction` takes the module
+  // `cli:int-fixture` (spec 201 EARS-7), NOT a `cli:hours-import` — the import
+  // COMMAND was deleted with the JSON store (#263) and this harness is the only
+  // caller `importDocument()` has left, so naming a script that does not exist
+  // would put a lie in the ledger. `platformTransaction` takes the module
   // advisory lock as the transaction's first statement exactly as the shipped
   // import did (spec 124 EARS-10, EARS-13).
   const summary = await platformTransaction(
-    { actorEmail: null, source: 'cli:hours-import' },
+    { actorEmail: null, source: 'cli:int-fixture' },
     async (tx) => importDocument(tx, source),
     { lockKey: HOURS_LOCK_KEY },
   )

@@ -379,3 +379,76 @@ describe('правка периода с оценками — пересчёт �
     expect(stored().periods).toHaveLength(1)
   })
 })
+
+/**
+ * Спека 201 EARS-25: КАЖДАЯ точка входа передаёт в хранилище автора из СЕССИИ.
+ *
+ * Это единственное место, где проводка «гейт → аудит-контекст» вообще
+ * проверяется. Интеграционный тир (`tests/int/platform/audit-hours-attribution.int.spec.ts`)
+ * зовёт `mutateHoursDocument(ctx, …)` с руками собранным контекстом — Server
+ * Action в той цепочке не участвует, — а в базе контекст обязателен, но база не
+ * знает, ОТКУДА он взялся. Подмена `actorOf(gate)` на константу или на чужой
+ * email прошла бы весь остальной набор зелёным.
+ *
+ * Ассерт держится на значении, которое производит ровно проводка и ничто
+ * другое: сессия отдаёт ` Anton@BBM.Academy `, а в контекст обязан приехать
+ * `anton@bbm.academy` — нормализация `sessionEmail()` из того самого гейта,
+ * который экшен применил (спека 124 EARS-2: актор джойнится к `core.member`
+ * равенством, так что ненормализованный актор не найдёт никого).
+ */
+type RecordedContext = { actorEmail: string | null; source: string }
+
+function recordedContexts(): RecordedContext[] {
+  return ((store as { contexts?: RecordedContext[] }).contexts ?? []) as RecordedContext[]
+}
+
+describe('EARS-25: аудит-контекст мутации приходит из сессии, а не из константы', () => {
+  it('EARS-25: все пять мутаций админки пишут actorEmail = нормализованный email сессии и source = portal', async () => {
+    authState.session = { user: { email: ' Anton@BBM.Academy ' } }
+
+    for (const mutation of await adminMutations()) {
+      setDocument(seed)
+      delete (store as { contexts?: RecordedContext[] }).contexts
+
+      const state = await mutation.run()
+      expect(state.status, mutation.name).toBe('ok')
+
+      expect(recordedContexts(), mutation.name).toEqual([
+        { actorEmail: 'anton@bbm.academy', source: 'portal' },
+      ])
+    }
+  })
+
+  it('EARS-25: saveAssessmentAction пишет автора той сессии, что сохраняет — не админа и не константу', async () => {
+    // Самооценку сохраняет сам участник (п.9), поэтому здесь автор ДРУГОЙ. Если
+    // бы контекст был захардкожен, оба теста не могли бы пройти одновременно.
+    authState.session = { user: { email: ' Eduard@BBM.Academy ' } }
+    delete (store as { contexts?: RecordedContext[] }).contexts
+
+    const actions = await import('@/modules/hours/actions')
+    const state = await actions.saveAssessmentAction(
+      IDLE,
+      form({
+        periodId: 'p-july',
+        email: MEMBER,
+        hours: '160',
+        method: 'period',
+        weekendHours: '0',
+        splitPercent: '30',
+      }),
+    )
+
+    expect(state.status).toBe('ok')
+    expect(recordedContexts()).toEqual([{ actorEmail: 'eduard@bbm.academy', source: 'portal' }])
+  })
+
+  it('EARS-9: отказавший гейт не доходит до хранилища — контекста нет, потому что нет и записи', async () => {
+    authState.session = { user: { email: MEMBER } }
+    delete (store as { contexts?: RecordedContext[] }).contexts
+
+    for (const mutation of await adminMutations()) {
+      expect((await mutation.run()).status, mutation.name).toBe('error')
+    }
+    expect(recordedContexts()).toEqual([])
+  })
+})

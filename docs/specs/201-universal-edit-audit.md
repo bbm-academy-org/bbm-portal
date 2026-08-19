@@ -359,6 +359,19 @@ delivery text NOT NULL, sent_at text)` with `UNIQUE (period_id, position)`
   protect against the latter needs a privilege arrangement this estate cannot
   express yet, and EARS-30 files that as a follow-up instead of asserting it is
   in place.
+  **Named, not discovered later (2026-08-19, review of #273):** the same gap
+  exists one level down, on the AUDITED tables. A row-level trigger does not fire
+  on `TRUNCATE`, so `TRUNCATE core.member` leaves **no** trail at all — the
+  ledger keeps its own `BEFORE TRUNCATE` guard, the domain tables have none. This
+  is not a defect against EARS-1, which speaks of INSERT, UPDATE and DELETE, and
+  it is not reachable from the application: no product path truncates a `core`
+  table, and the only callers in the tree are the integration fixtures. It is an
+  **operator** action, in the same class as the superuser who can
+  `ALTER TABLE … DISABLE TRIGGER` — so a `BEFORE TRUNCATE FOR EACH STATEMENT`
+  guard on the domain tables would be a real and cheap tightening. It is NAMED
+  here rather than shipped in this migration — where it would break every
+  integration fixture's reset in the same commit — and it belongs with EARS-30's
+  privilege follow-up, which addresses the same operator class.
 - **EARS-13, EARS-14 — removed (2026-08-19).** They declared the monthly RANGE
   partitioning with a DEFAULT partition and the `core.audit_ensure_partitions()`
   maintenance function called from `pnpm platform:migrate`. The owner's Q5 answer

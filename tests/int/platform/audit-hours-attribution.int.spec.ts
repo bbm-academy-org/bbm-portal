@@ -20,9 +20,16 @@ import { seedMember, seedParticipant, seedPeriod, truncateHoursTables } from './
  *
  * The Server Actions themselves are not called here: they open `auth()` and a
  * Next request scope. What they contribute — `sessionEmail(session)` +
- * `source: 'portal'` — is exactly the context passed below, and the unit tier
- * (`tests/unit/hours-actions*.spec.ts`) is where the gate-to-context wiring is
- * asserted.
+ * `source: 'portal'` — is exactly the context passed below. That the actions
+ * really contribute it is asserted where the actions run, against the store
+ * double's recorded `state.contexts`:
+ * `tests/unit/hours-actions.spec.ts` («EARS-25: аудит-контекст мутации приходит
+ * из сессии, а не из константы», all five admin mutations plus
+ * `saveAssessmentAction`) and `tests/unit/hours-publication-actions.spec.ts`
+ * («EARS-25: the publication action carries its session actor into every
+ * transaction», the batch plus every delivery step). Between them the eight
+ * mutation entrypoints of `src/modules/hours/actions.ts` are covered; this file
+ * asserts what happens to that context once it reaches Postgres.
  */
 
 const db = getPlatformDb()
