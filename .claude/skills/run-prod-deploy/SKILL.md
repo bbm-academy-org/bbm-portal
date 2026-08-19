@@ -22,6 +22,11 @@ One VPS, `portal-prod-tw`, running one compose stack: `postgres` · `app` ·
 `cms.bbm.academy` (CMS) and `portal.bbm.academy` (platform, `/p/*`) — served by
 the **same** `app` container.
 
+Recon on that box never prints a resolved environment into the session — which
+command shapes that bans, and which stay allowed, is the guard's own list:
+[`tools/hooks/secret-echo-guard.mjs`](../../../tools/hooks/secret-echo-guard.mjs)
+(rule `no-secret-echo`; a printed secret is a rotated secret — #262).
+
 ## Before deciding to ship
 
 The deploy is not the decision; it is the execution. Check these over the WHOLE
@@ -75,19 +80,20 @@ returns the pipe's exit code and turns a red deploy green. Use
 The pipeline, in order — it is fail-closed and stops at the first red step,
 printing a rollback pointer:
 
-| Stage                                                             | What it does                                                                                      | Refuses when                                        |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| pre-flight                                                        | clean tree · target = `origin/main` sha · green CI for that sha                                   | dirty tree · red or still-running CI · no CI at all |
-| ship                                                              | `git archive <sha>` → ssh → `rm -rf src && tar -xz`                                               | ssh/tar non-zero                                    |
-| checkpoint                                                        | box backup script → fresh dump BEFORE anything migrates, pinned under a per-deploy S3 key         | missing script · non-zero exit · no fresh dump      |
-| stack                                                             | build `app`+`migrate` → migrate → `up -d`                                                         | any compose step non-zero                           |
-| caddy                                                             | compares the shipped `Caddyfile` with the running bind mount, restarts only if stale, re-compares | still stale after the restart                       |
-| verify                                                            | polls until `bbm-portal-app-1` runs `bbm-portal-app:<sha>`                                        | the container carries any other image               |
-| smoke                                                             | `deploy:smoke --expect-sha` over BOTH vhosts, settling up to 90 s                                 | any check still red at the end of the budget        |
-| _below here prod is proven serving — nothing may fail the deploy_ |                                                                                                   |                                                     |
-| release                                                           | cuts `release-YYYY.MM.DD-<n>` at the deployed sha                                                 | non-fatal — warns only                              |
-| record                                                            | GitHub `Deployment(production, sha)` + `success`                                                  | non-fatal — warns only                              |
-| retention                                                         | keeps the last 3 sha-tagged app images                                                            | non-fatal — warns only                              |
+| Stage                                                             | What it does                                                                                                                                                               | Refuses when                                        |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| pre-flight                                                        | clean tree · target = `origin/main` sha · green CI for that sha                                                                                                            | dirty tree · red or still-running CI · no CI at all |
+| recover                                                           | puts back a tree an interrupted earlier ship left under `~/bbm-portal.prev` (no-op on a healthy box); runs BEFORE the env pre-flight, which reads the file that swap moved | ssh non-zero                                        |
+| ship                                                              | `git archive <sha>` → ssh → extract into `~/bbm-portal.next`, carry `deploy/.env*`, swap it in                                                                             | ssh/tar non-zero · no `deploy/.env.prod` to carry   |
+| checkpoint                                                        | box backup script → fresh dump BEFORE anything migrates, pinned under a per-deploy S3 key                                                                                  | missing script · non-zero exit · no fresh dump      |
+| stack                                                             | build `app`+`migrate` → migrate → `up -d`                                                                                                                                  | any compose step non-zero                           |
+| caddy                                                             | compares the shipped `Caddyfile` with the running bind mount, RECREATES it only if stale (a file bind mount keeps the pre-swap inode), re-compares                         | still stale after the recreate                      |
+| verify                                                            | polls until `bbm-portal-app-1` runs `bbm-portal-app:<sha>`                                                                                                                 | the container carries any other image               |
+| smoke                                                             | `deploy:smoke --expect-sha` over BOTH vhosts, settling up to 90 s                                                                                                          | any check still red at the end of the budget        |
+| _below here prod is proven serving — nothing may fail the deploy_ |                                                                                                                                                                            |                                                     |
+| release                                                           | cuts `release-YYYY.MM.DD-<n>` at the deployed sha                                                                                                                          | non-fatal — warns only                              |
+| record                                                            | GitHub `Deployment(production, sha)` + `success`                                                                                                                           | non-fatal — warns only                              |
+| retention                                                         | keeps the last 3 sha-tagged app images                                                                                                                                     | non-fatal — warns only                              |
 
 The split is **positional**: everything before the smoke can still leave prod in
 a state nobody described; everything after it cannot, so it is non-fatal by
@@ -193,11 +199,21 @@ migration is an owner-decision.
 - **Rolling back to a pruned sha** — roll forward instead.
 - **Believing "the commands exited 0"** — the verify + smoke stages exist
   because that was never sufficient. If you bypass them, you have no deploy.
-- **A retired file lingering on the box** — `tar -xz` is additive. The pipeline
-  wipes `src/` before extracting (the trap from 2026-07-30), but NOT `tools/`,
-  `docs/` or the repo root, and never `deploy/` (the host-only `.env.*` files
-  live there). A build failing on a file that no longer exists in the branch is
-  this class; remove it on the box by hand.
+- **A retired file lingering on the box** — the historical shape of this
+  failure (`tar -xz` is additive, and the pipeline used to wipe only `src/`
+  before extracting). Fixed in #264: the ship step now extracts into
+  `~/bbm-portal.next` and swaps it in, so the tree IS the shipped commit —
+  plus the box's own `deploy/.env*` files, copied across by name. Two things
+  follow: host state kept inside `~/bbm-portal` in anything but a
+  `deploy/.env*` file does not survive a deploy, and a leftover
+  `~/bbm-portal.prev` means a swap broke
+  mid-flight. Re-running `pnpm deploy:prod` repairs it: `recoverInterruptedShip`
+  is the FIRST box-touching stage, ahead of the env pre-flight that would
+  otherwise abort on the missing `deploy/.env.prod`. By hand it is
+  `rm -rf ~/bbm-portal && mv ~/bbm-portal.prev ~/bbm-portal` — the `rm -rf`
+  matters, since a half-swapped box can hold a PARTIAL `~/bbm-portal` and a bare
+  `mv` would move the previous tree inside it.
+  `deploy/README.md` → _How the tree reaches the box_.
 - **A `--dry-run` refusing on a dirty tree** — that is the gate working, not a
   bug. Commit or stash.
 - **A red checkpoint** — the backup script is missing, failed, produced no fresh

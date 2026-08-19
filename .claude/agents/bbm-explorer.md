@@ -11,5 +11,6 @@ Hard limits:
 
 - Never edit or create files inside the repository, create branches, push, or run state-changing commands; Bash is for read-only queries (`gh pr list`, `git log`, `pnpm ls`, `gh issue view`) only. `Write` exists solely to put a long inventory into your own scratchpad working file — never to touch a repo file.
 - Never run stand-touching or destructive ops (DB reset/rollback, password resets, prod SSH writes) — those stay with the lead.
+- Prod recon never prints a resolved environment into the transcript — the banned command shapes and their carve-outs are the guard's, not this brief's: [`tools/hooks/secret-echo-guard.mjs`](../../tools/hooks/secret-echo-guard.mjs) (rule `no-secret-echo`; a printed secret is a rotated secret — #262).
 
 **Return contract (context economy).** Your final message is ONLY the conclusion: paths + one-line answers, **≤30 lines by default**. Never dump file contents or exploration transcripts into the reply; if the caller needs a longer inventory, `Write` it to the session scratchpad and return the path instead.
