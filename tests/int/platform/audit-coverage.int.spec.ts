@@ -79,17 +79,25 @@ describe('audit coverage against the migrated database', () => {
     expect(AUDIT_TABLE_ALLOWLIST.hours_publication).toBe(
       'blocked on EARS-31 — `messages` must go first',
     )
-    // The stop is on the ORDER, not on the two tasks' sequencing: while
-    // `messages` exists under an attached trigger it would be audited BY VALUE
-    // (EARS-17 whitelists the hours tables' columns), putting frozen message
-    // texts into a ledger nothing can redact. The column is still here, so the
-    // allowlist entry must still be here.
+    // The stop was on the ORDER, not on the two tasks' sequencing: while
+    // `messages` existed under an attached trigger it would have been audited BY
+    // VALUE (EARS-17 whitelists the hours tables' columns), putting frozen
+    // message texts into a ledger nothing can redact. The CONTRACT release
+    // (#281, migration `0005_hours_publication_drop_messages.sql`) removed the
+    // column, so the obstacle EARS-31 named is gone — asserted here against the
+    // really migrated database rather than taken on the migration's word.
+    //
+    // The allowlist entry nevertheless STAYS until #275: attaching the trigger
+    // to `core.hours_publication` is that release's whole subject (EARS-33), and
+    // the rationale string is fixed verbatim by the spec until it is removed
+    // together with the entry. An entry that outlives its reason by one release
+    // is EARS-22 working — the absence is visible — not a stale list.
     const { rows } = await db.execute<{ n: number }>(
       sql`select count(*)::int as n from information_schema.columns
           where table_schema = 'core' and table_name = 'hours_publication'
             and column_name = 'messages'`,
     )
-    expect(rows[0].n).toBe(1)
+    expect(rows[0].n).toBe(0)
   })
 
   it('EARS-22: the allowlist has no stale entry — a table that got its trigger must leave the list', async () => {

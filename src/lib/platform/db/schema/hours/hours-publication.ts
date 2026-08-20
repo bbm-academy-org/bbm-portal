@@ -13,21 +13,25 @@
  * on. Delivery addresses a message BY POSITION and updates ONE row, so the audit
  * ledger records one small diff per step instead of «everything changed».
  *
- * `messages` (`jsonb`) is what that replaced, and it is still here on purpose:
- * this release only EXPANDS (`docs/runbooks/migrations-expand-contract.md`), so
- * the column is still WRITTEN by `src/lib/hours/core/{persist,import}.ts` and no
- * longer READ, keeping `pnpm deploy:prod --rollback <sha>` an honest button
- * across the cutover. Issue #281 is the contract release that drops it; issue
- * #275 then attaches this table's capture trigger (EARS-33), which is why
+ * The `messages` (`jsonb`) column that representation replaced is GONE since the
+ * contract release #281 (`0005_hours_publication_drop_messages.sql`, EARS-31
+ * step 4). #274 kept it alive on purpose for exactly one release — written but
+ * not read, so `pnpm deploy:prod --rollback <sha>` stayed an honest button
+ * across the cutover (`docs/runbooks/migrations-expand-contract.md`). That
+ * window is closed: rolling the app back past #281 is no longer an app-only
+ * operation, and the child table is now the only representation there is.
+ *
  * `core.hours_publication` is still an allowlisted absence in
- * `tools/lint/audit-coverage-allowlist.mjs`.
+ * `tools/lint/audit-coverage-allowlist.mjs` — issue #275 attaches this table's
+ * capture trigger and removes the entry (EARS-33), which the column's removal
+ * unblocks but does not itself do.
  *
  * `started_at` / `published_at` are `text` ISO-8601 (`toISOString()`), like every
  * timestamp that appears verbatim in the owner's export (spec 124 column table).
  * `published_at` is null until every message is `sent`.
  */
 import { sql } from 'drizzle-orm'
-import { check, jsonb, text } from 'drizzle-orm/pg-core'
+import { check, text } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
 import { hoursPeriod } from './hours-period'
@@ -45,12 +49,6 @@ export const hoursPublication = core.table(
     startedAt: text('started_at').notNull(),
     publishedAt: text('published_at'),
     previewFingerprint: text('preview_fingerprint').notNull(),
-    /**
-     * `PublicationMessage[]` (`src/lib/hours/types.ts`) — the pre-#274
-     * representation. WRITE-ONLY until #281 contracts it away; the read path is
-     * `./hours-publication-message.ts`.
-     */
-    messages: jsonb('messages').notNull(),
   },
   (table) => [
     check(

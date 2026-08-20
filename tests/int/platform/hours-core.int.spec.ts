@@ -113,13 +113,18 @@ describe('the hours tables on core (EARS-1)', () => {
     expect(shape('hours_assessment', 'weekday_count')).toBe('integer')
     expect(shape('hours_assessment', 'saved_at')).toBe('text')
 
-    // hours_publication — the batch as jsonb (EARS-6).
+    // hours_publication — the batch's own row (EARS-6). Its messages are rows of
+    // `core.hours_publication_message` since #274, and the `jsonb` array they
+    // replaced is gone since the contract release #281 (spec 201 EARS-31 step 4)
+    // — stated as `MISSING` rather than left unmentioned, so a column resurrected
+    // by a stray migration would be caught by the same list that describes the
+    // table.
     expect(shape('hours_publication', 'period_id')).toBe('text')
     expect(shape('hours_publication', 'status')).toBe('text')
     expect(shape('hours_publication', 'started_at')).toBe('text')
     expect(shape('hours_publication', 'published_at')).toBe('text null')
     expect(shape('hours_publication', 'preview_fingerprint')).toBe('text')
-    expect(shape('hours_publication', 'messages')).toBe('jsonb')
+    expect(shape('hours_publication', 'messages')).toBe('MISSING')
   })
 
   it('EARS-1: hours_participant and hours_assessment reference core.member, RESTRICT on the participant', async () => {

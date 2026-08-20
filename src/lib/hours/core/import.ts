@@ -249,9 +249,6 @@ export async function importDocument(tx: HoursTx, doc: HoursDocument): Promise<H
       startedAt: publication.started_at,
       publishedAt: publication.published_at,
       previewFingerprint: publication.preview_fingerprint,
-      // Dual-write until the contract release (#281) drops the column — see the
-      // header of `./persist.ts` and `docs/runbooks/migrations-expand-contract.md`.
-      messages: publication.messages,
     })
     // One row per message, the array ordinal as the explicit `position` (#274,
     // spec 201 EARS-31) — the same assignment the migration's backfill makes for
