@@ -5,7 +5,7 @@ import path from 'node:path'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { readHoursDocument } from '@/lib/hours'
+import { mutateHoursDocument, readHoursDocument, recordPublicationDelivery } from '@/lib/hours'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import { refusalText } from './audit-helpers'
@@ -28,9 +28,13 @@ import { fixtureWrite, seedPeriod, truncateHoursTables } from './hours-core-help
  *     `sending` batch blocks period mutations (spec 100 req. 12/15), and a
  *     cutover that lost the per-message flags would either re-send delivered
  *     messages or strand the batch.
- *  3. **The Release-A read fallback.** A batch that an app rollback created with
- *     no child rows at all is still read whole, from the legacy `jsonb` column
- *     (`docs/runbooks/migrations-expand-contract.md`, «The two-release split»).
+ *  3. **The Release-A read fallback, and its healing.** A batch that an app
+ *     rollback created with no child rows at all is still read whole, from the
+ *     legacy `jsonb` column (`docs/runbooks/migrations-expand-contract.md`,
+ *     «The two-release split») — and the first save that touches it materialises
+ *     ALL of its rows, not only the position that mutation changed. A partial
+ *     child set would end the fallback (it is all-or-nothing per batch) and take
+ *     the untouched messages out of the document with it.
  *
  * The backfill assertion runs **the statement the migration ships**, extracted
  * from the file between its two markers, rather than a re-typed copy of it: the
@@ -43,6 +47,9 @@ import { fixtureWrite, seedPeriod, truncateHoursTables } from './hours-core-help
  */
 
 const db = getPlatformDb()
+
+/** The portal's own door (spec 201 EARS-25) — a delivery step has an author. */
+const TEST_ACTOR = { actorEmail: 'anton@bbm.academy', source: 'portal' } as const
 
 const MIGRATION = path.join(
   process.cwd(),
@@ -429,5 +436,98 @@ describe('the read fallback of Release A (expand/contract)', () => {
     )
 
     await expect(readHoursDocument()).rejects.toThrow(/повреждённое сообщение/)
+  })
+
+  it('refuses values the child table itself would refuse — `delivery` outside the CHECK, a non-text `sent_at`', async () => {
+    // The fallback is the only path that reads the untyped `jsonb`, so it is the
+    // only place that can let a value into the document which the table's own
+    // constraints would then reject at the write — a refusal at the wrong end.
+    await seedPeriod({ id: 'p-july', label: 'Июль', from: '2026-07-01', to: '2026-07-31' })
+    await seedLegacyPublication({
+      periodId: 'p-july',
+      status: 'sending',
+      publishedAt: null,
+      messages: [
+        { email: 'anton@bbm.academy', text: 'первое', delivery: 'delivered', sent_at: null },
+      ],
+    })
+    await expect(readHoursDocument()).rejects.toThrow(/повреждённое сообщение/)
+
+    await fixtureWrite((tx) =>
+      tx.execute(sql`update core.hours_publication
+        set messages = '[{"email": "anton@bbm.academy", "text": "первое",
+                          "delivery": "sent", "sent_at": 1754211660000}]'::jsonb
+        where period_id = 'p-july'`),
+    )
+    await expect(readHoursDocument()).rejects.toThrow(/повреждённое сообщение/)
+  })
+
+  it('heals the batch on the next save: ALL messages become child rows, not just the delivered one', async () => {
+    // The half of «read with a fallback» that makes the window survivable. The
+    // fallback returns the batch whole from the array, so `before` inside the
+    // mutation equals `after` at every position except the one just delivered.
+    // Diffing against it would materialise ONE row — and the next load, seeing a
+    // non-empty child set, would stop consulting the array and read a batch that
+    // has silently lost its other recipients (or throw on the contiguity check,
+    // if the written position were not 0). `src/lib/hours/core/persist.ts`
+    // suspends the per-message diff for a batch the database does not hold in
+    // full, so the first save writes all N rows.
+    await seedPeriod({ id: 'p-july', label: 'Июль', from: '2026-07-01', to: '2026-07-31' })
+    await seedLegacyPublication({
+      periodId: 'p-july',
+      status: 'sending',
+      publishedAt: null,
+      messages: [
+        { email: 'anton@bbm.academy', text: 'первое', delivery: 'pending', sent_at: null },
+        { email: 'eduard@bbm.academy', text: 'второе', delivery: 'pending', sent_at: null },
+        { email: 'maria@bbm.academy', text: 'третье', delivery: 'pending', sent_at: null },
+      ],
+    })
+    expect(await childRows('p-july')).toEqual([])
+
+    const delivered = await mutateHoursDocument(TEST_ACTOR, (doc) =>
+      recordPublicationDelivery(doc, 'p-july', 0, 'sent', '2026-08-03T09:01:00.000Z'),
+    )
+    expect(delivered.ok).toBe(true)
+
+    expect(await childRows('p-july')).toEqual([
+      {
+        position: 0,
+        email: 'anton@bbm.academy',
+        text: 'первое',
+        delivery: 'sent',
+        sent_at: '2026-08-03T09:01:00.000Z',
+      },
+      {
+        position: 1,
+        email: 'eduard@bbm.academy',
+        text: 'второе',
+        delivery: 'pending',
+        sent_at: null,
+      },
+      {
+        position: 2,
+        email: 'maria@bbm.academy',
+        text: 'третье',
+        delivery: 'pending',
+        sent_at: null,
+      },
+    ])
+
+    // The second load takes the child rows (no fallback left to lean on) and the
+    // batch is still whole: three recipients, exactly one delivered, the period
+    // still `sending` with two messages to go rather than stranded.
+    const publication = (await readHoursDocument()).publications?.[0]
+    expect(publication?.status).toBe('sending')
+    expect(publication?.messages.map((message) => message.delivery)).toEqual([
+      'sent',
+      'pending',
+      'pending',
+    ])
+    expect(publication?.messages.map((message) => message.email)).toEqual([
+      'anton@bbm.academy',
+      'eduard@bbm.academy',
+      'maria@bbm.academy',
+    ])
   })
 })

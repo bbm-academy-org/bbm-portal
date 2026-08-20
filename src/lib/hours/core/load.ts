@@ -115,7 +115,12 @@ async function messagesByPeriod(tx: HoursTx): Promise<Map<string, PublicationMes
  * rolled-forward code would read it as a batch of zero messages — a `sending`
  * publication that blocks its period (spec 100 req. 12/15) and shows nobody to
  * deliver to. Read from the array instead, the batch is whole, and the next save
- * writes its rows through `./persist.ts`, which heals it.
+ * that touches it writes ALL of its rows through `./persist.ts`, which heals it:
+ * `materialisedMessageCounts` there sees the batch is short in the database and
+ * suspends the per-message diff for it. Without that suspension the save would
+ * write only the position it changed, this function would stop being reached for
+ * the batch (a non-empty child set is never re-read from the array), and the
+ * other messages would silently drop out of the document.
  *
  * A batch that HAS child rows is never re-read from the array: those rows are
  * the representation, and the divergence the other half of that window can leave
@@ -123,10 +128,16 @@ async function messagesByPeriod(tx: HoursTx): Promise<Map<string, PublicationMes
  * by re-running the backfill of `0004_hours_publication_message.sql`, which takes
  * the array as authoritative on conflict. The two halves are one mechanism.
  *
- * The corruption check is the one `readMessages` carried before #274, kept
- * exactly here: this is the only path that still reads an untyped `jsonb` value,
- * and it goes away with the column in #281.
+ * The corruption check is the one `readMessages` carried before #274, kept here
+ * and tightened to the child table's own constraints: this is the only path that
+ * still reads an untyped `jsonb` value, so `delivery` is checked against the
+ * values the `hours_publication_message_delivery_allowed` CHECK admits and
+ * `sent_at` against its `text` column, rather than being cast on trust. A value
+ * the table would refuse must not enter the document through the fallback and
+ * fail later, at the write. The whole function goes away with the column in #281.
  */
+const LEGACY_DELIVERIES: readonly string[] = ['pending', 'sent', 'failed', 'unknown']
+
 function messagesFromLegacyColumn(raw: unknown, periodId: string): PublicationMessage[] {
   if (!Array.isArray(raw)) {
     throw new HoursDataError(`Публикация периода ${periodId} хранится в неожиданном виде.`)
@@ -136,7 +147,11 @@ function messagesFromLegacyColumn(raw: unknown, periodId: string): PublicationMe
     if (
       typeof message?.email !== 'string' ||
       typeof message?.text !== 'string' ||
-      typeof message?.delivery !== 'string'
+      typeof message?.delivery !== 'string' ||
+      !LEGACY_DELIVERIES.includes(message.delivery) ||
+      (message.sent_at !== undefined &&
+        message.sent_at !== null &&
+        typeof message.sent_at !== 'string')
     ) {
       throw new HoursDataError(`Публикация периода ${periodId} содержит повреждённое сообщение.`)
     }
