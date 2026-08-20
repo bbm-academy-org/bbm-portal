@@ -96,7 +96,11 @@ export function latestReleaseTag(existingTags) {
  *           releaseIsAncestor?: boolean }} [facts]
  * @returns {{ cut: boolean, reason: string }}
  */
-export function shouldCutRelease({ latestReleaseSha, deployedSha, releaseIsAncestor = false } = {}) {
+export function shouldCutRelease({
+  latestReleaseSha,
+  deployedSha,
+  releaseIsAncestor = false,
+} = {}) {
   if (!deployedSha) return { cut: false, reason: 'no deployed sha' }
   if (!latestReleaseSha) return { cut: true, reason: 'no prior release — first release' }
   if (deployedSha === latestReleaseSha)
@@ -171,7 +175,9 @@ export function cutDeployRelease({ targetSha, cwd = process.cwd(), now = new Dat
     // locally so the range guard sees the real latest release. Non-fatal.
     const fetched = exec('git', ['fetch', '--tags', '--force', 'origin'])
     if (fetched.status !== 0) {
-      log(`⚠ \`git fetch --tags\` failed (continuing with local tags): ${(fetched.stderr || '').trim()}`)
+      log(
+        `⚠ \`git fetch --tags\` failed (continuing with local tags): ${(fetched.stderr || '').trim()}`,
+      )
     }
 
     const tagRes = exec('git', ['tag', '-l', 'release-*'])
@@ -188,7 +194,12 @@ export function cutDeployRelease({ targetSha, cwd = process.cwd(), now = new Dat
       const shaRes = exec('git', ['rev-list', '-n', '1', latestTag])
       if (shaRes.status !== 0) {
         log(`⚠ could not resolve ${latestTag} — skipping (green): ${(shaRes.stderr || '').trim()}`)
-        return { cut: false, reason: `cannot resolve ${latestTag}`, latestTag, latestReleaseSha: null }
+        return {
+          cut: false,
+          reason: `cannot resolve ${latestTag}`,
+          latestTag,
+          latestReleaseSha: null,
+        }
       }
       latestReleaseSha = (shaRes.stdout || '').trim()
     }

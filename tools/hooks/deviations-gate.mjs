@@ -191,7 +191,9 @@ function main() {
       writeActionSeen: hasWriteAction(transcript),
     })
     if (decision.block) {
-      process.stderr.write(decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage())
+      process.stderr.write(
+        decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage(),
+      )
       process.exit(2)
     }
     process.exit(0)

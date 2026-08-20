@@ -297,7 +297,9 @@ async function main() {
   }
 
   if (parsed.dryRun) {
-    log(`[deploy:smoke] dry run — ${parsed.expectSha ? `expecting sha ${parsed.expectSha.slice(0, 12)}` : 'liveness only'}:`)
+    log(
+      `[deploy:smoke] dry run — ${parsed.expectSha ? `expecting sha ${parsed.expectSha.slice(0, 12)}` : 'liveness only'}:`,
+    )
     for (const check of buildChecks({ expectSha: parsed.expectSha })) {
       const want = check.expectSha
         ? `sha == ${check.expectSha.slice(0, 12)}`

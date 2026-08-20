@@ -56,12 +56,7 @@ export const VALID_STATUS = ['Todo', 'In Progress', 'Done']
  * запрошены оунером, пользы никакой; источник — на уровень выше,
  * контекстуальный»). Enum'ом его не выразить: пространство источников открытое.
  */
-export const CHANNEL_LABELS = [
-  'channel:owner',
-  'channel:spec',
-  'channel:retro',
-  'channel:agent',
-]
+export const CHANNEL_LABELS = ['channel:owner', 'channel:spec', 'channel:retro', 'channel:agent']
 
 /** Штатные org Issue Types. Ровно один обязателен на каждой задаче. */
 export const ISSUE_TYPES = ['Bug', 'Feature', 'Task']
@@ -348,7 +343,10 @@ export function resolveBoardStatusTarget(issueNumber, statusName) {
   const project = item.project
   const statusField = project?.field
   if (!statusField?.id) {
-    return { ok: false, error: `поле Status (single-select) не найдено на Project ${PROJECT_NUMBER}` }
+    return {
+      ok: false,
+      error: `поле Status (single-select) не найдено на Project ${PROJECT_NUMBER}`,
+    }
   }
   const option = resolveStatusOption(statusField.options, statusName)
   if (!option) return { ok: false, error: `у поля Status нет опции «${statusName}»` }

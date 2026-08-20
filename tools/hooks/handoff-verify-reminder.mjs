@@ -64,7 +64,7 @@ export function reminderOutput() {
         'prompt — never a hand-retyped paraphrase, which injects false STALE rows) ' +
         'into `pnpm handoff:verify` and reconcile every flagged ref before acting on ' +
         "the handoff's premises. Canon: .claude/skills/task-cycle/SKILL.md stage 1 " +
-        '(a handoff is a HYPOTHESIS) and stage 2 (handoff ≠ the owner\'s go).</handoff-verify-reminder>',
+        "(a handoff is a HYPOTHESIS) and stage 2 (handoff ≠ the owner's go).</handoff-verify-reminder>",
     },
   }
 }

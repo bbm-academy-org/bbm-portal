@@ -113,7 +113,8 @@ export function decideDispatch({
  * (`bbm-explorer` says exactly that), so they flagged briefs that stage nothing.
  * What is left names the draft itself — the artifact staging actually produces.
  */
-export const STAGING_RE = /drafts? (?:on disk|only)|drafts? file|write .{0,40}draft|lead applies|черновик/i
+export const STAGING_RE =
+  /drafts? (?:on disk|only)|drafts? file|write .{0,40}draft|lead applies|черновик/i
 
 /** The escape hatch: staging declared, with the reason that justifies it. */
 export const STAGED_TOKEN_RE = /STAGED:\s*(irreversible|conflicting|owner-preapproval)/
@@ -138,7 +139,13 @@ export function stagingWarnMessage() {
  * env opt-out and an isolated worktree session. One guard, one set of exits —
  * otherwise `BBM_DISPATCH_GUARD_DISABLE=1` would silence half of it.
  */
-export function decideStaging({ toolName, prompt = '', cwd = '', projectDir = '', carveOut = false }) {
+export function decideStaging({
+  toolName,
+  prompt = '',
+  cwd = '',
+  projectDir = '',
+  carveOut = false,
+}) {
   if (!DISPATCH_TOOL_RE.test(toolName || '')) return { warn: false }
   if (carveOut) return { warn: false }
   if (inWorktree(cwd) || inWorktree(projectDir)) return { warn: false }

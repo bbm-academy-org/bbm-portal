@@ -64,7 +64,14 @@ import {
   AUDIT_TABLE_ALLOWLIST,
   rationaleIsBlank,
 } from './audit-coverage-allowlist.mjs'
-import { isEntryPoint, isFixturePath, reporter, repoRoot, runMain, walkFiles } from './lib/guard.mjs'
+import {
+  isEntryPoint,
+  isFixturePath,
+  reporter,
+  repoRoot,
+  runMain,
+  walkFiles,
+} from './lib/guard.mjs'
 
 const TAG = 'audit-coverage'
 
@@ -79,15 +86,15 @@ const ALLOWLIST_REL = 'tools/lint/audit-coverage-allowlist.mjs'
 /** `core.table('<name>', {` — the head of a drizzle table declaration. */
 const TABLE_HEAD_RE = /\bcore\.table\(\s*(['"])([A-Za-z0-9_]+)\1\s*,\s*\{/g
 /** `<prop>: <builder>('<sql_name>'` inside the column object. */
-const COLUMN_RE = /(?:^|[\s{,])[A-Za-z_$][\w$]*\s*:\s*[A-Za-z_$][\w$]*\s*\(\s*(['"])([A-Za-z0-9_]+)\1/g
+const COLUMN_RE =
+  /(?:^|[\s{,])[A-Za-z_$][\w$]*\s*:\s*[A-Za-z_$][\w$]*\s*\(\s*(['"])([A-Za-z0-9_]+)\1/g
 /**
  * `<prop>: <builder>()` / `<builder>({ … })` — drizzle's casing-inferred form,
  * where the SQL name is not in the source at all. Static parsing cannot know it
  * (it depends on the `casing` option of the drizzle config), so such a column is
  * reported rather than skipped: an invisible column is an uncheckable one.
  */
-const NAMELESS_COLUMN_RE =
-  /(?:^|[\s{,])([A-Za-z_$][\w$]*)\s*:\s*[A-Za-z_$][\w$]*\s*\(\s*(?:\)|\{)/g
+const NAMELESS_COLUMN_RE = /(?:^|[\s{,])([A-Za-z_$][\w$]*)\s*:\s*[A-Za-z_$][\w$]*\s*\(\s*(?:\)|\{)/g
 
 /**
  * An attach line, once statements have been isolated (see `sqlStatements`).
