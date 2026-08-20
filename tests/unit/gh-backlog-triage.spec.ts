@@ -5,6 +5,7 @@ import {
   detectClaimState,
   evaluateRationale,
   findMegaBlockers,
+  findEpicChecklistDrift,
   findMirrorDrift,
   formatAge,
   formatReport,
@@ -467,5 +468,76 @@ describe('formatReport', () => {
 
   it('omits the Warnings section when there are no warnings', () => {
     expect(formatReport({ ...model, warnings: [] })).not.toContain('## Warnings')
+  })
+})
+
+/**
+ * Retro 2026-08-20 (#299), theme `epic-checklist-drift`. Epic #111 had every
+ * native sub-issue closed while its body checklist still showed one tick — so a
+ * finished epic sat in the open list reading as work, feeding the owner's «ничего
+ * не закрывается». The graph is the fact; the checklist is a mirror that drifted.
+ * WARN only: closing an epic is the lead's or the owner's call, never a script's.
+ */
+describe('findEpicChecklistDrift', () => {
+  const done = [
+    { number: 10, state: 'closed' },
+    { number: 11, state: 'closed' },
+  ]
+
+  it('all sub-issues closed with an unchecked box is drift', () => {
+    const res = findEpicChecklistDrift({
+      number: 111,
+      body: '- [x] #10 first\n- [ ] #11 second',
+      subIssues: done,
+    })
+    expect(res).toMatchObject({ number: 111, unchecked: [11] })
+  })
+
+  it('an unchecked box with an OPEN sub-issue is ordinary work in progress', () => {
+    expect(
+      findEpicChecklistDrift({
+        number: 111,
+        body: '- [ ] #11 second',
+        subIssues: [{ number: 11, state: 'open' }],
+      }),
+    ).toBeNull()
+  })
+
+  it('a fully ticked checklist over closed children is clean', () => {
+    expect(
+      findEpicChecklistDrift({ number: 111, body: '- [x] #10\n- [x] #11', subIssues: done }),
+    ).toBeNull()
+  })
+
+  it('an epic with no sub-issue graph at all is not judged by its checkboxes', () => {
+    expect(
+      findEpicChecklistDrift({ number: 111, body: '- [ ] write the spec', subIssues: [] }),
+    ).toBeNull()
+  })
+
+  it('an unchecked box naming no issue still counts once the graph is done', () => {
+    const res = findEpicChecklistDrift({
+      number: 111,
+      body: '- [x] #10\n- [x] #11\n- [ ] final sweep',
+      subIssues: done,
+    })
+    expect(res).toMatchObject({ number: 111, unchecked: [] })
+    expect(res?.uncheckedCount).toBe(1)
+  })
+})
+
+describe('formatReport — epic checklist drift', () => {
+  it('prints the section and says the graph is the fact, not the checklist', () => {
+    const report = formatReport({
+      generatedAt: '2026-08-20T00:00:00.000Z',
+      epicChecklistDrift: [{ number: 111, uncheckedCount: 1, unchecked: [11], closed: 2 }],
+    })
+    expect(report).toContain('## Epic checklist drift (1)')
+    expect(report).toMatch(/#111/)
+    expect(report).toMatch(/all 2 native sub-issues are closed/)
+  })
+
+  it('says «none» when body and graph agree', () => {
+    expect(formatReport({ generatedAt: 'x' })).toContain('## Epic checklist drift (0)')
   })
 })

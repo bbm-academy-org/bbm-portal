@@ -7,10 +7,11 @@
 // because the task is "already done". Here the tail is one deterministic call,
 // with no weakening of the gate:
 //
-//   1. gate        — the PR is open and not a draft, no conflict, a `Closes #N`
-//                    is present, review is confirmed, every check-run on the
-//                    CURRENT head SHA is green (bounded polling), head has not
-//                    moved;
+//   1. gate        — the PR is open and not a draft, no conflict, a linkage is
+//                    present (`Closes #N`, or `Part of #N` on a still-OPEN
+//                    parent for a partial PR — #299), review is confirmed, every
+//                    check-run on the CURRENT head SHA is green (bounded
+//                    polling), head has not moved;
 //   2. merge       — `gh pr merge <N> --squash --delete-branch
 //                    --match-head-commit <the same SHA>`;
 //   3. board-clear — drop YOUR OWN PR row from the board. NOT fatal: the merge
@@ -63,6 +64,7 @@ import {
   ghJson,
   pickProjectItem,
 } from './lib/gh.mjs'
+import { extractPartOfIssues } from '../lint/lib/guard.mjs'
 
 const TAG = '[pr:land]'
 
@@ -396,8 +398,33 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
     )
   }
   const closes = (pr?.closingIssuesReferences ?? []).map((r) => r?.number).filter(Boolean)
+  // The SECOND admissible linkage (#299, retro 2026-08-20). `Closes #N` was the
+  // only one the gate accepted, so a PR delivering one SLICE of a live parent had
+  // to invent a sub-issue to close — #261 for PR #260, #270 for PR #265, #279 for
+  // PR #266, three in three days. Each was +1 filed and +1 closed for zero new
+  // work, inflating both halves of the backlog arithmetic the owner reads. A
+  // slice now says what it truly is: `Part of #<parent>`, with the parent still
+  // OPEN. A closed parent is not a linkage — nothing is left for the slice to be
+  // part of, and board-done would again have nowhere to go.
+  const partOf = (pr?.partOfIssues ?? [])
+    .filter((i) => String(i?.state ?? '').toUpperCase() === 'OPEN')
+    .map((i) => i?.number)
+    .filter(Boolean)
   if (closes.length === 0) {
-    red.push('the PR body carries no `Closes #N` — without it board-done has nowhere to set Done')
+    if (partOf.length > 0) {
+      warn.push(
+        `no \`Closes #N\`: this PR is linked as \`Part of #${partOf.join(', #')}\` — a partial ` +
+          `PR of a live parent. board-done is skipped; the parent moves to Done when the slice ` +
+          `that closes it lands`,
+      )
+    } else {
+      red.push(
+        'the PR body carries no `Closes #N`, and no `Part of #N` naming an OPEN parent — ' +
+          'without a linkage board-done has nowhere to set Done. If this PR delivers only a ' +
+          'SLICE, write `Part of #<parent>`; do NOT file a synthetic sub-issue just to have ' +
+          'something to close (#299)',
+      )
+    }
   }
 
   const humanApproved = String(pr?.reviewDecision ?? '').toUpperCase() === 'APPROVED'
@@ -443,7 +470,42 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
         '(`gh pr update-branch <pr#>`) and let CI re-run on the new head',
     )
   }
-  return { red, warn, closes }
+  return { red, warn, closes, partOf }
+}
+
+/**
+ * `Part of #N` in a PR body — the linkage of a PARTIAL PR (#299). Same-repo
+ * `#N` form only; the HTML comment that carries the PR template's own
+ * instructions for choosing between the two linkages, and a fenced example of
+ * the shape, are stripped first so text that merely TALKS ABOUT the linkage is
+ * never a claim.
+ *
+ * The parser itself is `extractPartOfIssues` in `tools/lint/lib/guard.mjs` — the
+ * same one `spec-link` and `stage-b` read this linkage with. This export stays
+ * as the name the gate and its spec use.
+ *
+ * @param {string|null|undefined} body
+ * @returns {number[]} deduped issue numbers, in the order the body names them
+ */
+export function parsePartOfRefs(body) {
+  return extractPartOfIssues(body)
+}
+
+/**
+ * Stamp the parents' states onto the PR payload, the same shape `gateConditions`
+ * reads. A parent whose state could not be read is DROPPED, never assumed OPEN:
+ * an unread issue must not manufacture a linkage that lets the gate through.
+ * @param {object} data  the `gh pr view` payload
+ * @param {Record<number|string, string>} statesByNumber
+ */
+export function withPartOfFacts(data, statesByNumber) {
+  const states = statesByNumber ?? {}
+  return {
+    ...data,
+    partOfIssues: parsePartOfRefs(data?.body)
+      .filter((n) => states[n])
+      .map((n) => ({ number: n, state: states[n] })),
+  }
 }
 
 export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
@@ -454,7 +516,9 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
 
   Gate: the PR is open and not a draft, no conflict, not behind its base
   (\`main\` requires strict status checks since #216, so BEHIND is a refusal at
-  the server), a \`Closes #N\` is present,
+  the server), the PR carries a linkage — \`Closes #N\`, or \`Part of #N\` naming a
+  still-OPEN parent when this PR is one slice of it (#299; a slice does NOT get a
+  synthetic sub-issue filed just to have something to close) —
   review is confirmed, every check on the CURRENT head SHA is green. That same
   SHA goes into \`gh pr merge --match-head-commit\`, so a commit that lands while
   we wait makes the merge refuse rather than ride in unchecked.
@@ -531,8 +595,24 @@ export function parseFlags(argv) {
 // ── imperative runners (injected in tests) ───────────────────────────────────
 
 const PR_FIELDS =
-  'state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,' +
+  'state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,body,' +
   'headRefName,headRefOid,statusCheckRollup,comments,commits'
+
+/**
+ * State of every issue a `Part of #N` line names (#299). Read only when the PR
+ * has no `Closes #N` at all — with a closing reference present the linkage is
+ * already settled and this is one avoidable API call per land.
+ * @param {number[]} numbers
+ * @returns {Record<number, string>} number → `OPEN` / `CLOSED`, unreadable ones omitted
+ */
+function runIssueStates(numbers) {
+  const out = {}
+  for (const n of numbers) {
+    const res = ghJson(['issue', 'view', String(n), '--json', 'number,state'])
+    if (res.ok && res.data?.state) out[n] = String(res.data.state).toUpperCase()
+  }
+  return out
+}
 
 /**
  * The REST listing of a PR's commits — the read that carries parents and
@@ -563,13 +643,21 @@ const COMMIT_FACTS_CACHE = new Map()
 export function runViewPr(pr, io = {}) {
   const view = io.view ?? (() => ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS]))
   const facts = io.facts ?? (() => runCommitFacts(pr))
+  const issueStates = io.issueStates ?? runIssueStates
   const cache = io.cache ?? COMMIT_FACTS_CACHE
 
   const res = view()
   if (!res.ok) return res
   const key = `${pr}:${res.data?.headRefOid ?? '?'}`
   if (!cache.has(key)) cache.set(key, facts())
-  return { ok: true, data: withCommitFacts(res.data, cache.get(key)) }
+  let data = withCommitFacts(res.data, cache.get(key))
+  // Resolve `Part of #N` only when there is no closing reference to fall back on
+  // (#299) — the second linkage exists for slices, not as a second read on every PR.
+  if ((data?.closingIssuesReferences ?? []).length === 0) {
+    const refs = parsePartOfRefs(data?.body)
+    if (refs.length > 0) data = withPartOfFacts(data, issueStates(refs))
+  }
+  return { ok: true, data }
 }
 
 /**

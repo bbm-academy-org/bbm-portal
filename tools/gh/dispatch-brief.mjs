@@ -266,7 +266,8 @@ ${bulletsOrPlaceholder(scopeSource, 'the files this slice touches — each one i
 
 ## PR
 - Conventional Commits; branch \`${branch}\`.
-- ONE \`gh pr create --body-file\` call with the full body: \`Closes #${n}\`, the repo PR template (\`.github/pull_request_template.md\`), a one-line summary.
+- ONE \`gh pr create --body-file\` call with the full body: the linkage line, the repo PR template (\`.github/pull_request_template.md\`), a one-line summary.
+- The linkage line is ONE of two, and the rule is which one is TRUE: \`Closes #${n}\` when this PR finishes the issue, \`Part of #${n}\` when it is a slice and the issue stays open after the merge. \`pnpm pr:land\` accepts both. If your PR does not fully close #${n}, write \`Part of #${n}\` — do NOT file a synthetic sub-issue just to have something to close (#261 / #270 / #279 were filed exactly that way).
 - Do NOT self-review and do NOT merge: the independent review is dispatched by the lead (task-cycle stage 4), and an owner-visible change also needs the owner's recorded live-stand acceptance (stage 5).
 
 ## Return contract (≤30 lines)

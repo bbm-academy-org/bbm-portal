@@ -7,6 +7,7 @@ import {
   hasWriteAction,
   isCompletionReport,
   isEnforceableTerminalReport,
+  hasExplicitInterimMarker,
   isInterimStatus,
   isTerminalReport,
 } from '../../tools/hooks/completion-report-gate.mjs'
@@ -86,6 +87,50 @@ describe('распознаватель терминального отчёта',
     expect(isInterimStatus('статус — промежуточный, задача не закрыта.')).toBe(true)
     expect(isInterimStatus('Статус - промежуточный.')).toBe(true)
     expect(isTerminalReport('Статус: промежуточный — PR #92 смержен, задача — нет.')).toBe(false)
+  })
+
+  // Ретро 2026-08-20 (#299), тема `interim-status-ceremony-noise`. Фикс #284
+  // недотянул: девять чекпойнтов подряд несли полный хвост stage-6/7, потому что
+  // у сессии не было ОБЪЯВЛЕННОГО способа сказать «это не финальный отчёт». Явный
+  // маркер отдельной строкой — этот способ, и он бьёт все эвристики ниже.
+  it('явный маркер отдельной строкой освобождает чекпойнт от хвоста stage-6/7', () => {
+    const checkpoint = [
+      '**Статус промежуточный.**',
+      '',
+      'PR #294 смержен, задача #201 не закрыта — жду прогон приёмки.',
+    ].join('\n')
+    expect(hasExplicitInterimMarker(checkpoint)).toBe(true)
+    expect(isTerminalReport(checkpoint)).toBe(false)
+    expect(
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: checkpoint,
+      }),
+    ).toEqual({ block: false })
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: checkpoint,
+      }),
+    ).toEqual({ block: false })
+    expect(
+      decideWarn({ stopHookActive: false, writeActionSeen: true, lastAssistantText: checkpoint }),
+    ).toEqual({ warn: false })
+  })
+
+  it('маркер внутри предложения финального отчёта его не освобождает', () => {
+    expect(
+      hasExplicitInterimMarker('Задача #91 закрыта, промежуточный статус больше не нужен.'),
+    ).toBe(false)
+    expect(isTerminalReport(REPORT_NO_MARKERS)).toBe(true)
+  })
+
+  it('английская форма маркера распознаётся так же', () => {
+    expect(hasExplicitInterimMarker('Interim status\n\nPR #294 merged, issue #201 open.')).toBe(
+      true,
+    )
   })
 })
 

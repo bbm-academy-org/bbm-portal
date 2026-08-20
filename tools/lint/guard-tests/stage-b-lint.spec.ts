@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   checkStageB,
   extractClosedIssues,
+  extractLinkedIssues,
   extractMarkerValues,
   ghIssueArgs,
   ghPrArgs,
@@ -235,6 +236,27 @@ describe('stage-b-lint: the verdict may live on the linked issue', () => {
   it('extracts every GitHub close keyword, deduped', () => {
     expect(extractClosedIssues('Closes #12, fixes #12, resolved #34')).toEqual([12, 34])
     expect(extractClosedIssues('see #99')).toEqual([])
+  })
+
+  /**
+   * A partial PR carries `Part of #<parent>` and no closing keyword (#299). Its
+   * Stage-B verdict still lands as a comment on that parent, so resolving the
+   * linked issue from `Closes #N` alone lost the evidence — review of PR #303, N1.
+   */
+  it('also resolves the partial linkage `Part of #N`', () => {
+    expect(extractLinkedIssues('Part of #201')).toEqual([201])
+    expect(extractLinkedIssues('Closes #12\n\nPart of #201')).toEqual([12, 201])
+    expect(extractLinkedIssues('this is not part of #201')).toEqual([])
+  })
+
+  it('the driver reads the Stage-B GO off a `Part of #N` parent', () => {
+    const gh = makeGh({
+      prs: { 202: pr({ number: 202, body: 'Part of #201', files: UI_PR_FILES }) },
+      issues: { 201: [{ body: 'Stage-B: GO — Антон' }] },
+    })
+    const result = runStageBLint({ prNumber: 202, severity: 'block', gh: gh.gh })
+    expect(result.verdict).toBe('pass')
+    expect(gh.calls.map((c) => `${c[0]} ${c[2]}`)).toEqual(['pr 202', 'issue 201'])
   })
 
   it('the driver fetches the linked issue comments through gh', () => {

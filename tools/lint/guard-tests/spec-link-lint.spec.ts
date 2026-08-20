@@ -10,6 +10,7 @@ import {
   evaluateSpecLink,
   exitCodeFor,
   extractClosedIssues,
+  extractLinkedIssues,
   extractSpecPaths,
   isRelatedSpec,
   parseFrontmatter,
@@ -69,6 +70,23 @@ describe('extractClosedIssues', () => {
   it('is empty for a body with no link', () => {
     expect(extractClosedIssues('## What\n\nSome change.')).toEqual([])
     expect(extractClosedIssues('')).toEqual([])
+  })
+})
+
+/**
+ * A PARTIAL PR carries `Part of #<parent>` instead of `Closes #N` (#299,
+ * `pr-land` gate). Resolving the linked issue from the closing keyword ALONE
+ * turned every such PR into a silent skip of this guard — review of PR #303, N1.
+ */
+describe('extractLinkedIssues', () => {
+  it('resolves the partial linkage as well as the closing one', () => {
+    expect(extractLinkedIssues('Part of #201')).toEqual([201])
+    expect(extractLinkedIssues('Closes #102\n\nPart of #201')).toEqual([102, 201])
+  })
+
+  it('does not count a quoted or mid-sentence mention', () => {
+    expect(extractLinkedIssues('```\nPart of #201\n```')).toEqual([])
+    expect(extractLinkedIssues('This is not part of #201.')).toEqual([])
   })
 })
 
@@ -309,6 +327,16 @@ describe('evaluateSpecLink', () => {
     })
     expect(res.verdict).toBe('findings')
     expect(res.findings.join('\n')).toMatch(/no spec/i)
+  })
+
+  it('checks a `Part of #N` slice PR instead of skipping it', () => {
+    const res = evaluateSpecLink({
+      pr: { ...featurePr, body: 'Part of #102' },
+      issues: [featureIssue],
+      tree: tree({}),
+    })
+    expect(res.verdict).toBe('findings')
+    expect(res.notes.join('\n')).not.toMatch(/skipping/)
   })
 
   it('passes when the PR body names an existing spec with a valid status', () => {

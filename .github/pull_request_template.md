@@ -6,6 +6,13 @@
 
 ## Why
 
+<!-- ONE linkage line, whichever is TRUE:
+       Closes #<issue>   — this PR finishes the issue
+       Part of #<parent> — this PR is a SLICE; the parent stays open after the merge
+     `pnpm pr:land` accepts both. Never file a sub-issue just to have something
+     to close: that is where #261 / #270 / #279 came from. Rule: task-cycle
+     stage 4 (.claude/skills/task-cycle/SKILL.md). -->
+
 Closes #
 
 ## Product note (RU)

@@ -99,8 +99,34 @@ export function isDecisionRequest(text) {
 export const INTERIM_STATUS_RE =
   /⏳|\bcheckpoint\b|чекпоинт|\bWIP\b|в процессе|в работе|жду\s+(?:вердикт|CI|ревью|приёмк|ответ)|ещё\s+не\s+(?:смерж|заверш)|промежуточн[а-яё\w]*\s+статус|статус[а-яё\w]*[\s:—–-]+промежуточн/i
 
+/**
+ * The EXPLICIT interim marker — the canonical, declared form, as opposed to the
+ * heuristic bag above («⏳», «жду CI», «в работе»), which only INFERS a checkpoint.
+ *
+ * Retro 2026-08-20 (#299), theme `interim-status-ceremony-noise`: the #284 fix
+ * did not go far enough. Nine consecutive checkpoints in one session carried the
+ * full stage-6/7 tail («Проверить глазами… Честный статус… ~70%… Отклонения от
+ * конвенций: нет. surface-decision-debt: none») because the session had no
+ * DECLARED way to say "this is not the final report" and paid the ceremony
+ * defensively. This marker is that way: one line, matched here, and the canon
+ * (`.claude/skills/report-task-outcome/SKILL.md`, «Промежуточный чекпойнт»)
+ * states that the marker — not the tail — is what an interim message owes.
+ *
+ * It is matched on its OWN line so that the phrase quoted inside a sentence of a
+ * real final report cannot exempt that report; markdown emphasis and a heading
+ * hash are stripped, they carry no meaning here. The trailing lookahead is
+ * `(?![а-яё\w])` and not `\b` for the reason the rest of this file already
+ * carries: JS word boundaries are ASCII-only and never fire after Cyrillic.
+ */
+export const EXPLICIT_INTERIM_MARKER_RE =
+  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*(?:статус[а-яё\w]*[\s:—–-]+промежуточн[а-яё\w]*|промежуточн[а-яё\w]*\s+статус[а-яё\w]*|interim\s+status)(?![а-яё\w])/i
+
+export function hasExplicitInterimMarker(text) {
+  return EXPLICIT_INTERIM_MARKER_RE.test(String(text || ''))
+}
+
 export function isInterimStatus(text) {
-  return INTERIM_STATUS_RE.test(String(text || ''))
+  return hasExplicitInterimMarker(text) || INTERIM_STATUS_RE.test(String(text || ''))
 }
 
 /** Предложение следующего шага / работа в полёте: перечисление уже смерженных
@@ -119,6 +145,10 @@ export function isProposalOrInFlight(text) {
  */
 export function isTerminalReport(text) {
   if (!text) return false
+  // The DECLARED marker is checked first and beats every other branch (#299):
+  // a message that states «Статус промежуточный» is the author saying this is
+  // not the final report, and no heuristic below may overrule that declaration.
+  if (hasExplicitInterimMarker(text)) return false
   if (isDecisionRequest(text)) return false
   if (isInterimStatus(text)) return false
   if (isProposalOrInFlight(text)) return false

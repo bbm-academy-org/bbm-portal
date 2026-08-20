@@ -404,6 +404,27 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-19-e7a1b201f2 -->
 
+- [ ] 2026-08-20 `stage-b-lint` now reads the Stage-B verdict off the `Part of #N`
+      parent's comments (#299, PR #303), so ONE `Stage-B: GO` recorded on a
+      long-lived parent satisfies the check for every later slice of it,
+      indefinitely — the verdict is not slice-scoped. Correct direction (that is
+      where a slice's GO is actually recorded) and harmless at WARN, but a real
+      weakening ahead of the BLOCK promotion — return condition: before the
+      `stage-b` BLOCK promotion window opens, earliest 2026-09-02
+      (`docs/ci-guardrails.md` §5) (#299, PR #303 review round 2, N2)
+
+<!-- debt-entry-end: 2026-08-20-b7f41c9a02 -->
+
+- [ ] 2026-08-20 `spec-link-lint` resolves the linked issue from `Part of #N` too
+      (#299, PR #303), so a chore-class slice of a `Feature`-typed epic parent
+      inherits the parent's type and can be asked for a spec link it does not owe.
+      WARN and low volume today — return condition: before the `spec-link` BLOCK
+      promotion window opens, earliest 2026-09-02 (`docs/ci-guardrails.md` §5), or
+      the first slice PR this fires on, whichever comes first (#299, PR #303
+      review round 2, N3)
+
+<!-- debt-entry-end: 2026-08-20-4e6a80d1c7 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very

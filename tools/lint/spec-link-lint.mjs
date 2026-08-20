@@ -43,6 +43,7 @@ import { resolve } from 'node:path'
 
 import { ghViewJson } from './lib/gh.mjs'
 import {
+  extractPartOfIssues,
   isEntryPoint,
   reporter,
   repoRoot,
@@ -126,6 +127,18 @@ export function extractClosedIssues(body) {
     const n = Number(m[1])
     if (!out.includes(n)) out.push(n)
   }
+  return out
+}
+
+/**
+ * Every issue this PR is linked to: the ones it CLOSES plus the parent(s) a
+ * partial PR names with `Part of #N` (#299). Resolving only the closing keyword
+ * meant a slice PR — the shape `pr-land` now lets through — skipped this guard
+ * entirely while reporting a clean line (review of PR #303, N1).
+ */
+export function extractLinkedIssues(body) {
+  const out = [...extractClosedIssues(body)]
+  for (const n of extractPartOfIssues(body)) if (!out.includes(n)) out.push(n)
   return out
 }
 
@@ -276,9 +289,11 @@ export function evaluateSpecLink({ pr, issues, tree }) {
     return { verdict: 'skip', notes, findings }
   }
 
-  const linked = extractClosedIssues(body)
+  const linked = extractLinkedIssues(body)
   if (linked.length === 0) {
-    notes.push('PR body has no `Closes #N` link — nothing to resolve a spec against, skipping')
+    notes.push(
+      'PR body has no `Closes #N` / `Part of #N` link — nothing to resolve a spec against, skipping',
+    )
     return { verdict: 'skip', notes, findings }
   }
 
@@ -475,7 +490,7 @@ function main() {
   }
 
   const issues = []
-  for (const n of extractClosedIssues(pr.body)) {
+  for (const n of extractLinkedIssues(pr.body)) {
     const r = ghViewJson('issue', n, 'number,title,body,issueType', repoRoot())
     if (!r.ok) report.fail(`ERROR could not read linked issue #${n}: ${r.error}`)
     issues.push({ number: n, type: r.data.issueType?.name ?? '', body: r.data.body ?? '' })

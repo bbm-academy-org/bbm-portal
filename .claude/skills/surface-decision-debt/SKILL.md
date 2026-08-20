@@ -49,6 +49,20 @@ The threshold is the one in `DEBT.md`'s header (issue #65 / #92), unchanged:
 
 The fourth row is the one agents skip. It still produces a list item.
 
+**A PRODUCT-scope gap is not a deviation and is never auto-filed (#299).** When
+the pass turns up something the product does not do — a missing screen, an
+unhandled user path, a feature the spec never claimed — you have found a
+QUESTION, not debt. It goes into the stage-6 report as a question to the owner in
+the form `.claude/skills/report-task-outcome/SKILL.md` fixes, and the owner
+decides whether it becomes work at all. Filing it yourself asserts on the owner's
+behalf that it should be built, and puts an unagreed item in the backlog they
+then have to triage. Filing follows the owner's answer, never precedes it.
+
+The boundary is who owns the decision, not how big it is: **you deviated from a
+convention** → route it here; **the product could do more or differently** → ask.
+An item you cannot place is asked, not filed — a question costs one round-trip, an
+unwanted issue costs a triage and a closure.
+
 ## 3. Write the two report lines
 
 The stage-6 final report carries **both**, adjacent:

@@ -98,8 +98,10 @@ async function main() {
   out.fail(
     `${findings.length} closing keyword(s) point at a live parent. Merging this PR would close the ` +
       'umbrella while its children are still open, and the tracker loses what was coordinating them. ' +
-      'Point `Closes #N` at the specific child sub-issue this PR delivers, and close the parent ' +
-      'deliberately when the last child lands. Canon: docs/ci-guardrails.md §5.',
+      'Point `Closes #N` at the specific child sub-issue this PR delivers — or, if no such child ' +
+      'exists, write `Part of #<parent>`: a PARTIAL PR names its live parent and closes nothing ' +
+      '(task-cycle stage 4; do NOT file a sub-issue just to have something to close). The parent ' +
+      'is closed deliberately when the last child or slice lands. Canon: docs/ci-guardrails.md §5.',
   )
 }
 

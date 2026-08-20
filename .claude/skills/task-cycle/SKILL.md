@@ -104,7 +104,12 @@ call names an explicit `model`.
 
 ## Stage 4 — review (mandatory)
 
-PR with `Closes #N` + the PR template (`.github/pull_request_template.md`). An
+PR with a linkage line + the PR template (`.github/pull_request_template.md`).
+**Two linkages, and the rule is which one is TRUE:** `Closes #N` when this PR
+finishes the issue, `Part of #N` when it is a SLICE and the parent stays open
+after the merge — `pnpm pr:land` accepts both, and a `Part of` parent must still
+be OPEN. Never file a sub-issue just to have something to close: #261 / #270 /
+#279 are three issues that existed only to satisfy `Closes #N` (#299). An
 independent review subagent (fresh context, read-only) posts a PR comment
 containing a `VERDICT: APPROVE | REQUEST_CHANGES` line. **The review is
 dispatched by the orchestrating lead, never by the implementer:** a review the
@@ -112,7 +117,16 @@ implementer commissioned for its own PR does not satisfy this gate and is
 re-run by the lead. (2026-07-24: PR #72's implementer self-commissioned its
 «independent» review; the lead's re-review was still required.) On
 REQUEST_CHANGES: address every point — fix it, or reject it with reasoning in
-the thread — then re-review, looping until APPROVE. **The review-free class is
+the thread — then re-review, looping until APPROVE. **TDD extends to review
+fixes: every blocker gets a RED test before its fix**, asserting the behaviour
+the reviewer said is missing or wrong, and the fix commit is what turns it green.
+A blocker rejected with reasoning needs no test; a blocker that is genuinely
+untestable says so in the thread, in that blocker's own reply. This is stage 3's
+rule applied where the defect rate is highest — a fix written straight into the
+code has no failing artifact to prove it addressed the finding, and round 2 then
+spends itself on a defect round 1's fix introduced (PR #282 took three rounds
+exactly that way, PR #294 two; every extra round lengthens the session and breeds
+incidental findings). The fix-agent's brief carries this line. **The review-free class is
 narrow (owner, 2026-08-05): a docs-only PR that touches NO process-canon file**
 — canon is `.claude/skills/task-cycle/**`, `.claude/rules/**`, root `CLAUDE.md`,
 root `AGENTS.md`. Such a PR merges on green CI without the review subagent and
@@ -174,7 +188,9 @@ Then the final task report, fixed form:
 
 ## Stage 7 — close
 
-Issue closed (verify `Closes #N` actually fired) with a results comment in the
+Issue closed (verify `Closes #N` actually fired — a `Part of #N` PR closes
+nothing by design, so its parent is closed by hand when the last slice lands)
+with a results comment in the
 fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`): artifacts
 (spec + KB instruction named by link — the stage-6 documentation DoD is
 verified here, not assumed), what was done, what got unblocked + the mandatory

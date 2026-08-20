@@ -1,7 +1,7 @@
 {
-  "version": 3,
+  "version": 4,
   "generatedAt": "2026-06-22",
-  "lastAuditAt": "2026-08-05",
+  "lastAuditAt": "2026-08-20",
   "foldedThemes": [
     "honest-status:deviations-line-self-certified",
     "unanswered-question-treated-as-consent",
@@ -24,7 +24,17 @@
     "secret-echo-to-transcript",
     "prod-deploy-postcheck",
     "askuserquestion-swallows-proposal",
-    "artifact-passport"
+    "artifact-passport",
+    "trivial-fix-filed-not-applied",
+    "process-generators-burst",
+    "guard-chasing-loop",
+    "closes-target-issues",
+    "offload-to-owner",
+    "issue-threshold-measures-form-not-content",
+    "review-fix-introduces-new-blocker",
+    "interim-status-ceremony-noise",
+    "epic-checklist-drift",
+    "over-delivery-artifacts"
   ],
   "tracker": "github+plane",
   "slug": "C--Users-sidor-repos-bbm-portal",

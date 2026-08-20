@@ -228,6 +228,18 @@ describe('dispatch:brief — renderBrief', () => {
     expect(brief).toContain('pnpm dispatch:brief-check 134')
   })
 
+  /**
+   * A brief that mandates `Closes #N` unconditionally is what manufactured the
+   * synthetic sub-issues #261 / #270 / #279: a slice PR that closes nothing had
+   * to invent an issue to close. The brief names BOTH linkages and the rule for
+   * choosing (#299; review of PR #303, blocker 1).
+   */
+  it('offers `Part of #N` for a partial PR next to `Closes #N` for a closing one', () => {
+    expect(brief).toContain('Part of #134')
+    expect(brief).toMatch(/does not (?:fully )?close/i)
+    expect(brief).toMatch(/do NOT file a (?:synthetic )?sub-issue/i)
+  })
+
   it('seeds the scope from the issue path tokens, and marks unknown fields <fill>', () => {
     expect(brief).toContain('- `tools/gh/dispatch-probe.mjs`')
     expect(renderBrief({ issueNumber: 99 })).toContain('<fill: issue #99 title>')
