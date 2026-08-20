@@ -133,9 +133,7 @@ const RETIRE_STATUS_RE = /^(?:Superseded|Retired)$/
 export function frontmatterField(text, field) {
   const m = String(text ?? '').match(/^---\r?\n([\s\S]*?)\r?\n---/)
   if (!m) return null
-  const line = m[1]
-    .split(/\r?\n/)
-    .find((l) => new RegExp(`^${field}\\s*:`).test(l))
+  const line = m[1].split(/\r?\n/).find((l) => new RegExp(`^${field}\\s*:`).test(l))
   if (!line) return null
   return line
     .slice(line.indexOf(':') + 1)

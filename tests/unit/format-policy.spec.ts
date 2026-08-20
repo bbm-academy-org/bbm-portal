@@ -106,6 +106,22 @@ describe('format-check and pre-commit policy', () => {
     )
   })
 
+  it('covers .mjs tooling in both Prettier writers (#286)', () => {
+    // Until #286 the globs stopped at {ts,tsx,css,md,json,yml,yaml}, so the whole
+    // tools/** layer — every guard, hook and gh script — was unformatted by
+    // omission, in CI and on pre-commit alike.
+    const config = createLintStagedConfig(repoRoot)
+    const guard = resolve(repoRoot, 'tools', 'lint', 'stage-b-lint.mjs')
+    const rootConfig = resolve(repoRoot, 'lint-staged.config.mjs')
+
+    expect(config([guard])).toEqual([`prettier --write "${guard}"`])
+    expect(config([rootConfig])).toEqual([`prettier --write "${rootConfig}"`])
+    for (const glob of formatCheckGlobs(packageConfig.scripts['format:check'])) {
+      if (!glob.startsWith('tools/')) continue
+      expect(glob, 'the tools/** format:check glob must name mjs').toContain('mjs')
+    }
+  })
+
   it('limits stylelint writes to the blocking lint:css surface', () => {
     const config = createLintStagedConfig(repoRoot)
 
@@ -220,6 +236,7 @@ describe('format-check and pre-commit policy', () => {
   it.each([
     'pnpm-lock.yaml',
     'src/payload-types.ts',
+    'src/app/(payload)/admin/importMap.js',
     'tools/lint/guard-tests/fixtures/workflow-auth/unwired/package.json',
   ])('keeps %s outside both Prettier writers', async (path) => {
     const info = await getFileInfo(resolve(repoRoot, path), {

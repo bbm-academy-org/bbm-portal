@@ -188,7 +188,9 @@ export function auditWorkflows(workflows, { ghConsumers = [], scriptMap = {} } =
   // `lint`: `\b` sits happily at the `:` and matched the shorter name (review of
   // PR #245, minor 4). The name is escaped: a script name is data here.
   const aliasRe = (name) =>
-    new RegExp(String.raw`(?:^|[\s;&|(])(?:pnpm|npm|yarn)\s+(?:run\s+|exec\s+)?${escapeRe(name)}(?=\s|$|[;&|)])`)
+    new RegExp(
+      String.raw`(?:^|[\s;&|(])(?:pnpm|npm|yarn)\s+(?:run\s+|exec\s+)?${escapeRe(name)}(?=\s|$|[;&|)])`,
+    )
 
   const consumerHit = (cmd) => {
     if (ghConsumers.some((p) => cmd.includes(p) || cmd.includes(p.replace(/\.mjs$/, ''))))

@@ -188,7 +188,11 @@ export function createDeploymentRecord({
       }
     }
 
-    const marked = ghApiPost(exec, `repos/{owner}/{repo}/deployments/${deploymentId}/statuses`, status)
+    const marked = ghApiPost(
+      exec,
+      `repos/{owner}/{repo}/deployments/${deploymentId}/statuses`,
+      status,
+    )
     if (!marked.ok) return { ok: false, deploymentId, error: marked.error }
 
     return { ok: true, deploymentId }
