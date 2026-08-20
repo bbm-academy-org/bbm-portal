@@ -27,7 +27,7 @@
  * owner's SQL escape hatch; a delivery record is history). A document that drops
  * one silently is a bug in a caller, not an instruction, and the row stays.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 
 import {
   ensureMemberByEmail,
@@ -301,41 +301,6 @@ function sameMessage(a: PublicationMessage, b: PublicationMessage): boolean {
 }
 
 /**
- * How many child rows each batch ALREADY has in the database, by period.
- *
- * Every other skip in this file leans on `before` being the database («read in
- * THIS transaction under the module lock»). For a publication's MESSAGES that is
- * true only while the batch is materialised as child rows. After `./load.ts`
- * took its Release-A read fallback it is not: the batch's messages came from the
- * legacy `jsonb` array, no child row exists for any of them, and `before`
- * nevertheless equals `after` at every position the mutation did not touch.
- * Diffing against it would write ONE row, the next `loadDocument` would find a
- * non-empty child set for that period, stop consulting the array, and read the
- * batch with its other messages gone — or throw on the contiguity check if the
- * one written position is not 0.
- *
- * So the per-message skip is allowed only for a batch whose rows are all there,
- * and a batch that is short is written WHOLE. That is what makes «the next save
- * heals it» in `./load.ts` an actual mechanism instead of a hope. The batches
- * are a few dozen rows at most, so the full write costs nothing worth saving.
- *
- * A batch nothing in the document changed is still skipped one level up
- * (`samePublication`) and stays un-materialised — which is fine and not a
- * half-state: the fallback is all-or-nothing per batch and keeps reading it
- * whole until a save actually touches it.
- */
-async function materialisedMessageCounts(tx: HoursTx): Promise<Map<string, number>> {
-  const rows = await tx
-    .select({
-      periodId: hoursPublicationMessage.periodId,
-      messageCount: sql<number>`count(*)::int`,
-    })
-    .from(hoursPublicationMessage)
-    .groupBy(hoursPublicationMessage.periodId)
-  return new Map(rows.map((row) => [row.periodId, row.messageCount]))
-}
-
-/**
  * Publications: the parent row, then the messages ROW BY ROW (#274, spec 201
  * EARS-31 step 3).
  *
@@ -347,17 +312,17 @@ async function materialisedMessageCounts(tx: HoursTx): Promise<Map<string, numbe
  * `{"period_id": …, "position": …}` (EARS-4). Unchanged messages are skipped for
  * the same reason `before` lets everything else be skipped: it was read inside
  * THIS transaction under the module advisory lock (EARS-10), so «unchanged in
- * the document» is «unchanged in the database» — with the one exception
- * `materialisedMessageCounts` above is about, where it is not.
+ * the document» is «unchanged in the database».
  *
- * `messages` on the parent is STILL written — deliberately, and only until the
- * contract release (#281). `docs/runbooks/migrations-expand-contract.md` lets one
- * release expand only: while both representations are written,
- * `pnpm deploy:prod --rollback <sha>` stays an honest button, because the
- * previous app code still finds the array it reads. The child table is the one
- * that is READ (`./load.ts`); the column is written here and read only as that
- * file's Release-A fallback, for a batch an app rollback created with no child
- * rows at all.
+ * That reason is now unconditional, and it was not while #274's dual-write
+ * stood. `core.hours_publication.messages` is gone since the contract release
+ * #281 (`0005_hours_publication_drop_messages.sql`), and with it both the write
+ * of the legacy array here and `./load.ts`'s fallback read of it. While the
+ * fallback existed a batch's `before` could come from the array with no child
+ * row behind it, so the per-message skip had to be suspended for any batch the
+ * database held short — the `materialisedMessageCounts` query this file used to
+ * carry. Now `before` is the child rows or nothing, so the skip is exactly what
+ * it says it is.
  *
  * A batch never gains or loses a message — it is frozen at creation (spec 100
  * req. 8/12) — so a length change is a caller bug and not an instruction to
@@ -365,7 +330,6 @@ async function materialisedMessageCounts(tx: HoursTx): Promise<Map<string, numbe
  */
 async function upsertPublications(tx: HoursTx, before: HoursDocument, after: HoursDocument) {
   const previousByPeriod = new Map((before.publications ?? []).map((p) => [p.period_id, p]))
-  const materialised = await materialisedMessageCounts(tx)
 
   for (const publication of after.publications ?? []) {
     const previous = previousByPeriod.get(publication.period_id)
@@ -382,21 +346,14 @@ async function upsertPublications(tx: HoursTx, before: HoursDocument, after: Hou
       startedAt: publication.started_at,
       publishedAt: publication.published_at,
       previewFingerprint: publication.preview_fingerprint,
-      // Dual-write until #281 contracts it away — see the header above.
-      messages: publication.messages,
     }
     await tx
       .insert(hoursPublication)
       .values({ periodId: publication.period_id, ...columns })
       .onConflictDoUpdate({ target: hoursPublication.periodId, set: columns })
 
-    // A batch the database does not hold in full is written whole, not diffed —
-    // see `materialisedMessageCounts`. Anything short is a batch `./load.ts`
-    // read through its Release-A fallback, and this save is its healing.
-    const wholeBatch = (materialised.get(publication.period_id) ?? 0) < publication.messages.length
-
     for (const [position, message] of publication.messages.entries()) {
-      if (!wholeBatch && previous && sameMessage(previous.messages[position], message)) continue
+      if (previous && sameMessage(previous.messages[position], message)) continue
       const messageColumns = {
         email: message.email,
         text: message.text,

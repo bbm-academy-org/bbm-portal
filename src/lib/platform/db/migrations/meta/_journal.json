@@ -36,6 +36,13 @@
       "when": 1787146290403,
       "tag": "0004_hours_publication_message",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787205790024,
+      "tag": "0005_hours_publication_drop_messages",
+      "breakpoints": true
     }
   ]
 }
