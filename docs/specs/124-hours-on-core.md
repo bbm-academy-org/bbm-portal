@@ -1,7 +1,7 @@
 ---
 status: Shipped
 issue: 124
-updated: 2026-08-18
+updated: 2026-08-19
 ---
 
 # /p/hours on the `core` schema — data model & migration off JSON — spec (issue #124)
@@ -180,8 +180,18 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   position by the import; `hours_assessment` orders by its identity PK
   assigned in array order; new rows append after the current maximum. This
   covers the participants table (081 §19), the summary, and the publication
-  preview/delivery order (spec 100 req. 2/10 — delivery addresses messages
-  **by index**, so order is a correctness property, not cosmetics).
+  preview/delivery order (spec 100 req. 2/10 — delivery addresses a message **by
+  its `position`**, so order is a correctness property, not cosmetics).
+  **Amended 2026-08-19 (#274, spec 201 EARS-31):** that clause used to read «by
+  index», the index into the `jsonb` array `core.hours_publication.messages`. The
+  messages are now rows of `core.hours_publication_message` keyed
+  `(period_id, position)`, and `position` is the explicit, stored form of exactly
+  that index — 0-based and contiguous, asserted when
+  `src/lib/hours/core/load.ts` rebuilds the legacy array. Nothing about the
+  ordering guarantee moved: the same messages go to the same people in the same
+  order, and what changed is that a delivery step now updates ONE row, so the
+  audit ledger of spec 201 records one small diff instead of «the whole array
+  changed».
 - **EARS-22.** The `preview_fingerprint` digest input shall be pinned to
   exactly today's serialized shape (`{period, rows}` with the legacy
   participant fields: `email`, `name`, `role`, `fork_min`, `fork_max`,

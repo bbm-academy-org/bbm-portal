@@ -15,6 +15,7 @@ import {
 } from '@/lib/hours'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
+import { auditEventsFor, auditWatermark } from './audit-helpers'
 import {
   fixtureWrite,
   seedMember,
@@ -33,12 +34,14 @@ const TEST_ACTOR = { actorEmail: 'anton@bbm.academy', source: 'portal' } as cons
 /**
  * The spec-100 publication batch on `core` (spec 124: EARS-6, EARS-22, EARS-31).
  *
- * The batch is the one node of the document that is NOT relational — a `jsonb`
- * array whose element order and length are a correctness property, because
- * delivery addresses messages BY INDEX (spec 100 req. 2/10). So the assertions
- * here are about the array surviving N rewrites unchanged, and about the
- * fingerprint's input being pinned to the legacy participant fields, which is
- * what keeps an unrelated `member` touch from invalidating a correct preview.
+ * Since #274 (spec 201 EARS-31) the batch's messages are rows of
+ * `core.hours_publication_message`, keyed `(period_id, position)`, and delivery
+ * addresses a message BY POSITION (spec 100 req. 2/10) rather than by an index
+ * into a `jsonb` array. So the assertions here are about the legacy array being
+ * rebuilt from those rows unchanged across N delivery steps, about a delivery
+ * step touching exactly ONE row, and about the fingerprint's input being pinned
+ * to the legacy participant fields, which is what keeps an unrelated `member`
+ * touch from invalidating a correct preview.
  */
 
 const db = getPlatformDb()
@@ -184,6 +187,89 @@ describe('the publication batch (EARS-6)', () => {
       setPeriodStatus(current, PERIOD, 'open'),
     )
     expect(reopened.ok).toBe(false)
+  })
+})
+
+describe('delivery addresses a message by position (EARS-31 step 3)', () => {
+  it('writes one child row per message at its position, in preview order', async () => {
+    await seedPeriodWithTwoAssessments()
+    await startBatch()
+
+    const { rows } = await db.execute<{ position: number; email: string; delivery: string }>(
+      sql`select "position", email, delivery from core.hours_publication_message
+          where period_id = ${PERIOD} order by "position"`,
+    )
+    expect(rows).toEqual([
+      { position: 0, email: 'anton@bbm.academy', delivery: 'pending' },
+      { position: 1, email: 'eduard@bbm.academy', delivery: 'pending' },
+    ])
+  })
+
+  it('a delivery step updates exactly the row at that position and leaves the others alone', async () => {
+    await seedPeriodWithTwoAssessments()
+    await startBatch()
+
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
+      recordPublicationDelivery(doc, PERIOD, 0, 'sent', '2026-08-03T09:01:00.000Z'),
+    )
+
+    const { rows } = await db.execute<{
+      position: number
+      delivery: string
+      sent_at: string | null
+    }>(
+      sql`select "position", delivery, sent_at from core.hours_publication_message
+          where period_id = ${PERIOD} order by "position"`,
+    )
+    expect(rows).toEqual([
+      { position: 0, delivery: 'sent', sent_at: '2026-08-03T09:01:00.000Z' },
+      { position: 1, delivery: 'pending', sent_at: null },
+    ])
+  })
+
+  it('an already-delivered message of a `sending` batch is not re-sent — the replayed position is refused', async () => {
+    await seedPeriodWithTwoAssessments()
+    await startBatch()
+
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
+      recordPublicationDelivery(doc, PERIOD, 0, 'sent', '2026-08-03T09:01:00.000Z'),
+    )
+    const replay = await mutateHoursDocument(TEST_ACTOR, (doc) =>
+      recordPublicationDelivery(doc, PERIOD, 0, 'sent', '2026-08-03T09:03:00.000Z'),
+    )
+    expect(replay.ok).toBe(false)
+    if (replay.ok) throw new Error('unreachable')
+    expect(replay.error).toBe('Сообщение уже обработано или не найдено.')
+
+    // The delivered row kept its own timestamp — the replay changed nothing.
+    const { rows } = await db.execute<{ sent_at: string | null }>(
+      sql`select sent_at from core.hours_publication_message
+          where period_id = ${PERIOD} and "position" = 0`,
+    )
+    expect(rows[0].sent_at).toBe('2026-08-03T09:01:00.000Z')
+  })
+
+  it('the audit ledger records one small diff per delivery step, naming the composite pk', async () => {
+    await seedPeriodWithTwoAssessments()
+    await startBatch()
+    const mark = await auditWatermark(db)
+
+    await mutateHoursDocument(TEST_ACTOR, (doc) =>
+      recordPublicationDelivery(doc, PERIOD, 0, 'sent', '2026-08-03T09:01:00.000Z'),
+    )
+
+    // ONE row, naming ONE message — the whole reason EARS-31 normalises the
+    // batch. On the old `jsonb` column the same step would have been «the
+    // messages array changed», once per delivered message.
+    const events = await auditEventsFor(db, mark, 'hours_publication_message')
+    expect(events).toHaveLength(1)
+    expect(events[0].event_type).toBe('data.hours_publication_message.update')
+    expect(events[0].pk).toEqual({ period_id: PERIOD, position: 0 })
+    expect(Object.keys(events[0].diff).sort()).toEqual(['delivery', 'sent_at'])
+    expect(events[0].diff.delivery).toEqual({ old: 'pending', new: 'sent' })
+    expect(events[0].diff.sent_at).toEqual({ old: null, new: '2026-08-03T09:01:00.000Z' })
+    expect(events[0].actor_email).toBe('anton@bbm.academy')
+    expect(events[0].source).toBe('portal')
   })
 })
 

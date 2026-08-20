@@ -232,14 +232,23 @@ export function createPublicationBatch(
 }
 
 /**
- * Persists one delivery outcome. Only the next pending message of an active
- * `sending` batch may move; incomplete/published batches are immutable because
- * an incoming webhook has no post id with which to make a retry idempotent.
+ * Persists one delivery outcome, addressed by the message's `position`.
+ *
+ * Only the next pending message of an active `sending` batch may move;
+ * incomplete/published batches are immutable because an incoming webhook has no
+ * post id with which to make a retry idempotent.
+ *
+ * `position` is the storage-level identity of the message since #274 (spec 201
+ * EARS-31): `core.hours_publication_message` is keyed `(period_id, position)`,
+ * and this call is what turns into the UPDATE of that one row. Inside the
+ * document the messages array is indexed BY position — `src/lib/hours/core/load.ts`
+ * rebuilds it sorted on the column and refuses a gap — so the lookup below is
+ * positional and the two cannot drift apart.
  */
 export function recordPublicationDelivery(
   doc: HoursDocument,
   periodId: string,
-  messageIndex: number,
+  position: number,
   delivery: 'sent' | 'failed' | 'unknown',
   at: string,
 ): PublicationMutationResult {
@@ -258,16 +267,19 @@ export function recordPublicationDelivery(
       error: 'Эта попытка уже завершена — автоматический повтор заблокирован.',
     }
   }
-  const message = existing.messages[messageIndex]
+  const message = existing.messages[position]
+  // An already-delivered message is never re-sent: `pending` is the only state a
+  // delivery outcome may be recorded against, so a replayed call at a position
+  // that is already `sent` is refused rather than re-attempted.
   if (!message || message.delivery !== 'pending') {
     return { ok: false, error: 'Сообщение уже обработано или не найдено.' }
   }
-  if (existing.messages.slice(0, messageIndex).some((candidate) => candidate.delivery !== 'sent')) {
+  if (existing.messages.slice(0, position).some((candidate) => candidate.delivery !== 'sent')) {
     return { ok: false, error: 'Сообщения должны отправляться последовательно.' }
   }
 
-  const messages = existing.messages.map((candidate, index) =>
-    index === messageIndex
+  const messages = existing.messages.map((candidate, candidatePosition) =>
+    candidatePosition === position
       ? {
           ...candidate,
           delivery,

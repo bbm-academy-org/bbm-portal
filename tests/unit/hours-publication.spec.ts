@@ -48,7 +48,7 @@ interface PublicationApi {
   recordPublicationDelivery: (
     doc: PublicationDocument,
     periodId: string,
-    messageIndex: number,
+    position: number,
     delivery: 'sent' | 'failed' | 'unknown',
     at: string,
   ) =>
@@ -317,6 +317,104 @@ describe('eligibility and immutable batch (spec 100 requirements 6, 8–9, 15)',
     const result = createPublicationBatch(source, 'p-july', stale, '2026-08-02T00:00:00.000Z')
     expect(result.ok).toBe(false)
     expect(source.publications ?? []).toEqual([])
+  })
+})
+
+describe('delivery is addressed by position (spec 201 EARS-31 step 3)', () => {
+  /**
+   * `position` is the storage-level identity of a message since #274:
+   * `core.hours_publication_message` is keyed `(period_id, position)`, and
+   * `src/lib/hours/core/load.ts` rebuilds the document array sorted on that
+   * column and refuses a gap. These tests pin the domain half of that contract —
+   * the argument names WHICH message moves, and nothing else moves with it.
+   */
+  async function sendingBatch() {
+    const { buildMattermostPreview, createPublicationBatch, recordPublicationDelivery } =
+      await publicationApi()
+    const source = document()
+    const preview = buildMattermostPreview(source, 'p-july')
+    const created = createPublicationBatch(
+      source,
+      'p-july',
+      preview.preview_fingerprint,
+      '2026-08-02T00:00:00.000Z',
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) throw new Error(created.error)
+    return { doc: created.doc, saved: created.saved, recordPublicationDelivery }
+  }
+
+  it('moves exactly the message at the given position and leaves its neighbours untouched', async () => {
+    const { doc, saved, recordPublicationDelivery } = await sendingBatch()
+    expect(saved.messages.length).toBeGreaterThan(1)
+    const before = structuredClone(saved.messages)
+
+    const progressed = recordPublicationDelivery(
+      doc,
+      'p-july',
+      0,
+      'sent',
+      '2026-08-02T00:00:01.000Z',
+    )
+    expect(progressed.ok).toBe(true)
+    if (!progressed.ok) throw new Error(progressed.error)
+
+    const messages = progressed.saved.messages
+    expect(messages[0]).toEqual({
+      ...before[0],
+      delivery: 'sent',
+      sent_at: '2026-08-02T00:00:01.000Z',
+    })
+    expect(messages.slice(1)).toEqual(before.slice(1))
+    // The recipients and their order are the invariant spec 100 req. 2/10 states.
+    expect(messages.map((message) => message.email)).toEqual(before.map((message) => message.email))
+  })
+
+  it('refuses a position out of order — messages go strictly in preview order', async () => {
+    const { doc, recordPublicationDelivery } = await sendingBatch()
+    const outOfOrder = recordPublicationDelivery(
+      doc,
+      'p-july',
+      1,
+      'sent',
+      '2026-08-02T00:00:01.000Z',
+    )
+    expect(outOfOrder.ok).toBe(false)
+    if (outOfOrder.ok) throw new Error('unreachable')
+    expect(outOfOrder.error).toBe('Сообщения должны отправляться последовательно.')
+  })
+
+  it('never re-sends an already delivered message: a replayed position is refused', async () => {
+    const { doc, recordPublicationDelivery } = await sendingBatch()
+    const first = recordPublicationDelivery(doc, 'p-july', 0, 'sent', '2026-08-02T00:00:01.000Z')
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.error)
+
+    const replay = recordPublicationDelivery(
+      first.doc,
+      'p-july',
+      0,
+      'sent',
+      '2026-08-02T00:00:09.000Z',
+    )
+    expect(replay.ok).toBe(false)
+    if (replay.ok) throw new Error('unreachable')
+    expect(replay.error).toBe('Сообщение уже обработано или не найдено.')
+    expect(first.saved.messages[0].sent_at).toBe('2026-08-02T00:00:01.000Z')
+  })
+
+  it('refuses a position that names no message', async () => {
+    const { doc, saved, recordPublicationDelivery } = await sendingBatch()
+    const missing = recordPublicationDelivery(
+      doc,
+      'p-july',
+      saved.messages.length,
+      'sent',
+      '2026-08-02T00:00:01.000Z',
+    )
+    expect(missing.ok).toBe(false)
+    if (missing.ok) throw new Error('unreachable')
+    expect(missing.error).toBe('Сообщение уже обработано или не найдено.')
   })
 })
 

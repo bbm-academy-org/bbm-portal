@@ -84,6 +84,7 @@ export const AUDIT_VALUE_WHITELIST = {
     'weekday_count',
     'saved_at',
   ],
+  hours_publication_message: ['period_id', 'position', 'email', 'text', 'delivery', 'sent_at'],
 }
 
 /** A rationale that is present but says nothing is itself a finding (EARS-19). */

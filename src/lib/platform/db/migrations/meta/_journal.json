@@ -29,6 +29,13 @@
       "when": 1787141820414,
       "tag": "0003_universal_edit_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787146290403,
+      "tag": "0004_hours_publication_message",
+      "breakpoints": true
     }
   ]
 }

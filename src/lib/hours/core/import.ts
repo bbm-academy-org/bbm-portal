@@ -33,6 +33,7 @@ import { findMemberByEmail } from '@/lib/member'
 import { hoursAssessment } from '@/lib/platform/db/schema/hours/hours-assessment'
 import { hoursParticipant } from '@/lib/platform/db/schema/hours/hours-participant'
 import { hoursPeriod } from '@/lib/platform/db/schema/hours/hours-period'
+import { hoursPublicationMessage } from '@/lib/platform/db/schema/hours/hours-publication-message'
 import { hoursPublication } from '@/lib/platform/db/schema/hours/hours-publication'
 
 import type { HoursTx } from './db'
@@ -58,6 +59,7 @@ export type HoursRowCounts = {
   participants: number
   assessments: number
   publications: number
+  messages: number
 }
 
 /** The table names as the refusal prints them, next to their counts. */
@@ -66,10 +68,11 @@ const TABLE_NAMES: Record<keyof HoursRowCounts, string> = {
   participants: 'core.hours_participant',
   assessments: 'core.hours_assessment',
   publications: 'core.hours_publication',
+  messages: 'core.hours_publication_message',
 }
 
 /**
- * Current row counts of the four hours tables.
+ * Current row counts of the five hours tables.
  *
  * Sequential, not `Promise.all`: these run on ONE transaction handle, i.e. one pg
  * client, and overlapping queries on a single client are deprecated in pg 8 and
@@ -82,11 +85,17 @@ export async function countHoursRows(tx: HoursTx): Promise<HoursRowCounts> {
   const participants = await tx.select({ n: count() }).from(hoursParticipant)
   const assessments = await tx.select({ n: count() }).from(hoursAssessment)
   const publications = await tx.select({ n: count() }).from(hoursPublication)
+  // The child table of #274. The FK makes an orphan message impossible, so it
+  // adds nothing to the emptiness pre-check — it is the POST-import comparison
+  // it belongs in: without it, «written vs expected» stops proving that every
+  // message of every batch was actually written.
+  const messages = await tx.select({ n: count() }).from(hoursPublicationMessage)
   return {
     periods: Number(periods[0]?.n ?? 0),
     participants: Number(participants[0]?.n ?? 0),
     assessments: Number(assessments[0]?.n ?? 0),
     publications: Number(publications[0]?.n ?? 0),
+    messages: Number(messages[0]?.n ?? 0),
   }
 }
 
@@ -118,8 +127,9 @@ export async function assertHoursTablesEmpty(tx: HoursTx): Promise<void> {
  * Every email the document needs a `member` for, in first-seen order.
  *
  * Participants and assessments, because both carry a `member_id` column. NOT the
- * publication messages: a delivery record is frozen history stored as `jsonb`
- * verbatim, and its addressee may well have left the team since.
+ * publication messages: a delivery record is frozen history, carried verbatim
+ * into `core.hours_publication_message`, and its addressee may well have left the
+ * team since.
  */
 export function documentEmails(doc: HoursDocument): string[] {
   const emails: string[] = []
@@ -239,8 +249,24 @@ export async function importDocument(tx: HoursTx, doc: HoursDocument): Promise<H
       startedAt: publication.started_at,
       publishedAt: publication.published_at,
       previewFingerprint: publication.preview_fingerprint,
+      // Dual-write until the contract release (#281) drops the column — see the
+      // header of `./persist.ts` and `docs/runbooks/migrations-expand-contract.md`.
       messages: publication.messages,
     })
+    // One row per message, the array ordinal as the explicit `position` (#274,
+    // spec 201 EARS-31) — the same assignment the migration's backfill makes for
+    // the batches that were already stored, and the order delivery addresses
+    // (spec 100 req. 2/10).
+    for (const [position, message] of publication.messages.entries()) {
+      await tx.insert(hoursPublicationMessage).values({
+        periodId: publication.period_id,
+        position,
+        email: message.email,
+        text: message.text,
+        delivery: message.delivery,
+        sentAt: message.sent_at ?? null,
+      })
+    }
   }
 
   const written = await countHoursRows(tx)
@@ -249,6 +275,7 @@ export async function importDocument(tx: HoursTx, doc: HoursDocument): Promise<H
     participants: doc.participants.length,
     assessments: doc.assessments.length,
     publications: (doc.publications ?? []).length,
+    messages: (doc.publications ?? []).reduce((n, p) => n + p.messages.length, 0),
   }
   // A silent short write is the failure this import cannot be allowed to have:
   // the verdict of EARS-27 would still be computed, but on a document nobody
