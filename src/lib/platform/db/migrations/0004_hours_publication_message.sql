@@ -63,10 +63,26 @@ ALTER TABLE "core"."hours_publication_message" ADD CONSTRAINT "hours_publication
 -- strand the batch. `->>` yields SQL NULL for a JSON `null`, which is exactly
 -- what an unsent message's `sent_at` must become.
 --
--- `ON CONFLICT DO NOTHING` makes the statement RE-RUNNABLE: it is the same
--- statement the contract release (#281) runs again to sweep up anything an app
--- rollback wrote into the old representation in between, and it is what the
--- integration test executes twice to assert idempotency.
+-- `ON CONFLICT … DO UPDATE` makes the statement RE-RUNNABLE **and
+-- RECONCILING**, which is what the contract release (#281) actually needs of it.
+-- `DO NOTHING` would not have been enough, and the shortfall would have been
+-- silent: in an app-rollback window the previous code writes the `jsonb` array
+-- ONLY, and for a batch that already existed at expand time every delivery it
+-- records is an UPDATE of `delivery`/`sent_at` at a position whose child row is
+-- already there. `DO NOTHING` skips exactly those rows, so the re-run would
+-- sweep up only batches CREATED during the window and drop precisely the
+-- per-message flags the paragraph above calls the point rather than a detail —
+-- and the new code would then re-send messages real people already received.
+--
+-- Taking the `jsonb` array as authoritative on conflict is right in both
+-- directions. While the new code runs, dual-write (`src/lib/hours/core/persist.ts`)
+-- keeps the two representations identical, so the UPDATE is a no-op by value; in
+-- the rollback window the array is by construction the newer of the two. The
+-- `WHERE … IS DISTINCT FROM` guard keeps «no-op by value» literal: an unchanged
+-- row is not written at all, so a re-run neither churns the heap nor asks
+-- `core.audit_row_change()` to decide the diff is empty. Idempotency is
+-- therefore still exactly what the integration test asserts by executing the
+-- statement twice, and reconciliation is asserted next to it.
 --
 -- The two markers below are read by
 -- `tests/int/platform/hours-publication-message.int.spec.ts`, which runs THIS
@@ -92,7 +108,19 @@ SELECT
 FROM "core"."hours_publication" AS publication
 CROSS JOIN LATERAL jsonb_array_elements(publication."messages")
 	WITH ORDINALITY AS element("value", "ordinality")
-ON CONFLICT ("period_id", "position") DO NOTHING;
+ON CONFLICT ("period_id", "position") DO UPDATE SET
+	"email"    = EXCLUDED."email",
+	"text"     = EXCLUDED."text",
+	"delivery" = EXCLUDED."delivery",
+	"sent_at"  = EXCLUDED."sent_at"
+WHERE (
+	"hours_publication_message"."email",
+	"hours_publication_message"."text",
+	"hours_publication_message"."delivery",
+	"hours_publication_message"."sent_at"
+) IS DISTINCT FROM (
+	EXCLUDED."email", EXCLUDED."text", EXCLUDED."delivery", EXCLUDED."sent_at"
+);
 -- <<< backfill
 --> statement-breakpoint
 

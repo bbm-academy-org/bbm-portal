@@ -59,6 +59,7 @@ export type HoursRowCounts = {
   participants: number
   assessments: number
   publications: number
+  messages: number
 }
 
 /** The table names as the refusal prints them, next to their counts. */
@@ -67,10 +68,11 @@ const TABLE_NAMES: Record<keyof HoursRowCounts, string> = {
   participants: 'core.hours_participant',
   assessments: 'core.hours_assessment',
   publications: 'core.hours_publication',
+  messages: 'core.hours_publication_message',
 }
 
 /**
- * Current row counts of the four hours tables.
+ * Current row counts of the five hours tables.
  *
  * Sequential, not `Promise.all`: these run on ONE transaction handle, i.e. one pg
  * client, and overlapping queries on a single client are deprecated in pg 8 and
@@ -83,11 +85,17 @@ export async function countHoursRows(tx: HoursTx): Promise<HoursRowCounts> {
   const participants = await tx.select({ n: count() }).from(hoursParticipant)
   const assessments = await tx.select({ n: count() }).from(hoursAssessment)
   const publications = await tx.select({ n: count() }).from(hoursPublication)
+  // The child table of #274. The FK makes an orphan message impossible, so it
+  // adds nothing to the emptiness pre-check — it is the POST-import comparison
+  // it belongs in: without it, «written vs expected» stops proving that every
+  // message of every batch was actually written.
+  const messages = await tx.select({ n: count() }).from(hoursPublicationMessage)
   return {
     periods: Number(periods[0]?.n ?? 0),
     participants: Number(participants[0]?.n ?? 0),
     assessments: Number(assessments[0]?.n ?? 0),
     publications: Number(publications[0]?.n ?? 0),
+    messages: Number(messages[0]?.n ?? 0),
   }
 }
 
@@ -267,6 +275,7 @@ export async function importDocument(tx: HoursTx, doc: HoursDocument): Promise<H
     participants: doc.participants.length,
     assessments: doc.assessments.length,
     publications: (doc.publications ?? []).length,
+    messages: (doc.publications ?? []).reduce((n, p) => n + p.messages.length, 0),
   }
   // A silent short write is the failure this import cannot be allowed to have:
   // the verdict of EARS-27 would still be computed, but on a document nobody

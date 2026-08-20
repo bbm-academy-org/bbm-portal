@@ -5,6 +5,7 @@ import path from 'node:path'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
+import { readHoursDocument } from '@/lib/hours'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import { refusalText } from './audit-helpers'
@@ -14,7 +15,7 @@ import { fixtureWrite, seedPeriod, truncateHoursTables } from './hours-core-help
  * `core.hours_publication_message` — the expand and the backfill (spec 201
  * EARS-31 steps 1–2, issue #274).
  *
- * Two questions this file answers against the REALLY migrated database:
+ * Three questions this file answers against the REALLY migrated database:
  *
  *  1. **Shape.** The table exists with the FK to `core.hours_publication`, the
  *     `UNIQUE (period_id, position)` — delivered as the composite PRIMARY KEY,
@@ -27,13 +28,18 @@ import { fixtureWrite, seedPeriod, truncateHoursTables } from './hours-core-help
  *     `sending` batch blocks period mutations (spec 100 req. 12/15), and a
  *     cutover that lost the per-message flags would either re-send delivered
  *     messages or strand the batch.
+ *  3. **The Release-A read fallback.** A batch that an app rollback created with
+ *     no child rows at all is still read whole, from the legacy `jsonb` column
+ *     (`docs/runbooks/migrations-expand-contract.md`, «The two-release split»).
  *
  * The backfill assertion runs **the statement the migration ships**, extracted
  * from the file between its two markers, rather than a re-typed copy of it: the
  * migration has already been applied by the time a test runs, so a copy here
  * would prove a second implementation correct and say nothing about the shipped
- * one. Re-running it over a freshly seeded legacy row is also how its
- * idempotency is asserted (it is `ON CONFLICT DO NOTHING`).
+ * one. Re-running it over a freshly seeded legacy row is how its idempotency is
+ * asserted, and re-running it after the legacy array has MOVED ON — the app
+ * rollback's signature — is how its reconciliation is (`ON CONFLICT … DO UPDATE`,
+ * the `jsonb` array authoritative in that window).
  */
 
 const db = getPlatformDb()
@@ -274,5 +280,154 @@ describe('the backfill (EARS-31 step 2)', () => {
 
     expect(await childRows('p-july')).toEqual(first)
     expect(first).toHaveLength(2)
+  })
+
+  it('reconciles a position the legacy array moved on for — the app-rollback window (#281)', async () => {
+    // The window the re-run exists for: the previous app code writes the `jsonb`
+    // array ONLY, and for a batch that already had child rows every delivery it
+    // records is an UPDATE at an EXISTING position. `DO NOTHING` would skip
+    // exactly those and leave `pending` where the message was in fact sent — and
+    // the rolled-forward code would then re-send it.
+    await seedPeriod({ id: 'p-july', label: 'Июль', from: '2026-07-01', to: '2026-07-31' })
+    await seedLegacyPublication({
+      periodId: 'p-july',
+      status: 'sending',
+      publishedAt: null,
+      messages: [
+        { email: 'anton@bbm.academy', text: 'первое', delivery: 'pending', sent_at: null },
+        { email: 'eduard@bbm.academy', text: 'второе', delivery: 'pending', sent_at: null },
+      ],
+    })
+
+    const statement = await backfillStatement()
+    await fixtureWrite((tx) => tx.execute(sql.raw(statement)))
+    expect((await childRows('p-july')).map((row) => row.delivery)).toEqual(['pending', 'pending'])
+
+    // The rolled-back app delivers message 0, into the array and nowhere else.
+    await fixtureWrite((tx) =>
+      tx.execute(sql`update core.hours_publication
+        set messages = jsonb_set(
+          jsonb_set(messages, '{0,delivery}', '"sent"'),
+          '{0,sent_at}', '"2026-08-03T09:01:00.000Z"')
+        where period_id = 'p-july'`),
+    )
+
+    await fixtureWrite((tx) => tx.execute(sql.raw(statement)))
+
+    expect(await childRows('p-july')).toEqual([
+      {
+        position: 0,
+        email: 'anton@bbm.academy',
+        text: 'первое',
+        delivery: 'sent',
+        sent_at: '2026-08-03T09:01:00.000Z',
+      },
+      {
+        position: 1,
+        email: 'eduard@bbm.academy',
+        text: 'второе',
+        delivery: 'pending',
+        sent_at: null,
+      },
+    ])
+  })
+
+  it('writes no row for a batch whose array is empty', async () => {
+    // `CROSS JOIN LATERAL jsonb_array_elements` drops the parent row when the
+    // array has no elements — asserted rather than left to be noticed, because
+    // the alternative (a LEFT JOIN LATERAL) would insert a row of NULLs and hit
+    // the NOT NULLs sideways.
+    await seedPeriod({ id: 'p-july', label: 'Июль', from: '2026-07-01', to: '2026-07-31' })
+    await seedLegacyPublication({
+      periodId: 'p-july',
+      status: 'incomplete',
+      publishedAt: null,
+      messages: [],
+    })
+
+    const statement = await backfillStatement()
+    await fixtureWrite((tx) => tx.execute(sql.raw(statement)))
+
+    expect(await childRows('p-july')).toEqual([])
+  })
+})
+
+describe('the read fallback of Release A (expand/contract)', () => {
+  it('reads a batch that has no child rows out of the legacy jsonb column', async () => {
+    // The shape an app rollback leaves behind: the previous code created the
+    // batch, so it exists in `messages` and in no child row. Without the
+    // fallback this loads as a `sending` publication with zero messages — a
+    // period locked for mutation (spec 100 req. 12/15) with nobody to deliver to.
+    await seedPeriod({ id: 'p-july', label: 'Июль', from: '2026-07-01', to: '2026-07-31' })
+    await seedLegacyPublication({
+      periodId: 'p-july',
+      status: 'sending',
+      publishedAt: null,
+      messages: [
+        {
+          email: 'anton@bbm.academy',
+          text: 'первое',
+          delivery: 'sent',
+          sent_at: '2026-08-03T09:01:00.000Z',
+        },
+        { email: 'eduard@bbm.academy', text: 'второе', delivery: 'pending', sent_at: null },
+      ],
+    })
+
+    expect(await childRows('p-july')).toEqual([])
+
+    const publication = (await readHoursDocument()).publications?.[0]
+    expect(publication?.messages).toEqual([
+      {
+        email: 'anton@bbm.academy',
+        text: 'первое',
+        delivery: 'sent',
+        sent_at: '2026-08-03T09:01:00.000Z',
+      },
+      { email: 'eduard@bbm.academy', text: 'второе', delivery: 'pending', sent_at: null },
+    ])
+    // Key order too: the fallback is on the export path (spec 124 EARS-11).
+    expect(JSON.stringify(publication?.messages[1])).toBe(
+      '{"email":"eduard@bbm.academy","text":"второе","delivery":"pending","sent_at":null}',
+    )
+  })
+
+  it('prefers the child rows once they exist — the array is not consulted', async () => {
+    await seedPeriod({ id: 'p-july', label: 'Июль', from: '2026-07-01', to: '2026-07-31' })
+    await seedLegacyPublication({
+      periodId: 'p-july',
+      status: 'sending',
+      publishedAt: null,
+      messages: [
+        { email: 'anton@bbm.academy', text: 'из массива', delivery: 'pending', sent_at: null },
+      ],
+    })
+    await fixtureWrite((tx) =>
+      tx.execute(sql`insert into core.hours_publication_message
+        (period_id, "position", email, text, delivery, sent_at)
+        values ('p-july', 0, 'anton@bbm.academy', 'из таблицы', 'sent', '2026-08-03T09:01:00.000Z')`),
+    )
+
+    const publication = (await readHoursDocument()).publications?.[0]
+    expect(publication?.messages).toEqual([
+      {
+        email: 'anton@bbm.academy',
+        text: 'из таблицы',
+        delivery: 'sent',
+        sent_at: '2026-08-03T09:01:00.000Z',
+      },
+    ])
+  })
+
+  it('refuses a corrupted legacy array instead of loading a broken batch', async () => {
+    await seedPeriod({ id: 'p-july', label: 'Июль', from: '2026-07-01', to: '2026-07-31' })
+    await fixtureWrite((tx) =>
+      tx.execute(sql`insert into core.hours_publication
+        (period_id, status, started_at, published_at, preview_fingerprint, messages)
+        values ('p-july', 'sending', '2026-08-03T09:00:00.000Z', null, 'fingerprint',
+                '[{"email": "anton@bbm.academy"}]'::jsonb)`),
+    )
+
+    await expect(readHoursDocument()).rejects.toThrow(/повреждённое сообщение/)
   })
 })

@@ -74,7 +74,8 @@ async function rowCounts() {
       (select count(*) from core.hours_period) as periods,
       (select count(*) from core.hours_participant) as participants,
       (select count(*) from core.hours_assessment) as assessments,
-      (select count(*) from core.hours_publication) as publications`)
+      (select count(*) from core.hours_publication) as publications,
+      (select count(*) from core.hours_publication_message) as messages`)
   ).rows as Array<Record<string, string | number>>
   return Object.fromEntries(
     Object.entries(rows[0]).map(([table, count]) => [table, Number(count)]),
@@ -136,6 +137,7 @@ describe('the cutover import (EARS-13)', () => {
       participants: 3,
       assessments: 3,
       publications: 1,
+      messages: 2,
     })
 
     const core = await readHoursDocument()
@@ -193,6 +195,7 @@ describe('the cutover import (EARS-13)', () => {
       participants: 0,
       assessments: 0,
       publications: 0,
+      messages: 0,
     })
   })
 
@@ -206,6 +209,7 @@ describe('the cutover import (EARS-13)', () => {
       participants: 0,
       assessments: 0,
       publications: 0,
+      messages: 0,
     })
   })
 })

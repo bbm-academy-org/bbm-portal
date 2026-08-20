@@ -319,7 +319,9 @@ function sameMessage(a: PublicationMessage, b: PublicationMessage): boolean {
  * release expand only: while both representations are written,
  * `pnpm deploy:prod --rollback <sha>` stays an honest button, because the
  * previous app code still finds the array it reads. The child table is the one
- * that is READ (`./load.ts`); the column is write-only from here on.
+ * that is READ (`./load.ts`); the column is written here and read only as that
+ * file's Release-A fallback, for a batch an app rollback created with no child
+ * rows at all.
  *
  * A batch never gains or loses a message — it is frozen at creation (spec 100
  * req. 8/12) — so a length change is a caller bug and not an instruction to

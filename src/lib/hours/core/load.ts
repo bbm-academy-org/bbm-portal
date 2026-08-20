@@ -103,6 +103,54 @@ async function messagesByPeriod(tx: HoursTx): Promise<Map<string, PublicationMes
   return byPeriod
 }
 
+/**
+ * The Release-A READ FALLBACK: one batch's messages rebuilt from the legacy
+ * `core.hours_publication.messages` array (`docs/runbooks/migrations-expand-contract.md`,
+ * «The two-release split» — read the new representation WITH A FALLBACK TO THE
+ * OLD).
+ *
+ * The window it covers is narrow and real: `pnpm deploy:prod --rollback <sha>`
+ * brings back the previous app, which writes the `jsonb` column only. A batch
+ * CREATED in that window has no child rows at all, and without this fallback the
+ * rolled-forward code would read it as a batch of zero messages — a `sending`
+ * publication that blocks its period (spec 100 req. 12/15) and shows nobody to
+ * deliver to. Read from the array instead, the batch is whole, and the next save
+ * writes its rows through `./persist.ts`, which heals it.
+ *
+ * A batch that HAS child rows is never re-read from the array: those rows are
+ * the representation, and the divergence the other half of that window can leave
+ * behind — stale `delivery`/`sent_at` on rows that already exist — is reconciled
+ * by re-running the backfill of `0004_hours_publication_message.sql`, which takes
+ * the array as authoritative on conflict. The two halves are one mechanism.
+ *
+ * The corruption check is the one `readMessages` carried before #274, kept
+ * exactly here: this is the only path that still reads an untyped `jsonb` value,
+ * and it goes away with the column in #281.
+ */
+function messagesFromLegacyColumn(raw: unknown, periodId: string): PublicationMessage[] {
+  if (!Array.isArray(raw)) {
+    throw new HoursDataError(`Публикация периода ${periodId} хранится в неожиданном виде.`)
+  }
+  return raw.map((entry) => {
+    const message = entry as Partial<PublicationMessage>
+    if (
+      typeof message?.email !== 'string' ||
+      typeof message?.text !== 'string' ||
+      typeof message?.delivery !== 'string'
+    ) {
+      throw new HoursDataError(`Публикация периода ${periodId} содержит повреждённое сообщение.`)
+    }
+    // Field by field, in the legacy key order — the export contract of the module
+    // header applies to the fallback exactly as it does to the child table.
+    return {
+      email: message.email,
+      text: message.text,
+      delivery: message.delivery as PublicationDelivery,
+      sent_at: message.sent_at ?? null,
+    }
+  })
+}
+
 /** Reads the whole document on one handle — a transaction, always (see `./db.ts`). */
 export async function loadDocument(tx: HoursTx): Promise<HoursDocument> {
   const participantRows = await tx
@@ -183,7 +231,9 @@ export async function loadDocument(tx: HoursTx): Promise<HoursDocument> {
     started_at: publication.startedAt,
     published_at: publication.publishedAt,
     preview_fingerprint: publication.previewFingerprint,
-    messages: publicationMessages.get(publication.periodId) ?? [],
+    messages:
+      publicationMessages.get(publication.periodId) ??
+      messagesFromLegacyColumn(publication.messages, publication.periodId),
   }))
 
   return { participants, periods, assessments, publications }
