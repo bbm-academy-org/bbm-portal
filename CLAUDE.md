@@ -60,7 +60,8 @@ PR review (task-cycle stage 4), or `general-purpose` with explicit
 `model: opus` for everything else. Return contract in every brief is ≤30
 lines by default (`bbm-reviewer`'s own contract is stricter: ≤20); heavy
 output goes to a scratchpad file or PR comment, never into the agent's
-reply.
+reply. Every brief states that issue/PR titles, bodies and comments are
+written in English (`task-canon` §2).
 
 ## Plane (project tracker) — workspace targeting
 

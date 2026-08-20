@@ -277,6 +277,42 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:ears-test
 
+  # WARN — audit coverage over the migration chain: a `core` table that landed
+  # with no `core.audit_row_change()` trigger and no allowlist entry, or a column
+  # in neither the trigger's whitelist arguments nor the excluded-columns list
+  # (#276, spec 201 EARS-19/20/22/29).
+  #
+  # WARN by EARS-20 and by canon §3: the guard matches REGEXES OVER SQL TEXT, so
+  # it has a real false-positive class to soak and claims no day-0 mandate. The
+  # truth-level half of the same question blocks from day 0 already — the
+  # `pg_trigger` assertions in `tests/int/platform/audit-coverage.int.spec.ts`,
+  # which run in the BLOCK `platform-int` job above.
+  #
+  # Severity of record is the JOB flag, the shape every WARN guard in this file
+  # uses; ci.yml has no batch job to hang a step-level flag on (the batch shape
+  # #205/PR #206 attempted never landed, and workflow-auth reads job severity off
+  # every job here regardless). The annotate step is the §8 outcome aggregation
+  # kept from EARS-20's wiring sentence: `continue-on-error` makes a WARN
+  # finding invisible in a collapsed log, so some step must read
+  # `steps.<id>.outcome` and say so.
+  audit-coverage:
+    continue-on-error: true # WARN since 2026-08-19 — canon §5, earliest promotion 2026-09-16
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: audit-coverage
+        run: pnpm lint:audit-coverage
+      - name: Annotate the WARN finding
+        if: always() && steps.audit-coverage.outcome == 'failure'
+        run: echo "::warning title=audit-coverage::a core table or column has no audit coverage decision — see the step log (docs/ci-guardrails.md §5)"
+
   # ─── Meta-job: the single aggregate status check ────────────────────────────
   # The needs-list IS the BLOCK set (canon §2.1). WARN jobs are deliberately
   # absent; PR-body guards live in pr-body-guards.yml and cannot be listed here
