@@ -11,6 +11,7 @@ import {
   decideSecretEcho,
   hasSensitiveVarRef,
   isSensitivePath,
+  splitSegments,
 } from '../../tools/hooks/secret-echo-guard.mjs'
 import { decideMergeWarn } from '../../tools/hooks/merge-gate.mjs'
 
@@ -149,6 +150,35 @@ describe('secret-echo-guard', () => {
     expect(decideSecretEcho('grep -rn "token" src/').block).toBe(false)
     expect(decideSecretEcho('cat src/theme/tokens.css').block).toBe(false)
     expect(decideSecretEcho("sed -n 's/secret=.*/x/p' app.log").block).toBe(false)
+  })
+
+  it('не считает паттерн поиска секретным ПУТЁМ — альтернация со словом secret (#268)', () => {
+    // Симптом: `\|` внутри кавычек резался общей разбивкой сегментов, обломок
+    // `"secret\` проходил `isSensitivePath` из-за обратного слэша, и поиск СЛОВА
+    // выглядел как чтение секретного файла.
+    expect(decideSecretEcho('grep -n -i "secret\\|deploy" some-file').block).toBe(false)
+    expect(decideSecretEcho('grep -n -i secret\\|deploy some-file').block).toBe(false)
+    expect(decideSecretEcho('rg -n "token|credentials" tools/hooks').block).toBe(false)
+    expect(decideSecretEcho('grep -rn "api/secret" src/').block).toBe(false)
+    expect(decideSecretEcho('grep -e "secret" -e "token" README.md').block).toBe(false)
+  })
+
+  it('файловый операнд всё ещё судится: паттерн выкинут, путь — нет (#268)', () => {
+    expect(decideSecretEcho('grep foo .env.prod')).toMatchObject({ block: true, rule: 'reader' })
+    expect(decideSecretEcho('grep -r foo deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho("ssh host 'grep foo deploy/.env.prod'").block).toBe(true)
+    expect(decideSecretEcho('grep -e foo deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep -n TOKEN ~/.aws/credentials').block).toBe(true)
+  })
+
+  it('разбивка сегментов уважает кавычки и экранирование (#268)', () => {
+    // Разделители ВНЕ кавычек по-прежнему разделяют — иначе `env | grep …`
+    // перестал бы ловиться как дамп окружения (#262).
+    expect(splitSegments('env | grep -i plane')).toEqual(['env', 'grep -i plane'])
+    expect(splitSegments('cd deploy && cat .env.prod')).toEqual(['cd deploy', 'cat .env.prod'])
+    expect(splitSegments('grep "a|b" f')).toEqual(['grep "a|b" f'])
+    expect(splitSegments('grep a\\|b f')).toEqual(['grep a\\|b f'])
+    expect(decideSecretEcho('env | grep -i plane').block).toBe(true)
   })
 
   it('пропускает санкционированные способы: в файл и в переменную', () => {

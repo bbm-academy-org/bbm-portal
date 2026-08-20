@@ -29,10 +29,18 @@ import { describe, expect, it } from 'vitest'
  * no longer exist — no, or the next honest edit of the historical section reads
  * as a regression.
  */
+/**
+ * Read with the line endings normalised to LF (#269). Several assertions below
+ * match literal `\n`-terminated needles (`'pnpm deploy:prod\n'`, ```` ```bash\n ````),
+ * and a Windows checkout with `core.autocrlf=true` delivers this `.md` with CRLF —
+ * so the suite was red on every workstation here and green on the Linux CI runner
+ * for the same sha, the split that makes an agent doubt its own diff. The document
+ * content is what these tests are about; its EOL bytes are not.
+ */
 const RUNBOOK = readFileSync(
   resolve(import.meta.dirname, '../../docs/runbooks/hours-core-cutover.md'),
   'utf8',
-)
+).replace(/\r\n/g, '\n')
 
 describe('docs/runbooks/hours-core-cutover.md', () => {
   it('EARS-26: makes the dev rehearsal a stated precondition with a link to its record', () => {

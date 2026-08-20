@@ -33,7 +33,9 @@
 // способ), присваивание в переменную (`TOKEN=$(cat .env.prod)`), исходники с
 // «token» в имени (design tokens: .ts/.css/.md/…), префиксная форма
 // `env VAR=x cmd`, `docker inspect` с шаблоном, не тянущим Env,
-// `printenv <НЕСЕКРЕТНОЕ_ИМЯ>` (`printenv PATH`).
+// `printenv <НЕСЕКРЕТНОЕ_ИМЯ>` (`printenv PATH`), ПАТТЕРН поиска у
+// `grep`/`rg`/`sed`/`awk` (`grep -n -i "secret\|deploy" file` — поиск слова, а не
+// чтение секретного пути; #268), файловые операнды при этом судятся как раньше.
 // Известные пробелы (осознанные, гард — растяжка, а не песочница): намеренный
 // обход через переменную-конструктор (`C=co; docker compose ${C}nfig`), pty-
 // обёртки (`script`, `expect`), и разрыв кавычек в `bash -c "a && b"` — общая
@@ -54,6 +56,9 @@ export const READER_RE =
 /** Команды, печатающие свои аргументы как есть. */
 export const ECHO_RE = /^(echo|printf|write-host|write-output|write-information)$/i
 
+/** Читатели, у которых первый позиционный аргумент — ПАТТЕРН, а не файл. */
+export const PATTERN_READER_RE = /^(grep|egrep|fgrep|rg|sed|awk|select-string|sls)$/i
+
 /** Секретные слова в имени файла/переменной. */
 export const SECRET_WORD_RE =
   /(credential|secret|token|password|passwd|api[_-]?key|private[_-]?key)/i
@@ -61,12 +66,59 @@ export const SECRET_WORD_RE =
 /** Расширения исходников/доков: «token» там почти всегда про design tokens. */
 export const SOURCE_EXT_RE = /\.(ts|tsx|js|jsx|mjs|cjs|css|scss|sass|md|mdx|html|svg|snap)$/i
 
-/** Разбивка команды на сегменты: `;`, `&&`, `||`, `|`, перевод строки. */
+/**
+ * Разбивка команды на сегменты: `;`, `&&`, `||`, `|`, перевод строки — но ТОЛЬКО
+ * на разделителях, которые действительно разделяют команды (#268). Кавычки и
+ * экранирование обратным слэшем пропускаются как есть: до этой правки регулярка
+ * резала `grep -n -i "secret\|deploy" file` по `|` ВНУТРИ кавычек, и обломок
+ * `"secret\` доезжал до `isSensitivePath` уже без закрывающей кавычки — поиск
+ * СЛОВА выглядел как чтение секретного ПУТИ.
+ */
 export function splitSegments(command) {
-  return String(command || '')
-    .split(/\|\||&&|;|\n|\|/)
-    .map((s) => s.trim())
-    .filter(Boolean)
+  const src = String(command || '')
+  const out = []
+  let buf = ''
+  let quote = null
+  const flush = () => {
+    const s = buf.trim()
+    if (s) out.push(s)
+    buf = ''
+  }
+  for (let i = 0; i < src.length; i += 1) {
+    const ch = src[i]
+    if (quote) {
+      buf += ch
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      buf += ch
+      continue
+    }
+    if (ch === '\\') {
+      buf += ch + (src[i + 1] || '') // `\|` — экранированная труба, не разделитель
+      i += 1
+      continue
+    }
+    if (ch === '\n' || ch === ';') {
+      flush()
+      continue
+    }
+    if (ch === '|') {
+      flush()
+      if (src[i + 1] === '|') i += 1
+      continue
+    }
+    if (ch === '&' && src[i + 1] === '&') {
+      flush()
+      i += 1
+      continue
+    }
+    buf += ch
+  }
+  flush()
+  return out
 }
 
 /** Токены сегмента с сохранением кавычек как единого токена. */
@@ -102,6 +154,39 @@ export function isSensitivePath(arg) {
   if (/^\.env(\..+)?$/.test(base)) return !/\.example$/.test(base)
   if (SOURCE_EXT_RE.test(base)) return false
   return SECRET_WORD_RE.test(a)
+}
+
+/**
+ * Аргументы читателя-с-паттерном БЕЗ самого паттерна (#268). Поиск СЛОВА
+ * `secret` — не чтение секрета: команда печатает строки файла, совпавшие со
+ * словом, и ничего чувствительного не дампит. `-e X` / `--regexp X` / `-eX` /
+ * `--regexp=X` называют паттерн явно; иначе паттерн — первый непозиционный…
+ * точнее, первый НЕ-опционный токен. Всё остальное — включая настоящий файл
+ * паттернов `-f patterns.txt` и все файловые операнды — остаётся кандидатом на
+ * путь, поэтому `grep foo deploy/.env.prod` блокируется как и раньше.
+ */
+export function patternFreeArgs(args) {
+  const rest = []
+  let explicit = false
+  for (let i = 0; i < args.length; i += 1) {
+    const t = stripQuotes(args[i])
+    if (/^(-e|--regexp)$/.test(t)) {
+      explicit = true
+      i += 1 // паттерн идёт следующим токеном
+      continue
+    }
+    if (/^(--regexp=|-e.)/.test(t)) {
+      explicit = true
+      continue
+    }
+    rest.push(args[i])
+  }
+  if (explicit) return rest
+  const at = rest.findIndex((a) => {
+    const t = stripQuotes(a)
+    return t !== '' && t !== '-' && !t.startsWith('-')
+  })
+  return at === -1 ? rest : rest.filter((_, i) => i !== at)
 }
 
 /** Ссылка на переменную с секретным именем: `$TOKEN`, `${API_KEY}`, `$env:X`, `%SECRET%`. */
@@ -453,7 +538,8 @@ export function decideSecretEcho(command, depth = 0) {
 
     if (READER_RE.test(cmd)) {
       if (redirected) continue // вывод уходит в файл, а не в сессию
-      const hit = args.find((a) => isSensitivePath(a))
+      const candidates = PATTERN_READER_RE.test(cmd) ? patternFreeArgs(args) : args
+      const hit = candidates.find((a) => isSensitivePath(a))
       if (hit) return { block: true, command: cmd, arg: stripQuotes(hit), rule: 'reader' }
       continue
     }

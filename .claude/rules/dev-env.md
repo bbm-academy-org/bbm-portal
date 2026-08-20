@@ -1,31 +1,33 @@
-# Dev env — этот Windows-бокс
+# Dev env — this Windows box
 
-- **Node 22 обязателен** (`engines: ^22.22.1`, engine-strict). Системный Node
-  тут новее, поэтому в каждой bash-сессии первым делом:
-  `export PATH="$LOCALAPPDATA/node22:$PATH"` — портативная сборка лежит в
-  `%LOCALAPPDATA%\node22`. На Node 23/24 ломается tsx-лоадер Payload
-  (`node:crypto?tsx-namespace` ENOENT), а `pnpm patch-commit` отказывается
-  работать вовсе.
-- **Git — только `git -C <абсолютный корень>`.** `cd` в Bash-инструменте не
-  использовать: cwd между вызовами дрейфует, и команда уезжает в чужой
-  worktree. Каждая git-команда явно называет своё дерево.
-- **Порты dev-стенда: 3000–3009.** Redirect URI в dev-Zitadel зарегистрированы
-  ровно на этот диапазон (× `localhost`/`127.0.0.1` × оба callback-пути); стенд
-  на другом порту поднимется, но логин упадёт с `400 invalid_request`. Порт
-  берётся через `pnpm dev:ports`, стенд поднимается как `PORT=<n> pnpm dev` (не
-  `pnpm dev -- -p <n>`).
-- **Диапазон в дефолте provisioning:** `infra/dev-stand/idp/provision.sh`
-  генерирует из одних и тех же границ оба набора — redirect URI (порт × хост ×
-  callback-путь) и post-logout URI (порт × хост, голые origin'ы), — поэтому
-  переprovisioning ни один из них не сужает (#93, #170). Печать без обращения к
-  IdP: `--print-redirect-uris` и `--print-post-logout-uris` (по одному флагу за
-  раз, оба сразу — ошибка). **Расширение диапазона — не одна строка**, и полный
-  чеклист правок (плюс supervised-прогон в конце) намеренно живёт в одном месте:
+- **Node 22 is mandatory** (`engines: ^22.22.1`, engine-strict). The system Node
+  here is newer, so the first thing in every bash session is:
+  `export PATH="$LOCALAPPDATA/node22:$PATH"` — the portable build lives in
+  `%LOCALAPPDATA%\node22`. On Node 23/24 the Payload tsx loader breaks
+  (`node:crypto?tsx-namespace` ENOENT), and `pnpm patch-commit` refuses to work
+  at all.
+- **Git — only as `git -C <absolute root>`.** Do not use `cd` in the Bash tool:
+  the cwd drifts between calls, and the command ends up in someone else's
+  worktree. Every git command names its own tree explicitly.
+- **Dev-stand ports: 3000–3009.** The redirect URIs in the dev Zitadel are
+  registered for exactly this range (× `localhost`/`127.0.0.1` × both callback
+  paths); a stand on another port will come up, but the login fails with
+  `400 invalid_request`. The port is taken via `pnpm dev:ports`, the stand is
+  started as `PORT=<n> pnpm dev` (not `pnpm dev -- -p <n>`).
+- **The range in the provisioning default:** `infra/dev-stand/idp/provision.sh`
+  generates both sets from the same bounds — the redirect URIs (port × host ×
+  callback path) and the post-logout URIs (port × host, bare origins) — so a
+  re-provisioning narrows neither of them (#93, #170). Printing without talking
+  to the IdP: `--print-redirect-uris` and `--print-post-logout-uris` (one flag at
+  a time; both at once is an error). **Widening the range is not a one-liner**,
+  and the full checklist of edits (plus a supervised run at the end)
+  deliberately lives in one place:
   [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
-  §6, «Widening the range — the whole checklist». Числа наборов здесь не
-  дублируются: их канон — таблица в том же §6.
-- **Полный прогон `provision.sh` — операция по живому IdP:** он идемпотентен и
-  больше не сужает URI, но пишет в живой dev-Zitadel (роли, login-политика,
-  loginV2, тестовый юзер). Запускать осознанно, а не «на всякий случай».
-- Параллельные сессии, worktree и правила по чужим listener'ам:
+  §6, "Widening the range — the whole checklist". The set counts are not
+  duplicated here: their canon is the table in that same §6.
+- **A full `provision.sh` run is an operation against the live IdP:** it is
+  idempotent and no longer narrows the URIs, but it writes to the live dev
+  Zitadel (roles, login policy, loginV2, the test user). Run it deliberately,
+  not "just in case".
+- Parallel sessions, worktrees and the rules about other sessions' listeners:
   [`parallel-sessions.md`](./parallel-sessions.md).
