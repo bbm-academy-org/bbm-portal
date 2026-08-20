@@ -14,7 +14,7 @@ export interface OkrProjectConfig {
   order: number
 }
 
-/** Workspace `doctor-school`, projects DSG1–DSG5 (plane-cut-spec.md). */
+/** Workspace `doctor-school`, projects DSG1–DSG6 (plane-cut-spec.md). */
 export const OKR_WORKSPACE = 'doctor-school'
 
 export const OKR_PROJECTS: OkrProjectConfig[] = [
@@ -33,6 +33,7 @@ export const OKR_PROJECTS: OkrProjectConfig[] = [
     mission: 'business',
     order: 5,
   },
+  { projectId: 'a5e44420-398e-4a73-8d18-f4d0da45e23f', ident: 'DSG6', mission: 'both', order: 6 },
 ]
 
 export const GOAL_TITLE = 'Цель «Academy Doctor.School»'
