@@ -173,12 +173,26 @@ export const PATTERN_FLAG_RE = /^(-e|--regexp)$/
 export const PS_PATTERN_FLAG_RE = /^-pattern$/i
 
 /**
- * Опции читателей, съедающие СЛЕДУЮЩИЙ токен как своё значение. Только те, где
- * значение обязательно во всех читателях набора: `-r`/`-v`/`-F` намеренно НЕ
- * здесь — в grep это флаги без значения, и они съели бы файловый операнд.
+ * Опции, берущие паттерн ИЗ ФАЙЛА (`grep/rg -f p.txt`, `awk -f p.awk`,
+ * `sed -f s.sed`). Позиционного паттерна при них нет вовсе, поэтому выкидывать
+ * из кандидатов нечего: следующий токен — входной ФАЙЛ (ревью PR #302 r2).
+ */
+export const PATTERN_FILE_FLAG_RE = /^(-f|--file)$/
+/** Слитные формы тех же опций: `--file=p.txt`, `-fp.txt`. */
+export const PATTERN_FILE_JOINED_RE = /^(--file=|-f.)/
+
+/**
+ * Опции читателей, съедающие СЛЕДУЮЩИЙ токен как своё значение. Список
+ * НАМЕРЕННО минимален и состоит только из числовых опций, одинаковых во всех
+ * читателях набора: значение `-m`/`-A`/`-B`/`-C` не бывает путём, поэтому такая
+ * запись ничего не может спрятать. Флаги, у которых значение-таки путь
+ * (`-f`/`--file`), обрабатываются выше как «паттерн уже назван», а `-r`/`-v`/
+ * `-F`/`--include`/`--exclude`/`--label`/`-g` не здесь: в реальном grep они
+ * либо без значения, либо расходятся между читателями, и любая ошибка в эту
+ * сторону СТИРАЕТ файловый операнд из кандидатов.
  */
 export const VALUE_FLAG_RE =
-  /^(-f|-m|-A|-B|-C|-d|-g|--file|--max-count|--after-context|--before-context|--context|--include|--exclude|--exclude-dir|--label|--binary-files|--devices|--glob|--type|--max-depth)$/
+  /^(-m|-A|-B|-C|--max-count|--after-context|--before-context|--context)$/
 /** Параметры Select-String со значением — включая `-Path`, естественную форму на этом боксе. */
 export const PS_VALUE_FLAG_RE =
   /^-(path|literalpath|include|exclude|encoding|context|inputobject)$/i
@@ -186,11 +200,15 @@ export const PS_VALUE_FLAG_RE =
 /**
  * Аргументы читателя-с-паттерном БЕЗ самого паттерна (#268). Поиск СЛОВА
  * `secret` — не чтение секрета: команда печатает строки файла, совпавшие со
- * словом, и ничего чувствительного не дампит. `-e X` / `--regexp X` / `-eX` /
- * `--regexp=X` называют паттерн явно; иначе паттерн — первый непозиционный…
- * точнее, первый НЕ-опционный токен. Всё остальное — включая настоящий файл
- * паттернов `-f patterns.txt` и все файловые операнды — остаётся кандидатом на
- * путь, поэтому `grep foo deploy/.env.prod` блокируется как и раньше.
+ * словом, и ничего чувствительного не дампит.
+ *
+ * Инвариант: **файловый операнд не выкидывается никогда** — из кандидатов
+ * уходит ровно один токен, и только когда он действительно паттерн. Поэтому:
+ * `-e X` / `--regexp X` / `-eX` / `--regexp=X` / `-Pattern X` называют паттерн
+ * явно, `-f p.txt` / `--file=p.txt` берут его из файла (в обоих случаях
+ * позиционный поиск НЕ запускается), значение опции никогда не считается
+ * паттерном, а `--` заканчивает разбор опций — после него первый токен паттерн,
+ * даже если начинается с дефиса, а всё остальное файлы.
  */
 export function patternFreeArgs(args) {
   const rest = []
@@ -198,36 +216,55 @@ export function patternFreeArgs(args) {
   const positional = []
   let explicit = false
   let expectValue = false
+  let endOfOptions = false
   for (let i = 0; i < args.length; i += 1) {
     const t = stripQuotes(args[i])
-    if (!expectValue && (PATTERN_FLAG_RE.test(t) || PS_PATTERN_FLAG_RE.test(t))) {
-      explicit = true
-      i += 1 // паттерн идёт следующим токеном
-      continue
-    }
-    if (!expectValue && /^(--regexp=|-e.)/.test(t)) {
-      explicit = true
-      continue
-    }
-    if (!expectValue && (VALUE_FLAG_RE.test(t) || PS_VALUE_FLAG_RE.test(t))) {
-      rest.push(args[i])
-      positional.push(false)
-      expectValue = true
-      continue
+    if (!expectValue && !endOfOptions) {
+      if (t === '--') {
+        endOfOptions = true
+        rest.push(args[i])
+        positional.push(false)
+        continue
+      }
+      if (PATTERN_FLAG_RE.test(t) || PS_PATTERN_FLAG_RE.test(t)) {
+        explicit = true
+        i += 1 // паттерн идёт следующим токеном
+        continue
+      }
+      if (/^(--regexp=|-e.)/.test(t)) {
+        explicit = true
+        continue
+      }
+      if (PATTERN_FILE_FLAG_RE.test(t)) {
+        explicit = true
+        rest.push(args[i]) // сам файл паттернов остаётся кандидатом на путь
+        positional.push(false)
+        expectValue = true
+        continue
+      }
+      if (PATTERN_FILE_JOINED_RE.test(t)) {
+        explicit = true
+        rest.push(args[i])
+        positional.push(false)
+        continue
+      }
+      if (VALUE_FLAG_RE.test(t) || PS_VALUE_FLAG_RE.test(t)) {
+        rest.push(args[i])
+        positional.push(false)
+        expectValue = true
+        continue
+      }
     }
     rest.push(args[i])
-    // Значение опции — это её значение (файл!), а не паттерн.
-    positional.push(!expectValue)
+    // Значение опции — это её значение (файл!), а не паттерн. После `--`
+    // кандидатом становится и токен с дефисом: `grep -- -x file`.
+    // Пустая строка — валидный паттерн (`grep "" file` печатает файл целиком),
+    // и выкинуть надо ЕЁ, а не файловый операнд следом.
+    positional.push(!expectValue && (endOfOptions || (t !== '-' && !t.startsWith('-'))))
     expectValue = false
   }
   if (explicit) return rest
-  const at = rest.findIndex((a, i) => {
-    if (!positional[i]) return false
-    const t = stripQuotes(a)
-    // Пустая строка — валидный паттерн (`grep "" file` печатает файл целиком),
-    // и выкинуть надо ЕЁ, а не файловый операнд следом (ревью PR #302).
-    return t !== '-' && !t.startsWith('-')
-  })
+  const at = positional.findIndex(Boolean)
   return at === -1 ? rest : rest.filter((_, i) => i !== at)
 }
 

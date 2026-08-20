@@ -11,6 +11,7 @@ import {
   decideSecretEcho,
   hasSensitiveVarRef,
   isSensitivePath,
+  patternFreeArgs,
   splitSegments,
 } from '../../tools/hooks/secret-echo-guard.mjs'
 import { decideMergeWarn } from '../../tools/hooks/merge-gate.mjs'
@@ -203,6 +204,46 @@ describe('secret-echo-guard', () => {
     // Паттерн после опции со значением по-прежнему выкидывается.
     expect(decideSecretEcho('grep -m 5 secret README.md').block).toBe(false)
     expect(decideSecretEcho('grep -A 2 -B 2 "secret" tools/hooks/README.md').block).toBe(false)
+  })
+
+  it('файл-источник паттерна не съедает файловый операнд (#268, ревью PR #302 r2)', () => {
+    // При `-f` паттерн берётся ИЗ ФАЙЛА — позиционного паттерна нет вовсе, и
+    // удалять из кандидатов нечего: следующий токен это входной ФАЙЛ, который
+    // команда печатает целиком (пустая строка в файле паттернов, `awk -f` с
+    // `{print}`).
+    expect(decideSecretEcho('grep -f patterns.txt deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('rg -f patterns.txt deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep --file /tmp/p.txt deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep --file=/tmp/p.txt deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep -f/tmp/p.txt deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('awk -f /tmp/p.awk deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('sed -f /tmp/s.sed deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep -i -f /tmp/p.txt .env.prod').block).toBe(true)
+    expect(decideSecretEcho('ssh host "grep -f /tmp/p.txt deploy/.env.prod"').block).toBe(true)
+  })
+
+  it('`--` заканчивает разбор опций (#268, ревью PR #302 r2)', () => {
+    // После `--` всё — операнды: `-x` это ПАТТЕРН, а `deploy/.env.prod` файл.
+    expect(decideSecretEcho('grep -- -x deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep -- secret deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep -i -- -x tools/hooks/README.md').block).toBe(false)
+  })
+
+  it('инвариант: файловый операнд никогда не выкидывается как паттерн (#268)', () => {
+    const cases: string[][] = [
+      ['-f', 'patterns.txt', 'deploy/.env.prod'],
+      ['--file=/tmp/p.txt', 'deploy/.env.prod'],
+      ['--', '-x', 'deploy/.env.prod'],
+      ['-i', '""', '.env.prod'],
+      ['-A', '2', 'secret', 'deploy/.env.prod'],
+      ['-Path', 'deploy/.env.prod', '-Pattern', 'x'],
+      ['-r', 'foo', 'deploy/.env.prod'],
+    ]
+    for (const args of cases) {
+      expect(patternFreeArgs(args).map((a) => a.replace(/^["']|["']$/g, ''))).toContain(
+        args.find((a) => /\.env/.test(a)),
+      )
+    }
   })
 
   it('незакрытая кавычка не отключает разбивку сегментов (#268, ревью PR #302)', () => {
