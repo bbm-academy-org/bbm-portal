@@ -9,11 +9,11 @@ Ported from ds-platform (task 7.8, issue #139). **This skill checks only what
 nothing else already checks.** Three enforcement layers exist in this repo
 before it, and the checklist REFERENCES them instead of re-running them:
 
-| Layer                                                                                                                       | Owns                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm pr:land <PR>` (`tools/gh/pr-land.mjs`)                                                                                | PR open / not draft / no conflict / carries `Closes #N`; a `VERDICT: APPROVE` review newer than the last commit that changed the diff; every check-run green on the current head SHA; then merge, board `Done`, teardown |
-| `tools/hooks/completion-report-gate.mjs`, `deviations-gate.mjs`, `surface-decision-debt-gate.mjs` (`tools/hooks/README.md`) | the shape of the final report at session Stop — «Проверить глазами:», «Отклонения от конвенций:», `surface-decision-debt:`                                                                                               |
-| `.claude/skills/report-task-outcome/SKILL.md`, `surface-decision-debt/SKILL.md`, `write-iteration-summary/SKILL.md`         | what those lines mean, how the routing is derived, and the shape of the closing issue comment                                                                                                                            |
+| Layer                                                                                                                       | Owns                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm pr:land <PR>` (`tools/gh/pr-land.mjs`)                                                                                | PR open / not draft / no conflict / carries a linkage (`Closes #N`, or `Part of #N` on an OPEN parent); a `VERDICT: APPROVE` review newer than the last commit that changed the diff; every check-run green on the current head SHA; then merge, board `Done`, teardown |
+| `tools/hooks/completion-report-gate.mjs`, `deviations-gate.mjs`, `surface-decision-debt-gate.mjs` (`tools/hooks/README.md`) | the shape of the final report at session Stop — «Проверить глазами:», «Отклонения от конвенций:», `surface-decision-debt:`                                                                                                                                              |
+| `.claude/skills/report-task-outcome/SKILL.md`, `surface-decision-debt/SKILL.md`, `write-iteration-summary/SKILL.md`         | what those lines mean, how the routing is derived, and the shape of the closing issue comment                                                                                                                                                                           |
 
 Duplicating any of those here would create a second source of truth that drifts.
 The items below are the gap between "the code compiles and someone approved it"
@@ -115,8 +115,9 @@ the contract — a free-form report without it is re-dispatched, not interpreted
   the author already believes.
 - **Returning PASS with a FAIL in the table** — the exact failure the verdict
   line exists to make visible.
-- **Re-running what `pnpm pr:land` gates** (CI, review verdict, `Closes #N`) —
-  wasted tokens and a second source of truth for the same rule.
+- **Re-running what `pnpm pr:land` gates** (CI, review verdict, the linkage —
+  `Closes #N` or `Part of #N`) — wasted tokens and a second source of truth for
+  the same rule.
 - **Marking item 8 N/A on a "chore" that added a form or changed a formula** —
   those two have no exemption by task type.
 - **Treating the checklist as the review** — `bbm-reviewer` judges the change on
