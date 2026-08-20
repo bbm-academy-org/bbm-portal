@@ -73,7 +73,7 @@ export interface OkrKr {
 export interface OkrObjective {
   /** Display id: 'o1'…'o5' (derived from config order). */
   id: string
-  /** Plane project identifier: DSG1…DSG5. */
+  /** Plane project identifier: DSG1…DSG6. */
   ident: string
   projectId: string
   title: string
