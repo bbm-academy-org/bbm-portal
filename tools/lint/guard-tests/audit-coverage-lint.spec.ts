@@ -1,6 +1,13 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve, sep } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
-import { AUDIT_COLUMN_EXCLUSIONS, AUDIT_TABLE_ALLOWLIST } from '../audit-coverage-allowlist.mjs'
+import {
+  AUDIT_COLUMN_EXCLUSIONS,
+  AUDIT_TABLE_ALLOWLIST,
+  AUDIT_VALUE_WHITELIST,
+} from '../audit-coverage-allowlist.mjs'
 import {
   MIGRATION_FILE_RE,
   SCHEMA_FILE_RE,
@@ -9,7 +16,7 @@ import {
   loadAllowlist,
   parseSchemaTables,
 } from '../audit-coverage-lint.mjs'
-import { caseDir, runGuard } from './run-guard'
+import { REPO_ROOT, caseDir, runGuard } from './run-guard'
 
 /**
  * audit-coverage — the migration-chain half of spec 201's coverage clauses
@@ -59,7 +66,7 @@ describe('parseSchemaTables', () => {
 
   it('reads the SQL table name and every SQL column name', () => {
     expect(parseSchemaTables(src)).toEqual([
-      { table: 'member', columns: ['id', 'member_id', 'created_at'] },
+      { table: 'member', columns: ['id', 'member_id', 'created_at'], nameless: [] },
     ])
   })
 
@@ -71,6 +78,56 @@ describe('parseSchemaTables', () => {
 
   it('returns nothing for a file that declares no table', () => {
     expect(parseSchemaTables("export const core = pgSchema('core')")).toEqual([])
+  })
+
+  /**
+   * The regression that the nine original fixtures could not see, because all of
+   * them were comment-free: an apostrophe in ordinary prose («the team's
+   * default») opened a phantom string literal, the brace scan never closed, and
+   * `core.member` / `core.hours_assessment` parsed with ZERO columns — which
+   * `evaluateCoverage` treats exactly like full coverage.
+   */
+  describe('comments', () => {
+    const commented = [
+      "import { core } from '../core'",
+      '',
+      "/** The registry — one row per person, the team's own list. */",
+      'export const member = core.table(',
+      "  'member',",
+      '  {',
+      "    /** Surrogate PK; the email is an attribute, never the row's business key. */",
+      "    id: serial('id').primaryKey(),",
+      "    // IANA zone name; the team's default, not a per-request preference.",
+      "    timezone: text('timezone').notNull().default('Europe/Moscow'),",
+      "    createdAt: timestamp('created_at', { withTimezone: true }).default(sql`now()`),",
+      "    // id: text('legacy_id'), <- commented out, not a column",
+      '  },',
+      ')',
+    ].join('\n')
+
+    it('reads every column even when a comment inside the object carries an apostrophe', () => {
+      expect(parseSchemaTables(commented)).toEqual([
+        { table: 'member', columns: ['id', 'timezone', 'created_at'], nameless: [] },
+      ])
+    })
+
+    it('never reads a commented-out declaration as a real column', () => {
+      const [{ columns }] = parseSchemaTables(commented)
+      expect(columns).not.toContain('legacy_id')
+    })
+
+    it('leaves an apostrophe that is really inside a string literal alone', () => {
+      const [{ columns }] = parseSchemaTables(
+        "export const t = core.table('t', { note: text('note').default('it\\'s fine') })",
+      )
+      expect(columns).toEqual(['note'])
+    })
+  })
+
+  it('reports a nameless column separately — its SQL name is not in the source', () => {
+    expect(
+      parseSchemaTables("export const t = core.table('t', { id: serial('id'), handle: text() })"),
+    ).toEqual([{ table: 't', columns: ['id'], nameless: ['handle'] }])
   })
 })
 
@@ -118,6 +175,17 @@ describe('attachedTriggers', () => {
       'DROP TRIGGER IF EXISTS "member_audit" ON "core"."member";',
     ]
     expect([...attachedTriggers(chain).keys()]).toEqual([])
+  })
+
+  it('never credits `core.<t>` for a trigger attached to another schema’s table', () => {
+    const sql =
+      'CREATE OR REPLACE TRIGGER "member_audit"\n\tAFTER INSERT ON "public"."member"\n\tFOR EACH ROW EXECUTE FUNCTION "core"."audit_row_change"(\'id\');'
+    expect([...attachedTriggers([sql]).keys()]).toEqual([])
+  })
+
+  it('never lets a DROP in another schema un-attach a `core` trigger', () => {
+    const chain = [attach('member', "'id'"), 'DROP TRIGGER "member_audit" ON "public"."member";']
+    expect(attachedTriggers(chain).get('member')).toEqual(['id'])
   })
 
   it('drops only the named trigger, not every trigger on that table', () => {
@@ -239,6 +307,44 @@ describe('evaluateCoverage', () => {
     expect(verdict.findings).toEqual([])
   })
 
+  /**
+   * Fail-closed at the TABLE level (canon §8). Every `core` table has at least
+   * one column, so zero parsed columns is a parse failure — and without this
+   * class it is byte-for-byte identical to full coverage, which is how the
+   * apostrophe bug stayed green.
+   */
+  it('a table that parsed with ZERO columns is a finding, not silence', () => {
+    const verdict = evaluateCoverage({
+      tables: [{ table: 'member', columns: [], nameless: [], file: 'schema/member.ts' }],
+      attached: new Map([['member', ['id', 'slug']]]),
+      tableAllowlist: {},
+      columnExclusions: {},
+    })
+    expect(verdict.findings.map((f) => f.kind)).toEqual(['unparsed-table'])
+    expect(verdict.findings[0].subject).toBe('member')
+  })
+
+  it('reports the unparsed table even when it is allowlisted — reading it is a different question', () => {
+    const verdict = evaluateCoverage({
+      tables: [{ table: 'hours_publication', columns: [], nameless: [] }],
+      attached: new Map(),
+      tableAllowlist: { hours_publication: 'blocked on EARS-31' },
+      columnExclusions: {},
+    })
+    expect(verdict.findings.map((f) => f.kind)).toEqual(['unparsed-table'])
+  })
+
+  it('a nameless column is a finding, and does not count as an unparsed table', () => {
+    const verdict = evaluateCoverage({
+      tables: [{ table: 'member', columns: [], nameless: ['handle'] }],
+      attached: new Map([['member', []]]),
+      tableAllowlist: {},
+      columnExclusions: {},
+    })
+    expect(verdict.findings.map((f) => f.kind)).toEqual(['nameless-column'])
+    expect(verdict.findings[0].subject).toBe('member.handle')
+  })
+
   it('EARS-22: the rule is by construction — a table nobody enumerated is covered like any other', () => {
     const verdict = evaluateCoverage({
       tables: tables([
@@ -347,8 +453,86 @@ describe('audit-coverage (spawned)', () => {
     expect(res.stderr).toContain('unexpected error')
   })
 
-  it('exits 0 on the real repo tree — the guard must be green at merge', () => {
-    const res = runGuard('audit-coverage-lint.mjs', null, { realTree: true })
-    expect(res.code).toBe(0)
+  /**
+   * The apostrophe regression, end to end. Before the comment-aware tokenizer
+   * this tree parsed with zero columns and the guard exited 0 — the exact state
+   * `core.member` and `core.hours_assessment` were in on the real repo.
+   */
+  it('sees through comments carrying apostrophes and reports the uncovered column', () => {
+    const res = runCase('comment-apostrophe')
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('uncovered-column')
+    expect(res.stderr).toContain('member.nickname')
+    // the commented-out declaration must not become a column of its own
+    expect(res.stderr).not.toContain('legacy_id')
+    // and the table must not read as unparsed either
+    expect(res.stderr).not.toContain('unparsed-table')
+  })
+
+  it('exits 1 on a table whose column object yields nothing — fail-closed per table', () => {
+    const res = runCase('unparsed-table')
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('unparsed-table')
+    expect(res.stderr).toContain('member')
+  })
+
+  it('exits 1 on a column declared without its explicit SQL name', () => {
+    const res = runCase('nameless-column')
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('nameless-column')
+    expect(res.stderr).toContain('member.handle')
+  })
+
+  /**
+   * Not an exit-code-only assertion. Exit 0 on the live tree cannot tell
+   * «covered» from «parsed nothing» — which is precisely how the EARS-29 half of
+   * this guard was inert on half the audited set while 34 tests were green. The
+   * census and the per-table column counts are what make the green mean
+   * something.
+   */
+  describe('the real repo tree', () => {
+    const schemaFiles = readdirSync(resolve(REPO_ROOT, 'src/lib/platform/db/schema'), {
+      recursive: true,
+      encoding: 'utf8',
+    })
+      .map((rel) => rel.split(sep).join('/'))
+      .filter((rel) => SCHEMA_FILE_RE.test(`src/lib/platform/db/schema/${rel}`))
+
+    const parsed = schemaFiles.flatMap((rel) =>
+      parseSchemaTables(
+        readFileSync(resolve(REPO_ROOT, 'src/lib/platform/db/schema', rel), 'utf8'),
+      ),
+    )
+
+    it('exits 0 — the guard must be green at merge', () => {
+      const res = runGuard('audit-coverage-lint.mjs', null, { realTree: true })
+      expect(res.code).toBe(0)
+      expect(res.stdout).toMatch(/\d+ core table\(s\) in \d+ schema file\(s\)/)
+    })
+
+    /**
+     * `audit_event` and `__drizzle_migrations` are SQL-only (the ledger and
+     * drizzle's bookkeeping declare no drizzle table), so the drizzle-visible
+     * set is the five audited tables plus the one allowlisted product table.
+     */
+    it('declares every drizzle-visible `core` table the allowlist and whitelist name', () => {
+      const known = [...Object.keys(AUDIT_VALUE_WHITELIST), 'hours_publication']
+      const parsedNames = parsed.map((t) => t.table)
+      for (const table of known) expect(parsedNames).toContain(table)
+    })
+
+    it('parses EVERY declared table with at least one column — no silently empty table', () => {
+      expect(parsed.length).toBeGreaterThan(0)
+      for (const { table, columns } of parsed) {
+        expect(`${table}: ${columns.length} column(s)`).not.toBe(`${table}: 0 column(s)`)
+      }
+    })
+
+    it('parses the whitelisted columns of every audited table, name for name', () => {
+      for (const [table, whitelisted] of Object.entries(AUDIT_VALUE_WHITELIST)) {
+        const declared = parsed.find((t) => t.table === table)?.columns ?? []
+        for (const column of whitelisted) expect(declared).toContain(column)
+      }
+    })
   })
 })

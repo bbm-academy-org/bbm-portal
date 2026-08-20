@@ -37,6 +37,16 @@
 //   uncovered-column        a column in neither the whitelist nor the exclusions
 //   blank-column-rationale  an exclusion whose rationale says nothing
 //   stale-exclusion         a column that is BOTH whitelisted and excluded
+//   unparsed-table          a `core` table whose column object yielded NOTHING
+//   nameless-column         a column declared without its explicit SQL name
+//
+// The last two are fail-closed classes at the TABLE level, and they exist
+// because of the way this guard failed silently once: an apostrophe in a JSDoc
+// line inside the column object opened a phantom string literal, the brace scan
+// never closed, and `core.member` was reported with zero columns — which reads
+// exactly like «every column is whitelisted». A parse that produced nothing is
+// now a FINDING rather than silence (canon §8 applied per table, not only per
+// tree), so the next tokenizer gap says so instead of going green.
 //
 // SEVERITY: WARN — docs/ci-guardrails.md §5, job in `.github/workflows/ci.yml`
 // with `continue-on-error: true`; the script itself exits 1 on a finding (canon
@@ -70,21 +80,94 @@ const ALLOWLIST_REL = 'tools/lint/audit-coverage-allowlist.mjs'
 const TABLE_HEAD_RE = /\bcore\.table\(\s*(['"])([A-Za-z0-9_]+)\1\s*,\s*\{/g
 /** `<prop>: <builder>('<sql_name>'` inside the column object. */
 const COLUMN_RE = /(?:^|[\s{,])[A-Za-z_$][\w$]*\s*:\s*[A-Za-z_$][\w$]*\s*\(\s*(['"])([A-Za-z0-9_]+)\1/g
+/**
+ * `<prop>: <builder>()` / `<builder>({ … })` — drizzle's casing-inferred form,
+ * where the SQL name is not in the source at all. Static parsing cannot know it
+ * (it depends on the `casing` option of the drizzle config), so such a column is
+ * reported rather than skipped: an invisible column is an uncheckable one.
+ */
+const NAMELESS_COLUMN_RE =
+  /(?:^|[\s{,])([A-Za-z_$][\w$]*)\s*:\s*[A-Za-z_$][\w$]*\s*\(\s*(?:\)|\{)/g
 
-/** An attach line, once statements have been isolated (see `sqlStatements`). */
+/**
+ * An attach line, once statements have been isolated (see `sqlStatements`).
+ *
+ * The `ON` clause's schema qualifier is CAPTURED, not assumed away: a trigger on
+ * `"public"."member"` says nothing about `core.member`, and the old optional
+ * `(?:"?core"?\.)?` group silently mis-read such a clause. `qualifiedTable()`
+ * below is what rejects a foreign schema.
+ */
 const ATTACH_RE =
-  /CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+"?([A-Za-z0-9_]+)"?[\s\S]*?\bON\s+(?:"?core"?\s*\.\s*)?"?([A-Za-z0-9_]+)"?[\s\S]*?EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+"?core"?\s*\.\s*"?audit_row_change"?\s*\(([\s\S]*)\)/i
-/** `DROP TRIGGER [IF EXISTS] "<name>" ON "core"."<table>"`. */
+  /CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+"?([A-Za-z0-9_]+)"?[\s\S]*?\bON\s+(?:"?([A-Za-z0-9_]+)"?\s*\.\s*)?"?([A-Za-z0-9_]+)"?[\s\S]*?EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+"?core"?\s*\.\s*"?audit_row_change"?\s*\(([\s\S]*)\)/i
+/** `DROP TRIGGER [IF EXISTS] "<name>" ON "core"."<table>"` — same schema rule. */
 const DROP_RE =
-  /DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?"?([A-Za-z0-9_]+)"?\s+ON\s+(?:"?core"?\s*\.\s*)?"?([A-Za-z0-9_]+)"?/i
+  /DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?"?([A-Za-z0-9_]+)"?\s+ON\s+(?:"?([A-Za-z0-9_]+)"?\s*\.\s*)?"?([A-Za-z0-9_]+)"?/i
 /** A single-quoted SQL literal — the trigger's whitelist arguments. */
 const SQL_STRING_RE = /'((?:[^']|'')*)'/g
+
+/**
+ * The source with every `//` and `/* … *\/` comment blanked to spaces, run
+ * BEFORE any other scan.
+ *
+ * This is the fix for the guard's one silent failure. Prose is full of
+ * apostrophes («the team's default»), and a tokenizer that tracks string
+ * literals but not comments reads such a one as an opening quote: from there the
+ * brace scan is inside a phantom string to the end of the file, the column
+ * object never closes, and the table is reported with ZERO columns — which
+ * `evaluateCoverage` cannot tell apart from «every column is whitelisted».
+ * `core.member` and `core.hours_assessment` were in exactly that state.
+ *
+ * Blanking also removes the mirror-image false positive: a commented-out
+ * `id: text('legacy_id')` no longer parses as a real column.
+ *
+ * Comments become spaces rather than disappearing (newlines are kept) so every
+ * offset and line in the returned text still matches the source.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripComments(text) {
+  const src = String(text ?? '')
+  let out = ''
+  let quote = ''
+  for (let i = 0; i < src.length; i += 1) {
+    const ch = src[i]
+    if (quote) {
+      out += ch
+      if (ch === '\\') {
+        out += src[i + 1] ?? ''
+        i += 1
+      } else if (ch === quote) quote = ''
+      continue
+    }
+    // A comment can only OPEN where no string literal is open — which is exactly
+    // here, so the apostrophe inside it never reaches the quote tracker.
+    if (ch === '/' && src[i + 1] === '/') {
+      const nl = src.indexOf('\n', i)
+      const stop = nl === -1 ? src.length : nl
+      out += ' '.repeat(stop - i)
+      i = stop - 1
+      continue
+    }
+    if (ch === '/' && src[i + 1] === '*') {
+      const close = src.indexOf('*/', i + 2)
+      const stop = close === -1 ? src.length : close + 2
+      out += src.slice(i, stop).replace(/[^\n]/g, ' ')
+      i = stop - 1
+      continue
+    }
+    out += ch
+    if (ch === "'" || ch === '"' || ch === '`') quote = ch
+  }
+  return out
+}
 
 /**
  * The `{ … }` block starting at `open`, brace-balanced and string-aware, so a
  * nested option object (`timestamp('created_at', { withTimezone: true })`) and a
  * brace inside a string literal both stay inside the column object instead of
- * ending it early.
+ * ending it early. Comments are already blanked by `stripComments` before this
+ * runs — see there for why that ordering is the whole point.
  *
  * @param {string} text
  * @param {number} open index of the opening `{`
@@ -119,18 +202,29 @@ function balancedBlock(text, open) {
  * this guard is plain ESM, and a guard that has to build the app before it can
  * judge it is not a guard.
  *
+ * Comments are blanked first (`stripComments`), which is what keeps an
+ * apostrophe in a JSDoc line from turning the whole column object into a string
+ * literal. `nameless` carries the columns declared WITHOUT an explicit SQL name
+ * (`slug: text()`), whose name static parsing cannot know — reported by the
+ * caller rather than dropped.
+ *
  * @param {string} text
- * @returns {{table: string, columns: string[]}[]}
+ * @returns {{table: string, columns: string[], nameless: string[]}[]}
  */
 export function parseSchemaTables(text) {
-  const src = String(text ?? '')
+  const src = stripComments(text)
   const out = []
   TABLE_HEAD_RE.lastIndex = 0
   for (const head of src.matchAll(TABLE_HEAD_RE)) {
     const open = head.index + head[0].length - 1
     const block = balancedBlock(src, open)
     const columns = [...block.matchAll(COLUMN_RE)].map((m) => m[2])
-    out.push({ table: head[2], columns: [...new Set(columns)] })
+    const nameless = [...block.matchAll(NAMELESS_COLUMN_RE)].map((m) => m[1])
+    out.push({
+      table: head[2],
+      columns: [...new Set(columns)],
+      nameless: [...new Set(nameless)],
+    })
   }
   return out
 }
@@ -167,19 +261,35 @@ export function sqlStatements(text) {
  * @returns {Map<string, string[]>}
  */
 export function attachedTriggers(sqlTexts) {
+  /**
+   * The table name when the statement really names a `core` table — an
+   * unqualified name (the migrations run with `core` reachable) or an explicit
+   * `core.` — and `null` for any other schema, so `ON "public"."member"` neither
+   * credits nor un-credits `core.member`.
+   *
+   * @param {string | undefined} schema
+   * @param {string} table
+   * @returns {string | null}
+   */
+  const qualifiedTable = (schema, table) =>
+    schema === undefined || schema.toLowerCase() === 'core' ? table : null
+
   /** @type {Map<string, {table: string, args: string[]}>} */
   const live = new Map()
   for (const text of sqlTexts) {
     for (const statement of sqlStatements(text)) {
       const drop = DROP_RE.exec(statement)
       if (drop) {
-        live.delete(`${drop[2]}.${drop[1]}`)
+        const table = qualifiedTable(drop[2], drop[3])
+        if (table) live.delete(`${table}.${drop[1]}`)
         continue
       }
       const attach = ATTACH_RE.exec(statement)
       if (!attach) continue
-      const args = [...attach[3].matchAll(SQL_STRING_RE)].map((m) => m[1].replace(/''/g, "'"))
-      live.set(`${attach[2]}.${attach[1]}`, { table: attach[2], args })
+      const table = qualifiedTable(attach[2], attach[3])
+      if (!table) continue
+      const args = [...attach[4].matchAll(SQL_STRING_RE)].map((m) => m[1].replace(/''/g, "'"))
+      live.set(`${table}.${attach[1]}`, { table, args })
     }
   }
 
@@ -194,7 +304,7 @@ export function attachedTriggers(sqlTexts) {
 /**
  * The pure decision seam. No IO.
  *
- * @param {{tables: {table: string, columns: string[], file?: string}[],
+ * @param {{tables: {table: string, columns: string[], nameless?: string[], file?: string}[],
  *          attached: Map<string, string[]>,
  *          tableAllowlist: Record<string, string>,
  *          columnExclusions: Record<string, string>}} input
@@ -204,9 +314,38 @@ export function evaluateCoverage({ tables, attached, tableAllowlist, columnExclu
   const findings = []
   const add = (kind, subject, detail) => findings.push({ kind, subject, detail })
 
-  for (const { table, columns, file } of tables) {
+  for (const { table, columns, nameless = [], file } of tables) {
     const where = file ? ` (declared in ${file})` : ''
     const args = attached.get(table)
+
+    // Fail-closed PER TABLE (canon §8, the same reasoning the wrong-tree class
+    // below applies to the whole run): every `core` table has at least one
+    // column, so a column object that yielded nothing is a PARSE FAILURE — and
+    // an unparsed table is silently identical to a fully covered one. This runs
+    // before the allowlist branch on purpose: whether the table is exempt from
+    // the trigger is a different question from whether the guard could read it.
+    if (columns.length === 0 && nameless.length === 0) {
+      add(
+        'unparsed-table',
+        table,
+        `\`core.${table}\`${where} parsed with ZERO columns — every \`core\` table has at ` +
+          'least one, so this is a parse failure in the guard, not coverage. A table the guard ' +
+          'cannot read is reported rather than passed: zero parsed columns reads exactly like ' +
+          '«every column is whitelisted» (canon §8, fail-closed)',
+      )
+      continue
+    }
+
+    for (const prop of nameless) {
+      add(
+        'nameless-column',
+        `${table}.${prop}`,
+        `\`${table}.${prop}\` is declared without an explicit SQL name (\`${prop}: builder()\`), ` +
+          "so its column name depends on drizzle's `casing` inference and this guard cannot " +
+          "compare it to the trigger's whitelist arguments. Give the column its SQL name " +
+          "explicitly — the repo's convention — so coverage stays checkable",
+      )
+    }
 
     if (!args) {
       if (!(table in tableAllowlist)) {
@@ -306,18 +445,18 @@ export function loadAllowlist(env = process.env) {
   return { tableAllowlist, columnExclusions }
 }
 
-/** Read every matching file under `root`, in path order. */
+/**
+ * Read every matching file under `root`, in path order.
+ *
+ * A read error is NOT swallowed. Skipping an unreadable schema file removes its
+ * tables from the audited set entirely, and skipping an unreadable migration
+ * un-attaches triggers — both fail OPEN, which is the one thing the rest of this
+ * guard refuses to do. The throw reaches `runMain` and becomes exit 1 with the
+ * stack (canon §8): a run that could not read its inputs cleared nothing.
+ */
 function readAll(root, fileRe) {
   const files = walkFiles(root, { include: (rel) => fileRe.test(rel) && !isFixturePath(rel) })
-  const texts = []
-  for (const rel of files) {
-    try {
-      texts.push({ rel, text: readFileSync(resolve(root, rel), 'utf8') })
-    } catch {
-      // an unreadable file declares nothing — it is not a coverage finding
-    }
-  }
-  return texts
+  return files.map((rel) => ({ rel, text: readFileSync(resolve(root, rel), 'utf8') }))
 }
 
 async function main() {

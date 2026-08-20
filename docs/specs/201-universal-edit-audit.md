@@ -555,8 +555,22 @@ surface.
 - **EARS-20.** The guard shall land as **WARN** per `docs/ci-guardrails.md` §3 —
   no day-0 BLOCK mandate is claimed, because it matches regexes over SQL text and
   therefore has a real false-positive class to soak — registered in the §5
-  inventory with its §4 promotion condition, and wired as a step carrying
-  `continue-on-error: true` plus the §8 batch-job outcome aggregation.
+  inventory with its §4 promotion condition, and wired as **its own `ci.yml` job
+  carrying job-level `continue-on-error: true`**, with the guard step given an
+  `id:` and a later step reading `steps.<id>.outcome` to emit a `::warning::`, so
+  the finding is not swallowed by the collapsed log.
+
+  > **Corrected 2026-08-20 (#276, PR #283 review).** This clause originally asked
+  > for «a step carrying `continue-on-error: true` plus the §8 batch-job outcome
+  > aggregation». It was written against the batch-job shape #205/PR #206
+  > attempted and never landed: `ci.yml` has no batch job, and §2.1's job-severity
+  > check applies per JOB, so a one-guard "batch" would have had to declare
+  > job-level severity anyway. The wiring above is what shipped and what every
+  > other WARN guard here uses; the half of §8 that was load-bearing — the
+  > outcome-annotate step — is kept. The deviation was written up in
+  > `docs/ci-guardrails.md` §5; this file owns EARS-20, so the correction lives
+  > here and that note is now the commentary, not the record.
+
 - **EARS-21.** The truth-level counterpart shall be an integration assertion
   under `tests/int/platform/` that reads `pg_trigger` against the **really
   migrated** database and fails when an audited table has lost its trigger. It
