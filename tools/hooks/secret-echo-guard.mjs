@@ -37,10 +37,10 @@
 // `grep`/`rg`/`sed`/`awk` (`grep -n -i "secret\|deploy" file` — поиск слова, а не
 // чтение секретного пути; #268), файловые операнды при этом судятся как раньше.
 // Известные пробелы (осознанные, гард — растяжка, а не песочница): намеренный
-// обход через переменную-конструктор (`C=co; docker compose ${C}nfig`), pty-
-// обёртки (`script`, `expect`), и разрыв кавычек в `bash -c "a && b"` — общая
-// разбивка сегментов режет по `&&` раньше, чем снимается обёртка, поэтому
-// хвост разбирается как отдельный сегмент верхнего уровня.
+// обход через переменную-конструктор (`C=co; docker compose ${C}nfig`) и pty-
+// обёртки (`script`, `expect`). Разрыв кавычек в `bash -c "a && b"` закрыт
+// вместе с #268: разбивка сегментов больше не режет по `&&` ВНУТРИ кавычек,
+// поэтому обёртка снимается целиком и её нагрузка разбирается рекурсивно.
 // Осознанно широко: `printenv` c СЕКРЕТНЫМ именем блокируется, хотя печатает
 // одно значение, — печать одного значения и есть предмет правила.
 //
@@ -73,6 +73,11 @@ export const SOURCE_EXT_RE = /\.(ts|tsx|js|jsx|mjs|cjs|css|scss|sass|md|mdx|html
  * резала `grep -n -i "secret\|deploy" file` по `|` ВНУТРИ кавычек, и обломок
  * `"secret\` доезжал до `isSensitivePath` уже без закрывающей кавычки — поиск
  * СЛОВА выглядел как чтение секретного ПУТИ.
+ *
+ * Если кавычка так и не закрылась (тело heredoc с апострофом: `don't`), точный
+ * сканер откатывается к наивной разбивке: незакрытая кавычка обязана деградировать
+ * до СТАРОГО поведения, а не до «перестать искать» — иначе всё, что идёт после
+ * такой строки, становится для гарда невидимым (ревью PR #302).
  */
 export function splitSegments(command) {
   const src = String(command || '')
@@ -118,6 +123,12 @@ export function splitSegments(command) {
     buf += ch
   }
   flush()
+  if (quote !== null) {
+    return src
+      .split(/\|\||&&|;|\n|\|/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
   return out
 }
 
@@ -156,6 +167,22 @@ export function isSensitivePath(arg) {
   return SECRET_WORD_RE.test(a)
 }
 
+/** Опции, НАЗЫВАЮЩИЕ паттерн: их значение — паттерн, а не путь. */
+export const PATTERN_FLAG_RE = /^(-e|--regexp)$/
+/** То же для PowerShell (`Select-String -Pattern x`) — регистр там не значим. */
+export const PS_PATTERN_FLAG_RE = /^-pattern$/i
+
+/**
+ * Опции читателей, съедающие СЛЕДУЮЩИЙ токен как своё значение. Только те, где
+ * значение обязательно во всех читателях набора: `-r`/`-v`/`-F` намеренно НЕ
+ * здесь — в grep это флаги без значения, и они съели бы файловый операнд.
+ */
+export const VALUE_FLAG_RE =
+  /^(-f|-m|-A|-B|-C|-d|-g|--file|--max-count|--after-context|--before-context|--context|--include|--exclude|--exclude-dir|--label|--binary-files|--devices|--glob|--type|--max-depth)$/
+/** Параметры Select-String со значением — включая `-Path`, естественную форму на этом боксе. */
+export const PS_VALUE_FLAG_RE =
+  /^-(path|literalpath|include|exclude|encoding|context|inputobject)$/i
+
 /**
  * Аргументы читателя-с-паттерном БЕЗ самого паттерна (#268). Поиск СЛОВА
  * `secret` — не чтение секрета: команда печатает строки файла, совпавшие со
@@ -167,24 +194,39 @@ export function isSensitivePath(arg) {
  */
 export function patternFreeArgs(args) {
   const rest = []
+  /** Параллельно `rest`: может ли токен быть ПОЗИЦИОННЫМ паттерном. */
+  const positional = []
   let explicit = false
+  let expectValue = false
   for (let i = 0; i < args.length; i += 1) {
     const t = stripQuotes(args[i])
-    if (/^(-e|--regexp)$/.test(t)) {
+    if (!expectValue && (PATTERN_FLAG_RE.test(t) || PS_PATTERN_FLAG_RE.test(t))) {
       explicit = true
       i += 1 // паттерн идёт следующим токеном
       continue
     }
-    if (/^(--regexp=|-e.)/.test(t)) {
+    if (!expectValue && /^(--regexp=|-e.)/.test(t)) {
       explicit = true
       continue
     }
+    if (!expectValue && (VALUE_FLAG_RE.test(t) || PS_VALUE_FLAG_RE.test(t))) {
+      rest.push(args[i])
+      positional.push(false)
+      expectValue = true
+      continue
+    }
     rest.push(args[i])
+    // Значение опции — это её значение (файл!), а не паттерн.
+    positional.push(!expectValue)
+    expectValue = false
   }
   if (explicit) return rest
-  const at = rest.findIndex((a) => {
+  const at = rest.findIndex((a, i) => {
+    if (!positional[i]) return false
     const t = stripQuotes(a)
-    return t !== '' && t !== '-' && !t.startsWith('-')
+    // Пустая строка — валидный паттерн (`grep "" file` печатает файл целиком),
+    // и выкинуть надо ЕЁ, а не файловый операнд следом (ревью PR #302).
+    return t !== '-' && !t.startsWith('-')
   })
   return at === -1 ? rest : rest.filter((_, i) => i !== at)
 }

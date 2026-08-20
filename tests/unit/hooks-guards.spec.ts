@@ -181,6 +181,43 @@ describe('secret-echo-guard', () => {
     expect(decideSecretEcho('env | grep -i plane').block).toBe(true)
   })
 
+  it('пустой паттерн не съедает файловый операнд (#268, ревью PR #302)', () => {
+    // `grep "" file` печатает ФАЙЛ ЦЕЛИКОМ — это ровно тот класс инцидента,
+    // ради которого гард существует. Пустая строка обязана считаться паттерном.
+    expect(decideSecretEcho('grep "" deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho("grep '' deploy/.env.prod").block).toBe(true)
+    expect(decideSecretEcho('grep -i "" .env.prod').block).toBe(true)
+    expect(decideSecretEcho('rg "" deploy/.env.prod').block).toBe(true)
+  })
+
+  it('значение опции-с-аргументом не считается паттерном (#268, ревью PR #302)', () => {
+    // «Первый не-опционный токен» — паттерн только если его не съела опция:
+    // `-f`/`--file` и PowerShell-ские `-Path`/`-LiteralPath` называют ФАЙЛ.
+    expect(decideSecretEcho('grep -f deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('grep -f deploy/.env.prod pat.txt').block).toBe(true)
+    expect(decideSecretEcho('grep --file deploy/.env.prod pat.txt').block).toBe(true)
+    expect(decideSecretEcho('sls -Path deploy/.env.prod -Pattern x').block).toBe(true)
+    expect(decideSecretEcho('Select-String -Path deploy/.env.prod -Pattern x').block).toBe(true)
+    expect(decideSecretEcho('sls -Pattern x -Path deploy/.env.prod').block).toBe(true)
+    expect(decideSecretEcho('sls -LiteralPath deploy/.env.prod -Pattern x').block).toBe(true)
+    // Паттерн после опции со значением по-прежнему выкидывается.
+    expect(decideSecretEcho('grep -m 5 secret README.md').block).toBe(false)
+    expect(decideSecretEcho('grep -A 2 -B 2 "secret" tools/hooks/README.md').block).toBe(false)
+  })
+
+  it('незакрытая кавычка не отключает разбивку сегментов (#268, ревью PR #302)', () => {
+    // Апостроф в теле heredoc открывает кавычку, которая никогда не закроется;
+    // без отката всё, что идёт дальше, становится невидимым для гарда.
+    const heredoc = "cat > /tmp/n.md <<'EOF'\ndon't forget\nEOF\ncat deploy/.env.prod"
+    expect(splitSegments(heredoc)).toContain('cat deploy/.env.prod')
+    expect(decideSecretEcho(heredoc).block).toBe(true)
+    expect(decideSecretEcho('echo "unclosed ; cat deploy/.env.prod').block).toBe(true)
+    // Сбалансированные кавычки продолжают работать по точному сканеру.
+    expect(decideSecretEcho('gh pr comment 1 -b "it\'s fine" ; cat deploy/.env.prod').block).toBe(
+      true,
+    )
+  })
+
   it('пропускает санкционированные способы: в файл и в переменную', () => {
     expect(decideSecretEcho('cat deploy/.env.prod > /tmp/x').block).toBe(false)
     expect(decideSecretEcho('TOKEN=$(cat deploy/.env.prod)').block).toBe(false)
