@@ -14,6 +14,9 @@
 //     (§4); resolution is asymmetric and only reported here, never released by
 //     the script on someone else's behalf;
 //   • field hygiene: Type / channel:* / **Source:** line / milestone / assignee;
+//   • epic checklist drift: an open epic whose native sub-issues are all closed
+//     while its body checklist is still unticked (#299) — it reads as live work
+//     when the graph says it is done;
 //   • edges without recorded rationale (provenance-orphan, grounds to challenge the edge);
 //   • mega-blockers — nodes blocking ≥5 issues.
 //
@@ -312,6 +315,35 @@ export function findMirrorDrift(body, nativeNumbers) {
   return rows
 }
 
+/**
+ * An epic whose native graph is FINISHED while its body checklist still shows
+ * unticked boxes (#299, retro 2026-08-20). Epic #111 sat in the open list looking
+ * like live work with every child closed — a direct contributor to the owner's
+ * reading that «nothing ever gets closed».
+ *
+ * The graph is the fact and the checklist is its mirror, so the drift is a
+ * hygiene WARN, never a closure: whether a finished epic closes is the lead's or
+ * the owner's call. An epic with no sub-issues is not judged at all — its boxes
+ * are a plan, not a mirror of anything.
+ * @param {{number:number, body?:string, subIssues?:{number?:number, state?:string}[]}} epic
+ * @returns {{number:number, closed:number, uncheckedCount:number, unchecked:number[]}|null}
+ */
+export function findEpicChecklistDrift({ number, body, subIssues }) {
+  const children = subIssues ?? []
+  if (children.length === 0) return null
+  if (children.some((s) => String(s?.state ?? 'open').toLowerCase() === 'open')) return null
+  const unchecked = []
+  let uncheckedCount = 0
+  for (const line of String(body ?? '').split(/\r?\n/)) {
+    if (!/^\s*[-*]\s*\[\s\]/.test(line)) continue
+    uncheckedCount += 1
+    const ref = /#(\d+)/.exec(line)
+    if (ref) unchecked.push(Number(ref[1]))
+  }
+  if (uncheckedCount === 0) return null
+  return { number, closed: children.length, uncheckedCount, unchecked }
+}
+
 /** Nodes blocking at least `threshold` open issues. */
 export function findMegaBlockers(triaged, threshold = 5) {
   const fanout = new Map()
@@ -386,6 +418,7 @@ export function formatReport(model) {
     epics = [],
     hygiene = [],
     mirrorDrift = [],
+    epicChecklistDrift = [],
     orphanEdges = [],
     megaBlockers = [],
     warnings = [],
@@ -454,6 +487,19 @@ export function formatReport(model) {
           `add a Dependencies line with rationale`,
       )
     }
+  }
+  lines.push('')
+
+  lines.push(`## Epic checklist drift (${epicChecklistDrift.length})`)
+  if (epicChecklistDrift.length === 0) lines.push('_none — epic bodies and the graph agree_')
+  for (const e of epicChecklistDrift) {
+    lines.push(
+      `- #${e.number}: all ${e.closed} native sub-issues are closed, but ${e.uncheckedCount} ` +
+        `checklist box(es) in the body are still unticked` +
+        `${e.unchecked?.length ? ` (${e.unchecked.map((n) => `#${n}`).join(', ')})` : ''} — ` +
+        `the epic reads as live work while the graph says it is done. Tick the boxes and decide ` +
+        `whether the epic closes; the script decides neither`,
+    )
   }
   lines.push('')
 
@@ -570,6 +616,22 @@ function fetchNativeBlockers(number, warnings) {
   }))
 }
 
+/**
+ * Native sub-issue graph of one epic. Unreadable → an empty list plus a warning:
+ * the checklist-drift check then simply does not fire for that epic (#299).
+ */
+function fetchSubIssues(number, warnings) {
+  const res = ghJson(['api', `repos/${REPO}/issues/${number}/sub_issues`])
+  if (!res.ok) {
+    warnings.push(`#${number}: could not read the sub-issue graph — ${res.error}`)
+    return []
+  }
+  return (Array.isArray(res.data) ? res.data : []).map((i) => ({
+    number: i?.number,
+    state: String(i?.state ?? 'open'),
+  }))
+}
+
 export const USAGE = `Usage: pnpm backlog:triage
 
   Backlog readiness report for ${REPO}. Read-only: no mutations, no comments,
@@ -580,6 +642,9 @@ export const USAGE = `Usage: pnpm backlog:triage
       (\`dependencies/blocked_by\`). Prose and the body mirror do not affect it.
     Claim drift — compares canon §4's two signals (worktree AND board status).
     Dependencies mirror drift — hygiene diagnostics, not readiness.
+    Epic checklist drift — an open epic whose native sub-issues are ALL closed
+      while its body checklist is still unticked (#299): it reads as live work
+      when the graph says it is done. WARN — closing it stays a human call.
     Edges without rationale — provenance-orphan: grounds to challenge an edge.
     Mega-blockers — nodes blocking ≥5 issues.
     Epics — umbrellas, not takeable themselves.
@@ -629,6 +694,7 @@ function main() {
   const triaged = []
   const hygiene = []
   const mirrorDrift = []
+  const epicChecklistDrift = []
   const orphanEdges = []
   const claimIssues = []
   const epics = []
@@ -680,6 +746,12 @@ function main() {
 
     if (labels.includes('epic')) {
       epics.push({ number: issue.number, title: issue.title })
+      const drift = findEpicChecklistDrift({
+        number: issue.number,
+        body: issue.body,
+        subIssues: fetchSubIssues(issue.number, warnings),
+      })
+      if (drift) epicChecklistDrift.push(drift)
       continue
     }
     triaged.push(t)
@@ -694,6 +766,7 @@ function main() {
     epics,
     hygiene,
     mirrorDrift,
+    epicChecklistDrift,
     orphanEdges,
     megaBlockers: findMegaBlockers(triaged),
     warnings,

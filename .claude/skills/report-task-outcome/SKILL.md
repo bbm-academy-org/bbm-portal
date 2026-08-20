@@ -78,12 +78,62 @@ GitHub comment. The second names where each deviation was routed (its own issue
 All three share ONE recognizer of "a completion report" (defined in
 `completion-report-gate.mjs`): a completion verb plus an issue/PR reference,
 minus negations, and excluding a short question to the owner, an interim
-checkpoint («⏳», «жду CI»), and a proposal of the next step — **and** the session
+checkpoint (the declared marker «Статус промежуточный», or inferred from «⏳»,
+«жду CI»), and a proposal of the next step — **and** the session
 must carry at least one write action in its transcript (#158), so a read-only
 answer that merely talks about a merged PR trips nothing. So a real report meets
 all three, and a checkpoint meets none. Points 1, 3 and 4 have no
 mechanical check — they are on you. `BBM_HOOKS_DISABLE=1` kills the whole stack;
 using it to get a report past a gate is itself a deviation to surface.
+
+## The owner's zone — prove there is no own path first (mandatory)
+
+A report that splits the work into zones ("mine" / "the owner's") makes a claim
+in every item it routes to the owner: **that no path of your own exists.** That
+claim is checked BEFORE the item is written, not asserted by default.
+
+Walk the four accesses you actually hold, and **name in the report which ones you
+checked and what each answered**:
+
+1. **ssh hosts** you can reach (the boxes the service in question runs on);
+2. **PATs and service accounts** already configured in this environment;
+3. **Terraform / provisioning state** — a credential this repo issued, it can
+   re-issue;
+4. **the provider's own API** with the token you have.
+
+Only after all four come back negative does the item go to the owner, and it goes
+with that list attached — "checked X, Y, Z; blocked because …". An item routed
+with no such list is a guess, and a wrong guess parks work in the backlog that
+was never blocked.
+
+_(symptom, owner 2026-08-19: «Почему ты перекладываешь работу на меня? Ты же сам
+заводил и прописывал все эти ключи. Сделай всё сам.» — within the same hour the
+session rotated the Zitadel client secret, the Plane token, the SSOT-sync key and
+the preview token, and rolled S3 credentials onto five boxes. Every one of them
+had been routed to the owner's zone a moment earlier.)_
+
+## Промежуточный чекпойнт — the marker, not the tail
+
+An interim message is **not** a stage-6 report and does not carry its five points
+or the two stage-7 lines. It carries one declared marker line:
+
+```
+Статус промежуточный
+```
+
+That line is what the Stop gates read (`EXPLICIT_INTERIM_MARKER_RE` in
+`tools/hooks/completion-report-gate.mjs`); it must stand on its own line, and it
+overrides every other signal in the message — so a checkpoint that mentions a
+merged PR is still a checkpoint. Everything else in the message is the actual
+content: what just landed, what is running, what is next.
+
+**Do not pay the ceremony defensively.** «Проверить глазами», an honest-status
+paragraph, a percentage and «Отклонения от конвенций: нет / surface-decision-debt:
+none» belong to the FINAL report of the iteration; repeating them on every
+checkpoint buries the content the owner is reading for. _(symptom, 2026-08-20:
+nine consecutive checkpoints in one session each carried the full tail.)_ The
+owner-question and owner-report language rules below still apply — those are about
+being understood, not about the gates.
 
 ## Owner-report form (mandatory)
 

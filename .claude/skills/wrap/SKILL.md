@@ -224,6 +224,25 @@ is either fixed now, promoted to a GitHub issue, or explicitly written off in
 this wrap; lines without a return condition do not survive the sweep. (The
 same sweep also runs at every epic close.)
 
+**Fix-here comes BEFORE file (#299).** A line whose return condition has fired
+is asked one question first: **does it close inside this retro's own PR?** The
+retro is already opening a PR that touches canon files and tooling, so a line
+that needs one edit and no owner decision is FIXED IN THAT PR, and the `DEBT.md`
+line is deleted with the fix — not converted into an issue. Only work that needs
+its own cycle (a design gate, an owner "go", an acceptance on a stand, a diff
+that does not belong next to this one) becomes an issue, through the significance
+threshold in [`task-canon`](../task-canon/SKILL.md) §6 — whose floor bans filing
+one-line work in the first place. _(Symptom: the 08-19 sweep turned five lines
+into #285–#289 in one pass; on the same day two other generators fired, and the
+owner read 13 process-born issues as 13 new problems.)_
+
+**Cross-check the generators before presenting.** When `spec-issue-graph`,
+this sweep and the retro itself all fire in one session, say so in the report and
+name what each batch actually is (planned slices of an approved spec / old
+`DEBT.md` lines changing storage form / this retro's remedies). An undifferentiated
+list of newly filed numbers reads as newly discovered problems, and that reading
+is the one the owner acts on.
+
 ## Phase 5 — handoff
 
 Invoke the global `handoff-prompt` skill; note "instructions updated this session:

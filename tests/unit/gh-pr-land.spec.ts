@@ -14,11 +14,13 @@ import {
   landPr,
   parseCommitFacts,
   parseFlags,
+  parsePartOfRefs,
   reviewBaselineDate,
   runGate,
   runViewPr,
   stageRemedy,
   withCommitFacts,
+  withPartOfFacts,
 } from '../../tools/gh/pr-land.mjs'
 
 /**
@@ -510,8 +512,48 @@ describe('gateConditions', () => {
     expect(red).toMatch(/re-review/)
   })
 
-  it('no `Closes #N` is RED: board-done would have nowhere to set Done', () => {
+  it('no linkage at all is RED: board-done would have nowhere to set Done', () => {
     expect(gateConditions({ ...ok, closingIssuesReferences: [] }).red[0]).toMatch(/Closes #N/)
+  })
+
+  /**
+   * Retro 2026-08-20 (#299), theme `closes-target-issues`. Requiring `Closes #N`
+   * from EVERY PR made a partial PR pay a synthetic sub-issue for the privilege
+   * of landing — #261 for PR #260, #270 for PR #265, #279 for PR #266 in three
+   * days, each one +1 filed and +1 closed for zero new work. `Part of #N` on a
+   * LIVE parent is the honest linkage for a slice, and it is not RED.
+   */
+  it('`Part of #N` with an OPEN parent is a valid linkage, not RED', () => {
+    const res = gateConditions({
+      ...ok,
+      closingIssuesReferences: [],
+      partOfIssues: [{ number: 201, state: 'OPEN' }],
+    })
+    expect(res.red).toEqual([])
+    expect(res.partOf).toEqual([201])
+    expect(res.warn.join('\n')).toMatch(/Part of #201/)
+  })
+
+  it('`Part of #N` pointing at a CLOSED parent is not a linkage — RED', () => {
+    const res = gateConditions({
+      ...ok,
+      closingIssuesReferences: [],
+      partOfIssues: [{ number: 201, state: 'CLOSED' }],
+    })
+    expect(res.red[0]).toMatch(/Part of #N/)
+    expect(res.partOf).toEqual([])
+  })
+
+  it('the no-linkage RED names `Part of #N` so nobody files a sub-issue to satisfy it', () => {
+    const red = gateConditions({ ...ok, closingIssuesReferences: [] }).red.join('\n')
+    expect(red).toMatch(/Part of #N/)
+    expect(red).toMatch(/sub-issue/)
+  })
+
+  it('a `Closes #N` PR that also says `Part of #N` still lands on Closes', () => {
+    const res = gateConditions({ ...ok, partOfIssues: [{ number: 201, state: 'OPEN' }] })
+    expect(res.red).toEqual([])
+    expect(res.closes).toEqual([130])
   })
 
   it('no review at all is RED by default, and says how to close that', () => {
@@ -1020,5 +1062,74 @@ describe('stageRemedy', () => {
 
   it('after the merge the hint does not offer «just retry»', () => {
     expect(stageRemedy('board-done', 7)).toMatch(/the merge landed/)
+  })
+})
+
+/**
+ * Parsing the `Part of #N` linkage out of a PR body (#299). Kept pure and
+ * separate from the state lookup: what the body CLAIMS and whether the parent is
+ * actually live are two different facts, and only the pair is a linkage.
+ */
+describe('parsePartOfRefs', () => {
+  it('reads every `Part of #N` form the template produces, deduped', () => {
+    expect(parsePartOfRefs('Part of #201\n\nsome text\npart of #201\nPart of  #7')).toEqual([
+      201, 7,
+    ])
+  })
+
+  it('ignores the template instructions in an HTML comment', () => {
+    expect(parsePartOfRefs('<!-- Part of #123 if this is a slice -->\nCloses #5')).toEqual([])
+  })
+
+  it('does not read `Closes #N` as a partial linkage', () => {
+    expect(parsePartOfRefs('Closes #5')).toEqual([])
+  })
+
+  it('a missing body is not a crash', () => {
+    expect(parsePartOfRefs(null)).toEqual([])
+  })
+})
+
+describe('withPartOfFacts', () => {
+  it('stamps the parent states onto the payload', () => {
+    const data = withPartOfFacts({ body: 'Part of #201' }, { 201: 'OPEN' })
+    expect(data.partOfIssues).toEqual([{ number: 201, state: 'OPEN' }])
+  })
+
+  it('an unresolved parent is dropped rather than guessed OPEN', () => {
+    const data = withPartOfFacts({ body: 'Part of #201' }, {})
+    expect(data.partOfIssues).toEqual([])
+  })
+})
+
+/**
+ * The read side of the second linkage: `runViewPr` resolves `Part of #N` ONLY
+ * when the PR closes nothing, so a normal `Closes #N` land costs no extra call.
+ */
+describe('runViewPr — Part of resolution', () => {
+  it('resolves the parents of a PR that closes nothing', () => {
+    const issueStates = vi.fn(() => ({ 201: 'OPEN' }))
+    const res = runViewPr(7, {
+      view: () => ({ ok: true, data: { body: 'Part of #201', closingIssuesReferences: [] } }),
+      facts: () => null,
+      issueStates,
+      cache: new Map(),
+    })
+    expect(issueStates).toHaveBeenCalledWith([201])
+    expect(res.data.partOfIssues).toEqual([{ number: 201, state: 'OPEN' }])
+  })
+
+  it('does not read a single issue when `Closes #N` is already there', () => {
+    const issueStates = vi.fn(() => ({}))
+    runViewPr(7, {
+      view: () => ({
+        ok: true,
+        data: { body: 'Part of #201', closingIssuesReferences: [{ number: 5 }] },
+      }),
+      facts: () => null,
+      issueStates,
+      cache: new Map(),
+    })
+    expect(issueStates).not.toHaveBeenCalled()
   })
 })

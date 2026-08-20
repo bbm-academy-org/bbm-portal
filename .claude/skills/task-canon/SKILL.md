@@ -298,8 +298,42 @@ the worktree signal is retired only by `pnpm worktree:teardown <N>`.
 A separate **issue** is filed if the debt matches at least one of:
 
 1. it blocks a deliverable or sits on its critical path;
-2. it is user-visible or it is a production risk (security, data, money);
+2. **naming the asset at risk**: it is user-visible, or exploiting it loses
+   concrete data, money or access — say WHICH. "What is lost if someone uses
+   this?" is the whole test, and it is about the CONTENT, not the FORM of the
+   violation: an internal surface reachable without auth is a production risk
+   when it exposes personal data or a write path, and is not one when everything
+   behind it is a draft nobody minds being read. A default-deny posture
+   (`Host`-allowlist, ADR-003) is how we BUILD; it is not a filing criterion, and
+   a finding that cannot name the loss does not clear this clause. _(#292 was
+   filed as a "production risk" for an anonymously readable internal page and
+   closed by the owner as not planned the same day — «и что? Это не угроза»;
+   retro 2026-08-20, theme `issue-threshold-measures-form-not-content`.)_
 3. it must be done before the next release/deploy.
+
+### The threshold from BELOW — what is never filed
+
+The clauses above are a ceiling; without a floor, one-line work travels into the
+tracker instead of into the diff. **Two classes are DONE, not filed:**
+
+- **A fix that is one line and needs no decision.** A `.gitattributes` entry, a
+  glob added to a lint script, a regex widened in a guard, a corrected path, a
+  translated rules file — nothing the owner must choose between, nothing a design
+  review touches. It lands in the CURRENT PR, or in the next one if the current
+  diff must stay clean. Meeting the bug live is the strongest signal here, not a
+  reason to file: if you tripped over it while doing something else, you are
+  already standing where the fix goes. _(#268, #269, #286, #289 — four one-line
+  fixes filed instead of applied, 22% of that retro window's open remainder; on
+  two of them the session wrote that it had hit the bug itself and filed anyway.)_
+- **A one-off incident-recovery chore.** Rotating a leaked credential, restoring a
+  dev stand, re-running a provisioning script — execute it and record the outcome
+  in the report. It becomes an issue only when it RECURS, or when the remedy is a
+  change to the machinery rather than the recovery itself.
+
+This floor is the enforceable form of the memory rule
+`direct-apply-for-simple-edits`; where they differ, this section wins. What the
+floor does NOT license: skipping a fix because it is small. "Not filed" means
+**applied**, and an item that is neither applied nor filed has been dropped.
 
 Everything else is **one line in `DEBT.md`**, added in the same commit or the same
 PR as the work that exposed the debt. The file's own rules (a return condition on
