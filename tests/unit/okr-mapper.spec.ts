@@ -312,10 +312,11 @@ describe('mapOkrTree', () => {
   it('degrades a missing project to an undefined objective + warning (FR-7)', () => {
     const src = sourceOf([]) // Plane returned nothing readable for any project
     const { objectives, warnings, pct } = mapOkrTree({ source: src, metrics: {}, now: NOW })
-    expect(objectives).toHaveLength(5)
+    // one degraded objective per configured project — not a frozen count
+    expect(objectives).toHaveLength(OKR_PROJECTS.length)
     expect(objectives.every((o) => o.pct === null && o.health === 'undef')).toBe(true)
     expect(pct).toBeNull()
-    expect(warnings.length).toBeGreaterThanOrEqual(5)
+    expect(warnings.length).toBeGreaterThanOrEqual(OKR_PROJECTS.length)
   })
 
   it('reports an unknown state ONCE, not once per groupOf call (#80)', () => {
