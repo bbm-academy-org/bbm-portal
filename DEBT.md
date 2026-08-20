@@ -43,16 +43,6 @@ Entry format:
 
 <!-- entries below this line -->
 
-- [ ] 2026-08-11 spec §11 defers `audit-coverage` (a guard that every `core` table
-      carries its audit columns) to «эпик 1, при создании схемы и миграций» — #125
-      created the schema and the first migration, so the trigger fired, but the
-      migration creates `CREATE SCHEMA` and NOTHING else: there is not one table
-      for the guard to have an opinion about, and a guard written against zero
-      tables would be green by vacuum and unreviewable. Recorded rather than
-      built — return condition: the first product table lands in `core` (#124 or
-      the hours migration), which is also the first moment the guard's rule can
-      be stated concretely (PR #190 review major 7)
-
 <!-- debt-entry-end: 2026-08-11-8fcb3c6ffc -->
 
 <!-- debt-entry-end: 2026-08-11-a0f80803db -->
@@ -465,6 +455,17 @@ into one source, `src/lib/hours/messages.ts`, which `document.ts`,
 sign-in helper duplication, `2026-08-17-c3d2e255e3`) is UNTOUCHED: its trigger —
 the next e2e spec that signs in — has not fired.)_
 
+_(Swept 2026-08-19 (#276). **One line closed by the work, body removed, anchor kept:**
+the `audit-coverage` guard line (`2026-08-11-8fcb3c6ffc`) — its return condition «the
+first product table lands in `core`» fired with #125/#255 (six `core` tables) and the
+rule could finally be stated concretely once #273 attached the triggers. The guard is
+`tools/lint/audit-coverage-lint.mjs` (`pnpm lint:audit-coverage`), WARN in `ci.yml`,
+registered in `docs/ci-guardrails.md` §5, paired with
+`tools/lint/guard-tests/audit-coverage-lint.spec.ts`. Note what it turned out to be: not
+«every `core` table carries its audit COLUMNS» as the 2026-08-11 line guessed, but «every
+`core` table carries the capture TRIGGER and every column has a whitelist decision» —
+spec 201 replaced the per-table-columns design with one generic trigger, so the line's
+subject moved before it was discharged.)_
 _(Swept 2026-08-19 (`/wrap` retro of the #201 session). **Five lines promoted to
 their own issues, bodies removed, anchors kept.** Per line, what actually
 happened to its return condition:
