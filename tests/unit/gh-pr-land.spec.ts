@@ -1085,6 +1085,24 @@ describe('parsePartOfRefs', () => {
     expect(parsePartOfRefs('Closes #5')).toEqual([])
   })
 
+  /**
+   * Same discipline `stage-b-lint` applies to its own marker: text that merely
+   * TALKS ABOUT the linkage is not the linkage. A fenced example (a handoff or a
+   * review note quoting the shape) and mid-sentence prose both used to arm the
+   * gate — review of PR #303, N5.
+   */
+  it('a fenced example of the shape is not a claim', () => {
+    expect(parsePartOfRefs('```\nPart of #123\n```\n\nCloses #5')).toEqual([])
+  })
+
+  it('mid-sentence prose is not a claim', () => {
+    expect(parsePartOfRefs('This work is not part of #5, it stands alone.')).toEqual([])
+  })
+
+  it('the decorated line-start forms the template and a checklist produce are claims', () => {
+    expect(parsePartOfRefs('- **Part of** #7\n**Part of #8**')).toEqual([7, 8])
+  })
+
   it('a missing body is not a crash', () => {
     expect(parsePartOfRefs(null)).toEqual([])
   })

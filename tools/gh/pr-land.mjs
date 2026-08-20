@@ -64,6 +64,7 @@ import {
   ghJson,
   pickProjectItem,
 } from './lib/gh.mjs'
+import { extractPartOfIssues } from '../lint/lib/guard.mjs'
 
 const TAG = '[pr:land]'
 
@@ -474,20 +475,20 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
 
 /**
  * `Part of #N` in a PR body — the linkage of a PARTIAL PR (#299). Same-repo
- * `#N` form only, HTML comments stripped first so the PR template's own
- * instructions never count as a claim (the trick `epic-autoclose-lint` uses on
- * closing keywords).
+ * `#N` form only; the HTML comment that carries the PR template's own
+ * instructions for choosing between the two linkages, and a fenced example of
+ * the shape, are stripped first so text that merely TALKS ABOUT the linkage is
+ * never a claim.
+ *
+ * The parser itself is `extractPartOfIssues` in `tools/lint/lib/guard.mjs` — the
+ * same one `spec-link` and `stage-b` read this linkage with. This export stays
+ * as the name the gate and its spec use.
+ *
  * @param {string|null|undefined} body
  * @returns {number[]} deduped issue numbers, in the order the body names them
  */
 export function parsePartOfRefs(body) {
-  const text = String(body ?? '').replace(/<!--[\s\S]*?-->/g, '')
-  const out = []
-  for (const m of text.matchAll(/\bpart\s+of\s+#(\d+)\b/gi)) {
-    const n = Number(m[1])
-    if (!out.includes(n)) out.push(n)
-  }
-  return out
+  return extractPartOfIssues(body)
 }
 
 /**

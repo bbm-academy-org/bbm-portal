@@ -87,6 +87,34 @@ export function stripNonEvidence(text) {
 }
 
 /**
+ * The PARTIAL linkage of a PR body — `Part of #<parent>` (#299). Anchored to a
+ * real line start (a list bullet and bold emphasis are the decorations the PR
+ * template and a checklist actually produce), so mid-sentence prose — «this is
+ * not part of #5» — never arms a linkage. Same-repo `#N` form only.
+ */
+const PART_OF_RE = /^ {0,3}(?:[-*+]\s+)?\*{0,2}part\s+of\*{0,2}\s*:?\s*#(\d+)\b/gim
+
+/**
+ * Issue numbers a body names as `Part of #N`, deduped in first-seen order.
+ *
+ * Lives here, next to `stripNonEvidence`, because it needs it and because THREE
+ * readers of this linkage now exist — `pr-land` (the merge gate), `spec-link`
+ * and `stage-b` (which resolve "the linked issue" from it). One rule, one copy:
+ * the same lesson the stripper itself learned across PR #151/#160.
+ *
+ * @param {string|null|undefined} body
+ * @returns {number[]}
+ */
+export function extractPartOfIssues(body) {
+  const out = []
+  for (const m of stripNonEvidence(body).matchAll(PART_OF_RE)) {
+    const n = Number(m[1])
+    if (!out.includes(n)) out.push(n)
+  }
+  return out
+}
+
+/**
  * The tree the guard scans. TEST SEAM `LINT_FIXTURE_ROOT` points it at a fixture
  * repo; unset, it resolves to this repo's root (tools/lint/lib -> three up).
  */

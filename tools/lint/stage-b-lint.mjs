@@ -50,7 +50,7 @@
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-import { stripNonEvidence } from './lib/guard.mjs'
+import { extractPartOfIssues, stripNonEvidence } from './lib/guard.mjs'
 
 const TAG = '[stage-b]'
 
@@ -135,6 +135,18 @@ export function extractClosedIssues(body) {
   const out = new Set()
   for (const m of String(body ?? '').matchAll(CLOSE_RE)) out.add(Number(m[1]))
   return [...out]
+}
+
+/**
+ * Every issue whose comments may carry this PR's Stage-B verdict: the ones it
+ * CLOSES plus the parent(s) a partial PR names with `Part of #N` (#299). A slice
+ * PR — the shape `pr-land` now lands — records its GO on the parent, so reading
+ * only the closing keyword lost the evidence (review of PR #303, N1).
+ */
+export function extractLinkedIssues(body) {
+  const out = [...extractClosedIssues(body)]
+  for (const n of extractPartOfIssues(body)) if (!out.includes(n)) out.push(n)
+  return out
 }
 
 const SHAPES = [
@@ -285,7 +297,7 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
   }
 
   const comments = []
-  for (const issue of extractClosedIssues(prRes.data?.body ?? '')) {
+  for (const issue of extractLinkedIssues(prRes.data?.body ?? '')) {
     const issueRes = ghJson(gh, ghIssueArgs(issue))
     if (!issueRes.ok) {
       // A linked issue we cannot read is never counted as evidence — the

@@ -104,7 +104,12 @@ call names an explicit `model`.
 
 ## Stage 4 — review (mandatory)
 
-PR with `Closes #N` + the PR template (`.github/pull_request_template.md`). An
+PR with a linkage line + the PR template (`.github/pull_request_template.md`).
+**Two linkages, and the rule is which one is TRUE:** `Closes #N` when this PR
+finishes the issue, `Part of #N` when it is a SLICE and the parent stays open
+after the merge — `pnpm pr:land` accepts both, and a `Part of` parent must still
+be OPEN. Never file a sub-issue just to have something to close: #261 / #270 /
+#279 are three issues that existed only to satisfy `Closes #N` (#299). An
 independent review subagent (fresh context, read-only) posts a PR comment
 containing a `VERDICT: APPROVE | REQUEST_CHANGES` line. **The review is
 dispatched by the orchestrating lead, never by the implementer:** a review the
@@ -183,7 +188,9 @@ Then the final task report, fixed form:
 
 ## Stage 7 — close
 
-Issue closed (verify `Closes #N` actually fired) with a results comment in the
+Issue closed (verify `Closes #N` actually fired — a `Part of #N` PR closes
+nothing by design, so its parent is closed by hand when the last slice lands)
+with a results comment in the
 fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`): artifacts
 (spec + KB instruction named by link — the stage-6 documentation DoD is
 verified here, not assumed), what was done, what got unblocked + the mandatory
