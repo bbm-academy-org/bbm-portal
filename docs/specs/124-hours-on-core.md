@@ -91,6 +91,29 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   `sending` batch surviving a crash still blocks a new batch and still locks
   period mutations (spec 100 req. 12/15). `jsonb` is deliberate: the batch is a
   delivery protocol artifact, never queried relationally.
+  **Amended 2026-08-20 (#281, spec 201 EARS-31 step 4):** the `jsonb` array
+  column is GONE — `core.hours_publication` now carries `period_id`, `status`,
+  `started_at`, `published_at`, `preview_fingerprint` and nothing else. The
+  messages are rows of `core.hours_publication_message`, keyed
+  `(period_id, position)`, since the expand of #274; this release is the
+  contract half that dropped the column
+  (`src/lib/platform/db/migrations/0005_hours_publication_drop_messages.sql`,
+  run as a separate release per `docs/runbooks/migrations-expand-contract.md`).
+  **The reason «`jsonb` is deliberate» was overturned rather than forgotten:**
+  the sentence above is right that the batch is a delivery-protocol artifact
+  never queried relationally, and that argument simply lost to a bigger one.
+  Under the audit ledger of spec 201 a column rewritten WHOLE on every delivery
+  step produces an audited diff saying «everything changed» once per message,
+  carrying frozen message texts and per-member delivery data into an
+  append-only ledger nothing can redact (EARS-31, EARS-33). Normalised, a
+  delivery step updates ONE row and the ledger records one small diff naming
+  `{"period_id": …, "position": …}`.
+  Everything else in this clause stands unchanged: still at most one batch per
+  period (now the parent's PK), still not write-once, still per-message
+  `delivery` + `sent_at` applied strictly sequentially, still stable order and
+  length across updates — the element order EARS-21 speaks of is now the stored
+  `position` rather than an array index, and a `sending` batch that survives a
+  crash still blocks a new batch and still locks period mutations.
 - **EARS-17.** The member module shall own a `member_alias` table
   (`schema/member/`): surrogate PK, FK to `member` (`ON DELETE CASCADE`),
   `kind` (open-set text; documented vocabulary in the module, stored

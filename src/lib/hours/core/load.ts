@@ -202,8 +202,14 @@ export async function loadDocument(tx: HoursTx): Promise<HoursDocument> {
     published_at: publication.publishedAt,
     preview_fingerprint: publication.previewFingerprint,
     // The child rows ARE the batch since #281 — see the note above
-    // `loadDocument`. An empty batch is a real state the module can hold (spec
-    // 124 EARS-6), so no rows for a period is an empty array, not a refusal.
+    // `loadDocument`. No rows for a period reads as an empty array rather than a
+    // refusal: a parent row with no messages is a shape the tables admit (the
+    // child table is a plain FK child, nothing requires it non-empty), and the
+    // publication path already refuses to CREATE one — `buildMattermostPreview`
+    // returns eligibility `empty` for a period with no saved assessments, so the
+    // publish button is never offered. Turning the read into a refusal would
+    // therefore not protect anything and would make the whole document
+    // unreadable over one odd row.
     messages: publicationMessages.get(publication.periodId) ?? [],
   }))
 
