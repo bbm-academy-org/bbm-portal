@@ -87,8 +87,7 @@ const eslintConfig = [
             'Транзакцию к платформенной БД открывает только platformTransaction(ctx, fn) из @/lib/platform/db/transaction (спека 201, EARS-24): без аудит-контекста запись отклонит триггер core.audit_row_change().',
         },
         {
-          selector:
-            "Literal[value=/set_config\\(\\s*'app\\.|SET LOCAL app\\.|set local app\\./]",
+          selector: "Literal[value=/set_config\\(\\s*'app\\.|SET LOCAL app\\.|set local app\\./]",
           message:
             'Аудит-контекст (app.actor_email / app.source) выставляет только platformTransaction() в src/lib/platform/db/ (спека 201, EARS-24). Рукописный set_config( app.… ) на месте вызова воссоздаёт ровно ту конвенцию, которую клауза отменяет.',
         },

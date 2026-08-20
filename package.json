@@ -50,7 +50,7 @@
     "lint:stage-b": "node tools/lint/stage-b-lint.mjs",
     "lint:instruction-budget": "node tools/lint/instruction-budget-lint.mjs",
     "lint:spec-link": "node tools/lint/spec-link-lint.mjs",
-    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tools/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"docs/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"deploy/**/*.{ts,tsx,css,md,json,yml,yaml}\" \"tests/**/*.{ts,tsx,css,md,json,yml,yaml}\" \".claude/**/*.{ts,tsx,css,md,json,yml,yaml}\" \".github/**/*.{yml,yaml}\" \"./*.md\" \"./*.json\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx,mjs,js,css,md,json,yml,yaml}\" \"tools/**/*.{ts,tsx,mjs,js,css,md,json,yml,yaml}\" \"docs/**/*.{ts,tsx,mjs,js,css,md,json,yml,yaml}\" \"deploy/**/*.{ts,tsx,mjs,js,css,md,json,yml,yaml}\" \"tests/**/*.{ts,tsx,mjs,js,css,md,json,yml,yaml}\" \"scripts/**/*.{ts,tsx,mjs,js,css,md,json,yml,yaml}\" \".claude/**/*.{ts,tsx,mjs,js,css,md,json,yml,yaml}\" \".github/**/*.{yml,yaml}\" \"./*.md\" \"./*.json\" \"./*.mjs\" \"./*.js\"",
     "boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "premigrate": "node scripts/require-node.mjs",
     "migrate": "cross-env NODE_OPTIONS=--no-deprecation payload migrate",

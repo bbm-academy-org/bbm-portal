@@ -50,7 +50,14 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { isEntryPoint, isFixturePath, reporter, repoRoot, runMain, walkFiles } from './lib/guard.mjs'
+import {
+  isEntryPoint,
+  isFixturePath,
+  reporter,
+  repoRoot,
+  runMain,
+  walkFiles,
+} from './lib/guard.mjs'
 
 const TAG = 'ears-naming'
 

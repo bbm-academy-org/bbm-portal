@@ -27,6 +27,14 @@ pnpm-lock.yaml
 # writes makes the boot a no-op. Same shape as `pnpm-lock.yaml` above (#240).
 src/payload-types.ts
 
+# src/app/(payload)/admin/importMap.js is written by `payload generate:importmap`
+# and rewritten on every dev-server boot — the same generated-file class as
+# `src/payload-types.ts` above, and the only `.js` in the tree. #286 widened the
+# Prettier globs to `mjs`/`js`; the generator stays the only writer of its own
+# output, so the file is exempted here rather than in the glob (a glob hole would
+# also swallow the next hand-written `.js`).
+src/app/(payload)/admin/importMap.js
+
 # Guard-test fixtures are fake repo trees fed to the CI guards
 # (docs/ci-guardrails.md §8): their content is the INPUT under test — a
 # deliberately malformed workflow, a PR body with a missing section, a source

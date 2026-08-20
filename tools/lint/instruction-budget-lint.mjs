@@ -248,10 +248,7 @@ export function formatReport(results, skipped = []) {
   for (const s of skipped) lines.push(`SKIP       unreadable: ${s}`)
 
   if (rows.length > 0) {
-    const pct = Math.max(
-      total.lines / AGGREGATE_BUDGET.lines,
-      total.bytes / AGGREGATE_BUDGET.bytes,
-    )
+    const pct = Math.max(total.lines / AGGREGATE_BUDGET.lines, total.bytes / AGGREGATE_BUDGET.bytes)
     const label = corpusOver.length > 0 ? 'OVER' : corpusNear ? 'NEAR' : 'ok'
     lines.push(
       '',
