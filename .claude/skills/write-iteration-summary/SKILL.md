@@ -19,7 +19,10 @@ of decisions; it is a record of lines.
 ## When it applies
 
 - **Every closed task**, right after `pnpm pr:land <PR>` returns (a `Closes #N`
-  merge closes the issue; a comment still lands on a closed issue).
+  merge closes the issue; a comment still lands on a closed issue). A
+  `Part of #N` PR closes nothing by design (task-cycle stage 4) — the slice
+  still gets this comment on the parent when it ENDS the task, and the parent is
+  closed by hand; a slice that leaves the task open takes the next bullet.
 - **An iteration that ends without closing the task** — then this comment is
   NOT the shape to use: leave the stop-state comment of
   `.claude/skills/task-canon/SKILL.md` §5 instead. One or the other, never both
