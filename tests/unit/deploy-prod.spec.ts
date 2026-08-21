@@ -20,6 +20,7 @@ import {
   formatEnvPreflightFailure,
   STALL_BUDGET_CHECKPOINT_MS,
   IMAGE_RETENTION,
+  BUILD_CACHE_RETENTION,
   NON_FATAL_STAGES,
   ROLLBACK_STAGES,
   buildCaddyComparisonScript,
@@ -27,6 +28,7 @@ import {
   buildCheckpointScript,
   buildDeployScript,
   buildRetentionScript,
+  buildBuilderPruneScript,
   buildShipCommand,
   buildShipRecoveryScript,
   buildVerifyScript,
@@ -721,6 +723,27 @@ describe('buildRetentionScript', () => {
   })
 })
 
+// ── build-cache retention (#305) ─────────────────────────────────────────────
+
+describe('buildBuilderPruneScript', () => {
+  it('prunes BuildKit cache older than the retention window, keeping warm cache', () => {
+    const script = buildBuilderPruneScript()
+    expect(script).toContain('docker builder prune')
+    expect(script).toContain(`--filter until=${BUILD_CACHE_RETENTION}`)
+    // -f: no interactive confirmation on a non-tty ssh channel.
+    expect(script).toMatch(/docker builder prune[^\n]*\s-f\b/)
+  })
+
+  it('keeps the retention window non-zero — a cold cache on every deploy is not the fix', () => {
+    expect(BUILD_CACHE_RETENTION).toMatch(/^\d+h$/)
+    expect(Number.parseInt(BUILD_CACHE_RETENTION, 10)).toBeGreaterThan(0)
+  })
+
+  it('never fails the deploy on a prune error', () => {
+    expect(buildBuilderPruneScript()).toContain('|| true')
+  })
+})
+
 // ── pre-migrate checkpoint (#156) ────────────────────────────────────────────
 
 describe('buildCheckpointScript', () => {
@@ -881,6 +904,7 @@ describe('every generated remote script is valid bash', () => {
     ['buildCaddyComparisonScript', buildCaddyComparisonScript()],
     ['buildCaddyRestartScript', buildCaddyRestartScript()],
     ['buildRetentionScript', buildRetentionScript()],
+    ['buildBuilderPruneScript', buildBuilderPruneScript()],
   ]
 
   it.each(scripts)('%s parses under `bash -n`', (_name, script) => {
@@ -940,6 +964,11 @@ describe('formatDryRunPlan', () => {
   it('shows the checkpoint before the stack — the order it really runs in', () => {
     expect(plan.indexOf('[checkpoint]')).toBeGreaterThan(plan.indexOf('[ship]'))
     expect(plan.indexOf('[checkpoint]')).toBeLessThan(plan.indexOf('[deployStack]'))
+  })
+
+  it('shows the build-cache prune the prune stage runs (#305)', () => {
+    expect(plan).toContain('docker builder prune')
+    expect(plan.indexOf('docker builder prune')).toBeGreaterThan(plan.indexOf('[prune]'))
   })
 })
 

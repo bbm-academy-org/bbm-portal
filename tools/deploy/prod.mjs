@@ -82,6 +82,13 @@ const APP_IMAGE_REPO = 'bbm-portal-app'
 export const IMAGE_RETENTION = 3
 
 /**
+ * How much BuildKit cache survives a deploy, as a `docker builder prune` age
+ * filter. 72h keeps the layers of the last few days' builds — the ones the next
+ * build actually reuses — and drops everything older.
+ */
+export const BUILD_CACHE_RETENTION = '72h'
+
+/**
  * How long the smoke may keep re-probing before calling a deploy red. The `app`
  * service has no healthcheck, so nothing upstream can prove readiness — only
  * liveness. Bounded on purpose: this buys a booting app a minute, not a broken
@@ -904,6 +911,32 @@ echo 'retained tags:'; docker images ${APP_IMAGE_REPO} --format '  {{.Tag}} ({{.
 `
 }
 
+/**
+ * Drop BuildKit cache older than `BUILD_CACHE_RETENTION`. Pure.
+ *
+ * The prod image is built ON the box, so every deploy leaves a fresh set of
+ * cache layers behind — and nothing ever removed them: `buildRetentionScript`
+ * prunes sha-tagged app IMAGES, which is a different store. By 2026-08-21
+ * `portal-prod-tw` carried 21.6 GB of build cache in 78 entries, none of them
+ * active and most last used weeks ago, with the root disk at 75% (#305).
+ *
+ * An age filter rather than a full `-a` wipe: the layers of the last few days'
+ * builds are what makes the NEXT build fast, and throwing them away would trade
+ * a disk problem for a cold build on every deploy. The structural alternative —
+ * a BuildKit GC policy in `/etc/docker/daemon.json` — needs a dockerd restart,
+ * and `live-restore` is off on this box, so it would take prod down; a prune in
+ * the already non-fatal `prune` stage buys the same hygiene with no downtime.
+ *
+ * `-f` because the ssh channel is not a tty; `|| true` because a busy or
+ * unreachable builder is a disk-hygiene miss, never a reason to redden a deploy
+ * whose app is already proven serving.
+ */
+export function buildBuilderPruneScript(until = BUILD_CACHE_RETENTION) {
+  return `docker builder prune -f --filter until=${until} || true
+echo 'build cache after prune:'; docker system df --format '  {{.Type}}: {{.Size}} (reclaimable {{.Reclaimable}})' || true
+`
+}
+
 /** Validate a `--rollback <sha>` argument. Pure. */
 export function parseRollbackSha(arg) {
   if (typeof arg !== 'string' || !SHA_RE.test(arg)) {
@@ -1433,6 +1466,10 @@ function productionSteps() {
       step(`Image retention (keep the last ${IMAGE_RETENTION} sha tags)`)
       await sshScript(PROD_SSH, buildRetentionScript(), { label: 'retention' })
       ok('old images pruned')
+
+      step(`Build-cache retention (drop BuildKit cache older than ${BUILD_CACHE_RETENTION})`)
+      await sshScript(PROD_SSH, buildBuilderPruneScript(), { label: 'builder-prune' })
+      ok('stale build cache pruned')
     },
 
     async smoke(sha) {
@@ -1501,7 +1538,7 @@ export function formatDryRunPlan(sha, { holdBeforeUp = false } = {}) {
     '\n-- everything below is NON-FATAL (prod is proven serving by here) --',
     '[cutRelease] release-YYYY.MM.DD-<n> at the deployed sha',
     '[recordDeployment] gh api POST repos/{owner}/{repo}/deployments (+ success status)',
-    `\n[prune]\n${buildRetentionScript()}`,
+    `\n[prune]\n${buildRetentionScript()}${buildBuilderPruneScript()}`,
   ].join('\n')
 }
 
