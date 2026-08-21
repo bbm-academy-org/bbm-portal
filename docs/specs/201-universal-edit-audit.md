@@ -885,9 +885,10 @@ privilege-echelon refusal — which is not performable in an estate with one
 superuser role and now belongs to EARS-30's follow-up, where it is that
 follow-up's own acceptance criterion.
 
-Two scenarios are additionally **blocked on prerequisites and named as such**
-rather than quietly assumed: anything touching `core.hours_publication` waits for
-EARS-31/EARS-33, and the privilege refusal waits for EARS-30.
+One scenario remains **blocked on a prerequisite and named as such** rather than
+quietly assumed: the privilege refusal waits for EARS-30. The
+`core.hours_publication` half of this paragraph is discharged — EARS-31 shipped
+with #281 and EARS-33 with #275.
 
 ## Owner decisions (2026-08-19)
 
