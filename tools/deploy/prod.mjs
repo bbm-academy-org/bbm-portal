@@ -920,9 +920,12 @@ echo 'retained tags:'; docker images ${APP_IMAGE_REPO} --format '  {{.Tag}} ({{.
  * `portal-prod-tw` carried 21.6 GB of build cache in 78 entries, none of them
  * active and most last used weeks ago, with the root disk at 75% (#305).
  *
- * An age filter rather than a full `-a` wipe: the layers of the last few days'
- * builds are what makes the NEXT build fast, and throwing them away would trade
- * a disk problem for a cold build on every deploy. The structural alternative —
+ * An age filter rather than an unfiltered wipe: the layers of the last few
+ * days' builds are what makes the NEXT build fast, and throwing them away would
+ * trade a disk problem for a cold build on every deploy. `-a` widens WHICH
+ * cache is eligible, `until=` bounds HOW OLD it must be — together they clear
+ * everything unused past the window and leave the warm tail alone. The
+ * structural alternative —
  * a BuildKit GC policy in `/etc/docker/daemon.json` — needs a dockerd restart,
  * and `live-restore` is off on this box, so it would take prod down; a prune in
  * the already non-fatal `prune` stage buys the same hygiene with no downtime.
