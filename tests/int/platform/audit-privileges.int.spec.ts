@@ -3,10 +3,7 @@ import { sql } from 'drizzle-orm'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
-import {
-  PLATFORM_APP_ROLE_GROUP,
-  PLATFORM_MIGRATOR_ROLE_GROUP,
-} from '@/lib/platform/db/config'
+import { PLATFORM_APP_ROLE_GROUP, PLATFORM_MIGRATOR_ROLE_GROUP } from '@/lib/platform/db/config'
 import { platformTransaction } from '@/lib/platform/db/transaction'
 
 import { auditEventsFor, auditWatermark, refusedWith } from './audit-helpers'
@@ -98,7 +95,13 @@ describe.skipIf(!split.split)(`least-privilege application role (${split.reason}
     ).rejects.toSatisfy(refusedWith(/permission denied for table audit_event/))
   })
 
-  it('EARS-30/EARS-23: SELECT on the ledger is retained — the read path runs as this role', async () => {
+  // Titled EARS-30 alone, deliberately: what is asserted here is the PRIVILEGE
+  // (`SELECT` survived the revoke), not spec 201's EARS-23, which is the read
+  // path itself — «SQL run by an agent, result pasted into the issue» — and has
+  // no automated counterpart until a surface over the ledger exists. It stays on
+  // the deferral list of `tools/lint/ears-test-lint.mjs` for exactly that reason,
+  // and citing it in a title here would retire that obligation without meeting it.
+  it('EARS-30: SELECT on the ledger is retained — the ledger read path runs as this role', async () => {
     const { rows } = await db.execute<{ n: number }>(
       sql`select count(*)::int as n from core.audit_event`,
     )

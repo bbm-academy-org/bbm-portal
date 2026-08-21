@@ -15,10 +15,7 @@ import {
   formatEnsureOutcome,
 } from './ensure-database.mjs'
 import { loadPlatformToolEnv } from './load-env.mjs'
-import {
-  PLATFORM_MIGRATE_DATABASE_URL_VAR,
-  resolveMigrateDatabaseUrl,
-} from './platform-config.mjs'
+import { PLATFORM_MIGRATE_DATABASE_URL_VAR, resolveMigrateDatabaseUrl } from './platform-config.mjs'
 
 export { PLATFORM_MIGRATE_DATABASE_URL_VAR }
 export const PLATFORM_DATABASE_URL_VAR = 'PLATFORM_DATABASE_URL'

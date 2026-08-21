@@ -36,7 +36,8 @@ export { APP_ROLE_GROUP, MIGRATOR_ROLE_GROUP }
 export const SUPERUSER_URL_VAR = 'PLATFORM_SUPERUSER_DATABASE_URL'
 
 /** The migration whose body IS the grant contract (see the file header). */
-export const LEAST_PRIVILEGE_MIGRATION = 'src/lib/platform/db/migrations/0007_platform_least_privilege.sql'
+export const LEAST_PRIVILEGE_MIGRATION =
+  'src/lib/platform/db/migrations/0007_platform_least_privilege.sql'
 
 const ROLE_NAME_RE = /^[a-z_][a-z0-9_]*$/
 
@@ -298,7 +299,11 @@ async function main() {
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : ''
 const selfPath = resolve(fileURLToPath(import.meta.url))
-if (invokedPath && invokedPath === selfPath && import.meta.url === pathToFileURL(invokedPath).href) {
+if (
+  invokedPath &&
+  invokedPath === selfPath &&
+  import.meta.url === pathToFileURL(invokedPath).href
+) {
   main().catch((err) => {
     console.error(`\n✗ platform:roles:ensure FAILED: ${err?.message ?? String(err)}`)
     process.exit(1)

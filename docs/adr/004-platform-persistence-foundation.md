@@ -116,11 +116,11 @@ Spec 201 (`docs/specs/201-universal-edit-audit.md`) then put an append-only audi
 
 **Decision.** The platform carries **two** connection strings, and they are two privilege echelons rather than two spellings of one:
 
-|                | `PLATFORM_DATABASE_URL`                                          | `PLATFORM_MIGRATE_DATABASE_URL`                                        |
-| -------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| whose          | the application (`src/lib/platform/db/client.ts`)                | `drizzle-kit`, `platform:db:ensure`, `dev:db:branch`, `migrate:status` |
-| privilege      | member of the group `platform_app`; no `CREATEDB`, no `CREATEROLE` | member of `platform_migrator`, which **owns** `core`                    |
-| on the ledger  | `SELECT` only — EARS-23's read path runs as this role            | owner                                                                   |
+|               | `PLATFORM_DATABASE_URL`                                            | `PLATFORM_MIGRATE_DATABASE_URL`                                        |
+| ------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| whose         | the application (`src/lib/platform/db/client.ts`)                  | `drizzle-kit`, `platform:db:ensure`, `dev:db:branch`, `migrate:status` |
+| privilege     | member of the group `platform_app`; no `CREATEDB`, no `CREATEROLE` | member of `platform_migrator`, which **owns** `core`                   |
+| on the ledger | `SELECT` only — EARS-23's read path runs as this role              | owner                                                                  |
 
 Three sub-decisions make that workable and are the parts worth recording:
 

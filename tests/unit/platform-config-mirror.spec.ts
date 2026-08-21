@@ -39,7 +39,10 @@ describe('platform-config.mjs mirrors src/lib/platform/db/config.ts', () => {
     ['split: both set', { PLATFORM_DATABASE_URL: APP, PLATFORM_MIGRATE_DATABASE_URL: MIGRATE }],
     ['split: only the migrating one set', { PLATFORM_MIGRATE_DATABASE_URL: MIGRATE }],
     ['un-split: only the application one set', { PLATFORM_DATABASE_URL: APP }],
-    ['whitespace is trimmed away to nothing', { PLATFORM_MIGRATE_DATABASE_URL: '   ', PLATFORM_DATABASE_URL: APP }],
+    [
+      'whitespace is trimmed away to nothing',
+      { PLATFORM_MIGRATE_DATABASE_URL: '   ', PLATFORM_DATABASE_URL: APP },
+    ],
   ])('resolves identically — %s', (_name, env) => {
     expect(toolConfig.resolveMigrateDatabaseUrl(env)).toEqual(
       resolvePlatformMigrateDatabaseUrl(env),

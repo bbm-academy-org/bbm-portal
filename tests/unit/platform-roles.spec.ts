@@ -45,7 +45,11 @@ describe('parseRoleCredentials', () => {
     ['not a url at all', 'nonsense', /is not a URL/],
     ['no user', 'postgres://db:5432/platform', /carries no user name/],
     ['no password', 'postgres://who@db:5432/platform', /carries no password/],
-    ['a role name that is not an identifier', 'postgres://we ird:pw@db:5432/p', /refusing to put it into DDL/],
+    [
+      'a role name that is not an identifier',
+      'postgres://we ird:pw@db:5432/p',
+      /refusing to put it into DDL/,
+    ],
   ])('refuses %s', (_name, url, pattern) => {
     expect(() => parseRoleCredentials(url, 'X')).toThrow(pattern)
   })

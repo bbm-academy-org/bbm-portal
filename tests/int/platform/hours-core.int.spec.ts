@@ -128,13 +128,13 @@ describe('the hours tables on core (EARS-1)', () => {
   })
 
   it('EARS-1: hours_participant and hours_assessment reference core.member, RESTRICT on the participant', async () => {
+    // `pg_catalog`, not `information_schema`: the SQL-standard views
+    // `referential_constraints` and `constraint_column_usage` show only rows
+    // whose table is OWNED by a currently enabled role, so since #278 — where
+    // `core` is owned by `platform_migrator` and the application connects as
+    // `platform_app` — they answer this question with an empty set. The catalog
+    // is not privilege-filtered and describes the same constraints.
     const constraints = (
-      // `pg_catalog`, not `information_schema`: the SQL-standard views
-      // `referential_constraints` and `constraint_column_usage` show only rows
-      // whose table is OWNED by a currently enabled role, so since #278 — where
-      // `core` is owned by `platform_migrator` and the application connects as
-      // `platform_app` — they answer this question with an empty set. The catalog
-      // is not privilege-filtered and describes the same constraints.
       await db.execute(sql`
         select con.conname as constraint_name,
                rel.relname as table_name,

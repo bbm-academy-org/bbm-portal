@@ -122,12 +122,8 @@
           "tableFrom": "hours_assessment",
           "tableTo": "hours_period",
           "schemaTo": "core",
-          "columnsFrom": [
-            "period_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -310,12 +306,8 @@
           "tableFrom": "hours_publication_message",
           "tableTo": "hours_publication",
           "schemaTo": "core",
-          "columnsFrom": [
-            "period_id"
-          ],
-          "columnsTo": [
-            "period_id"
-          ],
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["period_id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -323,10 +315,7 @@
       "compositePrimaryKeys": {
         "hours_publication_message_period_position_pk": {
           "name": "hours_publication_message_period_position_pk",
-          "columns": [
-            "period_id",
-            "position"
-          ]
+          "columns": ["period_id", "position"]
         }
       },
       "uniqueConstraints": {},
@@ -385,12 +374,8 @@
           "tableFrom": "hours_publication",
           "tableTo": "hours_period",
           "schemaTo": "core",
-          "columnsFrom": [
-            "period_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -470,12 +455,8 @@
           "tableFrom": "member_alias",
           "tableTo": "member",
           "schemaTo": "core",
-          "columnsFrom": [
-            "member_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
