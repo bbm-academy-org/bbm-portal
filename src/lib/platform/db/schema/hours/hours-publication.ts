@@ -21,10 +21,12 @@
  * window is closed: rolling the app back past #281 is no longer an app-only
  * operation, and the child table is now the only representation there is.
  *
- * `core.hours_publication` is still an allowlisted absence in
- * `tools/lint/audit-coverage-allowlist.mjs` — issue #275 attaches this table's
- * capture trigger and removes the entry (EARS-33), which the column's removal
- * unblocks but does not itself do.
+ * The table is AUDITED since #275 (`0006_hours_publication_audit_trigger.sql`,
+ * EARS-33): the capture trigger is attached with all five columns below
+ * whitelisted by value, and the allowlisted absence it used to be in
+ * `tools/lint/audit-coverage-allowlist.mjs` is gone. Dropping `messages`
+ * unblocked that but did not itself do it, which is why the two are separate
+ * releases.
  *
  * `started_at` / `published_at` are `text` ISO-8601 (`toISOString()`), like every
  * timestamp that appears verbatim in the owner's export (spec 124 column table).

@@ -43,6 +43,13 @@
       "when": 1787205790024,
       "tag": "0005_hours_publication_drop_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787301917339,
+      "tag": "0006_hours_publication_audit_trigger",
+      "breakpoints": true
     }
   ]
 }

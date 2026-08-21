@@ -199,6 +199,12 @@ delivery text NOT NULL, sent_at text)` with `UNIQUE (period_id, position)`
   putting frozen message texts and per-member delivery data into a ledger that
   EARS-28 says nothing can redact. The allowlist entry is removed, and the
   trigger attached, by the release that follows the contract step.
+  **Discharged 2026-08-21 (#275):** that release shipped as
+  `src/lib/platform/db/migrations/0006_hours_publication_audit_trigger.sql` —
+  the trigger is attached with all five remaining columns whitelisted by value,
+  and the entry is gone from `tools/lint/audit-coverage-allowlist.mjs`. No
+  product table is an allowlisted absence any more; what remains on the list is
+  structural only (EARS-15).
 
 ### Attribution
 
@@ -855,9 +861,10 @@ do not reach.
    integration counterpart sees the same thing from `pg_trigger.tgargs` against
    the really-migrated database. (EARS-1, EARS-27, EARS-29, EARS-21)
 10. **Coverage against reality.** The `platform-int` job is green with every
-    audited table's trigger present in `pg_trigger` — `core.hours_publication`
-    being, until EARS-33 lifts it, an allowlisted absence with its rationale
-    rather than a silent one; dropping one trigger locally turns that job red,
+    audited table's trigger present in `pg_trigger` — including
+    `core.hours_publication`, whose allowlisted absence EARS-33 lifted in #275
+    (before that release it was an absence with its rationale rather than a
+    silent one); dropping one trigger locally turns that job red,
     and `core.audit_event` itself carries no capture trigger.
     (EARS-15, EARS-21, EARS-22, EARS-33)
 11. **Reading it at all.** The owner asks «что менялось по этому человеку за
