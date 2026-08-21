@@ -731,7 +731,20 @@ describe('buildBuilderPruneScript', () => {
     expect(script).toContain('docker builder prune')
     expect(script).toContain(`--filter until=${BUILD_CACHE_RETENTION}`)
     // -f: no interactive confirmation on a non-tty ssh channel.
-    expect(script).toMatch(/docker builder prune[^\n]*\s-f\b/)
+    expect(script).toMatch(/docker builder prune[^\n]*\s-(?:af|f)\b/)
+  })
+
+  it('prunes ALL unused cache, not only dangling — the class #305 is about', () => {
+    // Without -a/--all `docker builder prune` touches dangling cache only, and
+    // the 78 unused-but-not-dangling entries of #305 survive. The manual run
+    // that reclaimed 4.6 GB on portal-prod-tw was `-af`.
+    expect(buildBuilderPruneScript()).toMatch(/docker builder prune\s+-af\b/)
+  })
+
+  it('honours a caller-supplied retention window', () => {
+    const script = buildBuilderPruneScript('168h')
+    expect(script).toContain('--filter until=168h')
+    expect(script).not.toContain(`until=${BUILD_CACHE_RETENTION}`)
   })
 
   it('keeps the retention window non-zero — a cold cache on every deploy is not the fix', () => {
