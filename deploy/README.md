@@ -361,9 +361,20 @@ protected `core.audit_event` from an accident and from nothing else. After this
 step the box carries two roles: an application role that can only **read** the
 ledger, and a migrating role that owns `core`.
 
-Run it **before** the first `pnpm deploy:prod` of this release — the deploy's
-`verifyRemoteEnv` stage refuses to ship without `PLATFORM_MIGRATE_DATABASE_URL`
-in `.env.prod`, which is the second half of the same step.
+**Bootstrap order on a box whose tree predates this release** (this is how the
+2026-08-21 split was actually run — `ensure-roles.mjs` and the `tooling` image
+only reach the box via the deploy, so the step cannot run first): (1) append a
+temporary `PLATFORM_MIGRATE_DATABASE_URL` that is a byte-copy of the existing
+superuser `PLATFORM_DATABASE_URL` line — this satisfies `verifyRemoteEnv`, and
+migration 0007 no-ops with a NOTICE while the roles are absent; (2)
+`pnpm deploy:prod` as usual; (3) step 1 below (replace both strings with the
+two new role logins); (4) step 2 below (`platform:roles:ensure` — its guards
+require the targets to already be the non-superuser names, which is why step 1
+comes first); (5) `docker compose -f deploy/docker-compose.prod.yml up -d app`
+to recreate the app under the new role. On a box that already carries this
+release's tree, steps 1–2 of the runbook before the next deploy are enough —
+`verifyRemoteEnv` refuses to ship without `PLATFORM_MIGRATE_DATABASE_URL` in
+`.env.prod` either way.
 
 **Step 1 — REPLACE the existing `PLATFORM_DATABASE_URL`, do not append one.**
 This box has carried that line since #125 and it names the container superuser
