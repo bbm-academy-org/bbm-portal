@@ -15,7 +15,12 @@ import {
   formatEnsureOutcome,
 } from './ensure-database.mjs'
 import { loadPlatformToolEnv } from './load-env.mjs'
+import {
+  PLATFORM_MIGRATE_DATABASE_URL_VAR,
+  resolveMigrateDatabaseUrl,
+} from './platform-config.mjs'
 
+export { PLATFORM_MIGRATE_DATABASE_URL_VAR }
 export const PLATFORM_DATABASE_URL_VAR = 'PLATFORM_DATABASE_URL'
 export const TASK_ID_RE = /^[1-9][0-9]*$/
 
@@ -117,39 +122,62 @@ function parseArgs(argv) {
   return { command, taskId: positional[0] ?? null, envRoot }
 }
 
-function loadBaseUrl(envRoot) {
+/**
+ * Both echelons of the base environment (#278).
+ *
+ * `CREATE DATABASE` is DDL, so the branch database is created and dropped
+ * through the MIGRATING string — the application role this repo now provisions
+ * is `NOCREATEDB` and would fail here, which is the whole point of it. The
+ * application string is still required: it is what the worktree's `.env` has to
+ * carry for `pnpm dev` and the integration tier.
+ */
+function loadBaseUrls(envRoot) {
   loadPlatformToolEnv(envRoot)
-  const base = process.env[PLATFORM_DATABASE_URL_VAR]?.trim()
-  if (!base) {
+  const app = process.env[PLATFORM_DATABASE_URL_VAR]?.trim()
+  if (!app) {
     throw new Error(
       `${PLATFORM_DATABASE_URL_VAR} is not set in the environment, this worktree .env, ` +
         'or the primary checkout .env; there is no fallback to DATABASE_URL/cms',
     )
   }
-  return base
+  const migrate = resolveMigrateDatabaseUrl(process.env)
+  return { app, migrate: migrate.url, split: migrate.split, warning: migrate.warning }
 }
 
-function patchWorktreeEnv(envRoot, branchUrl) {
+function patchWorktreeEnv(envRoot, values) {
   const path = resolve(envRoot, '.env')
-  const current = existsSync(path) ? readFileSync(path, 'utf8') : ''
-  writeFileSync(path, mergeEnvValue(current, PLATFORM_DATABASE_URL_VAR, branchUrl), 'utf8')
+  let contents = existsSync(path) ? readFileSync(path, 'utf8') : ''
+  for (const [key, value] of Object.entries(values)) {
+    contents = mergeEnvValue(contents, key, value)
+  }
+  writeFileSync(path, contents, 'utf8')
   return path
 }
 
 async function create({ taskId, envRoot }) {
   const task = taskId ?? taskIdFromWorktreePath(envRoot)
-  const branchUrl = formatBranchDatabaseUrl(loadBaseUrl(envRoot), task)
-  const outcome = await ensureDatabase(branchUrl)
-  const envPath = patchWorktreeEnv(envRoot, branchUrl)
+  const base = loadBaseUrls(envRoot)
+  if (base.warning) out(`! ${base.warning}`)
+
+  const branchAppUrl = formatBranchDatabaseUrl(base.app, task)
+  const branchMigrateUrl = formatBranchDatabaseUrl(base.migrate, task)
+  const outcome = await ensureDatabase(branchMigrateUrl)
+
+  const written = { [PLATFORM_DATABASE_URL_VAR]: branchAppUrl }
+  // Only when the estate really is split: writing the variable in an un-split
+  // worktree would turn this tool's documented fallback into a silent duplicate.
+  if (base.split) written[PLATFORM_MIGRATE_DATABASE_URL_VAR] = branchMigrateUrl
+  const envPath = patchWorktreeEnv(envRoot, written)
 
   out(formatEnsureOutcome(outcome).trim())
-  out(`${PLATFORM_DATABASE_URL_VAR}=${branchUrl}`)
+  for (const [key, value] of Object.entries(written)) out(`${key}=${value}`)
   out(`wrote ${envPath}; pnpm platform:migrate in this worktree will use ${outcome.database}.`)
 }
 
 async function drop({ taskId, envRoot }) {
   if (!taskId) die('drop requires a numeric task id', 2)
-  const branchUrl = formatBranchDatabaseUrl(loadBaseUrl(envRoot), taskId)
+  const base = loadBaseUrls(envRoot)
+  const branchUrl = formatBranchDatabaseUrl(base.migrate, taskId)
   const outcome = await dropBranchDatabase(branchUrl, taskId)
   out(formatDropOutcome(outcome).trim())
 }

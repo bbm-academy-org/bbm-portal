@@ -8,6 +8,8 @@ import {
   type PlatformTx,
 } from '@/lib/platform/db/transaction'
 
+import { truncateAsFixture } from './privilege-helpers'
+
 /**
  * Seeding and truncation for the hours-on-core integration specs (spec 124).
  *
@@ -43,9 +45,13 @@ export type IntDb = PlatformDb
  * The tables every hours spec resets, children first. `member` is included
  * because the hours participant FK points at it (ON DELETE RESTRICT), so a
  * leftover member would carry a participant into the next test.
+ *
+ * Runs through the FIXTURE connection, not the application pool — see
+ * `truncateAsFixture` in `./privilege-helpers`. The `db` parameter is kept only
+ * so every call site reads exactly as it did before, and is unused.
  */
-export async function truncateHoursTables(db: IntDb): Promise<void> {
-  await db.execute(sql`truncate table
+export async function truncateHoursTables(_db?: IntDb): Promise<void> {
+  await truncateAsFixture(`truncate table
     core.hours_publication_message, core.hours_publication, core.hours_assessment,
     core.hours_participant, core.hours_period,
     core.member_alias, core.member

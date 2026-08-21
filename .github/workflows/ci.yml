@@ -112,6 +112,13 @@ jobs:
   #
   # `platform:migrate` runs the ensure step first, so the empty `postgres` service
   # gets the `platform` database created before drizzle applies the migrations.
+  #
+  # Since #278 the job runs the two-role arrangement of EARS-30 rather than the
+  # service superuser: `platform:roles:ensure` splits the container into an
+  # application role and a migrating role, and the integration tier then connects
+  # as the application one. That ordering is the point — this is the only tier in
+  # the estate where the privilege echelon is asserted on every PR, and asserting
+  # it as a superuser would assert nothing.
   platform-int:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -130,7 +137,19 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      PLATFORM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/platform
+      # Three roles, three jobs (#278, EARS-30). `postgres` is the SERVICE
+      # container's superuser and is used for exactly one thing — creating the
+      # other two. `ci_platform_app` is what the integration tier connects as, so
+      # the tier really runs against the least-privilege role production will use;
+      # `ci_platform_migrate` owns `core` and is what drizzle-kit connects as.
+      # The names are per-environment on purpose: the dev stand and prod name
+      # theirs differently, and nothing in the code hardcodes any of the three —
+      # the fixed names are the privilege GROUPS the roles belong to.
+      # Throwaway credentials for an ephemeral container on localhost, exactly
+      # like the `postgres:postgres` above them.
+      PLATFORM_SUPERUSER_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      PLATFORM_DATABASE_URL: postgres://ci_platform_app:ci_platform_app@localhost:5432/platform
+      PLATFORM_MIGRATE_DATABASE_URL: postgres://ci_platform_migrate:ci_platform_migrate@localhost:5432/platform
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -139,6 +158,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Provisioning, not migration: a non-superuser migration can neither
+      # CREATE ROLE nor take ownership, so this step runs first and as the
+      # superuser. On the empty service container it creates the roles only —
+      # `platform` does not exist yet, and the grants ride in with the migration
+      # a step later.
+      - name: Platform roles (provisioning)
+        run: pnpm platform:roles:ensure
       - name: Platform migrations (ensure + drizzle)
         run: pnpm platform:migrate
       - name: Platform integration tier

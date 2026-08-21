@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { loadPlatformToolEnv } from './load-env.mjs'
+import { MIGRATOR_ROLE_GROUP, resolveMigrateDatabaseUrlLoudly } from './platform-config.mjs'
 
 export const MAINTENANCE_DATABASE = 'postgres'
 export const PAYLOAD_DATABASE = 'cms'
@@ -123,7 +124,23 @@ export async function ensureDatabase(connectionString, { Client } = {}) {
     const created = rowCount === 0
     // This is the full live scope of the ensure seam: one optional CREATE
     // DATABASE, no schemas and no migrations.
-    if (created) await client.query(`CREATE DATABASE ${quoteIdentifier(target.database)}`)
+    //
+    // `OWNER platform_migrator` when that privilege group exists (#278): a
+    // database created without it belongs to whichever login role happened to
+    // run the ensure step, and every environment would then hold `core` under a
+    // different owner name. Absent group → the single-role estate, and the
+    // plain CREATE is still correct there.
+    if (created) {
+      const { rowCount: hasGroup } = await client.query(
+        'SELECT 1 FROM pg_roles WHERE rolname = $1',
+        [MIGRATOR_ROLE_GROUP],
+      )
+      await client.query(
+        hasGroup > 0
+          ? `CREATE DATABASE ${quoteIdentifier(target.database)} OWNER ${quoteIdentifier(MIGRATOR_ROLE_GROUP)}`
+          : `CREATE DATABASE ${quoteIdentifier(target.database)}`,
+      )
+    }
     return { database: target.database, created, host: target.host }
   } finally {
     await client.end()
@@ -160,17 +177,21 @@ export async function dropBranchDatabase(connectionString, taskId, { Client } = 
 
 async function main() {
   loadPlatformToolEnv()
-  const target = deriveMaintenanceTarget(process.env.PLATFORM_DATABASE_URL)
+  // CREATE DATABASE is DDL, so this step runs as the MIGRATING role (#278) — the
+  // application role is deliberately NOCREATEDB.
+  const connectionString = resolveMigrateDatabaseUrlLoudly(process.env)
+  const target = deriveMaintenanceTarget(connectionString)
   if (!target.ok) {
     console.error(
       `\n✗ platform:db:ensure FAILED: ${target.error}\n` +
-        '  PLATFORM_DATABASE_URL is the platform database connection string — it is a\n' +
-        "  SEPARATE database from Payload's `cms`. See deploy/README.md and .env.example.",
+        '  PLATFORM_MIGRATE_DATABASE_URL (falling back to PLATFORM_DATABASE_URL) is the\n' +
+        "  platform database connection string — a SEPARATE database from Payload's `cms`.\n" +
+        '  See deploy/README.md and .env.example.',
     )
     process.exit(1)
   }
 
-  const outcome = await ensureDatabase(process.env.PLATFORM_DATABASE_URL)
+  const outcome = await ensureDatabase(connectionString)
   console.log(formatEnsureOutcome(outcome))
 }
 

@@ -65,6 +65,8 @@
     "payload": "cross-env NODE_OPTIONS=--no-deprecation payload",
     "preplatform:db:ensure": "node scripts/require-node.mjs",
     "platform:db:ensure": "node tools/platform/ensure-database.mjs",
+    "preplatform:roles:ensure": "node scripts/require-node.mjs",
+    "platform:roles:ensure": "node tools/platform/ensure-roles.mjs",
     "preplatform:migrate": "node scripts/require-node.mjs",
     "platform:migrate": "node tools/platform/ensure-database.mjs && drizzle-kit migrate --config=src/lib/platform/db/drizzle.config.ts",
     "preplatform:migrate:generate": "node scripts/require-node.mjs",

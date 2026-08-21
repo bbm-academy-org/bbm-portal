@@ -69,7 +69,16 @@ describe('the tools read `.env` (end to end)', () => {
     const res = spawnSync(process.execPath, [ENSURE], {
       cwd,
       encoding: 'utf8',
-      env: { ...process.env, PLATFORM_DATABASE_URL: undefined, ...env },
+      env: {
+        ...process.env,
+        PLATFORM_DATABASE_URL: undefined,
+        // Cleared for the same reason as the line above: since #278 the ensure
+        // step resolves the MIGRATING string first, so a leaked one from the
+        // developer's own environment would make every case here talk to a real
+        // database instead of the temp directory's `.env`.
+        PLATFORM_MIGRATE_DATABASE_URL: undefined,
+        ...env,
+      },
     })
     return `${res.stdout ?? ''}${res.stderr ?? ''}`
   }
@@ -83,6 +92,23 @@ describe('the tools read `.env` (end to end)', () => {
 
   it('still fails closed when neither the environment nor `.env` carries it', () => {
     expect(runEnsure(tempDirWith(null))).toContain('PLATFORM_DATABASE_URL')
+  })
+
+  it('#278: the MIGRATING string is what the ensure step uses when the estate is split', () => {
+    // Both set, and it is the migrating one the tool refuses by name — the whole
+    // point being that `CREATE DATABASE` must not run as the application role.
+    const dir = tempDirWith(
+      'PLATFORM_DATABASE_URL=postgres://app:pw@127.0.0.1:5432/platform\n' +
+        'PLATFORM_MIGRATE_DATABASE_URL=postgres://mig:pw@127.0.0.1:5432/cms\n',
+    )
+    expect(runEnsure(dir)).toContain('points at `cms`')
+  })
+
+  it('#278: an un-split environment falls back to the application string, and says so', () => {
+    const dir = tempDirWith('PLATFORM_DATABASE_URL=postgres://payload:pw@127.0.0.1:5432/cms\n')
+    const out = runEnsure(dir)
+    expect(out).toContain('PLATFORM_MIGRATE_DATABASE_URL is not set')
+    expect(out).toContain('points at `cms`')
   })
 
   it('lets an exported variable win over `.env` — the shell is the override', () => {

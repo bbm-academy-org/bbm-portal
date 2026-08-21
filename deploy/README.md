@@ -37,7 +37,8 @@ All commands below run **from the `deploy/` directory on the host**.
    ```bash
    cp .env.prod.example .env.prod          # app + migrate
    # edit: PAYLOAD_SECRET (openssl rand -hex 32), DATABASE_URL,
-   #       PLATFORM_DATABASE_URL (same credentials, database `platform`),
+   #       PLATFORM_DATABASE_URL + PLATFORM_MIGRATE_DATABASE_URL (database
+   #         `platform`, two DIFFERENT roles — see Splitting the platform roles),
    #       S3 keys (terraform output portal_media_*), SEED_ADMIN_*.
 
    cp .env.postgres.example .env.postgres  # postgres container only
@@ -50,7 +51,10 @@ All commands below run **from the `deploy/` directory on the host**.
    ```
 
    `DATABASE_URL` host is the compose service name `postgres`, not localhost —
-   and so is `PLATFORM_DATABASE_URL`'s (see _Platform database_ below).
+   and so is `PLATFORM_DATABASE_URL`'s (see _Platform database_ below). Since
+   #278 the two platform strings name two **non-superuser** roles that have to
+   exist before the first deploy of that release — _Splitting the platform roles_
+   below is the step that creates them.
 
 4. **The code on the host.** Org policy disables repo deploy keys, so the box
    has no `git` clone. Ship the committed tree as an archive from a workstation
@@ -325,7 +329,8 @@ Payload's migration and _before_ `up -d`.
 Three consequences at the host level:
 
 - **Nothing to provision inside Postgres by hand** (as distinct from the env line
-  above). `POSTGRES_DB` in `.env.postgres` still names `cms` only. The `platform`
+  above and the role split below). `POSTGRES_DB` in `.env.postgres` still names
+  `cms` only. The `platform`
   database itself is created on first migrate by `pnpm platform:db:ensure` (which
   `pnpm platform:migrate` runs first), so a fresh `pgdata` volume needs no
   hand-run `psql` — the same pattern the dev Zitadel uses for its own `zitadel`
@@ -335,6 +340,62 @@ Three consequences at the host level:
   platform migration is protected by exactly the same fail-closed dump gate as a
   Payload one.
 - **The checkpoint must cover BOTH databases.** See below.
+
+### Splitting the platform roles — one supervised step, once per box (#278)
+
+> **This is the one thing on this page that is NOT run by `pnpm deploy:prod`.**
+> Postgres roles are cluster objects: a migration runs as the migrating role, and
+> a non-superuser can neither `CREATE ROLE` nor take ownership of a table a
+> superuser owns. Provisioning them is therefore an operator step, run once, as
+> the container superuser — the same reasoning ADR-004 §5 applied to
+> `CREATE DATABASE`, arriving at the opposite answer only because roles cannot be
+> created from inside the pipeline at all.
+
+Until #278 the application, `drizzle-kit` and Zitadel all connected to `platform`
+as the **container superuser**. A superuser switches off any trigger with one
+statement and is exempt from every grant, so the ledger's append-only triggers
+protected `core.audit_event` from an accident and from nothing else. After this
+step the box carries two roles: an application role that can only **read** the
+ledger, and a migrating role that owns `core`.
+
+Run it **before** the first `pnpm deploy:prod` of this release — the deploy's
+`verifyRemoteEnv` stage refuses to ship without `PLATFORM_MIGRATE_DATABASE_URL`
+in `.env.prod`, which is the second half of the same step.
+
+```bash
+ssh portal-prod-tw
+cd ~/bbm-portal
+
+# 1. Pick two strong passwords and write BOTH strings into the host-only env
+#    file. The role names and passwords are read out of these strings — there is
+#    no separate PLATFORM_*_ROLE variable to keep in sync.
+cd deploy
+cat >> .env.prod <<'EOF'
+PLATFORM_DATABASE_URL=postgres://bbm_platform_app:<app-password>@postgres:5432/platform
+PLATFORM_MIGRATE_DATABASE_URL=postgres://bbm_platform_migrate:<migrate-password>@postgres:5432/platform
+EOF
+# If the box already had a PLATFORM_DATABASE_URL line (the superuser one), EDIT
+# it rather than appending a second: `verifyRemoteEnv` greps for `^NAME=` and a
+# duplicate would leave the old superuser string in force.
+
+# 2. Split the cluster, as the superuser. Idempotent; safe to re-run.
+#    PLATFORM_SUPERUSER_DATABASE_URL is used ONLY here and is never stored.
+cd ~/bbm-portal
+docker compose -f deploy/docker-compose.prod.yml --profile tools run --rm \
+  -e PLATFORM_SUPERUSER_DATABASE_URL='postgres://payload:<POSTGRES_PASSWORD>@postgres:5432/platform' \
+  migrate pnpm platform:roles:ensure
+```
+
+It prints the two role names and whether it applied the grants. `core` is handed
+to the migrating role and the ledger's `UPDATE`/`DELETE`/`TRUNCATE`/`INSERT` are
+revoked from the application role, `SELECT` retained. Verify from the box:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml exec postgres \
+  psql -U payload -d platform -c \
+  "select tableowner from pg_tables where schemaname='core' and tablename='audit_event'"
+# expected: platform_migrator
+```
 
 ### Backups must cover both databases
 

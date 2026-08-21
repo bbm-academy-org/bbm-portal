@@ -17,6 +17,8 @@ import {
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 import { platformTransaction } from '@/lib/platform/db/transaction'
 
+import { truncateAsFixture } from './privilege-helpers'
+
 /**
  * The member module against a REAL `core` schema (spec 124 EARS-2, EARS-17,
  * EARS-18, EARS-19).
@@ -79,7 +81,7 @@ async function seedAlias(memberId: number, kind: string, value: string, note?: s
 }
 
 beforeEach(async () => {
-  await db.execute(sql`truncate table core.member_alias, core.member restart identity cascade`)
+  await truncateAsFixture(`truncate table core.member_alias, core.member restart identity cascade`)
 })
 
 afterAll(async () => {

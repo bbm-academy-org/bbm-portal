@@ -32,6 +32,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { loadDotEnv } from './load-env.mjs'
+import { resolveMigrateDatabaseUrlLoudly } from './platform-config.mjs'
 
 // These two restate values owned by `src/lib/platform/db/config.ts`, which this
 // plain-.mjs tool cannot import. tests/unit/platform-migrate-status.spec.ts
@@ -141,13 +142,14 @@ export async function readAppliedWhen(client) {
 async function main() {
   // `.env` first, the environment wins (see ./load-env.mjs).
   loadDotEnv()
-  const connectionString = process.env.PLATFORM_DATABASE_URL?.trim()
-  if (!connectionString) {
-    console.error(
-      '\n✗ platform:migrate:status FAILED: PLATFORM_DATABASE_URL is not set.\n' +
-        "  The platform database is SEPARATE from Payload's `cms` and has no fallback —\n" +
-        '  see deploy/README.md and .env.example.',
-    )
+  // The MIGRATING role (#278): this command answers "what would
+  // `platform:migrate` do next", so it must look at the database through the same
+  // credential that command uses.
+  let connectionString
+  try {
+    connectionString = resolveMigrateDatabaseUrlLoudly(process.env)
+  } catch (err) {
+    console.error(`\n✗ platform:migrate:status FAILED: ${err?.message ?? String(err)}`)
     process.exit(1)
   }
 
