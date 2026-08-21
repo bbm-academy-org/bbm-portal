@@ -703,7 +703,15 @@ are still decided:
   not a rewrite of the function. With the column policy moved into `TG_ARGV`
   (EARS-16) the function reads no table other than the ledger it writes, which is
   what makes the pinned path sufficient.
-- **The role picture today, named once so no clause has to imply it.** One
+- **The role picture when this spec shipped, named once so no clause has to imply
+  it.** **Discharged (#278, 2026-08-21):** `platform` now carries two roles — an
+  application role in `PLATFORM_DATABASE_URL` and a migrating role in
+  `PLATFORM_MIGRATE_DATABASE_URL` which owns `core` — provisioned by
+  `pnpm platform:roles:ensure` and granted by migration
+  `0007_platform_least_privilege.sql`, and ADR-004 §3 carries the amendment
+  **A1 (2026-08-21)** this bullet anticipated. The paragraph below is kept
+  verbatim as the record of the estate the ledger shipped into, and of why
+  the migration described here issued no role statement at all. One
   Postgres role exists — the container superuser of
   `infra/dev-stand/compose.core.yml` and `deploy/docker-compose.prod.yml`, shared
   by Payload, Zitadel and the platform; `src/lib/platform/db/client.ts` and

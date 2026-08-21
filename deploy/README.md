@@ -292,9 +292,13 @@ cd deploy && docker compose -f docker-compose.prod.yml --profile tools run --rm 
 ## Platform database (`platform`, schema `core`) — #125
 
 The `postgres` container holds **two** databases from this task on: Payload's
-`cms`, and the platform's `platform` reached through a **second connection
-string**, `PLATFORM_DATABASE_URL` in `.env.prod`. Same container, same
-credentials, different database name — the Payload adapter is untouched.
+`cms`, and the platform's `platform`, reached through its own connection
+string(s) in `.env.prod` — the Payload adapter is untouched. Since #278 those
+are **two** strings with **two dedicated non-superuser roles**, not Payload's
+credentials: `PLATFORM_DATABASE_URL` (application role) and
+`PLATFORM_MIGRATE_DATABASE_URL` (migrating role, owner of `core`). Both are
+created by the supervised `pnpm platform:roles:ensure` step — _Splitting the
+platform roles_ below.
 
 The decision and its alternatives:
 [**ADR-004**](../docs/adr/004-platform-persistence-foundation.md). The pipeline's
@@ -307,16 +311,15 @@ here is only what is true at the **host** level.
 `deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
 deploy carries the box's own `deploy/.env*` across the swap — _How the tree
 reaches the box_ above), and **no deploy can add a line to it for you**. A box
-installed before this change therefore has no `PLATFORM_DATABASE_URL`, and the
+installed before this change therefore has neither platform variable, and the
 `migrate` service reads its environment from that file.
 
-```bash
-ssh portal-prod-tw
-cd ~/bbm-portal/deploy
-# same credentials and host as DATABASE_URL — only the database name differs
-grep '^DATABASE_URL=' .env.prod        # copy it, swap /cms for /platform
-echo 'PLATFORM_DATABASE_URL=postgres://payload:<the same password>@postgres:5432/platform' >> .env.prod
-```
+Since #278 both lines are written by the supervised role-split step below —
+_Splitting the platform roles — one supervised step, once per box (#278)_ — and
+that step is the only recipe for them on this page. Do not hand-write a
+`PLATFORM_DATABASE_URL` carrying Payload's superuser credentials: the roles must
+exist first, and a box that already has such a line must have it **edited**, not
+appended to.
 
 `pnpm deploy:prod` **checks this for you** before it touches anything: its first
 remote stage (`verifyRemoteEnv`) greps `.env.prod` for every variable the release
