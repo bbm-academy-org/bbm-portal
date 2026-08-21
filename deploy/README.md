@@ -365,25 +365,47 @@ Run it **before** the first `pnpm deploy:prod` of this release — the deploy's
 `verifyRemoteEnv` stage refuses to ship without `PLATFORM_MIGRATE_DATABASE_URL`
 in `.env.prod`, which is the second half of the same step.
 
+**Step 1 — REPLACE the existing `PLATFORM_DATABASE_URL`, do not append one.**
+This box has carried that line since #125 and it names the container superuser
+(`payload`). Two lines with the same name would leave the superuser string in
+force, and `verifyRemoteEnv` — which greps `^NAME=` — would report the variable
+present either way. So the application line is **edited in place** and only the
+genuinely new migrating line is appended.
+
 ```bash
 ssh portal-prod-tw
-cd ~/bbm-portal
+cd ~/bbm-portal/deploy
 
-# 1. Pick two strong passwords and write BOTH strings into the host-only env
-#    file. The role names and passwords are read out of these strings — there is
-#    no separate PLATFORM_*_ROLE variable to keep in sync.
-cd deploy
-cat >> .env.prod <<'EOF'
-PLATFORM_DATABASE_URL=postgres://bbm_platform_app:<app-password>@postgres:5432/platform
-PLATFORM_MIGRATE_DATABASE_URL=postgres://bbm_platform_migrate:<migrate-password>@postgres:5432/platform
-EOF
-# If the box already had a PLATFORM_DATABASE_URL line (the superuser one), EDIT
-# it rather than appending a second: `verifyRemoteEnv` greps for `^NAME=` and a
-# duplicate would leave the old superuser string in force.
+cp .env.prod .env.prod.bak-$(date +%F)   # host-only file, no other copy exists
+grep -n '^PLATFORM_' .env.prod           # see exactly what is there today
 
-# 2. Split the cluster, as the superuser. Idempotent; safe to re-run.
-#    PLATFORM_SUPERUSER_DATABASE_URL is used ONLY here and is never stored.
+# Pick two strong passwords first (`openssl rand -base64 24`, no `@ : / #`).
+# The role names and passwords are read out of these strings — there is no
+# separate PLATFORM_*_ROLE variable to keep in sync.
+#
+# 1a. Replace the one existing line (this rewrites it; it never adds a second):
+sed -i 's|^PLATFORM_DATABASE_URL=.*|PLATFORM_DATABASE_URL=postgres://bbm_platform_app:<app-password>@postgres:5432/platform|' .env.prod
+
+# 1b. Append the migrating string only if it is not already there:
+grep -q '^PLATFORM_MIGRATE_DATABASE_URL=' .env.prod \
+  || echo 'PLATFORM_MIGRATE_DATABASE_URL=postgres://bbm_platform_migrate:<migrate-password>@postgres:5432/platform' >> .env.prod
+
+# 1c. Verify before going further — EXACTLY one of each, and neither names `payload`:
+grep -c '^PLATFORM_DATABASE_URL=' .env.prod          # must print 1
+grep -c '^PLATFORM_MIGRATE_DATABASE_URL=' .env.prod  # must print 1
+grep '^PLATFORM_' .env.prod | grep -c 'payload'      # must print 0
+```
+
+**Step 2 — split the cluster, as the superuser.** Idempotent, and safe to run
+before or after step 1: the tool **refuses** to touch a role that is the login of
+`PLATFORM_SUPERUSER_DATABASE_URL` or of `DATABASE_URL`, and refuses any
+pre-existing role the catalog reports as a `SUPERUSER`. A box whose step 1 is not
+done yet therefore gets a refusal, not a demoted superuser.
+
+```bash
 cd ~/bbm-portal
+# PLATFORM_SUPERUSER_DATABASE_URL is passed on the command line for this one run
+# and is never written to .env.prod.
 docker compose -f deploy/docker-compose.prod.yml --profile tools run --rm \
   -e PLATFORM_SUPERUSER_DATABASE_URL='postgres://payload:<POSTGRES_PASSWORD>@postgres:5432/platform' \
   migrate pnpm platform:roles:ensure
@@ -391,7 +413,8 @@ docker compose -f deploy/docker-compose.prod.yml --profile tools run --rm \
 
 It prints the two role names and whether it applied the grants. `core` is handed
 to the migrating role and the ledger's `UPDATE`/`DELETE`/`TRUNCATE`/`INSERT` are
-revoked from the application role, `SELECT` retained. Verify from the box:
+revoked from the application role (`SELECT` retained), as is `USAGE` on its
+identity sequence. Verify from the box:
 
 ```bash
 docker compose -f deploy/docker-compose.prod.yml exec postgres \

@@ -395,7 +395,14 @@ delivery text NOT NULL, sent_at text)` with `UNIQUE (period_id, position)`
   single connection string, so ADR-004 carries the amendment **A1 (2026-08-21)**
   the clause below anticipated. The scenario this spec could not perform is
   performed in `tests/int/platform/audit-privileges.int.spec.ts`, on every PR, in
-  the CI job named in §«How it lands in our pipeline». The clause is kept verbatim
+  the CI job named in §«How it lands in our pipeline». That «on every PR» is
+  load-bearing and therefore fail-closed: the suite skips on an un-split developer
+  database, but where the split is mandatory — CI, which provisions it in its own
+  job — its absence **fails** the suite instead of skipping it green
+  (`assertSplitWhereMandatory`). The ledger's identity sequence lost `USAGE` along
+  with the table's write privileges: nothing legitimate calls `nextval()` from the
+  application role, and leaving it would allow gaps to be burned into the one
+  table whose value is an unbroken sequence. The clause is kept verbatim
   below because it is the record of what the estate looked like when the ledger
   shipped, and of why EARS-12's trigger was the whole of the enforcement until
   #278.

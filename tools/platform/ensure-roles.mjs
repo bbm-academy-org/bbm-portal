@@ -109,6 +109,77 @@ export function assertDistinctRoles(app, migrator) {
 }
 
 /**
+ * The role a connection string logs in as, or `null` when the string is absent
+ * or not a URL. Deliberately total: this is used by the guard below, and a guard
+ * that throws on an unrelated malformed variable would be a guard operators
+ * learn to work around.
+ */
+function roleOf(connectionString) {
+  try {
+    return decodeURIComponent(new URL(String(connectionString ?? '').trim()).username || '') || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Refuse to provision a role that some OTHER live connection already logs in as.
+ * Pure — it decides on the strings alone, so the refusal happens before this tool
+ * opens anything.
+ *
+ * WHY THIS IS FAIL-CLOSED AND NOT A PARAGRAPH IN THE RUNBOOK. `createLogin()` is
+ * a no-op for a role that exists, so the two `ALTER ROLE` statements below land
+ * on whatever role the string names — including one that was never meant to be a
+ * target. On this estate `PLATFORM_DATABASE_URL` named the container superuser
+ * (`payload` in dev and prod, `postgres` in CI) until the operator edited it, and
+ * that role is the cluster's ONLY superuser and the one behind Payload's
+ * `DATABASE_URL`. Running this tool before that edit, or re-running it from a
+ * checkout whose env predates #278, would rotate that superuser's password and
+ * then strip SUPERUSER from the only role that could grant it back — recovery is
+ * single-user-mode surgery, not a command. Hence: the two steps of the runbook
+ * are safe in EITHER order, and a stale env is a refusal rather than an outage.
+ */
+export function assertTargetsAreNotOperationalRoles({ app, migrator }, connections = []) {
+  const targets = new Map([
+    [app.role, 'PLATFORM_DATABASE_URL'],
+    [migrator.role, 'PLATFORM_MIGRATE_DATABASE_URL'],
+  ])
+  for (const { varName, url } of connections) {
+    const role = roleOf(url)
+    if (!role || !targets.has(role)) continue
+    throw new Error(
+      `${targets.get(role)} names the role ${JSON.stringify(role)}, which is also the login of ` +
+        `${varName}. This tool would ALTER that role's password and strip its attributes ` +
+        '(NOCREATEDB NOCREATEROLE NOSUPERUSER) — on the container superuser that is not ' +
+        'recoverable from SQL. Give the platform its OWN two roles first (see the runbook ' +
+        '«Splitting the platform roles» in deploy/README.md), then re-run.',
+    )
+  }
+  return true
+}
+
+/**
+ * The same refusal for the case the strings cannot see: a target role that
+ * ALREADY exists and is a superuser. Asked of the catalog, which is the only
+ * place that knows.
+ */
+export async function assertNoPreexistingSuperuser(client, roles) {
+  const { rows } = await client.query(
+    'SELECT rolname FROM pg_roles WHERE rolsuper AND rolname = ANY($1::text[])',
+    [roles],
+  )
+  const supers = (rows ?? []).map((row) => row?.rolname).filter(Boolean)
+  if (supers.length) {
+    throw new Error(
+      `refusing to touch ${supers.join(', ')}: the role already exists and is a SUPERUSER. ` +
+        'Provisioning would rotate its password and strip SUPERUSER from it, which cannot be ' +
+        'undone without single-user mode. Point the platform strings at their own roles.',
+    )
+  }
+  return true
+}
+
+/**
  * Every statement phase 1 runs, in order. Pure, so the whole provisioning
  * contract is unit-testable without a cluster.
  *
@@ -192,12 +263,16 @@ export function readLeastPrivilegeSql(root = repoRoot()) {
 }
 
 export async function ensureRoles(
-  { superuserUrl, appUrl, migrateUrl },
+  { superuserUrl, appUrl, migrateUrl, otherUrls = [] },
   { Client, sqlStatements } = {},
 ) {
   const app = parseRoleCredentials(appUrl, 'PLATFORM_DATABASE_URL')
   const migrator = parseRoleCredentials(migrateUrl, 'PLATFORM_MIGRATE_DATABASE_URL')
   assertDistinctRoles(app, migrator)
+  assertTargetsAreNotOperationalRoles({ app, migrator }, [
+    { varName: SUPERUSER_URL_VAR, url: superuserUrl },
+    ...otherUrls,
+  ])
 
   const target = deriveMaintenanceTarget(appUrl)
   if (!target.ok) throw new Error(target.error)
@@ -225,6 +300,9 @@ export async function ensureRoles(
   await admin.connect()
   let databaseExists = false
   try {
+    // Before the first ALTER, and while holding the one connection that can see
+    // the catalog: a target role that already exists as a SUPERUSER is refused.
+    await assertNoPreexistingSuperuser(admin, [app.role, migrator.role])
     const { rowCount } = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [
       target.database,
     ])
@@ -293,7 +371,13 @@ async function main() {
     )
   }
 
-  const outcome = await ensureRoles({ superuserUrl, appUrl, migrateUrl })
+  // Every other connection string this box is known to use, so that a target
+  // role which is somebody else's service account is refused by name rather than
+  // demoted. Payload's `DATABASE_URL` is the one that matters on this estate: in
+  // dev and prod it is the same `payload` superuser the platform used to borrow.
+  const otherUrls = [{ varName: 'DATABASE_URL', url: process.env.DATABASE_URL }]
+
+  const outcome = await ensureRoles({ superuserUrl, appUrl, migrateUrl, otherUrls })
   console.log(formatRolesOutcome(outcome))
 }
 

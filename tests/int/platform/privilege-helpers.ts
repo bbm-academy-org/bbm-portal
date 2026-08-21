@@ -48,6 +48,37 @@ export function truncateAsFixture(statement: string): Promise<void> {
 export type PrivilegeSplitState = { split: boolean; reason: string }
 
 /**
+ * Where the EARS-30 suite may skip, and where a skip is a FAILURE.
+ *
+ * A developer's un-provisioned branch database has nothing to deny and the suite
+ * skips there, loudly and by name. CI is the other case: it provisions the split
+ * itself, and it is the ONE tier behind ADR-004 A1's and spec 201's claim that
+ * the privilege echelon is asserted on every PR. If the provisioning there ever
+ * breaks, `split: false` must take the suite red — a skip that quietly retires
+ * the only assertion of an integrity claim is worse than no assertion, because it
+ * still reports green.
+ *
+ * Returns `true` when the suite must run, `false` when the skip is legitimate;
+ * throws where the split is mandatory and absent.
+ */
+export function assertSplitWhereMandatory(
+  state: PrivilegeSplitState,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (state.split) return true
+  const inCi = Boolean(env.CI) && env.CI !== 'false' && env.CI !== '0'
+  if (inCi) {
+    throw new Error(
+      `EARS-30: this environment MUST run the least-privilege suite and cannot — ${state.reason}. ` +
+        'CI provisions the split in its own job (`pnpm platform:roles:ensure`, see ' +
+        '.github/workflows/ci.yml → platform-int); if that step stopped running, the privilege ' +
+        'echelon is no longer asserted anywhere and this failure is the only signal of it.',
+    )
+  }
+  return false
+}
+
+/**
  * Is THIS database actually split into two roles?
  *
  * Asked of the live catalog rather than of the environment, because the only

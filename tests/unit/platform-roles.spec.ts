@@ -6,6 +6,7 @@ import {
   LEAST_PRIVILEGE_MIGRATION,
   MIGRATOR_ROLE_GROUP,
   assertDistinctRoles,
+  assertTargetsAreNotOperationalRoles,
   buildRoleProvisioningStatements,
   ensureRoles,
   formatRolesOutcome,
@@ -72,6 +73,61 @@ describe('assertDistinctRoles', () => {
       )
     },
   )
+})
+
+describe('assertTargetsAreNotOperationalRoles', () => {
+  /**
+   * The blast radius this guard exists for (review of PR #308).
+   *
+   * `buildRoleProvisioningStatements` emits `ALTER ROLE <target> LOGIN PASSWORD …`
+   * and `ALTER ROLE <target> NOCREATEDB NOCREATEROLE NOSUPERUSER` unconditionally,
+   * and the CREATE before them is a no-op when the role already exists. On a box
+   * whose `PLATFORM_DATABASE_URL` still names the container superuser — which is
+   * every box until step 1 of the runbook is done — those two statements rotate
+   * that superuser's password and strip SUPERUSER from the only role that could
+   * grant it back. So the run has to be refused BEFORE the first ALTER, on the
+   * strings alone, in whatever order the operator happens to do the two steps.
+   */
+  const superuser = {
+    varName: 'PLATFORM_SUPERUSER_DATABASE_URL',
+    url: 'postgres://payload:pw@db:5432/platform',
+  }
+
+  it('accepts targets that are neither the superuser nor another service account', () => {
+    expect(assertTargetsAreNotOperationalRoles({ app: APP, migrator: MIGRATOR }, [superuser])).toBe(
+      true,
+    )
+  })
+
+  it.each([
+    ['the application string', { role: 'payload', password: 'x' }, MIGRATOR],
+    ['the migrating string', APP, { role: 'payload', password: 'x' }],
+  ])('refuses when %s names the superuser role', (_which, app, migrator) => {
+    expect(() => assertTargetsAreNotOperationalRoles({ app, migrator }, [superuser])).toThrow(
+      /PLATFORM_SUPERUSER_DATABASE_URL/,
+    )
+  })
+
+  it('refuses when a target is the role another live connection string uses', () => {
+    // Payload's own `DATABASE_URL` is the second string that names `payload` on
+    // this estate; demoting that role breaks the CMS as surely as it breaks the
+    // cluster.
+    expect(() =>
+      assertTargetsAreNotOperationalRoles(
+        { app: { role: 'payload', password: 'x' }, migrator: MIGRATOR },
+        [{ varName: 'DATABASE_URL', url: 'postgres://payload:pw@db:5432/cms' }],
+      ),
+    ).toThrow(/DATABASE_URL/)
+  })
+
+  it('ignores a string that is absent or unparseable rather than failing on it', () => {
+    expect(
+      assertTargetsAreNotOperationalRoles({ app: APP, migrator: MIGRATOR }, [
+        { varName: 'DATABASE_URL', url: undefined },
+        { varName: 'OTHER', url: 'not a url' },
+      ]),
+    ).toBe(true)
+  })
 })
 
 describe('buildRoleProvisioningStatements', () => {
@@ -175,6 +231,60 @@ describe('ensureRoles (seams only — no cluster)', () => {
     }
     return { Fake, seen }
   }
+
+  it('refuses — before opening any connection — a target that IS the superuser', async () => {
+    const opened: string[] = []
+    class Fake {
+      constructor({ connectionString }: { connectionString: string }) {
+        opened.push(connectionString)
+      }
+      async connect() {}
+      async query() {
+        return { rows: [], rowCount: 0 }
+      }
+      async end() {}
+    }
+    await expect(
+      ensureRoles(
+        {
+          superuserUrl: 'postgres://payload:pw@db:5432/platform',
+          appUrl: 'postgres://payload:pw@db:5432/platform',
+          migrateUrl: 'postgres://mig:pw@db:5432/platform',
+        },
+        { Client: Fake },
+      ),
+    ).rejects.toThrow(/PLATFORM_SUPERUSER_DATABASE_URL/)
+    expect(opened).toEqual([])
+  })
+
+  it('refuses a PRE-EXISTING target role that the catalog says is a superuser', async () => {
+    // The string-level guard cannot see this one: a role can be a superuser
+    // without being the string this run was handed (a second superuser, or an
+    // operator who granted it by hand). The catalog is the only truth, and it is
+    // consulted BEFORE the first ALTER — the tool is already connected as the
+    // superuser at that point, so the query is free.
+    const seen: string[] = []
+    class Fake {
+      async connect() {}
+      async query(sql: string) {
+        seen.push(sql)
+        if (/rolsuper/i.test(sql)) return { rows: [{ rolname: 'app' }], rowCount: 1 }
+        return { rows: [], rowCount: 0 }
+      }
+      async end() {}
+    }
+    await expect(
+      ensureRoles(
+        {
+          superuserUrl: 'postgres://su:pw@db:5432/postgres',
+          appUrl: 'postgres://app:pw@db:5432/platform',
+          migrateUrl: 'postgres://mig:pw@db:5432/platform',
+        },
+        { Client: Fake },
+      ),
+    ).rejects.toThrow(/superuser/i)
+    expect(seen.join('\n')).not.toContain('ALTER ROLE')
+  })
 
   it('refuses two connection strings that point at different databases', async () => {
     const { Fake } = fakeClient()

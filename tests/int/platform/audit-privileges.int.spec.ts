@@ -6,9 +6,11 @@ import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 import { PLATFORM_APP_ROLE_GROUP, PLATFORM_MIGRATOR_ROLE_GROUP } from '@/lib/platform/db/config'
 import { platformTransaction } from '@/lib/platform/db/transaction'
 
+import { readLeastPrivilegeSql } from '../../../tools/platform/ensure-roles.mjs'
+
 import { auditEventsFor, auditWatermark, refusedWith } from './audit-helpers'
 import { seedMember, truncateHoursTables } from './hours-core-helpers'
-import { privilegeSplitState } from './privilege-helpers'
+import { asMigrator, assertSplitWhereMandatory, privilegeSplitState } from './privilege-helpers'
 
 /**
  * The privilege echelon (spec 201 EARS-30, issue #278 — the acceptance criteria
@@ -34,6 +36,11 @@ const split = await privilegeSplitState({
     return { rows: rows as Record<string, unknown>[] }
   },
 })
+
+// A skip is not an assertion. Where the split MUST exist — CI, which provisions
+// it as its own job — the absence of it fails this file instead of silently
+// removing the only tier that asserts EARS-30 on every PR.
+assertSplitWhereMandatory(split, process.env)
 
 afterAll(async () => {
   await closePlatformDb()
@@ -124,6 +131,56 @@ describe.skipIf(!split.split)(`least-privilege application role (${split.reason}
     expect(event.event_type).toBe('data.member.update')
     expect(event.actor_email).toBe('anton@bbm.academy')
     expect(event.diff).toEqual({ name: { old: 'Пётр', new: 'Пётр Б' } })
+  })
+
+  it('EARS-30: the ledger identity sequence is not usable by the application role either', async () => {
+    // Revoking INSERT is not the whole claim. The sequence behind `audit_event.id`
+    // is a separate object with its own ACL, and `GRANT USAGE … ON ALL SEQUENCES`
+    // reached it. Nothing legitimate calls `nextval()` on it — the SECURITY
+    // DEFINER capture function runs as the OWNER and draws ids as that role — so a
+    // surviving USAGE would only ever be used to burn ids and open gaps in the one
+    // table whose value is an unbroken sequence of events.
+    const { rows } = await db.execute<{ seq: string; usage: boolean; select_: boolean }>(
+      sql`select pg_get_serial_sequence('core.audit_event', 'id') as seq,
+                 has_sequence_privilege(current_user, pg_get_serial_sequence('core.audit_event','id'), 'USAGE') as usage,
+                 has_sequence_privilege(current_user, pg_get_serial_sequence('core.audit_event','id'), 'SELECT') as select_`,
+    )
+    expect(rows[0].seq).toBeTruthy()
+    expect(rows[0]).toMatchObject({ usage: false, select_: false })
+
+    await expect(
+      db.execute(sql`select nextval(pg_get_serial_sequence('core.audit_event','id'))`),
+    ).rejects.toSatisfy(refusedWith(/permission denied for sequence/))
+  })
+
+  it('EARS-30: migration 0007 re-applied by the migrator changes nothing — the prod shape is idempotent', async () => {
+    // The shape production takes is NOT the fresh one CI runs: `core` exists and
+    // every object in it is owned by the old superuser, the split is applied after
+    // the fact by `platform:roles:ensure` (superuser, phase 2), and then drizzle
+    // applies THE SAME FILE again as `platform_migrator` on the next migrate. This
+    // asserts the second pass: ownership and the ledger ACL are fixpoints, so the
+    // re-application is a no-op rather than a re-opening.
+    const snapshot = async () => {
+      const { rows } = await db.execute<Record<string, unknown>>(
+        sql`select c.relname, pg_get_userbyid(c.relowner) as owner,
+                   coalesce(array_to_string(c.relacl, '|'), '') as acl
+            from pg_class c
+            where c.relnamespace = 'core'::regnamespace and c.relkind in ('r','p','v','m','S')
+            order by c.relname`,
+      )
+      return rows
+    }
+
+    const before = await snapshot()
+    await asMigrator(async (client) => {
+      for (const statement of readLeastPrivilegeSql()) await client.query(statement)
+    })
+    expect(await snapshot()).toEqual(before)
+
+    // …and the refusals still hold after the second pass.
+    await expect(db.execute(sql`delete from core.audit_event`)).rejects.toSatisfy(
+      refusedWith(/permission denied for table audit_event/),
+    )
   })
 
   it('EARS-30: the module tables the application does own stay writable', async () => {

@@ -33,6 +33,7 @@
 DO $$
 DECLARE
   obj record;
+  seq text;
   me text := current_user;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'platform_migrator')
@@ -91,8 +92,24 @@ BEGIN
   --    which is the failure mode that makes people hand the app an owner role.
   --    Recorded for the group AND for whoever is running this migration, because
   --    default privileges are keyed by the role that creates the object.
+  --    SAID OUT LOUD, because it is the one way this file's protection can be
+  --    undone by a LATER migration and nothing here would notice: a migration
+  --    that DROPs and recreates `core.audit_event` gets a new table, and these
+  --    default privileges hand the application role full DML on it — step 3's
+  --    REVOKE applies to the table that existed when this file ran, not to its
+  --    successor. The backstop is `tests/int/platform/audit-privileges.int.spec.ts`,
+  --    which asserts the refusals on every PR; a migration that recreates the
+  --    ledger has to re-run this file's step 3 (or re-apply this migration) and
+  --    that suite is what will say so.
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE platform_migrator IN SCHEMA core GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ON TABLES TO platform_app';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE platform_migrator IN SCHEMA core GRANT USAGE, SELECT ON SEQUENCES TO platform_app';
+  --    The `me` branch fires only on the transitional run — the superuser phase
+  --    of `platform:roles:ensure` on an estate that carried `core` before the
+  --    split. It leaves a permanent `pg_default_acl` entry attributed to that
+  --    superuser, which is deliberate and is left in place: it costs one catalog
+  --    row, and dropping it would break the very case it exists for (a superuser
+  --    creating a table in `core` during a transition). After the split no
+  --    superuser creates objects there, so the entry simply never fires again.
   IF me <> 'platform_migrator' THEN
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA core GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ON TABLES TO platform_app', me);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA core GRANT USAGE, SELECT ON SEQUENCES TO platform_app', me);
@@ -108,6 +125,18 @@ BEGIN
   EXECUTE 'REVOKE ALL ON TABLE core.audit_event FROM platform_app';
   EXECUTE 'REVOKE ALL ON TABLE core.audit_event FROM PUBLIC';
   EXECUTE 'GRANT SELECT ON TABLE core.audit_event TO platform_app';
+
+  --    …and the ledger's identity sequence with it. It is a SEPARATE object with
+  --    its own ACL, and step 2's `ON ALL SEQUENCES` reached it. Nothing
+  --    legitimate calls `nextval()` on it from the application role — the
+  --    SECURITY DEFINER capture function draws ids as its OWNER — so what a
+  --    surviving USAGE buys is the ability to burn ids and open gaps in the one
+  --    table whose value is that its sequence of events is unbroken.
+  seq := pg_get_serial_sequence('core.audit_event', 'id');
+  IF seq IS NOT NULL THEN
+    EXECUTE format('REVOKE ALL ON SEQUENCE %s FROM platform_app', seq);
+    EXECUTE format('REVOKE ALL ON SEQUENCE %s FROM PUBLIC', seq);
+  END IF;
 
   --    drizzle's own bookkeeping is not domain data and nothing outside the
   --    migration pipeline writes it.
