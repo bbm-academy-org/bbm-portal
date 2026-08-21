@@ -24,17 +24,18 @@
 /**
  * Tables of `core` that carry NO capture trigger, each with the reason.
  *
- * `audit_event` and `__drizzle_migrations` are structural (EARS-15): the ledger
- * would recurse into itself, and drizzle's bookkeeping is not domain truth.
- * `hours_publication` is the one product table on the list and the only entry
- * meant to disappear — it is a STOP, not an exemption (EARS-33).
+ * Both remaining entries are structural (EARS-15): the ledger would recurse into
+ * itself, and drizzle's bookkeeping is not domain truth. NO product table is on
+ * this list. The one that ever was — `hours_publication`, a STOP rather than an
+ * exemption — left it with #275, the release EARS-33 names: its `messages`
+ * column was dropped by #281 and `0006_hours_publication_audit_trigger.sql`
+ * attached the trigger and deleted the entry in the same commit.
  *
  * @type {Record<string, string>}
  */
 export const AUDIT_TABLE_ALLOWLIST = {
   audit_event: 'the ledger itself — a capture trigger here would recurse (EARS-15)',
   __drizzle_migrations: "drizzle's own migration bookkeeping, not domain truth (EARS-15)",
-  hours_publication: 'blocked on EARS-31 — `messages` must go first',
 }
 
 /**
@@ -84,6 +85,7 @@ export const AUDIT_VALUE_WHITELIST = {
     'weekday_count',
     'saved_at',
   ],
+  hours_publication: ['period_id', 'status', 'started_at', 'published_at', 'preview_fingerprint'],
   hours_publication_message: ['period_id', 'position', 'email', 'text', 'delivery', 'sent_at'],
 }
 

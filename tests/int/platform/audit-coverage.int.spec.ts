@@ -25,7 +25,7 @@ import {
  * Coverage is defined BY CONSTRUCTION, not by enumeration: the set below is
  * whatever `core` currently holds, read from the catalog. Adding a table to
  * `core` without a trigger therefore turns this red without anyone editing a
- * list — which is the clause (EARS-22); the six tables of today are only its
+ * list — which is the clause (EARS-22); the tables of today are only its
  * current value.
  */
 
@@ -73,31 +73,41 @@ describe('audit coverage against the migrated database', () => {
     expect(uncovered).toEqual([])
   })
 
-  it('EARS-33: `core.hours_publication` is an allowlisted absence carrying its own rationale, not a silent one', async () => {
+  it('EARS-33: `core.hours_publication` carries the capture trigger and has LEFT the allowlist', async () => {
     const attached = await attachedTriggers()
-    expect(attached.has('hours_publication')).toBe(false)
-    expect(AUDIT_TABLE_ALLOWLIST.hours_publication).toBe(
-      'blocked on EARS-31 — `messages` must go first',
-    )
-    // The stop was on the ORDER, not on the two tasks' sequencing: while
-    // `messages` existed under an attached trigger it would have been audited BY
-    // VALUE (EARS-17 whitelists the hours tables' columns), putting frozen
-    // message texts into a ledger nothing can redact. The CONTRACT release
-    // (#281, migration `0005_hours_publication_drop_messages.sql`) removed the
-    // column, so the obstacle EARS-31 named is gone — asserted here against the
-    // really migrated database rather than taken on the migration's word.
+    // The stop EARS-33 stated was on the ORDER, not on the two tasks'
+    // sequencing: while `messages` existed under an attached trigger it would
+    // have been audited BY VALUE (EARS-17 whitelists the hours tables' columns),
+    // putting frozen message texts into a ledger nothing can redact. The
+    // CONTRACT release (#281, `0005_hours_publication_drop_messages.sql`)
+    // removed the column, and THIS release (#275,
+    // `0006_hours_publication_audit_trigger.sql`) attaches the trigger and
+    // deletes the allowlist entry together — the two halves EARS-33 names.
     //
-    // The allowlist entry nevertheless STAYS until #275: attaching the trigger
-    // to `core.hours_publication` is that release's whole subject (EARS-33), and
-    // the rationale string is fixed verbatim by the spec until it is removed
-    // together with the entry. An entry that outlives its reason by one release
-    // is EARS-22 working — the absence is visible — not a stale list.
+    // Both are asserted against the really migrated database rather than taken
+    // on the migration's word: the trigger out of `pg_trigger`, the column's
+    // absence out of `information_schema`.
+    expect(attached.has('hours_publication')).toBe(true)
+    expect(AUDIT_TABLE_ALLOWLIST.hours_publication).toBeUndefined()
+
     const { rows } = await db.execute<{ n: number }>(
       sql`select count(*)::int as n from information_schema.columns
           where table_schema = 'core' and table_name = 'hours_publication'
             and column_name = 'messages'`,
     )
     expect(rows[0].n).toBe(0)
+  })
+
+  it('EARS-22: no `core` product table is an allowlisted absence — the list is structural only', async () => {
+    // EARS-33's entry was the ONE product table on the list and the only entry
+    // meant to disappear. What remains is structural (EARS-15): the ledger
+    // itself, which a trigger would make recurse, and drizzle's bookkeeping,
+    // which is not domain truth. A product table reappearing here is a
+    // regression of this release, not a new exemption.
+    expect(Object.keys(AUDIT_TABLE_ALLOWLIST).sort()).toEqual([
+      '__drizzle_migrations',
+      'audit_event',
+    ])
   })
 
   it('EARS-22: the allowlist has no stale entry — a table that got its trigger must leave the list', async () => {

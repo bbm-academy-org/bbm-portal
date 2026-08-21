@@ -513,10 +513,11 @@ describe('audit-coverage (spawned)', () => {
     /**
      * `audit_event` and `__drizzle_migrations` are SQL-only (the ledger and
      * drizzle's bookkeeping declare no drizzle table), so the drizzle-visible
-     * set is the five audited tables plus the one allowlisted product table.
+     * set is exactly the audited tables — since #275 there is no allowlisted
+     * product table left to add to it (EARS-33).
      */
     it('declares every drizzle-visible `core` table the allowlist and whitelist name', () => {
-      const known = [...Object.keys(AUDIT_VALUE_WHITELIST), 'hours_publication']
+      const known = Object.keys(AUDIT_VALUE_WHITELIST)
       const parsedNames = parsed.map((t) => t.table)
       for (const table of known) expect(parsedNames).toContain(table)
     })

@@ -11,8 +11,8 @@ import { describe, expect, it } from 'vitest'
  * migrated database is asserted there — `tests/int/platform/hours-core.int.spec.ts`
  * reads the column list back out of `information_schema`, and
  * `tests/int/platform/audit-coverage.int.spec.ts` pins that
- * `core.hours_publication.messages` is gone while the allowlist entry EARS-33
- * owns stays until #275.
+ * `core.hours_publication.messages` is gone and (since #275 discharged EARS-33)
+ * that the table carries the audit trigger instead of an allowlist entry.
  *
  * What the integration tier structurally CANNOT reach is the inside of this
  * migration. Its first statement re-runs the #274 backfill, and that statement
