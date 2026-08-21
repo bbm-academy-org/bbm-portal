@@ -927,13 +927,17 @@ echo 'retained tags:'; docker images ${APP_IMAGE_REPO} --format '  {{.Tag}} ({{.
  * and `live-restore` is off on this box, so it would take prod down; a prune in
  * the already non-fatal `prune` stage buys the same hygiene with no downtime.
  *
+ * `-a` is load-bearing, not a flourish: the plain form removes only DANGLING
+ * cache, while the 78 entries that filled the box were unused-but-not-dangling
+ * — the class only `--all` reaches. `-af --filter until=…` is exactly the
+ * command proven by hand on this box on 2026-08-21 (review of PR #306).
  * `-f` because the ssh channel is not a tty; `|| true` because a busy or
  * unreachable builder is a disk-hygiene miss, never a reason to redden a deploy
  * whose app is already proven serving.
  */
 export function buildBuilderPruneScript(until = BUILD_CACHE_RETENTION) {
-  return `docker builder prune -f --filter until=${until} || true
-echo 'build cache after prune:'; docker system df --format '  {{.Type}}: {{.Size}} (reclaimable {{.Reclaimable}})' || true
+  return `docker builder prune -af --filter until=${until} || true
+echo 'docker system df after prune:'; docker system df --format '  {{.Type}}: {{.Size}} (reclaimable {{.Reclaimable}})' || true
 `
 }
 
@@ -1464,8 +1468,19 @@ function productionSteps() {
 
     async prune() {
       step(`Image retention (keep the last ${IMAGE_RETENTION} sha tags)`)
-      await sshScript(PROD_SSH, buildRetentionScript(), { label: 'retention' })
-      ok('old images pruned')
+      // Two independent pieces of hygiene, on two stores (images / BuildKit
+      // cache), with no ordering dependency between them. The image retention
+      // is caught here so that its failure — an unreachable box, the stall
+      // watchdog — does not silently take the cache prune with it (review of
+      // PR #306); the stage as a whole stays non-fatal either way.
+      try {
+        await sshScript(PROD_SSH, buildRetentionScript(), { label: 'retention' })
+        ok('old images pruned')
+      } catch (e) {
+        console.log(
+          `  ⚠ image retention failed — continuing with the build-cache prune: ${e?.message ?? String(e)}`,
+        )
+      }
 
       step(`Build-cache retention (drop BuildKit cache older than ${BUILD_CACHE_RETENTION})`)
       await sshScript(PROD_SSH, buildBuilderPruneScript(), { label: 'builder-prune' })

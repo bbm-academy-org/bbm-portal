@@ -94,7 +94,7 @@ printing a rollback pointer:
 | release                                                           | cuts `release-YYYY.MM.DD-<n>` at the deployed sha                                                                                                                          | non-fatal — warns only                              |
 | record                                                            | GitHub `Deployment(production, sha)` + `success`                                                                                                                           | non-fatal — warns only                              |
 | retention                                                         | keeps the last 3 sha-tagged app images                                                                                                                                     | non-fatal — warns only                              |
-| builder-prune                                                     | second half of the same `prune` stage: drops BuildKit build cache older than 72 h (warm cache survives), then echoes `docker system df`                                    | non-fatal — warns only                              |
+| builder-prune                                                     | second half of the same `prune` stage: drops ALL unused BuildKit build cache older than 72 h (warm cache survives), then echoes `docker system df`                         | non-fatal — warns only                              |
 
 The split is **positional**: everything before the smoke can still leave prod in
 a state nobody described; everything after it cannot, so it is non-fatal by
