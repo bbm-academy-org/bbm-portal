@@ -9,6 +9,7 @@ import { listAliases, listMembers, MemberConflictError } from '@/lib/member'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import { parseMemberDataset, seedMembers } from '../../../tools/platform/member-seed'
+import { truncateAsFixture } from './privilege-helpers'
 
 /**
  * The member seed of the cutover (spec 124 EARS-14), against the REAL `core`
@@ -40,7 +41,7 @@ function dataset(name: string) {
 }
 
 beforeEach(async () => {
-  await db.execute(sql`truncate table core.member_alias, core.member restart identity cascade`)
+  await truncateAsFixture(`truncate table core.member_alias, core.member restart identity cascade`)
 })
 
 afterAll(async () => {

@@ -60,6 +60,15 @@ ForEach-Object { Stop-Process -Id $_ -Force }`. Свой — тот, котор�
   `PLATFORM_DATABASE_URL=…/platform_<N>`, and prints the connection string.
   After that, `pnpm platform:migrate` in that worktree does not touch shared
   `platform` and cannot fall back to Payload `cms`.
+- **Two roles since #278.** `dev:db:branch` writes `PLATFORM_MIGRATE_DATABASE_URL`
+  alongside `PLATFORM_DATABASE_URL` when the base stand is split, and creates the
+  branch DB through the MIGRATING one — the application role is `NOCREATEDB` by
+  design. A stand that has never been split has no migrating variable, the tools
+  fall back to the application string and say so on stderr, and splitting it is one
+  supervised command (`pnpm platform:roles:ensure`, superuser). Roles are CLUSTER
+  objects: splitting the stand affects every session's branch DB on that box, which
+  is safe (it only adds roles) but is not a per-worktree act. Canon:
+  [`src/lib/platform/db/README.md`](../../src/lib/platform/db/README.md) → Commands.
 - **Teardown removes only proven branch DBs.** `pnpm worktree:teardown <N>`
   drops `platform_<N>` before removing the worktree only when that worktree's
   local `.env` names exactly `platform_<N>`. Without that marker it skips DB

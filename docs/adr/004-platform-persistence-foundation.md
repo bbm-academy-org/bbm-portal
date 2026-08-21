@@ -34,6 +34,8 @@ Both are direct dependencies at **exact** versions equal to what `@payloadcms/db
 
 ### 3. Our own migration pipeline, structurally unable to reach `cms`
 
+> Superseded by A1 (2026-08-21) — the connection-string row is now two strings, one per privilege echelon.
+
 The platform pipeline is `drizzle-kit` driven by `src/lib/platform/db/drizzle.config.ts`, and is separated from Payload's along every axis at once:
 
 |                      | Payload              | Platform                          |
@@ -56,6 +58,8 @@ Because the ledger lives at `core.__drizzle_migrations` (§3), drizzle's migrato
 Every schema-creating statement in `src/lib/platform/db/migrations` therefore uses `IF NOT EXISTS`. This is independently correct beyond the ledger ordering: the ensure step of §5, a partially-applied run and a restore-from-dump each present the same already-there schema. Since `platform:migrate:generate` re-emits the bare form, the invariant is asserted by test over the whole migrations directory rather than trusted to whoever regenerates a file next.
 
 ### 5. The database is bootstrapped by an idempotent ensure step, not by compose
+
+> Superseded by A1 (2026-08-21) — the step resolves the MIGRATING string, and creates the database `OWNER platform_migrator` where that group exists.
 
 `pnpm platform:db:ensure` — run automatically as the first half of `pnpm platform:migrate` — connects to the maintenance database derived from `PLATFORM_DATABASE_URL`, creates `platform` if it is absent, and logs which of the two things it did. Neither compose file creates the database.
 
@@ -103,3 +107,35 @@ Dumping the second database is **not** this repo's code: `backup-portal.sh` is o
 ---
 
 _Recorded per the owner ruling on issue #125 (2026-08-07): the foundation's decisions belong in `docs/adr/`, in the same PR as the build, not as prose in the issue. §1 restates an owner decision already taken on 2026-08-04; §2–§7 are the engineering decisions of the #125 implementation, taken in-session under that task's go._
+
+## A1 — two connection strings, because `platform` now carries two roles, 2026-08-21
+
+**Context.** §3 states the separation from Payload as a table, and one of its rows is `connection string → PLATFORM_DATABASE_URL`: one string, no fallback, used by the application pool and by `drizzle-kit` alike. That was accurate and is what production has been running since #125 — and it silently carried a second claim nobody had made deliberately: that the application and the migration pipeline are the same Postgres identity. In this estate that identity is the **container superuser** (`POSTGRES_USER`), because the estate provisions exactly one role.
+
+Spec 201 (`docs/specs/201-universal-edit-audit.md`) then put an append-only audit ledger into `core` and immediately filed the hole, as EARS-30: a superuser disables any trigger with one statement and is exempt from every grant, so the ledger's `BEFORE UPDATE/DELETE/TRUNCATE` guards protect it against an **accident** and not against the role writing to it. The donor canon (PostgreSQL wiki, _Audit trigger 91plus_) says the same in one line — the application must not connect as a superuser and must not own the tables it audits. Issue #278 is that follow-up.
+
+**Decision.** The platform carries **two** connection strings, and they are two privilege echelons rather than two spellings of one:
+
+|               | `PLATFORM_DATABASE_URL`                                            | `PLATFORM_MIGRATE_DATABASE_URL`                                        |
+| ------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| whose         | the application (`src/lib/platform/db/client.ts`)                  | `drizzle-kit`, `platform:db:ensure`, `dev:db:branch`, `migrate:status` |
+| privilege     | member of the group `platform_app`; no `CREATEDB`, no `CREATEROLE` | member of `platform_migrator`, which **owns** `core`                   |
+| on the ledger | `SELECT` only — EARS-23's read path runs as this role              | owner                                                                  |
+
+Three sub-decisions make that workable and are the parts worth recording:
+
+1. **The login role is env-driven, the privilege GROUP is fixed.** This estate already runs three different superuser names (`payload` in dev and prod, `postgres` in CI), so a credential cannot be a literal in a `.sql` file — and a `.sql` file takes no parameters, so a grant cannot be written against an environment variable either. The grants are therefore written against two fixed group names, `platform_app` and `platform_migrator`, and each environment's login role is granted membership in one of them. The migrating login role additionally carries `SET role = platform_migrator`, so every object a migration creates is owned by the group in every environment.
+2. **Roles are provisioning, not migration.** A migration runs as the migrating role, and a non-superuser can neither `CREATE ROLE` nor take ownership of a superuser's table. So `pnpm platform:roles:ensure` (`tools/platform/ensure-roles.mjs`) is an operator step run once per environment as the superuser — the same shape §5 gave `CREATE DATABASE`, arriving at the opposite answer about _who_ runs it only because roles cannot be created from inside the pipeline at all. It writes no grants of its own: its second phase executes `0007_platform_least_privilege.sql`, the same file drizzle applies on a fresh database, so the grant contract exists once.
+3. **The fallback is defined, and it is not silent.** An environment that has not been split has no `PLATFORM_MIGRATE_DATABASE_URL`; the migrating tools fall back to `PLATFORM_DATABASE_URL` and print the missing variable's name every time. Refusing instead would break every un-split checkout on the merge commit for no security gain — the fallback cannot bypass a split that does not exist. Where the split IS real and the variable is missing, the fallback reaches Postgres as the least-privilege role and is refused with `permission denied`; a quiet success is not reachable. There is still **no** fallback onto `DATABASE_URL`.
+
+**Consequences.**
+
+- `deploy/.env.prod` gains `PLATFORM_MIGRATE_DATABASE_URL`, and §7's `verifyRemoteEnv` requires it — a box carrying only the application string would otherwise fail _inside_ a deploy rather than before it.
+- Production and the dev stand each need the one-time supervised split, documented in `deploy/README.md` → _Splitting the platform roles_. Nothing in `pnpm deploy:prod` performs it.
+- CI's `platform-int` job provisions the two roles into its service container and runs the integration tier as the **application** role, which is what makes the privilege echelon an assertion on every PR instead of a claim.
+- Fixture resets in the integration tier moved to the migrating connection: `TRUNCATE … RESTART IDENTITY` needs ownership of the sequence, which is a test-harness privilege and not an application one.
+- Least privilege here is a claim about the **ledger**. The application role keeps full DML on the module tables of `core`; narrowing those is a decision for the specs that own them, not a side effect of this one.
+
+**Why now.** Issue #278, the follow-up spec 201 filed as EARS-30 and named as blocked in its own «Deviations» section, taken up after #273 created the objects it re-owns.
+
+**Affects.** §3 (the connection-string row and the "one string, no fallback" reading of it) and §5 (the ensure step now resolves the migrating string first, and sets `OWNER platform_migrator` on the database it creates). §7's required-variable list grows by one; the stage itself is unchanged.

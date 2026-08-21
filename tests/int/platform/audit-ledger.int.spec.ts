@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import { refusedWith } from './audit-helpers'
+import { asMigrator } from './privilege-helpers'
 
 /**
  * The ledger itself: shape, indexes and the append-only guard (spec 201,
@@ -84,23 +85,37 @@ describe('core.audit_event', () => {
     expect(pk.map((r) => r.attname)).toEqual(['id'])
   })
 
+  // The three refusals below run through the MIGRATING connection, not the
+  // application pool, and that is the point (#278). Once the ledger's grants
+  // exist, the application role is stopped by `permission denied` before a
+  // trigger is ever reached — asserting the trigger from there would silently
+  // become an assertion about the REVOKE, and EARS-12's guard could rot
+  // undetected behind it. The role that CAN attempt the write is the only role
+  // that can prove the trigger still refuses it. On an un-split database
+  // `asMigrator` is the same superuser these tests always used, so nothing about
+  // their meaning changes there. The privilege half lives in
+  // `audit-privileges.int.spec.ts`.
   it('EARS-12: scenario 3 — UPDATE and DELETE on the ledger are refused by the row-level trigger', async () => {
-    await expect(db.execute(sql`update core.audit_event set diff = '{}'::jsonb`)).rejects.toSatisfy(
-      refusedWith(/core\.audit_event is append-only: UPDATE is refused/),
-    )
+    await asMigrator(async (client) => {
+      await expect(
+        client.query(`update core.audit_event set diff = '{}'::jsonb`),
+      ).rejects.toSatisfy(refusedWith(/core\.audit_event is append-only: UPDATE is refused/))
 
-    await expect(db.execute(sql`delete from core.audit_event`)).rejects.toSatisfy(
-      refusedWith(/core\.audit_event is append-only: DELETE is refused/),
-    )
+      await expect(client.query('delete from core.audit_event')).rejects.toSatisfy(
+        refusedWith(/core\.audit_event is append-only: DELETE is refused/),
+      )
+    })
   })
 
   it('EARS-12: scenario 5 — TRUNCATE is refused too, by the statement-level trigger', async () => {
     // The one a ROW-level trigger would have let through in silence: `TRUNCATE`
     // fires no row triggers at all, so without a `FOR EACH STATEMENT` guard the
     // table's most destructive operation is the one nothing sees.
-    await expect(db.execute(sql`truncate core.audit_event`)).rejects.toSatisfy(
-      refusedWith(/core\.audit_event is append-only: TRUNCATE is refused/),
-    )
+    await asMigrator(async (client) => {
+      await expect(client.query('truncate core.audit_event')).rejects.toSatisfy(
+        refusedWith(/core\.audit_event is append-only: TRUNCATE is refused/),
+      )
+    })
   })
 
   it('EARS-12: both guard triggers exist, at the right level, and are SECURITY DEFINER with a pinned search_path', async () => {

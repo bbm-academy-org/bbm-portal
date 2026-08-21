@@ -128,20 +128,31 @@ describe('the hours tables on core (EARS-1)', () => {
   })
 
   it('EARS-1: hours_participant and hours_assessment reference core.member, RESTRICT on the participant', async () => {
+    // `pg_catalog`, not `information_schema`: the SQL-standard views
+    // `referential_constraints` and `constraint_column_usage` show only rows
+    // whose table is OWNED by a currently enabled role, so since #278 — where
+    // `core` is owned by `platform_migrator` and the application connects as
+    // `platform_app` — they answer this question with an empty set. The catalog
+    // is not privilege-filtered and describes the same constraints.
     const constraints = (
       await db.execute(sql`
-        select tc.constraint_name, tc.table_name, kcu.column_name, rc.delete_rule,
-               ccu.table_name as foreign_table
-        from information_schema.table_constraints tc
-        join information_schema.key_column_usage kcu
-          on kcu.constraint_name = tc.constraint_name and kcu.constraint_schema = tc.table_schema
-        join information_schema.referential_constraints rc
-          on rc.constraint_name = tc.constraint_name and rc.constraint_schema = tc.table_schema
-        join information_schema.constraint_column_usage ccu
-          on ccu.constraint_name = tc.constraint_name and ccu.constraint_schema = tc.table_schema
-        where tc.table_schema = 'core' and tc.constraint_type = 'FOREIGN KEY'
-          and tc.table_name like 'hours_%' and ccu.table_name = 'member'
-        order by tc.table_name
+        select con.conname as constraint_name,
+               rel.relname as table_name,
+               att.attname as column_name,
+               case con.confdeltype
+                 when 'a' then 'NO ACTION' when 'r' then 'RESTRICT' when 'c' then 'CASCADE'
+                 when 'n' then 'SET NULL' when 'd' then 'SET DEFAULT'
+               end as delete_rule,
+               ref.relname as foreign_table
+        from pg_constraint con
+        join pg_class rel on rel.oid = con.conrelid
+        join pg_class ref on ref.oid = con.confrelid
+        join pg_attribute att on att.attrelid = con.conrelid and att.attnum = con.conkey[1]
+        where con.contype = 'f'
+          and rel.relnamespace = 'core'::regnamespace
+          and rel.relname like 'hours_%'
+          and ref.relname = 'member'
+        order by rel.relname
       `)
     ).rows as Array<{
       table_name: string

@@ -328,6 +328,10 @@ function dropBranchDatabaseBeforeWorktreeRemoval(taskId, absPath) {
   const script = join(scriptRepoRoot(), 'tools', 'platform', 'branch-database.mjs')
   const envWithoutPlatformUrl = { ...process.env }
   delete envWithoutPlatformUrl.PLATFORM_DATABASE_URL
+  // Same reason as the line above, for the migrating echelon (#278): an exported
+  // variable wins over the worktree `.env`, and dropping must resolve the branch
+  // database from THAT worktree's file or it aims at someone else's.
+  delete envWithoutPlatformUrl.PLATFORM_MIGRATE_DATABASE_URL
   return run(process.execPath, [script, 'drop', taskId, '--env-root', absPath], {
     cwd: existsSync(absPath) ? absPath : scriptRepoRoot(),
     env: envWithoutPlatformUrl,

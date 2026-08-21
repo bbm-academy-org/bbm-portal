@@ -21,7 +21,24 @@ pnpm platform:migrate:generate   # diff the schema files → a new SQL migration
 pnpm platform:migrate:status     # what would `platform:migrate` do next
 pnpm platform:migrate            # ensure the database exists, then apply
 pnpm platform:db:ensure          # the ensure step alone (idempotent)
+pnpm platform:roles:ensure       # split the cluster into two roles — see below
 ```
+
+**Two roles, two connection strings** since #278 (spec 201 EARS-30, ADR-004 A1).
+`PLATFORM_DATABASE_URL` is the APPLICATION's least-privilege role, which can only
+`SELECT` the audit ledger `core.audit_event`; `PLATFORM_MIGRATE_DATABASE_URL` is
+the role that OWNS `core` and is what every command above except
+`platform:roles:ensure` connects as. An environment with no
+`PLATFORM_MIGRATE_DATABASE_URL` has not been split: the tools fall back to the
+application string and print the missing variable's name each time
+(`resolvePlatformMigrateDatabaseUrl()` in `./config.ts` carries the full
+semantics). Splitting is provisioning, not migration — a non-superuser can
+neither `CREATE ROLE` nor take ownership — so `pnpm platform:roles:ensure` runs
+once per environment as the container superuser named by
+`PLATFORM_SUPERUSER_DATABASE_URL`, and creates exactly the two roles the two
+strings name. Production's supervised version of that step:
+[`deploy/README.md`](../../../../deploy/README.md) → _Splitting the platform
+roles_.
 
 Data commands left over from the `/p/hours` cutover (spec 124 EARS-14/26/27) — the
 operating rules, the dataset shape and the never-commit rule live in
@@ -50,9 +67,12 @@ like the Payload `migrate*` scripts next to them in `package.json`, and run thro
 
 `tests/int/platform` executes against a real Postgres in the `platform-int` job of
 `.github/workflows/ci.yml`, which is in the `ci` meta-job's needs-list, i.e. it
-BLOCKS (docs/ci-guardrails.md §2.1). The job needs no `.env`: it passes
-`PLATFORM_DATABASE_URL` as an environment variable and runs `pnpm platform:migrate`
-against a `postgres:17-alpine` service — the version prod runs. Locally the same
+BLOCKS (docs/ci-guardrails.md §2.1). The job needs no `.env`: it passes the three
+connection strings as environment variables, runs `pnpm platform:roles:ensure`
+(which splits the service container into an application role and a migrating role,
+#278) and then `pnpm platform:migrate`, against a `postgres:17-alpine` service —
+the version prod runs. The tier itself then connects as the APPLICATION role, so
+the privilege refusals of EARS-30 are asserted on every PR. Locally the same
 tier runs against this worktree's branch DB:
 `pnpm exec vitest run tests/int/platform` (see
 [`.claude/rules/parallel-sessions.md`](../../../../.claude/rules/parallel-sessions.md),
@@ -62,7 +82,7 @@ tier runs against this worktree's branch DB:
 migration (see below) and 0 on a merely pending one — pending is a normal state,
 the other two are the tree and the database disagreeing about history.
 
-### Where `PLATFORM_DATABASE_URL` is read from
+### Where `PLATFORM_DATABASE_URL` (and `PLATFORM_MIGRATE_DATABASE_URL`) is read from
 
 `.env` in the repo root, and the process environment — in that order of loading,
 with the **environment winning**:

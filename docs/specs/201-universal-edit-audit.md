@@ -387,8 +387,29 @@ delivery text NOT NULL, sent_at text)` with `UNIQUE (period_id, position)`
   (recursion) nor to `core.__drizzle_migrations` (drizzle's own bookkeeping, not
   domain truth).
 
-- **EARS-30.** The platform shall carry a **named follow-up** — _«least-privilege
-  application role for `platform`»_ — filed with this spec's issue graph and
+- **EARS-30.** **Discharged (#278, 2026-08-21.)** The follow-up landed: `platform`
+  now carries two roles — an application role in the group `platform_app` and a
+  migrating role in `platform_migrator`, which owns `core`, both provisioned by
+  `pnpm platform:roles:ensure` and granted by migration
+  `0007_platform_least_privilege.sql`. `PLATFORM_DATABASE_URL` stopped being the
+  single connection string, so ADR-004 carries the amendment **A1 (2026-08-21)**
+  the clause below anticipated. The scenario this spec could not perform is
+  performed in `tests/int/platform/audit-privileges.int.spec.ts`, on every PR, in
+  the CI job named in §«How it lands in our pipeline». That «on every PR» is
+  load-bearing and therefore fail-closed: the suite skips on an un-split developer
+  database, but where the split is mandatory — CI, which provisions it in its own
+  job — its absence **fails** the suite instead of skipping it green
+  (`assertSplitWhereMandatory`). The ledger's identity sequence lost `USAGE` along
+  with the table's write privileges: nothing legitimate calls `nextval()` from the
+  application role, and leaving it would allow gaps to be burned into the one
+  table whose value is an unbroken sequence. The clause is kept verbatim
+  below because it is the record of what the estate looked like when the ledger
+  shipped, and of why EARS-12's trigger was the whole of the enforcement until
+  #278.
+
+  The platform shall carry a **named follow-up** —
+  _«least-privilege application role for `platform`»_ — filed with this spec's
+  issue graph and
   **not delivered here**: a second Postgres role that is not the container
   superuser; `core.audit_event` and `core.audit_row_change()` owned by the
   migrating role; `REVOKE UPDATE, DELETE, TRUNCATE` on the ledger from the
@@ -614,9 +635,9 @@ surface.
 ### Reading it
 
 - **EARS-23.** WHILE no UI over the ledger exists, the read path shall be SQL run
-  by an agent against the platform database — as the single role of ADR-004 §3
-  today, and as a role that explicitly keeps `SELECT` on the ledger after
-  EARS-30's follow-up lands — with the result pasted into the
+  by an agent against the platform database — since #278 as the least-privilege
+  application role of EARS-30, which explicitly **keeps `SELECT`** on the ledger
+  and has lost everything else on it — with the result pasted into the
   issue — the shape spec 124 (EARS-19, scenario 7) already established for alias
   resolution. No page, no route, no host change.
 
@@ -689,7 +710,15 @@ are still decided:
   not a rewrite of the function. With the column policy moved into `TG_ARGV`
   (EARS-16) the function reads no table other than the ledger it writes, which is
   what makes the pinned path sufficient.
-- **The role picture today, named once so no clause has to imply it.** One
+- **The role picture when this spec shipped, named once so no clause has to imply
+  it.** **Discharged (#278, 2026-08-21):** `platform` now carries two roles — an
+  application role in `PLATFORM_DATABASE_URL` and a migrating role in
+  `PLATFORM_MIGRATE_DATABASE_URL` which owns `core` — provisioned by
+  `pnpm platform:roles:ensure` and granted by migration
+  `0007_platform_least_privilege.sql`, and ADR-004 §3 carries the amendment
+  **A1 (2026-08-21)** this bullet anticipated. The paragraph below is kept
+  verbatim as the record of the estate the ledger shipped into, and of why
+  the migration described here issued no role statement at all. One
   Postgres role exists — the container superuser of
   `infra/dev-stand/compose.core.yml` and `deploy/docker-compose.prod.yml`, shared
   by Payload, Zitadel and the platform; `src/lib/platform/db/client.ts` and
@@ -737,8 +766,10 @@ job of `.github/workflows/ci.yml` runs `postgres:17-alpine` as a service, applie
 meta-job's needs-list, i.e. BLOCK. Diff semantics, no-op suppression,
 append-only refusal (row-level and `TRUNCATE`), `db-direct` degradation, the
 value whitelist and trigger coverage are all asserted there against real
-Postgres. The privilege echelon is **not** asserted there, and could not be:
-there is one role (EARS-12), and the assertion arrives with EARS-30's follow-up. None of this is testable against a
+Postgres. The privilege echelon is asserted there **too** since #278: the job
+provisions the two roles of EARS-30 into its service container and runs the tier
+as the APPLICATION role, so the refusals are Postgres's own and not our opinion of
+them. Before #278 it could not be asserted at all — there was one role. None of this is testable against a
 mock: a mock would assert our opinion of what Postgres does.
 
 ## Deviations from the donor (ds-platform spec 010)
@@ -881,14 +912,21 @@ do not reach.
 Three scenarios of the pre-revision spec are gone with their clauses: the
 partition horizon (removed EARS-13, EARS-14), the emptied column registry
 (replaced by scenario 9, since the registry table no longer exists), and the
-privilege-echelon refusal — which is not performable in an estate with one
-superuser role and now belongs to EARS-30's follow-up, where it is that
-follow-up's own acceptance criterion.
+privilege-echelon refusal — which was not performable in an estate with one
+superuser role and moved to EARS-30's follow-up, where it became that follow-up's
+own acceptance criterion.
 
-One scenario remains **blocked on a prerequisite and named as such** rather than
-quietly assumed: the privilege refusal waits for EARS-30. The
-`core.hours_publication` half of this paragraph is discharged — EARS-31 shipped
-with #281 and EARS-33 with #275.
+**No scenario of this spec is blocked any more.** The privilege refusal was the
+last one, and #278 (2026-08-21) discharged EARS-30: `core.audit_event` is owned by
+`platform_migrator`, `UPDATE`, `DELETE`, `TRUNCATE` and a direct `INSERT` are
+refused to the application role with `permission denied` before any trigger runs,
+and `SELECT` is retained for EARS-23. It is performed in
+`tests/int/platform/audit-privileges.int.spec.ts` on every PR, against the
+`platform-int` job's own two-role container, and the trigger refusals of EARS-12
+moved to the migrating connection in `audit-ledger.int.spec.ts` so that they keep
+testing the trigger rather than silently re-testing the grant. The
+`core.hours_publication` half of this paragraph is likewise discharged — EARS-31
+shipped with #281 and EARS-33 with #275.
 
 ## Owner decisions (2026-08-19)
 
@@ -1023,7 +1061,10 @@ Key sources (the memos carry the rest):
   rows already written — whichever comes first; the PD policy naming a term is
   what makes the purge half executable. What makes shipping without it safe today
   is EARS-17: declared personal data never enters the ledger.
-- **A least-privilege application role for `platform` (EARS-30).** The ownership
+- **A least-privilege application role for `platform` (EARS-30).** **Delivered by
+  #278 on 2026-08-21** — no longer out of scope; ADR-004 carries amendment A1 and
+  the arrangement below is what is running. Kept here as the record of why the
+  ledger shipped without it. The ownership
   split and the `REVOKE UPDATE, DELETE, TRUNCATE` that would make the ledger
   tamper-resistant against more than an accident. It is a follow-up because this
   estate has exactly one Postgres role — the container superuser — and creating a

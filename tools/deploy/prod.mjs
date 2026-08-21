@@ -419,8 +419,21 @@ fi
  * reading a NEW variable finds it missing on the first deploy after the merge,
  * every time. `PLATFORM_DATABASE_URL` is the first such variable this repo has
  * ever added, which is why this gate did not exist before.
+ *
+ * `PLATFORM_MIGRATE_DATABASE_URL` joins it with #278 (EARS-30, ADR-004 A1) and
+ * is the reason the gate has to be more than a formality here. The application
+ * string on a split box names the LEAST-PRIVILEGE role, so a box that carries it
+ * and not the migrating one does not fail at `up -d` with a missing variable —
+ * it reaches `platform:migrate`, falls back to the application role by the
+ * documented un-split semantics, and is refused by Postgres with `permission
+ * denied` mid-deploy. This stage is what turns that into a refusal that changed
+ * nothing.
  */
-export const REQUIRED_PROD_ENV_VARS = ['DATABASE_URL', 'PLATFORM_DATABASE_URL']
+export const REQUIRED_PROD_ENV_VARS = [
+  'DATABASE_URL',
+  'PLATFORM_DATABASE_URL',
+  'PLATFORM_MIGRATE_DATABASE_URL',
+]
 
 /**
  * Assert the box's env file carries every variable the shipped code needs.
