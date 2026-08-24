@@ -339,6 +339,44 @@ jobs:
         if: always() && steps.audit-coverage.outcome == 'failure'
         run: echo "::warning title=audit-coverage::a core table or column has no audit coverage decision — see the step log (docs/ci-guardrails.md §5)"
 
+  # BLOCK — the committed SSOT snapshot has drifted from its master. The master
+  # of the finmodel variables is `ssot/finmodel.yaml` in the PRIVATE repo
+  # bbm-academy-org/bbm-kb; this repo holds a snapshot under
+  # src/lib/finmodel/snapshot so neither the build nor the tests reach the
+  # network. That arrangement is only honest while something notices the two
+  # drifting apart — otherwise "fix the number in one place" silently stops
+  # recomputing everywhere, which is the exact failure the SSOT contract exists
+  # to prevent (spec §5, anti-staleness AC of #192).
+  #
+  # BLOCK from day 0 by that AC, not by the §3 class-1 mandate: the check does
+  # reach the network, so its false-positive class is infrastructure, not
+  # heuristics. The comparison itself is exact content equality against
+  # bbm-kb@main — there is nothing to soak.
+  #
+  # `KB_READ_TOKEN` (fine-grained PAT, read-only contents on bbm-kb) is required
+  # because the master repo is private: the workflow's own GITHUB_TOKEN cannot
+  # see it. Two consequences worth naming rather than discovering: without the
+  # secret the job is red on every PR (deliberate — a freshness check that cannot
+  # read the master has proved nothing, and §2.2's fail-open is a HOOK rule, not
+  # a CI one), and secrets are withheld from fork PRs, so this job cannot pass on
+  # one. Both are acceptable here: every PR in this repo comes from a branch of
+  # this repo (§2.1.1, second row).
+  ssot-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: SSOT snapshot freshness
+        run: pnpm ssot:check
+        env:
+          KB_READ_TOKEN: ${{ secrets.KB_READ_TOKEN }}
+
   # ─── Meta-job: the single aggregate status check ────────────────────────────
   # The needs-list IS the BLOCK set (canon §2.1). WARN jobs are deliberately
   # absent; PR-body guards live in pr-body-guards.yml and cannot be listed here
@@ -348,7 +386,7 @@ jobs:
   # The job name must stay literally `ci`: it is the context named in
   # .github/branch-protection.json, so renaming it silently unhooks the gate.
   ci:
-    needs: [lint-and-typecheck, guard-tests, guard-test-coverage, platform-int]
+    needs: [lint-and-typecheck, guard-tests, guard-test-coverage, platform-int, ssot-freshness]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

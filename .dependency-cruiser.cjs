@@ -72,6 +72,68 @@ module.exports = {
       to: { path: '^src/(lib/hours|modules/hours)' },
     },
     {
+      name: 'finmodel-must-not-import-cms',
+      comment:
+        'ADR-002 (#192): the finmodel module (src/lib/finmodel + src/modules/finmodel) must not ' +
+        'import CMS internals — collections/globals/endpoints/hooks/fields/admin/seed/migrations ' +
+        'or the Payload config. The module owns no persisted data at all: its variables come from ' +
+        'a committed snapshot of the bbm-kb master (src/lib/finmodel/snapshot, `pnpm ssot:pull`).',
+      severity: 'error',
+      from: { path: '^src/(lib/finmodel|modules/finmodel)' },
+      to: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations)|^src/payload\\.config|^src/payload-types',
+      },
+    },
+    {
+      name: 'finmodel-must-not-import-hours-internals',
+      comment:
+        'ADR-002 (#192): two modules of the same monolith stay independent. The duplication this ' +
+        'forbids is deliberate and already present — src/lib/finmodel/format.ts carries its own ' +
+        'copy of formatRub/formatPercent with that reason written above it. Anything genuinely ' +
+        'shared belongs in src/lib/platform, not in a cross-module import.',
+      severity: 'error',
+      from: { path: '^src/(lib/finmodel|modules/finmodel)' },
+      to: { path: '^src/(lib/hours|modules/hours)' },
+    },
+    {
+      name: 'hours-must-not-import-finmodel-internals',
+      comment: 'ADR-002 (#192): the mirror rule — hours may not reach into finmodel.',
+      severity: 'error',
+      from: { path: '^src/(lib/hours|modules/hours)' },
+      to: { path: '^src/(lib/finmodel|modules/finmodel)' },
+    },
+    {
+      name: 'finmodel-must-not-import-okr-internals',
+      comment: 'ADR-002 (#192): the same independence towards OKR.',
+      severity: 'error',
+      from: { path: '^src/(lib/finmodel|modules/finmodel)' },
+      to: { path: '^src/(lib/okr|modules/okr)' },
+    },
+    {
+      name: 'okr-must-not-import-finmodel-internals',
+      comment: 'ADR-002 (#192): the mirror rule — OKR may not reach into finmodel.',
+      severity: 'error',
+      from: { path: '^src/(lib/okr|modules/okr)' },
+      to: { path: '^src/(lib/finmodel|modules/finmodel)' },
+    },
+    {
+      name: 'cms-must-not-import-finmodel-internals',
+      comment:
+        'ADR-002/ADR-003 (#192): the CMS side may not reach into finmodel module internals. ' +
+        'ONE DIFFERENCE from the hours and OKR mirrors above, and it is the whole reason this ' +
+        'rule is written out rather than copied: those two surfaces live in the Zitadel-gated ' +
+        '(platform) route group, so their from-set lists app/(frontend). The finmodel surfaces ' +
+        'are PUBLIC by design (the model presentation renders for anyone), so they land in ' +
+        'app/(frontend) — which is therefore deliberately ABSENT here, exactly as (platform) is ' +
+        'absent from the other rules. The route group is the door; the internals stay closed to ' +
+        'collections, globals, endpoints, hooks, seed and the Payload config.',
+      severity: 'error',
+      from: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\))|^src/payload\\.config',
+      },
+      to: { path: '^src/(lib/finmodel|modules/finmodel)' },
+    },
+    {
       name: 'hours-must-import-member-only-via-api',
       comment:
         'spec 124 EARS-8: the hours module reaches `member` data ONLY through the member module ' +
