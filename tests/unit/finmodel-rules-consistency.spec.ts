@@ -1,3 +1,5 @@
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { formatPercent, formatRub, getVariables, RULES_MDX } from '@/lib/finmodel'
@@ -204,5 +206,39 @@ describe('MDX компилируется один раз на процесс', (
     const first = compiledDocument()
     expect(compiledDocument()).toBe(first)
     expect(await first).toBeTruthy()
+  })
+})
+
+/**
+ * Документ действительно ОТРЕНДЕРЕН, а не показан исходником.
+ *
+ * Приёмочный прогон #193 поймал ровно этот класс: четыре GFM-таблицы
+ * («Выбери, кто ты», три пути, два словаря) доезжали до читателя строками
+ * «| … | … |», потому что рендереру не передали remark-gfm. Компонент `table`
+ * в components-map и обёртка `.rules-tablewrap` при этом выглядели рабочими —
+ * они просто никогда не вызывались. Проверять надо результат, а не проводку.
+ */
+describe('нормативный документ рендерится, а не показывается исходником', () => {
+  it('таблицы стали таблицами, а не абзацами с палками', async () => {
+    const { compiledDocument } = await import('@/modules/finmodel/view/RulesDocument')
+    const html = renderToStaticMarkup(
+      React.createElement(React.Fragment, null, await compiledDocument()),
+    )
+    expect((html.match(/<table/g) ?? []).length).toBeGreaterThanOrEqual(4)
+    // Обёртка горизонтального скролла тоже обязана СРАБОТАТЬ, а не существовать.
+    expect((html.match(/rules-tablewrap/g) ?? []).length).toBeGreaterThanOrEqual(4)
+    // Ни одной сырой строки разметки таблицы в тексте: ни разделителя `|---`,
+    // ни вообще палки — в тексте документа её больше нигде нет.
+    expect(html).not.toMatch(/\|\s*-{3}/)
+    expect(html).not.toContain('|')
+  })
+
+  it('подстановки <V/> доехали значениями, а не тегами', async () => {
+    const { compiledDocument } = await import('@/modules/finmodel/view/RulesDocument')
+    const html = renderToStaticMarkup(
+      React.createElement(React.Fragment, null, await compiledDocument()),
+    )
+    expect(html).not.toContain('<V ')
+    expect(html).toContain('rules-var')
   })
 })

@@ -1,5 +1,6 @@
 import { compileMDX } from 'next-mdx-remote/rsc'
 import React from 'react'
+import remarkGfm from 'remark-gfm'
 
 import { getVariables, RULES_MDX } from '@/lib/finmodel'
 
@@ -54,8 +55,17 @@ export function compiledDocument(): Promise<React.ReactNode> {
   compiled ??= compileMDX({
     source: RULES_MDX,
     components,
-    // Фронтматтер мастера — метаданные, а не первый абзац документа.
-    options: { parseFrontmatter: true },
+    options: {
+      // Фронтматтер мастера — метаданные, а не первый абзац документа.
+      parseFrontmatter: true,
+      // GFM обязателен, а не «приятно бы»: документ несёт четыре таблицы
+      // (выбор роли, три пути, два словаря), а голый MDX таблиц не знает —
+      // без плагина они доезжали до читателя строками «| … | … |», и
+      // components-map `table` с обёрткой `.rules-tablewrap` просто никогда
+      // не вызывался. Поймано приёмочным прогоном #193; закреплено тестом
+      // рендера в tests/unit/finmodel-rules-consistency.spec.ts.
+      mdxOptions: { remarkPlugins: [remarkGfm] },
+    },
   }).then((result) => result.content)
   return compiled
 }
