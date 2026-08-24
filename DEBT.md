@@ -425,6 +425,36 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-20-4e6a80d1c7 -->
 
+- [ ] 2026-08-24 a tracker issue body must be edited by downloading it to a file
+      and writing it back with `gh issue edit --body-file`, with a **post-write
+      non-ASCII integrity check** (re-read the body and compare its non-ASCII
+      characters against the source): an in-place regex rewrite of #112's body on
+      2026-08-24 round-tripped the text through a non-UTF-8 codepage on this
+      Windows box and corrupted every em dash into mojibake, caught only by eye.
+      The class is the pipeline, not that one issue — any `gh issue edit` /
+      `gh pr edit` that pipes body text through a shell here can do it, and the
+      damage is silent because GitHub stores the mojibake without complaint.
+      Recorded rather than fixed because the remedy belongs inside `tools/gh/`
+      (a shared read-modify-write helper with the check built in), not bolted
+      onto a retro's DEBT commit — return condition: a second corruption incident
+      on any issue or PR body, or the next tooling touch of `tools/gh/`,
+      whichever comes first (session retro 2026-08-24)
+
+<!-- debt-entry-end: 2026-08-24-9b3c71ad04 -->
+
+- [ ] 2026-08-24 the retro folded-themes registry `.wrap-init.json` does not
+      exist in this repo, so every `/wrap` recurrence check runs against project
+      memory only: a theme already folded once is re-derived from memory files
+      rather than read off a registry, and «is this a recurrence?» is answered by
+      recall instead of by lookup — which is how the 2026-08-24
+      `lead-delegates-even-small-prep` recurrence went unremarked until the owner
+      named it. Creating the registry is `/wrap-init`'s job (it audits the whole
+      session-log corpus), a session of its own and not a rider on this retro —
+      return condition: the next `/wrap` run in this repo (create the registry via
+      `/wrap-init` in its own session) (session retro 2026-08-24)
+
+<!-- debt-entry-end: 2026-08-24-4f7e02c8b1 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
