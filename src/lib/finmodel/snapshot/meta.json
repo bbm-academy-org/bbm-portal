@@ -4,5 +4,12 @@
   "source_path": "ssot/finmodel.yaml",
   "commit_sha": "f1d15e1367ca726668a25dc23893bfd0a945ce04",
   "source_sha256": "ba67835b638c0c86e3e7ff3578f214c90988170a6721b97099ae85d1e25277d3",
-  "pulled_at": "2026-08-24T09:27:02.063Z"
+  "rules": {
+    "source_path": "content/finmodel/index.mdx",
+    "commit_sha": "f1d15e1367ca726668a25dc23893bfd0a945ce04",
+    "commit_date": "2026-08-11T12:12:53Z",
+    "source_sha256": "3a2f6cf9b1dd24857f6a422b777ae0f4d5b450112ab9f230beedd1cce20d9e39",
+    "pulled_at": "2026-08-24T10:39:21.837Z"
+  },
+  "pulled_at": "2026-08-24T10:39:21.837Z"
 }

@@ -33,6 +33,8 @@ export type {
   TimelinePoint,
 } from './formula'
 
+export { RULES_META, RULES_MDX } from './rulesDocument'
+
 export { getVariables, isModelExample, MODEL_EXAMPLE_PATHS, SNAPSHOT_META } from './variables'
 export type {
   FinmodelVariables,

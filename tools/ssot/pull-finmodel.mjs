@@ -18,10 +18,20 @@
 // дрейф. Сами пометки снимаются из комментариев в поле снапшота `model_example`,
 // чтобы «пометку» не пересказывать руками в типах этого репо.
 //
-// Нормативный документ (`content/finmodel/index.mdx` в bbm-kb) сюда НЕ
-// снапшотится: он снимается вместе со своим рендером (#193), где и принимается
-// решение о публичном контуре — этот репо публичный, а документ до двух гейтов
-// (юр-валидация; сверка словаря и весов) живёт в статусе драфта.
+// Второй снимаемый артефакт (#193) — НОРМАТИВНЫЙ ДОКУМЕНТ
+// `content/finmodel/index.mdx` того же мастера: он ложится байт в байт в
+// `src/lib/finmodel/snapshot/rules.mdx` и рендерится страницей `/p/model/rules`
+// внутри Zitadel-гейта (`(platform)`) — владелец 2026-08-24 отнёс документ к
+// рабочему пространству портала, а не к публичному контуру. Свежесть его тоже
+// считается по sha256 СЫРЫХ байт, поэтому правка одной формулировки мастера —
+// такой же дрейф, как правка значения.
+//
+// Коммит в паспорте документа — ПОСЛЕДНИЙ КОММИТ САМОГО ФАЙЛА
+// (`commits?path=…`), а не HEAD репо на момент снятия: подпись под документом
+// читает человек, и «версия» для него — когда менялся ЭТОТ текст, а не когда в
+// bbm-kb трогали что-то соседнее. Паспорт yaml-снапшота (`commit_sha` верхнего
+// уровня) остаётся прежним — HEAD на момент снятия; он машинный, его читает
+// джоба свежести (round-2 ревью PR #320, решение принято здесь).
 //
 // Доступ: `gh` CLI. Локально хватает `gh auth`; в CI — секрет `KB_READ_TOKEN`
 // (fine-grained PAT, read-only contents на bbm-kb), который скрипт подставляет
@@ -38,6 +48,7 @@ import { parse } from 'yaml'
 const REPO = 'bbm-academy-org/bbm-kb'
 const REF = 'main'
 const YAML_PATH = 'ssot/finmodel.yaml'
+const MDX_PATH = 'content/finmodel/index.mdx'
 const OUT_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
   '..',
@@ -208,6 +219,20 @@ export function hasDrift(currentSnapshotRaw, currentMeta, yamlRaw) {
 }
 
 /**
+ * Отстал ли закоммиченный снимок нормативного документа от мастера — по сырым
+ * байтам файла И по хэшу в паспорте. Отдельная функция, а не четвёртый
+ * аргумент `hasDrift`: у документа свой мастер-файл, свой хэш и свой коммит, и
+ * смешивать два дрейфа в одном булеве значило бы потерять, какой из них
+ * сработал.
+ * @param {string|null} currentRulesRaw
+ * @param {any} currentMeta
+ * @param {string} mdxRaw
+ */
+export function hasRulesDrift(currentRulesRaw, currentMeta, mdxRaw) {
+  return currentRulesRaw !== mdxRaw || currentMeta?.rules?.source_sha256 !== sourceSha256(mdxRaw)
+}
+
+/**
  * `pulled_at` меняется каждым прогоном, поэтому сам по себе он не повод
  * переписывать файл: иначе `ssot:pull` пачкает дерево и печатает «no changes».
  * @param {any} currentMeta
@@ -215,7 +240,11 @@ export function hasDrift(currentSnapshotRaw, currentMeta, yamlRaw) {
  */
 export function metaNeedsWrite(currentMeta, nextCore) {
   if (!currentMeta) return true
-  return Object.entries(nextCore).some(([key, value]) => currentMeta[key] !== value)
+  // Сравнение через JSON: с #193 в паспорте появился вложенный блок `rules`, и
+  // ссылочное сравнение объявляло бы его изменившимся каждым прогоном.
+  return Object.entries(nextCore).some(
+    ([key, value]) => JSON.stringify(currentMeta[key]) !== JSON.stringify(value),
+  )
 }
 
 /** Снапшот пишется той же формой, что и prettier для JSON: 2 пробела + \n. */
@@ -232,6 +261,21 @@ function main() {
     '-H',
     'Accept: application/vnd.github.raw',
   ])
+  const mdxRaw = gh([
+    'api',
+    `repos/${REPO}/contents/${MDX_PATH}?ref=${REF}`,
+    '-H',
+    'Accept: application/vnd.github.raw',
+  ])
+  // Последний коммит САМОГО файла документа — см. блок про паспорт в шапке.
+  const [rulesSha, rulesDate] = gh([
+    'api',
+    `repos/${REPO}/commits?path=${MDX_PATH}&sha=${REF}&per_page=1`,
+    '-q',
+    '.[0].sha + " " + .[0].commit.committer.date',
+  ])
+    .trim()
+    .split(' ')
 
   const violations = findInvariantViolations(parse(yamlRaw))
   if (violations.length > 0) {
@@ -242,14 +286,20 @@ function main() {
 
   const file = join(OUT_DIR, 'finmodel.json')
   const metaFile = join(OUT_DIR, 'meta.json')
+  const rulesFile = join(OUT_DIR, 'rules.mdx')
   const next = serialize(buildSnapshot(yamlRaw))
   const current = existsSync(file) ? readFileSync(file, 'utf8') : null
+  const currentRules = existsSync(rulesFile) ? readFileSync(rulesFile, 'utf8') : null
   const currentMeta = existsSync(metaFile) ? JSON.parse(readFileSync(metaFile, 'utf8')) : null
 
   if (checkOnly) {
-    if (hasDrift(current, currentMeta, yamlRaw)) {
+    const stale = []
+    if (hasDrift(current, currentMeta, yamlRaw)) stale.push(YAML_PATH)
+    if (hasRulesDrift(currentRules, currentMeta, mdxRaw)) stale.push(MDX_PATH)
+    if (stale.length > 0) {
       console.error(
-        `STALE: снапшот отстал от ${REPO}@${headSha.slice(0, 7)}. Обнови: pnpm ssot:pull`,
+        `STALE: снапшот отстал от ${REPO}@${headSha.slice(0, 7)} (${stale.join(', ')}). ` +
+          'Обнови: pnpm ssot:pull',
       )
       process.exit(1)
     }
@@ -260,6 +310,10 @@ function main() {
   mkdirSync(OUT_DIR, { recursive: true })
   const contentChanged = current !== next
   if (contentChanged) writeFileSync(file, next)
+  // Документ пишется БАЙТ В БАЙТ, без нормализации переводов строк: его хэш —
+  // тот же `sourceSha256`, и «поправленный» перевод строки дал бы вечный дрейф.
+  const rulesChanged = currentRules !== mdxRaw
+  if (rulesChanged) writeFileSync(rulesFile, mdxRaw)
 
   // Паспорт снапшота. `pulled_at` намеренно вне сравнения `--check`: он менялся
   // бы каждым прогоном, и джоба свежести дрейфила бы сама на себя. А
@@ -271,14 +325,30 @@ function main() {
     source_path: YAML_PATH,
     commit_sha: headSha,
     source_sha256: sourceSha256(yamlRaw),
+    rules: {
+      source_path: MDX_PATH,
+      commit_sha: rulesSha,
+      // Дата ТОГО коммита, а не снятия: паспорт под документом отвечает на
+      // вопрос «когда этот текст менялся в последний раз».
+      commit_date: rulesDate,
+      source_sha256: sourceSha256(mdxRaw),
+    },
   }
   const metaChanged = metaNeedsWrite(currentMeta, core)
   if (metaChanged) {
-    writeFileSync(metaFile, serialize({ ...core, pulled_at: new Date().toISOString() }))
+    const now = new Date().toISOString()
+    writeFileSync(
+      metaFile,
+      serialize({
+        ...core,
+        rules: { ...core.rules, pulled_at: now },
+        pulled_at: now,
+      }),
+    )
   }
 
   console.log(
-    contentChanged
+    contentChanged || rulesChanged
       ? `updated from ${REPO}@${headSha.slice(0, 7)}`
       : metaChanged
         ? `no changes (meta.json refreshed: ${REPO}@${headSha.slice(0, 7)})`
