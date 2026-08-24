@@ -43,6 +43,17 @@ describe('нормативный документ: снимок мастера',
     expect(RULES_MDX).not.toMatch(/^status:\s*pending\s*$/m)
   })
 
+  it('заголовки разделов — плоский текст, без разметки', () => {
+    // `headingText` в components-map собирает якорь из ДЕТЕЙ заголовка и
+    // отбрасывает всё, что не строка и не число: подчёркивание, код или
+    // `<V/>` внутри `##` дали бы id, который не совпадёт со ссылкой слева.
+    // Пока заголовки плоские, два источника (исходник и React-дети) сходятся;
+    // это утверждение — то, что делает «пока» проверяемым.
+    for (const [, title] of RULES_MDX.matchAll(/^## +(.+?)\s*$/gm)) {
+      expect(title).not.toMatch(/[*_`<>[\]]/)
+    }
+  })
+
   it('несёт разделы, из которых собирается оглавление', () => {
     const headings = [...RULES_MDX.matchAll(/^## (.+)$/gm)].map((match) => match[1].trim())
     expect(headings.length).toBeGreaterThanOrEqual(5)
@@ -65,6 +76,50 @@ describe('каждое число документа приходит из сн�
     const variables = getVariables()
     expect(() => resolveVar(variables, 'policy.нет_такого')).toThrow(/policy\.нет_такого/)
     expect(() => resolveVar(variables, 'policy.royalty_percent')).toThrow()
+  })
+})
+
+/**
+ * Пин подстановок: какие ключи документ зовёт и сколько раз.
+ *
+ * Проверка «нет чисел, набранных руками» ниже ловит только те значения, у
+ * которых есть единица измерения: процент и рубль опознаются в тексте. Доли
+ * распределения рендерятся голыми целыми, и `4` в теле документа встречается
+ * законно («40 часов»), поэтому со стороны текста такую подмену не поймать
+ * вообще — `<V k="policy.profit_shares.author" />`, заменённый на «2», не
+ * нарушал ни одного из тех правил.
+ *
+ * Поэтому контракт закреплён с ДРУГОЙ стороны: не «каких чисел в тексте нет»,
+ * а «какие подстановки в тексте есть». Удалённая или подменённая `<V/>` роняет
+ * тест мгновенно; новая подстановка в мастере — осознанная правка одной строки
+ * здесь, на которую смотрит ревьюер.
+ */
+describe('состав подстановок документа закреплён', () => {
+  // Список ведётся руками намеренно: он и есть предмет договорённости.
+  const EXPECTED_KEY_COUNTS: Record<string, number> = {
+    'policy.profit_shares.author': 3,
+    'policy.profit_shares.coauthors': 1,
+    'policy.profit_shares.investors': 2,
+    'policy.reserve_percent': 1,
+    'policy.royalty_percent.bbm_holders': 3,
+    'policy.royalty_percent.mission_fund': 2,
+    'policy.royalty_percent.total': 2,
+  }
+
+  it('документ зовёт ровно те ключи и ровно столько раз', () => {
+    const counts: Record<string, number> = {}
+    for (const key of usedVariableKeys(RULES_MDX)) {
+      counts[key] = (counts[key] ?? 0) + 1
+    }
+    expect(counts).toEqual(EXPECTED_KEY_COUNTS)
+  })
+
+  it('каждый закреплённый ключ разрешается в снапшоте', () => {
+    // Иначе пин можно было бы «починить» опечаткой, а не правкой документа.
+    const variables = getVariables()
+    for (const key of Object.keys(EXPECTED_KEY_COUNTS)) {
+      expect(typeof resolveVar(variables, key)).toBe('number')
+    }
   })
 })
 
