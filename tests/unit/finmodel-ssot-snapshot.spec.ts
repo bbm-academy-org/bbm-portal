@@ -5,7 +5,14 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // .mjs-тулинг без типов: из скрипта берётся только чистая, не ходящая в сеть часть
-import { findInvariantViolations } from '../../tools/ssot/pull-finmodel.mjs'
+import {
+  buildSnapshot,
+  extractModelExampleMarkers,
+  findInvariantViolations,
+  hasDrift,
+  metaNeedsWrite,
+  sourceSha256,
+} from '../../tools/ssot/pull-finmodel.mjs'
 
 /**
  * Снапшот SSOT — граница между этим репо и мастером в bbm-kb. Тесты здесь про
@@ -122,5 +129,105 @@ describe('проводка ssot:check', () => {
     }
     expect(stderr).toContain('KB_READ_TOKEN')
     expect(stderr).not.toContain('at Object.')
+  })
+})
+
+/**
+ * Маркеры `model_example` живут в мастере ТОЛЬКО как YAML-комментарии, а
+ * `parse()` комментарии выбрасывает. Пока они не снимаются вместе со
+ * значениями, «пометка» пересказывается руками в типах — второй источник
+ * правды ровно там, где этот модуль вводит SSOT-контракт.
+ */
+describe('пометки model_example снимаются из мастера', () => {
+  const master = [
+    '# Схема:',
+    '#   reserve_percent: <число>   # model_example; в шапке это не значение',
+    'policy:',
+    '  profit_shares:',
+    '    investors: 4',
+    '  reserve_percent: 15          # model_example',
+    '  emission_price_rub: 1000     # model_example (пример звонка 06.08)',
+    '  examples:',
+    '    team_monthly_rate_rub: 200000   # model_example',
+    '    team_hours_norm: 160',
+    'projects:',
+    '  doctor_school:',
+    '    unit_price_rub: 2000000    # model_example (резолюция №1)',
+    '    mining_weights:            # предложение BBM 4:1:2',
+    '      pul: 4',
+    '',
+  ].join('\n')
+
+  it('путь маркера собирается по вложенности, комментарий-шапка не считается значением', () => {
+    expect(extractModelExampleMarkers(master)).toEqual([
+      'policy.reserve_percent',
+      'policy.emission_price_rub',
+      'policy.examples.team_monthly_rate_rub',
+      'projects.doctor_school.unit_price_rub',
+    ])
+  })
+
+  it('снапшот несёт список маркеров рядом со значениями', () => {
+    const data = JSON.parse(
+      readFileSync(join(repoRoot, 'src/lib/finmodel/snapshot/finmodel.json'), 'utf8'),
+    )
+    expect(data.model_example).toEqual([
+      'policy.reserve_percent',
+      'policy.emission_price_rub',
+      'policy.examples.team_monthly_rate_rub',
+      'projects.doctor_school.unit_price_rub',
+    ])
+  })
+
+  it('снятие маркера в мастере — дрейф снапшота, а не молчаливая правка', () => {
+    const without = master.replace('  reserve_percent: 15          # model_example', '  reserve_percent: 15')
+    expect(extractModelExampleMarkers(without)).not.toContain('policy.reserve_percent')
+    expect(buildSnapshot(without)).not.toEqual(buildSnapshot(master))
+  })
+})
+
+/**
+ * Дырка свежести: `--check` сравнивал РАЗОБРАННЫЕ значения, поэтому правка
+ * одних комментариев мастера (пометка, подпись Эдуарда под весами майнинга)
+ * давала нулевой дрейф и зелёную джобу.
+ */
+describe('свежесть считается по сырым байтам мастера', () => {
+  const yamlA = 'policy:\n  reserve_percent: 15   # model_example\n'
+  const yamlB = 'policy:\n  reserve_percent: 15   # model_example (подтверждено 2026-08-24)\n'
+
+  it('правка одного комментария меняет хэш источника', () => {
+    expect(sourceSha256(yamlA)).not.toBe(sourceSha256(yamlB))
+  })
+
+  it('дрейф ловится даже когда сериализованный снапшот совпал байт в байт', () => {
+    const snapshotRaw = JSON.stringify(buildSnapshot(yamlA), null, 2) + '\n'
+    const meta = { source_sha256: sourceSha256(yamlA) }
+    expect(hasDrift(snapshotRaw, meta, yamlA)).toBe(false)
+    expect(hasDrift(snapshotRaw, meta, yamlB)).toBe(true)
+  })
+
+  it('в закоммиченном meta.json хэш источника записан', () => {
+    const meta = JSON.parse(
+      readFileSync(join(repoRoot, 'src/lib/finmodel/snapshot/meta.json'), 'utf8'),
+    )
+    expect(meta.source_sha256).toMatch(/^[0-9a-f]{64}$/)
+  })
+})
+
+describe('meta.json переписывается только когда в паспорте что-то изменилось', () => {
+  const core = {
+    source_repo: 'bbm-academy-org/bbm-kb',
+    ref: 'main',
+    source_path: 'ssot/finmodel.yaml',
+    commit_sha: 'f1d15e1367ca726668a25dc23893bfd0a945ce04',
+    source_sha256: 'a'.repeat(64),
+  }
+
+  it('другой pulled_at сам по себе не повод переписывать файл', () => {
+    expect(metaNeedsWrite({ ...core, pulled_at: '2020-01-01T00:00:00.000Z' }, core)).toBe(false)
+  })
+
+  it('новый коммит мастера — повод', () => {
+    expect(metaNeedsWrite({ ...core, pulled_at: '2020-01-01T00:00:00.000Z' }, { ...core, commit_sha: 'b'.repeat(40) })).toBe(true)
   })
 })
