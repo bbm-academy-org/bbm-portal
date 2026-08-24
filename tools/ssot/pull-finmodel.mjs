@@ -1,0 +1,290 @@
+#!/usr/bin/env node
+// pull-finmodel — снапшот SSOT-переменных финмодели из мастера в потребителя.
+//
+// Мастер значений — `ssot/finmodel.yaml` в репо `bbm-academy-org/bbm-kb`
+// (приватный). Этот репо — потребитель: он держит ЗАКОММИЧЕННЫЙ снапшот
+// `src/lib/finmodel/snapshot/finmodel.json`, чтобы сборка и тесты не ходили в
+// сеть, а модуль расчётов читал переменные обычным JSON-импортом.
+//
+// Контракт анти-staleness (спека финмодели §5): правка мастера обязана либо
+// доезжать до портала, либо ронять сборку. Здесь выбран второй вариант:
+//   pnpm ssot:pull   — обновить снапшот из bbm-kb@main
+//   pnpm ssot:check  — сравнить снапшот с мастером; дрейф = exit 1 (джоба CI
+//                      `ssot-freshness`, docs/ci-guardrails.md §5)
+//
+// Сравнивается не только разбор значений, но и sha256 СЫРЫХ байт мастера
+// (`meta.source_sha256`): правка одних комментариев мастера — тоже факт (снятая
+// пометка `model_example`, подпись под весами майнинга), и она обязана давать
+// дрейф. Сами пометки снимаются из комментариев в поле снапшота `model_example`,
+// чтобы «пометку» не пересказывать руками в типах этого репо.
+//
+// Нормативный документ (`content/finmodel/index.mdx` в bbm-kb) сюда НЕ
+// снапшотится: он снимается вместе со своим рендером (#193), где и принимается
+// решение о публичном контуре — этот репо публичный, а документ до двух гейтов
+// (юр-валидация; сверка словаря и весов) живёт в статусе драфта.
+//
+// Доступ: `gh` CLI. Локально хватает `gh auth`; в CI — секрет `KB_READ_TOKEN`
+// (fine-grained PAT, read-only contents на bbm-kb), который скрипт подставляет
+// в `GH_TOKEN`.
+
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { parse } from 'yaml'
+
+const REPO = 'bbm-academy-org/bbm-kb'
+const REF = 'main'
+const YAML_PATH = 'ssot/finmodel.yaml'
+const OUT_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'src',
+  'lib',
+  'finmodel',
+  'snapshot',
+)
+
+/**
+ * Единственная функция, зависящая от сети. `KB_READ_TOKEN` важнее `GH_TOKEN`:
+ * в CI дефолтный токен воркфлоу до приватного bbm-kb не дотягивается.
+ * @param {string[]} args
+ * @returns {string}
+ */
+function gh(args) {
+  const env = { ...process.env }
+  if (env.KB_READ_TOKEN) env.GH_TOKEN = env.KB_READ_TOKEN
+  try {
+    return execFileSync('gh', args, { encoding: 'utf8', env, maxBuffer: 16 * 1024 * 1024 })
+  } catch (error) {
+    // Стек Node здесь бесполезен: читателю нужно знать не «где упало», а чего
+    // не хватает — иначе красная джоба выглядит как поломка скрипта, а не как
+    // отсутствующий доступ.
+    const detail = String(error?.stderr ?? error?.message ?? error).trim()
+    console.error(`не удалось прочитать ${REPO} через gh: ${detail}`)
+    console.error(
+      env.KB_READ_TOKEN || env.GH_TOKEN
+        ? 'Токен есть, но доступа нет: нужен read-only contents на приватный bbm-kb.'
+        : 'Ни KB_READ_TOKEN, ни GH_TOKEN не заданы. Локально: gh auth login. ' +
+            'В CI: секрет KB_READ_TOKEN репо bbm-portal (fine-grained PAT, read-only contents на bbm-kb).',
+    )
+    process.exit(1)
+  }
+}
+
+/**
+ * Форма мастера, которую типы этого репо обещают потребителю. Проверяется на
+ * снятии, а не в рантайме калькулятора: `getVariables()` отдаёт снапшот с
+ * приведением типа, и единственное, что делает это приведение честным, —
+ * машинная проверка формы здесь плюс тот же вызов на закоммиченном файле в
+ * `tests/unit/finmodel-ssot-snapshot.spec.ts`. Переименованный или выпавший
+ * лист мастера обязан ронять `ssot:pull` / `ssot:check`, а не всплывать
+ * прочерком на публичной странице.
+ */
+const REQUIRED_NUMBER_LEAVES = [
+  'policy.profit_shares.investors',
+  'policy.profit_shares.author',
+  'policy.profit_shares.coauthors',
+  'policy.royalty_percent.total',
+  'policy.royalty_percent.mission_fund',
+  'policy.royalty_percent.bbm_holders',
+  'policy.reserve_percent',
+  'policy.emission_price_rub',
+  'policy.examples.team_monthly_rate_rub',
+  'policy.examples.team_hours_norm',
+  'projects.doctor_school.unit_price_rub',
+  'projects.doctor_school.mining_weights.pul',
+  'projects.doctor_school.mining_weights.bre',
+  'projects.doctor_school.mining_weights.con',
+]
+
+/**
+ * Значение по точечному пути; `undefined`, если путь обрывается.
+ * @param {any} data
+ * @param {string} path
+ */
+function at(data, path) {
+  return path.split('.').reduce((node, key) => (node == null ? undefined : node[key]), data)
+}
+
+/**
+ * Инварианты мастера, которые дешевле поймать на снятии, чем в рантайме
+ * калькулятора: полная форма (`REQUIRED_NUMBER_LEAVES`), сплит роялти обязан
+ * складываться в общий процент, а доли распределения — быть целыми (в текстах
+ * они называются «4x / 2x / 1x»).
+ * Чистая функция — её же зовут тесты снапшота.
+ * @param {any} data
+ * @returns {string[]} список нарушений, пустой массив = мастер валиден
+ */
+export function findInvariantViolations(data) {
+  const out = []
+  const policy = data?.policy
+  if (!policy) return ['policy: секция отсутствует']
+
+  for (const path of REQUIRED_NUMBER_LEAVES) {
+    const value = at(data, path)
+    if (!Number.isFinite(value)) {
+      out.push(`${path}: ожидалось число, получено ${JSON.stringify(value) ?? 'undefined'}`)
+    }
+  }
+
+  const r = policy.royalty_percent
+  if (!r || r.mission_fund + r.bbm_holders !== r.total) {
+    out.push('policy.royalty_percent: mission_fund + bbm_holders != total')
+  }
+  const s = policy.profit_shares
+  if (!s || ![s.investors, s.author, s.coauthors].every(Number.isInteger)) {
+    out.push('policy.profit_shares: доли обязаны быть целыми')
+  }
+  return out
+}
+
+/**
+ * Пометки `model_example` живут в мастере ТОЛЬКО как YAML-комментарии, а
+ * `parse()` их выбрасывает. Здесь они снимаются вместе со значениями и ложатся
+ * в снапшот структурными данными — иначе «пометку» пришлось бы пересказывать
+ * руками в типах, и это был бы второй источник правды: владелец переводит
+ * число из модельного в фикс канона в bbm-kb, а этот репо продолжает
+ * подписывать его «модельным».
+ *
+ * Путь маркера собирается по отступам; строки-комментарии (в том числе схема в
+ * шапке мастера) значениями не считаются.
+ * @param {string} yamlRaw
+ * @returns {string[]} точечные пути помеченных значений
+ */
+export function extractModelExampleMarkers(yamlRaw) {
+  const out = []
+  /** @type {{indent: number, key: string}[]} */
+  const stack = []
+  for (const line of yamlRaw.split('\n')) {
+    if (/^\s*(#|$)/.test(line)) continue
+    const match = /^(\s*)([A-Za-z_][\w.-]*):(.*)$/.exec(line)
+    if (!match) continue
+    const indent = match[1].length
+    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) stack.pop()
+    stack.push({ indent, key: match[2] })
+    const rest = match[3]
+    const hash = rest.indexOf('#')
+    if (hash >= 0 && /\bmodel_example\b/.test(rest.slice(hash))) {
+      out.push(stack.map((node) => node.key).join('.'))
+    }
+  }
+  return out
+}
+
+/**
+ * Содержимое снапшота: значения мастера плюс снятый из его комментариев список
+ * помеченных путей.
+ * @param {string} yamlRaw
+ */
+export function buildSnapshot(yamlRaw) {
+  return { ...parse(yamlRaw), model_example: extractModelExampleMarkers(yamlRaw) }
+}
+
+/**
+ * Хэш СЫРЫХ байт мастера. Сравнение разобранных значений слепо к правке одних
+ * комментариев — а комментарий мастера несёт факт (пометка `model_example`,
+ * подпись под весами майнинга), и его правка обязана давать дрейф.
+ * @param {string} yamlRaw
+ */
+export function sourceSha256(yamlRaw) {
+  return createHash('sha256').update(yamlRaw, 'utf8').digest('hex')
+}
+
+/**
+ * Отстал ли закоммиченный снапшот от мастера — по значениям И по сырым байтам.
+ * @param {string|null} currentSnapshotRaw
+ * @param {any} currentMeta
+ * @param {string} yamlRaw
+ */
+export function hasDrift(currentSnapshotRaw, currentMeta, yamlRaw) {
+  return (
+    currentSnapshotRaw !== serialize(buildSnapshot(yamlRaw)) ||
+    currentMeta?.source_sha256 !== sourceSha256(yamlRaw)
+  )
+}
+
+/**
+ * `pulled_at` меняется каждым прогоном, поэтому сам по себе он не повод
+ * переписывать файл: иначе `ssot:pull` пачкает дерево и печатает «no changes».
+ * @param {any} currentMeta
+ * @param {Record<string, string>} nextCore
+ */
+export function metaNeedsWrite(currentMeta, nextCore) {
+  if (!currentMeta) return true
+  return Object.entries(nextCore).some(([key, value]) => currentMeta[key] !== value)
+}
+
+/** Снапшот пишется той же формой, что и prettier для JSON: 2 пробела + \n. */
+function serialize(data) {
+  return JSON.stringify(data, null, 2) + '\n'
+}
+
+function main() {
+  const checkOnly = process.argv.includes('--check')
+  const headSha = gh(['api', `repos/${REPO}/commits/${REF}`, '-q', '.sha']).trim()
+  const yamlRaw = gh([
+    'api',
+    `repos/${REPO}/contents/${YAML_PATH}?ref=${REF}`,
+    '-H',
+    'Accept: application/vnd.github.raw',
+  ])
+
+  const violations = findInvariantViolations(parse(yamlRaw))
+  if (violations.length > 0) {
+    console.error(`ssot invariant broken in ${REPO}@${headSha.slice(0, 7)}:${YAML_PATH}`)
+    for (const v of violations) console.error(`  - ${v}`)
+    process.exit(1)
+  }
+
+  const file = join(OUT_DIR, 'finmodel.json')
+  const metaFile = join(OUT_DIR, 'meta.json')
+  const next = serialize(buildSnapshot(yamlRaw))
+  const current = existsSync(file) ? readFileSync(file, 'utf8') : null
+  const currentMeta = existsSync(metaFile) ? JSON.parse(readFileSync(metaFile, 'utf8')) : null
+
+  if (checkOnly) {
+    if (hasDrift(current, currentMeta, yamlRaw)) {
+      console.error(
+        `STALE: снапшот отстал от ${REPO}@${headSha.slice(0, 7)}. Обнови: pnpm ssot:pull`,
+      )
+      process.exit(1)
+    }
+    console.log(`fresh: снапшот соответствует ${REPO}@${headSha.slice(0, 7)}`)
+    return
+  }
+
+  mkdirSync(OUT_DIR, { recursive: true })
+  const contentChanged = current !== next
+  if (contentChanged) writeFileSync(file, next)
+
+  // Паспорт снапшота. `pulled_at` намеренно вне сравнения `--check`: он менялся
+  // бы каждым прогоном, и джоба свежести дрейфила бы сама на себя. А
+  // `source_sha256`, наоборот, В сравнении — им ловится правка ОДНИХ
+  // комментариев мастера, которую разбор значений не видит.
+  const core = {
+    source_repo: REPO,
+    ref: REF,
+    source_path: YAML_PATH,
+    commit_sha: headSha,
+    source_sha256: sourceSha256(yamlRaw),
+  }
+  const metaChanged = metaNeedsWrite(currentMeta, core)
+  if (metaChanged) {
+    writeFileSync(metaFile, serialize({ ...core, pulled_at: new Date().toISOString() }))
+  }
+
+  console.log(
+    contentChanged
+      ? `updated from ${REPO}@${headSha.slice(0, 7)}`
+      : metaChanged
+        ? `no changes (meta.json refreshed: ${REPO}@${headSha.slice(0, 7)})`
+        : 'no changes',
+  )
+}
+
+// Импорт из теста не должен ходить в сеть — сеть только у прямого запуска.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()

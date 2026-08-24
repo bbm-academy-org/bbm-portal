@@ -1,0 +1,36 @@
+{
+  "policy": {
+    "profit_shares": {
+      "investors": 4,
+      "author": 2,
+      "coauthors": 1
+    },
+    "royalty_percent": {
+      "total": 5,
+      "mission_fund": 2,
+      "bbm_holders": 3
+    },
+    "reserve_percent": 15,
+    "emission_price_rub": 1000,
+    "examples": {
+      "team_monthly_rate_rub": 200000,
+      "team_hours_norm": 160
+    }
+  },
+  "projects": {
+    "doctor_school": {
+      "unit_price_rub": 2000000,
+      "mining_weights": {
+        "pul": 4,
+        "bre": 1,
+        "con": 2
+      }
+    }
+  },
+  "model_example": [
+    "policy.reserve_percent",
+    "policy.emission_price_rub",
+    "policy.examples.team_monthly_rate_rub",
+    "projects.doctor_school.unit_price_rub"
+  ]
+}
