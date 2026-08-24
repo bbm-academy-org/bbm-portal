@@ -38,8 +38,6 @@ export type {
 
 export { resolveVar } from './resolveVar'
 
-export { RULES_META } from './rulesDocument'
-
 export { getVariables, isModelExample, MODEL_EXAMPLE_PATHS, SNAPSHOT_META } from './variables'
 export type {
   FinmodelVariables,
