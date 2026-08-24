@@ -11,6 +11,8 @@ import {
   findInvariantViolations,
   hasDrift,
   metaNeedsWrite,
+  parseCommitProbe,
+  rulesPassportDrift,
   sourceSha256,
 } from '../../tools/ssot/pull-finmodel.mjs'
 
@@ -264,5 +266,59 @@ describe('meta.json переписывается только когда в па
         { ...core, commit_sha: 'b'.repeat(40) },
       ),
     ).toBe(true)
+  })
+})
+
+/**
+ * Паспорт документа (#193, ревью PR #325 п.5 и п.7).
+ *
+ * Свежесть документа считалась по байтам и их хэшу — а поля паспорта
+ * (`commit_sha`, `commit_date`, `source_path`) не перепроверялись вообще.
+ * Переименование файла в мастере или любая смена его последнего коммита при
+ * тех же байтах оставляли `ssot:check` зелёным, пока строка «версия …» под
+ * документом показывала не то. Второй сюжет тот же по классу: пустой ответ
+ * `commits?path=` клал в паспорт пустую строку вместо того, чтобы уронить
+ * снятие.
+ */
+describe('паспорт нормативного документа', () => {
+  const passport = {
+    source_path: 'content/finmodel/index.mdx',
+    commit_sha: 'f'.repeat(40),
+    commit_date: '2026-08-11T12:12:53Z',
+  }
+
+  it('совпадающий паспорт дрейфа не даёт', () => {
+    expect(rulesPassportDrift({ rules: { ...passport } }, passport)).toEqual([])
+  })
+
+  it('переименование файла в мастере — дрейф, хотя байты те же', () => {
+    const stale = { rules: { ...passport, source_path: 'content/finmodel/rules.mdx' } }
+    expect(rulesPassportDrift(stale, passport)).toContain('source_path')
+  })
+
+  it('новый коммит документа — дрейф, даже если текст не менялся', () => {
+    const stale = { rules: { ...passport, commit_sha: 'a'.repeat(40) } }
+    expect(rulesPassportDrift(stale, passport)).toContain('commit_sha')
+  })
+
+  it('отсутствующий блок паспорта — дрейф целиком, а не «нарушений нет»', () => {
+    expect(rulesPassportDrift(null, passport).length).toBeGreaterThan(0)
+    expect(rulesPassportDrift({}, passport).length).toBeGreaterThan(0)
+  })
+
+  it('ответ gh разбирается в sha и дату', () => {
+    expect(
+      parseCommitProbe('f1d15e1367ca726668a25dc23893bfd0a945ce04 2026-08-11T12:12:53Z'),
+    ).toEqual({
+      sha: 'f1d15e1367ca726668a25dc23893bfd0a945ce04',
+      date: '2026-08-11T12:12:53Z',
+    })
+  })
+
+  it('пустой ответ — ошибка, а не пустой sha в паспорте', () => {
+    // `.[0]` по пустому массиву даёт «null null»; молча записанный, он стал бы
+    // подписью «версия ...» под нормативным документом.
+    expect(() => parseCommitProbe('')).toThrow(/commits/)
+    expect(() => parseCommitProbe('null null')).toThrow(/commits/)
   })
 })

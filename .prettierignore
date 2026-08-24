@@ -41,3 +41,13 @@ src/app/(payload)/admin/importMap.js
 # file carrying a banned stub marker. Formatting them would rewrite the
 # assertions.
 tools/lint/guard-tests/fixtures/
+
+# src/lib/finmodel/snapshot/rules.mdx is a BYTE-EXACT snapshot of the normative
+# document mastered in bbm-kb (`pnpm ssot:pull`), and its freshness is a sha256
+# of those raw bytes (`pnpm ssot:check`, the BLOCK-level `ssot-freshness` job).
+# Prettier's markdown printer happily reflows it — one `--write` over `src/` is
+# enough to make the guard red on a file nobody edited, and the "fix" would be
+# to re-pull, silently discarding the reflow. Same generated-file rule as the
+# entries above: the puller is the only writer. `.mdx` is outside the
+# `format:check` globs today, so this is defense in depth (#193).
+src/lib/finmodel/snapshot/rules.mdx

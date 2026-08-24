@@ -1,9 +1,12 @@
 /**
  * Модуль финансовой модели BBM (ADR-002) — публичная поверхность домена.
  *
- * Всё, что снаружи (будущие `src/modules/finmodel/view` и публичные страницы
- * раздела), импортирует ТОЛЬКО отсюда; внутренности модуля никто не тянет —
- * граница машинно проверяется dependency-cruiser'ом (`pnpm boundaries`).
+ * Всё, что снаружи, импортирует ТОЛЬКО отсюда; внутренности модуля никто не
+ * тянет — граница машинно проверяется dependency-cruiser'ом
+ * (`pnpm boundaries`). Поверхности отображения у модуля сегодня НЕТ: владелец
+ * 2026-08-24 отменил портальную страницу документа — его рендерит KB
+ * (kb.bbm.academy/finmodel), а этот модуль остаётся домом снимка, расчётов и
+ * машинной сверки текста с кодом.
  *
  * Ничто здесь не импортирует ни CMS, ни внутренности соседних модулей (hours,
  * okr) — тем же правилом.
@@ -32,6 +35,8 @@ export type {
   RoyaltyAmounts,
   TimelinePoint,
 } from './formula'
+
+export { resolveVar } from './resolveVar'
 
 export { getVariables, isModelExample, MODEL_EXAMPLE_PATHS, SNAPSHOT_META } from './variables'
 export type {

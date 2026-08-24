@@ -36,3 +36,10 @@ tools/**/*.mjs text eol=lf
 # that shape makes Git's built-in union driver safe for concurrent active appends
 # and for sweep-delete + append merges on GitHub/server-side merges.
 /DEBT.md merge=union
+
+# Снимок нормативного документа финмодели (#193): его свежесть считается по
+# sha256 СЫРЫХ байт (`meta.rules.source_sha256`, `pnpm ssot:check`). На
+# Windows-чекауте с core.autocrlf=true git подставил бы CRLF, хэш разошёлся бы
+# с мастером — и локальная джоба свежести кричала бы «STALE» на файле, который
+# только что снят байт в байт.
+src/lib/finmodel/snapshot/rules.mdx text eol=lf

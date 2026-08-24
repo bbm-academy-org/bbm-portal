@@ -120,16 +120,19 @@ module.exports = {
       name: 'cms-must-not-import-finmodel-internals',
       comment:
         'ADR-002/ADR-003 (#192): the CMS side may not reach into finmodel module internals. ' +
-        'ONE DIFFERENCE from the hours and OKR mirrors above, and it is the whole reason this ' +
-        'rule is written out rather than copied: those two surfaces live in the Zitadel-gated ' +
-        '(platform) route group, so their from-set lists app/(frontend). The finmodel surfaces ' +
-        'are PUBLIC by design (the model presentation renders for anyone), so they land in ' +
-        'app/(frontend) — which is therefore deliberately ABSENT here, exactly as (platform) is ' +
-        'absent from the other rules. The route group is the door; the internals stay closed to ' +
-        'collections, globals, endpoints, hooks, seed and the Payload config.',
+        'The from-set is the SAME as the hours and OKR mirrors above, but for a different ' +
+        'reason, and the difference is the point: those two modules HAVE a surface, and their ' +
+        'route group is the door left out of the from-set. This module has NO surface at all ' +
+        'today. #192 expected a public one in app/(frontend); #193 built a gated one at ' +
+        '/p/model/rules and the owner then dropped it (2026-08-24) — the normative document is ' +
+        'rendered by the KB (kb.bbm.academy/finmodel), and what stays here is the snapshot, the ' +
+        'calculations and the text-vs-code guard. So no route group is excused: every CMS-side ' +
+        'entry point, app/(frontend) included, is closed out of this module. WHEN a surface ' +
+        'appears, whoever builds it decides its route group and removes exactly that path from ' +
+        'this from-set — deliberately, in that PR, not by inheriting a hole nobody chose.',
       severity: 'error',
       from: {
-        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\))|^src/payload\\.config',
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',
       },
       to: { path: '^src/(lib/finmodel|modules/finmodel)' },
     },
@@ -212,9 +215,9 @@ module.exports = {
         'ADR-002/ADR-004 §6 (#125): the route layer never holds a table handle. ' +
         '`module-must-not-import-foreign-tables` keys on ^src/(lib|modules)/<module>/ and ' +
         '`cms-must-not-import-platform-db` deliberately omits the (platform) route group, so ' +
-        'without this rule a page under src/app/(platform)/ could import ANY module\'s tables ' +
+        "without this rule a page under src/app/(platform)/ could import ANY module's tables " +
         'directly and both other rules would stay green — the invariant would be stated but not ' +
-        'enforced. A route renders; it asks a module for data through the module\'s API, and the ' +
+        "enforced. A route renders; it asks a module for data through the module's API, and the " +
         'module talks to its own tables. Hence no per-module exception here: unlike the rule ' +
         'above, there is no module name a route legitimately owns.',
       severity: 'error',
