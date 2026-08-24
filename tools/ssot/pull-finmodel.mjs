@@ -50,7 +50,22 @@ const OUT_DIR = join(
 function gh(args) {
   const env = { ...process.env }
   if (env.KB_READ_TOKEN) env.GH_TOKEN = env.KB_READ_TOKEN
-  return execFileSync('gh', args, { encoding: 'utf8', env, maxBuffer: 16 * 1024 * 1024 })
+  try {
+    return execFileSync('gh', args, { encoding: 'utf8', env, maxBuffer: 16 * 1024 * 1024 })
+  } catch (error) {
+    // Стек Node здесь бесполезен: читателю нужно знать не «где упало», а чего
+    // не хватает — иначе красная джоба выглядит как поломка скрипта, а не как
+    // отсутствующий доступ.
+    const detail = String(error?.stderr ?? error?.message ?? error).trim()
+    console.error(`не удалось прочитать ${REPO} через gh: ${detail}`)
+    console.error(
+      env.KB_READ_TOKEN || env.GH_TOKEN
+        ? 'Токен есть, но доступа нет: нужен read-only contents на приватный bbm-kb.'
+        : 'Ни KB_READ_TOKEN, ни GH_TOKEN не заданы. Локально: gh auth login. ' +
+            'В CI: секрет KB_READ_TOKEN репо bbm-portal (fine-grained PAT, read-only contents на bbm-kb).',
+    )
+    process.exit(1)
+  }
 }
 
 /**
