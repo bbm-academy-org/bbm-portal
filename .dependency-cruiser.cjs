@@ -120,14 +120,16 @@ module.exports = {
       name: 'cms-must-not-import-finmodel-internals',
       comment:
         'ADR-002/ADR-003 (#192): the CMS side may not reach into finmodel module internals. ' +
-        'The from-set is the SAME as the hours and OKR mirrors above, and the reason it once ' +
-        'differed is worth keeping: #192 expected the finmodel surfaces to be PUBLIC, so ' +
-        'app/(frontend) was deliberately left OUT of this from-set as their door. The owner ' +
-        'ruled otherwise on 2026-08-24 (#193): the normative document ships at /p/model/rules ' +
-        'inside the Zitadel-gated (platform) route group, for signed-in BBM members. (platform) ' +
-        'is therefore the door and stays absent here, while app/(frontend) rejoins the from-set ' +
-        '— a public CMS page has no business reaching into this module either. The internals ' +
-        'stay closed to collections, globals, endpoints, hooks, seed and the Payload config.',
+        'The from-set is the SAME as the hours and OKR mirrors above, but for a different ' +
+        'reason, and the difference is the point: those two modules HAVE a surface, and their ' +
+        'route group is the door left out of the from-set. This module has NO surface at all ' +
+        'today. #192 expected a public one in app/(frontend); #193 built a gated one at ' +
+        '/p/model/rules and the owner then dropped it (2026-08-24) — the normative document is ' +
+        'rendered by the KB (kb.bbm.academy/finmodel), and what stays here is the snapshot, the ' +
+        'calculations and the text-vs-code guard. So no route group is excused: every CMS-side ' +
+        'entry point, app/(frontend) included, is closed out of this module. WHEN a surface ' +
+        'appears, whoever builds it decides its route group and removes exactly that path from ' +
+        'this from-set — deliberately, in that PR, not by inheriting a hole nobody chose.',
       severity: 'error',
       from: {
         path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',

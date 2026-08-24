@@ -1,24 +1,36 @@
-import React from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
-import { formatPercent, formatRub, getVariables, RULES_MDX } from '@/lib/finmodel'
-import { documentToc, headingText, sectionId } from '@/modules/finmodel/view/toc'
-import { resolveVar } from '@/modules/finmodel/view/V'
+import { formatPercent, formatRub, getVariables, resolveVar } from '@/lib/finmodel'
+
+/**
+ * Снимок читается с диска прямо здесь, а не через дверь в `src/lib`: у текста
+ * документа в этом репо ровно один потребитель — вот этот тест (рендерит
+ * документ KB, см. шапку ниже). Заводить ради него рантайм-модуль с лоадером и
+ * объявлениями в конфигах сборщиков значило бы построить механизм для ноля
+ * потребителей.
+ */
+const RULES_MDX = readFileSync(
+  join(import.meta.dirname, '..', '..', 'src', 'lib', 'finmodel', 'snapshot', 'rules.mdx'),
+  'utf8',
+)
 
 /**
  * Согласованность нормативного документа «Смарт-контракт BBM» с кодом (#193).
  *
  * Документ мастерится НЕ здесь: его мастер — `content/finmodel/index.mdx` в
- * bbm-kb, сюда он приезжает байт в байт (`pnpm ssot:pull`). Поэтому тесты ниже
- * — не про формулировки владельца, а про единственный машинный контракт между
- * текстом и кодом: каждое число документа приходит из снапшота через `<V/>`, и
- * ни одно не набрано руками.
+ * bbm-kb, сюда он приезжает байт в байт (`pnpm ssot:pull`), а РЕНДЕРИТ его KB
+ * (kb.bbm.academy/finmodel) — портальную страницу владелец отменил 2026-08-24.
+ * Значит, единственное, ради чего снимок лежит в этом репо, — вот эти
+ * проверки: машинный контракт между текстом владельца и кодом расчётов.
  *
- * Почему это тест, а не договорённость: набранное руками число молча
- * расходится с мастером значений при первой же его правке, и расхождение видит
- * читатель, а не автор. Сломать тест обязана ровно та правка, которая заменяет
- * `<V/>` на цифру.
+ * Контракт: каждое число документа приходит из снапшота через `<V/>`, и ни
+ * одно не набрано руками. Почему это тест, а не договорённость: набранное
+ * руками число молча расходится с мастером значений при первой же его правке,
+ * и расхождение видит читатель, а не автор. Сломать тест обязана ровно та
+ * правка, которая заменяет `<V/>` на цифру.
  */
 
 /** MDX-комментарии — не тело документа: в них живут служебные пометки. */
@@ -40,44 +52,9 @@ describe('нормативный документ: снимок мастера',
     expect(RULES_MDX.length).toBeGreaterThan(1000)
     expect(RULES_MDX).toContain('title: Смарт-контракт BBM')
     // Стаб мастера («документ перенесён, здесь ничего нет») помечается статусом
-    // во фронтматтере — отрендерить его вместо документа значило бы показать
-    // читателю пустую нормативную страницу как настоящую.
+    // во фронтматтере. Сверять с ним значило бы объявить согласованным пустой
+    // файл: подстановок в стабе нет, и все проверки ниже прошли бы вхолостую.
     expect(RULES_MDX).not.toMatch(/^status:\s*pending\s*$/m)
-  })
-
-  it('заголовки разделов — плоский текст, без разметки', () => {
-    // `headingText` в components-map собирает якорь из ДЕТЕЙ заголовка и
-    // отбрасывает всё, что не строка и не число: подчёркивание, код или
-    // `<V/>` внутри `##` дали бы id, который не совпадёт со ссылкой слева.
-    // Пока заголовки плоские, два источника (исходник и React-дети) сходятся;
-    // это утверждение — то, что делает «пока» проверяемым.
-    for (const [, title] of RULES_MDX.matchAll(/^## +(.+?)\s*$/gm)) {
-      expect(title).not.toMatch(/[*_`<>[\]]/)
-    }
-  })
-
-  it('несёт разделы, из которых собирается оглавление', () => {
-    const headings = [...RULES_MDX.matchAll(/^## (.+)$/gm)].map((match) => match[1].trim())
-    expect(headings.length).toBeGreaterThanOrEqual(5)
-    expect(new Set(headings).size).toBe(headings.length)
-  })
-})
-
-describe('каждое число документа приходит из снапшота', () => {
-  it('все ключи <V/> разрешаются в числа снапшота', () => {
-    const variables = getVariables()
-    const keys = usedVariableKeys(RULES_MDX)
-    expect(keys.length).toBeGreaterThan(0)
-    for (const key of keys) {
-      expect(() => resolveVar(variables, key)).not.toThrow()
-      expect(typeof resolveVar(variables, key)).toBe('number')
-    }
-  })
-
-  it('оборванный ключ — исключение, а не молчаливый прочерк', () => {
-    const variables = getVariables()
-    expect(() => resolveVar(variables, 'policy.нет_такого')).toThrow(/policy\.нет_такого/)
-    expect(() => resolveVar(variables, 'policy.royalty_percent')).toThrow()
   })
 })
 
@@ -125,6 +102,24 @@ describe('состав подстановок документа закрепл�
   })
 })
 
+describe('каждое число документа приходит из снапшота', () => {
+  it('все ключи <V/> разрешаются в числа снапшота', () => {
+    const variables = getVariables()
+    const keys = usedVariableKeys(RULES_MDX)
+    expect(keys.length).toBeGreaterThan(0)
+    for (const key of keys) {
+      expect(() => resolveVar(variables, key)).not.toThrow()
+      expect(typeof resolveVar(variables, key)).toBe('number')
+    }
+  })
+
+  it('оборванный ключ — исключение, а не молчаливый прочерк', () => {
+    const variables = getVariables()
+    expect(() => resolveVar(variables, 'policy.нет_такого')).toThrow(/policy\.нет_такого/)
+    expect(() => resolveVar(variables, 'policy.royalty_percent')).toThrow()
+  })
+})
+
 describe('в теле документа нет чисел, набранных руками', () => {
   const body = bodyWithoutSubstitutions(RULES_MDX)
 
@@ -159,86 +154,5 @@ describe('в теле документа нет чисел, набранных �
     for (const literal of forbidden) {
       expect(body).not.toContain(literal)
     }
-  })
-})
-
-/**
- * Оглавление и якоря — две стороны одного алгоритма: список слева считает
- * `documentToc`, id заголовка справа — компонент `h2` рендерера, и оба зовут
- * `sectionId`. Тест держит именно стык: ссылка обязана вести в существующий
- * раздел, а не в пустоту.
- */
-describe('оглавление ведёт в разделы документа', () => {
-  const toc = documentToc(RULES_MDX)
-
-  it('собрано из всех разделов, ни один id не пуст и не повторяется', () => {
-    const headings = [...RULES_MDX.matchAll(/^## +(.+?)\s*$/gm)].map((match) => match[1])
-    expect(toc.map((entry) => entry.title)).toEqual(headings)
-    expect(toc.every((entry) => entry.id.length > 0)).toBe(true)
-    expect(new Set(toc.map((entry) => entry.id)).size).toBe(toc.length)
-  })
-
-  it('якорь заголовка считается тем же способом, что и ссылка', () => {
-    // Ровно тот путь, которым идёт компонент `h2` в components-map рендерера:
-    // текст детей → sectionId.
-    for (const entry of toc) {
-      expect(sectionId(headingText(entry.title))).toBe(entry.id)
-    }
-  })
-
-  it('кириллица не транслитерируется, разделители схлопываются', () => {
-    expect(sectionId('Я работаю в команде проекта')).toBe('я-работаю-в-команде-проекта')
-    expect(sectionId('Я врач (пример аудитории — Doctor.School)')).toBe(
-      'я-врач-пример-аудитории-doctor-school',
-    )
-    expect(sectionId('— — —')).toBe('section')
-  })
-})
-
-/**
- * Компиляция документа — на процесс, а не на запрос (ревью PR #325, п.4).
- * Страница `force-dynamic`, но её источник константа, и без мемо каждый
- * читатель платил бы компиляцией MDX за один и тот же результат.
- */
-describe('MDX компилируется один раз на процесс', () => {
-  it('повторный вызов отдаёт тот же промис, а не новую компиляцию', async () => {
-    const { compiledDocument } = await import('@/modules/finmodel/view/RulesDocument')
-    const first = compiledDocument()
-    expect(compiledDocument()).toBe(first)
-    expect(await first).toBeTruthy()
-  })
-})
-
-/**
- * Документ действительно ОТРЕНДЕРЕН, а не показан исходником.
- *
- * Приёмочный прогон #193 поймал ровно этот класс: четыре GFM-таблицы
- * («Выбери, кто ты», три пути, два словаря) доезжали до читателя строками
- * «| … | … |», потому что рендереру не передали remark-gfm. Компонент `table`
- * в components-map и обёртка `.rules-tablewrap` при этом выглядели рабочими —
- * они просто никогда не вызывались. Проверять надо результат, а не проводку.
- */
-describe('нормативный документ рендерится, а не показывается исходником', () => {
-  it('таблицы стали таблицами, а не абзацами с палками', async () => {
-    const { compiledDocument } = await import('@/modules/finmodel/view/RulesDocument')
-    const html = renderToStaticMarkup(
-      React.createElement(React.Fragment, null, await compiledDocument()),
-    )
-    expect((html.match(/<table/g) ?? []).length).toBeGreaterThanOrEqual(4)
-    // Обёртка горизонтального скролла тоже обязана СРАБОТАТЬ, а не существовать.
-    expect((html.match(/rules-tablewrap/g) ?? []).length).toBeGreaterThanOrEqual(4)
-    // Ни одной сырой строки разметки таблицы в тексте: ни разделителя `|---`,
-    // ни вообще палки — в тексте документа её больше нигде нет.
-    expect(html).not.toMatch(/\|\s*-{3}/)
-    expect(html).not.toContain('|')
-  })
-
-  it('подстановки <V/> доехали значениями, а не тегами', async () => {
-    const { compiledDocument } = await import('@/modules/finmodel/view/RulesDocument')
-    const html = renderToStaticMarkup(
-      React.createElement(React.Fragment, null, await compiledDocument()),
-    )
-    expect(html).not.toContain('<V ')
-    expect(html).toContain('rules-var')
   })
 })
