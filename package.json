@@ -27,6 +27,8 @@
     "deploy:prod": "node tools/deploy/prod.mjs",
     "deploy:smoke": "node tools/deploy/smoke-prod.mjs",
     "deploy:notes": "node tools/deploy/release-notes.mjs",
+    "ssot:pull": "node tools/ssot/pull-finmodel.mjs",
+    "ssot:check": "node tools/ssot/pull-finmodel.mjs --check",
     "issue:create": "node tools/gh/create-issue.mjs",
     "board:status": "node tools/gh/set-board-status.mjs",
     "pr:land": "node tools/gh/pr-land.mjs",
