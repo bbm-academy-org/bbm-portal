@@ -57,33 +57,43 @@ export function splitReserve(amountRub: number, reservePercent: number): Reserve
 }
 
 /**
- * Роялти с чистой прибыли и его адресаты. Округляется целое и доля фонда,
+ * Роялти с распределяемой суммы и его адресаты. Округляется целое и доля фонда,
  * доля держателей BBM считается вычитанием — по той же причине, что и в
  * резерве: два независимых округления разошлись бы с общей суммой.
+ *
+ * База — АРГУМЕНТ, а не «чистая прибыль периода»: в каскаде `projectTimeline`
+ * сюда приходит распределяемый остаток (после покрытия убытка и возврата
+ * вложенного), а в отдельно взятом расчёте — та сумма, которую даёт вызывающий.
+ * Прочтение §11.7 расписано над `projectTimeline`.
  *
  * Адресат роялти — фонд эволюционной цели и держатели BBM, НЕ автор: доля
  * автора считается отдельно, из базы распределения (`distributeProfit`).
  */
-export function royaltySplit(netProfitRub: number, royalty: RoyaltyPercent): RoyaltyAmounts {
-  const total = Math.round(netProfitRub * (royalty.total / 100))
-  const missionFund = Math.round(netProfitRub * (royalty.mission_fund / 100))
+export function royaltySplit(amountRub: number, royalty: RoyaltyPercent): RoyaltyAmounts {
+  const total = Math.round(amountRub * (royalty.total / 100))
+  const missionFund = Math.round(amountRub * (royalty.mission_fund / 100))
   return { total, missionFund, bbmHolders: total - missionFund }
 }
 
 /**
- * Распределение чистой прибыли: сначала роялти, остаток («база») делится на
- * доли между инвесторами, автором и соавторами.
+ * Распределение РАСПРЕДЕЛЯЕМОЙ суммы: сначала роялти, остаток («база») делится
+ * на доли между инвесторами, автором и соавторами.
+ *
+ * Параметр назван `distributableRub`, а не «чистая прибыль», намеренно: в
+ * каскаде `projectTimeline` это остаток периода после покрытия накопленного
+ * убытка и возврата вложенного, и роялти берётся именно с него (см. блок
+ * «РАБОЧЕЕ ПРОЧТЕНИЕ» над `projectTimeline`).
  *
  * Доля `x` НЕ округляется: округление допустимо только при отображении
  * (`format.ts`), а промежуточное округление доли ушло бы в каждую из семи
  * позиций и разошлось бы с базой.
  */
 export function distributeProfit(
-  netProfitRub: number,
+  distributableRub: number,
   policy: PolicyVariables,
 ): ProfitDistribution {
-  const royalty = royaltySplit(netProfitRub, policy.royalty_percent)
-  const base = netProfitRub - royalty.total
+  const royalty = royaltySplit(distributableRub, policy.royalty_percent)
+  const base = distributableRub - royalty.total
   const shares = policy.profit_shares
   const totalShares = shares.investors + shares.author + shares.coauthors
   const x = totalShares > 0 ? base / totalShares : 0
@@ -162,7 +172,15 @@ export interface TimelinePoint {
  *      (loss carry-forward);
  *   2. затем — возврат вложенного инвесторам, до 100% суммы вложений; резерв в
  *      этом каскаде не участвует, он отделён ещё на входе (`splitReserve`);
- *   3. остаток делится по долям (`distributeProfit`).
+ *   3. остаток делится по долям (`distributeProfit`), и РОЯЛТИ 5% берётся с
+ *      этого остатка, а не с чистой прибыли периода: в фазе payback вся
+ *      распределяемая прибыль идёт инвесторам до возврата 100% вложенного,
+ *      поэтому фонд эволюционной цели и держатели BBM в такой период не
+ *      получают ничего, а после закрытия возврата та же чистая прибыль даёт
+ *      другое роялти. Это прочтение зафиксировано тестом плана
+ *      презентационной системы (репо bbm,
+ *      docs/superpowers/plans/2026-08-11-finmodel-presentation-system.md,
+ *      задача 5: 15 млн чистой прибыли в payback → `royalty.total` 100 000).
  *
  * Возврат идёт частями через столько периодов, сколько нужно; уже возвращённое
  * повторно не гасится. Убыточный период распределения не даёт — но и не
@@ -180,7 +198,10 @@ export function projectTimeline(
   return periods.map((period) => {
     const netProfit = period.revenue - period.costs
 
-    if (netProfit <= 0) {
+    // Строго `< 0`: нулевая прибыль убытка не добавляет и фазу не меняет —
+    // период с покрытым убытком и невозвращённым вложением остаётся `payback`,
+    // а не откатывается в `loss`. Фазу дальше считает одно общее выражение.
+    if (netProfit < 0) {
       cumLoss += -netProfit
       return {
         netProfit,
