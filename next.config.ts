@@ -31,6 +31,10 @@ const nextConfig: NextConfig = {
     ],
   },
   webpack: (webpackConfig) => {
+    // Снимок нормативного документа (#193) — текст, а не модуль: см.
+    // `tools/build/mdx-raw-loader.cjs`, там же причина. Дублируется в
+    // `turbopack.rules` ниже, потому что сборщика два.
+    webpackConfig.module.rules.push({ test: /\.mdx$/, type: 'asset/source' })
     webpackConfig.resolve.extensionAlias = {
       '.cjs': ['.cts', '.cjs'],
       '.js': ['.ts', '.tsx', '.js', '.jsx'],
@@ -41,6 +45,12 @@ const nextConfig: NextConfig = {
   },
   turbopack: {
     root: path.resolve(dirname),
+    rules: {
+      '*.mdx': {
+        loaders: ['./tools/build/mdx-raw-loader.cjs'],
+        as: '*.js',
+      },
+    },
   },
 }
 

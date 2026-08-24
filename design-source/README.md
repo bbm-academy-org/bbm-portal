@@ -61,9 +61,9 @@ meant to prevent it.
 
 | File | Surface | Provenance (original / export / build) | Built by |
 | ---- | ------- | -------------------------------------- | -------- |
+| `p-model-rules.md` | `/p/model/rules` — «Смарт-контракт BBM» document render | **original** — described layout picked by the owner (AskUserQuestion, session 2026-08-24), verbatim; no higher-fidelity source exists | #193 |
 
-_Empty by design._ Nothing is vendored yet: this folder ships with #138, and the
-first entry lands with the first UI task after it. Existing surfaces (`/p/hours`,
+The first entry landed with #193; before it the folder shipped empty with #138. Existing surfaces (`/p/hours`,
 `/p/okr`, the Payload admin) are **not** back-filled — see rule 4.
 
 ## Tooling notes
