@@ -192,3 +192,17 @@ describe('оглавление ведёт в разделы документа',
     expect(sectionId('— — —')).toBe('section')
   })
 })
+
+/**
+ * Компиляция документа — на процесс, а не на запрос (ревью PR #325, п.4).
+ * Страница `force-dynamic`, но её источник константа, и без мемо каждый
+ * читатель платил бы компиляцией MDX за один и тот же результат.
+ */
+describe('MDX компилируется один раз на процесс', () => {
+  it('повторный вызов отдаёт тот же промис, а не новую компиляцию', async () => {
+    const { compiledDocument } = await import('@/modules/finmodel/view/RulesDocument')
+    const first = compiledDocument()
+    expect(compiledDocument()).toBe(first)
+    expect(await first).toBeTruthy()
+  })
+})

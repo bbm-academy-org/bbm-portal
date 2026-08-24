@@ -18,6 +18,8 @@ vi.mock('@/modules/hours/view/AdminForms', () => ({
   PeriodRowActions: () => null,
 }))
 vi.mock('@/modules/hours/actions', () => ({}))
+vi.mock('@/modules/finmodel/view/RulesDocument', () => ({ RulesDocument: () => null }))
+vi.mock('@/modules/finmodel/view/RulesShell', () => ({ RulesShell: () => null }))
 
 describe('platform cache gate (force-dynamic route-segment config)', () => {
   it('/p/okr page opts out of static/route caching', async () => {
@@ -40,6 +42,14 @@ describe('platform cache gate (force-dynamic route-segment config)', () => {
   it('admin-only JSON export opts out of caching too', async () => {
     const route = await import('@/app/(platform)/p/hours/admin/export/route')
     expect(route.dynamic).toBe('force-dynamic')
+  })
+
+  // Нормативный документ (#193): текст и числа одинаковы для всех, но
+  // страница живёт за гейтом — реестр держит её собственный экспорт, а не
+  // наследование от layout'а, ровно затем и существует.
+  it('/p/model/rules page opts out of static/route caching', async () => {
+    const page = await import('@/app/(platform)/p/model/rules/page')
+    expect(page.dynamic).toBe('force-dynamic')
   })
 
   it('(platform) root layout opts out of static/route caching for the whole subtree', async () => {

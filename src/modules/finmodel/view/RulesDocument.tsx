@@ -37,12 +37,29 @@ const components = {
   ),
 }
 
-export async function RulesDocument() {
-  const { content } = await compileMDX({
+/**
+ * Компиляция кэшируется на ПРОЦЕСС, а не на запрос.
+ *
+ * Страница `force-dynamic` (гейт кэша группы `(platform)`), то есть рендерится
+ * на каждый запрос, — но источник у неё константа: закоммиченный снимок и
+ * значения снапшота. Без этого мемо каждый читатель платил бы полной
+ * компиляцией MDX за один и тот же результат. Кэшируется промис, а не
+ * значение: два одновременных запроса на холодном процессе иначе запустили бы
+ * компиляцию дважды. `React.cache` тут не подходит — он живёт ровно один
+ * запрос, то есть ничего бы не сэкономил.
+ */
+let compiled: Promise<React.ReactNode> | null = null
+
+export function compiledDocument(): Promise<React.ReactNode> {
+  compiled ??= compileMDX({
     source: RULES_MDX,
     components,
     // Фронтматтер мастера — метаданные, а не первый абзац документа.
     options: { parseFrontmatter: true },
-  })
-  return <div className="rules-doc">{content}</div>
+  }).then((result) => result.content)
+  return compiled
+}
+
+export async function RulesDocument() {
+  return <div className="rules-doc">{await compiledDocument()}</div>
 }

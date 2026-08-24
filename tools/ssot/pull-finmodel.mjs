@@ -233,6 +233,42 @@ export function hasRulesDrift(currentRulesRaw, currentMeta, mdxRaw) {
 }
 
 /**
+ * Поля паспорта документа, разошедшиеся с мастером. Байты и их хэш ловят
+ * правку ТЕКСТА, но не переименование файла и не смену его последнего коммита
+ * при тех же байтах — а подпись «версия …» под документом читает человек, и
+ * она обязана указывать на настоящий коммит. Поэтому `--check` сверяет и
+ * паспорт (ревью PR #325, п.5).
+ * @param {any} currentMeta
+ * @param {{source_path: string, commit_sha: string, commit_date: string}} expected
+ * @returns {string[]} имена разошедшихся полей, пустой массив = паспорт свеж
+ */
+export function rulesPassportDrift(currentMeta, expected) {
+  const rules = currentMeta?.rules
+  if (!rules) return Object.keys(expected)
+  return Object.keys(expected).filter((key) => rules[key] !== expected[key])
+}
+
+/**
+ * Ответ `gh api commits?path=…` → sha и дата коммита ДОКУМЕНТА.
+ *
+ * Разбор вынесен из `main` ради одного отказа: `.[0]` по пустому массиву даёт
+ * строку «null null», и незаграждённая деструктуризация положила бы её в
+ * паспорт вместо того, чтобы уронить снятие. Пустая подпись под нормативным
+ * документом хуже отсутствующей — она выглядит настоящей.
+ * @param {string} raw
+ * @returns {{sha: string, date: string}}
+ */
+export function parseCommitProbe(raw) {
+  const [sha, date] = String(raw).trim().split(/\s+/)
+  if (!/^[0-9a-f]{40}$/.test(sha ?? '') || !date || date === 'null') {
+    throw new Error(
+      `не удалось прочитать последний коммит ${MDX_PATH}: gh api commits вернул ${JSON.stringify(raw)}`,
+    )
+  }
+  return { sha, date }
+}
+
+/**
  * `pulled_at` меняется каждым прогоном, поэтому сам по себе он не повод
  * переписывать файл: иначе `ssot:pull` пачкает дерево и печатает «no changes».
  * @param {any} currentMeta
@@ -268,14 +304,23 @@ function main() {
     'Accept: application/vnd.github.raw',
   ])
   // Последний коммит САМОГО файла документа — см. блок про паспорт в шапке.
-  const [rulesSha, rulesDate] = gh([
-    'api',
-    `repos/${REPO}/commits?path=${MDX_PATH}&sha=${REF}&per_page=1`,
-    '-q',
-    '.[0].sha + " " + .[0].commit.committer.date',
-  ])
-    .trim()
-    .split(' ')
+  const { sha: rulesSha, date: rulesDate } = parseCommitProbe(
+    gh([
+      'api',
+      `repos/${REPO}/commits?path=${MDX_PATH}&sha=${REF}&per_page=1`,
+      '-q',
+      '.[0].sha + " " + .[0].commit.committer.date',
+    ]),
+  )
+
+  // Паспорт документа считается до ветки `--check`: его сверяют обе ветки.
+  const rulesPassport = {
+    source_path: MDX_PATH,
+    commit_sha: rulesSha,
+    // Дата ТОГО коммита, а не снятия: паспорт под документом отвечает на
+    // вопрос «когда этот текст менялся в последний раз».
+    commit_date: rulesDate,
+  }
 
   const violations = findInvariantViolations(parse(yamlRaw))
   if (violations.length > 0) {
@@ -296,6 +341,8 @@ function main() {
     const stale = []
     if (hasDrift(current, currentMeta, yamlRaw)) stale.push(YAML_PATH)
     if (hasRulesDrift(currentRules, currentMeta, mdxRaw)) stale.push(MDX_PATH)
+    const passportFields = rulesPassportDrift(currentMeta, rulesPassport)
+    if (passportFields.length > 0) stale.push(`паспорт документа: ${passportFields.join(', ')}`)
     if (stale.length > 0) {
       console.error(
         `STALE: снапшот отстал от ${REPO}@${headSha.slice(0, 7)} (${stale.join(', ')}). ` +
@@ -325,14 +372,7 @@ function main() {
     source_path: YAML_PATH,
     commit_sha: headSha,
     source_sha256: sourceSha256(yamlRaw),
-    rules: {
-      source_path: MDX_PATH,
-      commit_sha: rulesSha,
-      // Дата ТОГО коммита, а не снятия: паспорт под документом отвечает на
-      // вопрос «когда этот текст менялся в последний раз».
-      commit_date: rulesDate,
-      source_sha256: sourceSha256(mdxRaw),
-    },
+    rules: { ...rulesPassport, source_sha256: sourceSha256(mdxRaw) },
   }
   const metaChanged = metaNeedsWrite(currentMeta, core)
   if (metaChanged) {
