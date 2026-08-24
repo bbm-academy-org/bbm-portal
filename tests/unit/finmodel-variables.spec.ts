@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { SNAPSHOT_META, getVariables } from '@/lib/finmodel/variables'
+import {
+  MODEL_EXAMPLE_PATHS,
+  SNAPSHOT_META,
+  getVariables,
+  isModelExample,
+} from '@/lib/finmodel/variables'
 
 /**
  * Снапшот SSOT-переменных (мастер — `ssot/finmodel.yaml` в bbm-kb, снимается
@@ -33,9 +38,27 @@ describe('finmodel: снапшот переменных', () => {
     }
   })
 
-  it('снапшот назван своим источником — репо, ref и коммит мастера', () => {
+  it('снапшот назван своим источником — репо, ref, коммит и хэш байт мастера', () => {
     expect(SNAPSHOT_META.source_repo).toBe('bbm-academy-org/bbm-kb')
     expect(SNAPSHOT_META.ref).toBe('main')
     expect(SNAPSHOT_META.commit_sha).toMatch(/^[0-9a-f]{40}$/)
+    expect(SNAPSHOT_META.source_sha256).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('пометки model_example приходят из мастера, а не перечислены в этом репо', () => {
+    // Список путей снимается из комментариев мастера (`pnpm ssot:pull`), тест
+    // держит его контракт: каждый путь ведёт к существующему числу снапшота.
+    expect(MODEL_EXAMPLE_PATHS.length).toBeGreaterThan(0)
+    for (const path of MODEL_EXAMPLE_PATHS) {
+      const value = path
+        .split('.')
+        .reduce<unknown>(
+          (node, key) => (node as Record<string, unknown> | undefined)?.[key],
+          getVariables(),
+        )
+      expect(typeof value).toBe('number')
+      expect(isModelExample(path)).toBe(true)
+    }
+    expect(isModelExample('policy.profit_shares.investors')).toBe(false)
   })
 })

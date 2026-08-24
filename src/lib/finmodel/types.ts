@@ -10,6 +10,10 @@
  *
  * Числа с пометкой `model_example` в мастере — МОДЕЛЬНЫЕ значения: параметры
  * калькулятора, которые публикуются и уточняются, а не зафиксированные цифры.
+ * Список помеченных путей НЕ переписывается здесь руками: он снимается из
+ * комментариев мастера при `pnpm ssot:pull` и лежит в снапшоте полем
+ * `model_example` (`MODEL_EXAMPLE_PATHS` / `isModelExample` в `variables.ts`).
+ * Иначе перевод числа из модельного в фикс канона правился бы в двух местах.
  */
 
 /** Доли распределения прибыли: «4x инвесторам / 2x автору / 1x соавторам». */
@@ -34,11 +38,11 @@ export interface RoyaltyPercent {
 export interface PolicyVariables {
   profit_shares: ProfitShares
   royalty_percent: RoyaltyPercent
-  /** Модельное значение: доля каждой входящей суммы, уходящая в резерв. */
+  /** Доля каждой входящей суммы, уходящая в резерв. */
   reserve_percent: number
-  /** Модельное значение: цена первичной эмиссии токена. */
+  /** Цена первичной эмиссии токена. */
   emission_price_rub: number
-  /** Модельные значения для публичных примеров треков. */
+  /** Значения для публичных примеров треков. */
   examples: {
     team_monthly_rate_rub: number
     team_hours_norm: number
@@ -54,7 +58,7 @@ export interface MiningWeights {
 
 /** Уровень проекта. */
 export interface ProjectVariables {
-  /** Модельное значение: цена юнита продукта проекта. */
+  /** Цена юнита продукта проекта. */
   unit_price_rub: number
   mining_weights: MiningWeights
 }
@@ -64,6 +68,12 @@ export interface FinmodelVariables {
   projects: {
     doctor_school: ProjectVariables
   }
+  /**
+   * Точечные пути значений, помеченных в мастере как `model_example`, — снятые
+   * из его комментариев, а не перечисленные здесь. Публичная страница, которая
+   * показывает такое число, обязана показать и пометку.
+   */
+  model_example: string[]
 }
 
 /** Паспорт снапшота: чей мастер, какой ref и какой коммит сняли. */
@@ -72,5 +82,11 @@ export interface SnapshotMeta {
   ref: string
   source_path: string
   commit_sha: string
+  /**
+   * sha256 СЫРЫХ байт мастера. Свежесть считается по нему, а не только по
+   * разобранным значениям: правка одних комментариев (пометка, подпись под
+   * весами майнинга) иначе давала бы нулевой дрейф.
+   */
+  source_sha256: string
   pulled_at: string
 }

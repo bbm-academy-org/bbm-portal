@@ -26,5 +26,11 @@
         "con": 2
       }
     }
-  }
+  },
+  "model_example": [
+    "policy.reserve_percent",
+    "policy.emission_price_rub",
+    "policy.examples.team_monthly_rate_rub",
+    "projects.doctor_school.unit_price_rub"
+  ]
 }

@@ -33,7 +33,7 @@ export type {
   TimelinePoint,
 } from './formula'
 
-export { getVariables, SNAPSHOT_META } from './variables'
+export { getVariables, isModelExample, MODEL_EXAMPLE_PATHS, SNAPSHOT_META } from './variables'
 export type {
   FinmodelVariables,
   MiningWeights,

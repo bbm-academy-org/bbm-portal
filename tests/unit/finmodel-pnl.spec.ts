@@ -117,11 +117,9 @@ describe('P&L: граничные периоды', () => {
  */
 describe('P&L: база роялти в фазе payback', () => {
   it('роялти считается с распределяемого остатка, а не с чистой прибыли периода', () => {
-    const timeline = projectTimeline(
-      [{ revenue: 20_000_000, costs: 5_000_000 }],
-      policy,
-      [{ amountRub: 13_000_000 }],
-    )
+    const timeline = projectTimeline([{ revenue: 20_000_000, costs: 5_000_000 }], policy, [
+      { amountRub: 13_000_000 },
+    ])
     const point = timeline[0]
     expect(point.netProfit).toBe(15_000_000)
     expect(point.investorReturn).toBe(13_000_000)

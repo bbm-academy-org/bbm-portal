@@ -28,8 +28,13 @@ const validMaster = {
   policy: {
     profit_shares: { investors: 4, author: 2, coauthors: 1 },
     royalty_percent: { total: 5, mission_fund: 2, bbm_holders: 3 },
+    reserve_percent: 15,
+    emission_price_rub: 1000,
+    examples: { team_monthly_rate_rub: 200000, team_hours_norm: 160 },
   },
-  projects: { doctor_school: { mining_weights: { pul: 4, bre: 1, con: 2 } } },
+  projects: {
+    doctor_school: { unit_price_rub: 2000000, mining_weights: { pul: 4, bre: 1, con: 2 } },
+  },
 }
 
 describe('инварианты мастера ssot/finmodel.yaml', () => {
@@ -65,6 +70,28 @@ describe('инварианты мастера ssot/finmodel.yaml', () => {
 
   it('пустой файл — нарушение, а не «нарушений нет»', () => {
     expect(findInvariantViolations({}).length).toBeGreaterThan(0)
+  })
+
+  it('выпавший лист мастера ловится на снятии, а не прочерком на странице', () => {
+    const { emission_price_rub: _dropped, ...policy } = validMaster.policy
+    expect(findInvariantViolations({ ...validMaster, policy })).toContain(
+      'policy.emission_price_rub: ожидалось число, получено undefined',
+    )
+  })
+
+  it('переименованный лист — тоже нарушение, а не молчаливая потеря значения', () => {
+    const renamed = {
+      ...validMaster,
+      projects: {
+        doctor_school: {
+          ...validMaster.projects.doctor_school,
+          mining_weights: { pull: 4, bre: 1, con: 2 },
+        },
+      },
+    }
+    expect(findInvariantViolations(renamed)).toContain(
+      'projects.doctor_school.mining_weights.pul: ожидалось число, получено undefined',
+    )
   })
 })
 
@@ -180,7 +207,10 @@ describe('пометки model_example снимаются из мастера', 
   })
 
   it('снятие маркера в мастере — дрейф снапшота, а не молчаливая правка', () => {
-    const without = master.replace('  reserve_percent: 15          # model_example', '  reserve_percent: 15')
+    const without = master.replace(
+      '  reserve_percent: 15          # model_example',
+      '  reserve_percent: 15',
+    )
     expect(extractModelExampleMarkers(without)).not.toContain('policy.reserve_percent')
     expect(buildSnapshot(without)).not.toEqual(buildSnapshot(master))
   })
@@ -228,6 +258,11 @@ describe('meta.json переписывается только когда в па
   })
 
   it('новый коммит мастера — повод', () => {
-    expect(metaNeedsWrite({ ...core, pulled_at: '2020-01-01T00:00:00.000Z' }, { ...core, commit_sha: 'b'.repeat(40) })).toBe(true)
+    expect(
+      metaNeedsWrite(
+        { ...core, pulled_at: '2020-01-01T00:00:00.000Z' },
+        { ...core, commit_sha: 'b'.repeat(40) },
+      ),
+    ).toBe(true)
   })
 })
