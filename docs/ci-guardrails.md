@@ -380,6 +380,36 @@ restated here — exact predicates and carve-outs live in the guard,
 [`tools/hooks/secret-echo-guard.mjs`](../tools/hooks/secret-echo-guard.mjs); the stack it is
 wired into is [`tools/hooks/README.md`](../tools/hooks/README.md).
 
+**`zero-dispatch` — a BLOCK landed by owner mandate, and a recorded §3 deviation (#322).**
+[`tools/hooks/zero-dispatch-guard.mjs`](../tools/hooks/zero-dispatch-guard.mjs) denies the
+6th mutating lead call of a session when the session has dispatched **zero** `Agent` calls.
+It is **BLOCK from day 0**, and it fits **neither** §3 class: its input is the session's own
+tool-call stream, not the checked-out tree (not class 1), and the failure it catches is a
+process failure, not a data-protection incident (not class 2). The mandate is the owner's,
+recorded in #322: the rule it mechanises (`lead-delegates-even-small-prep`, owner
+2026-08-17) had already been written as prose twice, was in context, and was passed over
+for a whole session on 2026-08-24 — a WARN soak is exactly the thing that already failed
+here, because `dispatch-guard`'s WARN was live that whole session and changed nothing. The
+acceptance criteria of #322 are written as "is blocked", so a WARN landing would not have
+satisfied the task.
+
+What bounds the blast radius, and is why the deviation is affordable:
+
+- **The escape hatch is documented and one-shot** — the condition §6's own
+  `surface-decision-debt-gate` row names as a prerequisite for any gate that can stop a
+  session. `DISPATCH_BYPASS="<reason>"` lets exactly the next mutation through, prints the
+  reason to stderr so it lands in the session log, and requires that reason in the stage-7
+  «Отклонения от конвенций:» line. Consuming it does not disarm the guard.
+- **One `Agent` call disarms it for the rest of the session**, so the only session it can
+  ever stop is one that has orchestrated nothing at all.
+- **Subagents never reach it.** Exemption is by the harness's `AI_AGENT` spawn marker, the
+  `"promptSource":"sdk"` / `"isSidechain":true` transcript marker, or a worktree cwd.
+- **Fail-open** on unreadable stdin or unreadable state, like the rest of the stack.
+
+Demotion to WARN per §4 on one confirmed false block that the escape hatch did not
+adequately answer. The threshold (6) is the substantive rule for §4's clock: changing it
+restarts the clock, changing the message text does not.
+
 ### 6.1 CLI guards (§2.3) — severity per finding class
 
 `handoff-verify` is the reason §2.3 and §2's per-class rule exist. It is **not** a hook: no

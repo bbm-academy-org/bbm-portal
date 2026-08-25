@@ -36,6 +36,11 @@ export const MAIN_TREE_STATE_DIR_REL = '.claude/main-tree-guard-state'
 /** Каталог per-session состояния dispatch-гарда (`{streak}`). */
 export const DISPATCH_STATE_DIR_REL = '.claude/dispatch-guard-state'
 
+/** Каталог per-session состояния zero-dispatch-гарда (#322):
+ * `{mutations, dispatched, bypassUsed}` — накопительный счёт мутаций лида,
+ * флаг «диспатч в этой сессии уже был» и израсходованная причина побега. */
+export const ZERO_DISPATCH_STATE_DIR_REL = '.claude/zero-dispatch-guard-state'
+
 /** Per-session state of the AskUserQuestion guard (`{headers: {<header>: len}}`). */
 export const ASKUSERQUESTION_STATE_DIR_REL = '.claude/askuserquestion-guard-state'
 
