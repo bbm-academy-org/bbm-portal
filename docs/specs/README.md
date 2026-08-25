@@ -216,8 +216,13 @@ EARS↔test traceability mechanics to copy rather than invent (inventory #127).
 ### Clause form
 
 Stable ids `EARS-1`, `EARS-2`, … per spec, never renumbered — a split retires
-the old id and adds new ones, so a reference never dangles. The five standard
-shapes:
+the old id and adds new ones, so a reference never dangles. **The id keyspace is
+flat across the corpus** (`lint:ears-test` matches `EARS-N` with no spec
+qualifier), so a NEW spec takes the next free hundred-block (`EARS-101…`,
+`EARS-201…`, …; spec 311 holds 401–499) instead of restarting at `EARS-1` —
+otherwise its clauses collide with an older spec's ids and read as already
+covered by that spec's tests. Pre-EARS-era specs keep their low ids. The five
+standard shapes:
 
 | Shape        | Form                                                              |
 | ------------ | ----------------------------------------------------------------- |
