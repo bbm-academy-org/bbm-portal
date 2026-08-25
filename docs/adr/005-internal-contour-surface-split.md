@@ -27,17 +27,19 @@ None of the three steps was wrong given what was written down at the time; the c
 
 ### 1. The internal contour has two surfaces, with a strict content split
 
-**Text → the knowledge base.** `kb.bbm.academy` (repo `bbm-academy-org/bbm-kb`) is the single source of truth for any textual document **and its only reading surface**. The portal never builds a duplicate HTML renderer for plain text — not as a public page, not as a `(platform)` workspace page.
+**Static text → the knowledge base.** `kb.bbm.academy` (repo `bbm-academy-org/bbm-kb`) is the single source of truth for any textual document **and its only reading surface**. The portal never builds a duplicate HTML renderer for plain text — not as a public page, not as a `(platform)` workspace page. The KB is a **static export**: it renders content fixed at commit time, and has no capability to compute, to fetch data at request time, or to take user input.
 
-**Interactivity → the portal.** Anything that computes, or takes user input — calculators with charts, accounting-style tooling, dashboards, forms — is a `bbm-portal` module at `/p/*` behind the `(platform)` Zitadel gate. The KB renders text only and cannot host these.
+**Everything dynamic → the portal.** Anything that computes, renders live or derived data, or takes user input — calculators with charts, accounting-style tooling, dashboards, forms — is a `bbm-portal` module at `/p/*` behind the `(platform)` Zitadel gate. This includes surfaces that are **read-only yet data-driven**: the KB cannot host them, whether or not the user ever types anything.
 
 Both surfaces sit in the **internal contour**: reachable only after login. "Internal" here is the **access** contour, **not** a statement about repository consolidation — the surfaces stay in their own repos, exactly as ADR-002 leaves them.
 
 ### 2. The decision rule
 
-> For a new surface, ask: **is the deliverable a document to read, or a tool that computes / takes input?** A document → a KB page. A tool → a portal `/p/*` module. A mixed surface splits along that line: the text chapters go to the KB, the interactive part to the portal, cross-linked.
+> For a new surface, ask: **is the deliverable a static document to read — content fixed at commit time — or a tool that computes, renders live data, or takes input?** A static document → a KB page. Everything else → a portal `/p/*` module. A mixed surface splits along that line: the text chapters go to the KB, the interactive part to the portal, cross-linked.
 
 That is one testable sentence, applied before any build starts, and it replaces re-asking the owner about placement.
+
+**"Static" is the discriminator, not "read-only".** A surface can be entirely read-only — no form, no button, nothing the user types — and still belong in the portal, because it renders data that is computed or fetched at request time. The existing `/p/okr` dashboard is exactly that: prose-shaped output, zero user input, and impossible in the KB, which is a **static export** with no data-fetching capability at all. So the question is never "does the user type anything?" but "**is the content fixed at commit time?**" — if it is not, the KB cannot serve it and the surface is a portal module.
 
 ### 3. What the portal keeps of a KB-owned text
 
@@ -53,7 +55,7 @@ It **refines** ADR-003; it does not amend it. Nothing in ADR-003's host mapping,
 
 - **Placement stops being a per-task question.** Presentation-type work — e.g. the `/model` persona set — is scoped by §2 up front instead of re-asking the owner where it goes, and instead of discovering the answer after two reversals.
 - **Textual narratives route to the KB repo.** Per the cross-repo boundary in `CLAUDE.md`, the deliverable of a bbm-portal session that surfaces such work is a **filed, epic-linked issue in `bbm-academy-org/bbm-kb`** — not an implementation started here.
-- **The portal only gains pages that are tools.** Every new `/p/*` module can be justified in one sentence against §2; a proposed portal page that renders only prose is, by this ADR, a KB page filed in the wrong repo.
+- **The portal only gains pages that are tools.** Every new `/p/*` module can be justified in one sentence against §2; a proposed portal page that renders only static prose is, by this ADR, a KB page filed in the wrong repo — while a read-only page over live data is correctly a portal module.
 - **One source of truth per document.** A text has exactly one rendering surface, so it cannot drift between two renderers. Where code must track a document, it tracks a snapshot under a guard (§3), which fails loudly instead of drifting silently.
 - **Two auth mechanisms remain, deliberately.** The KB is gated by oauth2-proxy → Zitadel, the portal by the in-app OIDC gate (ADR-003). Both point at the same Zitadel; unifying them is not required by this ADR and is not proposed here.
 

@@ -5,6 +5,7 @@
 **Decider:** Anton Sidorov (owner)
 **Prepared by:** Claude (domain-topology recon after the `/okr` near-leak, issue #63 item 2)
 **Related:** ADR-002 (repository & module strategy — modular monolith), issue #63 (post-#61 remediation), #60 (P3 prod: `portal.bbm.academy` DNS + Caddy), #59 (Zitadel OIDC gate), PR #64 (per-route guard, since reverted), PR #67 (`/okr` unrouted), BBMP-129 milestone
+**See also:** ADR-005 (internal-contour surface split — adds `kb.bbm.academy` as a third surface and the content-class rule between the KB and the portal; refines this ADR, does not amend it)
 
 ## Context
 
