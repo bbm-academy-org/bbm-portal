@@ -1,5 +1,5 @@
 ---
-status: Draft
+status: In dev
 issue: 311
 updated: 2026-08-25
 ---
@@ -23,7 +23,17 @@ updated: 2026-08-25
   must be visually explicit, and OKR **does** get a cabinet section. Where this
   spec's prose and a vendored file disagree, the file wins
   (`.claude/rules/design-process.md` §1) — the two places where the launcher file
-  shows more than the prose did are settled explicitly by EARS-67 and EARS-68.
+  shows more than the prose did are settled explicitly by EARS-68 (the four tile
+  forms) and EARS-77/EARS-78 (the portfolio placeholder tiles).
+- **Owner «go» (task-cycle stage 2) — Антон, 2026-08-25.** The spec is approved
+  and its status moves `Draft` → `In dev`; from here it is the frozen scope of
+  #312…#317. The go carries **one owner decision that overrides a lead call**:
+  the launcher **does** render the greyed «портфель, позже» placeholder tiles for
+  the target-portfolio apps that are not live yet, exactly as the vendored
+  `design-source/p-launcher.html` draws them. D-13 below is rewritten to record
+  that decision, EARS-67 (which excluded them) is retired, and EARS-77/EARS-78
+  are the clauses that replace it. The vendored file wins, as
+  `.claude/rules/design-process.md` §1 says it does.
 - **Donor & benchmark pass:** run 2026-08-25 against three donors — Refine's
   own resource/menu model (`@refinedev/core` `resources[]` with `meta.parent`
   multi-level menus, adopted for the grouped navigation and for nothing else:
@@ -38,10 +48,11 @@ updated: 2026-08-25
   full independent review of commit `358d350` (2 BLOCKER, 4 MAJOR, 20 MINOR,
   4 NIT): the `/api/p/*` host topology (EARS-63…65, D-11), the OKR section's
   buildability (EARS-75/76), the member-vs-admin authorization split
-  (EARS-61/62, D-12), the launcher's ghost and admin tiles (EARS-67/68, D-13),
+  (EARS-61/62, D-12), the launcher's placeholder and admin tiles (EARS-68, D-13),
   the donor-spec revisions (Follow-up tasks), and scenario coverage for the
   clauses no scenario exercised. Seven clause ids were **retired** by splits or
-  as duplicates and are never reused — they are listed in place.
+  as duplicates and are never reused — they are listed in place. An eighth was
+  retired at the go by the owner decision recorded above.
 
 ## Why
 
@@ -230,27 +241,50 @@ recorded owner decisions do not settle.
   namespace: no module may name a resource `admin`, because
   `/api/p/<slug>/admin/<resource>` would then be ambiguous with
   `/api/p/<slug>/<resource>`.
-- **D-13 — the launcher's «портфель, позже» ghost tiles are a wireframe device,
-  not a feature.** `design-source/p-launcher.html` renders six greyed tiles
-  (Финансы, Колоды, CRM, Поиск команды, Запуск проекта, Калькуляторы) captioned
-  «портфель, позже» with an empty pulse. Their job in the Stage-A canvas is to
-  show the owner how the grid reads at full portfolio size — which is a real
-  requirement (EARS-71) — not to promise six disabled tiles in v1. Rendering
-  them would contradict the owner's own «absence is the whole treatment» ruling
-  (EARS-4) by teaching members to read a greyed tile as "exists but not for
-  you". A `planned` entry state in the contract was rejected for the same reason
-  plus a second: it would put unbuilt apps in the registry, where EARS-3 and the
-  type-level test would then have to special-case them. The **admin tile's**
-  distinct treatment, by contrast, IS built (EARS-68) — it is a real entry with
-  a real target. **This is the one decision in this spec that overrides an
-  owner-picked, vendored Stage-A file** (`.claude/rules/design-process.md` §1 —
-  «the file wins»), so it is flagged for an explicit owner confirmation at the
-  go: it is not carried as a silent lead call.
+- **D-13 — the launcher's «портфель, позже» placeholder tiles are built
+  (owner decision, Антон, 2026-08-25).** The pre-go draft carried the opposite
+  lead call — that the six greyed tiles of `design-source/p-launcher.html`
+  (Финансы, Колоды, CRM, Поиск команды, Запуск проекта, Калькуляторы) were a
+  wireframe device showing how the grid reads at full portfolio size, and were
+  not to be rendered in v1. **The owner overruled that call at the go**: the
+  launcher renders them, exactly as the vendored file draws them. The file wins
+  (`.claude/rules/design-process.md` §1), and the product reason is the owner's:
+  the portfolio is a promise the workspace makes to its members, and a member who
+  sees only two apps cannot tell a small workspace from a young one. The clauses
+  are EARS-77 (they are rendered, one per not-yet-live portfolio app) and
+  EARS-78 (how: greyed, non-interactive, no status line, no claim logic). The
+  lead call's one real worry — that a greyed tile teaches «exists but not for
+  you» and so blunts EARS-4's «absence is the whole treatment» — is answered by
+  EARS-78 keeping the two treatments visually and behaviourally distinct: a
+  placeholder is captioned «портфель, позже» and is not a link at all, while a
+  claim-gated entry is absent from the response body entirely (D-7). The
+  **admin tile's** distinct treatment is likewise built (EARS-68) — it is a real
+  entry with a real target.
+- **D-13a — a placeholder is a third variant of the registry entry, not a
+  second list.** The mechanism for EARS-77 is a `planned` member of the same
+  discriminated union: `kind: 'planned'` carrying a display `name`, a short
+  `description` and nothing else — no `href`, no `url`, no `slug`, no
+  `requiredClaim`, no `status` provider, no `admin` section. Three alternatives
+  were rejected: a hard-coded list in the launcher (it would put app names back
+  into the frame's own markup, which is exactly the property D-2 buys), a
+  separate `plannedApps` array (a second list for the app switcher and the
+  cabinet to disagree with, against EARS-2/EARS-27), and a `planned: true` flag
+  on an `internal` entry (it would make `href` optional on the variant that is
+  defined by having one, dissolving the type-level guarantee of D-10).
+  **D-10 stays intact:** «an external link has no admin section and no status
+  provider» remains a type error, and so now does «a planned app has a target».
+  **D-2 stays intact and is not excepted:** placeholders are registry content
+  listed in the composition root, so the launcher, the top bar and the cabinet
+  still hold **zero** lines naming an app — promoting a placeholder to a live
+  app is an edit to its own entry in the composition root and nowhere else. The
+  entries are content, not code, and they are exempt from EARS-3 by
+  construction: EARS-3 keys on a module under `src/lib/*` exporting a
+  declaration, and a planned app has no module to export one.
 
 ## Requirements
 
-Seven ids from the pre-review draft are **retired** and never reused — they are
-listed, with what replaced them, in "Retired clause ids" below. The list lives
+Eight ids from earlier revisions of this spec are **retired** and never reused —
+they are listed, with what replaced them, in "Retired clause ids" below. The list lives
 outside this section deliberately: an id named here is a live clause owing a
 test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
 
@@ -263,8 +297,12 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   optional `status` provider and an optional `admin` section; an `external`
   entry carrying `slug`, `name`, `description`, an absolute `url` and an
   optional `requiredClaim`, and **no** `status` and **no** `admin` field
-  (D-10). A module shall declare at most one entry and shall export it from its
-  public API (`src/lib/<module>/index.ts`), per ADR-002 §3.
+  (D-10); and a `planned` entry carrying a display `name` and a short
+  `description` and **no** `href`, **no** `url`, **no** `slug`, **no**
+  `requiredClaim`, **no** `status` and **no** `admin` field (D-13a). A module
+  shall declare at most one `internal` or `external` entry and shall export it
+  from its public API (`src/lib/<module>/index.ts`), per ADR-002 §3; a `planned`
+  entry has no module and is written directly in the composition root (EARS-2).
 - **EARS-2.** The platform shall hold exactly one composition root,
   `src/lib/workspace/registry.ts`, listing every declared entry in display
   order; the `/p` launcher, the top-bar app switcher and the `/p/admin`
@@ -379,9 +417,12 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
 - **EARS-22.** The platform shall serve a workspace home at `/p`, rendering the
   registry entries visible to the session as a **flat grid in registry order** —
   no grouping, no search, no pinning, no personalised ordering — per the
-  vendored `design-source/p-launcher.html` (option `launcher-a`). The tile
-  variants that grid carries are exactly the three forms of EARS-68 — the
-  vendored file draws a fourth (the ghost tile), which EARS-67 removes.
+  vendored `design-source/p-launcher.html` (option `launcher-a`). Registry order
+  is one order over all entries, placeholders included, and it places the
+  placeholder entries of EARS-77 last, where the vendored file draws them. The
+  tile variants that grid carries are
+  exactly the four forms of EARS-68, which are exactly the four the vendored
+  file draws.
 - **EARS-23.** The launcher shall mark an `external` entry as external and shall
   open it in a new tab (`target="_blank"` with `rel="noopener noreferrer"`), so
   the member does not lose the workspace.
@@ -390,8 +431,12 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   home, the current app's name, an app switcher fed by the registry, the
   signed-in member's identity and sign-out.
 - **EARS-27.** The app switcher and the launcher shall never disagree about
-  which apps exist. _(Both read EARS-2's single list; that is the mechanism, and
-  the test asserts the two renderings against one registry fixture.)_
+  which apps are **open to the session**. _(Both read EARS-2's single list; that
+  is the mechanism, and the test asserts the two renderings against one registry
+  fixture. The switcher is a navigation control, so it carries the openable
+  entries only — the `planned` placeholders the launcher draws have no target to
+  switch to (EARS-78), which is a difference in what each surface is for, not a
+  disagreement about the inventory.)_
 - **EARS-28.** WHILE the viewport is narrow, the home and the top bar shall stay
   usable, with the app switcher reachable from a collapsed menu. Basic
   responsiveness only; no separate mobile design.
@@ -403,16 +448,28 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   cabinet shell and its resource screens) shall be built from `src/ui` (#312)
   and from the vendored Stage-A sources; hand-rolled styles are a review
   stop-factor (consolidation §10).
-- **EARS-67.** The launcher shall render exactly the registry entries visible to
-  the session and nothing else; the six «портфель, позже» ghost tiles of
-  `design-source/p-launcher.html` are a full-portfolio wireframe device and
-  shall not be rendered in v1 (D-13). The requirement they illustrate — that the
-  grid still reads at full portfolio size — is EARS-71.
-- **EARS-68.** The grid shall carry exactly three tile forms, as the vendored
+- **EARS-68.** The grid shall carry exactly four tile forms, as the vendored
   file draws them: the standard `internal` tile; the shorter `external` tile
-  marked «↗ внешний» (EARS-23); and the admin entry's tile with its dashed
-  border and its «только администратор» flag. No other per-entry visual
-  variation exists in v1.
+  marked «↗ внешний» (EARS-23); the admin entry's tile with its dashed border
+  and its «только администратор» flag; and the `planned` placeholder tile of
+  EARS-77/EARS-78. No other per-entry visual variation exists in v1.
+- **EARS-77.** The launcher shall render one placeholder tile per not-yet-live
+  app of the target portfolio (consolidation spec §4, revision -f), as the
+  entries the composition root declares with `kind: 'planned'` (D-13a) — in v1
+  the six the vendored `design-source/p-launcher.html` draws: Финансы, Колоды,
+  CRM, Поиск команды, Запуск проекта, Калькуляторы. WHEN such an app ships, its
+  `planned` entry shall be replaced by that module's own `internal` entry, and
+  the placeholder shall disappear by that one edit alone.
+- **EARS-78.** The launcher shall render a `planned` entry as a greyed,
+  **non-interactive** tile captioned «портфель, позже» — dashed border and muted
+  text per the vendored file, no link and no click target, not reachable by
+  keyboard focus, with **no status line** (a `planned` entry declares no
+  provider, and the vendored file's empty `pulse` slot is a wireframe
+  placeholder, not content to render) and **no claim logic**: a placeholder
+  carries no `requiredClaim`, is never filtered per session, and is shown
+  identically to every session that reaches `/p`. A placeholder shall appear
+  nowhere else — not in the top-bar app switcher (EARS-25), not under `/p/admin`
+  (EARS-10), and it shall contribute no route and no handler.
 - **EARS-69.** The top bar shall resolve the current app by matching the request
   pathname against registry `href` values, longest prefix wins.
 - **EARS-70.** WHILE the member is on `/p` itself, the top bar shall show its
@@ -574,18 +631,20 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
 ## Retired clause ids
 
 Canon: `docs/specs/README.md` — «a split retires the old id and adds new ones,
-so a reference never dangles». All seven were retired on 2026-08-25 by the
-independent review of commit `358d350`; none is ever reused.
+so a reference never dangles». Seven were retired on 2026-08-25 by the
+independent review of commit `358d350`; the eighth on the same day by the
+owner's go decision on the placeholder tiles (D-13). None is ever reused.
 
-| Retired | Replaced by               | Why                                                                                                                                   |
-| ------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| EARS-11 | EARS-56, EARS-57, EARS-58 | bundled three independently testable boundary rules under one id, so a partial pass would look green                                  |
-| EARS-19 | EARS-59, EARS-60          | bundled the revocation event with the "a grant needs no redeploy" property, which is not that event's consequence                     |
-| EARS-20 | EARS-61, EARS-62          | required `platform-admin` on **every** `/api/p/*` handler, which locks plain members out of the member-facing half (consolidation §5) |
-| EARS-24 | EARS-4                    | duplicated EARS-4's treatment with a different subject; two ids for one rule drift apart                                              |
-| EARS-26 | EARS-69, EARS-70          | bundled a ubiquitous rule (longest-prefix resolution) with a WHILE state (the `/p` home state)                                        |
-| EARS-38 | EARS-72, EARS-73          | bundled a WHEN clause (the save answer) with an IF/THEN clause (the constraint refusal)                                               |
-| EARS-54 | EARS-75, EARS-76          | required persisted read-health state that EARS-55 and Out of scope forbid, and configuration `src/lib/okr` does not export            |
+| Retired | Replaced by               | Why                                                                                                                                    |
+| ------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| EARS-11 | EARS-56, EARS-57, EARS-58 | bundled three independently testable boundary rules under one id, so a partial pass would look green                                   |
+| EARS-19 | EARS-59, EARS-60          | bundled the revocation event with the "a grant needs no redeploy" property, which is not that event's consequence                      |
+| EARS-20 | EARS-61, EARS-62          | required `platform-admin` on **every** `/api/p/*` handler, which locks plain members out of the member-facing half (consolidation §5)  |
+| EARS-24 | EARS-4                    | duplicated EARS-4's treatment with a different subject; two ids for one rule drift apart                                               |
+| EARS-26 | EARS-69, EARS-70          | bundled a ubiquitous rule (longest-prefix resolution) with a WHILE state (the `/p` home state)                                         |
+| EARS-38 | EARS-72, EARS-73          | bundled a WHEN clause (the save answer) with an IF/THEN clause (the constraint refusal)                                                |
+| EARS-54 | EARS-75, EARS-76          | required persisted read-health state that EARS-55 and Out of scope forbid, and configuration `src/lib/okr` does not export             |
+| EARS-67 | EARS-77, EARS-78          | excluded the «портфель, позже» placeholder tiles; the owner ruled at the go (2026-08-25) that they ARE rendered, per the vendored file |
 
 ## Portfolio walk (discovery record behind EARS-13)
 
@@ -610,6 +669,11 @@ frame concept the contract does not already carry.
 | Mattermost integration       | external (today)       | n/a by type (EARS-1)      | —                | n/a by type                      |
 | **Frame's own:** `/p/admin`  | internal (D-4)         | no                        | `platform-admin` | n/a (it _is_ the cabinet)        |
 | **Frame's own:** Plane, KB   | external               | n/a by type               | —                | n/a by type                      |
+
+The kinds in the table are what each app declares **once it exists**. Until it
+does, six of them — Финансы, Колоды, CRM, Поиск команды, Запуск проекта,
+Калькуляторы — are present on the home as `planned` placeholders (EARS-77), and
+shipping one is a swap of its own entry in the composition root (D-13a).
 
 Two contract limits are named rather than hidden. A module wanting a **family**
 of tiles (calculators is the likely first) gets one entry in v1 and raises the
@@ -646,10 +710,13 @@ scenarios (task-cycle stage 3) and the stage-5 acceptance script.
 1. **The workspace exists.** A member with `platform-user` opens
    `https://portal.bbm.academy/p` and sees one flat grid: tiles for Часы and
    OKR, plus shorter marked external tiles for Plane, Mattermost and the
-   knowledge base. Clicking Plane opens a new tab and leaves `/p` where it was.
-   No admin tile appears anywhere on the page, «View source» contains no mention
-   of `/p/admin`, and there are no greyed «портфель, позже» tiles. (EARS-2,
-   EARS-4, EARS-22, EARS-23, EARS-67, EARS-68)
+   knowledge base. Below them, greyed and dashed, sit the six «портфель, позже»
+   placeholders — Финансы, Колоды, CRM, Поиск команды, Запуск проекта,
+   Калькуляторы — which carry no status line, do not respond to a click and
+   cannot be reached by Tab. Clicking Plane opens a new tab and leaves `/p`
+   where it was. No admin tile appears anywhere on the page and «View source»
+   contains no mention of `/p/admin`. (EARS-2, EARS-4, EARS-22, EARS-23,
+   EARS-68, EARS-77, EARS-78)
 2. **The pulse.** _(agent, dev stand.)_ The Часы tile carries a live line naming
    the open period; the OKR tile carries its own. With the hours provider
    deliberately broken, the Часы tile still renders and still opens, the OKR
@@ -657,8 +724,9 @@ scenarios (task-cycle stage 3) and the stage-5 acceptance script.
 3. **Chrome everywhere.** From `/p` the member opens Часы: the same top bar now
    names Часы, offers the switcher, shows their own name and a sign-out. They
    switch straight to OKR without going home, then return home in one click; on
-   `/p` the bar names no app. Sign-out ends the session. (EARS-25, EARS-27,
-   EARS-29, EARS-69, EARS-70)
+   `/p` the bar names no app. The switcher lists the apps they can open and no
+   «портфель, позже» placeholder. Sign-out ends the session. (EARS-25, EARS-27,
+   EARS-29, EARS-69, EARS-70, EARS-78)
 4. **Membership is granted, not assumed.** The owner revokes `platform-user`
    from a test account in Zitadel. That account's next request to `/p` gets a
    bare refusal — no page, no explanation, no login loop. The owner grants the
@@ -666,7 +734,9 @@ scenarios (task-cycle stage 3) and the stage-5 acceptance script.
    EARS-18, EARS-59, EARS-60)
 5. **One grant for an admin.** An account holding **only** `platform-admin`
    opens `/p`, sees the Админка tile alongside the apps — dashed, flagged
-   «только администратор» — and enters the cabinet. (EARS-4, EARS-17, EARS-68)
+   «только администратор» — and enters the cabinet. The six placeholders look
+   exactly as they do for a plain member: a placeholder is not claim-gated.
+   (EARS-4, EARS-17, EARS-68, EARS-78)
 6. **The cabinet's shape.** `/p/admin` opens on an index of sections, not a
    dashboard, under the same top bar as the rest of the workspace. The left
    sidebar shows Участники, Часы and OKR as parent groups with their items
@@ -729,13 +799,18 @@ scenarios (task-cycle stage 3) and the stage-5 acceptance script.
 14. **Existing surfaces were not restyled.** `/p/okr` and `/p/hours` look as
     they did, apart from the new top bar above them. (EARS-29)
 15. **Narrow viewport.** The member opens `/p` on a phone width: the grid
-    reflows, every tile stays readable and the app switcher is reachable from a
-    collapsed menu. (EARS-28)
+    reflows, every tile stays readable — the greyed placeholders included, still
+    below the live apps — and the app switcher is reachable from a collapsed
+    menu. (EARS-28, EARS-77)
 16. **A full portfolio still reads.** On a stand seeded with a full-portfolio
-    registry fixture — the ten apps of consolidation §4 plus the external entries
-    and the cabinet — the home is still one readable flat grid at desktop and at
-    narrow width, and the cabinet sidebar is still navigable with ten module
-    groups. (EARS-71, EARS-74)
+    registry fixture — the ten apps of consolidation §4 as live `internal`
+    entries, so no placeholder is left, plus the external entries and the
+    cabinet — the home is still one readable flat grid at desktop and at narrow
+    width, and the cabinet sidebar is still navigable with ten module groups.
+    The same fixture is the evidence that promoting a placeholder costs one
+    edit: the six «портфель, позже» tiles of scenario 1 are gone, and the
+    launcher's own files are unchanged between the two fixtures. (EARS-71,
+    EARS-74, EARS-77)
 
 ### Verified by CI, not by the owner
 
@@ -766,7 +841,10 @@ the exception the table states in its own row.
 - The tokens and base components themselves — #312.
 - Grouping, search, pinning, personalised ordering, notifications and global
   search on the home; any dashboard beyond one status line per tile.
-- Ghost / "coming later" tiles for unbuilt portfolio apps (D-13, EARS-67).
+- Anything a «портфель, позже» placeholder could grow into beyond a name and a
+  caption (D-13a, EARS-78): no target, no route, no waitlist, no "notify me", no
+  per-app copy, no ordering control. Which apps carry a placeholder is registry
+  content, and a placeholder is retired by the app shipping (EARS-77).
 - Caching or streaming of status lines (D-6 names the deferral).
 - Editing OKR parameters or OKR records (EARS-55); a settings store in `core`;
   any persisted OKR read-health history (EARS-76 probes live instead).
