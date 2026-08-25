@@ -1,7 +1,7 @@
 {
-  "version": 4,
+  "version": 5,
   "generatedAt": "2026-06-22",
-  "lastAuditAt": "2026-08-20",
+  "lastAuditAt": "2026-08-25",
   "foldedThemes": [
     "honest-status:deviations-line-self-certified",
     "unanswered-question-treated-as-consent",
@@ -34,7 +34,15 @@
     "review-fix-introduces-new-blocker",
     "interim-status-ceremony-noise",
     "epic-checklist-drift",
-    "over-delivery-artifacts"
+    "over-delivery-artifacts",
+    "lead-inline-execution-instead-of-orchestration",
+    "retro-remedy-filed-never-scheduled",
+    "inline-recon-instead-of-bbm-explorer",
+    "epic-decomposed-before-product-framing-confirmed",
+    "owner-has-to-say-orchestrate",
+    "inline-oneliner-rabbit-hole",
+    "last-session-report-not-addressable",
+    "lead-touches-third-party-box-for-a-credential"
   ],
   "tracker": "github+plane",
   "slug": "C--Users-sidor-repos-bbm-portal",

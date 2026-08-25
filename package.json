@@ -36,6 +36,7 @@
     "taxonomy:bootstrap": "node tools/gh/bootstrap-taxonomy.mjs",
     "handoff:verify": "node tools/gh/handoff-verify.mjs",
     "session:bootstrap": "node tools/gh/session-bootstrap.mjs",
+    "session:last-report": "node tools/session/last-report.mjs",
     "dispatch:brief": "node tools/gh/dispatch-brief.mjs",
     "dispatch:brief-check": "node tools/gh/dispatch-brief-check.mjs",
     "dispatch:probe": "node tools/gh/dispatch-probe.mjs",

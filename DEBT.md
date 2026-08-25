@@ -486,6 +486,33 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-25-6b0d4c1a83 -->
 
+- [ ] 2026-08-25 The dispatched-agent/SDK discriminator now lives in TWO places:
+      the hand-rolled `grep -qE '"promptSource":"sdk"|"isSidechain":true'` in
+      `.claude/skills/wrap/SKILL.md` phase 0 and `AGENT_LOG_MARKERS` in
+      `tools/session/last-report.mjs`. They are not merged in this PR because the
+      two jobs differ — phase 0 selects THIS session's segments by a content MARK
+      before dispatching the retro agent, the tool finds the PREVIOUS session's
+      report — so the shared part is the constant, not the procedure, and
+      collapsing them means giving the tool a segment-selection mode nobody has
+      asked for — return condition: the next change to the discriminator itself
+      (a new marker, a harness that actually emits `"isSidechain":true`), which
+      must then land in both (#349, PR #345 review non-blocking 4)
+
+<!-- debt-entry-end: 2026-08-25-4d7ac91b52 -->
+
+- [ ] 2026-08-25 `isSessionLog` in `tools/session/last-report.mjs` tests the
+      agent markers as a WHOLE-FILE substring, so one occurrence anywhere
+      excludes the entire session log. Verified not to false-positive today
+      (nested JSON escapes the quotes, so a quoted mention inside message text
+      does not match), and the per-entry form
+      `entry.promptSource === 'sdk' || entry.isSidechain === true` would need the
+      parse to run before the cheap exclusion that keeps the full-corpus scan at
+      ~2 s — hardening, not a live bug — return condition: the first session log
+      wrongly excluded, or any change that parses entries before the exclusion
+      anyway (#349, PR #345 review non-blocking 2)
+
+<!-- debt-entry-end: 2026-08-25-9e51f0c7ab -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
