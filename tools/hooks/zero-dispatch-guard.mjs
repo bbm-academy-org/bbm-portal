@@ -28,17 +28,58 @@
 //      ставятся ЛЮБОМУ дочернему процессу и субагента не отличают (проверено на
 //      бинаре claude 2.1.245, 2026-08-25);
 //   2) маркер диспатча в транскрипте — `"promptSource":"sdk"` либо
-//      `"isSidechain":true`. Это уже канон репо: тем же предикатом
-//      `.claude/skills/wrap/SKILL.md` отсеивает логи диспатченных агентов
-//      (измерено 2026-08-05: 80 логов из 114);
+//      `"isSidechain":true`. Тот же предикат `.claude/skills/wrap/SKILL.md`
+//      применяет к ФАЙЛАМ логов, отсеивая логи диспатченных агентов (измерено
+//      2026-08-05: 80 из 114). ЧЕСТНАЯ ГРАНИЦА заимствования (ревью PR #346,
+//      минор): измерено там про классификацию файлов, а не про то, что в
+//      транскрипте лида такие записи не встречаются — и sdk/headless-запущенный
+//      ЛИД под этот маркер тоже подойдёт. Дискриминатор №1 — единственный
+//      измеренный на самом харнесе; №2 остаётся эвристикой, и полярность у него
+//      выбрана соответствующая;
 //   3) сессия внутри `.claude/worktrees/…` — carve-out, общий с dispatch-guard.
 // Слои складываются через ИЛИ: промах в сторону освобождения — это молчащий
 // гард, промах в другую сторону — ложный блок исполнителя, и он дороже.
 //
+// СОСТОЯНИЕ КЛЮЧУЕТСЯ ПО `session_id`, а resume/fork сессии выдаёт новый id —
+// значит сессия, которая уже диспетчеризовала, после resume перевзводится с
+// нулевым счётчиком. Осознанно: цена — до шести лишних мутаций без блока,
+// альтернатива — переносить состояние между id, которых хук не связывает.
+//
+// ПОБЕГ ДОЛЖЕН БЫТЬ ДОСТИЖИМ ИЗНУТРИ ЗАБЛОКИРОВАННОЙ СЕССИИ (ревью PR #346,
+// BLOCKER 1). Первая редакция читала `process.env.DISPATCH_BYPASS` САМОГО
+// процесса хука, а его env ставит харнес: `export DISPATCH_BYPASS=…` живёт в
+// под-оболочке инструмента Bash, инлайн-префикс `DISPATCH_BYPASS=x <cmd>`
+// уезжает в `tool_input.command`, которого хук не читал, а у `Edit`/`Write`
+// env-канала нет вовсе. То есть побег включался только при СТАРТЕ `claude` —
+// то есть ценой перезапуска сессии, ради которой он и заведён. Каналов теперь
+// два, и оба видны хуку в том, что харнес ему реально передаёт:
+//
+//   A) ИНЛАЙН-ПРЕФИКС В КОМАНДЕ (Bash/PowerShell) —
+//      `DISPATCH_BYPASS="<причина>" <настоящая команда>`. Значение переменной
+//      оболочка никуда не донесёт, но САМА СТРОКА приходит хуку в
+//      `tool_input.command`. Префикс вырезается перед проверкой мутации, иначе
+//      настоящая команда перестаёт стоять в начале сегмента и гард молча
+//      перестал бы считать её мутацией.
+//   B) ФАЙЛ-ПОБЕГ В КАТАЛОГЕ СОСТОЯНИЯ — для `Edit`/`Write`/`MultiEdit`, у
+//      которых строки команды нет. Взводится СВОЕЙ ЖЕ командой гарда:
+//      `node <этот файл> --arm-bypass "<путь>" "<причина>"`. Она не мутирующая
+//      по `MUTATING_COMMAND_RE`, поэтому проходит сквозь уже стоящий блок;
+//      точный путь печатает само сообщение блока (session_id известен хуку, но
+//      не сессии). Файл СЪЕДАЕТСЯ при срабатывании — ровно один пропуск.
+//
+// Обоим каналам общее: причина обязательна (пустая строка побегом не
+// является), причина печатается в stderr и потому попадает в лог сессии, одна
+// и та же причина второй раз не проходит (`bypassUsed` в состоянии), и та же
+// причина обязана попасть в строку stage 7 «Отклонения от конвенций:».
+// Env-канал сохранён третьим — он работает при старте сессии и ничего не
+// стоит, но НЕ является тем, на что опирается запись §6.
+//
 // Контракт: stdin — JSON PreToolUse. exit 2 + stderr = BLOCK. exit 0 =
 // разрешено. FAIL-OPEN: сломанный stdin / нечитаемое состояние → exit 0.
 
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   MUTATING_COMMAND_RE,
@@ -52,6 +93,7 @@ import {
   inWorktree,
   isDirectRun,
   mainRepoRoot,
+  norm,
   readHookPayload,
   readState,
   stateFilePath,
@@ -74,8 +116,57 @@ export const ZERO_DISPATCH_BLOCK_THRESHOLD = 6
 /** Диспетчеризующие инструменты (`Task` — кросс-харнесный алиас `Agent`). */
 export const DISPATCH_TOOL_RE = /^(Agent|Task)$/
 
-/** Env-переменная одноразового записанного побега. ЗНАЧЕНИЕ — это ПРИЧИНА. */
+/**
+ * Имя одноразового записанного побега. ЗНАЧЕНИЕ — это ПРИЧИНА, а не «1».
+ * Одно имя на три канала: инлайн-префикс команды (A), файл-побег (B) и env
+ * старта сессии — чтобы в сообщении блока, в README и в §6 стояло одно слово.
+ */
 export const BYPASS_ENV = 'DISPATCH_BYPASS'
+
+/** Суффикс файла-побега (канал B) рядом с per-session файлом состояния. */
+export const BYPASS_FILE_SUFFIX = '.bypass'
+
+/** Флаг CLI-режима «взвести файл-побег» — им же гард и вызывают из сессии. */
+export const ARM_BYPASS_FLAG = '--arm-bypass'
+
+/**
+ * Инлайн-префикс побега в начале строки команды (канал A):
+ * `DISPATCH_BYPASS="причина" gh issue edit …`. Кавычки любые или без них —
+ * без кавычек причина обрывается на первом пробеле, что для причины бесполезно,
+ * но синтаксически честно.
+ */
+export const BYPASS_PREFIX_RE = new RegExp(
+  String.raw`^\s*${BYPASS_ENV}=(?:"([^"]*)"|'([^']*)'|(\S*))\s+`,
+)
+
+/**
+ * Разбирает инлайн-префикс: `{ reason, command }`. Причины нет → исходная
+ * строка и пустая причина. Префикс ОБЯЗАН быть срезан с команды: `COMMAND_START`
+ * в `MUTATING_COMMAND_RE` требует начала сегмента, и с оставленным префиксом
+ * `gh issue edit` перестал бы считаться мутацией — побег молча превратился бы в
+ * рубильник без записи.
+ */
+export function splitInlineBypass(command) {
+  const raw = String(command || '')
+  const m = BYPASS_PREFIX_RE.exec(raw)
+  if (!m) return { reason: '', command: raw }
+  const reason = String(m[1] ?? m[2] ?? m[3] ?? '').trim()
+  return { reason, command: raw.slice(m[0].length) }
+}
+
+/** Путь файла-побега для данного per-session файла состояния (канал B). */
+export function bypassFilePath(statePath) {
+  return String(statePath || '').replace(/\.json$/i, '') + BYPASS_FILE_SUFFIX
+}
+
+/** Причина из файла-побега или '' (нет файла / пусто — не улика). */
+export function readBypassFile(path, readFile = (p) => readFileSync(p, 'utf8')) {
+  try {
+    return String(readFile(path) || '').trim()
+  } catch {
+    return ''
+  }
+}
 
 /** Маркер сессии-агента в спавн-env харнеса (см. шапку, дискриминатор №1). */
 export const AGENT_ENV_MARKER = 'AI_AGENT'
@@ -96,19 +187,41 @@ export function isMutatingCall(toolName, toolInput) {
   const tool = String(toolName || '')
   if (WRITE_TOOLS.has(tool)) return true
   if (SHELL_TOOLS.has(tool)) {
-    return MUTATING_COMMAND_RE.test(stripNonCommandText(toolInput && toolInput.command))
+    const { command } = splitInlineBypass(toolInput && toolInput.command)
+    return MUTATING_COMMAND_RE.test(stripNonCommandText(command))
   }
   return false
 }
 
-/** Причина побега или '' — пустая строка и пробелы причиной не являются. */
+/** Причина побега из env старта сессии, или '' — пробелы причиной не являются. */
 export function bypassReason(env = process.env) {
   return String((env && env[BYPASS_ENV]) || '').trim()
 }
 
 /**
+ * Причина побега из ВСЕХ каналов, в порядке «что сессия реально контролирует»:
+ * инлайн-префикс команды → файл-побег → env старта. Первая непустая выигрывает.
+ */
+export function resolveBypassReason({ toolName, toolInput, bypassFile = '', env = process.env }) {
+  if (SHELL_TOOLS.has(String(toolName || ''))) {
+    const { reason } = splitInlineBypass(toolInput && toolInput.command)
+    if (reason) return reason
+  }
+  const fromFile = String(bypassFile || '').trim()
+  if (fromFile) return fromFile
+  return bypassReason(env)
+}
+
+/**
  * Сессия-субагент. Два независимых дискриминатора через ИЛИ (см. шапку);
  * нечитаемый транскрипт уликой не является ни за, ни против.
+ *
+ * ЧИТАЕТСЯ ЛЕНИВО. Транскрипт лида растёт до многих мегабайт, а матчер гарда
+ * включает `Bash`, поэтому первая редакция перечитывала весь файл на КАЖДОМ
+ * вызове оболочки (ревью PR #346, MAJOR 3). Теперь `decideZeroDispatch` зовёт
+ * этот предикат только когда от него реально зависит решение, а положительный
+ * вердикт кэшируется в состоянии сессии: субагентом сессия рождается и
+ * перестать им быть не может, поэтому одного успешного чтения хватает навсегда.
  */
 export function isSubagentSession({ env = process.env, transcriptPath = '' } = {}) {
   if (String((env && env[AGENT_ENV_MARKER]) || '').trim()) return true
@@ -128,13 +241,21 @@ export function readCounterState(state) {
     mutations: Number.isFinite(mutations) && mutations >= 0 ? mutations : 0,
     dispatched: raw.dispatched === true,
     bypassUsed: typeof raw.bypassUsed === 'string' ? raw.bypassUsed : '',
+    subagent: raw.subagent === true,
   }
 }
 
-export function blockMessage({ mutations, exhausted, threshold = ZERO_DISPATCH_BLOCK_THRESHOLD }) {
+export function blockMessage({
+  mutations,
+  exhausted,
+  threshold = ZERO_DISPATCH_BLOCK_THRESHOLD,
+  bypassPath = '',
+  guardPath = 'tools/hooks/zero-dispatch-guard.mjs',
+}) {
   const head = exhausted
     ? `одноразовый побег уже израсходован на эту причину — новая причина или диспатч.`
     : `${mutations} мутаций лида за сессию (порог ${threshold}) при НУЛЕ вызовов Agent.`
+  const armCommand = `node "${guardPath}" ${ARM_BYPASS_FLAG} "${bypassPath || '<путь>'}" "<причина>"`
   return (
     `⛔ zero-dispatch guard (#322): ${head}\n` +
     'Правило `lead-delegates-even-small-prep` (владелец, 2026-08-17): лид не делает руками ' +
@@ -142,10 +263,17 @@ export function blockMessage({ mutations, exhausted, threshold = ZERO_DISPATCH_B
     `«Subagents and models»): механика — поиск, инвентаризация, сбор фактов → \`bbm-explorer\` ` +
     `(sonnet); суждение — ревью, архитектура, имплементация → opus (\`bbm-reviewer\` для ревью ` +
     `PR, иначе \`general-purpose\` с \`model: "opus"\`).\n` +
-    `Два законных хода: (1) диспетчеризуй остаток — один Agent снимает этот гард до конца ` +
-    `сессии; (2) если инлайн осознан, назови причину — \`${BYPASS_ENV}="<причина>"\` пропускает ` +
-    `ровно СЛЕДУЮЩУЮ мутацию, печатает причину в лог сессии, и эта же причина обязана попасть ` +
-    `в строку stage 7 «Отклонения от конвенций:». Побег — это запись, а не кнопка «выключить».`
+    `Два законных хода.\n` +
+    `(1) Диспетчеризуй остаток — один Agent снимает этот гард до конца сессии.\n` +
+    `(2) Если инлайн осознан, назови причину. Побег одноразовый и достижим ОТСЮДА, из этой ` +
+    `сессии, двумя способами:\n` +
+    `    • Bash/PowerShell — поставь префикс прямо в команду: ` +
+    `\`${BYPASS_ENV}="<причина>" <твоя команда>\` (хук читает саму строку команды, а не env);\n` +
+    `    • Edit/Write — взведи файл-побег НЕ мутирующей командой, она проходит сквозь этот ` +
+    `блок: \`${armCommand}\`, затем повтори правку.\n` +
+    `Побег пропускает ровно СЛЕДУЮЩУЮ мутацию, печатает причину в лог сессии, съедается, и ` +
+    `эта же причина обязана попасть в строку stage 7 «Отклонения от конвенций:». Побег — это ` +
+    `запись, а не кнопка «выключить»; ту же причину второй раз гард не примет.`
   )
 }
 
@@ -170,6 +298,21 @@ export function bypassMessage(reason) {
  * Заблокированный вызов НЕ ИСПОЛНИЛСЯ, поэтому на пороге счётчик больше не
  * растёт: иначе повтор той же правки раздувал бы число в сообщении и врал о
  * количестве реальных мутаций.
+ *
+ * `subagent` принимает и булево, и ФУНКЦИЮ — ленивый предикат зовётся только на
+ * той единственной ветке, где от него зависит исход (мутация лида в сессии без
+ * диспатча). Дешёвые ветки — не мутация, уже диспетчеризованная сессия — до
+ * чтения транскрипта не доходят вовсе.
+ *
+ * @param {{
+ *   toolName?: string,
+ *   toolInput?: any,
+ *   state?: any,
+ *   subagent?: boolean | (() => boolean),
+ *   worktree?: boolean,
+ *   bypass?: string,
+ *   threshold?: number,
+ * }} args
  */
 export function decideZeroDispatch({
   toolName,
@@ -181,12 +324,23 @@ export function decideZeroDispatch({
   threshold = ZERO_DISPATCH_BLOCK_THRESHOLD,
 }) {
   const s = readCounterState(state)
-  if (subagent || worktree) return { action: 'silent' }
+  const isSubagent = () =>
+    s.subagent ? true : typeof subagent === 'function' ? subagent() : Boolean(subagent)
+  if (worktree) return { action: 'silent' }
   if (DISPATCH_TOOL_RE.test(toolName || '')) {
-    return { action: 'dispatched', state: { mutations: 0, dispatched: true, bypassUsed: '' } }
+    if (isSubagent()) return { action: 'silent' }
+    return {
+      action: 'dispatched',
+      state: { mutations: 0, dispatched: true, bypassUsed: '', subagent: false },
+    }
   }
   if (s.dispatched) return { action: 'silent' }
   if (!isMutatingCall(toolName, toolInput)) return { action: 'silent' }
+  if (isSubagent()) {
+    // Положительный вердикт кэшируется: перечитывать многомегабайтный
+    // транскрипт на каждой мутации незачем, субагентом сессия и останется.
+    return s.subagent ? { action: 'silent' } : { action: 'silent', state: { ...s, subagent: true } }
+  }
 
   const next = s.mutations >= threshold ? s.mutations : s.mutations + 1
   if (next < threshold) {
@@ -208,8 +362,53 @@ export function decideZeroDispatch({
   }
 }
 
+/**
+ * CLI-режим «взвести файл-побег» (канал B). Точный путь сессия получает из
+ * сообщения блока — сама она свой `session_id` не знает. Путь проверяется, а не
+ * принимается на веру: это запись в каталог состояния гарда, и превращать её в
+ * произвольную запись по любому пути незачем.
+ *
+ * Возвращает exit-код; печатает результат в stderr (лог сессии).
+ */
+export function armBypass(argv, deps = {}) {
+  const write = deps.write || ((p, c) => writeFileSync(p, c))
+  const mkdir = deps.mkdir || ((d) => mkdirSync(d, { recursive: true }))
+  const log = deps.log || ((m) => process.stderr.write(m))
+  const path = String(argv[0] || '')
+  const reason = String(argv.slice(1).join(' ') || '').trim()
+  if (!path.endsWith(BYPASS_FILE_SUFFIX) || !norm(path).includes('zero-dispatch-guard-state')) {
+    log(
+      `zero-dispatch guard (#322): ${ARM_BYPASS_FLAG} принимает только путь вида ` +
+        `<…/zero-dispatch-guard-state/<session>${BYPASS_FILE_SUFFIX}> — возьми его из сообщения блока.\n`,
+    )
+    return 2
+  }
+  if (!reason) {
+    log(
+      `zero-dispatch guard (#322): причина обязательна — ` +
+        `${ARM_BYPASS_FLAG} "<путь>" "<причина>". Побег это запись, а не рубильник.\n`,
+    )
+    return 2
+  }
+  try {
+    mkdir(dirname(path))
+    write(path, reason)
+  } catch {
+    log(`zero-dispatch guard (#322): не удалось записать файл-побег ${path}.\n`)
+    return 2
+  }
+  log(
+    `↪ zero-dispatch guard (#322): побег взведён, причина «${reason}». ` +
+      `Он пропустит ровно СЛЕДУЮЩУЮ мутацию лида и будет съеден. ` +
+      `Причина обязана попасть в строку stage 7 «Отклонения от конвенций:».\n`,
+  )
+  return 0
+}
+
 function main() {
   try {
+    const argv = process.argv.slice(2)
+    if (argv[0] === ARM_BYPASS_FLAG) process.exit(armBypass(argv.slice(1)))
     if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const cwd = payload.cwd || ''
@@ -219,25 +418,47 @@ function main() {
       ZERO_DISPATCH_STATE_DIR_REL,
       payload.session_id || '',
     )
+    const bypassPath = bypassFilePath(statePath)
     const decision = decideZeroDispatch({
       toolName: payload.tool_name,
       toolInput: payload.tool_input,
       state: readState(statePath),
-      subagent: isSubagentSession({
-        env: process.env,
-        transcriptPath: payload.transcript_path || '',
-      }),
+      // Ленивый предикат: транскрипт читается только если решение от него
+      // зависит (ревью PR #346, MAJOR 3).
+      subagent: () =>
+        isSubagentSession({
+          env: process.env,
+          transcriptPath: payload.transcript_path || '',
+        }),
       worktree: inWorktree(cwd) || inWorktree(projectDir),
-      bypass: bypassReason(process.env),
+      bypass: resolveBypassReason({
+        toolName: payload.tool_name,
+        toolInput: payload.tool_input,
+        bypassFile: readBypassFile(bypassPath),
+        env: process.env,
+      }),
     })
     if (decision.state) writeState(statePath, decision.state)
     if (decision.action === 'bypass') {
+      // Файл-побег СЪЕДАЕТСЯ: одноразовость канала B держится на удалении, а не
+      // на памяти сессии. Канал A одноразовый через `bypassUsed` — ту же причину
+      // повторно гард не примет.
+      try {
+        rmSync(bypassPath, { force: true })
+      } catch {
+        // fail-open: не съеденный файл ловится `bypassUsed` на следующем витке
+      }
       process.stderr.write(bypassMessage(decision.reason))
       process.exit(0)
     }
     if (decision.action === 'block') {
       process.stderr.write(
-        blockMessage({ mutations: decision.mutations, exhausted: decision.exhausted }),
+        blockMessage({
+          mutations: decision.mutations,
+          exhausted: decision.exhausted,
+          bypassPath,
+          guardPath: fileURLToPath(import.meta.url),
+        }),
       )
       process.exit(2)
     }

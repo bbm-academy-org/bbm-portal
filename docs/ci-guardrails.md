@@ -227,8 +227,28 @@ in §5 with a reason, and the guard is in one of these classes:
    reading the guard. (`guard-test-coverage` is such a guard.)
 2. **Documented security mandate** — a written decision that the failure being caught is a
    security/data-protection incident, in which case a soak period is itself the risk.
+3. **Owner-mandated process guard whose WARN form has already been demonstrated to fail** —
+   added 2026-08-25 by #322/PR #346. The bar is deliberately narrow and every clause is
+   load-bearing: (a) the mandate is the **owner's**, recorded with a name, a date and the
+   approved wording, and linked from the guard's §6 entry; (b) the rule being mechanised
+   already exists as prose **and** has a dated recurrence on record — a rule that has never
+   failed does not qualify; (c) a WARN guard over the same behaviour was **live** during
+   that recurrence and changed nothing, so the soak this canon would prescribe is the
+   experiment that already ran; and (d) the guard ships with an escape hatch that a
+   **blocked session can reach from inside itself**, demands a reason, is consumed once,
+   and writes that reason into the session log. Clause (d) is not decoration: without it
+   the guard is a dead end rather than a gate, which is precisely what §6's
+   `surface-decision-debt-gate` row names as the prerequisite for any gate that can stop a
+   session. `zero-dispatch` is the only class-3 guard today.
 
-Anything with a heuristic, a regex over human text, or an external API call soaks as WARN.
+Anything with a heuristic, a regex over human text, or an external API call soaks as WARN —
+unless it lands under class 3, whose whole point is that the heuristic's blast radius is
+bounded by an in-session escape rather than by a soak.
+
+**Class 3 is a day-0 posture, not an exemption from §4.** A class-3 guard is demoted to
+WARN on its first confirmed false block that the escape hatch did not adequately answer —
+the ordinary §4 demotion clause, with no special standing. Its §6 entry names that condition
+explicitly.
 
 ## 4. Promotion, demotion, cadence
 
@@ -380,34 +400,74 @@ restated here — exact predicates and carve-outs live in the guard,
 [`tools/hooks/secret-echo-guard.mjs`](../tools/hooks/secret-echo-guard.mjs); the stack it is
 wired into is [`tools/hooks/README.md`](../tools/hooks/README.md).
 
-**`zero-dispatch` — a BLOCK landed by owner mandate, and a recorded §3 deviation (#322).**
+**`zero-dispatch` — the one §3 class-3 guard: a day-0 BLOCK by owner mandate (#322).**
 [`tools/hooks/zero-dispatch-guard.mjs`](../tools/hooks/zero-dispatch-guard.mjs) denies the
 6th mutating lead call of a session when the session has dispatched **zero** `Agent` calls.
-It is **BLOCK from day 0**, and it fits **neither** §3 class: its input is the session's own
-tool-call stream, not the checked-out tree (not class 1), and the failure it catches is a
-process failure, not a data-protection incident (not class 2). The mandate is the owner's,
-recorded in #322: the rule it mechanises (`lead-delegates-even-small-prep`, owner
-2026-08-17) had already been written as prose twice, was in context, and was passed over
-for a whole session on 2026-08-24 — a WARN soak is exactly the thing that already failed
-here, because `dispatch-guard`'s WARN was live that whole session and changed nothing. The
-acceptance criteria of #322 are written as "is blocked", so a WARN landing would not have
-satisfied the task.
+It is **BLOCK from day 0**. It fits neither of §3's original two classes — its input is the
+session's own tool-call stream, not the checked-out tree (not class 1), and the failure it
+catches is a process failure, not a data-protection incident (not class 2) — which is why
+#322/PR #346 added **class 3** to §3 rather than leaving §3 and this entry contradicting
+each other. §3 owns new-guard posture; an entry here that quietly did the opposite of §3
+was the bug, and it was caught in review of PR #346.
 
-What bounds the blast radius, and is why the deviation is affordable:
+**The mandate, on record:** owner Anton (@sidorovanthon), 2026-08-25, in the lead session
+that presented the `/wrap-init` retro package; approved with «го всё», the approved item
+reading «PreToolUse-хук: счётчик мутирующих вызовов лида … блок на N=6 … и явным bypass с
+причиной в лог» — an explicit BLOCK at N = 6 with a reasoned escape. Recorded at
+<https://github.com/bbm-academy-org/bbm-portal/issues/322#issuecomment-5411504249>. That
+comment also states that the mandate supersedes #322's own Scope line "a new guard starts at
+WARN" for this guard alone; the issue body now points at it instead of contradicting it.
+The class-3 clauses are met in order: the rule (`lead-delegates-even-small-prep`, owner
+2026-08-17) was already prose twice, it recurred on 2026-08-24, `dispatch-guard`'s WARN was
+live throughout that recurrence and changed nothing, and the escape below is reachable from
+inside a blocked session.
 
-- **The escape hatch is documented and one-shot** — the condition §6's own
-  `surface-decision-debt-gate` row names as a prerequisite for any gate that can stop a
-  session. `DISPATCH_BYPASS="<reason>"` lets exactly the next mutation through, prints the
-  reason to stderr so it lands in the session log, and requires that reason in the stage-7
-  «Отклонения от конвенций:» line. Consuming it does not disarm the guard.
+What bounds the blast radius, and is why the day-0 BLOCK is affordable:
+
+- **The escape hatch is one-shot, reasoned, and reachable FROM INSIDE a blocked session** —
+  the condition §6's own `surface-decision-debt-gate` row names as a prerequisite for any
+  gate that can stop a session. Two channels, because the two blocked call shapes carry
+  different payloads:
+  - **Bash / PowerShell** — prefix the command itself:
+    `DISPATCH_BYPASS="<reason>" <your command>`. The hook parses the prefix out of
+    `tool_input.command`, which the harness does hand it; it does **not** rely on the
+    variable ever reaching a process environment, because it never does.
+  - **Edit / Write / MultiEdit** — no command string exists, so the reason is armed as a
+    one-shot file with a **non-mutating** command that therefore passes the standing block:
+    `node <guard> --arm-bypass "<path>" "<reason>"`. The block message prints the exact
+    path (the session does not know its own `session_id`; the hook does). The file is
+    deleted when it fires.
+
+  Both demand a reason — an empty value is not an escape — echo it to stderr so it lands in
+  the session log, pass exactly the **next** mutation, and refuse the same reason twice.
+  That reason must then appear in the stage-7 «Отклонения от конвенций:» line. Consuming an
+  escape does not disarm the guard. A `DISPATCH_BYPASS` set in the environment at
+  `claude` launch is still honoured as a third channel, but nothing in these bounds leans
+  on it: it costs a session restart, which is the price the escape exists to avoid.
+
 - **One `Agent` call disarms it for the rest of the session**, so the only session it can
   ever stop is one that has orchestrated nothing at all.
 - **Subagents never reach it.** Exemption is by the harness's `AI_AGENT` spawn marker, the
   `"promptSource":"sdk"` / `"isSidechain":true` transcript marker, or a worktree cwd.
 - **Fail-open** on unreadable stdin or unreadable state, like the rest of the stack.
 
+**A canonical triage session does hit this guard, and that is the decision, not an
+oversight.** Six inline `gh issue edit` / `pnpm issue:create` calls with no dispatch — the
+shape the owner rule `direct-apply-for-simple-edits` (2026-08-04) explicitly blesses, raised
+against this guard in review of PR #346 — reach the block. The answer is the escape, not a
+carve-out: with the escape reachable in flight, such a session names its reason once in a
+command prefix and continues, and the reason lands in the stage-7 deviations line, which is
+exactly the record this guard was built to produce. **The mutation predicate is deliberately
+not widened** to exempt `gh issue`/`pnpm issue:create`: it is imported whole from
+`completion-report-gate.mjs`, and forking it here would create the second source of truth
+CLAUDE.md's "path is the contract" rule exists to prevent, while making the guard silent for
+the exact session class it was written about (2026-08-24 was an issue-editing session).
+A block that the escape does **not** adequately answer is a different matter — that is the
+demotion trigger below, and one confirmed instance spends this guard's day-0 standing.
+
 Demotion to WARN per §4 on one confirmed false block that the escape hatch did not
-adequately answer. The threshold (6) is the substantive rule for §4's clock: changing it
+adequately answer — §3's class-3 paragraph names the same condition, and this row is where
+it is applied. The threshold (6) is the substantive rule for §4's clock: changing it
 restarts the clock, changing the message text does not.
 
 ### 6.1 CLI guards (§2.3) — severity per finding class

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,14 +7,19 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import {
+  ARM_BYPASS_FLAG,
   BYPASS_ENV,
   ZERO_DISPATCH_BLOCK_THRESHOLD,
+  armBypass,
   blockMessage,
+  bypassFilePath,
   bypassReason,
   decideZeroDispatch,
   isMutatingCall,
   isSubagentSession,
   readCounterState,
+  resolveBypassReason,
+  splitInlineBypass,
 } from '../../tools/hooks/zero-dispatch-guard.mjs'
 
 /**
@@ -24,6 +29,7 @@ import {
  */
 
 const HOOKS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../tools/hooks')
+const GUARD = resolve(HOOKS_DIR, 'zero-dispatch-guard.mjs')
 
 function runHook(hook: string, stdin: string, env: Record<string, string> = {}) {
   const res = spawnSync(process.execPath, [resolve(HOOKS_DIR, hook)], {
@@ -123,11 +129,17 @@ describe('zero-dispatch-guard: счётчик и порог', () => {
   })
 
   it('нечитаемое состояние трактуется как ноль (fail-open)', () => {
-    expect(readCounterState(null)).toEqual({ mutations: 0, dispatched: false, bypassUsed: '' })
+    expect(readCounterState(null)).toEqual({
+      mutations: 0,
+      dispatched: false,
+      bypassUsed: '',
+      subagent: false,
+    })
     expect(readCounterState({ mutations: -7, dispatched: 'да' })).toEqual({
       mutations: 0,
       dispatched: false,
       bypassUsed: '',
+      subagent: false,
     })
   })
 
@@ -152,7 +164,7 @@ describe('zero-dispatch-guard: диспетчеризующая сессия н�
       ...LEAD,
     })
     expect(d.action).toBe('dispatched')
-    expect(d.state).toEqual({ mutations: 0, dispatched: true, bypassUsed: '' })
+    expect(d.state).toEqual({ mutations: 0, dispatched: true, bypassUsed: '', subagent: false })
   })
 
   it('после диспатча порог не блокирует НИКОГДА — сессия оркеструет', () => {
@@ -268,6 +280,76 @@ describe('zero-dispatch-guard: субагент под гардом не ход�
     expect(d.action).toBe('silent')
   })
 
+  it('транскрипт читается ЛЕНИВО — только когда от него зависит решение (MAJOR 3)', () => {
+    let calls = 0
+    const probe = () => {
+      calls += 1
+      return false
+    }
+    // Не мутация — предикат не зовут вовсе.
+    decideZeroDispatch({
+      toolName: 'Read',
+      toolInput: {},
+      state: {},
+      subagent: probe,
+      worktree: false,
+    })
+    expect(calls).toBe(0)
+    // Не мутирующая Bash-команда — тоже.
+    decideZeroDispatch({
+      toolName: 'Bash',
+      toolInput: { command: 'gh issue view 1' },
+      state: {},
+      subagent: probe,
+      worktree: false,
+    })
+    expect(calls).toBe(0)
+    // Сессия уже диспетчеризовала — тоже.
+    decideZeroDispatch({
+      toolName: 'Edit',
+      toolInput: {},
+      state: { dispatched: true },
+      subagent: probe,
+      worktree: false,
+    })
+    expect(calls).toBe(0)
+    // И только настоящая мутация лида без диспатча платит за чтение.
+    decideZeroDispatch({
+      toolName: 'Edit',
+      toolInput: {},
+      state: {},
+      subagent: probe,
+      worktree: false,
+    })
+    expect(calls).toBe(1)
+  })
+
+  it('положительный вердикт кэшируется в состоянии — второго чтения нет', () => {
+    let calls = 0
+    const probe = () => {
+      calls += 1
+      return true
+    }
+    const first = decideZeroDispatch({
+      toolName: 'Edit',
+      toolInput: {},
+      state: {},
+      subagent: probe,
+      worktree: false,
+    })
+    expect(first.action).toBe('silent')
+    expect(first.state?.subagent).toBe(true)
+    const second = decideZeroDispatch({
+      toolName: 'Edit',
+      toolInput: {},
+      state: first.state,
+      subagent: probe,
+      worktree: false,
+    })
+    expect(second.action).toBe('silent')
+    expect(calls).toBe(1)
+  })
+
   it('дискриминатор №1 — AI_AGENT, харнес ставит его ТОЛЬКО в сессии-агенте', () => {
     expect(isSubagentSession({ env: env({ AI_AGENT: 'claude-code_2-1-245_agent' }) })).toBe(true)
     expect(isSubagentSession({ env: env({}) })).toBe(false)
@@ -288,6 +370,69 @@ describe('zero-dispatch-guard: субагент под гардом не ход�
     expect(isSubagentSession({ env: env({}), transcriptPath: resolve(dir, 'нет.jsonl') })).toBe(
       false,
     )
+  })
+})
+
+describe('zero-dispatch-guard: побег достижим ИЗ сессии (ревью PR #346, BLOCKER 1)', () => {
+  it('канал A — инлайн-префикс в строке команды, а не env под-оболочки', () => {
+    expect(splitInlineBypass('DISPATCH_BYPASS="фикс прода" gh issue edit 1 --body x')).toEqual({
+      reason: 'фикс прода',
+      command: 'gh issue edit 1 --body x',
+    })
+    expect(splitInlineBypass("DISPATCH_BYPASS='одна строка' git commit -m x").reason).toBe(
+      'одна строка',
+    )
+    expect(splitInlineBypass('gh issue edit 1')).toEqual({
+      reason: '',
+      command: 'gh issue edit 1',
+    })
+  })
+
+  it('префикс срезается ПЕРЕД предикатом мутации — иначе побег стал бы рубильником', () => {
+    // С оставленным префиксом `gh issue edit` не стоял бы в начале сегмента и
+    // MUTATING_COMMAND_RE промахнулся бы: вызов прошёл бы молча и БЕЗ записи.
+    expect(isMutatingCall('Bash', { command: 'DISPATCH_BYPASS="x" gh issue edit 1' })).toBe(true)
+  })
+
+  it('резолв причины: команда → файл → env старта', () => {
+    const shell = {
+      toolName: 'Bash',
+      toolInput: { command: 'DISPATCH_BYPASS="из команды" git push' },
+    }
+    expect(resolveBypassReason({ ...shell, bypassFile: 'из файла', env: env({}) })).toBe(
+      'из команды',
+    )
+    expect(
+      resolveBypassReason({
+        toolName: 'Edit',
+        toolInput: {},
+        bypassFile: 'из файла',
+        env: env({ [BYPASS_ENV]: 'из env' }),
+      }),
+    ).toBe('из файла')
+    expect(
+      resolveBypassReason({
+        toolName: 'Edit',
+        toolInput: {},
+        env: env({ [BYPASS_ENV]: 'из env' }),
+      }),
+    ).toBe('из env')
+    expect(resolveBypassReason({ toolName: 'Edit', toolInput: {}, env: env({}) })).toBe('')
+  })
+
+  it('файл-побег лежит рядом с файлом состояния сессии', () => {
+    expect(bypassFilePath('/x/zero-dispatch-guard-state/abc.json')).toBe(
+      '/x/zero-dispatch-guard-state/abc.bypass',
+    )
+  })
+
+  it('взвод файла требует причину и каталог состояния гарда', () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'zdg-arm-'))
+    const good = resolve(dir, 'zero-dispatch-guard-state', 's1.bypass')
+    expect(armBypass([good, ''], { log: () => {} })).toBe(2)
+    expect(armBypass([resolve(dir, 'что-угодно.txt'), 'причина'], { log: () => {} })).toBe(2)
+    expect(armBypass([good, 'правка', 'одной', 'строки'], { log: () => {} })).toBe(0)
+    expect(readFileSync(good, 'utf8')).toBe('правка одной строки')
   })
 })
 
@@ -363,17 +508,114 @@ describe('zero-dispatch-guard как процесс', () => {
     ).toBe(0)
   })
 
-  it('побег пропускает вызов и печатает причину в stderr — она попадает в лог сессии', () => {
-    const session = `zdg-bypass-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
+  /**
+   * ПРОДАКШЕН-ПУТЬ ПОБЕГА. Env сюда НЕ ВПРЫСКИВАЕТСЯ намеренно: ровно этим
+   * первая редакция и обманулась (ревью PR #346, BLOCKER 1) — тест инжектил
+   * `DISPATCH_BYPASS` через `spawnSync({ env })`, канала которого у живой
+   * сессии нет. Ниже сессия делает то же, что сделала бы настоящая: ставит
+   * префикс в команду и взводит файл-побег.
+   */
+  function bypassPathFor(session: string) {
+    return resolve(
+      FAKE_TREE,
+      '.claude/zero-dispatch-guard-state',
+      `${session.replace(/[^A-Za-z0-9._-]/g, '_')}.bypass`,
+    )
+  }
+
+  function shellPayload(session: string, command: string) {
+    return JSON.stringify({
+      tool_name: 'Bash',
+      tool_input: { command },
+      cwd: FAKE_TREE,
+      session_id: session,
+    })
+  }
+
+  it('канал A: инлайн-префикс в команде пропускает ровно следующую мутацию (без env)', () => {
+    const session = `zdg-inline-${Date.now()}`
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
+      runHook(
+        'zero-dispatch-guard.mjs',
+        shellPayload(session, 'gh issue edit 1 --body x'),
+        LEAD_ENV,
+      )
+    }
+    // Блок стоит.
+    expect(
+      runHook(
+        'zero-dispatch-guard.mjs',
+        shellPayload(session, 'gh issue edit 1 --body x'),
+        LEAD_ENV,
+      ).status,
+    ).toBe(2)
+    const escaped = runHook(
+      'zero-dispatch-guard.mjs',
+      shellPayload(session, 'DISPATCH_BYPASS="триаж бэклога, правки текста issue" gh issue edit 1'),
+      LEAD_ENV,
+    )
+    expect(escaped.status).toBe(0)
+    expect(escaped.stderr).toContain('триаж бэклога, правки текста issue')
+    // Израсходован: та же причина второй раз не проходит.
+    expect(
+      runHook(
+        'zero-dispatch-guard.mjs',
+        shellPayload(
+          session,
+          'DISPATCH_BYPASS="триаж бэклога, правки текста issue" gh issue edit 2',
+        ),
+        LEAD_ENV,
+      ).status,
+    ).toBe(2)
+  })
+
+  it('канал B: файл-побег, взведённый НЕ мутирующей командой, пропускает Edit (без env)', () => {
+    const session = `zdg-file-${Date.now()}`
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
       runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
     }
-    const escaped = runHook('zero-dispatch-guard.mjs', leadPayload(session), {
-      ...LEAD_ENV,
-      [BYPASS_ENV]: 'правка одной строки в доке',
-    })
+    const blocked = runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
+    expect(blocked.status).toBe(2)
+    const bypassPath = bypassPathFor(session)
+    // Сообщение блока называет ТОЧНЫЙ путь — сессия свой session_id не знает.
+    expect(blocked.stderr).toContain(bypassPath)
+    expect(blocked.stderr).toContain(ARM_BYPASS_FLAG)
+
+    // Команда взвода сама сквозь блок проходит: она не мутирующая.
+    expect(
+      runHook(
+        'zero-dispatch-guard.mjs',
+        shellPayload(session, `node "${GUARD}" ${ARM_BYPASS_FLAG} "${bypassPath}" "причина"`),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
+    const armed = spawnSync(
+      process.execPath,
+      [GUARD, ARM_BYPASS_FLAG, bypassPath, 'правка одной строки в доке'],
+      { encoding: 'utf8' },
+    )
+    expect(armed.status).toBe(0)
+
+    const escaped = runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
     expect(escaped.status).toBe(0)
     expect(escaped.stderr).toContain('правка одной строки в доке')
+    // Съеден: файла больше нет, следующая мутация снова блокируется.
+    expect(existsSync(bypassPath)).toBe(false)
+    expect(runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV).status).toBe(2)
+  })
+
+  it('побег без причины побегом не является (продакшен-путь)', () => {
+    const session = `zdg-noreason-${Date.now()}`
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
+      runHook('zero-dispatch-guard.mjs', shellPayload(session, 'git commit -m x'), LEAD_ENV)
+    }
+    expect(
+      runHook(
+        'zero-dispatch-guard.mjs',
+        shellPayload(session, 'DISPATCH_BYPASS="" git commit -m x'),
+        LEAD_ENV,
+      ).status,
+    ).toBe(2)
   })
 
   it('Agent снимает блок на всю оставшуюся сессию', () => {
