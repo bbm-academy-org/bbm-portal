@@ -38,6 +38,13 @@ import {
   ghJson,
   ghResult,
 } from './lib/gh.mjs'
+import { WAIVER_FORM, productLayerStatus } from './lib/product-layer.mjs'
+import { isPlaceholder } from './lib/text.mjs'
+
+// Re-exported: `isPlaceholder` moved to `lib/text.mjs` when the epic
+// product-layer gate (#321) needed the same definition of an unfilled field.
+// One definition, two readers — a second copy would be the one that drifts.
+export { isPlaceholder }
 
 const TAG = '[backlog:triage]'
 
@@ -192,30 +199,6 @@ export function parseRefsWithRationale(clause) {
   return out
 }
 
-/** «none», a dash, an empty string, or an unfilled template placeholder. */
-export function isPlaceholder(text) {
-  const t = String(text ?? '')
-    .trim()
-    .toLowerCase()
-  if (t === '') return true
-  if (/^<!--[\s\S]*-->$/.test(t)) return true
-  // An angle-bracket placeholder from canon §1's skeleton is an unfilled
-  // template, not a populated field.
-  if (/^<[^<>]*>$/.test(t)) return true
-  return [
-    '\u043d\u0435\u0442',
-    'none',
-    '\u043d\u0435\u0442\u0443',
-    'n/a',
-    'na',
-    '—',
-    '–',
-    '-',
-    'tbd',
-    '_no response_',
-  ].includes(t)
-}
-
 /**
  * Prose dependency mentions OUTSIDE the Dependencies section signal that an
  * edge was not recorded; they are not edges. Hierarchical wording is ignored:
@@ -344,6 +327,23 @@ export function findEpicChecklistDrift({ number, body, subIssues }) {
   return { number, closed: children.length, uncheckedCount, unchecked }
 }
 
+/**
+ * An open epic whose body neither names a `docs/product/…` artifact nor records
+ * an explicit waiver (#321, retro 2026-08-24). Epic #112 was decomposed straight
+ * from a technical spec and re-framed by the owner only afterwards, seven
+ * sub-issues later — nothing mechanical had asked what the epic was FOR.
+ *
+ * Here it is a FLAG, never a refusal and never an auto-edit: refusal lives at
+ * filing time in `pnpm issue:create`, and the existing corpus predates the rule.
+ * @param {{number:number, title?:string, body?:string}} epic
+ * @returns {{number:number, title:string, kind:'missing'|'waiver-incomplete'}|null}
+ */
+export function findEpicProductLayerGap({ number, title, body }) {
+  const status = productLayerStatus(body)
+  if (status.ok) return null
+  return { number, title: title ?? '', kind: status.kind }
+}
+
 /** Nodes blocking at least `threshold` open issues. */
 export function findMegaBlockers(triaged, threshold = 5) {
   const fanout = new Map()
@@ -419,6 +419,7 @@ export function formatReport(model) {
     hygiene = [],
     mirrorDrift = [],
     epicChecklistDrift = [],
+    epicProductLayer = [],
     orphanEdges = [],
     megaBlockers = [],
     warnings = [],
@@ -500,6 +501,32 @@ export function formatReport(model) {
         `the epic reads as live work while the graph says it is done. Tick the boxes and decide ` +
         `whether the epic closes; the script decides neither`,
     )
+  }
+  lines.push('')
+
+  lines.push(`## Epic product layer (${epicProductLayer.length})`)
+  if (epicProductLayer.length === 0) {
+    lines.push('_none — every open epic names its product layer or records a waiver_')
+  }
+  if (epicProductLayer.length > 0) {
+    // The cure is printed ONCE for the section, not per row: six identical
+    // paragraphs are how a report stops being read.
+    lines.push(
+      `Each of these can be decomposed into other people's work before anyone establishes what ` +
+        `it is FOR (#321). Two cures per epic: run the \`do-product-discovery\` skill and LINK the ` +
+        `resulting \`docs/product/<epic-slug>/brief.md\` from the body, or record «${WAIVER_FORM}» ` +
+        `in it. A product-layer file that exists but is not named in the epic body does not clear ` +
+        `this. Existing epics are FLAGGED here — never blocked, never auto-edited; filing-time ` +
+        `refusal lives in \`pnpm issue:create --label epic\`.`,
+    )
+    lines.push('')
+  }
+  for (const e of epicProductLayer) {
+    const what =
+      e.kind === 'waiver-incomplete'
+        ? 'carries a «product-layer: waived» line with NO tail — a waiver names who waived it and when'
+        : 'names no docs/product/… artifact and records no waiver'
+    lines.push(`- #${e.number} ${e.title} — ${what}`)
   }
   lines.push('')
 
@@ -645,6 +672,10 @@ export const USAGE = `Usage: pnpm backlog:triage
     Epic checklist drift — an open epic whose native sub-issues are ALL closed
       while its body checklist is still unticked (#299): it reads as live work
       when the graph says it is done. WARN — closing it stays a human call.
+    Epic product layer — an open epic that neither names a \`docs/product/…\`
+      artifact nor records a waiver (#321): it can be decomposed into other
+      people's work before anyone establishes what it is FOR. FLAG only —
+      filing-time refusal lives in \`pnpm issue:create --label epic\`.
     Edges without rationale — provenance-orphan: grounds to challenge an edge.
     Mega-blockers — nodes blocking ≥5 issues.
     Epics — umbrellas, not takeable themselves.
@@ -695,6 +726,7 @@ function main() {
   const hygiene = []
   const mirrorDrift = []
   const epicChecklistDrift = []
+  const epicProductLayer = []
   const orphanEdges = []
   const claimIssues = []
   const epics = []
@@ -752,6 +784,12 @@ function main() {
         subIssues: fetchSubIssues(issue.number, warnings),
       })
       if (drift) epicChecklistDrift.push(drift)
+      const gap = findEpicProductLayerGap({
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+      })
+      if (gap) epicProductLayer.push(gap)
       continue
     }
     triaged.push(t)
@@ -767,6 +805,7 @@ function main() {
     hygiene,
     mirrorDrift,
     epicChecklistDrift,
+    epicProductLayer,
     orphanEdges,
     megaBlockers: findMegaBlockers(triaged),
     warnings,

@@ -5,7 +5,7 @@ surface: user-facing
 updated: 2026-08-25
 ---
 
-# F3 — Reports: register, P&L, cash flow, unit cost, break-even (#115)
+# F3 — Reports: register, P&L, cash flow, unit cost, break-even (#340)
 
 ## Feature summary
 
@@ -18,8 +18,8 @@ ledger (decision 5):
 - **cash flow** — what actually moved in and out, and what is on the accounts
   now, which is a different question from P&L;
 - **unit cost (себестоимость)** — what one sellable unit of a project costs to
-  produce, where the unit is a lesson, a course, or whatever the project sells
-  (decision 9);
+  produce, where the unit is a **lesson or a course** — the production units the
+  owner confirmed at the wireframe review (decisions 9, 19);
 - **break-even sale price** — the price at which that unit stops losing money.
 
 Every one of them **computes from postings**; none stores its own numbers. A
@@ -36,6 +36,23 @@ currency**; the reporting currency is a property of the view, not of the data.
 Operations always keep their own currency (consolidation spec §8): switching the
 report re-presents the same postings, it never rewrites or re-denominates them,
 and the amount in its own currency stays visible beside the converted total.
+
+**The conversion rate is each operation's own actual rate — owner ruling,
+decision 18 (owner 2026-08-25).** A report that spans currencies converts every
+amount at the **actual rate the operation happened at, frozen at its date** —
+never a period-end market rate and never a rate fetched at read time. A
+RUB→USDT conversion records the factual rate it happened at, and that rate is
+what every later reading uses, so any total is reproducible from the postings
+behind it. This settles the rate-policy fork this PRD previously carried as its
+first open question.
+
+**Product capitalization is a reading of this layer — decision 22 (owner
+2026-08-25).** Because every product-attributable expense carries its product
+(F1, #338), the reports can show the **accumulated invested cost of each
+product** — its capitalization — beside the per-period unit cost. The treatment
+of overhead that belongs to no product follows the accounting rule the F1 spec
+proposes and the owner signs off; this feature reads that rule, it does not set
+it.
 
 **Recognition timing (accrual vs cash) is deferred — owner ruling, decision 14
 (owner 2026-08-25).** The owner decides accrual-vs-cash **from practice**, once
@@ -114,6 +131,15 @@ the two that decide the rest.
 - **US-14** — As the owner, every report tells me the period it covers and the
   moment it was computed, so a screenshot is never ambiguous.
   _(`agent-proposed — UNCONFIRMED`)_
+- **US-18** — As the owner, a cross-currency total is built from each operation's
+  own recorded rate, so I can reproduce it from the register and it does not
+  change when market rates move. _(decision 18)_
+- **US-19** — As the owner, unit cost is expressed per **lesson** and per
+  **course** — the production units of the business — rather than per an abstract
+  unit I have to define each time. _(decision 19)_
+- **US-20** — As the owner, I see the accumulated invested cost — the
+  capitalization — of each product, so I know what has been put into a lesson or
+  a course to date, not only what it cost in one period. _(decision 22)_
 
 ## Flows
 
@@ -134,14 +160,12 @@ units the period produced, and the cost per unit → beside it, the break-even
 price and the current price if one is set.
 
 **Multi-currency total.**
-A report opens in RUB and converts amounts to it at the stated policy, saying
-which policy and which rates it used; the owner can switch the reporting currency
-to another one and the same report re-presents itself there (decision 13).
-Amounts in their own currency remain visible next to the converted total, and the
-operations themselves keep their currency. _(`agent-proposed — UNCONFIRMED`:
-which conversion policy — rate at the operation date, or period-end rate — is an
-owner question below; decision 13 fixes the switchable presentation, not the
-rate rule.)_
+A report opens in RUB and converts amounts to it at **each operation's own actual
+rate, frozen at its date** _(decision 18)_, saying so and showing the rates it
+used; the owner can switch the reporting currency to another one and the same
+report re-presents itself there _(decision 13)_. Amounts in their own currency
+remain visible next to the converted total, and the operations themselves keep
+their currency.
 
 **An empty period.**
 A period with no operations reports zero and says so, rather than showing a blank
@@ -157,7 +181,11 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 - The owner can read that P&L for a single project.
 - The owner can see what actually moved in and out of each account in a period.
 - The owner can see the current balance of every account in its own currency.
-- A total that spans currencies states the rate policy it used.
+- A total that spans currencies states the rate policy it used, and that policy
+  is each operation's own recorded rate — the total is reproducible from the
+  register and does not move with the market.
+- Unit cost is reported per lesson and per course.
+- The owner can see the accumulated invested cost (capitalization) of a product.
 - A report opens in RUB and can be switched to another reporting currency without
   any operation changing the currency it was recorded in.
 - An accrued but unpaid obligation is visible in the reports rather than absent
@@ -187,13 +215,17 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 
 ## Open questions
 
-1. **The conversion policy for a multi-currency total** — the rate at each
-   operation's date, or one rate at period end? The two give different totals and
-   the choice is the owner's. _(The reporting currency itself is settled:
-   decision 13 — RUB by default, switchable.)_
-2. **What counts as a unit produced in a period?** Unit cost needs a denominator
-   — lessons published, courses released, units sold. Decision 9 fixes the unit,
-   not how it is counted.
+1. ~~**The conversion policy for a multi-currency total** — the rate at each
+   operation's date, or one rate at period end?~~ **Closed by decision 18** (owner
+   2026-08-25): each operation's own actual rate, frozen at its date. _(The
+   reporting currency itself was already settled by decision 13 — RUB by default,
+   switchable.)_
+2. **What counts as a unit produced in a period?** Decision 19 (owner 2026-08-25,
+   wireframe review) settled the **unit** — the production units are **lessons
+   and courses**, as drawn on the wireframe — but not the **counting rule**: when
+   a lesson or a course counts as "produced" in a given period (published,
+   released, sold) is still undecided, and unit cost per period cannot be
+   computed without it. Deferred to the F3 feature spec, not closed.
 3. **Is revenue per unit known** (a price on the product), or is break-even
    computed purely from cost? The DS model takes the price as an input
    (prior art §4).
@@ -203,4 +235,7 @@ _Settled since the first draft:_ cash-versus-accrual recognition timing is no
 longer an open product question here — decision 14 defers the rule to practice
 and fixes the principles instead (honest math; obligations counted and shown;
 plan-vs-fact explicit). The feature spec inherits the principles, not a timing
-rule.
+rule. The cross-currency rate policy (decision 18) and the unit denominator
+(decision 19) are likewise no longer open — both were ruled at the 2026-08-25
+wireframe review. The **counting rule** for a produced unit is a different
+question and stays open above (question 2).

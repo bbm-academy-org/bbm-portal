@@ -6,6 +6,7 @@ import {
   evaluateRationale,
   findMegaBlockers,
   findEpicChecklistDrift,
+  findEpicProductLayerGap,
   findMirrorDrift,
   formatAge,
   formatReport,
@@ -539,5 +540,60 @@ describe('formatReport — epic checklist drift', () => {
 
   it('says «none» when body and graph agree', () => {
     expect(formatReport({ generatedAt: 'x' })).toContain('## Epic checklist drift (0)')
+  })
+})
+
+describe('findEpicProductLayerGap', () => {
+  /**
+   * #321. Existing epics are FLAGGED here, never refused and never auto-edited:
+   * refusal lives at filing time, in `pnpm issue:create`.
+   */
+  it('flags an epic that names neither a product-layer path nor a waiver', () => {
+    const gap = findEpicProductLayerGap({
+      number: 112,
+      title: 'Platform consolidation',
+      body: '**Source:** spec\n\n## Context\n\ntechnical framing',
+    })
+    expect(gap).toMatchObject({ number: 112, kind: 'missing' })
+  })
+
+  it('stays quiet when the epic names its brief', () => {
+    expect(
+      findEpicProductLayerGap({ number: 1, title: 't', body: 'docs/product/finance/brief.md' }),
+    ).toBeNull()
+  })
+
+  it('stays quiet on a complete waiver', () => {
+    expect(
+      findEpicProductLayerGap({
+        number: 1,
+        title: 't',
+        body: 'product-layer: waived — Anton, 2026-08-25',
+      }),
+    ).toBeNull()
+  })
+
+  it('flags a tail-less waiver as its own kind', () => {
+    expect(
+      findEpicProductLayerGap({ number: 1, title: 't', body: 'product-layer: waived' }),
+    ).toMatchObject({ kind: 'waiver-incomplete' })
+  })
+})
+
+describe('formatReport — epic product layer', () => {
+  it('prints the section, names both cures and says nothing is blocked', () => {
+    const report = formatReport({
+      generatedAt: 'x',
+      epicProductLayer: [{ number: 112, title: 'Platform consolidation', kind: 'missing' }],
+    })
+    expect(report).toContain('## Epic product layer (1)')
+    expect(report).toMatch(/#112 Platform consolidation/)
+    expect(report).toMatch(/do-product-discovery/)
+    expect(report).toMatch(/product-layer: waived/)
+    expect(report).toMatch(/never blocked|not blocked/i)
+  })
+
+  it('says «none» when every open epic is covered', () => {
+    expect(formatReport({ generatedAt: 'x' })).toContain('## Epic product layer (0)')
   })
 })

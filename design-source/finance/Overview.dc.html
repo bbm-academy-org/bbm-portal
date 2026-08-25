@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #1c1917; }
+    a { color: #1d4ed8; } a:hover { color: #1e40af; }
+    .e { font-family: ui-monospace, monospace; font-size: 9px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+    .tab { font-size: 12px; padding: 6px 10px; color: #57534e; }
+    .tab-on { font-size: 12px; padding: 6px 10px; color: #1c1917; font-weight: 600; border-bottom: 2px solid #1c1917; }
+    .card { border: 1.5px solid #a8a29e; border-radius: 6px; padding: 12px 14px; background: #fafaf9; }
+    .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #78716c; }
+    .big { font-size: 22px; font-weight: 700; }
+    .neg { color: #b91c1c; } .pos { color: #15803d; }
+    .tag { font-size: 10px; border: 1px solid #d6d3d1; border-radius: 3px; padding: 0 4px; color: #57534e; background: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1180px; height: 780px; box-sizing: border-box; display: flex; flex-direction: column">
+  <div style="display: flex; align-items: center; gap: 4px; padding: 10px 20px 0; border-bottom: 1.5px solid #57534e">
+    <div style="font-size: 13px; font-weight: 700; margin-right: 16px">/p/finance</div>
+    <div class="tab-on">Обзор</div><div class="tab">Реестр</div><div class="tab">Отчёты</div><div class="tab">Заявки</div><div class="tab">Импорт</div><div class="tab">Сверка</div><div class="tab">Сценарии</div>
+    <div style="flex: 1"></div>
+    <div class="tag" style="margin-bottom: 6px; padding: 4px 8px">Проект: вся BBM ▾</div>
+  </div>
+  <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; flex: 1">
+
+    <div class="card">
+      <div class="lbl" style="margin-bottom: 8px">Деньги сейчас — по счетам, каждая в своей валюте <span class="e">счёт · остаток из проводок</span></div>
+      <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px">
+        <div><div class="lbl">Банк RUB</div><div class="big">1 284 500 ₽</div></div>
+        <div><div class="lbl">Карта THB</div><div class="big">38 420 ฿</div></div>
+        <div><div class="lbl">Крипто USDT</div><div class="big">2 130 ₮</div></div>
+        <div><div class="lbl">Наличные</div><div class="big">54 000 ₽</div></div>
+        <div style="border-left: 1.5px solid #d6d3d1; padding-left: 12px"><div class="lbl">Итого ≈ в RUB <span class="e">валюта отчёта</span></div><div class="big">1 620 400 ₽</div><div style="font-size: 10px; color: #78716c">курс: политика указана · переключить ▾</div></div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; flex: 1">
+      <div class="card">
+        <div class="lbl" style="margin-bottom: 8px">P&amp;L текущего периода (август) — только факт</div>
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px">
+          <div style="display: flex"><div>Доход</div><div style="flex: 1"></div><div class="pos">+ 360 000 ₽</div></div>
+          <div style="display: flex"><div>Расход</div><div style="flex: 1"></div><div class="neg">− 705 000 ₽</div></div>
+          <div style="display: flex; border-top: 1.5px solid #57534e; padding-top: 6px; font-weight: 700"><div>Результат</div><div style="flex: 1"></div><div class="neg">− 345 000 ₽</div></div>
+          <div style="font-size: 11px; color: #78716c">честная фаза убытков — это нормально по финмодели; клик → полный P&amp;L</div>
+        </div>
+      </div>
+      <div class="card" style="border-color: #b45309; background: #fffbeb">
+        <div class="lbl" style="margin-bottom: 8px; color: #b45309">Обязательства — начислено, не выплачено <span class="e">обязательство</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px">
+          <div style="display: flex"><div>Команде за июль (ФОТ из /p/hours)</div><div style="flex: 1"></div><div>412 500 ₽</div></div>
+          <div style="display: flex"><div>Возместить М. Ивановой (своя карта)</div><div style="flex: 1"></div><div>4 300 ₽</div></div>
+          <div style="font-size: 11px; color: #78716c">решение 14: долги видны всегда, даже когда деньги ещё не двигались</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 14px">
+      <div class="card" style="flex: 1">
+        <div class="lbl">Ждут решения</div>
+        <div style="font-size: 13px; margin-top: 4px">3 заявки на расход <span class="e">заявка.статус=ждёт</span> · 6 строк импорта не размечены</div>
+      </div>
+      <div class="card" style="flex: 1">
+        <div class="lbl">По проектам <span class="e">проводка.проект</span></div>
+        <div style="font-size: 13px; margin-top: 4px">Doctor.School: −290 000 ₽ · Фонд BBM: −55 000 ₽ · клик → тот же экран в разрезе проекта</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

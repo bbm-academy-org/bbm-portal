@@ -5,7 +5,7 @@ surface: user-facing
 updated: 2026-08-25
 ---
 
-# F5 — Scenario calculator on top of the fact (#115)
+# F5 — Scenario calculator on top of the fact (#342)
 
 ## Feature summary
 
@@ -28,6 +28,15 @@ appears in no report of F3, and is visibly separated from the actuals it sits on
 That separation is now an owner ruling, not only a design instinct — decision 14
 (owner 2026-08-25): plan stays plan until the fact happens, and plan-vs-fact is
 an explicit, visible distinction.
+
+**The baseline is recomputed on open — owner ruling, decision 20 (owner
+2026-08-25, wireframe review).** A scenario always starts from the **current**
+fact: reopening it refreshes the baseline to today's balances, cost structure and
+unit cost, while the owner's **assumption rows persist** and are re-applied on
+top. A scenario is therefore never a frozen snapshot of an old ledger state. The
+owner picked this after the baseline concept was explained and marked it
+reversible — if living with it shows that a frozen baseline is wanted for
+comparison, that is a later ruling, not a redesign of the feature.
 
 The money-route model also supplies the three questions worth answering, which
 this feature answers from the fact rather than from parameters: **operational
@@ -73,8 +82,11 @@ money-route calculator is a functional reference, not a template to reproduce
   changes nothing in the ledger and appears in no fact report. _(decision 1: the
   ledger is the source of truth)_
 - **US-11** — As the owner, a scenario I made a month ago is re-based on today's
-  facts when I reopen it, or clearly tells me it is frozen at the baseline it was
-  built on. _(`agent-proposed — UNCONFIRMED`)_
+  facts when I reopen it: the baseline refreshes to the current position and my
+  assumptions are re-applied on top, so I am never reasoning about a stale
+  picture of BBM. _(decision 20 — owner 2026-08-25; supersedes the
+  `agent-proposed — UNCONFIRMED` "re-base or freeze" alternative this story
+  previously carried)_
 - **US-12** — As the owner, I can see what a scenario changed relative to the
   fact — the list of my own assumptions — rather than only its result.
   _(`agent-proposed — UNCONFIRMED`)_
@@ -105,10 +117,11 @@ nothing is copied from the scenario, and the scenario's baseline moves with the
 fact on the next reading. There is no "promote scenario to ledger" act.
 _(`agent-proposed — UNCONFIRMED` as an explicit rule; it follows from decision 1)_
 
-**Reading a stale scenario.**
-A scenario built on an older baseline either re-bases on today's fact or says
-which baseline it is frozen at — never silently mixes the two. _(see US-11 open
-question)_
+**Reopening a scenario.**
+A scenario built earlier re-bases on today's fact on open: the baseline is
+recomputed from the current ledger, the saved assumption rows are re-applied, and
+the results are recomputed — the screen says which moment the baseline reflects.
+There is no stale-baseline mode to reconcile. _(decision 20)_
 
 ## Product acceptance criteria
 
@@ -126,7 +139,9 @@ question)_
 - No number produced by a scenario appears in any fact report.
 - The owner can see the list of assumptions a scenario makes, separately from its
   results.
-- A saved scenario can be reopened, and it states the baseline it uses.
+- A saved scenario can be reopened; its baseline is recomputed from the current
+  fact, its assumptions are preserved, and it states the moment the baseline
+  reflects.
 - Two scenarios can be compared on the same baseline.
 
 ## Out of scope
@@ -142,9 +157,10 @@ question)_
 
 ## Open questions
 
-1. **Is a scenario re-based on the fact when reopened, or frozen at its
-   baseline?** The two behaviours are both defensible and only the owner can pick
-   which one matches how he uses it.
+1. ~~**Is a scenario re-based on the fact when reopened, or frozen at its
+   baseline?**~~ **Closed by decision 20** (owner 2026-08-25): recomputed on open
+   — the baseline refreshes to the current fact and the assumption rows persist.
+   Recorded by the owner as reversible if practice argues for a frozen baseline.
 2. **What is the horizon** — 12 months, 36, the finmodel's `T`?
 3. **Do the three milestones (operational break-even, cash zero, investor
    payback) belong here?** They come from the money-route model, which has open

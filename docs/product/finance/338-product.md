@@ -5,7 +5,7 @@ surface: backend-only # the ledger itself has no screen; its reference tables ar
 updated: 2026-08-25
 ---
 
-# F1 — Ledger core: accounts, project dimension, postings, currencies, reversal (#115)
+# F1 — Ledger core: accounts, project dimension, postings, currencies, reversal (#338)
 
 ## Feature summary
 
@@ -32,18 +32,50 @@ schema. The module is a route + isolated library per ADR-002 §3.
 
 **Perimeter:** all of BBM, with a per-project analytical dimension — the fund
 plus each project — so P&L and cost are computable per project, matching the
-finmodel's "pool = project" frame (decision 2).
+finmodel's "pool = project" frame (decision 2). **Projects are one flat level —
+owner ruling, decision 16 (owner 2026-08-25, wireframe review):** there are no
+sub-projects in v1; the sellable product sits directly under the project, and the
+project → product pair is the whole hierarchy the ledger carries.
+
+**The books start at the first operation ever — owner ruling, decision 17 (owner
+2026-08-25).** The owner locates BBM's first operation and that date is the start
+of the books. Everything since is on record («всё зафиксировано»), so **every
+account opens at zero** and its balance is built by the backfilled operations
+themselves. There is no synthetic opening-balance operation in this model, and no
+"as of" cutover state to reconcile against. _(The backfill mechanism itself is
+F2's; F1 only fixes that nothing but real operations creates a balance.)_
+
+**Product is mandatory on product-attributable expenses — owner ruling, decision
+22 (owner 2026-08-25).** Every expense attributable to a product ties to one,
+because the module must be able to compute the **capitalization of each product**
+— its accumulated invested cost. Per-product capitalization is therefore a
+deliverable of the module, not an optional report. For overhead that has no
+product by nature (bank fees, the fund's domain, legal), the owner ruled: follow
+**proper-accounting best practices** — and made the research a duty of the F1
+feature spec, which proposes the standard treatment (direct cost → cost object;
+overhead → period cost or an allocation base; capitalization = direct +
+attributable overhead) for the owner's sign-off at the spec go. This PRD fixes
+the requirement, not the accounting rule.
 
 **Currencies from day one:** RUB, crypto, and other fiat — THB is live spend
 today (decision 4). Multi-currency is a product property, not only a schema
 property: it reaches the UI in F2 and F3.
 
-**Reference data is editable, not hard-coded** (decisions 10, 11): accounts,
-expense categories, projects, products, currencies and rates are reference tables
-an owner maintains. Their administration surface is the `/p/admin` shell of epic
-#112 — this feature contributes the resources, not a second cabinet.
-_(`agent-proposed — UNCONFIRMED` that all six live in `/p/admin` rather than in
-`/p/finance`; decisions 10–11 fix only that the taxonomy is an editable table.)_
+**Reference data is editable, not hard-coded** (decisions 10, 11, 21): accounts,
+expense categories, **request purposes**, projects, products, currencies and
+rates are reference tables an owner maintains. Their administration surface is
+the `/p/admin` shell of epic #112 — this feature contributes the resources, not a
+second cabinet. _(`agent-proposed — UNCONFIRMED` that all seven live in
+`/p/admin` rather than in `/p/finance`; decisions 10–11 and 21 fix only that
+these are editable tables.)_
+
+**The purpose reference — owner ruling, decision 21 (owner 2026-08-25):** the
+"what for" of an expense is picked from a **separate purpose reference**
+(«справочник назначений»), finer-grained than the category list, with **each
+purpose linked to its expense category** — «максимально упрощаем и
+систематизируем всё». The purpose is **a reference pick, not free text**. F1 owns
+the reference table and the link from purpose to category; the request form that
+picks from it is F2 (#339).
 
 ## Expense taxonomy — derived from the fact, not invented upfront
 
@@ -92,7 +124,11 @@ external vendors and a contingency buffer (prior art §4).
   entry. _(decision 4)_
 - **US-4** — As the owner, when money moves between currencies I see what left,
   what arrived, what the conversion cost in fees, and at what rate — as one
-  linked operation rather than two unrelated entries. _(consolidation spec §8)_
+  linked operation rather than two unrelated entries; the rate recorded is the
+  **actual rate the conversion happened at**, frozen at its date, not a market
+  quote fetched afterwards. _(consolidation spec §8; decision 18, owner
+  2026-08-25 — the same actual-rate rule governs how F3 (#340) converts across
+  currencies in reports)_
 - **US-5** — As the owner, a wrong entry is corrected by a reversal that leaves
   the original visible, so the history of the books never silently changes.
   _(consolidation spec §8)_
@@ -121,14 +157,44 @@ external vendors and a contingency buffer (prior art §4).
   _(`agent-proposed — UNCONFIRMED`: decision 5 requires P&L and cash flow, which
   require revenue; the owner never named income recording as its own
   requirement)_
+- **US-13** — As the owner, my projects are one flat list with their sellable
+  products directly beneath them, so there is one place a cost can be attributed
+  to and no nesting to reason about. _(decision 16)_
+- **US-14** — As the owner, the books begin at BBM's first real operation and
+  every account opens at zero, so a balance is always the sum of operations I can
+  open — never an opening figure someone asserted. _(decision 17)_
+- **US-15** — As the owner, an expense that belongs to a product carries that
+  product, so I can read the accumulated invested cost — the capitalization — of
+  each product from the ledger rather than reconstructing it. _(decision 22)_
+- **US-16** — As the owner, an expense that genuinely belongs to no product
+  (bank fees, the fund's domain, legal) is still recorded correctly, under the
+  treatment proper accounting prescribes, and I approve that treatment once at
+  the F1 spec go rather than deciding it per operation. _(decision 22)_
+- **US-17** — _Not a story of this feature._ The filer-facing act of picking a
+  purpose belongs to F2 — see **#339, US-20**. F1 owns only the purpose reference
+  table and the purpose → category link (US-7 covers reference-table
+  editability); this backend-only PRD carries no filer story. The id is kept so
+  the other US ids stay stable. _(decision 21)_
 
 ## Flows
 
 **Recording one operation.**
 A source produces an operation (F2) → it becomes a balanced set of postings on
-accounts, dated, in one currency, tagged with fund-or-project and, where the
-category is allocatable, with a product → it is visible in the register (F3) from
-that moment.
+accounts, dated, in one currency, tagged with fund-or-project and — whenever the
+expense is attributable to a product at all — with that product, which is
+mandatory there rather than optional _(decision 22)_ → it is visible in the
+register (F3) from that moment.
+
+**Opening the books.**
+The owner names BBM's first operation; that date starts the books. Every account
+is created at zero and reaches its real balance only through backfilled
+operations (F2). No opening-balance entry is ever posted. _(decision 17)_
+
+**Filing what an expense is for.**
+The purpose is picked from the purpose reference; its expense category comes with
+it through the purpose → category link, so a purpose and its category can never
+disagree. The purpose is a pick; free text is not a way to state it.
+_(decision 21)_
 
 **A conversion (RUB → USDT → THB).**
 One operation, a linked group of postings: the amount leaving, the amount
@@ -179,7 +245,17 @@ form)_
 - A category in use by existing postings cannot be removed in a way that leaves
   those postings uncategorised.
 - The owner can define the sellable products of a project and attach costs to
-  them.
+  them, with projects one flat level deep and products directly beneath them.
+- No account carries a balance that is not the sum of recorded operations: there
+  is no opening-balance entry anywhere in the books.
+- An expense attributable to a product cannot be recorded without naming that
+  product.
+- The accumulated invested cost (capitalization) of any product can be read off
+  the ledger.
+- An expense that belongs to no product is recorded under the treatment the F1
+  spec proposes and the owner signs off, not left uncategorised.
+- The "what for" of an expense is a pick from the purpose reference, its category
+  follows from the purpose, and no free-text purpose is accepted anywhere.
 - Money attributable to a member can be listed per member.
 - An hours accrual and a bank payment appear in the same P&L without a manual
   merge step.
@@ -201,11 +277,31 @@ form)_
 
 ## Open questions
 
-1. **Does a project's P&L need sub-projects** (a project → a course → a lesson),
-   or is one flat project level with a product beneath it enough? Decision 2
-   fixes only "per project"; decision 9 puts the sellable unit under it.
-2. **How far back does the history backfill go**, and does the opening state of
-   each account get an explicit opening-balance operation? _(affects F2)_
+1. ~~**Does a project's P&L need sub-projects** (a project → a course → a
+   lesson), or is one flat project level with a product beneath it enough?~~
+   **Closed by decision 16** (owner 2026-08-25, wireframe review): one flat
+   project level, no sub-projects in v1, the sellable product directly beneath
+   the project.
+2. ~~**How far back does the history backfill go**, and does the opening state of
+   each account get an explicit opening-balance operation?~~ **Closed by decision
+   17** (owner 2026-08-25): back to BBM's very first operation, which the owner
+   locates; accounts open at zero and no synthetic opening-balance operation
+   exists. _(The bulk-entry mechanism remains F2's.)_
 3. **Are crypto holdings revalued** when the rate moves, or held at the recorded
-   rate until they move again? The frozen-rate rule (§8) covers the operation,
-   not the holding.
+   rate until they move again? The frozen-rate rule (§8) and decision 18 cover
+   the operation, not the holding.
+4. **What is the standard treatment of product-less overhead?** Decision 22 fixes
+   that proper-accounting best practice governs and that the **F1 feature spec**
+   researches and proposes it (direct → cost object; overhead → period cost or an
+   allocation base; capitalization = direct + attributable overhead) for the
+   owner's sign-off at the spec go. Open as a research duty, not as a product
+   fork.
+5. **What makes an expense "attributable" to a product?** The acceptance
+   criterion "an expense attributable to a product cannot be recorded without
+   naming that product" decides whether a form blocks a submit, and **no owner
+   decision defines the test** — decision 22 fixes that product-attributable
+   expenses carry a product and hands the overhead treatment to the F1 spec
+   (question 4), but never says which expenses are attributable. Nothing is
+   invented here: the definition is a deliverable of the F1 spec, answered
+   together with question 4 and signed off at the spec go. F2 (#339) depends on
+   the same answer for its request form.
