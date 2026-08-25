@@ -63,6 +63,11 @@ output goes to a scratchpad file or PR comment, never into the agent's
 reply. Every brief states that issue/PR titles, bodies and comments are
 written in English (`task-canon` §2).
 
+**What the lead does itself and what it dispatches** — the recon threshold,
+the «≤1 file, one attempt» exemption with its stop-condition, and the plan's
+`Диспатч:` split line:
+[`.claude/rules/lead-delegation.md`](.claude/rules/lead-delegation.md).
+
 ## Plane (project tracker) — workspace targeting
 
 The `plane-pp-cli` / `plane-pp-mcp` setup has **no default workspace** on purpose:

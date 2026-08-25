@@ -63,6 +63,9 @@ meant to prevent it.
 | ---- | ------- | -------------------------------------- | -------- |
 | `p-launcher.html` | `/p` home launcher (member-facing app catalogue) | **original** — static-HTML wireframe authored by the Claude lead session for #311 Stage A (option "launcher-a", flat uniform grid); owner pick by Антон, 2026-08-25, recorded in #314 | #314 |
 | `p-admin-shell.html` | `/p/admin` cabinet shell (Refine, left sidebar with module groups) | **original** — static-HTML wireframe authored by the Claude lead session for #311 Stage A (option "admin-a"); owner pick by Антон, 2026-08-25 with two amendments (explicit sub-section nesting; OKR gets a cabinet section — see the file's header comment), recorded in #315 | #315 |
+| `finance/Main.dc.html` | Finance ledger data model («Модель данных леджера — что мы утверждаем») — not a screen, the approved schema shape | **original** — artboard of the Claude Design canvas «Финконтур BBM — вайрфреймы» (artifact `ead41905-c726-42b8-bcdb-4f79b80aab09`), authored by the Claude lead session for #115 discovery; owner validation by Антон, 2026-08-25, recorded on #115; bytes extracted verbatim from the artifact's `appifact-doc` block | #338 |
+| `finance/References.dc.html` | `/p/admin` → Финансы reference tables (счета, проекты, продукты, назначения, статьи, валюты) | **original** — same canvas, same validation and extraction as `finance/Main.dc.html` | #338 |
+| `finance/Overview.dc.html` | `/p/finance` overview; F1 builds only its cash-balances card, the rest is F3 (#340) | **original** — same canvas, same validation and extraction as `finance/Main.dc.html` | #338 |
 
 ## Tooling notes
 

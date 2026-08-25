@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #fafaf9; color: #1c1917; }
+    a { color: #1d4ed8; } a:hover { color: #1e40af; }
+    .ent { border: 1.5px solid #57534e; border-radius: 6px; background: #ffffff; box-shadow: 2px 2px 0 #e7e5e4; }
+    .ent h3 { margin: 0; padding: 6px 10px; font-size: 13px; border-bottom: 1.5px solid #57534e; background: #f5f5f4; }
+    .ent ul { margin: 0; padding: 6px 10px 8px; list-style: none; font-size: 11px; line-height: 1.55; }
+    .ent li { white-space: nowrap; }
+    .fk { color: #1d4ed8; }
+    .q { color: #b45309; }
+    .note { font-size: 11px; color: #57534e; }
+    .grp { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; }
+  </style>
+</helmet>
+<div style="width: 1500px; height: 1080px; padding: 24px 28px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+  <div style="display: flex; align-items: baseline; gap: 16px">
+    <div style="font-size: 20px; font-weight: 700">Модель данных леджера — что мы утверждаем</div>
+    <div class="note">поля <span class="fk">синим</span> — ссылки на другую сущность · <span class="q">оранжевым</span> — открытый вопрос владельцу</div>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; flex: 1">
+
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <div class="grp">Справочники (редактируемые)</div>
+      <div class="ent"><h3>Валюта</h3><ul>
+        <li>код (RUB, THB, USDT…)</li><li>минимальная единица</li><li>точность (копейки / сатоши)</li>
+      </ul></div>
+      <div class="ent"><h3>Счёт</h3><ul>
+        <li>название</li><li>тип: банк / карта / крипто / нал</li><li class="fk">валюта →</li>
+        <li class="note">старт с нуля; история с самой первой операции (реш. 17)</li>
+      </ul></div>
+      <div class="ent"><h3>Проект</h3><ul>
+        <li>название (Doctor.School, …)</li><li>«Фонд BBM» — особая строка</li>
+        <li class="note">один уровень, без подпроектов (реш. 16)</li>
+      </ul></div>
+      <div class="ent"><h3>Продукт (продаваемая единица)</h3><ul>
+        <li class="fk">проект →</li><li>название (урок, курс…)</li><li>цена продажи (если задана)</li>
+        <li>капитализация — считается из проводок (реш. 22)</li>
+      </ul></div>
+      <div class="ent"><h3>Назначение расхода</h3><ul>
+        <li>название («аренда студии»…)</li><li class="fk">статья →</li>
+        <li class="note">заявка выбирает отсюда, не текстом (реш. 21)</li>
+      </ul></div>
+      <div class="ent"><h3>Статья расходов</h3><ul>
+        <li>название · подкатегория свободна</li>
+        <li>флаг: в себестоимость / расход периода</li>
+        <li>retired (не удаляется, уходит в архив)</li>
+        <li class="note">стартует ПУСТОЙ — список выводится из факта (реш. 11)</li>
+      </ul></div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <div class="grp">Факт (неизменяемое ядро)</div>
+      <div class="ent"><h3>Операция</h3><ul>
+        <li>дата · назначение</li>
+        <li class="fk">источник → (заявка / банк / hours / вручную / бэкфилл)</li>
+        <li>флаг: перенесена задним числом</li>
+        <li class="fk">сторнирует → операцию (если сторно)</li>
+        <li class="fk">группа конвертации → (если обмен)</li>
+      </ul></div>
+      <div class="ent"><h3>Проводка (двойная запись)</h3><ul>
+        <li class="fk">операция →</li><li class="fk">счёт →</li>
+        <li>дебет / кредит · сумма (bigint, мин. единицы)</li>
+        <li class="fk">валюта →</li>
+        <li class="fk">проект → (или Фонд)</li>
+        <li class="fk">статья → · <span class="fk">продукт →</span> (если относимо)</li>
+        <li class="fk">участник → (если персонально)</li>
+      </ul></div>
+      <div class="ent"><h3>Группа конвертации</h3><ul>
+        <li>связанные проводки: ушло / пришло</li>
+        <li>комиссия каждого шага — своя проводка</li>
+        <li>курс, замороженный на дату операции</li>
+        <li class="q">переоценивать ли крипто-остатки?</li>
+      </ul></div>
+      <div class="ent"><h3>Обязательство (долг)</h3><ul>
+        <li>начислено, но не выплачено (команде)</li>
+        <li>возместить участнику (потратил своё)</li>
+        <li class="note">видно в отчётах всегда (реш. 14)</li>
+      </ul></div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <div class="grp">Наполнение (источники)</div>
+      <div class="ent"><h3>Заявка на расход</h3><ul>
+        <li class="fk">участник → · <span class="fk">проект →</span></li>
+        <li>сумма · <span class="fk">валюта →</span> · назначение</li>
+        <li>флаг «уже потрачено» (реш. 12)</li>
+        <li class="fk">документы → (инвойс, чек)</li>
+        <li>статус: ждёт / одобрена / отклонена</li>
+        <li class="fk">одобрил → · порождает операцию →</li>
+        <li class="q">отказ — с причиной?</li>
+      </ul></div>
+      <div class="ent"><h3>Документ</h3><ul>
+        <li>файл (инвойс, чек, выписка)</li>
+        <li class="fk">прикреплён к заявке / операции →</li>
+      </ul></div>
+      <div class="ent"><h3>Импорт выписки</h3><ul>
+        <li>файл · банк · формат</li>
+        <li>кандидаты → дедупликация → разметка</li>
+        <li class="note">ничего не проводится без подтверждения</li>
+        <li class="q">какие банки/форматы в v1?</li>
+      </ul></div>
+      <div class="ent"><h3>Начисления из /p/hours</h3><ul>
+        <li>закрытый период → операции ФОТ</li>
+        <li>ставка × часы · cash / invest части</li>
+        <li>повторное закрытие не дублирует</li>
+        <li class="q">проводить по участнику или суммарно?</li>
+      </ul></div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <div class="grp">Производные (ничего не хранят)</div>
+      <div class="ent"><h3>Отчёты — чтение проводок</h3><ul>
+        <li>Реестр · P&amp;L · Cash flow</li>
+        <li>Себестоимость единицы · Безубыточность</li>
+        <li>валюта отчёта переключаемая, RUB по умолчанию</li>
+        <li>курс — фактический, на дату операции (реш. 18)</li>
+      </ul></div>
+      <div class="ent"><h3>Сверка с финмоделью</h3><ul>
+        <li>ожидание из SSOT: резерв %, сектора, роялти</li>
+        <li>факт из проводок · разрыв = число</li>
+      </ul></div>
+      <div class="ent"><h3>Сценарий (план)</h3><ul>
+        <li>базлайн = факт на дату</li>
+        <li>строки-допущения: будущий расход / доход / цена</li>
+        <li>план НИКОГДА не смешивается с фактом (реш. 14)</li>
+        <li>базлайн пересчитывается при открытии (реш. 20)</li>
+      </ul></div>
+      <div style="border: 1.5px dashed #a8a29e; border-radius: 6px; padding: 10px 12px; font-size: 11px; color: #57534e; line-height: 1.5">
+        Правила ядра (спека §8, не пересматриваем): двойная запись · проводки неизменяемы, исправление — сторно · суммы bigint в минимальных единицах · курс конвертации заморожен на момент операции.
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -52,5 +52,11 @@
   the same process could no longer spawn even `node -e "process.exit(7)"` with a
   minimal env, while a fresh node on the same box forked fine. It is the PROCESS,
   not the code, not the box: kill that stand's PID and start a new one.
+- **Учётные данные с бокса ДРУГОЙ системы — стоп-состояние, а не действие.**
+  Зайти на `hermes-prod-tw`, truenas или чужой прод, чтобы достать оттуда ключ,
+  токен или пароль, — это вопрос владельцу, а не шаг лида, даже когда точно
+  известно, что ключ там лежит. Свой бокс этой задачи — можно; соседний — нет.
+  _(2026-08-25: лид ушёл по ssh на прод Гермеса за учёткой без единого вопроса;
+  владелец: «Не понял, как мы вообще отсюда затронули Гермеса?».)_
 - Parallel sessions, worktrees and the rules about other sessions' listeners:
   [`parallel-sessions.md`](./parallel-sessions.md).
