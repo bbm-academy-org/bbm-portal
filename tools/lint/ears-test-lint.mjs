@@ -98,18 +98,33 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  * the obligation stays visible. Keep it SHORT; the stale check below makes it a
  * ratchet that only tightens. Seam: `LINT_EARS_DEFERRALS` (JSON) replaces it.
  *
- * **Today: spec 201's EARS-23 only.** The list is short because the guard's id
- * namespace is FLAT: spec 124 declares EARS-1..22 and EARS-25..32 and its own
- * tests cite every one of those ids, so the guard reads spec 201's clauses
- * sharing them as covered and a deferral for them would be reported stale.
- * EARS-23, EARS-24 and EARS-33 are the only ids spec 124 skips (it stops at
- * EARS-32), which is why they were the whole list while spec 201 was `Draft`.
- * #273 landed EARS-24 and EARS-33 with real tests
+ * **Today: spec 201's EARS-23, plus spec 311's whole clause set.** The first
+ * list stayed short because the guard's id namespace is FLAT: spec 124 declares
+ * EARS-1..22 and EARS-25..32 and its own tests cite every one of those ids, so
+ * the guard reads spec 201's clauses sharing them as covered and a deferral for
+ * them would be reported stale. EARS-23, EARS-24 and EARS-33 are the only ids
+ * spec 124 skips (it stops at EARS-32), which is why they were the whole list
+ * while spec 201 was `Draft`. #273 landed EARS-24 and EARS-33 with real tests
  * (`tests/int/platform/audit-*.int.spec.ts`), so they left the list; EARS-23 —
  * the read path, «SQL run by an agent» — has no automated counterpart until a
  * surface over the ledger exists.
  * That conflation is recorded as decision debt in `DEBT.md`; the entries here
  * are only the ids the guard genuinely reports uncovered.
+ *
+ * **The 2026-08-25 round is a new state for this repo and is why the list is no
+ * longer short.** `docs/specs/311-portal-workspace.md` (epic #112, the portal
+ * workspace frame) was approved by the owner BEFORE its first line of code —
+ * a spec that leads its implementation rather than following it — and it is
+ * decomposed into six issues that each build one slice of it. Its 70 live
+ * clauses are numbered EARS-401..478 precisely so the flat keyspace above does
+ * NOT swallow them (they would otherwise read as covered by spec 124's and
+ * spec 201's tests), which means they are all genuinely uncovered on the day
+ * the spec lands. Every one of them is keyed below to the OPEN issue that
+ * implements it, taken from that spec's own «Follow-up tasks» and
+ * «Frame-level work that must be budgeted inside those issues» tables. The
+ * ratchet works as designed: each issue's PR writes the tests, the stale check
+ * then fails until that issue's ids are dropped from this list, and the list
+ * shrinks back to short as epic #112 lands.
  *
  * The previous round was spec 124's
  * **EARS-15** — «archive the JSON and delete its code path» — which could not be
@@ -127,6 +142,104 @@ const DEFERRALS_BY_ISSUE = {
     ids: ['EARS-23'],
     reason:
       'spec 201 EARS-23 is the READ path — «SQL run by an agent, result pasted into the issue» — which has no automated counterpart by construction: there is no route, no UI and no code to assert on until a surface over the ledger exists. EARS-24 and EARS-33 left this list when #273 landed their tests under tests/int/platform/audit-*.int.spec.ts',
+  },
+  312: {
+    ids: ['EARS-458'],
+    reason:
+      'spec 311 §H, the src/ui half of the boundary set: «pnpm boundaries shall forbid src/ui from importing any module». The rule cannot be written before the directory it keys on exists, and #312 is the issue that creates src/ui together with its dependency-cruiser boundary',
+  },
+  313: {
+    ids: [
+      'EARS-414',
+      'EARS-415',
+      'EARS-416',
+      'EARS-417',
+      'EARS-418',
+      'EARS-459',
+      'EARS-460',
+      'EARS-461',
+      'EARS-462',
+      'EARS-466',
+    ],
+    reason:
+      'spec 311 §B — the two starting Zitadel project roles, the (platform) layout gate, the bare 403, grant/revoke behaviour and the fail-closed re-check every module handler owes. #313 provisions the roles and builds the gate; none of it can be asserted before that role claim and that layout exist',
+  },
+  314: {
+    ids: [
+      'EARS-401',
+      'EARS-402',
+      'EARS-403',
+      'EARS-404',
+      'EARS-405',
+      'EARS-406',
+      'EARS-407',
+      'EARS-408',
+      'EARS-409',
+      'EARS-410',
+      'EARS-412',
+      'EARS-413',
+      'EARS-422',
+      'EARS-423',
+      'EARS-425',
+      'EARS-427',
+      'EARS-428',
+      'EARS-429',
+      'EARS-430',
+      'EARS-456',
+      'EARS-457',
+      'EARS-468',
+      'EARS-469',
+      'EARS-470',
+      'EARS-471',
+      'EARS-477',
+      'EARS-478',
+    ],
+    reason:
+      "spec 311 §A (the module plug-in contract and its composition root), §C (the /p launcher, the shared top bar and the four tile forms including the «портфель, позже» placeholders) and the two registry boundary rules of §H. §A has no separate issue by the spec's own Follow-up tasks: it is the first deliverable of #314, the first consumer to need it. EARS-430 is the one clause of the spec with no machine-checkable assertion at all — «built from src/ui, hand-rolled styles are a review stop-factor» is a reviewer's verdict under .claude/rules/design-process.md — so it is expected to leave this list by being retired or rewritten in #314, not by a test",
+  },
+  315: {
+    ids: [
+      'EARS-431',
+      'EARS-432',
+      'EARS-433',
+      'EARS-434',
+      'EARS-435',
+      'EARS-436',
+      'EARS-437',
+      'EARS-439',
+      'EARS-440',
+      'EARS-453',
+      'EARS-455',
+      'EARS-463',
+      'EARS-464',
+      'EARS-465',
+      'EARS-472',
+      'EARS-473',
+      'EARS-474',
+      'EARS-475',
+      'EARS-476',
+    ],
+    reason:
+      "spec 311 §D (the /p/admin Refine shell, its navigation, breadcrumbs, save answers and attribution) and §G (the OKR cabinet section and the one read-only accessor it needs), which the spec's Follow-up tasks both assign to #315. EARS-463..465 — the /api/p/* host-allowlist change and its Host-matrix rows — sit here by the spec's «Frame-level work» table: they are the prerequisite for the FIRST /api/p/* handler to answer, and that table names #315 as their owner unless #313 is planned first, in which case this entry moves with the row",
+  },
+  316: {
+    ids: ['EARS-441', 'EARS-442', 'EARS-443', 'EARS-444', 'EARS-445'],
+    reason:
+      "spec 311 §E — the members resource, its aliases, the read-only email and deactivation-instead-of-delete. #316 both builds the screens and extends src/lib/member's public API with the create/alias operations they need",
+  },
+  317: {
+    ids: [
+      'EARS-421',
+      'EARS-446',
+      'EARS-447',
+      'EARS-448',
+      'EARS-449',
+      'EARS-450',
+      'EARS-451',
+      'EARS-452',
+    ],
+    reason:
+      "spec 311 §F — moving the hours administration into the cabinet and retiring /p/hours/admin. EARS-421 (HOURS_ADMIN_EMAILS gone from the shipped code) sits here rather than in §B because the spec's «Frame-level work» table gives #317 the rewrite-or-retire of the five unit specs that assert the old env gate",
   },
 }
 

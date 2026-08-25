@@ -156,7 +156,10 @@ home starts from zero, which is why the discovery ran before the build.
 
 ## Design gate
 
-Stage A (task-cycle 1b) for the `/p` launcher and the `/p/admin` shell **has not
-run yet**. Layout options and the owner's pick are recorded in issue #311 and
-vendored into `design-source/` before any markup; the per-feature PRDs carry an
-empty slot for the pick.
+Stage A (task-cycle 1b) for the `/p` launcher and the `/p/admin` shell **ran on
+2026-08-25** under issue #311. Антон picked `launcher-a` («Единая сетка») and
+`admin-a` («Левый сайдбар с группами модулей»); both are vendored into
+`design-source/` (`p-launcher.html`, `p-admin-shell.html`) with provenance rows
+in `design-source/README.md`, the picks are recorded as comments on #314 and
+#315, and each per-feature PRD carries its own pick under "Design pick
+(Stage A)".

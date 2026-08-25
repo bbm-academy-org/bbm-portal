@@ -33,11 +33,17 @@ around it).
 
 ## Design pick (Stage A)
 
-Stage A (task-cycle 1b) has not run. Two to three layout options for the
-launcher and the top bar go to the owner in issue #311; the pick is vendored
-into `design-source/` with a provenance row before any markup.
+Stage A (task-cycle 1b) ran on 2026-08-25 under the discovery issue **#311**,
+whose scope puts the Stage-A options to the owner: the layout options for the
+launcher and the top bar went to him there, the **pick** is recorded as a
+comment on #314 (the issue that will build them), and the picked file is
+vendored into `design-source/` with a provenance row in
+`design-source/README.md`.
 
-> Pick: _pending_.
+> Pick: **`launcher-a`** («Единая сетка», flat uniform grid) →
+> `design-source/p-launcher.html`, picked by Антон on 2026-08-25. The file draws
+> the «портфель, позже» placeholder tiles of US-13, and per
+> `.claude/rules/design-process.md` §1 the file is what gets built.
 
 ## User stories
 
@@ -71,6 +77,12 @@ into `design-source/` with a provenance row before any markup.
   me a working tile I can open, and the home never waits on it. _(`lead-decided`)_
 - **US-12** — As a member on `/p` itself, the top bar shows me its home state and
   names no current app. _(`lead-decided`)_
+- **US-13** — As a member, the home also shows me the apps BBM has committed to
+  building but has not shipped yet, as greyed «портфель, позже» placeholders, so
+  I can tell a young workspace from a small one. _(owner decision at the go,
+  Антон, 2026-08-25 — it overrules the pre-go lead call that the wireframe's
+  greyed tiles were a wireframe device; the vendored
+  `design-source/p-launcher.html` wins per `.claude/rules/design-process.md` §1)_
 
 ## Flows
 
@@ -87,7 +99,20 @@ Member opens a tile → the app renders with the same top bar, now naming that a
 An admin opens `/p` and sees the admin entry among the apps; a regular member's
 home has no admin tile and no admin entry in the switcher. Absence is the whole
 treatment — no greyed-out tile, no "you don't have access" placeholder. _(owner
-decision 3; the "no greyed tile" reading is `lead-decided`)_
+decision 3; the "no greyed tile" reading is `lead-decided`)_ This is about
+**claim gating only** and does not conflict with the portfolio placeholders
+below: a claim-gated app is absent from the response entirely, while a
+placeholder is a portfolio promise shown identically to every member.
+
+**A portfolio app that does not exist yet.**
+The home renders one greyed, dashed «портфель, позже» tile per not-yet-live app
+of the target portfolio — in v1 six: Финансы, Колоды, CRM, Поиск команды, Запуск
+проекта, Калькуляторы. They carry no status line, are not clickable and are not
+reachable by keyboard; they appear last in the grid, and nowhere else — not in
+the app switcher, not in `/p/admin`. Task management is the one not-yet-live app
+without a placeholder: the external Plane entry already represents it. When an
+app ships, its placeholder is replaced by the real entry. _(owner decision at the
+go, 2026-08-25; the spec's clauses are EARS-477/EARS-478)_
 
 **An external link.**
 Member opens the Plane / Mattermost / KB entry → it is visibly marked as
@@ -113,6 +138,9 @@ _(`lead-decided`: no designed empty state)_
 - A tile whose module supplies a status line shows that line.
 - A tile whose module supplies none is complete and openable.
 - An app requiring a claim the member lacks does not appear on the screen.
+- A portfolio app that is not live yet appears as a greyed, non-interactive
+  «портфель, позже» placeholder, shown identically to every member, and
+  disappears when that app ships.
 - Every `/p/*` page shows the shared top bar.
 - From any `/p/*` page a member can reach the workspace home in one action.
 - From any `/p/*` page a member can tell which app they are in.
@@ -145,7 +173,10 @@ _(`lead-decided`: no designed empty state)_
 
 - Top bar ships with the launcher as one piece (`lead-decided`).
 - External entries: same registry, marked external, new tab (`lead-decided`).
-- Claim-gated apps are absent, never greyed out (`lead-decided`).
+- Claim-gated apps are absent, never greyed out (`lead-decided`). **Amended at
+  the go (2026-08-25):** this stays true for claim gating, and a _different_
+  class of greyed tile now exists — the portfolio placeholders of US-13, which
+  carry no claim logic at all.
 - Flat grid in v1; no grouping, search or pinning (`lead-decided`).
 - Basic responsiveness; switcher collapses into a menu (`lead-decided`).
 - On `/p` the bar shows home state, no app name (`lead-decided`).
@@ -154,5 +185,8 @@ _(`lead-decided`: no designed empty state)_
 
 ## Open questions
 
-None outstanding at the product layer. The remaining decisions are the Stage-A
-layout picks for the launcher and the top bar, recorded in issue #311.
+None outstanding at the product layer. The Stage-A layout pick for the launcher
+and the top bar was taken by Антон on 2026-08-25 (option `launcher-a`, vendored
+as `design-source/p-launcher.html`), and the last open product call — whether
+the not-yet-live portfolio apps are drawn as placeholders — was decided at the
+same go in favour of rendering them (US-13).

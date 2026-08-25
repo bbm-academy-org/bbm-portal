@@ -85,8 +85,13 @@ registry is the single source, so no frame cleanup is needed. _(`lead-decided`)_
 
 Outcome language; the feature spec restates these as EARS clauses.
 
-- A module author can add a new app to the workspace by editing only files
-  inside that module.
+- A module author can add a new app to the workspace by editing that module's
+  own files plus exactly one import and one array element in the composition
+  root `src/lib/workspace/registry.ts` — and zero lines in the launcher, the top
+  bar or the admin shell, none of which holds a list of apps. _(Amended
+  2026-08-25 by D-2 of `docs/specs/311-portal-workspace.md`: discovery is an
+  explicit composition root, not filesystem globbing, so "only files inside that
+  module" was never buildable as written.)_
 - An app registered once is listed in the launcher and in the top-bar app
   switcher without a second registration.
 - A module that declares an admin section has that section and its resources in
