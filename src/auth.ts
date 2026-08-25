@@ -1,7 +1,11 @@
 import NextAuth from 'next-auth'
 import Zitadel from 'next-auth/providers/zitadel'
 
-import { ZITADEL_ROLES_CLAIM, normalizeRolesClaim } from '@/lib/platform/authGate'
+import {
+  ZITADEL_ROLES_CLAIM,
+  normalizeRolesClaim,
+  rolesClaimStamped,
+} from '@/lib/platform/authGate'
 
 /**
  * Auth.js (next-auth v5) — the in-app OIDC session for the BBM Platform surface
@@ -69,6 +73,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Fail closed: a token with no readable roles yields an empty set, never
       // an absent field a downstream check could read as "not applicable".
       session.user.roles = normalizeRolesClaim(token.roles)
+      // …but "read and empty" and "never read" are different facts, and only
+      // the token's shape carries the difference. Sessions minted before this
+      // build have no `roles` field at all: the strategy is the default JWT
+      // with the default 30-day maxAge and no adapter, so on the deploy of the
+      // gate every already-signed-in member of the live workspace arrives with
+      // such a token. `resolveClaimGate` sends exactly those through sign-in
+      // once — the pass above always stamps the field — instead of into the
+      // bare 403 of EARS-418, which is meant for an account the IdP grants
+      // nothing, not for a cookie older than the feature.
+      session.user.rolesClaimAbsent = !rolesClaimStamped(token)
       return session
     },
   },

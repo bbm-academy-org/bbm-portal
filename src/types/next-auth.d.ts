@@ -19,6 +19,14 @@ declare module 'next-auth' {
   interface Session {
     user: {
       roles: string[]
+      /**
+       * TRUE only for a session built from a token minted before the roles
+       * claim existed (`src/auth.ts`). Negative on purpose: absent means the
+       * claim WAS read, which is what every session this build mints carries.
+       * `sessionPredatesRolesClaim` in `src/lib/platform/authGate.ts` is the
+       * only reader.
+       */
+      rolesClaimAbsent?: boolean
     } & DefaultSession['user']
   }
 }

@@ -8,6 +8,7 @@ import {
   hasClaim,
   normalizeRolesClaim,
   resolveClaimGate,
+  rolesClaimStamped,
   sessionRoles,
 } from '@/lib/platform/authGate'
 
@@ -152,5 +153,60 @@ describe('claimGateResponse — the handler-side boundary (EARS-461, EARS-462)',
 
   it('is fail-closed for an unknown claim: no role set grants what was never provisioned', () => {
     expect(claimGateResponse(admin, 'cms-editor')?.status).toBe(403)
+  })
+})
+
+describe('a session minted BEFORE the roles claim existed (deploy migration)', () => {
+  /**
+   * The gate ships onto a live workspace whose users already hold Auth.js JWT
+   * session cookies (default strategy, 30-day maxAge, no adapter). Those tokens
+   * were minted before `src/auth.ts` stamped any roles, so they carry no
+   * `roles` field at all — and "the claim was never fetched" is NOT the same
+   * fact as "the claim was fetched and came back empty". EARS-418 is about the
+   * second; the first is a migration artefact the spec never asked to punish,
+   * and treating it as a refusal strands every existing session in a bare 403
+   * with no way back for up to 30 days.
+   *
+   * The recovery is ONE forced re-authentication: the sign-in pass always
+   * stamps the field (to `[]` if the IdP grants nothing), so the redirect
+   * cannot repeat — the second decision is a real EARS-418 refusal or a render.
+   */
+  const legacy = { user: { email: 'old@bbm.local', roles: [], rolesClaimAbsent: true } }
+  const refused = { user: { email: 'n@bbm.local', roles: [], rolesClaimAbsent: false } }
+
+  it('tells a token that never got the field apart from one stamped empty', () => {
+    expect(rolesClaimStamped({ sub: 'x' })).toBe(false)
+    expect(rolesClaimStamped({ sub: 'x', roles: [] })).toBe(true)
+    expect(rolesClaimStamped({ sub: 'x', roles: [PLATFORM_USER_ROLE] })).toBe(true)
+    expect(rolesClaimStamped(null)).toBe(false)
+    expect(rolesClaimStamped(undefined)).toBe(false)
+    expect(rolesClaimStamped('roles')).toBe(false)
+  })
+
+  it('sends a legacy session through sign-in once instead of into an inescapable 403', () => {
+    expect(resolveClaimGate(legacy, '/p')).toEqual({
+      type: 'redirect',
+      to: '/api/auth/signin?callbackUrl=%2Fp',
+    })
+    expect(resolveClaimGate(legacy, '/p/admin', PLATFORM_ADMIN_ROLE)).toEqual({
+      type: 'redirect',
+      to: '/api/auth/signin?callbackUrl=%2Fp%2Fadmin',
+    })
+  })
+
+  it('still refuses a session that DID carry the claim and holds no role (EARS-418)', () => {
+    expect(resolveClaimGate(refused, '/p')).toEqual({ type: 'forbidden' })
+    expect(resolveClaimGate(refused, '/p/admin', PLATFORM_ADMIN_ROLE)).toEqual({
+      type: 'forbidden',
+    })
+  })
+
+  it('cannot loop: a re-authenticated session decides on its claim, not on the marker', () => {
+    const reauthed = { user: { email: 'old@bbm.local', roles: [PLATFORM_USER_ROLE] } }
+    expect(resolveClaimGate(reauthed, '/p')).toEqual({ type: 'render' })
+  })
+
+  it('leaves a handler on the bare 403 — a route handler never redirects', () => {
+    expect(claimGateResponse(legacy)?.status).toBe(403)
   })
 })
