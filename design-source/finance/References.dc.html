@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #1c1917; }
+    a { color: #1d4ed8; } a:hover { color: #1e40af; }
+    .e { font-family: ui-monospace, monospace; font-size: 9px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+    .card { border: 1.5px solid #a8a29e; border-radius: 6px; background: #fafaf9; }
+    .card h4 { margin: 0; padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #d6d3d1; }
+    .card div.rows { padding: 8px 12px; font-size: 12px; line-height: 1.8; }
+    .tag { font-size: 10px; border: 1px solid #d6d3d1; border-radius: 3px; padding: 0 4px; color: #57534e; background: #ffffff; }
+    .sub { font-size: 11px; color: #78716c; }
+  </style>
+</helmet>
+<div style="width: 1180px; height: 940px; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+  <div style="font-size: 11px; color: #78716c">/p/admin → Финансы · справочники живут в общей админке воркспейса (эпик #112), не во втором кабинете</div>
+  <div style="font-size: 18px; font-weight: 700">Справочники — редактируются без релиза</div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; flex: 1">
+    <div class="card">
+      <h4>Счета <span class="e">счёт</span></h4>
+      <div class="rows">
+        Банк RUB · банк · ₽<br>
+        Карта THB · карта · ฿<br>
+        Крипто USDT · кошелёк · ₮<br>
+        Наличные · нал · ₽<br>
+        <span class="tag">+ счёт</span>
+      </div>
+    </div>
+    <div class="card">
+      <h4>Проекты <span class="e">проект</span></h4>
+      <div class="rows">
+        Фонд BBM <span class="sub">(особая строка)</span><br>
+        Doctor.School<br>
+        <span class="tag">+ проект</span><br>
+        <span class="sub">один уровень, без подпроектов (реш. 16)</span>
+      </div>
+    </div>
+    <div class="card">
+      <h4>Продукты <span class="e">продукт</span></h4>
+      <div class="rows">
+        Doctor.School → Урок · цена не задана · капитализация: 172 500 ₽<br>
+        Doctor.School → Курс «Кардио» · 120 000 ₽ · капитализация: 517 500 ₽<br>
+        <span class="tag">+ продукт</span> <span class="sub">— капитализация = накопленные вложения из проводок (реш. 22)</span>
+      </div>
+    </div>
+    <div class="card">
+      <h4>Назначения расходов <span class="e">назначение → статья</span></h4>
+      <div class="rows">
+        Аренда студии → Продакшн<br>
+        Такси до площадки → Продакшн<br>
+        Домен/хостинг → SaaS<br>
+        <span class="tag">+ назначение</span> <span class="sub">— заявка выбирает отсюда, не свободным текстом (реш. 21)</span>
+      </div>
+    </div>
+    <div class="card" style="border-style: dashed">
+      <h4>Статьи расходов <span class="e">статья</span></h4>
+      <div class="rows">
+        <span class="sub">ПУСТО — намеренно (решение 11).<br>Список приедет из разметки факта после бэкфилла и будет утверждён владельцем.<br>У каждой статьи: флаг «в себестоимость / период», retired вместо удаления.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h4>Валюты <span class="e">валюта</span></h4>
+      <div class="rows">
+        RUB · копейки · 10⁻²<br>
+        THB · сатанг · 10⁻²<br>
+        USDT · 10⁻⁶<br>
+        <span class="tag">+ валюта</span> <span class="sub">— новая валюта доступна сразу, без релиза</span>
+      </div>
+    </div>
+    <div class="card">
+      <h4>Роли <span class="e">claim-гейт (#112)</span></h4>
+      <div class="rows">
+        Участник: подаёт заявки, видит свои<br>
+        Владелец: одобряет = проводит, правит справочники<br>
+        <span class="sub" style="color: #b45309">кто ещё «владельцы» кроме Антона? — вопрос</span>
+      </div>
+    </div>
+  </div>
+  <div class="sub">никакая правка справочника не меняет прошлое: проводки держат ссылки, статья в употреблении не удаляется, а retired</div>
+</div>
+</x-dc>
+</body>
+</html>
