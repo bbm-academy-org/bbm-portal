@@ -28,6 +28,20 @@ a handoff, task text, or config is a HYPOTHESIS: a mismatch with the tracker,
 or an unproven "already agreed" claim, goes to the owner as a question — it is
 not executed. (Memory: `orient-before-acting`.)
 
+**The plan carries the dispatch split, in one mandatory line:**
+
+```
+Диспатч: <agent type + model> на <часть> · лид оставляет себе <часть>
+```
+
+The split is stated and **owner-visible BEFORE the «го»**, not decided while
+working. A plan whose lead column contains implementation, drafting or bulk
+recon is **wrong at approval time** — it is corrected before the go, not after.
+Thresholds behind the split (recon > 3 read-only calls on one question; the
+«≤1 file, one attempt» exemption):
+[`.claude/rules/lead-delegation.md`](../../rules/lead-delegation.md).
+(2026-08-25: the owner had to say «оркеструй» five times in one week.)
+
 Any external reference the plan leans on (mockup, prototype, config) is named
 with an **artifact passport: path + owner + type — original / export / build**;
 if the original was not opened, the plan says «оригинал не проверен» outright.

@@ -136,10 +136,23 @@ mechanism (hook/lint) — never another paragraph of prose.
 ## Phase 2 — propose concrete diffs (MANDATORY approval gate)
 
 Present the understanding-check first (owner confirms/corrects). Then a compact
-`Finding → recurrence → Destination → Exact change` table, each mapped to its
-finding, favoring deterministic `remedy_kind` (`prose-not-enforced` →
-skill/command/hook/lint, not more prose); a `recurrence: yes` row may not be
+`Finding → recurrence → Destination → Exact change → когда строим` table, each
+mapped to its finding, favoring deterministic `remedy_kind` (`prose-not-enforced`
+→ skill/command/hook/lint, not more prose); a `recurrence: yes` row may not be
 remedied with prose.
+
+**«Когда строим» is a mandatory column, and «фоном» is not a value.** Allowed
+values are «в этой сессии», «в PR этого ретро» or a named blocking issue —
+"background, whenever" / «фоном, когда будет время» is banned outright: a remedy
+scheduled that way is a remedy that never lands. _(symptom 2026-08-25: the
+previous retro's remedies were filed and parked «фоном»; the same themes
+recurred inside 24 hours.)_
+
+**A `channel:retro` issue is the mechanical cure for a REPEAT theme
+(`recurrence: yes`), and it is scheduled the moment it is filed:** milestone
+**«Platform: operations and hardening»**, and it is named in the session
+handoff's «Next steps» as a **blocking prerequisite of the next task of that
+class**. An issue filed without both is parked, not scheduled.
 
 **This gate is non-bypassable.** Nothing in phase 3 lands without the owner's
 explicit "go" in THIS session, on THIS list:
@@ -261,6 +274,14 @@ post-process its output here, never edit the skill):
   implementation through merge, prepend: «чекпойнт с владельцем до начала
   имплементации — handoff ≠ согласие владельца на объём». _(symptom: следующая
   сессия дошла до merge по ошибочному handoff без единого чекпойнта.)_
+
+**Then give the session's final report a URL.** After `handoff-prompt` returns,
+paste this session's stage-6 report (`.claude/skills/report-task-outcome/SKILL.md`)
+verbatim as a **comment on the session's primary issue**, and cite that comment
+URL in the handoff. A report that exists only in the transcript costs the next
+session an archaeology dig through `*.jsonl` (`pnpm session:last-report` is the
+dig; the comment is the cure). _(symptom: «Прочитай отчёт последней сессии» — three
+consecutive sessions reconstructed it from raw logs.)_
 
 ## Project gotchas
 
