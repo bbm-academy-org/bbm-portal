@@ -25,9 +25,17 @@
   [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
   §6, "Widening the range — the whole checklist". The set counts are not
   duplicated here: their canon is the table in that same §6.
+- **The workspace roles** `platform-user` / `platform-admin` are seeded by the
+  same script and granted to the dev test user by it (steps 2 and 8). Printing
+  the set without talking to the IdP: `--print-seed-roles`. What has to be true
+  for a member to actually get in — the role, the role assertion and the
+  per-user grant are three different objects with one shared symptom — plus the
+  **prod** path, which is a console step for the operator and never a script
+  run: [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
+  §5a.
 - **A full `provision.sh` run is an operation against the live IdP:** it is
   idempotent and no longer narrows the URIs, but it writes to the live dev
-  Zitadel (roles, login policy, loginV2, the test user). Run it deliberately,
+  Zitadel (roles, login policy, loginV2, the test user and its project grant). Run it deliberately,
   not "just in case".
 - Parallel sessions, worktrees and the rules about other sessions' listeners:
   [`parallel-sessions.md`](./parallel-sessions.md).

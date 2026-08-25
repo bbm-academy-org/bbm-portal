@@ -120,9 +120,15 @@ require_nonempty_uris "redirect-URI" "$REDIRECT_URIS" "$CALLBACK_PATHS"
 # found). Same generator, same axes, same bounds — minus the path axis.
 POST_LOGOUT_URIS="${IDP_POST_LOGOUT_URIS:-$(generate_uris "")}"
 require_nonempty_uris "post-logout-URI" "$POST_LOGOUT_URIS" ""
-# Project roles to seed, comma-separated. `portal_admin` is a placeholder the P2b
-# gate can adopt or replace; projectRoleCheck stays OFF so login works without it.
-SEED_ROLE="${IDP_SEED_ROLE:-portal_admin}"
+# Project roles to seed, comma-separated — the workspace's two starting roles
+# (spec 311 §B EARS-414). They replace the `portal_admin` placeholder the P2b
+# gate was told to "adopt or replace": the gate that adopted it is
+# `src/lib/platform/authGate.ts`, and it checks these two spellings.
+# `projectRoleCheck` stays OFF, so a member without a grant still LOGS IN and is
+# then refused by the app with a bare 403 (EARS-418) rather than by the IdP with
+# an OIDC error — the refusal the spec designs is the app's, not Zitadel's.
+# Inspect without touching the IdP: `--print-seed-roles`.
+SEED_ROLE="${IDP_SEED_ROLE:-platform-user,platform-admin}"
 # Bootstrap machine user the PAT belongs to (FIRSTINSTANCE default).
 BOOTSTRAP_USERNAME="${IDP_BOOTSTRAP_USERNAME:-bbm-bootstrap}"
 # Human test user (created only when IDP_TEST_USER_PASSWORD is set). Marked
@@ -153,6 +159,7 @@ while [[ $# -gt 0 ]]; do
     --app-name) APP_NAME="$2"; shift 2 ;;
     --print-redirect-uris) _want_print "redirect" "$1"; shift ;;
     --print-post-logout-uris) _want_print "post-logout" "$1"; shift ;;
+    --print-seed-roles) _want_print "seed-roles" "$1"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -163,6 +170,7 @@ done
 case "$PRINT_SET" in
   redirect)    printf '%s\n' "$REDIRECT_URIS"    | tr ',' '\n'; exit 0 ;;
   post-logout) printf '%s\n' "$POST_LOGOUT_URIS" | tr ',' '\n'; exit 0 ;;
+  seed-roles)  printf '%s\n' "$SEED_ROLE"        | tr ',' '\n'; exit 0 ;;
 esac
 
 [[ -n "$PAT_FILE" ]] && PAT_VALUE="$(tr -d '\r\n' < "$PAT_FILE")"
@@ -406,6 +414,38 @@ if [[ -n "$TEST_PASSWORD" ]]; then
   fi
 else
   echo "IDP_TEST_USER_PASSWORD unset — skipping human test user creation" >&2
+fi
+
+# ── 8. ensure the test user's project grant carries the seeded roles ──────────
+# A project role exists on the PROJECT; it reaches a token only through a USER
+# GRANT on that project. Without this step the roles are provisioned, the claim
+# `urn:zitadel:iam:org:project:roles` is asserted, and it arrives EMPTY — which
+# the app reads as "no grant" and answers with the bare 403 of EARS-418. That
+# failure looks exactly like a correct refusal, which is why the grant is
+# provisioned here rather than left as a click in the console.
+#
+# Only the dev TEST user is granted, and only when it is known: real people are
+# granted deliberately (Zitadel console, or Access Sync — epic #113), never as a
+# side effect of a stand re-provisioning.
+if [[ -n "${TEST_UID:-}" ]]; then
+  ROLE_KEYS_JSON="$(printf '%s' "$SEED_ROLE" \
+    | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length > 0))')"
+  GRANT_ID="$(api POST /management/v1/users/grants/_search \
+    "$(jq -nc --arg u "$TEST_UID" --arg p "$PROJECT_ID" \
+       '{queries:[{userIdQuery:{userId:$u}},{projectIdQuery:{projectId:$p}}]}')" \
+    | jq -r '.result[0].id // empty')"
+  if [[ -n "$GRANT_ID" ]]; then
+    api_idempotent PUT "/management/v1/users/${TEST_UID}/grants/${GRANT_ID}" \
+      "$(jq -nc --argjson r "$ROLE_KEYS_JSON" '{roleKeys:$r}')" >/dev/null \
+      && echo "test user grant ${GRANT_ID} -> roles $(jq -r 'join(", ")' <<< "$ROLE_KEYS_JSON")" >&2
+  else
+    api POST "/management/v1/users/${TEST_UID}/grants" \
+      "$(jq -nc --arg p "$PROJECT_ID" --argjson r "$ROLE_KEYS_JSON" \
+         '{projectId:$p, roleKeys:$r}')" >/dev/null \
+      && echo "granted $(jq -r 'join(", ")' <<< "$ROLE_KEYS_JSON") to ${TEST_USERNAME}" >&2
+  fi
+else
+  echo "no test user id — skipping the project grant (roles exist, nobody holds them)" >&2
 fi
 
 # ── output (machine-parseable; secret only when freshly created) ─────────────

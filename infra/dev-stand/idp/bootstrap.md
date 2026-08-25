@@ -129,7 +129,7 @@ curl -s http://truenas.local:9180/.well-known/openid-configuration | jq -r .issu
 
 `idp/provision.sh` creates (or converges) the `bbm-portal-dev` project, the
 web/OIDC application (`authorization_code` + `refresh_token`, BASIC auth, dev-mode
-http redirect URIs), the project-role assertion, a seed role, the Login V2 feature
+http redirect URIs), the project-role assertion, the two workspace roles (step 5a), the Login V2 feature
 with its baseUri, the `IAM_LOGIN_CLIENT` grant, closes public self-registration,
 and — when `IDP_TEST_USER_PASSWORD` is set — a human test user (`bbm-test`, email
 pre-verified, password **permanent** / change NOT required). Re-running converges;
@@ -161,6 +161,63 @@ container so it picks up the grant/policy:
 ssh truenas 'cd ~/bbm-portal-dev-stand && \
   sudo docker compose -f compose.core.yml restart idp-login'
 ```
+
+## 5a. The workspace roles — `platform-user` and `platform-admin`
+
+The two starting roles of the portal workspace (spec
+[`docs/specs/311-portal-workspace.md`](../../../docs/specs/311-portal-workspace.md)
+§B, EARS-414). The app reads them from the token claim
+`urn:zitadel:iam:org:project:roles`; the spellings are owned by
+`src/lib/platform/authGate.ts` and asserted against this script by
+`tests/unit/idp-provision-seed-roles.spec.ts`.
+
+**Three things have to be true for a member to get in**, and only the first is
+what people mean by "create the role":
+
+| #   | Object                                             | Where it is set                                               | Symptom when missing                                       |
+| --- | -------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1   | the project ROLES exist                            | `provision.sh` step 2, from `SEED_ROLE`                       | nothing to grant; the console offers no role to tick       |
+| 2   | `projectRoleAssertion: true` on the project        | `provision.sh` step 1                                         | the grant exists and the claim is absent from the token    |
+| 3   | the member holds a USER GRANT carrying those roles | `provision.sh` step 8 (dev test user only) / console (people) | the claim arrives EMPTY — a bare 403 that looks like a bug |
+
+Row 3 is the one that gets forgotten: a project role lives on the PROJECT, and
+it reaches a token only through a per-user grant on that project. All three
+failures produce the same screen — the bare 403 of EARS-418 — which is
+indistinguishable from a correct refusal, so check them in this order.
+
+Inspect the seeded set without touching the IdP:
+
+```bash
+./provision.sh --print-seed-roles     # -> platform-user, platform-admin
+```
+
+`projectRoleCheck` stays **off**: a member without a grant still completes the
+OIDC login and is then refused by the app. That is deliberate — the refusal the
+spec designs is the platform's bare 403, not a Zitadel error page.
+
+### Prod (`id.bbm.academy`) — a supervised operator step, never an agent's
+
+`provision.sh` is a **dev-stand** script: it also writes the login policy, the
+Login V2 feature and the `bbm-test` human user, none of which belong on prod.
+Do **not** point it at `id.bbm.academy`. The prod path is the console, run by the
+operator (Антон):
+
+1. **Roles.** Console → the prod project → _Roles_ → add `platform-user` and
+   `platform-admin` (key = display name, no group). Same spellings, or the gate
+   refuses everyone.
+2. **Assertion.** Same project → _General_ → check **Assert Roles on
+   Authentication** (`projectRoleAssertion`). Without it step 1 is invisible to
+   the app.
+3. **Grants.** Per person: _Users_ → the user → _Authorizations_ → grant the prod
+   project with the roles that person should hold. An admin needs
+   `platform-admin` ALONE — it implies `platform-user` (EARS-417).
+4. **Verify** on the live portal: the member signs in and reaches `/p`; an
+   account with no grant gets a bare 403 on every `/p` path.
+
+A role granted in the console takes effect on that member's **next session** with
+no redeploy (EARS-460): the claim is read at sign-in and carried in the session.
+
+Automatic assignment from `core` (Access Sync) is epic #113, not this file.
 
 ## 6. What P2b (#59) consumes
 

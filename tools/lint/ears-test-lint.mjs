@@ -148,21 +148,10 @@ const DEFERRALS_BY_ISSUE = {
     reason:
       'spec 311 §H, the src/ui half of the boundary set: «pnpm boundaries shall forbid src/ui from importing any module». The rule cannot be written before the directory it keys on exists, and #312 is the issue that creates src/ui together with its dependency-cruiser boundary',
   },
-  313: {
-    ids: [
-      'EARS-414',
-      'EARS-415',
-      'EARS-416',
-      'EARS-417',
-      'EARS-418',
-      'EARS-459',
-      'EARS-460',
-      'EARS-461',
-      'EARS-462',
-      'EARS-466',
-    ],
+  333: {
+    ids: ['EARS-459'],
     reason:
-      'spec 311 §B — the two starting Zitadel project roles, the (platform) layout gate, the bare 403, grant/revoke behaviour and the fail-closed re-check every module handler owes. #313 provisions the roles and builds the gate; none of it can be asserted before that role claim and that layout exist',
+      'spec 311 §B, the REVOCATION half: «when a role is revoked, the next request lands in EARS-418». #313 landed the rest of §B and stopped here on purpose — the roles are read once, at sign-in, and then ride the Auth.js JWT session cookie, so a revoke in Zitadel is invisible until that session ends. The grant direction (EARS-460) is satisfied as written; «next request» is not something a claim carried in a cookie can promise, and picking a staleness window nobody chose would put a number into the security boundary. #333 decides the mechanism or amends the clause',
   },
   314: {
     ids: [
@@ -170,7 +159,6 @@ const DEFERRALS_BY_ISSUE = {
       'EARS-402',
       'EARS-403',
       'EARS-404',
-      'EARS-405',
       'EARS-406',
       'EARS-407',
       'EARS-408',
@@ -188,6 +176,7 @@ const DEFERRALS_BY_ISSUE = {
       'EARS-456',
       'EARS-457',
       'EARS-468',
+      'EARS-466',
       'EARS-469',
       'EARS-470',
       'EARS-471',
