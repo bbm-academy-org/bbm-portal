@@ -7,8 +7,9 @@
 # `urn:zitadel:iam:org:project:roles` is emitted in the token, a seed project role,
 # the Login V2 instance feature + baseUri (browsable admin Console), the
 # IAM_LOGIN_CLIENT grant the login client needs, a hardened login policy (public
-# self-registration OFF), and — when IDP_TEST_USER_PASSWORD is set — a human test
-# user the owner can log in with.
+# self-registration OFF), and — when IDP_TEST_USER_PASSWORD is set — the two human
+# accounts the owner logs in with: an admin holding every seeded role and a
+# member holding `platform-user` alone (`--print-seed-users`).
 #
 # Thin port of the `ds-platform` idp/provision.sh: the portal gate needs no email
 # or SMS delivery, so the SMTP / SMS / notification-language / message-text steps
@@ -25,6 +26,8 @@
 #   ./provision.sh --base-url http://truenas.local:9180 --pat-file ./idp-pat.txt
 #   ./provision.sh --print-redirect-uris      # print the redirect-URI set and exit
 #   ./provision.sh --print-post-logout-uris   # print the post-logout-URI set and exit
+#   ./provision.sh --print-seed-roles         # print the seeded project roles and exit
+#   ./provision.sh --print-seed-users         # print the seeded users + their roles and exit
 #                                             # (both: no IdP, no PAT, no mutation)
 #
 # Requires: bash, curl, jq. Run it on Linux/macOS (the TrueNAS box, CI, a
@@ -131,11 +134,37 @@ require_nonempty_uris "post-logout-URI" "$POST_LOGOUT_URIS" ""
 SEED_ROLE="${IDP_SEED_ROLE:-platform-user,platform-admin}"
 # Bootstrap machine user the PAT belongs to (FIRSTINSTANCE default).
 BOOTSTRAP_USERNAME="${IDP_BOOTSTRAP_USERNAME:-bbm-bootstrap}"
-# Human test user (created only when IDP_TEST_USER_PASSWORD is set). Marked
-# change-required so the owner sets their own password on first login.
+# Human test user — the ADMIN account, granted every seeded role (created only
+# when IDP_TEST_USER_PASSWORD is set; the password is permanent, see step 7+8).
 TEST_USERNAME="${IDP_TEST_USERNAME:-bbm-test}"
 TEST_EMAIL="${IDP_TEST_EMAIL:-bbm-test@bbm.local}"
 TEST_PASSWORD="${IDP_TEST_USER_PASSWORD:-}"
+# Second human account: a MEMBER, holding `platform-user` and nothing else.
+# The test user above ends up with every seeded role, so a freshly provisioned
+# stand used to contain no account that the workspace admits and the cabinet
+# refuses — the EARS-418 / EARS-405 refusal could not be reproduced on it at
+# all. The refusal is the half of the gate that fails silently (a missing grant
+# and a correct refusal render the same bare 403), so the account that proves it
+# is seeded, not clicked. Same password as the test user, same idempotency.
+MEMBER_USERNAME="${IDP_MEMBER_USERNAME:-bbm-member}"
+MEMBER_EMAIL="${IDP_MEMBER_EMAIL:-bbm-member@bbm.local}"
+MEMBER_ROLE="${IDP_MEMBER_ROLE:-platform-user}"
+
+# The seeded human accounts and the roles each one holds, as
+# `<username><TAB><role,role>`. The member row is dropped when the seeded set
+# does not carry its role (an `IDP_SEED_ROLE` override for some other project):
+# granting a role the project does not have would fail, and a member-only
+# account is meaningless where there is no admin role to withhold.
+seed_user_records() {
+  printf '%s\t%s\t%s\n' "$TEST_USERNAME" "$TEST_EMAIL" "$SEED_ROLE"
+  if [[ ",${SEED_ROLE}," == *",${MEMBER_ROLE},"* && "$SEED_ROLE" != "$MEMBER_ROLE" ]]; then
+    printf '%s\t%s\t%s\n' "$MEMBER_USERNAME" "$MEMBER_EMAIL" "$MEMBER_ROLE"
+  fi
+}
+
+seed_user_rows() {
+  seed_user_records | while IFS=$'\t' read -r _u _e _r; do printf '%s\t%s\n' "$_u" "$_r"; done
+}
 
 PRINT_SET=""
 # The print flags are mutually exclusive and say so. Silently last-winning would
@@ -160,6 +189,7 @@ while [[ $# -gt 0 ]]; do
     --print-redirect-uris) _want_print "redirect" "$1"; shift ;;
     --print-post-logout-uris) _want_print "post-logout" "$1"; shift ;;
     --print-seed-roles) _want_print "seed-roles" "$1"; shift ;;
+    --print-seed-users) _want_print "seed-users" "$1"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -171,6 +201,7 @@ case "$PRINT_SET" in
   redirect)    printf '%s\n' "$REDIRECT_URIS"    | tr ',' '\n'; exit 0 ;;
   post-logout) printf '%s\n' "$POST_LOGOUT_URIS" | tr ',' '\n'; exit 0 ;;
   seed-roles)  printf '%s\n' "$SEED_ROLE"        | tr ',' '\n'; exit 0 ;;
+  seed-users)  seed_user_rows; exit 0 ;;
 esac
 
 [[ -n "$PAT_FILE" ]] && PAT_VALUE="$(tr -d '\r\n' < "$PAT_FILE")"
@@ -385,67 +416,80 @@ else
     && echo "login policy: disabled public self-registration (allowRegister -> false)" >&2
 fi
 
-# ── 7. ensure a human test user (only when IDP_TEST_USER_PASSWORD is set) ─────
+# ── 7+8. ensure the seeded human users and their project grants ──────────────
+# Two objects per account, and they are NOT the same thing: the user exists in
+# the org, and a USER GRANT on the project carries the roles. A project role
+# lives on the PROJECT and reaches a token only through that grant — without it
+# the roles are provisioned, `urn:zitadel:iam:org:project:roles` is asserted, and
+# the claim arrives EMPTY, which the app reads as "no grant" and answers with the
+# bare 403 of EARS-418. That failure looks exactly like a correct refusal, which
+# is why the grant is provisioned here rather than left as a click in the console.
+#
+# Who is seeded: `seed_user_records` — the admin test account carrying every
+# seeded role, and the member account carrying `platform-user` alone so the
+# refusal path of the gate can actually be exercised on a fresh stand
+# (`--print-seed-users` prints the pair without touching the IdP). Only these
+# dev accounts are granted: real people are granted deliberately (Zitadel
+# console, or Access Sync — epic #113), never as a side effect of a re-provision.
+#
 # Password set PERMANENT (changeRequired:false): the Zitadel login-v2
 # /ui/v2/login/password/change screen is broken on this stand ("Could not get the
 # context of the user"), so a forced first-login change makes login IMPOSSIBLE —
 # the owner can never complete the gate. The email is pre-verified so no mail
 # delivery is needed (this stand has no SMTP). Idempotent: search by username; if
-# present, leave it untouched (no password reset).
-if [[ -n "$TEST_PASSWORD" ]]; then
-  TEST_UID="$(api POST /v2/users \
-    "$(jq -nc --arg u "$TEST_USERNAME" '{queries:[{userNameQuery:{userName:$u,method:"TEXT_QUERY_METHOD_EQUALS"}}]}')" \
-    | jq -r '.result[0].userId // empty')"
-  if [[ -n "$TEST_UID" ]]; then
-    echo "test user ${TEST_USERNAME} already exists (${TEST_UID}) — leaving untouched" >&2
-  else
-    TEST_UID="$(api POST /v2/users/human \
-      "$(jq -nc --arg u "$TEST_USERNAME" --arg e "$TEST_EMAIL" --arg p "$TEST_PASSWORD" \
-         '{username:$u,
-           profile:{givenName:"BBM", familyName:"Test"},
-           email:{email:$e, isVerified:true},
-           password:{password:$p, changeRequired:false}}')" \
-      | jq -r '.userId // empty')"
-    if [[ -n "$TEST_UID" ]]; then
-      echo "created human test user ${TEST_USERNAME} (${TEST_UID}); password permanent (change not required)" >&2
-    else
-      echo "WARN: could not create test user ${TEST_USERNAME}" >&2
-    fi
-  fi
-else
-  echo "IDP_TEST_USER_PASSWORD unset — skipping human test user creation" >&2
-fi
+# present, leave the account untouched (no password reset) and converge only the
+# grant.
 
-# ── 8. ensure the test user's project grant carries the seeded roles ──────────
-# A project role exists on the PROJECT; it reaches a token only through a USER
-# GRANT on that project. Without this step the roles are provisioned, the claim
-# `urn:zitadel:iam:org:project:roles` is asserted, and it arrives EMPTY — which
-# the app reads as "no grant" and answers with the bare 403 of EARS-418. That
-# failure looks exactly like a correct refusal, which is why the grant is
-# provisioned here rather than left as a click in the console.
-#
-# Only the dev TEST user is granted, and only when it is known: real people are
-# granted deliberately (Zitadel console, or Access Sync — epic #113), never as a
-# side effect of a stand re-provisioning.
-if [[ -n "${TEST_UID:-}" ]]; then
-  ROLE_KEYS_JSON="$(printf '%s' "$SEED_ROLE" \
-    | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length > 0))')"
-  GRANT_ID="$(api POST /management/v1/users/grants/_search \
-    "$(jq -nc --arg u "$TEST_UID" --arg p "$PROJECT_ID" \
-       '{queries:[{userIdQuery:{userId:$u}},{projectIdQuery:{projectId:$p}}]}')" \
-    | jq -r '.result[0].id // empty')"
-  if [[ -n "$GRANT_ID" ]]; then
-    api_idempotent PUT "/management/v1/users/${TEST_UID}/grants/${GRANT_ID}" \
-      "$(jq -nc --argjson r "$ROLE_KEYS_JSON" '{roleKeys:$r}')" >/dev/null \
-      && echo "test user grant ${GRANT_ID} -> roles $(jq -r 'join(", ")' <<< "$ROLE_KEYS_JSON")" >&2
-  else
-    api POST "/management/v1/users/${TEST_UID}/grants" \
-      "$(jq -nc --arg p "$PROJECT_ID" --argjson r "$ROLE_KEYS_JSON" \
-         '{projectId:$p, roleKeys:$r}')" >/dev/null \
-      && echo "granted $(jq -r 'join(", ")' <<< "$ROLE_KEYS_JSON") to ${TEST_USERNAME}" >&2
+# ensure_human_user <username> <email>  ->  the user id on stdout (empty on failure)
+ensure_human_user() {
+  local username="$1" email="$2" uid
+  uid="$(api POST /v2/users     "$(jq -nc --arg u "$username" '{queries:[{userNameQuery:{userName:$u,method:"TEXT_QUERY_METHOD_EQUALS"}}]}')"     | jq -r '.result[0].userId // empty')"
+  if [[ -n "$uid" ]]; then
+    echo "user ${username} already exists (${uid}) — leaving untouched" >&2
+    printf '%s' "$uid"
+    return 0
   fi
+  uid="$(api POST /v2/users/human     "$(jq -nc --arg u "$username" --arg e "$email" --arg p "$TEST_PASSWORD"        '{username:$u,
+         profile:{givenName:"BBM", familyName:"Test"},
+         email:{email:$e, isVerified:true},
+         password:{password:$p, changeRequired:false}}')"     | jq -r '.userId // empty')"
+  if [[ -n "$uid" ]]; then
+    echo "created human user ${username} (${uid}); password permanent (change not required)" >&2
+  else
+    echo "WARN: could not create user ${username}" >&2
+  fi
+  printf '%s' "$uid"
+}
+
+# ensure_project_grant <uid> <username> <roles-csv>
+#
+# The PUT replaces the grant's WHOLE role set — deliberately: this script is the
+# statement of what a seeded dev account holds, and a role added to one by hand
+# would otherwise survive as a silent difference between two stands. A role that
+# should stick belongs in IDP_SEED_ROLE / IDP_MEMBER_ROLE, not in the console.
+ensure_project_grant() {
+  local uid="$1" username="$2" roles_csv="$3" role_keys grant_id
+  role_keys="$(printf '%s' "$roles_csv"     | jq -Rc 'split(",") | map(gsub("^\s+|\s+$";"")) | map(select(length > 0))')"
+  grant_id="$(api POST /management/v1/users/grants/_search     "$(jq -nc --arg u "$uid" --arg p "$PROJECT_ID"        '{queries:[{userIdQuery:{userId:$u}},{projectIdQuery:{projectId:$p}}]}')"     | jq -r '.result[0].id // empty')"
+  if [[ -n "$grant_id" ]]; then
+    api_idempotent PUT "/management/v1/users/${uid}/grants/${grant_id}"       "$(jq -nc --argjson r "$role_keys" '{roleKeys:$r}')" >/dev/null       && echo "${username}: grant ${grant_id} -> roles $(jq -r 'join(", ")' <<< "$role_keys")" >&2
+  else
+    api POST "/management/v1/users/${uid}/grants"       "$(jq -nc --arg p "$PROJECT_ID" --argjson r "$role_keys"          '{projectId:$p, roleKeys:$r}')" >/dev/null       && echo "granted $(jq -r 'join(", ")' <<< "$role_keys") to ${username}" >&2
+  fi
+}
+
+if [[ -n "$TEST_PASSWORD" ]]; then
+  while IFS=$'	' read -r SEED_USERNAME SEED_EMAIL SEED_USER_ROLES; do
+    [[ -z "$SEED_USERNAME" ]] && continue
+    SEED_UID="$(ensure_human_user "$SEED_USERNAME" "$SEED_EMAIL")"
+    if [[ -n "$SEED_UID" ]]; then
+      ensure_project_grant "$SEED_UID" "$SEED_USERNAME" "$SEED_USER_ROLES"
+    else
+      echo "no user id for ${SEED_USERNAME} — skipping the project grant (roles exist, nobody holds them)" >&2
+    fi
+  done < <(seed_user_records)
 else
-  echo "no test user id — skipping the project grant (roles exist, nobody holds them)" >&2
+  echo "IDP_TEST_USER_PASSWORD unset — skipping human user creation and the project grants" >&2
 fi
 
 # ── output (machine-parseable; secret only when freshly created) ─────────────
