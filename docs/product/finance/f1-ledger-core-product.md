@@ -38,45 +38,44 @@ finmodel's "pool = project" frame (decision 2).
 today (decision 4). Multi-currency is a product property, not only a schema
 property: it reaches the UI in F2 and F3.
 
-**Reference data is editable, not hard-coded** (decision 10): accounts, expense
-categories, projects, products, currencies and rates are reference tables an
-owner maintains. Their administration surface is the `/p/admin` shell of epic
+**Reference data is editable, not hard-coded** (decisions 10, 11): accounts,
+expense categories, projects, products, currencies and rates are reference tables
+an owner maintains. Their administration surface is the `/p/admin` shell of epic
 #112 — this feature contributes the resources, not a second cabinet.
 _(`agent-proposed — UNCONFIRMED` that all six live in `/p/admin` rather than in
-`/p/finance`; decision 10 fixes only that the taxonomy is an editable table.)_
+`/p/finance`; decisions 10–11 fix only that the taxonomy is an editable table.)_
 
-## Starter expense taxonomy — `agent-proposed — UNCONFIRMED`
+## Expense taxonomy — derived from the fact, not invented upfront
 
-Decision 10 says the agents propose a starter taxonomy and the owner approves it
-at the design gate. This is that proposal. It is grounded in the only real cost
-model in the estate — the DS lesson-cost calculator, which models per-role
-payroll with employment-mode tax loading (штат ≈ ×2, ИП/УСН +8%, самозанятый/НПД
-+6%), external vendors, and a contingency buffer (prior art §4) — plus BBM's
-actual spend shape.
+**Owner ruling, decision 11 (owner 2026-08-25):** the categories are **not**
+invented upfront — «не будем выдумывать того, чего нет». When the filling
+mechanism is built (F2, and in particular the backfill of what has actually been
+spent), the category list is **derived from the real recorded expenses** and
+brought to the owner for approval. This supersedes the "agents propose a starter
+taxonomy" half of decision 10; the other half stands — categories live as an
+**editable reference table** in the system, never hard-coded, and the owner adds,
+renames and retires them without a release.
 
-Two levels: a **category** (stable, the P&L line) and a free **subcategory**
-(added during operation without a schema change).
+What F1 therefore delivers is the **slot, not the list**: a posting carries a
+category, and the category reference table ships empty. Filling it is F2's
+derivation step followed by the owner's approval; no seeded taxonomy is part of
+this feature.
 
-| #   | Category                    | What lands here                                                               | Typical currency | Feeds                       |
-| --- | --------------------------- | ----------------------------------------------------------------------------- | ---------------- | --------------------------- |
-| 1   | Payroll — team via hours    | accruals from `/p/hours`: role rate × actual hours; cash and invest parts     | RUB              | auto (F2), unit cost        |
-| 2   | Payroll — taxes and charges | the employment-mode loading on category 1 (штат / ИП / НПД), as its own line  | RUB              | derived or manual           |
-| 3   | Contractors and vendors     | external people and studios paid per work, not per hour                       | RUB, THB, USD    | expense request             |
-| 4   | SaaS and infrastructure     | hosting, domains, AI/API spend, tools — the recurring foreign spend           | THB, USD, crypto | bank import, card statement |
-| 5   | Marketing and acquisition   | ads, promotion, content distribution                                          | RUB, USD         | expense request             |
-| 6   | Content production          | production spend attributable to a sellable unit (a lesson, a course)         | RUB              | unit cost                   |
-| 7   | Legal, banking and fees     | accounting services, bank fees, conversion and network fees                   | any              | linked to conversions       |
-| 8   | Equipment and one-off       | hardware and capitalisable one-off purchases                                  | RUB, THB         | expense request             |
-| 9   | Other operating             | the residual line; a category that grows here is a candidate for its own line | any              | manual                      |
+### Requirements on whatever taxonomy emerges — `agent-proposed — UNCONFIRMED`
 
-Three properties the taxonomy must have, independent of the exact list:
+These are **lead-proposed constraints on the derived list, not a list**, and none
+of them is owner-confirmed. They come from the only real cost model in the estate
+— the DS lesson-cost calculator, which models per-role payroll with
+employment-mode tax loading (штат ≈ ×2, ИП/УСН +8%, самозанятый/НПД +6%),
+external vendors and a contingency buffer (prior art §4).
 
-- **Every category is allocatable or not**, explicitly — categories 1, 3, 6 flow
-  into a unit's cost; 5 and 9 are period costs by default. The flag is data, not
-  code.
-- **Tax loading is a line, not a multiplier hidden in a rate** — the DS model's
-  lesson is that the employment mode changes the true cost by up to 2×, and the
-  owner must see it.
+- **Allocatable-or-period is a flag on the category, and it is data** — some
+  categories flow into a sellable unit's cost, others are period costs. Whichever
+  categories the derivation produces, the split must be settable per category
+  without a release, not compiled into code.
+- **Tax loading is visible as its own line, not a multiplier hidden in a rate** —
+  the DS model's lesson is that the employment mode changes the true cost of a
+  person by up to 2×, and the owner must be able to see that part separately.
 - **A contingency buffer is a scenario input, never a posting** — the DS model
   applies +15% payroll / +25% external as a planning cushion. A ledger records
   what happened; the cushion belongs in F5.
@@ -101,7 +100,9 @@ Three properties the taxonomy must have, independent of the exact list:
   import, an approved expense request, an hours accrual, or a person's manual
   entry. _(decision 3)_
 - **US-7** — As the owner, I edit the list of expense categories myself when the
-  spend shape changes, without waiting for a release. _(decision 10)_
+  spend shape changes, without waiting for a release — and the list I start from
+  is the one derived from what we actually spent, not one invented for me.
+  _(decisions 10, 11)_
 - **US-8** — As the owner, I define the sellable products of a project (a
   Doctor.School lesson, a course) so that cost and break-even have a unit to
   attach to. _(decision 9)_
@@ -116,8 +117,10 @@ Three properties the taxonomy must have, independent of the exact list:
   _(`agent-proposed — UNCONFIRMED`: decisions 3–5 imply accounts exist; the owner
   never enumerated them)_
 - **US-12** — As the owner, income is recorded with the same machinery as
-  expense, so P&L and cash flow have both sides. _(decision 5 requires P&L and
-  cash flow, which require revenue)_
+  expense, so P&L and cash flow have both sides.
+  _(`agent-proposed — UNCONFIRMED`: decision 5 requires P&L and cash flow, which
+  require revenue; the owner never named income recording as its own
+  requirement)_
 
 ## Flows
 
@@ -143,7 +146,8 @@ reversal. _(consolidation spec §8)_
 The owner adds or renames a category in the reference table. Existing postings
 keep pointing at the category they carry; a category in use cannot simply
 disappear — it is retired rather than deleted. _(`agent-proposed — UNCONFIRMED`:
-decision 10 fixes editability, not the retirement rule)_
+decisions 10–11 fix editability and where the initial list comes from, not the
+retirement rule)_
 
 **Adding a currency.**
 The owner adds a currency with its minimal unit and precision; amounts in it are
@@ -169,6 +173,9 @@ form)_
   entries remain visible in the register.
 - The owner can tell, for any posting, which source produced it.
 - The owner can add, rename and retire an expense category without a developer.
+- No expense category is shipped pre-invented: the category table starts empty
+  and its first content is the list derived from real recorded spend in F2 and
+  approved by the owner.
 - A category in use by existing postings cannot be removed in a way that leaves
   those postings uncategorised.
 - The owner can define the sellable products of a project and attach costs to
@@ -182,6 +189,9 @@ form)_
 - The schema, table names and migration order — the feature spec's job
   (ADR-004 §6 fixes only where the tables live and who may import them).
 - Who is allowed to post — the roles are F2's subject (decision 8).
+- **Deriving the actual list of expense categories** — that step runs in F2, off
+  the backfilled spend, and ends with the owner's approval (decision 11). F1 owns
+  only the reference table it lands in.
 - Any report — F3.
 - Payout, token and waterfall mechanics: the profit-share proportions, the
   royalty cascade and the OPEX-tier fork are holding-level questions with open
@@ -191,14 +201,11 @@ form)_
 
 ## Open questions
 
-1. **The starter taxonomy above needs the owner's approval** at the design gate,
-   including whether the payroll split into two lines (accrual vs employment-mode
-   loading) matches how he thinks about the cost of a person. _(decision 10)_
-2. **Does a project's P&L need sub-projects** (a project → a course → a lesson),
+1. **Does a project's P&L need sub-projects** (a project → a course → a lesson),
    or is one flat project level with a product beneath it enough? Decision 2
    fixes only "per project"; decision 9 puts the sellable unit under it.
-3. **How far back does the history backfill go**, and does the opening state of
+2. **How far back does the history backfill go**, and does the opening state of
    each account get an explicit opening-balance operation? _(affects F2)_
-4. **Are crypto holdings revalued** when the rate moves, or held at the recorded
+3. **Are crypto holdings revalued** when the rate moves, or held at the recorded
    rate until they move again? The frozen-rate rule (§8) covers the operation,
    not the holding.

@@ -30,6 +30,25 @@ no report can drift from the books.
 report that spans currencies has to state a rate policy, and the policy has to be
 visible — the alternative is a total nobody can reproduce.
 
+**The reporting currency is switchable — owner ruling, decision 13 (owner
+2026-08-25).** Reports **default to RUB** and can be **viewed in another
+currency**; the reporting currency is a property of the view, not of the data.
+Operations always keep their own currency (consolidation spec §8): switching the
+report re-presents the same postings, it never rewrites or re-denominates them,
+and the amount in its own currency stays visible beside the converted total.
+
+**Recognition timing (accrual vs cash) is deferred — owner ruling, decision 14
+(owner 2026-08-25).** The owner decides accrual-vs-cash **from practice**, once
+there is a real ledger to decide against; no rule is fixed here. What is fixed is
+the set of principles the reports obey either way:
+
+- **the math is always honest** — no report shows a number it cannot derive from
+  postings, and no timing convention is applied silently;
+- **debts and obligations are counted and shown** — an accrued but unpaid team
+  accrual is visible as an obligation, not omitted because no money has moved;
+- **plan stays plan until the fact happens**, and plan-vs-fact is an explicit,
+  visible distinction — never two numbers blended into one line.
+
 **Per project, and the fund** (decision 2): the same report with a different
 dimension filter, never a separate report per project.
 
@@ -59,7 +78,17 @@ the two that decide the rest.
   what is on each account now — and I understand why it differs from the P&L
   result. _(decision 5)_
 - **US-5** — As the owner, I see the balance of each account in its own currency,
-  and a total in my reporting currency with the rate policy stated. _(decision 4)_
+  and a total in the reporting currency with the rate policy stated.
+  _(decisions 4, 13)_
+- **US-15** — As the owner, I read a report in roubles by default and can switch
+  it to another currency without the underlying operations changing currency.
+  _(decision 13)_
+- **US-16** — As the owner, an accrued but unpaid obligation to the team is
+  visible to me as a debt rather than absent because no money has moved yet.
+  _(decision 14)_
+- **US-17** — As the owner, a planned amount is never mixed into a fact: where a
+  report shows both, the plan and the fact are separate and labelled.
+  _(decision 14)_
 - **US-6** — As the owner, I see what one sellable unit of a project costs to
   produce, from the facts in the ledger rather than from a per-occasion
   spreadsheet. _(decisions 5, 9)_
@@ -105,11 +134,14 @@ units the period produced, and the cost per unit → beside it, the break-even
 price and the current price if one is set.
 
 **Multi-currency total.**
-A report spanning currencies converts to the reporting currency at the stated
-policy, and says which policy and which rates it used. Amounts in their own
-currency remain visible next to the converted total.
-_(`agent-proposed — UNCONFIRMED`: which policy — rate at the operation date, or
-period-end rate — is an owner question below.)_
+A report opens in RUB and converts amounts to it at the stated policy, saying
+which policy and which rates it used; the owner can switch the reporting currency
+to another one and the same report re-presents itself there (decision 13).
+Amounts in their own currency remain visible next to the converted total, and the
+operations themselves keep their currency. _(`agent-proposed — UNCONFIRMED`:
+which conversion policy — rate at the operation date, or period-end rate — is an
+owner question below; decision 13 fixes the switchable presentation, not the
+rate rule.)_
 
 **An empty period.**
 A period with no operations reports zero and says so, rather than showing a blank
@@ -126,6 +158,12 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 - The owner can see what actually moved in and out of each account in a period.
 - The owner can see the current balance of every account in its own currency.
 - A total that spans currencies states the rate policy it used.
+- A report opens in RUB and can be switched to another reporting currency without
+  any operation changing the currency it was recorded in.
+- An accrued but unpaid obligation is visible in the reports rather than absent
+  until it is paid.
+- Where a report shows a planned amount at all, it is labelled as plan and not
+  summed into a fact.
 - The owner can see the production cost of one sellable unit of a project.
 - The owner can see which cost categories make up that unit cost, and in what
   proportion.
@@ -149,18 +187,20 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 
 ## Open questions
 
-1. **The reporting currency and the conversion policy.** Is the reporting
-   currency RUB? And for a multi-currency total — the rate at each operation's
-   date, or one rate at period end? The two give different totals and the choice
-   is the owner's.
+1. **The conversion policy for a multi-currency total** — the rate at each
+   operation's date, or one rate at period end? The two give different totals and
+   the choice is the owner's. _(The reporting currency itself is settled:
+   decision 13 — RUB by default, switchable.)_
 2. **What counts as a unit produced in a period?** Unit cost needs a denominator
    — lessons published, courses released, units sold. Decision 9 fixes the unit,
    not how it is counted.
 3. **Is revenue per unit known** (a price on the product), or is break-even
    computed purely from cost? The DS model takes the price as an input
    (prior art §4).
-4. **Cash versus accrual.** An hours accrual is an expense when it is accrued; a
-   bank payment is cash when it leaves. Does the P&L use accrual dates and the
-   cash flow payment dates? The money-mechanics protocol already fixes that
-   salary is an expense before profit (prior art §2), but not the timing.
-5. **Does the owner need an export**, and in what form?
+4. **Does the owner need an export**, and in what form?
+
+_Settled since the first draft:_ cash-versus-accrual recognition timing is no
+longer an open product question here — decision 14 defers the rule to practice
+and fixes the principles instead (honest math; obligations counted and shown;
+plan-vs-fact explicit). The feature spec inherits the principles, not a timing
+rule.

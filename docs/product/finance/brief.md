@@ -37,7 +37,9 @@ BBM has money moving through it and no accounting of it.
   co-authors / …), which is an order of distribution, not a cost structure. The
   one real cost model — the Doctor.School lesson-cost calculator — is scoped to
   DS lessons (prior art §1, §3, §4). So "what did we spend it on" currently has
-  no answer that a system could give.
+  no answer that a system could give. The answer is not invented here either: the
+  owner ruled that the category list is derived from the spend once it is
+  recorded, not written up front _(decision 11)_.
 - **Every number about BBM's money is a model, not a fact.** `finmodel`
   variables and the money-route calculator project the future from parameters;
   the cap-table figures in the prototype are an explicit hypothetical
@@ -58,7 +60,7 @@ data.
 ## Jobs-to-be-done
 
 `lead-drafted — ratified at spec go` as a formulation; each job is derived from
-the owner-approved discovery decisions 1–10 in issue #115.
+the owner-approved discovery decisions 1–14 in issue #115.
 
 - **J1 — "Record what actually happened."** As the owner, I want every rouble,
   baht and satoshi that moved to exist as a fact in one ledger, so that the
@@ -70,9 +72,11 @@ the owner-approved discovery decisions 1–10 in issue #115.
   from where the data already is — hours accruals, bank statements, invoices the
   team uploads — with manual entry as the fallback, not the mechanism.
   _(decision 3)_
-- **J4 — "Spending asks first."** As a team member, I want to submit an expense
-  request with its invoice and get an answer; as an owner, I want approving it to
-  be the act that puts it in the ledger. _(decisions 6, 8)_
+- **J4 — "Spending passes approval, before or after."** As a team member, I want
+  to submit an expense request with its invoice and get an answer — asking before
+  I spend, or filing on the same form what I already spent; as an owner, I want
+  approving it to be the act that puts it in the ledger, on both paths.
+  _(decisions 6, 8, 12)_
 - **J5 — "What does a unit cost, and what must it sell for?"** As the owner, I
   want the cost of one sellable unit of a project and the price at which it
   breaks even. _(decisions 5, 9)_
@@ -87,7 +91,12 @@ the owner-approved discovery decisions 1–10 in issue #115.
 
 ## Information architecture
 
-How the epic's surfaces compose into one cabinet:
+How the epic's surfaces compose into one cabinet.
+
+**The route tree below is `agent-proposed — UNCONFIRMED`.** The owner named the
+outputs and the mechanisms (decisions 5–7), never a URL structure: every path,
+every split and the order they appear in are the lead's proposal and are settled
+at the design gate, not here.
 
 ```
 portal.bbm.academy  (Zitadel OIDC gate over /p/*, ADR-003 §3; ADR-005 §2: a tool → the portal)
@@ -103,7 +112,7 @@ portal.bbm.academy  (Zitadel OIDC gate over /p/*, ADR-003 §3; ADR-005 §2: a to
                                    products, currencies, rates                          ← F1 + #112
 ```
 
-Six structural facts:
+Seven structural facts:
 
 1. **The ledger is the source of truth; every other surface is a reading of
    it.** Reports, reconciliation and scenarios compute from postings — none of
@@ -123,24 +132,38 @@ Six structural facts:
    posting carries fund-or-project; P&L and cost are the same computation with a
    different filter. `agent-proposed — UNCONFIRMED` as a modelling choice;
    decision 2 fixes only that the dimension exists and is per project.
-5. **Reference data is editable, not hard-coded.** Expense categories, accounts,
-   projects, products and currencies live as reference tables an owner edits —
-   the taxonomy in particular. _(decision 10)_ The admin surface for them is the
-   `/p/admin` shell of epic #112, not a second cabinet.
+5. **Reference data is editable, not hard-coded — and the taxonomy is derived,
+   not invented.** Expense categories, accounts, projects, products and
+   currencies live as reference tables an owner edits _(decision 10)_. The
+   category list in particular is **not** written up front: it is derived from
+   the real recorded expenses once the filling mechanism has put spend into the
+   ledger, and the owner approves the derived list _(decision 11)_. That
+   derivation step belongs to **F2**; F1 owns only the empty reference table it
+   lands in. The admin surface for all of them is the `/p/admin` shell of epic
+   #112, not a second cabinet.
 6. **The module owns its own tables.** ADR-004 §1 puts them in the `platform`
    database, §6 in `src/lib/platform/db/schema/finance/`, importable only by the
    finance module; `core` deliberately does not predetermine the finance schema
    (consolidation spec §8, epic #111).
+7. **Presentation currency is a view, and plan is never a fact.** Reports default
+   to RUB and can be switched to another reporting currency, while every
+   operation keeps the currency it happened in _(decision 13)_. Whether an
+   expense is recognised on accrual or on cash is deliberately **not** decided
+   yet — the owner decides it from practice; the binding principles are that the
+   math is honest, that debts and obligations (including accrued-unpaid team
+   accruals) are counted and shown, and that plan stays plan until the fact, with
+   plan-vs-fact an explicit distinction _(decision 14)_. Both live in F3, with
+   the plan side in F5.
 
 ## Feature decomposition
 
-| Feature | PRD                            | Surface      | What it settles                                                                               |
-| ------- | ------------------------------ | ------------ | --------------------------------------------------------------------------------------------- |
-| F1      | `f1-ledger-core-product.md`    | backend-only | what a fact of money is here: accounts, the project dimension, postings, currencies, reversal |
-| F2      | `f2-ledger-filling-product.md` | user-facing  | how facts get in: manual entry, expense requests with invoices, history backfill, bank import |
-| F3      | `f3-reports-product.md`        | user-facing  | what the owner reads: register, P&L, cash flow, unit cost, break-even price                   |
-| F4      | `f4-reconciliation-product.md` | user-facing  | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap     |
-| F5      | `f5-scenarios-product.md`      | user-facing  | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow |
+| Feature | PRD                            | Surface      | What it settles                                                                                                                                                                                            |
+| ------- | ------------------------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1      | `f1-ledger-core-product.md`    | backend-only | what a fact of money is here: accounts, the project dimension, postings, currencies, reversal — including the empty, editable category table, but no category list                                         |
+| F2      | `f2-ledger-filling-product.md` | user-facing  | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve |
+| F3      | `f3-reports-product.md`        | user-facing  | what the owner reads: register, P&L, cash flow, unit cost, break-even price                                                                                                                                |
+| F4      | `f4-reconciliation-product.md` | user-facing  | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                  |
+| F5      | `f5-scenarios-product.md`      | user-facing  | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                              |
 
 The decomposition is the lead's, adopted unchanged from the dispatch brief; each
 feature maps to owner decisions named in its PRD.
@@ -148,7 +171,9 @@ feature maps to owner decisions named in its PRD.
 Not PRD'd here, deliberately:
 
 - **`/p/hours` accrual export** — the accrual source (decision 3) is consumed by
-  F2; the hours module's own product design is #124, not this epic.
+  F2; the hours module's own product design was its own cycle (#124, closed) and
+  its outcome lives in [`docs/specs/124-hours-on-core.md`](../../specs/124-hours-on-core.md),
+  not in this epic.
 - **The `/p/admin` resources for finance reference tables** — the cabinet is
   epic #112's; this epic contributes resources to it (F1 names them).
 - **Payout / token / waterfall mechanics** — the smart-contract prototype's
@@ -182,8 +207,8 @@ reproduce. Full digest with passports: [`prior-art.md`](./prior-art.md)
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `bbm/outputs/2026-07-24-bbm-finmodel/2026-08-05-money-calculator.html`  | `bbm` (Anton's research repo, sibling) — owner Anton (+Claude) — build/export | the money-route P&L shape and the three milestones; and the proof that expenses are one aggregated line                |
 | `.../2026-08-05-money-mechanics-and-forks.md`                           | `bbm` — owner Anton — original (session protocol)                             | salary is an expense before profit; accrual = role rate by grade × actual hours; the open owner forks                  |
-| `.../2026-08-01-smart-contract-calculator.html`                         | `bbm` — owner Эдуард (with Claude Code) — build (prototype)                   | waterfall tiers CAPEX/OPEX/…: an order of payout, explicitly not a cost structure; numbers hypothetical                |
-| `.../2026-08-04-smart-contract-calculator-export.md`                    | `bbm` — maths by Эдуард, export by Claude Code — export                       | the same mechanics in text form                                                                                        |
+| `.../2026-08-01-smart-contract-calculator.html`                         | `bbm` — owner Eduard (with Claude Code) — build (prototype)                   | waterfall tiers CAPEX/OPEX/…: an order of payout, explicitly not a cost structure; numbers hypothetical                |
+| `.../2026-08-04-smart-contract-calculator-export.md`                    | `bbm` — maths by Eduard, export by Claude Code — export                       | the same mechanics in text form                                                                                        |
 | `bbm/outputs/ds-lesson-cost-calculator/index.html`                      | `bbm` — derived from the DS re-estimate (DSP-218) — build/derived             | **the only real unit-cost model**: per-role payroll with employment-mode tax loading, external vendors, contingency    |
 | `src/lib/platform/db/schema/`                                           | bbm-portal (this repo) — original (live schema)                               | hours accruals exist (`monthlyRate`, `hourlyRate`, `accrual`, `cashAmount`, `investAmount`); nothing else money-shaped |
 | `src/lib/finmodel/{variables.ts,types.ts}`                              | bbm-portal — original (snapshot of `ssot/finmodel.yaml` in `bbm-kb`)          | the finmodel side of the reconciliation: reserve %, royalty, profit shares, unit price, mining weights                 |

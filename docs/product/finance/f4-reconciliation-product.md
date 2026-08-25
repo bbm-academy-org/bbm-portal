@@ -114,7 +114,9 @@ _(`agent-proposed — UNCONFIRMED`)_
   any distribution.
 - The waterfall / cascade order, the token mechanics and the profit-share
   proportions — Eduard's prototype models them and their owner forks are open
-  (prior art §2 §4.3/§3.3/§3.7, §3).
+  (prior art §2 and §3 — the forks themselves are §4.3 / §3.3 / §3.7 of
+  `bbm/outputs/2026-07-24-bbm-finmodel/2026-08-05-money-mechanics-and-forks.md`,
+  the document prior art §2 quotes).
 - Editing the finmodel. Its master is `finmodel.yaml` in `bbm-kb`, PR-edited
   (ADR-002 §2); this surface reads a snapshot and never writes back.
 - Forward projection of the model — F5.

@@ -27,6 +27,21 @@ login, invoice attached. Owners approve, and approval is what posts to the
 ledger; that is a claim-gated role. The gate mechanics are the workspace's
 (epic #112, feature #313), not re-decided here.
 
+**Both expense paths are in scope — owner ruling, decision 12 (owner
+2026-08-25).** The pre-spend request is the normal path: ask, get approved,
+spend. Money that was already spent is filed **retroactively through the same
+form**, and it still passes owner approval before anything is posted. There is
+one form, one queue and one approval act; the difference between the two paths is
+only whether the money had already left when the request was filed. This settles
+the approve-then-spend vs record-what-was-spent fork that this PRD previously
+carried as an open question.
+
+**The expense taxonomy is derived here, not shipped with F1 — decision 11.**
+Once the backfill and the first live sources have put real spend into the ledger,
+the category list is derived from those recorded expenses and brought to the
+owner for approval; it then lives on as the editable reference table F1 defines.
+Nothing seeds it in advance.
+
 Everything written by this feature obeys F1's rules: immutable postings,
 reversal instead of edits, amount in the currency's minimal units, the project
 dimension on every entry.
@@ -42,6 +57,13 @@ screen are the epic's most-used surfaces and need a Stage-A pick vendored into
 - **US-1** — As a team member, I submit an expense request with the amount, the
   currency, what it is for, the project, and the invoice or receipt attached, so
   spending starts with a request instead of a message. _(decisions 6, 8)_
+- **US-18** — As a team member who has already spent the money, I file it on the
+  same form after the fact, and it goes through the same owner approval before it
+  is posted — nothing is recorded around the approval just because the money has
+  already left. _(decision 12)_
+- **US-19** — As an owner, I approve the derived list of expense categories once
+  real spend is in the ledger, and from then on it is mine to edit — no category
+  was invented before there was spend to read it off. _(decision 11)_
 - **US-2** — As a team member, I can see what happened to my request — waiting,
   approved, refused — without asking. _(`agent-proposed — UNCONFIRMED`; decision
   6 fixes the request, not the status view)_
@@ -98,11 +120,21 @@ ledger with the invoice attached and the approver recorded → the member sees
 The owner refuses with a reason → nothing is posted → the member sees the
 refusal. _(`agent-proposed — UNCONFIRMED`: whether a refusal carries a reason)_
 
-**Expense request — already paid.**
-A member who spent their own money submits the same request after the fact; the
-approval both records the expense and creates the obligation to reimburse them.
-_(`agent-proposed — UNCONFIRMED` — this is the common real case, but the owner
-described the flow as approve-then-spend)_
+**Expense request — retroactive (money already spent).**
+A member who has already spent the money — their own or the company's — submits
+the same form after the fact, marked as already paid, with the receipt attached →
+it lands in the same owners' queue → an owner approves → only then is the
+operation posted. The pre-spend and the retroactive path differ in nothing but
+that flag. _(decision 12)_ Where the member spent their own money, the approval
+also creates an obligation to reimburse them. _(`agent-proposed — UNCONFIRMED`:
+decision 12 fixes the path and the approval, not the reimbursement obligation as
+a modelled entity)_
+
+**Deriving the category list.**
+Once the backfill and the first live sources have populated the ledger, the
+recorded expenses are read off into a proposed category list → the owner approves
+or reshapes it → it becomes the content of F1's editable reference table, and
+existing operations are classified against it. _(decision 11)_
 
 **Bank-statement import.**
 Owner uploads the statement file → the system parses it into candidate
@@ -137,6 +169,10 @@ same path as every other source. No existing source changes.
 - Approving a request results in a ledger operation, with no further manual entry
   step.
 - A refused request produces no ledger operation.
+- Money that was already spent can be filed on the same request form after the
+  fact, and it reaches the ledger only through the same owner approval.
+- The expense-category list the system runs on was derived from recorded spend
+  and approved by the owner; no category list is shipped pre-invented.
 - The invoice attached to a request is reachable from the resulting operation in
   the register.
 - A member without the owner role cannot post to the ledger by any route,
@@ -162,20 +198,24 @@ same path as every other source. No existing source changes.
   further source — decision 3 names them as future sources the layer must admit,
   not as v1 deliverables.
 - Payment execution: nothing here moves money, it records that money moved.
-- Reimbursement tracking as a workflow of its own, unless the owner confirms the
-  already-paid flow above.
+- Reimbursement tracking as a workflow of its own — decision 12 confirms the
+  retroactive filing path, not a payables/settlement workflow on top of it.
 - The workspace roles themselves — epic #112, feature #313.
 
 ## Open questions
 
-1. **Approve-then-spend, or record-what-was-spent?** Decision 6 describes a
-   request the owner approves; real spend often happens first. Which is the
-   primary flow decides the whole surface.
-2. **Which banks and which statement formats** are in v1 — the format decides how
+1. **Which banks and which statement formats** are in v1 — the format decides how
    much of the import is parsing versus mapping.
-3. **Does a refusal need a reason**, and does a refused request stay visible in
+2. **Does a refusal need a reason**, and does a refused request stay visible in
    history?
-4. **Are accruals posted per member or per period aggregate?** Per member gives
+3. **Are accruals posted per member or per period aggregate?** Per member gives
    "what did we pay X"; per aggregate is one line per period.
-5. **Who besides the owner holds the approving role** — decision 8 says "owners",
+4. **Who besides the owner holds the approving role** — decision 8 says "owners",
    plural.
+5. **How much spend is enough to derive the taxonomy from?** Decision 11 fixes
+   that the list comes from the fact, not when the derivation is run — after the
+   backfill alone, or after some period of live operation.
+
+_Settled since the first draft:_ approve-then-spend vs record-what-was-spent is
+no longer open — decision 12 rules that both paths run through the same form and
+the same approval.

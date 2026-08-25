@@ -14,8 +14,10 @@ plays with future expenses and incomes, product cost and sale price, and sees th
 impact on P&L and cash flow.
 
 Its distinguishing property is the words _on top of the fact_. The estate already
-has calculators that start from sliders — the money-route model projects from six
-parameters (`I`, `cost0`, `gCost`, `rev0`, `gRev`, `k`, `T`), and the DS
+has calculators that start from sliders — the money-route model projects from its
+sliders (`I`, `cost0`, `gCost`, `rev0`, `gRev`) plus the model parameters `k`
+(sales-launch lag) and `T` (horizon), which the extracted fragment does not
+expose as sliders (prior art §1) — and the DS
 lesson-cost calculator from per-role rates (prior art §1, §4). Both begin at zero
 because there was no ledger to begin from. Here the baseline is the recorded
 past: today's account balances, the real cost structure of the last periods, the
@@ -23,6 +25,9 @@ real unit cost — and the scenario changes only what the owner chooses to chang
 
 A scenario is a **what-if, never a fact**: it writes nothing into the ledger,
 appears in no report of F3, and is visibly separated from the actuals it sits on.
+That separation is now an owner ruling, not only a design instinct — decision 14
+(owner 2026-08-25): plan stays plan until the fact happens, and plan-vs-fact is
+an explicit, visible distinction.
 
 The money-route model also supplies the three questions worth answering, which
 this feature answers from the fact rather than from parameters: **operational
