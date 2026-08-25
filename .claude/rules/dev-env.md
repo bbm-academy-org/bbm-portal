@@ -37,5 +37,17 @@
   idempotent and no longer narrows the URIs, but it writes to the live dev
   Zitadel (roles, login policy, loginV2, the test user and its project grant). Run it deliberately,
   not "just in case".
+- **A long-lived `next dev` process can stop being able to fork — restart it, do
+  not debug the app.** Symptom: every `/api/auth/*` request answers `500` with
+  `Jest worker encountered 2 child process exceptions, exceeding retry limit`
+  while the rest of the stand is fine. In dev, Next runs `generateStaticParams`
+  for every DYNAMIC app route in a forked worker (`base-server.js`, unconditional
+  — `export const dynamic` does not opt out), and `/api/auth/[...nextauth]` is
+  this app's only dynamic route, so a fork that cannot start takes out exactly
+  the sign-in surface. Observed 2026-08-25 (#313 acceptance): the child exited
+  with `3221225794` = `0xC0000142` STATUS_DLL_INIT_FAILED before any JS ran, and
+  the same process could no longer spawn even `node -e "process.exit(7)"` with a
+  minimal env, while a fresh node on the same box forked fine. It is the PROCESS,
+  not the code, not the box: kill that stand's PID and start a new one.
 - Parallel sessions, worktrees and the rules about other sessions' listeners:
   [`parallel-sessions.md`](./parallel-sessions.md).
