@@ -1,6 +1,12 @@
 import NextAuth from 'next-auth'
 import Zitadel from 'next-auth/providers/zitadel'
 
+import {
+  ZITADEL_ROLES_CLAIM,
+  normalizeRolesClaim,
+  rolesClaimStamped,
+} from '@/lib/platform/authGate'
+
 /**
  * Auth.js (next-auth v5) — the in-app OIDC session for the BBM Platform surface
  * (spec 059 req.4, owner decision 2026-07-24: in-app BFF, not oauth2-proxy).
@@ -44,4 +50,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       authorization: { params: { scope: 'openid profile email' } },
     }),
   ],
+  callbacks: {
+    // Spec 311 EARS-415: the workspace roles are read from Zitadel's project
+    // roles claim and surfaced on the session, which is what every gate in
+    // `src/lib/platform/authGate.ts` reads. Zitadel emits the claim only
+    // because the project carries `projectRoleAssertion:true` and the member
+    // holds a user grant on it (infra/dev-stand/idp/provision.sh steps 1, 2, 8).
+    //
+    // `profile` is present only on the sign-in pass; on every later pass the
+    // roles ride the existing token. That is EARS-460 exactly — a granted role
+    // takes effect for that member on their NEXT SESSION, with no redeploy.
+    // The other direction (EARS-459, a revoke landing on the next REQUEST) is
+    // NOT what a claim carried in a session cookie does, and is deliberately
+    // not faked here; it is tracked as its own decision, see the PR of #313.
+    jwt({ token, profile }) {
+      if (profile) {
+        token.roles = normalizeRolesClaim((profile as Record<string, unknown>)[ZITADEL_ROLES_CLAIM])
+      }
+      return token
+    },
+    session({ session, token }) {
+      // Fail closed: a token with no readable roles yields an empty set, never
+      // an absent field a downstream check could read as "not applicable".
+      session.user.roles = normalizeRolesClaim(token.roles)
+      // …but "read and empty" and "never read" are different facts, and only
+      // the token's shape carries the difference. Sessions minted before this
+      // build have no `roles` field at all: the strategy is the default JWT
+      // with the default 30-day maxAge and no adapter, so on the deploy of the
+      // gate every already-signed-in member of the live workspace arrives with
+      // such a token. `resolveClaimGate` sends exactly those through sign-in
+      // once — the pass above always stamps the field — instead of into the
+      // bare 403 of EARS-418, which is meant for an account the IdP grants
+      // nothing, not for a cookie older than the feature.
+      session.user.rolesClaimAbsent = !rolesClaimStamped(token)
+      return session
+    },
+  },
 })

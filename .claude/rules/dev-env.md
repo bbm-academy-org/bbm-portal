@@ -25,9 +25,32 @@
   [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
   §6, "Widening the range — the whole checklist". The set counts are not
   duplicated here: their canon is the table in that same §6.
+- **The workspace roles** `platform-user` / `platform-admin` are seeded by the
+  same script and granted to the dev test user by it (steps 2 and 8). Printing
+  the set without talking to the IdP: `--print-seed-roles`. What has to be true
+  for a member to actually get in — the role, the role assertion and the
+  per-user grant are three different objects with one shared symptom — plus the
+  **prod** path, which is a console step for the operator and never a script
+  run: [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
+  §5a.
 - **A full `provision.sh` run is an operation against the live IdP:** it is
   idempotent and no longer narrows the URIs, but it writes to the live dev
-  Zitadel (roles, login policy, loginV2, the test user). Run it deliberately,
+  Zitadel (roles, login policy, loginV2, the test user and its project grant). Run it deliberately,
   not "just in case".
+- **A long-lived `next dev` process can stop being able to fork — restart it, do
+  not debug the app.** Symptom: every `/api/auth/*` request answers `500` with
+  `Jest worker encountered 2 child process exceptions, exceeding retry limit`
+  while the rest of the stand is fine. In dev, Next runs `generateStaticParams`
+  for every DYNAMIC app route in a forked worker (`base-server.js`, unconditional
+  — `export const dynamic` does not opt out). The app has three dynamic
+  segments — `(platform)/api/auth/[...nextauth]` plus Payload's
+  `(payload)/admin/[[...segments]]` and `(payload)/api/[...slug]` — so a fork
+  that cannot start takes out whichever of those surfaces gets compiled next:
+  in the observed case the sign-in surface, but a 500 on `/admin` is the same
+  failure. Observed 2026-08-25 (#313 acceptance): the child exited
+  with `3221225794` = `0xC0000142` STATUS_DLL_INIT_FAILED before any JS ran, and
+  the same process could no longer spawn even `node -e "process.exit(7)"` with a
+  minimal env, while a fresh node on the same box forked fine. It is the PROCESS,
+  not the code, not the box: kill that stand's PID and start a new one.
 - Parallel sessions, worktrees and the rules about other sessions' listeners:
   [`parallel-sessions.md`](./parallel-sessions.md).
