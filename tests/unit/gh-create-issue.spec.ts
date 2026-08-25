@@ -18,6 +18,8 @@ import {
   channelError,
   composeBody,
   dedupeLabelFlags,
+  epicProductLayerError,
+  epicWaiverNotice,
   normalizeChannel,
   resolveChannel,
   sourceLineError,
@@ -309,6 +311,96 @@ describe('validationError — gate order', () => {
     expect(validationError(drop('--type'))).toBeTruthy()
     expect(validationError(drop('--milestone'))).toBeTruthy()
     expect(validationError(drop('--body'))).toBeTruthy()
+  })
+
+  it('fails an epic with no product layer — the LAST gate, after the field taxonomy', () => {
+    const err = validationError([...OK_ARGS, '--label', 'epic'])
+    expect(err).toMatch(/docs\/product/)
+  })
+
+  it('lets a non-epic issue through with the same bare body', () => {
+    expect(validationError(OK_ARGS)).toBeNull()
+  })
+})
+
+describe('epicProductLayerError', () => {
+  /**
+   * #321: an epic parent must establish what it is FOR before it is decomposed.
+   * Epic-ness is the `epic` LABEL — the same signal `pnpm backlog:triage` reads
+   * (canon §2); Type stays Task/Feature/Bug and carries no umbrella meaning.
+   */
+  const epicArgs = (body: string) => [
+    ...OK_ARGS.slice(0, OK_ARGS.indexOf('--body')),
+    '--body',
+    body,
+    ...OK_ARGS.slice(OK_ARGS.indexOf('--body') + 2),
+    '--label',
+    'epic',
+  ]
+
+  it('ignores a non-epic issue entirely', () => {
+    expect(epicProductLayerError(OK_ARGS)).toBeNull()
+  })
+
+  it('refuses an epic that names neither a product-layer path nor a waiver', () => {
+    const err = epicProductLayerError(epicArgs('## Context\n\ntechnical framing only'))
+    expect(err).toMatch(/docs\/product/)
+    expect(err).toMatch(/do-product-discovery/)
+    expect(err).toMatch(/product-layer: waived/)
+  })
+
+  it('accepts an epic that names its brief', () => {
+    expect(epicProductLayerError(epicArgs('Framing: docs/product/finance/brief.md'))).toBeNull()
+  })
+
+  it('accepts an epic carrying a complete waiver', () => {
+    expect(
+      epicProductLayerError(epicArgs('pure infra\n\nproduct-layer: waived — Anton, 2026-08-25')),
+    ).toBeNull()
+  })
+
+  it('refuses a tail-less waiver', () => {
+    expect(epicProductLayerError(epicArgs('product-layer: waived'))).toMatch(/tail/i)
+  })
+
+  it('reads the epic label from a comma-separated list', () => {
+    const args = [...OK_ARGS, '--label', 'consolidation,epic']
+    expect(epicProductLayerError(args)).toBeTruthy()
+  })
+
+  it('reads the body from --body-file through the injected reader', () => {
+    const args = [
+      ...OK_ARGS.slice(0, OK_ARGS.indexOf('--body')),
+      ...OK_ARGS.slice(OK_ARGS.indexOf('--body') + 2),
+      '--body-file',
+      'epic.md',
+      '--label',
+      'epic',
+    ]
+    expect(epicProductLayerError(args, () => 'docs/product/finance/brief.md')).toBeNull()
+    expect(epicProductLayerError(args, () => 'nothing')).toBeTruthy()
+  })
+})
+
+describe('epicWaiverNotice', () => {
+  it('returns the waiver line so it lands in the session record', () => {
+    const notice = epicWaiverNotice(
+      [...OK_ARGS, '--label', 'epic'].map((a) =>
+        a === 'body' ? 'product-layer: waived — Anton, 2026-08-25' : a,
+      ),
+    )
+    expect(notice).toMatch(/product-layer: waived — Anton, 2026-08-25/)
+  })
+
+  it('is null for an epic that named a path instead', () => {
+    const args = [...OK_ARGS, '--label', 'epic'].map((a) =>
+      a === 'body' ? 'docs/product/finance/brief.md' : a,
+    )
+    expect(epicWaiverNotice(args)).toBeNull()
+  })
+
+  it('is null for a non-epic', () => {
+    expect(epicWaiverNotice(OK_ARGS)).toBeNull()
   })
 })
 

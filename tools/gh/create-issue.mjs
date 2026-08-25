@@ -60,6 +60,7 @@ import {
   parseNodeReadback,
   resolveBoardStatusTarget,
 } from './lib/gh.mjs'
+import { WAIVER_FORM, productLayerError, productLayerStatus } from './lib/product-layer.mjs'
 
 const TAG = '[issue:create]'
 
@@ -405,6 +406,42 @@ export function ensureAssigneeFlag(args) {
   return [...list, '--assignee', '@me']
 }
 
+/** Whether this filing declares an epic. Epic-ness is the `epic` LABEL (canon §2). */
+export function isEpicFiling(args) {
+  return collectLabels(args).includes('epic')
+}
+
+/**
+ * #321 — an epic parent must establish what it is FOR before it is decomposed:
+ * its body either names a `docs/product/…` artifact or carries a recorded
+ * waiver. This is a FAIL-CLOSED gate, unlike `skeletonWarnings`: canon §7's four
+ * conditions are about fields any issue must carry, while this one is a rule the
+ * owner added for epics after epic #112 was decomposed from a technical spec and
+ * re-framed only through dialogue (retro 2026-08-24).
+ *
+ * The predicate itself lives in `lib/product-layer.mjs` — `pnpm backlog:triage`
+ * reads the same one for the existing corpus, which it flags and never blocks.
+ */
+export function epicProductLayerError(args, readFile) {
+  if (!isEpicFiling(args)) return null
+  return productLayerError(readBodyText(args, readFile), 'an epic')
+}
+
+/**
+ * The waiver line, for printing. A waiver that is never read back is an omission
+ * with extra steps, so `main` echoes it into the session record.
+ */
+export function epicWaiverNotice(args, readFile) {
+  if (!isEpicFiling(args)) return null
+  const status = productLayerStatus(readBodyText(args, readFile))
+  if (status.kind !== 'waiver') return null
+  return (
+    `PRODUCT-LAYER WAIVER RECORDED — «${status.waiver.line}». ` +
+    `This epic is being decomposed with no product layer; the waiver is the decision, ` +
+    `and it now stands in this session's record.`
+  )
+}
+
 /**
  * Every gate in order. Report the first error only: listing five violations at
  * once does not help because callers still repair them one at a time.
@@ -424,6 +461,7 @@ export function validationError(args, readFile) {
     milestoneError(args) ??
     bodyError(args, readFile) ??
     sourceLineError(readBodyText(args, readFile)) ??
+    epicProductLayerError(args, readFile) ??
     null
   )
 }
@@ -490,7 +528,11 @@ export const USAGE =
   `    • a non-empty --source (do not write **Source:** manually in the body);\n` +
   `    • exactly one --type: ${ISSUE_TYPES.join(' | ')} (native GitHub field);\n` +
   `    • a non-empty --milestone (fallback «${FALLBACK_MILESTONE}»);\n` +
-  `    • a non-empty body (--body or --body-file), following canon §1's skeleton.\n` +
+  `    • a non-empty body (--body or --body-file), following canon §1's skeleton;\n` +
+  `    • for --label epic ONLY: the body names a docs/product/… artifact (the\n` +
+  `      do-product-discovery output) or carries the waiver line\n` +
+  `      «${WAIVER_FORM}». An epic is decomposed into other people's work,\n` +
+  `      so what it is FOR is established before, not corrected after (#321).\n` +
   `  The default assignee is @me. --repo/-R is forbidden.\n\n` +
   `  Bootstrap the taxonomy once: pnpm taxonomy:bootstrap --apply.\n` +
   `  Exit codes: 0 — issue created and confirmed on the board; 1 — error.\n`
@@ -521,6 +563,8 @@ function main() {
   for (const w of skeletonWarnings(body, [channel, ...collectLabels(passthrough)])) {
     process.stderr.write(`${TAG} remark (non-blocking): ${w}\n`)
   }
+  const waiverNotice = epicWaiverNotice(passthrough)
+  if (waiverNotice) out(waiverNotice)
 
   const bodyDir = mkdtempSync(join(tmpdir(), 'bbm-issue-'))
   const bodyFile = join(bodyDir, 'body.md')
