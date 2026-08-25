@@ -105,6 +105,31 @@ author (the `.github/ISSUE_TEMPLATE/fix.yml` form pre-fills these fields).
 For an `epic`, `Acceptance criteria` is replaced by the set of sub-issues: an
 epic's criterion is its closed children, it keeps no separate checklist.
 
+**An epic also carries its product layer, or an explicit waiver.** An epic is
+decomposed into other people's work, so what it is FOR is established before
+that, not corrected after. Its body therefore satisfies exactly one of:
+
+| Shape                                       | Means                                                                                                                                        |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| a `docs/product/<epic-slug>/…` path         | the product layer exists and is NAMED here — the output of `do-product-discovery` / [`author-product-spec`](../author-product-spec/SKILL.md) |
+| `product-layer: waived — <who, YYYY-MM-DD>` | the epic honestly needs no PRD (pure infrastructure) and a named person decided that on a named day                                          |
+
+**The tail is part of the record**, exactly as with the `Stage-B:` marker
+([`design-process.md`](../../rules/design-process.md) §2): a bare
+`product-layer: waived` is an omission wearing a marker's clothes. Text that only
+_talks about_ the requirement — a fenced example, an `<!-- … -->` comment, the
+`docs/product/**` glob — is never evidence; the check strips it.
+
+The rule is deliberately satisfiable two ways: a hard «every epic needs a PRD»
+would be false, and a rule that is sometimes wrong gets routed around. The
+failure it exists for (#321, retro 2026-08-24) was not that a waiver was taken —
+epic #112 was decomposed from a technical spec, re-framed by the owner seven
+sub-issues later, and the question had never been asked at all.
+
+Enforcement is split: `pnpm issue:create --label epic` REFUSES a filing that
+satisfies neither (§7), while `pnpm backlog:triage` only FLAGS an existing epic —
+the corpus predates the rule and is never blocked or auto-edited.
+
 The **title** is free-form English text without a Conventional-Commits prefix:
 the task class is carried by the built-in **Type** field, and duplicating it in
 the title buys nothing.
@@ -355,17 +380,17 @@ a link to the created issue.
 The canon names each command and its role; the contract of each lives in the
 artifact itself (the script's `--help` and its file header).
 
-| Command / artifact                             | Role in the canon                                                                                                     | Where the contract is                      |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `pnpm issue:create`                            | the **only** way to create a task; raw `gh issue create` is forbidden                                                 | `tools/gh/create-issue.mjs` (`--help`)     |
-| `pnpm board:status <issue> <status>`           | half of the claim (§4) and `Done` after a merge: `Closes #N` does not move the board column                           | `tools/gh/set-board-status.mjs`            |
-| `pnpm pr:land <pr>`                            | the PR closing tail in one command; the first failing stage stops the tail                                            | `tools/gh/pr-land.mjs`                     |
-| `pnpm backlog:triage`                          | readiness from the native graph, field hygiene, edges without a rationale, mega-blockers, claim-signal reconciliation | `tools/gh/backlog-triage.mjs`              |
-| `pnpm taxonomy:bootstrap [--apply]`            | creates the `channel:*` labels and the permanent milestones; deletes nothing                                          | `tools/gh/bootstrap-taxonomy.mjs`          |
-| `pnpm task:worktree <N>` / `worktree:teardown` | the worktree as the first claim signal (§4); the branch prefix is derived from Type                                   | `parallel-sessions.md`                     |
-| The `spec-issue-graph` skill                   | opening a connected set of tasks from a spec: sub-issues, edges, exactly one pickable                                 | `.claude/skills/spec-issue-graph/SKILL.md` |
-| Issue forms                                    | the owner's path from the web UI; the form sets Type and `channel:owner` itself, a blank issue is forbidden           | `.github/ISSUE_TEMPLATE/*.yml`             |
-| `.github/branch-protection.json`               | declarative protection of `main`: required check `ci` (the aggregate meta-job), linear history, no force-push         | `docs/ci-guardrails.md` §2.1               |
+| Command / artifact                             | Role in the canon                                                                                                                                         | Where the contract is                      |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `pnpm issue:create`                            | the **only** way to create a task; raw `gh issue create` is forbidden. On `--label epic` it also refuses a body with no product layer and no waiver (§1)  | `tools/gh/create-issue.mjs` (`--help`)     |
+| `pnpm board:status <issue> <status>`           | half of the claim (§4) and `Done` after a merge: `Closes #N` does not move the board column                                                               | `tools/gh/set-board-status.mjs`            |
+| `pnpm pr:land <pr>`                            | the PR closing tail in one command; the first failing stage stops the tail                                                                                | `tools/gh/pr-land.mjs`                     |
+| `pnpm backlog:triage`                          | readiness from the native graph, field hygiene, edges without a rationale, mega-blockers, claim-signal reconciliation, epics missing a product layer (§1) | `tools/gh/backlog-triage.mjs`              |
+| `pnpm taxonomy:bootstrap [--apply]`            | creates the `channel:*` labels and the permanent milestones; deletes nothing                                                                              | `tools/gh/bootstrap-taxonomy.mjs`          |
+| `pnpm task:worktree <N>` / `worktree:teardown` | the worktree as the first claim signal (§4); the branch prefix is derived from Type                                                                       | `parallel-sessions.md`                     |
+| The `spec-issue-graph` skill                   | opening a connected set of tasks from a spec: sub-issues, edges, exactly one pickable                                                                     | `.claude/skills/spec-issue-graph/SKILL.md` |
+| Issue forms                                    | the owner's path from the web UI; the form sets Type and `channel:owner` itself, a blank issue is forbidden                                               | `.github/ISSUE_TEMPLATE/*.yml`             |
+| `.github/branch-protection.json`               | declarative protection of `main`: required check `ci` (the aggregate meta-job), linear history, no force-push                                             | `docs/ci-guardrails.md` §2.1               |
 
 `.github/branch-protection.json` is a payload, not a state: it is applied by hand
 with
