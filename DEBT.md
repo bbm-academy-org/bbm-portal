@@ -455,6 +455,37 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-24-4f7e02c8b1 -->
 
+- [ ] 2026-08-25 `src/auth.ts` `jwt()` stamps the roles claim only under
+      `if (profile)` — `profile` is present on the sign-in pass only, so a
+      sign-in pass where the provider returns NO profile leaves the token
+      unstamped. `rolesClaimAbsent` then reads true on a token that has just
+      been through sign-in, and the session loops back through re-sign-in
+      instead of failing closed on a bare 403 — the recovery path the gate uses
+      for a genuinely stale token becomes an endless one for this shape. Not
+      fixed in #313 because telling «no profile on this pass» from «not a
+      sign-in pass at all» needs a positive sign-in marker on the token rather
+      than the absence of a field, which is a change to the token contract every
+      gate reads, not a guard clause — return condition: the first observed
+      sign-in loop in dev or prod, or the next task touching `src/auth.ts`'s
+      `jwt` callback (#313, PR #334 review round 2, non-blocking residual)
+
+<!-- debt-entry-end: 2026-08-25-3ac91f2e70 -->
+
+- [ ] 2026-08-25 `tests/e2e/hours-core-parity.e2e.spec.ts` still carries the
+      pre-hardening COPY of the Zitadel sign-in flow; the hardened shared helper
+      extracted by #313 is `tests/e2e/support/zitadel-sign-in.ts`, and the
+      sibling was deliberately left untouched — migrating it means actually
+      RUNNING the hours parity suite, which mutates the stand it signs into, so
+      it is a run with its own port and its own dev-stand state, not a
+      mechanical import swap inside a claim-gate PR. Distinct from the
+      2026-08-17 duplication line (`2026-08-17-c3d2e255e3`): that one is two
+      specs duplicating each other, this one is one spec left behind by a
+      hardening the other copies now have — return condition: the next task that
+      touches hours e2e, or the first flake of hours sign-in in CI (#313,
+      PR #334)
+
+<!-- debt-entry-end: 2026-08-25-6b0d4c1a83 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
