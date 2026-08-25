@@ -891,6 +891,15 @@ plug-in contract itself (§A) has no separate implementation issue: it is the
 first deliverable of #314, which is the first consumer to need it, and #315
 verifies it on the admin half.
 
+**Opened while §B was built:** **#333** — the revocation half of EARS-459. #313
+landed every other clause of §B and stopped there deliberately: the roles are
+read once, at sign-in, and then ride the Auth.js JWT session cookie, so a revoke
+performed in Zitadel is invisible to the platform until that session ends. The
+grant direction (EARS-460) holds exactly as specced. «The next request from that
+session» is not something a claim carried in a cookie can promise, and the fix is
+a choice between a per-request IdP round trip, a bounded staleness window and an
+amendment to the clause — an owner's call, not an implementer's. #333 carries it.
+
 ### Frame-level work that must be budgeted inside those issues
 
 Named here because each is a change to a file outside the issue's obvious

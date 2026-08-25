@@ -23,6 +23,15 @@ const nextConfig: NextConfig = {
   // said — read the version-matched docs bundled in the `next` package — is now
   // stated by us, in `AGENTS.md`, under our own review. (#229)
   agentRules: false,
+  experimental: {
+    // `forbidden()` and its `forbidden.tsx` boundary (spec 311 EARS-418, D-5):
+    // the bare HTTP 403 the workspace gates answer with. Still behind this flag
+    // in Next 16, and it is the ONLY way an App Router layout can refuse a
+    // request with a real status code — a layout cannot return a Response, and
+    // `notFound()` would answer 404, which D-5 rejects because it is
+    // indistinguishable from the ADR-003 host refusal.
+    authInterrupts: true,
+  },
   images: {
     localPatterns: [
       {
