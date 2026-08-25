@@ -42,4 +42,8 @@ tools/**/*.mjs text eol=lf
 # Windows-чекауте с core.autocrlf=true git подставил бы CRLF, хэш разошёлся бы
 # с мастером — и локальная джоба свежести кричала бы «STALE» на файле, который
 # только что снят байт в байт.
-src/lib/finmodel/snapshot/rules.mdx text eol=lf
+# То же и для JSON-снимка (#330): `finmodel-ssot-snapshot.spec.ts` сверяет
+# сырой текст файла с `JSON.stringify(…, 2) + '\n'` — на CRLF-чекауте он падал
+# локально (в CI/Linux зелёный). Правило берёт всю папку снимка, чтобы
+# следующий файл в ней не завёл ту же ошибку заново.
+src/lib/finmodel/snapshot/** text eol=lf
