@@ -166,13 +166,13 @@ Seven structural facts:
 
 ## Feature decomposition
 
-| Feature | Issue | PRD                             | Blocked by | Surface      | What it settles                                                                                                                                                                                            |
-| ------- | ----- | ------------------------------- | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1      | #338  | `338-ledger-core-product.md`    | —          | backend-only | what a fact of money is here: accounts, the project dimension, postings, currencies, reversal — including the empty, editable category table, but no category list                                         |
-| F2      | #339  | `339-ledger-filling-product.md` | #338       | user-facing  | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve |
-| F3      | #340  | `340-reports-product.md`        | #338       | user-facing  | what the owner reads: register, P&L, cash flow, unit cost, break-even price                                                                                                                                |
-| F4      | #341  | `341-reconciliation-product.md` | #340       | user-facing  | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                  |
-| F5      | #342  | `342-scenarios-product.md`      | #340       | user-facing  | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                              |
+| Feature | Issue | PRD              | Blocked by | Surface      | What it settles                                                                                                                                                                                            |
+| ------- | ----- | ---------------- | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1      | #338  | `338-product.md` | —          | backend-only | what a fact of money is here: accounts, the project dimension, postings, currencies, reversal — including the empty, editable category table, but no category list                                         |
+| F2      | #339  | `339-product.md` | #338       | user-facing  | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve |
+| F3      | #340  | `340-product.md` | #338       | user-facing  | what the owner reads: register, P&L, cash flow, unit cost, break-even price                                                                                                                                |
+| F4      | #341  | `341-product.md` | #340       | user-facing  | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                  |
+| F5      | #342  | `342-product.md` | #340       | user-facing  | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                              |
 
 **The graph:** F1 is the head of the critical path and the only takeable issue at
 filing time; F2 and F3 are blocked by F1 (nothing fills or reads a ledger that

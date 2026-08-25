@@ -73,10 +73,9 @@ these are editable tables.)_
 "what for" of an expense is picked from a **separate purpose reference**
 («справочник назначений»), finer-grained than the category list, with **each
 purpose linked to its expense category** — «максимально упрощаем и
-систематизируем всё». Free text survives only as an optional details comment
-beside the picked purpose, never as the purpose itself. F1 owns the reference
-table and the link from purpose to category; the request form that picks from it
-is F2 (#339).
+систематизируем всё». The purpose is **a reference pick, not free text**. F1 owns
+the reference table and the link from purpose to category; the request form that
+picks from it is F2 (#339).
 
 ## Expense taxonomy — derived from the fact, not invented upfront
 
@@ -171,10 +170,11 @@ external vendors and a contingency buffer (prior art §4).
   (bank fees, the fund's domain, legal) is still recorded correctly, under the
   treatment proper accounting prescribes, and I approve that treatment once at
   the F1 spec go rather than deciding it per operation. _(decision 22)_
-- **US-17** — As a person filing an expense, I pick what it is for from the
-  purpose reference, and the category follows from the purpose; anything I want
-  to add in my own words is a comment beside it, not the purpose.
-  _(decision 21)_
+- **US-17** — _Not a story of this feature._ The filer-facing act of picking a
+  purpose belongs to F2 — see **#339, US-20**. F1 owns only the purpose reference
+  table and the purpose → category link (US-7 covers reference-table
+  editability); this backend-only PRD carries no filer story. The id is kept so
+  the other US ids stay stable. _(decision 21)_
 
 ## Flows
 
@@ -193,7 +193,7 @@ operations (F2). No opening-balance entry is ever posted. _(decision 17)_
 **Filing what an expense is for.**
 The purpose is picked from the purpose reference; its expense category comes with
 it through the purpose → category link, so a purpose and its category can never
-disagree. Free text is an optional details comment on the operation.
+disagree. The purpose is a pick; free text is not a way to state it.
 _(decision 21)_
 
 **A conversion (RUB → USDT → THB).**
@@ -255,7 +255,7 @@ form)_
 - An expense that belongs to no product is recorded under the treatment the F1
   spec proposes and the owner signs off, not left uncategorised.
 - The "what for" of an expense is a pick from the purpose reference, its category
-  follows from the purpose, and free text is only an accompanying comment.
+  follows from the purpose, and no free-text purpose is accepted anywhere.
 - Money attributable to a member can be listed per member.
 - An hours accrual and a bank payment appear in the same P&L without a manual
   merge step.
@@ -296,3 +296,12 @@ form)_
    allocation base; capitalization = direct + attributable overhead) for the
    owner's sign-off at the spec go. Open as a research duty, not as a product
    fork.
+5. **What makes an expense "attributable" to a product?** The acceptance
+   criterion "an expense attributable to a product cannot be recorded without
+   naming that product" decides whether a form blocks a submit, and **no owner
+   decision defines the test** — decision 22 fixes that product-attributable
+   expenses carry a product and hands the overhead treatment to the F1 spec
+   (question 4), but never says which expenses are attributable. Nothing is
+   invented here: the definition is a deliverable of the F1 spec, answered
+   together with question 4 and signed off at the spec go. F2 (#339) depends on
+   the same answer for its request form.

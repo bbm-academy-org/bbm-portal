@@ -220,11 +220,12 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
    2026-08-25): each operation's own actual rate, frozen at its date. _(The
    reporting currency itself was already settled by decision 13 — RUB by default,
    switchable.)_
-2. ~~**What counts as a unit produced in a period?**~~ **Closed by decision 19**
-   (owner 2026-08-25, wireframe review): the production units are **lessons and
-   courses**, as drawn on the wireframe. How a lesson or a course is counted as
-   "produced" in a given period (published, released, sold) stays a spec-level
-   definition, not a product fork.
+2. **What counts as a unit produced in a period?** Decision 19 (owner 2026-08-25,
+   wireframe review) settled the **unit** — the production units are **lessons
+   and courses**, as drawn on the wireframe — but not the **counting rule**: when
+   a lesson or a course counts as "produced" in a given period (published,
+   released, sold) is still undecided, and unit cost per period cannot be
+   computed without it. Deferred to the F3 feature spec, not closed.
 3. **Is revenue per unit known** (a price on the product), or is break-even
    computed purely from cost? The DS model takes the price as an input
    (prior art §4).
@@ -236,4 +237,5 @@ and fixes the principles instead (honest math; obligations counted and shown;
 plan-vs-fact explicit). The feature spec inherits the principles, not a timing
 rule. The cross-currency rate policy (decision 18) and the unit denominator
 (decision 19) are likewise no longer open — both were ruled at the 2026-08-25
-wireframe review.
+wireframe review. The **counting rule** for a produced unit is a different
+question and stays open above (question 2).

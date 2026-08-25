@@ -46,8 +46,8 @@ Nothing seeds it in advance.
 (owner 2026-08-25).** "What for" is chosen from the **purpose reference**
 («справочник назначений») that F1 (#338) owns: finer-grained than the category
 list, each purpose linked to its expense category, so the category follows from
-the pick. Free text survives only as an optional details comment on the request —
-«максимально упрощаем и систематизируем всё».
+the pick. The purpose is **a reference pick, not free text** — «максимально
+упрощаем и систематизируем всё».
 
 **The backfill starts at the first operation ever — decision 17 (owner
 2026-08-25).** The owner locates it; from there the books run forward, accounts
@@ -122,9 +122,8 @@ screen are the epic's most-used surfaces and need a Stage-A pick vendored into
   ledger, only request. _(decision 8)_
 - **US-20** — As a team member, I choose the purpose of my request from the
   purpose reference and the expense category follows from it, so two people
-  spending on the same thing never file it under two different words. Anything I
-  need to say in my own words goes in a details comment beside the picked
-  purpose. _(decision 21)_
+  spending on the same thing never file it under two different words, and the
+  form does not let me type one instead. _(decision 21)_
 - **US-21** — As an owner, when a purpose I need is missing from the reference, I
   add it to the reference (linked to its category) rather than letting the form
   accept free text. _(decision 21; `agent-proposed — UNCONFIRMED` as to who may
@@ -139,8 +138,8 @@ screen are the epic's most-used surfaces and need a Stage-A pick vendored into
 Member opens `/p/finance/requests` → fills amount + currency → **picks the
 purpose from the purpose reference**, which carries its expense category with it
 _(decision 21)_ → picks the project and, where the expense is attributable to a
-product, the product, which is then mandatory _(decision 22)_ → optionally adds a
-free-text details comment → attaches the invoice → submits → the request
+product, the product, which is then mandatory _(decision 22)_ → attaches the
+invoice → submits → the request
 appears in the owners' queue → an owner approves → the operation is posted to the
 ledger with the invoice attached and the approver recorded → the member sees
 "approved".
@@ -253,6 +252,9 @@ same path as every other source. No existing source changes.
 5. **How much spend is enough to derive the taxonomy from?** Decision 11 fixes
    that the list comes from the fact, not when the derivation is run — after the
    backfill alone, or after some period of live operation.
+6. **What makes an expense "attributable" to a product?** This form blocks a
+   submit on it, and no owner decision defines the test — the definition is owned
+   by F1's open question 5 (#338) and is answered at the F1 spec go, not here.
 
 _Settled since the first draft:_ approve-then-spend vs record-what-was-spent is
 no longer open — decision 12 rules that both paths run through the same form and
