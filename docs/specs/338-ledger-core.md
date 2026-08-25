@@ -203,14 +203,20 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   filled, the system shall set that category on the operation's expense-side
   postings itself and shall refuse a differing one — a purpose and its category
   can never disagree on a posting (decision 21).
-- **EARS-328.** WHEN a holding in a non-RUB currency or crypto leaves an
-  account (a conversion or a payment from it), the system shall compute the
-  realized difference between the disposal-date rate and the account's
-  **weighted-average recorded rate** for that currency, and shall post it to
-  the system `fx_result` account of the fund — never onto a product — as part
-  of the same operation, keeping EARS-311's per-currency zero-sum intact
-  (Accounting policy, ruling 3; the recorded legs themselves are never
-  restated).
+- **EARS-328.** WHEN an operation's conversion steps dispose of a holding of
+  crypto or another currency — an operation that itself establishes an actual
+  rate (decision 18) — the system shall compute the realized difference
+  between that rate and the holding's **weighted-average recorded rate**, and
+  shall post it inside the same operation to the system `fx_result` account of
+  the fund — never onto a product — with the system `conversion` account as
+  the balancing counter-leg in the same currency, keeping EARS-311's
+  per-currency zero-sum intact (Accounting policy, ruling 3; the recorded legs
+  themselves are never restated).
+- **EARS-329.** IF an operation carries no conversion step (a payment or
+  transfer in one currency), THEN the system shall post no FX result: the
+  ledger holds no rate source for it (decision 18 records only actual
+  operation rates), and any unrealised movement is an F3 display concern
+  (ruling 3), never a posting.
 
 ### C. Module structure, admin resources, audit
 
@@ -285,11 +291,14 @@ agenda decision crypto is a non-monetary asset; IAS 21 does not retranslate
 non-monetary items held at cost — the transaction-date rate persists, so the
 ledger's frozen-rate principle IS the standard treatment. Proposal: the ledger
 holds crypto at the recorded rate forever; **no revaluation postings ever**
-(EARS-319); the difference is recognised only on disposal — computed against
-the holding's **weighted-average recorded rate** (the standard cost-flow
-assumption for a fungible holding; no lot tracking in v1) and posted at the
-disposal-date rate to the system `fx_result` account of the fund, never onto a
-product (EARS-328); unrealised movement is an F3 display concern (a computed,
+(EARS-319); the difference is recognised only on disposal **through a
+conversion** — the one operation class that itself establishes an actual rate
+(decision 18) — computed against the holding's **weighted-average recorded
+rate** (the standard cost-flow assumption for a fungible holding; no lot
+tracking in v1) and posted to the system `fx_result` account of the fund,
+against the `conversion` account, never onto a product (EARS-328). A payment
+or transfer in one currency establishes no rate and recognises nothing
+(EARS-329); unrealised movement is an F3 display concern (a computed,
 labelled non-posting line). IAS 36 impairment is an explicit v1 deferral.
 
 Cross-cutting principle, verbatim in the model: the ledger records facts at the

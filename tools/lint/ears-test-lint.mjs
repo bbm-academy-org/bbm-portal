@@ -139,7 +139,7 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  */
 const DEFERRALS_BY_ISSUE = {
   338: {
-    ids: Array.from({ length: 28 }, (_, i) => `EARS-${301 + i}`),
+    ids: Array.from({ length: 29 }, (_, i) => `EARS-${301 + i}`),
     reason:
       'spec 338 (finance F1 ledger core) is Draft, authored at stage 1a and awaiting the owner’s stage-2 go on #338; no implementation exists to test yet. The build task removes ids from this list as their tests land (tests named it(’EARS-N: …’) per task-cycle stage 3), the same way #273 drained the 201 entry',
   },
