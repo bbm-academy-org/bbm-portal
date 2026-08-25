@@ -61,10 +61,8 @@ meant to prevent it.
 
 | File | Surface | Provenance (original / export / build) | Built by |
 | ---- | ------- | -------------------------------------- | -------- |
-
-_Empty by design._ Nothing is vendored yet: this folder ships with #138, and the
-first entry lands with the first UI task after it. Existing surfaces (`/p/hours`,
-`/p/okr`, the Payload admin) are **not** back-filled — see rule 4.
+| `p-launcher.html` | `/p` home launcher (member-facing app catalogue) | **original** — static-HTML wireframe authored by the Claude lead session for #311 Stage A (option "launcher-a", flat uniform grid); owner pick by Антон, 2026-08-25, recorded in #314 | #314 |
+| `p-admin-shell.html` | `/p/admin` cabinet shell (Refine, left sidebar with module groups) | **original** — static-HTML wireframe authored by the Claude lead session for #311 Stage A (option "admin-a"); owner pick by Антон, 2026-08-25 with two amendments (explicit sub-section nesting; OKR gets a cabinet section — see the file's header comment), recorded in #315 | #315 |
 
 ## Tooling notes
 

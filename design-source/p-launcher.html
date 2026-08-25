@@ -1,0 +1,177 @@
+<!--
+  OPTION: launcher-a — «Единая сетка»
+  THESIS: одна плоская сетка одинаковых плиток; внешние ссылки — те же плитки,
+          на четверть меньше по высоте и помеченные значком ↗, вперемешку с
+          приложениями в общем потоке (порядок = порядок реестра).
+  NOT SHOWN (states this wireframe does NOT depict):
+    - empty (портфель без единого приложения — по PRD не возникает)
+    - loading (скелет плиток и «пульс ещё не приехал»)
+    - error (модуль не отдал статус-строку / реестр недоступен)
+    - denied (нет claim → запись просто отсутствует; тут показан вид АДМИНА)
+    - narrow/mobile (свёрнутый переключатель приложений в меню)
+-->
+<meta charset="utf-8" />
+<title>Stage A — /p launcher, вариант A</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f2f2f2;
+    color: #1a1a1a;
+    font: 15px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  .wire-note {
+    max-width: 1160px; margin: 0 auto; padding: 8px 24px;
+    font-size: 12px; color: #777; letter-spacing: .04em; text-transform: uppercase;
+  }
+  /* --- shared top bar (общая для всех /p/*) --- */
+  .bar {
+    background: #fff; border-bottom: 1px solid #bbb;
+  }
+  .bar-in {
+    max-width: 1160px; margin: 0 auto; padding: 0 24px;
+    height: 52px; display: flex; align-items: center; gap: 16px;
+  }
+  .bar-home { font-weight: 600; letter-spacing: .01em; }
+  .bar-sep { color: #bbb; }
+  .bar-app { color: #666; }
+  .bar-switch {
+    margin-left: 4px; border: 1px solid #bbb; background: #f7f7f7;
+    padding: 4px 10px; font-size: 13px; color: #444;
+  }
+  .bar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: #555; }
+  .bar-avatar { width: 24px; height: 24px; border: 1px solid #bbb; background: #eee; border-radius: 50%; }
+  .bar-out { border: 1px solid #bbb; background: #fff; padding: 4px 10px; font-size: 13px; color: #444; }
+
+  main { max-width: 1160px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  .sub { color: #777; font-size: 14px; margin: 0 0 28px; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .tile {
+    background: #fff; border: 1px solid #bbb; padding: 16px;
+    min-height: 132px; display: flex; flex-direction: column;
+  }
+  .tile-icon { width: 28px; height: 28px; border: 1px solid #bbb; background: #eee; margin-bottom: 12px; }
+  .tile-name { font-weight: 600; font-size: 16px; }
+  .tile-desc { color: #777; font-size: 13px; margin-top: 2px; }
+  .pulse {
+    margin-top: auto; padding-top: 12px; border-top: 1px dashed #ccc;
+    font-size: 13px; color: #333;
+  }
+  .pulse.none { color: #aaa; font-style: italic; border-top-color: #e4e4e4; }
+  .tile.ext { min-height: 96px; background: #fafafa; }
+  .tile.ext .tile-icon { width: 22px; height: 22px; margin-bottom: 8px; }
+  .ext-mark { float: right; font-size: 12px; color: #777; border: 1px solid #ccc; padding: 1px 5px; }
+  .tile.admin { border-style: dashed; }
+  .admin-flag { font-size: 11px; color: #777; letter-spacing: .05em; text-transform: uppercase; }
+  .ghost { background: #f7f7f7; border-style: dashed; color: #999; }
+  .ghost .tile-name { color: #999; font-weight: 500; }
+</style>
+
+<div class="bar">
+  <div class="bar-in">
+    <span class="bar-home">BBM · Портал</span>
+    <span class="bar-sep">/</span>
+    <span class="bar-app">Главная</span>
+    <button class="bar-switch">Приложения ▾</button>
+    <span class="bar-right">
+      <span class="bar-avatar"></span>
+      <span>Анна Ковалёва</span>
+      <button class="bar-out">Выйти</button>
+    </span>
+  </div>
+</div>
+
+<div class="wire-note">Вариант A — единая сетка · вид платформенного администратора</div>
+
+<main>
+  <h1>Рабочее пространство BBM</h1>
+  <p class="sub">Всё, что открыто для вас сегодня. 24 августа 2026.</p>
+
+  <div class="grid">
+    <div class="tile">
+      <div class="tile-icon"></div>
+      <div class="tile-name">Часы</div>
+      <div class="tile-desc">Самооценка часов</div>
+      <div class="pulse">Период «август 2026» открыт до 1 сентября</div>
+    </div>
+
+    <div class="tile">
+      <div class="tile-icon"></div>
+      <div class="tile-name">OKR</div>
+      <div class="tile-desc">Цели квартала</div>
+      <div class="pulse">Q3: обновлено 4 цели из 7</div>
+    </div>
+
+    <div class="tile admin">
+      <div class="tile-icon"></div>
+      <div class="tile-name">Админка</div>
+      <div class="tile-desc"><span class="admin-flag">только администратор</span></div>
+      <div class="pulse none">— без статус-строки —</div>
+    </div>
+
+    <div class="tile ext">
+      <span class="ext-mark">↗ внешний</span>
+      <div class="tile-icon"></div>
+      <div class="tile-name">Plane</div>
+      <div class="tile-desc">Задачи и проекты</div>
+    </div>
+
+    <div class="tile ext">
+      <span class="ext-mark">↗ внешний</span>
+      <div class="tile-icon"></div>
+      <div class="tile-name">Mattermost</div>
+      <div class="tile-desc">Общение команды</div>
+    </div>
+
+    <div class="tile ext">
+      <span class="ext-mark">↗ внешний</span>
+      <div class="tile-icon"></div>
+      <div class="tile-name">База знаний</div>
+      <div class="tile-desc">Вики BBM</div>
+    </div>
+
+    <div class="tile ghost">
+      <div class="tile-icon"></div>
+      <div class="tile-name">Финансы</div>
+      <div class="tile-desc">портфель, позже</div>
+      <div class="pulse none">— —</div>
+    </div>
+
+    <div class="tile ghost">
+      <div class="tile-icon"></div>
+      <div class="tile-name">Колоды</div>
+      <div class="tile-desc">портфель, позже</div>
+      <div class="pulse none">— —</div>
+    </div>
+
+    <div class="tile ghost">
+      <div class="tile-icon"></div>
+      <div class="tile-name">CRM</div>
+      <div class="tile-desc">портфель, позже</div>
+      <div class="pulse none">— —</div>
+    </div>
+
+    <div class="tile ghost">
+      <div class="tile-icon"></div>
+      <div class="tile-name">Поиск команды</div>
+      <div class="tile-desc">портфель, позже</div>
+      <div class="pulse none">— —</div>
+    </div>
+
+    <div class="tile ghost">
+      <div class="tile-icon"></div>
+      <div class="tile-name">Запуск проекта</div>
+      <div class="tile-desc">портфель, позже</div>
+      <div class="pulse none">— —</div>
+    </div>
+
+    <div class="tile ghost">
+      <div class="tile-icon"></div>
+      <div class="tile-name">Калькуляторы</div>
+      <div class="tile-desc">портфель, позже</div>
+      <div class="pulse none">— —</div>
+    </div>
+  </div>
+</main>

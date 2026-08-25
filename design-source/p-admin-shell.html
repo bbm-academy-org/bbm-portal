@@ -1,0 +1,147 @@
+<!--
+  OPTION: admin-a — «Левый сайдбар с группами модулей»
+  THESIS: постоянная левая колонка навигации, сгруппированная по модулям
+          (Участники · Часы …); вся навигация портфеля видна одновременно,
+          рабочая область справа — список/форма ресурса. Показан экран ресурса
+          «Участники» (индекс-страница разделов — тот же макет с пустой рабочей
+          областью, здесь не отрисован отдельно).
+  OWNER PICK 2026-08-25 (Антон), с двумя поправками:
+    1. Вложенность подразделов в сайдбаре сделать заметнее, чем в этом
+       вайрфрейме (ожидание: штатные multi-level menu Refine это покрывают).
+    2. OKR ТОЖЕ получает раздел в кабинете — исходная сноска «OKR раздела в
+       админке не имеет — данные читаются из Plane» отменена владельцем:
+       источник данных не аргумент для выноса из админки. Состав раздела
+       определит спека.
+  NOT SHOWN (states this wireframe does NOT depict):
+    - empty (модуль без разделов; ресурс без записей)
+    - loading (скелет таблицы, загрузка формы)
+    - error (сохранение не прошло, данные не читаются)
+    - denied (не-админ до шелла не доходит — отказ на сервере, #313)
+    - форма редактирования и подтверждение сохранения
+    - narrow/mobile (сайдбар сворачивается)
+-->
+<meta charset="utf-8" />
+<title>Stage A — /p/admin, вариант A</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f2f2f2; color: #1a1a1a; font: 15px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; }
+  .bar { background: #fff; border-bottom: 1px solid #bbb; }
+  .bar-in { padding: 0 24px; height: 52px; display: flex; align-items: center; gap: 16px; }
+  .bar-home { font-weight: 600; }
+  .bar-sep { color: #bbb; }
+  .bar-app { color: #666; }
+  .bar-switch { border: 1px solid #bbb; background: #f7f7f7; padding: 4px 10px; font-size: 13px; color: #444; }
+  .bar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: #555; }
+  .bar-avatar { width: 24px; height: 24px; border: 1px solid #bbb; background: #eee; border-radius: 50%; }
+  .bar-out { border: 1px solid #bbb; background: #fff; padding: 4px 10px; font-size: 13px; color: #444; }
+  .wire-note { padding: 8px 24px; font-size: 12px; color: #777; letter-spacing: .04em; text-transform: uppercase; }
+
+  .shell { display: grid; grid-template-columns: 248px 1fr; min-height: calc(100vh - 78px); }
+  .side { background: #fff; border-right: 1px solid #bbb; padding: 20px 0; }
+  .side-title { padding: 0 18px 14px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #777; }
+  .grp { margin-bottom: 18px; }
+  .grp-name {
+    padding: 6px 18px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+    color: #555; background: #f4f4f4; border-top: 1px solid #e2e2e2; border-bottom: 1px solid #e2e2e2;
+  }
+  .nav-i { display: block; padding: 8px 18px 8px 30px; font-size: 14px; color: #333; border-left: 3px solid transparent; }
+  .nav-i.on { background: #ececec; border-left-color: #555; font-weight: 600; }
+  .grp.ghost .grp-name, .grp.ghost .nav-i { color: #a0a0a0; }
+  .side-foot { padding: 14px 18px; font-size: 12px; color: #999; border-top: 1px solid #e2e2e2; }
+
+  .work { padding: 28px 32px; }
+  .crumbs { font-size: 13px; color: #777; margin-bottom: 8px; }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
+  .hint { color: #777; font-size: 13px; margin: 0 0 20px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
+  .btn { border: 1px solid #bbb; background: #f7f7f7; padding: 6px 12px; font-size: 13px; color: #333; }
+  .search { border: 1px solid #bbb; background: #fff; padding: 6px 10px; font-size: 13px; color: #999; min-width: 280px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #bbb; font-size: 14px; }
+  th { text-align: left; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: #666; background: #f6f6f6; padding: 10px 14px; border-bottom: 1px solid #ccc; }
+  td { padding: 11px 14px; border-bottom: 1px solid #eaeaea; }
+  tr:last-child td { border-bottom: 0; }
+  .tag { border: 1px solid #ccc; background: #f6f6f6; padding: 1px 7px; font-size: 12px; color: #555; }
+  .tag.off { border-style: dashed; color: #999; }
+  .rowacts a { font-size: 13px; color: #444; border-bottom: 1px dotted #999; margin-right: 12px; text-decoration: none; }
+  .pager { margin-top: 12px; font-size: 13px; color: #777; }
+</style>
+
+<div class="bar">
+  <div class="bar-in">
+    <span class="bar-home">BBM · Портал</span>
+    <span class="bar-sep">/</span>
+    <span class="bar-app">Админка</span>
+    <button class="bar-switch">Приложения ▾</button>
+    <span class="bar-right">
+      <span class="bar-avatar"></span>
+      <span>Анна Ковалёва · администратор</span>
+      <button class="bar-out">Выйти</button>
+    </span>
+  </div>
+</div>
+<div class="wire-note">Вариант A — левый сайдбар с группами модулей</div>
+
+<div class="shell">
+  <nav class="side">
+    <div class="side-title">Разделы</div>
+
+    <div class="grp">
+      <div class="grp-name">Участники</div>
+      <span class="nav-i on">Участники</span>
+    </div>
+
+    <div class="grp">
+      <div class="grp-name">Часы</div>
+      <span class="nav-i">Периоды</span>
+      <span class="nav-i">Ставки и грейды</span>
+      <span class="nav-i">Экспорт</span>
+      <span class="nav-i">Публикация в Mattermost</span>
+    </div>
+
+    <div class="grp ghost">
+      <div class="grp-name">OKR</div>
+      <span class="nav-i">— состав раздела определит спека —</span>
+    </div>
+
+    <div class="grp ghost">
+      <div class="grp-name">Финансы</div>
+      <span class="nav-i">— портфель, позже —</span>
+    </div>
+  </nav>
+
+  <main class="work">
+    <div class="crumbs">Админка / Участники / Участники</div>
+    <h1>Участники</h1>
+    <p class="hint">Правка записи и деактивация. Удаление не поддерживается.</p>
+
+    <div class="toolbar">
+      <span class="search">Поиск по имени или почте…</span>
+      <span class="btn">Добавить участника</span>
+    </div>
+
+    <table>
+      <tr><th>Имя</th><th>Почта</th><th>Грейд</th><th>Статус</th><th>Действия</th></tr>
+      <tr>
+        <td>Анна Ковалёва</td><td>a.kovaleva@bbm.academy</td><td>Senior</td>
+        <td><span class="tag">активен</span></td>
+        <td class="rowacts"><a>Открыть</a><a>Деактивировать</a></td>
+      </tr>
+      <tr>
+        <td>Пётр Ильин</td><td>p.ilin@bbm.academy</td><td>Middle</td>
+        <td><span class="tag">активен</span></td>
+        <td class="rowacts"><a>Открыть</a><a>Деактивировать</a></td>
+      </tr>
+      <tr>
+        <td>Мария Дементьева</td><td>m.dementieva@bbm.academy</td><td>Lead</td>
+        <td><span class="tag">активен</span></td>
+        <td class="rowacts"><a>Открыть</a><a>Деактивировать</a></td>
+      </tr>
+      <tr>
+        <td>Сергей Титов</td><td>s.titov@bbm.academy</td><td>Junior</td>
+        <td><span class="tag off">деактивирован</span></td>
+        <td class="rowacts"><a>Открыть</a><a>Активировать</a></td>
+      </tr>
+    </table>
+    <div class="pager">1–4 из 27 · ‹ назад · вперёд ›</div>
+  </main>
+</div>
