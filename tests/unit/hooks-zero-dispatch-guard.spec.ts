@@ -20,6 +20,7 @@ import {
   readCounterState,
   resolveBypassReason,
   splitInlineBypass,
+  wrongShellForm,
 } from '../../tools/hooks/zero-dispatch-guard.mjs'
 
 /**
@@ -132,15 +133,24 @@ describe('zero-dispatch-guard: счётчик и порог', () => {
     expect(readCounterState(null)).toEqual({
       mutations: 0,
       dispatched: false,
-      bypassUsed: '',
+      bypassUsed: [],
       subagent: false,
     })
     expect(readCounterState({ mutations: -7, dispatched: 'да' })).toEqual({
       mutations: 0,
       dispatched: false,
-      bypassUsed: '',
+      bypassUsed: [],
       subagent: false,
     })
+  })
+
+  it('старая строковая форма bypassUsed читается как список из одного элемента', () => {
+    // Сессия, начатая до правки MAJOR 1, не теряет запись и не получает лишний
+    // побег: строка — это одна израсходованная причина, а не «ничего».
+    expect(readCounterState({ bypassUsed: 'старая причина' }).bypassUsed).toEqual([
+      'старая причина',
+    ])
+    expect(readCounterState({ bypassUsed: ['a', '', 7, 'b'] }).bypassUsed).toEqual(['a', 'b'])
   })
 
   it('не-мутирующий вызов состояние не трогает', () => {
@@ -164,11 +174,11 @@ describe('zero-dispatch-guard: диспетчеризующая сессия н�
       ...LEAD,
     })
     expect(d.action).toBe('dispatched')
-    expect(d.state).toEqual({ mutations: 0, dispatched: true, bypassUsed: '', subagent: false })
+    expect(d.state).toEqual({ mutations: 0, dispatched: true, bypassUsed: [], subagent: false })
   })
 
   it('после диспатча порог не блокирует НИКОГДА — сессия оркеструет', () => {
-    const dispatched = { mutations: 0, dispatched: true, bypassUsed: '' }
+    const dispatched = { mutations: 0, dispatched: true, bypassUsed: [] as string[] }
     let state = dispatched
     for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 3; i += 1) {
       const d = decideZeroDispatch({ toolName: 'Edit', toolInput: {}, state, ...LEAD })
@@ -189,7 +199,7 @@ describe('zero-dispatch-guard: одноразовый записанный по�
   const atThreshold = {
     mutations: ZERO_DISPATCH_BLOCK_THRESHOLD - 1,
     dispatched: false,
-    bypassUsed: '',
+    bypassUsed: [] as string[],
   }
 
   it('побег пропускает ровно следующую мутацию и называет причину', () => {
@@ -202,14 +212,14 @@ describe('zero-dispatch-guard: одноразовый записанный по�
     })
     expect(d.action).toBe('bypass')
     expect(d.reason).toBe('фикс прода, диспатч дороже правки')
-    expect(d.state?.bypassUsed).toBe('фикс прода, диспатч дороже правки')
+    expect(d.state?.bypassUsed).toEqual(['фикс прода, диспатч дороже правки'])
   })
 
   it('израсходованный побег ту же причину второй раз не пропускает', () => {
     const used = {
       ...atThreshold,
       mutations: ZERO_DISPATCH_BLOCK_THRESHOLD,
-      bypassUsed: 'та же причина',
+      bypassUsed: ['та же причина'],
     }
     const d = decideZeroDispatch({
       toolName: 'Edit',
@@ -223,11 +233,32 @@ describe('zero-dispatch-guard: одноразовый записанный по�
   })
 
   it('новая причина — новый побег', () => {
-    const used = { ...atThreshold, mutations: ZERO_DISPATCH_BLOCK_THRESHOLD, bypassUsed: 'старая' }
+    const used = {
+      ...atThreshold,
+      mutations: ZERO_DISPATCH_BLOCK_THRESHOLD,
+      bypassUsed: ['старая'],
+    }
     expect(
       decideZeroDispatch({ toolName: 'Edit', toolInput: {}, state: used, bypass: 'новая', ...LEAD })
         .action,
     ).toBe('bypass')
+  })
+
+  it('ЧЕРЕДОВАНИЕ двух причин побег не размножает (ревью PR #346, MAJOR 1)', () => {
+    // r1 → r2 → r1: с одной строкой `bypassUsed` третий вызов снова проходил бы,
+    // и две причины давали бы неограниченное число побегов.
+    const step = (state: unknown, bypass: string) =>
+      decideZeroDispatch({ toolName: 'Edit', toolInput: {}, state, bypass, ...LEAD })
+    const first = step({ ...atThreshold, mutations: ZERO_DISPATCH_BLOCK_THRESHOLD }, 'причина r1')
+    expect(first.action).toBe('bypass')
+    const second = step(first.state, 'причина r2')
+    expect(second.action).toBe('bypass')
+    expect(second.state?.bypassUsed).toEqual(['причина r1', 'причина r2'])
+    const third = step(second.state, 'причина r1')
+    expect(third.action).toBe('block')
+    expect(third.exhausted).toBe(true)
+    // Свежая причина по-прежнему работает — гард не превратился в рубильник.
+    expect(step(second.state, 'причина r3').action).toBe('bypass')
   })
 
   it('пустой побег побегом не является — значение это ПРИЧИНА, а не рубильник', () => {
@@ -248,12 +279,12 @@ describe('zero-dispatch-guard: одноразовый записанный по�
     const d = decideZeroDispatch({
       toolName: 'Edit',
       toolInput: {},
-      state: { mutations: 0, dispatched: false, bypassUsed: '' },
+      state: { mutations: 0, dispatched: false, bypassUsed: [] },
       bypass: 'причина',
       ...LEAD,
     })
     expect(d.action).toBe('count')
-    expect(d.state?.bypassUsed).toBe('')
+    expect(d.state?.bypassUsed).toEqual([])
   })
 })
 
@@ -378,6 +409,7 @@ describe('zero-dispatch-guard: побег достижим ИЗ сессии (р
     expect(splitInlineBypass('DISPATCH_BYPASS="фикс прода" gh issue edit 1 --body x')).toEqual({
       reason: 'фикс прода',
       command: 'gh issue edit 1 --body x',
+      wrongForm: '',
     })
     expect(splitInlineBypass("DISPATCH_BYPASS='одна строка' git commit -m x").reason).toBe(
       'одна строка',
@@ -385,7 +417,52 @@ describe('zero-dispatch-guard: побег достижим ИЗ сессии (р
     expect(splitInlineBypass('gh issue edit 1')).toEqual({
       reason: '',
       command: 'gh issue edit 1',
+      wrongForm: '',
     })
+  })
+
+  it('PowerShell имеет СВОЮ форму префикса (ревью PR #346, MAJOR 2)', () => {
+    expect(
+      splitInlineBypass(`$env:DISPATCH_BYPASS='триаж бэклога'; gh issue edit 1`, 'PowerShell'),
+    ).toEqual({
+      reason: 'триаж бэклога',
+      command: 'gh issue edit 1',
+      wrongForm: '',
+    })
+    expect(
+      splitInlineBypass('$env:DISPATCH_BYPASS = "фикс прода" ; git commit -m x', 'PowerShell')
+        .reason,
+    ).toBe('фикс прода')
+  })
+
+  it('форма чужой оболочки причину НЕ расходует — команда бы не исполнилась', () => {
+    // В PowerShell `DISPATCH_BYPASS="x" gh …` не присваивание, а команда с таким
+    // именем: она падает. Засчитать по ней побег значило бы съесть причину при
+    // неисполнившейся мутации.
+    const ps = splitInlineBypass('DISPATCH_BYPASS="фикс" gh issue edit 1', 'PowerShell')
+    expect(ps.reason).toBe('')
+    expect(ps.wrongForm).toBe('bash')
+    // Вызов при этом обязан остаться СЧИТАННЫМ как мутация.
+    expect(
+      isMutatingCall('PowerShell', { command: 'DISPATCH_BYPASS="фикс" gh issue edit 1' }),
+    ).toBe(true)
+    expect(
+      wrongShellForm({
+        toolName: 'PowerShell',
+        toolInput: { command: 'DISPATCH_BYPASS="фикс" gh issue edit 1' },
+      }),
+    ).toBe('bash')
+    // Симметрично: powershell-форма в Bash-вызове тоже не побег.
+    const bash = splitInlineBypass(`$env:DISPATCH_BYPASS='фикс'; git commit -m x`, 'Bash')
+    expect(bash.reason).toBe('')
+    expect(bash.wrongForm).toBe('powershell')
+    expect(
+      resolveBypassReason({
+        toolName: 'Bash',
+        toolInput: { command: `$env:DISPATCH_BYPASS='фикс'; git commit -m x` },
+        env: env({}),
+      }),
+    ).toBe('')
   })
 
   it('префикс срезается ПЕРЕД предикатом мутации — иначе побег стал бы рубильником', () => {
@@ -453,6 +530,21 @@ describe('zero-dispatch-guard: сообщение блока', () => {
 
   it('на израсходованном побеге говорит именно это', () => {
     expect(blockMessage({ mutations: 9, exhausted: true })).toMatch(/израсходован/i)
+  })
+
+  it('называет форму префикса ОТДЕЛЬНО для каждой оболочки (MAJOR 2)', () => {
+    expect(text).toContain(`${BYPASS_ENV}="<причина>" <твоя команда>`)
+    expect(text).toContain(`$env:${BYPASS_ENV}='<причина>'; <твоя команда>`)
+  })
+
+  it('обещает отказ по ЛЮБОЙ уже названной причине, а не только по последней', () => {
+    expect(text).toMatch(/ЛЮБУЮ уже названную/)
+  })
+
+  it('на форме чужой оболочки объясняет, что причина НЕ израсходована', () => {
+    const hinted = blockMessage({ mutations: 6, exhausted: false, wrongForm: 'bash' })
+    expect(hinted).toMatch(/НЕ засчитана и НЕ израсходована/)
+    expect(hinted).toContain(`$env:${BYPASS_ENV}=`)
   })
 })
 
@@ -523,9 +615,9 @@ describe('zero-dispatch-guard как процесс', () => {
     )
   }
 
-  function shellPayload(session: string, command: string) {
+  function shellPayload(session: string, command: string, tool = 'Bash') {
     return JSON.stringify({
-      tool_name: 'Bash',
+      tool_name: tool,
       tool_input: { command },
       cwd: FAKE_TREE,
       session_id: session,
@@ -567,6 +659,69 @@ describe('zero-dispatch-guard как процесс', () => {
         LEAD_ENV,
       ).status,
     ).toBe(2)
+  })
+
+  it('канал A в PowerShell: своя форма префикса работает через продакшен-путь', () => {
+    const session = `zdg-ps-${Date.now()}`
+    const cmd = 'gh issue edit 1 --body x'
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
+      runHook('zero-dispatch-guard.mjs', shellPayload(session, cmd, 'PowerShell'), LEAD_ENV)
+    }
+    expect(
+      runHook('zero-dispatch-guard.mjs', shellPayload(session, cmd, 'PowerShell'), LEAD_ENV).status,
+    ).toBe(2)
+    const escaped = runHook(
+      'zero-dispatch-guard.mjs',
+      shellPayload(session, `$env:DISPATCH_BYPASS='правка текста issue'; ${cmd}`, 'PowerShell'),
+      LEAD_ENV,
+    )
+    expect(escaped.status).toBe(0)
+    expect(escaped.stderr).toContain('правка текста issue')
+  })
+
+  it('bash-форма в вызове PowerShell блокируется и причину НЕ расходует (MAJOR 2)', () => {
+    const session = `zdg-ps-wrong-${Date.now()}`
+    const cmd = 'gh issue edit 1 --body x'
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
+      runHook('zero-dispatch-guard.mjs', shellPayload(session, cmd, 'PowerShell'), LEAD_ENV)
+    }
+    // Bash-префикс в PowerShell: сама команда упала бы, поэтому побегом это не
+    // считается — блок стоит, а сообщение называет правильную форму.
+    const wrong = runHook(
+      'zero-dispatch-guard.mjs',
+      shellPayload(session, `DISPATCH_BYPASS="одна причина" ${cmd}`, 'PowerShell'),
+      LEAD_ENV,
+    )
+    expect(wrong.status).toBe(2)
+    expect(wrong.stderr).toMatch(/НЕ засчитана и НЕ израсходована/)
+    expect(wrong.stderr).toContain(`$env:${BYPASS_ENV}=`)
+    // Причина не съедена: та же причина в ПРАВИЛЬНОЙ форме проходит.
+    const escaped = runHook(
+      'zero-dispatch-guard.mjs',
+      shellPayload(session, `$env:DISPATCH_BYPASS='одна причина'; ${cmd}`, 'PowerShell'),
+      LEAD_ENV,
+    )
+    expect(escaped.status).toBe(0)
+    expect(escaped.stderr).toContain('одна причина')
+  })
+
+  it('чередование двух причин побег не размножает (продакшен-путь, MAJOR 1)', () => {
+    const session = `zdg-alt-${Date.now()}`
+    const edit = (reason: string) =>
+      runHook(
+        'zero-dispatch-guard.mjs',
+        shellPayload(session, `DISPATCH_BYPASS="${reason}" gh issue edit 1`),
+        LEAD_ENV,
+      )
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
+      runHook('zero-dispatch-guard.mjs', shellPayload(session, 'gh issue edit 1'), LEAD_ENV)
+    }
+    expect(edit('причина r1').status).toBe(0)
+    expect(edit('причина r2').status).toBe(0)
+    expect(edit('причина r1').status).toBe(2)
+    expect(edit('причина r2').status).toBe(2)
+    // Свежая причина по-прежнему проходит — это запись, а не рубильник.
+    expect(edit('причина r3').status).toBe(0)
   })
 
   it('канал B: файл-побег, взведённый НЕ мутирующей командой, пропускает Edit (без env)', () => {

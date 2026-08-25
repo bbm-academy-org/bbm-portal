@@ -54,12 +54,17 @@
 // то есть ценой перезапуска сессии, ради которой он и заведён. Каналов теперь
 // два, и оба видны хуку в том, что харнес ему реально передаёт:
 //
-//   A) ИНЛАЙН-ПРЕФИКС В КОМАНДЕ (Bash/PowerShell) —
-//      `DISPATCH_BYPASS="<причина>" <настоящая команда>`. Значение переменной
-//      оболочка никуда не донесёт, но САМА СТРОКА приходит хуку в
+//   A) ИНЛАЙН-ПРЕФИКС В КОМАНДЕ — форма СВОЯ у каждой оболочки:
+//      Bash `DISPATCH_BYPASS="<причина>" <команда>`,
+//      PowerShell `$env:DISPATCH_BYPASS='<причина>'; <команда>`. Значение
+//      переменной оболочка никуда не донесёт, но САМА СТРОКА приходит хуку в
 //      `tool_input.command`. Префикс вырезается перед проверкой мутации, иначе
 //      настоящая команда перестаёт стоять в начале сегмента и гард молча
-//      перестал бы считать её мутацией.
+//      перестал бы считать её мутацией. Форма ЧУЖОЙ оболочки причину НЕ
+//      расходует (ревью PR #346, MAJOR 2): bash-префикс в вызове `PowerShell`
+//      уронил бы саму команду, поэтому засчитать по нему побег значило бы съесть
+//      причину при неисполнившейся мутации. Такой вызов блокируется, а сообщение
+//      называет правильную форму.
 //   B) ФАЙЛ-ПОБЕГ В КАТАЛОГЕ СОСТОЯНИЯ — для `Edit`/`Write`/`MultiEdit`, у
 //      которых строки команды нет. Взводится СВОЕЙ ЖЕ командой гарда:
 //      `node <этот файл> --arm-bypass "<путь>" "<причина>"`. Она не мутирующая
@@ -68,9 +73,11 @@
 //      не сессии). Файл СЪЕДАЕТСЯ при срабатывании — ровно один пропуск.
 //
 // Обоим каналам общее: причина обязательна (пустая строка побегом не
-// является), причина печатается в stderr и потому попадает в лог сессии, одна
-// и та же причина второй раз не проходит (`bypassUsed` в состоянии), и та же
-// причина обязана попасть в строку stage 7 «Отклонения от конвенций:».
+// является), причина печатается в stderr и потому попадает в лог сессии, ЛЮБАЯ
+// уже названная за сессию причина второй раз не проходит (`bypassUsed` — это
+// СПИСОК всех израсходованных, а не последняя: с одной строкой две чередующиеся
+// причины давали бесконечный побег, ревью PR #346, MAJOR 1), и та же причина
+// обязана попасть в строку stage 7 «Отклонения от конвенций:».
 // Env-канал сохранён третьим — он работает при старте сессии и ничего не
 // стоит, но НЕ является тем, на что опирается запись §6.
 //
@@ -130,7 +137,7 @@ export const BYPASS_FILE_SUFFIX = '.bypass'
 export const ARM_BYPASS_FLAG = '--arm-bypass'
 
 /**
- * Инлайн-префикс побега в начале строки команды (канал A):
+ * Инлайн-префикс побега в начале строки команды (канал A), ФОРМА BASH:
  * `DISPATCH_BYPASS="причина" gh issue edit …`. Кавычки любые или без них —
  * без кавычек причина обрывается на первом пробеле, что для причины бесполезно,
  * но синтаксически честно.
@@ -140,18 +147,72 @@ export const BYPASS_PREFIX_RE = new RegExp(
 )
 
 /**
- * Разбирает инлайн-префикс: `{ reason, command }`. Причины нет → исходная
- * строка и пустая причина. Префикс ОБЯЗАН быть срезан с команды: `COMMAND_START`
- * в `MUTATING_COMMAND_RE` требует начала сегмента, и с оставленным префиксом
- * `gh issue edit` перестал бы считаться мутацией — побег молча превратился бы в
- * рубильник без записи.
+ * ТА ЖЕ форма для PowerShell: `$env:DISPATCH_BYPASS='причина'; <команда>`.
+ *
+ * Отдельная форма, а не «и так сойдёт» (ревью PR #346, MAJOR 2). Bash-префикс
+ * `DISPATCH_BYPASS="x" gh …` в PowerShell присваиванием НЕ является — строка
+ * разбирается как команда с именем `DISPATCH_BYPASS=x` и падает. Хук читает
+ * только строку, поэтому раньше он спокойно СЪЕДАЛ бы причину, а настоящая
+ * мутация не исполнилась бы вовсе: повтору нужна была бы новая причина. На этой
+ * машине PowerShell — основная оболочка, так что путь живой.
  */
-export function splitInlineBypass(command) {
+export const BYPASS_PS_PREFIX_RE = new RegExp(
+  String.raw`^\s*\$env:${BYPASS_ENV}\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S*))\s*;\s*`,
+)
+
+/** Имя оболочки инструмента: `PowerShell` → `powershell`, иначе `bash`. */
+export function shellOf(toolName) {
+  return String(toolName || '') === 'PowerShell' ? 'powershell' : 'bash'
+}
+
+function prefixReason(m) {
+  return String(m[1] ?? m[2] ?? m[3] ?? '').trim()
+}
+
+/**
+ * Разбирает инлайн-префикс: `{ reason, command, wrongForm }`. Причины нет →
+ * исходная строка и пустая причина. Префикс ОБЯЗАН быть срезан с команды:
+ * `COMMAND_START` в `MUTATING_COMMAND_RE` требует начала сегмента, и с
+ * оставленным префиксом `gh issue edit` перестал бы считаться мутацией — побег
+ * молча превратился бы в рубильник без записи.
+ *
+ * ПРИЧИНА НЕ СЪЕДАЕТСЯ ФОРМОЙ ЧУЖОЙ ОБОЛОЧКИ. Если в вызове `PowerShell` стоит
+ * bash-форма (или наоборот), команда всё равно не исполнилась бы — значит и
+ * побегом это не является: `reason` пуст, а `wrongForm` называет, чья это форма,
+ * чтобы сообщение блока подсказало правильную. Команда при этом всё равно
+ * срезается: вызов обязан остаться СЧИТАННЫМ как мутация.
+ */
+export function splitInlineBypass(command, toolName = 'Bash') {
   const raw = String(command || '')
-  const m = BYPASS_PREFIX_RE.exec(raw)
-  if (!m) return { reason: '', command: raw }
-  const reason = String(m[1] ?? m[2] ?? m[3] ?? '').trim()
-  return { reason, command: raw.slice(m[0].length) }
+  const own = shellOf(toolName) === 'powershell' ? BYPASS_PS_PREFIX_RE : BYPASS_PREFIX_RE
+  const foreign = shellOf(toolName) === 'powershell' ? BYPASS_PREFIX_RE : BYPASS_PS_PREFIX_RE
+  const mine = own.exec(raw)
+  if (mine) return { reason: prefixReason(mine), command: raw.slice(mine[0].length), wrongForm: '' }
+  const theirs = foreign.exec(raw)
+  if (theirs) {
+    return {
+      reason: '',
+      command: raw.slice(theirs[0].length),
+      wrongForm: shellOf(toolName) === 'powershell' ? 'bash' : 'powershell',
+    }
+  }
+  return { reason: '', command: raw, wrongForm: '' }
+}
+
+/** Правильная форма инлайн-побега для оболочки инструмента (канал A). */
+export function inlineBypassForm(toolName) {
+  return shellOf(toolName) === 'powershell'
+    ? `$env:${BYPASS_ENV}='<причина>'; <твоя команда>`
+    : `${BYPASS_ENV}="<причина>" <твоя команда>`
+}
+
+/**
+ * Форма чужой оболочки в вызове (`'bash'` / `'powershell'` / `''`) — то, из-за
+ * чего побег НЕ засчитан и команда бы не исполнилась.
+ */
+export function wrongShellForm({ toolName, toolInput }) {
+  if (!SHELL_TOOLS.has(String(toolName || ''))) return ''
+  return splitInlineBypass(toolInput && toolInput.command, toolName).wrongForm
 }
 
 /** Путь файла-побега для данного per-session файла состояния (канал B). */
@@ -187,7 +248,7 @@ export function isMutatingCall(toolName, toolInput) {
   const tool = String(toolName || '')
   if (WRITE_TOOLS.has(tool)) return true
   if (SHELL_TOOLS.has(tool)) {
-    const { command } = splitInlineBypass(toolInput && toolInput.command)
+    const { command } = splitInlineBypass(toolInput && toolInput.command, tool)
     return MUTATING_COMMAND_RE.test(stripNonCommandText(command))
   }
   return false
@@ -204,7 +265,7 @@ export function bypassReason(env = process.env) {
  */
 export function resolveBypassReason({ toolName, toolInput, bypassFile = '', env = process.env }) {
   if (SHELL_TOOLS.has(String(toolName || ''))) {
-    const { reason } = splitInlineBypass(toolInput && toolInput.command)
+    const { reason } = splitInlineBypass(toolInput && toolInput.command, toolName)
     if (reason) return reason
   }
   const fromFile = String(bypassFile || '').trim()
@@ -233,14 +294,28 @@ export function isSubagentSession({ env = process.env, transcriptPath = '' } = {
   }
 }
 
-/** Нормализованное состояние; всё нечитаемое трактуется как чистый ноль. */
+/**
+ * Нормализованное состояние; всё нечитаемое трактуется как чистый ноль.
+ *
+ * `bypassUsed` — СПИСОК всех израсходованных за сессию причин, а не последняя
+ * (ревью PR #346, MAJOR 1). С одной строкой две чередующиеся причины
+ * (`r1 → r2 → r1 → …`) давали неограниченное число побегов, тогда как сообщение
+ * блока и §6 обещают отказ по ЛЮБОЙ уже названной причине. Форма-строка из
+ * старого состояния читается как список из одного элемента: сессия, начатая до
+ * этой правки, не теряет свою запись и не получает лишний побег.
+ */
 export function readCounterState(state) {
   const raw = state && typeof state === 'object' ? state : {}
   const mutations = Number(raw.mutations)
+  const used = Array.isArray(raw.bypassUsed)
+    ? raw.bypassUsed
+    : typeof raw.bypassUsed === 'string'
+      ? [raw.bypassUsed]
+      : []
   return {
     mutations: Number.isFinite(mutations) && mutations >= 0 ? mutations : 0,
     dispatched: raw.dispatched === true,
-    bypassUsed: typeof raw.bypassUsed === 'string' ? raw.bypassUsed : '',
+    bypassUsed: used.filter((r) => typeof r === 'string' && r.trim() !== ''),
     subagent: raw.subagent === true,
   }
 }
@@ -251,12 +326,20 @@ export function blockMessage({
   threshold = ZERO_DISPATCH_BLOCK_THRESHOLD,
   bypassPath = '',
   guardPath = 'tools/hooks/zero-dispatch-guard.mjs',
+  wrongForm = '',
 }) {
   const head = exhausted
     ? `одноразовый побег уже израсходован на эту причину — новая причина или диспатч.`
     : `${mutations} мутаций лида за сессию (порог ${threshold}) при НУЛЕ вызовов Agent.`
   const armCommand = `node "${guardPath}" ${ARM_BYPASS_FLAG} "${bypassPath || '<путь>'}" "<причина>"`
+  const wrongFormHint = wrongForm
+    ? `⚠ Форма побега не от этой оболочки: в вызове стоит ` +
+      `${wrongForm === 'bash' ? 'bash' : 'powershell'}-форма. Причина НЕ засчитана и НЕ ` +
+      `израсходована — сама команда в этой оболочке тоже не исполнилась бы. Повтори в форме ` +
+      `своей оболочки (ниже).\n`
+    : ''
   return (
+    wrongFormHint +
     `⛔ zero-dispatch guard (#322): ${head}\n` +
     'Правило `lead-delegates-even-small-prep` (владелец, 2026-08-17): лид не делает руками ' +
     `даже мелкую подготовку — исполнение уходит агентам. Лестница делегирования (CLAUDE.md, ` +
@@ -266,14 +349,16 @@ export function blockMessage({
     `Два законных хода.\n` +
     `(1) Диспетчеризуй остаток — один Agent снимает этот гард до конца сессии.\n` +
     `(2) Если инлайн осознан, назови причину. Побег одноразовый и достижим ОТСЮДА, из этой ` +
-    `сессии, двумя способами:\n` +
-    `    • Bash/PowerShell — поставь префикс прямо в команду: ` +
-    `\`${BYPASS_ENV}="<причина>" <твоя команда>\` (хук читает саму строку команды, а не env);\n` +
+    `сессии. Форма префикса — СВОЯ у каждой оболочки:\n` +
+    `    • Bash — \`${inlineBypassForm('Bash')}\` (хук читает саму строку команды, а не env);\n` +
+    `    • PowerShell — \`${inlineBypassForm('PowerShell')}\`; bash-префикс здесь присваиванием ` +
+    `НЕ является и команду бы уронил, поэтому побегом он не считается;\n` +
     `    • Edit/Write — взведи файл-побег НЕ мутирующей командой, она проходит сквозь этот ` +
     `блок: \`${armCommand}\`, затем повтори правку.\n` +
     `Побег пропускает ровно СЛЕДУЮЩУЮ мутацию, печатает причину в лог сессии, съедается, и ` +
     `эта же причина обязана попасть в строку stage 7 «Отклонения от конвенций:». Побег — это ` +
-    `запись, а не кнопка «выключить»; ту же причину второй раз гард не примет.`
+    `запись, а не кнопка «выключить»; ЛЮБУЮ уже названную в этой сессии причину гард второй ` +
+    `раз не примет — чередованием двух причин побег не размножается.`
   )
 }
 
@@ -331,7 +416,7 @@ export function decideZeroDispatch({
     if (isSubagent()) return { action: 'silent' }
     return {
       action: 'dispatched',
-      state: { mutations: 0, dispatched: true, bypassUsed: '', subagent: false },
+      state: { mutations: 0, dispatched: true, bypassUsed: [], subagent: false },
     }
   }
   if (s.dispatched) return { action: 'silent' }
@@ -347,17 +432,17 @@ export function decideZeroDispatch({
     return { action: 'count', state: { ...s, mutations: next } }
   }
   const reason = String(bypass || '').trim()
-  if (reason && reason !== s.bypassUsed) {
+  if (reason && !s.bypassUsed.includes(reason)) {
     return {
       action: 'bypass',
       reason,
-      state: { ...s, mutations: next, bypassUsed: reason },
+      state: { ...s, mutations: next, bypassUsed: [...s.bypassUsed, reason] },
     }
   }
   return {
     action: 'block',
     mutations: next,
-    exhausted: Boolean(reason && reason === s.bypassUsed),
+    exhausted: Boolean(reason && s.bypassUsed.includes(reason)),
     state: { ...s, mutations: next },
   }
 }
@@ -441,8 +526,8 @@ function main() {
     if (decision.state) writeState(statePath, decision.state)
     if (decision.action === 'bypass') {
       // Файл-побег СЪЕДАЕТСЯ: одноразовость канала B держится на удалении, а не
-      // на памяти сессии. Канал A одноразовый через `bypassUsed` — ту же причину
-      // повторно гард не примет.
+      // на памяти сессии. Канал A одноразовый через `bypassUsed` — любую уже
+      // названную за сессию причину гард повторно не примет.
       try {
         rmSync(bypassPath, { force: true })
       } catch {
@@ -458,6 +543,13 @@ function main() {
           exhausted: decision.exhausted,
           bypassPath,
           guardPath: fileURLToPath(import.meta.url),
+          // Форма чужой оболочки — причина, по которой побег НЕ засчитан:
+          // сообщение обязано назвать правильную форму, а не молчать
+          // (ревью PR #346, MAJOR 2).
+          wrongForm: wrongShellForm({
+            toolName: payload.tool_name,
+            toolInput: payload.tool_input,
+          }),
         }),
       )
       process.exit(2)

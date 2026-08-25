@@ -428,10 +428,17 @@ What bounds the blast radius, and is why the day-0 BLOCK is affordable:
   the condition §6's own `surface-decision-debt-gate` row names as a prerequisite for any
   gate that can stop a session. Two channels, because the two blocked call shapes carry
   different payloads:
-  - **Bash / PowerShell** — prefix the command itself:
+  - **Bash** — prefix the command itself:
     `DISPATCH_BYPASS="<reason>" <your command>`. The hook parses the prefix out of
     `tool_input.command`, which the harness does hand it; it does **not** rely on the
     variable ever reaching a process environment, because it never does.
+  - **PowerShell** — the same channel, its own syntax:
+    `$env:DISPATCH_BYPASS='<reason>'; <your command>`. The form is per shell, not
+    shared: the Bash prefix is not an assignment in PowerShell — the line parses as a
+    command literally named `DISPATCH_BYPASS=<reason>` and fails. A prefix in the wrong
+    shell's form therefore **does not spend the reason**: the guard blocks the call and
+    the message names the right form, rather than recording an escape for a mutation
+    that never ran (review of PR #346, major 2).
   - **Edit / Write / MultiEdit** — no command string exists, so the reason is armed as a
     one-shot file with a **non-mutating** command that therefore passes the standing block:
     `node <guard> --arm-bypass "<path>" "<reason>"`. The block message prints the exact
@@ -439,7 +446,11 @@ What bounds the blast radius, and is why the day-0 BLOCK is affordable:
     deleted when it fires.
 
   Both demand a reason — an empty value is not an escape — echo it to stderr so it lands in
-  the session log, pass exactly the **next** mutation, and refuse the same reason twice.
+  the session log, pass exactly the **next** mutation, and refuse **any reason already spent
+  in this session**. The bound is the whole session, not the previous call: the state keeps
+  the full set of spent reasons, so alternating two reasons (`r1 → r2 → r1`) does not
+  manufacture unlimited escapes (review of PR #346, major 1). A reason never used before
+  still works — this is a record, not a kill switch.
   That reason must then appear in the stage-7 «Отклонения от конвенций:» line. Consuming an
   escape does not disarm the guard. A `DISPATCH_BYPASS` set in the environment at
   `claude` launch is still honoured as a third channel, but nothing in these bounds leans
