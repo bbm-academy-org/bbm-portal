@@ -36,6 +36,11 @@ function runHook(hook: string, stdin: string, env: Record<string, string> = {}) 
 
 const LEAD = { subagent: false, worktree: false }
 
+/** Голое env-окружение для чистых seam'ов: `NODE_ENV` в них не участвует. */
+function env(vars: Record<string, string>) {
+  return vars as unknown as NodeJS.ProcessEnv
+}
+
 describe('zero-dispatch-guard: что считается мутацией лида', () => {
   it.each(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])('%s — мутация', (tool) => {
     expect(isMutatingCall(tool, {})).toBe(true)
@@ -86,7 +91,7 @@ describe('zero-dispatch-guard: счётчик и порог', () => {
       ...LEAD,
     })
     expect(d.action).toBe('count')
-    expect(d.state.mutations).toBe(ZERO_DISPATCH_BLOCK_THRESHOLD - 1)
+    expect(d.state?.mutations).toBe(ZERO_DISPATCH_BLOCK_THRESHOLD - 1)
   })
 
   it('на пороге — блокирует', () => {
@@ -97,7 +102,7 @@ describe('zero-dispatch-guard: счётчик и порог', () => {
       ...LEAD,
     })
     expect(d.action).toBe('block')
-    expect(d.state.mutations).toBe(ZERO_DISPATCH_BLOCK_THRESHOLD)
+    expect(d.state?.mutations).toBe(ZERO_DISPATCH_BLOCK_THRESHOLD)
   })
 
   it('заблокированный вызов не исполнился — счётчик не растёт на повторе', () => {
@@ -114,7 +119,7 @@ describe('zero-dispatch-guard: счётчик и порог', () => {
       ...LEAD,
     })
     expect(second.action).toBe('block')
-    expect(second.state.mutations).toBe(ZERO_DISPATCH_BLOCK_THRESHOLD)
+    expect(second.state?.mutations).toBe(ZERO_DISPATCH_BLOCK_THRESHOLD)
   })
 
   it('нечитаемое состояние трактуется как ноль (fail-open)', () => {
@@ -185,7 +190,7 @@ describe('zero-dispatch-guard: одноразовый записанный по�
     })
     expect(d.action).toBe('bypass')
     expect(d.reason).toBe('фикс прода, диспатч дороже правки')
-    expect(d.state.bypassUsed).toBe('фикс прода, диспатч дороже правки')
+    expect(d.state?.bypassUsed).toBe('фикс прода, диспатч дороже правки')
   })
 
   it('израсходованный побег ту же причину второй раз не пропускает', () => {
@@ -214,9 +219,9 @@ describe('zero-dispatch-guard: одноразовый записанный по�
   })
 
   it('пустой побег побегом не является — значение это ПРИЧИНА, а не рубильник', () => {
-    expect(bypassReason({ [BYPASS_ENV]: '1' })).toBe('1')
-    expect(bypassReason({ [BYPASS_ENV]: '   ' })).toBe('')
-    expect(bypassReason({})).toBe('')
+    expect(bypassReason(env({ [BYPASS_ENV]: '1' }))).toBe('1')
+    expect(bypassReason(env({ [BYPASS_ENV]: '   ' }))).toBe('')
+    expect(bypassReason(env({}))).toBe('')
     const d = decideZeroDispatch({
       toolName: 'Edit',
       toolInput: {},
@@ -236,7 +241,7 @@ describe('zero-dispatch-guard: одноразовый записанный по�
       ...LEAD,
     })
     expect(d.action).toBe('count')
-    expect(d.state.bypassUsed).toBe('')
+    expect(d.state?.bypassUsed).toBe('')
   })
 })
 
@@ -264,9 +269,9 @@ describe('zero-dispatch-guard: субагент под гардом не ход�
   })
 
   it('дискриминатор №1 — AI_AGENT, харнес ставит его ТОЛЬКО в сессии-агенте', () => {
-    expect(isSubagentSession({ env: { AI_AGENT: 'claude-code_2-1-245_agent' } })).toBe(true)
-    expect(isSubagentSession({ env: {} })).toBe(false)
-    expect(isSubagentSession({ env: { CLAUDE_CODE_CHILD_SESSION: '1' } })).toBe(false)
+    expect(isSubagentSession({ env: env({ AI_AGENT: 'claude-code_2-1-245_agent' }) })).toBe(true)
+    expect(isSubagentSession({ env: env({}) })).toBe(false)
+    expect(isSubagentSession({ env: env({ CLAUDE_CODE_CHILD_SESSION: '1' }) })).toBe(false)
   })
 
   it('дискриминатор №2 — маркер диспатча в транскрипте (канон wrap/SKILL.md)', () => {
@@ -275,12 +280,14 @@ describe('zero-dispatch-guard: субагент под гардом не ход�
     const typed = resolve(dir, 'typed.jsonl')
     writeFileSync(sdk, '{"type":"user","promptSource":"sdk"}\n')
     writeFileSync(typed, '{"type":"user","promptSource":"typed"}\n')
-    expect(isSubagentSession({ env: {}, transcriptPath: sdk })).toBe(true)
-    expect(isSubagentSession({ env: {}, transcriptPath: typed })).toBe(false)
+    expect(isSubagentSession({ env: env({}), transcriptPath: sdk })).toBe(true)
+    expect(isSubagentSession({ env: env({}), transcriptPath: typed })).toBe(false)
     writeFileSync(sdk, '{"isSidechain":true}\n')
-    expect(isSubagentSession({ env: {}, transcriptPath: sdk })).toBe(true)
+    expect(isSubagentSession({ env: env({}), transcriptPath: sdk })).toBe(true)
     // Нечитаемый транскрипт — не улика ни за, ни против.
-    expect(isSubagentSession({ env: {}, transcriptPath: resolve(dir, 'нет.jsonl') })).toBe(false)
+    expect(isSubagentSession({ env: env({}), transcriptPath: resolve(dir, 'нет.jsonl') })).toBe(
+      false,
+    )
   })
 })
 
@@ -322,7 +329,7 @@ describe('zero-dispatch-guard как процесс', () => {
 
   it('N-я мутация подряд без диспатча возвращает 2 и называет правило', () => {
     const session = `zdg-block-${Date.now()}`
-    let last = { status: 0, stderr: '' }
+    let last: ReturnType<typeof runHook> = { status: 0, stderr: '', stdout: '' }
     for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
       last = runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
     }
