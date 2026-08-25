@@ -1,5 +1,6 @@
 import { auth } from '@/auth'
 import { HoursDataError, isHoursAdmin, readHoursDocument, sessionEmail } from '@/lib/hours'
+import { PLATFORM_ADMIN_ROLE, claimGateResponse } from '@/lib/platform/authGate'
 
 /**
  * Выгрузка JSON-документа для владельца (спека 081 п.25, сценарий 10): данные
@@ -18,6 +19,16 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(): Promise<Response> {
   const session = await auth()
+
+  // Спека 311 EARS-461/EARS-462: обработчик под `/p` не проходит ни через один
+  // layout, поэтому claim-гейт рабочего пространства он применяет сам. Это
+  // единственный такой путь под `/p` сегодня — «под /p» не значит «за гейтом»,
+  // пока обработчик не проверит клейм. Проверка идёт ПЕРВОЙ и отвечает голой
+  // 403 (D-5); allowlist ниже остаётся до EARS-421/EARS-452, которые его
+  // удаляют вместе с этим маршрутом.
+  const refusal = claimGateResponse(session, PLATFORM_ADMIN_ROLE)
+  if (refusal) return refusal
+
   const email = sessionEmail(session)
   if (!isHoursAdmin(email, process.env.HOURS_ADMIN_EMAILS)) {
     return new Response('Доступ только для администраторов модуля часов.', {

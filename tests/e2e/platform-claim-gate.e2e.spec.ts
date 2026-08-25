@@ -74,7 +74,7 @@ test.describe('the platform-admin claim gate over /p/admin (spec 311 §B)', () =
     await expect(page.getByRole('heading', { name: 'Админка' })).toHaveCount(0)
   })
 
-  test('EARS-417: an account holding only platform-admin reaches the cabinet', async ({ page }) => {
+  test('EARS-417: an account holding platform-admin reaches the cabinet', async ({ page }) => {
     test.skip(
       !adminUsername || !adminPassword,
       'set E2E_ADMIN_USERNAME / E2E_ADMIN_PASSWORD (an account holding platform-admin) to run',

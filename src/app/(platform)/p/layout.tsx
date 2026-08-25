@@ -18,6 +18,13 @@ import { PLATFORM_USER_ROLE, resolveClaimGate } from '@/lib/platform/authGate'
  * one, and it covers the whole workspace surface — the root layout's own
  * sign-in gate (spec 059) is unchanged and still runs first.
  *
+ * What this layout does NOT cover: a ROUTE HANDLER. Next does not run layouts
+ * for `route.ts`, so «every path under `/p`» (EARS-416) is true of pages and
+ * server components only — a handler under `/p` is gated when it calls
+ * `claimGateResponse` itself, and not before. The one such handler today
+ * (`p/hours/admin/export/route.ts`) does; #314/#315 inherit the obligation, not
+ * the coverage.
+ *
  * The trust boundary is this server component and the handler-side
  * `claimGateResponse` (EARS-461, EARS-462) — never the UI. A tile the launcher
  * omits is a convenience, not a gate.
