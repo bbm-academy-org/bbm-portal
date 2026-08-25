@@ -26,8 +26,10 @@ replaces the per-app admin screens: hours administration moves here and
 
 ## Design pick (Stage A)
 
-Stage A (task-cycle 1b) ran on 2026-08-25: three layout options for the admin
-shell went to the owner on issue #315, and the pick is vendored into
+Stage A (task-cycle 1b) ran on 2026-08-25 under the discovery issue **#311**,
+whose scope puts the Stage-A options to the owner: three layout options for the
+admin shell went to him there, the **pick** is recorded as a comment on #315
+(the issue that will build the shell), and the picked file is vendored into
 `design-source/` with a provenance row in `design-source/README.md`.
 
 > Pick: **`admin-a`** («Левый сайдбар с группами модулей») →
@@ -169,5 +171,6 @@ Refused by the server (#313). The shell never renders a partial cabinet.
 
 ## Open questions
 
-None outstanding at the product layer. The remaining decision is the Stage-A
-layout pick for the shell, recorded in issue #311.
+None outstanding at the product layer. The last one — the Stage-A layout pick
+for the shell — was made by the owner on 2026-08-25 in the option round run
+under #311; see "Design pick (Stage A)" above.

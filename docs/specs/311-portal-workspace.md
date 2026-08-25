@@ -16,8 +16,9 @@ updated: 2026-08-25
   **`launcher-a`** («Единая сетка», flat uniform grid) →
   `design-source/p-launcher.html`. Cabinet: option **`admin-a`** («Левый сайдбар
   с группами модулей») → `design-source/p-admin-shell.html`. Both picked by
-  Антон on 2026-08-25; the picks are recorded as comments on #314 and #315 and
-  as provenance rows in `design-source/README.md`. The admin pick carries two
+  Антон on 2026-08-25 in the option round run under **#311** (this issue's scope
+  puts the Stage-A options to the owner); the picks are recorded as comments on
+  #314 and #315 and as provenance rows in `design-source/README.md`. The admin pick carries two
   owner amendments, written into the file's header comment: sub-section nesting
   must be visually explicit, and OKR **does** get a cabinet section. Where this
   spec's prose and a vendored file disagree, the file wins
@@ -123,9 +124,10 @@ plus the OKR cabinet section.
   of hours. Its CRUD table is inherited verbatim by §F here; its EARS-19
   («WHILE no admin UI exists (until `/p/admin`, epic #112), aliases shall be
   populated by the SQL escape hatch») names this spec as the thing that retires
-  it, and EARS-44 does. Spec 124 is `Shipped`, so retiring one of its clauses
-  from the outside is only half the job — the **same PR** that lands the
-  behaviour amends spec 124 itself (Follow-up tasks → "Donor spec revisions").
+  it, and EARS-44 does. Spec 124 is `Shipped`, so retiring its clauses from the
+  outside is only half the job — spec 124 itself is amended, once, in the PR
+  named in Follow-up tasks → "Donor spec revisions" (both of its retired clauses
+  in one edit, so no second PR reverts the first one's status ladder).
 - **Specs 081 (+#83/#85) and 100** — the behaviour of the hours admin screen the
   cabinet must reproduce. Not restated here; the cabinet is a move, not a
   redesign. They too are amended on touch, in the PR that moves the surface.
@@ -224,7 +226,10 @@ recorded owner decisions do not settle.
   `platform-user` only" would leave the cabinet's writes guarded by the shell
   alone. The path prefix makes the required claim readable from the URL and
   greppable in review; the per-entry `requiredClaim` still applies on top of it
-  (EARS-61).
+  (EARS-61). The segment `admin` is therefore **reserved** inside a module's API
+  namespace: no module may name a resource `admin`, because
+  `/api/p/<slug>/admin/<resource>` would then be ambiguous with
+  `/api/p/<slug>/<resource>`.
 - **D-13 — the launcher's «портфель, позже» ghost tiles are a wireframe device,
   not a feature.** `design-source/p-launcher.html` renders six greyed tiles
   (Финансы, Колоды, CRM, Поиск команды, Запуск проекта, Калькуляторы) captioned
@@ -237,7 +242,10 @@ recorded owner decisions do not settle.
   plus a second: it would put unbuilt apps in the registry, where EARS-3 and the
   type-level test would then have to special-case them. The **admin tile's**
   distinct treatment, by contrast, IS built (EARS-68) — it is a real entry with
-  a real target.
+  a real target. **This is the one decision in this spec that overrides an
+  owner-picked, vendored Stage-A file** (`.claude/rules/design-process.md` §1 —
+  «the file wins»), so it is flagged for an explicit owner confirmation at the
+  go: it is not carried as a silent lead call.
 
 ## Requirements
 
@@ -372,8 +380,8 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   registry entries visible to the session as a **flat grid in registry order** —
   no grouping, no search, no pinning, no personalised ordering — per the
   vendored `design-source/p-launcher.html` (option `launcher-a`). The tile
-  variants that grid carries are exactly the ones the vendored file draws
-  (EARS-68).
+  variants that grid carries are exactly the three forms of EARS-68 — the
+  vendored file draws a fourth (the ghost tile), which EARS-67 removes.
 - **EARS-23.** The launcher shall mark an `external` entry as external and shall
   open it in a new tab (`target="_blank"` with `rel="noopener noreferrer"`), so
   the member does not lose the workspace.
@@ -541,12 +549,17 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   adds a single read-only accessor (`getOkrParameters()`) over the existing
   `src/lib/okr/config.ts` values and exports it from `index.ts`. Nothing else in
   the OKR module changes, and no caller reaches past `index.ts`.
-- **EARS-76.** WHEN an admin opens that page, the cabinet shall perform a **live
-  read probe** against Plane through `getOkrTree()` and shall show its outcome
-  on the page: success with the moment of that read, or, IF the read fails or
-  raises `OkrUnavailableError`, THEN the error it reports. The probe is
-  performed on open and its result is not stored anywhere — the page states what
-  is true when it is looked at, which is why no read-health store is needed.
+- **EARS-76.** WHEN an admin opens that page, the cabinet shall call
+  `getOkrTree()` and shall show **the module's current read state and when it was
+  obtained**: success with that moment, or, IF the call fails or raises
+  `OkrUnavailableError`, THEN the error it reports. The result is not stored
+  anywhere — which is why no read-health store is needed. It is **not** a
+  guaranteed fresh round-trip to Plane: `getOkrTree` is served through
+  `src/lib/okr/cache.ts` and a hit inside `cacheTtlMs()` returns the cached read,
+  so the page shows exactly the freshness the `/p/okr` dashboard itself is
+  running on. That is the honest thing to show — the question the admin is asking
+  is "what is the OKR module seeing right now", not "is Plane up this second" —
+  and no cache bypass is added.
 
 ### H. Boundaries (`pnpm boundaries`)
 
@@ -696,7 +709,8 @@ scenarios (task-cycle stage 3) and the stage-5 acceptance script.
 12. **OKR has a cabinet section.** The sidebar's OKR group opens a single
     read-only page naming the Plane workspace and projects the dashboard reads,
     the period it displays and the mission/order mapping it applies, plus the
-    result of the read it just performed against Plane. There is no save button
+    module's current read state and the moment it was obtained (the same read the
+    `/p/okr` dashboard is running on, cache included). There is no save button
     and no delete control, and the page states in one line why. (EARS-37,
     EARS-53, EARS-55, EARS-75, EARS-76)
 13. **The tenth app costs what the third did.** _(agent, throwaway diff.)_ An
@@ -708,29 +722,36 @@ scenarios (task-cycle stage 3) and the stage-5 acceptance script.
     admin section appears on the home and nowhere under `/p/admin`. Removing a
     declaration removes it from all three renderings. Deleting only the array
     element while leaving the module's declaration in place makes the test suite
-    fail by name. (EARS-1, EARS-2, EARS-3, EARS-9, EARS-10, EARS-12)
+    fail by name. The claim the first throwaway module declares is one that did
+    not exist before, and the diff shows it cost no edit to the launcher, the top
+    bar or the cabinet shell either — a new claim is registry data, not frame
+    code. (EARS-1, EARS-2, EARS-3, EARS-9, EARS-10, EARS-12, EARS-66)
 14. **Existing surfaces were not restyled.** `/p/okr` and `/p/hours` look as
     they did, apart from the new top bar above them. (EARS-29)
-15. **Narrow viewport, and a full portfolio.** The member opens `/p` on a phone
-    width: the grid reflows, every tile stays readable and the app switcher is
-    reachable from a collapsed menu. On a stand seeded with a full-portfolio
-    registry fixture — ten apps plus the external entries and the cabinet — the
-    home is still one readable grid and the cabinet sidebar is still navigable.
-    (EARS-28, EARS-71, EARS-74)
+15. **Narrow viewport.** The member opens `/p` on a phone width: the grid
+    reflows, every tile stays readable and the app switcher is reachable from a
+    collapsed menu. (EARS-28)
+16. **A full portfolio still reads.** On a stand seeded with a full-portfolio
+    registry fixture — the ten apps of consolidation §4 plus the external entries
+    and the cabinet — the home is still one readable flat grid at desktop and at
+    narrow width, and the cabinet sidebar is still navigable with ten module
+    groups. (EARS-71, EARS-74)
 
 ### Verified by CI, not by the owner
 
-Four clauses are machine-level by nature: there is no screen on which a
+Seven clauses are machine-level by nature: there is no screen on which a
 non-developer can observe them. They are named here so that "no scenario
 exercises it" never means "nothing checks it" — each is covered by a test whose
-title carries its id, per `docs/specs/README.md`.
+title carries its id, per `docs/specs/README.md`. One of the seven (EARS-30) is
+the exception the table states in its own row.
 
-| Clause                    | Verified by                                                                                                                                                                                                                            |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| EARS-13                   | a type-level test constructing one declaration per portfolio app and compiling                                                                                                                                                         |
-| EARS-56, EARS-57, EARS-58 | `pnpm boundaries` — three dependency-cruiser rules, one test each asserting the rule fires                                                                                                                                             |
-| EARS-65                   | the Host-matrix unit test over `evaluateRequest`, rows for `/api/p/*` × every host × mode                                                                                                                                              |
-| EARS-30, EARS-36          | EARS-36 by a handler/provider unit test on the shared zod schema; EARS-30 additionally by the review gate of `.claude/rules/design-process.md` (hand-rolled styles are a stop-factor, which is a reviewer's verdict, not an assertion) |
+| Clause                    | Verified by                                                                                                                                                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EARS-13                   | a type-level test constructing one declaration per portfolio app and compiling                                                                                                                                                               |
+| EARS-56, EARS-57, EARS-58 | `pnpm boundaries` — three dependency-cruiser rules, one test each asserting the rule fires                                                                                                                                                   |
+| EARS-65                   | the Host-matrix unit test over `evaluateRequest`, rows for `/api/p/*` × every host × mode                                                                                                                                                    |
+| EARS-36                   | a handler/provider unit test on the shared zod schema                                                                                                                                                                                        |
+| EARS-30                   | **nothing machine-checkable — the only clause in this spec with no automated assertion.** It is enforced by the review gate of `.claude/rules/design-process.md`: hand-rolled styles are a review stop-factor, which is a reviewer's verdict |
 
 ## Out of scope
 
@@ -771,14 +792,14 @@ verifies it on the admin half.
 Named here because each is a change to a file outside the issue's obvious
 surface, and an implementer who does not read this list discovers it mid-build.
 
-| Work                                                                                                                                                              | Issue    | Why it is not optional                                                                           |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------ |
-| `src/lib/platform/hostAllowlist.ts` — admit `/api/p/*` on the platform surface, exclude it from the CMS `/api/*` clause, extend the Host-matrix test (EARS-63…65) | **#315** | it is a prerequisite for the **first** `/api/p/*` handler to answer at all; #316/#317 inherit it |
-| `src/lib/okr/index.ts` — export one read-only `getOkrParameters()` accessor over `src/lib/okr/config.ts` (EARS-75)                                                | **#315** | §G cannot be built from today's OKR public API                                                   |
-| `src/lib/member/index.ts` — add member create, alias update and alias delete to the module's public API (EARS-41, EARS-44)                                        | **#316** | the cabinet must not reach past the module door to get them                                      |
-| Rewrite or retire the five `HOURS_ADMIN_EMAILS` unit specs listed in EARS-21                                                                                      | **#317** | they assert the gate this spec deletes                                                           |
+| Work                                                                                                                                                              | Issue    | Why it is not optional                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/platform/hostAllowlist.ts` — admit `/api/p/*` on the platform surface, exclude it from the CMS `/api/*` clause, extend the Host-matrix test (EARS-63…65) | **#315** | it is a prerequisite for the **first** `/api/p/*` handler to answer at all; #316/#317 inherit it. **#313** (access & roles) is the equally defensible home and takes it if #313 is planned first — whichever is planned first owns it, and this row is corrected then |
+| `src/lib/okr/index.ts` — export one read-only `getOkrParameters()` accessor over `src/lib/okr/config.ts` (EARS-75)                                                | **#315** | §G cannot be built from today's OKR public API                                                                                                                                                                                                                        |
+| `src/lib/member/index.ts` — add member create, alias update and alias delete to the module's public API (EARS-41, EARS-44)                                        | **#316** | the cabinet must not reach past the module door to get them                                                                                                                                                                                                           |
+| Rewrite or retire the five `HOURS_ADMIN_EMAILS` unit specs listed in EARS-21                                                                                      | **#317** | they assert the gate this spec deletes                                                                                                                                                                                                                                |
 
-### Donor spec revisions (on-touch, same PR as the behaviour)
+### Donor spec revisions (on touch — one donor file, one PR)
 
 This spec retires clauses that live in **other** specs describing production.
 `docs/specs/README.md` → Status model: changing a shipped behaviour **updates
@@ -786,11 +807,20 @@ the existing spec** in the same PR; leaving the donor untouched creates two
 contradicting sources of truth, and the copy nobody edited is the one that
 drifts. Each row is a required part of its PR, not a follow-up wish.
 
-| Donor spec                                       | What this spec changes in it                                                                                                                                  | Landed by |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `docs/specs/124-hours-on-core.md`                | EARS-19 (SQL escape hatch until `/p/admin`) is retired by EARS-44 — amend the clause in 124 and set the file's status per the ladder                          | **#316**  |
-| `docs/specs/124-hours-on-core.md`                | EARS-32 (`HOURS_ADMIN_EMAILS` re-check) is superseded by EARS-51 — amend it to name `platform-admin`                                                          | **#317**  |
-| `docs/specs/081-hours-calculator.md` (+#83/#85)  | the admin screen it describes is deleted (EARS-52); its administrative behaviour now lives in the cabinet — amend the affected sections to point at this spec | **#317**  |
-| `docs/specs/100-hours-mattermost-publication.md` | the publication panel moves into the cabinet (EARS-50) — amend the surface it names                                                                           | **#317**  |
+**One donor file, one amending PR.** Each row below names exactly one file and
+exactly one issue, so no two PRs edit the same donor spec and there is no second
+PR that could revert the first one's status-ladder change. Spec 124 loses two
+clauses to two different issues, and both amendments are therefore taken **once,
+in #317** — the later of the two — rather than split across #316 and #317: an
+amendment is a single edit to one file's status ladder, and splitting it is what
+creates the revert. **#317 therefore lands after #316**, which is the order the
+epic already runs in (§E is the first tenant, §F the second); if that order ever
+changes, this row moves with it rather than splitting.
+
+| Donor spec                                       | What this spec changes in it                                                                                                                                                                                                                                                  | Landed by |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `docs/specs/124-hours-on-core.md`                | **both** clause retirements in one amendment: EARS-19 (SQL escape hatch until `/p/admin`) is retired by EARS-44 (behaviour lands in #316), and EARS-32 (`HOURS_ADMIN_EMAILS` re-check) is superseded by EARS-51 — amend both clauses and set the file's status per the ladder | **#317**  |
+| `docs/specs/081-hours-calculator.md` (+#83/#85)  | the admin screen it describes is deleted (EARS-52); its administrative behaviour now lives in the cabinet — amend the affected sections to point at this spec                                                                                                                 | **#317**  |
+| `docs/specs/100-hours-mattermost-publication.md` | the publication panel moves into the cabinet (EARS-50) — amend the surface it names                                                                                                                                                                                           | **#317**  |
 
 </content>
