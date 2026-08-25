@@ -131,7 +131,10 @@ All commands below run **from the `deploy/` directory on the host**.
    carries the claim gate (#313), not a follow-up.** Since that release every
    path under `/p` (`portal.bbm.academy/p/okr`, `/p/hours`, `/p/admin`) requires
    the Zitadel project role **`platform-user`**, and the cabinet requires
-   **`platform-admin`**. Three separate objects have to exist in
+   **`platform-admin`** — as does the hours export route
+   `/p/hours/admin/export`, which applies the claim gate itself (it is a route
+   handler and passes through no layout), so a working hours export is part of
+   what the role grant restores. Three separate objects have to exist in
    `id.bbm.academy` **before** the release is deployed, for **every** person who
    uses the portal:
 
