@@ -114,113 +114,130 @@ reports as plain sums.
 
 ## Requirements
 
-Ids continue the flat corpus keyspace: this spec holds **EARS-501…**.
+Ids continue the flat corpus keyspace: this spec takes the next free
+hundred-block, **EARS-301…** (spec 311 holds 401–499).
 
 ### A. Reference tables (справочники)
 
-- **EARS-501.** The finance module shall store currencies, accounts, projects,
+- **EARS-301.** The finance module shall store currencies, accounts, projects,
   products, purposes and expense categories as editable reference tables, per
   the vendored `design-source/finance/References.dc.html`.
-- **EARS-502.** WHEN the owner adds a currency with its precision, the system
+- **EARS-302.** WHEN the owner adds a currency with its precision, the system
   shall accept postings in that currency immediately, with no release.
-- **EARS-503.** IF a posting exists in a currency, THEN the system shall refuse
+- **EARS-303.** IF a posting exists in a currency, THEN the system shall refuse
   a change to that currency's precision.
-- **EARS-504.** The system shall seed exactly one fund project row («Фонд BBM»)
+- **EARS-304.** The system shall seed exactly one fund project row («Фонд BBM»)
   in the migration, and shall refuse to retire it or to create a second fund
   row.
-- **EARS-505.** The system shall create system accounts (income, expense,
+- **EARS-305.** The system shall create system accounts (income, expense,
   conversion, fx_result, liability) itself, one per kind and currency on first
   need, and the cabinet shall not offer creating, editing or retiring them.
-- **EARS-506.** WHEN a purpose is created, the system shall require its
+- **EARS-306.** WHEN a purpose is created, the system shall require its
   `product_binding` (`required` / `forbidden` / `optional`) to be declared, and
   shall link the purpose to an expense category WHERE the category list is
   non-empty.
-- **EARS-507.** The expense category table shall ship empty: no migration, seed
+- **EARS-307.** The expense category table shall ship empty: no migration, seed
   or fixture inserts a category (decision 11); each category row shall carry an
   `allocable` flag stating whether it flows into unit cost or is a period cost.
-- **EARS-508.** IF a reference row (currency, account, project, product,
+- **EARS-308.** IF a reference row (currency, account, project, product,
   purpose, category) is referenced by any posting, operation or purpose, THEN
   the system shall refuse to delete it and shall offer retirement instead;
   a retired row shall stay valid on every existing posting and shall stop
   being offered for new ones.
-- **EARS-509.** The system shall never rewrite an existing posting as a
+- **EARS-309.** The system shall never rewrite an existing posting as a
   consequence of a reference edit — renames and retirements change how rows
   read going forward, never what was recorded.
 
 ### B. The fact core: operations, postings, reversal, conversions
 
-- **EARS-510.** The finance module shall record money only as operations made
+- **EARS-310.** The finance module shall record money only as operations made
   of postings: each posting names its account, a signed `bigint` amount in the
   currency's minimal units, and its currency; each amount keeps the currency it
   happened in, with conversion for display left to reports (F3).
-- **EARS-511.** The system shall refuse to record an operation whose postings
+- **EARS-311.** The system shall refuse to record an operation whose postings
   do not sum to zero per currency.
-- **EARS-512.** IF a posting's currency differs from its account's currency,
+- **EARS-312.** IF a posting's currency differs from its account's currency,
   THEN the system shall refuse the operation.
-- **EARS-513.** The system shall refuse any update or delete of a recorded
+- **EARS-313.** The system shall refuse any update or delete of a recorded
   operation or posting, at the module API and — as an accident guard, per the
   spec-201 precedent — with database triggers on both tables; the only
   correction is reversal.
-- **EARS-514.** WHEN an operation is reversed (сторно), the system shall record
+- **EARS-314.** WHEN an operation is reversed (сторно), the system shall record
   a new operation with `source = reversal`, referencing the original, whose
   postings mirror the original's with negated amounts and identical dimensions;
   both operations shall remain visible, and their sum shall be zero in every
   cut.
-- **EARS-515.** IF an operation has already been reversed, THEN the system
+- **EARS-315.** IF an operation has already been reversed, THEN the system
   shall refuse a second reversal of it; a reversal operation itself shall be
   reversible (undoing a mistaken reversal).
-- **EARS-516.** Every posting shall be traceable to its source: the operation
+- **EARS-316.** Every posting shall be traceable to its source: the operation
   carries one of `request` / `bank_import` / `hours` / `manual` / `backfill` /
   `reversal` (decision 3); backfilled operations carry the `backdated` flag
   (decision 17 context). F1 fixes the enum and the columns; the intake flows
   that fill `source_ref` are F2's.
-- **EARS-517.** The system shall provide no opening-balance mechanism: every
+- **EARS-317.** The system shall provide no opening-balance mechanism: every
   account starts at zero and its balance is exclusively the sum of its postings
   (decision 17).
-- **EARS-518.** The system shall record a currency conversion as ONE operation:
+- **EARS-318.** The system shall record a currency conversion as ONE operation:
   its exchange steps as `finance_conversion_step` rows each carrying the actual
   rate as recorded at the operation (decision 18), each step's fee as its own
   posting, and the legs balanced per currency through the system conversion
   account.
-- **EARS-519.** The system shall never restate a recorded rate or amount: a
+- **EARS-319.** The system shall never restate a recorded rate or amount: a
   conversion read a year later shows the rate of its day (decision 18), and no
   process revalues crypto or currency balances by posting (Accounting policy,
   ruling 3).
-- **EARS-520.** WHEN a purpose with `product_binding = required` is used on an
+- **EARS-320.** WHEN a purpose with `product_binding = required` is used on an
   expense operation, the system shall refuse to record it without a product;
   WHEN the binding is `forbidden`, the system shall refuse a product on it;
   WHERE the binding is `optional`, the product may be absent (decision 22;
   Accounting policy, ruling 2).
-- **EARS-521.** Every posting on an income or expense system account shall name
+- **EARS-321.** Every posting on an income or expense system account shall name
   a project (the fund row counts as one), so P&L is computable per project and
   for the whole of BBM as their sum (decision 2).
-- **EARS-522.** WHERE an amount is attributable to a person, the posting shall
+- **EARS-322.** WHERE an amount is attributable to a person, the posting shall
   carry `member_id`, declared as an SQL FK to `core.member` in the migration
   (ADR-004 §6) and asserted by an integration test, so "what did we pay X" is a
   query.
+- **EARS-327.** WHEN an operation carries a purpose whose category link is
+  filled, the system shall set that category on the operation's expense-side
+  postings itself and shall refuse a differing one — a purpose and its category
+  can never disagree on a posting (decision 21).
+- **EARS-328.** WHEN a holding in a non-RUB currency or crypto leaves an
+  account (a conversion or a payment from it), the system shall compute the
+  realized difference between the disposal-date rate and the account's
+  **weighted-average recorded rate** for that currency, and shall post it to
+  the system `fx_result` account of the fund — never onto a product — as part
+  of the same operation, keeping EARS-311's per-currency zero-sum intact
+  (Accounting policy, ruling 3; the recorded legs themselves are never
+  restated).
 
 ### C. Module structure, admin resources, audit
 
-- **EARS-523.** The finance module shall live as `src/lib/finance/` with its
+- **EARS-323.** The finance module shall live as `src/lib/finance/` with its
   public API in `src/lib/finance/index.ts` (ADR-002 §3), exposing recording,
   reversal, reference management and balance/register queries; its tables shall
   appear only via the platform migration pipeline (ADR-004 §3), and
   `pnpm boundaries` shall stay green: only the finance module imports
   `schema/finance/`, and no route imports a table file.
-- **EARS-524.** The module shall export one `internal` workspace declaration
-  (slug `finance`, href `/p/finance`) with an `admin` section declaring the
-  reference resources, registered in the composition root (spec 311
-  EARS-401/402), so they mount at `/p/admin/finance/<resource>` with no edit to
-  the shell (EARS-409).
-- **EARS-525.** WHEN a signed-in member opens `/p/finance`, the page shall
-  render the accounts with their balances computed live from postings, each in
-  its own currency (the cash card of the vendored
-  `design-source/finance/Overview.dc.html`); the rest of the overview is F3's
-  and shall not be stubbed.
-- **EARS-526.** Every cabinet write to a finance reference shall run through
+- **EARS-324.** The module shall export one `internal` workspace declaration
+  (slug `finance`, href `/p/finance`) carrying
+  `requiredClaim: platform-admin` — BBM's money is visible to no one below the
+  admin claim until the F2 role model (decision 8) widens it deliberately —
+  with an `admin` section declaring the reference resources, registered in the
+  composition root (spec 311 EARS-401/402), so they mount at
+  `/p/admin/finance/<resource>` with no edit to the shell (EARS-409).
+- **EARS-325.** WHEN a signed-in member holding the `platform-admin` claim
+  opens `/p/finance`, the page shall render the accounts with their balances
+  computed live from postings, each in its own currency (the cash card of the
+  vendored `design-source/finance/Overview.dc.html`); the rest of the overview
+  is F3's and shall not be stubbed. A session without the claim shall be
+  refused by the module's own handlers regardless of how the URL was reached
+  (spec 311 EARS-405).
+- **EARS-326.** Every cabinet write to a finance reference shall run through
   `platformTransaction` with the signed-in admin as actor (spec 311 EARS-439),
   and shall validate against the module's zod schemas (EARS-436); a refusal
-  (EARS-503/504/508/511/512/513/520) shall reach the admin as the module's
+  (EARS-303/304/308/311/312/313/320) shall reach the admin as the module's
   readable message, never a raw constraint error (EARS-473 shape).
 
 ## Accounting policy — proposed rulings for the stage-2 go
@@ -246,7 +263,7 @@ ladder:
    base in v1**.
 
 Capitalization of a product = its direct costs + its directly attributable
-overhead, read off postings (EARS-520/521 carry the mechanics). Trade-off,
+overhead, read off postings (EARS-320/321 carry the mechanics). Trade-off,
 stated: the sum of product margins exceeds holding profit by the unallocated
 overhead, which F3 shows as one explicit line — never smeared. Because the
 ledger stores attributability per posting, an absorption/ABC view can be added
@@ -258,7 +275,7 @@ later as an F3 overlay without restating anything.
 no → name it; (2) only if "partly": «Можешь назвать ОДИН продукт без деления по
 процентам?» no → no product (v1 does not split). The filer rarely answers them:
 attributability is declared ONCE, on the **purpose**, as `product_binding`
-(EARS-506/520) — whoever defines a purpose runs the test, and the form then
+(EARS-306/320) — whoever defines a purpose runs the test, and the form then
 requires, hides or offers the product field. `optional` is the pressure valve;
 F3 reports optional filings left product-less so the taxonomy converges from
 use.
@@ -268,10 +285,12 @@ agenda decision crypto is a non-monetary asset; IAS 21 does not retranslate
 non-monetary items held at cost — the transaction-date rate persists, so the
 ledger's frozen-rate principle IS the standard treatment. Proposal: the ledger
 holds crypto at the recorded rate forever; **no revaluation postings ever**
-(EARS-519); the difference is recognised only on disposal, posted at the
+(EARS-319); the difference is recognised only on disposal — computed against
+the holding's **weighted-average recorded rate** (the standard cost-flow
+assumption for a fungible holding; no lot tracking in v1) and posted at the
 disposal-date rate to the system `fx_result` account of the fund, never onto a
-product; unrealised movement is an F3 display concern (a computed, labelled
-non-posting line). IAS 36 impairment is an explicit v1 deferral.
+product (EARS-328); unrealised movement is an F3 display concern (a computed,
+labelled non-posting line). IAS 36 impairment is an explicit v1 deferral.
 
 Cross-cutting principle, verbatim in the model: the ledger records facts at the
 rate and cost object they had when they happened; every judgement that can
@@ -283,14 +302,14 @@ migrations.
 
 | Resource (`/p/admin/finance/…`) | Create                                               | Read                                  | Update                                       | Delete                                                             |
 | ------------------------------- | ---------------------------------------------------- | ------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| currencies                      | yes (code, name, precision)                          | yes                                   | name; precision only while unused (EARS-503) | retire; hard delete only if never referenced (EARS-508)            |
+| currencies                      | yes (code, name, precision)                          | yes                                   | name; precision only while unused (EARS-303) | retire; hard delete only if never referenced (EARS-308)            |
 | accounts                        | yes (money kinds only)                               | yes (system accounts shown read-only) | name                                         | retire; same rule                                                  |
-| projects                        | yes                                                  | yes                                   | name                                         | retire; the fund row is neither retirable nor deletable (EARS-504) |
+| projects                        | yes                                                  | yes                                   | name                                         | retire; the fund row is neither retirable nor deletable (EARS-304) |
 | products                        | yes (under a project)                                | yes                                   | name, sale price                             | retire; same rule                                                  |
-| purposes                        | yes (binding mandatory, EARS-506)                    | yes                                   | name, category link, binding                 | retire; same rule                                                  |
+| purposes                        | yes (binding mandatory, EARS-306)                    | yes                                   | name, category link, binding                 | retire; same rule                                                  |
 | categories                      | yes (from F2's derivation on; the table ships empty) | yes                                   | name, allocable flag                         | retire; same rule                                                  |
 
-Deliberately unsupported: creating/editing system accounts (EARS-505); any
+Deliberately unsupported: creating/editing system accounts (EARS-305); any
 cabinet surface for operations or postings — the fact core is written only by
 the module API (intakes are F2); changing a currency's precision in use; a
 second fund row.
@@ -300,39 +319,40 @@ second fund row.
 Owner walkthrough, on a live stand, after the go and the build:
 
 1. **References exist and are mine to edit.** Open `/p/admin` → group «Финансы»
-   lists the six resources (EARS-524). Create currency `THB` (precision 2),
+   lists the six resources (EARS-324). Create currency `THB` (precision 2),
    account «Карта THB» (kind card, THB), project «Doctor.School», product
    «Урок» under it, purpose «Продакшн урока» with binding `required` — each
-   save answers with a visible confirmation (EARS-501/502/506, spec 311
+   save answers with a visible confirmation (EARS-301/302/306, spec 311
    EARS-472).
 2. **The ledger starts honest.** Open `/p/finance` — every account shows
    balance 0 in its own currency, because no operation exists yet
-   (EARS-517/525).
+   (EARS-317/325).
 3. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
    that the account uses — a readable refusal offers retirement instead
-   (EARS-508/526). Rename the account — the rename is visible, nothing else
-   changes (EARS-509).
+   (EARS-308/326). Rename the account — the rename is visible, nothing else
+   changes (EARS-309).
 4. **The fund is fixed.** Try retiring «Фонд BBM» — a readable refusal
-   (EARS-504).
+   (EARS-304).
 5. **Categories are not pre-invented.** Open the categories resource — the
-   table is empty, with creation available (EARS-507).
+   table is empty, with creation available (EARS-307).
 
 ### Verified by CI, not by the owner
 
 The fact-core invariants have no owner-facing surface until F2's intakes; they
 are exercised by TDD tests named `it('EARS-N: …')` (task-cycle stage 3):
-per-currency zero-sum (EARS-511/512), immutability incl. the DB trigger
-(EARS-513), reversal mechanics (EARS-514/515), the source enum and backdated
-flag (EARS-516), no-opening-balance (EARS-517), conversion steps with frozen
-rates (EARS-518/519), product binding (EARS-520), the project dimension
-(EARS-521), the `core.member` FK (EARS-522), boundaries (EARS-523).
+per-currency zero-sum (EARS-311/312), immutability incl. the DB trigger
+(EARS-313), reversal mechanics (EARS-314/315), the source enum and backdated
+flag (EARS-316), no-opening-balance (EARS-317), conversion steps with frozen
+rates (EARS-318/319), product binding (EARS-320), the project dimension
+(EARS-321), the `core.member` FK (EARS-322), boundaries (EARS-323).
 
 ## Out of scope
 
 - Every intake: the request form, approval queue, bank import, backfill, hours
   accruals — **F2 (#339)**, which also derives the category list (decision 11)
-  and settles roles/claims (decision 8). F1's `/p/finance` and `/p/admin`
-  screens are reachable to signed-in members; narrowing by claim is F2's.
+  and settles the full role model (decision 8). F1 gates every finance surface
+  behind `platform-admin` (EARS-324/325) as the conservative default; widening
+  access to participants is F2's deliberate act, not F1's omission.
 - Reports beyond the balances card: register UI, P&L, cash flow, unit cost,
   capitalization display — **F3 (#340)**; reconciliation — **F4 (#341)**;
   scenarios — **F5 (#342)**.
@@ -347,4 +367,7 @@ rates (EARS-518/519), product binding (EARS-520), the project dimension
 
 None remain open as questions. #338 OQ1/OQ2 were closed by decisions 16/17;
 OQ3/OQ4/OQ5 are answered by the three proposed rulings above and close when the
-owner signs them off at the stage-2 go.
+owner signs them off at the stage-2 go. The go question additionally names one
+lead-chosen default for the owner's veto: every F1 finance surface is gated
+behind `platform-admin` (EARS-324/325) until F2's role model (decision 8)
+widens it.
