@@ -31,15 +31,21 @@
 // `tests/unit/session-last-report.spec.ts`; the entry-point guard keeps the
 // import side-effect free.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 /** Marker lines of the stage-6 report shape. One is enough to recognise it. */
 export const REPORT_MARKERS = ['Проверить глазами:', 'Отклонения от конвенций:']
 
-/** Substrings that mark a log as a dispatched-agent / SDK log, not a session. */
+/**
+ * Substrings that mark a log as a dispatched-agent / SDK log, not a session.
+ * `"promptSource":"sdk"` is the one that actually fires here;
+ * `"isSidechain":true` is SPECULATIVE future-proofing — it appears on 0 of the
+ * 280 logs on this box, exactly as `.claude/skills/wrap/SKILL.md` phase 0
+ * records. Do not read a passing exclusion as evidence that it matched.
+ */
 export const AGENT_LOG_MARKERS = ['"promptSource":"sdk"', '"isSidechain":true']
 
 /** How many trailing assistant messages are searched for the report block. */
@@ -181,21 +187,18 @@ export function findReport(texts) {
 
 /**
  * Newest session log (by last timestamp) that actually contains a report.
- * Returns `{file, report, at}` or `null`. Files are read lazily, newest first
- * by mtime, so the common case reads one or two logs, not a hundred.
+ * Returns `{file, report, at}` or `null`. It reads EVERY survivor and picks by
+ * the log's own last timestamp — there is no early exit, and no mtime
+ * pre-ordering: file mtime and the last in-log timestamp disagree often enough
+ * (a re-slugged worktree segment, a log touched by a tool) that ordering by
+ * mtime and stopping at the first hit would return the wrong session. ~2 s over
+ * the whole corpus (280 logs / 291 MB measured), which is the price of being
+ * right.
  */
 export function selectReport(files, deps = {}) {
   const read = deps.readFileSync ?? readFileSync
-  const stat = deps.statSync ?? statSync
-  const mtime = (file) => {
-    try {
-      return stat(file).mtimeMs
-    } catch {
-      return 0
-    }
-  }
   const candidates = []
-  for (const file of [...files].sort((a, b) => mtime(b) - mtime(a))) {
+  for (const file of files) {
     let text
     try {
       text = read(file, 'utf8')
@@ -243,7 +246,9 @@ export function main(argv = process.argv.slice(2), deps = {}) {
   const projectsDir = deps.projectsDir ?? join(homedir(), '.claude', 'projects')
   let files = (deps.discoverLogs ?? discoverLogs)(projectsDir, deps)
   if (args.session) {
-    files = files.filter((file) => file.endsWith(`${args.session}.jsonl`))
+    // Basename EQUALITY, not a suffix test: `--session 123` must not also match
+    // `abc-123.jsonl`. The id is the basename of the `.jsonl`, in any slug dir.
+    files = files.filter((file) => basename(file) === `${args.session}.jsonl`)
     if (files.length === 0) {
       write(err, `no log found for session ${args.session} under ${projectsDir}\n`)
       return 1

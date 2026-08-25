@@ -196,6 +196,15 @@ describe('selectReport', () => {
     expect(selectReport(['/logs/agent.jsonl'], deps)).toBeNull()
   })
 
+  it('picks by the in-log last timestamp, not by the order files arrive in', () => {
+    // The newest log listed FIRST: an implementation that stopped at the first
+    // hit in list order would still be right here only by accident, so the
+    // assertion is that the reversed order gives the same answer.
+    const hit = selectReport(['/logs/new.jsonl', '/logs/old.jsonl'], deps)
+    expect(hit?.file).toBe('/logs/new.jsonl')
+    expect(selectReport(['/logs/old.jsonl', '/logs/new.jsonl'], deps)?.file).toBe('/logs/new.jsonl')
+  })
+
   it('skips an unreadable file instead of throwing', () => {
     const hit = selectReport(['/logs/gone.jsonl', '/logs/new.jsonl'], {
       ...deps,
@@ -268,6 +277,37 @@ describe('main', () => {
     })
     expect(code).toBe(1)
     expect(err.text()).toContain('no log found for session nope')
+  })
+
+  it('--session matches the basename exactly, not by suffix', () => {
+    const err = sink()
+    const code = main(['--session', '123'], {
+      stdout: sink(),
+      stderr: err,
+      // `abc-123.jsonl` ENDS WITH `123.jsonl` — a suffix test would pick it up.
+      discoverLogs: () => ['/logs/abc-123.jsonl'],
+    })
+    expect(code).toBe(1)
+    expect(err.text()).toContain('no log found for session 123')
+  })
+
+  it('--session picks the log whose basename equals the id, in any slug dir', () => {
+    const out = sink()
+    const code = main(['--session', 'abc-123'], {
+      stdout: out,
+      stderr: sink(),
+      discoverLogs: () => ['/logs/worktrees-7/abc-123.jsonl', '/logs/other.jsonl'],
+      readFileSync: () => sessionLog('2026-08-25T10:00:00Z'),
+    })
+    expect(code).toBe(0)
+    expect(out.text()).toContain('abc-123.jsonl')
+  })
+
+  it('exits 1 with a diagnostic when no bbm-portal log was discovered at all', () => {
+    const err = sink()
+    const code = main([], { stdout: sink(), stderr: err, discoverLogs: () => [] })
+    expect(code).toBe(1)
+    expect(err.text()).toContain('no bbm-portal session logs')
   })
 
   it('exits 2 on a bad argument', () => {

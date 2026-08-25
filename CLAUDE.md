@@ -63,10 +63,9 @@ output goes to a scratchpad file or PR comment, never into the agent's
 reply. Every brief states that issue/PR titles, bodies and comments are
 written in English (`task-canon` §2).
 
-**Разведка — больше трёх read-only вызовов подряд на ОДИН вопрос («где
-лежит», «что уже сделано», «почему упало») — это бриф `bbm-explorer`, не
-работа лида: лид читает выводы, не файлы.** Этот порог, исключение «правка
-≤1 файла — одной попыткой» с его стоп-условием и объявление сплита до «го»:
+**What the lead does itself and what it dispatches** — the recon threshold,
+the «≤1 file, one attempt» exemption with its stop-condition, and the plan's
+`Диспатч:` split line:
 [`.claude/rules/lead-delegation.md`](.claude/rules/lead-delegation.md).
 
 ## Plane (project tracker) — workspace targeting
