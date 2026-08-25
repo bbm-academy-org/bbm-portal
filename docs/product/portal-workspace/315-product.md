@@ -26,11 +26,15 @@ replaces the per-app admin screens: hours administration moves here and
 
 ## Design pick (Stage A)
 
-Stage A (task-cycle 1b) has not run. Two to three layout options for the admin
-shell go to the owner in issue #311; the pick is vendored into `design-source/`
-with a provenance row before any markup.
+Stage A (task-cycle 1b) ran on 2026-08-25: three layout options for the admin
+shell went to the owner on issue #315, and the pick is vendored into
+`design-source/` with a provenance row in `design-source/README.md`.
 
-> Pick: _pending_.
+> Pick: **`admin-a`** («Левый сайдбар с группами модулей») →
+> `design-source/p-admin-shell.html`, picked by Антон on 2026-08-25, with two
+> recorded amendments written into the file's header comment: sub-section
+> nesting must be visually explicit, and OKR **does** get a cabinet section —
+> the reversal this document already carries below.
 
 ## User stories
 
