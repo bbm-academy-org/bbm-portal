@@ -1,6 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-import { isAllowedE2EIdpOrigin } from './support/idp-origin'
+import { signInThroughZitadel } from './support/zitadel-sign-in'
 
 /**
  * The claim gate over `/p/admin`, end to end (spec 311 §B, acceptance scenario 7:
@@ -37,9 +37,11 @@ import { isAllowedE2EIdpOrigin } from './support/idp-origin'
  *   E2E_PORT=3005 E2E_ADMIN_USERNAME=… E2E_ADMIN_PASSWORD=… \
  *   pnpm test:e2e tests/e2e/platform-claim-gate.e2e.spec.ts
  *
- * The sign-in flow is a local copy for the same reason `hours-core-parity`
- * carries one: the shared-helper extraction is a follow-up, not a silent edit of
- * an acceptance-critical file.
+ * The sign-in flow lives in `tests/e2e/support/zitadel-sign-in.ts` — the login-v2
+ * screens hydrate AFTER their markup is served, and getting that race right is
+ * not something a spec should re-derive per file. `hours-core-parity` still
+ * carries its own pre-hardening copy; migrating it is a follow-up, not a silent
+ * edit of an acceptance-critical file from this task.
  */
 
 const idpHost = process.env.E2E_IDP_HOST
@@ -50,40 +52,11 @@ const memberPassword = process.env.E2E_MEMBER_PASSWORD
 
 const ADMIN_PATH = '/p/admin'
 
-async function signIn(
-  page: Page,
+const signIn = (
+  page: Parameters<typeof signInThroughZitadel>[0],
   targetPath: string,
   credentials: { username: string; password: string },
-): Promise<void> {
-  await page.goto(targetPath, { waitUntil: 'domcontentloaded' })
-
-  if (new URL(page.url()).pathname.startsWith('/api/auth/signin')) {
-    await page
-      .getByRole('button', { name: /zitadel|sign in/i })
-      .first()
-      .click()
-  }
-
-  if (new URL(page.url()).pathname !== targetPath) {
-    const loginName = page.locator('input[name="loginName"], input#loginName').first()
-    await loginName.waitFor({ state: 'visible', timeout: 30_000 })
-    // Credentials are never typed into an origin the operator did not name.
-    if (!isAllowedE2EIdpOrigin(page.url(), idpHost)) {
-      throw new Error(`Refusing to submit E2E username to untrusted IdP origin: ${page.url()}`)
-    }
-    await loginName.fill(credentials.username)
-    await page.keyboard.press('Enter')
-    const password = page.locator('input[type="password"]').first()
-    await password.waitFor({ state: 'visible' })
-    if (!isAllowedE2EIdpOrigin(page.url(), idpHost)) {
-      throw new Error(`Refusing to submit E2E password to untrusted IdP origin: ${page.url()}`)
-    }
-    await password.fill(credentials.password)
-    await page.keyboard.press('Enter')
-  }
-
-  await page.waitForURL((url) => url.pathname === targetPath, { timeout: 45_000 })
-}
+) => signInThroughZitadel(page, targetPath, credentials, { idpHost })
 
 test.describe('the platform-admin claim gate over /p/admin (spec 311 §B)', () => {
   test('EARS-405: an anonymous request for the cabinet never renders it', async ({ page }) => {

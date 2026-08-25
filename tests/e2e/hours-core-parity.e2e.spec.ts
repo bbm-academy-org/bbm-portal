@@ -41,6 +41,12 @@ import { isAllowedE2EIdpOrigin } from './support/idp-origin'
  * `PORTAL_E2E_BASE_URL` and this one drives a named stand through `baseURL`, and
  * #255 part 3 is not allowed to reshape the prod suite. Extracting one helper for
  * both is a small follow-up, not a silent edit of an acceptance-critical file.
+ *
+ * That follow-up now has a destination: `tests/e2e/support/zitadel-sign-in.ts`
+ * holds the hardened version (it waits for login-v2 to hydrate instead of racing
+ * it). The copy below still presses Enter at the pre-hydration form and carries
+ * the flake that fix removes; migrating it needs a run of THIS file, which
+ * mutates the stand, so it is left to the task that next touches it.
  */
 
 const idpUsername = process.env.E2E_IDP_USERNAME
