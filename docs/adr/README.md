@@ -11,6 +11,7 @@ knowledge lives in `bbm-kb`; platform-wide architecture specs (D-001..D-029) liv
 | ADR-002 | [Repository & module strategy for the BBM Platform](./002-repository-and-module-strategy.md)                                                   | Accepted 2026-07-24                        | This directory                                                                               |
 | ADR-003 | [Domain topology — `cms.bbm.academy` vs `portal.bbm.academy`](./003-domain-topology-cms-vs-portal.md)                                          | Accepted 2026-07-24                        | This directory                                                                               |
 | ADR-004 | [Platform persistence foundation — the `platform` database, drizzle, and our own migration pipeline](./004-platform-persistence-foundation.md) | Accepted 2026-08-11, amended A1 2026-08-21 | This directory                                                                               |
+| ADR-005 | [Internal-contour surface split — text in the knowledge base, tools in the portal](./005-internal-contour-surface-split.md)                    | Accepted 2026-08-25                        | This directory                                                                               |
 
 Numbering is ecosystem-wide and append-only; ADR-001 keeps its historical home.
 
