@@ -312,13 +312,25 @@ describe('zero-dispatch-guard: сообщение блока', () => {
 })
 
 describe('zero-dispatch-guard как процесс', () => {
-  const LEAD_ENV = { AI_AGENT: '', BBM_HOOKS_DISABLE: '', [BYPASS_ENV]: '' }
+  // Состояние гарда живёт в дереве, которое он резолвит из cwd вызова. Тест
+  // даёт ему СВОЁ дерево во временном каталоге: не-git-каталог отправляет
+  // `mainRepoRoot` в откат на `CLAUDE_PROJECT_DIR`, и счётчик кладётся туда,
+  // а не в рабочий чекаут. Захардкоженный windows-путь тут не годится — на
+  // Linux он не существует, запись состояния молча теряется, и гард никогда
+  // не доходит до порога.
+  const FAKE_TREE = mkdtempSync(resolve(tmpdir(), 'zdg-tree-'))
+  const LEAD_ENV = {
+    AI_AGENT: '',
+    BBM_HOOKS_DISABLE: '',
+    [BYPASS_ENV]: '',
+    CLAUDE_PROJECT_DIR: FAKE_TREE,
+  }
 
   function leadPayload(session: string, tool = 'Edit') {
     return JSON.stringify({
       tool_name: tool,
-      tool_input: { file_path: 'C:/Users/sidor/repos/bbm-portal/src/x.ts' },
-      cwd: 'C:/Users/sidor/repos/bbm-portal',
+      tool_input: { file_path: resolve(FAKE_TREE, 'src/x.ts') },
+      cwd: FAKE_TREE,
       session_id: session,
     })
   }
