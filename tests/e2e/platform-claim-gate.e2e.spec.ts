@@ -34,8 +34,13 @@ import { signInThroughZitadel } from './support/zitadel-sign-in'
  * (`.claude/rules/parallel-sessions.md`: naming a port asserts the stand is
  * yours). Read-only: no flow here writes anything to the stand.
  *
- *   E2E_PORT=3005 E2E_ADMIN_USERNAME=… E2E_ADMIN_PASSWORD=… \
+ *   E2E_PORT=3005 E2E_IDP_HOST=truenas.local:9180 \
+ *   E2E_ADMIN_USERNAME=… E2E_ADMIN_PASSWORD=… \
  *   pnpm test:e2e tests/e2e/platform-claim-gate.e2e.spec.ts
+ *
+ * `E2E_IDP_HOST` is the dev IdP's host WITH its port — the sign-in helper
+ * refuses to type credentials into any other origin
+ * (`tests/e2e/support/idp-origin.ts` compares `url.host`).
  *
  * The sign-in flow lives in `tests/e2e/support/zitadel-sign-in.ts` — the login-v2
  * screens hydrate AFTER their markup is served, and getting that race right is
