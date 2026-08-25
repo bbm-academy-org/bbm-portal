@@ -127,6 +127,39 @@ All commands below run **from the `deploy/` directory on the host**.
    for the ops repo, not an assumption to act on — creating it under
    `infra/portal/` is tracked there as ops-repo issue 148.
 
+6. **The workspace roles in the prod IdP — a precondition of the release that
+   carries the claim gate (#313), not a follow-up.** Since that release every
+   path under `/p` (`portal.bbm.academy/p/okr`, `/p/hours`, `/p/admin`) requires
+   the Zitadel project role **`platform-user`**, and the cabinet requires
+   **`platform-admin`**. Three separate objects have to exist in
+   `id.bbm.academy` **before** the release is deployed, for **every** person who
+   uses the portal:
+
+   | #   | Object                                           | Missing ⇒                                            |
+   | --- | ------------------------------------------------ | ---------------------------------------------------- |
+   | 1   | the two project ROLES on the prod project        | nothing to grant; the console offers no role to tick |
+   | 2   | **`projectRoleAssertion: true`** on that project | grants exist, the claim never reaches the token      |
+   | 3   | a per-user GRANT carrying the roles, per person  | the claim arrives EMPTY                              |
+
+   **Blast radius if any of them is missing: the whole live workspace answers a
+   bare HTTP 403** — no copy, no link, nothing to click (that refusal is the
+   specced one, D-5). A missing grant and a correct refusal are the SAME screen,
+   so the failure is silent: nobody gets an error to report, the surfaces simply
+   stop working for everyone at once.
+
+   The console procedure is not repeated here — it is
+   [`infra/dev-stand/idp/bootstrap.md`](../infra/dev-stand/idp/bootstrap.md)
+   §5a, _Prod (`id.bbm.academy`)_. Do **not** point `provision.sh` at prod: it is
+   a dev-stand script and also writes the login policy, Login V2 and test users.
+
+   Ordering, both directions: the console steps are additive and safe to run
+   **before** the deploy (a role nobody's build reads changes nothing), while
+   running them after it means an outage that lasts until they are done. Verify
+   after deploying: a granted member signs in and reaches `/p`; an account with
+   no grant gets the bare 403 on every `/p` path. A member who was already
+   signed in when the release landed is sent through sign-in once and comes back
+   with the claim — no cookie-clearing, no support ticket.
+
 > **Node version:** the image bakes Node 22 (`Dockerfile`), so the Payload
 > migrate tsx-loader gotcha that bites Node 23/24 on the dev host does **not**
 > apply inside Docker.

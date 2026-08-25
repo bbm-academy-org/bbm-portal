@@ -131,7 +131,8 @@ curl -s http://truenas.local:9180/.well-known/openid-configuration | jq -r .issu
 web/OIDC application (`authorization_code` + `refresh_token`, BASIC auth, dev-mode
 http redirect URIs), the project-role assertion, the two workspace roles (step 5a), the Login V2 feature
 with its baseUri, the `IAM_LOGIN_CLIENT` grant, closes public self-registration,
-and — when `IDP_TEST_USER_PASSWORD` is set — a human test user (`bbm-test`, email
+and — when `IDP_TEST_USER_PASSWORD` is set — the two human accounts of step 5a
+(`bbm-test` with both roles, `bbm-member` with `platform-user` alone; email
 pre-verified, password **permanent** / change NOT required). Re-running converges;
 it never duplicates.
 
@@ -178,17 +179,26 @@ what people mean by "create the role":
 | --- | -------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------- |
 | 1   | the project ROLES exist                            | `provision.sh` step 2, from `SEED_ROLE`                       | nothing to grant; the console offers no role to tick       |
 | 2   | `projectRoleAssertion: true` on the project        | `provision.sh` step 1                                         | the grant exists and the claim is absent from the token    |
-| 3   | the member holds a USER GRANT carrying those roles | `provision.sh` step 8 (dev test user only) / console (people) | the claim arrives EMPTY — a bare 403 that looks like a bug |
+| 3   | the member holds a USER GRANT carrying those roles | `provision.sh` step 7+8 (the seeded dev accounts only) / console (people) | the claim arrives EMPTY — a bare 403 that looks like a bug |
 
 Row 3 is the one that gets forgotten: a project role lives on the PROJECT, and
 it reaches a token only through a per-user grant on that project. All three
 failures produce the same screen — the bare 403 of EARS-418 — which is
 indistinguishable from a correct refusal, so check them in this order.
 
+**Two seeded accounts, one role apart.** Step 7+8 seeds `bbm-test` with every
+seeded role AND `bbm-member` with `platform-user` alone (same password, both
+idempotent). Without the second one a fresh stand has no account the workspace
+admits and the cabinet refuses, so the EARS-418 / EARS-405 refusal — the half of
+the gate that fails silently — cannot be exercised on it at all. Overrides:
+`IDP_MEMBER_USERNAME`, `IDP_MEMBER_EMAIL`, `IDP_MEMBER_ROLE`.
+
 Inspect the seeded set without touching the IdP:
 
 ```bash
 ./provision.sh --print-seed-roles     # -> platform-user, platform-admin
+./provision.sh --print-seed-users     # -> bbm-test <TAB> platform-user,platform-admin
+                                      #    bbm-member <TAB> platform-user
 ```
 
 `projectRoleCheck` stays **off**: a member without a grant still completes the
@@ -196,6 +206,15 @@ OIDC login and is then refused by the app. That is deliberate — the refusal th
 spec designs is the platform's bare 403, not a Zitadel error page.
 
 ### Prod (`id.bbm.academy`) — a supervised operator step, never an agent's
+
+**This is a PRECONDITION of deploying #313, not a how-to to read afterwards.**
+The release that carries the claim gate flips `portal.bbm.academy` from «any
+authenticated account» to «a grant is required». Until all three objects below
+exist for **every** person who uses the portal, that release answers the bare 403
+of EARS-418 on every `/p` path — `/p/okr` and `/p/hours` included — and a missing
+grant is indistinguishable from a correct refusal, so the outage is silent. The
+deploy runbook carries the same precondition where the operator meets it:
+[`deploy/README.md`](../../../deploy/README.md) → _Prerequisites_ item 6.
 
 `provision.sh` is a **dev-stand** script: it also writes the login policy, the
 Login V2 feature and the `bbm-test` human user, none of which belong on prod.
