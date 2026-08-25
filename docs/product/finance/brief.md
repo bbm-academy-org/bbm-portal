@@ -2,11 +2,11 @@
 status: Draft
 epic: 115
 features:
-  - F1 — Ledger core: accounts, project dimension, postings, currencies, reversal (backend-only)
-  - F2 — Filling the ledger: manual entry, expense requests, history backfill, bank import (user-facing)
-  - F3 — Reports: register, P&L, cash flow, unit cost, break-even (user-facing)
-  - F4 — Fact-vs-finmodel reconciliation (user-facing)
-  - F5 — Scenario calculator on top of the fact (user-facing)
+  - F1 (#338) — Ledger core: accounts, project dimension, postings, currencies, reversal (backend-only)
+  - F2 (#339) — Filling the ledger: manual entry, expense requests, history backfill, bank import (user-facing)
+  - F3 (#340) — Reports: register, P&L, cash flow, unit cost, break-even (user-facing)
+  - F4 (#341) — Fact-vs-finmodel reconciliation (user-facing)
+  - F5 (#342) — Scenario calculator on top of the fact (user-facing)
 updated: 2026-08-25
 ---
 
@@ -16,12 +16,10 @@ The reader is the owner. This brief is deliberately thin: it says what
 `/p/finance` is for and how its surfaces compose. Stories, flows and acceptance
 criteria live in the per-feature PRDs listed above.
 
-**Feature files are named `f<N>-<slug>-product.md` until the decomposition
-issues are filed.** The house pattern is `<NNN>-product.md`, where `NNN` is the
-feature's GitHub issue number; epic #115 has no children yet ("Decomposition
-pending" in the epic body), so the PRDs are named by feature id and renamed on
-filing. `agent-proposed — UNCONFIRMED` as a naming choice; the F-ids themselves
-come from the lead's decomposition.
+The decomposition issues were filed on 2026-08-25 (#338–#342), so the PRDs now
+carry the house name `<NNN>-product.md`, where `NNN` is the feature's GitHub
+issue number. The F-ids stay as the reading shorthand inside this epic's
+documents.
 
 ## Problem
 
@@ -60,7 +58,7 @@ data.
 ## Jobs-to-be-done
 
 `lead-drafted — ratified at spec go` as a formulation; each job is derived from
-the owner-approved discovery decisions 1–14 in issue #115.
+the owner-approved discovery decisions 1–22 in issue #115.
 
 - **J1 — "Record what actually happened."** As the owner, I want every rouble,
   baht and satoshi that moved to exist as a fact in one ledger, so that the
@@ -87,7 +85,10 @@ the owner-approved discovery decisions 1–14 in issue #115.
   expense, a price or a volume on top of the real fact and see P&L and cash flow
   move. _(decision 7)_
 - **J8 — "History counts."** As the owner, I want everything already spent
-  entered once, so the first P&L is not empty. _(decision 3)_
+  entered once, so the first P&L is not empty — starting from the very first
+  operation BBM ever had, with the accounts opening at zero and their balances
+  built by the backfill rather than by a synthetic opening entry.
+  _(decisions 3, 17)_
 
 ## Information architecture
 
@@ -108,8 +109,8 @@ portal.bbm.academy  (Zitadel OIDC gate over /p/*, ADR-003 §3; ADR-005 §2: a to
     ├── /p/finance/import          ingestion: bank statement, history backfill, sources      ← F2
     ├── /p/finance/reconciliation  fact vs finmodel — reserve %, pool sectors, royalty       ← F4
     ├── /p/finance/scenarios       what-if on top of the fact                                ← F5
-    └── /p/admin → finance         reference tables: accounts, expense categories, projects,
-                                   products, currencies, rates                          ← F1 + #112
+    └── /p/admin → finance         reference tables: accounts, expense categories, request
+                                   purposes, projects, products, currencies, rates      ← F1 + #112
 ```
 
 Seven structural facts:
@@ -130,11 +131,17 @@ Seven structural facts:
    verbatim intent)_
 4. **The project dimension is on the posting, not in the account tree.** Every
    posting carries fund-or-project; P&L and cost are the same computation with a
-   different filter. `agent-proposed — UNCONFIRMED` as a modelling choice;
-   decision 2 fixes only that the dimension exists and is per project.
+   different filter. **Projects are one flat level** — no sub-projects in v1, and
+   the sellable product sits directly under the project _(decision 16, owner
+   2026-08-25)_. `agent-proposed — UNCONFIRMED` as a modelling choice (the
+   dimension on the posting rather than in the account tree); decisions 2 and 16
+   fix that the dimension exists, is per project, and has exactly one level.
 5. **Reference data is editable, not hard-coded — and the taxonomy is derived,
-   not invented.** Expense categories, accounts, projects, products and
-   currencies live as reference tables an owner edits _(decision 10)_. The
+   not invented.** Expense categories, request purposes, accounts, projects,
+   products and currencies live as reference tables an owner edits
+   _(decisions 10, 21)_. The purpose reference is finer-grained than the category
+   list and each purpose is linked to its category, so an expense request picks
+   its "what for" instead of typing it _(decision 21)_. The
    category list in particular is **not** written up front: it is derived from
    the real recorded expenses once the filling mechanism has put spend into the
    ledger, and the owner approves the derived list _(decision 11)_. That
@@ -147,7 +154,9 @@ Seven structural facts:
    (consolidation spec §8, epic #111).
 7. **Presentation currency is a view, and plan is never a fact.** Reports default
    to RUB and can be switched to another reporting currency, while every
-   operation keeps the currency it happened in _(decision 13)_. Whether an
+   operation keeps the currency it happened in _(decision 13)_, and a report that
+   crosses currencies converts at **each operation's own actual rate, frozen at
+   its date** — never at a period-end market rate _(decision 18)_. Whether an
    expense is recognised on accrual or on cash is deliberately **not** decided
    yet — the owner decides it from practice; the binding principles are that the
    math is honest, that debts and obligations (including accrued-unpaid team
@@ -157,15 +166,22 @@ Seven structural facts:
 
 ## Feature decomposition
 
-| Feature | PRD                            | Surface      | What it settles                                                                                                                                                                                            |
-| ------- | ------------------------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1      | `f1-ledger-core-product.md`    | backend-only | what a fact of money is here: accounts, the project dimension, postings, currencies, reversal — including the empty, editable category table, but no category list                                         |
-| F2      | `f2-ledger-filling-product.md` | user-facing  | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve |
-| F3      | `f3-reports-product.md`        | user-facing  | what the owner reads: register, P&L, cash flow, unit cost, break-even price                                                                                                                                |
-| F4      | `f4-reconciliation-product.md` | user-facing  | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                  |
-| F5      | `f5-scenarios-product.md`      | user-facing  | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                              |
+| Feature | Issue | PRD                             | Blocked by | Surface      | What it settles                                                                                                                                                                                            |
+| ------- | ----- | ------------------------------- | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1      | #338  | `338-ledger-core-product.md`    | —          | backend-only | what a fact of money is here: accounts, the project dimension, postings, currencies, reversal — including the empty, editable category table, but no category list                                         |
+| F2      | #339  | `339-ledger-filling-product.md` | #338       | user-facing  | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve |
+| F3      | #340  | `340-reports-product.md`        | #338       | user-facing  | what the owner reads: register, P&L, cash flow, unit cost, break-even price                                                                                                                                |
+| F4      | #341  | `341-reconciliation-product.md` | #340       | user-facing  | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                  |
+| F5      | #342  | `342-scenarios-product.md`      | #340       | user-facing  | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                              |
 
-The decomposition is the lead's, adopted unchanged from the dispatch brief; each
+**The graph:** F1 is the head of the critical path and the only takeable issue at
+filing time; F2 and F3 are blocked by F1 (nothing fills or reads a ledger that
+does not exist yet); F4 and F5 are blocked by F3 (both read through the report
+layer — reconciliation compares against it, scenarios project on top of it).
+
+The decomposition is the lead's, adopted unchanged from the dispatch brief, and
+**confirmed by the owner on 2026-08-25** at the wireframe review («в целом ок»,
+decision 15) with the ordering amendment recorded under "Design gate" below. Each
 feature maps to owner decisions named in its PRD.
 
 Not PRD'd here, deliberately:
@@ -221,8 +237,28 @@ which is why discovery ran before the build.
 
 ## Design gate
 
-Stage A (task-cycle 1b) has **not** run for this epic. F2–F5 are `user-facing`
-and each carries an empty "Design pick (Stage A)" slot; per
+**Wireframe-first ordering — owner ruling, decision 15 (owner 2026-08-25):**
+before the F1 ledger-core spec is written, a wireframe prototype of the key
+surfaces is drawn and reviewed, so the data model is validated visually and its
+gaps surface before it is frozen.
+
+**That epic-level wireframe pass RAN on 2026-08-25 and validated the model.**
+12 artboards — the data-model board plus every `/p/finance` surface (overview,
+register, operation card, request form and queue, import and sources, references
+in `/p/admin`, P&L + cash flow, unit cost and break-even, finmodel
+reconciliation, scenarios), every field tagged with the ledger entity it binds
+to. The review turned the five open data-model questions carried on its sticky
+notes into owner rulings — decisions 16–20 (flat project level, history from the
+first operation, actual per-operation frozen rate, lessons/courses as the unit,
+scenario baseline recomputed on open) — plus decisions 21–22 on request purpose
+and product attribution. Those rulings are absorbed into the PRDs below.
+
+- Artifact: <https://claude.ai/code/artifact/ead41905-c726-42b8-bcdb-4f79b80aab09>
+- Record: [issue #115, comment of 2026-08-25](https://github.com/bbm-academy-org/bbm-portal/issues/115#issuecomment-5410131406)
+
+**The per-feature Stage A is still pending.** The wireframe pass validated the
+data model; it is **not** the Stage-A layout pick for F2–F5. Each of those is
+`user-facing` and carries an empty "Design pick (Stage A)" slot; per
 `.claude/rules/design-process.md`, none of those surfaces is ready to build until
-its design is vendored into `design-source/`. F1 is backend-only and owns no
+its own design is vendored into `design-source/`. F1 is backend-only and owns no
 visual surface.

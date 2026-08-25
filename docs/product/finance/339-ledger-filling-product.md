@@ -5,7 +5,7 @@ surface: user-facing
 updated: 2026-08-25
 ---
 
-# F2 — Filling the ledger: manual entry, expense requests, history backfill, bank import (#115)
+# F2 — Filling the ledger: manual entry, expense requests, history backfill, bank import (#339)
 
 ## Feature summary
 
@@ -42,6 +42,18 @@ the category list is derived from those recorded expenses and brought to the
 owner for approval; it then lives on as the editable reference table F1 defines.
 Nothing seeds it in advance.
 
+**The purpose of a request is a pick, not prose — owner ruling, decision 21
+(owner 2026-08-25).** "What for" is chosen from the **purpose reference**
+(«справочник назначений») that F1 (#338) owns: finer-grained than the category
+list, each purpose linked to its expense category, so the category follows from
+the pick. Free text survives only as an optional details comment on the request —
+«максимально упрощаем и систематизируем всё».
+
+**The backfill starts at the first operation ever — decision 17 (owner
+2026-08-25).** The owner locates it; from there the books run forward, accounts
+open at zero, and balances come from the backfilled operations themselves. No
+opening-balance entry is filed by this feature.
+
 Everything written by this feature obeys F1's rules: immutable postings,
 reversal instead of edits, amount in the currency's minimal units, the project
 dimension on every entry.
@@ -55,8 +67,10 @@ screen are the epic's most-used surfaces and need a Stage-A pick vendored into
 ## User stories
 
 - **US-1** — As a team member, I submit an expense request with the amount, the
-  currency, what it is for, the project, and the invoice or receipt attached, so
-  spending starts with a request instead of a message. _(decisions 6, 8)_
+  currency, what it is for — **picked from the purpose reference**, not typed —
+  the project, the product where the expense is attributable to one, and the
+  invoice or receipt attached, so spending starts with a request instead of a
+  message. _(decisions 6, 8, 21, 22)_
 - **US-18** — As a team member who has already spent the money, I file it on the
   same form after the fact, and it goes through the same owner approval before it
   is posted — nothing is recorded around the approval just because the money has
@@ -106,12 +120,27 @@ screen are the epic's most-used surfaces and need a Stage-A pick vendored into
   original. _(F1, consolidation spec §8)_
 - **US-17** — As a team member without the owner role, I cannot post to the
   ledger, only request. _(decision 8)_
+- **US-20** — As a team member, I choose the purpose of my request from the
+  purpose reference and the expense category follows from it, so two people
+  spending on the same thing never file it under two different words. Anything I
+  need to say in my own words goes in a details comment beside the picked
+  purpose. _(decision 21)_
+- **US-21** — As an owner, when a purpose I need is missing from the reference, I
+  add it to the reference (linked to its category) rather than letting the form
+  accept free text. _(decision 21; `agent-proposed — UNCONFIRMED` as to who may
+  add a purpose and whether it can be added inline from the form)_
+- **US-22** — As an owner backfilling history, I start from BBM's first operation
+  and carry it forward; the accounts stand at zero until the backfilled
+  operations move them, so I never enter an opening balance. _(decision 17)_
 
 ## Flows
 
 **Expense request — happy path.**
-Member opens `/p/finance/requests` → fills amount + currency + purpose + project
-(+ product where it applies) → attaches the invoice → submits → the request
+Member opens `/p/finance/requests` → fills amount + currency → **picks the
+purpose from the purpose reference**, which carries its expense category with it
+_(decision 21)_ → picks the project and, where the expense is attributable to a
+product, the product, which is then mandatory _(decision 22)_ → optionally adds a
+free-text details comment → attaches the invoice → submits → the request
 appears in the owners' queue → an owner approves → the operation is posted to the
 ledger with the invoice attached and the approver recorded → the member sees
 "approved".
@@ -151,9 +180,13 @@ member → they appear in P&L as payroll without anyone entering them.
 _(decision 3; the accrual columns exist today — prior art §5)_
 
 **History backfill.**
-The owner works through the past spend in a bulk-entry surface — many rows, one
-save — and the resulting operations are marked as backfilled. A backfilled
-operation behaves exactly like a live one in every report.
+The owner locates BBM's **first operation ever**; that date opens the books
+_(decision 17)_ → every account starts at zero → the owner works forward through
+the past spend in a bulk-entry surface — many rows, one save — and the resulting
+operations are marked as backfilled. Balances are produced by those operations
+alone: **no opening-balance entry is created for any account**, because
+everything since the first operation is on record. A backfilled operation behaves
+exactly like a live one in every report.
 
 **A new source arrives.**
 A source declares what it produces; intake validates and posts it through the
@@ -185,7 +218,12 @@ same path as every other source. No existing source changes.
 - Re-publishing or re-closing an hours period does not double the payroll expense
   already recorded.
 - The owner can enter past spend in bulk and reach a populated P&L for a past
-  period.
+  period, starting from the first operation of the books, with no account ever
+  given an opening balance.
+- The request form offers the purpose as a pick from the purpose reference and
+  accepts no free-text purpose; the category is derived from the picked purpose.
+- A request for an expense attributable to a product cannot be submitted without
+  a product.
 - A backfilled operation is distinguishable from one captured live.
 - Every operation in the register names the source that produced it.
 - A wrong operation from any source is corrected by reversal, never by editing.
