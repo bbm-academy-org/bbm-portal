@@ -5,7 +5,7 @@ surface: user-facing
 updated: 2026-08-25
 ---
 
-# F4 — Fact-vs-finmodel reconciliation (#115)
+# F4 — Fact-vs-finmodel reconciliation (#341)
 
 ## Feature summary
 
