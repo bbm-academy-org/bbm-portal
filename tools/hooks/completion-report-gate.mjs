@@ -30,7 +30,7 @@
 //
 // DECLARED FORMS BEAT HEURISTICS (#299, then #374). The recognizer knows two
 // forms the canon mandates and reads each as itself: «Статус промежуточный»
-// (`EXPLICIT_INTERIM_MARKER_RE`) and the four-beat owner question
+// (`EXPLICIT_INTERIM_MARKER_RE`) and the FOUR BEATS of the owner question
 // (`isOwnerQuestionForm`, canon: `.claude/skills/report-task-outcome/SKILL.md`,
 // «Owner-question form»). Incident 2026-08-26: a canonical owner question tripped
 // both BLOCK gates — «закрыты» was domain speech, `#338` was a spec reference —
@@ -155,19 +155,25 @@ export function isInterimStatus(text) {
  * закрыты на роль»), `REF_RE` matched the spec reference `#338`, and
  * `isDecisionRequest` needs ≤ 4 lines, which the four-beat form never is.
  *
- * The header is matched on its OWN line, with the heading hash and markdown
- * emphasis stripped, for the same reason as the interim marker: «отвечаю на
- * вопрос 2 из 8» inside a sentence of a real report must not exempt that report.
- * The trailing lookahead is `(?![а-яё\w])` and not `\b` — JS word boundaries are
- * ASCII-only and never fire after Cyrillic, so «Вопросительный» would otherwise
- * pass as a header.
+ * THE FORM IS THE FOUR BEATS AND NOTHING ELSE — no «Вопрос N из M» / «Вопрос
+ * владельцу» header (review of PR #375, BLOCKER). A header branch was written
+ * first and removed: `report-task-outcome` defines point 5 of the MANDATORY
+ * stage-6 report shape as literally «Вопросы владельцу» on its own line, so
+ * recognizing that header would exempt the CORRECTLY formed final report from
+ * all three gates — re-opening through a different door exactly the hole the
+ * length condition of `isDecisionRequest` closed in the PR #99 review, and
+ * widening the declared fail-open from a rare shape to the default one. The
+ * header also bought nothing: the incident message carries all four beats and is
+ * exempted by them alone.
  */
-export const OWNER_QUESTION_HEADER_RE =
-  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*вопрос(?:ы)?\s+(?:\d+\s+из\s+\d+|владельцу)(?![а-яё\w])/i
 
-/** The four beat labels of that same form, each on its own line and followed by
- * a colon (markdown emphasis around the label is tolerated and carries no
- * meaning here, as everywhere else in this file). */
+/** The four beat labels of the form, each on its own line and followed by a
+ * colon. Markdown emphasis and a heading hash are stripped — they carry no
+ * meaning here, as everywhere else in this file. Matching on the OWN line is the
+ * same discipline `EXPLICIT_INTERIM_MARKER_RE` carries: a label quoted inside a
+ * sentence of a real report is not a beat. Word tails are written `[а-яё\w]*`
+ * rather than `\w*` because JS `\w` is ASCII-only and never covers a Cyrillic
+ * ending. */
 export const QUESTION_BEAT_RES = [
   /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*что\s+случилось[*_`]*[ \t]*:/i,
   /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*почему\s+спрашива[а-яё\w]*[*_`]*[ \t]*:/i,
@@ -176,8 +182,7 @@ export const QUESTION_BEAT_RES = [
 ]
 
 /**
- * The declared owner-question form: either the «Вопрос N из M» / «Вопрос
- * владельцу» header, or at least TWO DISTINCT beat labels.
+ * The declared owner-question form: at least TWO DISTINCT beat labels.
  *
  * Two and not one, deliberately: «Что случилось:» alone is ordinary prose and
  * appears in real completion reports, while two beats on their own lines is
@@ -186,7 +191,6 @@ export const QUESTION_BEAT_RES = [
 export function isOwnerQuestionForm(text) {
   const t = String(text || '')
   if (!t) return false
-  if (OWNER_QUESTION_HEADER_RE.test(t)) return true
   let beats = 0
   for (const re of QUESTION_BEAT_RES) {
     if (re.test(t)) beats += 1

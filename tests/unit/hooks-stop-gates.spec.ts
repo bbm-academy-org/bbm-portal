@@ -189,7 +189,30 @@ describe('#374: the declared owner-question form is not a terminal report', () =
     ).toEqual({ warn: false })
   })
 
-  it('the header alone exempts, without any beat label', () => {
+  // Review of PR #375 (BLOCKER): a «Вопрос N из M» / «Вопрос владельцу» HEADER
+  // is not part of the declared form at all. `report-task-outcome` defines point
+  // 5 of the mandatory stage-6 shape as literally «Вопросы владельцу» on its own
+  // line, so any header-based branch would exempt the CORRECTLY formed final
+  // report from all three gates — re-opening through a different door the very
+  // hole the `isDecisionRequest` length condition closed in PR #99. The header
+  // buys nothing either: the incident message qualifies on its beats alone.
+  it('the point-5 section title «Вопросы владельцу» does NOT exempt a report', () => {
+    const heading = 'PR #92 смержен, issue #91 закрыт. 100% от заявленного объёма.'
+    for (const title of ['## Вопросы владельцу', '**Вопросы владельцу**', 'Вопросы владельцу:']) {
+      const report = `${title}\n${heading}`
+      expect(isOwnerQuestionForm(report)).toBe(false)
+      expect(isTerminalReport(report)).toBe(true)
+      expect(
+        decideCompletionBlock({
+          stopHookActive: false,
+          writeActionSeen: true,
+          lastAssistantText: report,
+        }),
+      ).toEqual({ block: true })
+    }
+  })
+
+  it('a standalone question header without beats is not the declared form either', () => {
     const headerOnly = [
       'Вопрос 3 из 8 — кто платит за внешний сервис',
       'PR #352 смержен, issue #338 закрыт, ledger лежит в базе.',
@@ -197,10 +220,8 @@ describe('#374: the declared owner-question form is not a terminal report', () =
       'Работа ждёт ответа.',
       'Ничего больше не начинаю.',
     ].join('\n')
-    expect(isOwnerQuestionForm(headerOnly)).toBe(true)
-    expect(isTerminalReport(headerOnly)).toBe(false)
-
-    expect(isOwnerQuestionForm('Вопрос владельцу\n\nЧто дальше с #338?')).toBe(true)
+    expect(isOwnerQuestionForm(headerOnly)).toBe(false)
+    expect(isTerminalReport(headerOnly)).toBe(true)
   })
 
   it('one lone beat label does NOT exempt a real completion report', () => {
@@ -228,26 +249,27 @@ describe('#374: the declared owner-question form is not a terminal report', () =
 
   it('markdown emphasis and heading hashes around the labels are tolerated', () => {
     expect(
-      isOwnerQuestionForm('## Вопрос 1 из 3 — про доступ\n\nPR #92 смержен, issue закрыт.'),
+      isOwnerQuestionForm('**Что случилось:** записи закрыты.\n**Где посмотреть:** /p/finance'),
     ).toBe(true)
     expect(
-      isOwnerQuestionForm('**Что случилось:** записи закрыты.\n**Где посмотреть:** /p/finance'),
+      isOwnerQuestionForm('## Что случилось: записи закрыты\n### Почему спрашиваю: спека молчит'),
     ).toBe(true)
   })
 
-  it('the header is pinned to its own line and to the exact word', () => {
-    // Inflected forms are not the declared header: the trailing lookahead is
-    // `(?![а-яё\w])`, since a JS word boundary never fires after Cyrillic.
-    expect(isOwnerQuestionForm('Вопросительный знак: PR #92 смержен, issue закрыт.')).toBe(false)
-    expect(isOwnerQuestionForm('В вопросах владельцу к PR #92 всё уже смержено.')).toBe(false)
-    // Mid-sentence mention is not a declared header either.
-    expect(isOwnerQuestionForm('Отвечаю на вопрос 2 из 8: PR #92 смержен, issue закрыт.')).toBe(
-      false,
+  it('a beat label is pinned to its own line and to the exact wording', () => {
+    // Quoted inside a sentence, a beat label is not a beat — the own-line
+    // discipline is the same one `EXPLICIT_INTERIM_MARKER_RE` already carries.
+    expect(
+      isOwnerQuestionForm(
+        'Ниже написано, что случилось: PR #92 смержен.\nИ отдельно, где посмотреть: /p/hours',
+      ),
+    ).toBe(false)
+    // «почему спрашива[а-яё\w]*» tolerates the inflection, nothing else does:
+    // the tails are written `[а-яё\w]*` because JS `\w` is ASCII-only.
+    expect(isOwnerQuestionForm('Почему спрашивал: спека молчит.\nГде посмотреть: /p/finance')).toBe(
+      true,
     )
-    // …and a beat label quoted inside a sentence is not a beat.
-    expect(isOwnerQuestionForm('Ниже написано, что случилось: PR #92 смержен, issue закрыт.')).toBe(
-      false,
-    )
+    expect(isOwnerQuestionForm('Что изменилось: ничего.\nГде посмотреть: /p/finance')).toBe(false)
   })
 
   // DELIBERATE TRADE-OFF, pinned here so it cannot be "fixed" by accident: a

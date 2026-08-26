@@ -78,8 +78,8 @@ GitHub comment. The second names where each deviation was routed (its own issue
 All three share ONE recognizer of "a completion report" (defined in
 `completion-report-gate.mjs`): a completion verb plus an issue/PR reference,
 minus negations, and excluding a short question to the owner, the declared
-owner-question form below (its «Вопрос N из M» / «Вопрос владельцу» header, or
-two of its four beat labels), an interim
+four-beat owner-question form below (two of its four beat labels, each on its own
+line), an interim
 checkpoint (the declared marker «Статус промежуточный», or inferred from «⏳»,
 «жду CI»), and a proposal of the next step — **and** the session
 must carry at least one write action in its transcript (#158), so a read-only
@@ -181,11 +181,12 @@ sending: someone who read nothing else must be able to answer it.
 
 **The four beats are a DECLARED form, and the Stop gates read them as one**
 (#374, `isOwnerQuestionForm` in `tools/hooks/completion-report-gate.mjs`): a
-message carrying the «Вопрос N из M» / «Вопрос владельцу» header on its own line,
-or two of the four beat labels on their own lines, is a question and not a
-completion report — however many merged PRs and issue numbers it mentions. Before
-#374 it was not, and the owner saw almost every question twice: the gates blocked
-it once and the session re-sent it.
+message carrying **two or more of the four beat labels, each on its own line**, is
+a question and not a completion report — however many merged PRs and issue
+numbers it mentions. The beats are the whole of what the gate reads; a question
+heading is not part of the form and buys nothing. Before #374 the gate read none
+of it, and the owner saw almost every question twice: the gates blocked it once
+and the session re-sent it.
 
 A correctly formed report still usually ENDS on a question line, and that does
 not relieve it of its own markers — a final report owes points 1–5 and the two
