@@ -315,12 +315,17 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   refused by the module's own handlers for a session that does not carry
   `platform-admin`, however the URL or API was reached; read access is
   EARS-325's and is deliberately wider.
-  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
-  EARS-501/529) — the F2 role model this clause deferred to, now settled.
+  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`, its
+  role clauses in §A) — the F2 role model this clause deferred to, now settled.
   Reference administration stays `platform-admin`; the **ledger** writes,
   posting an operation and reversing one, are gated by the flow roles
   `finance-entry` / `finance-approve` instead, and `platform-admin` by itself
-  no longer posts or reverses.)_
+  no longer posts or reverses. The shipped F1a code is deliberately behind this
+  amendment until the F2 roles sub-task (under #339) reworks it: the F1a guard
+  `assertFinanceWriteAccess` still enforces the platform-admin gate on every
+  ledger write, and `tests/unit/finance-invariants.spec.ts` and
+  `tests/int/platform/finance-core.int.spec.ts` still assert it and stay green —
+  the drift is intended and tracked, not an unnoticed contradiction.)_
 - **EARS-331.** The `product_binding` shall be master data, never a
   per-operation judgement: WHEN an operation is recorded, the system shall take
   the binding from the named purpose and shall accept from the operator only
@@ -331,8 +336,9 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   leave every already-recorded posting exactly as posted — it shall neither
   rewrite nor re-validate history against the new rule (EARS-309); the only
   correction of a recorded operation in F1 is reversal (EARS-313/314).
-  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
-  EARS-520): the reclassification path this clause promised for F2 is **not**
+  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`, its
+  read-time category resolution in §F): the reclassification path this clause
+  promised for F2 is **not**
   built. F2 replaces it with read-time category resolution — a posting that
   stored no category resolves it through its purpose's current link when read —
   and keeps reversal as the only correction; no posting-mutation

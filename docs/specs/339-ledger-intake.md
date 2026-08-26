@@ -75,8 +75,9 @@ these hidden; they are owner-visible items at the go):
    338 passage that states the old gate or defers to «F2's role model», not
    one sentence: EARS-330 itself, Out-of-scope bullet 1 and the
    Open-questions entry (role model), plus acceptance scenario 3's admin
-   write gate (the spec is `In dev`; in-place amendment is its own
-   precedent, EARS-328).
+   write gate. Spec 338 is `In dev` and already amends itself in place —
+   EARS-328 carries such a revision, recorded with its own dated italic note —
+   and this PR continues that practice rather than inventing one.
 2. **The reclassification journal is not built.** Spec 338 ruling 2 promised
    «a true reclassification journal arrives with F2». This spec replaces it
    with read-time category resolution (EARS-520) and keeps reversal as the
@@ -237,8 +238,10 @@ step; dev falls back to local disk exactly as the media adapter does.
 ## Requirements
 
 Ids continue the flat corpus keyspace: this spec takes **EARS-501…** (spec 338
-holds 301–334, spec 311 holds 401–499). EARS-522 was retired pre-go (a
-process note now, §G); the id is not reused.
+holds 301–334, spec 311 holds 401–499). One number in that range — 522 — was
+retired pre-go and is now a process note under §G; the number is not reused,
+and it is deliberately not written here as an id token, so no guard reads it as
+a declared clause.
 
 ### A. Roles
 
@@ -258,8 +261,10 @@ process note now, §G); the id is not reused.
   member (spec 338 EARS-324/325), with document content excluded
   (EARS-523).
 - **EARS-502.** The system shall let a signed-in platform member holding
-  neither flow role, on `/p/finance/requests`, submit an expense request,
-  cancel their own `submitted` request, attach documents to their own items
+  neither flow role, on `/p/finance/requests`, submit an expense request, edit
+  their own request while it is `draft` or `submitted` (the money and dimension
+  fields the status machine leaves editable there — EARS-524), cancel their own
+  `submitted` request, attach documents to their own items
   and see their own requests with statuses (decision 8, US-1, US-2) — the
   submitter exemption, the one deliberate carve-out from EARS-501.
 
@@ -478,8 +483,10 @@ process note now, §G); the id is not reused.
   _Process note (owner ruling 2026-08-26, decision 25): the format parser is
   built only against real statement files once supplied — until then the
   import ships as the contract above with no parser, and this deliberately
-  blocks nothing else in F2. (Formerly EARS-522, retired pre-go: a
-  build-process commitment, not a testable system behaviour.)_
+  blocks nothing else in F2. (This note carried number 522 before the go and was
+  retired there: a build-process commitment, not a testable system behaviour.
+  The number is not reused, and it is not written as an id token so that no
+  guard counts a retired clause as declared.)_
 
 ### H. The status machine
 
