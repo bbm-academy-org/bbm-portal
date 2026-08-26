@@ -326,19 +326,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-14-f2de673c1f -->
 
-- [ ] 2026-08-15 the e2e suite's `test.beforeAll` hook budget is 30 s, which is
-      shorter than Next dev's FIRST compile of `/admin` on this box: a cold run of
-      `pnpm test:e2e` fails `admin.e2e.spec.ts` and `publish-panel.e2e.spec.ts` on
-      `"beforeAll" hook timeout of 30000ms exceeded` while waiting for
-      `#field-email`, then leaves 16 skipped and 7 not run. Nothing is wrong with
-      the product — a warmed stand passes — but the suite's first red of the day is
-      routinely noise, and task-cycle stage 5 makes a green Playwright pass the
-      precondition for inviting the owner to any UI flow, so noise there is
-      expensive. CI does not cover it (`ci.yml` runs `test:unit` only), which is why
-      it stays invisible between sessions — return condition: the next task that
-      must run `pnpm test:e2e` as acceptance evidence, or any move to run e2e in CI
-      (observed in #232 / PR #234, diff touched no runtime code)
-
 <!-- debt-entry-end: 2026-08-15-01bc69afb6 -->
 
 - [ ] 2026-08-15 `pnpm lint:stage-b` classifies a PR as a UI diff **by path** — a
@@ -438,20 +425,13 @@ Entry format:
       (a shared read-modify-write helper with the check built in), not bolted
       onto a retro's DEBT commit — return condition: a second corruption incident
       on any issue or PR body, or the next tooling touch of `tools/gh/`,
-      whichever comes first (session retro 2026-08-24)
+      whichever comes first (session retro 2026-08-24). **Promoted 2026-08-26 to
+      #361** (the `tools/gh/` text-integrity helper): the line stays here until
+      #361 lands, because until the helper exists the deviation is still live and
+      a deleted line is one nobody re-reads — return condition, superseding the
+      above: #361 closed.
 
 <!-- debt-entry-end: 2026-08-24-9b3c71ad04 -->
-
-- [ ] 2026-08-24 the retro folded-themes registry `.wrap-init.json` does not
-      exist in this repo, so every `/wrap` recurrence check runs against project
-      memory only: a theme already folded once is re-derived from memory files
-      rather than read off a registry, and «is this a recurrence?» is answered by
-      recall instead of by lookup — which is how the 2026-08-24
-      `lead-delegates-even-small-prep` recurrence went unremarked until the owner
-      named it. Creating the registry is `/wrap-init`'s job (it audits the whole
-      session-log corpus), a session of its own and not a rider on this retro —
-      return condition: the next `/wrap` run in this repo (create the registry via
-      `/wrap-init` in its own session) (session retro 2026-08-24)
 
 <!-- debt-entry-end: 2026-08-24-4f7e02c8b1 -->
 

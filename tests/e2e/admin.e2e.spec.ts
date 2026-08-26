@@ -1,11 +1,15 @@
 import { test, expect, Page } from '@playwright/test'
-import { login } from '../helpers/login'
+import { COLD_START_HOOK_TIMEOUT_MS, login } from '../helpers/login'
 import { seedTestUser, cleanupTestUser, testUser } from '../helpers/seedUser'
 
 test.describe('Admin Panel', () => {
   let page: Page
 
   test.beforeAll(async ({ browser }, testInfo) => {
+    // Cold `next dev` compiles /admin inside this hook; see the constant's
+    // docblock in tests/helpers/login.ts (DEBT 2026-08-15).
+    test.setTimeout(COLD_START_HOOK_TIMEOUT_MS)
+
     await seedTestUser()
 
     const context = await browser.newContext()

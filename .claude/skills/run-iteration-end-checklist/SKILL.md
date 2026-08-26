@@ -109,6 +109,25 @@ VERDICT: <n>/12 — PASS | BLOCKED on <item numbers>
 until the blocking item is fixed and the checklist re-run. The verdict line is
 the contract — a free-form report without it is re-dispatched, not interpreted.
 
+### BLOCKED-but-proceed — the one escape
+
+The lead may advance past a `BLOCKED` verdict to exactly ONE next stage, and
+only when all three hold:
+
+1. **That next stage IS the remedy for the blocking item** — dispatching the
+   stage-4 review whose mandate is precisely the FAIL (e.g. "item 2 has no
+   verifiable TDD order — the reviewer rules on it"). A stage that merely
+   happens to come next, and `pnpm pr:land` in every case, is not a remedy.
+2. **The decision and its condition are recorded on the PR** — which item, why
+   the next stage answers it, what verdict would release it. Unrecorded, it did
+   not happen.
+3. **The item stays FAIL** until an explicit owner or lead acceptance says
+   otherwise. The escape buys ordering, never a verdict: the re-run still has to
+   turn that FAIL into PASS or N/A before the merge tail.
+
+Precedent: PR #354 (2026-08-26) — the gate blocked on unverifiable TDD order and
+the review it was blocking was the very thing that could rule on it.
+
 ## Failure modes
 
 - **Running it yourself** because "the diff is small" — a self-check finds what
