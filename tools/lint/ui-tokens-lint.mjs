@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// ui-tokens — the UI kit's values come from the palette, and the palette has
-// one source (#312).
+// ui-tokens — the UI kit has ONE place where a colour value is written, and
+// that place is the theme entry (#312, rewritten for the kit of #360).
 //
 // Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-26 (new-guard
 // posture, §3). Earliest promotion 2026-09-23 under the §4 clauses.
@@ -9,38 +9,50 @@
 // «Отложено» column behind ONE trigger — the start of `src/ui`. This guard is
 // that trigger firing rather than the deferral being renewed silently.
 //
-// The rule is about a specific way a token layer dies. `src/ui/tokens.css` is
-// derived, value by value, from the two owner-picked wireframes vendored in
-// `design-source/` (that derivation is itself asserted, by
-// tests/unit/ui-tokens.spec.ts). None of that survives a component stylesheet
-// that writes `#fafafa` inline: the value is then correct today, unattributable
-// tomorrow, and invisible to the next redesign. Three findings:
+// WHAT CHANGED IN #360, and why the rules are not the ones this file shipped
+// with. The kit the guard was written against (#312) was a hand-written
+// `--bbm-…` palette in `src/ui/tokens.css`, a `src/ui/tokens.ts` registry and a
+// `/p/ui-kit` showcase that rendered it. The owner's Stage-A decision on
+// 2026-08-26 replaced that kit with Tailwind v4 + the shadcn/ui neutral theme,
+// and PR-1a deleted all three files. So:
 //
-//   1. hardcoded-color — a colour literal in a KIT stylesheet other than
-//      tokens.css. Scoped to `src/ui/**` on purpose: EARS-429 says the existing
-//      /p/okr and /p/hours bodies are NOT restyled in this epic, so policing
-//      their stylesheets would be this guard fighting a spec clause. Each
-//      surface joins the scope on its own first substantive touch, per the
-//      back-fill rule of .claude/rules/design-process.md §1.
-//   2. unknown-token — a `var(--bbm-…)` ANYWHERE under `src/**\/*.css` naming a
-//      token tokens.css does not declare. Repo-wide because the failure is
-//      silent: a mistyped custom property does not error, it drops the whole
-//      declaration, and the surface just looks slightly wrong.
-//   3. registry-drift — `src/ui/tokens.ts`, the list the showcase renders,
-//      disagreeing with what tokens.css declares, in either direction.
+//   - the SUBJECT moved from `src/ui/tokens.css` to `src/ui/theme.css`;
+//   - the `--bbm-` namespace is gone — the theme's variables are shadcn's
+//     unnamespaced ones (`--background`, `--border`, `--radius`, …);
+//   - `registry-drift` is RETIRED, not re-pointed. There is no registry and no
+//     showcase left for it to be about, and a rule kept alive past its subject
+//     is a check that cannot fail while still reporting PASS.
 //
-// KNOWN FALSE-POSITIVE CLASS, named here before the promotion window rather
-// than discovered inside it: `unknown-token` reads any `var(--bbm-…)` under
-// `src/**\/*.css` as a reference to the palette, so a surface stylesheet that
-// DECLARES its own local `--bbm-…` custom property and then reads it back is
-// reported even though it resolves fine. Nothing in the tree does that today.
-// WARN absorbs it; before promotion to BLOCK (canon §4) the rule either drops
-// findings whose token is declared in the SAME stylesheet, or the local
-// property is renamed out of the `--bbm-` namespace, which is the honest fix —
-// `--bbm-` is the palette's namespace and a local value borrowing it is the
-// ambiguity, not the guard.
+// The rule that mattered survives, widened where the new kit needs it:
 //
-// Deliberately NOT checked: raw `px`. Component CSS legitimately carries
+//   1. hardcoded-color — a colour literal ANYWHERE under `src/ui/**` other than
+//      the theme entry, in `.css` AND in `.tsx`/`.ts`. The `.tsx` half is the
+//      new half and it is the whole point: under Tailwind a value does not
+//      escape the theme through a stylesheet any more, it escapes through
+//      `className="bg-[#fafafa]"` or an inline `style`. A CSS-only scan would
+//      leave the kit's actual failure mode unguarded — the kit ships exactly
+//      one stylesheet today, and it is the exempt one.
+//   2. unknown-variable — a `var(--…)` in a KIT stylesheet naming a variable
+//      the theme entry does not declare. A mistyped custom property does not
+//      error, it drops the whole declaration, and the surface just looks
+//      slightly wrong.
+//
+// Scope stays the kit and not every stylesheet, for the reason it always did:
+// spec 311 EARS-429 keeps the existing /p/okr and /p/hours bodies unreskinned
+// in this epic, so policing their stylesheets would be this guard fighting a
+// spec clause. Each surface joins the scope on its own first substantive touch,
+// per the back-fill rule of .claude/rules/design-process.md §1.
+//
+// NARROWING RECORDED ON PURPOSE: `unknown-variable` used to run repo-wide over
+// `src/**\/*.css`, which it could do because `--bbm-` was OUR namespace and any
+// use of it was a reference to OUR palette. shadcn's variables are not
+// namespaced, so a repo-wide scan would report every unrelated local custom
+// property in okr.css / hours.css as an unknown token. Kit-scoped is the honest
+// reading; the alternative (a prefix on the theme) would fork the kit from the
+// upstream the owner chose to stand on. This also retires the known
+// false-positive class the previous version carried into its promotion window.
+//
+// Deliberately NOT checked: raw `px`. Component source legitimately carries
 // one-off geometry, and a px ban would be noise on day 0. Widening the rule is
 // a substantive change and restarts the promotion clock (canon §4).
 //
@@ -53,119 +65,118 @@ import { isEntryPoint, reporter, repoRoot, runMain, walkFiles } from './lib/guar
 
 const TAG = 'ui-tokens'
 
-const TOKENS_CSS = 'src/ui/tokens.css'
-const TOKENS_REGISTRY = 'src/ui/tokens.ts'
-/** The kit's own stylesheets — the scope of the hardcoded-colour rule. */
+/** The theme entry — the ONE file allowed to carry colour values. */
+const THEME_CSS = 'src/ui/theme.css'
+/** The kit's own source — the scope of the hardcoded-colour rule. */
+const KIT_FILE_RE = /^src\/ui\/.*\.(css|tsx|ts)$/
+/** The kit's own stylesheets — the scope of the unknown-variable rule. */
 const KIT_CSS_RE = /^src\/ui\/.*\.css$/
-/** Every stylesheet under src/ — the scope of the unknown-token rule. */
-const ANY_CSS_RE = /^src\/.*\.css$/
 
 /**
- * Blank out CSS comments while KEEPING line numbers: a finding reports
- * `file:line`, so collapsing comments would misreport every line after one.
- * A comment may legitimately quote a design-source value («derived from #bbb»),
- * which is exactly why it must not be scanned.
+ * Blank out comments while KEEPING line numbers: a finding reports `file:line`,
+ * so collapsing comments would misreport every line after one. Both comment
+ * forms, because the kit is now `.tsx` as much as `.css` — and a comment may
+ * legitimately quote a theme value («upstream paints this #fafafa»), which is
+ * exactly why it must not be scanned.
+ *
+ * @param {string} text
+ * @returns {string}
  */
-function blankComments(css) {
-  return String(css).replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+function blankComments(text) {
+  return String(text)
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (m, lead) => lead + ' '.repeat(m.length - lead.length))
 }
 
-/** `--bbm-x: value` declarations of a stylesheet, in source order. */
-export function declaredTokens(css) {
+/**
+ * `--x: value` declarations of a stylesheet, in source order.
+ *
+ * @param {string} css
+ * @returns {Map<string, string>}
+ */
+export function declaredVariables(css) {
   const out = new Map()
-  for (const m of blankComments(css).matchAll(/(--bbm-[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
+  for (const m of blankComments(css).matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
     out.set(m[1], m[2].trim())
   }
   return out
 }
 
-/** Every `var(--bbm-…)` a stylesheet references. Non-`--bbm-` vars are none of our business. */
-export function usedTokens(css) {
+/**
+ * Every `var(--…)` a stylesheet references.
+ *
+ * @param {string} css
+ * @returns {Set<string>}
+ */
+export function usedVariables(css) {
   const out = new Set()
-  for (const m of blankComments(css).matchAll(/var\(\s*(--bbm-[a-z0-9-]+)/g)) out.add(m[1])
+  for (const m of blankComments(css).matchAll(/var\(\s*(--[a-z0-9-]+)/g)) out.add(m[1])
   return out
 }
 
 /**
- * Colour literals with their 1-based line numbers. Hex, `rgb(` and `hsl(` in
- * every form — the point is that a colour was written here at all, not which
- * notation was used. `transparent` and `currentColor` name no palette value and
+ * Colour literals with their 1-based line numbers. Hex plus every functional
+ * notation the kit could reach for — the point is that a colour was written
+ * here at all, not which notation was used. `oklch(` is in the list because the
+ * shadcn theme is written in it, so it is the notation a copy-paste from the
+ * theme would carry. `transparent` and `currentColor` name no theme value and
  * are not literals in this sense.
+ *
+ * @param {string} text
+ * @returns {{line: number, text: string}[]}
  */
-export function colorLiterals(css) {
+export function colorLiterals(text) {
   const out = []
-  blankComments(css)
+  blankComments(text)
     .split(/\r?\n/)
     .forEach((line, i) => {
-      for (const m of line.matchAll(/#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(/g)) {
+      for (const m of line.matchAll(
+        /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lch|lab|color)\(/g,
+      )) {
         out.push({ line: i + 1, text: m[0] })
       }
     })
   return out
 }
 
-/** Token names quoted in `src/ui/tokens.ts`. Quoted, so prose can never arm one. */
-export function registryNames(ts) {
-  const src = String(ts).replace(/\/\*[\s\S]*?\*\//g, '')
-  return [...src.matchAll(/'(--bbm-[a-z0-9-]+)'/g)].map((m) => m[1])
-}
-
 /**
  * The whole verdict, as a pure seam.
  *
  * @param {{
- *   tokensCss: string|null,
- *   registry: string[]|null,
- *   stylesheets: {rel: string, text: string}[],
+ *   themeCss: string|null,
+ *   files: {rel: string, text: string}[],
  * }} input
  * @returns {{ findings: {kind: string, where: string, detail: string}[], skipped: boolean }}
  */
-export function checkTokens({ tokensCss, registry, stylesheets }) {
+export function checkKit({ themeCss, files }) {
   // A tree with no kit is nothing-to-check, not a clean pass. Stated as its own
   // outcome so a guard that lost its subject cannot report success.
-  if (tokensCss == null || registry == null) return { findings: [], skipped: true }
+  if (themeCss == null) return { findings: [], skipped: true }
 
-  const declared = declaredTokens(tokensCss)
+  const declared = declaredVariables(themeCss)
   const findings = []
 
-  for (const { rel, text } of stylesheets) {
-    if (KIT_CSS_RE.test(rel) && rel !== TOKENS_CSS) {
+  for (const { rel, text } of files) {
+    if (rel === THEME_CSS) continue
+    if (KIT_FILE_RE.test(rel)) {
       for (const { line, text: literal } of colorLiterals(text)) {
         findings.push({
           kind: 'hardcoded-color',
           where: `${rel}:${line}`,
-          detail: `${literal} — a colour the palette does not name. Add it to ${TOKENS_CSS} with the design-source selector it came from, or use the token that already carries it.`,
+          detail: `${literal} — a colour the theme does not name. Use the theme utility that already carries it (bg-background, text-muted-foreground, border-border …), or add the value to ${THEME_CSS} as a named variable.`,
         })
       }
     }
-    for (const name of usedTokens(text)) {
-      if (!declared.has(name)) {
-        findings.push({
-          kind: 'unknown-token',
-          where: rel,
-          detail: `var(${name}) — ${TOKENS_CSS} declares no such token, so the declaration using it is silently dropped at runtime.`,
-        })
+    if (KIT_CSS_RE.test(rel)) {
+      for (const name of usedVariables(text)) {
+        if (!declared.has(name)) {
+          findings.push({
+            kind: 'unknown-variable',
+            where: rel,
+            detail: `var(${name}) — ${THEME_CSS} declares no such variable, so the declaration using it is silently dropped at runtime.`,
+          })
+        }
       }
-    }
-  }
-
-  const listed = new Set(registry)
-  for (const name of declared.keys()) {
-    if (!listed.has(name)) {
-      findings.push({
-        kind: 'registry-drift',
-        where: TOKENS_REGISTRY,
-        detail: `${name} is declared in ${TOKENS_CSS} but listed in no group — the showcase would not show it.`,
-      })
-    }
-  }
-  for (const name of listed) {
-    if (!declared.has(name)) {
-      findings.push({
-        kind: 'registry-drift',
-        where: TOKENS_REGISTRY,
-        detail: `${name} is listed in a group but declared nowhere in ${TOKENS_CSS} — the showcase would render an empty swatch.`,
-      })
     }
   }
 
@@ -175,39 +186,33 @@ export function checkTokens({ tokensCss, registry, stylesheets }) {
 async function main() {
   const out = reporter(TAG)
   const root = repoRoot()
-  const read = (rel) =>
-    existsSync(resolve(root, rel)) ? readFileSync(resolve(root, rel), 'utf8') : null
+  const themePath = resolve(root, THEME_CSS)
+  const themeCss = existsSync(themePath) ? readFileSync(themePath, 'utf8') : null
 
-  const tokensCss = read(TOKENS_CSS)
-  const registryTs = read(TOKENS_REGISTRY)
-  const stylesheets = walkFiles(root, { include: (rel) => ANY_CSS_RE.test(rel) }).map((rel) => ({
+  const files = walkFiles(root, { include: (rel) => KIT_FILE_RE.test(rel) }).map((rel) => ({
     rel,
     text: readFileSync(resolve(root, rel), 'utf8'),
   }))
 
-  const { findings, skipped } = checkTokens({
-    tokensCss,
-    registry: registryTs == null ? null : registryNames(registryTs),
-    stylesheets,
-  })
+  const { findings, skipped } = checkKit({ themeCss, files })
 
   if (skipped) {
-    out.ok(`no ${TOKENS_CSS} in this tree — the UI kit is not present, nothing to check.`)
+    out.ok(`no ${THEME_CSS} in this tree — the UI kit is not present, nothing to check.`)
   }
 
-  out.info(`scanned ${stylesheets.length} stylesheet(s) under src/`)
+  out.info(`scanned ${files.length} kit file(s) under src/ui/`)
   if (findings.length === 0) {
     out.ok(
-      `PASS — the kit's stylesheets carry no colour outside ${TOKENS_CSS}, every var(--bbm-…) ` +
-        `resolves, and ${TOKENS_REGISTRY} lists exactly what is declared.`,
+      `PASS — the kit carries no colour outside ${THEME_CSS}, and every var(--…) in a kit ` +
+        'stylesheet resolves against it.',
     )
   }
 
   for (const f of findings) out.finding(`${f.kind}  ${f.where}\n    ${f.detail}`)
   out.fail(
-    `FAIL — ${findings.length} finding(s). The kit has ONE palette and it is derived from ` +
-      'design-source/ (.claude/rules/design-process.md §1); a value written past it is correct ' +
-      'today and unattributable tomorrow. Canon: docs/ci-guardrails.md §5.',
+    `FAIL — ${findings.length} finding(s). The kit has ONE theme and it is the standard ` +
+      'shadcn/ui neutral theme the owner adopted on 2026-08-26 (#360); a value written past it ' +
+      'is correct today and unattributable tomorrow. Canon: docs/ci-guardrails.md §5.',
   )
 }
 

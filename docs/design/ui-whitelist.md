@@ -9,19 +9,20 @@ climbs (`.claude/rules/design-process.md`):
 A whitelist **entry** answers one question: _for this element class, is there
 something already settled that a new surface must reuse instead of inventing?_
 
-**The kit directory exists, its contents do not, and the registry is empty —
-all three facts are correct.** `src/ui` landed with #312 (tokens derived from
-the `design-source/` wireframes, eight base components, a lint
-`pnpm lint:ui-tokens`, and a `/p/ui-kit` showcase), and those contents were
-**deleted again on #360**: they were derived from `fidelity: wireframe` sources,
-which fix layout and no visual language, and the owner rejected the stand. The
-Stage-A decision (Антон, 2026-08-26) puts the visual language of `/p/*` on the
-default theme of Refine's official shadcn/ui integration; the replacement
-components are copied into `src/ui` from `ui.refine.dev` in the next PR on #360.
-The directory and its boundary rule never moved.
+**The kit is populated, the registry is still empty — both facts are
+correct.** `src/ui` landed with #312 (tokens derived from the `design-source/`
+wireframes, eight base components, a lint `pnpm lint:ui-tokens`, and a
+`/p/ui-kit` showcase), and those contents were **deleted again on #360**
+(PR #373): they were derived from `fidelity: wireframe` sources, which fix
+layout and no visual language, and the owner rejected the stand. The Stage-A
+decision (Антон, 2026-08-26) puts the visual language of `/p/*` on the default
+theme of Refine's official shadcn/ui integration; the replacement components
+were copied into `src/ui` on the same issue (PR #376) — its README says what
+the kit holds. The directory and its boundary rule never moved.
 
 So the ladder today resolves `design-source/` → **`src/ui` (rung 2 by import,
-empty until #360 repopulates it)** → bespoke with a justification. In practice
+populated with the copied shadcn/ui components since #360)** → bespoke with a
+justification. In practice
 that means: a UI task **imports from `@/ui` and does not invent** — that
 obligation comes from EARS-430 and consolidation §10, not from this file — and
 this table starts filling when a surface built from the repopulated kit passes
@@ -38,9 +39,9 @@ than of what was agreed.
 | ------------- | ---------------------- | ---------------------- | ----- |
 
 _No entries yet._ The eight exports that used to be the candidates were deleted
-with the wireframe-derived kit (#360); the candidates are now whatever `src/ui`
-carries once the Refine shadcn components are copied in. They become rows when a
-surface built from them passes Stage B.
+with the wireframe-derived kit (#360); the candidates are now the copied
+shadcn/ui components `src/ui` carries (its README lists them). They become rows
+when a surface built from them passes Stage B.
 
 ## Adding a row
 
@@ -62,9 +63,9 @@ order:
 
 1. **`design-source/`** — the owner already designed this unit for another
    surface; reuse the vendored source (this is rung 1, not an adoption).
-2. **`src/ui`** — the directory is present since #312, its contents are being
-   replaced on #360. Import it before looking further; its README says what the
-   kit currently holds and what it deliberately does not cover yet.
+2. **`src/ui`** — present since #312, repopulated on #360 with the copied
+   shadcn/ui components. Import it before looking further; its README says what
+   the kit currently holds and what it deliberately does not cover yet.
 3. **Upstream component registries**, MIT/permissive only, adopted **as owned
    code** (copied in, re-skinned to our own styles — never a runtime UI-kit
    dependency): shadcn/ui (Radix) · Origin UI · Intent UI / JollyUI (React-Aria)
@@ -76,7 +77,8 @@ what was found, and the license — and adds a row above once the class is settl
 
 ## Bespoke — the last resort, and what "justification" means
 
-Bespoke is legitimate today (empty registry, no kit) but never silent. The PR
+Bespoke is legitimate today (empty registry) but never silent — check the kit
+first. The PR
 body of a bespoke UI diff states, in one line:
 
 > `bespoke — whitelist empty for <element class>; searched <sources>; not

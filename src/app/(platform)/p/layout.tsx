@@ -5,6 +5,14 @@ import React from 'react'
 import { auth } from '@/auth'
 import { PLATFORM_USER_ROLE, resolveClaimGate } from '@/lib/platform/authGate'
 
+// The UI kit's theme entry (#360). Imported HERE rather than in the (platform)
+// root layout because `/p/*` is exactly the surface the kit is for: the CMS and
+// the (frontend) group keep their own stylesheets untouched. The import carries
+// no preflight — see the header of the file — so it changes nothing on screen
+// today; it makes the theme variables and Tailwind's utilities available to the
+// kit's components, which is what the re-skin slice builds on.
+import '@/ui/theme.css'
+
 /**
  * The workspace membership gate (spec 311 EARS-416): WHILE a session lacks
  * `platform-user`, every path under `/p` is refused. It lives in a layout so a
