@@ -543,6 +543,17 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-26-7c4de91b83 -->
 
+- [ ] 2026-08-26 `stage-b-lint.mjs` keeps the inherited `GO_RE`-before-
+      `PLACEHOLDER_RE` ordering that `design-fidelity-lint.mjs` had to fix
+      (an unfilled `GO — <owner, date>` shape could classify as a record);
+      left as-is because the stage-b plane is WARN and its template shape is
+      HTML-commented, never printed back at the violator — return condition:
+      stage-b promotion to BLOCK per `docs/ci-guardrails.md` §4 (earliest
+      2026-09-02), or the first observed placeholder clearing the guard
+      (#359, PR #371 fix round)
+
+<!-- debt-entry-end: 2026-08-26-3b59d1e0f4 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
