@@ -554,6 +554,22 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-26-3b59d1e0f4 -->
 
+- [ ] 2026-08-26 `design-fidelity-lint.mjs` (and `stage-b-lint.mjs` alike)
+      accepts `batched at #N` without checking that issue #N exists or is
+      open, so `batched at #1 covers \`src/**\``would clear the gate on a gate
+    issue that was never filed; left as-is because`checkDesignFidelity`is
+    an IO-free pure seam by design — an existence check adds a network call
+    per marker and turns a token or rate-limit hiccup into a red BLOCK on a
+    correct PR — and because a fabricated gate number is a deliberate
+    forgery, the class a guard cannot detect, not the «nobody checked» class
+    #359 closes; the`covers`globs still have to reach the touched file —
+    return condition: the first`batched at #N`marker observed naming a
+    non-existent or closed issue, or the stage-b promotion to BLOCK per
+   `docs/ci-guardrails.md` §4 (earliest 2026-09-02), whichever is first
+      (#359, PR #371 review round 2, finding N2)
+
+<!-- debt-entry-end: 2026-08-26-9f27ac4d15 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
