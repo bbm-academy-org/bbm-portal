@@ -30,6 +30,8 @@ once a PRD exists.
 - The ADRs loaded (step 1) **before** any open-ended brainstorm.
 - The step-0 "what exists today → what changes" delta, or an explicit note that
   there is no existing counterpart.
+- The step-2 primitive cross-check done **before** any mechanism reaches the
+  owner.
 
 ## Procedure
 
@@ -47,7 +49,18 @@ output.
 1. **[`read-relevant-adrs`](../read-relevant-adrs/SKILL.md)** — load the ADRs
    governing the domain and cite them (`per ADR-00N §X`) in the first reply.
    Brainstorming before this is how a settled decision gets re-litigated.
-2. **Donor & benchmark pass** — mandatory, and it runs **before** a single
+2. **Platform-primitive cross-check** — mandatory, and it runs **before** any
+   mechanism is proposed to the owner. Walk the proposal's concerns against the
+   cross-cutting primitives this platform already runs — the universal edit
+   audit ([`docs/specs/201-universal-edit-audit.md`](../../../docs/specs/201-universal-edit-audit.md),
+   `core.audit_event`, `tools/lint/audit-coverage-lint.mjs`), auth claims and
+   roles, the migrations pipeline — and **name in the spec which primitive
+   covers each concern** instead of inventing a parallel one. A mechanism that
+   duplicates a primitive is deleted before the owner ever sees it; where the
+   primitive genuinely does not fit, the spec says why in one line.
+   _(2026-08-26: the F1 spec offered the owner a «binding-change journal» the
+   platform already had (#201); the owner caught it, not the process.)_
+3. **Donor & benchmark pass** — mandatory, and it runs **before** a single
    question reaches the owner. Its outcome is recorded by one line in the spec
    body («Donor & benchmark pass: …»), so a skipped pass is visible in the file.
    Three clauses:
@@ -65,7 +78,7 @@ output.
      below, never a spec parameter.** It becomes a sub-task against the schema;
      the spec does not encode the workaround. _(symptom: «Может мы криво
      спроектировали публикацию?… Откуда тут мусор?».)_
-3. **Settle the product scope with the owner.** One question at a time.
+4. **Settle the product scope with the owner.** One question at a time.
    **Product-scope forks are the owner's**; technical, architectural and
    sequencing calls are the lead's own — do not spend the owner's attention on
    them. `superpowers:brainstorming` is the vehicle. Do **not** chain into
@@ -75,7 +88,7 @@ output.
      unsupported.
    - Any computed or money formula in scope → the spec is mandatory **and** gets
      an independent review of the spec itself.
-4. **Write the spec** — `docs/specs/<issue-number>-<slug>.md`, the template and
+5. **Write the spec** — `docs/specs/<issue-number>-<slug>.md`, the template and
    frontmatter of `docs/specs/README.md`, **`status: Draft`**. It is one file:
    the lead writes it directly rather than dispatching. Sections that carry the
    weight:
@@ -90,14 +103,14 @@ output.
      naming the `EARS-N` clauses it exercises. These become the TDD tests at
      stage 3 (named `it('EARS-N: …')`, so requirement ↔ test is a grep) and the
      live-stand script at stage 5.
-5. **New or reshaped UI → the stage-1b design gate.** 2–3 options of any
+6. **New or reshaped UI → the stage-1b design gate.** 2–3 options of any
    fidelity to the owner before any markup; his pick is recorded in the issue and
    referenced from the spec. No pick, no markup.
-6. **Take it through the "go" (stage 2).** The owner approves the **spec**, in
+7. **Take it through the "go" (stage 2).** The owner approves the **spec**, in
    session, explicitly. On "go": flip the frontmatter to **`status: In dev`** —
    that flip is what the `spec-link` guard reads, and a spec left on `Draft`
    while its code is in review is a finding.
-7. **If the spec spawns a set of tasks**, open them with
+8. **If the spec spawns a set of tasks**, open them with
    [`spec-issue-graph`](../spec-issue-graph/SKILL.md) — native sub-issues and
    `blocked_by` edges, exactly one takeable task at the end — and write the
    issue numbers back into the spec header.
@@ -114,6 +127,9 @@ output.
 - **Designing without opening the live surface.** The replacement gets specified
   against an imagined current state.
 - **Brainstorming before the ADRs** — re-deriving a decision already recorded.
+- **Offering the owner a mechanism the platform already runs** — the spec grows
+  a second audit trail, a second role model or a second migration path, and the
+  owner does the cross-check the process should have done.
 - **Spending the owner on technical forks** — the questions he must answer get
   lost among the ones he should not have been asked.
 - **A spec with no acceptance scenarios**, or scenarios that are not something a
