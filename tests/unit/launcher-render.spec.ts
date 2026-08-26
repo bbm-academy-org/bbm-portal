@@ -20,7 +20,7 @@ import type { WorkspaceEntry } from '@/lib/workspace/contract'
 
 const el = React.createElement
 
-const FIXTURE: WorkspaceEntry[] = [
+const BASE: WorkspaceEntry[] = [
   {
     kind: 'internal',
     slug: 'hours',
@@ -61,6 +61,91 @@ const FIXTURE: WorkspaceEntry[] = [
   { kind: 'planned', name: 'Финансы', description: 'портфель, позже' },
   { kind: 'planned', name: 'Колоды', description: 'портфель, позже' },
 ]
+
+/**
+ * The whole target portfolio of consolidation §4 (revision -f) — ten apps, the
+ * shape EARS-471 asks the flat grid to survive: every app of the portfolio LIVE
+ * at once, so the grid holds more than the six tiles the wireframe draws. Built
+ * from the same declarations as `workspace-registry.spec.ts`'s EARS-413 list,
+ * with a status provider on some and none on others.
+ */
+const FULL_PORTFOLIO: WorkspaceEntry[] = [
+  { ...(BASE[0] as WorkspaceEntry) },
+  { ...(BASE[1] as WorkspaceEntry) },
+  {
+    kind: 'internal',
+    slug: 'finance',
+    name: 'Финансы',
+    description: 'Учёт',
+    href: '/p/finance',
+    icon: 'finance',
+    status: () => 'Август закрыт',
+  },
+  {
+    kind: 'internal',
+    slug: 'decks',
+    name: 'Колоды',
+    description: 'Презентации',
+    href: '/p/decks',
+    icon: 'decks',
+  },
+  {
+    kind: 'internal',
+    slug: 'crm',
+    name: 'CRM',
+    description: 'Клиенты',
+    href: '/p/crm',
+    icon: 'crm',
+  },
+  {
+    kind: 'internal',
+    slug: 'recruiting',
+    name: 'Поиск команды',
+    description: 'Вакансии',
+    href: '/p/recruiting',
+    icon: 'recruiting',
+  },
+  {
+    kind: 'internal',
+    slug: 'launch',
+    name: 'Запуск проекта',
+    description: 'Чек-листы',
+    href: '/p/launch',
+    icon: 'launch',
+  },
+  {
+    kind: 'internal',
+    slug: 'calculators',
+    name: 'Калькуляторы',
+    description: 'Инструменты',
+    href: '/p/calculators',
+    icon: 'calculators',
+  },
+  {
+    kind: 'external',
+    slug: 'plane',
+    name: 'Plane',
+    description: 'Задачи и проекты',
+    url: 'https://plane.bbm.academy',
+    icon: 'plane',
+  },
+  {
+    kind: 'external',
+    slug: 'mattermost',
+    name: 'Mattermost',
+    description: 'Общение',
+    url: 'https://chat.bbm.academy',
+    icon: 'mattermost',
+  },
+]
+
+/**
+ * The registry the mocked composition root hands out. It is the SAME array
+ * object throughout the file — the mock factory captures it once — so a test
+ * that needs a different inventory replaces its CONTENTS and `beforeEach` puts
+ * the six-entry base back.
+ */
+const FIXTURE: WorkspaceEntry[] = [...BASE]
 
 vi.mock('@/lib/workspace/registry', () => ({
   WORKSPACE_REGISTRY: FIXTURE,
@@ -107,6 +192,7 @@ function dom(html: string): HTMLDivElement {
 beforeEach(() => {
   session = { user: { name: 'Анна Ковалёва', roles: ['platform-user'] } }
   pathname = '/p'
+  FIXTURE.splice(0, FIXTURE.length, ...BASE)
 })
 
 describe('the workspace home (spec 311 EARS-422, EARS-468)', () => {
@@ -218,7 +304,16 @@ describe('the portfolio placeholders (spec 311 EARS-477, EARS-478)', () => {
 
 describe('the home at full portfolio size (spec 311 EARS-471)', () => {
   it('EARS-471: stays ONE flat grid with the whole target portfolio present', async () => {
+    // The clause is about the FULL portfolio, so the registry under this test is
+    // the full one — ten live apps, well past the six tiles of the wireframe.
+    // The narrow-width half of the clause is markup-invariant by construction
+    // (the grid is one `auto-fill` track list, asserted below, and the switcher
+    // is collapsed at every width) and is shown live at 390px by the e2e spec.
+    FIXTURE.splice(0, FIXTURE.length, ...FULL_PORTFOLIO)
     const host = dom(await renderHome())
+    const names = Array.from(host.querySelectorAll('.bbm-app-tile__name')).map((n) => n.textContent)
+    expect(names).toEqual(FULL_PORTFOLIO.map((e) => e.name))
+    expect(names.length).toBeGreaterThan(BASE.length)
     expect(host.querySelectorAll('.bbm-tile-grid')).toHaveLength(1)
     // No grouping element, no second grid, no per-section heading: the flat grid
     // of `launcher-a` is the only structure on the page.

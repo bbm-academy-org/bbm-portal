@@ -218,4 +218,31 @@ describe('the current app (spec 311 EARS-469, EARS-470)', () => {
   it('EARS-469: never matches a partial segment', () => {
     expect(currentEntry(FIXTURE, '/p/hoursomething')).toBe(null)
   })
+
+  /**
+   * The tie-break itself, which the fixtures above cannot exercise: none of them
+   * has an `href` that is a prefix of another's, so `/p/hours/admin/export`
+   * resolving to Часы only proves the `startsWith` match. A section root and a
+   * page nested UNDER it both match the same pathname — the deeper one is the
+   * app the member is in, and «longest prefix wins» is the whole of the rule.
+   */
+  it('EARS-469: when two hrefs both match, the DEEPER entry wins, in either order', () => {
+    const reports: InternalWorkspaceEntry = {
+      kind: 'internal',
+      slug: 'hours-reports',
+      name: 'Отчёты по часам',
+      description: 'Сводки',
+      href: '/p/hours/reports',
+      icon: 'reports',
+    }
+    for (const entries of [
+      [hours, reports],
+      [reports, hours],
+    ]) {
+      expect(currentEntry(entries, '/p/hours/reports')?.name).toBe('Отчёты по часам')
+      expect(currentEntry(entries, '/p/hours/reports/q3')?.name).toBe('Отчёты по часам')
+      // The shallower entry still owns everything that is not under the deeper one.
+      expect(currentEntry(entries, '/p/hours/admin')?.name).toBe('Часы')
+    }
+  })
 })
