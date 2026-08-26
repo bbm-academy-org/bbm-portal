@@ -216,6 +216,37 @@ module.exports = {
       to: { path: '^src/(lib/finance|modules/finance)' },
     },
     {
+      name: 'finance-must-import-member-only-via-api',
+      comment:
+        'spec 338 EARS-322 (#356), the same shape as the hours rule below. The finance ledger ' +
+        'names a person on a posting (`finance_posting.member_id`), and that link is an SQL ' +
+        'foreign key written in migration 0008 — so the module imports nothing from ' +
+        '`src/lib/member` TODAY. The rule is written anyway, and now rather than with F2: ' +
+        '`module-must-not-import-foreign-tables` guards the TABLE directory ' +
+        '(src/lib/platform/db/schema/member/), so without this one an import of ' +
+        '`@/lib/member/repository` would keep every boundary green while pinning finance to the ' +
+        "member module's internal shape. The exception is the barrel file itself, which is what " +
+        '`@/lib/member` resolves to — so when F2 does need people data, the door it walks through ' +
+        'is already the only one open.',
+      severity: 'error',
+      from: { path: '^src/(lib/finance|modules/finance)' },
+      to: {
+        path: '^src/lib/member/',
+        pathNot: '^src/lib/member/index\\.ts$',
+      },
+    },
+    {
+      name: 'member-must-not-import-finance',
+      comment:
+        'spec 338 EARS-323 (#356), the mirror: the shared people registry has no business with ' +
+        'the ledger in either direction. `member` is imported BY modules, it does not reach into ' +
+        'them — and a registry that knew about money would make «delete this person» a finance ' +
+        'question, which is exactly what the ON DELETE RESTRICT foreign key answers instead.',
+      severity: 'error',
+      from: { path: '^src/lib/member/' },
+      to: { path: '^src/(lib/finance|modules/finance)' },
+    },
+    {
       name: 'hours-must-import-member-only-via-api',
       comment:
         'spec 124 EARS-8: the hours module reaches `member` data ONLY through the member module ' +

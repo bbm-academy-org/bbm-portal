@@ -187,6 +187,59 @@ describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)',
     expect((fee.rows[0] as { conversion_step_id: number | null }).conversion_step_id).not.toBeNull()
   })
 
+  it('EARS-318: refuses a system account as either end of the chain, naming why', async () => {
+    const wallets = await seedWallets()
+    const conversion = await systemAccount(ADMIN, 'conversion', 'THB')
+    for (const ends of [
+      { sourceAccountId: conversion.id, targetAccountId: wallets.usdt.id },
+      { sourceAccountId: wallets.thb.id, targetAccountId: conversion.id },
+    ]) {
+      await expect(
+        recordConversion(ADMIN, {
+          occurredOn: '2026-01-10',
+          ...ends,
+          steps: [
+            {
+              fromCurrency: 'THB',
+              toCurrency: 'USDT',
+              fromAmount: 100_000n,
+              toAmount: 10_000_000n,
+              rate: '100',
+            },
+          ],
+        }),
+      ).rejects.toThrow(/EARS-305/)
+    }
+  })
+
+  it('EARS-318: refuses a chain whose steps do not carry the amount through, before the generic balance check', async () => {
+    const wallets = await seedWallets()
+    await expect(
+      recordConversion(ADMIN, {
+        occurredOn: '2026-01-10',
+        sourceAccountId: wallets.thb.id,
+        targetAccountId: wallets.rub.id,
+        steps: [
+          {
+            fromCurrency: 'THB',
+            toCurrency: 'USDT',
+            fromAmount: 3_500_000n,
+            toAmount: 1_000_000_000n,
+            rate: '35',
+          },
+          {
+            fromCurrency: 'USDT',
+            toCurrency: 'RUB',
+            // The chain drops 100.000000 USDT on the floor.
+            fromAmount: 900_000_000n,
+            toAmount: 8_100_000n,
+            rate: '90',
+          },
+        ],
+      }),
+    ).rejects.toThrow(/не стыкуются по сумме/)
+  })
+
   it('EARS-319: the recorded rate is never restated — a conversion read later shows the rate of its day', async () => {
     const wallets = await seedWallets()
     const operation = await buyUsdt(wallets, 3_450_000n, 1_000_000_000n, '34.50')

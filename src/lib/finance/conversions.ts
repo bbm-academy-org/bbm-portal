@@ -131,6 +131,18 @@ export async function recordConversion(
           `а шаг #${index + 1} начинается с ${step.fromCurrency}.`,
       )
     }
+    // The AMOUNT has to carry through as well, not only the currency. Without
+    // this the mismatch is still caught — by `assertBalancedPerCurrency`'s
+    // generic «не сходятся в ноль» — but that message sends the admin looking at
+    // the wrong thing entirely (EARS-326 asks for the readable refusal).
+    if (previous !== undefined && previous.toAmount !== step.fromAmount) {
+      throw new FinanceRefusal(
+        `Шаги обмена не стыкуются по сумме: шаг #${index} дал ${previous.toAmount} ` +
+          `${previous.toCurrency} (в минимальных единицах), а шаг #${index + 1} забирает ` +
+          `${step.fromAmount}. Промежуточная валюта нигде не оседает — цепочка проходит её ` +
+          'насквозь; комиссия шага записывается отдельной проводкой, а не разницей сумм.',
+      )
+    }
   }
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
@@ -138,6 +150,23 @@ export async function recordConversion(
     const last = input.steps[input.steps.length - 1]
     const sourceAccount = await requireAccount(tx, input.sourceAccountId)
     const targetAccount = await requireAccount(tx, input.targetAccountId)
+    // A chain runs between the owner's OWN accounts. Letting a system account in
+    // is not merely untidy: pass the `conversion` account as source and a fee
+    // leg lands on a conversion account WITH a step link — the one combination
+    // that would contaminate the EARS-328 average, which is read off exactly
+    // those legs.
+    for (const [role, account] of [
+      ['списания', sourceAccount],
+      ['зачисления', targetAccount],
+    ] as const) {
+      if (account.isSystem) {
+        throw new FinanceRefusal(
+          `Счётом ${role} в конвертации не может быть системный счёт «${account.name}» ` +
+            `(вид ${account.kind}, EARS-305): модуль ведёт его сам, и через него проходят ` +
+            'служебные плечи обмена. Обмен идёт между денежными счетами — bank, card, crypto, cash.',
+        )
+      }
+    }
     if (sourceAccount.currency !== first.fromCurrency) {
       throw new FinanceRefusal(
         `Счёт списания ведётся в ${sourceAccount.currency}, а обмен начинается с ${first.fromCurrency} (EARS-312).`,

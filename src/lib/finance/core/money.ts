@@ -9,9 +9,16 @@
  *
  * A rate is TEXT as recorded (EARS-319) and is parsed, never re-serialized: this
  * file reads `"34.5"` as the exact pair (345, scale 1) and does integer
- * arithmetic with it. Its ORIENTATION is fixed by
- * `schema/finance/finance-conversion-step.ts`: `to` MAJOR units per one `from`
- * MAJOR unit, the way a human writes it on a receipt.
+ * arithmetic with it.
+ *
+ * **Orientation is the CALLER's to establish.** `convertMinorUnits` multiplies:
+ * it treats `rate` as `to` major units per one `from` major unit, and a caller
+ * holding the inverse quote inverts it before calling. This is deliberately NOT
+ * asserted against `finance_conversion_step.rate`, whose orientation is not
+ * machine-determinable — see that file's header for why the recorded rate is
+ * testimony and the amounts are the fact. Nothing in F1a applies this function
+ * to a stored rate; it is here for the intakes (F2) that compute an amount from
+ * a quote whose orientation they know, and for F3's display arithmetic.
  */
 import { FinanceRefusal } from './errors'
 

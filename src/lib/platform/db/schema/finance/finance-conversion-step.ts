@@ -12,11 +12,29 @@
  * quiet restatement of a recorded fact. The CHECK below keeps the text a decimal
  * literal so a reader can still cast it; nothing in the estate rewrites it.
  *
- * The rate's ORIENTATION, fixed once here so no caller has to guess: it is
- * `to_currency` MAJOR units per one `from_currency` MAJOR unit — the form a
- * human writes on a receipt («1 USDT = 34.50 THB»). Converting stored minimal
- * units therefore also carries the two currencies' precisions, which is what
- * `src/lib/finance/core/money.ts` does.
+ * ## The rate is TESTIMONY; the amounts are the FACT
+ *
+ * `rate` records the number the operator wrote down, and the module does not
+ * derive anything from it — `from_amount`/`to_amount` (the postings) are what
+ * the ledger computes with, including the realized FX of EARS-328.
+ *
+ * That is deliberate, and it is not a gap left by laziness: a recorded rate has
+ * no machine-determinable ORIENTATION. A human writes «35» for a THB→USDT
+ * exchange and «35» again for the USDT→THB one back, because both times they
+ * mean «35 бат за один USDT» — the price of the thing being traded, not a ratio
+ * keyed to the step's direction. Declaring one orientation and validating
+ * against it would make one of those two entries a refusal for being written
+ * the way every receipt in Thailand writes it, and would put the module in the
+ * business of correcting the operator's testimony about what the day's rate was.
+ *
+ * The consequence, stated so nobody later reads a guarantee that is not here: a
+ * step CAN carry a rate that its own amounts do not imply, and the ledger stores
+ * both. The amounts are authoritative everywhere; a reader of `rate` (F3) is
+ * reading what a person recorded, and should render it as such.
+ *
+ * `src/lib/finance/core/money.ts` holds the minimal-unit arithmetic for a caller
+ * that DOES know its orientation — a future intake computing an amount from a
+ * quoted rate. It is not applied to this column.
  */
 import { sql } from 'drizzle-orm'
 import { check, integer, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
