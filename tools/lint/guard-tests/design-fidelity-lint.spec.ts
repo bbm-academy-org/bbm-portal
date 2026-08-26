@@ -295,13 +295,83 @@ describe('design-fidelity-lint: the guard’s own printed shape is not a way out
     ).toBe('violation')
   })
 
-  it('an indented marker line is never evidence, filled or not', () => {
-    expect(extractMarkerValues('    Design-fidelity: GO — Антон, 2026-08-26')).toEqual([])
-    expect(extractMarkerValues('\tDesign-fidelity: GO — Антон, 2026-08-26')).toEqual([])
-    // A one-level list indent is still prose, not a code block: it stays evidence.
+  it('an indented marker line that still carries an angle-slot is never evidence', () => {
+    expect(extractMarkerValues('    Design-fidelity: GO — <owner, date>')).toEqual([])
+    expect(
+      extractMarkerValues('\tDesign-fidelity: batched at #<gate issue> covers `<path glob>`'),
+    ).toEqual([])
+  })
+
+  // N2 of the round-2 review of PR #371: the indent strip fails CLOSED, but it
+  // swallows a FILLED record written as a deeply nested list item or under a tab
+  // — and then the violation says «no marker» about a marker the author can see.
+  // It also contradicts `MARKER_RE`'s own `^[ \t>*_-]*` allowance, in the same
+  // file. The strip narrows to indented lines that are still the PRINTED shape.
+  it('a FILLED marker stays evidence however deeply it is indented', () => {
+    expect(extractMarkerValues('    Design-fidelity: GO — Антон, 2026-08-26')).toEqual([
+      'GO — Антон, 2026-08-26',
+    ])
+    expect(extractMarkerValues('\tDesign-fidelity: GO — Антон, 2026-08-26')).toEqual([
+      'GO — Антон, 2026-08-26',
+    ])
+    expect(
+      extractMarkerValues('- a\n  - b\n    - Design-fidelity: GO — Антон, 2026-08-26 — theme'),
+    ).toEqual(['GO — Антон, 2026-08-26 — theme'])
+    // A one-level list indent was always evidence and stays evidence.
     expect(extractMarkerValues('  - Design-fidelity: GO — Антон, 2026-08-26')).toEqual([
       'GO — Антон, 2026-08-26',
     ])
+  })
+})
+
+describe('design-fidelity-lint: a non-record tail is not a record either (`GO — TBD`)', () => {
+  // BLOCKER of the round-2 review of PR #371. `filledRemainder` asked only
+  // whether SOMETHING survives slot removal — and `TBD` survives. A bare `TBD`
+  // was already caught; prefixing it with `GO — ` cleared a BLOCK gate. Canon
+  // `.claude/rules/design-process.md` §2 names it verbatim: «a bare GO, a TBD,
+  // or the unfilled template placeholder is NOT a record».
+  const rows = rowsOf(WIREFRAME_INDEX)
+  const files = [{ path: LAUNCHER }]
+
+  it.each([
+    'TBD',
+    'tbd',
+    'todo',
+    'TODO: ask Антон',
+    'pending owner decision',
+    'n/a',
+    'N / A',
+    'none',
+    'later',
+    '???',
+  ])('`GO — %s` is a placeholder, not evidence', (tail) => {
+    expect(classifyMarker(`GO — ${tail}`).kind).toBe('placeholder')
+  })
+
+  it('the same tail without the `GO — ` prefix stays a placeholder (no regression)', () => {
+    expect(classifyMarker('TBD').kind).toBe('placeholder')
+    expect(classifyMarker('n/a').kind).toBe('placeholder')
+    expect(classifyMarker('later').kind).toBe('placeholder')
+  })
+
+  it('a real record — a named person and a named day — is still evidence', () => {
+    expect(classifyMarker('GO — Антон, 2026-08-26 — принял стандартную тему').kind).toBe('go')
+    expect(classifyMarker('GO — Антон, 2026-08-26').kind).toBe('go')
+    expect(
+      classifyMarker('GO — Антон, 2026-08-26 (adopting the shadcn/ui default theme, #360)').kind,
+    ).toBe('go')
+    // A word that merely STARTS like a non-record token is content, not a token.
+    expect(classifyMarker('GO — Nonetheless approved by Антон, 2026-08-26').kind).toBe('go')
+  })
+
+  it('`Design-fidelity: GO — TBD` in the PR body does NOT clear the BLOCK', () => {
+    const result = checkDesignFidelity({
+      pr: pr({ body: 'Design-fidelity: GO — TBD', files }),
+      rows,
+    })
+    expect(result.verdict).toBe('violation')
+    expect(result.evidence).toBeNull()
+    expect(result.message).toContain('placeholder')
   })
 })
 
