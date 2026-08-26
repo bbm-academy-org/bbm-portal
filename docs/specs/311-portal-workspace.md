@@ -60,6 +60,25 @@ updated: 2026-08-26
   components) land in the next PR on #360. EARS-430 («built from `src/ui`»)
   therefore refers to the kit as it will be repopulated, not to the deleted
   wireframe-derived one.
+- **Kit repopulated (#360, PR-1b).** Tailwind v4 and the shadcn/ui neutral theme
+  landed in `src/ui`: the theme entry `src/ui/theme.css` and six copied
+  primitives (`button`, `card`, `badge`, `avatar`, `separator`,
+  `dropdown-menu`), with `components.json` aliases pointing every generated path
+  into the kit so EARS-458 and `ui-kit-must-not-import-src` stay green. The
+  visual source is the new `system:` row in `design-source/README.md` at
+  `fidelity: visual`. **Three clauses of §C were amended by that landing**, all
+  in one direction — stripping VISUAL prescriptions that had been read off a
+  `fidelity: wireframe` file, while leaving the layout and inventory decisions
+  the file legitimately settles: EARS-430 (which source licenses which half),
+  EARS-468 (the four tile forms are an inventory, not a look) and EARS-478 (the
+  placeholder is muted the way the theme expresses muted, not «dashed border and
+  greys per the file»). No clause was retired and none changed what the launcher
+  must DO, so their #314 deferral entry in `tools/lint/ears-test-lint.mjs`
+  stands: the tests that would cover them are the launcher's, and the launcher
+  is the re-skin slice. What PR-1b deliberately did NOT settle: EARS-430 still
+  has no machine-checkable assertion, and choosing between retiring it and
+  giving it one is a product call for the re-skin slice, not a mechanical
+  rewrite this one could make.
 - **Donor & benchmark pass:** run 2026-08-25 against three donors — Refine's
   own resource/menu model (`@refinedev/core` `resources[]` with `meta.parent`
   multi-level menus, adopted for the grouped navigation and for nothing else:
@@ -493,14 +512,23 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   the reskin happens on each surface's first substantive touch, per the
   back-fill rule of `.claude/rules/design-process.md` §1.
 - **EARS-430.** Every new screen this spec introduces (`/p`, the top bar, the
-  cabinet shell and its resource screens) shall be built from `src/ui` (#312)
-  and from the vendored Stage-A sources; hand-rolled styles are a review
-  stop-factor (consolidation §10).
+  cabinet shell and its resource screens) shall be built from `src/ui` (#360 —
+  the kit as repopulated: Tailwind plus the copied shadcn/ui components on the
+  adopted neutral theme) and shall take its LAYOUT from the vendored Stage-A
+  sources; hand-rolled styles are a review stop-factor (consolidation §10). The
+  two halves come from different rows of `design-source/README.md` and it
+  matters which: layout from the `fidelity: wireframe` file for the surface, the
+  visual language from the `system:` row at `fidelity: visual`.
 - **EARS-468.** The grid shall carry exactly four tile forms, as the vendored
   file draws them: the standard `internal` tile; the shorter `external` tile
-  marked «↗ внешний» (EARS-423); the admin entry's tile with its dashed border
-  and its «только администратор» flag; and the `planned` placeholder tile of
-  EARS-477/EARS-478. No other per-entry visual variation exists in v1.
+  marked «↗ внешний» (EARS-423); the admin entry's tile with its «только
+  администратор» flag; and the `planned` placeholder tile of EARS-477/EARS-478.
+  No other per-entry visual variation exists in v1. The vendored file settles
+  WHICH four forms exist and what distinguishes them — an inventory question,
+  which is what a `fidelity: wireframe` source is allowed to settle. It does not
+  settle how each form LOOKS: the admin tile's dashed border and the greys the
+  file draws them in are wireframe scaffolding, and the rendering comes from the
+  kit's own components on the adopted theme (#360).
 - **EARS-477.** The launcher shall render one placeholder tile per not-yet-live
   app of the target portfolio (consolidation spec §4, revision -f) **that no
   entry of the registry already represents**, as the entries the composition
@@ -517,9 +545,11 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   disappear by that one edit alone; WHEN управление задачами finishes its own
   discovery, it becomes an `internal` entry replacing the Plane `external` one,
   and it never passes through a placeholder.
-- **EARS-478.** The launcher shall render a `planned` entry as a greyed,
-  **non-interactive** tile captioned «портфель, позже» — dashed border and muted
-  text per the vendored file, no link and no click target, not reachable by
+- **EARS-478.** The launcher shall render a `planned` entry as a visibly
+  de-emphasised, **non-interactive** tile captioned «портфель, позже» — muted
+  against the live tiles in whatever way the kit's own theme expresses «muted»
+  (the vendored file's dashed border and greys are wireframe scaffolding, not
+  the visual decision, #360), no link and no click target, not reachable by
   keyboard focus, with **no status line** (a `planned` entry declares no
   provider, and the vendored file's empty `pulse` slot is a wireframe
   placeholder, not content to render) and **no claim logic**: a placeholder

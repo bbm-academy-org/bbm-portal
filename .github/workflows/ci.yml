@@ -265,8 +265,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:no-stub
 
-  # WARN — the UI kit's values come from one palette, and that palette is
-  # derived from design-source/ (#312, consolidation §10/§11).
+  # WARN — the UI kit's colour values come from one theme entry, and that entry
+  # is the standard shadcn/ui neutral theme the owner adopted on 2026-08-26
+  # (#360; consolidation §10/§11, guard rewritten from the #312 palette form).
   ui-tokens:
     continue-on-error: true # WARN since 2026-08-26 — canon §5, earliest promotion 2026-09-23
     runs-on: ubuntu-latest
