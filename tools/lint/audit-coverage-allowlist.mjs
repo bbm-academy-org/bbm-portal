@@ -87,6 +87,50 @@ export const AUDIT_VALUE_WHITELIST = {
   ],
   hours_publication: ['period_id', 'status', 'started_at', 'published_at', 'preview_fingerprint'],
   hours_publication_message: ['period_id', 'position', 'email', 'text', 'delivery', 'sent_at'],
+  // The finance ledger (spec `docs/specs/338-ledger-core.md`, migration `0008`).
+  // Nothing here is a person's contact data — the class EARS-17 keeps out — and
+  // the amounts are exactly what an audit of a ledger is for. On the two
+  // IMMUTABLE tables (`finance_operation`, `finance_posting`, EARS-313) an
+  // UPDATE or a DELETE can no longer succeed at all, so what the trigger records
+  // in practice is the INSERT: who recorded which fact, and when.
+  finance_currency: ['code', 'name', 'precision', 'retired_at'],
+  finance_account: ['id', 'name', 'kind', 'currency', 'is_system', 'retired_at'],
+  finance_project: ['id', 'name', 'is_fund', 'retired_at'],
+  finance_product: ['id', 'project_id', 'name', 'sale_price', 'sale_price_currency', 'retired_at'],
+  // `product_binding` is whitelisted ON PURPOSE: «кто и когда сменил привязку»
+  // is answered by the old/new pair, which is why spec 338 ruling 2 adds no
+  // binding-change journal of its own (EARS-331/332).
+  finance_purpose: ['id', 'name', 'category_id', 'product_binding', 'retired_at'],
+  finance_category: ['id', 'name', 'allocable', 'retired_at'],
+  finance_operation: [
+    'id',
+    'occurred_on',
+    'purpose_id',
+    'source',
+    'source_ref',
+    'backdated',
+    'reverses',
+  ],
+  finance_posting: [
+    'id',
+    'operation_id',
+    'account_id',
+    'amount',
+    'currency',
+    'project_id',
+    'category_id',
+    'product_id',
+    'member_id',
+    'conversion_step_id',
+  ],
+  finance_conversion_step: [
+    'id',
+    'operation_id',
+    'step_no',
+    'from_currency',
+    'to_currency',
+    'rate',
+  ],
 }
 
 /** A rationale that is present but says nothing is itself a finding (EARS-19). */

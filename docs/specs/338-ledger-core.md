@@ -259,6 +259,21 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   the balancing counter-leg in the same currency, keeping EARS-311's
   per-currency zero-sum intact (Accounting policy, ruling 3; the recorded legs
   themselves are never restated).
+  The average is of the **remaining** holding, moving-average cost flow: every
+  disposal removes its quantity from the pool together with the share of cost
+  that quantity carried, so an acquisition made after a disposal prices the next
+  one and a lifetime average of every purchase ever made does not. It is derived
+  from recorded postings rather than from re-applied rate strings — the exchange
+  legs of the pair's prior steps, summed rather than sign-filtered, so a
+  reversal cancels its original (EARS-314) — which keeps the arithmetic exact
+  integer arithmetic and restates nothing (EARS-319). WHERE the ledger holds no
+  remaining recorded acquisition of the disposed currency against the received
+  one, the system shall post no FX result at all rather than invent a basis; the
+  `conversion` account is a clearing account and shall read zero once every unit
+  acquired has been disposed of. _(Recorded 2026-08-26 from the #370 review, so
+  the clause and `src/lib/finance/conversions.ts` cannot drift; the F1a
+  limitation that the pool is per currency PAIR is named in that module's
+  header.)_
 - **EARS-329.** IF an operation carries no conversion step (a payment or
   transfer in one currency), THEN the system shall post no FX result: the
   ledger holds no rate source for it (decision 18 records only actual
