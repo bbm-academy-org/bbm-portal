@@ -122,11 +122,11 @@ describe('components.json keeps the kit self-contained', () => {
 })
 
 // Deliberately NOT titled with the EARS-429 id. This suite asserts one half of
-// that clause — that the kit's arrival restyles nothing — and the clause's own
-// subject is the top bar landing on /p/okr and /p/hours, which is #314's. A
-// half-assertion that claims the id would drain a real deferral for a test that
-// does not cover it.
-describe('the theme entry is deliberately inert (the no-reskin half of spec 311 §C)', () => {
+// that clause — that the kit restyles nothing that did not ask to be restyled —
+// and the clause's own subject is the top bar landing on /p/okr and /p/hours,
+// which is #314's. A half-assertion that claims the id would drain a real
+// deferral for a test that does not cover it.
+describe('the theme entry restyles only what opted in (the no-reskin half of spec 311 §C)', () => {
   const theme = readRepo('src/ui/theme.css')
   const code = theme.replace(/\/\*[\s\S]*?\*\//g, '')
 
@@ -136,7 +136,7 @@ describe('the theme entry is deliberately inert (the no-reskin half of spec 311 
     expect(code).toMatch(/--background:\s*oklch\(1 0 0\)/)
   })
 
-  it('does not import Tailwind preflight — it would restyle /p/okr and /p/hours today', () => {
+  it('does not import Tailwind preflight — an @import cannot be scoped, and unscoped it would restyle /p/okr and /p/hours', () => {
     expect(code).not.toContain('preflight')
     // `@import "tailwindcss"` is the bundle that CONTAINS preflight; the entry
     // imports the theme and utilities layers by name instead.
@@ -144,7 +144,106 @@ describe('the theme entry is deliberately inert (the no-reskin half of spec 311 
     expect(code).toContain('tailwindcss/utilities.css')
   })
 
-  it('arms no document-level base layer', () => {
-    expect(code).not.toMatch(/@layer\s+base\s*\{/)
+  it('arms a base layer, and EVERY selector in it is confined to a [data-bbm-ui] subtree', () => {
+    // The base layer is armed since the re-skin of #360, which is why this test
+    // replaced «arms no base layer». What keeps it legal while EARS-429 holds is
+    // the scoping, so the scoping is what is asserted — not the presence of the
+    // block. Drop the `[data-bbm-ui]` prefix from any one selector below and the
+    // rule reaches /p/okr and /p/hours, and this test goes red.
+    const selectors = baseLayerSelectors(code)
+    expect(selectors.length).toBeGreaterThan(5)
+    for (const selector of selectors) {
+      expect(selector, `"${selector}" can match outside an opted-in subtree`).toMatch(
+        /^\[data-bbm-ui\]/,
+      )
+    }
+  })
+
+  it('paints no page-level element — no html, body or bare * rule survives anywhere in the file', () => {
+    // Belt and braces for the rule above: a document-level painter added OUTSIDE
+    // `@layer base` would escape `baseLayerSelectors` entirely.
+    for (const selector of topLevelSelectors(code)) {
+      expect(selector, `"${selector}" is a document-level selector`).not.toMatch(
+        /^(\*|html|body|:root\s|:host)/,
+      )
+    }
   })
 })
+
+/**
+ * The comma-separated selectors of every rule inside the file's `@layer base`
+ * block. Nesting inside the block is one level deep by construction (plain rules
+ * only), which is what makes this a scan rather than a parser.
+ */
+function baseLayerSelectors(css: string): string[] {
+  const start = css.indexOf('@layer base {')
+  if (start === -1) return []
+  let depth = 0
+  let end = start
+  for (let i = css.indexOf('{', start); i < css.length; i += 1) {
+    if (css[i] === '{') depth += 1
+    else if (css[i] === '}') {
+      depth -= 1
+      if (depth === 0) {
+        end = i
+        break
+      }
+    }
+  }
+  const body = css.slice(css.indexOf('{', start) + 1, end)
+  return ruleSelectors(body)
+}
+
+/** Selectors of the rules at the top level of a CSS body, `@…` blocks excluded. */
+function ruleSelectors(body: string): string[] {
+  const out: string[] = []
+  let depth = 0
+  let head = ''
+  for (const ch of body) {
+    if (ch === '{') {
+      depth += 1
+      if (depth === 1) {
+        const selector = head.trim()
+        if (selector && !selector.startsWith('@')) {
+          out.push(...splitSelectorList(selector))
+        }
+        head = ''
+        continue
+      }
+    } else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) head = ''
+      continue
+    }
+    if (depth === 0) head += ch
+  }
+  return out.filter(Boolean)
+}
+
+/**
+ * Split a selector list on its TOP-LEVEL commas only — `:is(h1, h2, h3)` is one
+ * selector, and splitting inside the parens would report `h2` as an unscoped
+ * rule that does not exist.
+ */
+function splitSelectorList(list: string): string[] {
+  const out: string[] = []
+  let depth = 0
+  let current = ''
+  for (const ch of list) {
+    if (ch === '(') depth += 1
+    else if (ch === ')') depth -= 1
+    if (ch === ',' && depth === 0) {
+      out.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  out.push(current.trim())
+  return out.filter(Boolean)
+}
+
+/** Selectors of the rules written at the top level of the FILE (outside @layer). */
+function topLevelSelectors(css: string): string[] {
+  return ruleSelectors(css).filter((s) => s !== ':root' && s !== '.dark')
+}

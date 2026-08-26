@@ -153,11 +153,6 @@ const DEFERRALS_BY_ISSUE = {
     reason:
       'spec 311 §B, the REVOCATION half: «when a role is revoked, the next request lands in EARS-418». #313 landed the rest of §B and stopped here on purpose — the roles are read once, at sign-in, and then ride the Auth.js JWT session cookie, so a revoke in Zitadel is invisible until that session ends. The grant direction (EARS-460) is satisfied as written; «next request» is not something a claim carried in a cookie can promise, and picking a staleness window nobody chose would put a number into the security boundary. #333 decides the mechanism or amends the clause',
   },
-  314: {
-    ids: ['EARS-430'],
-    reason:
-      "spec 311 EARS-430 — «every new screen is built from src/ui and hand-rolled styles are a review stop-factor» — is the one clause of the spec with no machine-checkable assertion at all: it is a reviewer's verdict under .claude/rules/design-process.md, and the nearest mechanical proxy (pnpm lint:ui-tokens) checks that a stylesheet's VALUES come from the palette, never that a screen reached for a kit component instead of writing its own div. #314 drained the other 26 ids of this entry by landing their tests (tests/unit/workspace-{view,registry,module-declarations}.spec.ts, launcher-render.spec.ts, platform-boundaries.spec.ts) and deliberately did NOT retire or rewrite the clause while doing so — amending an accepted spec to make a guard tidy is the wrong direction. It stays here as a standing, honest exception rather than as work owed",
-  },
   315: {
     ids: [
       'EARS-409',

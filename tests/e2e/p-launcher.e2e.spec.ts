@@ -60,7 +60,7 @@ test.describe('the /p launcher (spec 311 §C)', () => {
     await page.goto(HOME, { waitUntil: 'domcontentloaded' })
 
     expect(new URL(page.url()).pathname).not.toBe(HOME)
-    await expect(page.locator('.bbm-tile-grid')).toHaveCount(0)
+    await expect(page.locator('[data-tile-grid]')).toHaveCount(0)
   })
 
   test('EARS-422/423/478: a member sees one flat grid, marked external tiles and inert placeholders', async ({
@@ -74,12 +74,12 @@ test.describe('the /p launcher (spec 311 §C)', () => {
     await signIn(page, HOME, { username: memberUsername!, password: memberPassword! })
 
     // ONE grid, no grouping (EARS-422).
-    await expect(page.locator('.bbm-tile-grid')).toHaveCount(1)
+    await expect(page.locator('[data-tile-grid]')).toHaveCount(1)
     await expect(page.getByRole('heading', { name: 'Рабочее пространство BBM' })).toBeVisible()
 
     // The live apps are openable links; the external ones are marked and
     // targeted at their own tab (EARS-423).
-    const external = page.locator('.bbm-app-tile--external')
+    const external = page.locator('[data-tile-form="external"]')
     expect(await external.count()).toBeGreaterThan(0)
     for (let i = 0; i < (await external.count()); i += 1) {
       const tile = external.nth(i)
@@ -90,7 +90,7 @@ test.describe('the /p launcher (spec 311 §C)', () => {
 
     // The «портфель, позже» placeholders: below the live apps, no status line,
     // no link, and not reachable by Tab (EARS-477, EARS-478).
-    const planned = page.locator('.bbm-app-tile--planned')
+    const planned = page.locator('[data-tile-form="planned"]')
     await expect(planned).toHaveCount(6)
     for (let i = 0; i < 6; i += 1) {
       const tile = planned.nth(i)
@@ -101,7 +101,7 @@ test.describe('the /p launcher (spec 311 §C)', () => {
     expect(
       await page.evaluate(() =>
         Array.from(document.querySelectorAll('a, button, [tabindex]')).some((el) =>
-          el.closest('.bbm-app-tile--planned'),
+          el.closest('[data-tile-form="planned"]'),
         ),
       ),
     ).toBe(false)
@@ -111,7 +111,7 @@ test.describe('the /p launcher (spec 311 §C)', () => {
     const html = await page.content()
     expect(html).not.toContain('/p/admin')
     expect(html).not.toContain('Админка')
-    await expect(page.locator('.bbm-app-tile--admin')).toHaveCount(0)
+    await expect(page.locator('[data-tile-form="admin"]')).toHaveCount(0)
   })
 
   test('EARS-425/470: the top bar is on the home in its home state, with switcher and sign-out', async ({
@@ -124,15 +124,15 @@ test.describe('the /p launcher (spec 311 §C)', () => {
 
     await signIn(page, HOME, { username: memberUsername!, password: memberPassword! })
 
-    await expect(page.locator('.bbm-top-bar')).toHaveCount(1)
-    await expect(page.locator('.bbm-top-bar__home')).toHaveAttribute('href', '/p')
-    await expect(page.locator('.bbm-top-bar__app')).toHaveText('Главная')
-    await expect(page.getByRole('button', { name: 'Приложения ▾' })).toBeVisible()
+    await expect(page.locator('[data-top-bar]')).toHaveCount(1)
+    await expect(page.locator('[data-top-bar-home]')).toHaveAttribute('href', '/p')
+    await expect(page.locator('[data-top-bar-app]')).toHaveText('Главная')
+    await expect(page.getByRole('button', { name: 'Приложения' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible()
 
     // EARS-427/EARS-478: the switcher offers the openable apps and no placeholder.
-    await page.getByRole('button', { name: 'Приложения ▾' }).click()
-    const menu = page.locator('.bbm-app-switcher__menu')
+    await page.getByRole('button', { name: 'Приложения' }).click()
+    const menu = page.locator('[data-app-switcher-menu]')
     await expect(menu).toBeVisible()
     await expect(menu).not.toContainText('портфель, позже')
     expect(await menu.locator('a').count()).toBeGreaterThan(0)
@@ -148,14 +148,14 @@ test.describe('the /p launcher (spec 311 §C)', () => {
 
     await signIn(page, HOME, { username: memberUsername!, password: memberPassword! })
 
-    const firstInternal = page.locator('.bbm-app-tile--internal').first()
-    const name = (await firstInternal.locator('.bbm-app-tile__name').textContent())?.trim()
+    const firstInternal = page.locator('[data-tile-form="internal"]').first()
+    const name = (await firstInternal.locator('[data-tile-name]').textContent())?.trim()
     await firstInternal.click()
 
-    await expect(page.locator('.bbm-top-bar__app')).toHaveText(name!)
-    await page.locator('.bbm-top-bar__home').click()
+    await expect(page.locator('[data-top-bar-app]')).toHaveText(name!)
+    await page.locator('[data-top-bar-home]').click()
     await expect(page).toHaveURL(/\/p$/)
-    await expect(page.locator('.bbm-top-bar__app')).toHaveText('Главная')
+    await expect(page.locator('[data-top-bar-app]')).toHaveText('Главная')
   })
 
   test('EARS-406: a live module publishes a status line on its own tile', async ({ page }) => {
@@ -171,15 +171,13 @@ test.describe('the /p launcher (spec 311 §C)', () => {
     // renders no line. What must hold on every stand is that the page rendered
     // completely anyway: every internal tile is a real, openable link, and the
     // foot is either a line or the explicit «no line» rule, never a broken tile.
-    const internal = page.locator('.bbm-app-tile--internal')
+    const internal = page.locator('[data-tile-form="internal"]')
     const count = await internal.count()
     expect(count).toBeGreaterThan(0)
     for (let i = 0; i < count; i += 1) {
       const tile = internal.nth(i)
       expect(await tile.evaluate((el) => el.tagName)).toBe('A')
-      expect(
-        await tile.evaluate((el) => el.querySelectorAll('[class*="bbm-app-tile__status"]').length),
-      ).toBe(1)
+      expect(await tile.evaluate((el) => el.querySelectorAll('[data-tile-status]').length)).toBe(1)
     }
   })
 
@@ -193,14 +191,14 @@ test.describe('the /p launcher (spec 311 §C)', () => {
 
     await signIn(page, HOME, { username: adminUsername!, password: adminPassword! })
 
-    const cabinet = page.locator('.bbm-app-tile--admin')
+    const cabinet = page.locator('[data-tile-form="admin"]')
     await expect(cabinet).toHaveCount(1)
     await expect(cabinet).toHaveAttribute('href', '/p/admin')
     await expect(cabinet).toContainText('только администратор')
 
     // A placeholder is NOT claim-gated: an admin sees exactly what a member sees
     // (EARS-478, scenario 5).
-    await expect(page.locator('.bbm-app-tile--planned')).toHaveCount(6)
+    await expect(page.locator('[data-tile-form="planned"]')).toHaveCount(6)
   })
 
   test('EARS-428: on a narrow viewport the grid reflows and the switcher stays reachable', async ({
@@ -221,8 +219,8 @@ test.describe('the /p launcher (spec 311 §C)', () => {
     )
     expect(overflows).toBe(false)
 
-    await expect(page.locator('.bbm-tile-grid')).toHaveCount(1)
-    await page.getByRole('button', { name: 'Приложения ▾' }).click()
-    await expect(page.locator('.bbm-app-switcher__menu')).toBeVisible()
+    await expect(page.locator('[data-tile-grid]')).toHaveCount(1)
+    await page.getByRole('button', { name: 'Приложения' }).click()
+    await expect(page.locator('[data-app-switcher-menu]')).toBeVisible()
   })
 })

@@ -12,31 +12,37 @@
    the kit's colour values are declared — `pnpm lint:ui-tokens` enforces that a
    colour literal appears nowhere else under `src/ui/**`.
 
-   THE DOCUMENT-LEVEL HALF IS DELIBERATELY NOT ARMED YET, and that is the one
-   thing to read before editing this file. `/p/*` already renders `/p/okr` and
-   `/p/hours`, which spec 311 EARS-429 keeps UNRESKINNED until each surface's
-   own first substantive touch. Two pieces of a stock shadcn setup would restyle
-   both of them the moment this file is imported — Tailwind's preflight reset,
-   and the `@layer base` block the CLI writes to paint `html`/`body`/`*` in the
-   theme. Neither is here. What remains is inert by construction: `@theme`
-   variable declarations plus utilities that are emitted only for class names
-   the source actually uses, and no `/p` surface uses one yet.
+   THE BASE LAYER IS ARMED, AND IT IS SCOPED — that is the one thing to read
+   before editing this file.
 
-   The re-skin slice of #360 arms both, together with the surfaces that need
-   them. Restoring them is two edits — add
+   A stock shadcn setup arms two DOCUMENT-LEVEL pieces: Tailwind's preflight
+   reset on `*` / `html`, and an `@layer base` block painting `html` / `body` /
+   `*` in the theme. Neither may land here as written. `theme.css` is imported by
+   `src/app/(platform)/p/layout.tsx`, so it is loaded on `/p/okr` and `/p/hours`
+   too — and spec 311 EARS-429 keeps those two page bodies UNRESKINNED until each
+   surface's own first substantive touch. A document-level reset would restyle
+   both of them today, which is exactly the clause the re-skin slice must not
+   break (#360, the `/p` launcher; okr and hours are out of its scope).
 
-       @import "tailwindcss/preflight.css" layer(base);
+   So the base layer below is the CLI's two pieces plus the preflight rules the
+   copied components depend on, every one of them SCOPED to a `[data-bbm-ui]`
+   subtree. The attribute is placed by the surfaces that opted in — today the
+   shared top bar (`src/app/(platform)/p/TopBar.tsx`) and the launcher's `<main>`
+   (`src/app/(platform)/p/page.tsx`). A page body that does not carry it, and is
+   not inside an element that does, is untouched by every rule in this file:
+   there is no selector here that can match outside such a subtree, and
+   `tests/unit/ui-kit.spec.ts` asserts that property rather than trusting it.
 
-   next to the imports below, and re-add the CLI's base layer:
+   WHEN `/p/okr` AND `/p/hours` ARE RE-SKINNED (their own tasks, EARS-429's
+   back-fill), the honest move is to drop the `[data-bbm-ui]` prefix and go back
+   to stock — `@import 'tailwindcss/preflight.css' layer(base);` next to the
+   imports, and the CLI's `* / body / html` block. Until then the scoping is what
+   makes an armed base layer legal at all.
 
-       @layer base {
-         * { @apply border-border outline-ring/50; }
-         body { @apply bg-background text-foreground; }
-         html { @apply font-sans; }
-       }
-
-   — and neither may land before `/p/okr` and `/p/hours` are ready to be
-   restyled, because EARS-429 is what they would break.
+   Why a hand-written preflight subset rather than the upstream file: an
+   `@import` cannot be scoped. The subset below is transcribed from
+   `tailwindcss/preflight.css` (4.3.3) — the rules the kit's components rely on
+   and no others — with each selector confined to the subtree.
    ============================================================================ */
 @layer theme, base, components, utilities;
 @import 'tailwindcss/theme.css' layer(theme);
@@ -47,8 +53,15 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* `--font-sans` is Tailwind's own default stack (`tailwindcss/theme.css`).
+     The CLI writes `--font-sans: var(--font-sans)` here so a project can point
+     it at a Next font variable; left self-referential it is not a value, it is a
+     cycle — `@theme inline` emits no `:root` declaration of its own, so the
+     `font-sans` utility resolved to nothing. Removed rather than "fixed": this
+     project adopted the system's default theme, which includes its font stack.
+     Re-adding the line means naming a real font variable on the right-hand
+     side. `pnpm lint:ui-tokens` (`self-reference`) refuses the cyclic form. */
   --font-heading: var(--font-sans);
-  --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -156,4 +169,96 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* ============================================================================
+   The base layer — armed, and scoped to `[data-bbm-ui]`. See the file header
+   for WHY it is scoped and what dropping the scope would cost today.
+
+   Two parts, in the order a stock setup applies them:
+     1. the preflight subset the copied components depend on, transcribed from
+        `tailwindcss/preflight.css` (4.3.3);
+     2. the CLI's own base block (`border-border` / `outline-ring/50` on
+        everything, `bg-background text-foreground` and `font-sans` on the root),
+        written with `@apply` exactly as the CLI writes it.
+   ============================================================================ */
+@layer base {
+  /* preflight §1 — box model, margins, and `border: 0 solid` so that a
+     `border-t` utility has a style to draw with. Without this rule every border
+     the kit's components ask for renders as nothing. */
+  [data-bbm-ui],
+  [data-bbm-ui] *,
+  [data-bbm-ui] *::after,
+  [data-bbm-ui] *::before,
+  [data-bbm-ui] *::backdrop {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+
+  /* preflight §2 — the typographic defaults `html` carries upstream, applied to
+     the subtree root instead. Descendants inherit them. */
+  [data-bbm-ui] {
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    tab-size: 4;
+  }
+
+  /* preflight §3 — headings take their size and weight from utilities, never
+     from the UA; a link takes its colour from its context. */
+  [data-bbm-ui] :is(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  [data-bbm-ui] a {
+    color: inherit;
+    -webkit-text-decoration: inherit;
+    text-decoration: inherit;
+  }
+
+  [data-bbm-ui] :is(ol, ul, menu) {
+    list-style: none;
+  }
+
+  /* preflight §4 — replaced elements. */
+  [data-bbm-ui] :is(img, svg, video, canvas, audio, iframe, embed, object) {
+    display: block;
+    vertical-align: middle;
+  }
+
+  [data-bbm-ui] :is(img, video) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* preflight §5 — form controls inherit the type they sit in. This is the rule
+     that keeps a `<button>` from falling back to the UA's own font family, which
+     no utility overrides. */
+  [data-bbm-ui] :is(button, input, select, optgroup, textarea) {
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+  }
+
+  [data-bbm-ui] :is(button, input:where([type='button'], [type='reset'], [type='submit'])) {
+    appearance: button;
+  }
+
+  /* The CLI's base block, verbatim apart from the scoping selector. */
+  [data-bbm-ui],
+  [data-bbm-ui] * {
+    @apply border-border outline-ring/50;
+  }
+
+  [data-bbm-ui] {
+    @apply bg-background font-sans text-foreground;
+  }
 }

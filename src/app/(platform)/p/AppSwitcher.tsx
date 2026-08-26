@@ -2,9 +2,13 @@
 
 import React from 'react'
 
-import { Button } from '@/ui'
-
-import './app-switcher.css'
+import { Button } from '@/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/ui/dropdown-menu'
 
 /**
  * The top bar's app switcher (spec 311 EARS-425, EARS-427, EARS-428).
@@ -15,17 +19,17 @@ import './app-switcher.css'
  * and a `planned` placeholder is not here at all, because a switcher is a
  * navigation control and a placeholder has nowhere to switch to (EARS-478).
  *
- * WHY IT IS BESPOKE, and what «bespoke» covers here
- * (`build-ui-from-design-system`, reuse ladder step 3):
- * the vendored `design-source/p-launcher.html` draws the switcher CLOSED — one
- * control, `.bar-switch`, which IS the kit's `Button` and is used as such below.
- * The OPEN menu is a state the wireframe explicitly lists under NOT SHOWN, so
- * there is no design to build it from and no kit component that covers it.
- * Adding one to `src/ui` would be putting an element class into the kit with no
- * Stage A behind it, which is the thing `.claude/rules/design-process.md` §1
- * forbids. So the panel is local to this surface, is drawn only from palette
- * tokens (no literal ever enters `app-switcher.css`), and stays a candidate for
- * the kit when a menu is designed rather than a settled element class today.
+ * NO LONGER BESPOKE (#360). Until the re-skin this panel was a hand-written
+ * `<ul role="menu">` with its own stylesheet, justified at rung 3 of the reuse
+ * ladder because the kit of the day had no menu component and the wireframe drew
+ * the control closed. The kit adopted on #360 publishes `dropdown-menu`, so the
+ * ladder now resolves one rung higher: the control is the kit's `Button`, the
+ * panel is the kit's `DropdownMenu`, and `app-switcher.css` is deleted rather
+ * than ported. Nothing on this surface is bespoke any more, which is why
+ * `docs/design/ui-whitelist.md` records no justification for it.
+ *
+ * Escape, click-outside, focus return and roving focus are Radix's, not ours —
+ * that is most of what the hand-written panel had to implement by hand.
  */
 
 export interface AppSwitcherLink {
@@ -37,61 +41,40 @@ export interface AppSwitcherLink {
 
 export function AppSwitcher({
   links,
-  label = 'Приложения ▾',
+  label = 'Приложения',
 }: {
   links: readonly AppSwitcherLink[]
   label?: string
 }) {
-  const [open, setOpen] = React.useState(false)
-  const root = React.useRef<HTMLSpanElement | null>(null)
-
-  React.useEffect(() => {
-    if (!open) return
-    // Two ways out that a member expects from any menu and that the wireframe
-    // could not draw: Escape, and a click anywhere else. Without them the panel
-    // is a trap on touch, where there is no Escape key and no obvious close.
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    const onPointer = (event: MouseEvent) => {
-      if (root.current && !root.current.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('mousedown', onPointer)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onPointer)
-    }
-  }, [open])
-
   if (links.length === 0) return null
 
   return (
-    <span className="bbm-app-switcher" ref={root}>
-      <Button aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((v) => !v)}>
-        {label}
-      </Button>
-      {open ? (
-        <ul className="bbm-app-switcher__menu" role="menu">
-          {links.map((link) => (
-            <li key={link.key} role="none">
-              <a
-                className="bbm-app-switcher__item"
-                role="menuitem"
-                href={link.href}
-                {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-              >
-                {link.name}
-                {link.external ? (
-                  <span className="bbm-app-switcher__mark" aria-hidden="true">
-                    ↗
-                  </span>
-                ) : null}
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </span>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button data-app-switcher variant="outline" size="sm">
+          {label}
+        </Button>
+      </DropdownMenuTrigger>
+      {/* `data-bbm-ui` again, and it is load-bearing: Radix portals the panel to
+          `document.body`, outside the bar's own subtree, so the scoped base
+          layer of `src/ui/theme.css` would not otherwise reach it. */}
+      <DropdownMenuContent data-bbm-ui data-app-switcher-menu align="start" className="w-56">
+        {links.map((link) => (
+          <DropdownMenuItem key={link.key} asChild>
+            <a
+              href={link.href}
+              {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            >
+              <span>{link.name}</span>
+              {link.external ? (
+                <span className="ml-auto text-xs text-muted-foreground" aria-hidden="true">
+                  ↗
+                </span>
+              ) : null}
+            </a>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

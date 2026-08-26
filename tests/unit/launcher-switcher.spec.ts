@@ -10,17 +10,41 @@ import type { WorkspaceEntry } from '@/lib/workspace/contract'
  * (spec 311 EARS-423, EARS-427).
  *
  * Why this file exists apart from `launcher-render.spec.ts`: that suite renders
- * the bar with `renderToStaticMarkup`, where `useState(false)` means the menu is
- * never in the markup at all — so nothing there constrains what the OPEN panel
- * puts on a link. An external app opened in the SAME tab loses the member's
- * workspace, which is the harm EARS-423 exists to prevent, and it loses
- * `noopener` on a cross-origin target as well. Here the control is actually
- * clicked open (jsdom + `@testing-library/react`), and the `external:` flag the
- * layout computes is read off the element tree it returns.
+ * the bar with `renderToStaticMarkup`, where a closed menu is not in the markup
+ * at all — so nothing there constrains what the OPEN panel puts on a link. An
+ * external app opened in the SAME tab loses the member's workspace, which is the
+ * harm EARS-423 exists to prevent, and it loses `noopener` on a cross-origin
+ * target as well. Here the control is actually opened, and the `external:` flag
+ * the layout computes is read off the element tree it returns.
+ *
+ * SINCE #360 the panel is the kit's `DropdownMenu` (Radix) rather than the
+ * hand-written `<ul role="menu">` it replaced, which changes how a test opens
+ * it: Radix triggers on `pointerdown`, and jsdom has no pointer events, so the
+ * menu is opened the way a keyboard user opens it. Radix also needs three DOM
+ * APIs jsdom does not implement; they are stubbed below and nothing else about
+ * the assertions changed.
  *
  * The vitest include glob is `tests/unit/**\/*.spec.ts`, so this suite is
  * written with `React.createElement` rather than JSX, as the sibling suites are.
  */
+
+// Radix's menu measures and captures pointers; jsdom implements neither.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.setPointerCapture ??= () => {}
+Element.prototype.releasePointerCapture ??= () => {}
+Element.prototype.scrollIntoView ??= () => {}
+
+/** Open the switcher the way a keyboard user does — Radix opens on ArrowDown. */
+function openMenu(): void {
+  const trigger = screen.getByRole('button')
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+}
 
 const el = React.createElement
 
@@ -112,7 +136,7 @@ describe('the switcher panel, opened (spec 311 EARS-423, EARS-427)', () => {
 
   it('EARS-423: an external item of the OPEN menu opens in its own tab, with noopener', () => {
     render(el(AppSwitcher, { links }))
-    fireEvent.click(screen.getByRole('button'))
+    openMenu()
 
     const external = screen.getByRole('menuitem', { name: /Plane/ })
     expect(external.getAttribute('href')).toBe('https://plane.bbm.academy')
@@ -125,7 +149,7 @@ describe('the switcher panel, opened (spec 311 EARS-423, EARS-427)', () => {
 
   it('EARS-423: an internal item carries NO target and NO rel, and no external mark', () => {
     render(el(AppSwitcher, { links }))
-    fireEvent.click(screen.getByRole('button'))
+    openMenu()
 
     const internal = screen.getByRole('menuitem', { name: /Часы/ })
     expect(internal.getAttribute('href')).toBe('/p/hours')
@@ -153,7 +177,7 @@ describe('what the layout hands the switcher (spec 311 EARS-427)', () => {
 
   it('EARS-423: those very links, rendered open, target the external app at its own tab', async () => {
     render(el(AppSwitcher, { links: await switcherLinksFromLayout() }))
-    fireEvent.click(screen.getByRole('button'))
+    openMenu()
 
     const external = screen.getByRole('menuitem', { name: /Plane/ })
     expect(external.getAttribute('target')).toBe('_blank')

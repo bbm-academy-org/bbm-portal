@@ -61,17 +61,29 @@ Copied files are Prettier-formatted on the way in (`pnpm format:check` is a gate
 and the vendored style differs). That is a formatting pass and nothing else: no
 component's markup or variants are edited on arrival.
 
-## Two things that are deliberately NOT armed yet
+## The base layer is armed, and it is scoped
 
 Read [`theme.css`](./theme.css)'s header before touching it. A stock shadcn setup
-also installs Tailwind's **preflight** reset and an `@layer base` block painting
-`html` / `body` / `*` in the theme. Neither is here, because `/p/okr` and
-`/p/hours` live under the same layout and spec 311 EARS-429 keeps them
-unreskinned until each surface's own first substantive touch — either one would
-restyle both of them today. What remains is inert: theme variables plus
-utilities emitted only for class names the source actually uses. The re-skin
-slice of #360 arms both together with the surfaces that need them; `theme.css`
-spells out the two edits.
+installs Tailwind's **preflight** reset and an `@layer base` block painting
+`html` / `body` / `*` in the theme. Neither may land here in that form: this file
+is imported by `src/app/(platform)/p/layout.tsx`, so it is loaded on `/p/okr` and
+`/p/hours` too, and spec 311 EARS-429 keeps those two page bodies unreskinned
+until each surface's own first substantive touch.
+
+So the re-skin slice of #360 armed the base layer **scoped to a `[data-bbm-ui]`
+subtree**. A surface opts in by putting the attribute on its root — the shared
+top bar and the launcher's `<main>` do today — and a page body that does not is
+untouched by every rule in the file. `tests/unit/ui-kit.spec.ts` asserts that
+property directly: every selector in the `@layer base` block must begin with
+`[data-bbm-ui]`, and no document-level selector may appear anywhere in the file.
+
+Two consequences worth knowing before adding a component:
+
+- **Anything Radix portals to `document.body` needs its own `data-bbm-ui`** —
+  the portal lands outside the opted-in subtree. `AppSwitcher.tsx` puts it on
+  `DropdownMenuContent` for exactly this reason.
+- **When `/p/okr` and `/p/hours` are re-skinned**, the honest move is to drop the
+  prefix and go back to stock preflight rather than to keep growing the subset.
 
 ## The guard
 

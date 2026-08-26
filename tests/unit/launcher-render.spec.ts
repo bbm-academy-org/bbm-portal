@@ -198,8 +198,8 @@ beforeEach(() => {
 describe('the workspace home (spec 311 EARS-422, EARS-468)', () => {
   it('EARS-422: renders the visible entries as ONE flat grid in registry order', async () => {
     const host = dom(await renderHome())
-    expect(host.querySelectorAll('.bbm-tile-grid')).toHaveLength(1)
-    const names = Array.from(host.querySelectorAll('.bbm-app-tile__name')).map((n) => n.textContent)
+    expect(host.querySelectorAll('[data-tile-grid]')).toHaveLength(1)
+    const names = Array.from(host.querySelectorAll('[data-tile-name]')).map((n) => n.textContent)
     // Registry order, minus the claim-gated cabinet this session may not see.
     expect(names).toEqual(['Часы', 'OKR', 'Plane', 'Финансы', 'Колоды'])
   })
@@ -209,22 +209,17 @@ describe('the workspace home (spec 311 EARS-422, EARS-468)', () => {
     session = { user: { name: 'A', roles: ['platform-admin'] } }
     const adminHost = dom(await renderHome())
     const forms = new Set(
-      Array.from(adminHost.querySelectorAll('.bbm-app-tile')).flatMap((tile) =>
-        Array.from(tile.classList).filter((c) => c.startsWith('bbm-app-tile--')),
+      Array.from(adminHost.querySelectorAll('[data-tile]')).map((tile) =>
+        tile.getAttribute('data-tile-form'),
       ),
     )
-    expect([...forms].sort()).toEqual([
-      'bbm-app-tile--admin',
-      'bbm-app-tile--external',
-      'bbm-app-tile--internal',
-      'bbm-app-tile--planned',
-    ])
-    expect(host.querySelectorAll('.bbm-app-tile--admin')).toHaveLength(0)
+    expect([...forms].sort()).toEqual(['admin', 'external', 'internal', 'planned'])
+    expect(host.querySelectorAll('[data-tile-form="admin"]')).toHaveLength(0)
   })
 
   it('EARS-423: an external entry is marked «↗ внешний» and opens in its own tab', async () => {
     const host = dom(await renderHome())
-    const tile = host.querySelector('.bbm-app-tile--external') as HTMLAnchorElement
+    const tile = host.querySelector('[data-tile-form="external"]') as HTMLAnchorElement
     expect(tile.tagName).toBe('A')
     expect(tile.getAttribute('href')).toBe('https://plane.bbm.academy')
     expect(tile.getAttribute('target')).toBe('_blank')
@@ -234,17 +229,17 @@ describe('the workspace home (spec 311 EARS-422, EARS-468)', () => {
 
   it('EARS-408: a tile whose module publishes a line shows it; EARS-407: a failed one still renders', async () => {
     const host = dom(await renderHome())
-    const tiles = Array.from(host.querySelectorAll('.bbm-app-tile'))
+    const tiles = Array.from(host.querySelectorAll('[data-tile]'))
     const hours = tiles.find((t) => t.textContent?.includes('Часы'))
     const okr = tiles.find((t) => t.textContent?.includes('OKR'))
-    expect(hours?.querySelector('.bbm-app-tile__status')?.textContent).toBe(
+    expect(hours?.querySelector('[data-tile-status]')?.textContent).toBe(
       'Период «август 2026» открыт до 1 сентября',
     )
     // The OKR provider threw. The tile is still a complete, openable tile — the
     // page did not fail, and the failure surfaces as «no line», not as an error.
     expect(okr?.tagName).toBe('A')
     expect(okr?.getAttribute('href')).toBe('/p/okr')
-    expect(okr?.querySelector('.bbm-app-tile__status--empty')?.textContent).toBe(
+    expect(okr?.querySelector('[data-tile-status="empty"]')?.textContent).toBe(
       '— без статус-строки —',
     )
   })
@@ -259,10 +254,10 @@ describe('the workspace home (spec 311 EARS-422, EARS-468)', () => {
   it('EARS-404/417: an account holding only platform-admin sees the cabinet tile', async () => {
     session = { user: { name: 'Антон', roles: ['platform-admin'] } }
     const host = dom(await renderHome())
-    const tile = host.querySelector('.bbm-app-tile--admin') as HTMLAnchorElement
+    const tile = host.querySelector('[data-tile-form="admin"]') as HTMLAnchorElement
     expect(tile.getAttribute('href')).toBe('/p/admin')
     expect(tile.textContent).toContain('только администратор')
-    expect(tile.querySelector('.bbm-app-tile__status--empty')?.textContent).toBe(
+    expect(tile.querySelector('[data-tile-status="empty"]')?.textContent).toBe(
       '— без статус-строки —',
     )
   })
@@ -271,33 +266,33 @@ describe('the workspace home (spec 311 EARS-422, EARS-468)', () => {
 describe('the portfolio placeholders (spec 311 EARS-477, EARS-478)', () => {
   it('EARS-478: a placeholder is a non-link, is not focusable and carries no status line', async () => {
     const host = dom(await renderHome())
-    const planned = Array.from(host.querySelectorAll('.bbm-app-tile--planned'))
+    const planned = Array.from(host.querySelectorAll('[data-tile-form="planned"]'))
     expect(planned).toHaveLength(2)
     for (const tile of planned) {
       expect(tile.tagName).toBe('DIV')
       expect(tile.getAttribute('href')).toBe(null)
       expect(tile.getAttribute('tabindex')).toBe(null)
-      expect(tile.querySelector('.bbm-app-tile__status')).toBe(null)
+      expect(tile.querySelector('[data-tile-status]')).toBe(null)
       expect(tile.textContent).toContain('портфель, позже')
     }
   })
 
   it('EARS-478: a placeholder is shown identically to every session, admin included', async () => {
-    const memberHtml = dom(await renderHome()).querySelectorAll('.bbm-app-tile--planned')[0]
+    const memberHtml = dom(await renderHome()).querySelectorAll('[data-tile-form="planned"]')[0]
       .outerHTML
     session = { user: { name: 'Антон', roles: ['platform-admin'] } }
-    const adminHtml = dom(await renderHome()).querySelectorAll('.bbm-app-tile--planned')[0]
+    const adminHtml = dom(await renderHome()).querySelectorAll('[data-tile-form="planned"]')[0]
       .outerHTML
     expect(adminHtml).toBe(memberHtml)
   })
 
   it('EARS-477: placeholders come last, below the live apps', async () => {
     const host = dom(await renderHome())
-    const tiles = Array.from(host.querySelectorAll('.bbm-app-tile'))
-    const firstPlanned = tiles.findIndex((t) => t.classList.contains('bbm-app-tile--planned'))
+    const tiles = Array.from(host.querySelectorAll('[data-tile]'))
+    const firstPlanned = tiles.findIndex((t) => t.getAttribute('data-tile-form') === 'planned')
     expect(firstPlanned).toBeGreaterThan(0)
     expect(
-      tiles.slice(firstPlanned).every((t) => t.classList.contains('bbm-app-tile--planned')),
+      tiles.slice(firstPlanned).every((t) => t.getAttribute('data-tile-form') === 'planned'),
     ).toBe(true)
   })
 })
@@ -311,26 +306,26 @@ describe('the home at full portfolio size (spec 311 EARS-471)', () => {
     // is collapsed at every width) and is shown live at 390px by the e2e spec.
     FIXTURE.splice(0, FIXTURE.length, ...FULL_PORTFOLIO)
     const host = dom(await renderHome())
-    const names = Array.from(host.querySelectorAll('.bbm-app-tile__name')).map((n) => n.textContent)
+    const names = Array.from(host.querySelectorAll('[data-tile-name]')).map((n) => n.textContent)
     expect(names).toEqual(FULL_PORTFOLIO.map((e) => e.name))
     expect(names.length).toBeGreaterThan(BASE.length)
-    expect(host.querySelectorAll('.bbm-tile-grid')).toHaveLength(1)
+    expect(host.querySelectorAll('[data-tile-grid]')).toHaveLength(1)
     // No grouping element, no second grid, no per-section heading: the flat grid
     // of `launcher-a` is the only structure on the page.
     expect(host.querySelectorAll('h2, h3, section')).toHaveLength(0)
     // The grid is `auto-fill` at a minimum column width rather than a fixed
-    // four (src/ui/README.md §1, EARS-428) — that is what keeps it readable both
-    // at full portfolio size and while narrow.
-    expect(host.querySelector('.bbm-tile-grid')?.className).toBe('bbm-tile-grid')
+    // four (EARS-428) — that is what keeps it readable both at full portfolio
+    // size and while narrow. A fixed column count would fail this.
+    expect(host.querySelector('[data-tile-grid]')?.className).toContain('repeat(auto-fill,minmax(')
   })
 })
 
 describe('the shared top bar (spec 311 EARS-425, EARS-429, EARS-469, EARS-470)', () => {
   it('EARS-425: the layout renders the bar, so every /p/* page carries it by existing', async () => {
     const host = dom(await renderBar())
-    expect(host.querySelectorAll('.bbm-top-bar')).toHaveLength(1)
-    expect(host.querySelector('.bbm-top-bar__home')?.getAttribute('href')).toBe('/p')
-    expect(host.querySelector('.bbm-top-bar__member')?.textContent).toBe('Анна Ковалёва')
+    expect(host.querySelectorAll('[data-top-bar]')).toHaveLength(1)
+    expect(host.querySelector('[data-top-bar-home]')?.getAttribute('href')).toBe('/p')
+    expect(host.querySelector('[data-top-bar-member]')?.textContent).toBe('Анна Ковалёва')
     expect(host.textContent).toContain('Выйти')
   })
 
@@ -341,31 +336,31 @@ describe('the shared top bar (spec 311 EARS-425, EARS-429, EARS-469, EARS-470)',
 
   it('EARS-470: on /p the bar is in its home state and names no app of the registry', async () => {
     const host = dom(await renderBar())
-    const app = host.querySelector('.bbm-top-bar__app')?.textContent
+    const app = host.querySelector('[data-top-bar-app]')?.textContent
     // `design-source/p-launcher.html` draws this slot as «Главная» on the home —
     // the bar naming the home, not naming an app. No registry entry is named.
     expect(app).toBe('Главная')
     for (const entry of FIXTURE) {
-      expect(host.querySelector('.bbm-top-bar__app')?.textContent).not.toBe(entry.name)
+      expect(host.querySelector('[data-top-bar-app]')?.textContent).not.toBe(entry.name)
     }
   })
 
   it('EARS-469: on an app path the bar names that app, longest prefix wins', async () => {
     pathname = '/p/hours'
-    expect(dom(await renderBar()).querySelector('.bbm-top-bar__app')?.textContent).toBe('Часы')
+    expect(dom(await renderBar()).querySelector('[data-top-bar-app]')?.textContent).toBe('Часы')
     pathname = '/p/okr'
-    expect(dom(await renderBar()).querySelector('.bbm-top-bar__app')?.textContent).toBe('OKR')
+    expect(dom(await renderBar()).querySelector('[data-top-bar-app]')?.textContent).toBe('OKR')
   })
 
   it('EARS-427/428: the switcher is one collapsed control fed by the registry', async () => {
     const host = dom(await renderBar())
-    const toggle = host.querySelector('.bbm-app-switcher button') as HTMLButtonElement
-    expect(toggle.textContent).toBe('Приложения ▾')
+    const toggle = host.querySelector('[data-app-switcher]') as HTMLButtonElement
+    expect(toggle.textContent).toBe('Приложения')
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(toggle.getAttribute('aria-haspopup')).toBe('menu')
     // Collapsed by default at EVERY width — which is what makes the narrow
     // viewport of EARS-428 the same control and not a second design.
-    expect(host.querySelector('.bbm-app-switcher__menu')).toBe(null)
+    expect(host.querySelector('[data-app-switcher-menu]')).toBe(null)
   })
 
   it('EARS-427: the switcher carries the openable entries of THIS session and no placeholder', async () => {
@@ -377,7 +372,7 @@ describe('the shared top bar (spec 311 EARS-425, EARS-429, EARS-469, EARS-470)',
     // Rendered open, which is the state the wireframe does not draw: the panel
     // is a list of links, external ones marked and targeted like their tiles.
     const host = dom(renderToStaticMarkup(el(AppSwitcher, { links })))
-    expect(host.querySelector('.bbm-app-switcher button')).not.toBe(null)
+    expect(host.querySelector('[data-app-switcher]')).not.toBe(null)
     expect(host.textContent).not.toContain('портфель, позже')
   })
 })

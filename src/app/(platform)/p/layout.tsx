@@ -5,16 +5,18 @@ import React from 'react'
 import { auth, signOut } from '@/auth'
 import { hasClaim, PLATFORM_USER_ROLE, resolveClaimGate } from '@/lib/platform/authGate'
 import { currentEntry, switcherEntries, WORKSPACE_REGISTRY } from '@/lib/workspace'
-import { Button, TopBar } from '@/ui'
+import { Button } from '@/ui/button'
 
 import { AppSwitcher } from './AppSwitcher'
+import { TopBar } from './TopBar'
 
 // The UI kit's theme entry (#360). Imported HERE rather than in the (platform)
 // root layout because `/p/*` is exactly the surface the kit is for: the CMS and
-// the (frontend) group keep their own stylesheets untouched. The import carries
-// no preflight — see the header of the file — so it changes nothing on screen
-// today; it makes the theme variables and Tailwind's utilities available to the
-// kit's components, which is what the re-skin slice builds on.
+// the (frontend) group keep their own stylesheets untouched. Its base layer IS
+// armed since the re-skin, and is scoped to `[data-bbm-ui]` subtrees precisely
+// so that loading it on the two surfaces that already lived here restyles
+// nothing in them (EARS-429) — the reasoning is in `src/ui/theme.css`'s header,
+// and this file names no surface of its own.
 import '@/ui/theme.css'
 
 /**
@@ -75,11 +77,10 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
     <>
       <TopBar
         homeHref="/p"
-        // EARS-470 / the vendored file: on `/p` the bar is in its HOME state and
-        // names no app of the registry — `design-source/p-launcher.html` draws
-        // that state as «BBM · Портал / Главная», which is the home naming
-        // itself and not a current app. On any other `/p/*` path the slot holds
-        // the app the pathname resolved to (EARS-469, longest prefix wins).
+        // EARS-470: on `/p` the bar is in its HOME state and names no app of the
+        // registry — «Главная» is the bar naming the home, not naming a current
+        // app. On any other `/p/*` path the slot holds the app the pathname
+        // resolved to (EARS-469, longest prefix wins).
         appName={current ? current.name : 'Главная'}
         memberName={user.name ?? user.email ?? 'Участник'}
         switcher={<AppSwitcher links={links} />}
@@ -93,7 +94,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
               await signOut({ redirectTo: '/p' })
             }}
           >
-            <Button type="submit" variant="plain">
+            <Button type="submit" variant="ghost" size="sm">
               Выйти
             </Button>
           </form>
