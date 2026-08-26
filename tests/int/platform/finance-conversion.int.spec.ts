@@ -10,6 +10,7 @@ import {
   listAccounts,
   recordConversion,
   recordOperation,
+  reverseOperation,
   systemAccount,
 } from '@/lib/finance'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
@@ -35,17 +36,29 @@ afterAll(async () => {
   await closePlatformDb()
 })
 
-/** THB (2 dp) and USDT (6 dp), one money account each. */
+/** THB (2 dp), USDT (6 dp) and RUB (2 dp), one money account each. */
 async function seedWallets() {
   await createCurrency(ADMIN, { code: 'THB', name: 'Бат', precision: 2 })
   await createCurrency(ADMIN, { code: 'USDT', name: 'Tether', precision: 6 })
+  await createCurrency(ADMIN, { code: 'RUB', name: 'Рубль', precision: 2 })
   const thb = await createAccount(ADMIN, { name: 'Kasikorn THB', kind: 'bank', currency: 'THB' })
   const usdt = await createAccount(ADMIN, {
     name: 'Кошелёк USDT',
     kind: 'crypto',
     currency: 'USDT',
   })
-  return { thb, usdt }
+  const rub = await createAccount(ADMIN, { name: 'Тинькофф RUB', kind: 'bank', currency: 'RUB' })
+  return { thb, usdt, rub }
+}
+
+/** Every `conversion`-kind account balance, by currency. */
+async function clearingBalances(): Promise<Record<string, bigint>> {
+  const out: Record<string, bigint> = {}
+  for (const row of await accountBalances()) {
+    if (row.kind !== 'conversion') continue
+    out[row.currency] = (out[row.currency] ?? 0n) + row.balance
+  }
+  return out
 }
 
 /** Buy `usdtMinor` USDT for `thbMinor` THB at `rate` THB per USDT. */
@@ -179,6 +192,66 @@ describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)',
       sql`select count(*)::int as count from core.finance_operation`,
     )
     expect(Number((operations.rows[0] as { count: number }).count)).toBe(0)
+  })
+})
+
+describe('a conversion is reversible like any other operation (EARS-314, EARS-319)', () => {
+  it('EARS-314/319: a conversion is reversible, and its сторно names the SAME conversion steps', async () => {
+    const wallets = await seedWallets()
+    // Two steps: 35 000.00 THB → 1 000.000000 USDT → 90 000.00 RUB.
+    const original = await recordConversion(ADMIN, {
+      occurredOn: '2026-01-10',
+      sourceAccountId: wallets.thb.id,
+      targetAccountId: wallets.rub.id,
+      steps: [
+        {
+          fromCurrency: 'THB',
+          toCurrency: 'USDT',
+          fromAmount: 3_500_000n,
+          toAmount: 1_000_000_000n,
+          rate: '35',
+        },
+        {
+          fromCurrency: 'USDT',
+          toCurrency: 'RUB',
+          fromAmount: 1_000_000_000n,
+          toAmount: 9_000_000n,
+          rate: '90',
+        },
+      ],
+    })
+
+    const reversal = await reverseOperation(ADMIN, original.id)
+    expect(reversal.reverses).toBe(original.id)
+
+    // The сторно names the SAME steps — a conversion and its reversal are one
+    // story, and no new step row was invented (EARS-319).
+    const steps = await db.execute(
+      sql`select count(*)::int as count from core.finance_conversion_step`,
+    )
+    expect(Number((steps.rows[0] as { count: number }).count)).toBe(2)
+
+    const linked = await db.execute(sql`
+      select operation_id, account_id, amount::text as amount, currency, conversion_step_id
+        from core.finance_posting
+       where operation_id in (${original.id}, ${reversal.id})
+       order by operation_id, id
+    `)
+    const rows = linked.rows as Record<string, unknown>[]
+    const originals = rows.filter((row) => Number(row.operation_id) === original.id)
+    const mirrors = rows.filter((row) => Number(row.operation_id) === reversal.id)
+    expect(mirrors).toHaveLength(originals.length)
+    for (const [index, row] of originals.entries()) {
+      expect(mirrors[index].conversion_step_id).toEqual(row.conversion_step_id)
+      expect(BigInt(String(mirrors[index].amount))).toBe(-BigInt(String(row.amount)))
+    }
+    // At least one leg really did carry a step — otherwise this proves nothing.
+    expect(originals.some((row) => row.conversion_step_id !== null)).toBe(true)
+
+    // And every account is back where it started (EARS-314).
+    for (const balance of await accountBalances()) {
+      expect(balance.balance).toBe(0n)
+    }
   })
 })
 
