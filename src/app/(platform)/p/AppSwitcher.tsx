@@ -67,7 +67,10 @@ export function AppSwitcher({
             >
               <span>{link.name}</span>
               {link.external ? (
-                <span className="ml-auto text-xs text-muted-foreground" aria-hidden="true">
+                <span
+                  className="ml-auto text-xs text-muted-foreground [font-variant-emoji:text]"
+                  aria-hidden="true"
+                >
                   ↗
                 </span>
               ) : null}

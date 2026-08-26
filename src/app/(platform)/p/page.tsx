@@ -111,7 +111,15 @@ function Tile({ tile }: { tile: LauncherTile }) {
   // into the mark because that is where the wireframe puts it.
   const mark =
     form === 'external' ? (
-      <Badge variant="outline">↗ внешний</Badge>
+      // `font-variant-emoji: text` is load-bearing, not decoration: at the
+      // badge's own weight (500) Windows resolves U+2197 out of Segoe UI Emoji
+      // and draws a blue emoji tile — one saturated colour in an otherwise
+      // monochrome theme. The property asks for the text presentation the
+      // character's own default already is, and changes no text: the mark is
+      // still exactly «↗ внешний» (EARS-423, EARS-468).
+      <Badge variant="outline" className="[font-variant-emoji:text]">
+        ↗ внешний
+      </Badge>
     ) : form === 'admin' ? (
       <Badge variant="secondary">{tile.description}</Badge>
     ) : null
