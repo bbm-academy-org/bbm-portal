@@ -118,10 +118,19 @@ function cellsOf(line) {
 }
 
 /**
+ * One provenance row of the index.
+ *
+ * @typedef {{file: string|null, system: string|null, surface: string,
+ *            covers: string[], fidelity: string, provenance: string}} IndexRow
+ * @typedef {{file: string, fidelity: string,
+ *            reason: 'missing-fidelity'|'unknown-fidelity'}} BadRow
+ */
+
+/**
  * Parse the `## Index` table of `design-source/README.md`.
  *
- * @returns {{found: boolean, rows: object[], badRows: {file: string, fidelity: string,
- *            reason: 'missing-fidelity'|'unknown-fidelity'}[]}}
+ * @param {string|null|undefined} markdown
+ * @returns {{found: boolean, rows: IndexRow[], badRows: BadRow[]}}
  */
 export function parseIndex(markdown) {
   const lines = String(markdown ?? '').split(/\r?\n/)
@@ -213,6 +222,10 @@ function specificity(glob) {
 /**
  * The row that OWNS a path: the most specific covering row, so a screen's own row
  * overrides the shell row whose glob it sits inside.
+ *
+ * @param {IndexRow[]} rows
+ * @param {string} path
+ * @returns {IndexRow|null}
  */
 export function coveringRow(rows, path) {
   let best = null
@@ -278,7 +291,7 @@ const SHAPES = [
  * The pure seam. No IO.
  *
  * @param {{pr: {number?: number, body?: string, files?: {path: string, status?: string}[]},
- *          rows?: object[], badRows?: object[], issueComments?: string[]}} input
+ *          rows?: IndexRow[], badRows?: BadRow[], issueComments?: string[]}} input
  */
 export function checkDesignFidelity({ pr, rows = [], badRows = [], issueComments = [] }) {
   const files = (pr?.files ?? []).map((f) =>
