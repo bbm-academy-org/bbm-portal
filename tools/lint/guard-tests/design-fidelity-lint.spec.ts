@@ -223,6 +223,88 @@ describe('design-fidelity-lint: the recorded owner GO clears a wireframe-sourced
   })
 })
 
+describe('design-fidelity-lint: the guard’s own printed shape is not a way out of the guard', () => {
+  // Review of PR #371: the blocked session is HANDED the marker shape by the
+  // violation message. If pasting that string back unfilled clears the BLOCK,
+  // the gate is decorative — the same «every input present, nothing checked»
+  // class #359 exists to close. Canon: `.claude/rules/design-process.md` §2 —
+  // «a bare GO, a TBD, or the unfilled template placeholder is NOT a record».
+  const rows = rowsOf(WIREFRAME_INDEX)
+  const files = [{ path: LAUNCHER }]
+
+  /** The guard's OWN output for a blocked PR — the bytes a session copies from. */
+  const blockedMessage = checkDesignFidelity({ pr: pr({ files }), rows }).message
+  /** The `Design-fidelity: …` lines that message prints, verbatim, indent and all. */
+  const printedLines = blockedMessage.split('\n').filter((l) => /Design-fidelity\s*:/i.test(l))
+  /** Their VALUES — what `classifyMarker` would see if the indent were decoration. */
+  const printedValues = printedLines.map((l) => l.replace(/^.*?Design-fidelity\s*:\s*/i, '').trim())
+
+  it('the message really does print both marker shapes (the premise of this block)', () => {
+    expect(printedLines.length).toBe(2)
+    expect(printedValues[0]).toMatch(/^GO\b/)
+    expect(printedValues[1]).toMatch(/^batched\b/)
+  })
+
+  it('a GO whose tail is only angle-bracket placeholders is a placeholder, not evidence', () => {
+    for (const value of printedValues) expect(classifyMarker(value).kind).not.toBe('go')
+    expect(classifyMarker(printedValues[0]).kind).toBe('placeholder')
+    expect(classifyMarker('GO — <owner, date>').kind).toBe('placeholder')
+    expect(
+      classifyMarker('GO — <owner, date> — <the visual language that was approved>').kind,
+    ).toBe('placeholder')
+    // …and the filled record still passes: the tail is a named person and a day.
+    expect(classifyMarker('GO — Антон, 2026-08-26 — shadcn/ui default theme').kind).toBe('go')
+  })
+
+  it('the unfilled `batched at #<gate issue>` shape is a placeholder too', () => {
+    expect(classifyMarker(printedValues[1]).kind).toBe('placeholder')
+    expect(classifyMarker('batched at #<gate issue> covers `<path glob>`').kind).toBe('placeholder')
+    expect(classifyMarker('batched at #360 covers `src/**`').kind).toBe('batched')
+  })
+
+  it('pasting the unfilled GO into the PR body does NOT clear the BLOCK', () => {
+    const result = checkDesignFidelity({
+      pr: pr({
+        body: 'Design-fidelity: GO — <owner, date> — <the visual language that was approved>',
+        files,
+      }),
+      rows,
+    })
+    expect(result.verdict).toBe('violation')
+    expect(result.evidence).toBeNull()
+    expect(result.message).toContain('placeholder')
+  })
+
+  it('the guard’s own violation output, pasted verbatim, yields no evidence at all', () => {
+    // The indented SHAPES lines are markdown INDENTED CODE — text that only
+    // talks about the marker, exactly like the fenced example `stripNonEvidence`
+    // already drops. Neither the PR body nor a linked-issue comment may arm the
+    // gate with it.
+    expect(extractMarkerValues(blockedMessage)).toEqual([])
+    for (const body of [blockedMessage, `> ${blockedMessage.split('\n').join('\n> ')}`]) {
+      const result = checkDesignFidelity({ pr: pr({ body, files }), rows })
+      expect(result.verdict).toBe('violation')
+      expect(result.evidence).toBeNull()
+    }
+    expect(
+      checkDesignFidelity({
+        pr: pr({ body: 'Closes #360', files }),
+        rows,
+        issueComments: [blockedMessage],
+      }).verdict,
+    ).toBe('violation')
+  })
+
+  it('an indented marker line is never evidence, filled or not', () => {
+    expect(extractMarkerValues('    Design-fidelity: GO — Антон, 2026-08-26')).toEqual([])
+    expect(extractMarkerValues('\tDesign-fidelity: GO — Антон, 2026-08-26')).toEqual([])
+    // A one-level list indent is still prose, not a code block: it stays evidence.
+    expect(extractMarkerValues('  - Design-fidelity: GO — Антон, 2026-08-26')).toEqual([
+      'GO — Антон, 2026-08-26',
+    ])
+  })
+})
+
 describe('design-fidelity-lint: a standard design system is a legitimate visual source (#359 scope note)', () => {
   // Owner decision 2026-08-26 on #359/#360: the visual language of /p is the
   // default theme of a standard system, not a vendored mockup. The gate must
