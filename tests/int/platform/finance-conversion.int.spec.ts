@@ -85,6 +85,41 @@ async function buyUsdt(
   })
 }
 
+/** Sell `usdtMinor` USDT for `thbMinor` THB at `rate` THB per USDT. */
+async function sellUsdt(
+  wallets: Awaited<ReturnType<typeof seedWallets>>,
+  usdtMinor: bigint,
+  thbMinor: bigint,
+  rate: string,
+  occurredOn = '2026-03-10',
+) {
+  return recordConversion(ADMIN, {
+    occurredOn,
+    sourceAccountId: wallets.usdt.id,
+    targetAccountId: wallets.thb.id,
+    steps: [
+      {
+        fromCurrency: 'USDT',
+        toCurrency: 'THB',
+        fromAmount: usdtMinor,
+        toAmount: thbMinor,
+        rate,
+      },
+    ],
+  })
+}
+
+/** The fx_result leg of one operation, in minimal units (a gain is negative). */
+async function fxResultOf(operationId: number, currency: string): Promise<bigint> {
+  const result = await db.execute(sql`
+    select coalesce(sum(p.amount), 0)::text as total
+      from core.finance_posting p
+      join core.finance_account a on a.id = p.account_id
+     where p.operation_id = ${operationId} and a.kind = 'fx_result' and p.currency = ${currency}
+  `)
+  return BigInt((result.rows[0] as { total: string }).total)
+}
+
 describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)', () => {
   it('EARS-318: records the chain as one operation, its steps as rows, and balances every currency through the conversion account', async () => {
     const wallets = await seedWallets()
@@ -340,6 +375,57 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     )
     // Exactly four legs: the two money ends and the two conversion legs.
     expect(Number((legs.rows[0] as { count: number }).count)).toBe(4)
+  })
+
+  it("EARS-328: an acquisition made AFTER a disposal prices the next disposal at the remaining holding's average, not at the lifetime average", async () => {
+    const wallets = await seedWallets()
+    // The pool must DEPLETE. Buy 10 USDT for 1 000.00 THB, sell all 10 for
+    // 1 200.00 (gain 200.00), buy 10 again for 2 000.00, sell all 10 for
+    // 2 000.00 — the second disposal is exactly at the remaining holding's cost,
+    // so it recognises NOTHING. A lifetime average of (1 000 + 2 000)/20 = 150
+    // would invent a 500.00 gain out of a 200.00 cash movement.
+    await buyUsdt(wallets, 100_000n, 10_000_000n, '100', '2026-01-10')
+    const firstSale = await sellUsdt(wallets, 10_000_000n, 120_000n, '120', '2026-02-10')
+    await buyUsdt(wallets, 200_000n, 10_000_000n, '200', '2026-03-10')
+    const secondSale = await sellUsdt(wallets, 10_000_000n, 200_000n, '200', '2026-04-10')
+
+    expect(await fxResultOf(firstSale.id, 'THB')).toBe(-20_000n)
+    expect(await fxResultOf(secondSale.id, 'THB')).toBe(0n)
+  })
+
+  it('EARS-328: when every acquired unit has been disposed of, every conversion account is back to zero', async () => {
+    const wallets = await seedWallets()
+    await buyUsdt(wallets, 100_000n, 10_000_000n, '100', '2026-01-10')
+    await sellUsdt(wallets, 10_000_000n, 120_000n, '120', '2026-02-10')
+    await buyUsdt(wallets, 200_000n, 10_000_000n, '200', '2026-03-10')
+    await sellUsdt(wallets, 10_000_000n, 200_000n, '200', '2026-04-10')
+
+    // The conversion account is a CLEARING account: it carries historical cost
+    // between an acquisition and its disposal and holds nothing of its own. A
+    // non-zero residue after a complete cycle is an asset corresponding to
+    // nothing, and is the ledger evidencing an invented gain.
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+
+    // Cross-check against the cash: the THB account moved by exactly the sum of
+    // the recognised results.
+    const thb = (await accountBalances()).find((row) => row.accountId === wallets.thb.id)
+    expect(thb?.balance).toBe(20_000n)
+  })
+
+  it('EARS-314/328: a reversed acquisition does not price a later disposal', async () => {
+    const wallets = await seedWallets()
+    // A purchase entered wrong, сторнирована, then entered again at the real
+    // rate. Only the surviving acquisition may price the disposal — otherwise
+    // an operation and its сторно do not «sum to zero in every cut» (EARS-314),
+    // and the FX average is a cut.
+    const wrong = await buyUsdt(wallets, 100_000n, 10_000_000n, '100', '2026-01-10')
+    await reverseOperation(ADMIN, wrong.id)
+    await buyUsdt(wallets, 200_000n, 10_000_000n, '200', '2026-01-11')
+
+    const sale = await sellUsdt(wallets, 10_000_000n, 250_000n, '250', '2026-02-10')
+    // Basis is the surviving 2 000.00 alone, so the gain is 500.00 — not the
+    // 1 000.00 a (1 000 + 2 000)/20 average would produce.
+    expect(await fxResultOf(sale.id, 'THB')).toBe(-50_000n)
   })
 
   it('EARS-329: an operation with no conversion step posts no FX result at all', async () => {
