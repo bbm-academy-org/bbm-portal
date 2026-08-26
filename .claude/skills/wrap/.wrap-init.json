@@ -1,7 +1,7 @@
 {
-  "version": 5,
+  "version": 6,
   "generatedAt": "2026-06-22",
-  "lastAuditAt": "2026-08-25",
+  "lastAuditAt": "2026-08-26",
   "foldedThemes": [
     "honest-status:deviations-line-self-certified",
     "unanswered-question-treated-as-consent",
@@ -42,7 +42,13 @@
     "owner-has-to-say-orchestrate",
     "inline-oneliner-rabbit-hole",
     "last-session-report-not-addressable",
-    "lead-touches-third-party-box-for-a-credential"
+    "lead-touches-third-party-box-for-a-credential",
+    "wireframe-vendored-as-design-mockup",
+    "quality-gates-pin-the-wrong-source",
+    "unnamed-surface-merged-without-stage-a",
+    "tdd-order-unverifiable-guard-false-green",
+    "review-dispatched-while-gate-blocked",
+    "owner-question-repeated-into-reports"
   ],
   "tracker": "github+plane",
   "slug": "C--Users-sidor-repos-bbm-portal",

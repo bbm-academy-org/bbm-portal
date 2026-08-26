@@ -122,6 +122,30 @@ VERDICT: <n>/12 — PASS | BLOCKED on <item numbers>
 until the blocking item is fixed and the checklist re-run. The verdict line is
 the contract — a free-form report without it is re-dispatched, not interpreted.
 
+### BLOCKED-but-proceed — the one escape
+
+The lead may advance past a `BLOCKED` verdict to exactly ONE next stage, and
+only when all three hold:
+
+1. **That next stage IS the remedy for the blocking item** — dispatching the
+   stage-4 review whose mandate is precisely the FAIL (e.g. "item 2 has no
+   verifiable TDD order — the reviewer rules on it"). A stage that merely
+   happens to come next, and `pnpm pr:land` in every case, is not a remedy.
+2. **The decision is recorded on the PR as its own comment**, in the same place
+   the gate's verdict table goes — one line naming the blocked item number, the
+   remedy stage being dispatched, and the release condition. Unrecorded, it did
+   not happen.
+3. **The item stays FAIL, and exactly ONE thing releases it: the re-run of the
+   dispatched gate turning it PASS or N/A.** The escape buys ordering, never a
+   verdict, and the lead never clears its own blocking item — that is this
+   file's "dispatch, never self-check" applied to the escape it grants. The one
+   alternative is not an acceptance the lead may issue: it is an **owner
+   write-off recorded on the PR by the owner**, naming the item. Absent that
+   comment, the re-run is the only door, and `pnpm pr:land` waits for it.
+
+Precedent: PR #354 (2026-08-26) — the gate blocked on unverifiable TDD order and
+the review it was blocking was the very thing that could rule on it.
+
 ## Failure modes
 
 - **Running it yourself** because "the diff is small" — a self-check finds what
@@ -135,6 +159,9 @@ the contract — a free-form report without it is re-dispatched, not interpreted
   the same rule.
 - **Marking item 8 N/A on a "chore" that added a form or changed a formula** —
   those two have no exemption by task type.
+- **Reading the BLOCKED-but-proceed escape as a general bypass** — it moves ONE
+  stage forward and clears nothing; the lead marking its own blocked item PASS
+  is the same self-check the Mode section bans.
 - **Treating the checklist as the review** — `bbm-reviewer` judges the change on
   its merits (`task-cycle` stage 4); this gate judges whether the iteration is
   finished. Both run.
