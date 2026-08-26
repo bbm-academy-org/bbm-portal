@@ -26,6 +26,15 @@ export type PostingDraft = {
   memberId?: number | null
   /** 1-based step of the conversion this leg belongs to, if any (EARS-318). */
   conversionStepNo?: number | null
+  /**
+   * The step's id, when the caller already holds it.
+   *
+   * A reversal is the case that needs it: it mirrors postings whose steps exist
+   * already, so it names them by id rather than by position in a chain it is not
+   * building. Carrying it on the DRAFT is what lets the mirror rows be INSERTed
+   * complete — a posting is never patched after the fact (EARS-313).
+   */
+  conversionStepId?: number | null
 }
 
 /** What the module needs to know about an account to validate a posting. */

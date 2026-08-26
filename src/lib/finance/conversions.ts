@@ -42,6 +42,7 @@ import {
   assertNoRetiredAccount,
   insertOperation,
   loadAccountFacts,
+  resolveConversionStepId,
   type RecordedOperation,
 } from './operations'
 import {
@@ -331,10 +332,7 @@ async function appendPostings(
         categoryId: posting.categoryId ?? null,
         productId: posting.productId ?? null,
         memberId: posting.memberId ?? null,
-        conversionStepId:
-          posting.conversionStepNo === null || posting.conversionStepNo === undefined
-            ? null
-            : (stepIdByNo.get(posting.conversionStepNo) ?? null),
+        conversionStepId: resolveConversionStepId(posting, stepIdByNo),
       })),
     )
     .returning()

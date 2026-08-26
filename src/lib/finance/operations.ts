@@ -201,6 +201,18 @@ export async function reverseOperation(
       .from(financePosting)
       .where(eq(financePosting.operationId, operationId))
 
+    // The mirror is built COMPLETE, conversion-step link included, and inserted
+    // once. It used to be inserted bare and then patched, which the EARS-313
+    // trigger refused outright — so сторно of any conversion was impossible —
+    // and which was the wrong shape besides: a module that mutates a recorded
+    // fact is exactly what EARS-313 says the module refuses «by having no such
+    // function at all». Building the draft whole also removes the positional
+    // `postings[index]` pairing that silently relied on `.returning()`
+    // preserving input order.
+    //
+    // The step link is COPIED, never re-created: a conversion and its сторно
+    // name the same steps, so they stay one story and no rate is restated
+    // (EARS-319).
     const mirrored: PostingDraft[] = originalPostings.map((posting) => ({
       accountId: posting.accountId,
       amount: -posting.amount,
@@ -209,10 +221,11 @@ export async function reverseOperation(
       categoryId: posting.categoryId,
       productId: posting.productId,
       memberId: posting.memberId,
+      conversionStepId: posting.conversionStepId,
     }))
     assertBalancedPerCurrency(mirrored)
 
-    const reversal = await insertOperation(tx, {
+    return insertOperation(tx, {
       occurredOn: options.occurredOn ?? original.occurredOn,
       source: 'reversal',
       purposeId: original.purposeId,
@@ -221,20 +234,26 @@ export async function reverseOperation(
       reverses: operationId,
       postings: mirrored,
     })
-    // The conversion-step links are copied straight from the original rows: a
-    // reversal names the SAME steps rather than inventing new ones, so a
-    // conversion and its сторно stay one story (EARS-319 — nothing is restated).
-    for (const [index, posting] of originalPostings.entries()) {
-      if (posting.conversionStepId === null) continue
-      const mirrorId = reversal.postings[index]?.id
-      if (mirrorId === undefined) continue
-      await tx
-        .update(financePosting)
-        .set({ conversionStepId: posting.conversionStepId })
-        .where(eq(financePosting.id, mirrorId))
-    }
-    return reversal
   })
+}
+
+/**
+ * The step a posting draft belongs to, as an id.
+ *
+ * Two ways in, and the precedence is the point: a draft that already KNOWS its
+ * step (a reversal, mirroring rows whose steps exist) wins over the positional
+ * lookup a conversion uses while it is still building its own chain. Shared by
+ * `insertOperation` and `./conversions.ts` so both write the column the same way.
+ */
+export function resolveConversionStepId(
+  posting: PostingDraft,
+  stepIdByNo: ReadonlyMap<number, number>,
+): number | null {
+  if (posting.conversionStepId !== null && posting.conversionStepId !== undefined) {
+    return posting.conversionStepId
+  }
+  if (posting.conversionStepNo === null || posting.conversionStepNo === undefined) return null
+  return stepIdByNo.get(posting.conversionStepNo) ?? null
 }
 
 // ── internals, shared with ./conversions.ts ──────────────────────────────────
@@ -295,10 +314,7 @@ export async function insertOperation(
         categoryId: posting.categoryId ?? null,
         productId: posting.productId ?? null,
         memberId: posting.memberId ?? null,
-        conversionStepId:
-          posting.conversionStepNo === null || posting.conversionStepNo === undefined
-            ? null
-            : (stepIdByNo.get(posting.conversionStepNo) ?? null),
+        conversionStepId: resolveConversionStepId(posting, stepIdByNo),
       })),
     )
     .returning()
