@@ -150,7 +150,7 @@ All commands below run **from the `deploy/` directory on the host**.
    so the failure is silent: nobody gets an error to report, the surfaces simply
    stop working for everyone at once.
 
-   The console procedure is not repeated here — it is
+   The procedure is not repeated here — it is
    [`infra/dev-stand/idp/bootstrap.md`](../infra/dev-stand/idp/bootstrap.md)
    §5a, _Prod (`id.bbm.academy`)_. Do **not** point `provision.sh` at prod: it is
    a dev-stand script and also writes the login policy, Login V2 and test users.

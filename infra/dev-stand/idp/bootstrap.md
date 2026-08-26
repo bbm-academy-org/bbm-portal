@@ -236,21 +236,25 @@ proxy, so each call carries the routing headers explicitly:
 | Headers | `Host: id.bbm.academy`, `X-Forwarded-Proto: https`, `x-zitadel-orgid: <org>` |
 | Auth    | the `bbm-bootstrap` PAT at `/home/deploy/zitadel-deploy/login-client.pat`    |
 
-**A v4.16.2 quirk:** the grant search path is
+**A quirk of the current prod version:** the grant search path is
 `/management/v1/users/grants/_search`. The `/usergrants/_search` spelling that
-older docs use answers **404** on this version.
+older docs use answers **404**. The running version is recorded in the bbm ops
+repo, not here.
 
-The four objects below are the same on either path:
+The three objects of the table above, plus a verify step — the same on either
+path:
 
 1. **Roles.** Console → the prod project → _Roles_ → add `platform-user` and
-   `platform-admin` (key = display name, no group). Same spellings, or the gate
+   `platform-admin` (key = display name, no group). API:
+   `POST /management/v1/projects/{projectId}/roles`. Same spellings, or the gate
    refuses everyone.
 2. **Assertion.** Same project → _General_ → check **Assert Roles on
-   Authentication** (`projectRoleAssertion`). Without it step 1 is invisible to
-   the app.
+   Authentication** (`projectRoleAssertion`). API: the project update call with
+   `projectRoleAssertion: true`. Without it step 1 is invisible to the app.
 3. **Grants.** Per person: _Users_ → the user → _Authorizations_ → grant the prod
-   project with the roles that person should hold. An admin needs
-   `platform-admin` ALONE — it implies `platform-user` (EARS-417).
+   project with the roles that person should hold. API:
+   `POST /management/v1/users/{userId}/grants`. An admin needs `platform-admin`
+   ALONE — it implies `platform-user` (EARS-417).
 4. **Verify** on the live portal: the member signs in and reaches `/p`; an
    account with no grant gets a bare 403 on every `/p` path.
 

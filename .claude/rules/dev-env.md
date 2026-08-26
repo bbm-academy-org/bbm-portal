@@ -30,8 +30,9 @@
   the set without talking to the IdP: `--print-seed-roles`. What has to be true
   for a member to actually get in — the role, the role assertion and the
   per-user grant are three different objects with one shared symptom — plus the
-  **prod** path, which is a console step for the operator and never a script
-  run: [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
+  **prod** path, which is a supervised step on the owner's explicit
+  per-operation go (management API or console, never a `provision.sh` run):
+  [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
   §5a.
 - **A full `provision.sh` run is an operation against the live IdP:** it is
   idempotent and no longer narrows the URIs, but it writes to the live dev
