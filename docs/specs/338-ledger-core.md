@@ -1,7 +1,7 @@
 ---
-status: Draft
+status: In dev
 issue: 338
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Finance F1 — ledger core — spec (issue #338)
@@ -49,19 +49,39 @@ owner on the wireframe prototype (Stage A, 2026-08-25 — see "Design gate").
   declaration contract: finance declares one `internal` entry with an `admin`
   section; its resources mount at `/p/admin/finance/<resource>` through the
   registry, with zod schemas, readable refusals and audited writes.
-- **Spec 201 / ADR-004 A1** — every cabinet write runs through
-  `platformTransaction` with the signed-in admin as actor, so reference edits
-  are attributable in `core.audit_event` (spec 311 EARS-439).
+- **Spec 201 / ADR-004 A1** (`docs/specs/201-universal-edit-audit.md`, migration
+  `0003`, coverage guard `tools/lint/audit-coverage-lint.mjs`) — every cabinet
+  write runs through `platformTransaction` with the signed-in admin as actor, so
+  reference edits are attributable in `core.audit_event` (spec 311 EARS-439).
+  This is the who/when/what record for finance reference edits, including a
+  change of a purpose's `product_binding`: F1 adds **no** dedicated
+  binding-change journal on top of it (Accounting policy, ruling 2).
 
 **Donor & benchmark pass:** the engineering constraints above are inherited from
 the consolidation spec §8 and the hours schema conventions (spec 124), each
 justified for this domain in place. The three accounting questions the PRD left
-open (#338 OQ3/OQ4/OQ5) were researched against public canon — IAS 2.16, IAS
-38.67, IFRS 15.92/98, IAS 21, the IFRIC June 2019 agenda decision on
-cryptoassets, and small-entity cost-accounting practice — and are answered as
-**proposed rulings** in "Accounting policy" below, for the owner's sign-off at
-the stage-2 go. No owner question in this spec asks what public research
-answers.
+open (#338 OQ3/OQ4/OQ5) were researched against public canon — IAS 38.67,
+IFRS 15.97(d)/15.98(a), IFRS 8.28, IAS 21 with the IFRIC June 2019 agenda
+decision on cryptoassets, the IMA Conceptual Framework for Managerial Costing
+(causality / attributability), CIMA's allocation-vs-apportionment distinction
+and the Garrison segment-margin statement — and the resulting rulings in
+"Accounting policy" below were **accepted by the owner at the stage-2 go
+(2026-08-26, #338)**, the overhead ladder with five amendments. No owner
+question in this spec asks what public research answers.
+
+**Scope note on IFRS.** No IFRS standard governs management accounting; this
+register is an internal decision ledger, not a statutory measurement. Where a
+standard is cited below it is cited for the reasoning it supplies, never as
+authority over this ledger — and **IAS 2 is deliberately not cited in support of
+non-allocation**: IAS 2.12 _requires_ a systematic allocation of production
+overheads, it governs the balance-sheet carrying amount of inventory (which BBM
+does not hold), and its old §19 on service providers was deleted by the IFRS 15
+consequential amendments. The honest anchors are IAS 38.67 (selling,
+administrative and general overheads are not capitalised into an internally
+generated intangible _even when_ they could be allocated on a reasonable and
+consistent basis), IFRS 15.97(d)/15.98(a), and — for the reporting shape —
+IFRS 8.28's reconciliation of segment results to entity result with unallocated
+corporate costs identified and described.
 
 ## Current behavior → replacement delta
 
@@ -227,64 +247,145 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   `pnpm boundaries` shall stay green: only the finance module imports
   `schema/finance/`, and no route imports a table file.
 - **EARS-324.** The module shall export one `internal` workspace declaration
-  (slug `finance`, href `/p/finance`) carrying
-  `requiredClaim: platform-admin` — BBM's money is visible to no one below the
-  admin claim until the F2 role model (decision 8) widens it deliberately —
-  with an `admin` section declaring the reference resources, registered in the
-  composition root (spec 311 EARS-401/402), so they mount at
-  `/p/admin/finance/<resource>` with no edit to the shell (EARS-409).
-- **EARS-325.** WHEN a signed-in member holding the `platform-admin` claim
-  opens `/p/finance`, the page shall render the accounts with their balances
-  computed live from postings, each in its own currency (the cash card of the
-  vendored `design-source/finance/Overview.dc.html`); the rest of the overview
-  is F3's and shall not be stubbed. A session without the claim shall be
-  refused by the module's own handlers regardless of how the URL was reached
-  (spec 311 EARS-405).
+  (slug `finance`, href `/p/finance`) carrying **no** `requiredClaim` — the
+  owner's transparency policy makes BBM's money readable by every platform
+  member, so the entry rides the workspace-wide `platform-user` gate (spec 311
+  EARS-416) and nothing narrower — with an `admin` section declaring the
+  reference resources, registered in the composition root (spec 311
+  EARS-401/402), so they mount at `/p/admin/finance/<resource>` with no edit to
+  the shell (EARS-409).
+- **EARS-325.** WHEN any signed-in platform member opens `/p/finance`, the page
+  shall render the accounts with their balances computed live from postings,
+  each in its own currency (the cash card of the vendored
+  `design-source/finance/Overview.dc.html`); the rest of the overview is F3's
+  and shall not be stubbed. An unauthenticated request shall be refused by the
+  module's own handlers regardless of how the URL was reached (spec 311
+  EARS-405/416): F1 exposes no public finance surface.
 - **EARS-326.** Every cabinet write to a finance reference shall run through
   `platformTransaction` with the signed-in admin as actor (spec 311 EARS-439),
   and shall validate against the module's zod schemas (EARS-436); a refusal
   (EARS-303/304/308/311/312/313/320) shall reach the admin as the module's
   readable message, never a raw constraint error (EARS-473 shape).
+- **EARS-330.** Every write to the finance module — recording an operation,
+  reversing one, and every reference edit under `/p/admin/finance/*` — shall be
+  refused by the module's own handlers for a session that does not carry
+  `platform-admin`, however the URL or API was reached, until the F2 role model
+  (decision 8) widens it; read access is EARS-325's and is deliberately wider.
+- **EARS-331.** The `product_binding` shall be master data, never a
+  per-operation judgement: WHEN an operation is recorded, the system shall take
+  the binding from the named purpose and shall accept from the operator only
+  the product **value**, never a change of the binding itself; changing a
+  binding shall be an edit of the purpose, available to `platform-admin` only
+  (EARS-330) and recorded by the universal edit audit (spec 201).
+- **EARS-332.** WHEN a purpose's `product_binding` changes, the system shall
+  leave every already-recorded posting exactly as posted — it shall neither
+  rewrite nor re-validate history against the new rule (EARS-309); the only
+  correction of a recorded operation in F1 is reversal (EARS-313/314), and a
+  reclassification path arrives with F2.
+- **EARS-333.** The module's public API shall expose, as a query, the postings
+  recorded against a purpose with `product_binding = optional` that carry no
+  product — the exception list by which the taxonomy converges from use; its
+  reporting surface is F3's.
+- **EARS-334.** The system shall post no allocation of overhead onto a product
+  or project: an amount reaches a cost object only as a posting recorded with
+  that dimension (EARS-320/321), and no percentage base, absorption rate or
+  allocation run shall write to the ledger. Cost-driver data (member time
+  through `/p/hours`, usage) shall remain collected and queryable so an
+  allocation view can be computed later in F3 without restating anything
+  (Accounting policy, ruling 1).
 
-## Accounting policy — proposed rulings for the stage-2 go
+## Accounting policy — rulings accepted at the stage-2 go
 
 The owner ruled (decision 22) that overhead treatment follows proper-accounting
-best practice, researched by this spec and signed off at the go. Three rulings
-are proposed; each is a **spec proposal awaiting the owner's sign-off**, and the
-sign-off is recorded with the go on #338.
+best practice, researched by this spec and signed off at the go. All three
+rulings below were **accepted by the owner on 2026-08-26 (#338)** — ruling 1
+with five amendments, folded into its text.
 
-**Ruling 1 — product-less overhead (closes #338 OQ4).** Canon (IAS 2.16, IAS
-38.67, IFRS 15.98) excludes administrative, selling and general overhead from
-the cost of a product; allocation is reserved for overhead incurred inside
-making the thing, and at BBM's scale (few, heterogeneous, low-volume products)
-an allocation base distorts more than it informs. Proposal — a three-rung
-ladder:
+**Ruling 1 — product-less overhead (closes #338 OQ4).** The governing texts for
+a service/digital product are IAS 38.67 (selling, administrative and general
+overhead is not part of an internally generated intangible's cost even when it
+could be allocated on a reasonable and consistent basis) and IFRS 15.97(d) /
+15.98(a) (a fulfilment cost relates to a contract when it was incurred _only
+because_ the entity entered into it; G&A is expensed as incurred). Neither
+governs this internal register — see the scope note under "Prior decisions" —
+and at BBM's scale (few, heterogeneous, low-volume products) an allocation base
+distorts more than it informs: IMA's causality/attributability principles and
+CIMA's allocation-vs-arbitrary-apportionment distinction both say attach only
+what a cost object actually caused. The ladder:
 
 1. a **direct** cost → its product;
 2. **directly attributable overhead** → a product only if it passes ALL of:
    (a) it would not exist without the product, (b) it traces to ONE product
-   without a percentage split, (c) its purpose is to create/deliver the product
-   rather than to sell it or run the entity;
+   without a percentage split, (c) its purpose is to create, deliver **or
+   market** the product rather than to run the entity;
 3. everything else → **period cost** of the fund or project, **no allocation
    base in v1**.
+
+Amendment (c): a campaign run for exactly one product passes (a) and (b) and is
+a textbook traceable fixed cost of that product's segment — «does not sell» was
+an inventory-valuation rule (IAS 2.16(d)) imported into a decision report, and
+keeping it would overstate the margin of exactly the heavily marketed products.
+Single-product marketing therefore IS attributable to that product.
+
+Amendment (b) — **the level-lift.** A cost that fails (b) only because it serves
+several products of ONE product line or fund lands on that **line/fund** as its
+own named subtotal, sitting between the product margins and the entity line.
+This is the standard multi-level segment statement (Garrison); it introduces no
+percentage base anywhere — a cost either traces to a level or moves up one.
 
 Capitalization of a product = its direct costs + its directly attributable
 overhead, read off postings (EARS-320/321 carry the mechanics). Trade-off,
 stated: the sum of product margins exceeds holding profit by the unallocated
-overhead, which F3 shows as one explicit line — never smeared. Because the
-ledger stores attributability per posting, an absorption/ABC view can be added
-later as an F3 overlay without restating anything.
+overhead. That gap is the reporting device, not an artefact (IFRS 8.28
+reconciliation; Garrison's segmented income statement) — and, per amendment
+(c'), F3 shows it as **named buckets** (office, shared salaries, shared
+hosting, fundraising/admin…), each identified and described in the IFRS 8.28
+manner, never as one opaque «нераспределённое» line.
+
+**Cost drivers are collected, allocations are not posted** (amendment (d),
+EARS-334): member time through `/p/hours` and usage data stay in the estate so
+a functional-expense or indirect-cost-rate view is later a query rather than a
+data-archaeology project — but nothing writes an allocation into the ledger.
+Because the ledger stores attributability per posting, an absorption/ABC view
+can be added as an F3 overlay without restating anything.
+
+**Prices are never derived from this register's product cost** (amendment (e)).
+A cost base that deliberately excludes overhead would systematically underprice
+if it were used cost-plus. Pricing takes a required-contribution target derived
+top-down from the total unallocated block; the register measures, it does not
+price.
 
 **Ruling 2 — the attributability test (closes #338 OQ5).** Adapted from IFRS
-15.92's incremental-cost wording into two filer questions: (1) «Если бы этого
+15.97(d)'s incremental-cost wording into two questions: (1) «Если бы этого
 продукта не было — мы бы всё равно потратили эти деньги?» yes → no product;
 no → name it; (2) only if "partly": «Можешь назвать ОДИН продукт без деления по
-процентам?» no → no product (v1 does not split). The filer rarely answers them:
+процентам?» no → the cost moves up a level (ruling 1, amendment (b)), it is not
+split by percentage. The operator recording an operation never answers them:
 attributability is declared ONCE, on the **purpose**, as `product_binding`
-(EARS-306/320) — whoever defines a purpose runs the test, and the form then
-requires, hides or offers the product field. `optional` is the pressure valve;
-F3 reports optional filings left product-less so the taxonomy converges from
-use.
+(EARS-306/320/331) — whoever defines a purpose runs the test, and the form then
+requires, hides or offers the product field.
+
+This is the mainstream shape, not an invention: it is Dynamics 365 Business
+Central's `Value Posting` (Code Mandatory / No Code / blank), SAP's field status
+(Required / Optional / Suppressed), NetSuite's mandatory classifications and
+Sage Intacct's required-dimension checkbox. What SMB tools (Xero, QuickBooks)
+lack is precisely this master-data rule — per-transaction judgement is their
+defect, not a design anyone defends. Four consequences, all accepted at the go:
+
+- **the operator picks the value, never the binding** (EARS-331); the binding is
+  a `platform-admin` edit of the purpose;
+- **corrections of already-posted entries are role-gated and audited** — in F1
+  the only correction is reversal (EARS-313/314) by an admin (EARS-330), with
+  the actor recorded per spec 201; a true reclassification journal (moving a
+  dimension without reversing) arrives with F2;
+- **an exception report** lists `optional`-binding postings filed without a
+  product (EARS-333), so the taxonomy converges from use;
+- **a binding change never rewrites history** (EARS-332): postings made under
+  the old rule stand exactly as posted. There is deliberately **no dedicated
+  binding-change journal** — the universal edit audit
+  (`docs/specs/201-universal-edit-audit.md`, migration `0003`, coverage guard
+  `tools/lint/audit-coverage-lint.mjs`) already records who changed what and
+  when on the core tables, and a second log of the same fact would drift.
 
 **Ruling 3 — crypto holdings (closes #338 OQ3).** Per the IFRIC June 2019
 agenda decision crypto is a non-monetary asset; IAS 21 does not retranslate
@@ -298,8 +399,11 @@ rate** (the standard cost-flow assumption for a fungible holding; no lot
 tracking in v1) and posted to the system `fx_result` account of the fund,
 against the `conversion` account, never onto a product (EARS-328). A payment
 or transfer in one currency establishes no rate and recognises nothing
-(EARS-329); unrealised movement is an F3 display concern (a computed,
-labelled non-posting line). IAS 36 impairment is an explicit v1 deferral.
+(EARS-329); unrealised movement is an F3 display concern — the market
+equivalent of a holding is a computed, labelled report/dashboard line, never a
+posting, while the **quantity** held is always shown as recorded. IAS 36
+impairment is an explicit v1 deferral. Accepted as proposed at the go, with no
+amendment.
 
 Cross-cutting principle, verbatim in the model: the ledger records facts at the
 rate and cost object they had when they happened; every judgement that can
@@ -309,14 +413,14 @@ migrations.
 
 ## CRUD check (task-cycle stage 1a)
 
-| Resource (`/p/admin/finance/…`) | Create                                               | Read                                  | Update                                       | Delete                                                             |
-| ------------------------------- | ---------------------------------------------------- | ------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| currencies                      | yes (code, name, precision)                          | yes                                   | name; precision only while unused (EARS-303) | retire; hard delete only if never referenced (EARS-308)            |
-| accounts                        | yes (money kinds only)                               | yes (system accounts shown read-only) | name                                         | retire; same rule                                                  |
-| projects                        | yes                                                  | yes                                   | name                                         | retire; the fund row is neither retirable nor deletable (EARS-304) |
-| products                        | yes (under a project)                                | yes                                   | name, sale price                             | retire; same rule                                                  |
-| purposes                        | yes (binding mandatory, EARS-306)                    | yes                                   | name, category link, binding                 | retire; same rule                                                  |
-| categories                      | yes (from F2's derivation on; the table ships empty) | yes                                   | name, allocable flag                         | retire; same rule                                                  |
+| Resource (`/p/admin/finance/…`) | Create                                               | Read                                  | Update                                                                        | Delete                                                             |
+| ------------------------------- | ---------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| currencies                      | yes (code, name, precision)                          | yes                                   | name; precision only while unused (EARS-303)                                  | retire; hard delete only if never referenced (EARS-308)            |
+| accounts                        | yes (money kinds only)                               | yes (system accounts shown read-only) | name                                                                          | retire; same rule                                                  |
+| projects                        | yes                                                  | yes                                   | name                                                                          | retire; the fund row is neither retirable nor deletable (EARS-304) |
+| products                        | yes (under a project)                                | yes                                   | name, sale price                                                              | retire; same rule                                                  |
+| purposes                        | yes (binding mandatory, EARS-306)                    | yes                                   | name, category link, binding (admin only, EARS-331; history stands, EARS-332) | retire; same rule                                                  |
+| categories                      | yes (from F2's derivation on; the table ships empty) | yes                                   | name, allocable flag                                                          | retire; same rule                                                  |
 
 Deliberately unsupported: creating/editing system accounts (EARS-305); any
 cabinet surface for operations or postings — the fact core is written only by
@@ -336,13 +440,19 @@ Owner walkthrough, on a live stand, after the go and the build:
 2. **The ledger starts honest.** Open `/p/finance` — every account shows
    balance 0 in its own currency, because no operation exists yet
    (EARS-317/325).
-3. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
+3. **Money is visible to the team, editable by the admin.** Sign in as a member
+   holding `platform-user` but not `platform-admin`: `/p/finance` opens and
+   shows the same balances card (EARS-324/325), while
+   `/p/admin/finance/purposes` is refused (EARS-330, spec 311 EARS-405). Sign
+   out entirely and open `/p/finance` — refused, F1 has no public surface
+   (EARS-325).
+4. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
    that the account uses — a readable refusal offers retirement instead
    (EARS-308/326). Rename the account — the rename is visible, nothing else
    changes (EARS-309).
-4. **The fund is fixed.** Try retiring «Фонд BBM» — a readable refusal
+5. **The fund is fixed.** Try retiring «Фонд BBM» — a readable refusal
    (EARS-304).
-5. **Categories are not pre-invented.** Open the categories resource — the
+6. **Categories are not pre-invented.** Open the categories resource — the
    table is empty, with creation available (EARS-307).
 
 ### Verified by CI, not by the owner
@@ -353,15 +463,25 @@ per-currency zero-sum (EARS-311/312), immutability incl. the DB trigger
 (EARS-313), reversal mechanics (EARS-314/315), the source enum and backdated
 flag (EARS-316), no-opening-balance (EARS-317), conversion steps with frozen
 rates (EARS-318/319), product binding (EARS-320), the project dimension
-(EARS-321), the `core.member` FK (EARS-322), boundaries (EARS-323).
+(EARS-321), the `core.member` FK (EARS-322), boundaries (EARS-323), the
+write-side claim gate (EARS-330), the binding as master data (EARS-331), a
+binding change leaving history intact (EARS-332), the product-less `optional`
+exception query (EARS-333), and the absence of any allocation posting
+(EARS-334).
 
 ## Out of scope
 
 - Every intake: the request form, approval queue, bank import, backfill, hours
   accruals — **F2 (#339)**, which also derives the category list (decision 11)
-  and settles the full role model (decision 8). F1 gates every finance surface
-  behind `platform-admin` (EARS-324/325) as the conservative default; widening
-  access to participants is F2's deliberate act, not F1's omission.
+  and settles the full role model (decision 8). F1 already opens **reading**
+  `/p/finance` to every platform member (EARS-324/325, the owner's transparency
+  policy) and keeps every **write** and every reference catalogue at
+  `platform-admin` (EARS-330); a finer split — who may record, who may reverse,
+  who may edit which catalogue — is F2's role model, not F1's.
+- Reclassification of a posted operation (moving a dimension without reversing
+  it) — F2; in F1 the only correction is reversal (EARS-313/314/332).
+- Any allocation, absorption or ABC run: F1 posts none by design (EARS-334) and
+  F3 computes such views as overlays.
 - Reports beyond the balances card: register UI, P&L, cash flow, unit cost,
   capitalization display — **F3 (#340)**; reconciliation — **F4 (#341)**;
   scenarios — **F5 (#342)**.
@@ -374,9 +494,10 @@ rates (EARS-318/319), product binding (EARS-320), the project dimension
 
 ## Open questions
 
-None remain open as questions. #338 OQ1/OQ2 were closed by decisions 16/17;
-OQ3/OQ4/OQ5 are answered by the three proposed rulings above and close when the
-owner signs them off at the stage-2 go. The go question additionally names one
-lead-chosen default for the owner's veto: every F1 finance surface is gated
-behind `platform-admin` (EARS-324/325) until F2's role model (decision 8)
-widens it.
+None. #338 OQ1/OQ2 were closed by decisions 16/17; OQ3/OQ4/OQ5 are closed by the
+three rulings above, accepted by the owner at the stage-2 go on 2026-08-26
+(#338) — ruling 1 with the five amendments folded into its text. The lead's
+`platform-admin`-everywhere default was **reversed** by the owner in the same
+go: reading `/p/finance` is open to every platform member, writing and the
+reference catalogues stay `platform-admin` until F2's role model (decision 8),
+and F1 exposes no unauthenticated surface (EARS-324/325/330).
