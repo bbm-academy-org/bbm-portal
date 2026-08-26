@@ -31,8 +31,8 @@ Product source: `docs/product/finance/339-product.md` (US-1…US-22); owner
 decisions 1–27 live in the #115 issue body — decisions 23–27 were taken in
 this spec's session (2026-08-26). The de-facto request corpus is analysed in
 the session scratchpad (`mm-payments-corpus.md`; see «Current behavior»).
-An independent spec review ran before the go (2026-08-26, session record);
-its blockers and majors are folded into this revision.
+Two rounds of independent spec review ran before the go (2026-08-26, session
+records); both rounds' blockers and majors are folded into this revision.
 
 ## Prior decisions
 
@@ -67,21 +67,37 @@ these hidden; they are owner-visible items at the go):
 
 1. **The write gate.** Spec 338 EARS-330 holds every finance write at
    `platform-admin` «until the F2 role model widens it». This spec is that
-   widening: EARS-501 narrows EARS-330 to reference administration, and the
+   widening: EARS-529 narrows EARS-330 to reference administration, and the
    F1a guard (`assertFinanceWriteAccess`) is reworked so ledger writes are
-   gated by the two flow roles instead. The spec-338 text of EARS-330 is
-   amended in this spec's PR (the spec is `In dev`; in-place amendment is its
-   own precedent, EARS-328).
+   gated by the two flow roles instead. **An admin who does not hold
+   `finance-approve` loses posting and reversal** — a behaviour change to a
+   shipped-spec scenario, explicitly on the go list. The PR amends **every**
+   338 passage that states the old gate or defers to «F2's role model», not
+   one sentence: EARS-330 itself, Out-of-scope bullet 1 and the
+   Open-questions entry (role model), plus acceptance scenario 3's admin
+   write gate (the spec is `In dev`; in-place amendment is its own
+   precedent, EARS-328).
 2. **The reclassification journal is not built.** Spec 338 ruling 2 promised
    «a true reclassification journal arrives with F2». This spec replaces it
    with read-time category resolution (EARS-520) and keeps reversal as the
-   only correction; the ruling-2 sentence is amended in this spec's PR. This
-   drops a stated expectation of an owner-accepted spec — **explicitly on the
-   go list**.
+   only correction. The PR amends **all four** 338 passages carrying that
+   promise: the ruling-2 journal sentence, ruling 2's correction bullet,
+   EARS-332 and Out-of-scope bullet 2. This drops a stated expectation of an
+   owner-accepted spec — **explicitly on the go list**.
 3. **An internal F1a refactor** — `recordOperation`/`recordConversion` learn
    to run inside a caller-supplied `platformTransaction` (today they open
    their own), so posting an intake item is atomic (EARS-505). Module-private
    signatures, no spec-338 text change.
+4. **A cross-currency vendor-payment posting path.** F1a's `recordConversion`
+   demands a source AND a target money account, both non-system, with
+   explicit per-step rates — a THB/USD invoice paid from a RUB card (the
+   corpus's dominant shape) has no owner-side target account and cannot be
+   posted through it, and `recordOperation` refuses cross-currency legs
+   without conversion legs (EARS-311/312). The module gains a module-private
+   posting path that builds the conversion legs itself, per the worked
+   example in the data model; the legs enter the same system conversion
+   account — and EARS-328's FX pool — exactly as an EARS-318 step does.
+   Module-private signatures, no spec-338 text change.
 
 **Donor & benchmark pass:** the design is grounded in the **actual document
 corpus** — the owner's ruling of 2026-08-26: analyse the real requests and
@@ -141,11 +157,12 @@ able to express everything the backfill has to reconstruct from zero
 (decision 17) — expenses, income, transfers between own accounts and
 conversions — or the books cannot be rebuilt.
 
-| Table                      | Carries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Key points                                                                                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `finance_intake_item`      | `id`, `source` (`request`\|`manual`\|`backfill`\|`bank_import`), `source_ref` (nullable; **unique per source where set**), `kind` (`expense`\|`income`\|`transfer`\|`conversion`), `status` (`draft`\|`submitted`\|`approved`\|`refused`\|`cancelled`\|`posted`), `occurred_on`, `account` FK (the money account), `counter_account` FK (nullable — transfer/conversion target), `amount` + `currency` (document side, bigint minimal units), `paid_amount` + `paid_currency` (nullable — the account side when it differs), `fee_amount` (nullable, conversions), `purpose` FK (nullable — expense only), `project` FK, `product` FK (per binding), `counterparty` (text), `note`, `already_paid`, `personal_funds`, `created_by` → `core.member`, `decided_by`, `decided_at`, `refusal_reason`, `posted_by`, `posted_at`, `operation` FK (nullable, unique) | one spine for all sources (decision 3); items are editable until posted per the status machine below — the ledger stays immutable; `operation` filled at posting |
-| `finance_document`         | `id`, `storage_key` (private object storage), `filename`, `mime`, `size`, `kind` (`ru_invoice`\|`fiscal_receipt`\|`foreign_invoice`\|`payment_order`\|`bank_screenshot`\|`other`), `intake_item` FK (nullable), `operation` FK (nullable), `uploaded_by`, `uploaded_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | files in a **private** bucket/prefix, never the public media bucket (EARS-514); **not** in Payload — owner ruling 2026-08-26                                     |
-| `finance_purpose_proposal` | `id`, `text`, `proposed_by`, `created_at`, `resolved_purpose` FK (nullable), `resolved_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | US-21: a missing purpose is proposed as free text that only an admin can turn into a purpose — free text never becomes a purpose by itself (decision 21)         |
+| Table                      | Carries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Key points                                                                                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `finance_intake_item`      | `id`, `source` (`request`\|`manual`\|`backfill`\|`bank_import`), `source_ref` (nullable; **unique per source where set**), `kind` (`expense`\|`income`\|`transfer`\|`conversion`), `status` (`draft`\|`submitted`\|`approved`\|`refused`\|`cancelled`\|`posted`), `occurred_on` (always the date money moved — EARS-508), `account` FK (the money account; **nullable — empty exactly when `personal_funds`**, EARS-513), `counter_account` FK (nullable — transfer/conversion target; a system `liability` account only per EARS-528), `amount` + `currency` (document side, bigint minimal units), `paid_amount` + `paid_currency` (nullable — the account side when it differs; for `kind = conversion` — the target side), `fee_amount` + `fee_currency` (nullable), `purpose` FK (nullable — expense only), `project` FK, `product` FK (per binding), `counterparty` (text), `member` FK (nullable — the person the payment is attributable to, spec 338 EARS-322; required for `personal_funds` and liability transfers), `note`, `already_paid`, `personal_funds`, `created_by` → `core.member`, `decided_by`, `decided_at`, `refusal_reason`, `posted_by`, `posted_at`, `operation` FK (nullable, unique) | one spine for all sources (decision 3); items are editable until posted per the status machine below — the ledger stays immutable; `operation` filled at posting                             |
+| `finance_document`         | `id`, `storage_key` (private object storage), `filename`, `mime`, `size`, `kind` (`ru_invoice`\|`fiscal_receipt`\|`foreign_invoice`\|`payment_order`\|`bank_screenshot`\|`bank_statement`\|`other`), `uploaded_by`, `uploaded_at`; items linked via `finance_document_link`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | files in a **private** bucket/prefix, never the public media bucket (EARS-514); **not** in Payload — owner ruling 2026-08-26                                                                 |
+| `finance_document_link`    | `document` FK, `intake_item` FK (pair unique)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | **one document may confirm several items** (corpus: one screenshot proving two consultations; «$370 + $22» in one payment); the operation link is derived through each item's `operation` FK |
+| `finance_purpose_proposal` | `id`, `text`, `proposed_by`, `created_at`, `resolved_purpose` FK (nullable), `resolved_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | US-21: a missing purpose is proposed as free text that only an admin can turn into a purpose — free text never becomes a purpose by itself (decision 21)                                     |
 
 **Status machine** (every transition not listed is refused — EARS-524):
 
@@ -164,20 +181,44 @@ conversions — or the books cannot be rebuilt.
   the record.
 
 **Cross-currency payments** (the corpus's dominant case): an expense whose
-`paid_currency` differs from its `currency` posts as one F1 operation — a
-conversion step from the paying account's currency at the **actual** rate
-implied by the two amounts (spec 338 EARS-318, decision 18), the expense legs
-in the document's currency, fees explicit where entered. The two amounts are
-structured fields of one item — never two prose sums (the donor form's
-«Сумма» / «Сумма в рублях» ambiguity is the bug being fixed).
+`paid_currency` differs from its `currency` posts as **one F1 operation with
+module-built conversion legs** (Prior-decisions change 4). The
+authoritative-amount rule: **both recorded amounts are facts and both are
+authoritative** — no leg is ever computed as `amount × rate`, the rate exists
+only for display, derived from the pair, and is not stored; a rounding
+residual cannot arise by construction. Worked example — invoice 3 500 THB
+paid from the RUB card, 8 750 ₽ actually charged:
+
+| Leg        | Account                    | Amount     |
+| ---------- | -------------------------- | ---------- |
+| money      | RUB card account           | −8 750 ₽   |
+| conversion | system conversion account  | +8 750 ₽   |
+| conversion | system conversion account  | −3 500 THB |
+| expense    | the purpose's expense side | +3 500 THB |
+
+Per-currency zero-sum (spec 338 EARS-311) holds in each currency; the
+conversion legs sit on the same system conversion account — and in EARS-328's
+FX pool — exactly as a spec-338 EARS-318 step does, so F1's FX treatment
+applies unchanged. A fee, where entered, is its own posting in
+`fee_currency`. For `kind = conversion` (own-account exchange) the same pair
+carries the two sides — `amount`/`currency` the source,
+`paid_amount`/`paid_currency` the target, **one implicit step at the actual
+implied rate**; multi-step chains are not enterable through intake and go
+through the F1 API directly. The two amounts are structured fields of one
+item — never two prose sums (the donor form's «Сумма» / «Сумма в рублях»
+ambiguity is the bug being fixed).
 
 **Roles → claims.** Two Zitadel project roles, `finance-entry` and
 `finance-approve` (decision 27), seeded and granted per the bootstrap canon
 (`infra/dev-stand/idp/bootstrap.md` §5a; prod is a supervised owner-go step).
 `platform-admin` continues to gate the reference catalogues and **no longer
-implies ledger writes** (Prior-decisions change 1); reading `/p/finance`
-stays open to every platform member (spec 338 EARS-324/325) — **documents
+implies ledger writes** (EARS-529, Prior-decisions change 1); reading
+`/p/finance` stays open to every platform member (EARS-530) — **documents
 excluded** (EARS-523).
+
+**Audit coverage:** all four tables register with the audit-coverage guard
+(`tools/lint/audit-coverage-lint.mjs`, spec 201) in the same PR that creates
+them — the build must not discover the registration in CI.
 
 **Document storage** is a private object-storage bucket (or provably private
 prefix) — the estate's only current bucket (`bbm-portal-media`) is
@@ -189,35 +230,45 @@ step; dev falls back to local disk exactly as the media adapter does.
 ## Requirements
 
 Ids continue the flat corpus keyspace: this spec takes **EARS-501…** (spec 338
-holds 301–334, spec 311 holds 401–499).
+holds 301–334, spec 311 holds 401–499). EARS-522 was retired pre-go (a
+process note now, §G); the id is not reused.
 
 ### A. Roles
 
 - **EARS-501.** The finance module shall enforce exactly two flow roles
   (decision 27): `finance-entry` permits creating and editing intake items
   and uploading documents; `finance-approve` permits approving, refusing,
-  posting and reversing. Reference-table administration remains
-  `platform-admin` (spec 338 EARS-330 narrows to references — Prior-decisions
-  change 1), and `platform-admin` by itself shall no longer permit ledger
-  writes; reading `/p/finance` remains open to every platform member
-  (spec 338 EARS-324/325), documents excluded (EARS-523).
-- **EARS-502.** WHEN a signed-in platform member without either role opens
-  `/p/finance/requests`, the system shall let them submit an expense request,
+  posting and reversing. Every intake write from a session without the
+  matching role shall be refused by the module's own handlers, however the
+  URL or API is reached (spec 311 EARS-405 pattern) — with EARS-502 as the
+  one deliberate carve-out.
+- **EARS-529.** Reference-table administration shall remain `platform-admin`
+  (spec 338 EARS-330 narrows to references — Prior-decisions change 1), and
+  `platform-admin` by itself shall no longer permit ledger writes: an admin
+  who does not hold `finance-approve` can no longer post or reverse (on the
+  go list — this narrows a shipped spec).
+- **EARS-530.** Reading `/p/finance` shall remain open to every platform
+  member (spec 338 EARS-324/325), with document content excluded
+  (EARS-523).
+- **EARS-502.** The system shall let a signed-in platform member holding
+  neither flow role, on `/p/finance/requests`, submit an expense request,
   cancel their own `submitted` request, attach documents to their own items
-  and see their own requests with statuses (decision 8, US-1, US-2) — this
-  submitter exemption is the one deliberate carve-out from EARS-501; every
-  other intake write shall be refused by the module's own handlers for a
-  session without the matching role, however the URL or API is reached
-  (spec 311 EARS-405 pattern).
+  and see their own requests with statuses (decision 8, US-1, US-2) — the
+  submitter exemption, the one deliberate carve-out from EARS-501.
 
 ### B. The intake spine (pluggable source layer)
 
 - **EARS-503.** Every intake path shall produce an intake item carrying its
-  source — one of the spec-338 EARS-316 enum — and a `source_ref` with fixed
-  per-source semantics: `bank_import` — the statement line's stable identity,
-  always; `backfill` — the source document's identity (a Mattermost post id,
-  a document number) **where one exists**; `manual` and `request` — none (a
-  human act has no external identity to deduplicate on).
+  source — one of the intake subset of the spec-338 EARS-316 enum
+  (`request`\|`manual`\|`backfill`\|`bank_import`; `hours` and `reversal`
+  are not intake sources) — and a `source_ref` with fixed per-source
+  semantics: `bank_import` — the statement line's stable identity,
+  **always**; `backfill` — **always**: the source document's number where it
+  has one, otherwise the Mattermost post id, otherwise a deterministic
+  natural key the entry surface composes (date + account + amount +
+  counterparty) — so re-running the same history can never double-post
+  (EARS-504, scenario 6); `manual` and `request` — none (a human act has no
+  external identity to deduplicate on).
 - **EARS-504.** IF an intake item arrives with a (`source`, `source_ref`)
   pair that already exists, THEN the system shall refuse that item and answer
   with the existing one; in a bulk arrival (an import file, a backfill batch)
@@ -229,10 +280,12 @@ holds 301–334, spec 311 holds 401–499).
   change 3: F1a's record functions learn to join a caller's transaction);
   the item's documents are carried onto the operation, `posted_by`/
   `posted_at` are recorded, and the item shall accept no further edit.
-- **EARS-506.** IF an intake item has no attached confirming document, THEN
-  the system shall refuse to post it: the item shall wait, visibly, in the
-  intake list, and the books shall not contain it until the document is
-  attached — mandatory enrichment (decision 24).
+- **EARS-506.** IF an intake item has no attached **proof-of-payment**
+  document (the EARS-515 split), THEN the system shall refuse to post it:
+  the item shall wait, visibly, in the intake list, and the books shall not
+  contain it until such a document is attached — mandatory enrichment
+  (decision 24). An invoice is a request for money, not proof it moved
+  (decision 23): attaching one satisfies nothing by itself.
 - **EARS-507.** The system shall create no posting from any hours-module
   event (period close, publication): only an actual movement of money,
   entered through intake with its document, posts (decision 23). F2 ships no
@@ -247,12 +300,16 @@ holds 301–334, spec 311 holds 401–499).
   `kind = expense` and shall capture: the purpose — a pick from the purpose
   reference, no free text (decision 21; the category follows the purpose,
   spec 338 EARS-327); the project; the product, per the purpose's binding
-  (spec 338 EARS-320); the paying account; the amount and currency **of the
+  (spec 338 EARS-320); the paying account (left empty exactly when
+  `personal_funds` — EARS-513); the amount and currency **of the
   document**, and — WHERE the paying account's currency differs — the actual
   amount charged in the account's currency (the cross-currency rule above);
   the counterparty (who is being paid — the donor form's «Сервис», free text
-  in v1, a reference candidate for #372); the operation date, labeled for
-  what it is; a free-text note; attachments; and the `already_paid` flag
+  in v1, a reference candidate for #372); the operation date — `occurred_on`
+  is **always the date money moved** (for a pre-spend request, the expected
+  date, confirmed or corrected at the one-act posting; the document's own
+  issue date is not stored — the attached file carries it, which settles the
+  corpus's three-meanings-of-«Дата» ambiguity); a free-text note; attachments; and the `already_paid` flag
   (decision 12) with the `personal_funds` refinement, which shall be
   accepted only together with `already_paid`.
 - **EARS-509.** WHEN a member submits a request, it shall appear in the
@@ -273,17 +330,36 @@ holds 301–334, spec 311 holds 401–499).
 - **EARS-512.** WHEN an approver refuses a request — from `submitted`, or
   revoking an unposted `approved` — the system shall require a reason, shall
   post nothing (US-5), and shall keep the refused request visible with its
-  reason and its documents to the submitter and the approvers.
+  reason and its documents to the submitter and the approvers. Refusing an
+  `already_paid` item is the approver's assertion that the claimed movement
+  is **not a company expense** (the corpus's «можете не выплачивать»): the
+  books deliberately record nothing, and the refused claim with its
+  documents remains the record of that decision.
 - **EARS-513.** WHERE a posted expense was filed with `personal_funds`, the
-  operation's money leg shall credit the per-currency system `liability`
-  account **instead of** a company money account — the liability IS the
-  counter-leg, not an extra one — and that liability posting shall carry the
-  paying member's `member_id` (spec 338 EARS-322), so the debt to each person
-  is the member-filtered balance of the liability account. The later
-  reimbursement is an ordinary transfer operation debiting the same liability
-  account with the same `member_id`; the running link between debt and
-  repayment is that shared (account, member) pair, and no separate
-  settlement entity exists (out of scope per `339-product.md`).
+  item shall name **no company money account** (`account` is empty — the
+  model's one nullable-account case) and the operation's money leg shall
+  credit the per-currency system `liability` account instead — the liability
+  IS the counter-leg, not an extra one. The liability is recorded **in the
+  currency actually charged to the member** — `paid_currency`, falling back
+  to `currency` — for the amount the member's card actually lost; WHERE that
+  differs from the document currency, the expense leg stays in the document
+  currency and the cross-currency rule above supplies the conversion legs
+  (corpus: every «оплачено с моей карты» is a USD/foreign spend from a RUB
+  card — the debt to the member is in rubles). The liability posting shall
+  carry the paying member's `member_id` (spec 338 EARS-322), so the debt to
+  each person is the member-filtered balance of the liability account.
+- **EARS-527.** The intake surface shall show a **liability view**: the
+  member-filtered balances of the system liability accounts — who BBM
+  currently owes and how much, per currency (scenario 5).
+- **EARS-528.** A `kind = transfer` intake item may name the system
+  `liability` account as its `counter_account` and shall then carry the
+  `member` whose debt it settles: the EARS-513 reimbursement is entered
+  exactly this way — an ordinary transfer debiting the liability account
+  with the same `member_id`. This is the **only** place an intake item names
+  a system account (spec 338 EARS-305 stands — the cabinet still cannot
+  create, edit or retire them); the running link between debt and repayment
+  is the shared (account, member) pair, and no separate settlement entity
+  exists (out of scope per `339-product.md`).
 - **EARS-526.** WHERE no purpose in the reference fits, the form shall let
   the member file a free-text **purpose proposal** alongside a draft request;
   the proposal is not a purpose, appears in the admin's reference cabinet,
@@ -305,11 +381,15 @@ holds 301–334, spec 311 holds 401–499).
   member-wide read of `/p/finance` (spec 338 EARS-324/325) shall NOT extend
   to document content, and no public or unauthenticated URL to a document
   shall exist.
-- **EARS-515.** Every document shall carry a `kind` picked at upload — RU
-  invoice, fiscal receipt, foreign invoice, payment order, bank-app
-  screenshot, other — the five real classes of the corpus plus a rest
-  bucket; any kind satisfies EARS-506 in v1, and the kind is data for later
-  tightening, not a gate today.
+- **EARS-515.** Every document shall carry a `kind` picked at upload — the
+  five real classes of the corpus, the bank statement (EARS-521) and a rest
+  bucket — split into two sets with different force: the
+  **proof-of-payment set** (`fiscal_receipt`, `payment_order`,
+  `bank_screenshot`, `bank_statement`) satisfies EARS-506; the **claim set**
+  (`ru_invoice`, `foreign_invoice`, `other`) documents the item but does
+  not unlock posting. The corpus shows invoices posted days before money
+  moved; recording them as movement is what decision 23 forbids. (On the go
+  list — draft v2 said «any kind satisfies», this tightens it.)
 - **EARS-516.** IF a document is linked to a posted operation, THEN the
   system shall refuse to delete or replace it; correcting a wrong document
   is attaching another one. Documents of refused and cancelled items are
@@ -322,8 +402,10 @@ holds 301–334, spec 311 holds 401–499).
   (expense, income, transfer, conversion: everything the reconstruction of
   real balances from zero requires — decision 17, US-13, US-22; spec 338
   EARS-317), posting as backdated operations (spec 338 EARS-316), with each
-  row's `source_ref` filled per EARS-503 where the source document has an
-  identity.
+  row's `source_ref` filled per EARS-503 (always, for backfill). A
+  conversion row uses the data model's two-sided pair semantics (one
+  implicit step, `fee_amount`/`fee_currency` where a fee was taken) — the
+  kinds the rebuild needs are all expressible through the spine.
 - **EARS-518.** A backfilled item shall pass the same gates as a live one —
   the document rule (EARS-506) and the approve-role posting — and the
   resulting operation shall behave in every report exactly like a live one
@@ -331,18 +413,21 @@ holds 301–334, spec 311 holds 401–499).
 
 ### F. Category derivation
 
-- **EARS-519.** The module shall expose the derivation query: recorded spend
-  grouped by purpose, with postings that carry no category listed — the
-  input from which the owner derives and approves the category list
-  (decision 11); the list itself is then created as ordinary, audited
-  reference edits (spec 338 EARS-301/307/308), and no seed ships.
+- **EARS-519.** The intake surface (`/p/finance/intake`) shall show the
+  **derivation view**, backed by a module query: recorded spend grouped by
+  purpose, with postings that carry no category listed — the input from
+  which the owner derives and approves the category list (decision 11); the
+  list itself is then created as ordinary, audited reference edits (spec 338
+  EARS-301/307/308), and no seed ships.
 - **EARS-520.** WHERE a posting stores no category (recorded before the
   taxonomy existed) and its purpose is linked to one, every query and report
   shall resolve the category through the purpose's **current** link at read
   time; a posting with a stored category keeps it (spec 338 EARS-327), and
   recorded postings are never rewritten (spec 338 EARS-309/332). The stated
   consequence: re-linking a purpose re-reads only its pre-taxonomy history —
-  deliberate, those postings were never classified. F2 therefore ships
+  deliberate, those postings were never classified — and F3's reports shall
+  label a read-time-derived category as derived, or the same purpose
+  appearing under two categories will read as a bug. F2 therefore ships
   **no** posting-mutation reclassification: a genuinely wrong dimension is
   corrected by reversal (spec 338 EARS-313/314); the F1a register/balance
   queries gain the read-time fallback, and the spec-338 ruling-2 journal
@@ -353,13 +438,16 @@ holds 301–334, spec 311 holds 401–499).
 - **EARS-521.** Statement import shall be an intake producer and nothing
   more: it parses a statement file into draft intake items
   (`source = bank_import`, `source_ref` = the line's stable identity, the
-  statement itself linked as the confirming document), deduplicated per line
+  statement itself linked as the confirming document, `kind =
+bank_statement` — proof-of-payment per EARS-515: it is the bank's own
+  record of the movement), deduplicated per line
   (EARS-504), reviewed and posted through the same queue by the same roles.
   Nothing posts on upload alone.
-- **EARS-522.** WHERE real statement files are supplied, the format parser
-  shall be built against those files and nothing else (owner ruling
-  2026-08-26, decision 25); until then the import ships as the contract
-  above with no parser, and this deliberately blocks nothing else in F2.
+  _Process note (owner ruling 2026-08-26, decision 25): the format parser is
+  built only against real statement files once supplied — until then the
+  import ships as the contract above with no parser, and this deliberately
+  blocks nothing else in F2. (Formerly EARS-522, retired pre-go: a
+  build-process commitment, not a testable system behaviour.)_
 
 ### H. The status machine
 
@@ -371,20 +459,22 @@ holds 301–334, spec 311 holds 401–499).
 
 ## CRUD check (task-cycle stage 1a)
 
-| Resource                                | Create                                                      | Read                                                        | Update                                                                                      | Delete                                                                                      |
-| --------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| requests (`/p/finance/requests`)        | any platform member (EARS-502)                              | own — the submitter; all — entry/approve roles              | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512) |
-| intake items (`/p/finance/intake`)      | `finance-entry` (manual, backfill bulk); producers (import) | entry/approve roles                                         | entry role per the status machine; **never after `posted`** (EARS-505)                      | entry role deletes `draft` only; later — refuse/cancel, not delete                          |
-| documents                               | submitter on own items; entry role anywhere                 | submitter — own items' docs; entry/approve — all (EARS-523) | `kind` only, while its item is unposted                                                     | while unlinked or on an unposted item; linked to a posted operation — never (EARS-516)      |
-| purpose proposals                       | any platform member from the request form (EARS-526)        | admin (reference cabinet), proposer sees own                | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                  |
-| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501)                           | queue — approve role                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                         |
+| Resource                                | Create                                                      | Read                                                        | Update                                                                                      | Delete                                                                                       |
+| --------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| requests (`/p/finance/requests`)        | any platform member (EARS-502)                              | own — the submitter; all — entry/approve roles              | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512)  |
+| intake items (`/p/finance/intake`)      | `finance-entry` (manual, backfill bulk); producers (import) | entry/approve roles                                         | entry role per the status machine; **never after `posted`** (EARS-505)                      | entry role deletes `draft` only; later — refuse/cancel, not delete                           |
+| documents                               | submitter on own items; entry role anywhere                 | submitter — own items' docs; entry/approve — all (EARS-523) | `kind` only, while no linked item is posted                                                 | while unlinked or all linked items unposted; linked to a posted operation — never (EARS-516) |
+| purpose proposals                       | any platform member from the request form (EARS-526)        | admin (reference cabinet), proposer sees own                | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                   |
+| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501)                           | queue — approve role                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                          |
 
 Deliberately unsupported: editing or deleting anything already posted (the
 ledger's own EARS-313 stands); posting without a document (EARS-506);
 free-text purpose (decision 21; proposals are not purposes — EARS-526);
 income, transfers and conversions **through the request form** — those enter
 via the entry role (manual/backfill); `personal_funds` without `already_paid`
-(EARS-508); any cabinet surface for the calendar (#372).
+(EARS-508); multi-step conversion chains through intake (one implicit step
+only — the F1 API takes the rest); any cabinet surface for the calendar
+(#372).
 
 ## Acceptance scenarios
 
@@ -396,8 +486,9 @@ register, that dependency is named in the step:
 1. **Two roles exist and bite.** Sign in as a member with neither role:
    `/p/finance/requests` lets you file a request with an invoice attached and
    shows your list; `/p/finance/intake` refuses (EARS-501/502). Grant
-   `finance-entry` to a test user — the intake list opens, the approve
-   actions are still refused (EARS-501).
+   `finance-entry` to a test user (an IdP console act —
+   `infra/dev-stand/idp/bootstrap.md` §5a) — the intake list opens, the
+   approve actions are still refused (EARS-501).
 2. **Request → approval → books, one act.** File a request «уже оплачено» in
    THB paid from a RUB card (both amounts), receipt attached; as an approver,
    approve it — one act, the item shows `posted` with your name, and the
@@ -414,7 +505,7 @@ register, that dependency is named in the step:
 5. **Personal funds.** File «оплачено своими средствами», approve — the
    posted operation's money leg sits on the liability account with your
    member id; the intake list's liability view shows the debt to you
-   (EARS-513).
+   (EARS-513/527).
 6. **Backfill in bulk.** Open the bulk entry, enter three historical rows
    from real Mattermost receipts — an expense, a transfer, a conversion —
    attach documents, post (EARS-517/518). Re-enter the same rows with the
@@ -433,16 +524,18 @@ register, that dependency is named in the step:
 ### Verified by CI, not by the owner
 
 TDD tests named `it('EARS-N: …')` (stage 3) cover every clause of this spec —
-the role gates (EARS-501/502), spine semantics and per-line idempotency
-(EARS-503/504), atomic posting (EARS-505), the document gate (EARS-506), no
-hours-event posting (EARS-507), form validation incl. cross-currency and
-`personal_funds`⇒`already_paid` (EARS-508), status visibility (EARS-509),
-one-act posting (EARS-510/511), refusal (EARS-512), the liability counter-leg
-with `member_id` (EARS-513), storage privacy and access (EARS-514/523), the
-document kind (EARS-515), document immutability and retention (EARS-516),
-backfill kinds and flags (EARS-517/518), the derivation query (EARS-519),
-read-time resolution (EARS-520), the import contract (EARS-521/522), the
-status machine (EARS-524), producer isolation (EARS-525), purpose proposals
+the role gates and the narrowing (EARS-501/502/529/530), spine semantics and
+per-line idempotency (EARS-503/504), atomic posting (EARS-505), the
+proof-of-payment gate (EARS-506/515), no hours-event posting (EARS-507), form
+validation incl. cross-currency and `personal_funds`⇒`already_paid`
+(EARS-508), status visibility (EARS-509), one-act posting (EARS-510/511),
+refusal incl. `already_paid` (EARS-512), the liability counter-leg with
+`member_id` and its currency rule (EARS-513), the liability view (EARS-527),
+the reimbursement route (EARS-528), storage privacy and access
+(EARS-514/523), document immutability and retention (EARS-516), backfill
+kinds, refs and flags (EARS-517/518), the derivation view (EARS-519),
+read-time resolution (EARS-520), the import contract (EARS-521), the status
+machine (EARS-524), producer isolation (EARS-525), purpose proposals
 (EARS-526) — plus `pnpm boundaries` green on the module (ADR-004 §6).
 
 ## Out of scope
@@ -451,8 +544,9 @@ status machine (EARS-524), producer isolation (EARS-525), purpose proposals
   P&L, unit cost — **F3 (#340)**; reconciliation — **F4 (#341)**; scenarios —
   **F5 (#342)**.
 - **The payment calendar** — #372, its own brainstorm (decision 26).
-- Bank **format parsers** until real statements are supplied (EARS-522);
-  bank APIs, AI-agent entry — future producers by design (decision 3).
+- Bank **format parsers** until real statements are supplied (§G process
+  note); bank APIs, AI-agent entry — future producers by design
+  (decision 3).
 - Automatic hours-accrual posting — ruled out by decision 23; whether the
   entry form later pre-fills a payout from hours data is deferred to
   practice, unbuilt here.
@@ -470,10 +564,19 @@ so none rides in silently:
 
 1. The decision-27 mapping: submitting a request stays open to any platform
    login (decision 8); `finance-entry` gates direct entry (EARS-501/502).
-2. EARS-511's one-act confirmation for the pre-spend path.
-3. Prior-decisions change 2: the spec-338 reclassification-journal promise is
+2. `platform-admin` alone loses ledger writes: an admin without
+   `finance-approve` can no longer post or reverse (EARS-529 — narrows
+   shipped spec 338 EARS-330 and its acceptance scenario 3).
+3. EARS-511's one-act confirmation for the pre-spend path.
+4. Prior-decisions change 2: the spec-338 reclassification-journal promise is
    replaced by read-time resolution + reversal (EARS-520).
-4. Documents demand a **private** storage location — a new infra step in the
+5. The document gate splits kinds: only proof-of-payment documents (fiscal
+   receipt / payment order / bank screenshot) unlock posting; an invoice
+   alone does not (EARS-506/515 — enforces decision 23, tightens draft v2's
+   «any kind satisfies»).
+6. Documents demand a **private** storage location — a new infra step in the
    `bbm` ops repo (the current media bucket is public by design).
-5. Agent-proposed details: the `counterparty` free-text field (EARS-508) and
-   the purpose-proposal path (EARS-526).
+7. The `counterparty` free-text field, free text in v1 (EARS-508) —
+   agent-proposed.
+8. The purpose-proposal path for a missing purpose (EARS-526) —
+   agent-proposed.
