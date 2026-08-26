@@ -9,8 +9,11 @@ export interface TopBarProps {
   /** The workspace's own name. The design's wording is the default. */
   homeLabel?: ReactNode
   /**
-   * The app the member is currently in. OMITTED on `/p` itself — EARS-470: the
-   * bar shows its home state there and names no current app.
+   * The app the member is currently in. On `/p` itself the bar is in its HOME
+   * state and names no app of the registry (EARS-470) — what the slot holds
+   * there is the home's own naming, «Главная» in
+   * `design-source/p-launcher.html`. The kit does not decide that: the caller
+   * does, and may pass nothing at all.
    */
   appName?: ReactNode
   /** The signed-in member, as they should be addressed. */
