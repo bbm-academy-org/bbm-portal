@@ -529,6 +529,20 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-25-9e51f0c7ab -->
 
+- [ ] 2026-08-26 the cold-start fix for the e2e `beforeAll` budget
+      (`COLD_START_HOOK_TIMEOUT_MS` in `tests/helpers/login.ts`, applied by the
+      sign-in hooks of `admin.e2e.spec.ts` and `publish-panel.e2e.spec.ts`) has
+      never been OBSERVED green: PR #364 landed it without a stand, so the claim
+      "180 s covers Next dev's first compile of `/admin` on this box" is reasoned
+      from the 2026-08-15 measurement, not measured after the change. This
+      narrowed line replaces the fixed 2026-08-15 entry so the residual is
+      carried by the ledger rather than by one PR comment — return condition: the
+      first cold `pnpm test:e2e` run on this box (green → delete the line; still
+      red → the budget is the wrong remedy, not merely the wrong number)
+      (#362, PR #364 review non-blocking N2)
+
+<!-- debt-entry-end: 2026-08-26-7c4de91b83 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very

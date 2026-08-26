@@ -118,12 +118,17 @@ only when all three hold:
    stage-4 review whose mandate is precisely the FAIL (e.g. "item 2 has no
    verifiable TDD order — the reviewer rules on it"). A stage that merely
    happens to come next, and `pnpm pr:land` in every case, is not a remedy.
-2. **The decision and its condition are recorded on the PR** — which item, why
-   the next stage answers it, what verdict would release it. Unrecorded, it did
+2. **The decision is recorded on the PR as its own comment**, in the same place
+   the gate's verdict table goes — one line naming the blocked item number, the
+   remedy stage being dispatched, and the release condition. Unrecorded, it did
    not happen.
-3. **The item stays FAIL** until an explicit owner or lead acceptance says
-   otherwise. The escape buys ordering, never a verdict: the re-run still has to
-   turn that FAIL into PASS or N/A before the merge tail.
+3. **The item stays FAIL, and exactly ONE thing releases it: the re-run of the
+   dispatched gate turning it PASS or N/A.** The escape buys ordering, never a
+   verdict, and the lead never clears its own blocking item — that is this
+   file's "dispatch, never self-check" applied to the escape it grants. The one
+   alternative is not an acceptance the lead may issue: it is an **owner
+   write-off recorded on the PR by the owner**, naming the item. Absent that
+   comment, the re-run is the only door, and `pnpm pr:land` waits for it.
 
 Precedent: PR #354 (2026-08-26) — the gate blocked on unverifiable TDD order and
 the review it was blocking was the very thing that could rule on it.
@@ -139,6 +144,9 @@ the review it was blocking was the very thing that could rule on it.
   the same rule.
 - **Marking item 8 N/A on a "chore" that added a form or changed a formula** —
   those two have no exemption by task type.
+- **Reading the BLOCKED-but-proceed escape as a general bypass** — it moves ONE
+  stage forward and clears nothing; the lead marking its own blocked item PASS
+  is the same self-check the Mode section bans.
 - **Treating the checklist as the review** — `bbm-reviewer` judges the change on
   its merits (`task-cycle` stage 4); this gate judges whether the iteration is
   finished. Both run.

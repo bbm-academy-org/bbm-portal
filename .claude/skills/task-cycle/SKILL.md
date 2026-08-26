@@ -143,7 +143,8 @@ root `AGENTS.md`. Such a PR merges on green CI without the review subagent and
 without the iteration-end gate. **Everything else runs both** — any code,
 tooling or migration change, and ANY edit to a canon file, prose or not: the
 independent review above, plus the iteration-end gate before the review is
-requested (dispatched, never self-checked, verdict `PASS` required —
+requested (dispatched, never self-checked; what its verdict permits — including
+its one BLOCKED-but-proceed escape — is owned by
 `.claude/skills/run-iteration-end-checklist/SKILL.md`). A canon edit changes how
 every future session behaves; that is exactly why it does not count as docs.
 This boundary is defined here and nowhere else — other files point at it.
