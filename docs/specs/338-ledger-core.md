@@ -61,7 +61,7 @@ owner on the wireframe prototype (Stage A, 2026-08-25 — see "Design gate").
 the consolidation spec §8 and the hours schema conventions (spec 124), each
 justified for this domain in place. The three accounting questions the PRD left
 open (#338 OQ3/OQ4/OQ5) were researched against public canon — IAS 38.67,
-IFRS 15.97(d)/15.98(a), IFRS 8.28, IAS 21 with the IFRIC June 2019 agenda
+IFRS 15.97(e)/15.98(a), IFRS 8.28, IAS 21 with the IFRIC June 2019 agenda
 decision on cryptoassets, the IMA Conceptual Framework for Managerial Costing
 (causality / attributability), CIMA's allocation-vs-apportionment distinction
 and the Garrison segment-margin statement — and the resulting rulings in
@@ -76,12 +76,25 @@ authority over this ledger — and **IAS 2 is deliberately not cited in support 
 non-allocation**: IAS 2.12 _requires_ a systematic allocation of production
 overheads, it governs the balance-sheet carrying amount of inventory (which BBM
 does not hold), and its old §19 on service providers was deleted by the IFRS 15
-consequential amendments. The honest anchors are IAS 38.67 (selling,
-administrative and general overheads are not capitalised into an internally
-generated intangible _even when_ they could be allocated on a reasonable and
-consistent basis), IFRS 15.97(d)/15.98(a), and — for the reporting shape —
-IFRS 8.28's reconciliation of segment results to entity result with unallocated
-corporate costs identified and described.
+consequential amendments. The honest anchors are IAS 38.67(a) (selling,
+administrative and other general overhead expenditure is not a component of an
+internally generated intangible's cost _unless_ it can be directly attributed to
+preparing the asset for use — IAS 38.66 does include directly attributable
+costs), IFRS 15.97(e)/15.98(a), and — for the reporting shape — IFRS 8.28's
+reconciliation of segment results to entity result with unallocated corporate
+costs identified and described.
+
+**IFRS 15.97 is borrowed for one criterion, not as a ban on allocation.** The
+same trap that IAS 2 sets is set by IFRS 15: **97(c) expressly permits
+«allocations of costs that relate directly to the contract or to contract
+activities»**, so a reader must not take the citations below as IFRS
+prohibiting allocation bases. Only **97(e)** («other costs that are incurred
+only because an entity entered into the contract») is used here, and only for
+its «would not exist without» criterion. The design choice to post no
+allocation base is a **management-accounting** choice — IMA causality /
+attributability, CIMA's allocation-vs-apportionment distinction, and IAS 38.67's
+direct-attribution ladder — not the application of a prohibition that no
+standard states.
 
 ## Current behavior → replacement delta
 
@@ -258,9 +271,12 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   shall render the accounts with their balances computed live from postings,
   each in its own currency (the cash card of the vendored
   `design-source/finance/Overview.dc.html`); the rest of the overview is F3's
-  and shall not be stubbed. An unauthenticated request shall be refused by the
-  module's own handlers regardless of how the URL was reached (spec 311
-  EARS-405/416): F1 exposes no public finance surface.
+  and shall not be stubbed. A request that does not carry `platform-user` (or
+  `platform-admin`, which implies it — spec 311 EARS-417) shall be refused by
+  the module's own handlers regardless of how the URL was reached (spec 311
+  EARS-405/416): an unauthenticated request, and equally an **authenticated**
+  session carrying neither role, which spec 311 answers with a bare 403
+  (EARS-418). F1 exposes no public finance surface.
 - **EARS-326.** Every cabinet write to a finance reference shall run through
   `platformTransaction` with the signed-in admin as actor (spec 311 EARS-439),
   and shall validate against the module's zod schemas (EARS-436); a refusal
@@ -302,13 +318,15 @@ rulings below were **accepted by the owner on 2026-08-26 (#338)** — ruling 1
 with five amendments, folded into its text.
 
 **Ruling 1 — product-less overhead (closes #338 OQ4).** The governing texts for
-a service/digital product are IAS 38.67 (selling, administrative and general
-overhead is not part of an internally generated intangible's cost even when it
-could be allocated on a reasonable and consistent basis) and IFRS 15.97(d) /
-15.98(a) (a fulfilment cost relates to a contract when it was incurred _only
-because_ the entity entered into it; G&A is expensed as incurred). Neither
-governs this internal register — see the scope note under "Prior decisions" —
-and at BBM's scale (few, heterogeneous, low-volume products) an allocation base
+a service/digital product are IAS 38.67(a) (selling, administrative and other
+general overhead expenditure is not part of an internally generated intangible's
+cost _unless_ it can be directly attributed to preparing the asset for use) and
+IFRS 15.97(e) / 15.98(a) (a fulfilment cost relates to a contract when it was
+incurred _only because_ the entity entered into it; G&A is expensed as
+incurred). Neither governs this internal register, and neither forbids
+allocation — IFRS 15.97(c) expressly permits allocations of directly related
+costs; see the scope note under "Prior decisions" for why 97(e) is borrowed for
+its criterion alone. At BBM's scale (few, heterogeneous, low-volume products) an allocation base
 distorts more than it informs: IMA's causality/attributability principles and
 CIMA's allocation-vs-arbitrary-apportionment distinction both say attach only
 what a cost object actually caused. The ladder:
@@ -321,13 +339,17 @@ what a cost object actually caused. The ladder:
 3. everything else → **period cost** of the fund or project, **no allocation
    base in v1**.
 
-Amendment (c): a campaign run for exactly one product passes (a) and (b) and is
-a textbook traceable fixed cost of that product's segment — «does not sell» was
+Throughout this ruling, **(a)–(e) in «amendment (…)» are the owner's amendment
+letters** from the stage-2 go (#338), while the ladder's own tests are always
+named «criterion (a)/(b)/(c)» — the two schemes are unrelated.
+
+Amendment (a): a campaign run for exactly one product passes criteria (a) and
+(b) and is a textbook traceable fixed cost of that product's segment — «does not sell» was
 an inventory-valuation rule (IAS 2.16(d)) imported into a decision report, and
 keeping it would overstate the margin of exactly the heavily marketed products.
 Single-product marketing therefore IS attributable to that product.
 
-Amendment (b) — **the level-lift.** A cost that fails (b) only because it serves
+Amendment (b) — **the level-lift.** A cost that fails criterion (b) only because it serves
 several products of ONE product line or fund lands on that **line/fund** as its
 own named subtotal, sitting between the product margins and the entity line.
 This is the standard multi-level segment statement (Garrison); it introduces no
@@ -338,7 +360,7 @@ overhead, read off postings (EARS-320/321 carry the mechanics). Trade-off,
 stated: the sum of product margins exceeds holding profit by the unallocated
 overhead. That gap is the reporting device, not an artefact (IFRS 8.28
 reconciliation; Garrison's segmented income statement) — and, per amendment
-(c'), F3 shows it as **named buckets** (office, shared salaries, shared
+(c), F3 shows it as **named buckets** (office, shared salaries, shared
 hosting, fundraising/admin…), each identified and described in the IFRS 8.28
 manner, never as one opaque «нераспределённое» line.
 
@@ -356,7 +378,8 @@ top-down from the total unallocated block; the register measures, it does not
 price.
 
 **Ruling 2 — the attributability test (closes #338 OQ5).** Adapted from IFRS
-15.97(d)'s incremental-cost wording into two questions: (1) «Если бы этого
+15.92's incremental-cost wording (a cost the entity «would not have incurred if
+the contract had not been obtained») into two questions: (1) «Если бы этого
 продукта не было — мы бы всё равно потратили эти деньги?» yes → no product;
 no → name it; (2) only if "partly": «Можешь назвать ОДИН продукт без деления по
 процентам?» no → the cost moves up a level (ruling 1, amendment (b)), it is not
