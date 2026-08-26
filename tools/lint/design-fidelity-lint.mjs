@@ -43,7 +43,11 @@
 // stands in for a decision a named person took on a named day. The GO may cite an
 // owner decision adopting a standard system's default theme — it does not have to
 // be a per-mockup «принято». Text that only TALKS ABOUT the marker — an HTML
-// comment, a fenced example — is stripped before extraction (`stripNonEvidence`).
+// comment, a fenced example, a four-space-INDENTED line — is stripped before
+// extraction. Nor is the shape THIS GUARD PRINTS: a `GO` whose tail is nothing
+// but `<…>` slots is classified as the unfilled placeholder it is, so a blocked
+// session cannot clear the BLOCK by pasting back the string the failure handed
+// it (review of PR #371).
 //
 // SEVERITY: BLOCK, from day one, and with NO severity dial — a flag here could
 // only ever weaken the gate (the reasoning `instruction-budget` records in canon
@@ -94,11 +98,32 @@ const ROUTE_FILE_RE =
 const MARKER_RE = /^[ \t>*_-]*design-?fidelity\s*:\s*(.+?)\s*$/gim
 
 /** `GO — Антон, 2026-08-26 …` — the attribution tail is REQUIRED (see header). */
-const GO_RE = /^\**go\b\**\s*[-–—:,(]\s*\S/i
+const GO_RE = /^\**go\b\**\s*[-–—:,(]\s*(\S.*)$/i
 /** `batched at #360 covers \`src/app/(platform)/p/**\`` */
 const BATCHED_RE = /^\**batched\s+at\s+#(\d+)\b/i
+/** A `batched` marker whose gate is not a real issue number (`#<gate issue>`). */
+const BATCHED_SHAPE_RE = /^\**batched\b/i
 /** An unfilled placeholder — reported distinctly from a missing marker. */
 const PLACEHOLDER_RE = /^(<.*>|\(.*\)|tbd|pending.*|todo.*|\?+)$/i
+/** An angle-bracket slot of the printed shape: `<owner, date>`, `<path glob>`. */
+const ANGLE_SLOT_RE = /<[^<>]*>/g
+/** The same, non-global — `.test` on a `/g` regex is stateful. */
+const HAS_ANGLE_SLOT_RE = /<[^<>]*>/
+/** Punctuation that only SEPARATES a record from its slots — never content. */
+const SEPARATORS_RE = /[-–—:;,()[\]{}`"'«»…·|/\\.\s]+/g
+
+/**
+ * What SURVIVES when every angle-bracket slot and every separator is removed.
+ * Empty means the value carries no record at all — it is the printed shape, not
+ * a decision. `GO — <owner, date> — <…>` collapses to '' ; `GO — Антон,
+ * 2026-08-26` does not.
+ */
+function filledRemainder(text) {
+  return String(text ?? '')
+    .replace(ANGLE_SLOT_RE, ' ')
+    .replace(SEPARATORS_RE, ' ')
+    .trim()
+}
 
 // ── the index ────────────────────────────────────────────────────────────────
 
@@ -245,10 +270,30 @@ export function coveringRow(rows, path) {
 
 // ── the marker ───────────────────────────────────────────────────────────────
 
+/**
+ * Markdown's OTHER code block: a line indented by four spaces (or a tab), the
+ * blockquote prefix of a quoted paste discounted first. The shared
+ * `stripNonEvidence` drops fenced blocks and HTML comments; it does not know
+ * this form, and this guard is the one that PRINTS its marker shapes indented by
+ * four spaces into the failure a session must clear (review of PR #371). The
+ * rule stays local rather than going into `lib/guard.mjs`, because widening the
+ * shared stripper silently changes `stage-b`, `spec-link`, `spec-deletion` and
+ * `pr-land` — a different decision, and not this PR's.
+ */
+const INDENTED_CODE_RE = /^(?: {4,}|\t)/
+const QUOTE_PREFIX_RE = /^ {0,3}(?:>\s?)+/
+
+function stripIndentedCode(text) {
+  return String(text ?? '')
+    .split(/\r?\n/)
+    .filter((line) => !INDENTED_CODE_RE.test(line.replace(QUOTE_PREFIX_RE, '')))
+    .join('\n')
+}
+
 /** Every `Design-fidelity:` VALUE in a text blob; quoted text never counts. */
 export function extractMarkerValues(text) {
   if (!text) return []
-  return [...stripNonEvidence(text).matchAll(MARKER_RE)].map((m) =>
+  return [...stripIndentedCode(stripNonEvidence(text)).matchAll(MARKER_RE)].map((m) =>
     (m[1] ?? '').replace(/^[\s*_]+/, '').trim(),
   )
 }
@@ -259,7 +304,14 @@ export function extractMarkerValues(text) {
  */
 export function classifyMarker(value) {
   const v = String(value ?? '').trim()
-  if (GO_RE.test(v)) return { kind: 'go' }
+  // PLACEHOLDER FIRST. The blocked session is handed the marker shape by the
+  // violation message; if pasting it back unfilled classified as `go`, the gate
+  // would be cleared by its own error text (review of PR #371). A `GO` whose
+  // tail is nothing but angle-bracket slots records neither a person nor a day,
+  // which is exactly what design-process.md §2 says is NOT a record.
+  if (PLACEHOLDER_RE.test(v)) return { kind: 'placeholder' }
+  const go = GO_RE.exec(v)
+  if (go) return filledRemainder(go[1]) ? { kind: 'go' } : { kind: 'placeholder' }
   const batched = BATCHED_RE.exec(v)
   if (batched) {
     const coversClause = /\bcovers\b[:\s]*(.+)$/i.exec(v)
@@ -276,7 +328,11 @@ export function classifyMarker(value) {
       : []
     return { kind: 'batched', gate: Number(batched[1]), covers }
   }
-  if (PLACEHOLDER_RE.test(v)) return { kind: 'placeholder' }
+  // `batched at #<gate issue> covers \`<path glob>\`` — the printed shape again.
+  // `BATCHED_RE` already refuses it (it demands `#\d+`), so it was never
+  // evidence; saying «placeholder» rather than «records nothing» is what tells
+  // the session it pasted the template back.
+  if (BATCHED_SHAPE_RE.test(v) && HAS_ANGLE_SLOT_RE.test(v)) return { kind: 'placeholder' }
   return { kind: 'unrecognized' }
 }
 
