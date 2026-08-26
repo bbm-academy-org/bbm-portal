@@ -224,6 +224,25 @@ module.exports = {
       from: { path: '^src/app/' },
       to: { path: '^src/lib/platform/db/schema/[^/]+/' },
     },
+    {
+      name: 'ui-kit-must-not-import-src',
+      comment:
+        'Spec 311 EARS-458 / consolidation §10: «любой модуль может импортировать `src/ui`; ' +
+        '`src/ui` не импортирует ни один модуль». The half that needs a rule is the second one — ' +
+        'the first is the ABSENCE of a rule, and the fixture `module-imports-ui` pins that it ' +
+        'stays absent. Written wider than the word "module" on purpose: a kit that may not ' +
+        'import src/lib/hours but MAY import src/app, src/collections or src/lib/platform/db is ' +
+        'not context-free, it has just leaked through a door nobody named. So the to-set is ALL ' +
+        'of src/ with src/ui/ excepted — the kit is composed of its own files and of nothing ' +
+        'else. That is what makes it reusable by every module at once: it has no opinion about ' +
+        'the session, the registry or the database, because it cannot reach any of them. ' +
+        'Note the asymmetry with every rule above: those wall two peers off from each other and ' +
+        'each names a route group it deliberately leaves out. This one has no exception at all — ' +
+        'there is no caller src/ui is allowed to know about.',
+      severity: 'error',
+      from: { path: '^src/ui/' },
+      to: { path: '^src/', pathNot: '^src/ui/' },
+    },
   ],
   options: {
     doNotFollow: { path: 'node_modules' },

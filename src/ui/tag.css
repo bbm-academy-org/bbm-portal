@@ -1,0 +1,23 @@
+/* Tag — `.tag` of `p-admin-shell.html` (a member's «активен» state) and
+   `.ext-mark` of `p-launcher.html` (the «↗ внешний» marker). One element class:
+   the two are the same bordered micro-label at the same size, and the launcher
+   only differs in where it is placed. */
+
+.bbm-tag {
+  display: inline-block;
+  border: var(--bbm-border-width) solid var(--bbm-color-border);
+  background: var(--bbm-color-surface-head);
+  color: var(--bbm-color-text-secondary);
+  font-size: var(--bbm-font-size-xs);
+  line-height: var(--bbm-line-height-base);
+  padding: var(--bbm-space-1) var(--bbm-space-7);
+  white-space: nowrap;
+}
+
+/* `.tag.off` — a state that is recorded but no longer live (a deactivated
+   member). Dashed, not red: the design signals with line style, having no
+   colour to signal with. */
+.bbm-tag--muted {
+  border-style: dashed;
+  color: var(--bbm-color-text-disabled);
+}

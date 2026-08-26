@@ -1,0 +1,53 @@
+/* Button — `.bar-switch` / `.btn` (default) and `.bar-out` (plain) of the two
+   vendored Stage-A sources. Square corners, one hairline border, no shadow:
+   the design's controls are drawn, not raised. */
+
+.bbm-button {
+  border: var(--bbm-border-width) solid var(--bbm-color-border-strong);
+  background: var(--bbm-color-surface-sunken);
+  color: var(--bbm-color-text-control);
+  font: inherit;
+  font-size: var(--bbm-font-size-sm);
+  line-height: var(--bbm-line-height-base);
+  padding: var(--bbm-space-4) var(--bbm-space-10);
+  cursor: pointer;
+}
+
+/* `.btn` of the cabinet toolbar is the same control at a roomier padding and
+   the darker label the wireframe gives a working-area action. */
+.bbm-button--work {
+  padding: var(--bbm-space-6) var(--bbm-space-12);
+  color: var(--bbm-color-text-strong);
+}
+
+/* `.bar-out` — the sign-out control, on paper rather than on a control face. */
+.bbm-button--plain {
+  background: var(--bbm-color-surface);
+}
+
+/* States the wireframes do NOT draw (they show the default only). Derived from
+   the palette rather than invented: hover borrows the neighbouring surface
+   step, focus reuses the sidebar's accent rail width, and the design has no
+   colour to signal with.
+
+   Ordered least-specific first (`:disabled` and `:focus-visible` before the
+   `:not(:disabled)` pair) so the cascade reads in source order — stylelint's
+   `no-descending-specificity`, the one rule this repo configures. */
+.bbm-button:disabled {
+  color: var(--bbm-color-text-disabled);
+  border-color: var(--bbm-color-border);
+  cursor: default;
+}
+
+.bbm-button:focus-visible {
+  outline: var(--bbm-border-width-accent) solid var(--bbm-color-text-secondary);
+  outline-offset: var(--bbm-space-1);
+}
+
+.bbm-button:hover:not(:disabled) {
+  background: var(--bbm-color-surface-head);
+}
+
+.bbm-button:active:not(:disabled) {
+  background: var(--bbm-color-surface-selected);
+}

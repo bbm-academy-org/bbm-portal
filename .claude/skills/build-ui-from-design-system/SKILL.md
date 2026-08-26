@@ -14,8 +14,9 @@ standards; it points at where they live and enforces the order of operations:
 - [`design-source/`](../../../design-source/README.md) — the design of each
   surface, vendored as a file. **The fidelity source of truth.**
 - [`docs/design/ui-whitelist.md`](../../../docs/design/ui-whitelist.md) — the
-  registry of settled, reusable element classes. **Empty today** (this repo has
-  no UI kit); it fills as classes settle, and `src/ui` (#112) will add rows.
+  registry of settled, reusable element classes, plus the state of the kit —
+  `src/ui` exists since #312; whether the registry has rows yet is that file's
+  to say.
 - [`.claude/rules/design-process.md`](../../rules/design-process.md) — the two
   repo rules this skill enforces.
 - [`task-cycle`](../task-cycle/SKILL.md) stages **1b** (Stage A) and **5**
@@ -51,11 +52,13 @@ new. Build the unit from the vendored file's actual values, not from a
 re-narration of them; if you hand the work to a subagent, hand it the **file
 path** plus "the source overrides any prose in this brief".
 
-**2. Adopt from the whitelist registry.** Check
+**2. Adopt from the kit and the whitelist registry.** `src/ui` exists since #312
+— read [`src/ui/README.md`](../../../src/ui/README.md) for what it covers and
+import from `@/ui` rather than rebuilding it (EARS-430: hand-rolled styles are a
+review stop-factor). Then check
 [`docs/design/ui-whitelist.md`](../../../docs/design/ui-whitelist.md) for the
-element class. **Today it is empty, so this rung returns nothing** — that is the
-expected answer in this repo right now, and it is a one-line check, not a reason
-to skip the ladder. If the class is missing and the look is genuinely open,
+element class; that file states whether the registry has rows yet. If the class
+is missing and the look is genuinely open,
 dispatch [`research-ui-element`](../research-ui-element/SKILL.md) rather than
 inventing a look at the keyboard.
 

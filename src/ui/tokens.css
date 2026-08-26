@@ -1,0 +1,157 @@
+/* ============================================================================
+   BBM UI kit — the token layer (#312; consolidation spec §10).
+
+   EVERY value in this file is DERIVED, not chosen. Its two sources are the
+   owner-picked Stage-A wireframes vendored in `design-source/`:
+
+     - `design-source/p-launcher.html`    (option `launcher-a`, owner pick
+                                           Антон 2026-08-25, recorded in #314)
+     - `design-source/p-admin-shell.html` (option `admin-a`,   owner pick
+                                           Антон 2026-08-25, recorded in #315)
+
+   `.claude/rules/design-process.md` §1: «build to the file, not to issue-body
+   prose… where the two disagree, the file wins». That is enforced here rather
+   than asserted: `tests/unit/ui-tokens.spec.ts` re-reads both vendored files,
+   collects every colour they paint, and fails if a colour has no token — or if
+   a token carries a colour the designs never used. So this palette cannot drift
+   from the design by editing this file, only by editing the design.
+
+   THE PALETTE IS ALL GREY, AND THAT IS THE DESIGN'S OWN STATEMENT. The two
+   wireframes use no hue at all: 22 greys, no accent, no brand colour, no
+   border-radius except the avatar's circle. A kit that "helpfully" added an
+   accent would be inventing a decision the owner has not made. When the
+   workspace gets a brand colour, it arrives here as a new token group, from a
+   new Stage-A pick — not from a component.
+
+   ONE COLOUR, ONE NAME. Each of the 22 greys gets exactly one semantic token,
+   named for the job it does in the design rather than for its lightness. There
+   is deliberately no primitive `--bbm-grey-N` layer underneath: a two-tier
+   system whose lower tier is a 1:1 relabelling of the upper one is two places
+   to look and one place to drift.
+
+   Every token below carries the selector it was read from, so a reviewer can
+   check any single value against the vendored bytes in one grep.
+   ============================================================================ */
+
+:root {
+  /* --- Surfaces --------------------------------------------------------- */
+  /* body of both wireframes — the workspace canvas behind every surface */
+  --bbm-color-canvas: #f2f2f2;
+  /* .bar, .tile, .side, table, .search — the paper every panel is drawn on */
+  --bbm-color-surface: #ffffff;
+  /* .tile.ext — the external tile sits a shade off the paper */
+  --bbm-color-surface-raised: #fafafa;
+  /* .bar-switch, .btn, .ghost — a control's face, and the placeholder tile */
+  --bbm-color-surface-sunken: #f7f7f7;
+  /* th, .tag — a table head and a status pill */
+  --bbm-color-surface-head: #f6f6f6;
+  /* .grp-name — the sidebar's module group band */
+  --bbm-color-surface-group: #f4f4f4;
+  /* .nav-i.on — the selected sidebar item */
+  --bbm-color-surface-selected: #ececec;
+  /* .tile-icon, .bar-avatar — the icon/avatar swatch, until real art exists */
+  --bbm-color-surface-placeholder: #eeeeee;
+
+  /* --- Text ------------------------------------------------------------- */
+  /* body — the default reading colour */
+  --bbm-color-text: #1a1a1a;
+  /* .nav-i, .btn, .pulse — a control's label and a live status line */
+  --bbm-color-text-strong: #333333;
+  /* .bar-switch, .bar-out, .rowacts a — chrome controls */
+  --bbm-color-text-control: #444444;
+  /* .bar-right, .grp-name, .tag, .nav-i.on border — secondary chrome */
+  --bbm-color-text-secondary: #555555;
+  /* .bar-app, th — the current app's name, a column head */
+  --bbm-color-text-tertiary: #666666;
+  /* .sub, .tile-desc, .hint, .crumbs, .admin-flag, .side-title, .pager */
+  --bbm-color-text-muted: #777777;
+  /* .ghost .tile-name, .search placeholder, .side-foot — present but inactive */
+  --bbm-color-text-disabled: #999999;
+  /* .grp.ghost — a whole sidebar group that is not live yet */
+  --bbm-color-text-ghost: #a0a0a0;
+  /* .pulse.none — the faintest text in either design */
+  --bbm-color-text-faint: #aaaaaa;
+
+  /* --- Borders ---------------------------------------------------------- */
+  /* .bar, .tile, .side, table, .btn, .search — the workspace's structural line */
+  --bbm-color-border-strong: #bbbbbb;
+  /* .pulse, .tag, .ext-mark, th — a line inside a panel */
+  --bbm-color-border: #cccccc;
+  /* .grp-name, .side-foot — the sidebar's internal rules */
+  --bbm-color-border-muted: #e2e2e2;
+  /* .pulse.none — the divider above an absent status line */
+  --bbm-color-border-subtle: #e4e4e4;
+  /* td — the faintest rule, between table rows */
+  --bbm-color-border-faint: #eaeaea;
+
+  /* --- Typography ------------------------------------------------------- */
+  /* body of both wireframes, verbatim */
+  --bbm-font-family-base: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --bbm-font-size-2xs: 11px; /* .admin-flag */
+  --bbm-font-size-xs: 12px; /* .tag, th, .grp-name, .side-title, .ext-mark */
+  --bbm-font-size-sm: 13px; /* .bar-switch, .btn, .pulse, .crumbs, .pager */
+  --bbm-font-size-md: 14px; /* .sub, .nav-i, table body */
+  --bbm-font-size-base: 15px; /* body */
+  --bbm-font-size-lg: 16px; /* .tile-name */
+  --bbm-font-size-xl: 22px; /* h1 of the cabinet */
+  --bbm-font-size-2xl: 24px; /* h1 of the launcher */
+  --bbm-font-weight-regular: 400;
+  --bbm-font-weight-medium: 500; /* .ghost .tile-name */
+  --bbm-font-weight-semibold: 600; /* .bar-home, .tile-name, h1, .nav-i.on */
+  --bbm-line-height-base: 1.5; /* body */
+  --bbm-tracking-tight: 0.01em; /* .bar-home */
+  --bbm-tracking-wide: 0.04em; /* .wire-note */
+  --bbm-tracking-wider: 0.05em; /* .admin-flag, th */
+  --bbm-tracking-widest: 0.06em; /* .grp-name */
+  --bbm-tracking-ultra: 0.08em; /* .side-title */
+
+  /* --- Spacing ---------------------------------------------------------- */
+  /* Named after the pixel value each carries, and asserted to be so
+     (tests/unit/ui-tokens.spec.ts). A t-shirt scale would have had to invent
+     an ordering the design does not have — these are the exact padding, margin
+     and gap values the two wireframes use, and nothing else. */
+  --bbm-space-1: 1px;
+  --bbm-space-2: 2px;
+  --bbm-space-4: 4px;
+  --bbm-space-5: 5px;
+  --bbm-space-6: 6px;
+  --bbm-space-7: 7px;
+  --bbm-space-8: 8px;
+  --bbm-space-10: 10px;
+  --bbm-space-11: 11px;
+  --bbm-space-12: 12px;
+  --bbm-space-14: 14px;
+  --bbm-space-16: 16px;
+  --bbm-space-18: 18px;
+  --bbm-space-20: 20px;
+  --bbm-space-24: 24px;
+  --bbm-space-28: 28px;
+  --bbm-space-30: 30px;
+  --bbm-space-32: 32px;
+  --bbm-space-64: 64px;
+
+  /* --- Sizes ------------------------------------------------------------ */
+  --bbm-size-bar-height: 52px; /* .bar-in */
+  --bbm-size-content-max: 1160px; /* .bar-in, main, .wire-note */
+  --bbm-size-sidebar: 248px; /* .shell grid-template-columns */
+  --bbm-size-avatar: 24px; /* .bar-avatar */
+  --bbm-size-tile-icon: 28px; /* .tile-icon */
+  --bbm-size-tile-icon-compact: 22px; /* .tile.ext .tile-icon */
+  --bbm-size-tile-min: 132px; /* .tile min-height */
+  --bbm-size-tile-min-compact: 96px; /* .tile.ext min-height */
+  --bbm-size-search-min: 280px; /* .search min-width */
+  /* The narrowest a tile may get before the grid drops a column. NOT drawn by
+     the wireframes, which show one desktop width only: EARS-428 requires the
+     home to stay usable while narrow, and a fixed `repeat(4, 1fr)` cannot. It
+     is set to the desktop column width the design DOES imply — (1160 - 48
+     padding - 3 × 16 gap) / 4 = 266px, rounded down — so at full width the grid
+     lays out exactly as drawn and only reflows below it. */
+  --bbm-size-tile-min-width: 260px;
+
+  /* --- Lines and corners ------------------------------------------------ */
+  --bbm-border-width: 1px; /* every border in both designs */
+  --bbm-border-width-accent: 3px; /* .nav-i left rail */
+  /* The designs are square-cornered throughout; the avatar is the ONLY radius
+     either of them uses. There is no `--bbm-radius-sm`, on purpose. */
+  --bbm-radius-round: 50%;
+}
