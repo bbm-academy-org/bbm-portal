@@ -112,6 +112,23 @@ session rotated the Zitadel client secret, the Plane token, the SSOT-sync key an
 the preview token, and rolled S3 credentials onto five boxes. Every one of them
 had been routed to the owner's zone a moment earlier.)_
 
+### A fact that exists nowhere in the repo is a stop-state input
+
+The four accesses above answer «can I DO this myself». They do not answer «what
+is the value». When the four come back negative **and** the fact itself exists
+nowhere in the repo, the environment or the provider's API — an external origin
+or URL, an organisation or workspace name, where a credential lives — that fact
+is a **stop-state input**: it goes to the owner as a question and the work waits.
+
+**Never a guessed value with a TODO built around it.** A plausible-looking
+placeholder compiles, reviews clean and ships; the TODO next to it does not make
+the value less wrong, it only records that someone knew it might be. Guessing
+also destroys the question: the owner is never asked, because the code looks
+answered.
+
+_(symptom, 2026-08-26: a Mattermost origin nobody in the repo knew was guessed
+and wrapped in a TODO instead of being asked about.)_
+
 ## Промежуточный чекпойнт — the marker, not the tail
 
 An interim message is **not** a stage-6 report and does not carry its five points
@@ -164,6 +181,17 @@ A correctly formed report therefore usually ENDS on a question line — that is
 expected and does not exempt it from the gates (the recognizer only exempts
 short question-only turns).
 
+**Unanswered across more than two consecutive reports → escalate, do not
+restate.** A question that has ridden point 5 of three reports has been shown to
+be invisible there: the owner reads the report for what changed, and a tail item
+is not where an unanswered decision gets noticed. On its third crossing it leaves
+the report and is sent as its **own standalone chat message** — nothing but the
+four beats, and the note that the work is waiting on it. Restating it as point 5
+a fourth time is the failure, not the persistence.
+
+_(symptom, 2026-08-26: the same owner question restated six times across
+consecutive reports, never once asked on its own.)_
+
 ## Failure modes
 
 - **Filling «Проверить глазами» with a PR or repo link** when there is nothing
@@ -180,6 +208,10 @@ short question-only turns).
   rejected by the gate, and rightly: that session's deviations are exactly what
   the line exists for.
 - **Questions in internal shorthand** — costs a full round-trip.
+- **A guessed external value with a `TODO` beside it** — the placeholder ships
+  and the question is never asked.
+- **The same unanswered question as point 5 for the third report running** — it
+  is a standalone message by then, not a tail item.
 
 ## Related
 
