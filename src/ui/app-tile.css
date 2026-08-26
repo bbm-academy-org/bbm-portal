@@ -41,6 +41,15 @@
   color: var(--bbm-color-text-strong);
 }
 
+/* `.pulse.none` — the entry publishes no status line, and says so instead of
+   losing its foot rule. `p-launcher.html` draws it on the admin tile, which is
+   a real entry; it is never drawn for a `planned` placeholder (EARS-478). */
+.bbm-app-tile__status--empty {
+  color: var(--bbm-color-text-faint);
+  font-style: italic;
+  border-top-color: var(--bbm-color-border-subtle);
+}
+
 /* --- external (EARS-423) --------------------------------------------------- */
 .bbm-app-tile--external {
   background: var(--bbm-color-surface-raised);
@@ -78,8 +87,15 @@
   font-weight: var(--bbm-font-weight-medium);
 }
 
+/* The caption («портфель, позже») is a `.tile-desc`, and `p-launcher.html`
+   paints THAT element at #777 — the more specific rule wins over the #999 the
+   `.ghost` tile sets on itself, so the caption stays at the muted text colour
+   the design gives every tile caption. It is restated here rather than left to
+   inherit, because the surrounding `.bbm-app-tile--planned` sets #999 on the
+   tile and the caption must not follow it down.
+   Asserted against the vendored bytes: tests/unit/ui-design-fidelity.spec.ts. */
 .bbm-app-tile--planned .bbm-app-tile__description {
-  color: var(--bbm-color-text-ghost);
+  color: var(--bbm-color-text-muted);
 }
 
 /* --- states the wireframe does not draw ----------------------------------- */

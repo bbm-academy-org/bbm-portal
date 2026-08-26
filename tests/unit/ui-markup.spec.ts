@@ -121,6 +121,7 @@ describe('AppTile — the four tile forms the launcher needs', () => {
         variant: 'planned',
         name: 'Финансы',
         status: 'this must never be rendered',
+        emptyStatus: 'this must never be rendered either',
       }),
     )
     expect(html).not.toContain('<a')
@@ -129,6 +130,34 @@ describe('AppTile — the four tile forms the launcher needs', () => {
     expect(html).not.toContain('bbm-app-tile__status')
     expect(html).not.toContain('this must never be rendered')
     expect(html).toContain('портфель, позже')
+  })
+
+  it('says a live entry publishes no status line, rather than dropping the foot rule', () => {
+    // `.pulse.none` of `p-launcher.html`, which the wireframe draws on the
+    // admin tile — a real entry with nothing to report.
+    const html = renderToStaticMarkup(
+      el(AppTile, {
+        variant: 'admin',
+        name: 'Админка',
+        href: '/p/admin',
+        emptyStatus: '— без статус-строки —',
+      }),
+    )
+    expect(html).toContain('bbm-app-tile__status--empty')
+    expect(html).toContain('— без статус-строки —')
+  })
+
+  it('prefers a real status line over the empty form when both are supplied', () => {
+    const html = renderToStaticMarkup(
+      el(AppTile, {
+        name: 'Часы',
+        href: '/p/hours',
+        status: 'Период открыт',
+        emptyStatus: '— без статус-строки —',
+      }),
+    )
+    expect(html).toContain('Период открыт')
+    expect(html).not.toContain('bbm-app-tile__status--empty')
   })
 
   it('renders no status element when the entry declares no status', () => {
@@ -216,6 +245,20 @@ describe('Tag and Eyebrow', () => {
     expect(renderToStaticMarkup(el(Tag, { muted: true, children: 'деактивирован' }))).toContain(
       'bbm-tag--muted',
     )
+  })
+
+  it('renders the launcher’s unfilled marker form as its own modifier', () => {
+    expect(renderToStaticMarkup(el(Tag, { mark: true, children: '↗ внешний' }))).toContain(
+      'bbm-tag--mark',
+    )
+    expect(renderToStaticMarkup(el(Tag, { children: 'активен' }))).not.toContain('bbm-tag--mark')
+  })
+
+  it('marks an external tile with that form, not with the cabinet’s filled tag', () => {
+    const html = renderToStaticMarkup(
+      el(AppTile, { variant: 'external', name: 'Plane', href: 'https://plane.bbm.academy' }),
+    )
+    expect(html).toContain('bbm-tag--mark')
   })
 
   it('renders an eyebrow label in its two sizes', () => {

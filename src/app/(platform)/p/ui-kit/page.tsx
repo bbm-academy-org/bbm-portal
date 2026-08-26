@@ -144,7 +144,12 @@ export default function UiKitShowcasePage() {
               status="Период «август 2026» открыт до 1 сентября"
             />
             <AppTile name="OKR" description="Цели квартала" href="/p/okr" />
-            <AppTile variant="admin" name="Админка" href="/p/admin" />
+            <AppTile
+              variant="admin"
+              name="Админка"
+              href="/p/admin"
+              emptyStatus="— без статус-строки —"
+            />
             <AppTile
               variant="external"
               name="Plane"
@@ -180,7 +185,7 @@ export default function UiKitShowcasePage() {
           <div className="bbm-showcase__row">
             <Tag>активен</Tag>
             <Tag muted>деактивирован</Tag>
-            <Tag>↗ внешний</Tag>
+            <Tag mark>↗ внешний</Tag>
           </div>
         </ComponentSection>
 

@@ -26,6 +26,16 @@ token carries a colour they never used, or if two tokens share one value. The
 palette therefore cannot drift from the design by editing `tokens.css` — only
 by editing the design.
 
+That check is blind in one direction: it proves a value is IN the palette, not
+that the component reached for the RIGHT one. A token derived from a sidebar
+group of the cabinet is a perfectly valid token to paint a launcher tile
+caption with, and the palette check sees nothing. So the other direction is
+asserted too — `tests/unit/ui-design-fidelity.spec.ts` resolves what a
+component actually paints through the token layer and compares it, property by
+property, with the declarations the vendored file carries for the same element
+(the planned caption, the external marker, the cabinet tag, the empty status
+line). Both blockers of the #353 review were exactly that gap.
+
 **The palette is all grey, and that is the design's own statement**: 22 greys, no
 hue, no accent, no border-radius except the avatar's circle. A brand colour, when
 the owner picks one, arrives as a new token group from a new Stage A — never
@@ -39,10 +49,11 @@ from a component.
 | `tokens.ts`  | —                                                      | the token NAMES, grouped for the showcase. Names only; drift is caught by the lint |
 | `TopBar`     | `.bar` of both sources                                 | EARS-425/440. Switcher and sign-out are SLOTS — the registry never reaches the kit |
 | `AppTile`    | `.tile` and its `.ext` / `.admin` / `.ghost` modifiers | the four forms of EARS-468; the `planned` form is inert by element type (EARS-478) |
+| ↳ status     | `.pulse` and `.pulse.none`                             | a live status line, or `emptyStatus` — the foot rule stating there is none         |
 | `TileGrid`   | `.grid`                                                | `auto-fill` at a min column width, not `repeat(4, 1fr)` — see below                |
 | `PageHeader` | `h1` + `.sub` / `.hint`                                | always an `h1`; two sizes, the launcher's and the cabinet's                        |
 | `Button`     | `.bar-switch` / `.btn` / `.bar-out`                    | a button, never a link; `type="button"` by default                                 |
-| `Tag`        | `.tag` and `.ext-mark`                                 | one element class — the two are the same bordered micro-label                      |
+| `Tag`        | `.tag` and `.ext-mark`                                 | one element class, TWO forms: the cabinet's filled tag and the launcher's `mark`   |
 | `Eyebrow`    | `.side-title` / `.grp-name` / `th` / `.admin-flag`     | a `<span>`, never a heading: an eyebrow must not enter the document outline        |
 | `Container`  | `.bar-in` / `main`                                     | the 1160px measure; vertical rhythm belongs to what it holds                       |
 | `cx`         | —                                                      | the kit's one utility, three lines, so the kit adds no runtime dependency          |
@@ -54,10 +65,14 @@ from `src/` except `src/ui` itself, while every module, route and even the CMS
 side may import the kit. `pnpm boundaries`; demonstrated by four fixtures in
 `tests/unit/platform-boundaries.spec.ts`.
 
-## Two places the kit is not a transcription
+## Three places the kit is not a transcription
 
-Both are cases where the vendored file could not answer, and both are recorded
-rather than silently decided.
+All three are cases where the vendored file could not answer — a width it never
+draws, a state it never shows — and all three are recorded rather than silently
+decided. Where the file DOES answer, it wins and there is nothing to record:
+the launcher's «↗ внешний» marker was a fourth entry here until the #353 review,
+and the fix was to paint it as `p-launcher.html` draws it, not to justify the
+difference.
 
 1. **The grid's column count.** The wireframe says `repeat(4, 1fr)` at one
    desktop width — the only width a static mockup has, and its own header lists
@@ -68,7 +83,14 @@ rather than silently decided.
    design: 1160 − 48 padding − 3 × 16 gap = 266px per column, so `auto-fill`
    lays out exactly four until the viewport is narrower than the wireframe's.
 
-2. **Hover, focus-visible, active and disabled.** Neither source draws them —
+2. **The top bar wrapping.** `.bar-in` is a single 52px-high flex row in both
+   wireframes, at the one desktop width they draw. `TopBar` adds
+   `flex-wrap: wrap` for the same reason the grid is not a fixed four —
+   EARS-428 requires the workspace to stay usable while narrow, and an
+   unwrapped bar overflows the page instead. At the wireframes' own width
+   nothing wraps, so the drawn layout is unchanged.
+
+3. **Hover, focus-visible, active and disabled.** Neither source draws them —
    both list the states they omit in their own headers. They are derived from
    the palette rather than invented: hover borrows the neighbouring surface
    step, focus reuses the sidebar's accent rail width, disabled drops to the
@@ -97,6 +119,16 @@ import { AppTile, Container, PageHeader, TileGrid, TopBar } from '@/ui'
 `@/ui` is the only door: nothing imports past the barrel into a component file.
 Importing the barrel also pulls in `tokens.css`, so a consumer cannot get the
 components without the palette.
+
+**The kit is for code that a bundler compiles.** Because the barrel imports a
+stylesheet, `@/ui` must not be imported from a module that Node executes
+directly with no CSS loader — a Payload collection, `payload.config.ts`, a
+`tools/` script, an instrumentation hook. The boundary rule
+`ui-kit-must-not-import-src` says the CMS side MAY import the kit, and that is
+a statement about dependency direction, not an invitation: a Payload collection
+that pulled in `@/ui` would execute `import './tokens.css'` inside the tsx
+config loader and fail there, not at build time. Shared VALUES a Node context
+needs (token names) live in `src/ui/tokens.ts`, which imports no CSS.
 
 ## Adding to it
 

@@ -29,6 +29,17 @@
 //   3. registry-drift — `src/ui/tokens.ts`, the list the showcase renders,
 //      disagreeing with what tokens.css declares, in either direction.
 //
+// KNOWN FALSE-POSITIVE CLASS, named here before the promotion window rather
+// than discovered inside it: `unknown-token` reads any `var(--bbm-…)` under
+// `src/**\/*.css` as a reference to the palette, so a surface stylesheet that
+// DECLARES its own local `--bbm-…` custom property and then reads it back is
+// reported even though it resolves fine. Nothing in the tree does that today.
+// WARN absorbs it; before promotion to BLOCK (canon §4) the rule either drops
+// findings whose token is declared in the SAME stylesheet, or the local
+// property is renamed out of the `--bbm-` namespace, which is the honest fix —
+// `--bbm-` is the palette's namespace and a local value borrowing it is the
+// ambiguity, not the guard.
+//
 // Deliberately NOT checked: raw `px`. Component CSS legitimately carries
 // one-off geometry, and a px ban would be noise on day 0. Widening the rule is
 // a substantive change and restarts the promotion clock (canon §4).

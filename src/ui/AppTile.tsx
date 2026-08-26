@@ -21,6 +21,13 @@ export interface AppTileProps {
    * has no status line. Never rendered for a `planned` placeholder (EARS-478).
    */
   status?: ReactNode
+  /**
+   * The launcher's `.pulse.none` — the entry publishes no status line and says
+   * so, keeping the tile's foot rule («— без статус-строки —» on the admin
+   * tile). Opt-in: a tile given neither `status` nor this renders no foot at
+   * all, and a `planned` placeholder never renders one either (EARS-478).
+   */
+  emptyStatus?: ReactNode
   /** The icon swatch's content. Empty by default, as the wireframe draws it. */
   icon?: ReactNode
   /** Copy of the external marker. Overridable so the kit does not own wording. */
@@ -52,6 +59,7 @@ export function AppTile({
   href,
   variant = 'internal',
   status,
+  emptyStatus,
   icon,
   externalLabel = '↗ внешний',
   adminLabel = 'только администратор',
@@ -64,7 +72,9 @@ export function AppTile({
   const body = (
     <>
       {variant === 'external' ? (
-        <Tag className="bbm-app-tile__external-mark">{externalLabel}</Tag>
+        <Tag mark className="bbm-app-tile__external-mark">
+          {externalLabel}
+        </Tag>
       ) : null}
       <span className="bbm-app-tile__icon" aria-hidden="true">
         {icon}
@@ -78,6 +88,9 @@ export function AppTile({
       ) : null}
       {planned ? <span className="bbm-app-tile__description">{plannedLabel}</span> : null}
       {!planned && status ? <span className="bbm-app-tile__status">{status}</span> : null}
+      {!planned && !status && emptyStatus ? (
+        <span className="bbm-app-tile__status bbm-app-tile__status--empty">{emptyStatus}</span>
+      ) : null}
     </>
   )
 
