@@ -21,7 +21,27 @@
  * The FX difference lands on the fund's system `fx_result` account, never on a
  * product, with the system `conversion` account as the balancing counter-leg in
  * the same currency — which keeps EARS-311's per-currency zero-sum intact and
- * leaves the conversion account carrying the historical cost forward.
+ * leaves the conversion account carrying the historical cost forward. That
+ * account is a CLEARING account and holds nothing of its own: once every unit
+ * acquired has been disposed of, it reads zero, and a residue there is the
+ * ledger evidencing a mispriced disposal.
+ *
+ * ## Named limitation of F1a — the pool is per CURRENCY PAIR
+ *
+ * `realizedFxResult` prices a disposal against the holding acquired **against
+ * the currency now being received**. So a holding acquired one way and disposed
+ * of another — buy USDT with RUB, sell that USDT for THB — finds no pool and
+ * recognises NOTHING, silently, even though its recorded cost is perfectly well
+ * defined. The same applies to every leg but the first of a multi-step chain,
+ * and to any holding that arrived other than by conversion (income received in
+ * USDT).
+ *
+ * This is deliberate for F1a and is the reading that restates nothing: a
+ * cross-pair basis would have to be carried through a currency the operation
+ * never touched, i.e. through a rate the ledger did not record. It is a real
+ * product limitation, not a subtlety of a SQL predicate, and lifting it is F2/F3
+ * work — a single holding pool per currency, valued in one reporting currency,
+ * with the rate source that implies.
  */
 import { and, eq, sql } from 'drizzle-orm'
 
@@ -273,43 +293,93 @@ export async function recordConversion(
 
 /**
  * The realized FX difference of one disposal step, in `toCurrency` minimal units
- * (EARS-328).
+ * (EARS-328). Positive is a gain.
  *
- * Positive is a gain. Zero — including «the ledger has never recorded an
- * acquisition of this currency against that one» — means nothing is posted:
- * without a recorded acquisition there is no cost to compare against, and
- * inventing one would be exactly the restatement EARS-319 forbids.
+ * **Moving average over the REMAINING holding, not a lifetime average.** Ruling
+ * 3 names «the holding's weighted-average recorded rate … the standard cost-flow
+ * assumption for a fungible holding», and the standard assumption tracks a pool
+ * that DEPLETES: every disposal removes both quantity and its share of the cost.
+ * Averaging every acquisition ever made instead diverges the moment an
+ * acquisition follows a disposal, and the divergence is not academic — it posts
+ * a gain no cash movement backs, and leaves the `conversion` clearing account
+ * holding a residue that corresponds to nothing. So the prior steps of the pair
+ * are REPLAYED in chronological order, in both directions, and the pool that
+ * comes out the far end is what prices this disposal.
+ *
+ * **A reversal nets out because the legs are SUMMED, not sign-filtered.** A
+ * сторно mirrors each leg with the opposite sign and the SAME
+ * `conversion_step_id`, so a fully reversed step aggregates to zero on both
+ * sides and contributes neither quantity nor cost — which is EARS-314's «their
+ * sum shall be zero in every cut» applied to the cut this function computes. An
+ * earlier `amount > 0` / `amount < 0` predicate excluded exactly the mirror leg
+ * and so kept reversed purchases alive in the average.
+ *
+ * The legs that count are named exactly: step-linked AND on a system
+ * `conversion` account. Fee legs sit on money and expense accounts, FX legs
+ * carry no step link, so neither can enter the average, and an operation's own
+ * result can never price the next disposal.
+ *
+ * **Scope, and its limit:** the pool is per CURRENCY PAIR. Acquire USDT with RUB
+ * and dispose of it for THB and this function has no pool to price against, so
+ * it posts nothing — the named limitation recorded in the module header.
+ *
+ * Zero — no remaining holding, or none ever acquired against this currency —
+ * means nothing is posted at all: without a recorded acquisition there is no
+ * cost to compare against, and inventing one is the restatement EARS-319 forbids.
  */
 async function realizedFxResult(tx: PlatformTx, step: ConversionStepInput): Promise<bigint> {
-  // Two independent aggregates, not a join: a join would multiply rows the
-  // moment a step ever carries more than one leg per side. The filters name the
-  // EXCHANGE legs exactly — step-linked, on the system `conversion` account —
-  // which is why fee legs (money + expense accounts) and FX legs (unlinked) can
-  // never enter the average.
-  const acquired = await tx.execute(sql`
-    select
-      (select coalesce(sum(p.amount), 0)
-         from core.finance_conversion_step cs
-         join core.finance_posting p on p.conversion_step_id = cs.id
-         join core.finance_account a on a.id = p.account_id and a.kind = 'conversion'
-        where cs.from_currency = ${step.toCurrency}
-          and cs.to_currency = ${step.fromCurrency}
-          and p.currency = ${step.toCurrency}
-          and p.amount > 0)::text as total_to_spent,
-      (select coalesce(-sum(p.amount), 0)
-         from core.finance_conversion_step cs
-         join core.finance_posting p on p.conversion_step_id = cs.id
-         join core.finance_account a on a.id = p.account_id and a.kind = 'conversion'
-        where cs.from_currency = ${step.toCurrency}
-          and cs.to_currency = ${step.fromCurrency}
-          and p.currency = ${step.fromCurrency}
-          and p.amount < 0)::text as total_from_acquired
+  // One row per PRIOR step of the pair, in either direction, with its two sides
+  // aggregated. `filter (where …)` rather than two subqueries: the sides must
+  // come from the same step to be replayed together, and summing (rather than
+  // filtering by sign) is what makes a сторно cancel its original.
+  const steps = await tx.execute(sql`
+    select cs.from_currency,
+           coalesce(sum(p.amount) filter (where p.currency = cs.from_currency), 0)::text as net_from,
+           coalesce(sum(p.amount) filter (where p.currency = cs.to_currency), 0)::text   as net_to
+      from core.finance_conversion_step cs
+      join core.finance_operation o on o.id = cs.operation_id
+      join core.finance_posting p on p.conversion_step_id = cs.id
+      join core.finance_account a on a.id = p.account_id and a.kind = 'conversion'
+     where (cs.from_currency = ${step.fromCurrency} and cs.to_currency = ${step.toCurrency})
+        or (cs.from_currency = ${step.toCurrency} and cs.to_currency = ${step.fromCurrency})
+     group by cs.id, cs.from_currency, cs.to_currency, o.occurred_on, o.id, cs.step_no
+     order by o.occurred_on, o.id, cs.step_no
   `)
-  const row = (acquired.rows[0] ?? {}) as { total_to_spent?: string; total_from_acquired?: string }
-  const totalToSpent = BigInt(row.total_to_spent ?? '0')
-  const totalFromAcquired = BigInt(row.total_from_acquired ?? '0')
-  if (totalFromAcquired === 0n) return 0n
-  const basis = costBasisAtAverage(step.fromAmount, totalToSpent, totalFromAcquired)
+
+  // The remaining holding of the currency being disposed of now, and the cost it
+  // was acquired at, expressed in the currency now being received.
+  let heldQuantity = 0n
+  let heldCost = 0n
+
+  for (const raw of steps.rows as Record<string, unknown>[]) {
+    const netFrom = BigInt(String(raw.net_from))
+    const netTo = BigInt(String(raw.net_to))
+
+    if (String(raw.from_currency) === step.toCurrency) {
+      // An ACQUISITION of the disposed currency, paid for in the received one.
+      heldQuantity += -netTo
+      heldCost += netFrom
+      continue
+    }
+    // An earlier DISPOSAL: it takes its quantity out of the pool, and with it
+    // the share of the cost that quantity carried at the time.
+    const disposed = netFrom
+    if (disposed <= 0n || heldQuantity <= 0n) continue
+    const consumed =
+      disposed >= heldQuantity ? heldCost : costBasisAtAverage(disposed, heldCost, heldQuantity)
+    heldQuantity -= disposed
+    heldCost -= consumed
+    if (heldQuantity <= 0n) {
+      heldQuantity = 0n
+      heldCost = 0n
+    }
+  }
+
+  if (heldQuantity <= 0n || heldCost <= 0n) return 0n
+  const basis =
+    step.fromAmount >= heldQuantity
+      ? heldCost
+      : costBasisAtAverage(step.fromAmount, heldCost, heldQuantity)
   return step.toAmount - basis
 }
 
