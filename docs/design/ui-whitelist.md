@@ -9,18 +9,18 @@ climbs (`.claude/rules/design-process.md`):
 A whitelist **entry** answers one question: _for this element class, is there
 something already settled that a new surface must reuse instead of inventing?_
 
-**The kit now exists; the registry is still empty, and both facts are correct.**
-`src/ui` landed with #312 — tokens derived from `design-source/`, eight base
-components, a lint (`pnpm lint:ui-tokens`) and the `/p/ui-kit` showcase. What it
-has NOT yet got is the third condition a row requires below: no surface built
-from it has passed **Stage B** on a live stand. The kit's acceptance is batched
-at #314 (the `/p` launcher), agreed with the owner on 2026-08-26.
+**The kit landed with #312** — tokens derived from `design-source/`, eight base
+components, a lint (`pnpm lint:ui-tokens`) and the `/p/ui-kit` showcase. The one
+condition it could not satisfy on its own is the second below: a kit is not
+«settled» because it was written, but because a surface built from it was
+accepted by the owner. That acceptance was batched at #314 (the `/p` launcher),
+agreed with the owner on 2026-08-26, and #314 is the PR that fills this table.
 
-So the ladder today resolves `design-source/` → **`src/ui` (rung 2 by import,
-not yet by row)** → bespoke with a justification. In practice that means: a UI
-task **imports from `@/ui` and does not invent** — that obligation comes from
-EARS-430 and consolidation §10, not from this file — and this table starts
-filling the moment #314 is accepted, in the PR that carries the acceptance.
+So the ladder resolves `design-source/` → **`src/ui`** → bespoke with a
+justification. A UI task **imports from `@/ui` and does not invent** — that
+obligation comes from EARS-430 and consolidation §10, not from this file; what
+the rows below add is the record of WHICH classes are settled and on which
+screen, so a later surface can point at a decision rather than re-argue it.
 
 Keeping the table honest in the meantime is the point. A row here asserts that a
 look was accepted by the owner on a real screen; a row added on the strength of
@@ -29,12 +29,40 @@ than of what was agreed.
 
 ## Entries
 
-| Element class | Settled implementation | Approved at (issue/PR) | Notes |
-| ------------- | ---------------------- | ---------------------- | ----- |
+**Status of this table: filled by #314, pending that issue's Stage-B GO.** Every
+row below satisfies conditions (1) and (3) of "Adding a row" today — one
+importable implementation, and its states written down — and satisfies (2)'s
+Stage-A half (Антон, 2026-08-25). The Stage-B half is the `/p` launcher's own
+acceptance on a live stand, which is what these eight classes shipped on. Until
+the owner says «принято» the rows are **provisional**: the PR that carries the
+acceptance replaces the pending marker with the GO line, and a refusal at Stage B
+takes the rows back out rather than leaving a registry that asserts an approval
+nobody gave.
 
-_No entries yet._ The candidates are the eight exports of `src/ui`
-(`src/ui/README.md` lists each with the `design-source/` selector it came from);
-they become rows when #314 passes Stage B.
+| Element class                           | Settled implementation   | Approved at (issue/PR)                | Notes                                                                                                                       |
+| --------------------------------------- | ------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Workspace top bar                       | `TopBar` from `@/ui`     | #314 · PR #354 — _pending Stage-B GO_ | `.bar` of both vendored sources. Switcher and sign-out are SLOTS — the bar never reaches the registry. Wraps while narrow.  |
+| App tile (launcher entry)               | `AppTile` from `@/ui`    | #314 · PR #354 — _pending Stage-B GO_ | Four forms and only four (EARS-468): internal · external · admin · planned. A `planned` tile is inert BY ELEMENT TYPE.      |
+| Tile grid                               | `TileGrid` from `@/ui`   | #314 · PR #354 — _pending Stage-B GO_ | `auto-fill` at `--bbm-size-tile-min-width`, not a fixed four — four columns at the launcher's own measure, reflowing below. |
+| Page header (title + subtitle)          | `PageHeader` from `@/ui` | #314 · PR #354 — _pending Stage-B GO_ | Always an `h1`; two sizes, the launcher's `lg` and the cabinet's `md`.                                                      |
+| Content measure                         | `Container` from `@/ui`  | #314 · PR #354 — _pending Stage-B GO_ | The 1160px measure of `.bar-in` / `main`. Vertical rhythm belongs to what it holds, never to the container.                 |
+| Button (chrome control, toolbar, plain) | `Button` from `@/ui`     | #314 · PR #354 — _pending Stage-B GO_ | A button, never a link; `type="button"` by default. Navigation is an `<a>`, and that is not negotiable per surface.         |
+| Tag / marker                            | `Tag` from `@/ui`        | #314 · PR #354 — _pending Stage-B GO_ | One element class, two forms: the cabinet's filled tag and the launcher's `mark` («↗ внешний»).                             |
+| Eyebrow (small caps label)              | `Eyebrow` from `@/ui`    | #314 · PR #354 — _pending Stage-B GO_ | A `<span>`, never a heading — an eyebrow must not enter the document outline.                                               |
+
+**States, for condition (3):** default / hover / focus-visible / active /
+disabled are in the kit itself and derived from the palette rather than invented
+(`src/ui/README.md` §3 records the derivation, and the two vendored sources'
+headers record that they draw none of them). Loading / empty / error are not
+component states in this kit — no component fetches anything — so they are
+answered per surface; `/p`'s answers are written at the top of
+`src/app/(platform)/p/page.tsx`.
+
+**Not a row:** the app switcher's OPEN menu
+(`src/app/(platform)/p/AppSwitcher.tsx` + `app-switcher.css`). The vendored file
+draws the control closed only, so the panel is bespoke-with-justification
+(rung 3), local to the surface, and becomes a candidate for the kit when a menu
+is designed rather than a settled element class today.
 
 ## Adding a row
 

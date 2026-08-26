@@ -9,3 +9,7 @@ export { getOkrTree, OkrUnavailableError } from './cache'
 export { GRACE_DAYS, OKR_PERIOD, TEAM } from './config'
 export { expectedShare, inGracePeriod } from './rollup'
 export type { Health, OkrAction, OkrKr, OkrObjective, OkrTask, OkrTree, StateGroup } from './types'
+
+// The module's workspace declaration (spec 311 EARS-401) — see
+// src/lib/hours/index.ts for the same note.
+export { okrStatusLine, okrWorkspaceEntry } from './workspace'

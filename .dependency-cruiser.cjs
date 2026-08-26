@@ -243,6 +243,40 @@ module.exports = {
       from: { path: '^src/ui/' },
       to: { path: '^src/', pathNot: '^src/ui/' },
     },
+    {
+      name: 'module-must-not-import-workspace-registry',
+      comment:
+        'Spec 311 EARS-456 / D-3: a module declares its own workspace entry against ' +
+        '`src/lib/workspace/contract` (types), and must not be able to read ' +
+        '`src/lib/workspace/registry` (the composition root). Two reasons, and the second is ' +
+        'the load-bearing one: the registry imports every module, so a module importing it ' +
+        'back closes an import cycle — and a module that can read the registry can read its ' +
+        'NEIGHBOURS, which is exactly the coupling ADR-002 §3 forbids and the reason the ' +
+        'contract and the root are two files at all. The to-set names the barrel as well as ' +
+        'registry.ts: `src/lib/workspace/index.ts` re-exports the root, so without it the rule ' +
+        'would be one import specifier away from meaning nothing. The ALLOWED half — a module ' +
+        'importing the contract — is the ABSENCE of a rule, pinned by the fixture ' +
+        '`module-imports-workspace-contract`.',
+      severity: 'error',
+      from: { path: '^src/(lib|modules)/', pathNot: '^src/lib/workspace/' },
+      to: { path: '^src/lib/workspace/(registry|index)' },
+    },
+    {
+      name: 'workspace-registry-is-not-importable-outside-the-frame',
+      comment:
+        'Spec 311 EARS-457: only `src/lib/workspace` itself and the `(platform)` route group ' +
+        'may import the composition root. The frame renders it — the launcher, the top bar and ' +
+        'the cabinet shell — and nothing else has a reason to know what this workspace ' +
+        'contains. Deliberately OVERLAPS the module rule above rather than partitioning with ' +
+        'it: EARS-456 and EARS-457 are two clauses with two tests, and a module reaching for ' +
+        'the registry should trip both, the same way a rule that lost half its from-set should ' +
+        'still leave the dependency reported. The Payload side, `src/auth.ts`, ' +
+        '`src/middleware.ts` and the (payload) route group are the callers this one catches ' +
+        'alone.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: '^(src/lib/workspace/|src/app/\\(platform\\)/)' },
+      to: { path: '^src/lib/workspace/(registry|index)' },
+    },
   ],
   options: {
     doNotFollow: { path: 'node_modules' },

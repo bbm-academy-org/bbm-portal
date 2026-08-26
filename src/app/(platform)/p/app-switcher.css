@@ -1,0 +1,54 @@
+/* App switcher — the OPEN state of the top bar's `.bar-switch`.
+
+   `design-source/p-launcher.html` draws the control closed and lists the open
+   menu under NOT SHOWN, so there is no vendored design for this panel and no
+   `src/ui` component that covers it. It is therefore surface-local rather than
+   kit, and the justification lives in AppSwitcher.tsx.
+
+   Every value below is a palette token. The panel invents no colour, no radius
+   and no shadow — the design is flat, grey and square-cornered, and a menu that
+   arrived with a drop shadow would be a new visual language smuggled in through
+   a state nobody drew. */
+
+.bbm-app-switcher {
+  position: relative;
+  display: inline-flex;
+}
+
+.bbm-app-switcher__menu {
+  position: absolute;
+  top: calc(100% + var(--bbm-space-4));
+  left: 0;
+  z-index: 10;
+  min-width: var(--bbm-size-tile-min-width);
+  margin: 0;
+  padding: var(--bbm-space-4) 0;
+  list-style: none;
+  background: var(--bbm-color-surface);
+  border: var(--bbm-border-width) solid var(--bbm-color-border-strong);
+  font-size: var(--bbm-font-size-sm);
+}
+
+.bbm-app-switcher__item {
+  display: flex;
+  align-items: center;
+  gap: var(--bbm-space-8);
+  padding: var(--bbm-space-6) var(--bbm-space-12);
+  color: var(--bbm-color-text-control);
+  text-decoration: none;
+}
+
+.bbm-app-switcher__item:focus-visible {
+  outline: var(--bbm-border-width-accent) solid var(--bbm-color-text-secondary);
+  outline-offset: calc(-1 * var(--bbm-border-width-accent));
+}
+
+.bbm-app-switcher__item:hover {
+  background: var(--bbm-color-surface-head);
+}
+
+.bbm-app-switcher__mark {
+  margin-left: auto;
+  color: var(--bbm-color-text-muted);
+  font-size: var(--bbm-font-size-xs);
+}
