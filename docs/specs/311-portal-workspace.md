@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 311
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Portal workspace — `/p` launcher, `/p/admin` shell, module plug-in contract — spec (issue #311)
@@ -34,6 +34,13 @@ updated: 2026-08-25
   that decision, EARS-467 (which excluded them) is retired, and EARS-477/EARS-478
   are the clauses that replace it. The vendored file wins, as
   `.claude/rules/design-process.md` §1 says it does.
+- **Consolidation revision 2026-08-26-g (#360) — citations reconciled.** The
+  owner decided the visual language of `/p/*` is the standard neutral theme of
+  Refine's official shadcn integration; the consolidation spec's §3 decision 9,
+  §6 and §10 were revised accordingly, and the quotes of §6/§10 in "Prior
+  decisions" below carry the revised wording. Nothing else in this spec changes:
+  the kit still lives at `src/ui` behind the same boundary, so EARS-458 and
+  every "built from `src/ui`" clause stand as written.
 - **Donor & benchmark pass:** run 2026-08-25 against three donors — Refine's
   own resource/menu model (`@refinedev/core` `resources[]` with `meta.parent`
   multi-level menus, adopted for the grouped navigation and for nothing else:
@@ -130,11 +137,17 @@ plus the OKR cabinet section.
   - **§6** — `/p/admin` is Refine as a thin CRUD scaffold: `@refinedev/core` +
     router only, a hand-written data provider over the §5 handlers, the same
     Zitadel gate plus an admin claim, first resources `members` and `hours`,
-    `HOURS_ADMIN_EMAILS` dropped.
+    `HOURS_ADMIN_EMAILS` dropped. Its UI layer (revision 2026-08-26-g) is
+    Refine's **official shadcn integration**: components are copied into
+    `src/ui` from the `ui.refine.dev` registry, no UI npm dependency is added,
+    the theme is standard shadcn (CSS variables) with a text logo «Платформа
+    BBM», and the `@refinedev/antd` path is rejected.
   - **§10** — one unified UI kit for `/p/*` and the cabinet, living as `src/ui`
-    in the monolith; new screens are built from the kit and hand-rolled styles
-    are a review stop-factor; any module may import `src/ui`, `src/ui` imports
-    no module.
+    in the monolith; the kit = the copied shadcn components of Refine's
+    integration on the standard theme (revision 2026-08-26-g), tokens being that
+    theme's CSS variables, with Tailwind in the build; new screens are built
+    from the kit and hand-rolled styles are a review stop-factor; any module may
+    import `src/ui`, `src/ui` imports no module.
   - **§14 item 3** — _«Состав ролей в Zitadel для claim-гейтов (`platform-admin`,
     `cms-editor`, …) — финализируется в эпике 2/4»_. This is an **open question**
     in that spec, not a decision; the task brief refers to it as §14.3, but §14
