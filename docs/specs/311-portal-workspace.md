@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 311
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Portal workspace — `/p` launcher, `/p/admin` shell, module plug-in contract — spec (issue #311)
