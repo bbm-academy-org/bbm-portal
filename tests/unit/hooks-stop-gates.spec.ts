@@ -9,6 +9,7 @@ import {
   isEnforceableTerminalReport,
   hasExplicitInterimMarker,
   isInterimStatus,
+  isOwnerQuestionForm,
   isTerminalReport,
 } from '../../tools/hooks/completion-report-gate.mjs'
 import {
@@ -131,6 +132,155 @@ describe('распознаватель терминального отчёта',
     expect(hasExplicitInterimMarker('Interim status\n\nPR #294 merged, issue #201 open.')).toBe(
       true,
     )
+  })
+})
+
+/**
+ * #374, incident 2026-08-26: nearly every owner-facing question was blocked once
+ * and re-sent, so the owner saw each question twice. The message was in the
+ * canonical four-beat owner-question form mandated by
+ * `.claude/skills/report-task-outcome/SKILL.md` («Owner-question form»), but the
+ * recognizer read it as a completion report: `COMPLETION_VERB_RE` matched
+ * «закрыты» in domain speech, `REF_RE` matched the spec reference `#338`, and the
+ * `isDecisionRequest` exemption needs <= 4 lines so the canonical form never fits.
+ *
+ * The fix is the same philosophy as the declared interim marker (#299): the
+ * recognizer learns the DECLARED form instead of widening the heuristics.
+ */
+describe('#374: the declared owner-question form is not a terminal report', () => {
+  /** The exact shape from the owner's 2026-08-26 screenshot. */
+  const OWNER_QUESTION = [
+    'Вопрос 2 из 8 — доступ к записям справочника',
+    'Что случилось: записи в справочнике временно закрыты на роль администратора.',
+    'Почему спрашиваю: спека #338 не называет, кто видит их после запуска.',
+    'Что изменит ответ: от него зависит, показывать ли колонку всем сотрудникам.',
+    'Где посмотреть: https://portal.bbm.academy/p/finance',
+  ].join('\n')
+
+  it('the incident message is not terminal and passes both blocking gates', () => {
+    // Preconditions of the incident: longer than the short-question exemption,
+    // no interim marker, and the completion heuristics genuinely fire on it.
+    expect(OWNER_QUESTION.split('\n').filter((l) => l.trim()).length).toBeGreaterThan(4)
+    expect(hasExplicitInterimMarker(OWNER_QUESTION)).toBe(false)
+    expect(isCompletionReport(OWNER_QUESTION)).toBe(true)
+
+    expect(isOwnerQuestionForm(OWNER_QUESTION)).toBe(true)
+    expect(isTerminalReport(OWNER_QUESTION)).toBe(false)
+    expect(
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: OWNER_QUESTION,
+      }),
+    ).toEqual({ block: false })
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: OWNER_QUESTION,
+      }),
+    ).toEqual({ block: false })
+    expect(
+      decideWarn({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: OWNER_QUESTION,
+      }),
+    ).toEqual({ warn: false })
+  })
+
+  it('the header alone exempts, without any beat label', () => {
+    const headerOnly = [
+      'Вопрос 3 из 8 — кто платит за внешний сервис',
+      'PR #352 смержен, issue #338 закрыт, ledger лежит в базе.',
+      'Дальше нужен твой выбор по оплате.',
+      'Работа ждёт ответа.',
+      'Ничего больше не начинаю.',
+    ].join('\n')
+    expect(isOwnerQuestionForm(headerOnly)).toBe(true)
+    expect(isTerminalReport(headerOnly)).toBe(false)
+
+    expect(isOwnerQuestionForm('Вопрос владельцу\n\nЧто дальше с #338?')).toBe(true)
+  })
+
+  it('one lone beat label does NOT exempt a real completion report', () => {
+    const report = [
+      'Готово: PR #92 смержен, issue #91 закрыт.',
+      'Что случилось: гейт перестал блокировать чекпойнты.',
+      'Статус: смержено, задеплоя не требует.',
+      '100% от заявленного объёма.',
+    ].join('\n')
+    expect(isOwnerQuestionForm(report)).toBe(false)
+    expect(isTerminalReport(report)).toBe(true)
+  })
+
+  it('two distinct beat labels are already the declared form', () => {
+    const twoBeats = [
+      'Что случилось: записи закрыты на роль администратора (#338).',
+      'Почему спрашиваю: спека не называет, кто их видит.',
+      'Нужен твой выбор, дальше не двигаюсь.',
+      'Работа стоит.',
+      'Жду.',
+    ].join('\n')
+    expect(isOwnerQuestionForm(twoBeats)).toBe(true)
+    expect(isTerminalReport(twoBeats)).toBe(false)
+  })
+
+  it('markdown emphasis and heading hashes around the labels are tolerated', () => {
+    expect(
+      isOwnerQuestionForm('## Вопрос 1 из 3 — про доступ\n\nPR #92 смержен, issue закрыт.'),
+    ).toBe(true)
+    expect(
+      isOwnerQuestionForm('**Что случилось:** записи закрыты.\n**Где посмотреть:** /p/finance'),
+    ).toBe(true)
+  })
+
+  it('the header is pinned to its own line and to the exact word', () => {
+    // Inflected forms are not the declared header: the trailing lookahead is
+    // `(?![а-яё\w])`, since a JS word boundary never fires after Cyrillic.
+    expect(isOwnerQuestionForm('Вопросительный знак: PR #92 смержен, issue закрыт.')).toBe(false)
+    expect(isOwnerQuestionForm('В вопросах владельцу к PR #92 всё уже смержено.')).toBe(false)
+    // Mid-sentence mention is not a declared header either.
+    expect(isOwnerQuestionForm('Отвечаю на вопрос 2 из 8: PR #92 смержен, issue закрыт.')).toBe(
+      false,
+    )
+    // …and a beat label quoted inside a sentence is not a beat.
+    expect(isOwnerQuestionForm('Ниже написано, что случилось: PR #92 смержен, issue закрыт.')).toBe(
+      false,
+    )
+  })
+
+  // DELIBERATE TRADE-OFF, pinned here so it cannot be "fixed" by accident: a
+  // would-be FINAL report that embeds the four-beat question form escapes all
+  // three gates. This is fail-open by design, exactly like the declared interim
+  // marker (#299) — the recognizer trusts declared forms, and the price of a
+  // missed gate is lower than the price of blocking every owner question.
+  it('trade-off: a stage-6-shaped report carrying all four beats is exempt', () => {
+    const reportWithQuestion = [
+      'Готово: PR #92 смержен, issue #91 закрыт.',
+      'Статус: смержено, задеплоя не требует.',
+      '100% от заявленного объёма.',
+      'Что случилось: гейт перестал блокировать вопросы.',
+      'Почему спрашиваю: остался открытым порог dispatch-гарда.',
+      'Что изменит ответ: порог станет 3 или 5.',
+      'Где посмотреть: https://portal.bbm.academy/p/hours',
+    ].join('\n')
+    expect(isOwnerQuestionForm(reportWithQuestion)).toBe(true)
+    expect(isTerminalReport(reportWithQuestion)).toBe(false)
+  })
+
+  it('regression: the canonical terminal reports are still recognized', () => {
+    expect(isTerminalReport(REPORT_NO_MARKERS)).toBe(true)
+    expect(isOwnerQuestionForm(REPORT_NO_MARKERS)).toBe(false)
+    expect(
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: REPORT_NO_MARKERS,
+      }),
+    ).toEqual({ block: true })
+    expect(isOwnerQuestionForm('')).toBe(false)
+    expect(isOwnerQuestionForm(null)).toBe(false)
   })
 })
 

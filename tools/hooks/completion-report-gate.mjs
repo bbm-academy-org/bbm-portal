@@ -28,6 +28,16 @@
 // `isEnforceableTerminalReport()` — тот самый общий seam — соединяет обе
 // половины. Все три Stop-гейта ходят через него.
 //
+// DECLARED FORMS BEAT HEURISTICS (#299, then #374). The recognizer knows two
+// forms the canon mandates and reads each as itself: «Статус промежуточный»
+// (`EXPLICIT_INTERIM_MARKER_RE`) and the four-beat owner question
+// (`isOwnerQuestionForm`, canon: `.claude/skills/report-task-outcome/SKILL.md`,
+// «Owner-question form»). Incident 2026-08-26: a canonical owner question tripped
+// both BLOCK gates — «закрыты» was domain speech, `#338` was a spec reference —
+// so almost every question was blocked once and re-sent, and the owner saw it
+// twice. The direction of every fix here is «recognize the declared form», never
+// «widen the heuristics».
+//
 // Контракт Stop-хука: stdin — {session_id, transcript_path, stop_hook_active}.
 // exit 0 = остановка разрешена; exit 2 + stderr = остановка заблокирована,
 // текст уходит модели. Loop-guard: при `stop_hook_active` никогда не exit 2 —
@@ -129,6 +139,62 @@ export function isInterimStatus(text) {
   return hasExplicitInterimMarker(text) || INTERIM_STATUS_RE.test(String(text || ''))
 }
 
+/**
+ * The DECLARED owner-question form — the second declared form the recognizer
+ * knows, next to `EXPLICIT_INTERIM_MARKER_RE` above, and built on the same
+ * philosophy: a form the canon MANDATES is read as itself, never re-derived from
+ * heuristics.
+ *
+ * Incident 2026-08-26 (#374), owner's complaint: almost every owner-facing
+ * question was blocked once and re-sent, so the owner saw each question twice.
+ * The message was in the canonical four-beat form of
+ * `.claude/skills/report-task-outcome/SKILL.md` («Owner-question form») —
+ * «Вопрос 2 из 8 — … / Что случилось: … / Почему спрашиваю: … / Что изменит
+ * ответ: … / Где посмотреть: …» — and every branch of the recognizer missed it:
+ * `COMPLETION_VERB_RE` matched «закрыты» in domain speech («записи… временно
+ * закрыты на роль»), `REF_RE` matched the spec reference `#338`, and
+ * `isDecisionRequest` needs ≤ 4 lines, which the four-beat form never is.
+ *
+ * The header is matched on its OWN line, with the heading hash and markdown
+ * emphasis stripped, for the same reason as the interim marker: «отвечаю на
+ * вопрос 2 из 8» inside a sentence of a real report must not exempt that report.
+ * The trailing lookahead is `(?![а-яё\w])` and not `\b` — JS word boundaries are
+ * ASCII-only and never fire after Cyrillic, so «Вопросительный» would otherwise
+ * pass as a header.
+ */
+export const OWNER_QUESTION_HEADER_RE =
+  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*вопрос(?:ы)?\s+(?:\d+\s+из\s+\d+|владельцу)(?![а-яё\w])/i
+
+/** The four beat labels of that same form, each on its own line and followed by
+ * a colon (markdown emphasis around the label is tolerated and carries no
+ * meaning here, as everywhere else in this file). */
+export const QUESTION_BEAT_RES = [
+  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*что\s+случилось[*_`]*[ \t]*:/i,
+  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*почему\s+спрашива[а-яё\w]*[*_`]*[ \t]*:/i,
+  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*что\s+изменит\s+ответ[*_`]*[ \t]*:/i,
+  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*где\s+посмотреть[*_`]*[ \t]*:/i,
+]
+
+/**
+ * The declared owner-question form: either the «Вопрос N из M» / «Вопрос
+ * владельцу» header, or at least TWO DISTINCT beat labels.
+ *
+ * Two and not one, deliberately: «Что случилось:» alone is ordinary prose and
+ * appears in real completion reports, while two beats on their own lines is
+ * already nobody's accident — it is the canonical form being written out.
+ */
+export function isOwnerQuestionForm(text) {
+  const t = String(text || '')
+  if (!t) return false
+  if (OWNER_QUESTION_HEADER_RE.test(t)) return true
+  let beats = 0
+  for (const re of QUESTION_BEAT_RES) {
+    if (re.test(t)) beats += 1
+    if (beats >= 2) return true
+  }
+  return false
+}
+
 /** Предложение следующего шага / работа в полёте: перечисление уже смерженных
  * подшагов в рамке «сейчас запускаю следующее» — тоже не терминальный отчёт. */
 export const PROPOSAL_INFLIGHT_RE =
@@ -149,6 +215,17 @@ export function isTerminalReport(text) {
   // a message that states «Статус промежуточный» is the author saying this is
   // not the final report, and no heuristic below may overrule that declaration.
   if (hasExplicitInterimMarker(text)) return false
+  // The second DECLARED form (#374): the canonical owner-question shape from
+  // `.claude/skills/report-task-outcome/SKILL.md` («Owner-question form»). It is
+  // checked before the heuristics for the same reason as the marker above — the
+  // author declared what this message is.
+  //
+  // The deliberate trade-off: a would-be FINAL report that embeds the four-beat
+  // question form escapes all three gates. That is fail-open BY DESIGN, exactly
+  // as with the declared interim marker — the recognizer trusts declared forms,
+  // and a missed gate on a report costs far less than blocking (and thereby
+  // duplicating) every owner question, which is what #374 actually observed.
+  if (isOwnerQuestionForm(text)) return false
   if (isDecisionRequest(text)) return false
   if (isInterimStatus(text)) return false
   if (isProposalOrInFlight(text)) return false
