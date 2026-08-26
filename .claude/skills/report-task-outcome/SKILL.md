@@ -77,7 +77,9 @@ GitHub comment. The second names where each deviation was routed (its own issue
 
 All three share ONE recognizer of "a completion report" (defined in
 `completion-report-gate.mjs`): a completion verb plus an issue/PR reference,
-minus negations, and excluding a short question to the owner, an interim
+minus negations, and excluding a short question to the owner, the declared
+four-beat owner-question form below (two of its four beat labels, each on its own
+line), an interim
 checkpoint (the declared marker «Статус промежуточный», or inferred from «⏳»,
 «жду CI»), and a proposal of the next step — **and** the session
 must carry at least one write action in its transcript (#158), so a read-only
@@ -177,9 +179,22 @@ without a gloss) and any «см. issue/отчёт» redirect that makes the owne
 something before they can parse the question. Self-check each question before
 sending: someone who read nothing else must be able to answer it.
 
-A correctly formed report therefore usually ENDS on a question line — that is
-expected and does not exempt it from the gates (the recognizer only exempts
-short question-only turns).
+**The four beats are a DECLARED form, and the Stop gates read them as one**
+(#374, `isOwnerQuestionForm` in `tools/hooks/completion-report-gate.mjs`): a
+message carrying **two or more of the four beat labels, each on its own line**, is
+a question and not a completion report — however many merged PRs and issue
+numbers it mentions. The beats are the whole of what the gate reads; a question
+heading is not part of the form and buys nothing. Before #374 the gate read none
+of it, and the owner saw almost every question twice: the gates blocked it once
+and the session re-sent it.
+
+A correctly formed report still usually ENDS on a question line, and that does
+not relieve it of its own markers — a final report owes points 1–5 and the two
+stage-7 lines by this canon, not because a hook forces them. What changed is only
+whom the gate trusts: it takes the declared form at its word, exactly as it does
+«Статус промежуточный». A report that writes out the whole four-beat block will
+therefore pass the gates unchecked — that is a deliberate fail-open, and writing
+the markers is on you.
 
 **Unanswered across more than two consecutive reports → escalate, do not
 restate.** A question that has ridden point 5 of three reports has been shown to
