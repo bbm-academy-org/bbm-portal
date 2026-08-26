@@ -8,10 +8,12 @@ updated: 2026-08-26
 
 - **Issues:** #338 (this spec, the F1 parent under epic #115); the build is split
   in two — **#356** «Finance F1a — ledger backend core» carries the data model,
-  the migrations, the module API and every fact-core invariant (§A, §B, EARS-323),
-  and **#357** «Finance F1b — finance surfaces» carries the workspace
-  declaration, `/p/finance` and the `/p/admin/finance/*` resources
-  (EARS-324/325/326). #357 is blocked by #356 and by the portal-workspace frame
+  the migrations, the module API and every fact-core invariant — §A, §B,
+  EARS-323 and EARS-330…334 — and **#357** «Finance F1b — finance surfaces»
+  carries the workspace declaration, `/p/finance` and the `/p/admin/finance/*`
+  resources, which are EARS-324/325/326 and nothing else: the write gate, the
+  binding as master data and the exception query are enforced in the module
+  (#356) and only surfaced here. #357 is blocked by #356 and by the portal-workspace frame
   it plugs into — #314 (`/p` launcher and the registry rendering) and #315
   (`/p/admin` Refine shell); #312 (UI kit) and #313 (`platform-admin` claim gate)
   are already delivered. The split follows the owner's order of 2026-08-26 that
