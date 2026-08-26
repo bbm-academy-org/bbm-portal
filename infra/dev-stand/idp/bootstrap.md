@@ -205,7 +205,7 @@ Inspect the seeded set without touching the IdP:
 OIDC login and is then refused by the app. That is deliberate — the refusal the
 spec designs is the platform's bare 403, not a Zitadel error page.
 
-### Prod (`id.bbm.academy`) — a supervised operator step, never an agent's
+### Prod (`id.bbm.academy`) — a supervised step, only on the owner's explicit go
 
 **This is a PRECONDITION of deploying #313, not a how-to to read afterwards.**
 The release that carries the claim gate flips `portal.bbm.academy` from «any
@@ -218,8 +218,29 @@ deploy runbook carries the same precondition where the operator meets it:
 
 `provision.sh` is a **dev-stand** script: it also writes the login policy, the
 Login V2 feature and the `bbm-test` human user, none of which belong on prod.
-Do **not** point it at `id.bbm.academy`. The prod path is the console, run by the
-operator (Антон):
+Do **not** point it at `id.bbm.academy`.
+
+**The prod path is the MANAGEMENT API or the console — and an agent may run it,
+but only WITH the owner's explicit go for that operation.** The console-only rule
+this section carried was lifted by the owner (Антон) on 2026-08-26: «Zitadel ты
+сам поднимал и у тебя есть доступ к его серверу — выполняй всё, что нужно».
+That go is per-operation: writing to the prod IdP is never a routine
+unsupervised step, and it is still never a `provision.sh` run.
+
+The API lives on the `tools-prod-tw` box, reachable on `127.0.0.1:8081` behind the
+proxy, so each call carries the routing headers explicitly:
+
+| Piece   | Value                                                                        |
+| ------- | ---------------------------------------------------------------------------- |
+| Base    | `http://127.0.0.1:8081`                                                      |
+| Headers | `Host: id.bbm.academy`, `X-Forwarded-Proto: https`, `x-zitadel-orgid: <org>` |
+| Auth    | the `bbm-bootstrap` PAT at `/home/deploy/zitadel-deploy/login-client.pat`    |
+
+**A v4.16.2 quirk:** the grant search path is
+`/management/v1/users/grants/_search`. The `/usergrants/_search` spelling that
+older docs use answers **404** on this version.
+
+The four objects below are the same on either path:
 
 1. **Roles.** Console → the prod project → _Roles_ → add `platform-user` and
    `platform-admin` (key = display name, no group). Same spellings, or the gate
@@ -233,8 +254,13 @@ operator (Антон):
 4. **Verify** on the live portal: the member signs in and reaches `/p`; an
    account with no grant gets a bare 403 on every `/p` path.
 
-A role granted in the console takes effect on that member's **next session** with
+A role granted on either path takes effect on that member's **next session** with
 no redeploy (EARS-460): the claim is read at sign-in and carried in the session.
+
+**State: provisioned 2026-08-26** on project `bbm-platform`
+(`383573015847239683`) — both roles created, `projectRoleAssertion` already on,
+12 user grants issued. The grant matrix (who holds what) is recorded in the
+activation comment on issue #313, not duplicated here.
 
 Automatic assignment from `core` (Access Sync) is epic #113, not this file.
 
