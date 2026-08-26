@@ -311,11 +311,21 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   and shall validate against the module's zod schemas (EARS-436); a refusal
   (EARS-303/304/308/311/312/313/320) shall reach the admin as the module's
   readable message, never a raw constraint error (EARS-473 shape).
-- **EARS-330.** Every write to the finance module — recording an operation,
-  reversing one, and every reference edit under `/p/admin/finance/*` — shall be
+- **EARS-330.** Every reference edit under `/p/admin/finance/*` shall be
   refused by the module's own handlers for a session that does not carry
-  `platform-admin`, however the URL or API was reached, until the F2 role model
-  (decision 8) widens it; read access is EARS-325's and is deliberately wider.
+  `platform-admin`, however the URL or API was reached; read access is
+  EARS-325's and is deliberately wider.
+  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`, its
+  role clauses in §A) — the F2 role model this clause deferred to, now settled.
+  Reference administration stays `platform-admin`; the **ledger** writes,
+  posting an operation and reversing one, are gated by the flow roles
+  `finance-entry` / `finance-approve` instead, and `platform-admin` by itself
+  no longer posts or reverses. The shipped F1a code is deliberately behind this
+  amendment until the F2 roles sub-task (under #339) reworks it: the F1a guard
+  `assertFinanceWriteAccess` still enforces the platform-admin gate on every
+  ledger write, and `tests/unit/finance-invariants.spec.ts` and
+  `tests/int/platform/finance-core.int.spec.ts` still assert it and stay green —
+  the drift is intended and tracked, not an unnoticed contradiction.)_
 - **EARS-331.** The `product_binding` shall be master data, never a
   per-operation judgement: WHEN an operation is recorded, the system shall take
   the binding from the named purpose and shall accept from the operator only
@@ -325,8 +335,14 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
 - **EARS-332.** WHEN a purpose's `product_binding` changes, the system shall
   leave every already-recorded posting exactly as posted — it shall neither
   rewrite nor re-validate history against the new rule (EARS-309); the only
-  correction of a recorded operation in F1 is reversal (EARS-313/314), and a
-  reclassification path arrives with F2.
+  correction of a recorded operation in F1 is reversal (EARS-313/314).
+  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`, its
+  read-time category resolution in §F): the reclassification path this clause
+  promised for F2 is **not**
+  built. F2 replaces it with read-time category resolution — a posting that
+  stored no category resolves it through its purpose's current link when read —
+  and keeps reversal as the only correction; no posting-mutation
+  reclassification will be built.)_
 - **EARS-333.** The module's public API shall expose, as a query, the postings
   recorded against a purpose with `product_binding = optional` that carry no
   product — the exception list by which the taxonomy converges from use; its
@@ -426,10 +442,15 @@ defect, not a design anyone defends. Four consequences, all accepted at the go:
 
 - **the operator picks the value, never the binding** (EARS-331); the binding is
   a `platform-admin` edit of the purpose;
-- **corrections of already-posted entries are role-gated and audited** — in F1
-  the only correction is reversal (EARS-313/314) by an admin (EARS-330), with
-  the actor recorded per spec 201; a true reclassification journal (moving a
-  dimension without reversing) arrives with F2;
+- **corrections of already-posted entries are role-gated and audited** — the
+  only correction is reversal (EARS-313/314), with the actor recorded per spec 201. _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
+  EARS-520/529) on two counts. The **gate**: reversal is not an admin act — it
+  is gated by the flow role `finance-approve`, while `platform-admin` covers
+  reference administration only (EARS-330 as amended). The **journal**: the
+  «true reclassification journal (moving a dimension without reversing) arrives
+  with F2» promised here is not built — F2 replaces it with read-time category
+  resolution (EARS-520) and keeps reversal as the only correction; no
+  posting-mutation reclassification will be built.)_;
 - **an exception report** lists `optional`-binding postings filed without a
   product (EARS-333), so the taxonomy converges from use;
 - **a binding change never rewrites history** (EARS-332): postings made under
@@ -492,12 +513,17 @@ Owner walkthrough, on a live stand, after the go and the build:
 2. **The ledger starts honest.** Open `/p/finance` — every account shows
    balance 0 in its own currency, because no operation exists yet
    (EARS-317/325).
-3. **Money is visible to the team, editable by the admin.** Sign in as a member
-   holding `platform-user` but not `platform-admin`: `/p/finance` opens and
-   shows the same balances card (EARS-324/325), while
+3. **Money is visible to the team, references editable by the admin.** Sign in
+   as a member holding `platform-user` but not `platform-admin`: `/p/finance`
+   opens and shows the same balances card (EARS-324/325), while
    `/p/admin/finance/purposes` is refused (EARS-330, spec 311 EARS-405). Sign
    out entirely and open `/p/finance` — refused, F1 has no public surface
    (EARS-325).
+   _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
+   EARS-529): this step checks the **reference** write gate only. Ledger writes
+   — posting and reversal — are gated by `finance-entry` / `finance-approve`,
+   so `platform-admin` alone is no longer the write role to walk here; that
+   part of the walkthrough lives in spec 339's scenario 1.)_
 4. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
    that the account uses — a readable refusal offers retirement instead
    (EARS-308/326). Rename the account — the rename is visible, nothing else
@@ -527,11 +553,18 @@ exception query (EARS-333), and the absence of any allocation posting
   accruals — **F2 (#339)**, which also derives the category list (decision 11)
   and settles the full role model (decision 8). F1 already opens **reading**
   `/p/finance` to every platform member (EARS-324/325, the owner's transparency
-  policy) and keeps every **write** and every reference catalogue at
-  `platform-admin` (EARS-330); a finer split — who may record, who may reverse,
-  who may edit which catalogue — is F2's role model, not F1's.
+  policy) and keeps every reference catalogue at `platform-admin` (EARS-330).
+  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
+  EARS-501/529): the finer split deferred here is settled. Reference
+  administration stays `platform-admin`; ledger writes — posting and reversal —
+  are gated by the flow roles `finance-entry` / `finance-approve`, and
+  `platform-admin` by itself no longer posts or reverses.)_
 - Reclassification of a posted operation (moving a dimension without reversing
-  it) — F2; in F1 the only correction is reversal (EARS-313/314/332).
+  it): in F1 the only correction is reversal (EARS-313/314/332).
+  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
+  EARS-520): it is not F2's either. F2 replaces the promised reclassification
+  with read-time category resolution and keeps reversal as the only
+  correction; no posting-mutation reclassification will be built.)_
 - Any allocation, absorption or ABC run: F1 posts none by design (EARS-334) and
   F3 computes such views as overlays.
 - Reports beyond the balances card: register UI, P&L, cash flow, unit cost,
@@ -550,6 +583,12 @@ None. #338 OQ1/OQ2 were closed by decisions 16/17; OQ3/OQ4/OQ5 are closed by the
 three rulings above, accepted by the owner at the stage-2 go on 2026-08-26
 (#338) — ruling 1 with the five amendments folded into its text. The lead's
 `platform-admin`-everywhere default was **reversed** by the owner in the same
-go: reading `/p/finance` is open to every platform member, writing and the
-reference catalogues stay `platform-admin` until F2's role model (decision 8),
-and F1 exposes no unauthenticated surface (EARS-324/325/330).
+go: reading `/p/finance` is open to every platform member, the reference
+catalogues stay `platform-admin`, and F1 exposes no unauthenticated surface
+(EARS-324/325/330).
+_(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
+EARS-501/529) — F2's role model (decision 8) is settled and this entry no
+longer defers to it: reference administration stays `platform-admin`, while
+ledger writes — posting and reversal — are gated by the flow roles
+`finance-entry` / `finance-approve`, and `platform-admin` alone no longer posts
+or reverses.)_
