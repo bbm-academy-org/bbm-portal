@@ -133,7 +133,11 @@ describe('проводка ssot:check', () => {
     expect(job).toContain('pnpm ssot:check')
     expect(job).toContain('KB_READ_TOKEN')
     expect(job).not.toContain('continue-on-error')
-    expect(ci).toMatch(/needs: \[[^\]]*ssot-freshness[^\]]*\]/)
+    // `\s*` after the colon on purpose: the needs-list is a YAML flow array
+    // whichever way prettier lays it out, and it crossed printWidth (and so went
+    // multi-line) when #359 added `design-fidelity` to the BLOCK set. What this
+    // pins is membership in that list — not the line it happens to fit on.
+    expect(ci).toMatch(/needs:\s*\[[^\]]*ssot-freshness[^\]]*\]/)
   })
 
   it('без доступа к мастеру падает с внятной подсказкой, а не стеком Node', () => {

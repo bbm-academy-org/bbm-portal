@@ -1,146 +1,98 @@
 # `src/ui` — the BBM workspace UI kit
 
-One kit for `/p/*` and the cabinet: design tokens plus the base components both
-surfaces are built from (consolidation spec
+One kit for `/p/*` and the cabinet: **any module may import it, it imports no
+module.** That is spec 311 EARS-458 / consolidation
 [`§10`](../../docs/superpowers/specs/2026-08-04-platform-consolidation-design.md),
-issue #312). It ships with a lint (`pnpm lint:ui-tokens`) and a showcase
-(`/p/ui-kit`) — the deferred §11 trigger «UI-линты и showcase», whose one
-condition was the start of this directory.
+enforced by the dependency-cruiser rule `ui-kit-must-not-import-src`
+(`pnpm boundaries`) — the to-set is ALL of `src/` with `src/ui/` excepted, so the
+kit has no caller it is allowed to know about.
 
-## Where the values come from
+## What the kit is
 
-Two files, and nothing else:
+**The default neutral theme of shadcn/ui, as published through Refine's official
+integration.** Owner Stage-A decision, Антон, 2026-08-26, on #360; consolidation
+spec §3 decision 9 / §6 / §10, revision `2026-08-26-g`; the provenance row is the
+`system:` line in [`design-source/README.md`](../../design-source/README.md) at
+`fidelity: visual`.
 
-| Source                             | What it settles                                                              |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| `design-source/p-launcher.html`    | the `/p` home — top bar, page header, the tile grid and its four tile forms  |
-| `design-source/p-admin-shell.html` | the cabinet — the same top bar full-bleed, headings, buttons, tags, eyebrows |
+The delivery model is **copy-paste, and that is the reason it was chosen**: the
+components are added to this repo's own source (`npx shadcn add …`), so there is
+no UI component library in `package.json` to pin us to someone's release train,
+and §10 stays intact because the copied files live inside the kit like any other
+kit file. What IS in `package.json` is the small runtime the copied source
+imports — `radix-ui`, `lucide-react`, `class-variance-authority`, `clsx`,
+`tailwind-merge`, `tw-animate-css` — plus Tailwind and the `shadcn` CLI as dev
+dependencies. Those are pinned exactly.
 
-Both are owner picks recorded at Stage A (Антон, 2026-08-25; #314 and #315).
-`.claude/rules/design-process.md` §1 governs: **build to the file, not to
-issue-body prose; where the two disagree, the file wins.**
+| File                                                                                 | What it is                                                                                               |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `theme.css`                                                                          | the theme entry — the ONE place a colour value is written. Imported by `src/app/(platform)/p/layout.tsx` |
+| `utils.ts`                                                                           | `cn()` — the `clsx` + `tailwind-merge` helper every copied component imports                             |
+| `button.tsx` `card.tsx` `badge.tsx` `avatar.tsx` `separator.tsx` `dropdown-menu.tsx` | the copied shadcn primitives                                                                             |
 
-That is not left as a promise. `tests/unit/ui-tokens.spec.ts` re-reads both
-vendored files on every run and fails if a colour they paint has no token, if a
-token carries a colour they never used, or if two tokens share one value. The
-palette therefore cannot drift from the design by editing `tokens.css` — only
-by editing the design.
+**Why exactly those six.** They are the set the frozen `/p` launcher (PR #354)
+actually renders: a tile per app (card), the external marker (badge), the admin
+flag (badge), the top bar's avatar and its rule (avatar, separator), and the app
+switcher's trigger and menu (button, dropdown-menu). The kit grows by the same
+rule — a component is copied in when a surface needs it, not in anticipation.
 
-That check is blind in one direction: it proves a value is IN the palette, not
-that the component reached for the RIGHT one. A token derived from a sidebar
-group of the cabinet is a perfectly valid token to paint a launcher tile
-caption with, and the palette check sees nothing. So the other direction is
-asserted too — `tests/unit/ui-design-fidelity.spec.ts` resolves what a
-component actually paints through the token layer and compares it, property by
-property, with the declarations the vendored file carries for the same element
-(the planned caption, the external marker, the cabinet tag, the empty status
-line). Both blockers of the #353 review were exactly that gap.
+## Adding to the kit
 
-**The palette is all grey, and that is the design's own statement**: 22 greys, no
-hue, no accent, no border-radius except the avatar's circle. A brand colour, when
-the owner picks one, arrives as a new token group from a new Stage A — never
-from a component.
-
-## What is in here
-
-| Export       | Built from                                             | Notes                                                                              |
-| ------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `tokens.css` | every value in both sources                            | the `:root` layer; each token names the selector it was read from                  |
-| `tokens.ts`  | —                                                      | the token NAMES, grouped for the showcase. Names only; drift is caught by the lint |
-| `TopBar`     | `.bar` of both sources                                 | EARS-425/440. Switcher and sign-out are SLOTS — the registry never reaches the kit |
-| `AppTile`    | `.tile` and its `.ext` / `.admin` / `.ghost` modifiers | the four forms of EARS-468; the `planned` form is inert by element type (EARS-478) |
-| ↳ status     | `.pulse` and `.pulse.none`                             | a live status line, or `emptyStatus` — the foot rule stating there is none         |
-| `TileGrid`   | `.grid`                                                | `auto-fill` at a min column width, not `repeat(4, 1fr)` — see below                |
-| `PageHeader` | `h1` + `.sub` / `.hint`                                | always an `h1`; two sizes, the launcher's and the cabinet's                        |
-| `Button`     | `.bar-switch` / `.btn` / `.bar-out`                    | a button, never a link; `type="button"` by default                                 |
-| `Tag`        | `.tag` and `.ext-mark`                                 | one element class, TWO forms: the cabinet's filled tag and the launcher's `mark`   |
-| `Eyebrow`    | `.side-title` / `.grp-name` / `th` / `.admin-flag`     | a `<span>`, never a heading: an eyebrow must not enter the document outline        |
-| `Container`  | `.bar-in` / `main`                                     | the 1160px measure; vertical rhythm belongs to what it holds                       |
-| `cx`         | —                                                      | the kit's one utility, three lines, so the kit adds no runtime dependency          |
-
-Everything is presentation. No data fetching, no auth gating, no registry, no
-routing — and that is machine-enforced, not asked for: the boundary rule
-`ui-kit-must-not-import-src` (spec 311 EARS-458) forbids `src/ui` every import
-from `src/` except `src/ui` itself, while every module, route and even the CMS
-side may import the kit. `pnpm boundaries`; demonstrated by four fixtures in
-`tests/unit/platform-boundaries.spec.ts`.
-
-## Three places the kit is not a transcription
-
-All three are cases where the vendored file could not answer — a width it never
-draws, a state it never shows — and all three are recorded rather than silently
-decided. Where the file DOES answer, it wins and there is nothing to record:
-the launcher's «↗ внешний» marker was a fourth entry here until the #353 review,
-and the fix was to paint it as `p-launcher.html` draws it, not to justify the
-difference.
-
-1. **The grid's column count.** The wireframe says `repeat(4, 1fr)` at one
-   desktop width — the only width a static mockup has, and its own header lists
-   `narrow/mobile` under NOT SHOWN. EARS-428 requires the home to stay usable
-   while narrow, so the grid is expressed as a minimum column width
-   (`--bbm-size-tile-min-width: 260px`) rather than a fixed four. At the
-   launcher's own measure this is not an approximation of the design, it IS the
-   design: 1160 − 48 padding − 3 × 16 gap = 266px per column, so `auto-fill`
-   lays out exactly four until the viewport is narrower than the wireframe's.
-
-2. **The top bar wrapping.** `.bar-in` is a single 52px-high flex row in both
-   wireframes, at the one desktop width they draw. `TopBar` adds
-   `flex-wrap: wrap` for the same reason the grid is not a fixed four —
-   EARS-428 requires the workspace to stay usable while narrow, and an
-   unwrapped bar overflows the page instead. At the wireframes' own width
-   nothing wraps, so the drawn layout is unchanged.
-
-3. **Hover, focus-visible, active and disabled.** Neither source draws them —
-   both list the states they omit in their own headers. They are derived from
-   the palette rather than invented: hover borrows the neighbouring surface
-   step, focus reuses the sidebar's accent rail width, disabled drops to the
-   disabled text token. The design has no colour to signal with, so nothing here
-   signals with colour.
-
-## What is deliberately NOT here yet
-
-The cabinet's own furniture — sidebar navigation, the resource table, the
-breadcrumb, the toolbar, the pager. Those belong to #315, which builds the shell
-against `p-admin-shell.html`; the tokens they need are already in `tokens.css`
-(the file is derived from BOTH sources, not only the launcher's), so #315 adds
-components, not values.
-
-Also not here: an `Avatar` export. The bar's avatar is an empty swatch in both
-wireframes — there is no member photo anywhere in this workspace — so it lives
-inside `TopBar` as decoration rather than becoming a public component with
-nothing to show.
-
-## Using it
-
-```tsx
-import { AppTile, Container, PageHeader, TileGrid, TopBar } from '@/ui'
+```bash
+npx shadcn@latest add <component>                          # a base shadcn primitive
+npx shadcn@latest add https://ui.refine.dev/r/<item>.json  # a Refine-specific wrapper or block
 ```
 
-`@/ui` is the only door: nothing imports past the barrel into a component file.
-Importing the barrel also pulls in `tokens.css`, so a consumer cannot get the
-components without the palette.
+`components.json` is configured so **everything** the CLI generates lands here —
+`components`, `ui`, `lib` and `hooks` all alias into `@/ui`, and `utils` into
+`@/ui/utils`. Do not accept a generated file under `src/lib` or `src/components`:
+that is the §10 boundary leaking, and `pnpm boundaries` will say so on the next
+import.
 
-**The kit is for code that a bundler compiles.** Because the barrel imports a
-stylesheet, `@/ui` must not be imported from a module that Node executes
-directly with no CSS loader — a Payload collection, `payload.config.ts`, a
-`tools/` script, an instrumentation hook. The boundary rule
-`ui-kit-must-not-import-src` says the CMS side MAY import the kit, and that is
-a statement about dependency direction, not an invitation: a Payload collection
-that pulled in `@/ui` would execute `import './tokens.css'` inside the tsx
-config loader and fail there, not at build time. Shared VALUES a Node context
-needs (token names) live in `src/ui/tokens.ts`, which imports no CSS.
+**One caveat for the Refine registry specifically.** Refine's own items
+(`views`, `layout-01`, `data-table`, `theme-provider`, …) carry a hardcoded
+`target` in their registry JSON, e.g. `src/components/refine-ui/views/…`, and a
+`target` overrides the aliases. Adding one therefore needs a follow-up move into
+`src/ui` plus an import rewrite. Refine republishes no base primitives — those
+come from the plain shadcn registry, which honours the aliases — so this only
+bites when the admin shell (#315) starts pulling the CRUD wrappers.
 
-## Adding to it
+Copied files are Prettier-formatted on the way in (`pnpm format:check` is a gate
+and the vendored style differs). That is a formatting pass and nothing else: no
+component's markup or variants are edited on arrival.
 
-1. The surface's design source is vendored in `design-source/` first, or there
-   is nothing to build to (`.claude/rules/design-process.md` §1).
-2. New values go in `tokens.css` with the selector they came from; a value
-   written into a component stylesheet is a `hardcoded-color` finding.
-3. A new token is listed in `tokens.ts` in the same edit — the lint fails on
-   drift in either direction, and the showcase renders from that list.
-4. The component gets a section in `/p/ui-kit` and a clause in
-   `tests/unit/ui-markup.spec.ts`; `tests/unit/ui-showcase.spec.ts` fails if the
-   showcase stops being complete.
-5. When an element class settles, it gets a row in
-   [`docs/design/ui-whitelist.md`](../../docs/design/ui-whitelist.md) — in that
-   PR, not a follow-up.
+## Two things that are deliberately NOT armed yet
+
+Read [`theme.css`](./theme.css)'s header before touching it. A stock shadcn setup
+also installs Tailwind's **preflight** reset and an `@layer base` block painting
+`html` / `body` / `*` in the theme. Neither is here, because `/p/okr` and
+`/p/hours` live under the same layout and spec 311 EARS-429 keeps them
+unreskinned until each surface's own first substantive touch — either one would
+restyle both of them today. What remains is inert: theme variables plus
+utilities emitted only for class names the source actually uses. The re-skin
+slice of #360 arms both together with the surfaces that need them; `theme.css`
+spells out the two edits.
+
+## The guard
+
+`pnpm lint:ui-tokens` (`tools/lint/ui-tokens-lint.mjs`, WARN — register:
+[`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5) holds the one rule
+that makes a theme a theme: **a colour literal appears nowhere under `src/ui/**`
+except `theme.css`** — in `.tsx` as much as in `.css`, because under Tailwind a
+value escapes through `className="bg-[#fafafa]"`, not through a stylesheet. It
+also flags a `var(--…)` in a kit stylesheet that `theme.css` does not declare.
+While there is no `theme.css` it reports «the UI kit is not present, nothing to
+check» rather than PASS: a guard that lost its subject must not look clean.
+
+## What was here before, and why it is gone
+
+The first contents of this directory (#312) were **derived from
+`design-source/p-launcher.html` and `design-source/p-admin-shell.html`, which are
+`fidelity: wireframe` sources** — they fix layout, not a visual language
+(`design-source/README.md` → «The fidelity axis»; the gate is
+`pnpm lint:design-fidelity`, #359). Building a token palette and eight components
+out of wireframe greys produced a stand the owner rejected on 2026-08-26. The
+remedy chosen was not a repaint but a professionally built foundation, so
+`tokens.css` / `tokens.ts`, the eight components, the `classNames` helper, the
+barrel and the `/p/ui-kit` showcase were deleted (PR-1a of #360) rather than
+patched.

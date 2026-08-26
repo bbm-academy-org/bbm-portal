@@ -138,10 +138,10 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  * @type {Record<number, {ids: string[], reason: string}>}
  */
 const DEFERRALS_BY_ISSUE = {
-  338: {
-    ids: Array.from({ length: 34 }, (_, i) => `EARS-${301 + i}`),
+  357: {
+    ids: ['EARS-324', 'EARS-325', 'EARS-326'],
     reason:
-      'spec 338 (finance F1 ledger core) is In dev — the owner gave the stage-2 go on #338 (2026-08-26), which added EARS-330…334, and the build has not started, so no implementation exists to test yet. The build task removes ids from this list as their tests land (tests named it(’EARS-N: …’) per task-cycle stage 3), the same way #273 drained the 201 entry',
+      'spec 338 §C, the SURFACE half: the workspace declaration, /p/finance and the /p/admin/finance/* resources. #356 landed everything else in that spec — §A, §B, EARS-323 and EARS-330…334 — and drained them from this entry as their tests appeared under tests/unit/finance-*.spec.ts and tests/int/platform/finance-*.int.spec.ts. These three have no code to assert on until the surfaces exist: the write gate they describe is already enforced and tested in the module (EARS-330), what is missing is the route that renders and refuses. #357 is blocked by #356 and by the portal-workspace frame (#314, #315)',
   },
   201: {
     ids: ['EARS-23'],

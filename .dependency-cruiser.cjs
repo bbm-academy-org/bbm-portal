@@ -137,6 +137,116 @@ module.exports = {
       to: { path: '^src/(lib/finmodel|modules/finmodel)' },
     },
     {
+      name: 'finance-must-not-import-cms',
+      comment:
+        'ADR-002 §3 / spec 338 EARS-323 (#356): the finance module (src/lib/finance + ' +
+        'src/modules/finance) must not import CMS internals. The ledger is platform data in the ' +
+        '`platform` database (ADR-004 §1); Payload knows nothing about it and must stay that way, ' +
+        'the same closure `cms-must-not-import-platform-db` states from the other side.',
+      severity: 'error',
+      from: { path: '^src/(lib/finance|modules/finance)' },
+      to: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations)|^src/payload\\.config|^src/payload-types',
+      },
+    },
+    {
+      name: 'cms-must-not-import-finance-internals',
+      comment:
+        'ADR-002/ADR-003 (#356): the mirror. The finance surfaces are `/p/finance` and ' +
+        '/p/admin/finance/* (spec 338 EARS-324/325, delivered by #357), i.e. the (platform) route ' +
+        'group — which is why that group is the one left out of the from-set, exactly as in the ' +
+        'hours and OKR mirrors. app/(frontend) IS closed out: BBM money has no public surface at ' +
+        'all (EARS-325), and that is a product decision, not an oversight.',
+      severity: 'error',
+      from: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',
+      },
+      to: { path: '^src/(lib/finance|modules/finance)' },
+    },
+    {
+      name: 'finance-must-not-import-hours-internals',
+      comment:
+        'ADR-002 §3 (#356): two modules of the same monolith stay independent. Finance will need ' +
+        "hours data eventually — F2's accruals (spec 338, Out of scope) — and when it does it " +
+        "asks through `@/lib/hours`'s public API and gets its own reviewed rule pair, the way " +
+        'hours got one for member. It does not inherit the access by importing an internal.',
+      severity: 'error',
+      from: { path: '^src/(lib/finance|modules/finance)' },
+      to: { path: '^src/(lib/hours|modules/hours)' },
+    },
+    {
+      name: 'hours-must-not-import-finance-internals',
+      comment: 'ADR-002 §3 (#356): the mirror rule — hours may not reach into finance.',
+      severity: 'error',
+      from: { path: '^src/(lib/hours|modules/hours)' },
+      to: { path: '^src/(lib/finance|modules/finance)' },
+    },
+    {
+      name: 'finance-must-not-import-okr-internals',
+      comment: 'ADR-002 §3 (#356): the same independence towards OKR.',
+      severity: 'error',
+      from: { path: '^src/(lib/finance|modules/finance)' },
+      to: { path: '^src/(lib/okr|modules/okr)' },
+    },
+    {
+      name: 'okr-must-not-import-finance-internals',
+      comment: 'ADR-002 §3 (#356): the mirror rule — OKR may not reach into finance.',
+      severity: 'error',
+      from: { path: '^src/(lib/okr|modules/okr)' },
+      to: { path: '^src/(lib/finance|modules/finance)' },
+    },
+    {
+      name: 'finance-must-not-import-finmodel-internals',
+      comment:
+        'ADR-002 §3 / ADR-005 §2 (#356): the finmodel snapshot is the PLAN (a committed snapshot ' +
+        'of the bbm-kb master), the finance ledger is the FACT. Two things that look adjacent and ' +
+        'must not be wired together: a plan variable leaking into a recorded amount would make ' +
+        'the ledger restate itself whenever `pnpm ssot:pull` runs, which is the opposite of ' +
+        'EARS-319. Comparing plan against fact is a report (F3), computed from both, owned by ' +
+        'neither.',
+      severity: 'error',
+      from: { path: '^src/(lib/finance|modules/finance)' },
+      to: { path: '^src/(lib/finmodel|modules/finmodel)' },
+    },
+    {
+      name: 'finmodel-must-not-import-finance-internals',
+      comment: 'ADR-002 §3 (#356): the mirror rule — finmodel may not reach into finance.',
+      severity: 'error',
+      from: { path: '^src/(lib/finmodel|modules/finmodel)' },
+      to: { path: '^src/(lib/finance|modules/finance)' },
+    },
+    {
+      name: 'finance-must-import-member-only-via-api',
+      comment:
+        'spec 338 EARS-322 (#356), the same shape as the hours rule below. The finance ledger ' +
+        'names a person on a posting (`finance_posting.member_id`), and that link is an SQL ' +
+        'foreign key written in migration 0008 — so the module imports nothing from ' +
+        '`src/lib/member` TODAY. The rule is written anyway, and now rather than with F2: ' +
+        '`module-must-not-import-foreign-tables` guards the TABLE directory ' +
+        '(src/lib/platform/db/schema/member/), so without this one an import of ' +
+        '`@/lib/member/repository` would keep every boundary green while pinning finance to the ' +
+        "member module's internal shape. The exception is the barrel file itself, which is what " +
+        '`@/lib/member` resolves to — so when F2 does need people data, the door it walks through ' +
+        'is already the only one open.',
+      severity: 'error',
+      from: { path: '^src/(lib/finance|modules/finance)' },
+      to: {
+        path: '^src/lib/member/',
+        pathNot: '^src/lib/member/index\\.ts$',
+      },
+    },
+    {
+      name: 'member-must-not-import-finance',
+      comment:
+        'spec 338 EARS-323 (#356), the mirror: the shared people registry has no business with ' +
+        'the ledger in either direction. `member` is imported BY modules, it does not reach into ' +
+        'them — and a registry that knew about money would make «delete this person» a finance ' +
+        'question, which is exactly what the ON DELETE RESTRICT foreign key answers instead.',
+      severity: 'error',
+      from: { path: '^src/lib/member/' },
+      to: { path: '^src/(lib/finance|modules/finance)' },
+    },
+    {
       name: 'hours-must-import-member-only-via-api',
       comment:
         'spec 124 EARS-8: the hours module reaches `member` data ONLY through the member module ' +

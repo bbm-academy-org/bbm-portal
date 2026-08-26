@@ -41,9 +41,41 @@ export async function asMigrator<T>(fn: (client: Client) => Promise<T>): Promise
  */
 export function truncateAsFixture(statement: string): Promise<void> {
   return asMigrator(async (client) => {
-    await client.query(statement)
+    for (const trigger of FACT_CORE_TRUNCATE_GUARDS) {
+      await client.query(`alter table ${trigger.table} disable trigger ${trigger.name}`)
+    }
+    try {
+      await client.query(statement)
+    } finally {
+      for (const trigger of FACT_CORE_TRUNCATE_GUARDS) {
+        await client.query(`alter table ${trigger.table} enable trigger ${trigger.name}`)
+      }
+    }
   })
 }
+
+/**
+ * The statement-level guards a fixture reset has to step around (spec 338
+ * EARS-313, migration `0008`).
+ *
+ * `core.finance_operation` and `core.finance_posting` refuse TRUNCATE outright,
+ * and they do so for any suite — a `truncate core.member … cascade` reaches them
+ * through `finance_posting.member_id`, so this is not only the finance suites'
+ * problem. The harness therefore lifts the two guards for the length of the
+ * reset and puts them back in the `finally`, which needs table OWNERSHIP and is
+ * why it lives inside `asMigrator`.
+ *
+ * That this is the only way to empty those tables is not a workaround, it is the
+ * clause: the application has no such door at all, and a reset is a property of
+ * the harness rather than of the system under test. The row-level UPDATE/DELETE
+ * guards are deliberately NOT lifted — nothing here needs to edit a recorded
+ * fact, and a helper that could would be a hole in exactly the invariant several
+ * specs assert.
+ */
+const FACT_CORE_TRUNCATE_GUARDS = [
+  { table: 'core.finance_operation', name: 'finance_operation_immutable_truncate' },
+  { table: 'core.finance_posting', name: 'finance_posting_immutable_truncate' },
+] as const
 
 export type PrivilegeSplitState = { split: boolean; reason: string }
 

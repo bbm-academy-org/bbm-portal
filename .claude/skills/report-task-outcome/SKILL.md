@@ -77,7 +77,9 @@ GitHub comment. The second names where each deviation was routed (its own issue
 
 All three share ONE recognizer of "a completion report" (defined in
 `completion-report-gate.mjs`): a completion verb plus an issue/PR reference,
-minus negations, and excluding a short question to the owner, an interim
+minus negations, and excluding a short question to the owner, the declared
+four-beat owner-question form below (two of its four beat labels, each on its own
+line), an interim
 checkpoint (the declared marker «Статус промежуточный», or inferred from «⏳»,
 «жду CI»), and a proposal of the next step — **and** the session
 must carry at least one write action in its transcript (#158), so a read-only
@@ -111,6 +113,23 @@ _(symptom, owner 2026-08-19: «Почему ты перекладываешь р
 session rotated the Zitadel client secret, the Plane token, the SSOT-sync key and
 the preview token, and rolled S3 credentials onto five boxes. Every one of them
 had been routed to the owner's zone a moment earlier.)_
+
+### A fact that exists nowhere in the repo is a stop-state input
+
+The four accesses above answer «can I DO this myself». They do not answer «what
+is the value». When the four come back negative **and** the fact itself exists
+nowhere in the repo, the environment or the provider's API — an external origin
+or URL, an organisation or workspace name, where a credential lives — that fact
+is a **stop-state input**: it goes to the owner as a question and the work waits.
+
+**Never a guessed value with a TODO built around it.** A plausible-looking
+placeholder compiles, reviews clean and ships; the TODO next to it does not make
+the value less wrong, it only records that someone knew it might be. Guessing
+also destroys the question: the owner is never asked, because the code looks
+answered.
+
+_(symptom, 2026-08-26: a Mattermost origin nobody in the repo knew was guessed
+and wrapped in a TODO instead of being asked about.)_
 
 ## Промежуточный чекпойнт — the marker, not the tail
 
@@ -160,9 +179,33 @@ without a gloss) and any «см. issue/отчёт» redirect that makes the owne
 something before they can parse the question. Self-check each question before
 sending: someone who read nothing else must be able to answer it.
 
-A correctly formed report therefore usually ENDS on a question line — that is
-expected and does not exempt it from the gates (the recognizer only exempts
-short question-only turns).
+**The four beats are a DECLARED form, and the Stop gates read them as one**
+(#374, `isOwnerQuestionForm` in `tools/hooks/completion-report-gate.mjs`): a
+message carrying **two or more of the four beat labels, each on its own line**, is
+a question and not a completion report — however many merged PRs and issue
+numbers it mentions. The beats are the whole of what the gate reads; a question
+heading is not part of the form and buys nothing. Before #374 the gate read none
+of it, and the owner saw almost every question twice: the gates blocked it once
+and the session re-sent it.
+
+A correctly formed report still usually ENDS on a question line, and that does
+not relieve it of its own markers — a final report owes points 1–5 and the two
+stage-7 lines by this canon, not because a hook forces them. What changed is only
+whom the gate trusts: it takes the declared form at its word, exactly as it does
+«Статус промежуточный». A report that writes out the whole four-beat block will
+therefore pass the gates unchecked — that is a deliberate fail-open, and writing
+the markers is on you.
+
+**Unanswered across more than two consecutive reports → escalate, do not
+restate.** A question that has ridden point 5 of three reports has been shown to
+be invisible there: the owner reads the report for what changed, and a tail item
+is not where an unanswered decision gets noticed. On its third crossing it leaves
+the report and is sent as its **own standalone chat message** — nothing but the
+four beats, and the note that the work is waiting on it. Restating it as point 5
+a fourth time is the failure, not the persistence.
+
+_(symptom, 2026-08-26: the same owner question restated six times across
+consecutive reports, never once asked on its own.)_
 
 ## Failure modes
 
@@ -180,6 +223,10 @@ short question-only turns).
   rejected by the gate, and rightly: that session's deviations are exactly what
   the line exists for.
 - **Questions in internal shorthand** — costs a full round-trip.
+- **A guessed external value with a `TODO` beside it** — the placeholder ships
+  and the question is never asked.
+- **The same unanswered question as point 5 for the third report running** — it
+  is a standalone message by then, not a tail item.
 
 ## Related
 

@@ -187,6 +187,46 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:guard-test-coverage
 
+  # BLOCK from day 0 — a UI diff built on a surface that has no VISUAL design
+  # source (#359). Recorded mandate: docs/ci-guardrails.md §5, row
+  # `design-fidelity` (§3 class 3 — owner-mandated process guard whose WARN form
+  # already failed: the prose rule was live in .claude/rules/design-process.md §1
+  # while #312/#314 built the `/p` wireframe as the design, and the WARN guards
+  # that flank it — `stage-b`, `ui-tokens` — were live too and changed nothing).
+  #
+  # It lives in `ci.yml` and in the `ci` needs-list because that IS what BLOCK
+  # means here (§2.1): a job in `pr-body-guards.yml` cannot be in that list at all.
+  # The cost of that placement, named rather than discovered: `ci.yml` does not
+  # trigger on `edited`, so adding the missing `Design-fidelity:` line to the PR
+  # body does not by itself re-run this job. It does not need a push either — the
+  # guard reads the body LIVE through `gh pr view`, so re-running the failed job
+  # picks up the edit.
+  #
+  # No `--severity` flag on purpose: this guard has exited 1 on a finding since day
+  # 0, so a dial could only ever weaken it (the reasoning of §6.1). Reads PR
+  # metadata through `gh`, hence the auth block workflow-auth enforces; `issues:
+  # read` on top of the usual pair, because the owner's record may live in a
+  # linked-issue comment.
+  design-fidelity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:design-fidelity
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
   # WARN — production changed with no test in the diff and none in the tree.
   # Reads the PR's changed-file set through `gh`, hence the auth block
   # (workflow-auth enforces its presence).
@@ -225,8 +265,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:no-stub
 
-  # WARN — the UI kit's values come from one palette, and that palette is
-  # derived from design-source/ (#312, consolidation §10/§11).
+  # WARN — the UI kit's colour values come from one theme entry, and that entry
+  # is the standard shadcn/ui neutral theme the owner adopted on 2026-08-26
+  # (#360; consolidation §10/§11, guard rewritten from the #312 palette form).
   ui-tokens:
     continue-on-error: true # WARN since 2026-08-26 — canon §5, earliest promotion 2026-09-23
     runs-on: ubuntu-latest
@@ -402,7 +443,15 @@ jobs:
   # The job name must stay literally `ci`: it is the context named in
   # .github/branch-protection.json, so renaming it silently unhooks the gate.
   ci:
-    needs: [lint-and-typecheck, guard-tests, guard-test-coverage, platform-int, ssot-freshness]
+    needs:
+      [
+        lint-and-typecheck,
+        guard-tests,
+        guard-test-coverage,
+        platform-int,
+        ssot-freshness,
+        design-fidelity,
+      ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

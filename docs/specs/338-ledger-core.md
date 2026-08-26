@@ -6,6 +6,20 @@ updated: 2026-08-26
 
 # Finance F1 — ledger core — spec (issue #338)
 
+- **Issues:** #338 (this spec, the F1 parent under epic #115); the build is split
+  in two — **#356** «Finance F1a — ledger backend core» carries the data model,
+  the migrations, the module API and every fact-core invariant — §A, §B,
+  EARS-323 and EARS-330…334 — and **#357** «Finance F1b — finance surfaces»
+  carries the workspace declaration, `/p/finance` and the `/p/admin/finance/*`
+  resources, which are EARS-324/325/326 and nothing else: the write gate, the
+  binding as master data and the exception query are enforced in the module
+  (#356) and only surfaced here. #357 is blocked by #356 and by the portal-workspace frame
+  it plugs into — #314 (`/p` launcher and the registry rendering) and #315
+  (`/p/admin` Refine shell); #312 (UI kit) and #313 (`platform-admin` claim gate)
+  are already delivered. The split follows the owner's order of 2026-08-26 that
+  the backend core is built first and the front-end dependency lives in the
+  native issue graph rather than in prose.
+
 ## Why
 
 The finance epic (#115) needs its foundation: the definition of "a fact of
@@ -245,6 +259,21 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   the balancing counter-leg in the same currency, keeping EARS-311's
   per-currency zero-sum intact (Accounting policy, ruling 3; the recorded legs
   themselves are never restated).
+  The average is of the **remaining** holding, moving-average cost flow: every
+  disposal removes its quantity from the pool together with the share of cost
+  that quantity carried, so an acquisition made after a disposal prices the next
+  one and a lifetime average of every purchase ever made does not. It is derived
+  from recorded postings rather than from re-applied rate strings — the exchange
+  legs of the pair's prior steps, summed rather than sign-filtered, so a
+  reversal cancels its original (EARS-314) — which keeps the arithmetic exact
+  integer arithmetic and restates nothing (EARS-319). WHERE the ledger holds no
+  remaining recorded acquisition of the disposed currency against the received
+  one, the system shall post no FX result at all rather than invent a basis; the
+  `conversion` account is a clearing account and shall read zero once every unit
+  acquired has been disposed of. _(Recorded 2026-08-26 from the #370 review, so
+  the clause and `src/lib/finance/conversions.ts` cannot drift; the F1a
+  limitation that the pool is per currency PAIR is named in that module's
+  header.)_
 - **EARS-329.** IF an operation carries no conversion step (a payment or
   transfer in one currency), THEN the system shall post no FX result: the
   ledger holds no rate source for it (decision 18 records only actual

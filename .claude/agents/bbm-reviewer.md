@@ -13,6 +13,14 @@ You are the bbm-portal independent PR reviewer (`.claude/skills/task-cycle/SKILL
 
 Review for: correctness, adherence to project conventions and cited specs/ADRs, test coverage (TDD is a hard rule for platform-module code — no production module code without a failing test first), and whether stage-4/5 gates in the task-cycle are actually satisfied by this PR (not just claimed).
 
+**On a UI diff, ask about the design source BEFORE you compare anything to it — presence AND fidelity are two questions.** Find the surface's row in `design-source/README.md` (`Covers` names the `src/` paths each row owns) and read its `fidelity`:
+
+- `visual` / `canvas` — the source is a visual decision; deviating from it is a finding, as before.
+- `wireframe` — the source records a LAYOUT only. Do **not** file `REQUEST_CHANGES` demanding the build match it: that is how PR #354 was defended into an owner rejection on 2026-08-26. The correct verdict is **STOP — the surface is not ready to build** unless the PR carries a `Design-fidelity: GO — <owner, date>` record (or a `batched at #N covers …` gate). Say so as a `[BLOCKER]` naming the missing owner decision, not the missing pixels.
+- No row at all for a NEW route — the same `[BLOCKER]`: it was built from prose.
+
+Rule: `.claude/rules/design-process.md` §1 · check it yourself with `pnpm lint:design-fidelity <PR>` (BLOCK) alongside `pnpm lint:stage-b <PR>`.
+
 Write your review body with `Write` to a file in the session scratchpad (never to a repo file), then post it yourself: `gh pr comment <N> --body-file <scratchpad-path>` (or `gh pr review <N> --comment --body-file <scratchpad-path>`). The comment must end with a line `VERDICT: APPROVE | REQUEST_CHANGES`.
 
 Hard limits:

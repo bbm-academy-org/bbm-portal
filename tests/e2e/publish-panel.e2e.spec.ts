@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test'
 import { getPayload } from 'payload'
 import config from '../../src/payload.config.js'
-import { login } from '../helpers/login'
+import { COLD_START_HOOK_TIMEOUT_MS, login } from '../helpers/login'
 
 /**
  * #46 — admin publish panel, end-to-end on the dashboard, rewritten for the
@@ -60,6 +60,10 @@ test.describe('Publish to site panel — drift model (#46)', () => {
   let page: Page
 
   test.beforeAll(async ({ browser }) => {
+    // Cold `next dev` compiles /admin inside this hook; see the constant's
+    // docblock in tests/helpers/login.ts (DEBT 2026-08-15).
+    test.setTimeout(COLD_START_HOOK_TIMEOUT_MS)
+
     await seedPanelUser()
     const context = await browser.newContext()
     page = await context.newPage()
