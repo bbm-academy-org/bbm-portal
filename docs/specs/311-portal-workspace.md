@@ -21,10 +21,14 @@ updated: 2026-08-26
   #314 and #315 and as provenance rows in `design-source/README.md`. The admin pick carries two
   owner amendments, written into the file's header comment: sub-section nesting
   must be visually explicit, and OKR **does** get a cabinet section. Where this
-  spec's prose and a vendored file disagree, the file wins
-  (`.claude/rules/design-process.md` §1) — the two places where the launcher file
-  shows more than the prose did are settled explicitly by EARS-468 (the four tile
-  forms) and EARS-477/EARS-478 (the portfolio placeholder tiles).
+  spec's prose and a vendored file disagree, the file wins **on layout and
+  coverage** — both files are `fidelity: wireframe`, and per
+  `.claude/rules/design-process.md` §1 (fidelity clause, #359) a wireframe fixes
+  where things sit, never how they look; the visual language comes from the
+  standard-system decision of #360, not from these files. The two places where
+  the launcher file shows more than the prose did are settled explicitly by
+  EARS-468 (the four tile forms) and EARS-477/EARS-478 (the portfolio
+  placeholder tiles).
 - **Owner «go» (task-cycle stage 2) — Антон, 2026-08-25.** The spec is approved
   and its status moves `Draft` → `In dev`; from here it is the frozen scope of
   #312…#317. The go carries **one owner decision that overrides a lead call**:
@@ -32,15 +36,30 @@ updated: 2026-08-26
   the target-portfolio apps that are not live yet, exactly as the vendored
   `design-source/p-launcher.html` draws them. D-13 below is rewritten to record
   that decision, EARS-467 (which excluded them) is retired, and EARS-477/EARS-478
-  are the clauses that replace it. The vendored file wins, as
-  `.claude/rules/design-process.md` §1 says it does.
+  are the clauses that replace it. The vendored file wins **on that inventory
+  question** — which tiles exist at all is a layout/coverage decision, which is
+  exactly what a `fidelity: wireframe` source is allowed to settle
+  (`.claude/rules/design-process.md` §1, fidelity clause, #359). How those tiles
+  LOOK is not settled by the file.
 - **Consolidation revision 2026-08-26-g (#360) — citations reconciled.** The
   owner decided the visual language of `/p/*` is the standard neutral theme of
   Refine's official shadcn integration; the consolidation spec's §3 decision 9,
   §6 and §10 were revised accordingly, and the quotes of §6/§10 in "Prior
-  decisions" below carry the revised wording. Nothing else in this spec changes:
-  the kit still lives at `src/ui` behind the same boundary, so EARS-458 and
-  every "built from `src/ui`" clause stand as written.
+  decisions" below carry the revised wording. The kit still lives at `src/ui`
+  behind the same boundary, so EARS-458 and every "built from `src/ui`" clause
+  stand as written.
+- **Kit contents cleared (#360, PR-1a).** The first `src/ui` contents (#312 —
+  `tokens.css`/`tokens.ts` derived from the two wireframes, eight components,
+  the `classNames` helper, the barrel) and the `/p/ui-kit` showcase route were
+  **deleted**, together with the unit suites that asserted the wireframe
+  derivation (`tests/unit/ui-tokens.spec.ts`, `ui-showcase.spec.ts`,
+  `ui-design-fidelity.spec.ts`, `ui-markup.spec.ts`). Authority: the owner's
+  Stage-A decision on #360 (Антон, 2026-08-26). The directory, the
+  dependency-cruiser rule `ui-kit-must-not-import-src` and EARS-458 are
+  untouched; the replacement contents (Tailwind + the copied Refine shadcn
+  components) land in the next PR on #360. EARS-430 («built from `src/ui`»)
+  therefore refers to the kit as it will be repopulated, not to the deleted
+  wireframe-derived one.
 - **Donor & benchmark pass:** run 2026-08-25 against three donors — Refine's
   own resource/menu model (`@refinedev/core` `resources[]` with `meta.parent`
   multi-level menus, adopted for the grouped navigation and for nothing else:
@@ -271,8 +290,10 @@ recorded owner decisions do not settle.
   (Финансы, Колоды, CRM, Поиск команды, Запуск проекта, Калькуляторы) were a
   wireframe device showing how the grid reads at full portfolio size, and were
   not to be rendered in v1. **The owner overruled that call at the go**: the
-  launcher renders them, exactly as the vendored file draws them. The file wins
-  (`.claude/rules/design-process.md` §1), and the product reason is the owner's:
+  launcher renders them. The file wins on **which tiles exist** — a layout and
+  coverage question, the kind a `fidelity: wireframe` source is allowed to settle
+  (`.claude/rules/design-process.md` §1, fidelity clause) — not on how they look,
+  which #360 settles. The product reason is the owner's:
   the portfolio is a promise the workspace makes to its members, and a member who
   sees only two apps cannot tell a small workspace from a young one. The clauses
   are EARS-477 (they are rendered, one per not-yet-live portfolio app) and

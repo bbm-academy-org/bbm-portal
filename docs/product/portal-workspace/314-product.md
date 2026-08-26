@@ -43,7 +43,10 @@ vendored into `design-source/` with a provenance row in
 > Pick: **`launcher-a`** («Единая сетка», flat uniform grid) →
 > `design-source/p-launcher.html`, picked by Антон on 2026-08-25. The file draws
 > the «портфель, позже» placeholder tiles of US-13, and per
-> `.claude/rules/design-process.md` §1 the file is what gets built.
+> `.claude/rules/design-process.md` §1 the file settles the **layout** that gets
+> built — it is `fidelity: wireframe`, so it fixes what sits where and nothing
+> about the look. The visual language is the owner's #360 decision (Антон,
+> 2026-08-26): the default theme of Refine's official shadcn/ui integration.
 
 ## User stories
 
@@ -82,7 +85,10 @@ vendored into `design-source/` with a provenance row in
   I can tell a young workspace from a small one. _(owner decision at the go,
   Антон, 2026-08-25 — it overrules the pre-go lead call that the wireframe's
   greyed tiles were a wireframe device; the vendored
-  `design-source/p-launcher.html` wins per `.claude/rules/design-process.md` §1)_
+  `design-source/p-launcher.html` wins on **which tiles exist**, a layout and
+  coverage question a `fidelity: wireframe` source may settle per
+  `.claude/rules/design-process.md` §1; how they look is #360's decision, not
+  this file's)_
 
 ## Flows
 
