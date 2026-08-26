@@ -43,11 +43,13 @@
 // stands in for a decision a named person took on a named day. The GO may cite an
 // owner decision adopting a standard system's default theme — it does not have to
 // be a per-mockup «принято». Text that only TALKS ABOUT the marker — an HTML
-// comment, a fenced example, a four-space-INDENTED line — is stripped before
-// extraction. Nor is the shape THIS GUARD PRINTS: a `GO` whose tail is nothing
-// but `<…>` slots is classified as the unfilled placeholder it is, so a blocked
-// session cannot clear the BLOCK by pasting back the string the failure handed
-// it (review of PR #371).
+// comment, a fenced example, an INDENTED line that is still the printed shape —
+// is stripped before extraction. Nor is the shape THIS GUARD PRINTS: a `GO`
+// whose tail is nothing but `<…>` slots is classified as the unfilled
+// placeholder it is, so a blocked session cannot clear the BLOCK by pasting back
+// the string the failure handed it (review of PR #371). Nor is a tail that
+// merely ANNOUNCES the absence of a decision — `GO — TBD`, `GO — pending`,
+// `GO — n/a` — which `NON_RECORD_RE` refuses as the closed set it documents.
 //
 // SEVERITY: BLOCK, from day one, and with NO severity dial — a flag here could
 // only ever weaken the gate (the reasoning `instruction-budget` records in canon
@@ -103,8 +105,32 @@ const GO_RE = /^\**go\b\**\s*[-–—:,(]\s*(\S.*)$/i
 const BATCHED_RE = /^\**batched\s+at\s+#(\d+)\b/i
 /** A `batched` marker whose gate is not a real issue number (`#<gate issue>`). */
 const BATCHED_SHAPE_RE = /^\**batched\b/i
+/**
+ * A token that ANNOUNCES the absence of a decision. A CLOSED SET, deliberately,
+ * not a heuristic (review of PR #371): the only heuristic available — «a record
+ * must look like a name plus a date» — cannot be written without guessing at
+ * name and date formats, and every guess rejects a real owner GO («Антон,
+ * вчера на созвоне», an English date, a decision cited as `#360`). Refusing a
+ * true record is the expensive failure here: it blocks a correct PR on a BLOCK
+ * gate. So the set enumerates the words a session actually types when it has
+ * nothing to record, and an unknown junk tail is left to the human reviewer —
+ * who reads the marker anyway. Extend the set when a new one is observed.
+ *
+ * A token counts only when it OPENS the value and is followed by a non-word
+ * character or nothing: `pending owner decision` is a non-record, `Nonetheless
+ * approved by …` is content.
+ */
+const NON_RECORD_RE =
+  /^(?:tbd|to-?do|pending|later|none|wip|n\s*\/\s*a|n\.\s*a\.?|\?+|[-–—]+)(?:\W[\s\S]*)?$/i
+
 /** An unfilled placeholder — reported distinctly from a missing marker. */
-const PLACEHOLDER_RE = /^(<.*>|\(.*\)|tbd|pending.*|todo.*|\?+)$/i
+const PLACEHOLDER_RE = /^(?:<.*>|\(.*\))$/i
+
+/** Neither a filled slot nor a decision: the two shapes that are not a record. */
+function isNonRecord(text) {
+  const v = String(text ?? '').trim()
+  return v === '' || PLACEHOLDER_RE.test(v) || NON_RECORD_RE.test(v)
+}
 /** An angle-bracket slot of the printed shape: `<owner, date>`, `<path glob>`. */
 const ANGLE_SLOT_RE = /<[^<>]*>/g
 /** The same, non-global — `.test` on a `/g` regex is stateful. */
@@ -279,6 +305,15 @@ export function coveringRow(rows, path) {
  * rule stays local rather than going into `lib/guard.mjs`, because widening the
  * shared stripper silently changes `stage-b`, `spec-link`, `spec-deletion` and
  * `pr-land` — a different decision, and not this PR's.
+ *
+ * NARROWED to lines that still carry an angle-bracket slot (round-2 review of
+ * PR #371, N1). Indentation alone also swallowed a FILLED record written as a
+ * 4-space-nested list item or under a tab — valid markdown, and in tension with
+ * `MARKER_RE`'s own `^[ \t>*_-]*` allowance three screens up — and the author
+ * then read «no marker» about a marker they can see. What the strip exists for
+ * is THIS guard's own printed output; every line of it carries a `<…>` slot, so
+ * the narrowing costs none of that protection, and `classifyMarker` refuses an
+ * unfilled shape a second time whatever indentation it arrives at.
  */
 const INDENTED_CODE_RE = /^(?: {4,}|\t)/
 const QUOTE_PREFIX_RE = /^ {0,3}(?:>\s?)+/
@@ -286,7 +321,10 @@ const QUOTE_PREFIX_RE = /^ {0,3}(?:>\s?)+/
 function stripIndentedCode(text) {
   return String(text ?? '')
     .split(/\r?\n/)
-    .filter((line) => !INDENTED_CODE_RE.test(line.replace(QUOTE_PREFIX_RE, '')))
+    .filter((line) => {
+      const bare = line.replace(QUOTE_PREFIX_RE, '')
+      return !(INDENTED_CODE_RE.test(bare) && HAS_ANGLE_SLOT_RE.test(bare))
+    })
     .join('\n')
 }
 
@@ -309,9 +347,14 @@ export function classifyMarker(value) {
   // would be cleared by its own error text (review of PR #371). A `GO` whose
   // tail is nothing but angle-bracket slots records neither a person nor a day,
   // which is exactly what design-process.md §2 says is NOT a record.
-  if (PLACEHOLDER_RE.test(v)) return { kind: 'placeholder' }
+  if (isNonRecord(v)) return { kind: 'placeholder' }
   const go = GO_RE.exec(v)
-  if (go) return filledRemainder(go[1]) ? { kind: 'go' } : { kind: 'placeholder' }
+  // The TAIL is the record, and it is checked as one. `filledRemainder` only
+  // asks whether SOMETHING survives slot removal — and `TBD` survives, so
+  // `GO — TBD` cleared a BLOCK gate for three keystrokes while a bare `TBD`
+  // was refused (round-2 review of PR #371). design-process.md §2 names both.
+  if (go)
+    return filledRemainder(go[1]) && !isNonRecord(go[1]) ? { kind: 'go' } : { kind: 'placeholder' }
   const batched = BATCHED_RE.exec(v)
   if (batched) {
     const coversClause = /\bcovers\b[:\s]*(.+)$/i.exec(v)
