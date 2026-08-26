@@ -138,7 +138,7 @@
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "4.7.0",
     "dependency-cruiser": "^18.1.0",
-    "drizzle-kit": "0.31.7",
+    "drizzle-kit": "0.31.10",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.3",
     "jsdom": "28.1.0",
