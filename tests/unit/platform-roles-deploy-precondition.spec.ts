@@ -37,7 +37,7 @@ describe('deploy/README.md — the workspace-roles precondition', () => {
     expect(deployReadme).toMatch(/grant/i)
   })
 
-  it('states the ordering — the console steps run BEFORE the release', () => {
+  it('states the ordering — the provisioning steps run BEFORE the release', () => {
     expect(deployReadme).toMatch(/before[^.\n]*deploy|deploy[^.\n]*after|precondition/i)
   })
 
