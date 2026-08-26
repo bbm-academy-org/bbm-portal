@@ -175,8 +175,11 @@ conversions — or the books cannot be rebuilt.
 - Money/dimension fields (`kind`, `account`, `counter_account`, amounts,
   currencies, `purpose`, `project`, `product`, `occurred_on`) are editable in
   `draft` and `submitted`; editing any of them in `approved` returns the item
-  to `submitted` — the approval never covers data it has not seen. Attaching
-  a document (submitter or entry role) changes no status.
+  to `submitted` — the approval never covers data it has not seen. The one
+  sanctioned exception: at EARS-511's one-act confirmation the poster sets
+  `occurred_on` to the actual money date without bouncing the item
+  (EARS-508). Attaching a document (submitter or entry role) changes no
+  status.
 - `refused` / `cancelled` / `posted` are terminal; documents stay linked for
   the record.
 
@@ -184,8 +187,8 @@ conversions — or the books cannot be rebuilt.
 `paid_currency` differs from its `currency` posts as **one F1 operation with
 module-built conversion legs** (Prior-decisions change 4). The
 authoritative-amount rule: **both recorded amounts are facts and both are
-authoritative** — no leg is ever computed as `amount × rate`, the rate exists
-only for display, derived from the pair, and is not stored; a rounding
+authoritative** — no leg is ever computed as `amount × rate`; the rate is
+derived from the pair and never used to compute an amount, so a rounding
 residual cannot arise by construction. Worked example — invoice 3 500 THB
 paid from the RUB card, 8 750 ₽ actually charged:
 
@@ -196,10 +199,13 @@ paid from the RUB card, 8 750 ₽ actually charged:
 | conversion | system conversion account  | −3 500 THB |
 | expense    | the purpose's expense side | +3 500 THB |
 
-Per-currency zero-sum (spec 338 EARS-311) holds in each currency; the
-conversion legs sit on the same system conversion account — and in EARS-328's
-FX pool — exactly as a spec-338 EARS-318 step does, so F1's FX treatment
-applies unchanged. A fee, where entered, is its own posting in
+Per-currency zero-sum (spec 338 EARS-311) holds in each currency. The module
+path writes **one `finance_conversion_step` row** carrying the two recorded
+amounts, with the derived rate stored as that row's informational `rate`
+(recorded numeric text, spec 338 EARS-318) — the conversion postings
+reference it via their `conversion_step` FK, so `realizedFxResult` and
+EARS-328's FX pool read the operation exactly as any conversion; F1's FX
+treatment applies unchanged. A fee, where entered, is its own posting in
 `fee_currency`. For `kind = conversion` (own-account exchange) the same pair
 carries the two sides — `amount`/`currency` the source,
 `paid_amount`/`paid_currency` the target, **one implicit step at the actual
@@ -307,7 +313,9 @@ process note now, §G); the id is not reused.
   the counterparty (who is being paid — the donor form's «Сервис», free text
   in v1, a reference candidate for #372); the operation date — `occurred_on`
   is **always the date money moved** (for a pre-spend request, the expected
-  date, confirmed or corrected at the one-act posting; the document's own
+  date; setting it to the actual money date at EARS-511's one-act
+  confirmation is the status machine's one sanctioned in-`approved` edit and
+  does not bounce the item; the document's own
   issue date is not stored — the attached file carries it, which settles the
   corpus's three-meanings-of-«Дата» ambiguity); a free-text note; attachments; and the `already_paid` flag
   (decision 12) with the `personal_funds` refinement, which shall be
@@ -388,8 +396,11 @@ process note now, §G); the id is not reused.
   `bank_screenshot`, `bank_statement`) satisfies EARS-506; the **claim set**
   (`ru_invoice`, `foreign_invoice`, `other`) documents the item but does
   not unlock posting. The corpus shows invoices posted days before money
-  moved; recording them as movement is what decision 23 forbids. (On the go
-  list — draft v2 said «any kind satisfies», this tightens it.)
+  moved; recording them as movement is what decision 23 forbids. `other`
+  sits in the claim set deliberately: a document class that genuinely
+  proves movement (e.g. the corpus's contractor-portal «Акт» screenshot)
+  gets its own proof-set kind by spec revision, never through `other`. (On
+  the go list — draft v2 said «any kind satisfies», this tightens it.)
 - **EARS-516.** IF a document is linked to a posted operation, THEN the
   system shall refuse to delete or replace it; correcting a wrong document
   is attaching another one. Documents of refused and cancelled items are
@@ -438,8 +449,8 @@ process note now, §G); the id is not reused.
 - **EARS-521.** Statement import shall be an intake producer and nothing
   more: it parses a statement file into draft intake items
   (`source = bank_import`, `source_ref` = the line's stable identity, the
-  statement itself linked as the confirming document, `kind =
-bank_statement` — proof-of-payment per EARS-515: it is the bank's own
+  statement itself linked as the confirming document with kind
+  `bank_statement` — proof-of-payment per EARS-515: it is the bank's own
   record of the movement), deduplicated per line
   (EARS-504), reviewed and posted through the same queue by the same roles.
   Nothing posts on upload alone.
