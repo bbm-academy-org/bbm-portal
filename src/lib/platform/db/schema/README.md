@@ -49,4 +49,19 @@ schema files against `meta/*_snapshot.json`, never the live database), so it is
 neither dropped nor re-proposed — and it must be repeated by hand if the table is
 ever recreated.
 
+**`finance/`** holds the nine tables of the finance ledger (`src/lib/finance`,
+spec [`docs/specs/338-ledger-core.md`](../../../../../docs/specs/338-ledger-core.md),
+issue #356): the six reference tables (`finance_currency`, `finance_account`,
+`finance_project`, `finance_product`, `finance_purpose`, `finance_category`) and
+the three of the fact core (`finance_operation`, `finance_posting`,
+`finance_conversion_step`). Three things about them are decided in
+`migrations/0008_finance_ledger_core.sql` rather than in these files, each for a
+reason the file itself states: `finance_posting.member_id` → `core.member(id)` is
+a hand-written FK for the same ADR-004 §6 reason the hours ones are (EARS-322);
+the single fund project row is seeded there (EARS-304); and
+`finance_operation` / `finance_posting` carry BEFORE UPDATE/DELETE/TRUNCATE
+triggers refusing every mutation, because the fact core is append-only and its
+only correction is a reversal (EARS-313). No table here stores a balance or a
+capitalization — both are sums over postings, always (EARS-317).
+
 Pipeline: [`../README.md`](../README.md).
