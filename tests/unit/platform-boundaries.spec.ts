@@ -108,6 +108,41 @@ describe('cms-must-not-import-platform-db', () => {
   })
 })
 
+describe('the UI kit boundary (spec 311 EARS-458, consolidation §10)', () => {
+  it('EARS-458: FAILS when src/ui imports a module', () => {
+    const { code, output } = cruiseFixture('ui-imports-module')
+    expect(output).toContain('ui-kit-must-not-import-src')
+    expect(code).not.toBe(0)
+  })
+
+  it('EARS-458: FAILS when src/ui reaches for a route, the CMS side or the platform db', () => {
+    // The clause says «`src/ui` не импортирует ни один модуль», and the rule is
+    // written wider than the word "module" on purpose: a kit that may not
+    // import `src/lib/hours` but MAY import `src/app`, `src/collections` or
+    // `src/lib/platform/db` is not context-free, it just leaks through a door
+    // nobody named. One fixture exercises all three so a rule that lost part of
+    // its to-set still leaves a dependency unreported.
+    const { code, output } = cruiseFixture('ui-imports-app-and-cms')
+    expect(output).toContain('ui-kit-must-not-import-src')
+    expect(output).toContain('app/(platform)')
+    expect(output).toContain('collections/Team.ts')
+    expect(output).toContain('platform/db')
+    expect(code).not.toBe(0)
+  })
+
+  it('EARS-458: allows a module, a route and the CMS side to import src/ui', () => {
+    const { code, output } = cruiseFixture('module-imports-ui')
+    expect(output).not.toContain('ui-kit-must-not-import-src')
+    expect(code).toBe(0)
+  })
+
+  it('EARS-458: allows src/ui to import its own files', () => {
+    const { code, output } = cruiseFixture('ui-imports-itself')
+    expect(output).not.toContain('ui-kit-must-not-import-src')
+    expect(code).toBe(0)
+  })
+})
+
 describe('the real tree', () => {
   it('is clean under the same rules (this is `pnpm boundaries`)', () => {
     const res = spawnSync(

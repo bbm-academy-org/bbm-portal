@@ -1,0 +1,38 @@
+/* Tag — `.tag` of `p-admin-shell.html` (a member's «активен» state) and
+   `.ext-mark` of `p-launcher.html` (the «↗ внешний» marker).
+
+   ONE element class, TWO forms — the two share the border (`1px #ccc`) and the
+   size (12px) and agree on nothing else: the launcher's marker is a step
+   lighter (#777 vs #555), carries no fill at all where the cabinet tag is
+   filled (#f6f6f6), and sits at a tighter padding (1px 5px vs 1px 7px). So the
+   marker is `.bbm-tag--mark`, not the base tag with a different placement.
+   Both forms are asserted against the vendored bytes in
+   tests/unit/ui-design-fidelity.spec.ts. */
+
+.bbm-tag {
+  display: inline-block;
+  border: var(--bbm-border-width) solid var(--bbm-color-border);
+  background: var(--bbm-color-surface-head);
+  color: var(--bbm-color-text-secondary);
+  font-size: var(--bbm-font-size-xs);
+  line-height: var(--bbm-line-height-base);
+  padding: var(--bbm-space-1) var(--bbm-space-7);
+  white-space: nowrap;
+}
+
+/* `.ext-mark` — a marker ON another element rather than a state OF a row. It
+   is unfilled so it reads as annotation on whatever surface it lands on (the
+   external tile is #fafafa, not the cabinet's white table). */
+.bbm-tag--mark {
+  background: transparent;
+  color: var(--bbm-color-text-muted);
+  padding: var(--bbm-space-1) var(--bbm-space-5);
+}
+
+/* `.tag.off` — a state that is recorded but no longer live (a deactivated
+   member). Dashed, not red: the design signals with line style, having no
+   colour to signal with. */
+.bbm-tag--muted {
+  border-style: dashed;
+  color: var(--bbm-color-text-disabled);
+}

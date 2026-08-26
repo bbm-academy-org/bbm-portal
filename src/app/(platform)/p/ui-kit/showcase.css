@@ -1,0 +1,79 @@
+/* The showcase's own layout. Not part of the kit: this stylesheet dresses the
+   page that DISPLAYS the kit, and nothing here is importable by a surface. */
+
+body:has(.bbm-showcase) {
+  background: var(--bbm-color-canvas);
+  color: var(--bbm-color-text);
+  font-family: var(--bbm-font-family-base);
+  font-size: var(--bbm-font-size-base);
+  line-height: var(--bbm-line-height-base);
+}
+
+.bbm-showcase {
+  padding: var(--bbm-space-32) var(--bbm-space-24) var(--bbm-space-64);
+}
+
+.bbm-showcase__section {
+  margin-top: var(--bbm-space-32);
+}
+
+.bbm-showcase__section-title {
+  font-size: var(--bbm-font-size-lg);
+  font-weight: var(--bbm-font-weight-semibold);
+  margin: 0 0 var(--bbm-space-4);
+}
+
+.bbm-showcase__note {
+  color: var(--bbm-color-text-muted);
+  font-size: var(--bbm-font-size-sm);
+  margin: 0 0 var(--bbm-space-16);
+  max-width: 68ch;
+}
+
+.bbm-showcase__panel {
+  background: var(--bbm-color-surface);
+  border: var(--bbm-border-width) solid var(--bbm-color-border-strong);
+  padding: var(--bbm-space-16);
+}
+
+.bbm-showcase__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bbm-space-12);
+}
+
+.bbm-showcase__states {
+  color: var(--bbm-color-text-muted);
+  font-size: var(--bbm-font-size-sm);
+  margin: var(--bbm-space-8) 0 0;
+}
+
+/* --- tokens ---------------------------------------------------------------- */
+
+.bbm-showcase__tokens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--bbm-size-search-min), 1fr));
+  gap: var(--bbm-space-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bbm-showcase__token {
+  display: flex;
+  align-items: center;
+  gap: var(--bbm-space-10);
+  font-size: var(--bbm-font-size-sm);
+}
+
+.bbm-showcase__swatch {
+  width: var(--bbm-size-avatar);
+  height: var(--bbm-size-avatar);
+  border: var(--bbm-border-width) solid var(--bbm-color-border-strong);
+  flex: none;
+}
+
+.bbm-showcase__token-name {
+  color: var(--bbm-color-text-strong);
+}

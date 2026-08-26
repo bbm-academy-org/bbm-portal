@@ -9,21 +9,32 @@ climbs (`.claude/rules/design-process.md`):
 A whitelist **entry** answers one question: _for this element class, is there
 something already settled that a new surface must reuse instead of inventing?_
 
-**The registry is empty today, on purpose.** This repo has no UI kit: there is no
-`src/ui`, no tokens file, no showcase, and exactly one shared component
-(`src/components/PublishPanel.tsx`). So the ladder currently resolves
-`design-source/` → **(empty)** → **bespoke with a justification**, and that is
-the correct, working answer — not a failure of the procedure. The kit
-(`src/ui` + showcase, epic 2 / #112) will **add rows here**; it does not change
-the ladder.
+**The kit now exists; the registry is still empty, and both facts are correct.**
+`src/ui` landed with #312 — tokens derived from `design-source/`, eight base
+components, a lint (`pnpm lint:ui-tokens`) and the `/p/ui-kit` showcase. What it
+has NOT yet got is the third condition a row requires below: no surface built
+from it has passed **Stage B** on a live stand. The kit's acceptance is batched
+at #314 (the `/p` launcher), agreed with the owner on 2026-08-26.
+
+So the ladder today resolves `design-source/` → **`src/ui` (rung 2 by import,
+not yet by row)** → bespoke with a justification. In practice that means: a UI
+task **imports from `@/ui` and does not invent** — that obligation comes from
+EARS-430 and consolidation §10, not from this file — and this table starts
+filling the moment #314 is accepted, in the PR that carries the acceptance.
+
+Keeping the table honest in the meantime is the point. A row here asserts that a
+look was accepted by the owner on a real screen; a row added on the strength of
+the code existing would make this registry a list of what was written rather
+than of what was agreed.
 
 ## Entries
 
 | Element class | Settled implementation | Approved at (issue/PR) | Notes |
 | ------------- | ---------------------- | ---------------------- | ----- |
 
-_No entries._ Every element class is currently uncovered → a UI task builds it
-bespoke and records the justification in its PR (see below).
+_No entries yet._ The candidates are the eight exports of `src/ui`
+(`src/ui/README.md` lists each with the `design-source/` selector it came from);
+they become rows when #314 passes Stage B.
 
 ## Adding a row
 
@@ -45,7 +56,9 @@ order:
 
 1. **`design-source/`** — the owner already designed this unit for another
    surface; reuse the vendored source (this is rung 1, not an adoption).
-2. **`src/ui`** — once #112 lands. Not present today.
+2. **`src/ui`** — present since #312. Import it before looking further; its
+   README names what each component was built from and what it deliberately does
+   not cover yet.
 3. **Upstream component registries**, MIT/permissive only, adopted **as owned
    code** (copied in, re-skinned to our own styles — never a runtime UI-kit
    dependency): shadcn/ui (Radix) · Origin UI · Intent UI / JollyUI (React-Aria)

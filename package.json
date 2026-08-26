@@ -107,6 +107,7 @@
     "lint:ears-test": "node tools/lint/ears-test-lint.mjs",
     "lint:spec-deletion": "node tools/lint/spec-deletion-lint.mjs",
     "lint:audit-coverage": "node tools/lint/audit-coverage-lint.mjs",
+    "lint:ui-tokens": "node tools/lint/ui-tokens-lint.mjs",
     "ci:verify-base": "node tools/gh/verify-base-ci-green.mjs"
   },
   "dependencies": {

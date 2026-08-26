@@ -1,0 +1,19 @@
+/* TileGrid — `.grid` of `p-launcher.html`.
+
+   The vendored file says `repeat(4, 1fr)` at one desktop width, which is the
+   whole of what it can say: a static wireframe has no narrow state (its own
+   header lists `narrow/mobile` under NOT SHOWN). EARS-428 requires the home to
+   stay usable while narrow and EARS-471 requires it to stay readable as ONE
+   flat grid at the full portfolio size, so the column count is expressed as a
+   minimum column width instead of a fixed four.
+
+   At the launcher's own measure this is not an approximation of the design, it
+   IS the design: 1160 − 48 padding − 3 × 16 gap = 1064 / 4 = 266px per column,
+   and `--bbm-size-tile-min-width` is 260px, so `auto-fill` lays out exactly
+   four columns until the viewport is narrower than the wireframe's. */
+
+.bbm-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--bbm-size-tile-min-width), 1fr));
+  gap: var(--bbm-space-16);
+}

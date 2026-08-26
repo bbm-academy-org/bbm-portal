@@ -1,0 +1,5 @@
+/* Every value comes from the palette; the comment may quote #ffffff freely. */
+.bbm-app-tile {
+  background: var(--bbm-color-surface);
+  padding: var(--bbm-space-16);
+}

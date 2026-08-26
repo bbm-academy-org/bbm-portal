@@ -148,11 +148,6 @@ const DEFERRALS_BY_ISSUE = {
     reason:
       'spec 201 EARS-23 is the READ path — «SQL run by an agent, result pasted into the issue» — which has no automated counterpart by construction: there is no route, no UI and no code to assert on until a surface over the ledger exists. EARS-24 and EARS-33 left this list when #273 landed their tests under tests/int/platform/audit-*.int.spec.ts',
   },
-  312: {
-    ids: ['EARS-458'],
-    reason:
-      'spec 311 §H, the src/ui half of the boundary set: «pnpm boundaries shall forbid src/ui from importing any module». The rule cannot be written before the directory it keys on exists, and #312 is the issue that creates src/ui together with its dependency-cruiser boundary',
-  },
   333: {
     ids: ['EARS-459'],
     reason:
