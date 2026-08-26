@@ -29,10 +29,23 @@ the process canon, runs both.
 
 ## Mode — dispatch, never self-check
 
+**Precondition — the decision-debt pass runs BEFORE the dispatch.** Item 10
+verifies a pass that has already happened, so a gate dispatched before
+`.claude/skills/surface-decision-debt/SKILL.md` was executed comes back BLOCKED
+on 10 by construction and burns a whole round. _(2026-08-26: the first run of
+the gate returned 11/12, BLOCKED on 10, for exactly this.)_
+
 The lead dispatches a **fresh-context subagent** with this file's content plus a
 task-specific message (branch, `git diff --name-only origin/main...HEAD`, issue
 `#N`, PR `#M`, whether the change is owner-visible). The subagent verifies and
 reports; it does not fix, stage, push, or merge.
+
+- **The subagent POSTS its own report on the PR** — the full table plus the
+  `VERDICT:` line, via `gh pr comment <PR> --body-file <path>` — **before** it
+  returns. The record then exists on the PR the moment the gate runs, not only
+  in a session transcript that nobody else can read. _(2026-08-26: PR #352's
+  gate ran in-session and left no trace; the reviewer flagged the missing record
+  as a blocker.)_
 
 - Every `Agent` call names an explicit `model` — `tools/hooks/agent-model-guard.mjs`
   **blocks** a call without one (CLAUDE.md → "Subagents and models"). This one is
@@ -115,6 +128,8 @@ the contract — a free-form report without it is re-dispatched, not interpreted
   the author already believes.
 - **Returning PASS with a FAIL in the table** — the exact failure the verdict
   line exists to make visible.
+- **Returning the report without posting it on the PR** — a gate whose only
+  trace is a session transcript reads, from the PR, as a gate that never ran.
 - **Re-running what `pnpm pr:land` gates** (CI, review verdict, the linkage —
   `Closes #N` or `Part of #N`) — wasted tokens and a second source of truth for
   the same rule.
