@@ -34,13 +34,26 @@ task and runs this gate. The Payload admin surface counts.
 
 ## The ladder (the whole procedure, in order)
 
-**0. Is the design in the repo?** `ls design-source/` and grep it for the
-surface. If the surface's design source is **not** vendored, stop and vendor it
-first (rule 1 of `design-process.md`) — a link, a screenshot pasted in the issue,
-or an owner's prose description does **not** substitute. If no design exists at
-all, this is a Stage-A task: go to
+**0. Is the design in the repo, and is it a VISUAL one?** Two questions, both
+asked before any markup — presence, then fidelity.
+
+**0a. Presence.** `ls design-source/` and read its index (`Covers` names the
+`src/` paths each row owns). If the surface's design source is **not** there,
+stop and vendor it first (rule 1 of `design-process.md`) — a link, a screenshot
+pasted in the issue, or an owner's prose description does **not** substitute. If
+no design exists at all, this is a Stage-A task: go to
 [`author-design-mockup`](../author-design-mockup/SKILL.md) for a whole surface,
 or to step 2 below for a single element class.
+
+**0b. Fidelity.** Read the row's `fidelity` cell. `visual` / `canvas` — build to
+it. **`wireframe` — STOP: the surface has a layout and no visual language, and
+building the look from one is the 2026-08-26 incident (#312/#314 — owner rejected
+the stand).** That is a stop-state question to the owner, not a licence to
+reproduce the grey boxes faithfully. The build resumes only once the owner's
+decision is recorded — a visual source vendored, a standard design system + version
+named in the row (`system: … @ default theme`, `fidelity: visual`), or a
+`Design-fidelity: GO — <owner, date>` line in the PR / linked issue. Check with
+`pnpm lint:design-fidelity <PR>` (BLOCK, `.claude/rules/design-process.md` §1).
 
 **Never build from a build.** If the only artifact you were handed is our own
 rendered page or an export of it, say so and ask for the original — that
