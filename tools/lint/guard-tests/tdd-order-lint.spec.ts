@@ -397,35 +397,67 @@ describe('tdd-order (spawned)', () => {
  * that guard. The rest is the CI rule read against the index instead of a
  * commit graph.
  */
+/**
+ * MIXED-ONLY blocking (round-2 review of PR #394, BLOCKER).
+ *
+ * The staged plane originally also REJECTED a new module that no test cites.
+ * That rule ran `needlesFor` — a substring matcher — in the REJECTING direction,
+ * so every miss of the heuristic was a false BLOCK, and the class was measured
+ * at 41 of 78 files on `main` (53%): barrels (`src/lib/hours/index.ts` is
+ * structurally uncitable — a test importing `@/lib/hours` never contains the
+ * string `lib/hours/index`), route-group `layout.tsx`, Drizzle schema tables.
+ * A gate whose correct-usage answer is «reach for `--no-verify`» is the dead end
+ * §3 clause 3(d) forbids.
+ *
+ * So the blocking rule is now MIXED only — a new module staged together with a
+ * staged test citing it. That direction's misses are false PASSes (the CI half
+ * catches them), so its false-BLOCK class is genuinely empty and the day-1 local
+ * BLOCK stands under §3 class 1. It is also the #355 retro mandate's literal
+ * wording: «rejecting a single commit that introduces a NEW module's
+ * implementation and its tests together».
+ *
+ * The uncited-module case survives as a NON-blocking advisory at exit 0.
+ */
 describe('evaluateStaged', () => {
-  it('accepts a new module whose test is already in HEAD — the RED-first path', () => {
+  it('is silent for a new module whose test is already in HEAD — the RED-first path', () => {
     expect(
       evaluateStaged([
         { path: 'src/lib/leads/intake.ts', headTests: ['tests/unit/x.spec.ts'], indexTests: [] },
       ]),
-    ).toEqual([])
+    ).toEqual({ mixed: [], advisory: [] })
   })
 
-  it('rejects a new module with no test in HEAD and none staged', () => {
-    const res = evaluateStaged([{ path: 'src/lib/leads/intake.ts', headTests: [], indexTests: [] }])
-    expect(res).toEqual([{ path: 'src/lib/leads/intake.ts', kind: 'no-test', tests: [] }])
+  it('BLOCKS a MIXED commit — module and its test staged together', () => {
+    expect(
+      evaluateStaged([
+        {
+          path: 'src/lib/leads/intake.ts',
+          headTests: [],
+          indexTests: ['tests/unit/leads-intake.spec.ts'],
+        },
+      ]),
+    ).toEqual({
+      mixed: [{ path: 'src/lib/leads/intake.ts', tests: ['tests/unit/leads-intake.spec.ts'] }],
+      advisory: [],
+    })
   })
 
-  it('rejects a MIXED commit — module and its test staged together', () => {
-    const res = evaluateStaged([
-      {
-        path: 'src/lib/leads/intake.ts',
-        headTests: [],
-        indexTests: ['tests/unit/leads-intake.spec.ts'],
-      },
-    ])
-    expect(res).toEqual([
-      {
-        path: 'src/lib/leads/intake.ts',
-        kind: 'mixed',
-        tests: ['tests/unit/leads-intake.spec.ts'],
-      },
-    ])
+  it('only ADVISES on a new module nothing cites — never blocks it', () => {
+    expect(
+      evaluateStaged([{ path: 'src/lib/hours/index.ts', headTests: [], indexTests: [] }]),
+    ).toEqual({ mixed: [], advisory: [{ path: 'src/lib/hours/index.ts' }] })
+  })
+
+  it('does not block a barrel, a layout or a schema table — the 41-of-78 class', () => {
+    const uncitable = [
+      'src/lib/hours/index.ts',
+      'src/app/(platform)/p/layout.tsx',
+      'src/lib/platform/db/schema/finance/accounts.ts',
+      'src/lib/finance/core/money.ts',
+    ].map((path) => ({ path, headTests: [], indexTests: [] }))
+    const res = evaluateStaged(uncitable)
+    expect(res.mixed).toEqual([])
+    expect(res.advisory).toHaveLength(4)
   })
 
   it('a test in HEAD wins even when one is also staged — the obligation was already met', () => {
@@ -437,16 +469,16 @@ describe('evaluateStaged', () => {
           indexTests: ['tests/unit/x.spec.ts'],
         },
       ]),
-    ).toEqual([])
+    ).toEqual({ mixed: [], advisory: [] })
   })
 
-  it('reports every offending module, not just the first', () => {
-    expect(
-      evaluateStaged([
-        { path: 'src/lib/a/one.ts', headTests: [], indexTests: [] },
-        { path: 'src/lib/b/two.ts', headTests: [], indexTests: ['tests/unit/two.spec.ts'] },
-      ]).map((f) => f.kind),
-    ).toEqual(['no-test', 'mixed'])
+  it('separates the two directions across several modules', () => {
+    const res = evaluateStaged([
+      { path: 'src/lib/a/one.ts', headTests: [], indexTests: [] },
+      { path: 'src/lib/b/two.ts', headTests: [], indexTests: ['tests/unit/two.spec.ts'] },
+    ])
+    expect(res.mixed.map((m) => m.path)).toEqual(['src/lib/b/two.ts'])
+    expect(res.advisory.map((a) => a.path)).toEqual(['src/lib/a/one.ts'])
   })
 })
 
@@ -500,15 +532,31 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     expect(res.stdout).toContain('PASS')
   })
 
-  it('exits 1 naming the file when a new module is staged with no test anywhere', () => {
+  it('ADVISES but exits 0 when a new module is staged with no test anywhere', () => {
     const root = repo((r) => {
       put(r, MODULE, 'export const intake = () => true\n')
       git(r, 'add', MODULE)
     })
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain(MODULE)
-    expect(res.stderr).toContain('commit the failing test first')
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain(MODULE)
+    expect(res.stdout).toContain('commit the failing test first')
+    // The advisory hands the developer on to the plane that CAN judge order.
+    expect(res.stdout).toContain('tdd-order')
+  })
+
+  // REGRESSION (round-2 review, BLOCKER): 41 of 78 platform files on `main` are
+  // not name-cited by any test — barrels are structurally uncitable, and a route
+  // layout or a Drizzle table is not imported by path in a test. None is a TDD
+  // violation, and blocking them would make `--no-verify` the correct usage.
+  it('exits 0 for a barrel, a layout and a schema table staged alone', () => {
+    const root = repo((r) => {
+      put(r, 'src/lib/hours/index.ts', "export * from './format'\n")
+      put(r, 'src/app/(platform)/p/layout.tsx', 'export default function L() {}\n')
+      put(r, 'src/lib/platform/db/schema/finance/accounts.ts', 'export const accounts = {}\n')
+      git(r, 'add', '.')
+    })
+    expect(staged(root).code).toBe(0)
   })
 
   it('exits 1 on a MIXED commit and explains the two-commit order', () => {
