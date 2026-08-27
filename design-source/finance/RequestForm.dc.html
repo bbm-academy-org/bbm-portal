@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #1c1917; }
+    a { color: #1d4ed8; } a:hover { color: #1e40af; }
+    .e { font-family: ui-monospace, monospace; font-size: 9px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+    .lbl { font-size: 11px; font-weight: 600; margin-bottom: 3px; }
+    .in { border: 1.5px solid #a8a29e; border-radius: 4px; background: #fafaf9; font-size: 13px; padding: 8px 10px; color: #44403c; min-height: 18px; }
+    .hint { font-size: 10px; color: #78716c; margin-top: 2px; }
+  </style>
+</helmet>
+<div style="width: 760px; height: 880px; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+  <div style="font-size: 11px; color: #78716c">/p/finance/requests → новая заявка · доступно каждому с платформенным логином <span class="e">роль: участник</span></div>
+  <div style="font-size: 18px; font-weight: 700">Заявка на расход</div>
+
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px">
+    <div><div class="lbl">Сумма</div><div class="in">45 000</div></div>
+    <div><div class="lbl">Валюта <span class="e">валюта</span></div><div class="in">RUB ▾</div></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+    <div><div class="lbl">Назначение — из справочника, не свободный текст (реш. 21) <span class="e">назначение → статья</span></div><div class="in">Аренда студии ▾</div><div class="hint">каждое назначение привязано к статье расходов</div></div>
+    <div><div class="lbl">Комментарий (детали)</div><div class="in" style="color: #78716c">для съёмки урока №14</div></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+    <div><div class="lbl">Проект <span class="e">проект</span></div><div class="in">Doctor.School ▾</div><div class="hint">или «Фонд BBM»</div></div>
+    <div><div class="lbl">Продукт — обязателен (реш. 22) <span class="e">продукт</span></div><div class="in">Урок №14 ▾</div><div class="hint">капитализация каждого продукта считается из этих привязок; общие траты — по бухгалтерским правилам (спека ядра)</div></div>
+  </div>
+
+  <div>
+    <div class="lbl">Категория расхода</div>
+    <div class="in" style="border-style: dashed; color: #78716c">пока пусто — статьи появятся после разметки первого факта (решение 11); заявку размечает владелец при одобрении</div>
+  </div>
+
+  <div>
+    <div class="lbl">Инвойс / чек <span class="e">документ</span></div>
+    <div class="in" style="border-style: dashed; height: 70px; display: flex; align-items: center; justify-content: center; color: #78716c">перетащи файл или выбери — прикрепляется к заявке и остаётся на операции</div>
+  </div>
+
+  <div style="border: 1.5px solid #b45309; background: #fffbeb; border-radius: 6px; padding: 10px 12px">
+    <div style="display: flex; gap: 8px; align-items: baseline">
+      <div style="width: 14px; height: 14px; border: 1.5px solid #57534e; border-radius: 3px; background: #ffffff; align-self: center"></div>
+      <div style="font-size: 13px; font-weight: 600">Деньги уже потрачены <span class="e">заявка.флаг «уже потрачено»</span></div>
+    </div>
+    <div class="hint" style="margin-top: 4px">решение 12: тот же бланк задним числом; проводка появится только после одобрения владельцем — путь одинаковый</div>
+    <div style="display: flex; gap: 8px; align-items: baseline; margin-top: 8px">
+      <div style="width: 14px; height: 14px; border: 1.5px solid #57534e; border-radius: 3px; background: #ffffff; align-self: center"></div>
+      <div style="font-size: 12px">Платил со своей карты → после одобрения появится долг «возместить мне» <span class="e">обязательство</span></div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 10px; align-items: center; margin-top: auto">
+    <div style="border: 1.5px solid #57534e; border-radius: 4px; padding: 9px 18px; font-size: 13px; font-weight: 700; background: #1c1917; color: #ffffff">Отправить</div>
+    <div class="hint">уйдёт в очередь владельцев; статус виден мне: ждёт / одобрена / отклонена <span class="e">заявка.статус</span></div>
+  </div>
+
+  <div style="border-top: 1.5px solid #e7e5e4; padding-top: 10px">
+    <div class="lbl" style="color: #78716c">Мои заявки</div>
+    <div style="font-size: 12px; line-height: 1.8">
+      Студия, урок №14 — 45 000 ₽ — <b>ждёт</b><br>
+      Такси до площадки — 720 ₽ (уже потрачено) — <b>одобрена</b>, возмещение начислено<br>
+      Микрофон запасной — 12 000 ₽ — <b>отклонена</b>: «есть на складе» <span class="e">отказ: с причиной? (вопрос)</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

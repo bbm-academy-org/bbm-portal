@@ -1,18 +1,29 @@
 ---
 status: In dev
 issue: 339
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # Finance F2 — filling the ledger: requests, documents, backfill, intake layer — spec (issue #339)
 
-- **Issues:** #339 (this spec, the F2 parent under epic #115). The build split
-  into sub-issues is proposed after the stage-2 go via `spec-issue-graph`; the
-  numbers are written back here when filed. The UI surfaces plug into the
-  portal-workspace frame exactly as F1b does: they are blocked by #314 (`/p`
-  launcher/registry) and #315 (`/p/admin` shell), while the intake backend
-  (spine, roles, documents, posting) is buildable on merged F1a (#356) alone —
-  the graph records that split with edges, not prose.
+- **Issues:** #339 (this spec, the F2 parent under epic #115). Build split
+  filed 2026-08-27 — backend chain: #380 (flow roles `finance-entry` /
+  `finance-approve`, F1a guard rework) → #381 (intake spine: schema, status
+  machine, idempotent sources) → #382 (documents: private storage, authorized
+  reads, immutability) and #383 (counterparty reference + purpose proposals) →
+  #385 (posting: atomic, document-gated, cross-currency, liability) → #386
+  (expense-request flow: submit, approve, refuse, one-act post) and #387
+  (backfill bulk entry, category derivation, import contract). Admin cabinet
+  rows (counterparty rename, purpose-proposal resolution) are #384, on #383 and
+  #315. UI: #388 (requests board — Stage-A pick D, on #386) and #389 (intake
+  workspace — entry, bulk backfill, derivation and liability views, on #387);
+  both plug into the portal-workspace frame exactly as F1b does and are also
+  blocked by #314 (`/p` launcher/registry) and #315 (`/p/admin` shell), while
+  the intake backend is buildable on merged F1a (#356) alone — the graph
+  records that split with edges, not prose. The Hermes document-verifier
+  integration is #390 (on #386), filed under epic #115. The private prod bucket
+  the documents need is an infra step in the ops repo
+  (`sidorovanthon/bbm#172`), not an issue here.
 
 ## Why
 
@@ -139,14 +150,22 @@ in v1. Nothing existing in the portal changes: F1 shipped no intake surface.
 
 ## Design gate (stage 1b)
 
-**Pending — no markup before the pick.** The request form, the member's
-request list and the intake/approval queue are new surfaces: 2–3 layout
-options go to the owner, the pick is recorded on #339 and vendored into
-`design-source/finance/` on first touch. The epic's wireframe canvas
-(2026-08-25) contains F2 artboards — they are **layout** evidence only
-(fidelity axis, incident 2026-08-26/#359): the visual layer follows the
-`src/ui` kit and the admin-shell design, and vendoring is coordinated with the
-parallel session working `design-source`/`src/ui` (#360/#359).
+**`/p/finance/requests` — picked.** Layout **D: a kanban over the status
+machine plus a details slide-over sheet** — four columns (`submitted` /
+`approved, unposted` / `posted` / `refused`), the card is the intake item, and
+**dragging initiates the act, never flips a status by itself** (drop → approve
+act with its marking per EARS-510, refuse dialog per EARS-512, one-act post on
+the attached document per EARS-511/531; illegal drops are rejected). Pick by
+Антон, 2026-08-27, recorded on #339; vendored as
+`design-source/finance/RequestBoard.dc.html`, with the canvas artboards
+`finance/RequestForm.dc.html` and `finance/RequestQueue.dc.html` vendored
+alongside as its layout evidence. All three are **layout** only (fidelity axis,
+incident 2026-08-26/#359): the visual layer is the `src/ui` kit per #359/#360,
+unchanged by this pick. The build is #388.
+
+**`/p/finance/intake` — still pending.** The entry / bulk-backfill /
+derivation / liability workspace has no Stage-A pick yet; it runs at #389
+pickup, before any markup.
 
 ## Data model (lead-level engineering decisions)
 

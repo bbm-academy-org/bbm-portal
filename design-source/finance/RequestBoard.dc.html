@@ -1,0 +1,162 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #1c1917; }
+    a { color: #1d4ed8; } a:hover { color: #1e40af; }
+    .e { font-family: ui-monospace, monospace; font-size: 9px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+    .col { border: 1.5px solid #d6d3d1; border-radius: 6px; background: #fafaf9; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .colhd { font-size: 11px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; }
+    .card { border: 1.5px solid #a8a29e; border-radius: 5px; background: #ffffff; padding: 8px 9px; display: flex; flex-direction: column; gap: 4px; }
+    .amt { font-size: 13px; font-weight: 700; }
+    .meta { font-size: 10px; color: #57534e; }
+    .tag { font-size: 9px; border: 1px solid #d6d3d1; border-radius: 3px; padding: 0 4px; color: #57534e; background: #ffffff; white-space: nowrap; }
+    .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #78716c; }
+    .in { border: 1.5px solid #a8a29e; border-radius: 4px; background: #fafaf9; font-size: 12px; padding: 6px 8px; color: #44403c; }
+    .note { font-size: 10px; color: #78716c; line-height: 1.5; }
+    .btn-y { border: 1.5px solid #15803d; color: #15803d; border-radius: 4px; padding: 5px 10px; font-size: 11px; font-weight: 700; background: #ffffff; }
+    .btn-n { border: 1.5px solid #b91c1c; color: #b91c1c; border-radius: 4px; padding: 5px 10px; font-size: 11px; font-weight: 700; background: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1400px; height: 900px; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+  <div style="font-size: 11px; color: #78716c">/p/finance/requests · вид одобряющего <span class="e">роль: finance-approve</span> · компоновка D — канбан по машине статусов + шторка деталей</div>
+  <div style="display: flex; align-items: baseline; gap: 12px">
+    <div style="font-size: 18px; font-weight: 700">Заявки</div>
+    <div style="display: flex; gap: 6px"><div class="tag">Доска</div><div class="tag">Обязательства</div><div class="tag">Мои заявки</div></div>
+    <div style="margin-left: auto; border: 1.5px solid #57534e; border-radius: 4px; padding: 6px 14px; font-size: 12px; font-weight: 700; background: #1c1917; color: #ffffff">Новая заявка</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 340px; gap: 14px; flex: 1; min-height: 0">
+
+    <!-- ДОСКА: 4 колонки = машина статусов -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; min-height: 0">
+
+      <div class="col">
+        <div class="colhd"><span>Ждут</span><span class="e">статус: submitted</span></div>
+        <div class="card" style="border-color: #1c1917">
+          <div class="amt">45 000,00 ₽</div>
+          <div style="font-size: 11px">Аренда студии, урок №14</div>
+          <div class="meta">М. Иванова · Doctor.School · Урок №14 <span class="e">заявка.участник/проект/продукт</span></div>
+          <div style="display: flex; gap: 4px"><span class="tag">инвойс</span></div>
+        </div>
+        <div class="card" style="border-color: #b45309; background: #fffbeb">
+          <div class="amt">720,00 ₽</div>
+          <div style="font-size: 11px">Такси до площадки</div>
+          <div class="meta">К. Смирнов · Фонд BBM</div>
+          <div style="display: flex; gap: 4px">
+            <span class="tag" style="border-color: #b45309; color: #b45309">уже потрачено</span>
+            <span class="tag" style="border-color: #b45309; color: #b45309">свои деньги</span>
+          </div>
+          <div class="note"><span class="e">already_paid</span> <span class="e">personal_funds</span></div>
+        </div>
+        <div class="card">
+          <div class="amt">2 100,00 THB</div>
+          <div style="font-size: 11px">Продление домена</div>
+          <div class="meta">А. Петров · Фонд BBM · платёж в RUB <span class="e">пара валют</span></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="colhd"><span>Одобрены — ждут документа</span><span class="e">approved, не проведена</span></div>
+        <div class="card">
+          <div class="amt">18 400,00 ₽</div>
+          <div style="font-size: 11px">Монтаж, октябрь</div>
+          <div class="meta">Д. Козлов · Doctor.School</div>
+          <div style="display: flex; gap: 4px"><span class="tag" style="border-color: #b45309; color: #b45309">нет документа</span></div>
+          <div class="note">разметка уже проставлена: статья + счёт <span class="e">статья</span> <span class="e">счёт</span></div>
+        </div>
+        <div class="card" style="border-style: dashed; background: #fafaf9">
+          <div class="note">без подтверждающего документа карточка отсюда не уезжает — проводки нет <span class="e">EARS-531</span></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="colhd"><span>Проведены</span><span class="e">статус: posted</span></div>
+        <div class="card" style="opacity: .8">
+          <div class="amt">45 000,00 ₽</div>
+          <div style="font-size: 11px">Студия, урок №13</div>
+          <div class="meta">операция в реестре · 15.08 <span class="e">заявка→операция</span></div>
+        </div>
+        <div class="card" style="opacity: .8">
+          <div class="amt">6 300,00 ₽</div>
+          <div style="font-size: 11px">Реквизит</div>
+          <div class="meta">операция в реестре · 12.08</div>
+        </div>
+        <div class="note">карточка отсюда не перетаскивается: леджер неизменяем</div>
+      </div>
+
+      <div class="col">
+        <div class="colhd"><span>Отклонены</span><span class="e">refused — терминальный</span></div>
+        <div class="card" style="opacity: .8">
+          <div class="amt">12 000,00 ₽</div>
+          <div style="font-size: 11px">Микрофон запасной</div>
+          <div class="meta">Антон, 21.08: «есть на складе» <span class="e">причина обязательна</span></div>
+        </div>
+        <div class="note">следа в леджере не оставляет, но остаётся в истории</div>
+      </div>
+    </div>
+
+    <!-- ШТОРКА ДЕТАЛЕЙ -->
+    <div style="border: 1.5px solid #a8a29e; border-radius: 6px; background: #fafaf9; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline">
+        <div class="lbl">шторка деталей (справа, поверх доски)</div>
+        <div style="font-size: 14px; color: #78716c">✕</div>
+      </div>
+      <div style="font-size: 15px; font-weight: 700">45 000,00 ₽ — Аренда студии</div>
+      <div class="meta">М. Иванова · подана 22.08 · <span class="tag">ждёт</span></div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px">
+        <div><div class="lbl">Контрагент <span class="e">контрагент</span></div><div class="in">ООО «Студия-7» ▾</div></div>
+        <div><div class="lbl">Счёт списания <span class="e">счёт</span></div><div class="in">Банк RUB ▾</div></div>
+        <div><div class="lbl">Дата движения денег <span class="e">occurred_on</span></div><div class="in">22.08.2026</div></div>
+        <div><div class="lbl">Статья <span class="e">статья</span></div><div class="in">Продакшн ▾</div></div>
+      </div>
+
+      <div>
+        <div class="lbl">Документ — читается прямо тут <span class="e">документ</span></div>
+        <div style="border: 1.5px dashed #a8a29e; border-radius: 4px; background: #ffffff; height: 110px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #78716c">инвойс.pdf — просмотр без ухода с доски</div>
+      </div>
+
+      <div style="display: flex; gap: 8px; align-items: center">
+        <div class="btn-y">Одобрить</div>
+        <div class="btn-n">Отклонить…</div>
+        <div class="note">акты здесь же, а не на карточке</div>
+      </div>
+
+      <div style="border-top: 1.5px solid #e7e5e4; padding-top: 8px">
+        <div class="lbl">та же шторка — форма «Новая заявка»</div>
+        <div class="note">поля по артборду RequestForm + EARS-508: контрагент, счёт оплаты, дата движения денег, пара валют при кросс-курсе, предложение назначения (если нужного нет в справочнике)</div>
+      </div>
+
+      <div style="border-top: 1.5px solid #e7e5e4; padding-top: 8px">
+        <div class="lbl">вид участника <span class="e">роль: участник</span></div>
+        <div class="note">доска только на чтение / вкладка «Мои заявки»; свои акты — подать, отозвать, приложить документ — через ту же шторку карточки</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- АННОТАЦИЯ: перетаскивание инициирует акт -->
+  <div style="border: 1.5px solid #b45309; background: #fffbeb; border-radius: 6px; padding: 10px 12px">
+    <div style="font-size: 12px; font-weight: 700">Перетаскивание ИНИЦИИРУЕТ АКТ и само по себе статус не меняет</div>
+    <div class="note" style="margin-top: 4px">
+      Ждут → Одобрены: открывается акт одобрения в шторке — разметка (статья + счёт) обязательна, проводка по <span class="e">EARS-510</span><br>
+      Одобрены → Проведены: подтверждение одним актом на приложенном документе <span class="e">EARS-511</span> <span class="e">EARS-531</span> — без документа проводки нет<br>
+      Любая → Отклонены: диалог обязательной причины <span class="e">EARS-512</span><br>
+      Недопустимые переносы (из «Проведены» куда угодно, из «Отклонены» обратно) отклоняются — карточка возвращается на место
+    </div>
+  </div>
+
+  <div style="border-top: 1.5px solid #e7e5e4; padding-top: 8px; display: flex; gap: 12px; align-items: baseline">
+    <div class="lbl">вкладка «Обязательства» — рядом с доской, НЕ колонка <span class="e">EARS-527</span></div>
+    <div class="note">«кому BBM должен»: возмещения участникам за траты со своих денег + непогашенные долги; живёт своим срезом, потому что это состояние счетов, а не стадия заявки</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
