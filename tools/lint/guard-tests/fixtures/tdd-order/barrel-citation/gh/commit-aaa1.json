@@ -1,0 +1,10 @@
+{
+  "sha": "aaa1",
+  "files": [
+    {
+      "filename": "tests/unit/finance-intake-sources.spec.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,7 @@\n+import { describe, expect, it } from 'vitest'\n+\n+import { listSources } from '@/lib/finance'\n+\n+describe('listSources', () => {\n+  it('lists the intake sources', () => expect(listSources()).toEqual([]))\n+})"
+    }
+  ]
+}

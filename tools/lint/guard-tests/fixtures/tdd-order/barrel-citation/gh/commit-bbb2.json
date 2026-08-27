@@ -1,0 +1,15 @@
+{
+  "sha": "bbb2",
+  "files": [
+    {
+      "filename": "src/lib/finance/intake/sources.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,3 @@\n+export function listSources() {\n+  return []\n+}"
+    },
+    {
+      "filename": "src/lib/finance/index.ts",
+      "status": "modified",
+      "patch": "@@ -10,3 +10,4 @@ export { recordOperation } from './operations'\n export { recordOperation } from './operations'\n+export { listSources } from './intake/sources'"
+    }
+  ]
+}
