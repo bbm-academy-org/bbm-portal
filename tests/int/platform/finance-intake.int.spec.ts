@@ -397,10 +397,14 @@ describe('The status machine over real rows (EARS-524)', () => {
     expect((await getIntakeItem(APPROVER, item.id))?.refusalReason).toBe('дубль')
   })
 
-  it('EARS-524: deletion exists in draft only, and it is the creator who does it', async () => {
+  it('EARS-524: deletion exists in draft only — the creator or the entry role does it', async () => {
     const refs = await seedIntakeReferences()
     const item = await createIntakeItem(MEMBER, requestLine(refs))
-    await expect(transitionIntakeItem(ENTRY, item.id, 'delete')).rejects.toBeInstanceOf(
+
+    // A platform member who is neither the author nor inside the flow is refused.
+    const stranger = { email: 'passerby@bbm.academy', roles: ['platform-user'] }
+    await seedMember(stranger.email, 'Passer By')
+    await expect(transitionIntakeItem(stranger, item.id, 'delete')).rejects.toBeInstanceOf(
       FinanceAccessRefusal,
     )
 
@@ -412,6 +416,27 @@ describe('The status machine over real rows (EARS-524)', () => {
 
     expect(await transitionIntakeItem(MEMBER, item.id, 'delete')).toBeNull()
     expect(await getIntakeItem(MEMBER, item.id)).toBeNull()
+  })
+
+  it('EARS-524: an entry-role holder deletes an abandoned draft that is not theirs', async () => {
+    // Owner ruling, Антон, 2026-08-27: a draft is deleted by its CREATOR or by
+    // any `finance-entry` holder. Creator-only left `draft` with no exit at all
+    // when its author had left — a bad import row nobody could delete, cancel or
+    // refuse, because `cancel` starts at `submitted` and refusal is the approve
+    // role's act on a submitted item.
+    const refs = await seedIntakeReferences()
+    const abandoned = await createIntakeItem(MEMBER, requestLine(refs))
+
+    expect(await transitionIntakeItem(ENTRY, abandoned.id, 'delete')).toBeNull()
+    expect(await getIntakeItem(ENTRY, abandoned.id)).toBeNull()
+
+    // The widening reaches `draft` and stops there: a submitted item is still
+    // withdrawn by its submitter, never deleted by a clerk.
+    const live = await createIntakeItem(MEMBER, requestLine(refs, { amount: 7_000n }))
+    await transitionIntakeItem(MEMBER, live.id, 'submit')
+    await expect(transitionIntakeItem(ENTRY, live.id, 'delete')).rejects.toBeInstanceOf(
+      FinanceRefusal,
+    )
   })
 
   it('EARS-524: the posting ACT is not in this spine — approved → posted refuses and names #385', async () => {
