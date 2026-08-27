@@ -479,7 +479,14 @@ ensure_human_user() {
 # should stick belongs in IDP_SEED_ROLE / IDP_MEMBER_ROLE, not in the console.
 ensure_project_grant() {
   local uid="$1" username="$2" roles_csv="$3" role_keys grant_id
-  role_keys="$(printf '%s' "$roles_csv"     | jq -Rc 'split(",") | map(gsub("^\s+|\s+$";"")) | map(select(length > 0))')"
+  # `[[:space:]]` and not `\s`: a jq STRING literal follows JSON escaping, where
+  # `\s` is not an escape at all. jq 1.6 — the version on the dev-stand box —
+  # rejects it outright («Invalid escape»), which took step 8 down with two
+  # compile errors while every earlier step reported success: the roles were
+  # created and NOT granted, the silent half of the three-object failure in
+  # bootstrap.md §5a. The two URI generators above escape it as `\\s` for the
+  # same reason; this one did not (#380).
+  role_keys="$(printf '%s' "$roles_csv"     | jq -Rc 'split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$";"")) | map(select(length > 0))')"
   grant_id="$(api POST /management/v1/users/grants/_search     "$(jq -nc --arg u "$uid" --arg p "$PROJECT_ID"        '{queries:[{userIdQuery:{userId:$u}},{projectIdQuery:{projectId:$p}}]}')"     | jq -r '.result[0].id // empty')"
   if [[ -n "$grant_id" ]]; then
     api_idempotent PUT "/management/v1/users/${uid}/grants/${grant_id}"       "$(jq -nc --argjson r "$role_keys" '{roleKeys:$r}')" >/dev/null       && echo "${username}: grant ${grant_id} -> roles $(jq -r 'join(", ")' <<< "$role_keys")" >&2
