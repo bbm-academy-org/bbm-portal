@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   addedLines,
   findOrderViolations,
+  hitsFileCap,
   isMergeCommit,
   isPlatformModule,
+  MAX_FILE_PAGES,
   normaliseCommit,
 } from '../tdd-order-lint.mjs'
 import { caseDir, ghDir, runGuard } from './run-guard'
@@ -84,6 +86,35 @@ describe('normaliseCommit', () => {
     // A root commit, and a payload that omits `parents` entirely.
     expect(normaliseCommit({ sha: 'r0', parents: [] }).parentCount).toBe(0)
     expect(normaliseCommit({ sha: 'x0' }).parentCount).toBe(0)
+  })
+})
+
+/**
+ * REGRESSION (review of PR #394, blocker 2.2). `repos/{owner}/{repo}/commits/{sha}`
+ * caps `files` at 300 HOWEVER you page it. A dropped test file loses its citation,
+ * and if a later commit cites the module the verdict flips to a false `impl-first`
+ * BLOCK. docs/ci-guardrails.md §8 already states the standing rule — "a guard
+ * promoted to BLOCK on this input must page the API first" — so the guard pages,
+ * and where paging cannot help (the hard cap) it must fail CLOSED rather than judge
+ * order on a list it knows is incomplete.
+ */
+describe('hitsFileCap', () => {
+  it('is false while pages are still available', () => {
+    expect(hitsFileCap(1, 100, 100)).toBe(false)
+    expect(hitsFileCap(2, 100, 100)).toBe(false)
+  })
+
+  it('is false when the last page came back SHORT — the list is complete', () => {
+    expect(hitsFileCap(MAX_FILE_PAGES, 99, 100)).toBe(false)
+    expect(hitsFileCap(1, 0, 100)).toBe(false)
+  })
+
+  it('is true when the FINAL allowed page is still full — the API cap was hit', () => {
+    expect(hitsFileCap(MAX_FILE_PAGES, 100, 100)).toBe(true)
+  })
+
+  it('caps at the endpoint 300-file ceiling', () => {
+    expect(MAX_FILE_PAGES * 100).toBe(300)
   })
 })
 
@@ -310,6 +341,25 @@ describe('tdd-order (spawned)', () => {
     })
     expect(res.code).toBe(0)
     expect(res.stdout).toContain('PASS')
+  })
+
+  // REGRESSION (review of PR #394, blocker 2.2), CLI level. The page-size seam puts
+  // the cap at MAX_FILE_PAGES x 2 files so a fixture can reach it without 300 entries.
+  it('pages the commit file list — the implementation on page 2 is still seen', () => {
+    const res = runGuard('tdd-order-lint.mjs', caseDir('tdd-order', 'paged'), {
+      env: { ...env('paged'), LINT_TDD_ORDER_PAGE_SIZE: '2' },
+    })
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('src/lib/leads/intake.ts')
+  })
+
+  it('fails CLOSED when the file list is truncated — never judges order on a partial list', () => {
+    const res = runGuard('tdd-order-lint.mjs', caseDir('tdd-order', 'truncated'), {
+      env: { ...env('truncated'), LINT_TDD_ORDER_PAGE_SIZE: '2' },
+    })
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('truncated')
+    expect(res.stderr).toContain('big1')
   })
 
   it('exits 1 when the PR commit list cannot be read — fail closed', () => {
