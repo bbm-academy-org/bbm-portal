@@ -82,7 +82,7 @@ wireframe faithfully.
 instead of a vendored file and carries `fidelity: visual`:
 
 ```text
-| `system: shadcn/ui via ui.refine.dev @ default theme` | … | `src/app/(platform)/p/**` | visual | … |
+| `system: shadcn/ui via ui.refine.dev @ default theme` | … | `src/ui/**` | visual | … |
 ```
 
 Nothing is vendored for it — the system's own published default theme is the
