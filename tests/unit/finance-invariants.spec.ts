@@ -5,9 +5,9 @@
  * does not balance, a posting in the wrong currency, a product where the
  * purpose's binding forbids one, a result posting with no project, a caller
  * holding neither the reference role nor the flow role the act demands
- * (EARS-330 as amended, EARS-501/502/529). Keeping them in pure functions is what lets the
- * module refuse with a readable message BEFORE it opens a transaction — the
- * constraint-error shape EARS-326 rules out.
+ * (EARS-330 as amended, EARS-501/502/529). Keeping them in pure functions is
+ * what lets the module refuse with a readable message BEFORE it opens a
+ * transaction — the constraint-error shape EARS-326 rules out.
  *
  * The database-level half (immutability triggers, the `core.member` FK, reversal
  * and conversion mechanics) lives in `tests/int/platform/finance-*.int.spec.ts`.

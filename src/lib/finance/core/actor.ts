@@ -150,13 +150,22 @@ export type FinanceIntakeAct = {
  * The intake — creating and editing intake items, attaching documents
  * (EARS-501), with the submitter carve-out (EARS-502).
  *
- * `finance-approve` passes too: the role that decides on an intake item may
- * fill one. The reverse does not hold — see `assertFinanceLedgerAccess`.
+ * **`finance-approve` does NOT pass here**, and that is the clause, not an
+ * oversight. EARS-501 splits the two roles BY ACT — entry fills the intake,
+ * approval decides on it — and then closes the door: an intake write from a
+ * session «without the matching role» is refused, «with EARS-502 as the ONE
+ * deliberate carve-out». Admitting an approver would be a second carve-out the
+ * owner never accepted, and it would contradict this file's own rule that
+ * neither flow role is implied by anything. Spec 339's CRUD table pairs the two
+ * roles on READ only; every intake write column names the entry role alone.
+ *
+ * An approver who also fills the intake holds `finance-entry` as its own grant —
+ * that is the shape the IdP already seeds for `bbm-test`.
  */
 export function assertFinanceIntakeAccess(actor: FinanceActor, act: FinanceIntakeAct = {}): void {
   assertAttributable(actor)
   if (act.ownRequest === true) return
-  if (holds(actor, FINANCE_ENTRY_ROLE) || holds(actor, FINANCE_APPROVE_ROLE)) return
+  if (holds(actor, FINANCE_ENTRY_ROLE)) return
   throw new FinanceAccessRefusal(
     `Ведение заявок и документов вне собственной заявки — роль «${FINANCE_ENTRY_ROLE}» ` +
       `(EARS-501). У ${actor.email} её нет. Своя заявка на /p/finance/requests доступна ` +
