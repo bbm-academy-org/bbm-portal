@@ -15,9 +15,13 @@
  *  - reference management (EARS-301…309), the fact core (EARS-310…322),
  *    conversions with frozen rates (EARS-318/319/328/329), and the balance /
  *    register / exception queries;
- *  - EVERY write demands `platform-admin` from the actor and is refused here,
- *    however the URL was reached (EARS-330); reading is deliberately wider and
- *    is gated by the surface (EARS-325, F1b/#357);
+ *  - EVERY write is refused here, however the URL was reached, by the gate that
+ *    matches its KIND: reference administration demands `platform-admin`
+ *    (EARS-330 as amended, EARS-529), the ledger — posting and reversing —
+ *    demands `finance-approve`, and the intake demands `finance-entry` with the
+ *    submitter carve-out (EARS-501/502, #380). Reading is deliberately wider:
+ *    `/p/finance` stays open to every platform member (EARS-530/EARS-325) and is
+ *    gated by the surface (F1b/#357);
  *  - NO opening-balance mechanism (EARS-317): an account starts at zero and its
  *    balance is the sum of its postings, always;
  *  - NO allocation, absorption or apportionment of any kind (EARS-334): an
@@ -31,9 +35,17 @@
  * (EARS-324/325/326) are #357 and are not exported here yet.
  */
 
-// ── who may write, and how the write is attributed (EARS-330; spec 201) ──────
-export { assertFinanceWriteAccess, financeAuditContext } from './core/actor'
-export type { FinanceActor } from './core/actor'
+// ── who may write, and how the write is attributed (EARS-330/501/502/529; spec 201) ──
+export {
+  assertFinanceIntakeAccess,
+  assertFinanceLedgerAccess,
+  assertFinanceReferenceAccess,
+  financeAuditContext,
+  FINANCE_APPROVE_ROLE,
+  FINANCE_ENTRY_ROLE,
+  FINANCE_FLOW_ROLES,
+} from './core/actor'
+export type { FinanceActor, FinanceFlowRole, FinanceIntakeAct } from './core/actor'
 export { FinanceAccessRefusal, FinanceRefusal } from './core/errors'
 export type { AuditContext, AuditSource } from '@/lib/platform/db/transaction'
 

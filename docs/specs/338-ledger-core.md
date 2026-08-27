@@ -320,12 +320,16 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   Reference administration stays `platform-admin`; the **ledger** writes,
   posting an operation and reversing one, are gated by the flow roles
   `finance-entry` / `finance-approve` instead, and `platform-admin` by itself
-  no longer posts or reverses. The shipped F1a code is deliberately behind this
-  amendment until the F2 roles sub-task (under #339) reworks it: the F1a guard
-  `assertFinanceWriteAccess` still enforces the platform-admin gate on every
-  ledger write, and `tests/unit/finance-invariants.spec.ts` and
-  `tests/int/platform/finance-core.int.spec.ts` still assert it and stay green —
-  the drift is intended and tracked, not an unnoticed contradiction.)_
+  no longer posts or reverses. **The code caught up with this amendment in #380
+  (2026-08-27) and the drift this note recorded is closed:** the single F1a
+  guard `assertFinanceWriteAccess` was replaced by the three gates that match
+  the three questions — `assertFinanceReferenceAccess` (this clause),
+  `assertFinanceLedgerAccess` (spec 339 EARS-501/529) and
+  `assertFinanceIntakeAccess` (EARS-501/502) — in
+  `src/lib/finance/core/actor.ts`, and `tests/unit/finance-invariants.spec.ts`
+  and `tests/int/platform/finance-core.int.spec.ts` assert the amended clause,
+  including that an admin without `finance-approve` is refused posting and
+  reversal.)_
 - **EARS-331.** The `product_binding` shall be master data, never a
   per-operation judgement: WHEN an operation is recorded, the system shall take
   the binding from the named purpose and shall accept from the operator only

@@ -129,10 +129,10 @@ curl -s http://truenas.local:9180/.well-known/openid-configuration | jq -r .issu
 
 `idp/provision.sh` creates (or converges) the `bbm-portal-dev` project, the
 web/OIDC application (`authorization_code` + `refresh_token`, BASIC auth, dev-mode
-http redirect URIs), the project-role assertion, the two workspace roles (step 5a), the Login V2 feature
+http redirect URIs), the project-role assertion, the four seeded project roles (step 5a), the Login V2 feature
 with its baseUri, the `IAM_LOGIN_CLIENT` grant, closes public self-registration,
 and — when `IDP_TEST_USER_PASSWORD` is set — the two human accounts of step 5a
-(`bbm-test` with both roles, `bbm-member` with `platform-user` alone; email
+(`bbm-test` with every seeded role, `bbm-member` with `platform-user` alone; email
 pre-verified, password **permanent** / change NOT required). Re-running converges;
 it never duplicates.
 
@@ -163,14 +163,29 @@ ssh truenas 'cd ~/bbm-portal-dev-stand && \
   sudo docker compose -f compose.core.yml restart idp-login'
 ```
 
-## 5a. The workspace roles — `platform-user` and `platform-admin`
+## 5a. The seeded project roles — the workspace pair and the finance flow pair
 
-The two starting roles of the portal workspace (spec
-[`docs/specs/311-portal-workspace.md`](../../../docs/specs/311-portal-workspace.md)
-§B, EARS-414). The app reads them from the token claim
-`urn:zitadel:iam:org:project:roles`; the spellings are owned by
-`src/lib/platform/authGate.ts` and asserted against this script by
-`tests/unit/idp-provision-seed-roles.spec.ts`.
+Four roles, two groups, two owners — and the groups are not interchangeable.
+
+| Group                | Roles                                | Spelling owned by                | Clause                                                                                                             |
+| -------------------- | ------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| workspace (starting) | `platform-user`, `platform-admin`    | `src/lib/platform/authGate.ts`   | spec [311](../../../docs/specs/311-portal-workspace.md) §B, EARS-414                                                |
+| finance flow         | `finance-entry`, `finance-approve`   | `src/lib/finance/core/actor.ts`  | spec [339](../../../docs/specs/339-ledger-intake.md) §A, EARS-501 (seeded by #380)                                  |
+
+The app reads all four from the token claim
+`urn:zitadel:iam:org:project:roles`; the script is asserted against both owners
+by `tests/unit/idp-provision-seed-roles.spec.ts`.
+
+**`platform-admin` does not imply a flow role, and neither flow role implies
+anything.** `finance-approve` gates posting and reversal in the ledger,
+`finance-entry` gates the intake, and reference administration stays
+`platform-admin` (spec 339 EARS-529, which narrowed spec 338 EARS-330). An
+admin who has to post therefore holds `finance-approve` as its own grant — a
+missing one produces the module's readable refusal, not a bare 403, because the
+gate is the finance module's own. The one act that needs no role at all is a
+member filing and managing THEIR OWN request on `/p/finance/requests`
+(EARS-502), which is why the seeded `bbm-member` account below — `platform-user`
+alone — is the account that path is proved on.
 
 **Three things have to be true for a member to get in**, and only the first is
 what people mean by "create the role":
@@ -196,8 +211,9 @@ the gate that fails silently — cannot be exercised on it at all. Overrides:
 Inspect the seeded set without touching the IdP:
 
 ```bash
-./provision.sh --print-seed-roles     # -> platform-user, platform-admin
-./provision.sh --print-seed-users     # -> bbm-test <TAB> platform-user,platform-admin
+./provision.sh --print-seed-roles     # -> platform-user, platform-admin,
+                                      #    finance-entry, finance-approve
+./provision.sh --print-seed-users     # -> bbm-test <TAB> all four
                                       #    bbm-member <TAB> platform-user
 ```
 
