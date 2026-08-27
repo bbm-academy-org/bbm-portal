@@ -581,9 +581,32 @@ Entry format:
       nothing committed — return condition: the next session that hits the
       missing-secret int failures in a fresh worktree promotes this to a tooling
       issue (extend `task:worktree`/`dev:db:branch` to copy or reference the
-      base keys) (#380)
+      base keys) (#380). **Promoted 2026-08-27 to #403** — the return condition
+      fired the same day it was written: the #382 session's worktree stand came
+      up with no `AUTH_SECRET` (no sign-in at all), and the implementer merged
+      the main checkout's `.env` by hand (recorded on PR #402). The line stays
+      until #403 lands, because until the tooling carries the base keys the
+      deviation is still live — return condition, superseding the above: #403
+      closed.
 
 <!-- debt-entry-end: 2026-08-27-4b1e7d92c3 -->
+
+- [ ] 2026-08-27 the role-less-member witness of acceptance scenario 9
+      (`tests/e2e/finance-documents.e2e.spec.ts`, #382/PR #402) signs in with a
+      **minted Auth.js session cookie** (`tests/e2e/support/platform-session.ts`
+      signs with the stand's own `AUTH_SECRET`), not a real OIDC hop: the dev
+      Zitadel has no account holding `platform-user` and neither finance flow
+      role — `bbm-test` holds `platform-admin` plus both flow roles after
+      `provision.sh` step 8 — and no `E2E_MEMBER_*` credentials exist on this
+      box. `auth()`, the claim gate and the EARS-523 authorization join all run
+      untouched; only the OIDC redirect dance is skipped, which is
+      `platform-claim-gate.e2e.spec.ts`'s own subject — return condition: a
+      role-less member account is provisioned in the dev Zitadel (then the
+      helper's callers switch to a real sign-in), or the first e2e defect that
+      a real OIDC hop would have caught and the minted cookie masked (#382,
+      PR #402)
+
+<!-- debt-entry-end: 2026-08-27-5c8f2a1d94 -->
 
 <!-- debt-append-marker -->
 
