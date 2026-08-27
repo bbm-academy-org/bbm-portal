@@ -49,12 +49,15 @@ schema files against `meta/*_snapshot.json`, never the live database), so it is
 neither dropped nor re-proposed — and it must be repeated by hand if the table is
 ever recreated.
 
-**`finance/`** holds the nine tables of the finance ledger (`src/lib/finance`,
-spec [`docs/specs/338-ledger-core.md`](../../../../../docs/specs/338-ledger-core.md),
-issue #356): the six reference tables (`finance_currency`, `finance_account`,
-`finance_project`, `finance_product`, `finance_purpose`, `finance_category`) and
-the three of the fact core (`finance_operation`, `finance_posting`,
-`finance_conversion_step`). Three things about them are decided in
+**`finance/`** holds the eleven tables of the finance module (`src/lib/finance`,
+specs [`docs/specs/338-ledger-core.md`](../../../../../docs/specs/338-ledger-core.md)
+and [`docs/specs/339-ledger-intake.md`](../../../../../docs/specs/339-ledger-intake.md),
+issues #356 and #381): the six reference tables (`finance_currency`,
+`finance_account`, `finance_project`, `finance_product`, `finance_purpose`,
+`finance_category`), the three of the fact core (`finance_operation`,
+`finance_posting`, `finance_conversion_step`), and the two of the intake spine
+(`finance_intake_item`, `finance_counterparty` —
+`migrations/0009_finance_intake_spine.sql`). Three things about them are decided in
 `migrations/0008_finance_ledger_core.sql` rather than in these files, each for a
 reason the file itself states: `finance_posting.member_id` → `core.member(id)` is
 a hand-written FK for the same ADR-004 §6 reason the hours ones are (EARS-322);
