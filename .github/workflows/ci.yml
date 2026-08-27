@@ -231,26 +231,34 @@ jobs:
   # the same PR (#355). Severity of record: docs/ci-guardrails.md §5, row
   # `tdd-order` — read that row, not this comment.
   #
-  # Wired BLOCK (no `continue-on-error`, in the `ci` needs-list — §2.1), and that
-  # posture is UNDER OWNER REVIEW: review of PR #394 found the day-0 mandate was
-  # claimed under §3 class 1, which class 1 excludes by name — this guard's only
-  # input is PR metadata over the network, matched with a substring heuristic, so
-  # the §3 default (land WARN, soak) applies unless the owner records a class-3
-  # mandate with the wording and the escape hatch that class requires. Do not
-  # read this job's presence in the needs-list as that decision having been made.
+  # WARN by the §3 DEFAULT, settled 2026-08-27 — and the reasoning is kept because
+  # an earlier draft of this job got it wrong. A day-0 BLOCK was claimed under §3
+  # class 1; class 1 excludes this guard by name, because its only input is PR
+  # metadata fetched over the network and judged with a substring match, which is
+  # exactly what §3's closing line sends to a WARN soak. No owner class-3 mandate
+  # was sought or granted: the canon's own default decided it, so there is nothing
+  # contested left here. Promotion to BLOCK follows §4 (≥4 clean weeks) —
+  # earliest 2026-09-24, the usual three edits (drop `continue-on-error`, add the
+  # job to the `ci` needs-list, update the §5 row).
   #
-  # The "no false-positive class" claim this comment used to carry was simply
-  # untrue; the guard header now enumerates the class honestly — two paths closed
-  # in code (merge commits, truncated file lists), one open and benign (substring
-  # needles, a false PASS rather than a false BLOCK).
+  # The PRE-COMMIT half of this same guard (`--staged`, on the simple-git-hooks
+  # line) is untouched by that and blocks locally from day one: it reads only the
+  # local tree and index through git plumbing, meeting class 1 on its own terms.
+  # Two enforcement points, two severities, both recorded in the §5 row.
   #
-  # No `--severity` flag: the guard has exited 1 on a finding since day 0, so a
-  # dial could only ever weaken it (§6.1).
+  # The guard header enumerates the false-positive class honestly — two paths
+  # closed in code (merge-commit first-parent diffs, truncated commit file lists),
+  # one open and benign (substring needles: a false PASS, never a false BLOCK).
+  #
+  # No `--severity` flag: the guard has exited 1 on a finding since day 0, so the
+  # dial `stage-b` and `spec-link` need would be a no-op here that could only ever
+  # weaken it (§6.1).
   #
   # Reads PR metadata through `gh` (the REST commits endpoints, not `--json
   # files` — the shallow checkout has no base ref to walk), hence the auth block
   # workflow-auth enforces. `pull-requests: read` covers both endpoints.
   tdd-order:
+    continue-on-error: true # WARN since 2026-08-27 — canon §5, earliest promotion 2026-09-24
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -500,7 +508,6 @@ jobs:
         platform-int,
         ssot-freshness,
         design-fidelity,
-        tdd-order,
       ]
     if: always()
     runs-on: ubuntu-latest

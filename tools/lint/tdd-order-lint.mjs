@@ -3,13 +3,15 @@
 //
 // Canon: docs/ci-guardrails.md §5, which carries the severity of record.
 //
-// ── What this guard's false-positive class actually is ──────────────────────
+// ── What the CI plane's false-positive class actually is ────────────────────
 // It is NOT empty, and an earlier draft of this header said it was. That claim
 // was wrong on its own terms and is the kind of thing this guard family exists
 // to stop: §3 class 1 requires "no network, no PR metadata, no heuristics", and
-// this guard's ONLY input is PR metadata fetched over the network, judged with a
-// substring match. Three concrete paths to a false BLOCK were named in review of
-// PR #394; two are now closed in code, one remains:
+// the CI plane's ONLY input is PR metadata fetched over the network, judged with
+// a substring match — which is why that plane is WARN and soaks. (The staged
+// plane below is the class-1 half and does block.) Three concrete paths to a
+// false BLOCK were named in review of PR #394; two are now closed in code, one
+// remains:
 //
 //   CLOSED  a merge commit's first-parent diff read as authorship — a branch
 //           that merged `origin/main` in saw main's modules as its own new
@@ -28,8 +30,7 @@
 //
 // Under canon §4 a confirmed false positive DEMOTES a BLOCK guard to WARN in the
 // same session that confirms it, plus an issue to fix the guard. That clause is
-// this guard's real safety net, and it applies whatever §3 class the register
-// row ends up recording.
+// the staged plane's real safety net, and it is what the CI plane's soak is for.
 //
 // ── The incident this guard exists for (#355) ────────────────────────────────
 // PR #354 shipped ONE commit carrying its tests and its implementation together.
@@ -110,9 +111,15 @@
 // REJECTED at pre-commit, where no test-presence counterpart runs and forcing the
 // tests-only commit is the whole point.
 //
-// The staged plane's input is the local tree and index through git plumbing —
-// no network, no PR metadata — so it is genuinely §3 class-1 deterministic and
-// blocks from day one, independently of the CI plane's contested severity.
+// TWO SEVERITIES, and the split is the design rather than a compromise. The
+// staged plane's input is the local tree and index through git plumbing — no
+// network, no PR metadata — so it is genuinely §3 class-1 deterministic and
+// BLOCKS from day one. The CI plane is WARN v1 by the §3 DEFAULT, settled
+// 2026-08-27, with promotion to BLOCK per §4 no earlier than 2026-09-24: it
+// reads PR metadata over the network and matches with a substring, so it has a
+// real false-positive class and soaks like anything else that does. The
+// deterministic half stops the violation where it is cheap to fix (one more
+// commit); the heuristic half only reports until it has earned more.
 //
 // PR-event-gated: the commit sequence comes from the REST API through `gh`,
 // because the Actions checkout is shallow and carries no base ref to walk. On a
