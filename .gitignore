@@ -11,6 +11,7 @@
 /.claude/*-guard-state/
 /.claude/codex-write-state/
 /.claude/hook-session-registry/
+/.claude/stop-gate-budget-state/
 
 # Generated local bridge: Codex follows this junction/symlink to the canonical
 # project skill bodies under `.claude/skills/`.

@@ -44,6 +44,18 @@ export const ZERO_DISPATCH_STATE_DIR_REL = '.claude/zero-dispatch-guard-state'
 /** Per-session state of the AskUserQuestion guard (`{headers: {<header>: len}}`). */
 export const ASKUSERQUESTION_STATE_DIR_REL = '.claude/askuserquestion-guard-state'
 
+/**
+ * Per-session budget state of the two BLOCK Stop-gates (#392):
+ * `{blocked: {"completion-report": true, "deviations": true}}`.
+ *
+ * Each gate blocks at most ONCE per session; a further recognized violation is
+ * demoted to a `systemMessage` warning. Rationale: heuristic recognition of free
+ * prose is whack-a-mole (#158 → #299 → #374 → #392, three owner complaints), and
+ * the cost of the recognizer being wrong must be BOUNDED even while the gates
+ * keep their real BLOCK plane. One block per session is the whole tax.
+ */
+export const STOP_BLOCK_BUDGET_STATE_DIR_REL = '.claude/stop-gate-budget-state'
+
 /** Stable per-session write evidence recorded from Codex PostToolUse payloads. */
 export const CODEX_WRITE_STATE_DIR_REL = '.claude/codex-write-state'
 
@@ -174,7 +186,93 @@ export function writeState(path, state, deps = {}) {
 }
 
 /**
- * PreToolUse-предупреждение: только `systemMessage`, БЕЗ `hookSpecificOutput`.
+ * @typedef {{block?: boolean, reason?: string}} GateDecision
+ * @typedef {{blocked: Record<string, boolean>}} BlockBudgetState — the shape the
+ *   writer produces; readers accept `unknown` and validate, see below.
+ */
+
+/**
+ * The block budget as a PURE function (#392), so the decision is unit-testable
+ * without touching the filesystem: `main()` supplies the state I/O, this decides.
+ *
+ * `alreadyBlocked` defaults to `false` — that is the FAIL-OPEN direction on
+ * purpose. Unreadable or lost state costs at most one extra block, while the
+ * opposite default would silently disarm a gate that never actually fired.
+ *
+ * The JSDoc types are load-bearing, not decoration: without them TS infers the
+ * parameter from the destructuring defaults alone, `decision` (which has no
+ * default) drops out of the inferred shape, and every caller of this exported
+ * seam becomes untypeable from the outside — which is exactly what turned
+ * `lint-and-typecheck` red on PR #393.
+ *
+ * @param {{decision?: GateDecision, alreadyBlocked?: boolean}} [args]
+ * @returns {{block: boolean, demoted: boolean, reason?: string}}
+ */
+export function applyBlockBudget({ decision, alreadyBlocked = false } = {}) {
+  const d = decision && typeof decision === 'object' ? decision : {}
+  if (!d.block) return { ...d, block: false, demoted: false }
+  if (alreadyBlocked) return { ...d, block: false, demoted: true }
+  return { ...d, block: true, demoted: false }
+}
+
+/**
+ * I/O half of the budget, shared by both BLOCK gates so they cannot drift apart:
+ * the state path for this session, whether `key` has already spent its block, and
+ * the recording of a spend. Both reads and writes are fail-open (`readState` /
+ * `writeState` swallow their own errors), so a lost state costs one extra block.
+ */
+/**
+ * @param {string} root
+ * @param {string} sessionId — REQUIRED and non-empty; see the note in each gate's
+ *   `main()`: without a real session id the budget is skipped entirely rather
+ *   than written to a shared, never-expiring `unknown.json`.
+ * @returns {string}
+ */
+export function blockBudgetStatePath(root, sessionId) {
+  return stateFilePath(root, STOP_BLOCK_BUDGET_STATE_DIR_REL, sessionId)
+}
+
+/**
+ * Defensive by contract — `state` is whatever `readState` salvaged from disk,
+ * so it is typed `unknown` and every non-conforming shape reads as «not spent».
+ *
+ * @param {unknown} state
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function hasSpentBlockBudget(state, key) {
+  const blocked = state && typeof state.blocked === 'object' ? state.blocked : null
+  return Boolean(blocked && blocked[key])
+}
+
+/**
+ * @param {string} path
+ * @param {unknown} state
+ * @param {string} key
+ * @param {{mkdir?: (dir: string) => void, writeFile?: (p: string, c: string) => void}} [deps]
+ * @returns {void}
+ */
+export function recordBlockBudgetSpend(path, state, key, deps = {}) {
+  const blocked = state && typeof state.blocked === 'object' && state.blocked ? state.blocked : {}
+  writeState(path, { ...state, blocked: { ...blocked, [key]: true } }, deps)
+}
+
+/** Текст демотированного блока: то же сообщение гейта плюс объяснение бюджета. */
+export function budgetDemotedMessage(message) {
+  return (
+    '⚠ ' +
+    String(message || '') +
+    ' (без блока: этот гейт уже блокировал в этой сессии — бюджет 1 блок/сессию, #392)'
+  )
+}
+
+/**
+ * Предупреждение БЕЗ блока: только `systemMessage`, БЕЗ `hookSpecificOutput`.
+ * Двое пользователей, оба легитимны: PreToolUse-гарды и — с #392 —
+ * демотированный блок двух Stop-гейтов, у которых бюджет уже израсходован.
+ * На Stop-хуке `systemMessage` доходит до ОПЕРАТОРА, а не в контекст модели
+ * (единственный модель-обращённый канал там — exit 2 + stderr, то есть ровно тот
+ * блок, который и демотируется); докам это известно, они большего не обещают.
  *
  * `permissionDecision: "allow"` — это не «промолчать», а активное разрешение
  * вызова в обход обычного разрешительного потока владельца: WARN-гард на
