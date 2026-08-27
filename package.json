@@ -179,6 +179,6 @@
     }
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm exec lint-staged"
+    "pre-commit": "pnpm exec lint-staged && node tools/lint/tdd-order-lint.mjs --staged"
   }
 }
