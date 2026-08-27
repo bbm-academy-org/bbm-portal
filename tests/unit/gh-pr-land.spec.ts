@@ -19,6 +19,7 @@ import {
   reviewBaselineDate,
   runGate,
   runViewPr,
+  runWarnPlane,
   stageRemedy,
   warnPlaneFromWorkflows,
   withCommitFacts,
@@ -1308,5 +1309,123 @@ describe('runGate — the WARN plane reaches the operator', () => {
     )
     expect(res.verdict).toBe('red')
     expect(res.reasons[0]).toMatch(/tdd-order/)
+  })
+})
+
+/**
+ * `runWarnPlane` — the seam that carries this feature's security property
+ * (review of PR #399, blocker 2). The plane decides which red check-runs stop a
+ * merge, so «read from the BASE ref» is not a comment, it is the thing to
+ * assert: a later edit dropping `?ref=` from the per-file read would fall back
+ * to the repo's default branch and break the property with a green suite.
+ *
+ * The seam injected is therefore the API call itself, not `list`/`read` — those
+ * are where the URL is BUILT, and a test that replaces them proves nothing about
+ * the URL.
+ */
+describe('runWarnPlane', () => {
+  const listing = [
+    { type: 'file', path: '.github/workflows/ci.yml' },
+    { type: 'file', path: '.github/workflows/pr-body-guards.yml' },
+  ]
+  const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64')
+
+  /** An `api` stub that records every path it was called with. */
+  const recorder = (byPath: Record<string, unknown>) => {
+    const calls: string[] = []
+    const api = (path: string) => {
+      calls.push(path)
+      const hit = byPath[path]
+      return hit === undefined
+        ? { ok: false, error: `no stub for ${path}` }
+        : { ok: true, data: hit }
+    }
+    return { api, calls }
+  }
+
+  it('queries the contents API on the BASE ref — the listing AND every file read', () => {
+    const { api, calls } = recorder({
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows?ref=main': listing,
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows/ci.yml?ref=main': {
+        content: b64('jobs:\n  tdd-order:\n    continue-on-error: true\n'),
+      },
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows/pr-body-guards.yml?ref=main': {
+        content: b64('jobs:\n  stage-b:\n    continue-on-error: true\n'),
+      },
+    })
+    const plane = runWarnPlane('main', { api })
+    expect([...plane].sort()).toEqual(['stage-b', 'tdd-order'])
+    expect(calls).toEqual([
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows?ref=main',
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows/ci.yml?ref=main',
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows/pr-body-guards.yml?ref=main',
+    ])
+    // every single call names the ref — none silently falls back to the default branch
+    expect(calls.every((c) => c.includes('?ref='))).toBe(true)
+  })
+
+  it('a slash in the base ref is encoded, on both kinds of call', () => {
+    const { api, calls } = recorder({})
+    runWarnPlane('feat/x', { api })
+    expect(calls[0]).toContain('?ref=feat%2Fx')
+  })
+
+  it('an unreadable listing yields an EMPTY plane — the strict fallback', () => {
+    const plane = runWarnPlane('main', { api: () => ({ ok: false, error: '404' }) })
+    expect(plane.size).toBe(0)
+  })
+
+  it('a listing that is not an array yields an empty plane rather than throwing', () => {
+    expect(
+      runWarnPlane('main', { api: () => ({ ok: true, data: { message: 'nope' } }) }).size,
+    ).toBe(0)
+  })
+
+  it('skips directories and non-YAML entries — they are never even read', () => {
+    const { api, calls } = recorder({
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows?ref=main': [
+        { type: 'dir', path: '.github/workflows/nested' },
+        { type: 'file', path: '.github/workflows/README.md' },
+        { type: 'file', path: '.github/workflows/ci.yml' },
+      ],
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows/ci.yml?ref=main': {
+        content: b64('jobs:\n  no-stub:\n    continue-on-error: true\n'),
+      },
+    })
+    const plane = runWarnPlane('main', { api })
+    expect([...plane]).toEqual(['no-stub'])
+    expect(calls).toHaveLength(2)
+    expect(calls.join(' ')).not.toContain('README.md')
+    expect(calls.join(' ')).not.toContain('nested')
+  })
+
+  it('a file too large to inline (empty `content`) contributes nothing and does not throw', () => {
+    const { api } = recorder({
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows?ref=main': [
+        { type: 'file', path: '.github/workflows/ci.yml' },
+      ],
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows/ci.yml?ref=main': {
+        content: '',
+        size: 2_000_000,
+      },
+    })
+    expect(runWarnPlane('main', { api }).size).toBe(0)
+  })
+
+  it('a per-file read that fails drops THAT file only, not the whole plane', () => {
+    const { api } = recorder({
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows?ref=main': listing,
+      'repos/bbm-academy-org/bbm-portal/contents/.github/workflows/pr-body-guards.yml?ref=main': {
+        content: b64('jobs:\n  stage-b:\n    continue-on-error: true\n'),
+      },
+    })
+    expect([...runWarnPlane('main', { api })]).toEqual(['stage-b'])
+  })
+
+  it('no base ref means no call at all — nothing to resolve a plane against', () => {
+    const { api, calls } = recorder({})
+    expect(runWarnPlane(null, { api }).size).toBe(0)
+    expect(runWarnPlane('  ', { api }).size).toBe(0)
+    expect(calls).toEqual([])
   })
 })
