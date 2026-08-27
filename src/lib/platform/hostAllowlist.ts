@@ -16,7 +16,9 @@
  *                       /api/* (EXCEPT /api/auth/* — Auth.js is platform
  *                       plumbing, the more specific rule wins), media via
  *                       /api/media/*, the (frontend) static-backend routes
- *                       (today only `/`), framework infra.
+ *                       (today only `/`), framework infra — EXCEPT /api/p/*,
+ *                       the workspace modules' surface, carved out the same
+ *                       way and for the same reason (spec 311 EARS-464).
  *   app (internal)    → CMS surface. The `preview` container fetches drafts
  *                       server-to-server from http://app:3000 over the compose
  *                       network (deploy/docker-compose.prod.yml) — full
@@ -27,7 +29,8 @@
  *                       published. (No container healthcheck hits the app over
  *                       HTTP — nothing else to allow; verified 2026-07-27.)
  *   portal.bbm.academy→ Platform surface: /p, /p/*, /api/auth/* (Auth.js),
- *                       framework infra.
+ *                       /api/p/* (the workspace modules' HTTP surface, spec
+ *                       311 EARS-463), framework infra.
  *   localhost/127.0.0.1 → BOTH surfaces, but ONLY in development mode (dev
  *                       ergonomics: admin + /p/okr on one origin). In
  *                       production they are NOT hosts of either surface
@@ -102,6 +105,27 @@ function isAuthPath(pathname: string): boolean {
 }
 
 /**
+ * The workspace modules' HTTP surface, `/api/p/<slug>/*` (spec 311 EARS-463,
+ * D-11; consolidation §5).
+ *
+ * It is a PLATFORM path that does not live under `/p/`, which is why it needs an
+ * entry of its own: `isPlatformPath` does not cover it, and the CMS surface's
+ * generic `/api/*` clause DOES — so before this rule existed every module API
+ * 404'd on `portal.bbm.academy` and answered on `cms.bbm.academy`. Both halves
+ * are fixed by this one predicate, used in opposite directions below (EARS-464).
+ *
+ * The separator is load-bearing, exactly as it is in `isPlatformPath`: `/api/pages`
+ * and `/api/products` are legitimate Payload `/api/[...slug]` paths, and a bare
+ * `startsWith('/api/p')` would move them onto the portal and off the CMS.
+ *
+ * Like `/p/*` it is ONE self-maintaining prefix entry (ADR-003 §3(a)): a new
+ * module adds no line here.
+ */
+export function isModuleApiPath(pathname: string): boolean {
+  return pathname === '/api/p' || pathname.startsWith('/api/p/')
+}
+
+/**
  * Framework infrastructure that both surfaces need: /_next/* (static chunks,
  * image optimizer, RSC/HMR plumbing), the favicon, and `/api/health` — the
  * deploy pipeline's build-identity probe (#137). Forgetting these is the
@@ -123,9 +147,13 @@ function isFrameworkPath(pathname: string, mode: AllowlistMode): boolean {
   return mode === 'development' && pathname.startsWith('/__nextjs')
 }
 
-/** Platform-surface allowlist: the O(1) /p/* rule (ADR-003 §3(a)) + Auth.js. */
+/**
+ * Platform-surface allowlist: the O(1) /p/* rule (ADR-003 §3(a)) + Auth.js +
+ * the modules' /api/p/* surface (EARS-463). Three prefix entries, all
+ * self-maintaining — a new module needs no edit here.
+ */
 function isPlatformSurfacePath(pathname: string): boolean {
-  return isPlatformPath(pathname) || isAuthPath(pathname)
+  return isPlatformPath(pathname) || isAuthPath(pathname) || isModuleApiPath(pathname)
 }
 
 /**
@@ -139,6 +167,12 @@ function isCmsSurfacePath(pathname: string): boolean {
   if (pathname === '/') return true
   if (pathname === '/admin' || pathname.startsWith('/admin/')) return true
   if (isAuthPath(pathname)) return false
+  // EARS-464: the same carve-out shape, for the same reason — a module API is
+  // platform plumbing and the more specific rule wins over the generic /api/*
+  // clause. Without it the default-deny does not self-maintain here, because
+  // `/api` is an allowlisted CMS prefix and every future module would land
+  // inside it.
+  if (isModuleApiPath(pathname)) return false
   return pathname === '/api' || pathname.startsWith('/api/')
 }
 

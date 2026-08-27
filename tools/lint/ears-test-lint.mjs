@@ -197,9 +197,6 @@ const DEFERRALS_BY_ISSUE = {
       'EARS-440',
       'EARS-453',
       'EARS-455',
-      'EARS-463',
-      'EARS-464',
-      'EARS-465',
       'EARS-472',
       'EARS-473',
       'EARS-474',
@@ -207,7 +204,7 @@ const DEFERRALS_BY_ISSUE = {
       'EARS-476',
     ],
     reason:
-      "spec 311 §D (the /p/admin Refine shell, its navigation, breadcrumbs, save answers and attribution) and §G (the OKR cabinet section and the one read-only accessor it needs), which the spec's Follow-up tasks both assign to #315. EARS-409/EARS-410 moved here from the #314 entry when the launcher landed: both are statements about what the CABINET renders for a module that declares an admin section and for one that does not, and the cabinet is #315 — #314 built the contract half (WorkspaceAdminSection in src/lib/workspace/contract.ts) but has no shell to assert against, and a test that only re-read the type would be a green light for a surface nobody built. EARS-463..465 — the /api/p/* host-allowlist change and its Host-matrix rows — sit here by the spec's «Frame-level work» table: they are the prerequisite for the FIRST /api/p/* handler to answer, and that table names #315 as their owner unless #313 is planned first, in which case this entry moves with the row",
+      "spec 311 §D (the /p/admin Refine shell, its navigation, breadcrumbs, save answers and attribution) and §G (the OKR cabinet section and the one read-only accessor it needs), which the spec's Follow-up tasks both assign to #315. EARS-409/EARS-410 moved here from the #314 entry when the launcher landed: both are statements about what the CABINET renders for a module that declares an admin section and for one that does not, and the cabinet is #315 — #314 built the contract half (WorkspaceAdminSection in src/lib/workspace/contract.ts) but has no shell to assert against, and a test that only re-read the type would be a green light for a surface nobody built. EARS-463..465 — the /api/p/* host-allowlist change and its Host-matrix rows — LEFT this list when #315 landed them: they were the prerequisite for the FIRST /api/p/* handler to answer at all, so they are the first thing that issue builds, and they are now asserted in tests/unit/platform-host-allowlist.spec.ts",
   },
   316: {
     ids: ['EARS-441', 'EARS-442', 'EARS-443', 'EARS-444', 'EARS-445'],
