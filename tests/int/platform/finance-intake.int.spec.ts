@@ -109,7 +109,7 @@ function requestLine(refs: Refs, overrides: Record<string, unknown> = {}) {
   }
 }
 
-describe('EARS-503 — every intake path carries its source and its ref semantics', () => {
+describe('Every intake path carries its source and its ref semantics (EARS-503)', () => {
   it('EARS-503: a backfill item persists the composed natural key as its source_ref', async () => {
     const refs = await seedIntakeReferences()
     const item = await createIntakeItem(ENTRY, backfillLine(refs))
@@ -145,7 +145,7 @@ describe('EARS-503 — every intake path carries its source and its ref semantic
   })
 })
 
-describe('EARS-504 — a duplicate arrival is refused and answers with the existing item', () => {
+describe('A duplicate arrival is refused and answers with the existing item (EARS-504)', () => {
   it('EARS-504: the second arrival of one (source, source_ref) is refused and carries the original', async () => {
     const refs = await seedIntakeReferences()
     const original = await createIntakeItem(ENTRY, backfillLine(refs))
@@ -199,7 +199,7 @@ describe('EARS-504 — a duplicate arrival is refused and answers with the exist
   })
 })
 
-describe('EARS-524 — the status machine over real rows', () => {
+describe('The status machine over real rows (EARS-524)', () => {
   it('EARS-524: the submitter walks draft → submitted → cancelled without any flow role', async () => {
     const refs = await seedIntakeReferences()
     const item = await createIntakeItem(MEMBER, requestLine(refs))

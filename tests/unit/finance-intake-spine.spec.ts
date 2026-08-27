@@ -31,7 +31,7 @@ import {
  * on real rows — is `tests/int/platform/finance-intake.int.spec.ts`.
  */
 
-describe('EARS-524 — the status machine', () => {
+describe('The intake status machine (EARS-524)', () => {
   it('EARS-524: lists exactly the transitions of the spec and refuses every other one', () => {
     // The spec's block, transcribed as (act, from, to). Written out rather than
     // derived from the table under test — a test that recomputes the thing it
@@ -142,7 +142,7 @@ describe('EARS-524 — the status machine', () => {
   })
 })
 
-describe('EARS-503 — per-source source_ref semantics', () => {
+describe('Per-source source_ref semantics (EARS-503)', () => {
   it('EARS-503: bank_import and backfill always carry a ref; manual and request never do', () => {
     expect(resolveIntakeProducer('bank_import').sourceRefPolicy).toBe('required')
     expect(resolveIntakeProducer('backfill').sourceRefPolicy).toBe('required')
@@ -190,7 +190,7 @@ describe('EARS-503 — per-source source_ref semantics', () => {
   })
 })
 
-describe('EARS-525 — producer isolation', () => {
+describe('Producer isolation (EARS-525)', () => {
   it('EARS-525: a new source is a new producer and changes nothing in the shared spine', () => {
     const before = listIntakeProducers().map((producer) => ({ ...producer }))
 

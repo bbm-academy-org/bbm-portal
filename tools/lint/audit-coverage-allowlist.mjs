@@ -131,6 +131,41 @@ export const AUDIT_VALUE_WHITELIST = {
     'to_currency',
     'rate',
   ],
+  // The F2 intake spine (spec 339, #381). `finance_intake_item` is the one table
+  // here that is EDITABLE by design, so its old/new pairs are the record of the
+  // status machine in motion — the approval, the bounce, the refusal reason.
+  finance_counterparty: ['id', 'name', 'created_by', 'created_at'],
+  finance_intake_item: [
+    'id',
+    'source',
+    'source_ref',
+    'kind',
+    'status',
+    'occurred_on',
+    'account_id',
+    'counter_account_id',
+    'amount',
+    'currency',
+    'paid_amount',
+    'paid_currency',
+    'fee_amount',
+    'fee_currency',
+    'purpose_id',
+    'project_id',
+    'product_id',
+    'counterparty_id',
+    'member_id',
+    'note',
+    'already_paid',
+    'personal_funds',
+    'created_by',
+    'decided_by',
+    'decided_at',
+    'refusal_reason',
+    'posted_by',
+    'posted_at',
+    'operation_id',
+  ],
 }
 
 /** A rationale that is present but says nothing is itself a finding (EARS-19). */
