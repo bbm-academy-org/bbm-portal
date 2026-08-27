@@ -539,6 +539,13 @@ async function main() {
   // test, that proves otherwise. `readCommit` pages to completion first.
   const commits = []
   for (const entry of listed.data) {
+    // Skip a merge BEFORE reading it, not after. `findOrderViolations` discards
+    // merges either way, but reading one first meant a >300-file merge of
+    // `origin/main` hit the paging cap and failed closed on a commit whose
+    // contents the verdict never used (round-2 review of PR #394). The list
+    // endpoint already carries `parents`, so this costs nothing.
+    if ((entry.parents ?? []).length > 1) continue
+
     const detail = readCommit(entry.sha, root)
     if (!detail.ok) {
       out.fail(`could not fetch commit ${short(entry.sha)} of PR #${prNumber}: ${detail.error}`)
