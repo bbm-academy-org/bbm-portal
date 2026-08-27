@@ -12,6 +12,8 @@
 //       gh pr view <n>                            -> <dir>/pr-view-<n>.json
 //       gh issue view <n>                         -> <dir>/issue-view-<n>.json
 //       gh api .../issues/<n>/sub_issues          -> <dir>/sub-issues-<n>.json
+//       gh api .../pulls/<n>/commits              -> <dir>/pr-commits-<n>.json
+//       gh api .../commits/<sha>                  -> <dir>/commit-<sha>.json
 //   A missing or invalid fixture resolves to `{ ok: false }`, matching the real
 //   CLI's failure path, so a guard's fail-closed branch is testable too.
 //
@@ -79,6 +81,47 @@ export function ghViewJson(kind, number, fields, cwd) {
     : ghRun([kind, 'view', String(number), '--json', fields], cwd)
   if (!res.ok) return res
   return { ok: true, data: withEventBody(kind, number, fields, res.data) }
+}
+
+/**
+ * The PR's commits, oldest first: `[{ sha, … }]`.
+ *
+ * There is no `gh pr view --json` field carrying per-commit FILES, so a guard
+ * that reasons about commit ORDER (`tdd-order`) needs the REST pair — this call
+ * for the sequence, `ghCommit` below for each commit's file list. `gh` resolves
+ * `{owner}/{repo}` from the cwd.
+ *
+ * Fixture seam: `<LINT_GH_FIXTURE_DIR>/pr-commits-<n>.json`.
+ *
+ * Known limit, inherited from the endpoint and worth naming rather than
+ * discovering: the commits endpoint pages at 250 commits. A PR that long is its
+ * own review problem, but a guard reading this must not assume completeness
+ * silently.
+ */
+export function ghPrCommits(number, cwd) {
+  const fixtureDir = process.env.LINT_GH_FIXTURE_DIR
+  const res = fixtureDir
+    ? fixtureRead(resolve(fixtureDir, `pr-commits-${number}.json`))
+    : ghRun(['api', '--paginate', `repos/{owner}/{repo}/pulls/${number}/commits`], cwd)
+  if (!res.ok) return res
+  return { ok: true, data: Array.isArray(res.data) ? res.data : [] }
+}
+
+/**
+ * One commit with its file list: `{ sha, files: [{ filename, status, patch }] }`.
+ * `status` is git's own verdict for that commit (`added` / `modified` /
+ * `renamed` / …), which is what lets a caller tell a NEW file from a rename
+ * without re-deriving it.
+ *
+ * Fixture seam: `<LINT_GH_FIXTURE_DIR>/commit-<sha>.json`.
+ */
+export function ghCommit(sha, cwd) {
+  const fixtureDir = process.env.LINT_GH_FIXTURE_DIR
+  const res = fixtureDir
+    ? fixtureRead(resolve(fixtureDir, `commit-${sha}.json`))
+    : ghRun(['api', `repos/{owner}/{repo}/commits/${sha}`], cwd)
+  if (!res.ok) return res
+  return { ok: true, data: res.data ?? {} }
 }
 
 /**
