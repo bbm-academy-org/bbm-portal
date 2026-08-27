@@ -334,7 +334,7 @@ export function resolveSpecifier(fromDir, spec) {
  * Direction is target -> barrels, because that is how the lookup runs.
  * A merge commit contributes nothing, exactly as everywhere else in this guard.
  *
- * @param {{parentCount?: number, files?: {path: string, patch?: string}[]}[]} commits
+ * @param {{sha?: string, parentCount?: number, files?: {path: string, status?: string, patch?: string}[]}[]} commits
  * @returns {Map<string, Set<string>>} extension-less target path -> barrel DIRS
  *   (`src/lib/finance`, the path a test actually imports)
  */
