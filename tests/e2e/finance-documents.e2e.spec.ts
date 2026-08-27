@@ -1,11 +1,15 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { sql } from 'drizzle-orm'
 
 import { expect, test } from '@playwright/test'
 
+import { FINANCE_DOCUMENTS_DEFAULT_DIR } from '@/lib/finance'
 import { closePlatformDb } from '@/lib/platform/db/client'
 import { platformTransaction } from '@/lib/platform/db/transaction'
 
-import { signInThroughZitadel } from './support/zitadel-sign-in'
+import { signInAsPlatformMember } from './support/platform-session'
 
 /**
  * A finance document is private, end to end — spec
@@ -20,38 +24,44 @@ import { signInThroughZitadel } from './support/zitadel-sign-in'
  * there is no public object-storage link behind the handler and no route that
  * serves the bytes without asking.
  *
- * The fixture writes DIRECTLY to the stand's platform database with `pg` rather
- * than importing the finance module: this spec is about what the SERVER answers,
- * and a fixture that went through the module would be testing the module twice.
- * The blob itself is never written — an authorized read is not what is being
- * proved here, and the access decision is taken before any byte is fetched.
+ * The fixture writes the rows DIRECTLY (through `platformTransaction`, the one
+ * place that may set the audit context — spec 201 EARS-24) rather than through
+ * the finance module: this spec is about what the SERVER answers, and a fixture
+ * that went through the module would be testing the module twice. The blob
+ * itself is never written — an authorized read is not what is being proved
+ * here, and the access decision is taken before any byte is fetched.
  *
- * Two flows at two credential requirements, so the file always says something:
- *
- *   1. anonymous — runs on ANY stand, no credentials: the document URL never
- *      returns the document;
- *   2. member — needs `E2E_MEMBER_USERNAME` / `E2E_MEMBER_PASSWORD`, an account
- *      holding `platform-user` and NEITHER flow role: the same URL, now with a
- *      real session, still refuses because the item belongs to someone else.
+ * **The role-less member is MINTED, not signed in through the IdP.** The
+ * witness this scenario needs holds `platform-user` and NEITHER flow role, and
+ * the dev IdP has no such account: `bbm-test` holds `platform-admin` plus both
+ * finance roles after `provision.sh` step 8. `signInAsPlatformMember` states the
+ * session under test exactly, with the stand's own `AUTH_SECRET`, so everything
+ * from `auth()` down runs untouched — see `./support/platform-session`. The OIDC
+ * round trip itself is `tests/e2e/platform-claim-gate.e2e.spec.ts`'s subject.
  *
  * Relative paths only, resolved against Playwright's `baseURL` (`E2E_PORT` /
  * `E2E_BASE_URL` — `tests/helpers/base-url.ts`; naming a port asserts the stand
  * is yours, `.claude/rules/parallel-sessions.md`).
  *
- *   E2E_PORT=3005 E2E_IDP_HOST=truenas.local:9180 \
- *   E2E_MEMBER_USERNAME=… E2E_MEMBER_PASSWORD=… \
- *   pnpm test:e2e tests/e2e/finance-documents.e2e.spec.ts
+ *   E2E_PORT=3005 pnpm test:e2e tests/e2e/finance-documents.e2e.spec.ts
  */
 
-const idpHost = process.env.E2E_IDP_HOST
-const memberUsername = process.env.E2E_MEMBER_USERNAME
-const memberPassword = process.env.E2E_MEMBER_PASSWORD
 const databaseUrl = process.env.PLATFORM_DATABASE_URL
 
-/** Whoever signs in for flow 2, this is not them — the item is «someone else's». */
+/** The member the item belongs to. The witness below is deliberately NOT them. */
 const OWNER_EMAIL = 'e2e-document-owner@bbm.academy'
 
+/** A signed-in platform member holding neither flow role — the EARS-523 witness. */
+const OUTSIDER = { email: 'e2e-outsider@bbm.academy', roles: ['platform-user'] }
+
+/** The positive control: a refusal that is never lifted proves nothing. */
+const CLERK = { email: OWNER_EMAIL, roles: ['platform-user', 'finance-entry'] }
+
+/** The confirming file's bytes — written to the disk fallback by the fixture. */
+const PDF = Buffer.from('%PDF-1.7 e2e fixture invoice')
+
 let documentId: number
+let storageKey: string
 
 /**
  * Seed one intake item owned by `OWNER_EMAIL` with one document linked to it.
@@ -110,12 +120,19 @@ async function seedDocument(): Promise<number> {
         `)
       ).rows,
     )
+    storageKey = `finance/documents/e2e/${Date.now()}.pdf`
+    // The bytes go where the DISK FALLBACK expects them (EARS-514): this stand
+    // has no bucket configured, which is the acceptance criterion, so writing
+    // here is also the proof that the fallback is the path actually in use.
+    const blob = path.resolve(FINANCE_DOCUMENTS_DEFAULT_DIR, storageKey)
+    mkdirSync(path.dirname(blob), { recursive: true })
+    writeFileSync(blob, PDF)
     const docId = one(
       (
         await tx.execute(sql`
           insert into core.finance_document (storage_key, filename, mime, size, kind, uploaded_by)
-          values (${`finance/documents/e2e/${Date.now()}.pdf`}, 'e2e-invoice.pdf',
-                  'application/pdf', 24, 'ru_invoice', ${ownerId})
+          values (${storageKey}, 'e2e-invoice.pdf',
+                  ${'application/pdf'}, ${PDF.byteLength}, 'ru_invoice', ${ownerId})
           returning id
         `)
       ).rows,
@@ -138,52 +155,44 @@ test.afterAll(async () => {
 })
 
 test.describe('a finance document has no URL that gives it away (spec 339 scenario 9)', () => {
-  test('EARS-523: a signed-out request for a document never returns it', async ({ page }) => {
-    const response = await page.goto(`/p/finance/api/documents/${documentId}`, {
-      waitUntil: 'domcontentloaded',
-    })
-
-    // Either the Auth.js sign-in route, the IdP login, or a bare refusal — what
-    // must NOT happen is a PDF coming back.
-    expect(response).not.toBeNull()
-    const status = response?.status() ?? 0
-    const contentType = response?.headers()['content-type'] ?? ''
-    expect(contentType).not.toContain('application/pdf')
-    if (status === 200) {
-      expect(page.url()).toMatch(/\/(api\/auth\/signin|ui\/v2\/login|oauth\/v2\/authorize)/)
-    } else {
-      expect([401, 403]).toContain(status)
-    }
-  })
-
-  test('EARS-514: no unauthenticated object-storage URL is handed out either', async ({
-    request,
-  }) => {
-    // The metadata endpoint is the only place a client could learn a storage
-    // key from; anonymous, it answers nothing at all.
+  test('EARS-523: a signed-out request for a document never returns it', async ({ request }) => {
+    // The `request` fixture, not `page.goto`: this is the owner's «copy the URL
+    // and open it signed out», and a plain HTTP GET is what that is. It also
+    // sees what a browser hides — the exact status, and that the body is empty
+    // rather than a rendered «нет доступа» page carrying a 200.
     const response = await request.get(`/p/finance/api/documents/${documentId}`, {
       maxRedirects: 0,
     })
 
-    expect(response.status()).not.toBe(200)
-    // …and nothing in the answer leaks a bucket URL to try directly.
+    expect(response.status()).toBe(403)
+    expect(response.headers()['content-type'] ?? '').not.toContain('application/pdf')
+    // The claim gate answers BARE for an anonymous caller (spec 311 D-5) — and
+    // nothing in that answer leaks a bucket URL to try directly (EARS-514).
     expect(await response.text()).not.toMatch(/s3|twcstorage|storage_key/i)
+  })
+
+  test('EARS-514: a browser cannot render the document either', async ({ page }) => {
+    // Chromium refuses to navigate to a 403 with an empty body at all, so the
+    // navigation THROWS rather than returning a response — which is the point:
+    // there is nothing behind this URL for an anonymous caller to look at, and
+    // no redirect to an object-storage address to follow.
+    const navigation = page
+      .goto(`/p/finance/api/documents/${documentId}`, { waitUntil: 'domcontentloaded' })
+      .then((response) => ({ status: response?.status() ?? 0 }))
+      .catch((error: Error) => ({ status: 0, error: error.message }))
+    const outcome = await navigation
+
+    expect(outcome.status).not.toBe(200)
+    if ('error' in outcome) expect(outcome.error).toContain('ERR_HTTP_RESPONSE_CODE_FAILURE')
+    else expect(outcome.status).toBe(403)
   })
 
   test('EARS-523: a signed-in role-less member is refused someone elses document', async ({
     page,
+    context,
+    baseURL,
   }) => {
-    test.skip(
-      !memberUsername || !memberPassword,
-      'needs E2E_MEMBER_USERNAME / E2E_MEMBER_PASSWORD — an account with NEITHER finance flow role',
-    )
-
-    await signInThroughZitadel(
-      page,
-      '/p',
-      { username: memberUsername as string, password: memberPassword as string },
-      { idpHost },
-    )
+    await signInAsPlatformMember(context, baseURL as string, OUTSIDER)
 
     const response = await page.goto(`/p/finance/api/documents/${documentId}`, {
       waitUntil: 'domcontentloaded',
@@ -191,5 +200,34 @@ test.describe('a finance document has no URL that gives it away (spec 339 scenar
 
     expect(response?.status()).toBe(403)
     expect(response?.headers()['content-type'] ?? '').not.toContain('application/pdf')
+    // The refusal is the module's, not the gate's — the session DID hold
+    // `platform-user`, the role that opens /p/finance for everyone (EARS-530),
+    // and it bought nothing here (EARS-523).
+    expect(await response?.text()).toContain('EARS-523')
+  })
+
+  test('EARS-514: a flow-role holder DOES get the bytes, from the local-disk fallback', async ({
+    context,
+    baseURL,
+    request,
+  }) => {
+    // The positive control. Without it the three refusals above are also passed
+    // by a handler that answers 403 to everyone — and this flow is additionally
+    // the acceptance criterion «a dev stand with no bucket configured works».
+    await signInAsPlatformMember(context, baseURL as string, CLERK)
+    const cookies = await context.cookies()
+    const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ')
+
+    const response = await request.get(`/p/finance/api/documents/${documentId}`, {
+      headers: { cookie: cookieHeader },
+    })
+
+    expect(response.status()).toBe(200)
+    expect(response.headers()['content-type']).toContain('application/pdf')
+    // Never inline, never cached: an attachment with nosniff, private no-store.
+    expect(response.headers()['content-disposition']).toContain('attachment')
+    expect(response.headers()['x-content-type-options']).toBe('nosniff')
+    expect(response.headers()['cache-control']).toContain('no-store')
+    expect(Buffer.from(await response.body()).equals(PDF)).toBe(true)
   })
 })
