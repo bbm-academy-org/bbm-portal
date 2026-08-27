@@ -4,6 +4,10 @@ import React from 'react'
 
 import { auth } from '@/auth'
 import { PLATFORM_ADMIN_ROLE, resolveClaimGate } from '@/lib/platform/authGate'
+import { WORKSPACE_REGISTRY } from '@/lib/workspace'
+
+import { CabinetShell } from './CabinetShell'
+import { cabinetResources } from './resources'
 
 /**
  * The cabinet's claim gate (spec 311 §B, D-4): `/p/admin` is the frame's own
@@ -16,9 +20,13 @@ import { PLATFORM_ADMIN_ROLE, resolveClaimGate } from '@/lib/platform/authGate'
  * behind the cabinet re-checks the claim for itself (EARS-462) — this layout
  * is not their gate, it is the shell's.
  *
- * #315 builds the Refine shell inside this layout; the gate is deliberately a
- * separate file from whatever that shell becomes, so the boundary survives a
- * rewrite of the surface it protects.
+ * SINCE #315 this layout also mounts the Refine shell (EARS-431) — but the gate
+ * above it is deliberately still the first thing that runs, and lives in its
+ * own file from the shell it protects, so the boundary survives a rewrite of
+ * the surface. The shell is given the resource tree DERIVED here from the
+ * composition root (EARS-402, EARS-409, EARS-410): reading the registry is a
+ * server-side act (EARS-457, and the declarations reach the data layer), and
+ * `ResourceProps[]` is plain data, so it is what crosses into the client.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -29,5 +37,5 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (decision.type === 'redirect') redirect(decision.to)
   if (decision.type === 'forbidden') forbidden()
 
-  return <>{children}</>
+  return <CabinetShell resources={cabinetResources(WORKSPACE_REGISTRY)}>{children}</CabinetShell>
 }

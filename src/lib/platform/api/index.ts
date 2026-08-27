@@ -20,8 +20,6 @@ export {
   listQuerySchema,
   ModuleApiError,
   oneEnvelopeSchema,
-  RESOURCE_OPERATIONS,
-  type ResourceOperation,
 } from './contract'
 export {
   adminRoute,

@@ -15,6 +15,8 @@
  * failure.
  */
 
+import type { ZodType } from 'zod'
+
 /**
  * A stable icon reference (EARS-401). The vendored `design-source/p-launcher.html`
  * draws the tile's icon as an EMPTY swatch — there is no icon set in this design
@@ -39,12 +41,40 @@ export type WorkspaceIconRef = string
  */
 export type WorkspaceStatusProvider = () => string | null | Promise<string | null>
 
+/**
+ * The operations a cabinet resource may support (EARS-437).
+ *
+ * Declared per resource rather than discovered, because the clause is about
+ * what the SCREEN renders: «the cabinet shall omit an operation a resource does
+ * not support from the screen entirely — no control that fails on click». An
+ * operation absent from a resource's array gets no route in the shell, so there
+ * is no control to remember to hide and none to disable.
+ */
+export const RESOURCE_OPERATIONS = ['list', 'show', 'create', 'edit', 'delete'] as const
+export type ResourceOperation = (typeof RESOURCE_OPERATIONS)[number]
+
 /** One CRUD resource of a module's cabinet section, mounted at `/p/admin/<slug>/<resource>` (D-9). */
 export interface WorkspaceAdminResource {
   /** The route segment, and the module's own name for the resource. */
   name: string
   /** What the cabinet's navigation calls it. */
   label: string
+  /**
+   * The operations this resource supports, in the order the shell offers them
+   * (EARS-437). An empty `create` is not «create is disabled» — it is «there is
+   * no create screen and no button that could lead to one».
+   */
+  operations: readonly ResourceOperation[]
+  /**
+   * The MODULE's own zod schema for one record of this resource (EARS-436).
+   *
+   * It is carried on the declaration rather than registered twice because
+   * «one schema typing the client and validating the handler» is only true if
+   * there is literally one: the cabinet's data provider parses answers with
+   * this object, and the module's route handler validates with the same one.
+   * A second registration is the thing that drifts.
+   */
+  schema: ZodType
 }
 
 /** A module's cabinet presence (EARS-409). Absent means no presence at all (EARS-410). */

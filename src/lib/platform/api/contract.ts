@@ -110,14 +110,7 @@ export const listQuerySchema = z.object({
 
 export type ListQuery = z.infer<typeof listQuerySchema>
 
-/**
- * The operations a cabinet resource supports (spec 311 EARS-437).
- *
- * Declared DATA rather than discovered at runtime, because EARS-437 is about
- * what the screen renders: «the cabinet shall omit an operation a resource does
- * not support from the screen entirely — no control that fails on click». A
- * resource that omits `create` gets no create button; there is nothing to
- * remember to hide.
- */
-export const RESOURCE_OPERATIONS = ['list', 'show', 'create', 'edit', 'delete'] as const
-export type ResourceOperation = (typeof RESOURCE_OPERATIONS)[number]
+// The operations a cabinet resource supports (EARS-437) are NOT declared here.
+// They are a property of a module's registry declaration, so they live with it:
+// `RESOURCE_OPERATIONS` in `src/lib/workspace/contract.ts`. Declaring them in
+// both places would be the second source of truth this file exists to avoid.

@@ -183,33 +183,14 @@ const DEFERRALS_BY_ISSUE = {
       'spec 311 §B, the REVOCATION half: «when a role is revoked, the next request lands in EARS-418». #313 landed the rest of §B and stopped here on purpose — the roles are read once, at sign-in, and then ride the Auth.js JWT session cookie, so a revoke in Zitadel is invisible until that session ends. The grant direction (EARS-460) is satisfied as written; «next request» is not something a claim carried in a cookie can promise, and picking a staleness window nobody chose would put a number into the security boundary. #333 decides the mechanism or amends the clause',
   },
   315: {
-    ids: [
-      'EARS-409',
-      'EARS-410',
-      'EARS-431',
-      'EARS-432',
-      'EARS-433',
-      'EARS-434',
-      'EARS-435',
-      'EARS-436',
-      'EARS-437',
-      'EARS-439',
-      'EARS-440',
-      'EARS-453',
-      'EARS-455',
-      'EARS-472',
-      'EARS-473',
-      'EARS-474',
-      'EARS-475',
-      'EARS-476',
-    ],
+    ids: [],
     reason:
-      "spec 311 §D (the /p/admin Refine shell, its navigation, breadcrumbs, save answers and attribution) and §G (the OKR cabinet section and the one read-only accessor it needs), which the spec's Follow-up tasks both assign to #315. EARS-409/EARS-410 moved here from the #314 entry when the launcher landed: both are statements about what the CABINET renders for a module that declares an admin section and for one that does not, and the cabinet is #315 — #314 built the contract half (WorkspaceAdminSection in src/lib/workspace/contract.ts) but has no shell to assert against, and a test that only re-read the type would be a green light for a surface nobody built. EARS-463..465 — the /api/p/* host-allowlist change and its Host-matrix rows — LEFT this list when #315 landed them: they were the prerequisite for the FIRST /api/p/* handler to answer at all, so they are the first thing that issue builds, and they are now asserted in tests/unit/platform-host-allowlist.spec.ts",
+      "spec 311 §D (the /p/admin Refine shell, its navigation, breadcrumbs, save answers and attribution) and §G (the OKR cabinet section and the one read-only accessor it needs), which the spec's Follow-up tasks both assign to #315. The list is EMPTY because #315 landed: §D and §G are asserted in tests/unit/cabinet-shell.spec.ts, cabinet-data-provider.spec.ts, okr-cabinet-section.spec.ts and platform-module-api.spec.ts, and EARS-463..465 (the /api/p/* host-allowlist change and its Host-matrix rows) in platform-host-allowlist.spec.ts. One id did NOT stay here and did not become covered either: EARS-439, cabinet WRITE attribution, moved to the #316 entry — #315 opens no write at all (the OKR section is read-only by EARS-455), so a test for it here could only re-read a type, which is the green light for a surface nobody built that EARS-409/EARS-410 were moved OUT of #314 to avoid",
   },
   316: {
-    ids: ['EARS-441', 'EARS-442', 'EARS-443', 'EARS-444', 'EARS-445'],
+    ids: ['EARS-439', 'EARS-441', 'EARS-442', 'EARS-443', 'EARS-444', 'EARS-445'],
     reason:
-      "spec 311 §E — the members resource, its aliases, the read-only email and deactivation-instead-of-delete. #316 both builds the screens and extends src/lib/member's public API with the create/alias operations they need",
+      "spec 311 §E — the members resource, its aliases, the read-only email and deactivation-instead-of-delete. #316 both builds the screens and extends src/lib/member's public API with the create/alias operations they need. EARS-439 (every cabinet WRITE runs through platformTransaction with the signed-in admin, ADR-004 A1) moved here from #315 when the shell landed: #315 built the frame that HANDS a handler its audit context (ModuleRouteContext.audit in src/lib/platform/api/moduleRoute.ts) but opened no write to attribute — the members resource is the first, so the clause is asserted where a row actually reaches core.audit_event",
   },
   317: {
     ids: [
