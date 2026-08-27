@@ -78,8 +78,8 @@ GitHub comment. The second names where each deviation was routed (its own issue
 All three share ONE recognizer of "a completion report" (defined in
 `completion-report-gate.mjs`): a completion verb plus an issue/PR reference,
 minus negations, and excluding a short question to the owner, the declared
-four-beat owner-question form below (two of its four beat labels, each on its own
-line), an interim
+owner-question form below (its **marker line**, or two of its four beat labels
+each on its own line), an interim
 checkpoint (the declared marker «Статус промежуточный», or inferred from «⏳»,
 «жду CI»), and a proposal of the next step — **and** the session
 must carry at least one write action in its transcript (#158), so a read-only
@@ -87,6 +87,15 @@ answer that merely talks about a merged PR trips nothing. So a real report meets
 all three, and a checkpoint meets none. Points 1, 3 and 4 have no
 mechanical check — they are on you. `BBM_HOOKS_DISABLE=1` kills the whole stack;
 using it to get a report past a gate is itself a deviation to surface.
+
+**Each BLOCK gate blocks at most ONCE per session** (#392, `applyBlockBudget` in
+`tools/hooks/shared.mjs`). A second recognized violation in the same session is
+demoted to a `systemMessage` warning and the stop proceeds. The budget bounds the
+cost of the recognizer being wrong about free prose — three owner complaints in a
+row (#158 → #299 → #374 → #392) each came from a message the recognizer misread
+and then blocked again and again. It is a backstop on the tax, **not** a licence
+to skip the markers: the first block is a real one, and this canon is what the
+report owes regardless of what the hook does.
 
 ## The owner's zone — prove there is no own path first (mandatory)
 
@@ -183,10 +192,36 @@ sending: someone who read nothing else must be able to answer it.
 (#374, `isOwnerQuestionForm` in `tools/hooks/completion-report-gate.mjs`): a
 message carrying **two or more of the four beat labels, each on its own line**, is
 a question and not a completion report — however many merged PRs and issue
-numbers it mentions. The beats are the whole of what the gate reads; a question
-heading is not part of the form and buys nothing. Before #374 the gate read none
-of it, and the owner saw almost every question twice: the gates blocked it once
-and the session re-sent it.
+numbers it mentions. Before #374 the gate read none of it, and the owner saw
+almost every question twice: the gates blocked it once and the session re-sent it.
+
+**A standalone owner question owes ONE declared line** (#392,
+`OWNER_QUESTION_MARKER_RE` in the same file). The beats stay the content canon,
+but a real question is often written as free prose, and the gate must still be
+able to tell it apart. So exactly one of these lines, on its own line, is what a
+question message owes:
+
+```
+Вопрос владельцу: <the question>
+```
+
+```
+Вопрос N из M — <the subject>
+```
+
+**Singular, and the singular matters.** «Вопрос владельцу:» (SINGULAR + colon,
+markdown emphasis around it tolerated) and the numbered «Вопрос N из M» header
+are markers. The PLURAL **«Вопросы владельцу» is NOT** — it is point 5 of the
+mandatory report shape above, so reading it as a marker would exempt exactly the
+correctly formed final report from all three gates. Write the plural only as the
+report's section heading and the singular only as a question's marker; the gate
+holds that line in both directions.
+
+Before #392 the gate read only the beats, and the owner's second complaint
+(2026-08-27) was a free-form binary decision request — sections, no beat labels —
+that carried «Осталось только смержить» and `PR #354` and was therefore blocked
+and re-sent. It already had the «Вопрос владельцу: …» line; the gate simply did
+not look at it.
 
 A correctly formed report still usually ENDS on a question line, and that does
 not relieve it of its own markers — a final report owes points 1–5 and the two

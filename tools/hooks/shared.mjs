@@ -44,6 +44,18 @@ export const ZERO_DISPATCH_STATE_DIR_REL = '.claude/zero-dispatch-guard-state'
 /** Per-session state of the AskUserQuestion guard (`{headers: {<header>: len}}`). */
 export const ASKUSERQUESTION_STATE_DIR_REL = '.claude/askuserquestion-guard-state'
 
+/**
+ * Per-session budget state of the two BLOCK Stop-gates (#392):
+ * `{blocked: {"completion-report": true, "deviations": true}}`.
+ *
+ * Each gate blocks at most ONCE per session; a further recognized violation is
+ * demoted to a `systemMessage` warning. Rationale: heuristic recognition of free
+ * prose is whack-a-mole (#158 → #299 → #374 → #392, three owner complaints), and
+ * the cost of the recognizer being wrong must be BOUNDED even while the gates
+ * keep their real BLOCK plane. One block per session is the whole tax.
+ */
+export const STOP_BLOCK_BUDGET_STATE_DIR_REL = '.claude/stop-gate-budget-state'
+
 /** Stable per-session write evidence recorded from Codex PostToolUse payloads. */
 export const CODEX_WRITE_STATE_DIR_REL = '.claude/codex-write-state'
 
@@ -171,6 +183,50 @@ export function writeState(path, state, deps = {}) {
   } catch {
     // fail-open: состояние — вспомогательное, его потеря не повод падать
   }
+}
+
+/**
+ * The block budget as a PURE function (#392), so the decision is unit-testable
+ * without touching the filesystem: `main()` supplies the state I/O, this decides.
+ *
+ * `alreadyBlocked` defaults to `false` — that is the FAIL-OPEN direction on
+ * purpose. Unreadable or lost state costs at most one extra block, while the
+ * opposite default would silently disarm a gate that never actually fired.
+ */
+export function applyBlockBudget({ decision, alreadyBlocked = false } = {}) {
+  const d = decision && typeof decision === 'object' ? decision : {}
+  if (!d.block) return { ...d, block: false, demoted: false }
+  if (alreadyBlocked) return { ...d, block: false, demoted: true }
+  return { ...d, block: true, demoted: false }
+}
+
+/**
+ * I/O half of the budget, shared by both BLOCK gates so they cannot drift apart:
+ * the state path for this session, whether `key` has already spent its block, and
+ * the recording of a spend. Both reads and writes are fail-open (`readState` /
+ * `writeState` swallow their own errors), so a lost state costs one extra block.
+ */
+export function blockBudgetStatePath(root, sessionId) {
+  return stateFilePath(root, STOP_BLOCK_BUDGET_STATE_DIR_REL, sessionId)
+}
+
+export function hasSpentBlockBudget(state, key) {
+  const blocked = state && typeof state.blocked === 'object' ? state.blocked : null
+  return Boolean(blocked && blocked[key])
+}
+
+export function recordBlockBudgetSpend(path, state, key, deps = {}) {
+  const blocked = state && typeof state.blocked === 'object' ? state.blocked : {}
+  writeState(path, { ...state, blocked: { ...blocked, [key]: true } }, deps)
+}
+
+/** Текст демотированного блока: то же сообщение гейта плюс объяснение бюджета. */
+export function budgetDemotedMessage(message) {
+  return (
+    '⚠ ' +
+    String(message || '') +
+    ' (без блока: этот гейт уже блокировал в этой сессии — бюджет 1 блок/сессию, #392)'
+  )
 }
 
 /**

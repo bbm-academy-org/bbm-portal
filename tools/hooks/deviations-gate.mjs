@@ -32,7 +32,26 @@ import {
   hasWriteAction,
   isEnforceableTerminalReport,
 } from './completion-report-gate.mjs'
-import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
+import {
+  applyBlockBudget,
+  blockBudgetStatePath,
+  budgetDemotedMessage,
+  emitWarn,
+  hasSpentBlockBudget,
+  hooksDisabled,
+  isDirectRun,
+  mainRepoRoot,
+  readHookPayload,
+  readState,
+  recordBlockBudgetSpend,
+} from './shared.mjs'
+
+/**
+ * This gate's key in the shared per-session block-budget state (#392). ONE key
+ * for both blocking branches: the self-cert block spends the same budget as the
+ * missing-line block, because from the session's side they are the same gate.
+ */
+export const BUDGET_KEY = 'deviations'
 
 /** Маркер stage 7. Регистронезависимо, с допуском пробела перед двоеточием;
  * markdown-выделение (`**Отклонения от конвенций:**`) содержит тот же токен.
@@ -190,10 +209,23 @@ function main() {
       haltSignal: detectHaltSignal(transcript),
       writeActionSeen: hasWriteAction(transcript),
     })
-    if (decision.block) {
-      process.stderr.write(
-        decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage(),
-      )
+    // PER-SESSION BLOCK BUDGET (#392): see the twin comment in
+    // `completion-report-gate.mjs`. Both blocking branches of this gate share one
+    // budget key — to the session they are one gate blocking twice.
+    const message = decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage()
+    const statePath = blockBudgetStatePath(mainRepoRoot(process.cwd()), payload.session_id)
+    const state = readState(statePath)
+    const budgeted = applyBlockBudget({
+      decision,
+      alreadyBlocked: hasSpentBlockBudget(state, BUDGET_KEY),
+    })
+    if (budgeted.demoted) {
+      emitWarn(budgetDemotedMessage(message))
+      process.exit(0)
+    }
+    if (budgeted.block) {
+      recordBlockBudgetSpend(statePath, state, BUDGET_KEY)
+      process.stderr.write(message)
       process.exit(2)
     }
     process.exit(0)
