@@ -53,6 +53,12 @@ const ITEM_BASE =
   'block rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 function Item({ item, selectedKey }: { item: CabinetMenuItem; selectedKey: string }) {
+  // TWO IDENTIFIERS, deliberately. `key` is Refine's own — a route-shaped
+  // string like `/okr/okr.parameters` — and it is what `selectedKey` is
+  // compared against, so «which item am I on» stays Refine's answer. `name` is
+  // the RESOURCE name (`okr.parameters`), and it is what the markup exposes:
+  // a test and a reviewer read the module and the resource off the attribute,
+  // and Refine changing the shape of its keys does not rewrite the selectors.
   const key = item.key ?? item.name
   const selected = key === selectedKey
   const label = item.label ?? item.name
@@ -62,7 +68,7 @@ function Item({ item, selectedKey }: { item: CabinetMenuItem; selectedKey: strin
   // resources (EARS-433).
   if (item.children.length > 0) {
     return (
-      <li data-nav-group={key} className="mb-4">
+      <li data-nav-group={item.name} className="mb-4">
         <div className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/80">
           {label}
         </div>
@@ -81,7 +87,7 @@ function Item({ item, selectedKey }: { item: CabinetMenuItem; selectedKey: strin
   if (!item.route) {
     return (
       <li>
-        <span data-nav-item={key} className={cn(ITEM_BASE, 'cursor-default opacity-60')}>
+        <span data-nav-item={item.name} className={cn(ITEM_BASE, 'cursor-default opacity-60')}>
           {label}
         </span>
       </li>
@@ -91,7 +97,7 @@ function Item({ item, selectedKey }: { item: CabinetMenuItem; selectedKey: strin
   return (
     <li>
       <a
-        data-nav-item={key}
+        data-nav-item={item.name}
         href={item.route}
         {...(selected ? { 'aria-current': 'page' as const } : {})}
         className={cn(ITEM_BASE, selected && 'bg-accent font-medium text-accent-foreground')}
