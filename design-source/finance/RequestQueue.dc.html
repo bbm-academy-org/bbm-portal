@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #1c1917; }
+    a { color: #1d4ed8; } a:hover { color: #1e40af; }
+    .e { font-family: ui-monospace, monospace; font-size: 9px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+    .card { border: 1.5px solid #a8a29e; border-radius: 6px; padding: 12px 14px; background: #fafaf9; }
+    .tag { font-size: 10px; border: 1px solid #d6d3d1; border-radius: 3px; padding: 0 4px; color: #57534e; background: #ffffff; white-space: nowrap; }
+    .btn-y { border: 1.5px solid #15803d; color: #15803d; border-radius: 4px; padding: 6px 12px; font-size: 12px; font-weight: 700; background: #ffffff; }
+    .btn-n { border: 1.5px solid #b91c1c; color: #b91c1c; border-radius: 4px; padding: 6px 12px; font-size: 12px; font-weight: 700; background: #ffffff; }
+    .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #78716c; }
+  </style>
+</helmet>
+<div style="width: 1100px; height: 800px; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+  <div style="font-size: 11px; color: #78716c">/p/finance/requests · вид владельца <span class="e">роль: владелец (claim-гейт)</span></div>
+  <div style="display: flex; align-items: baseline; gap: 12px">
+    <div style="font-size: 18px; font-weight: 700">Очередь заявок — 3 ждут</div>
+    <div style="font-size: 11px; color: #78716c">одобрение = проводка в леджер, второго акта ввода нет (US-4)</div>
+  </div>
+
+  <div class="card" style="display: grid; grid-template-columns: 1fr 320px; gap: 14px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; gap: 8px; align-items: baseline">
+        <div style="font-size: 15px; font-weight: 700">45 000,00 ₽ — Аренда студии, урок №14</div>
+        <div class="tag">ждёт</div>
+      </div>
+      <div style="font-size: 12px; color: #57534e">М. Иванова · Doctor.School · продукт: Урок №14 · подана 22.08 <span class="e">заявка.участник/проект/продукт</span></div>
+      <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px">
+        <div class="lbl">разметить при одобрении:</div>
+        <div class="tag" style="padding: 4px 8px">Статья: Продакшн ▾ <span class="e">статья</span></div>
+        <div class="tag" style="padding: 4px 8px">Счёт списания: Банк RUB ▾ <span class="e">счёт</span></div>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 8px; align-items: center">
+        <div class="btn-y">Одобрить → провести</div>
+        <div class="btn-n">Отклонить…</div>
+        <div style="font-size: 10px; color: #78716c">отклонение следа в леджере не оставляет</div>
+      </div>
+    </div>
+    <div style="border: 1.5px dashed #a8a29e; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #78716c; background: #ffffff">инвойс читается прямо тут, не покидая очередь <span class="e">документ</span></div>
+  </div>
+
+  <div class="card" style="display: grid; grid-template-columns: 1fr 320px; gap: 14px; border-color: #b45309; background: #fffbeb">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; gap: 8px; align-items: baseline">
+        <div style="font-size: 15px; font-weight: 700">720,00 ₽ — Такси до площадки</div>
+        <div class="tag" style="border-color: #b45309; color: #b45309">уже потрачено</div>
+      </div>
+      <div style="font-size: 12px; color: #57534e">К. Смирнов · платил со своей карты → одобрение создаст долг «возместить» <span class="e">обязательство</span></div>
+      <div style="display: flex; gap: 10px; margin-top: 8px"><div class="btn-y">Одобрить → провести</div><div class="btn-n">Отклонить…</div></div>
+    </div>
+    <div style="border: 1.5px dashed #a8a29e; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #78716c; background: #ffffff">чек.jpg</div>
+  </div>
+
+  <div class="card" style="opacity: .75">
+    <div style="font-size: 13px">2 100,00 THB — продление домена · А. Петров · Фонд BBM · <span class="tag">ждёт</span></div>
+  </div>
+
+  <div style="border-top: 1.5px solid #e7e5e4; padding-top: 8px">
+    <div class="lbl">История решений</div>
+    <div style="font-size: 12px; line-height: 1.7; color: #57534e">
+      Микрофон запасной — отклонена Антоном 21.08: «есть на складе» · заявка видна в истории<br>
+      Студия, урок №13 — одобрена 15.08 → операция в реестре <span class="e">заявка→операция</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
