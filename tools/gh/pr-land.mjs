@@ -206,6 +206,14 @@ export function parseWarnPlaneJobs(text) {
 /**
  * The union of the WARN plane over every workflow file that contributes
  * check-runs (`ci.yml`, `pr-body-guards.yml`, …).
+ *
+ * Membership is a flat set of NAMES with no workflow scoping, so a WARN name
+ * contributed by one workflow would demote a same-named `FAILURE` originating in
+ * another. No collision exists today — the WARN entries are all bare job ids and
+ * none of them collides with a BLOCK job — and nothing mechanical prevents one
+ * from being introduced. Scoping would need the check-run to name its workflow,
+ * which the rollup does not carry; recorded here rather than mechanised (review
+ * of PR #399, note 3).
  * @param {{path?:string, text?:string}[]} files
  * @returns {Set<string>}
  */
@@ -709,24 +717,34 @@ const WORKFLOWS_DIR = '.github/workflows'
  * its own `ci.yml`. On the base ref the plane is what `main` already agreed to,
  * exactly like the guard register it mirrors.
  *
+ * It does NOT close the mirror image, and that is a considered acceptance rather
+ * than an oversight (review of PR #399, note 4): a head-side edit that renames a
+ * BLOCK job's `name:` ONTO a base-plane WARN name produces a check-run whose name
+ * is in the plane, and its `FAILURE` is demoted. That edit is an obvious
+ * `ci.yml` hunk sitting in the reviewed diff — a review-visible act, not a silent
+ * one — whereas the base-side attack needed no reviewer to be fooled at all.
+ * Hardening it means matching check-runs by their workflow as well as their name,
+ * which the rollup does not carry.
+ *
  * Failure modes, all of them towards STRICT: an unreadable directory listing, an
  * unreadable file, a file too large for the contents API to inline, or YAML that
  * does not parse all collapse to «that file contributes nothing», and a plane
  * that ends up empty is the pre-#397 gate — every failing check-run red.
+ *
+ * The injected seam is the API CALL, not a `list`/`read` pair: those are where
+ * the `?ref=` is built, so a test that replaced them would assert nothing about
+ * the one property this function exists to hold (review of PR #399, blocker 2).
  * @param {string|null|undefined} baseRef
- * @param {{list?:Function, read?:Function}} [io]
+ * @param {{api?:(path:string)=>{ok:boolean, data?:unknown}}} [io]
  * @returns {Set<string>}
  */
 export function runWarnPlane(baseRef, io = {}) {
   const ref = String(baseRef ?? '').trim()
   if (ref === '') return new Set()
-  const list =
-    io.list ??
-    (() =>
-      ghJson(['api', `repos/${REPO}/contents/${WORKFLOWS_DIR}?ref=${encodeURIComponent(ref)}`]))
-  const read =
-    io.read ??
-    ((path) => ghJson(['api', `repos/${REPO}/contents/${path}?ref=${encodeURIComponent(ref)}`]))
+  const api = io.api ?? ((path) => ghJson(['api', path]))
+  const at = (path) => `repos/${REPO}/contents/${path}?ref=${encodeURIComponent(ref)}`
+  const list = () => api(at(WORKFLOWS_DIR))
+  const read = (path) => api(at(path))
 
   const listed = list()
   if (!listed.ok || !Array.isArray(listed.data)) return new Set()
