@@ -112,6 +112,27 @@ export function sessionRoles(session: SessionLike | null | undefined): string[] 
 }
 
 /**
+ * The signed-in member's email, normalized the way `core.member.email` is
+ * stored (`lower(btrim(…))`, DB-enforced by a CHECK — spec 124 EARS-2), or
+ * `null` when the session carries none.
+ *
+ * This is the actor of every attributable write a platform surface makes
+ * (ADR-004 A1, spec 201 EARS-9). It lives HERE rather than being imported from
+ * `src/lib/hours/access.ts`, which has the same function under the name
+ * `sessionEmail`: the frame must not depend on a module, and a module's helper
+ * is that module's to change. The normalization is the same by contract with
+ * the DB, not by copying — `platformTransaction` normalizes again on the way in.
+ */
+export function sessionActorEmail(session: SessionLike | null | undefined): string | null {
+  const user = session?.user
+  if (user === null || typeof user !== 'object') return null
+  const email = (user as { email?: unknown }).email
+  if (typeof email !== 'string') return null
+  const normalized = email.trim().toLowerCase()
+  return normalized === '' ? null : normalized
+}
+
+/**
  * Does this session carry `required`?
  *
  * `platform-admin` implies `platform-user` (EARS-417): one grant lets an admin

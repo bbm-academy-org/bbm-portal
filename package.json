@@ -100,6 +100,7 @@
     "lint:test-presence": "node tools/lint/test-presence-lint.mjs",
     "lint:tdd-order": "node tools/lint/tdd-order-lint.mjs",
     "lint:no-stub": "node tools/lint/no-stub-lint.mjs",
+    "lint:endpoint-authz": "node tools/lint/endpoint-authz-lint.mjs",
     "lint:workflow-auth": "node tools/lint/workflow-auth-lint.mjs",
     "lint:epic-autoclose": "node tools/lint/epic-autoclose-lint.mjs",
     "lint:assignee-milestone": "node tools/lint/assignee-milestone-lint.mjs",
@@ -119,6 +120,9 @@
     "@payloadcms/richtext-lexical": "3.85.1",
     "@payloadcms/storage-s3": "3.85.1",
     "@payloadcms/ui": "3.85.1",
+    "@refinedev/core": "5.0.12",
+    "@refinedev/nextjs-router": "7.0.5",
+    "@tanstack/react-query": "5.90.5",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cross-env": "^7.0.3",
@@ -135,7 +139,8 @@
     "react-dom": "19.2.8",
     "sharp": "0.34.2",
     "tailwind-merge": "3.6.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
