@@ -227,15 +227,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
-  # BLOCK from day 0 under the canon §3 class-1 mandate — a NEW platform module
-  # whose test did not land in a STRICTLY EARLIER commit of the same PR (#355).
-  # Recorded mandate: docs/ci-guardrails.md §5, row `tdd-order`. The input is the
-  # PR's own commit graph — which commit introduced which file, which commit's
-  # patch first cites it — so there is no heuristic and no false-positive class
-  # for a WARN soak to discover, the same reasoning as `guard-test-coverage` and
-  # `design-fidelity` above.
+  # A NEW platform module whose test did not land in a STRICTLY EARLIER commit of
+  # the same PR (#355). Severity of record: docs/ci-guardrails.md §5, row
+  # `tdd-order` — read that row, not this comment.
   #
-  # It is here and in the `ci` needs-list because that IS what BLOCK means (§2.1).
+  # Wired BLOCK (no `continue-on-error`, in the `ci` needs-list — §2.1), and that
+  # posture is UNDER OWNER REVIEW: review of PR #394 found the day-0 mandate was
+  # claimed under §3 class 1, which class 1 excludes by name — this guard's only
+  # input is PR metadata over the network, matched with a substring heuristic, so
+  # the §3 default (land WARN, soak) applies unless the owner records a class-3
+  # mandate with the wording and the escape hatch that class requires. Do not
+  # read this job's presence in the needs-list as that decision having been made.
+  #
+  # The "no false-positive class" claim this comment used to carry was simply
+  # untrue; the guard header now enumerates the class honestly — two paths closed
+  # in code (merge commits, truncated file lists), one open and benign (substring
+  # needles, a false PASS rather than a false BLOCK).
+  #
   # No `--severity` flag: the guard has exited 1 on a finding since day 0, so a
   # dial could only ever weaken it (§6.1).
   #

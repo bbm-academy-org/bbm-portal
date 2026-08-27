@@ -1,12 +1,35 @@
 #!/usr/bin/env node
 // tdd-order — a new platform module whose test did not land in an earlier commit.
 //
-// Canon: docs/ci-guardrails.md §5. Severity: BLOCK from day 0 under the §3
-// class-1 mandate, recorded in that row. The input is the PR's own commit
-// graph — which commit introduced which file, and which commit's patch first
-// cites the module — and a commit graph is a fact, not a heuristic. There is no
-// false-positive class for a WARN soak to discover, which is the same reasoning
-// that put `guard-test-coverage` and `design-fidelity` at BLOCK on day 0.
+// Canon: docs/ci-guardrails.md §5, which carries the severity of record.
+//
+// ── What this guard's false-positive class actually is ──────────────────────
+// It is NOT empty, and an earlier draft of this header said it was. That claim
+// was wrong on its own terms and is the kind of thing this guard family exists
+// to stop: §3 class 1 requires "no network, no PR metadata, no heuristics", and
+// this guard's ONLY input is PR metadata fetched over the network, judged with a
+// substring match. Three concrete paths to a false BLOCK were named in review of
+// PR #394; two are now closed in code, one remains:
+//
+//   CLOSED  a merge commit's first-parent diff read as authorship — a branch
+//           that merged `origin/main` in saw main's modules as its own new
+//           files. `isMergeCommit` skips merges in both directions.
+//   CLOSED  a truncated commit file list losing the citing test and flipping the
+//           verdict to `impl-first`. The list is now paged, and where paging
+//           cannot help (the endpoint's hard 300-file cap) the guard fails
+//           closed instead of judging on a partial list.
+//   OPEN    `needlesFor` is SUBSTRING matching against added patch lines, so
+//           `lib/leads/intake` is satisfied by any longer path containing it.
+//           That direction is a false PASS, not a false BLOCK — the guard stays
+//           silent where it should speak — so it cannot wrongly stop a PR. It is
+//           still a heuristic, it is the DEBT.md entry `test-presence` carries
+//           (both guards share `needlesFor`), and it is why no one should read
+//           this guard's decision as mechanical certainty.
+//
+// Under canon §4 a confirmed false positive DEMOTES a BLOCK guard to WARN in the
+// same session that confirms it, plus an issue to fix the guard. That clause is
+// this guard's real safety net, and it applies whatever §3 class the register
+// row ends up recording.
 //
 // ── The incident this guard exists for (#355) ────────────────────────────────
 // PR #354 shipped ONE commit carrying its tests and its implementation together.
@@ -45,6 +68,9 @@
 //     `test-presence`'s reckoning but not a platform module, so a guard like
 //     this one is not itself subject to the ordering rule. That is a scope
 //     decision, not an exemption anybody may invoke.
+//   * `.js` / `.jsx` are not read as sources (`SOURCE_EXT_RE` is ts/tsx/mjs).
+//     No platform module is written in them today; if one ever is, it is
+//     invisible here.
 //   * A test that cites the module only in a LATER commit's patch, having been
 //     added earlier without the citation, dates from the citing commit. The
 //     needle has to appear in an ADDED patch line, so a pre-existing test file
@@ -123,7 +149,8 @@ export function addedLines(patch) {
  * The GitHub commit shape (`files[].filename`) mapped onto the guard's shape
  * (`files[].path`), so the decision seam never sees an API field name.
  *
- * @param {{sha?: string, files?: {filename?: string, status?: string, patch?: string}[]}} commit
+ * @param {{sha?: string, parents?: {sha?: string}[],
+ *          files?: {filename?: string, status?: string, patch?: string}[]}} commit
  */
 export function normaliseCommit(commit) {
   return {
@@ -162,8 +189,10 @@ export function isMergeCommit(commit) {
 /**
  * The pure decision seam. No IO.
  *
- * @param {{sha: string, files: {path: string, status: string, patch?: string}[]}[]} commits
- *   the PR's commits, OLDEST FIRST — the order is the whole rule.
+ * @param {{sha: string, parentCount?: number,
+ *          files: {path: string, status: string, patch?: string}[]}[]} commits
+ *   the PR's commits, OLDEST FIRST — the order is the whole rule. `parentCount`
+ *   absent reads as an ordinary (non-merge) commit.
  * @returns {{path: string, implIndex: number, implSha: string, testIndex: number,
  *            testSha: string, kind: 'same-commit'|'impl-first'}[]}
  */
