@@ -12,12 +12,12 @@ on:
 
 # Least-privilege floor for the whole workflow (#220). `contents: read` is all a
 # job needs to check out, install and run a tree-local guard or the test tier —
-# which is every job here except `tdd-signal`, the one that reads PR metadata
-# through `gh`.
+# which is every job here except the ones that read PR metadata through `gh`
+# (`design-fidelity`, `test-presence`, `tdd-order`).
 #
 # A job-level `permissions:` block REPLACES this one, it does not merge with it:
 # any job that declares its own must list EVERY scope it needs, `contents: read`
-# included. `tdd-signal` below already does. Widen there, never here — raising
+# included. Those three below already do. Widen there, never here — raising
 # this floor hands the extra scope to every job in the file.
 permissions:
   contents: read
@@ -230,7 +230,14 @@ jobs:
   # WARN — production changed with no test in the diff and none in the tree.
   # Reads the PR's changed-file set through `gh`, hence the auth block
   # (workflow-auth enforces its presence).
-  tdd-signal:
+  #
+  # Called `tdd-signal` until 2026-08-27 (#355). The rename is not cosmetic: this
+  # job answers «does a test EXIST», and a green check under the old name was
+  # read as an attestation that TDD had happened — which it was not, and which
+  # PR #354 proved by passing it with an implementation written before its tests.
+  # The order question is the `tdd-order` job below. Renaming changed no rule, so
+  # the §4 promotion clock is untouched (earliest 2026-09-02).
+  test-presence:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -245,7 +252,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:tdd-signal
+      - run: pnpm lint:test-presence
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

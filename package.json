@@ -97,7 +97,7 @@
     "pretest:guards": "node scripts/require-node.mjs",
     "test:guards": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts tools/lint/guard-tests",
     "lint:guard-test-coverage": "node tools/lint/guard-test-coverage-lint.mjs",
-    "lint:tdd-signal": "node tools/lint/tdd-signal-lint.mjs",
+    "lint:test-presence": "node tools/lint/test-presence-lint.mjs",
     "lint:no-stub": "node tools/lint/no-stub-lint.mjs",
     "lint:workflow-auth": "node tools/lint/workflow-auth-lint.mjs",
     "lint:epic-autoclose": "node tools/lint/epic-autoclose-lint.mjs",
