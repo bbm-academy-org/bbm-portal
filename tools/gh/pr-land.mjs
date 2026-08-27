@@ -10,8 +10,9 @@
 //   1. gate        — the PR is open and not a draft, no conflict, a linkage is
 //                    present (`Closes #N`, or `Part of #N` on a still-OPEN
 //                    parent for a partial PR — #299), review is confirmed, every
-//                    check-run on the CURRENT head SHA is green (bounded
-//                    polling), head has not moved;
+//                    BLOCK-plane check-run on the CURRENT head SHA is green
+//                    (bounded polling; a failing WARN-plane job is printed as a
+//                    remark, #397), head has not moved;
 //   2. merge       — `gh pr merge <N> --squash --delete-branch
 //                    --match-head-commit <the same SHA>`;
 //   3. board-clear — drop YOUR OWN PR row from the board. NOT fatal: the merge
@@ -55,6 +56,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+import { parse as parseYaml } from 'yaml'
 
 import {
   REPO,
@@ -156,15 +159,105 @@ export function cwdGuardMessage(cwd) {
 }
 
 /**
+ * The check-run names of every job in ONE workflow file that carries
+ * `continue-on-error: true` — the WARN plane of the guard register
+ * (`docs/ci-guardrails.md` §5), read off the workflow definition rather than
+ * off any prose (#397).
+ *
+ * The mapping check-run → job is GitHub's own: a job's check-run is named by
+ * its `name:` when it has one, and by its job id otherwise. Two cases are
+ * dropped rather than guessed, and both drop towards STRICT (the check-run
+ * stays red):
+ *   * a `name:` carrying a `${{ … }}` expression — its rendered value is not
+ *     knowable from the file, and a prefix match would excuse jobs by accident;
+ *   * a matrix job, whose real check-run is `<name> (<matrix values>)`. No WARN
+ *     job in this repo uses a matrix; if one ever does, it will read as red and
+ *     that is the safe direction.
+ * @param {string|null|undefined} text  the workflow YAML
+ * @returns {string[]}
+ */
+export function parseWarnPlaneJobs(text) {
+  if (typeof text !== 'string' || text.trim() === '') return []
+  let doc
+  try {
+    doc = parseYaml(text)
+  } catch {
+    // An unreadable workflow resolves to «no WARN plane», i.e. the pre-#397
+    // behaviour. A gate must never widen on a file it could not parse.
+    return []
+  }
+  const jobs = doc?.jobs
+  if (!jobs || typeof jobs !== 'object') return []
+  const out = []
+  for (const [id, job] of Object.entries(jobs)) {
+    if (job?.['continue-on-error'] !== true) continue
+    const name = job?.name
+    if (name === undefined || name === null) {
+      out.push(id)
+      continue
+    }
+    const str = String(name)
+    if (str.includes('${{')) continue
+    out.push(str)
+  }
+  return out
+}
+
+/**
+ * The union of the WARN plane over every workflow file that contributes
+ * check-runs (`ci.yml`, `pr-body-guards.yml`, …).
+ *
+ * Membership is a flat set of NAMES with no workflow scoping, so a WARN name
+ * contributed by one workflow would demote a same-named `FAILURE` originating in
+ * another. No collision exists today — the WARN entries are all bare job ids and
+ * none of them collides with a BLOCK job — and nothing mechanical prevents one
+ * from being introduced. Scoping would need the check-run to name its workflow,
+ * which the rollup does not carry; recorded here rather than mechanised (review
+ * of PR #399, note 3).
+ * @param {{path?:string, text?:string}[]} files
+ * @returns {Set<string>}
+ */
+export function warnPlaneFromWorkflows(files) {
+  const out = new Set()
+  for (const file of Array.isArray(files) ? files : []) {
+    for (const name of parseWarnPlaneJobs(file?.text)) out.add(name)
+  }
+  return out
+}
+
+/**
  * Structural classification of check-runs. Parsed ONLY by the status /
  * conclusion / state fields — matching on a job's name yields a false green at
  * the first rename.
- * @returns {{verdict:'green'|'pending'|'red', pending:string[], failed:string[]}}
+ *
+ * ONE exception, and it is the reason #397 exists: the WARN plane. Job-level
+ * `continue-on-error: true` greens the workflow RUN, but the job's OWN check-run
+ * keeps `conclusion: failure` — verified on the live check-runs API on PR #396.
+ * So a gate that judges the rollup by conclusions alone hard-blocks every merge
+ * on every failing WARN guard, which is the exact opposite of what WARN means in
+ * `docs/ci-guardrails.md` §5. The plane is therefore resolved from the workflow
+ * definitions on the PR's BASE ref and passed in here; membership is by name,
+ * because the check-run carries nothing else that identifies its job.
+ *
+ * That name match is narrow on purpose:
+ *   * only `FAILURE` is demoted. `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED` and
+ *     a missing conclusion stay red — a run that did not finish proved nothing,
+ *     whichever plane it is on (the `pr-body-guards.yml` no-cancel caveat);
+ *   * an empty plane (nothing resolved, the read failed) reproduces the previous
+ *     behaviour exactly: every non-SUCCESS/SKIPPED/NEUTRAL run is red;
+ *   * a RENAMED WARN job falls out of the plane and reads as red — the strict
+ *     direction, and the same reason the rest of this function never matches on
+ *     names.
+ * @param {unknown} rollup
+ * @param {Set<string>|string[]} [warnPlane]  check-run names of `continue-on-error` jobs
+ * @returns {{verdict:'green'|'pending'|'red', pending:string[], failed:string[], warnings:string[]}}
  */
-export function classifyChecks(rollup) {
+export function classifyChecks(rollup, warnPlane) {
   const list = Array.isArray(rollup) ? rollup : []
+  const plane = warnPlane instanceof Set ? warnPlane : new Set(warnPlane ?? [])
   const pending = []
   const failed = []
+  const warnings = []
   for (const entry of list) {
     const name = entry?.name ?? entry?.context ?? '(unnamed)'
     if (entry?.__typename === 'StatusContext' || entry?.state !== undefined) {
@@ -181,15 +274,22 @@ export function classifyChecks(rollup) {
     const conclusion = String(entry?.conclusion ?? '').toUpperCase()
     // SKIPPED/NEUTRAL — a legitimate "nothing to do" (path filters); CANCELLED
     // and everything else is red: a cancelled run proved nothing.
-    if (!['SUCCESS', 'SKIPPED', 'NEUTRAL'].includes(conclusion)) {
-      failed.push(`${name} (${conclusion || 'no conclusion'})`)
+    if (['SUCCESS', 'SKIPPED', 'NEUTRAL'].includes(conclusion)) continue
+    if (conclusion === 'FAILURE' && plane.has(name)) {
+      warnings.push(
+        `${name} (FAILURE) — WARN plane: the job carries \`continue-on-error: true\`, so this ` +
+          `check-run does not block the merge (docs/ci-guardrails.md §5). Read the finding anyway`,
+      )
+      continue
     }
+    failed.push(`${name} (${conclusion || 'no conclusion'})`)
   }
-  if (failed.length > 0) return { verdict: 'red', pending, failed }
+  if (failed.length > 0) return { verdict: 'red', pending, failed, warnings }
   // Zero registered runs is not "green" but "they have not arrived yet": we
   // wait within the timeout, after which the stage turns RED.
-  if (pending.length > 0 || list.length === 0) return { verdict: 'pending', pending, failed }
-  return { verdict: 'green', pending, failed }
+  if (pending.length > 0 || list.length === 0)
+    return { verdict: 'pending', pending, failed, warnings }
+  return { verdict: 'green', pending, failed, warnings }
 }
 
 /**
@@ -519,9 +619,16 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
   the server), the PR carries a linkage — \`Closes #N\`, or \`Part of #N\` naming a
   still-OPEN parent when this PR is one slice of it (#299; a slice does NOT get a
   synthetic sub-issue filed just to have something to close) —
-  review is confirmed, every check on the CURRENT head SHA is green. That same
-  SHA goes into \`gh pr merge --match-head-commit\`, so a commit that lands while
-  we wait makes the merge refuse rather than ride in unchecked.
+  review is confirmed, every BLOCK-plane check on the CURRENT head SHA is green.
+  That same SHA goes into \`gh pr merge --match-head-commit\`, so a commit that
+  lands while we wait makes the merge refuse rather than ride in unchecked.
+
+  The WARN plane (#397): a job carrying \`continue-on-error: true\` greens the
+  workflow RUN but its own check-run still reports \`failure\`, so the plane is
+  resolved from the workflow definitions on the PR's BASE ref and such a FAILURE
+  is printed as a gate remark instead of blocking. Only \`failure\` is demoted —
+  a CANCELLED or unreadable WARN run stays red, and a plane that could not be
+  read leaves every failure red.
 
   Review counts in two ways by default: a human APPROVE OR a reviewer comment
   carrying a \`VERDICT: APPROVE\` line created AFTER the last commit that changed
@@ -596,7 +703,63 @@ export function parseFlags(argv) {
 
 const PR_FIELDS =
   'state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,body,' +
-  'headRefName,headRefOid,statusCheckRollup,comments,commits'
+  'headRefName,headRefOid,baseRefName,statusCheckRollup,comments,commits'
+
+/** Where the workflow definitions live — the only place check-run jobs come from. */
+const WORKFLOWS_DIR = '.github/workflows'
+
+/**
+ * The WARN plane, read from the workflow definitions on the PR's BASE ref (#397).
+ *
+ * BASE, not head, and that is the whole security argument: the plane decides
+ * which red check-runs stop a merge, so reading it from the PR's own branch
+ * would let a PR demote the guard that is failing on it by editing one line of
+ * its own `ci.yml`. On the base ref the plane is what `main` already agreed to,
+ * exactly like the guard register it mirrors.
+ *
+ * It does NOT close the mirror image, and that is a considered acceptance rather
+ * than an oversight (review of PR #399, note 4): a head-side edit that renames a
+ * BLOCK job's `name:` ONTO a base-plane WARN name produces a check-run whose name
+ * is in the plane, and its `FAILURE` is demoted. That edit is an obvious
+ * `ci.yml` hunk sitting in the reviewed diff — a review-visible act, not a silent
+ * one — whereas the base-side attack needed no reviewer to be fooled at all.
+ * Hardening it means matching check-runs by their workflow as well as their name,
+ * which the rollup does not carry.
+ *
+ * Failure modes, all of them towards STRICT: an unreadable directory listing, an
+ * unreadable file, a file too large for the contents API to inline, or YAML that
+ * does not parse all collapse to «that file contributes nothing», and a plane
+ * that ends up empty is the pre-#397 gate — every failing check-run red.
+ *
+ * The injected seam is the API CALL, not a `list`/`read` pair: those are where
+ * the `?ref=` is built, so a test that replaced them would assert nothing about
+ * the one property this function exists to hold (review of PR #399, blocker 2).
+ * @param {string|null|undefined} baseRef
+ * @param {{api?:(path:string)=>{ok:boolean, data?:unknown}}} [io]
+ * @returns {Set<string>}
+ */
+export function runWarnPlane(baseRef, io = {}) {
+  const ref = String(baseRef ?? '').trim()
+  if (ref === '') return new Set()
+  const api = io.api ?? ((path) => ghJson(['api', path]))
+  const at = (path) => `repos/${REPO}/contents/${path}?ref=${encodeURIComponent(ref)}`
+  const list = () => api(at(WORKFLOWS_DIR))
+  const read = (path) => api(at(path))
+
+  const listed = list()
+  if (!listed.ok || !Array.isArray(listed.data)) return new Set()
+  const files = []
+  for (const entry of listed.data) {
+    const path = entry?.path
+    if (entry?.type !== 'file' || typeof path !== 'string' || !/\.ya?ml$/i.test(path)) continue
+    const res = read(path)
+    // `content` is base64 and comes back EMPTY for a file over the inline cap —
+    // an empty text parses to no jobs, which is the strict direction already.
+    const content = res.ok ? (res.data?.content ?? '') : ''
+    files.push({ path, text: Buffer.from(String(content), 'base64').toString('utf8') })
+  }
+  return warnPlaneFromWorkflows(files)
+}
 
 /**
  * State of every issue a `Part of #N` line names (#299). Read only when the PR
@@ -760,10 +923,16 @@ export function runGate(
   const viewPr = io.viewPr ?? runViewPr
   const sleep = io.sleep ?? sleepSync
   const now = io.now ?? (() => Date.now())
+  const warnPlaneOf = io.warnPlane ?? runWarnPlane
 
   const deadline = now() + timeout * 1000
   let pinnedSha = null
   let lastPending = []
+  // Resolved at most ONCE per gate run, keyed by the base ref: the loop re-reads
+  // the PR on every probe, and the base branch's workflow definitions do not
+  // change under us in a way this gate should chase mid-wait.
+  let planeRef = null
+  let plane = new Set()
 
   for (;;) {
     const res = viewPr(pr)
@@ -773,10 +942,12 @@ export function runGate(
     const data = res.data ?? {}
     const cond = gateConditions(data, { requireReview, reviewGate })
     const sha = data.headRefOid ?? null
+    const baseRef = data.baseRefName ?? null
+    let checks = { verdict: 'pending', pending: [], failed: [], warnings: [] }
     const out = (verdict, reasons) => ({
       verdict,
       reasons,
-      warn: cond.warn,
+      warn: [...cond.warn, ...checks.warnings],
       closes: cond.closes,
       branch: data.headRefName ?? null,
       sha: pinnedSha ?? sha,
@@ -791,7 +962,11 @@ export function runGate(
       ])
     }
 
-    const checks = classifyChecks(data.statusCheckRollup)
+    if (planeRef !== baseRef) {
+      planeRef = baseRef
+      plane = warnPlaneOf(baseRef) ?? new Set()
+    }
+    checks = classifyChecks(data.statusCheckRollup, plane)
     if (checks.verdict === 'red') return out('red', [`red checks: ${checks.failed.join(', ')}`])
     if (checks.verdict === 'green') return out('green', [])
 

@@ -73,13 +73,23 @@ downstream of anything.
   match on the job's name — a renamed job would otherwise read as a false green.
   Zero registered runs is _pending_, not green. The aggregate to look for is the
   `ci` meta-job (`docs/ci-guardrails.md` §2.1); the WARN guards are deliberately
-  not part of it. **But note what the gate actually reads:** it evaluates _every_
-  check-run in the rollup, WARN ones included, and it cannot see which job
-  carries `continue-on-error` — `SUCCESS`/`SKIPPED`/`NEUTRAL` pass, anything else
-  counts as failed. A WARN job whose guard fails still reports success (that is
-  what `continue-on-error` does), but a **cancelled** WARN run reads as red. That
-  is why `pr-body-guards.yml` does not cancel in-progress runs; a gate red on a
-  WARN guard's check-run is that bug, not a merge decision.
+  not part of it. **Mind what `continue-on-error` really does** — the sentence
+  that used to stand here got it backwards and cost a merge (#397, PR #396). It
+  greens the workflow RUN; the job's OWN check-run keeps `conclusion: failure`,
+  and the rollup the gate reads is made of check-runs. So a failing WARN guard is
+  indistinguishable from a failing BLOCK one by conclusion alone, and until #397
+  every failing WARN guard hard-blocked every merge.
+  The gate now resolves the WARN plane itself: it reads
+  `.github/workflows/*.yml` on the PR's **base** ref (not its head — a PR must
+  not be able to demote the guard that is failing on it) and treats a
+  `FAILURE` check-run whose job carries `continue-on-error: true` as a printed
+  gate remark rather than a red. Everything else is unchanged and strict: a
+  **cancelled** WARN run still reads as red (a run that did not finish proved
+  nothing — which is why `pr-body-guards.yml` does not cancel in-progress runs),
+  a WARN job that was renamed since the base ref falls out of the plane and reads
+  as red, and a plane that could not be read at all leaves every failure red.
+  A gate remark is not a licence to ignore the finding: WARN means the guard is
+  soaking (`docs/ci-guardrails.md` §4), so read what it said before merging.
 - **The review verdict**, freshly: a `VERDICT: APPROVE` line in a PR comment,
   dated after the last commit that changed the PR's own diff. An approval given
   before that commit approved different code. A `gh pr update-branch` merge
