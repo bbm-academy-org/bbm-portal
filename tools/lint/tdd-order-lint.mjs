@@ -102,10 +102,14 @@
 //         `src/lib/x/sub/index.ts` is new here, so a citation of `@/lib/x` is
 //         still invisible. Closing it needs the barrel's content at the citing
 //         commit, i.e. a per-file API read this guard deliberately does not make.
-//       - a barrel citation covers EVERY module of this PR that barrel
-//         re-exports. A test importing `@/lib/finance` for one new module reads
-//         as citing its new sibling too. That is a false PASS, chosen knowingly:
-//         the alternative is the false BLOCK this guard was demoted for.
+//       - ANY added test line citing the barrel discharges the obligation for
+//         every module of this PR that barrel re-exports — including a line in a
+//         pre-existing test file edited for an entirely unrelated reason, and
+//         including a test written for a different module behind the same
+//         barrel. The guard reads that the module's public API was named in an
+//         earlier commit; it does not read WHAT was asserted about it, here or
+//         anywhere else. That is a false PASS, chosen knowingly: the alternative
+//         is the false BLOCK this guard was demoted for.
 //       - a multi-line `} from './x'` inside an index file is read as a
 //         re-export even when it closes a plain `import`. Same direction —
 //         a wider PASS, never a rejection.
@@ -406,15 +410,39 @@ function barrelNeedles(barrelDir) {
   return needles
 }
 
+/** A path token continues to the right: the needle was only a PREFIX of it. */
+const RIGHT_BOUNDARY_RE = /[\w./-]/
 /**
- * A barrel needle matched at a PATH BOUNDARY, not as a bare substring.
+ * A name character to the left: the needle did not start at a path SEGMENT
+ * boundary. `/` is deliberately absent — `@/lib/finance` is the citation form
+ * this matcher exists to accept.
+ */
+const LEFT_BOUNDARY_RE = /[\w.-]/
+
+/**
+ * A barrel needle matched at a PATH BOUNDARY on BOTH sides, not as a bare
+ * substring.
  *
  * This is the half that keeps the #398 fix from buying the false BLOCK back with
- * a false PASS: `lib/finance` is a substring of `lib/finance/core/money`, so a
- * plain `includes` would read a test of a SIBLING module as a citation of the
- * barrel — and through it of every new module behind that barrel. Requiring the
- * next character to be outside a path token (`'`, `"`, end of line) means only a
- * citation of the barrel ITSELF counts.
+ * a false PASS. The two sides fail differently and so are tested differently:
+ *
+ *   RIGHT  `lib/finance` is a prefix of `lib/finance/core/money`, so a plain
+ *          `includes` would read a test of a SIBLING module as a citation of the
+ *          barrel — and through it of every new module behind that barrel. The
+ *          next character must therefore be outside a path token (`'`, `"`, end
+ *          of line), which `RIGHT_BOUNDARY_RE` says.
+ *   LEFT   `lib/finance` is also a SUFFIX of `xlib/finance`, and the needle is
+ *          matched mid-path by construction: the citation forms it must accept
+ *          are `'@/lib/finance'` and `'../../src/lib/finance'`, where the
+ *          preceding character is a `/` or a quote. So the left test is not the
+ *          same class as the right one — `/` must be ALLOWED there — and it is
+ *          «the needle starts at a path SEGMENT boundary»: the preceding
+ *          character may not be a name character (`LEFT_BOUNDARY_RE`).
+ *
+ * Both sides together are what makes the claim true rather than nearly true:
+ * only a citation of the barrel ITSELF counts. The review of PR #400 caught this
+ * comment claiming that while the code checked one side; the code was the half
+ * that moved.
  *
  * @param {string} line
  * @param {string} needle
@@ -422,8 +450,11 @@ function barrelNeedles(barrelDir) {
  */
 export function citesAtBoundary(line, needle) {
   for (let i = line.indexOf(needle); i !== -1; i = line.indexOf(needle, i + 1)) {
+    const before = i === 0 ? undefined : line[i - 1]
     const next = line[i + needle.length]
-    if (next === undefined || !/[\w./-]/.test(next)) return true
+    const leftOk = before === undefined || !LEFT_BOUNDARY_RE.test(before)
+    const rightOk = next === undefined || !RIGHT_BOUNDARY_RE.test(next)
+    if (leftOk && rightOk) return true
   }
   return false
 }

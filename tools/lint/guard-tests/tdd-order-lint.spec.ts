@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import {
   addedLines,
   barrelsFor,
+  citesAtBoundary,
   evaluateStaged,
   findOrderViolations,
   hitsFileCap,
@@ -229,6 +230,38 @@ describe('reexportEdges', () => {
       },
     ])
     expect(edges.size).toBe(0)
+  })
+})
+
+/**
+ * The false-PASS half of the #398 fix. Review of PR #400 [MINOR]: the doc comment
+ * claimed «only a citation of the barrel ITSELF counts» while only the RIGHT
+ * boundary was tested, so `@/xlib/finance` matched the needle `lib/finance`. The
+ * code moved rather than the claim — both sides are checked now, and they are
+ * NOT the same class: `/` continues a path to the right but is exactly what
+ * precedes the needle in the `@/lib/finance` form the matcher must accept.
+ */
+describe('citesAtBoundary', () => {
+  const N = 'lib/finance'
+
+  it('accepts the citation forms a test actually writes', () => {
+    expect(citesAtBoundary("import { x } from '@/lib/finance'", N)).toBe(true)
+    expect(citesAtBoundary("import { x } from '../../src/lib/finance'", N)).toBe(true)
+    expect(citesAtBoundary('lib/finance', N)).toBe(true)
+  })
+
+  it('rejects a DEEPER path — the needle was only a prefix', () => {
+    expect(citesAtBoundary("import { x } from '@/lib/finance/core/money'", N)).toBe(false)
+    expect(citesAtBoundary("import { x } from '@/lib/finance-legacy'", N)).toBe(false)
+  })
+
+  it('rejects a LONGER segment to the LEFT — the needle was only a suffix', () => {
+    expect(citesAtBoundary("import { x } from '@/xlib/finance'", N)).toBe(false)
+    expect(citesAtBoundary("import { x } from '@/my-lib/finance'", N)).toBe(false)
+  })
+
+  it('still finds the citation when an earlier occurrence on the line is not one', () => {
+    expect(citesAtBoundary("// see @/xlib/finance, use '@/lib/finance'", N)).toBe(true)
   })
 })
 
