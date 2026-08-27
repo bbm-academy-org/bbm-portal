@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   addedLines,
   findOrderViolations,
+  isMergeCommit,
   isPlatformModule,
   normaliseCommit,
 } from '../tdd-order-lint.mjs'
@@ -64,16 +65,36 @@ describe('addedLines', () => {
 })
 
 describe('normaliseCommit', () => {
-  it('maps the GitHub commit shape onto the guard shape', () => {
+  it('maps the GitHub commit shape onto the guard shape, parents included', () => {
     expect(
       normaliseCommit({
         sha: 'aaa1',
+        parents: [{ sha: 'p0' }],
         files: [{ filename: 'src/lib/a.ts', status: 'added', patch: '+x' }],
       }),
     ).toEqual({
       sha: 'aaa1',
+      parentCount: 1,
       files: [{ path: 'src/lib/a.ts', status: 'added', patch: '+x' }],
     })
+  })
+
+  it('carries the parent COUNT, because that is what tells a merge from a commit', () => {
+    expect(normaliseCommit({ sha: 'm1', parents: [{ sha: 'a' }, { sha: 'b' }] }).parentCount).toBe(2)
+    // A root commit, and a payload that omits `parents` entirely.
+    expect(normaliseCommit({ sha: 'r0', parents: [] }).parentCount).toBe(0)
+    expect(normaliseCommit({ sha: 'x0' }).parentCount).toBe(0)
+  })
+})
+
+describe('isMergeCommit', () => {
+  it('is true for a commit with more than one parent', () => {
+    expect(isMergeCommit({ parentCount: 2 })).toBe(true)
+  })
+
+  it('is false for an ordinary commit and for a root commit', () => {
+    expect(isMergeCommit({ parentCount: 1 })).toBe(false)
+    expect(isMergeCommit({ parentCount: 0 })).toBe(false)
   })
 })
 
@@ -172,6 +193,50 @@ describe('findOrderViolations', () => {
     // No test cites leads/intake at all -> test-presence's jurisdiction, silent here.
   })
 
+  // REGRESSION (review of PR #394, blocker 2.1): `repos/{owner}/{repo}/commits/{sha}`
+  // reports a MERGE commit's files as the diff against its FIRST PARENT. A branch
+  // that merges `origin/main` in rather than rebasing therefore sees every platform
+  // module main landed since the branch point as `status: "added"` inside that merge —
+  // code this PR never wrote. Blocking a PR for someone else's module is a false BLOCK,
+  // and under canon §4 the first one demotes the guard.
+  it('ignores a MERGE commit — its file list is a first-parent diff, not this PR authoring code', () => {
+    const merged = {
+      path: 'src/lib/other/landed-on-main.ts',
+      status: 'added',
+      patch: '+export const landedElsewhere = true',
+    }
+    const citingTest = {
+      path: 'tests/unit/other-landed.spec.ts',
+      status: 'added',
+      patch: "+import { landedElsewhere } from '@/lib/other/landed-on-main'",
+    }
+    expect(
+      findOrderViolations([
+        { sha: 'mmm0', parentCount: 2, files: [merged] },
+        { sha: 'bbb2', parentCount: 1, files: [citingTest] },
+      ]),
+    ).toEqual([])
+  })
+
+  it('still flags a real violation that sits AFTER a merge commit in the sequence', () => {
+    const res = findOrderViolations([
+      { sha: 'mmm0', parentCount: 2, files: [{ path: 'src/lib/x/from-main.ts', status: 'added' }] },
+      { sha: 'bbb2', parentCount: 1, files: [test(), impl()] },
+    ])
+    expect(res).toHaveLength(1)
+    expect(res[0]).toMatchObject({ path: 'src/lib/leads/intake.ts', kind: 'same-commit' })
+  })
+
+  it('does not let a test that exists ONLY inside a merge commit rescue the order', () => {
+    const res = findOrderViolations([
+      { sha: 'mmm0', parentCount: 2, files: [test()] },
+      { sha: 'bbb2', parentCount: 1, files: [impl()] },
+    ])
+    // The merge contributes nothing in either direction, so nothing cites the module
+    // and this is test-presence's question again — silent, not a finding.
+    expect(res).toEqual([])
+  })
+
   it('counts a guard spec as a test source too', () => {
     expect(
       findOrderViolations([
@@ -234,6 +299,17 @@ describe('tdd-order (spawned)', () => {
     const res = runGuard('tdd-order-lint.mjs', caseDir('tdd-order', 'test-first'))
     expect(res.code).toBe(0)
     expect(res.stdout).toContain('not a pull_request event')
+  })
+
+  // REGRESSION (review of PR #394, blocker 2.1) at the CLI level: the fixture is a
+  // branch that merged `origin/main` in, and the merge's first-parent diff carries a
+  // module main landed. Before the fix this exited 1 against code the PR never wrote.
+  it('exits 0 on a branch that merged main in — a merge introduces nothing', () => {
+    const res = runGuard('tdd-order-lint.mjs', caseDir('tdd-order', 'merged-main'), {
+      env: env('merged-main'),
+    })
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('PASS')
   })
 
   it('exits 1 when the PR commit list cannot be read — fail closed', () => {
