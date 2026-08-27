@@ -126,11 +126,15 @@ describe('EARS-503 — every intake path carries its source and its ref semantic
 
     // The CHECK is the accident guard behind the module refusal: a writer that
     // bypassed the module entirely still cannot store a human-source ref.
-    await expect(
-      db.execute(sql`
-        update core.finance_intake_item set source_ref = 'MM-1' where id = ${item.id}
-      `),
-    ).rejects.toThrow(/source_ref_policy/)
+    const rejection = await db
+      .execute(sql`update core.finance_intake_item set source_ref = 'MM-1' where id = ${item.id}`)
+      .then(
+        () => null,
+        (error: unknown) => error as { cause?: { constraint?: string } },
+      )
+    // Drizzle wraps the driver error, so the constraint name lives on the cause —
+    // asserting the wrapper's text would pass for any failed query at all.
+    expect(rejection?.cause?.constraint).toBe('finance_intake_item_source_ref_policy')
   })
 
   it('EARS-503: a machine source without its identity is refused, not stored ref-less', async () => {
