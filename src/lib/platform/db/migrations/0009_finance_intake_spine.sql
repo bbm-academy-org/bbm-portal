@@ -41,6 +41,7 @@ CREATE TABLE "core"."finance_intake_item" (
 	CONSTRAINT "finance_intake_item_source_ref_policy" CHECK (("core"."finance_intake_item"."source" in ('bank_import', 'backfill')) = ("core"."finance_intake_item"."source_ref" is not null)),
 	CONSTRAINT "finance_intake_item_personal_funds_account" CHECK ("core"."finance_intake_item"."personal_funds" = ("core"."finance_intake_item"."account_id" is null)),
 	CONSTRAINT "finance_intake_item_personal_funds_already_paid" CHECK ((not "core"."finance_intake_item"."personal_funds") or "core"."finance_intake_item"."already_paid"),
+	CONSTRAINT "finance_intake_item_personal_funds_member" CHECK ((not "core"."finance_intake_item"."personal_funds") or ("core"."finance_intake_item"."member_id" is not null)),
 	CONSTRAINT "finance_intake_item_paid_pair" CHECK (("core"."finance_intake_item"."paid_amount" is null) = ("core"."finance_intake_item"."paid_currency" is null)),
 	CONSTRAINT "finance_intake_item_fee_pair" CHECK (("core"."finance_intake_item"."fee_amount" is null) = ("core"."finance_intake_item"."fee_currency" is null)),
 	CONSTRAINT "finance_intake_item_decision_pair" CHECK (("core"."finance_intake_item"."decided_by" is null) = ("core"."finance_intake_item"."decided_at" is null)),

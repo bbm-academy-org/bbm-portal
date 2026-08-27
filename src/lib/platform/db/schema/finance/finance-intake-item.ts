@@ -187,6 +187,17 @@ export const financeIntakeItem = core.table(
       'finance_intake_item_personal_funds_already_paid',
       sql`(not ${table.personalFunds}) or ${table.alreadyPaid}`,
     ),
+    // The other half of the model row's `member` note: «required for
+    // `personal_funds` and liability transfers». Only the personal-funds arm is
+    // enforceable from this row alone — the liability arm turns on
+    // `counter_account` naming a system `liability` account, which is a property
+    // of ANOTHER row (EARS-528, #386). A debt owed to nobody cannot be read back
+    // as «who does BBM owe», so it is refused at the column rather than
+    // discovered by the liability view.
+    check(
+      'finance_intake_item_personal_funds_member',
+      sql`(not ${table.personalFunds}) or (${table.memberId} is not null)`,
+    ),
     check(
       'finance_intake_item_paid_pair',
       sql`(${table.paidAmount} is null) = (${table.paidCurrency} is null)`,

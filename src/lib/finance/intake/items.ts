@@ -33,7 +33,6 @@ import {
   type FinanceIntakeSource,
   type FinanceIntakeStatus,
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
-import { hasClaim } from '@/lib/platform/authGate'
 import { getPlatformDb } from '@/lib/platform/db/client'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
@@ -41,6 +40,7 @@ import {
   assertFinanceIntakeAccess,
   assertFinanceLedgerAccess,
   financeAuditContext,
+  holdsFinanceFlowRole,
   FINANCE_APPROVE_ROLE,
   FINANCE_ENTRY_ROLE,
   type FinanceActor,
@@ -231,6 +231,7 @@ function assertItemShape(state: {
   amount: bigint
   currency: string
   accountId: number | null
+  memberId: number | null
   paidAmount: bigint | null
   paidCurrency: string | null
   feeAmount: bigint | null
@@ -279,6 +280,13 @@ function assertItemShape(state: {
         'своими средствами платят по факту, а не заранее.',
     )
   }
+  if (state.personalFunds && state.memberId === null) {
+    throw new FinanceRefusal(
+      'Позиция «оплачено своими средствами» обязана назвать участника, чьими средствами ' +
+        'заплатили (спека 339, строка модели: «required for personal_funds»): без него долг ' +
+        'компании записан никому, и обязательство перед человеком (EARS-513) не прочитать.',
+    )
+  }
   if (state.personalFunds !== (state.accountId === null)) {
     throw new FinanceRefusal(
       state.personalFunds
@@ -300,11 +308,6 @@ async function requireMemberId(actor: FinanceActor): Promise<number> {
     )
   }
   return member.id
-}
-
-function holdsFlowRole(actor: FinanceActor): boolean {
-  const session = { user: { roles: [...actor.roles] } }
-  return hasClaim(session, FINANCE_ENTRY_ROLE) || hasClaim(session, FINANCE_APPROVE_ROLE)
 }
 
 function assertKnownSource(source: string): void {
@@ -437,19 +440,69 @@ export async function createIntakeItems(
   return { created, duplicates }
 }
 
-async function loadItem(id: number): Promise<typeof financeIntakeItem.$inferSelect | undefined> {
-  const [row] = await getPlatformDb()
+/**
+ * The row, locked, INSIDE the caller's transaction (`select … for update`).
+ *
+ * This is the whole answer to «the status machine is guarded in memory but not
+ * in the database». Reading in autocommit and then writing by `id` in a separate
+ * transaction leaves the status a decision was made on un-asserted at write
+ * time: two callers both read `submitted`, both write, and the row lands in a
+ * state no listed transition produced — `cancelled` carrying an approval's
+ * decider, or a plain `cancelled → approved`. There is no CHECK that can catch
+ * that, unlike EARS-504's unique index.
+ *
+ * The lock, rather than a compare-and-swap, because the decision needs the row
+ * anyway: the gate reads `created_by` and `source`, the edit plan reads the
+ * status, and `assertItemShape` validates the MERGED row. F1's
+ * `reverseOperation` reads inside its transaction for exactly this reason, and
+ * `createIntakeItem` already argues the point in its own docstring.
+ */
+async function lockItem(
+  tx: PlatformTx,
+  id: number,
+): Promise<typeof financeIntakeItem.$inferSelect> {
+  const [row] = await tx
     .select()
     .from(financeIntakeItem)
     .where(eq(financeIntakeItem.id, id))
-  return row
-}
-
-function requireItem(row: typeof financeIntakeItem.$inferSelect | undefined, id: number) {
+    .for('update')
   if (row === undefined) {
     throw new FinanceRefusal(`Позиции приёмки #${id} не существует.`)
   }
   return row
+}
+
+/**
+ * Can this actor see the item AT ALL (EARS-502)?
+ *
+ * Asked before the machine and before the act gate, and the order is the fix for
+ * an oracle: checking the machine first is right for someone who may act on the
+ * item — «отзовите» beats «недостаточно прав» — but a stranger must not read
+ * another person's status out of the refusal text on the way to being refused.
+ */
+function assertItemVisible(
+  actor: FinanceActor,
+  row: typeof financeIntakeItem.$inferSelect,
+  actorMemberId: number,
+): void {
+  if (holdsFinanceFlowRole(actor)) return
+  if (row.createdBy === actorMemberId) return
+  throw new FinanceAccessRefusal(
+    `Позиция приёмки #${row.id} не ваша: чужие заявки видят роли ${FINANCE_ENTRY_ROLE} и ` +
+      `${FINANCE_APPROVE_ROLE} (EARS-501/502).`,
+  )
+}
+
+/** The fields this patch actually CHANGES — a re-save of the same value is not an edit. */
+function changedFields(
+  row: typeof financeIntakeItem.$inferSelect,
+  patch: EditIntakeItemPatch,
+): string[] {
+  const current = row as unknown as Record<string, unknown>
+  return Object.keys(patch).filter((key) => {
+    const next = (patch as Record<string, unknown>)[key]
+    return (next ?? null) !== (current[key] ?? null)
+  })
 }
 
 /**
@@ -458,7 +511,8 @@ function requireItem(row: typeof financeIntakeItem.$inferSelect | undefined, id:
  * The status machine decides what the edit DOES to the status; this function
  * decides who may attempt it. A bounce clears the decision fields as well as the
  * status: an approval that no longer covers the data is not a decision worth
- * keeping a name on.
+ * keeping a name on — and it fires on a real change only, because re-saving the
+ * same amount is not data the approval has not seen.
  */
 export async function editIntakeItem(
   actor: FinanceActor,
@@ -470,30 +524,31 @@ export async function editIntakeItem(
       throw new FinanceRefusal(`Поле «${key}» правкой позиции приёмки не меняется.`)
     }
   }
-  const row = requireItem(await loadItem(id), id)
   const actorMemberId = await requireMemberId(actor)
-  assertFinanceIntakeAccess(actor, {
-    ownRequest: isOwnEditableRequest(row, actorMemberId),
-  })
-
-  const changed = Object.keys(patch)
-  const plan = planIntakeEdit(row.status as FinanceIntakeStatus, changed)
-  const next = { ...row, ...patch }
-  assertItemShape({
-    kind: next.kind,
-    occurredOn: next.occurredOn,
-    amount: next.amount,
-    currency: next.currency,
-    accountId: next.accountId ?? null,
-    paidAmount: next.paidAmount ?? null,
-    paidCurrency: next.paidCurrency ?? null,
-    feeAmount: next.feeAmount ?? null,
-    feeCurrency: next.feeCurrency ?? null,
-    alreadyPaid: next.alreadyPaid,
-    personalFunds: next.personalFunds,
-  })
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const row = await lockItem(tx, id)
+    assertItemVisible(actor, row, actorMemberId)
+
+    const plan = planIntakeEdit(row.status as FinanceIntakeStatus, changedFields(row, patch))
+    assertFinanceIntakeAccess(actor, { ownRequest: isOwnEditableRequest(row, actorMemberId) })
+
+    const next = { ...row, ...patch }
+    assertItemShape({
+      kind: next.kind,
+      occurredOn: next.occurredOn,
+      amount: next.amount,
+      currency: next.currency,
+      accountId: next.accountId ?? null,
+      memberId: next.memberId ?? null,
+      paidAmount: next.paidAmount ?? null,
+      paidCurrency: next.paidCurrency ?? null,
+      feeAmount: next.feeAmount ?? null,
+      feeCurrency: next.feeCurrency ?? null,
+      alreadyPaid: next.alreadyPaid,
+      personalFunds: next.personalFunds,
+    })
+
     const [updated] = await tx
       .update(financeIntakeItem)
       .set({
@@ -522,10 +577,14 @@ function isOwnEditableRequest(
 /**
  * Move an item along the machine (EARS-524).
  *
- * **The transition is checked BEFORE the role**, and the order is deliberate: a
- * submitter asking to delete a `submitted` request has made a machine mistake,
- * not an authorization one, and «отзовите» is the answer they need. Telling them
- * «недостаточно прав» would send them looking for a grant that would not help.
+ * **The transition is checked BEFORE the act's role gate**, and the order is
+ * deliberate: a submitter asking to delete a `submitted` request has made a
+ * machine mistake, not an authorization one, and «отзовите» is the answer they
+ * need. Telling them «недостаточно прав» would send them looking for a grant
+ * that would not help. VISIBILITY is asked before both, so that ordering does
+ * not turn the refusal text into a status oracle for a stranger.
+ *
+ * The row is read and written inside ONE transaction, locked — see `lockItem`.
  *
  * Returns `null` for the one act that ends with no row — `delete` from `draft`.
  */
@@ -535,24 +594,27 @@ export async function transitionIntakeItem(
   act: FinanceIntakeTransitionAct,
   options: { reason?: string | null } = {},
 ): Promise<FinanceIntakeItemView | null> {
-  const row = requireItem(await loadItem(id), id)
-  const transition = assertIntakeTransition({
-    act,
-    from: row.status as FinanceIntakeStatus,
-    reason: options.reason,
-  })
   const actorMemberId = await requireMemberId(actor)
-  assertTransitionGate(actor, transition, row, actorMemberId)
-
-  if (act === 'post') {
-    throw new FinanceRefusal(
-      'Проводка позиции приёмки в этот слой не входит: она атомарна, требует приложенного ' +
-        'документа и строит кросс-валютные ноги (EARS-505/506) — это задача #385. ' +
-        'Машина статусов знает переход approved → posted, но выполняет его путь проведения.',
-    )
-  }
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const row = await lockItem(tx, id)
+    assertItemVisible(actor, row, actorMemberId)
+
+    const transition = assertIntakeTransition({
+      act,
+      from: row.status as FinanceIntakeStatus,
+      reason: options.reason,
+    })
+    assertTransitionGate(actor, transition, row, actorMemberId)
+
+    if (act === 'post') {
+      throw new FinanceRefusal(
+        'Проводка позиции приёмки в этот слой не входит: она атомарна, требует приложенного ' +
+          'документа и строит кросс-валютные ноги (EARS-505/506) — это задача #385. ' +
+          'Машина статусов знает переход approved → posted, но выполняет его путь проведения.',
+      )
+    }
+
     if (transition.to === null) {
       await tx.delete(financeIntakeItem).where(eq(financeIntakeItem.id, id))
       return null
@@ -617,7 +679,7 @@ export async function listIntakeItems(
   filter: ListIntakeItemsFilter = {},
 ): Promise<FinanceIntakeItemView[]> {
   const conditions = []
-  if (!holdsFlowRole(actor)) {
+  if (!holdsFinanceFlowRole(actor)) {
     conditions.push(eq(financeIntakeItem.createdBy, await requireMemberId(actor)))
   }
   if (filter.status !== undefined && filter.status.length > 0) {
@@ -626,9 +688,15 @@ export async function listIntakeItems(
   if (filter.source !== undefined && filter.source.length > 0) {
     conditions.push(inArray(financeIntakeItem.source, [...filter.source]))
   }
-  const base = getPlatformDb().select().from(financeIntakeItem)
-  const rows = await (conditions.length === 0 ? base : base.where(and(...conditions)))
-  return rows.map(toView).sort((a, b) => a.id - b.id)
+  // Ordered in SQL, not in JS. There is deliberately no LIMIT: paging is the
+  // consuming surface's decision (#386/#389), and inventing one here would give
+  // that surface a silent truncation instead of a contract.
+  const rows = await getPlatformDb()
+    .select()
+    .from(financeIntakeItem)
+    .where(conditions.length === 0 ? undefined : and(...conditions))
+    .orderBy(financeIntakeItem.id)
+  return rows.map(toView)
 }
 
 /** One item, subject to the same visibility rule as the list. */
@@ -636,13 +704,11 @@ export async function getIntakeItem(
   actor: FinanceActor,
   id: number,
 ): Promise<FinanceIntakeItemView | null> {
-  const row = await loadItem(id)
+  const [row] = await getPlatformDb()
+    .select()
+    .from(financeIntakeItem)
+    .where(eq(financeIntakeItem.id, id))
   if (row === undefined) return null
-  if (!holdsFlowRole(actor) && row.createdBy !== (await requireMemberId(actor))) {
-    throw new FinanceAccessRefusal(
-      `Позиция приёмки #${id} не ваша: чужие заявки видят роли ${FINANCE_ENTRY_ROLE} и ` +
-        `${FINANCE_APPROVE_ROLE} (EARS-501/502).`,
-    )
-  }
+  assertItemVisible(actor, row, await requireMemberId(actor))
   return toView(row)
 }

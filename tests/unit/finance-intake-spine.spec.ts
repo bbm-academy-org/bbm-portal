@@ -10,10 +10,13 @@ import {
   isTerminalIntakeStatus,
   listIntakeProducers,
   planIntakeEdit,
-  registerIntakeProducer,
   resolveIntakeProducer,
   resolveIntakeSourceRef,
 } from '@/lib/finance'
+// The registry MUTATOR is module-internal on purpose (see src/lib/finance/index.ts):
+// this suite is the one caller that registers a producer, and it reaches for it
+// where it lives rather than asking for a public hole to do it through.
+import { registerIntakeProducer } from '@/lib/finance/intake/sources'
 import {
   FINANCE_INTAKE_SOURCES,
   FINANCE_INTAKE_STATUSES,

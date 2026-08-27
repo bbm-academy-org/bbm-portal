@@ -175,6 +175,20 @@ export function assertFinanceIntakeAccess(actor: FinanceActor, act: FinanceIntak
 }
 
 /**
+ * Does this actor hold EITHER flow role — the «is this person inside the finance
+ * flow at all» question, as opposed to «may they do this act».
+ *
+ * It lives here, with the rest of «what a role means in this module», rather
+ * than in the handler that needed it first: a second file building a session
+ * shape by hand and calling `hasClaim` twice is how the two answers start to
+ * disagree. Used by the intake list and by the visibility rule in front of it —
+ * a flow-role holder reads every item, everyone else reads their own (EARS-502).
+ */
+export function holdsFinanceFlowRole(actor: FinanceActor): boolean {
+  return FINANCE_FLOW_ROLES.some((role) => holds(actor, role))
+}
+
+/**
  * The spec-201 audit context for a finance write.
  *
  * `source: 'portal'` in every case, because every finance write in F1 comes from

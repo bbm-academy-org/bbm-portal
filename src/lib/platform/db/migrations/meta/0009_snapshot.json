@@ -1,5 +1,5 @@
 {
-  "id": "e8343a84-3f08-4ba0-b733-961c643a9484",
+  "id": "4bb26f72-3ab3-450e-a9af-ae481e699f46",
   "prevId": "0a5c95fd-2df6-42d9-a563-63f4e726d86d",
   "version": "7",
   "dialect": "postgresql",
@@ -703,6 +703,10 @@
         "finance_intake_item_personal_funds_already_paid": {
           "name": "finance_intake_item_personal_funds_already_paid",
           "value": "(not \"core\".\"finance_intake_item\".\"personal_funds\") or \"core\".\"finance_intake_item\".\"already_paid\""
+        },
+        "finance_intake_item_personal_funds_member": {
+          "name": "finance_intake_item_personal_funds_member",
+          "value": "(not \"core\".\"finance_intake_item\".\"personal_funds\") or (\"core\".\"finance_intake_item\".\"member_id\" is not null)"
         },
         "finance_intake_item_paid_pair": {
           "name": "finance_intake_item_paid_pair",

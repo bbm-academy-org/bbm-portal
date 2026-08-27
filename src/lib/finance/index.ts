@@ -123,10 +123,15 @@ export type {
   FinanceIntakeItemView,
   ListIntakeItemsFilter,
 } from './intake/items'
+// `registerIntakeProducer` is deliberately NOT re-exported. Registration is a
+// LOAD-TIME act inside the module (`./intake/sources` registers the four sources
+// spec 339 fixes), and the registry is a module-global `Map` keyed by source: a
+// mutator crossing the module boundary would let any caller silently redefine
+// `manual` at runtime. A future producer is registered from inside
+// `src/lib/finance`, the way these four are.
 export {
   backfillSourceRef,
   listIntakeProducers,
-  registerIntakeProducer,
   resolveIntakeProducer,
   resolveIntakeSourceRef,
 } from './intake/sources'

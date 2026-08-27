@@ -334,11 +334,12 @@ describe('The status machine over real rows (EARS-524)', () => {
 
     const stranger = { email: 'oracle@bbm.academy', roles: ['platform-user'] }
     await seedMember(stranger.email, 'Oracle Probe')
-    const refusal = await transitionIntakeItem(stranger, item.id, 'cancel').catch(
-      (error: unknown) => error as Error,
+    const refusal: unknown = await transitionIntakeItem(stranger, item.id, 'cancel').then(
+      () => null,
+      (error: unknown) => error,
     )
     expect(refusal).toBeInstanceOf(FinanceAccessRefusal)
-    expect(refusal.message).not.toContain('approved')
+    expect((refusal as Error).message).not.toContain('approved')
   })
 
   it('EARS-524: approving and refusing demand finance-approve, and a refusal demands its reason', async () => {
