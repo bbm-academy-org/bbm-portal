@@ -106,15 +106,24 @@
 // how every pre-commit edit behaves here — but it is why the hook was NOT
 // force-installed while this branch is open.
 //
-// The two planes differ in exactly one rule, deliberately — see `evaluateStaged`:
-// a module NO test cites is silent in CI (that is `test-presence`'s finding) and
-// REJECTED at pre-commit, where no test-presence counterpart runs and forcing the
-// tests-only commit is the whole point.
+// WHAT THE STAGED PLANE BLOCKS ON, and why it is only that: a MIXED commit — a
+// new module staged together with a staged test citing it, the literal #354
+// shape and the #355 retro mandate's literal wording. A new module that NO test
+// cites is an ADVISORY at exit 0, not a rejection. Round-2 review of PR #394
+// measured why: rejecting on «no citation found» runs the `needlesFor` substring
+// matcher in the REJECTING direction, where every miss is a false BLOCK, and 41
+// of 78 platform files on `main` (53%) carry no name-citing test — barrels are
+// structurally uncitable, and route layouts and Drizzle tables are not imported
+// by path. See `evaluateStaged` for the full reasoning.
 //
 // TWO SEVERITIES, and the split is the design rather than a compromise. The
-// staged plane's input is the local tree and index through git plumbing — no
-// network, no PR metadata — so it is genuinely §3 class-1 deterministic and
-// BLOCKS from day one. The CI plane is WARN v1 by the §3 DEFAULT, settled
+// staged plane reads only the local tree and index through git plumbing — no
+// network, no PR metadata — and its ONE blocking rule (mixed) has a false-BLOCK
+// class that is empty by construction, because a miss of the matcher there lets
+// a commit through rather than stopping one. Those together are §3 class 1, so
+// it BLOCKS from day one. Note what the class-1 claim rests on: not «git is
+// deterministic» — a heuristic run in the rejecting direction would fail clause
+// three however local its input is, which is exactly what round-2 review caught. The CI plane is WARN v1 by the §3 DEFAULT, settled
 // 2026-08-27, with promotion to BLOCK per §4 no earlier than 2026-09-24: it
 // reads PR metadata over the network and matches with a substring, so it has a
 // real false-positive class and soaks like anything else that does. The
@@ -291,29 +300,46 @@ export function findOrderViolations(commits) {
 // ── The pre-commit plane (`--staged`) ────────────────────────────────────────
 
 /**
- * The staged verdict. Pure seam: no git, no IO.
+ * The staged verdict, in two buckets: what BLOCKS and what merely advises.
+ * Pure seam: no git, no IO.
  *
- * One rule differs from the PR plane ON PURPOSE. In CI a module NO test cites is
- * silent, because `test-presence` owns that question and two guards reporting it
- * would be two findings for one violation. At commit time `test-presence` is not
- * running at all, and the point of the hook is to force the tests-only commit —
- * so "no test anywhere" is a rejection here.
+ * ── Why only MIXED blocks (round-2 review of PR #394) ────────────────────────
+ * This plane once rejected a new module NO test cites. That rule ran the
+ * `needlesFor` substring matcher in the REJECTING direction, which inverts its
+ * error mode: on the CI plane a missed citation is a false PASS, here it was a
+ * false BLOCK. The class was measured against `main` and is large — 41 of 78
+ * platform files (53%) are not name-cited by any test. A barrel is
+ * STRUCTURALLY uncitable (a test importing `@/lib/hours` never contains the
+ * string `lib/hours/index`); a route-group `layout.tsx` and a Drizzle table are
+ * not imported by path either. None of them is a TDD violation, and a gate whose
+ * correct-usage answer is «reach for `--no-verify`» is precisely the dead end §3
+ * clause 3(d) forbids.
+ *
+ * MIXED — a new module staged together with a staged test citing it — inverts
+ * back: a miss of the matcher lets a commit through (a false PASS the CI plane
+ * still catches), and it can never wrongly stop one. THAT is a false-BLOCK class
+ * empty by construction, so this plane keeps its day-1 BLOCK under §3 class 1.
+ * It is also the #355 retro mandate word for word: «rejecting a single commit
+ * that introduces a NEW module's implementation and its tests together».
+ *
+ * The uncited-module case survives as an ADVISORY at exit 0 — it is real
+ * information, just not a verdict this matcher is entitled to enforce.
  *
  * A test already in HEAD discharges the obligation even if one is also staged:
  * the RED commit happened, and what is staged now is the implementation plus
  * whatever that test grew into.
  *
  * @param {{path: string, headTests: string[], indexTests: string[]}[]} modules
- * @returns {{path: string, kind: 'no-test'|'mixed', tests: string[]}[]}
+ * @returns {{mixed: {path: string, tests: string[]}[], advisory: {path: string}[]}}
  */
 export function evaluateStaged(modules) {
-  return modules
-    .filter((m) => m.headTests.length === 0)
-    .map((m) => ({
-      path: m.path,
-      kind: m.indexTests.length > 0 ? 'mixed' : 'no-test',
-      tests: m.indexTests,
-    }))
+  const pending = modules.filter((m) => m.headTests.length === 0)
+  return {
+    mixed: pending
+      .filter((m) => m.indexTests.length > 0)
+      .map((m) => ({ path: m.path, tests: m.indexTests })),
+    advisory: pending.filter((m) => m.indexTests.length === 0).map((m) => ({ path: m.path })),
+  }
 }
 
 /** `git` in `root`, stdout or null. Never throws: a git that cannot answer is a skip. */
@@ -381,22 +407,35 @@ function runStaged(out, root) {
     }
   })
 
-  const findings = evaluateStaged(modules)
-  if (findings.length === 0) {
-    out.ok(
-      `PASS — ${newModules.length} new platform module(s) staged, each already covered by a test in HEAD.`,
+  const { mixed, advisory } = evaluateStaged(modules)
+
+  // ADVISORY, never a verdict: printed on stdout and does not affect the exit
+  // code. The substring matcher is not entitled to reject in this direction —
+  // see `evaluateStaged` — but the developer is still better off knowing, and
+  // the CI plane can judge the order once there is a commit graph to read.
+  for (const a of advisory) {
+    out.info(
+      `advisory  ${a.path}  is new and no test in HEAD or the index names it. If it holds ` +
+        'behaviour, commit the failing test first and the module on top of it; a barrel, a ' +
+        'route layout or a schema table legitimately has no name-citing test and needs nothing. ' +
+        'Not blocked here — CI tdd-order judges the real commit order on the PR.',
     )
   }
 
-  for (const f of findings) {
+  if (mixed.length === 0) {
+    out.ok(
+      `PASS — ${newModules.length} new platform module(s) staged, none of them together with its own test` +
+        (advisory.length ? ` (${advisory.length} advisory note(s) above).` : '.'),
+    )
+  }
+
+  for (const m of mixed) {
     out.finding(
-      f.kind === 'mixed'
-        ? `mixed commit   ${f.path}  is staged together with its test (${f.tests.join(', ')})`
-        : `no test        ${f.path}  is new, and no test in HEAD or in the index references it`,
+      `mixed commit   ${m.path}  is staged together with its test (${m.tests.join(', ')})`,
     )
   }
   out.fail(
-    `${findings.length} new platform module(s) staged without a committed failing test. ` +
+    `${mixed.length} new platform module(s) staged together with their own tests. ` +
       'task-cycle stage 3: commit the failing test first, then the implementation on top of it — ' +
       'two commits, in that order, so the RED run is a real artifact rather than a claim. ' +
       'Unstage the module (`git restore --staged <file>`), commit the test alone, then commit ' +
