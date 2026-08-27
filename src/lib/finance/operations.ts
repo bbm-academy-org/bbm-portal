@@ -21,7 +21,7 @@ import type { FinanceOperationSource } from '@/lib/platform/db/schema/finance/fi
 import { financePosting } from '@/lib/platform/db/schema/finance/finance-posting'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
-import { assertFinanceWriteAccess, financeAuditContext, type FinanceActor } from './core/actor'
+import { assertFinanceLedgerAccess, financeAuditContext, type FinanceActor } from './core/actor'
 import { FinanceRefusal } from './core/errors'
 import {
   assertBalancedPerCurrency,
@@ -127,7 +127,7 @@ export async function recordOperation(
   actor: FinanceActor,
   input: RecordOperationInput,
 ): Promise<RecordedOperation> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceLedgerAccess(actor)
   const parsed = parseRecordOperationInput(input)
   if (parsed.source === 'reversal') {
     throw new FinanceRefusal(
@@ -171,7 +171,7 @@ export async function reverseOperation(
   operationId: number,
   options: { occurredOn?: string } = {},
 ): Promise<RecordedOperation> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceLedgerAccess(actor)
   if (options.occurredOn !== undefined && !ISO_DATE.test(options.occurredOn)) {
     throw new FinanceRefusal(
       `Дата сторно «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД.`,

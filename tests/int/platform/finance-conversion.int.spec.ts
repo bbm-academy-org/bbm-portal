@@ -6,8 +6,10 @@ import {
   accountBalances,
   createAccount,
   createCurrency,
+  FinanceAccessRefusal,
   FinanceRefusal,
   listAccounts,
+  listRegister,
   recordConversion,
   recordOperation,
   reverseOperation,
@@ -15,7 +17,7 @@ import {
 } from '@/lib/finance'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
-import { ADMIN, fundProjectId, truncateFinanceTables } from './finance-helpers'
+import { ADMIN, APPROVER, fundProjectId, truncateFinanceTables } from './finance-helpers'
 
 /**
  * Conversions, frozen rates and realized FX (spec 338 EARS-318/319/328/329;
@@ -69,7 +71,7 @@ async function buyUsdt(
   rate: string,
   occurredOn = '2026-01-10',
 ) {
-  return recordConversion(ADMIN, {
+  return recordConversion(APPROVER, {
     occurredOn,
     sourceAccountId: wallets.thb.id,
     targetAccountId: wallets.usdt.id,
@@ -93,7 +95,7 @@ async function sellUsdt(
   rate: string,
   occurredOn = '2026-03-10',
 ) {
-  return recordConversion(ADMIN, {
+  return recordConversion(APPROVER, {
     occurredOn,
     sourceAccountId: wallets.usdt.id,
     targetAccountId: wallets.thb.id,
@@ -119,6 +121,30 @@ async function fxResultOf(operationId: number, currency: string): Promise<bigint
   `)
   return BigInt((result.rows[0] as { total: string }).total)
 }
+
+describe('the conversion door is a ledger door (EARS-501, EARS-529)', () => {
+  it('EARS-501: refuses a conversion from a session without `finance-approve` — the third ledger door is gated like the other two', async () => {
+    const wallets = await seedWallets()
+    const draft = {
+      occurredOn: '2026-01-10',
+      sourceAccountId: wallets.thb.id,
+      targetAccountId: wallets.usdt.id,
+      steps: [
+        {
+          fromCurrency: 'THB',
+          toCurrency: 'USDT',
+          fromAmount: 3_500_000n,
+          toAmount: 1_000_000_000n,
+          rate: '35',
+        },
+      ],
+    }
+    // `ADMIN` holds `platform-admin` and no flow role: EARS-529 in its own right,
+    // and the assertion that keeps `assertFinanceLedgerAccess` in this function.
+    await expect(recordConversion(ADMIN, draft)).rejects.toBeInstanceOf(FinanceAccessRefusal)
+    expect(await listRegister()).toHaveLength(0)
+  })
+})
 
 describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)', () => {
   it('EARS-318: records the chain as one operation, its steps as rows, and balances every currency through the conversion account', async () => {
@@ -156,7 +182,7 @@ describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)',
 
   it("EARS-318: a step's fee is its own posting, charged against the money account it left", async () => {
     const wallets = await seedWallets()
-    await recordConversion(ADMIN, {
+    await recordConversion(APPROVER, {
       occurredOn: '2026-01-10',
       sourceAccountId: wallets.thb.id,
       targetAccountId: wallets.usdt.id,
@@ -195,7 +221,7 @@ describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)',
       { sourceAccountId: wallets.thb.id, targetAccountId: conversion.id },
     ]) {
       await expect(
-        recordConversion(ADMIN, {
+        recordConversion(APPROVER, {
           occurredOn: '2026-01-10',
           ...ends,
           steps: [
@@ -215,7 +241,7 @@ describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)',
   it('EARS-318: refuses a chain whose steps do not carry the amount through, before the generic balance check', async () => {
     const wallets = await seedWallets()
     await expect(
-      recordConversion(ADMIN, {
+      recordConversion(APPROVER, {
         occurredOn: '2026-01-10',
         sourceAccountId: wallets.thb.id,
         targetAccountId: wallets.rub.id,
@@ -261,7 +287,7 @@ describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)',
   it('EARS-319: refuses a rate that is not a positive decimal literal, before anything is written', async () => {
     const wallets = await seedWallets()
     await expect(
-      recordConversion(ADMIN, {
+      recordConversion(APPROVER, {
         occurredOn: '2026-01-10',
         sourceAccountId: wallets.thb.id,
         targetAccountId: wallets.usdt.id,
@@ -287,7 +313,7 @@ describe('a conversion is reversible like any other operation (EARS-314, EARS-31
   it('EARS-314/319: a conversion is reversible, and its сторно names the SAME conversion steps', async () => {
     const wallets = await seedWallets()
     // Two steps: 35 000.00 THB → 1 000.000000 USDT → 90 000.00 RUB.
-    const original = await recordConversion(ADMIN, {
+    const original = await recordConversion(APPROVER, {
       occurredOn: '2026-01-10',
       sourceAccountId: wallets.thb.id,
       targetAccountId: wallets.rub.id,
@@ -309,7 +335,7 @@ describe('a conversion is reversible like any other operation (EARS-314, EARS-31
       ],
     })
 
-    const reversal = await reverseOperation(ADMIN, original.id)
+    const reversal = await reverseOperation(APPROVER, original.id)
     expect(reversal.reverses).toBe(original.id)
 
     // The сторно names the SAME steps — a conversion and its reversal are one
@@ -352,7 +378,7 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     await buyUsdt(wallets, 4_000_000n, 1_000_000_000n, '40', '2026-02-10')
 
     // Dispose of 1 000 USDT at 38 THB → proceeds 38 000, basis 35 000, gain 3 000.00 THB.
-    const disposal = await recordConversion(ADMIN, {
+    const disposal = await recordConversion(APPROVER, {
       occurredOn: '2026-03-10',
       sourceAccountId: wallets.usdt.id,
       targetAccountId: wallets.thb.id,
@@ -395,7 +421,7 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
   it('EARS-328: a disposal below the average records a LOSS on the same account', async () => {
     const wallets = await seedWallets()
     await buyUsdt(wallets, 4_000_000n, 1_000_000_000n, '40', '2026-01-10')
-    const disposal = await recordConversion(ADMIN, {
+    const disposal = await recordConversion(APPROVER, {
       occurredOn: '2026-03-10',
       sourceAccountId: wallets.usdt.id,
       targetAccountId: wallets.thb.id,
@@ -472,7 +498,7 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     // an operation and its сторно do not «sum to zero in every cut» (EARS-314),
     // and the FX average is a cut.
     const wrong = await buyUsdt(wallets, 100_000n, 10_000_000n, '100', '2026-01-10')
-    await reverseOperation(ADMIN, wrong.id)
+    await reverseOperation(APPROVER, wrong.id)
     await buyUsdt(wallets, 200_000n, 10_000_000n, '200', '2026-01-11')
 
     const sale = await sellUsdt(wallets, 10_000_000n, 250_000n, '250', '2026-02-10')
@@ -488,7 +514,7 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     // A plain payment in one currency — a transfer, not an exchange.
     const fund = await fundProjectId()
     const expense = await systemAccount(ADMIN, 'expense', 'THB')
-    const payment = await recordOperation(ADMIN, {
+    const payment = await recordOperation(APPROVER, {
       occurredOn: '2026-04-01',
       source: 'manual',
       postings: [
@@ -508,7 +534,7 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
   it('EARS-329: recordConversion refuses an operation with no steps, naming the door that does take one', async () => {
     const wallets = await seedWallets()
     await expect(
-      recordConversion(ADMIN, {
+      recordConversion(APPROVER, {
         occurredOn: '2026-04-01',
         sourceAccountId: wallets.thb.id,
         targetAccountId: wallets.usdt.id,

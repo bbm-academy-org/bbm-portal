@@ -120,3 +120,9 @@ export type {
   PublicationMessage,
   PublicationStatus,
 } from './types'
+
+// The module's workspace declaration (spec 311 EARS-401): what the `/p` launcher
+// and the app switcher show for this app. Exported from the module's public API,
+// per ADR-002 §3, and registered in `src/lib/workspace/registry.ts` — EARS-403's
+// test fails by name if it ever is not.
+export { hoursStatusLine, hoursWorkspaceEntry, openUntilLabel } from './workspace'

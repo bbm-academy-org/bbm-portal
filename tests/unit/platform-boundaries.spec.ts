@@ -143,6 +143,38 @@ describe('the UI kit boundary (spec 311 EARS-458, consolidation §10)', () => {
   })
 })
 
+describe('the workspace registry boundary (spec 311 EARS-456/EARS-457, D-3)', () => {
+  it('EARS-456: FAILS when a module imports the composition root', () => {
+    const { code, output } = cruiseFixture('module-imports-workspace-registry')
+    expect(output).toContain('module-must-not-import-workspace-registry')
+    // The barrel is named in the to-set as well as registry.ts — otherwise the
+    // rule is one import specifier away from meaning nothing.
+    expect(output).toContain('modules/okr/workspace.ts')
+    expect(code).not.toBe(0)
+  })
+
+  it('EARS-456: allows a module the contract, and the route group the registry', () => {
+    const { code, output } = cruiseFixture('module-imports-workspace-contract')
+    expect(output).not.toContain('module-must-not-import-workspace-registry')
+    expect(output).not.toContain('workspace-registry-is-not-importable-outside-the-frame')
+    expect(code).toBe(0)
+  })
+
+  it('EARS-457: FAILS when anything outside the frame imports the registry', () => {
+    // The CMS side is the caller EARS-457 catches that EARS-456 does not: it is
+    // no module, so the module rule's from-set never sees it.
+    const { code, output } = cruiseFixture('cms-imports-workspace-registry')
+    expect(output).toContain('workspace-registry-is-not-importable-outside-the-frame')
+    expect(output).not.toContain('module-must-not-import-workspace-registry')
+    expect(code).not.toBe(0)
+  })
+
+  it('EARS-457: reports a module reaching for the registry under BOTH rules', () => {
+    const { output } = cruiseFixture('module-imports-workspace-registry')
+    expect(output).toContain('workspace-registry-is-not-importable-outside-the-frame')
+  })
+})
+
 describe('the real tree', () => {
   it('is clean under the same rules (this is `pnpm boundaries`)', () => {
     const res = spawnSync(

@@ -4,17 +4,22 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { FINANCE_APPROVE_ROLE, FINANCE_ENTRY_ROLE } from '@/lib/finance'
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 /**
- * `infra/dev-stand/idp/provision.sh` — the seeded project roles (spec 311 §B).
+ * `infra/dev-stand/idp/provision.sh` — the seeded project roles (spec 311 §B,
+ * spec 339 §A).
  *
  * EARS-414: the workspace is gated by exactly TWO starting Zitadel project
- * roles. The gate in `src/lib/platform/authGate.ts` and the roles the IdP
- * actually carries are two ends of one contract, and the failure mode when they
- * drift is silent: a role the app checks but the IdP never issues locks every
- * member out with a bare 403 that looks exactly like a correct refusal. The
- * spelling is therefore imported from the gate, not retyped here.
+ * roles. EARS-501 adds the two finance FLOW roles on top — a separate keyspace
+ * with a separate owner (`src/lib/finance/core/actor.ts`), because
+ * `platform-admin` no longer implies a ledger write (EARS-529) and the flow
+ * roles imply nothing at all. The gates and the roles the IdP actually carries
+ * are two ends of one contract, and the failure mode when they drift is silent:
+ * a role the app checks but the IdP never issues locks every holder out with a
+ * bare 403 that looks exactly like a correct refusal. Every spelling is
+ * therefore imported from the module that owns it, not retyped here.
  *
  * The script is driven through its own `--print-seed-roles` path — the set is
  * generated with no IdP, no PAT and no mutation, the same seam #93 built for
@@ -41,9 +46,20 @@ function printSeedRoles(env: Record<string, string> = {}): string[] {
   return res.stdout.trim().split('\n')
 }
 
-describe.skipIf(!hasBash)('provision.sh — seeded project roles (EARS-414)', () => {
-  it('seeds exactly the two starting roles the gate checks', () => {
-    expect(printSeedRoles()).toEqual([PLATFORM_USER_ROLE, PLATFORM_ADMIN_ROLE])
+describe.skipIf(!hasBash)('provision.sh — seeded project roles (EARS-414, EARS-501)', () => {
+  it('seeds exactly the two starting roles and the two finance flow roles', () => {
+    expect(printSeedRoles()).toEqual([
+      PLATFORM_USER_ROLE,
+      PLATFORM_ADMIN_ROLE,
+      FINANCE_ENTRY_ROLE,
+      FINANCE_APPROVE_ROLE,
+    ])
+  })
+
+  it('EARS-501: seeds both flow roles — a role the module checks and the IdP never issues is a silent lock-out', () => {
+    const seeded = printSeedRoles()
+    expect(seeded).toContain(FINANCE_ENTRY_ROLE)
+    expect(seeded).toContain(FINANCE_APPROVE_ROLE)
   })
 
   it('no longer seeds the retired `portal_admin` placeholder', () => {
@@ -86,11 +102,18 @@ function printSeedUsers(env: Record<string, string> = {}): string[] {
 }
 
 describe.skipIf(!hasBash)('provision.sh — seeded users (EARS-417, EARS-418)', () => {
-  it('seeds an admin account holding both roles and a member-only account', () => {
+  it('seeds an admin account holding every seeded role and a member-only account', () => {
     expect(printSeedUsers()).toEqual([
-      `bbm-test\t${PLATFORM_USER_ROLE},${PLATFORM_ADMIN_ROLE}`,
+      `bbm-test\t${PLATFORM_USER_ROLE},${PLATFORM_ADMIN_ROLE},${FINANCE_ENTRY_ROLE},${FINANCE_APPROVE_ROLE}`,
       `bbm-member\t${PLATFORM_USER_ROLE}`,
     ])
+  })
+
+  it('EARS-502: the member account holds NEITHER flow role — that is the account the carve-out is proved on', () => {
+    const memberRow = printSeedUsers().find((row) => row.startsWith('bbm-member\t'))
+    expect(memberRow).toBeDefined()
+    expect(memberRow).not.toContain(FINANCE_ENTRY_ROLE)
+    expect(memberRow).not.toContain(FINANCE_APPROVE_ROLE)
   })
 
   it('never grants `platform-admin` to the member account — that is its whole point', () => {

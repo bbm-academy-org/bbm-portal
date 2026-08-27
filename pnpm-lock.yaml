@@ -79,9 +79,6 @@ importers:
       tailwind-merge:
         specifier: 3.6.0
         version: 3.6.0
-      tw-animate-css:
-        specifier: 1.4.0
-        version: 1.4.0
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -146,6 +143,9 @@ importers:
       tsx:
         specifier: 4.23.12
         version: 4.23.12
+      tw-animate-css:
+        specifier: 1.4.0
+        version: 1.4.0
       typescript:
         specifier: 5.9.3
         version: 5.9.3
