@@ -369,6 +369,22 @@ describe('tdd-order (spawned)', () => {
     expect(res.stderr).toContain('big1')
   })
 
+  // REGRESSION (round-2 review, non-blocking finding): `findOrderViolations`
+  // skips merges, but `main()` was still READING them first — so a merge of
+  // `origin/main` carrying more than 300 files hit the paging cap and failed
+  // closed on a commit whose contents the guard then discarded anyway. The
+  // fixture proves the read no longer happens: the merge entry carries
+  // `parents: 2` and has NO `commit-<sha>.json` detail file at all, so any
+  // attempt to read it fails.
+  it('never reads a merge commit — skipped before the paging path, not after', () => {
+    const res = runGuard('tdd-order-lint.mjs', caseDir('tdd-order', 'merge-unreadable'), {
+      env: env('merge-unreadable'),
+    })
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('PASS')
+    expect(res.stderr).not.toContain('could not fetch')
+  })
+
   it('exits 1 when the PR commit list cannot be read — fail closed', () => {
     const res = runGuard('tdd-order-lint.mjs', caseDir('tdd-order', 'test-first'), {
       env: { ...env('test-first'), PR_NUMBER: '404' },

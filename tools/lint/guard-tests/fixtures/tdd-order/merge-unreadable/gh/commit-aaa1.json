@@ -1,0 +1,15 @@
+{
+  "sha": "aaa1",
+  "parents": [
+    {
+      "sha": "mrg9"
+    }
+  ],
+  "files": [
+    {
+      "filename": "docs/notes.md",
+      "status": "added",
+      "patch": "@@ -0,0 +1,1 @@\n+prose"
+    }
+  ]
+}
