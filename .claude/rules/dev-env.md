@@ -25,7 +25,8 @@
   [`infra/dev-stand/idp/bootstrap.md`](../../infra/dev-stand/idp/bootstrap.md)
   §6, "Widening the range — the whole checklist". The set counts are not
   duplicated here: their canon is the table in that same §6.
-- **The workspace roles** `platform-user` / `platform-admin` are seeded by the
+- **The workspace roles** `platform-user` / `platform-admin` — and, since #380,
+  the finance flow roles `finance-entry` / `finance-approve` — are seeded by the
   same script and granted to the dev test user by it (steps 2 and 8). Printing
   the set without talking to the IdP: `--print-seed-roles`. What has to be true
   for a member to actually get in — the role, the role assertion and the

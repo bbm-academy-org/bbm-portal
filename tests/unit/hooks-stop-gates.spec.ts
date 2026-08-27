@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  BUDGET_KEY as COMPLETION_REPORT_BUDGET_KEY,
   decideBlock as decideCompletionBlock,
   extractLastAssistantText,
   hasEyesOrNoVisualChange,
@@ -8,16 +9,25 @@ import {
   isCompletionReport,
   isEnforceableTerminalReport,
   hasExplicitInterimMarker,
+  hasOwnerQuestionMarker,
   isInterimStatus,
   isOwnerQuestionForm,
   isTerminalReport,
 } from '../../tools/hooks/completion-report-gate.mjs'
 import {
+  BUDGET_KEY as DEVIATIONS_BUDGET_KEY,
   decideBlock as decideDeviationsBlock,
   detectHaltSignal,
   hasDeviationsLine,
   hasNoDeviationsValue,
 } from '../../tools/hooks/deviations-gate.mjs'
+import {
+  applyBlockBudget,
+  blockBudgetStatePath,
+  budgetDemotedMessage,
+  hasSpentBlockBudget,
+  recordBlockBudgetSpend,
+} from '../../tools/hooks/shared.mjs'
 import { decideWarn } from '../../tools/hooks/surface-decision-debt-gate.mjs'
 
 /**
@@ -212,7 +222,14 @@ describe('#374: the declared owner-question form is not a terminal report', () =
     }
   })
 
-  it('a standalone question header without beats is not the declared form either', () => {
+  // REVERSED by #392, deliberately. PR #375 pinned the NUMBERED header as a
+  // non-form because round 1 had recognized «Вопрос N из M» and «Вопрос
+  // владельцу» through one branch, and the PLURAL «Вопросы владельцу» — point 5
+  // of the mandatory stage-6 shape — collided with it. Only the plural was the
+  // hole: «Вопрос 3 из 8» has no collision with any heading a real report
+  // carries, so #392 restores it as a declared marker (see the #392 describe
+  // block below). The plural stays pinned as a non-marker in both directions.
+  it('a standalone numbered question header is a declared marker (#392)', () => {
     const headerOnly = [
       'Вопрос 3 из 8 — кто платит за внешний сервис',
       'PR #352 смержен, issue #338 закрыт, ledger лежит в базе.',
@@ -220,8 +237,8 @@ describe('#374: the declared owner-question form is not a terminal report', () =
       'Работа ждёт ответа.',
       'Ничего больше не начинаю.',
     ].join('\n')
-    expect(isOwnerQuestionForm(headerOnly)).toBe(false)
-    expect(isTerminalReport(headerOnly)).toBe(true)
+    expect(isOwnerQuestionForm(headerOnly)).toBe(true)
+    expect(isTerminalReport(headerOnly)).toBe(false)
   })
 
   it('one lone beat label does NOT exempt a real completion report', () => {
@@ -303,6 +320,286 @@ describe('#374: the declared owner-question form is not a terminal report', () =
     ).toEqual({ block: true })
     expect(isOwnerQuestionForm('')).toBe(false)
     expect(isOwnerQuestionForm(null)).toBe(false)
+  })
+})
+
+/**
+ * #392, incident 2026-08-27 — the owner's SECOND complaint, one day after the
+ * #374 fix shipped. A free-form binary decision request about PR #354 was
+ * blocked by both BLOCK gates and re-sent: it was written as free sections
+ * («Что происходит», «Почему мерж не происходит сам», «Что нужно от тебя»),
+ * carried zero beat labels, and tripped `COMPLETION_VERB_RE` on «Осталось
+ * только смержить» plus `REF_RE` on `PR #354` while being far longer than the
+ * `isDecisionRequest` four-line cap.
+ *
+ * The message DID already carry the literal line «Вопрос владельцу: …». So the
+ * fix is the same philosophy once more: read the DECLARED marker.
+ */
+describe('#392: the declared owner-question MARKER line', () => {
+  /** The shape from the owner's 2026-08-27 screenshot. */
+  const FREE_FORM_QUESTION = [
+    'Что происходит',
+    '',
+    'Пункт 2 итогового чеклиста (порядок TDD) по PR #354 не сходится: тесты',
+    'легли одним коммитом вместе с реализацией, а не до неё.',
+    '',
+    'Почему мерж не происходит сам',
+    '',
+    'Осталось только смержить, но чеклист не пускает — пункт помечен как',
+    'нарушенный, и снять его может только твоё решение.',
+    '',
+    'Что нужно от тебя',
+    '',
+    'Вопрос владельцу: списываешь пункт 2 (TDD-порядок) по PR #354?',
+    '',
+    'Решение одно, бинарное: списываем и мержим — или переделываем историю',
+    'коммитов.',
+  ].join('\n')
+
+  it('the 2026-08-27 incident message is not terminal and passes all three gates', () => {
+    // Preconditions of the incident: the heuristics genuinely fire, the short-
+    // question exemption cannot apply, and there are no beat labels at all.
+    expect(FREE_FORM_QUESTION.split('\n').filter((l) => l.trim()).length).toBeGreaterThan(4)
+    expect(isCompletionReport(FREE_FORM_QUESTION)).toBe(true)
+    expect(hasExplicitInterimMarker(FREE_FORM_QUESTION)).toBe(false)
+
+    expect(hasOwnerQuestionMarker(FREE_FORM_QUESTION)).toBe(true)
+    expect(isOwnerQuestionForm(FREE_FORM_QUESTION)).toBe(true)
+    expect(isTerminalReport(FREE_FORM_QUESTION)).toBe(false)
+    expect(
+      decideCompletionBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: FREE_FORM_QUESTION,
+      }),
+    ).toEqual({ block: false })
+    expect(
+      decideDeviationsBlock({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: FREE_FORM_QUESTION,
+      }),
+    ).toEqual({ block: false })
+    expect(
+      decideWarn({
+        stopHookActive: false,
+        writeActionSeen: true,
+        lastAssistantText: FREE_FORM_QUESTION,
+      }),
+    ).toEqual({ warn: false })
+  })
+
+  it('the singular «Вопрос владельцу:» marker is recognized with emphasis and hashes', () => {
+    expect(hasOwnerQuestionMarker('Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('**Вопрос владельцу:** списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('**Вопрос владельцу**: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('## Вопрос владельцу: списываем пункт 2?')).toBe(true)
+  })
+
+  it('the numbered «Вопрос N из M» header is recognized with or without a tail', () => {
+    // The em-dash tail is the shape the 2026-08-26 incident message itself used.
+    expect(hasOwnerQuestionMarker('Вопрос 2 из 8 — доступ к записям')).toBe(true)
+    expect(hasOwnerQuestionMarker('Вопрос 2 из 8 - доступ к записям')).toBe(true)
+    expect(hasOwnerQuestionMarker('Вопрос 2 из 8: доступ к записям')).toBe(true)
+    expect(hasOwnerQuestionMarker('Вопрос 2 из 8')).toBe(true)
+    expect(hasOwnerQuestionMarker('**Вопрос 2 из 8**')).toBe(true)
+    expect(hasOwnerQuestionMarker('Отчёт готов.\n### Вопрос 12 из 12')).toBe(true)
+  })
+
+  // Review of PR #393: a free-prose owner question written inside a bulleted
+  // «Что нужно от тебя» section is exactly the incident genre, and a bullet or a
+  // blockquote prefix defeated the marker. Both are stripped now, on the same
+  // «the prefix carries no meaning here» principle as the heading hashes.
+  it('a list bullet or a blockquote before the marker is tolerated', () => {
+    expect(hasOwnerQuestionMarker('- Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('* Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('+ Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('  - **Вопрос владельцу:** списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('> Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('> - Вопрос 4 из 9 — оплата')).toBe(true)
+    // …and the plural still leaks through none of the new prefixes.
+    for (const prefix of ['- ', '* ', '> ', '  - ']) {
+      expect(hasOwnerQuestionMarker(`${prefix}Вопросы владельцу:`)).toBe(false)
+      expect(hasOwnerQuestionMarker(`${prefix}**Вопросы владельцу**`)).toBe(false)
+    }
+  })
+
+  // The asymmetry is deliberate and documented in
+  // `.claude/skills/report-task-outcome/SKILL.md`: the colon is what the skill
+  // prescribes for the singular line, and a bare «Вопрос владельцу» without it
+  // is one inflection away from the plural report heading.
+  it('the singular marker requires its colon', () => {
+    expect(hasOwnerQuestionMarker('Вопрос владельцу — списываем пункт 2?')).toBe(false)
+    expect(hasOwnerQuestionMarker('Вопрос владельцу')).toBe(false)
+    expect(hasOwnerQuestionMarker('Вопрос к владельцу: списываем?')).toBe(false)
+    expect(hasOwnerQuestionMarker('Вопрос-владельцу: списываем?')).toBe(false)
+  })
+
+  // THE BLOCKER OF THE PR #375 ROUND-1 REVIEW, pinned in both directions: the
+  // PLURAL «Вопросы владельцу» is point 5 of the canonical stage-6 report, so
+  // recognizing it would exempt the CORRECTLY formed final report from all
+  // three gates. Only the singular + colon and the numbered header are markers.
+  it('the PLURAL «Вопросы владельцу» heading is NOT a marker, in any form', () => {
+    const heading = 'PR #92 смержен, issue #91 закрыт. 100% от заявленного объёма.'
+    for (const title of ['## Вопросы владельцу', '**Вопросы владельцу**', 'Вопросы владельцу:']) {
+      expect(hasOwnerQuestionMarker(title)).toBe(false)
+      const report = `${title}\n${heading}`
+      expect(hasOwnerQuestionMarker(report)).toBe(false)
+      expect(isOwnerQuestionForm(report)).toBe(false)
+      expect(isTerminalReport(report)).toBe(true)
+      expect(
+        decideCompletionBlock({
+          stopHookActive: false,
+          writeActionSeen: true,
+          lastAssistantText: report,
+        }),
+      ).toEqual({ block: true })
+    }
+  })
+
+  it('a mid-sentence «вопрос владельцу» does not exempt a report', () => {
+    const report = [
+      'Готово: PR #92 смержен, issue #91 закрыт.',
+      'Остался один вопрос владельцу про порог dispatch-гарда, задам отдельно.',
+      '100% от заявленного объёма.',
+    ].join('\n')
+    expect(hasOwnerQuestionMarker(report)).toBe(false)
+    expect(isTerminalReport(report)).toBe(true)
+  })
+
+  it('the marker branch does not disturb the beats branch', () => {
+    expect(hasOwnerQuestionMarker('Что случилось: X.\nПочему спрашиваю: Y.')).toBe(false)
+    expect(isOwnerQuestionForm('Что случилось: X.\nПочему спрашиваю: Y.')).toBe(true)
+    expect(hasOwnerQuestionMarker('')).toBe(false)
+    expect(hasOwnerQuestionMarker(null)).toBe(false)
+  })
+})
+
+/**
+ * #392, mechanism 2 — the block budget. Heuristic recognition of free prose is
+ * whack-a-mole (#158 → #299 → #374 → #392); the budget bounds the cost of being
+ * wrong without demoting the gates to WARN outright. Each BLOCK gate blocks at
+ * most ONCE per session; a further recognized violation is demoted to a warning.
+ */
+describe('#392: per-session block budget', () => {
+  it('the first recognized violation still blocks', () => {
+    expect(applyBlockBudget({ decision: { block: true }, alreadyBlocked: false })).toEqual({
+      block: true,
+      demoted: false,
+    })
+  })
+
+  it('the second one in the same session is demoted to a warning', () => {
+    expect(applyBlockBudget({ decision: { block: true }, alreadyBlocked: true })).toEqual({
+      block: false,
+      demoted: true,
+    })
+  })
+
+  it('a non-blocking decision is never demoted and never spends the budget', () => {
+    expect(applyBlockBudget({ decision: { block: false }, alreadyBlocked: false })).toEqual({
+      block: false,
+      demoted: false,
+    })
+    expect(applyBlockBudget({ decision: { block: false }, alreadyBlocked: true })).toEqual({
+      block: false,
+      demoted: false,
+    })
+  })
+
+  it('carries the decision reason through, so the self-cert branch keeps its message', () => {
+    expect(
+      applyBlockBudget({ decision: { block: true, reason: 'self-cert' }, alreadyBlocked: false }),
+    ).toEqual({ block: true, demoted: false, reason: 'self-cert' })
+    expect(
+      applyBlockBudget({ decision: { block: true, reason: 'self-cert' }, alreadyBlocked: true }),
+    ).toEqual({ block: false, demoted: true, reason: 'self-cert' })
+  })
+
+  it('the demoted text is the gate message plus the budget suffix', () => {
+    const demoted = budgetDemotedMessage('⛔ deviations gate (#91): …')
+    expect(demoted.startsWith('⚠ ⛔ deviations gate (#91): …')).toBe(true)
+    expect(demoted).toContain('#392')
+    expect(demoted).toContain('1 блок/сессию')
+  })
+
+  it('the budget is per gate: a spent completion-report budget leaves deviations intact', () => {
+    // The PRODUCTION predicate decides here, not a re-implementation of it in
+    // the test: the state SHAPE agreed between writer and reader and the per-gate
+    // KEY are the two things that can actually break the mechanism, so they are
+    // what gets asserted (review of PR #393).
+    const state = { blocked: { [COMPLETION_REPORT_BUDGET_KEY]: true } }
+    expect(
+      applyBlockBudget({
+        decision: { block: true },
+        alreadyBlocked: hasSpentBlockBudget(state, COMPLETION_REPORT_BUDGET_KEY),
+      }),
+    ).toEqual({ block: false, demoted: true })
+    expect(
+      applyBlockBudget({
+        decision: { block: true },
+        alreadyBlocked: hasSpentBlockBudget(state, DEVIATIONS_BUDGET_KEY),
+      }),
+    ).toEqual({ block: true, demoted: false })
+  })
+
+  // The state I/O half, exercised through the injectable `deps` seam the writer
+  // was given precisely so it needs no filesystem. Writer and reader are pinned
+  // together: whatever `recordBlockBudgetSpend` serializes is what
+  // `hasSpentBlockBudget` must read back.
+  it('round-trips a spend through the injectable writer and back through the reader', () => {
+    const writes: Record<string, string> = {}
+    const dirs: string[] = []
+    const deps = {
+      mkdir: (d: string) => {
+        dirs.push(d)
+      },
+      writeFile: (p: string, c: string) => {
+        writes[p] = c
+      },
+    }
+    const path = '/tmp/bbm-budget/session-abc.json'
+
+    expect(hasSpentBlockBudget({}, DEVIATIONS_BUDGET_KEY)).toBe(false)
+
+    recordBlockBudgetSpend(path, {}, DEVIATIONS_BUDGET_KEY, deps)
+    expect(dirs).toEqual(['/tmp/bbm-budget'])
+    const afterFirst = JSON.parse(writes[path])
+    expect(afterFirst).toEqual({ blocked: { deviations: true } })
+    expect(hasSpentBlockBudget(afterFirst, DEVIATIONS_BUDGET_KEY)).toBe(true)
+    expect(hasSpentBlockBudget(afterFirst, COMPLETION_REPORT_BUDGET_KEY)).toBe(false)
+
+    // A second gate's spend merges into the same object instead of replacing it.
+    recordBlockBudgetSpend(path, afterFirst, COMPLETION_REPORT_BUDGET_KEY, deps)
+    const afterBoth = JSON.parse(writes[path])
+    expect(afterBoth).toEqual({ blocked: { deviations: true, 'completion-report': true } })
+    expect(hasSpentBlockBudget(afterBoth, DEVIATIONS_BUDGET_KEY)).toBe(true)
+    expect(hasSpentBlockBudget(afterBoth, COMPLETION_REPORT_BUDGET_KEY)).toBe(true)
+  })
+
+  it('the reader is fail-open on every shape a lost or corrupt state can take', () => {
+    for (const state of [undefined, null, {}, { blocked: null }, { blocked: 'nope' }]) {
+      expect(hasSpentBlockBudget(state, DEVIATIONS_BUDGET_KEY)).toBe(false)
+    }
+  })
+
+  it('the state path is per session, under the budget state dir', () => {
+    const path = blockBudgetStatePath('/repo', 'sess/01:ABC')
+    expect(path.replace(/\\/g, '/')).toContain('/.claude/stop-gate-budget-state/')
+    // `stateFilePath` sanitises the id — no separator from it may reach the path.
+    expect(path.replace(/\\/g, '/')).toMatch(/\/sess_01_ABC\.json$/)
+    expect(blockBudgetStatePath('/repo', 'a')).not.toEqual(blockBudgetStatePath('/repo', 'b'))
+  })
+
+  it('fail-open: unusable state defaults to "not yet blocked"', () => {
+    expect(applyBlockBudget({ decision: { block: true } })).toEqual({
+      block: true,
+      demoted: false,
+    })
+    expect(applyBlockBudget({ decision: { block: true }, alreadyBlocked: undefined })).toEqual({
+      block: true,
+      demoted: false,
+    })
   })
 })
 

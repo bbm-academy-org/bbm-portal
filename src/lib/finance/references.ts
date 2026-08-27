@@ -36,7 +36,7 @@ import { financePurpose } from '@/lib/platform/db/schema/finance/finance-purpose
 import type { FinanceProductBinding } from '@/lib/platform/db/schema/finance/finance-purpose'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
-import { assertFinanceWriteAccess, financeAuditContext, type FinanceActor } from './core/actor'
+import { assertFinanceReferenceAccess, financeAuditContext, type FinanceActor } from './core/actor'
 import { FinanceRefusal } from './core/errors'
 
 export type FinanceCurrencyView = {
@@ -162,7 +162,7 @@ export async function createCurrency(
   actor: FinanceActor,
   input: { code: string; name: string; precision: number },
 ): Promise<FinanceCurrencyView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   const code = typeof input.code === 'string' ? input.code.trim().toUpperCase() : ''
   if (code === '') throw new FinanceRefusal('Код валюты обязателен (например RUB, THB, USDT).')
   if (!Number.isInteger(input.precision) || input.precision < 0 || input.precision > 18) {
@@ -198,7 +198,7 @@ export async function updateCurrency(
   code: string,
   patch: { name?: string; precision?: number },
 ): Promise<FinanceCurrencyView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const current = await requireCurrency(tx, code)
     const next: Partial<typeof financeCurrency.$inferInsert> = {}
@@ -229,7 +229,7 @@ export async function createAccount(
   actor: FinanceActor,
   input: { name: string; kind: FinanceMoneyAccountKind; currency: string },
 ): Promise<FinanceAccountView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   const name = requireName(input.name, 'Счёт')
   if (!(['bank', 'card', 'crypto', 'cash'] as string[]).includes(input.kind)) {
     throw new FinanceRefusal(
@@ -254,7 +254,7 @@ export async function updateAccount(
   id: number,
   patch: { name?: string },
 ): Promise<FinanceAccountView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const current = await requireAccount(tx, id)
     if (current.isSystem) {
@@ -318,7 +318,7 @@ export async function systemAccount(
   kind: FinanceSystemAccountKind,
   currency: string,
 ): Promise<FinanceAccountView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   return platformTransaction(financeAuditContext(actor), (tx) =>
     ensureSystemAccount(tx, kind, currency),
   )
@@ -336,7 +336,7 @@ export async function createProject(
   actor: FinanceActor,
   input: { name: string },
 ): Promise<FinanceProjectView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   if ('isFund' in input || 'is_fund' in input) {
     throw new FinanceRefusal(
       'Строка фонда в справочнике ровно одна — «Фонд BBM», её создаёт миграция (EARS-304). ' +
@@ -355,7 +355,7 @@ export async function updateProject(
   id: number,
   patch: { name?: string },
 ): Promise<FinanceProjectView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const current = await requireProject(tx, id)
     if (patch.name === undefined) return current
@@ -377,7 +377,7 @@ export async function createProduct(
     salePriceCurrency?: string | null
   },
 ): Promise<FinanceProductView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   const name = requireName(input.name, 'Продукт')
   const salePrice = input.salePrice ?? null
   const salePriceCurrency = input.salePriceCurrency ?? null
@@ -400,7 +400,7 @@ export async function updateProduct(
   id: number,
   patch: { name?: string; salePrice?: bigint | null; salePriceCurrency?: string | null },
 ): Promise<FinanceProductView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const current = await requireProduct(tx, id)
     const next: Partial<typeof financeProduct.$inferInsert> = {}
@@ -436,7 +436,7 @@ export async function createPurpose(
   actor: FinanceActor,
   input: { name: string; productBinding: FinanceProductBinding; categoryId?: number | null },
 ): Promise<FinancePurposeView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   const name = requireName(input.name, 'Назначение')
   assertKnownBinding(input.productBinding)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
@@ -460,7 +460,7 @@ export async function updatePurpose(
   id: number,
   patch: { name?: string; categoryId?: number | null; productBinding?: FinanceProductBinding },
 ): Promise<FinancePurposeView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   if (patch.productBinding !== undefined) assertKnownBinding(patch.productBinding)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const current = await requirePurpose(tx, id)
@@ -490,7 +490,7 @@ export async function createCategory(
   actor: FinanceActor,
   input: { name: string; allocable: boolean },
 ): Promise<FinanceCategoryView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   const name = requireName(input.name, 'Статью расходов')
   if (typeof input.allocable !== 'boolean') {
     throw new FinanceRefusal(
@@ -512,7 +512,7 @@ export async function updateCategory(
   id: number,
   patch: { name?: string; allocable?: boolean },
 ): Promise<FinanceCategoryView> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const current = await requireCategory(tx, id)
     const next: Partial<typeof financeCategory.$inferInsert> = {}
@@ -542,7 +542,7 @@ export async function retireReferenceRow(
   table: FinanceReferenceTable,
   id: string | number,
 ): Promise<void> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   await platformTransaction(financeAuditContext(actor), async (tx) => {
     const retiredAt = new Date()
     switch (table) {
@@ -622,7 +622,7 @@ export async function deleteReferenceRow(
   table: FinanceReferenceTable,
   id: string | number,
 ): Promise<void> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceReferenceAccess(actor)
   await platformTransaction(financeAuditContext(actor), async (tx) => {
     const { label, references } = await referenceUsage(tx, table, id)
     if (references > 0) {

@@ -49,7 +49,7 @@ import { financeConversionStep } from '@/lib/platform/db/schema/finance/finance-
 import { financePosting } from '@/lib/platform/db/schema/finance/finance-posting'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
-import { assertFinanceWriteAccess, financeAuditContext, type FinanceActor } from './core/actor'
+import { assertFinanceLedgerAccess, financeAuditContext, type FinanceActor } from './core/actor'
 import { FinanceRefusal } from './core/errors'
 import {
   assertBalancedPerCurrency,
@@ -104,7 +104,7 @@ export async function recordConversion(
   actor: FinanceActor,
   input: RecordConversionInput,
 ): Promise<RecordedOperation> {
-  assertFinanceWriteAccess(actor)
+  assertFinanceLedgerAccess(actor)
   if (!ISO_DATE.test(input.occurredOn)) {
     throw new FinanceRefusal(
       `Дата операции «${input.occurredOn}» записана не в формате ГГГГ-ММ-ДД.`,

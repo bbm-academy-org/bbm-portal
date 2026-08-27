@@ -123,15 +123,25 @@ require_nonempty_uris "redirect-URI" "$REDIRECT_URIS" "$CALLBACK_PATHS"
 # found). Same generator, same axes, same bounds — minus the path axis.
 POST_LOGOUT_URIS="${IDP_POST_LOGOUT_URIS:-$(generate_uris "")}"
 require_nonempty_uris "post-logout-URI" "$POST_LOGOUT_URIS" ""
-# Project roles to seed, comma-separated — the workspace's two starting roles
-# (spec 311 §B EARS-414). They replace the `portal_admin` placeholder the P2b
-# gate was told to "adopt or replace": the gate that adopted it is
-# `src/lib/platform/authGate.ts`, and it checks these two spellings.
+# Project roles to seed, comma-separated. Two groups, owned by two different
+# files, and they are not interchangeable:
+#
+#   - the workspace's two starting roles (spec 311 §B EARS-414), checked by
+#     `src/lib/platform/authGate.ts`. They replace the `portal_admin` placeholder
+#     the P2b gate was told to "adopt or replace"; the gate that adopted it
+#     checks these two spellings;
+#   - the finance FLOW roles (spec 339 §A EARS-501, #380), checked by
+#     `src/lib/finance/core/actor.ts`, which owns their spellings. They gate the
+#     ledger and the intake; `platform-admin` no longer implies either
+#     (EARS-529), so an admin who has to post holds `finance-approve` as a
+#     separate grant. Neither is implied by anything — a grant is the only way
+#     to hold one (spec 311 EARS-417/466).
+#
 # `projectRoleCheck` stays OFF, so a member without a grant still LOGS IN and is
 # then refused by the app with a bare 403 (EARS-418) rather than by the IdP with
 # an OIDC error — the refusal the spec designs is the app's, not Zitadel's.
 # Inspect without touching the IdP: `--print-seed-roles`.
-SEED_ROLE="${IDP_SEED_ROLE:-platform-user,platform-admin}"
+SEED_ROLE="${IDP_SEED_ROLE:-platform-user,platform-admin,finance-entry,finance-approve}"
 # Bootstrap machine user the PAT belongs to (FIRSTINSTANCE default).
 BOOTSTRAP_USERNAME="${IDP_BOOTSTRAP_USERNAME:-bbm-bootstrap}"
 # Human test user — the ADMIN account, granted every seeded role (created only
@@ -469,7 +479,14 @@ ensure_human_user() {
 # should stick belongs in IDP_SEED_ROLE / IDP_MEMBER_ROLE, not in the console.
 ensure_project_grant() {
   local uid="$1" username="$2" roles_csv="$3" role_keys grant_id
-  role_keys="$(printf '%s' "$roles_csv"     | jq -Rc 'split(",") | map(gsub("^\s+|\s+$";"")) | map(select(length > 0))')"
+  # `[[:space:]]` and not `\s`: a jq STRING literal follows JSON escaping, where
+  # `\s` is not an escape at all. jq 1.6 — the version on the dev-stand box —
+  # rejects it outright («Invalid escape»), which took step 8 down with two
+  # compile errors while every earlier step reported success: the roles were
+  # created and NOT granted, the silent half of the three-object failure in
+  # bootstrap.md §5a. The two URI generators above escape it as `\\s` for the
+  # same reason; this one did not (#380).
+  role_keys="$(printf '%s' "$roles_csv"     | jq -Rc 'split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$";"")) | map(select(length > 0))')"
   grant_id="$(api POST /management/v1/users/grants/_search     "$(jq -nc --arg u "$uid" --arg p "$PROJECT_ID"        '{queries:[{userIdQuery:{userId:$u}},{projectIdQuery:{projectId:$p}}]}')"     | jq -r '.result[0].id // empty')"
   if [[ -n "$grant_id" ]]; then
     api_idempotent PUT "/management/v1/users/${uid}/grants/${grant_id}"       "$(jq -nc --argjson r "$role_keys" '{roleKeys:$r}')" >/dev/null       && echo "${username}: grant ${grant_id} -> roles $(jq -r 'join(", ")' <<< "$role_keys")" >&2

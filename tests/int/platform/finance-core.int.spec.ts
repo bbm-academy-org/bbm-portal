@@ -27,7 +27,14 @@ import {
 } from '@/lib/finance'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
-import { ADMIN, fundProjectId, MEMBER, seedMember, truncateFinanceTables } from './finance-helpers'
+import {
+  ADMIN,
+  APPROVER,
+  fundProjectId,
+  MEMBER,
+  seedMember,
+  truncateFinanceTables,
+} from './finance-helpers'
 
 /**
  * The finance ledger against the REAL `core` tables (spec
@@ -71,7 +78,7 @@ async function recordExpense(options: {
 }) {
   const expense = await systemAccount(ADMIN, 'expense', 'RUB')
   const amount = options.amount ?? 100_000n
-  return recordOperation(ADMIN, {
+  return recordOperation(APPROVER, {
     occurredOn: options.occurredOn ?? '2026-08-26',
     source: 'manual',
     purposeId: options.purposeId ?? null,
@@ -351,7 +358,7 @@ describe('reversal — сторно (EARS-314, EARS-315)', () => {
       memberId: member,
     })
 
-    const reversal = await reverseOperation(ADMIN, original.id)
+    const reversal = await reverseOperation(APPROVER, original.id)
     expect(reversal.source).toBe('reversal')
     expect(reversal.reverses).toBe(original.id)
 
@@ -393,10 +400,10 @@ describe('reversal — сторно (EARS-314, EARS-315)', () => {
   it('EARS-315: refuses a SECOND reversal of the same operation, naming the one that exists', async () => {
     const bank = await seedRubBank()
     const original = await recordExpense({ accountId: bank.id, projectId: await fundProjectId() })
-    const reversal = await reverseOperation(ADMIN, original.id)
+    const reversal = await reverseOperation(APPROVER, original.id)
 
-    await expect(reverseOperation(ADMIN, original.id)).rejects.toBeInstanceOf(FinanceRefusal)
-    await expect(reverseOperation(ADMIN, original.id)).rejects.toThrow(
+    await expect(reverseOperation(APPROVER, original.id)).rejects.toBeInstanceOf(FinanceRefusal)
+    await expect(reverseOperation(APPROVER, original.id)).rejects.toThrow(
       new RegExp(`#${reversal.id}`),
     )
   })
@@ -405,8 +412,8 @@ describe('reversal — сторно (EARS-314, EARS-315)', () => {
     const bank = await seedRubBank()
     const fund = await fundProjectId()
     const original = await recordExpense({ accountId: bank.id, projectId: fund })
-    const reversal = await reverseOperation(ADMIN, original.id)
-    const undo = await reverseOperation(ADMIN, reversal.id)
+    const reversal = await reverseOperation(APPROVER, original.id)
+    const undo = await reverseOperation(APPROVER, reversal.id)
 
     expect(undo.reverses).toBe(reversal.id)
     const balances = await accountBalances()
@@ -420,7 +427,7 @@ describe('provenance and the absence of an opening balance (EARS-316, EARS-317)'
     const bank = await seedRubBank()
     const fund = await fundProjectId()
     const expense = await systemAccount(ADMIN, 'expense', 'RUB')
-    const backfilled = await recordOperation(ADMIN, {
+    const backfilled = await recordOperation(APPROVER, {
       occurredOn: '2025-01-15',
       source: 'backfill',
       backdated: true,
@@ -441,7 +448,7 @@ describe('provenance and the absence of an opening balance (EARS-316, EARS-317)'
     ).rejects.toThrow()
     // `reversal` is not a source a caller may claim — only a сторно wears it.
     await expect(
-      recordOperation(ADMIN, {
+      recordOperation(APPROVER, {
         occurredOn: '2026-01-01',
         source: 'reversal',
         postings: [
@@ -568,7 +575,7 @@ describe('the purpose governs the dimensions (EARS-320, EARS-327, EARS-331, EARS
     })
     const expense = await systemAccount(ADMIN, 'expense', 'RUB')
 
-    const recorded = await recordOperation(ADMIN, {
+    const recorded = await recordOperation(APPROVER, {
       occurredOn: '2026-08-26',
       source: 'manual',
       purposeId: purpose.id,
@@ -591,7 +598,7 @@ describe('the purpose governs the dimensions (EARS-320, EARS-327, EARS-331, EARS
     expect(byAccount.get(bank.id)).toBeNull()
 
     await expect(
-      recordOperation(ADMIN, {
+      recordOperation(APPROVER, {
         occurredOn: '2026-08-26',
         source: 'manual',
         purposeId: purpose.id,
@@ -616,7 +623,7 @@ describe('the purpose governs the dimensions (EARS-320, EARS-327, EARS-331, EARS
     const expense = await systemAccount(ADMIN, 'expense', 'RUB')
 
     await expect(
-      recordOperation(ADMIN, {
+      recordOperation(APPROVER, {
         occurredOn: '2026-08-26',
         source: 'manual',
         purposeId: purpose.id,
@@ -734,23 +741,11 @@ describe('the exception list and the absence of allocation (EARS-333, EARS-334)'
   })
 })
 
-describe('every write demands `platform-admin` (EARS-330)', () => {
-  it('EARS-330: refuses recording, reversing and every reference edit for a session without the claim', async () => {
+describe('the write gates against the real tables (EARS-330, EARS-501, EARS-529, EARS-530)', () => {
+  it('EARS-330: refuses every reference edit for a session that does not carry `platform-admin`', async () => {
     const bank = await seedRubBank()
-    const fund = await fundProjectId()
-    const recorded = await recordExpense({ accountId: bank.id, projectId: fund })
-    const expense = await systemAccount(ADMIN, 'expense', 'RUB')
 
     const refusals = [
-      recordOperation(MEMBER, {
-        occurredOn: '2026-08-26',
-        source: 'manual',
-        postings: [
-          { accountId: expense.id, amount: 1n, currency: 'RUB', projectId: fund },
-          { accountId: bank.id, amount: -1n, currency: 'RUB' },
-        ],
-      }),
-      reverseOperation(MEMBER, recorded.id),
       createCurrency(MEMBER, { code: 'THB', name: 'Бат', precision: 2 }),
       createAccount(MEMBER, { name: 'Карта', kind: 'card', currency: 'RUB' }),
       createProject(MEMBER, { name: 'Проект' }),
@@ -759,13 +754,56 @@ describe('every write demands `platform-admin` (EARS-330)', () => {
       retireReferenceRow(MEMBER, 'account', bank.id),
       deleteReferenceRow(MEMBER, 'account', bank.id),
       updatePurpose(MEMBER, 1, { name: 'Иначе' }),
+      // The flow roles are not reference administration either (EARS-529).
+      createProject(APPROVER, { name: 'Проект' }),
+      systemAccount(APPROVER, 'expense', 'RUB'),
     ]
     for (const refusal of refusals) {
       await expect(refusal).rejects.toBeInstanceOf(FinanceAccessRefusal)
     }
   })
 
-  it('EARS-330: reading is deliberately wider — balances and the register need no actor at all', async () => {
+  it('EARS-501: refuses recording and reversing for a session carrying neither flow role', async () => {
+    const bank = await seedRubBank()
+    const fund = await fundProjectId()
+    const recorded = await recordExpense({ accountId: bank.id, projectId: fund })
+    const expense = await systemAccount(ADMIN, 'expense', 'RUB')
+    const draft = {
+      occurredOn: '2026-08-26',
+      source: 'manual' as const,
+      postings: [
+        { accountId: expense.id, amount: 1n, currency: 'RUB', projectId: fund },
+        { accountId: bank.id, amount: -1n, currency: 'RUB' },
+      ],
+    }
+
+    await expect(recordOperation(MEMBER, draft)).rejects.toBeInstanceOf(FinanceAccessRefusal)
+    await expect(reverseOperation(MEMBER, recorded.id)).rejects.toBeInstanceOf(FinanceAccessRefusal)
+  })
+
+  it('EARS-529: an admin without `finance-approve` is refused posting and reversal, and nothing lands', async () => {
+    const bank = await seedRubBank()
+    const fund = await fundProjectId()
+    const recorded = await recordExpense({ accountId: bank.id, projectId: fund })
+    const expense = await systemAccount(ADMIN, 'expense', 'RUB')
+    const before = await listRegister()
+
+    await expect(
+      recordOperation(ADMIN, {
+        occurredOn: '2026-08-26',
+        source: 'manual',
+        postings: [
+          { accountId: expense.id, amount: 1n, currency: 'RUB', projectId: fund },
+          { accountId: bank.id, amount: -1n, currency: 'RUB' },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(FinanceAccessRefusal)
+    await expect(reverseOperation(ADMIN, recorded.id)).rejects.toBeInstanceOf(FinanceAccessRefusal)
+    // The refusal is a refusal, not a half-write: the register is untouched.
+    expect(await listRegister()).toHaveLength(before.length)
+  })
+
+  it('EARS-530: reading is deliberately wider — balances and the register need no actor at all', async () => {
     const bank = await seedRubBank()
     await recordExpense({ accountId: bank.id, projectId: await fundProjectId() })
     expect(await accountBalances()).not.toHaveLength(0)
