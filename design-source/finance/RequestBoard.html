@@ -1,30 +1,44 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <script src="./support.js"></script>
-</head>
-<body>
-<x-dc>
-<helmet>
-  <style>
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #1c1917; }
-    a { color: #1d4ed8; } a:hover { color: #1e40af; }
-    .e { font-family: ui-monospace, monospace; font-size: 9px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
-    .col { border: 1.5px solid #d6d3d1; border-radius: 6px; background: #fafaf9; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
-    .colhd { font-size: 11px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; }
-    .card { border: 1.5px solid #a8a29e; border-radius: 5px; background: #ffffff; padding: 8px 9px; display: flex; flex-direction: column; gap: 4px; }
-    .amt { font-size: 13px; font-weight: 700; }
-    .meta { font-size: 10px; color: #57534e; }
-    .tag { font-size: 9px; border: 1px solid #d6d3d1; border-radius: 3px; padding: 0 4px; color: #57534e; background: #ffffff; white-space: nowrap; }
-    .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #78716c; }
-    .in { border: 1.5px solid #a8a29e; border-radius: 4px; background: #fafaf9; font-size: 12px; padding: 6px 8px; color: #44403c; }
-    .note { font-size: 10px; color: #78716c; line-height: 1.5; }
-    .btn-y { border: 1.5px solid #15803d; color: #15803d; border-radius: 4px; padding: 5px 10px; font-size: 11px; font-weight: 700; background: #ffffff; }
-    .btn-n { border: 1.5px solid #b91c1c; color: #b91c1c; border-radius: 4px; padding: 5px 10px; font-size: 11px; font-weight: 700; background: #ffffff; }
-  </style>
-</helmet>
-<div style="width: 1400px; height: 900px; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+<!--
+  OPTION: D — «Канбан по машине статусов + шторка деталей»
+  SURFACE: /p/finance/requests (вид одобряющего), F2 intake — issue #339, build #388
+  PICK: Антон, 2026-08-27, записан на #339
+  THESIS: четыре колонки = четыре статуса машины (submitted / approved-unposted /
+          posted / refused); карточка = intake item; перетаскивание ИНИЦИИРУЕТ
+          АКТ и само по себе статус не меняет; все акты и чтение документа —
+          в правой шторке деталей, не на карточке.
+  AUTHORED, NOT A CANVAS ARTBOARD: этот файл написан агентом под Stage-A гейт
+          #339. Артборды владельца — RequestForm.dc.html и RequestQueue.dc.html
+          (точные байты канваса) — служат ему layout-доказательством.
+  FIDELITY: wireframe — фиксирует КОМПОНОВКУ. Визуальный язык берётся из кита
+          src/ui (shadcn neutral, #359/#360), а не из этих серых коробок.
+  NOT SHOWN (states this wireframe does NOT depict):
+    - empty (ни одной заявки — первый запуск модуля)
+    - loading (скелет колонок)
+    - error (доска не отдалась / акт отклонён сервером)
+    - denied (нет claim finance-approve → вид участника, read-only)
+    - narrow/mobile (колонки схлопываются в один список с фильтром статуса)
+    - drag-in-flight (подсветка допустимых колонок во время переноса)
+-->
+<meta charset="utf-8" />
+<title>Stage A — /p/finance/requests, вариант D</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #1c1917; }
+  .e { font-family: ui-monospace, monospace; font-size: 9px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+  .col { border: 1.5px solid #d6d3d1; border-radius: 6px; background: #fafaf9; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .colhd { font-size: 11px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; }
+  .card { border: 1.5px solid #a8a29e; border-radius: 5px; background: #ffffff; padding: 8px 9px; display: flex; flex-direction: column; gap: 4px; }
+  .amt { font-size: 13px; font-weight: 700; }
+  .meta { font-size: 10px; color: #57534e; }
+  .tag { font-size: 9px; border: 1px solid #d6d3d1; border-radius: 3px; padding: 0 4px; color: #57534e; background: #ffffff; white-space: nowrap; }
+  .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #78716c; }
+  .in { border: 1.5px solid #a8a29e; border-radius: 4px; background: #fafaf9; font-size: 12px; padding: 6px 8px; color: #44403c; }
+  .note { font-size: 10px; color: #78716c; line-height: 1.5; }
+  .btn-y { border: 1.5px solid #15803d; color: #15803d; border-radius: 4px; padding: 5px 10px; font-size: 11px; font-weight: 700; background: #ffffff; }
+  .btn-n { border: 1.5px solid #b91c1c; color: #b91c1c; border-radius: 4px; padding: 5px 10px; font-size: 11px; font-weight: 700; background: #ffffff; }
+</style>
+
+<div style="width: 1400px; height: 900px; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
   <div style="font-size: 11px; color: #78716c">/p/finance/requests · вид одобряющего <span class="e">роль: finance-approve</span> · компоновка D — канбан по машине статусов + шторка деталей</div>
   <div style="display: flex; align-items: baseline; gap: 12px">
     <div style="font-size: 18px; font-weight: 700">Заявки</div>
@@ -98,7 +112,7 @@
           <div style="font-size: 11px">Микрофон запасной</div>
           <div class="meta">Антон, 21.08: «есть на складе» <span class="e">причина обязательна</span></div>
         </div>
-        <div class="note">следа в леджере не оставляет, но остаётся в истории</div>
+        <div class="note">проводки нет, но заявка остаётся видимой с причиной и документами <span class="e">EARS-512</span></div>
       </div>
     </div>
 
@@ -145,7 +159,7 @@
   <div style="border: 1.5px solid #b45309; background: #fffbeb; border-radius: 6px; padding: 10px 12px">
     <div style="font-size: 12px; font-weight: 700">Перетаскивание ИНИЦИИРУЕТ АКТ и само по себе статус не меняет</div>
     <div class="note" style="margin-top: 4px">
-      Ждут → Одобрены: открывается акт одобрения в шторке — разметка (статья + счёт) обязательна, проводка по <span class="e">EARS-510</span><br>
+      Ждут → Одобрены: открывается акт одобрения в шторке — разметка (статья + счёт) обязательна. Если документ уже приложен, тот же акт и проводит <span class="e">EARS-510</span>; если документа нет, одобрение только авторизует, проводки не возникает, и карточка встаёт в «Одобрены — ждут документа» <span class="e">EARS-511</span><br>
       Одобрены → Проведены: подтверждение одним актом на приложенном документе <span class="e">EARS-511</span> <span class="e">EARS-531</span> — без документа проводки нет<br>
       Любая → Отклонены: диалог обязательной причины <span class="e">EARS-512</span><br>
       Недопустимые переносы (из «Проведены» куда угодно, из «Отклонены» обратно) отклоняются — карточка возвращается на место
@@ -157,6 +171,3 @@
     <div class="note">«кому BBM должен»: возмещения участникам за траты со своих денег + непогашенные долги; живёт своим срезом, потому что это состояние счетов, а не стадия заявки</div>
   </div>
 </div>
-</x-dc>
-</body>
-</html>

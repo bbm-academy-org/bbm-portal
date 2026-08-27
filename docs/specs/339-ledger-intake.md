@@ -7,20 +7,23 @@ updated: 2026-08-27
 # Finance F2 — filling the ledger: requests, documents, backfill, intake layer — spec (issue #339)
 
 - **Issues:** #339 (this spec, the F2 parent under epic #115). Build split
-  filed 2026-08-27 — backend chain: #380 (flow roles `finance-entry` /
-  `finance-approve`, F1a guard rework) → #381 (intake spine: schema, status
-  machine, idempotent sources) → #382 (documents: private storage, authorized
-  reads, immutability) and #383 (counterparty reference + purpose proposals) →
-  #385 (posting: atomic, document-gated, cross-currency, liability) → #386
-  (expense-request flow: submit, approve, refuse, one-act post) and #387
-  (backfill bulk entry, category derivation, import contract). Admin cabinet
-  rows (counterparty rename, purpose-proposal resolution) are #384, on #383 and
-  #315. UI: #388 (requests board — Stage-A pick D, on #386) and #389 (intake
-  workspace — entry, bulk backfill, derivation and liability views, on #387);
-  both plug into the portal-workspace frame exactly as F1b does and are also
-  blocked by #314 (`/p` launcher/registry) and #315 (`/p/admin` shell), while
-  the intake backend is buildable on merged F1a (#356) alone — the graph
-  records that split with edges, not prose. The Hermes document-verifier
+  filed 2026-08-27. The root is #380 (flow roles `finance-entry` /
+  `finance-approve`, F1a guard rework), and two strands run from it. The spine
+  strand: #381 (intake spine: schema, status machine, idempotent sources) ←
+  #380; #382 (documents: private storage, authorized reads, immutability) ←
+  #381; #385 (posting: atomic, document-gated, cross-currency, liability) ←
+  #381 + #382. The reference strand: #383 (counterparty reference + purpose
+  proposals) ← #380, and the admin cabinet rows (counterparty rename,
+  purpose-proposal resolution) #384 ← #383 + #315. The two strands meet at
+  #386 (expense-request flow: submit, approve, refuse, one-act post) ← #385 +
+  #383, while #387 (backfill bulk entry, category derivation, import contract)
+  ← #385 alone. UI: #388 (requests board — Stage-A pick D) ← #386 + #314 +
+  #315, and #389 (intake workspace — entry, bulk backfill, derivation and
+  liability views) ← #387 + #314 + #315; both plug into the portal-workspace
+  frame exactly as F1b does, which is why each also carries #314 (`/p`
+  launcher/registry) and #315 (`/p/admin` shell), while the intake backend is
+  buildable on merged F1a (#356) alone — the graph records that split with
+  edges, not prose. The Hermes document-verifier
   integration is #390 (on #386), filed under epic #115. The private prod bucket
   the documents need is an infra step in the ops repo
   (`sidorovanthon/bbm#172`), not an issue here.
@@ -157,7 +160,7 @@ machine plus a details slide-over sheet** — four columns (`submitted` /
 act with its marking per EARS-510, refuse dialog per EARS-512, one-act post on
 the attached document per EARS-511/531; illegal drops are rejected). Pick by
 Антон, 2026-08-27, recorded on #339; vendored as
-`design-source/finance/RequestBoard.dc.html`, with the canvas artboards
+`design-source/finance/RequestBoard.html`, with the canvas artboards
 `finance/RequestForm.dc.html` and `finance/RequestQueue.dc.html` vendored
 alongside as its layout evidence. All three are **layout** only (fidelity axis,
 incident 2026-08-26/#359): the visual layer is the `src/ui` kit per #359/#360,
