@@ -15,10 +15,12 @@ import {
   parseCommitFacts,
   parseFlags,
   parsePartOfRefs,
+  parseWarnPlaneJobs,
   reviewBaselineDate,
   runGate,
   runViewPr,
   stageRemedy,
+  warnPlaneFromWorkflows,
   withCommitFacts,
   withPartOfFacts,
 } from '../../tools/gh/pr-land.mjs'
@@ -1149,5 +1151,162 @@ describe('runViewPr — Part of resolution', () => {
       cache: new Map(),
     })
     expect(issueStates).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The WARN plane of the CI guard register (#397). Regression: `pnpm pr:land`
+ * hard-blocked PR #396 on `tdd-order (FAILURE)` — a job that carries
+ * `continue-on-error: true` and is therefore WARN by `docs/ci-guardrails.md` §5.
+ *
+ * The false assumption was about GitHub, not about this repo: job-level
+ * `continue-on-error` greens the workflow RUN, but the job's own check-run keeps
+ * `conclusion: failure`. So the rollup the gate reads cannot be judged by the
+ * conclusion alone — the plane has to be resolved from the workflow definition.
+ */
+describe('parseWarnPlaneJobs', () => {
+  it('collects exactly the jobs carrying `continue-on-error: true`', () => {
+    const yml = `
+name: CI
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+  tdd-order:
+    continue-on-error: true
+    runs-on: ubuntu-latest
+  no-stub:
+    continue-on-error: false
+    runs-on: ubuntu-latest
+`
+    expect(parseWarnPlaneJobs(yml)).toEqual(['tdd-order'])
+  })
+
+  it('a job-level `name:` is the check-run name, not the job id', () => {
+    const yml = `
+jobs:
+  guard:
+    name: Guard specs
+    continue-on-error: true
+`
+    expect(parseWarnPlaneJobs(yml)).toEqual(['Guard specs'])
+  })
+
+  it('an unresolvable templated name is dropped — an unnamed job must not be excused', () => {
+    const yml = `
+jobs:
+  guard:
+    name: guard-\${{ matrix.node }}
+    continue-on-error: true
+`
+    expect(parseWarnPlaneJobs(yml)).toEqual([])
+  })
+
+  it('unparseable YAML yields nothing rather than throwing (the strict fallback)', () => {
+    expect(parseWarnPlaneJobs('jobs: [oops')).toEqual([])
+    expect(parseWarnPlaneJobs(null)).toEqual([])
+  })
+
+  it('warnPlaneFromWorkflows unions every workflow file', () => {
+    const plane = warnPlaneFromWorkflows([
+      { path: '.github/workflows/ci.yml', text: 'jobs:\n  a:\n    continue-on-error: true\n' },
+      {
+        path: '.github/workflows/pr-body-guards.yml',
+        text: 'jobs:\n  b:\n    continue-on-error: true\n  c: {}\n',
+      },
+    ])
+    expect([...plane].sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('classifyChecks — the WARN plane', () => {
+  const warnPlane = new Set(['tdd-order'])
+
+  it('a FAILED check-run of a `continue-on-error` job is a warning, not a red', () => {
+    const res = classifyChecks(
+      [
+        { name: 'ci', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        { name: 'tdd-order', status: 'COMPLETED', conclusion: 'FAILURE' },
+      ],
+      warnPlane,
+    )
+    expect(res.verdict).toBe('green')
+    expect(res.failed).toEqual([])
+    expect(res.warnings.join(' ')).toMatch(/tdd-order/)
+  })
+
+  it('a failed BLOCK-plane check-run stays red even with a WARN plane resolved', () => {
+    const res = classifyChecks(
+      [{ name: 'guard-tests', status: 'COMPLETED', conclusion: 'FAILURE' }],
+      warnPlane,
+    )
+    expect(res.verdict).toBe('red')
+    expect(res.failed.join(' ')).toMatch(/guard-tests/)
+    expect(res.warnings).toEqual([])
+  })
+
+  it('a CANCELLED WARN check-run stays red — a cancelled run proved nothing', () => {
+    const res = classifyChecks(
+      [{ name: 'tdd-order', status: 'COMPLETED', conclusion: 'CANCELLED' }],
+      warnPlane,
+    )
+    expect(res.verdict).toBe('red')
+    expect(res.failed.join(' ')).toMatch(/CANCELLED/)
+  })
+
+  it('with no WARN plane resolved every failure is red, exactly as before', () => {
+    expect(
+      classifyChecks([{ name: 'tdd-order', status: 'COMPLETED', conclusion: 'FAILURE' }]).verdict,
+    ).toBe('red')
+  })
+})
+
+describe('runGate — the WARN plane reaches the operator', () => {
+  const pr = (over = {}) => ({
+    ok: true,
+    data: {
+      state: 'OPEN',
+      isDraft: false,
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      closingIssuesReferences: [{ number: 397 }],
+      headRefName: 'fix/397-x',
+      headRefOid: 'aaa',
+      baseRefName: 'main',
+      statusCheckRollup: [
+        { name: 'ci', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        { name: 'tdd-order', status: 'COMPLETED', conclusion: 'FAILURE' },
+      ],
+      ...over,
+    },
+  })
+
+  it('a failing WARN job passes the gate and is printed as a remark', () => {
+    const res = runGate(
+      1,
+      { timeout: 10, interval: 1, requireReview: false },
+      { viewPr: () => pr(), warnPlane: () => new Set(['tdd-order']) },
+    )
+    expect(res.verdict).toBe('green')
+    expect(res.warn.join(' ')).toMatch(/tdd-order/)
+  })
+
+  it('the WARN plane is resolved from the PR’s BASE ref, not from its head', () => {
+    const warnPlane = vi.fn(() => new Set<string>())
+    runGate(
+      1,
+      { timeout: 10, interval: 1, requireReview: false },
+      { viewPr: () => pr({ baseRefName: 'release/x' }), warnPlane },
+    )
+    expect(warnPlane).toHaveBeenCalledWith('release/x')
+  })
+
+  it('a WARN plane that could not be read leaves the gate at its strict default', () => {
+    const res = runGate(
+      1,
+      { timeout: 10, interval: 1, requireReview: false },
+      { viewPr: () => pr(), warnPlane: () => new Set() },
+    )
+    expect(res.verdict).toBe('red')
+    expect(res.reasons[0]).toMatch(/tdd-order/)
   })
 })
