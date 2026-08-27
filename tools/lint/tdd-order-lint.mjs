@@ -20,13 +20,28 @@
 //           verdict to `impl-first`. The list is now paged, and where paging
 //           cannot help (the endpoint's hard 300-file cap) the guard fails
 //           closed instead of judging on a partial list.
-//   OPEN    `needlesFor` is SUBSTRING matching against added patch lines, so
-//           `lib/leads/intake` is satisfied by any longer path containing it.
-//           That direction is a false PASS, not a false BLOCK — the guard stays
-//           silent where it should speak — so it cannot wrongly stop a PR. It is
-//           still a heuristic, it is the DEBT.md entry `test-presence` carries
-//           (both guards share `needlesFor`), and it is why no one should read
-//           this guard's decision as mechanical certainty.
+//   CLOSED  `needlesFor` matched only the LITERAL module path, so a test citing
+//           the module through its public BARREL (`@/lib/finance`) — which is
+//           what ADR-002 module isolation prescribes for a test of the public
+//           API — was invisible. On PR #396 the tests-only commit cited the
+//           barrel and a LATER commit switched to the literal path, so the guard
+//           dated the citation from that later commit and reported `impl-first`
+//           on an honest branch. That is the first CONFIRMED false BLOCK of this
+//           guard (#398, day 0 of the CI plane's soak, 2026-08-27) and it
+//           disproves the claim this header used to make in this very slot —
+//           that the substring heuristic can only ever false-PASS. It could not,
+//           because the substring was not the whole matcher: the NEEDLE was too
+//           narrow, and a needle that is too narrow rejects. `reexportEdges` /
+//           `barrelsFor` now resolve the barrels that re-export a new module and
+//           accept a citation of THOSE paths, for THAT module only.
+//   OPEN    `needlesFor` is still SUBSTRING matching against added patch lines,
+//           so `lib/leads/intake` is satisfied by any longer path containing it.
+//           THAT direction is a false PASS — the guard stays silent where it
+//           should speak — and it is the DEBT.md entry `test-presence` carries
+//           (both guards share `needlesFor`). It is why no one should read this
+//           guard's decision as mechanical certainty. Note the correction the
+//           row above forced: «the heuristic can only false-PASS» is a claim
+//           about ONE direction of ONE matcher, never about the guard.
 //
 // Under canon §4 a confirmed false positive DEMOTES a BLOCK guard to WARN in the
 // same session that confirms it, plus an issue to fix the guard. That clause is
@@ -78,6 +93,27 @@
 //     that gains the import later is ordered by the import, not by the file.
 //   * `needlesFor` is substring matching (the DEBT.md entry `test-presence`
 //     carries), narrowed here by only reading ADDED patch lines.
+//   * BARREL resolution (#398) reads the re-export graph out of THIS PR's own
+//     patches, and that is sound only because a module that is NEW here cannot
+//     have been re-exported before this PR added the line. Three things it
+//     therefore does not see, named rather than discovered:
+//       - a CHAIN whose upper hop pre-dates the PR — `src/lib/x/index.ts`
+//         already carried `export * from './sub'` on main and only
+//         `src/lib/x/sub/index.ts` is new here, so a citation of `@/lib/x` is
+//         still invisible. Closing it needs the barrel's content at the citing
+//         commit, i.e. a per-file API read this guard deliberately does not make.
+//       - a barrel citation covers EVERY module of this PR that barrel
+//         re-exports. A test importing `@/lib/finance` for one new module reads
+//         as citing its new sibling too. That is a false PASS, chosen knowingly:
+//         the alternative is the false BLOCK this guard was demoted for.
+//       - a multi-line `} from './x'` inside an index file is read as a
+//         re-export even when it closes a plain `import`. Same direction —
+//         a wider PASS, never a rejection.
+//   * The STAGED plane does not resolve barrels. It only ever blocks on MIXED
+//     (module + citing test in one commit), so a barrel citation it cannot see
+//     lets the commit through and the CI plane judges the order. Adding the
+//     resolution there would move a heuristic into the rejecting direction,
+//     which is exactly what `evaluateStaged` refuses to do.
 //
 // ── Two enforcement points, one rule (#355) ──────────────────────────────────
 // `pnpm lint:tdd-order`                 the PR plane — the commit graph, in CI.
@@ -242,6 +278,157 @@ export function isMergeCommit(commit) {
 }
 
 /**
+ * An index file — the only shape this guard reads a re-export graph out of.
+ * Restricted to `src/**` because that is where a platform module's public API
+ * lives; `tools/**` has no barrels and no TDD obligation here anyway.
+ */
+const BARREL_RE = /^src\/(?:.*\/)?index\.(?:ts|tsx|mjs)$/
+
+/**
+ * A re-export line inside a barrel, in the two shapes a unified diff shows:
+ *
+ *   `export * from './intake/sources'`      the whole line, star or named
+ *   `} from './references'`                 the tail of a MULTI-LINE named block
+ *
+ * The second form is why this is not simply `^export`: `src/lib/finance/index.ts`
+ * writes its named re-exports across many lines, and in a patch the specifier
+ * arrives on the closing line alone. It also matches the tail of a multi-line
+ * plain `import` in an index file — a wider PASS, never a rejection, and named
+ * in the header's blind-spot list.
+ *
+ * Only relative and `@/`-aliased specifiers are read: a bare specifier is a
+ * package, not a module of this repo.
+ */
+const REEXPORT_RE = /^\s*(?:export\b[^'"]*|\}\s*)from\s*['"]((?:\.|@\/)[^'"]*)['"]/
+
+/** Strip the module extension, so every path in the graph is comparable. */
+const stripExt = (p) => p.replace(/\.(?:ts|tsx|mjs|js|jsx)$/, '')
+
+/**
+ * Resolve a module specifier written inside `fromDir` to a repo-relative,
+ * extension-less path. `@/x` is the repo's `src/x` alias; `./` and `../` walk.
+ *
+ * @param {string} fromDir directory of the file the specifier is written in
+ * @param {string} spec
+ * @returns {string}
+ */
+export function resolveSpecifier(fromDir, spec) {
+  if (spec.startsWith('@/')) return stripExt(`src/${spec.slice(2)}`)
+  const parts = fromDir.split('/').filter(Boolean)
+  for (const seg of spec.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  return stripExt(parts.join('/'))
+}
+
+/**
+ * The re-export graph this PR ADDS, read from the PR's own patches.
+ *
+ * Why the PR's patches are enough evidence (#398): a module that is NEW in this
+ * PR cannot have been reachable through a barrel before the PR, so whichever
+ * barrel now re-exports it must have gained that line HERE. No tree read, no
+ * second API call, no network beyond what the guard already fetches.
+ *
+ * Direction is target -> barrels, because that is how the lookup runs.
+ * A merge commit contributes nothing, exactly as everywhere else in this guard.
+ *
+ * @param {{parentCount?: number, files?: {path: string, patch?: string}[]}[]} commits
+ * @returns {Map<string, Set<string>>} extension-less target path -> barrel DIRS
+ *   (`src/lib/finance`, the path a test actually imports)
+ */
+export function reexportEdges(commits) {
+  /** @type {Map<string, Set<string>>} */
+  const edges = new Map()
+  for (const commit of commits ?? []) {
+    if (isMergeCommit(commit)) continue
+    for (const file of commit.files ?? []) {
+      const path = toPosix(file.path ?? '')
+      if (!BARREL_RE.test(path)) continue
+      const dir = path.slice(0, path.lastIndexOf('/'))
+      for (const line of addedLines(file.patch)) {
+        const m = REEXPORT_RE.exec(line)
+        if (!m) continue
+        const target = resolveSpecifier(dir, m[1])
+        if (!target || target === dir) continue
+        if (!edges.has(target)) edges.set(target, new Set())
+        edges.get(target).add(dir)
+      }
+    }
+  }
+  return edges
+}
+
+/**
+ * Every barrel through which `moduleRel` is reachable, walking the graph
+ * transitively — `finance/index.ts` re-exporting `./intake`, whose
+ * `intake/index.ts` re-exports `./sources`, makes BOTH `@/lib/finance` and
+ * `@/lib/finance/intake` legitimate citations of `intake/sources.ts`.
+ *
+ * A target may be written either as the module path or, for a barrel, as its
+ * DIRECTORY (`./intake`) — both forms are pushed onto the frontier, and the
+ * `seen` set is what makes a cyclic re-export terminate instead of spinning.
+ *
+ * @param {string} moduleRel
+ * @param {Map<string, Set<string>>} edges
+ * @returns {string[]} barrel dirs, never including the module itself
+ */
+export function barrelsFor(moduleRel, edges) {
+  const noExt = stripExt(toPosix(moduleRel))
+  const frontier = [noExt]
+  if (noExt.endsWith('/index')) frontier.push(noExt.slice(0, -'/index'.length))
+  const seen = new Set()
+  const out = new Set()
+  while (frontier.length > 0) {
+    const target = frontier.pop()
+    if (seen.has(target)) continue
+    seen.add(target)
+    for (const barrel of edges.get(target) ?? []) {
+      out.add(barrel)
+      frontier.push(barrel, `${barrel}/index`)
+    }
+  }
+  out.delete(noExt)
+  return [...out]
+}
+
+/**
+ * The citation forms of a barrel dir: the repo-relative path and the `src/`-less
+ * tail, which is what `@/lib/finance` and `../../src/lib/finance` both end with.
+ *
+ * @param {string} barrelDir
+ * @returns {string[]}
+ */
+function barrelNeedles(barrelDir) {
+  const needles = [barrelDir]
+  if (barrelDir.startsWith('src/')) needles.push(barrelDir.slice('src/'.length))
+  return needles
+}
+
+/**
+ * A barrel needle matched at a PATH BOUNDARY, not as a bare substring.
+ *
+ * This is the half that keeps the #398 fix from buying the false BLOCK back with
+ * a false PASS: `lib/finance` is a substring of `lib/finance/core/money`, so a
+ * plain `includes` would read a test of a SIBLING module as a citation of the
+ * barrel — and through it of every new module behind that barrel. Requiring the
+ * next character to be outside a path token (`'`, `"`, end of line) means only a
+ * citation of the barrel ITSELF counts.
+ *
+ * @param {string} line
+ * @param {string} needle
+ * @returns {boolean}
+ */
+export function citesAtBoundary(line, needle) {
+  for (let i = line.indexOf(needle); i !== -1; i = line.indexOf(needle, i + 1)) {
+    const next = line[i + needle.length]
+    if (next === undefined || !/[\w./-]/.test(next)) return true
+  }
+  return false
+}
+
+/**
  * The pure decision seam. No IO.
  *
  * @param {{sha: string, parentCount?: number,
@@ -266,18 +453,28 @@ export function findOrderViolations(commits) {
     }
   }
 
+  // The barrels this PR makes a module reachable through (#398). Built once for
+  // the whole sequence, and deliberately NOT dated to the citing commit: the
+  // re-export line lands with the implementation, while the RED test that cites
+  // the barrel is written BEFORE it and is red precisely because the export does
+  // not exist yet. Dating the edge would re-create the false BLOCK it closes.
+  const edges = reexportEdges(commits)
+
   const violations = []
   for (const [path, touch] of firstTouch) {
     if (touch.status !== 'added' || !isPlatformModule(path)) continue
 
     const needles = needlesFor(path)
+    // Barrel needles are matched at a path boundary, module needles as
+    // substrings — see `citesAtBoundary` for why the two differ.
+    const barrels = barrelsFor(path, edges).flatMap(barrelNeedles)
+    const cites = (line) =>
+      needles.some((n) => line.includes(n)) || barrels.some((n) => citesAtBoundary(line, n))
     const citing = commits.findIndex((commit) =>
       isMergeCommit(commit)
         ? false
         : (commit.files ?? []).some(
-            (file) =>
-              isTestSource(file.path) &&
-              addedLines(file.patch).some((line) => needles.some((n) => line.includes(n))),
+            (file) => isTestSource(file.path) && addedLines(file.patch).some(cites),
           ),
     )
     // No commit of this PR cites the module: `test-presence`'s question, not
