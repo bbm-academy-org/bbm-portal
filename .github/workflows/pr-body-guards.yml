@@ -25,13 +25,17 @@ on:
     types: [opened, edited, synchronize, reopened]
 
 concurrency:
-  # NOT cancel-in-progress. `pnpm pr:land` classifies every check-run in the PR's
-  # rollup structurally — SUCCESS/SKIPPED/NEUTRAL pass, everything else counts as
-  # failed — and it cannot see which job is `continue-on-error`. A cancelled run
-  # would therefore leave CANCELLED check-runs that block a merge these WARN
-  # guards are never supposed to block (canon §2.1). The `if:` no-op fence below
-  # is safe by contrast: SKIPPED passes the gate. These jobs are cheap, so a
-  # superseded run is left to finish rather than turned into a false verdict.
+  # NOT cancel-in-progress — and since #397 for a sharper reason than before.
+  # `pnpm pr:land` now DOES know which job is `continue-on-error` (it resolves the
+  # WARN plane from the workflow definitions on the PR's base ref), but it demotes
+  # only `FAILURE`: a CANCELLED check-run still reads as red, on either plane,
+  # because a run that did not finish proved nothing. Cancelling a superseded run
+  # here would therefore leave CANCELLED check-runs blocking a merge these WARN
+  # guards are never supposed to block. The rule of record is canon §2.1
+  # (docs/ci-guardrails.md) — read it there, do not restate it here. The `if:`
+  # no-op fence below is safe by contrast: SKIPPED passes the gate. These jobs are
+  # cheap, so a superseded run is left to finish rather than turned into a false
+  # verdict.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
