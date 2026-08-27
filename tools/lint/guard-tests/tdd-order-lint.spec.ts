@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   addedLines,
+  evaluateStaged,
   findOrderViolations,
   hitsFileCap,
   isMergeCommit,
@@ -378,5 +383,180 @@ describe('tdd-order (spawned)', () => {
     })
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('could not fetch')
+  })
+})
+
+/**
+ * The PRE-COMMIT half (#355, owner feedback on PR #394: the CI guard fires too
+ * late — the retro comment mandated a "pre-commit/PR check", and the PR half
+ * alone lets a developer discover the violation only after pushing).
+ *
+ * Same rule, different plane, and the plane changes one thing deliberately: at
+ * pre-commit there is no `test-presence` counterpart running, so a new module
+ * with NO test anywhere is rejected here, where CI stays silent and leaves it to
+ * that guard. The rest is the CI rule read against the index instead of a
+ * commit graph.
+ */
+describe('evaluateStaged', () => {
+  it('accepts a new module whose test is already in HEAD — the RED-first path', () => {
+    expect(
+      evaluateStaged([
+        { path: 'src/lib/leads/intake.ts', headTests: ['tests/unit/x.spec.ts'], indexTests: [] },
+      ]),
+    ).toEqual([])
+  })
+
+  it('rejects a new module with no test in HEAD and none staged', () => {
+    const res = evaluateStaged([{ path: 'src/lib/leads/intake.ts', headTests: [], indexTests: [] }])
+    expect(res).toEqual([{ path: 'src/lib/leads/intake.ts', kind: 'no-test', tests: [] }])
+  })
+
+  it('rejects a MIXED commit — module and its test staged together', () => {
+    const res = evaluateStaged([
+      {
+        path: 'src/lib/leads/intake.ts',
+        headTests: [],
+        indexTests: ['tests/unit/leads-intake.spec.ts'],
+      },
+    ])
+    expect(res).toEqual([
+      {
+        path: 'src/lib/leads/intake.ts',
+        kind: 'mixed',
+        tests: ['tests/unit/leads-intake.spec.ts'],
+      },
+    ])
+  })
+
+  it('a test in HEAD wins even when one is also staged — the obligation was already met', () => {
+    expect(
+      evaluateStaged([
+        {
+          path: 'src/lib/leads/intake.ts',
+          headTests: ['tests/unit/x.spec.ts'],
+          indexTests: ['tests/unit/x.spec.ts'],
+        },
+      ]),
+    ).toEqual([])
+  })
+
+  it('reports every offending module, not just the first', () => {
+    expect(
+      evaluateStaged([
+        { path: 'src/lib/a/one.ts', headTests: [], indexTests: [] },
+        { path: 'src/lib/b/two.ts', headTests: [], indexTests: ['tests/unit/two.spec.ts'] },
+      ]).map((f) => f.kind),
+    ).toEqual(['no-test', 'mixed'])
+  })
+})
+
+describe('tdd-order --staged (spawned against a real git index)', () => {
+  const repos: string[] = []
+  afterAll(() => {
+    for (const dir of repos) rmSync(dir, { recursive: true, force: true })
+  })
+
+  const git = (cwd: string, ...args: string[]) => {
+    const res = spawnSync('git', args, { cwd, encoding: 'utf8' })
+    if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`)
+    return res.stdout
+  }
+
+  const put = (root: string, rel: string, text: string) => {
+    mkdirSync(dirname(join(root, rel)), { recursive: true })
+    writeFileSync(join(root, rel), text)
+  }
+
+  /** A throwaway repo with a real index — the plumbing under test is the real one. */
+  const repo = (build: (root: string) => void) => {
+    const root = mkdtempSync(join(tmpdir(), 'tdd-order-staged-'))
+    repos.push(root)
+    git(root, 'init', '-q')
+    git(root, 'config', 'user.email', 'guard@test.local')
+    git(root, 'config', 'user.name', 'guard test')
+    put(root, 'README.md', '# fixture repo\n')
+    git(root, 'add', '.')
+    git(root, 'commit', '-qm', 'base')
+    build(root)
+    return root
+  }
+
+  const staged = (root: string) => runGuard('tdd-order-lint.mjs', root, { extraArgs: ['--staged'] })
+
+  const MODULE = 'src/lib/leads/intake.ts'
+  const TEST = 'tests/unit/leads-intake.spec.ts'
+  const testBody = "import { intake } from '@/lib/leads/intake'\nit('reds', () => intake())\n"
+
+  it('exits 0 when the failing test is already committed — the ritual followed', () => {
+    const root = repo((r) => {
+      put(r, TEST, testBody)
+      git(r, 'add', '.')
+      git(r, 'commit', '-qm', 'test(leads): RED')
+      put(r, MODULE, 'export const intake = () => true\n')
+      git(r, 'add', MODULE)
+    })
+    const res = staged(root)
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('PASS')
+  })
+
+  it('exits 1 naming the file when a new module is staged with no test anywhere', () => {
+    const root = repo((r) => {
+      put(r, MODULE, 'export const intake = () => true\n')
+      git(r, 'add', MODULE)
+    })
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain(MODULE)
+    expect(res.stderr).toContain('commit the failing test first')
+  })
+
+  it('exits 1 on a MIXED commit and explains the two-commit order', () => {
+    const root = repo((r) => {
+      put(r, MODULE, 'export const intake = () => true\n')
+      put(r, TEST, testBody)
+      git(r, 'add', '.')
+    })
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain(MODULE)
+    expect(res.stderr).toContain(TEST)
+  })
+
+  it('exits 0 when nothing new lands under the platform-module scope', () => {
+    const root = repo((r) => {
+      put(r, 'docs/notes.md', 'prose\n')
+      put(r, 'tools/lint/whatever.mjs', 'export const x = 1\n')
+      git(r, 'add', '.')
+    })
+    const res = staged(root)
+    expect(res.code).toBe(0)
+  })
+
+  it('exits 0 for a MODIFIED existing module — v1 scope is new files', () => {
+    const root = repo((r) => {
+      put(r, MODULE, 'export const intake = () => true\n')
+      git(r, 'add', '.')
+      git(r, 'commit', '-qm', 'feat: module')
+      put(r, MODULE, 'export const intake = () => false\n')
+      git(r, 'add', MODULE)
+    })
+    expect(staged(root).code).toBe(0)
+  })
+
+  it('exits 0 for a RENAME of a tracked module — moving code re-opens no obligation', () => {
+    const root = repo((r) => {
+      put(r, MODULE, 'export const intake = () => true\n')
+      git(r, 'add', '.')
+      git(r, 'commit', '-qm', 'feat: module')
+      git(r, 'mv', MODULE, 'src/lib/leads/renamed.ts')
+    })
+    expect(staged(root).code).toBe(0)
+  })
+
+  it('exits 0 with nothing staged at all', () => {
+    const root = repo(() => {})
+    const res = staged(root)
+    expect(res.code).toBe(0)
   })
 })
