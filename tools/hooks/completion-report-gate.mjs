@@ -204,9 +204,29 @@ export function isInterimStatus(text) {
  *   * «Вопрос N из M» — the numbered header of a standalone question, with or
  *     without a trailing colon or dash. It has no collision with any heading a
  *     real report carries, which is precisely why it is safe and the plural is not.
+ *
+ * The colon is REQUIRED for the singular shape and optional for the numbered
+ * one. That asymmetry is deliberate: the colon is what the skill prescribes, and
+ * a bare «Вопрос владельцу» is one inflection away from the plural heading the
+ * lookahead exists to keep out. It is stated in `report-task-outcome/SKILL.md`
+ * so the next author does not learn it by getting blocked.
+ *
+ * The prefix class tolerates a list bullet (`- `, `* `, `+ `) and a blockquote
+ * (`> `) in front, nested and indented, on the same «the prefix carries no
+ * meaning here» principle as the heading hashes (review of PR #393: a free-prose
+ * question written inside a bulleted «Что нужно от тебя» section — exactly the
+ * 2026-08-27 incident genre — otherwise missed the marker). The bullet group
+ * requires the trailing space, which is what disambiguates a `* ` bullet from
+ * the `**` of markdown emphasis.
+ *
+ * NOT stripped, knowingly: fenced code blocks and inline backticks, so a report
+ * that merely QUOTES the marker exempts itself. That matches
+ * `EXPLICIT_INTERIM_MARKER_RE` and diverges from `tools/lint/stage-b-lint.mjs`,
+ * which does strip fences; the divergence is recorded in `tools/hooks/README.md`
+ * rather than silently carried.
  */
 export const OWNER_QUESTION_MARKER_RE =
-  /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*вопрос(?![а-яё\w])[ \t]*(?:владельцу[*_`]*[ \t]*:|\d+[ \t]+из[ \t]+\d+(?![а-яё\w\d]))/i
+  /(?:^|\n)[ \t]*(?:[-*+>][ \t]+)*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*вопрос(?![а-яё\w])[ \t]*(?:владельцу[*_`]*[ \t]*:|\d+[ \t]+из[ \t]+\d+(?![а-яё\w\d]))/i
 
 export function hasOwnerQuestionMarker(text) {
   return OWNER_QUESTION_MARKER_RE.test(String(text || ''))
@@ -550,23 +570,34 @@ function main() {
       lastAssistantText: extractLastAssistantText(transcript),
       writeActionSeen: hasWriteAction(transcript),
     })
-    // PER-SESSION BLOCK BUDGET (#392): this gate blocks at most ONCE per
-    // session. A second recognized violation is demoted to a warning, so a
-    // recognizer that is wrong about free prose costs the session one block, not
-    // one block per message. State I/O lives here; the decision is the pure
-    // `applyBlockBudget` seam above it.
-    const statePath = blockBudgetStatePath(mainRepoRoot(process.cwd()), payload.session_id)
-    const state = readState(statePath)
-    const budgeted = applyBlockBudget({
-      decision,
-      alreadyBlocked: hasSpentBlockBudget(state, BUDGET_KEY),
-    })
-    if (budgeted.demoted) {
-      emitWarn(budgetDemotedMessage(blockMessage()))
-      process.exit(0)
-    }
-    if (budgeted.block) {
-      recordBlockBudgetSpend(statePath, state, BUDGET_KEY)
+    if (decision.block) {
+      // PER-SESSION BLOCK BUDGET (#392): this gate blocks at most ONCE per
+      // session. A second recognized violation is demoted to a warning, so a
+      // recognizer that is wrong about free prose costs the session one block,
+      // not one block per message. State I/O lives here — inside the blocking
+      // branch, so the overwhelmingly common quiet path pays no `spawnSync`; the
+      // decision itself is the pure `applyBlockBudget` seam.
+      //
+      // NO SESSION ID → NO BUDGET. `stateFilePath` would otherwise fall back to
+      // a shared `unknown.json` that nothing ever expires, and one block written
+      // there would demote this BLOCK gate to warn-only for every later
+      // id-less session on the box — permanently. A gate silently disarmed
+      // forever is far worse than one extra block, so this is the one place the
+      // fail-open default is inverted (review of PR #393).
+      const sessionId = payload.session_id
+      const statePath = sessionId
+        ? blockBudgetStatePath(mainRepoRoot(process.cwd()), sessionId)
+        : null
+      const state = statePath ? readState(statePath) : {}
+      const budgeted = applyBlockBudget({
+        decision,
+        alreadyBlocked: Boolean(statePath) && hasSpentBlockBudget(state, BUDGET_KEY),
+      })
+      if (budgeted.demoted) {
+        emitWarn(budgetDemotedMessage(blockMessage()))
+        process.exit(0)
+      }
+      if (statePath) recordBlockBudgetSpend(statePath, state, BUDGET_KEY)
       process.stderr.write(blockMessage())
       process.exit(2)
     }

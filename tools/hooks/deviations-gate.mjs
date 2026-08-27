@@ -209,22 +209,27 @@ function main() {
       haltSignal: detectHaltSignal(transcript),
       writeActionSeen: hasWriteAction(transcript),
     })
-    // PER-SESSION BLOCK BUDGET (#392): see the twin comment in
-    // `completion-report-gate.mjs`. Both blocking branches of this gate share one
-    // budget key — to the session they are one gate blocking twice.
-    const message = decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage()
-    const statePath = blockBudgetStatePath(mainRepoRoot(process.cwd()), payload.session_id)
-    const state = readState(statePath)
-    const budgeted = applyBlockBudget({
-      decision,
-      alreadyBlocked: hasSpentBlockBudget(state, BUDGET_KEY),
-    })
-    if (budgeted.demoted) {
-      emitWarn(budgetDemotedMessage(message))
-      process.exit(0)
-    }
-    if (budgeted.block) {
-      recordBlockBudgetSpend(statePath, state, BUDGET_KEY)
+    if (decision.block) {
+      // PER-SESSION BLOCK BUDGET (#392): see the twin comment in
+      // `completion-report-gate.mjs`, including why a payload without a
+      // `session_id` skips the budget instead of sharing an `unknown.json`. Both
+      // blocking branches of this gate share ONE budget key — to the session they
+      // are one gate blocking twice.
+      const message = decision.reason === 'self-cert' ? selfCertBlockMessage() : blockMessage()
+      const sessionId = payload.session_id
+      const statePath = sessionId
+        ? blockBudgetStatePath(mainRepoRoot(process.cwd()), sessionId)
+        : null
+      const state = statePath ? readState(statePath) : {}
+      const budgeted = applyBlockBudget({
+        decision,
+        alreadyBlocked: Boolean(statePath) && hasSpentBlockBudget(state, BUDGET_KEY),
+      })
+      if (budgeted.demoted) {
+        emitWarn(budgetDemotedMessage(message))
+        process.exit(0)
+      }
+      if (statePath) recordBlockBudgetSpend(statePath, state, BUDGET_KEY)
       process.stderr.write(message)
       process.exit(2)
     }

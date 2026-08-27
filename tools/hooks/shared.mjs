@@ -186,12 +186,27 @@ export function writeState(path, state, deps = {}) {
 }
 
 /**
+ * @typedef {{block?: boolean, reason?: string}} GateDecision
+ * @typedef {{blocked: Record<string, boolean>}} BlockBudgetState — the shape the
+ *   writer produces; readers accept `unknown` and validate, see below.
+ */
+
+/**
  * The block budget as a PURE function (#392), so the decision is unit-testable
  * without touching the filesystem: `main()` supplies the state I/O, this decides.
  *
  * `alreadyBlocked` defaults to `false` — that is the FAIL-OPEN direction on
  * purpose. Unreadable or lost state costs at most one extra block, while the
  * opposite default would silently disarm a gate that never actually fired.
+ *
+ * The JSDoc types are load-bearing, not decoration: without them TS infers the
+ * parameter from the destructuring defaults alone, `decision` (which has no
+ * default) drops out of the inferred shape, and every caller of this exported
+ * seam becomes untypeable from the outside — which is exactly what turned
+ * `lint-and-typecheck` red on PR #393.
+ *
+ * @param {{decision?: GateDecision, alreadyBlocked?: boolean}} [args]
+ * @returns {{block: boolean, demoted: boolean, reason?: string}}
  */
 export function applyBlockBudget({ decision, alreadyBlocked = false } = {}) {
   const d = decision && typeof decision === 'object' ? decision : {}
@@ -206,17 +221,39 @@ export function applyBlockBudget({ decision, alreadyBlocked = false } = {}) {
  * the recording of a spend. Both reads and writes are fail-open (`readState` /
  * `writeState` swallow their own errors), so a lost state costs one extra block.
  */
+/**
+ * @param {string} root
+ * @param {string} sessionId — REQUIRED and non-empty; see the note in each gate's
+ *   `main()`: without a real session id the budget is skipped entirely rather
+ *   than written to a shared, never-expiring `unknown.json`.
+ * @returns {string}
+ */
 export function blockBudgetStatePath(root, sessionId) {
   return stateFilePath(root, STOP_BLOCK_BUDGET_STATE_DIR_REL, sessionId)
 }
 
+/**
+ * Defensive by contract — `state` is whatever `readState` salvaged from disk,
+ * so it is typed `unknown` and every non-conforming shape reads as «not spent».
+ *
+ * @param {unknown} state
+ * @param {string} key
+ * @returns {boolean}
+ */
 export function hasSpentBlockBudget(state, key) {
   const blocked = state && typeof state.blocked === 'object' ? state.blocked : null
   return Boolean(blocked && blocked[key])
 }
 
+/**
+ * @param {string} path
+ * @param {unknown} state
+ * @param {string} key
+ * @param {{mkdir?: (dir: string) => void, writeFile?: (p: string, c: string) => void}} [deps]
+ * @returns {void}
+ */
 export function recordBlockBudgetSpend(path, state, key, deps = {}) {
-  const blocked = state && typeof state.blocked === 'object' ? state.blocked : {}
+  const blocked = state && typeof state.blocked === 'object' && state.blocked ? state.blocked : {}
   writeState(path, { ...state, blocked: { ...blocked, [key]: true } }, deps)
 }
 
@@ -230,7 +267,12 @@ export function budgetDemotedMessage(message) {
 }
 
 /**
- * PreToolUse-предупреждение: только `systemMessage`, БЕЗ `hookSpecificOutput`.
+ * Предупреждение БЕЗ блока: только `systemMessage`, БЕЗ `hookSpecificOutput`.
+ * Двое пользователей, оба легитимны: PreToolUse-гарды и — с #392 —
+ * демотированный блок двух Stop-гейтов, у которых бюджет уже израсходован.
+ * На Stop-хуке `systemMessage` доходит до ОПЕРАТОРА, а не в контекст модели
+ * (единственный модель-обращённый канал там — exit 2 + stderr, то есть ровно тот
+ * блок, который и демотируется); докам это известно, они большего не обещают.
  *
  * `permissionDecision: "allow"` — это не «промолчать», а активное разрешение
  * вызова в обход обычного разрешительного потока владельца: WARN-гард на

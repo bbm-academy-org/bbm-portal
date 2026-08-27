@@ -21,7 +21,13 @@ import {
   hasDeviationsLine,
   hasNoDeviationsValue,
 } from '../../tools/hooks/deviations-gate.mjs'
-import { applyBlockBudget, budgetDemotedMessage } from '../../tools/hooks/shared.mjs'
+import {
+  applyBlockBudget,
+  blockBudgetStatePath,
+  budgetDemotedMessage,
+  hasSpentBlockBudget,
+  recordBlockBudgetSpend,
+} from '../../tools/hooks/shared.mjs'
 import { decideWarn } from '../../tools/hooks/surface-decision-debt-gate.mjs'
 
 /**
@@ -391,10 +397,42 @@ describe('#392: the declared owner-question MARKER line', () => {
   })
 
   it('the numbered «Вопрос N из M» header is recognized with or without a tail', () => {
+    // The em-dash tail is the shape the 2026-08-26 incident message itself used.
     expect(hasOwnerQuestionMarker('Вопрос 2 из 8 — доступ к записям')).toBe(true)
+    expect(hasOwnerQuestionMarker('Вопрос 2 из 8 - доступ к записям')).toBe(true)
     expect(hasOwnerQuestionMarker('Вопрос 2 из 8: доступ к записям')).toBe(true)
+    expect(hasOwnerQuestionMarker('Вопрос 2 из 8')).toBe(true)
     expect(hasOwnerQuestionMarker('**Вопрос 2 из 8**')).toBe(true)
     expect(hasOwnerQuestionMarker('Отчёт готов.\n### Вопрос 12 из 12')).toBe(true)
+  })
+
+  // Review of PR #393: a free-prose owner question written inside a bulleted
+  // «Что нужно от тебя» section is exactly the incident genre, and a bullet or a
+  // blockquote prefix defeated the marker. Both are stripped now, on the same
+  // «the prefix carries no meaning here» principle as the heading hashes.
+  it('a list bullet or a blockquote before the marker is tolerated', () => {
+    expect(hasOwnerQuestionMarker('- Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('* Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('+ Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('  - **Вопрос владельцу:** списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('> Вопрос владельцу: списываем пункт 2?')).toBe(true)
+    expect(hasOwnerQuestionMarker('> - Вопрос 4 из 9 — оплата')).toBe(true)
+    // …and the plural still leaks through none of the new prefixes.
+    for (const prefix of ['- ', '* ', '> ', '  - ']) {
+      expect(hasOwnerQuestionMarker(`${prefix}Вопросы владельцу:`)).toBe(false)
+      expect(hasOwnerQuestionMarker(`${prefix}**Вопросы владельцу**`)).toBe(false)
+    }
+  })
+
+  // The asymmetry is deliberate and documented in
+  // `.claude/skills/report-task-outcome/SKILL.md`: the colon is what the skill
+  // prescribes for the singular line, and a bare «Вопрос владельцу» without it
+  // is one inflection away from the plural report heading.
+  it('the singular marker requires its colon', () => {
+    expect(hasOwnerQuestionMarker('Вопрос владельцу — списываем пункт 2?')).toBe(false)
+    expect(hasOwnerQuestionMarker('Вопрос владельцу')).toBe(false)
+    expect(hasOwnerQuestionMarker('Вопрос к владельцу: списываем?')).toBe(false)
+    expect(hasOwnerQuestionMarker('Вопрос-владельцу: списываем?')).toBe(false)
   })
 
   // THE BLOCKER OF THE PR #375 ROUND-1 REVIEW, pinned in both directions: the
@@ -486,21 +524,71 @@ describe('#392: per-session block budget', () => {
   })
 
   it('the budget is per gate: a spent completion-report budget leaves deviations intact', () => {
-    // The state shape both gates share; each reads only its own key, so the
-    // gates cannot spend each other's budget.
-    const state = { blocked: { 'completion-report': true } }
+    // The PRODUCTION predicate decides here, not a re-implementation of it in
+    // the test: the state SHAPE agreed between writer and reader and the per-gate
+    // KEY are the two things that can actually break the mechanism, so they are
+    // what gets asserted (review of PR #393).
+    const state = { blocked: { [COMPLETION_REPORT_BUDGET_KEY]: true } }
     expect(
       applyBlockBudget({
         decision: { block: true },
-        alreadyBlocked: Boolean(state.blocked[COMPLETION_REPORT_BUDGET_KEY]),
+        alreadyBlocked: hasSpentBlockBudget(state, COMPLETION_REPORT_BUDGET_KEY),
       }),
     ).toEqual({ block: false, demoted: true })
     expect(
       applyBlockBudget({
         decision: { block: true },
-        alreadyBlocked: Boolean(state.blocked[DEVIATIONS_BUDGET_KEY]),
+        alreadyBlocked: hasSpentBlockBudget(state, DEVIATIONS_BUDGET_KEY),
       }),
     ).toEqual({ block: true, demoted: false })
+  })
+
+  // The state I/O half, exercised through the injectable `deps` seam the writer
+  // was given precisely so it needs no filesystem. Writer and reader are pinned
+  // together: whatever `recordBlockBudgetSpend` serializes is what
+  // `hasSpentBlockBudget` must read back.
+  it('round-trips a spend through the injectable writer and back through the reader', () => {
+    const writes: Record<string, string> = {}
+    const dirs: string[] = []
+    const deps = {
+      mkdir: (d: string) => {
+        dirs.push(d)
+      },
+      writeFile: (p: string, c: string) => {
+        writes[p] = c
+      },
+    }
+    const path = '/tmp/bbm-budget/session-abc.json'
+
+    expect(hasSpentBlockBudget({}, DEVIATIONS_BUDGET_KEY)).toBe(false)
+
+    recordBlockBudgetSpend(path, {}, DEVIATIONS_BUDGET_KEY, deps)
+    expect(dirs).toEqual(['/tmp/bbm-budget'])
+    const afterFirst = JSON.parse(writes[path])
+    expect(afterFirst).toEqual({ blocked: { deviations: true } })
+    expect(hasSpentBlockBudget(afterFirst, DEVIATIONS_BUDGET_KEY)).toBe(true)
+    expect(hasSpentBlockBudget(afterFirst, COMPLETION_REPORT_BUDGET_KEY)).toBe(false)
+
+    // A second gate's spend merges into the same object instead of replacing it.
+    recordBlockBudgetSpend(path, afterFirst, COMPLETION_REPORT_BUDGET_KEY, deps)
+    const afterBoth = JSON.parse(writes[path])
+    expect(afterBoth).toEqual({ blocked: { deviations: true, 'completion-report': true } })
+    expect(hasSpentBlockBudget(afterBoth, DEVIATIONS_BUDGET_KEY)).toBe(true)
+    expect(hasSpentBlockBudget(afterBoth, COMPLETION_REPORT_BUDGET_KEY)).toBe(true)
+  })
+
+  it('the reader is fail-open on every shape a lost or corrupt state can take', () => {
+    for (const state of [undefined, null, {}, { blocked: null }, { blocked: 'nope' }]) {
+      expect(hasSpentBlockBudget(state, DEVIATIONS_BUDGET_KEY)).toBe(false)
+    }
+  })
+
+  it('the state path is per session, under the budget state dir', () => {
+    const path = blockBudgetStatePath('/repo', 'sess/01:ABC')
+    expect(path.replace(/\\/g, '/')).toContain('/.claude/stop-gate-budget-state/')
+    // `stateFilePath` sanitises the id — no separator from it may reach the path.
+    expect(path.replace(/\\/g, '/')).toMatch(/\/sess_01_ABC\.json$/)
+    expect(blockBudgetStatePath('/repo', 'a')).not.toEqual(blockBudgetStatePath('/repo', 'b'))
   })
 
   it('fail-open: unusable state defaults to "not yet blocked"', () => {

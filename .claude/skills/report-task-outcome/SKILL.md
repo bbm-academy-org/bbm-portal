@@ -209,6 +209,12 @@ question message owes:
 Вопрос N из M — <the subject>
 ```
 
+**The colon on the singular line is not optional.** «Вопрос владельцу — …» with
+a dash is NOT read as a marker, while the numbered header takes a colon, a dash
+or nothing. The asymmetry is deliberate: a bare «Вопрос владельцу» is one
+inflection away from the plural heading below, and the colon is what separates
+them. A list bullet or a blockquote in front of either line is fine.
+
 **Singular, and the singular matters.** «Вопрос владельцу:» (SINGULAR + colon,
 markdown emphasis around it tolerated) and the numbered «Вопрос N из M» header
 are markers. The PLURAL **«Вопросы владельцу» is NOT** — it is point 5 of the
