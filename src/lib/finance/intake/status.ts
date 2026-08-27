@@ -41,9 +41,10 @@ export type FinanceIntakeTransitionAct = (typeof FINANCE_INTAKE_ACTS)[number]
  * Who the act belongs to, as a label the handler resolves against the row.
  *
  *  - `entry-or-submitter` — the entry role, or the submitter of their own
- *    request (the EARS-502 carve-out);
- *  - `submitter` — the person who filed it, and only them (a withdrawal is not
- *    somebody else's act);
+ *    request (the EARS-502 carve-out). `submit` and `delete` both sit here;
+ *  - `submitter` — the person who filed it, and only them. `cancel` alone: a
+ *    withdrawal is a statement about one's own intent, not a clerical act, so it
+ *    is the one gate the entry role does not widen;
  *  - `approve` — `finance-approve` (EARS-501).
  */
 export type FinanceIntakeGate = 'entry-or-submitter' | 'submitter' | 'approve'
@@ -67,7 +68,12 @@ export const FINANCE_INTAKE_TRANSITIONS: readonly FinanceIntakeTransition[] = [
     reasonRequired: false,
   },
   // The ONLY deletion in the whole machine (EARS-524: «no deletion past draft»).
-  { act: 'delete', from: 'draft', to: null, gate: 'submitter', reasonRequired: false },
+  // Gated like `submit` rather than on the author alone — owner ruling, Антон,
+  // 2026-08-27: a draft is deleted by its CREATOR or by any `finance-entry`
+  // holder. Creator-only left `draft` with no exit at all once its author had
+  // gone: `cancel` starts at `submitted` and refusal is the approve role's act on
+  // a submitted item, so a bad import row was undeletable by everyone.
+  { act: 'delete', from: 'draft', to: null, gate: 'entry-or-submitter', reasonRequired: false },
   { act: 'approve', from: 'submitted', to: 'approved', gate: 'approve', reasonRequired: false },
   { act: 'refuse', from: 'submitted', to: 'refused', gate: 'approve', reasonRequired: true },
   { act: 'cancel', from: 'submitted', to: 'cancelled', gate: 'submitter', reasonRequired: false },

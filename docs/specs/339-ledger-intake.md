@@ -190,7 +190,8 @@ conversions — or the books cannot be rebuilt.
 
 **Status machine** (every transition not listed is refused — EARS-524):
 
-- `draft` → `submitted` (creator/entry) · `draft` → deleted (creator, CRUD).
+- `draft` → `submitted` (creator/entry) · `draft` → deleted (creator or entry
+  role, CRUD).
 - `submitted` → `approved` (approve role) · → `refused` (approve role, reason
   required) · → `cancelled` (the submitter withdraws).
 - `approved` → `posted` (approve role; document gate EARS-506; one act when
@@ -520,14 +521,14 @@ a declared clause.
 
 ## CRUD check (task-cycle stage 1a)
 
-| Resource                                | Create                                                      | Read                                                        | Update                                                                                      | Delete                                                                                       |
-| --------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| requests (`/p/finance/requests`)        | any platform member (EARS-502)                              | own — the submitter; all — entry/approve roles              | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512)  |
-| intake items (`/p/finance/intake`)      | `finance-entry` (manual, backfill bulk); producers (import) | entry/approve roles                                         | entry role per the status machine; **never after `posted`** (EARS-505)                      | creator deletes `draft` only (status machine); later — refuse/cancel, not delete             |
-| documents                               | submitter on own items; entry role anywhere                 | submitter — own items' docs; entry/approve — all (EARS-523) | `kind` only, while no linked item is posted                                                 | while unlinked or all linked items unposted; linked to a posted operation — never (EARS-516) |
-| counterparties                          | any member inline from the forms; entry role (EARS-532)     | every finance reader                                        | rename — admin (reference administration, EARS-529)                                         | none (referenced by postings); merge out of scope in v1                                      |
-| purpose proposals                       | any platform member from the request form (EARS-526)        | admin (reference cabinet), proposer sees own                | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                   |
-| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501)                           | queue — approve role                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                          |
+| Resource                                | Create                                                      | Read                                                        | Update                                                                                      | Delete                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| requests (`/p/finance/requests`)        | any platform member (EARS-502)                              | own — the submitter; all — entry/approve roles              | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512)    |
+| intake items (`/p/finance/intake`)      | `finance-entry` (manual, backfill bulk); producers (import) | entry/approve roles                                         | entry role per the status machine; **never after `posted`** (EARS-505)                      | creator or entry role deletes `draft` only (status machine); later — refuse/cancel, not delete |
+| documents                               | submitter on own items; entry role anywhere                 | submitter — own items' docs; entry/approve — all (EARS-523) | `kind` only, while no linked item is posted                                                 | while unlinked or all linked items unposted; linked to a posted operation — never (EARS-516)   |
+| counterparties                          | any member inline from the forms; entry role (EARS-532)     | every finance reader                                        | rename — admin (reference administration, EARS-529)                                         | none (referenced by postings); merge out of scope in v1                                        |
+| purpose proposals                       | any platform member from the request form (EARS-526)        | admin (reference cabinet), proposer sees own                | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                     |
+| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501)                           | queue — approve role                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                            |
 
 Deliberately unsupported: editing or deleting anything already posted (the
 ledger's own EARS-313 stands); posting without a document (EARS-506);

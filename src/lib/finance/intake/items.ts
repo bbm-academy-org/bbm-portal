@@ -649,8 +649,9 @@ function assertTransitionGate(
   if (transition.gate === 'submitter') {
     if (row.createdBy !== actorMemberId) {
       throw new FinanceAccessRefusal(
-        `Это действие принадлежит автору позиции приёмки #${row.id}: отзыв и удаление ` +
-          'черновика — акты заявителя, а не роли (EARS-524).',
+        `Отзыв позиции приёмки #${row.id} принадлежит её автору: это заявление о ` +
+          'собственном намерении, а не роль (EARS-524). Удаление черновика — шире: ' +
+          `автор или роль «${FINANCE_ENTRY_ROLE}» (решение владельца, Антон, 2026-08-27).`,
       )
     }
     return
