@@ -1,0 +1,21 @@
+[
+  {
+    "sha": "mrg9",
+    "parents": [
+      {
+        "sha": "branch0"
+      },
+      {
+        "sha": "main0"
+      }
+    ]
+  },
+  {
+    "sha": "aaa1",
+    "parents": [
+      {
+        "sha": "mrg9"
+      }
+    ]
+  }
+]

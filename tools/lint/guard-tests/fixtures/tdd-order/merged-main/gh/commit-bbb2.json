@@ -1,0 +1,15 @@
+{
+  "sha": "bbb2",
+  "parents": [
+    {
+      "sha": "mmm0"
+    }
+  ],
+  "files": [
+    {
+      "filename": "tests/unit/other-landed.spec.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,3 @@\n+import { landedElsewhere } from '@/lib/other/landed-on-main'\n+\n+it('is landed', () => expect(landedElsewhere).toBe(true))"
+    }
+  ]
+}

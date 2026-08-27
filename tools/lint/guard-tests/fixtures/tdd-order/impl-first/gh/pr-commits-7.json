@@ -1,0 +1,14 @@
+[
+  {
+    "sha": "aaa1",
+    "commit": {
+      "message": "fixture commit aaa1"
+    }
+  },
+  {
+    "sha": "bbb2",
+    "commit": {
+      "message": "fixture commit bbb2"
+    }
+  }
+]

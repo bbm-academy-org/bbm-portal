@@ -1,0 +1,10 @@
+{
+  "sha": "bbb2",
+  "files": [
+    {
+      "filename": "src/lib/leads/intake.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,3 @@\n+export function intake(raw) {\n+  return { ...raw, received: true }\n+}"
+    }
+  ]
+}

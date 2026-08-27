@@ -12,12 +12,12 @@ on:
 
 # Least-privilege floor for the whole workflow (#220). `contents: read` is all a
 # job needs to check out, install and run a tree-local guard or the test tier —
-# which is every job here except `tdd-signal`, the one that reads PR metadata
-# through `gh`.
+# which is every job here except the ones that read PR metadata through `gh`
+# (`design-fidelity`, `test-presence`, `tdd-order`).
 #
 # A job-level `permissions:` block REPLACES this one, it does not merge with it:
 # any job that declares its own must list EVERY scope it needs, `contents: read`
-# included. `tdd-signal` below already does. Widen there, never here — raising
+# included. Those three below already do. Widen there, never here — raising
 # this floor hands the extra scope to every job in the file.
 permissions:
   contents: read
@@ -227,10 +227,67 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
+  # A NEW platform module whose test did not land in a STRICTLY EARLIER commit of
+  # the same PR (#355). Severity of record: docs/ci-guardrails.md §5, row
+  # `tdd-order` — read that row, not this comment.
+  #
+  # WARN by the §3 DEFAULT, settled 2026-08-27 — and the reasoning is kept because
+  # an earlier draft of this job got it wrong. A day-0 BLOCK was claimed under §3
+  # class 1; class 1 excludes this guard by name, because its only input is PR
+  # metadata fetched over the network and judged with a substring match, which is
+  # exactly what §3's closing line sends to a WARN soak. No owner class-3 mandate
+  # was sought or granted: the canon's own default decided it, so there is nothing
+  # contested left here. Promotion to BLOCK follows §4 (≥4 clean weeks) —
+  # earliest 2026-09-24, the usual three edits (drop `continue-on-error`, add the
+  # job to the `ci` needs-list, update the §5 row).
+  #
+  # The PRE-COMMIT half of this same guard (`--staged`, on the simple-git-hooks
+  # line) is untouched by that and blocks locally from day one: it reads only the
+  # local tree and index through git plumbing, meeting class 1 on its own terms.
+  # Two enforcement points, two severities, both recorded in the §5 row.
+  #
+  # The guard header enumerates the false-positive class honestly — two paths
+  # closed in code (merge-commit first-parent diffs, truncated commit file lists),
+  # one open and benign (substring needles: a false PASS, never a false BLOCK).
+  #
+  # No `--severity` flag: the guard has exited 1 on a finding since day 0, so the
+  # dial `stage-b` and `spec-link` need would be a no-op here that could only ever
+  # weaken it (§6.1).
+  #
+  # Reads PR metadata through `gh` (the REST commits endpoints, not `--json
+  # files` — the shallow checkout has no base ref to walk), hence the auth block
+  # workflow-auth enforces. `pull-requests: read` covers both endpoints.
+  tdd-order:
+    continue-on-error: true # WARN since 2026-08-27 — canon §5, earliest promotion 2026-09-24
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:tdd-order
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
   # WARN — production changed with no test in the diff and none in the tree.
   # Reads the PR's changed-file set through `gh`, hence the auth block
   # (workflow-auth enforces its presence).
-  tdd-signal:
+  #
+  # Called `tdd-signal` until 2026-08-27 (#355). The rename is not cosmetic: this
+  # job answers «does a test EXIST», and a green check under the old name was
+  # read as an attestation that TDD had happened — which it was not, and which
+  # PR #354 proved by passing it with an implementation written before its tests.
+  # The order question is the `tdd-order` job below. Renaming changed no rule, so
+  # the §4 promotion clock is untouched (earliest 2026-09-02).
+  test-presence:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -245,7 +302,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint:tdd-signal
+      - run: pnpm lint:test-presence
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
