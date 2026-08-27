@@ -22,6 +22,7 @@ import {
   ADMIN,
   APPROVER,
   ENTRY,
+  fixtureWrite,
   fundProjectId,
   MEMBER,
   seedCounterparty,
@@ -199,6 +200,45 @@ describe('A duplicate arrival is refused and answers with the existing item (EAR
   })
 })
 
+describe("The model row's own invariants (spec 339 §Data model)", () => {
+  it('personal_funds names the member it is owed to, in both planes', async () => {
+    // «`member` FK (nullable — … required for `personal_funds` and liability
+    // transfers)». A personal-funds item without it is a reimbursement debt owed
+    // to nobody, and EARS-513's «who does BBM owe and how much» cannot be
+    // expressed over it. Unlike the per-kind nullability of `product_id` and
+    // `counterparty_id`, this one depends on no other row: `personal_funds` is a
+    // boolean here, so the payer is known at creation time.
+    const refs = await seedIntakeReferences()
+    const payerId = await seedMember('payer@bbm.academy', 'Payer Person')
+    const personal = {
+      source: 'manual' as const,
+      kind: 'expense' as const,
+      occurredOn: '2026-08-20',
+      accountId: null,
+      amount: 37_000n,
+      currency: 'RUB',
+      purposeId: refs.purposeId,
+      projectId: refs.projectId,
+      counterpartyId: refs.counterpartyId,
+      alreadyPaid: true,
+      personalFunds: true,
+    }
+
+    await expect(createIntakeItem(ENTRY, personal)).rejects.toBeInstanceOf(FinanceRefusal)
+
+    const item = await createIntakeItem(ENTRY, { ...personal, memberId: payerId })
+    expect(item.memberId).toBe(payerId)
+
+    const rejection = await db
+      .execute(sql`update core.finance_intake_item set member_id = null where id = ${item.id}`)
+      .then(
+        () => null,
+        (error: unknown) => error as { cause?: { constraint?: string } },
+      )
+    expect(rejection?.cause?.constraint).toBe('finance_intake_item_personal_funds_member')
+  })
+})
+
 describe('The status machine over real rows (EARS-524)', () => {
   it('EARS-524: the submitter walks draft → submitted → cancelled without any flow role', async () => {
     const refs = await seedIntakeReferences()
@@ -207,6 +247,98 @@ describe('The status machine over real rows (EARS-524)', () => {
     expect(submitted?.status).toBe('submitted')
     const cancelled = await transitionIntakeItem(MEMBER, item.id, 'cancel')
     expect(cancelled?.status).toBe('cancelled')
+  })
+
+  it('EARS-524: two transitions racing on one item — exactly one is refused', async () => {
+    // The status a decision was made on has to be re-asserted AT WRITE TIME, or
+    // the machine is enforced only in memory: two callers both read `submitted`,
+    // both write, and the item lands in a state no listed transition produced —
+    // `cancelled` carrying an approval's decider, or a plain `cancelled →
+    // approved`. F1's `reverseOperation` reads inside its own transaction for
+    // exactly this reason.
+    const refs = await seedIntakeReferences()
+    const item = await createIntakeItem(MEMBER, requestLine(refs))
+    await transitionIntakeItem(MEMBER, item.id, 'submit')
+
+    // The interleave is STAGED rather than hoped for: a fixture transaction
+    // cancels the item and is held open, so the racing approval reads the row
+    // while `submitted` is still the committed truth. Racing two handlers with
+    // `Promise.all` would prove nothing — the pool serializes them and the
+    // second one's read happens to see fresh data.
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const holder = fixtureWrite(async (tx) => {
+      await tx.execute(
+        sql`update core.finance_intake_item set status = 'cancelled' where id = ${item.id}`,
+      )
+      await held
+    })
+
+    const racing = transitionIntakeItem(APPROVER, item.id, 'approve').then(
+      (value) => value,
+      (error: unknown) => error,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    release()
+    await holder
+
+    expect(await racing).toBeInstanceOf(FinanceRefusal)
+    const final = await getIntakeItem(APPROVER, item.id)
+    // `cancelled → approved` is in no row of FINANCE_INTAKE_TRANSITIONS, and a
+    // cancelled item never carries the decision of an approval that lost.
+    expect(final?.status).toBe('cancelled')
+    expect(final?.decidedAt).toBeNull()
+  })
+
+  it('EARS-524: an edit racing a refusal cannot overwrite the terminal status it never read', async () => {
+    // `editIntakeItem` writes `status` UNCONDITIONALLY on every edit, so an edit
+    // that read `submitted` and committed after a refusal silently resurrects the
+    // item — and once #385 lands, the same shape overwrites `posted`.
+    const refs = await seedIntakeReferences()
+    const item = await createIntakeItem(MEMBER, requestLine(refs))
+    await transitionIntakeItem(MEMBER, item.id, 'submit')
+
+    await Promise.allSettled([
+      transitionIntakeItem(APPROVER, item.id, 'refuse', { reason: 'дубль' }),
+      editIntakeItem(ENTRY, item.id, { amount: 130_000n }),
+    ])
+
+    const final = await getIntakeItem(APPROVER, item.id)
+    expect(final?.status).toBe('refused')
+    expect(final?.refusalReason).toBe('дубль')
+  })
+
+  it('EARS-524: an edit that changes nothing does not bounce an approved item', async () => {
+    // The bounce means «the approval no longer covers the data». Re-saving the
+    // same amount changes no data, so it is not that.
+    const refs = await seedIntakeReferences()
+    const item = await createIntakeItem(MEMBER, requestLine(refs))
+    await transitionIntakeItem(MEMBER, item.id, 'submit')
+    const approved = await transitionIntakeItem(APPROVER, item.id, 'approve')
+
+    const edited = await editIntakeItem(ENTRY, item.id, { amount: item.amount })
+    expect(edited.status).toBe('approved')
+    expect(edited.decidedAt?.getTime()).toBe(approved?.decidedAt?.getTime())
+  })
+
+  it("EARS-524: a stranger's refusal names no status — the machine answer is not an oracle", async () => {
+    // Checking the machine before the role is right (a submitter who tried to
+    // delete a `submitted` request needs «отзовите», not «недостаточно прав») —
+    // but it must not read a stranger someone else's status out loud on the way.
+    const refs = await seedIntakeReferences()
+    const item = await createIntakeItem(MEMBER, requestLine(refs))
+    await transitionIntakeItem(MEMBER, item.id, 'submit')
+    await transitionIntakeItem(APPROVER, item.id, 'approve')
+
+    const stranger = { email: 'oracle@bbm.academy', roles: ['platform-user'] }
+    await seedMember(stranger.email, 'Oracle Probe')
+    const refusal = await transitionIntakeItem(stranger, item.id, 'cancel').catch(
+      (error: unknown) => error as Error,
+    )
+    expect(refusal).toBeInstanceOf(FinanceAccessRefusal)
+    expect(refusal.message).not.toContain('approved')
   })
 
   it('EARS-524: approving and refusing demand finance-approve, and a refusal demands its reason', async () => {
