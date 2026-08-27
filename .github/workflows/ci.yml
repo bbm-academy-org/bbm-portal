@@ -227,6 +227,40 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
+  # BLOCK from day 0 under the canon §3 class-1 mandate — a NEW platform module
+  # whose test did not land in a STRICTLY EARLIER commit of the same PR (#355).
+  # Recorded mandate: docs/ci-guardrails.md §5, row `tdd-order`. The input is the
+  # PR's own commit graph — which commit introduced which file, which commit's
+  # patch first cites it — so there is no heuristic and no false-positive class
+  # for a WARN soak to discover, the same reasoning as `guard-test-coverage` and
+  # `design-fidelity` above.
+  #
+  # It is here and in the `ci` needs-list because that IS what BLOCK means (§2.1).
+  # No `--severity` flag: the guard has exited 1 on a finding since day 0, so a
+  # dial could only ever weaken it (§6.1).
+  #
+  # Reads PR metadata through `gh` (the REST commits endpoints, not `--json
+  # files` — the shallow checkout has no base ref to walk), hence the auth block
+  # workflow-auth enforces. `pull-requests: read` covers both endpoints.
+  tdd-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:tdd-order
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
   # WARN — production changed with no test in the diff and none in the tree.
   # Reads the PR's changed-file set through `gh`, hence the auth block
   # (workflow-auth enforces its presence).
@@ -458,6 +492,7 @@ jobs:
         platform-int,
         ssot-freshness,
         design-fidelity,
+        tdd-order,
       ]
     if: always()
     runs-on: ubuntu-latest
