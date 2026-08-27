@@ -140,8 +140,6 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
 const DEFERRALS_BY_ISSUE = {
   339: {
     ids: [
-      'EARS-501',
-      'EARS-502',
       'EARS-503',
       'EARS-504',
       'EARS-505',
@@ -167,13 +165,11 @@ const DEFERRALS_BY_ISSUE = {
       'EARS-526',
       'EARS-527',
       'EARS-528',
-      'EARS-529',
-      'EARS-530',
       'EARS-531',
       'EARS-532',
     ],
     reason:
-      'spec 339 (docs/specs/339-ledger-intake.md, finance F2 — filling the ledger) is the same shape as spec 311 above: owner-approved and `In dev` BEFORE its first line of code, numbered EARS-501… precisely so the flat keyspace does not swallow it, so every clause is genuinely uncovered on the day the spec lands. #339 is the parent issue; as its sub-tasks land their TDD slices these ids drain from this entry and the stale check fails until they are dropped. The list has no entry for the one number spec 339 retired before the go: that clause is a process note under its §G and the spec deliberately does not write it as an id token, so the guard never counts it as declared and a deferral for it would sit here forever',
+      'spec 339 (docs/specs/339-ledger-intake.md, finance F2 — filling the ledger) is the same shape as spec 311 above: owner-approved and `In dev` BEFORE its first line of code, numbered EARS-501… precisely so the flat keyspace does not swallow it, so every clause is genuinely uncovered on the day the spec lands. #339 is the parent issue; as its sub-tasks land their TDD slices these ids drain from this entry and the stale check fails until they are dropped — #380 drained the first four (EARS-501/502/529/530: the two flow roles, the submitter carve-out and the narrowing of spec 338 EARS-330). The list has no entry for the one number spec 339 retired before the go: that clause is a process note under its §G and the spec deliberately does not write it as an id token, so the guard never counts it as declared and a deferral for it would sit here forever',
   },
   357: {
     ids: ['EARS-324', 'EARS-325', 'EARS-326'],

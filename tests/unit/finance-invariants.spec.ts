@@ -4,9 +4,10 @@
  * These are the refusals that need no database to be true: an operation that
  * does not balance, a posting in the wrong currency, a product where the
  * purpose's binding forbids one, a result posting with no project, a caller
- * without `platform-admin`. Keeping them in pure functions is what lets the
- * module refuse with a readable message BEFORE it opens a transaction — the
- * constraint-error shape EARS-326 rules out.
+ * holding neither the reference role nor the flow role the act demands
+ * (EARS-330 as amended, EARS-501/502/529). Keeping them in pure functions is
+ * what lets the module refuse with a readable message BEFORE it opens a
+ * transaction — the constraint-error shape EARS-326 rules out.
  *
  * The database-level half (immutability triggers, the `core.member` FK, reversal
  * and conversion mechanics) lives in `tests/int/platform/finance-*.int.spec.ts`.
@@ -15,11 +16,16 @@ import { describe, expect, it } from 'vitest'
 
 import {
   assertBalancedPerCurrency,
-  assertFinanceWriteAccess,
+  assertFinanceIntakeAccess,
+  assertFinanceLedgerAccess,
+  assertFinanceReferenceAccess,
   assertPostingCurrencyMatchesAccount,
   assertProductBinding,
   assertProjectOnResultPostings,
   convertMinorUnits,
+  FINANCE_APPROVE_ROLE,
+  FINANCE_ENTRY_ROLE,
+  FINANCE_FLOW_ROLES,
   FinanceAccessRefusal,
   FinanceRefusal,
   resolvePostingCategory,
@@ -179,27 +185,116 @@ describe('a purpose and its category never disagree on a posting (EARS-327)', ()
   })
 })
 
-describe('every finance write demands `platform-admin` (EARS-330)', () => {
-  it('EARS-330: refuses an actor carrying no roles at all', () => {
-    expect(() => assertFinanceWriteAccess({ email: 'a@bbm.academy', roles: [] })).toThrow(
+/** Actors as roles alone — the email half is asserted separately below. */
+function actor(...roles: string[]) {
+  return { email: 'a@bbm.academy', roles }
+}
+
+describe('reference administration stays `platform-admin` (EARS-330 as amended, EARS-529)', () => {
+  it('EARS-330: refuses a reference edit for an actor carrying no roles at all', () => {
+    expect(() => assertFinanceReferenceAccess(actor())).toThrow(FinanceAccessRefusal)
+  })
+
+  it('EARS-330: refuses a reference edit for an actor carrying only `platform-user` — read access is deliberately wider', () => {
+    expect(() => assertFinanceReferenceAccess(actor('platform-user'))).toThrow(FinanceAccessRefusal)
+  })
+
+  it('EARS-330: accepts a reference edit from an actor carrying `platform-admin`', () => {
+    expect(() => assertFinanceReferenceAccess(actor('platform-admin'))).not.toThrow()
+  })
+
+  it('EARS-330: refuses an actor with no email — an attributable write has a person behind it (spec 201)', () => {
+    expect(() => assertFinanceReferenceAccess({ email: '', roles: ['platform-admin'] })).toThrow(
       FinanceAccessRefusal,
     )
   })
 
-  it('EARS-330: refuses an actor carrying only `platform-user` — read access is deliberately wider', () => {
-    expect(() =>
-      assertFinanceWriteAccess({ email: 'a@bbm.academy', roles: ['platform-user'] }),
-    ).toThrow(FinanceAccessRefusal)
+  it('EARS-529: a flow role is NOT reference administration — neither one opens the catalogues', () => {
+    expect(() => assertFinanceReferenceAccess(actor(FINANCE_ENTRY_ROLE))).toThrow(
+      FinanceAccessRefusal,
+    )
+    expect(() => assertFinanceReferenceAccess(actor(FINANCE_APPROVE_ROLE))).toThrow(
+      FinanceAccessRefusal,
+    )
+  })
+})
+
+describe('the two flow roles gate the ledger (EARS-501, EARS-529)', () => {
+  it('EARS-501: the module knows exactly two flow roles and no others', () => {
+    expect(FINANCE_FLOW_ROLES).toEqual(['finance-entry', 'finance-approve'])
   })
 
-  it('EARS-330: accepts an actor carrying `platform-admin`', () => {
+  it('EARS-501: posting and reversing demand `finance-approve`', () => {
+    expect(() => assertFinanceLedgerAccess(actor(FINANCE_APPROVE_ROLE))).not.toThrow()
+    expect(() => assertFinanceLedgerAccess(actor('platform-user'))).toThrow(FinanceAccessRefusal)
+    expect(() => assertFinanceLedgerAccess(actor())).toThrow(FinanceAccessRefusal)
+  })
+
+  it('EARS-501: `finance-entry` alone does not post — entry fills the intake, approval posts it', () => {
+    expect(() => assertFinanceLedgerAccess(actor(FINANCE_ENTRY_ROLE))).toThrow(FinanceAccessRefusal)
+  })
+
+  it('EARS-529: `platform-admin` by itself no longer posts or reverses', () => {
+    expect(() => assertFinanceLedgerAccess(actor('platform-admin'))).toThrow(FinanceAccessRefusal)
+    expect(() => assertFinanceLedgerAccess(actor('platform-user', 'platform-admin'))).toThrow(
+      FinanceAccessRefusal,
+    )
+  })
+
+  it('EARS-529: an admin who ALSO holds `finance-approve` posts — the grant is what carries it, not the office', () => {
     expect(() =>
-      assertFinanceWriteAccess({ email: 'a@bbm.academy', roles: ['platform-admin'] }),
+      assertFinanceLedgerAccess(actor('platform-admin', FINANCE_APPROVE_ROLE)),
     ).not.toThrow()
   })
 
-  it('EARS-330: refuses an actor with no email — an attributable write has a person behind it (spec 201)', () => {
-    expect(() => assertFinanceWriteAccess({ email: '', roles: ['platform-admin'] })).toThrow(
+  it('EARS-501: a ledger write with no email is refused even from an approver (spec 201)', () => {
+    expect(() => assertFinanceLedgerAccess({ email: '  ', roles: [FINANCE_APPROVE_ROLE] })).toThrow(
+      FinanceAccessRefusal,
+    )
+  })
+})
+
+describe('intake writes and the submitter carve-out (EARS-501, EARS-502)', () => {
+  it('EARS-501: creating or editing an intake item demands `finance-entry`', () => {
+    expect(() => assertFinanceIntakeAccess(actor(FINANCE_ENTRY_ROLE))).not.toThrow()
+    expect(() => assertFinanceIntakeAccess(actor('platform-user'))).toThrow(FinanceAccessRefusal)
+    expect(() => assertFinanceIntakeAccess(actor())).toThrow(FinanceAccessRefusal)
+  })
+
+  it('EARS-529: `platform-admin` by itself is not an entry role either', () => {
+    expect(() => assertFinanceIntakeAccess(actor('platform-admin'))).toThrow(FinanceAccessRefusal)
+  })
+
+  it('EARS-501: `finance-approve` alone does NOT carry the entry acts — the roles split by act, and EARS-502 is the ONE carve-out', () => {
+    expect(() => assertFinanceIntakeAccess(actor(FINANCE_APPROVE_ROLE))).toThrow(
+      FinanceAccessRefusal,
+    )
+    expect(() => assertFinanceIntakeAccess(actor('platform-user', FINANCE_APPROVE_ROLE))).toThrow(
+      FinanceAccessRefusal,
+    )
+  })
+
+  it('EARS-501: an approver who ALSO holds `finance-entry` fills the intake — on that grant, not on the office', () => {
+    expect(() =>
+      assertFinanceIntakeAccess(actor(FINANCE_ENTRY_ROLE, FINANCE_APPROVE_ROLE)),
+    ).not.toThrow()
+  })
+
+  it('EARS-502: a member holding neither flow role may act on their OWN request', () => {
+    expect(() =>
+      assertFinanceIntakeAccess(actor('platform-user'), { ownRequest: true }),
+    ).not.toThrow()
+    expect(() => assertFinanceIntakeAccess(actor(), { ownRequest: true })).not.toThrow()
+  })
+
+  it('EARS-502: the carve-out is the OWN request and nothing else — `ownRequest: false` is the plain gate', () => {
+    expect(() => assertFinanceIntakeAccess(actor('platform-user'), { ownRequest: false })).toThrow(
+      FinanceAccessRefusal,
+    )
+  })
+
+  it('EARS-502: the carve-out still demands a known author — an anonymous submitter is refused (spec 201)', () => {
+    expect(() => assertFinanceIntakeAccess({ email: '', roles: [] }, { ownRequest: true })).toThrow(
       FinanceAccessRefusal,
     )
   })

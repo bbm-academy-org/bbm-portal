@@ -30,13 +30,26 @@ import { asMigrator, truncateAsFixture } from './privilege-helpers'
 /** The fixture's own door (spec 201 EARS-7): a repo writer with no human behind it. */
 export const FIXTURE_AUDIT_CTX: AuditContext = { actorEmail: null, source: 'cli:int-fixture' }
 
-/** An admin actor — what a signed-in `platform-admin` session looks like here. */
+/**
+ * An admin actor — what a signed-in `platform-admin` session looks like here.
+ *
+ * Since #380 this actor administers the REFERENCES and nothing else: it holds
+ * no flow role, so every ledger write it attempts is refused (EARS-529). That is
+ * not an oversight in the fixture, it is the clause — the ledger-writing actor
+ * is `APPROVER` below.
+ */
 export const ADMIN: FinanceActor = {
   email: 'anton@bbm.academy',
   roles: ['platform-admin'],
 }
 
-/** A member who may READ /p/finance and may write nothing (EARS-330). */
+/** The ledger actor — `finance-approve` posts and reverses (EARS-501). */
+export const APPROVER: FinanceActor = {
+  email: 'approver@bbm.academy',
+  roles: ['platform-user', 'finance-approve'],
+}
+
+/** A member who may READ /p/finance and may write nothing (EARS-330/501/530). */
 export const MEMBER: FinanceActor = {
   email: 'member@bbm.academy',
   roles: ['platform-user'],
