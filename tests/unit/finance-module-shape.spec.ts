@@ -86,6 +86,10 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // `finance_counterparty` its FK needs. Still a committed migration, still
       // no DDL in the module: the list grows, the rule does not move.
       '0009_finance_intake_spine.sql',
+      // The confirming documents (spec 339 §D, #382) — `finance_document` and
+      // `finance_document_link`. Same rule again: the archive's TABLES are a
+      // committed migration, and the module creates none of them at runtime.
+      '0010_finance_documents.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

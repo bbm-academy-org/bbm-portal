@@ -71,6 +71,13 @@
       "when": 1787814860413,
       "tag": "0009_finance_intake_spine",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787836365650,
+      "tag": "0010_finance_documents",
+      "breakpoints": true
     }
   ]
 }

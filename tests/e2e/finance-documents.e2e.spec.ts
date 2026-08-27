@@ -1,6 +1,9 @@
-import { Client } from 'pg'
+import { sql } from 'drizzle-orm'
 
 import { expect, test } from '@playwright/test'
+
+import { closePlatformDb } from '@/lib/platform/db/client'
+import { platformTransaction } from '@/lib/platform/db/transaction'
 
 import { signInThroughZitadel } from './support/zitadel-sign-in'
 
@@ -53,70 +56,85 @@ let documentId: number
 /**
  * Seed one intake item owned by `OWNER_EMAIL` with one document linked to it.
  *
- * `set_config('app.source', …)` is not optional: the universal edit audit
- * (spec 201 EARS-24/26) refuses any write to `core` that names no door.
+ * Through `platformTransaction` and never through a hand-rolled
+ * `set_config('app.…')`: the audit context is set in ONE place in this repo
+ * (spec 201 EARS-24), and an eslint rule enforces it. The door is a `cli:` one
+ * because a fixture is not a person (EARS-7).
  */
+const FIXTURE_DOOR = { actorEmail: null, source: 'cli:e2e-fixture' } as const
+
+const one = (rows: unknown[]): number => Number((rows[0] as { id: number }).id)
+
 async function seedDocument(): Promise<number> {
-  const client = new Client({ connectionString: databaseUrl })
-  await client.connect()
-  try {
-    await client.query('begin')
-    await client.query(`select set_config('app.source', 'cli:e2e-fixture', true)`)
-    await client.query(`
+  return platformTransaction(FIXTURE_DOOR, async (tx) => {
+    await tx.execute(sql`
       insert into core.member (slug, email, name)
-      values ('e2e-document-owner', $1, 'E2E Document Owner')
+      values ('e2e-document-owner', ${OWNER_EMAIL}, 'E2E Document Owner')
       on conflict (email) do nothing
-    `, [OWNER_EMAIL])
-    const owner = await client.query<{ id: number }>(
-      'select id from core.member where email = $1',
-      [OWNER_EMAIL],
+    `)
+    const ownerId = one(
+      (await tx.execute(sql`select id from core.member where email = ${OWNER_EMAIL}`)).rows,
     )
-    const ownerId = owner.rows[0].id
-    await client.query(`
+    await tx.execute(sql`
       insert into core.finance_currency (code, name, precision)
       values ('RUB', 'Рубль', 2) on conflict (code) do nothing
     `)
-    const account = await client.query<{ id: number }>(`
-      insert into core.finance_account (name, kind, currency)
-      values ('E2E счёт', 'bank', 'RUB')
-      returning id
-    `)
-    const purpose = await client.query<{ id: number }>(`
-      insert into core.finance_purpose (name, product_binding)
-      values ('E2E назначение', 'forbidden')
-      returning id
-    `)
-    const project = await client.query<{ id: number }>(
-      'select id from core.finance_project where is_fund limit 1',
+    const accountId = one(
+      (
+        await tx.execute(sql`
+          insert into core.finance_account (name, kind, currency)
+          values (${`E2E счёт ${Date.now()}`}, 'bank', 'RUB') returning id
+        `)
+      ).rows,
     )
-    const item = await client.query<{ id: number }>(`
-      insert into core.finance_intake_item
-        (source, kind, occurred_on, account_id, amount, currency, purpose_id, project_id, created_by)
-      values ('request', 'expense', current_date, $1, 120000, 'RUB', $2, $3, $4)
-      returning id
-    `, [account.rows[0].id, purpose.rows[0].id, project.rows[0].id, ownerId])
-    const doc = await client.query<{ id: number }>(`
-      insert into core.finance_document (storage_key, filename, mime, size, kind, uploaded_by)
-      values ($1, 'e2e-invoice.pdf', 'application/pdf', 24, 'ru_invoice', $2)
-      returning id
-    `, [`finance/documents/e2e/${Date.now()}.pdf`, ownerId])
-    await client.query(`
+    const purposeId = one(
+      (
+        await tx.execute(sql`
+          insert into core.finance_purpose (name, product_binding)
+          values (${`E2E назначение ${Date.now()}`}, 'forbidden') returning id
+        `)
+      ).rows,
+    )
+    const projectId = one(
+      (await tx.execute(sql`select id from core.finance_project where is_fund limit 1`)).rows,
+    )
+    const itemId = one(
+      (
+        await tx.execute(sql`
+          insert into core.finance_intake_item
+            (source, kind, occurred_on, account_id, amount, currency, purpose_id, project_id,
+             created_by)
+          values ('request', 'expense', current_date, ${accountId}, 120000, 'RUB', ${purposeId},
+                  ${projectId}, ${ownerId})
+          returning id
+        `)
+      ).rows,
+    )
+    const docId = one(
+      (
+        await tx.execute(sql`
+          insert into core.finance_document (storage_key, filename, mime, size, kind, uploaded_by)
+          values (${`finance/documents/e2e/${Date.now()}.pdf`}, 'e2e-invoice.pdf',
+                  'application/pdf', 24, 'ru_invoice', ${ownerId})
+          returning id
+        `)
+      ).rows,
+    )
+    await tx.execute(sql`
       insert into core.finance_document_link (document_id, intake_item_id, linked_by)
-      values ($1, $2, $3)
-    `, [doc.rows[0].id, item.rows[0].id, ownerId])
-    await client.query('commit')
-    return doc.rows[0].id
-  } catch (error) {
-    await client.query('rollback')
-    throw error
-  } finally {
-    await client.end()
-  }
+      values (${docId}, ${itemId}, ${ownerId})
+    `)
+    return docId
+  })
 }
 
 test.beforeAll(async () => {
   test.skip(!databaseUrl, 'PLATFORM_DATABASE_URL is not set — no stand database to seed into')
   documentId = await seedDocument()
+})
+
+test.afterAll(async () => {
+  await closePlatformDb()
 })
 
 test.describe('a finance document has no URL that gives it away (spec 339 scenario 9)', () => {

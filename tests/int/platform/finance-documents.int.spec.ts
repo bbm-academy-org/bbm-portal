@@ -106,11 +106,17 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     const refs = await seedIntakeReferences()
     const item = await seedIntakeItemFor(ENTRY, refs)
 
+    // The audit ledger is append-only and `truncateFinanceTables` deliberately
+    // leaves it alone, so the window is taken by id rather than by table: what
+    // this test asserts is what THIS upload wrote, not what the file wrote.
+    const before = await db.execute(sql`select coalesce(max(id), 0) as id from core.audit_event`)
+    const since = (before.rows[0] as { id: string }).id
+
     const doc = await uploadFor(ENTRY, [item.id])
 
     const events = await db.execute(sql`
       select table_name, actor_email from core.audit_event
-      where table_name in ('finance_document', 'finance_document_link')
+      where id > ${since} and table_name in ('finance_document', 'finance_document_link')
       order by table_name
     `)
     const captured = events.rows as { table_name: string; actor_email: string }[]
@@ -137,9 +143,9 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     const doc = await uploadFor(MEMBER, [own.id])
 
     expect(doc.uploadedBy).toBe(refs.memberMemberId)
-    expect((await listFinanceDocuments(MEMBER, { intakeItemId: own.id })).map((d) => d.id)).toEqual([
-      doc.id,
-    ])
+    expect((await listFinanceDocuments(MEMBER, { intakeItemId: own.id })).map((d) => d.id)).toEqual(
+      [doc.id],
+    )
   })
 
   it('EARS-502: a role-less member may not upload without naming an own item', async () => {

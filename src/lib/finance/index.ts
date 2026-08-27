@@ -160,6 +160,42 @@ export type {
   FinanceIntakeTransition,
 } from './intake/status'
 
+// ── the confirming documents (spec 339 EARS-514/515/516/523) ─────────────────
+// `FinanceDocumentStorage` is exported as a TYPE only, and its resolver only so
+// a stand can be diagnosed: nothing outside the module composes an archive of
+// its own, and there is deliberately no export anywhere that turns a
+// `storage_key` into an address — that absence IS EARS-523.
+export {
+  assertFinanceDocumentUpload,
+  attachFinanceDocument,
+  deleteFinanceDocument,
+  detachFinanceDocument,
+  listFinanceDocuments,
+  readFinanceDocument,
+  setFinanceDocumentKind,
+  uploadFinanceDocument,
+  FINANCE_DOCUMENT_MAX_BYTES,
+} from './documents/documents'
+export type {
+  FinanceDocumentContent,
+  FinanceDocumentView,
+  UploadFinanceDocumentInput,
+} from './documents/documents'
+export {
+  buildFinanceDocumentStorageKey,
+  resolveFinanceDocumentStorage,
+  FINANCE_DOCUMENTS_DEFAULT_DIR,
+} from './documents/storage'
+export type { FinanceDocumentStorage, FinanceDocumentStorageEnv } from './documents/storage'
+export {
+  FINANCE_DOCUMENT_KINDS,
+  FINANCE_DOCUMENT_MIME_TYPES,
+} from '@/lib/platform/db/schema/finance/finance-document'
+export type {
+  FinanceDocumentKind,
+  FinanceDocumentMimeType,
+} from '@/lib/platform/db/schema/finance/finance-document'
+
 // ── the read side: balances, register, the exception list (EARS-317/333) ─────
 export { accountBalances, listRegister, postingsMissingOptionalProduct } from './queries'
 export type { AccountBalance, RegisterEntry, MissingProductPosting } from './queries'

@@ -13,6 +13,9 @@ importers:
 
   .:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1067.0
+        version: 3.1067.0
       '@octokit/auth-app':
         specifier: ^8.3.0
         version: 8.3.0

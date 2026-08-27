@@ -1,0 +1,496 @@
+/**
+ * The document handlers — upload, attach, read, retype, delete (spec
+ * `docs/specs/339-ledger-intake.md` §D, issue #382).
+ *
+ * **The gate lives HERE, not on the route** (EARS-501/523, spec 311 EARS-405).
+ * A surface that forgets to check is a bug, not a hole: every function below
+ * answers the access question itself, so a CLI, a future importer and the two
+ * route handlers under `/p/finance/api/documents` all get the same answer.
+ *
+ * **Three different access questions, and they are genuinely different.**
+ *
+ *  - *May you PUT a document into the archive?* — the intake gate
+ *    (`assertFinanceIntakeAccess`), because attaching a document is filling the
+ *    intake. `finance-entry` anywhere; a role-less member only onto items they
+ *    submitted (EARS-502). An approver is not admitted, for the reason
+ *    `core/actor.ts` argues at length: EARS-501 splits the roles BY ACT.
+ *  - *May you READ its content?* — EARS-523, which is NOT a role question at
+ *    all. The submitter reads their own items' documents; both flow roles read
+ *    everything; `platform-user` — the role that opens `/p/finance` for
+ *    everyone (EARS-530) — buys nothing here. That exclusion is written into
+ *    EARS-530 itself.
+ *  - *May it MOVE?* — EARS-516, which is not about the actor at all. Once any
+ *    linked item has posted, no one deletes, unlinks or retypes the document —
+ *    not the uploader, not an approver, not an admin.
+ *
+ * **What this file deliberately does not do.** It does not enforce the document
+ * gate at posting time (EARS-506 — #385): «an item may not post without a
+ * document» is the posting handler's clause, and half-enforcing it here would
+ * give #385 something to unpick. It renders nothing (#357 owns `/p/finance`),
+ * and it reads no `kind` to decide anything (EARS-515: the kind is data).
+ */
+import { and, eq, inArray } from 'drizzle-orm'
+
+import { findMemberByEmail } from '@/lib/member'
+import {
+  financeDocument,
+  FINANCE_DOCUMENT_KINDS,
+  FINANCE_DOCUMENT_MIME_TYPES,
+  type FinanceDocumentKind,
+} from '@/lib/platform/db/schema/finance/finance-document'
+import { financeDocumentLink } from '@/lib/platform/db/schema/finance/finance-document-link'
+import { financeIntakeItem } from '@/lib/platform/db/schema/finance/finance-intake-item'
+import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
+
+import {
+  assertFinanceIntakeAccess,
+  financeAuditContext,
+  holdsFinanceFlowRole,
+  type FinanceActor,
+} from '../core/actor'
+import { FinanceAccessRefusal, FinanceRefusal } from '../core/errors'
+import {
+  buildFinanceDocumentStorageKey,
+  resolveFinanceDocumentStorage,
+  type FinanceDocumentStorage,
+} from './storage'
+
+/**
+ * The ceiling on one upload.
+ *
+ * 25 MiB is a scanned multi-page invoice with room to spare and a phone photo
+ * several times over; it is not a number the corpus dictated, so it is stated
+ * once, here, rather than repeated in a form and a route. A file above it is
+ * refused rather than truncated: half a document is not a smaller document.
+ */
+export const FINANCE_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024
+
+/** A document as the module hands it out. Never the storage key's contents. */
+export type FinanceDocumentView = {
+  id: number
+  storageKey: string
+  filename: string
+  mime: string
+  size: number
+  kind: FinanceDocumentKind
+  uploadedBy: number
+  uploadedAt: Date
+}
+
+export type UploadFinanceDocumentInput = {
+  filename: string
+  mime: string
+  bytes: Buffer
+  kind: string
+  /**
+   * The items this document confirms. Optional for a flow-role holder (a file
+   * may arrive before the line it belongs to); REQUIRED for a role-less member,
+   * whose whole permission is «their own items» (EARS-502).
+   */
+  intakeItemIds?: readonly number[]
+}
+
+function toView(row: typeof financeDocument.$inferSelect): FinanceDocumentView {
+  return {
+    id: row.id,
+    storageKey: row.storageKey,
+    filename: row.filename,
+    mime: row.mime,
+    size: Number(row.size),
+    kind: row.kind as FinanceDocumentKind,
+    uploadedBy: row.uploadedBy,
+    uploadedAt: row.uploadedAt,
+  }
+}
+
+/**
+ * What an upload is allowed to BE (EARS-514/515) — shape only, no actor and no
+ * rows, so a form can ask the same question before it sends a byte.
+ */
+export function assertFinanceDocumentUpload(input: {
+  filename: string
+  mime: string
+  size: number
+  kind: string
+}): void {
+  if (typeof input.filename !== 'string' || input.filename.trim() === '') {
+    throw new FinanceRefusal('У документа должно быть имя файла — оно попадает в архив как есть.')
+  }
+  if (!(FINANCE_DOCUMENT_MIME_TYPES as readonly string[]).includes(input.mime)) {
+    throw new FinanceRefusal(
+      `Тип «${input.mime}» не принимается: подтверждающий документ это PDF или изображение ` +
+        `(${FINANCE_DOCUMENT_MIME_TYPES.join(', ')}) — EARS-514. Архив бухгалтерии не файлопомойка.`,
+    )
+  }
+  if (!Number.isInteger(input.size) || input.size <= 0) {
+    throw new FinanceRefusal(
+      'Пустой файл не документ: это неудавшаяся загрузка, которая потом выглядит как доказательство.',
+    )
+  }
+  if (input.size > FINANCE_DOCUMENT_MAX_BYTES) {
+    throw new FinanceRefusal(
+      `Файл ${input.size} байт больше предела в ${FINANCE_DOCUMENT_MAX_BYTES} байт (EARS-514).`,
+    )
+  }
+  if (!(FINANCE_DOCUMENT_KINDS as readonly string[]).includes(input.kind)) {
+    throw new FinanceRefusal(
+      `Вид документа «${input.kind}» не входит в набор спеки 339 ` +
+        `(${FINANCE_DOCUMENT_KINDS.join(', ')}). Вид — это ДАННЫЕ (EARS-515): он ничего не ` +
+        'запрещает, но и произвольным быть не может — иначе аналитика по видам не собирается.',
+    )
+  }
+}
+
+/** Who this actor is in `core.member` — every document names its uploader. */
+async function requireMemberId(actor: FinanceActor): Promise<number> {
+  const member = await findMemberByEmail(actor.email)
+  if (member === null) {
+    throw new FinanceAccessRefusal(
+      `У ${actor.email} нет записи в общем реестре людей (core.member), а документ обязан ` +
+        'называть загрузившего. Заведите участника — src/lib/member.',
+    )
+  }
+  return member.id
+}
+
+/** The member id, or `null` — for the READ path, where «not a member» is a refusal, not an error. */
+async function memberIdOrNull(actor: FinanceActor): Promise<number | null> {
+  if (typeof actor.email !== 'string' || actor.email.trim() === '') return null
+  const member = await findMemberByEmail(actor.email)
+  return member?.id ?? null
+}
+
+/** The items named, loaded — with a readable refusal for any that does not exist. */
+async function loadItems(tx: PlatformTx, ids: readonly number[]) {
+  if (ids.length === 0) return []
+  const rows = await tx
+    .select()
+    .from(financeIntakeItem)
+    .where(inArray(financeIntakeItem.id, [...ids]))
+  const found = new Set(rows.map((row) => row.id))
+  const missing = ids.filter((id) => !found.has(id))
+  if (missing.length > 0) {
+    throw new FinanceRefusal(`Позиции приёмки не существует: ${missing.join(', ')}.`)
+  }
+  return rows
+}
+
+/**
+ * Is every named item this actor's OWN request (EARS-502)?
+ *
+ * The carve-out is the CALLER's fact, exactly as `FinanceIntakeAct` says: the
+ * handler holds the rows, so it is the only place that can know they are
+ * `source = 'request'` and were submitted by this actor. An EMPTY list is
+ * deliberately NOT «own» — an unattached upload names no item to own, so it is
+ * the entry role's act, not the submitter's.
+ */
+function isOwnRequestSet(
+  items: readonly { source: string; createdBy: number }[],
+  memberId: number | null,
+): boolean {
+  if (items.length === 0 || memberId === null) return false
+  return items.every((item) => item.source === 'request' && item.createdBy === memberId)
+}
+
+/**
+ * Upload one document and link it to the items it confirms (EARS-514/515).
+ *
+ * Order: the shape, then the actor's member row, then the gate over the REAL
+ * items, then the bytes, then the transaction. The bytes go to storage BEFORE
+ * the row exists, and the row is what makes them findable — an object with no
+ * row is invisible garbage the operator can sweep, while a row with no object
+ * is a document the archive claims to hold and cannot produce. Of the two
+ * failure modes only the first is honest, so it is the one this order can
+ * produce.
+ */
+export async function uploadFinanceDocument(
+  actor: FinanceActor,
+  input: UploadFinanceDocumentInput,
+  storage: FinanceDocumentStorage = resolveFinanceDocumentStorage(),
+): Promise<FinanceDocumentView> {
+  const bytes = input.bytes
+  if (!Buffer.isBuffer(bytes)) {
+    throw new FinanceRefusal('Содержимое документа должно быть буфером байтов.')
+  }
+  assertFinanceDocumentUpload({
+    filename: input.filename,
+    mime: input.mime,
+    size: bytes.byteLength,
+    kind: input.kind,
+  })
+
+  const uploadedBy = await requireMemberId(actor)
+  const itemIds = [...new Set(input.intakeItemIds ?? [])]
+
+  return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const items = await loadItems(tx, itemIds)
+    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, uploadedBy) })
+
+    const storageKey = buildFinanceDocumentStorageKey(input.filename)
+    await storage.put(storageKey, bytes)
+
+    const [row] = await tx
+      .insert(financeDocument)
+      .values({
+        storageKey,
+        filename: input.filename,
+        mime: input.mime,
+        size: bytes.byteLength,
+        kind: input.kind,
+        uploadedBy,
+      })
+      .returning()
+    if (items.length > 0) {
+      await tx.insert(financeDocumentLink).values(
+        items.map((item) => ({
+          documentId: row.id,
+          intakeItemId: item.id,
+          linkedBy: uploadedBy,
+        })),
+      )
+    }
+    return toView(row)
+  })
+}
+
+/** The document row, or a readable refusal. */
+async function requireDocument(tx: PlatformTx, documentId: number) {
+  const [row] = await tx.select().from(financeDocument).where(eq(financeDocument.id, documentId))
+  if (row === undefined) throw new FinanceRefusal(`Документа #${documentId} не существует.`)
+  return row
+}
+
+/** Every intake item this document confirms — the EARS-516 and EARS-523 input. */
+async function linkedItems(tx: PlatformTx, documentId: number) {
+  return tx
+    .select({
+      id: financeIntakeItem.id,
+      status: financeIntakeItem.status,
+      source: financeIntakeItem.source,
+      createdBy: financeIntakeItem.createdBy,
+      operationId: financeIntakeItem.operationId,
+    })
+    .from(financeDocumentLink)
+    .innerJoin(financeIntakeItem, eq(financeDocumentLink.intakeItemId, financeIntakeItem.id))
+    .where(eq(financeDocumentLink.documentId, documentId))
+}
+
+/**
+ * EARS-516: has this document already confirmed a posting?
+ *
+ * `status = 'posted'` and `operation_id is not null` are the same fact — the
+ * `finance_intake_item_posting_shape` CHECK makes them equivalent — so reading
+ * either is reading the clause's «linked to a posted operation».
+ */
+function assertNotPosted(
+  documentId: number,
+  items: readonly { status: string; id: number }[],
+  act: string,
+): void {
+  const posted = items.filter((item) => item.status === 'posted')
+  if (posted.length === 0) return
+  throw new FinanceRefusal(
+    `Документ #${documentId} подтверждает проведённую операцию (позиции ` +
+      `${posted.map((item) => `#${item.id}`).join(', ')}), поэтому ${act} нельзя (EARS-516). ` +
+      'Исправление неверного документа — прикрепить другой, а не подменить этот.',
+  )
+}
+
+/**
+ * May this actor read the CONTENT of this document (EARS-523)?
+ *
+ * Returns nothing and throws on refusal, in the shape of the actor gates: a
+ * function that returned a boolean would eventually be called without its
+ * result being looked at.
+ */
+async function assertReadAccess(
+  tx: PlatformTx,
+  actor: FinanceActor,
+  document: typeof financeDocument.$inferSelect,
+): Promise<void> {
+  if (holdsFinanceFlowRole(actor)) return
+
+  const memberId = await memberIdOrNull(actor)
+  if (memberId !== null) {
+    // The uploader always reads back what they themselves put in — otherwise a
+    // submitter could attach a file and immediately lose sight of it.
+    if (document.uploadedBy === memberId) return
+    const items = await linkedItems(tx, document.id)
+    if (items.some((item) => item.source === 'request' && item.createdBy === memberId)) return
+  }
+
+  throw new FinanceAccessRefusal(
+    `Содержимое документа #${document.id} читают роли «finance-entry» / «finance-approve» ` +
+      'и автор заявки, к которой он приложен (EARS-523). Открытое чтение /p/finance для всех ' +
+      'участников (EARS-530) на содержимое документов НЕ распространяется.',
+  )
+}
+
+/** Metadata plus bytes, for a caller that has passed EARS-523. */
+export type FinanceDocumentContent = FinanceDocumentView & { bytes: Buffer }
+
+/**
+ * Read a document's content — the ONE way bytes leave the archive (EARS-523).
+ *
+ * No sibling that returns a URL exists, and that is the clause rather than an
+ * unfinished API: an address a browser can follow without this function is
+ * precisely «a public or unauthenticated URL to a document».
+ */
+export async function readFinanceDocument(
+  actor: FinanceActor,
+  documentId: number,
+  storage: FinanceDocumentStorage = resolveFinanceDocumentStorage(),
+): Promise<FinanceDocumentContent> {
+  const document = await platformTransaction(financeAuditContext(actor), async (tx) => {
+    const row = await requireDocument(tx, documentId)
+    await assertReadAccess(tx, actor, row)
+    return row
+  })
+  return { ...toView(document), bytes: await storage.get(document.storageKey) }
+}
+
+/** The documents confirming one intake item, metadata only — same gate as the content. */
+export async function listFinanceDocuments(
+  actor: FinanceActor,
+  filter: { intakeItemId: number },
+): Promise<FinanceDocumentView[]> {
+  return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const [item] = await tx
+      .select()
+      .from(financeIntakeItem)
+      .where(eq(financeIntakeItem.id, filter.intakeItemId))
+    if (item === undefined) {
+      throw new FinanceRefusal(`Позиции приёмки #${filter.intakeItemId} не существует.`)
+    }
+    if (!holdsFinanceFlowRole(actor)) {
+      const memberId = await memberIdOrNull(actor)
+      if (memberId === null || item.source !== 'request' || item.createdBy !== memberId) {
+        throw new FinanceAccessRefusal(
+          `Документы позиции #${item.id} видят роли «finance-entry» / «finance-approve» ` +
+            'и автор самой заявки (EARS-523).',
+        )
+      }
+    }
+    const rows = await tx
+      .select({ document: financeDocument })
+      .from(financeDocumentLink)
+      .innerJoin(financeDocument, eq(financeDocumentLink.documentId, financeDocument.id))
+      .where(eq(financeDocumentLink.intakeItemId, item.id))
+    return rows.map((row) => toView(row.document))
+  })
+}
+
+/** Attach an EXISTING document to one more item — «one document, several items». */
+export async function attachFinanceDocument(
+  actor: FinanceActor,
+  input: { documentId: number; intakeItemId: number },
+): Promise<void> {
+  const linkedBy = await requireMemberId(actor)
+  await platformTransaction(financeAuditContext(actor), async (tx) => {
+    const document = await requireDocument(tx, input.documentId)
+    const [item] = await loadItems(tx, [input.intakeItemId])
+    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], linkedBy) })
+    // Attaching to an item that ALREADY posted would put a document behind a
+    // posting nobody weighed when they posted it (EARS-516's other direction).
+    assertNotPosted(item.id, [item], 'прикреплять к ней документы')
+
+    const [existing] = await tx
+      .select()
+      .from(financeDocumentLink)
+      .where(
+        and(
+          eq(financeDocumentLink.documentId, document.id),
+          eq(financeDocumentLink.intakeItemId, item.id),
+        ),
+      )
+    if (existing !== undefined) {
+      throw new FinanceRefusal(
+        `Документ #${document.id} уже приложен к позиции #${item.id} — второй раз это ` +
+          'двойной клик, а не второй факт.',
+      )
+    }
+    await tx
+      .insert(financeDocumentLink)
+      .values({ documentId: document.id, intakeItemId: item.id, linkedBy })
+  })
+}
+
+/** Detach a document from an item — never once that item has posted (EARS-516). */
+export async function detachFinanceDocument(
+  actor: FinanceActor,
+  input: { documentId: number; intakeItemId: number },
+): Promise<void> {
+  const memberId = await requireMemberId(actor)
+  await platformTransaction(financeAuditContext(actor), async (tx) => {
+    const document = await requireDocument(tx, input.documentId)
+    const [item] = await loadItems(tx, [input.intakeItemId])
+    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], memberId) })
+    assertNotPosted(document.id, [item], 'откреплять его')
+
+    await tx
+      .delete(financeDocumentLink)
+      .where(
+        and(
+          eq(financeDocumentLink.documentId, document.id),
+          eq(financeDocumentLink.intakeItemId, item.id),
+        ),
+      )
+  })
+}
+
+/**
+ * Change a document's `kind` — the ONE editable column, and only while nothing
+ * it confirms has posted (spec 339 CRUD table: «`kind` only, while no linked
+ * item is posted»).
+ */
+export async function setFinanceDocumentKind(
+  actor: FinanceActor,
+  documentId: number,
+  kind: string,
+): Promise<FinanceDocumentView> {
+  if (!(FINANCE_DOCUMENT_KINDS as readonly string[]).includes(kind)) {
+    throw new FinanceRefusal(
+      `Вид документа «${kind}» не входит в набор спеки 339 (${FINANCE_DOCUMENT_KINDS.join(', ')}).`,
+    )
+  }
+  const memberId = await requireMemberId(actor)
+  return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const document = await requireDocument(tx, documentId)
+    const items = await linkedItems(tx, document.id)
+    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
+    assertNotPosted(document.id, items, 'менять его вид')
+
+    const [row] = await tx
+      .update(financeDocument)
+      .set({ kind })
+      .where(eq(financeDocument.id, document.id))
+      .returning()
+    return toView(row)
+  })
+}
+
+/**
+ * Delete a document — «while unlinked or all linked items unposted» (EARS-516).
+ *
+ * The row goes first and the object second, which is the reverse of the upload
+ * order and for the same reason: the honest failure is an orphaned object, not
+ * a row pointing at bytes that are gone. The links go with the row through the
+ * cascade the link table declares.
+ */
+export async function deleteFinanceDocument(
+  actor: FinanceActor,
+  documentId: number,
+  storage: FinanceDocumentStorage = resolveFinanceDocumentStorage(),
+): Promise<void> {
+  const memberId = await requireMemberId(actor)
+  const storageKey = await platformTransaction(financeAuditContext(actor), async (tx) => {
+    const document = await requireDocument(tx, documentId)
+    const items = await linkedItems(tx, document.id)
+    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
+    assertNotPosted(document.id, items, 'удалять его')
+
+    await tx.delete(financeDocument).where(eq(financeDocument.id, document.id))
+    return document.storageKey
+  })
+  await storage.remove(storageKey)
+}
