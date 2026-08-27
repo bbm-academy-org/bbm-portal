@@ -46,7 +46,22 @@
 
 import { readFileSync } from 'node:fs'
 
-import { hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
+import {
+  applyBlockBudget,
+  blockBudgetStatePath,
+  budgetDemotedMessage,
+  emitWarn,
+  hasSpentBlockBudget,
+  hooksDisabled,
+  isDirectRun,
+  mainRepoRoot,
+  readHookPayload,
+  readState,
+  recordBlockBudgetSpend,
+} from './shared.mjs'
+
+/** This gate's key in the shared per-session block-budget state (#392). */
+export const BUDGET_KEY = 'completion-report'
 
 /** Маркер stage 6: пункт «Проверить глазами: <URL>». */
 export const EYES_MARKER_RE = /проверить\s+глазами\s*:/i
@@ -155,17 +170,67 @@ export function isInterimStatus(text) {
  * закрыты на роль»), `REF_RE` matched the spec reference `#338`, and
  * `isDecisionRequest` needs ≤ 4 lines, which the four-beat form never is.
  *
- * THE FORM IS THE FOUR BEATS AND NOTHING ELSE — no «Вопрос N из M» / «Вопрос
- * владельцу» header (review of PR #375, BLOCKER). A header branch was written
- * first and removed: `report-task-outcome` defines point 5 of the MANDATORY
- * stage-6 report shape as literally «Вопросы владельцу» on its own line, so
- * recognizing that header would exempt the CORRECTLY formed final report from
- * all three gates — re-opening through a different door exactly the hole the
- * length condition of `isDecisionRequest` closed in the PR #99 review, and
- * widening the declared fail-open from a rare shape to the default one. The
- * header also bought nothing: the incident message carries all four beats and is
- * exempted by them alone.
+ * THE PLURAL «Вопросы владельцу» IS NEVER A MARKER (review of PR #375,
+ * BLOCKER, and still the invariant here): `report-task-outcome` defines point 5
+ * of the MANDATORY stage-6 report shape as literally «Вопросы владельцу» on its
+ * own line, so recognizing that heading would exempt the CORRECTLY formed final
+ * report from all three gates — re-opening through a different door exactly the
+ * hole the length condition of `isDecisionRequest` closed in the PR #99 review.
+ * PR #375 therefore dropped its whole header branch; #392 brings back only the
+ * shapes that do NOT collide with that heading, and pins the plural in both
+ * directions by test.
+ *
+ * INCIDENT 2026-08-27 (#392) — the owner's SECOND complaint, one day later. A
+ * free-form binary decision request about PR #354 was blocked and re-sent: it
+ * was written as free sections («Что происходит», «Почему мерж не происходит
+ * сам», «Что нужно от тебя»), carried ZERO beat labels, and tripped
+ * `COMPLETION_VERB_RE` on «Осталось только смержить» plus `REF_RE` on `PR #354`
+ * while being far longer than the `isDecisionRequest` four-line cap. The beats
+ * are the CONTENT canon, but real questions do not reliably come in that shape —
+ * and this one already carried the literal line «Вопрос владельцу: …». So the
+ * form gets a second, cheaper entrance: ONE declared marker line.
  */
+
+/**
+ * The declared marker line, in the exact style of `EXPLICIT_INTERIM_MARKER_RE`:
+ * own line, leading heading hashes and markdown emphasis stripped, Cyrillic-safe
+ * `(?![а-яё\w])` lookaheads instead of `\b` (JS word boundaries are ASCII-only
+ * and never fire after Cyrillic). Two shapes, and only two:
+ *
+ *   * «Вопрос владельцу:» — SINGULAR, with the colon (emphasis between the word
+ *     and the colon tolerated: `**Вопрос владельцу:**`, `**Вопрос владельцу**:`).
+ *     The `вопрос(?![а-яё\w])` lookahead is what keeps the PLURAL «Вопросы
+ *     владельцу» — the report's point-5 heading — out, in every one of its forms.
+ *   * «Вопрос N из M» — the numbered header of a standalone question, with or
+ *     without a trailing colon or dash. It has no collision with any heading a
+ *     real report carries, which is precisely why it is safe and the plural is not.
+ *
+ * The colon is REQUIRED for the singular shape and optional for the numbered
+ * one. That asymmetry is deliberate: the colon is what the skill prescribes, and
+ * a bare «Вопрос владельцу» is one inflection away from the plural heading the
+ * lookahead exists to keep out. It is stated in `report-task-outcome/SKILL.md`
+ * so the next author does not learn it by getting blocked.
+ *
+ * The prefix class tolerates a list bullet (`- `, `* `, `+ `) and a blockquote
+ * (`> `) in front, nested and indented, on the same «the prefix carries no
+ * meaning here» principle as the heading hashes (review of PR #393: a free-prose
+ * question written inside a bulleted «Что нужно от тебя» section — exactly the
+ * 2026-08-27 incident genre — otherwise missed the marker). The bullet group
+ * requires the trailing space, which is what disambiguates a `* ` bullet from
+ * the `**` of markdown emphasis.
+ *
+ * NOT stripped, knowingly: fenced code blocks and inline backticks, so a report
+ * that merely QUOTES the marker exempts itself. That matches
+ * `EXPLICIT_INTERIM_MARKER_RE` and diverges from `tools/lint/stage-b-lint.mjs`,
+ * which does strip fences; the divergence is recorded in `tools/hooks/README.md`
+ * rather than silently carried.
+ */
+export const OWNER_QUESTION_MARKER_RE =
+  /(?:^|\n)[ \t]*(?:[-*+>][ \t]+)*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*вопрос(?![а-яё\w])[ \t]*(?:владельцу[*_`]*[ \t]*:|\d+[ \t]+из[ \t]+\d+(?![а-яё\w\d]))/i
+
+export function hasOwnerQuestionMarker(text) {
+  return OWNER_QUESTION_MARKER_RE.test(String(text || ''))
+}
 
 /** The four beat labels of the form, each on its own line and followed by a
  * colon. Markdown emphasis and a heading hash are stripped — they carry no
@@ -182,15 +247,19 @@ export const QUESTION_BEAT_RES = [
 ]
 
 /**
- * The declared owner-question form: at least TWO DISTINCT beat labels.
+ * The declared owner-question form: the declared MARKER line (#392) OR at least
+ * TWO DISTINCT beat labels (#374).
  *
- * Two and not one, deliberately: «Что случилось:» alone is ordinary prose and
- * appears in real completion reports, while two beats on their own lines is
- * already nobody's accident — it is the canonical form being written out.
+ * Two beats and not one, deliberately: «Что случилось:» alone is ordinary prose
+ * and appears in real completion reports, while two beats on their own lines is
+ * already nobody's accident — it is the canonical form being written out. The
+ * marker is the cheap second entrance for a question whose BODY is free prose:
+ * the beats remain the content canon, the marker is what the gate can rely on.
  */
 export function isOwnerQuestionForm(text) {
   const t = String(text || '')
   if (!t) return false
+  if (hasOwnerQuestionMarker(t)) return true
   let beats = 0
   for (const re of QUESTION_BEAT_RES) {
     if (re.test(t)) beats += 1
@@ -502,6 +571,33 @@ function main() {
       writeActionSeen: hasWriteAction(transcript),
     })
     if (decision.block) {
+      // PER-SESSION BLOCK BUDGET (#392): this gate blocks at most ONCE per
+      // session. A second recognized violation is demoted to a warning, so a
+      // recognizer that is wrong about free prose costs the session one block,
+      // not one block per message. State I/O lives here — inside the blocking
+      // branch, so the overwhelmingly common quiet path pays no `spawnSync`; the
+      // decision itself is the pure `applyBlockBudget` seam.
+      //
+      // NO SESSION ID → NO BUDGET. `stateFilePath` would otherwise fall back to
+      // a shared `unknown.json` that nothing ever expires, and one block written
+      // there would demote this BLOCK gate to warn-only for every later
+      // id-less session on the box — permanently. A gate silently disarmed
+      // forever is far worse than one extra block, so this is the one place the
+      // fail-open default is inverted (review of PR #393).
+      const sessionId = payload.session_id
+      const statePath = sessionId
+        ? blockBudgetStatePath(mainRepoRoot(process.cwd()), sessionId)
+        : null
+      const state = statePath ? readState(statePath) : {}
+      const budgeted = applyBlockBudget({
+        decision,
+        alreadyBlocked: Boolean(statePath) && hasSpentBlockBudget(state, BUDGET_KEY),
+      })
+      if (budgeted.demoted) {
+        emitWarn(budgetDemotedMessage(blockMessage()))
+        process.exit(0)
+      }
+      if (statePath) recordBlockBudgetSpend(statePath, state, BUDGET_KEY)
       process.stderr.write(blockMessage())
       process.exit(2)
     }
