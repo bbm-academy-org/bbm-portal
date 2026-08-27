@@ -227,6 +227,18 @@ describe('the workspace home (spec 311 EARS-422, EARS-468)', () => {
     expect(tile.textContent).toContain('↗ внешний')
   })
 
+  it('EARS-468: the external tile is the SHORTER form — no status foot at all', async () => {
+    const host = dom(await renderHome())
+    const tile = host.querySelector('[data-tile-form="external"]') as HTMLAnchorElement
+    // «No status line» is a statement about a module that COULD publish a pulse
+    // and did not (EARS-407). An external app has no status concept, so the
+    // caption would assert something untrue about it — the vendored file draws
+    // `div.tile.ext` with no foot element, and that form inventory is exactly
+    // what a `fidelity: wireframe` source settles.
+    expect(tile.querySelector('[data-tile-status]')).toBe(null)
+    expect(tile.textContent).not.toContain('— без статус-строки —')
+  })
+
   it('EARS-408: a tile whose module publishes a line shows it; EARS-407: a failed one still renders', async () => {
     const host = dom(await renderHome())
     const tiles = Array.from(host.querySelectorAll('[data-tile]'))

@@ -80,12 +80,17 @@ export function todayLabel(now: Date = new Date()): string {
 }
 
 /**
- * The wireframe draws a foot rule on every INTERNAL tile: the module's own line
- * where it publishes one, and this explicit «no line» where it does not — the
- * tile it draws that way is the cabinet's, which declares no provider.
+ * The foot belongs to the forms that carry a status concept — the `internal`
+ * tile and the admin entry's: the module's own line where it publishes one, and
+ * this explicit «no line» where it does not (the tile the vendored file draws
+ * that way is the cabinet's, which declares no provider).
  *
  * A provider that failed lands here too (EARS-407): «no line» is what the member
  * sees either way, and the tile keeps the height its neighbours have.
+ *
+ * The `external` tile has NO foot — it is the shorter form of EARS-468, and an
+ * external app has no status to be missing. The `planned` placeholder has none
+ * either (EARS-478).
  */
 const EMPTY_STATUS = '— без статус-строки —'
 
@@ -126,8 +131,12 @@ function Tile({ tile }: { tile: LauncherTile }) {
 
   const description = form === 'admin' ? null : tile.description
 
+  // EARS-468: the foot belongs to the forms that HAVE a status concept — the
+  // `internal` tile and the admin entry's. The `external` tile is the shorter
+  // form (no foot element in the vendored file), and a placeholder has nothing
+  // to publish either.
   const foot =
-    form === 'planned' ? null : (
+    form !== 'internal' && form !== 'admin' ? null : (
       <CardContent
         data-tile-status={tile.status ? 'line' : 'empty'}
         className={cn(

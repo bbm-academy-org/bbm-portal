@@ -18,8 +18,9 @@
 /**
  * A stable icon reference (EARS-401). The vendored `design-source/p-launcher.html`
  * draws the tile's icon as an EMPTY swatch — there is no icon set in this design
- * yet — so the launcher renders no glyph in v1 and `AppTile` keeps its default
- * empty swatch. The reference is still declared, and required, because the entry
+ * yet — so the launcher renders no glyph in v1: the tile that
+ * `src/app/(platform)/p/page.tsx` builds out of the kit's `Card` has no icon
+ * slot at all. The reference is still declared, and required, because the entry
  * is the place that owns it: when the design gains icons, every live entry
  * already names one and no module is edited to catch up.
  */
