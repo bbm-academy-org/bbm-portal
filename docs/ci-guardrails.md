@@ -61,15 +61,19 @@ currently no such guard: every guard in that workflow is WARN. Promoting one to 
 requires either moving it into `ci.yml` or teaching `pnpm pr:land`'s gate to demand its
 check-run by name — decide that at the promotion, do not leave it implied.
 
-**A WARN check-run can still be read as red by the merge gate.** `pnpm pr:land` classifies
-**every** check-run in the PR's rollup structurally — `SUCCESS`/`SKIPPED`/`NEUTRAL` pass,
-anything else counts as failed — and it does not know which job carries
-`continue-on-error`. The `if:` no-op fence in `pr-body-guards.yml` is therefore safe
-(`SKIPPED` passes), but a **cancelled** run is not: `cancel-in-progress` on the WARN
-workflow would leave `CANCELLED` check-runs that block a merge the canon says WARN never
-blocks. That is why `pr-body-guards.yml` sets `cancel-in-progress: false` — the WARN
-workflow is cheap, and a superseded run finishing is preferable to a cancelled one being
-read as a verdict. Do not re-enable it without changing the gate first.
+**The merge gate knows the WARN plane — but only for `FAILURE`.** `pnpm pr:land` resolves
+which jobs carry `continue-on-error: true` from the workflow files on the PR's **base**
+ref (a PR cannot demote a guard by editing its own branch) and demotes a `FAILURE`
+check-run of a plane member to a printed warning; a BLOCK-plane failure stays red (#397).
+Everything unresolvable resolves towards red — a renamed or templated job name, an
+unreadable workflow listing, a conclusion other than `FAILURE`: an empty plane reproduces
+the strict pre-#397 gate. The `if:` no-op fence in `pr-body-guards.yml` is safe
+(`SKIPPED` passes), but a **cancelled** run is not: only `FAILURE` is demoted, so
+`cancel-in-progress` on the WARN workflow would leave `CANCELLED` check-runs that block a
+merge the canon says WARN never blocks. That is why `pr-body-guards.yml` sets
+`cancel-in-progress: false` — the WARN workflow is cheap, and a superseded run finishing
+is preferable to a cancelled one being read as a verdict. Do not re-enable it without
+changing the gate first.
 
 **A job that is neither is a bug, and is checked.** A `ci.yml` job with no
 `continue-on-error` that is also absent from the needs-list would look blocking on the PR
