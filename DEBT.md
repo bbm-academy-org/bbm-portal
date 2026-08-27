@@ -570,6 +570,18 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-26-9f27ac4d15 -->
 
+- [ ] 2026-08-27 a fresh numeric task worktree cannot run the Payload-backed
+      integration specs until the non-`PLATFORM_*` secrets (`PAYLOAD_SECRET`,
+      S3, IdP) are hand-copied from the shared checkout's `.env` — neither
+      `pnpm task:worktree` nor `pnpm dev:db:branch` carries them, and 8 int
+      specs fail on "missing secret key"; the #380 session copied them by hand,
+      nothing committed — return condition: the next session that hits the
+      missing-secret int failures in a fresh worktree promotes this to a tooling
+      issue (extend `task:worktree`/`dev:db:branch` to copy or reference the
+      base keys) (#380)
+
+<!-- debt-entry-end: 2026-08-27-4b1e7d92c3 -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
