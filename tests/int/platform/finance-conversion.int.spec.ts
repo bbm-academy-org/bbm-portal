@@ -6,8 +6,10 @@ import {
   accountBalances,
   createAccount,
   createCurrency,
+  FinanceAccessRefusal,
   FinanceRefusal,
   listAccounts,
+  listRegister,
   recordConversion,
   recordOperation,
   reverseOperation,
@@ -119,6 +121,30 @@ async function fxResultOf(operationId: number, currency: string): Promise<bigint
   `)
   return BigInt((result.rows[0] as { total: string }).total)
 }
+
+describe('the conversion door is a ledger door (EARS-501, EARS-529)', () => {
+  it('EARS-501: refuses a conversion from a session without `finance-approve` — the third ledger door is gated like the other two', async () => {
+    const wallets = await seedWallets()
+    const draft = {
+      occurredOn: '2026-01-10',
+      sourceAccountId: wallets.thb.id,
+      targetAccountId: wallets.usdt.id,
+      steps: [
+        {
+          fromCurrency: 'THB',
+          toCurrency: 'USDT',
+          fromAmount: 3_500_000n,
+          toAmount: 1_000_000_000n,
+          rate: '35',
+        },
+      ],
+    }
+    // `ADMIN` holds `platform-admin` and no flow role: EARS-529 in its own right,
+    // and the assertion that keeps `assertFinanceLedgerAccess` in this function.
+    await expect(recordConversion(ADMIN, draft)).rejects.toBeInstanceOf(FinanceAccessRefusal)
+    expect(await listRegister()).toHaveLength(0)
+  })
+})
 
 describe('a conversion is ONE operation with frozen rates (EARS-318, EARS-319)', () => {
   it('EARS-318: records the chain as one operation, its steps as rows, and balances every currency through the conversion account', async () => {

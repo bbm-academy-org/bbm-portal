@@ -265,8 +265,19 @@ describe('intake writes and the submitter carve-out (EARS-501, EARS-502)', () =>
     expect(() => assertFinanceIntakeAccess(actor('platform-admin'))).toThrow(FinanceAccessRefusal)
   })
 
-  it('EARS-501: `finance-approve` carries the entry acts too — an approver may fill the intake it decides on', () => {
-    expect(() => assertFinanceIntakeAccess(actor(FINANCE_APPROVE_ROLE))).not.toThrow()
+  it('EARS-501: `finance-approve` alone does NOT carry the entry acts — the roles split by act, and EARS-502 is the ONE carve-out', () => {
+    expect(() => assertFinanceIntakeAccess(actor(FINANCE_APPROVE_ROLE))).toThrow(
+      FinanceAccessRefusal,
+    )
+    expect(() => assertFinanceIntakeAccess(actor('platform-user', FINANCE_APPROVE_ROLE))).toThrow(
+      FinanceAccessRefusal,
+    )
+  })
+
+  it('EARS-501: an approver who ALSO holds `finance-entry` fills the intake — on that grant, not on the office', () => {
+    expect(() =>
+      assertFinanceIntakeAccess(actor(FINANCE_ENTRY_ROLE, FINANCE_APPROVE_ROLE)),
+    ).not.toThrow()
   })
 
   it('EARS-502: a member holding neither flow role may act on their OWN request', () => {
