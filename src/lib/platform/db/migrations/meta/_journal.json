@@ -64,6 +64,13 @@
       "when": 1787731415669,
       "tag": "0008_finance_ledger_core",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787814860413,
+      "tag": "0009_finance_intake_spine",
+      "breakpoints": true
     }
   ]
 }

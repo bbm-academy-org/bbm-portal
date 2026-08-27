@@ -105,6 +105,61 @@ export type { RecordOperationInput, RecordedOperation } from './operations'
 export { recordConversion } from './conversions'
 export type { ConversionStepInput, RecordConversionInput } from './conversions'
 
+// ── the intake spine (spec 339 EARS-503/504/524/525) ─────────────────────────
+export {
+  createIntakeItem,
+  createIntakeItems,
+  editIntakeItem,
+  FinanceIntakeDuplicate,
+  getIntakeItem,
+  listIntakeItems,
+  transitionIntakeItem,
+} from './intake/items'
+export type {
+  CreateIntakeItemInput,
+  EditIntakeItemPatch,
+  FinanceIntakeBulkOutcome,
+  FinanceIntakeDuplicateLine,
+  FinanceIntakeItemView,
+  ListIntakeItemsFilter,
+} from './intake/items'
+// `registerIntakeProducer` is deliberately NOT re-exported. Registration is a
+// LOAD-TIME act inside the module (`./intake/sources` registers the four sources
+// spec 339 fixes), and the registry is a module-global `Map` keyed by source: a
+// mutator crossing the module boundary would let any caller silently redefine
+// `manual` at runtime. A future producer is registered from inside
+// `src/lib/finance`, the way these four are.
+export {
+  backfillSourceRef,
+  listIntakeProducers,
+  resolveIntakeProducer,
+  resolveIntakeSourceRef,
+} from './intake/sources'
+export type {
+  FinanceIntakeNaturalKey,
+  FinanceIntakeProducer,
+  FinanceIntakeRefInput,
+  FinanceIntakeSourceRefPolicy,
+} from './intake/sources'
+export {
+  assertIntakeTransition,
+  findIntakeTransition,
+  isIntakeMoneyField,
+  isTerminalIntakeStatus,
+  planIntakeEdit,
+  FINANCE_INTAKE_ACTS,
+  FINANCE_INTAKE_MONEY_FIELDS,
+  FINANCE_INTAKE_TERMINAL_STATUSES,
+  FINANCE_INTAKE_TRANSITIONS,
+} from './intake/status'
+export type {
+  FinanceIntakeTransitionAct,
+  FinanceIntakeEditPlan,
+  FinanceIntakeGate,
+  FinanceIntakeMoneyField,
+  FinanceIntakeTransition,
+} from './intake/status'
+
 // ── the read side: balances, register, the exception list (EARS-317/333) ─────
 export { accountBalances, listRegister, postingsMissingOptionalProduct } from './queries'
 export type { AccountBalance, RegisterEntry, MissingProductPosting } from './queries'
@@ -122,5 +177,15 @@ export type {
 } from '@/lib/platform/db/schema/finance/finance-account'
 export { FINANCE_OPERATION_SOURCES } from '@/lib/platform/db/schema/finance/finance-operation'
 export type { FinanceOperationSource } from '@/lib/platform/db/schema/finance/finance-operation'
+export {
+  FINANCE_INTAKE_KINDS,
+  FINANCE_INTAKE_SOURCES,
+  FINANCE_INTAKE_STATUSES,
+} from '@/lib/platform/db/schema/finance/finance-intake-item'
+export type {
+  FinanceIntakeKind,
+  FinanceIntakeSource,
+  FinanceIntakeStatus,
+} from '@/lib/platform/db/schema/finance/finance-intake-item'
 export { FINANCE_PRODUCT_BINDINGS } from '@/lib/platform/db/schema/finance/finance-purpose'
 export type { FinanceProductBinding } from '@/lib/platform/db/schema/finance/finance-purpose'

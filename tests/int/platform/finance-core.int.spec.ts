@@ -503,9 +503,21 @@ describe('the person dimension (EARS-322)', () => {
       `)
     ).rows as Array<{ table_name: string; column_name: string; delete_rule: string }>
 
+    // Every finance → `core.member` link, sorted, with its delete rule. The F2
+    // intake spine (#381) added five: an intake item records who filed it, who
+    // decided and who posted, and a counterparty records who created it — all of
+    // them RESTRICT for the same reason the posting's is, so the registry cannot
+    // delete a person out from under an act recorded to their name.
     expect(
-      constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`),
-    ).toEqual(['finance_posting.member_id → RESTRICT'])
+      constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`).sort(),
+    ).toEqual([
+      'finance_counterparty.created_by → RESTRICT',
+      'finance_intake_item.created_by → RESTRICT',
+      'finance_intake_item.decided_by → RESTRICT',
+      'finance_intake_item.member_id → RESTRICT',
+      'finance_intake_item.posted_by → RESTRICT',
+      'finance_posting.member_id → RESTRICT',
+    ])
   })
 
   it('EARS-322: "what did we pay X" is a query, and the registry cannot delete a person out from under it', async () => {

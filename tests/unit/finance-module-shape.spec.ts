@@ -80,7 +80,13 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
         'core"."finance_',
       ),
     )
-    expect(financeMigrations).toEqual(['0008_finance_ledger_core.sql'])
+    expect(financeMigrations).toEqual([
+      '0008_finance_ledger_core.sql',
+      // The F2 intake spine (spec 339, #381) — `finance_intake_item` and the
+      // `finance_counterparty` its FK needs. Still a committed migration, still
+      // no DDL in the module: the list grows, the rule does not move.
+      '0009_finance_intake_spine.sql',
+    ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {
       const source = readFileSync(file, 'utf8')

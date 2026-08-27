@@ -49,6 +49,12 @@ export const APPROVER: FinanceActor = {
   roles: ['platform-user', 'finance-approve'],
 }
 
+/** The intake actor — `finance-entry` fills the intake and attaches documents (EARS-501). */
+export const ENTRY: FinanceActor = {
+  email: 'entry@bbm.academy',
+  roles: ['platform-user', 'finance-entry'],
+}
+
 /** A member who may READ /p/finance and may write nothing (EARS-330/501/530). */
 export const MEMBER: FinanceActor = {
   email: 'member@bbm.academy',
@@ -69,6 +75,7 @@ export function fixtureWrite<T>(fn: (tx: PlatformTx) => Promise<T>): Promise<T> 
  */
 export async function truncateFinanceTables(): Promise<void> {
   await truncateAsFixture(`truncate table
+    core.finance_intake_item, core.finance_counterparty,
     core.finance_posting, core.finance_conversion_step, core.finance_operation,
     core.finance_purpose, core.finance_category, core.finance_product,
     core.finance_project, core.finance_account, core.finance_currency,
@@ -85,6 +92,25 @@ export async function truncateFinanceTables(): Promise<void> {
 export async function fundProjectId(): Promise<number> {
   return fixtureWrite(async (tx) => {
     const result = await tx.execute(sql`select id from core.finance_project where is_fund`)
+    return Number((result.rows[0] as { id: number }).id)
+  })
+}
+
+/**
+ * A counterparty row, seeded RAW (spec 339 EARS-532).
+ *
+ * Deliberately not through a module function: `finance_intake_item.counterparty_id`
+ * needs a target row, and #381 ships the TABLE only — the counterparty reference
+ * as a module surface (inline creation, admin rename) is #383. A fixture that
+ * called a function this PR does not own would be a claim it does.
+ */
+export async function seedCounterparty(name: string, createdBy: number): Promise<number> {
+  return fixtureWrite(async (tx) => {
+    const result = await tx.execute(sql`
+      insert into core.finance_counterparty (name, created_by)
+      values (${name}, ${createdBy})
+      returning id
+    `)
     return Number((result.rows[0] as { id: number }).id)
   })
 }
