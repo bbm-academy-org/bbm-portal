@@ -71,11 +71,12 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceEntry[] = [
     slug: 'mattermost',
     name: 'Mattermost',
     description: 'Общение команды',
-    // TODO(Антон): the Mattermost origin is the one value this repo never
-    // records — `.env.example` holds incoming-webhook URLs only, and those are
-    // secrets, not a home page. Confirm the host at Stage-B acceptance; every
-    // other tool here is pinned by a document (Plane by `PLANE_API_BASE_URL`,
-    // the knowledge base by ADR-005 §1).
+    // Confirmed by the owner (Антон, 2026-08-27, Stage-B acceptance of PR #354):
+    // this is the team's Mattermost home. The origin exists in no repo document
+    // (`.env.example` holds incoming-webhook URLs only, and those are secrets,
+    // not a home page), so the owner's record here is its pin — every other
+    // tool is pinned by a document (Plane by `PLANE_API_BASE_URL`, the
+    // knowledge base by ADR-005 §1).
     url: 'https://chat.bbm.academy',
     icon: 'mattermost',
   },
