@@ -1,0 +1,10 @@
+{
+  "sha": "aaa1",
+  "files": [
+    {
+      "filename": "tests/unit/leads-intake.spec.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,7 @@\n+import { describe, expect, it } from 'vitest'\n+\n+import { intake } from '@/lib/leads/intake'\n+\n+describe('intake', () => {\n+  it('parses a raw lead', () => expect(intake({})).toBeTruthy())\n+})"
+    }
+  ]
+}

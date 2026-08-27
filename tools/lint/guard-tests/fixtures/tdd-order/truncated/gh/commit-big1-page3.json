@@ -1,0 +1,15 @@
+{
+  "sha": "big1",
+  "files": [
+    {
+      "filename": "src/lib/bulk/mod-5.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,1 @@\n+export const mod5 = 5"
+    },
+    {
+      "filename": "src/lib/bulk/mod-6.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,1 @@\n+export const mod6 = 6"
+    }
+  ]
+}

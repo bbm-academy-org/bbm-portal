@@ -1,0 +1,20 @@
+{
+  "sha": "big1",
+  "parents": [
+    {
+      "sha": "p0"
+    }
+  ],
+  "files": [
+    {
+      "filename": "src/lib/bulk/mod-1.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,1 @@\n+export const mod1 = 1"
+    },
+    {
+      "filename": "src/lib/bulk/mod-2.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,1 @@\n+export const mod2 = 2"
+    }
+  ]
+}

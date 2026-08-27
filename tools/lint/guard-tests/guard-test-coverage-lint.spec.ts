@@ -16,8 +16,8 @@ import { caseDir, runGuard } from './run-guard'
 describe('checkCoverage', () => {
   it('pairs a guard with the spec whose name mirrors it', () => {
     const res = checkCoverage({
-      guards: ['no-stub-lint.mjs', 'tdd-signal-lint.mjs'],
-      specs: ['no-stub-lint.spec.ts', 'tdd-signal-lint.spec.ts'],
+      guards: ['no-stub-lint.mjs', 'test-presence-lint.mjs'],
+      specs: ['no-stub-lint.spec.ts', 'test-presence-lint.spec.ts'],
     })
     expect(res.missing).toEqual([])
     expect(res.orphans).toEqual([])

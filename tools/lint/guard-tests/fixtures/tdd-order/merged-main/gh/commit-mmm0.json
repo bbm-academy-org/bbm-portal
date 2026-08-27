@@ -1,0 +1,18 @@
+{
+  "sha": "mmm0",
+  "parents": [
+    {
+      "sha": "branch0"
+    },
+    {
+      "sha": "main0"
+    }
+  ],
+  "files": [
+    {
+      "filename": "src/lib/other/landed-on-main.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,1 @@\n+export const landedElsewhere = true"
+    }
+  ]
+}

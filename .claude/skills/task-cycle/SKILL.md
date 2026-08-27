@@ -131,7 +131,11 @@ the thread — then re-review, looping until APPROVE. **TDD extends to review
 fixes: every blocker gets a RED test before its fix**, asserting the behaviour
 the reviewer said is missing or wrong, and the fix commit is what turns it green.
 A blocker rejected with reasoning needs no test; a blocker that is genuinely
-untestable says so in the thread, in that blocker's own reply. This is stage 3's
+untestable says so in the thread, in that blocker's own reply. **Tests are read
+against the SPEC's acceptance scenarios, never against the implementation:** a
+test that encodes what the code happens to do, where the spec says something
+else, is a BLOCKER — it converts the defect into a passing suite and every later
+session inherits it as settled truth. This is stage 3's
 rule applied where the defect rate is highest — a fix written straight into the
 code has no failing artifact to prove it addressed the finding, and round 2 then
 spends itself on a defect round 1's fix introduced (PR #282 took three rounds

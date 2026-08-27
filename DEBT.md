@@ -145,12 +145,15 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-05-e5366ddfb7 -->
 
-- [ ] 2026-08-05 `tools/lint/tdd-signal-lint.mjs`: substring path matching — a
-      spec that merely MENTIONS a module path counts as covering it (nothing
-      masked today; anchor needles to import statements like
-      `IMPORTS_GUARD_LIB_RE` does) — return condition: first tdd-signal finding
-      disputed as false, or the guard's WARN→BLOCK promotion review
-      (2026-09-02 window) (#136, review of PR #154)
+- [ ] 2026-08-05 `tools/lint/test-presence-lint.mjs` (called
+      `tdd-signal-lint.mjs` until the #355 rename on 2026-08-27): substring path
+      matching — a spec that merely MENTIONS a module path counts as covering it
+      (nothing masked today; anchor needles to import statements like
+      `IMPORTS_GUARD_LIB_RE` does) — return condition: first test-presence
+      finding disputed as false, or the guard's WARN→BLOCK promotion review
+      (2026-09-02 window) (#136, review of PR #154). `tdd-order-lint.mjs`
+      inherits the same `needlesFor` and so the same weakness, one direction
+      milder: there the needle is matched against ADDED PATCH lines only.
 
 <!-- debt-entry-end: 2026-08-05-8fa8f75d9b -->
 

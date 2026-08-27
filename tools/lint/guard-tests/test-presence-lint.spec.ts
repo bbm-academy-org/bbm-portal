@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyChanges, findUntested, isTestSource, needlesFor } from '../tdd-signal-lint.mjs'
+import { classifyChanges, findUntested, isTestSource, needlesFor } from '../test-presence-lint.mjs'
 import { caseDir, ghDir, runGuard } from './run-guard'
 
 /**
- * tdd-signal — a PR that changes production code and ships no test, in a module
- * nothing tests either (canon docs/ci-guardrails.md §5, WARN since 2026-08-05).
+ * test-presence — a PR that changes production code and ships no test, in a
+ * module nothing tests either (canon docs/ci-guardrails.md §5, WARN since
+ * 2026-08-05; renamed from `tdd-signal` on 2026-08-27 by #355, rule unchanged).
+ *
+ * The name is the point of the rename: this guard checks that a test EXISTS, not
+ * that one was written first. The order question belongs to `tdd-order-lint.mjs`
+ * and its spec next door — see this guard's header for the #354 incident that
+ * separated them.
  *
  * task-cycle stage 3 makes TDD a hard rule for platform-module code; this is the
  * signal that the rule was skipped, visible to the reviewer at review time.
@@ -41,7 +47,7 @@ describe('classifyChanges', () => {
 
   it('treats a fixture as neither production nor test — it is input under test', () => {
     const res = classifyChanges([
-      'tools/lint/guard-tests/fixtures/tdd-signal/tested/tests/unit/leads-intake.spec.ts',
+      'tools/lint/guard-tests/fixtures/test-presence/tested/tests/unit/leads-intake.spec.ts',
       'tools/lint/guard-tests/fixtures/no-stub/dirty/src/lib/config.ts',
     ])
     expect(res.prod).toEqual([])
@@ -57,7 +63,7 @@ describe('isTestSource — the guard must not read its own fixtures as coverage'
 
   it('does NOT count a fixture, even one shaped exactly like a spec', () => {
     expect(
-      isTestSource('tools/lint/guard-tests/fixtures/tdd-signal/tested/tests/unit/x.spec.ts'),
+      isTestSource('tools/lint/guard-tests/fixtures/test-presence/tested/tests/unit/x.spec.ts'),
     ).toBe(false)
   })
 })
@@ -97,15 +103,15 @@ describe('findUntested', () => {
   })
 })
 
-describe('tdd-signal (spawned)', () => {
+describe('test-presence (spawned)', () => {
   const env = (n: string) => ({
     GITHUB_EVENT_NAME: 'pull_request',
     PR_NUMBER: '7',
-    LINT_GH_FIXTURE_DIR: ghDir('tdd-signal', n),
+    LINT_GH_FIXTURE_DIR: ghDir('test-presence', n),
   })
 
   it('exits 1 naming the untested production file', () => {
-    const res = runGuard('tdd-signal-lint.mjs', caseDir('tdd-signal', 'untested'), {
+    const res = runGuard('test-presence-lint.mjs', caseDir('test-presence', 'untested'), {
       env: env('untested'),
     })
     expect(res.code).toBe(1)
@@ -113,14 +119,14 @@ describe('tdd-signal (spawned)', () => {
   })
 
   it('exits 0 when the diff carries a test', () => {
-    const res = runGuard('tdd-signal-lint.mjs', caseDir('tdd-signal', 'tested'), {
+    const res = runGuard('test-presence-lint.mjs', caseDir('test-presence', 'tested'), {
       env: env('tested'),
     })
     expect(res.code).toBe(0)
   })
 
   it('exits 0 outside a pull_request event — nothing to check, said out loud', () => {
-    const res = runGuard('tdd-signal-lint.mjs', caseDir('tdd-signal', 'untested'))
+    const res = runGuard('test-presence-lint.mjs', caseDir('test-presence', 'untested'))
     expect(res.code).toBe(0)
     expect(res.stdout).toContain('not a pull_request event')
   })
@@ -130,7 +136,7 @@ describe('tdd-signal (spawned)', () => {
   // Counting it as coverage let a genuinely untested module pass, and measured the
   // §4 promotion clock on evidence the guard's own fixtures manufactured.
   it('exits 1 even when a FIXTURE references the changed module', () => {
-    const res = runGuard('tdd-signal-lint.mjs', caseDir('tdd-signal', 'fixture-only'), {
+    const res = runGuard('test-presence-lint.mjs', caseDir('test-presence', 'fixture-only'), {
       env: env('fixture-only'),
     })
     expect(res.code).toBe(1)
@@ -138,7 +144,7 @@ describe('tdd-signal (spawned)', () => {
   })
 
   it('exits 1 when the PR metadata cannot be read — fail closed', () => {
-    const res = runGuard('tdd-signal-lint.mjs', caseDir('tdd-signal', 'untested'), {
+    const res = runGuard('test-presence-lint.mjs', caseDir('test-presence', 'untested'), {
       env: { ...env('untested'), PR_NUMBER: '404' },
     })
     expect(res.code).toBe(1)

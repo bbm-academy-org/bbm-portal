@@ -1,8 +1,27 @@
 #!/usr/bin/env node
-// tdd-signal — production code changed, no test anywhere near it.
+// test-presence — production code changed, no test anywhere near it.
 //
 // Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05 (heuristic,
-// so it soaks per §3); earliest promotion 2026-09-02 under the §4 clauses.
+// so it soaks per §3); earliest promotion 2026-09-02 under the §4 clauses. The
+// 2026-08-27 rename (#355) changed no rule and so did not restart that clock —
+// §4 clause 2 counts from the last change to WHAT a guard matches, and this
+// guard matches exactly what it matched the day it landed.
+//
+// ── Why this guard is no longer called `tdd-signal` (#355) ───────────────────
+// It was, until 2026-08-27, and the name was a lie of exactly the kind a guard
+// is supposed to prevent. PR #354 shipped one commit carrying its tests and its
+// implementation together; the implementer's own record confirms the
+// implementation was written FIRST and the specs after, with no RED run per
+// spec file. This guard was GREEN throughout — correctly, by its own rule,
+// because a test was present. A reviewer reading a green `tdd-signal` check
+// read it as an attestation that TDD had happened. It never checked that.
+//
+// PRESENCE is what this guard owns, and presence is all it claims. The ORDER
+// half — a new module's test must land in a strictly earlier COMMIT than its
+// implementation — is `tools/lint/tdd-order-lint.mjs`, which reads the PR's
+// commit graph rather than its file set. Neither guard is the other's
+// duplicate: a module with no test at all is this guard's finding and is
+// deliberately silent in `tdd-order`.
 //
 // Why it exists: task-cycle stage 3 makes TDD a hard rule for platform-module
 // code ("no production module code without a failing test first"). A rule stated
@@ -33,9 +52,10 @@
 // Known blind spots, accepted to keep the false-positive rate low: coverage
 // DEPTH is not measured (any test importing the module counts); a new file added
 // beside an already-imported one passes; a test living only in an unmerged
-// sibling branch is invisible.
+// sibling branch is invisible. And — the one the rename exists to stop hiding —
+// WHEN the test was written relative to the code is not this guard's question.
 //
-// Run: `pnpm lint:tdd-signal`. Findings: stderr + exit 1. Clean/skip: exit 0.
+// Run: `pnpm lint:test-presence`. Findings: stderr + exit 1. Clean/skip: exit 0.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -53,11 +73,17 @@ import {
   walkFiles,
 } from './lib/guard.mjs'
 
-const TAG = 'tdd-signal'
+const TAG = 'test-presence'
 
 const TEST_RE = /(^tests\/|^tools\/lint\/guard-tests\/|\.(spec|test)\.[tj]sx?$)/
 const PROD_RE = /^(src|tools)\/.+\.(ts|tsx|mjs)$/
-const PROD_EXEMPT_RE =
+/**
+ * Files that are production sources by path but carry no testable behaviour —
+ * generated types, migrations, declaration files, configs. Exported because
+ * `tdd-order-lint.mjs` scopes its NEW-file rule with the same list: one
+ * definition of "not really code", not two that drift.
+ */
+export const PROD_EXEMPT_RE =
   /(\.d\.ts$|^src\/payload-types\.ts$|^src\/payload-generated-schema\.ts$|^src\/migrations\/|\.config\.[mc]?[jt]sx?$)/
 
 /**
