@@ -33,9 +33,27 @@
 //      leave the kit's actual failure mode unguarded — the kit ships exactly
 //      one stylesheet today, and it is the exempt one.
 //   2. unknown-variable — a `var(--…)` in a KIT stylesheet naming a variable
-//      the theme entry does not declare. A mistyped custom property does not
-//      error, it drops the whole declaration, and the surface just looks
-//      slightly wrong.
+//      neither the theme entry nor a named upstream source declares. A mistyped
+//      custom property does not error, it drops the whole declaration, and the
+//      surface just looks slightly wrong.
+//
+//      THE THEME ENTRY IS IN THIS RULE'S SCOPE, and that is a 2026-08-26 fix,
+//      not a detail. The rule used to skip `theme.css` along with the colour
+//      rule — and `theme.css` is the kit's ONLY stylesheet, so the rule scanned
+//      zero files and could not fail while still reporting PASS. It now scans
+//      every kit stylesheet including the theme entry, which is where the forty
+//      `var(--…)` references of an `@theme inline` block actually live.
+//
+//      Names the theme entry legitimately does not declare are the ones a named
+//      UPSTREAM declares — Tailwind's own default theme, Radix's runtime
+//      properties. Those are an explicit allowlist below rather than a wildcard:
+//      adding a new upstream reference is meant to be a decision.
+//
+//   3. self-reference — a kit stylesheet declaring `--x: var(--x)`. Not a value,
+//      a cycle: the shadcn CLI writes `--font-sans: var(--font-sans)` in
+//      `@theme inline` so a project can point it at its own font variable, and
+//      left as generated it resolves to nothing while looking deliberate. Landed
+//      exactly that way on #376 and was caught in review, not by a guard.
 //
 // Scope stays the kit and not every stylesheet, for the reason it always did:
 // spec 311 EARS-429 keeps the existing /p/okr and /p/hours bodies unreskinned
@@ -71,6 +89,54 @@ const THEME_CSS = 'src/ui/theme.css'
 const KIT_FILE_RE = /^src\/ui\/.*\.(css|tsx|ts)$/
 /** The kit's own stylesheets — the scope of the unknown-variable rule. */
 const KIT_CSS_RE = /^src\/ui\/.*\.css$/
+
+/**
+ * Custom properties a kit stylesheet may reference without declaring, because a
+ * named upstream declares them. Exact names, or a prefix ending in `-`.
+ *
+ *   - `--font-sans` / `--font-mono` / `--font-serif` / `--spacing` — Tailwind's
+ *     own default theme (`tailwindcss/theme.css`), imported at the top of
+ *     `theme.css` into the `theme` layer.
+ *   - `--radix-` — properties Radix sets on its own portalled elements at
+ *     runtime (menu width, transform origin, available height).
+ *
+ * A name that is neither declared nor listed here is a typo, which is the whole
+ * subject of the rule.
+ */
+export const UPSTREAM_VARIABLES = [
+  '--font-sans',
+  '--font-mono',
+  '--font-serif',
+  '--spacing',
+  '--radix-',
+]
+
+/**
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isUpstream(name) {
+  return UPSTREAM_VARIABLES.some((u) => (u.endsWith('-') ? name.startsWith(u) : name === u))
+}
+
+/**
+ * Declarations whose value references the property being declared — `--x:
+ * var(--x)`. Returned with 1-based line numbers.
+ *
+ * @param {string} css
+ * @returns {{line: number, name: string}[]}
+ */
+export function selfReferences(css) {
+  const out = []
+  blankComments(css)
+    .split(/\r?\n/)
+    .forEach((line, i) => {
+      const m = /(--[a-z0-9-]+)\s*:\s*([^;]*)/.exec(line)
+      if (!m) return
+      if (new RegExp(`var\\(\\s*${m[1]}\\b`).test(m[2])) out.push({ line: i + 1, name: m[1] })
+    })
+  return out
+}
 
 /**
  * Blank out comments while KEEPING line numbers: a finding reports `file:line`,
@@ -157,8 +223,10 @@ export function checkKit({ themeCss, files }) {
   const findings = []
 
   for (const { rel, text } of files) {
-    if (rel === THEME_CSS) continue
-    if (KIT_FILE_RE.test(rel)) {
+    // The theme entry is exempt from the COLOUR rule only — it is where the
+    // colours are supposed to be. It is in scope for the variable rules, which
+    // is what stops those from being a check with no subject.
+    if (rel !== THEME_CSS && KIT_FILE_RE.test(rel)) {
       for (const { line, text: literal } of colorLiterals(text)) {
         findings.push({
           kind: 'hardcoded-color',
@@ -168,8 +236,15 @@ export function checkKit({ themeCss, files }) {
       }
     }
     if (KIT_CSS_RE.test(rel)) {
+      for (const { line, name } of selfReferences(text)) {
+        findings.push({
+          kind: 'self-reference',
+          where: `${rel}:${line}`,
+          detail: `${name}: var(${name}) — a property declared as itself is a cycle, not a value: it resolves to nothing while reading like a deliberate indirection. Give it a real value, or delete the line and let the upstream declaration stand.`,
+        })
+      }
       for (const name of usedVariables(text)) {
-        if (!declared.has(name)) {
+        if (!declared.has(name) && !isUpstream(name)) {
           findings.push({
             kind: 'unknown-variable',
             where: rel,
@@ -203,8 +278,9 @@ async function main() {
   out.info(`scanned ${files.length} kit file(s) under src/ui/`)
   if (findings.length === 0) {
     out.ok(
-      `PASS — the kit carries no colour outside ${THEME_CSS}, and every var(--…) in a kit ` +
-        'stylesheet resolves against it.',
+      `PASS — the kit carries no colour outside ${THEME_CSS}; every var(--…) in a kit ` +
+        'stylesheet resolves against it or against a named upstream, and no property is ' +
+        'declared as itself.',
     )
   }
 

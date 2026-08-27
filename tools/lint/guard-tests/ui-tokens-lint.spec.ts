@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { checkKit, colorLiterals, declaredVariables, usedVariables } from '../ui-tokens-lint.mjs'
+import {
+  checkKit,
+  colorLiterals,
+  declaredVariables,
+  selfReferences,
+  usedVariables,
+} from '../ui-tokens-lint.mjs'
 import { caseDir, runGuard } from './run-guard'
 
 /**
@@ -81,6 +87,22 @@ describe('colorLiterals', () => {
   })
 })
 
+describe('selfReferences', () => {
+  it('finds a property declared as itself — the shape the shadcn CLI generates for --font-sans', () => {
+    const css = ':root {\n  --font-sans: var(--font-sans);\n  --radius: 0.625rem;\n}'
+    expect(selfReferences(css).map((f) => `${f.line}:${f.name}`)).toEqual(['2:--font-sans'])
+  })
+
+  it('does not flag a property that references a DIFFERENT one — that is the normal case', () => {
+    expect(selfReferences('--font-heading: var(--font-sans);')).toEqual([])
+    expect(selfReferences('--radius-lg: calc(var(--radius) * 1.4);')).toEqual([])
+  })
+
+  it('does not see a self-reference inside a comment', () => {
+    expect(selfReferences('/* the CLI writes --font-sans: var(--font-sans) here */')).toEqual([])
+  })
+})
+
 describe('checkKit — the whole verdict, as a pure seam', () => {
   const clean = {
     themeCss: ':root { --background: oklch(1 0 0); }',
@@ -126,6 +148,46 @@ describe('checkKit — the whole verdict, as a pure seam', () => {
       files: [{ rel: 'src/ui/extra.css', text: '.o { color: var(--backgruond) }' }],
     })
     expect(res.findings.map((f) => f.kind)).toEqual(['unknown-variable'])
+  })
+
+  it("flags a var() in the THEME ENTRY itself — the rule used to skip the kit's only stylesheet", () => {
+    // The vacuity fix of 2026-08-26. Before it, the theme entry was skipped for
+    // BOTH rules; it is the kit's only `.css`, so `unknown-variable` scanned
+    // nothing and could not fail while the guard still printed PASS.
+    const res = checkKit({
+      themeCss: ':root { --background: oklch(1 0 0) }',
+      files: [
+        {
+          rel: 'src/ui/theme.css',
+          text: ':root { --background: oklch(1 0 0) }\n@theme inline { --color-bg: var(--backgruond); }',
+        },
+      ],
+    })
+    expect(res.findings.map((f) => f.kind)).toEqual(['unknown-variable'])
+  })
+
+  it("accepts a var() a NAMED upstream declares — Tailwind's own font stack, Radix's runtime props", () => {
+    const res = checkKit({
+      ...clean,
+      files: [
+        {
+          rel: 'src/ui/theme.css',
+          text: '@theme inline { --font-heading: var(--font-sans); }\n.m { width: var(--radix-dropdown-menu-trigger-width) }',
+        },
+      ],
+    })
+    expect(res.findings).toEqual([])
+  })
+
+  it('flags a property declared as itself, wherever in the kit it is written', () => {
+    const res = checkKit({
+      ...clean,
+      files: [
+        { rel: 'src/ui/theme.css', text: '@theme inline { --font-sans: var(--font-sans); }' },
+      ],
+    })
+    expect(res.findings.map((f) => f.kind)).toEqual(['self-reference'])
+    expect(res.findings[0].where).toBe('src/ui/theme.css:1')
   })
 
   it('reports a tree with no theme entry as nothing-to-check, not as a clean pass', () => {

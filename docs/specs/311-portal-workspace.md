@@ -79,6 +79,29 @@ updated: 2026-08-26
   has no machine-checkable assertion, and choosing between retiring it and
   giving it one is a product call for the re-skin slice, not a mechanical
   rewrite this one could make.
+- **Launcher re-skinned onto the adopted kit (#360, PR-2 — PR #354).** The
+  frozen `/p` launcher branch was rebuilt on the repopulated kit: the tile is
+  `Card` + `Badge`, the shared top bar is a surface-local composition of
+  `Avatar` / `Separator` / `Button` (the kit publishes primitives, not
+  application chrome), the app switcher is the kit's `DropdownMenu` — which
+  **retired the one bespoke element of this epic**, the hand-written open menu
+  and its stylesheet — and the branding is the text logo «Платформа BBM» per the
+  Stage-A decision. `src/ui/theme.css`'s base layer was **armed and scoped to a
+  `[data-bbm-ui]` subtree**: the document-level form the shadcn CLI generates
+  would have restyled `/p/okr` and `/p/hours` the moment the theme entry was
+  imported, which is EARS-429, so the arming and that clause are reconciled by
+  the scoping rather than by deferring one of them.
+
+  **EARS-430 left the deferral list here.** PR-1b recorded that choosing between
+  retiring it and giving it a machine-checkable assertion was this slice's call.
+  It is **not retired**: it is the clause the 2026-08-26 incident violated, and
+  «a reviewer will notice» is precisely what did not happen. It is asserted
+  instead, in `tests/unit/launcher-kit-adoption.spec.ts` — the surface ships no
+  stylesheet, writes no colour and no inline style, and imports its element
+  classes from `@/ui`. The cabinet screens are also subjects of the clause and
+  do not exist yet (#315); the suite scans the surface files that DO exist and
+  grows with them, which is why nothing is owed back to the deferral list.
+
 - **Donor & benchmark pass:** run 2026-08-25 against three donors — Refine's
   own resource/menu model (`@refinedev/core` `resources[]` with `meta.parent`
   multi-level menus, adopted for the grouped navigation and for nothing else:
@@ -518,7 +541,8 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   sources; hand-rolled styles are a review stop-factor (consolidation §10). The
   two halves come from different rows of `design-source/README.md` and it
   matters which: layout from the `fidelity: wireframe` file for the surface, the
-  visual language from the `system:` row at `fidelity: visual`.
+  visual language from the `system:` row at `fidelity: visual`. _(Asserted
+  since #360's re-skin slice: `tests/unit/launcher-kit-adoption.spec.ts`.)_
 - **EARS-468.** The grid shall carry exactly four tile forms, as the vendored
   file draws them: the standard `internal` tile; the shorter `external` tile
   marked «↗ внешний» (EARS-423); the admin entry's tile with its «только
