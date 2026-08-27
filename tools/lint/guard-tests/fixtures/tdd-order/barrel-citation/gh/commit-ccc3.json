@@ -1,0 +1,10 @@
+{
+  "sha": "ccc3",
+  "files": [
+    {
+      "filename": "tests/unit/finance-intake-sources.spec.ts",
+      "status": "modified",
+      "patch": "@@ -1,5 +1,5 @@\n import { describe, expect, it } from 'vitest'\n \n-import { listSources } from '@/lib/finance'\n+import { listSources } from '@/lib/finance/intake/sources'"
+    }
+  ]
+}

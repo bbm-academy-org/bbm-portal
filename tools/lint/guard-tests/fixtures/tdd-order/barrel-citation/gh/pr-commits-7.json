@@ -1,0 +1,5 @@
+[
+  { "sha": "aaa1", "commit": { "message": "test(finance): RED — intake sources through the public barrel" } },
+  { "sha": "bbb2", "commit": { "message": "feat(finance): intake sources" } },
+  { "sha": "ccc3", "commit": { "message": "refactor(finance): review nit — import the module directly" } }
+]

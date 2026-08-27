@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   addedLines,
+  barrelsFor,
   evaluateStaged,
   findOrderViolations,
   hitsFileCap,
@@ -13,6 +14,7 @@ import {
   isPlatformModule,
   MAX_FILE_PAGES,
   normaliseCommit,
+  reexportEdges,
 } from '../tdd-order-lint.mjs'
 import { caseDir, ghDir, runGuard } from './run-guard'
 
@@ -133,6 +135,147 @@ describe('isMergeCommit', () => {
   it('is false for an ordinary commit and for a root commit', () => {
     expect(isMergeCommit({ parentCount: 1 })).toBe(false)
     expect(isMergeCommit({ parentCount: 0 })).toBe(false)
+  })
+})
+
+/**
+ * REGRESSION (#398) in `tools/lint/tdd-order-lint.mjs` — the first confirmed
+ * false positive of the CI plane's soak (PR #396, 2026-08-27). The tests-only commit cited the new module
+ * `src/lib/finance/intake/sources.ts` through its PUBLIC BARREL `@/lib/finance`
+ * — which is what ADR-002 module isolation prescribes for a test of the public
+ * API — while `needlesFor` only ever matched the literal path. The guard saw no
+ * citation until a later commit switched the import to the literal path, and the
+ * verdict flipped to `impl-first` on a PR whose TDD order was genuinely honest.
+ *
+ * The fix reads the PR's OWN patches for the re-export edges: a module that is
+ * NEW in this PR can only become reachable through a barrel if some commit of
+ * this PR adds the re-export line, so the evidence never needs a tree read or a
+ * second API call.
+ */
+describe('reexportEdges', () => {
+  const barrelCommit = (patch: string) => [
+    { sha: 'aaa1', files: [{ path: 'src/lib/finance/index.ts', status: 'modified', patch }] },
+  ]
+
+  it('reads a NAMED re-export line and maps the target back to its barrel', () => {
+    const edges = reexportEdges(barrelCommit("+export { listSources } from './intake/sources'"))
+    expect([...(edges.get('src/lib/finance/intake/sources') ?? [])]).toEqual(['src/lib/finance'])
+  })
+
+  it('reads a star re-export and a type-only re-export too', () => {
+    const edges = reexportEdges(
+      barrelCommit(
+        "+export * from './intake/sources'\n+export type { Source } from './core/money'",
+      ),
+    )
+    expect(edges.has('src/lib/finance/intake/sources')).toBe(true)
+    expect(edges.has('src/lib/finance/core/money')).toBe(true)
+  })
+
+  it('normalises an explicit extension and a parent-relative specifier', () => {
+    const edges = reexportEdges([
+      {
+        sha: 'aaa1',
+        files: [
+          {
+            path: 'src/lib/finance/intake/index.ts',
+            status: 'added',
+            patch: "+export * from './sources.js'\n+export * from '../core/money'",
+          },
+        ],
+      },
+    ])
+    expect([...(edges.get('src/lib/finance/intake/sources') ?? [])]).toEqual([
+      'src/lib/finance/intake',
+    ])
+    expect([...(edges.get('src/lib/finance/core/money') ?? [])]).toEqual(['src/lib/finance/intake'])
+  })
+
+  it('reads only INDEX files — an ordinary module re-exporting something is not a barrel', () => {
+    const edges = reexportEdges([
+      {
+        sha: 'aaa1',
+        files: [
+          {
+            path: 'src/lib/finance/operations.ts',
+            status: 'modified',
+            patch: "+export { listSources } from './intake/sources'",
+          },
+        ],
+      },
+    ])
+    expect(edges.size).toBe(0)
+  })
+
+  it('ignores a plain IMPORT and a bare-specifier re-export', () => {
+    const edges = reexportEdges(
+      barrelCommit("+import { x } from './intake/sources'\n+export { y } from 'drizzle-orm'"),
+    )
+    expect(edges.size).toBe(0)
+  })
+
+  it('never reads a merge commit — same rule as everywhere else in this guard', () => {
+    const edges = reexportEdges([
+      {
+        sha: 'mmm0',
+        parentCount: 2,
+        files: [
+          {
+            path: 'src/lib/finance/index.ts',
+            status: 'modified',
+            patch: "+export * from './intake/sources'",
+          },
+        ],
+      },
+    ])
+    expect(edges.size).toBe(0)
+  })
+})
+
+describe('barrelsFor', () => {
+  const edgesOf = (files: { path: string; status: string; patch: string }[]) =>
+    reexportEdges([{ sha: 'aaa1', files }])
+
+  it('resolves the direct barrel of a module', () => {
+    const edges = edgesOf([
+      {
+        path: 'src/lib/finance/index.ts',
+        status: 'modified',
+        patch: "+export { listSources } from './intake/sources'",
+      },
+    ])
+    expect(barrelsFor('src/lib/finance/intake/sources.ts', edges)).toEqual(['src/lib/finance'])
+  })
+
+  it('walks a CHAIN of barrels when this PR adds both hops', () => {
+    const edges = edgesOf([
+      { path: 'src/lib/finance/index.ts', status: 'modified', patch: "+export * from './intake'" },
+      {
+        path: 'src/lib/finance/intake/index.ts',
+        status: 'added',
+        patch: "+export * from './sources'",
+      },
+    ])
+    expect(barrelsFor('src/lib/finance/intake/sources.ts', edges).sort()).toEqual([
+      'src/lib/finance',
+      'src/lib/finance/intake',
+    ])
+  })
+
+  it('terminates on a cyclic re-export rather than spinning', () => {
+    const edges = edgesOf([
+      { path: 'src/lib/a/index.ts', status: 'added', patch: "+export * from '../b'" },
+      {
+        path: 'src/lib/b/index.ts',
+        status: 'added',
+        patch: "+export * from '../a'\n+export * from './thing'",
+      },
+    ])
+    expect(barrelsFor('src/lib/b/thing.ts', edges).sort()).toEqual(['src/lib/a', 'src/lib/b'])
+  })
+
+  it('returns nothing for a module no barrel in this PR re-exports', () => {
+    expect(barrelsFor('src/lib/finance/intake/sources.ts', new Map())).toEqual([])
   })
 })
 
@@ -275,6 +418,158 @@ describe('findOrderViolations', () => {
     expect(res).toEqual([])
   })
 
+  // REGRESSION (#398) — the PR #396 shape, end to end in the decision seam: a
+  // tests-only commit citing the module through the barrel, then the module plus
+  // the barrel's re-export line, then a later commit switching the import to the
+  // literal path. Honest TDD order; the guard used to call it `impl-first`.
+  it('accepts a BARREL citation for the module that barrel re-exports (#396 shape)', () => {
+    const barrelTest = {
+      path: 'tests/unit/finance-intake-sources.spec.ts',
+      status: 'added',
+      patch: "+import { listSources } from '@/lib/finance'",
+    }
+    const newModule = {
+      path: 'src/lib/finance/intake/sources.ts',
+      status: 'added',
+      patch: '+export const listSources = () => []',
+    }
+    const barrel = {
+      path: 'src/lib/finance/index.ts',
+      status: 'modified',
+      patch: "+export { listSources } from './intake/sources'",
+    }
+    const literalLater = {
+      path: 'tests/unit/finance-intake-sources.spec.ts',
+      status: 'modified',
+      patch: "+import { listSources } from '@/lib/finance/intake/sources'",
+    }
+    expect(
+      findOrderViolations([
+        { sha: 'aaa1', files: [barrelTest] },
+        { sha: 'bbb2', files: [newModule, barrel] },
+        { sha: 'ccc3', files: [literalLater] },
+      ]),
+    ).toEqual([])
+  })
+
+  // The other half of the tension: a barrel citation must NOT blanket-satisfy
+  // TDD for every module behind that barrel. Only the modules that barrel
+  // actually re-exports are covered.
+  it('does not let a barrel citation cover a module that barrel does not re-export', () => {
+    const barrelTest = {
+      path: 'tests/unit/finance-money.spec.ts',
+      status: 'added',
+      patch: "+import { convert } from '@/lib/finance'",
+    }
+    const uncovered = {
+      path: 'src/lib/finance/intake/sources.ts',
+      status: 'added',
+      patch: '+export const listSources = () => []',
+    }
+    const barrel = {
+      path: 'src/lib/finance/index.ts',
+      status: 'modified',
+      patch: "+export { convert } from './core/money'",
+    }
+    // Nothing cites sources.ts -> test-presence's question, silent here. The
+    // point is that the barrel citation does not rescue it either.
+    expect(findOrderViolations([{ sha: 'aaa1', files: [barrelTest, uncovered, barrel] }])).toEqual(
+      [],
+    )
+  })
+
+  it('still flags impl-first when the barrel citation lands AFTER the module', () => {
+    const res = findOrderViolations([
+      {
+        sha: 'aaa1',
+        files: [
+          {
+            path: 'src/lib/finance/intake/sources.ts',
+            status: 'added',
+            patch: '+export const listSources = () => []',
+          },
+          {
+            path: 'src/lib/finance/index.ts',
+            status: 'modified',
+            patch: "+export { listSources } from './intake/sources'",
+          },
+        ],
+      },
+      {
+        sha: 'bbb2',
+        files: [
+          {
+            path: 'tests/unit/finance-intake-sources.spec.ts',
+            status: 'added',
+            patch: "+import { listSources } from '@/lib/finance'",
+          },
+        ],
+      },
+    ])
+    expect(res).toHaveLength(1)
+    expect(res[0]).toMatchObject({ path: 'src/lib/finance/intake/sources.ts', kind: 'impl-first' })
+  })
+
+  it('still flags same-commit when the barrel-citing test rides along', () => {
+    const res = findOrderViolations([
+      {
+        sha: 'aaa1',
+        files: [
+          {
+            path: 'src/lib/finance/intake/sources.ts',
+            status: 'added',
+            patch: '+export const listSources = () => []',
+          },
+          {
+            path: 'src/lib/finance/index.ts',
+            status: 'modified',
+            patch: "+export { listSources } from './intake/sources'",
+          },
+          {
+            path: 'tests/unit/finance-intake-sources.spec.ts',
+            status: 'added',
+            patch: "+import { listSources } from '@/lib/finance'",
+          },
+        ],
+      },
+    ])
+    expect(res).toHaveLength(1)
+    expect(res[0]).toMatchObject({ kind: 'same-commit' })
+  })
+
+  it('does not read a DEEPER sibling import as a citation of the barrel', () => {
+    // `@/lib/finance/core/money` contains the barrel needle `lib/finance` as a
+    // substring; boundary matching is what keeps it from covering sources.ts.
+    const res = findOrderViolations([
+      {
+        sha: 'aaa1',
+        files: [
+          {
+            path: 'tests/unit/finance-money.spec.ts',
+            status: 'added',
+            patch: "+import { convert } from '@/lib/finance/core/money'",
+          },
+        ],
+      },
+      {
+        sha: 'bbb2',
+        files: [
+          {
+            path: 'src/lib/finance/intake/sources.ts',
+            status: 'added',
+            patch: '+export const listSources = () => []',
+          },
+          {
+            path: 'src/lib/finance/index.ts',
+            status: 'modified',
+            patch: "+export { listSources } from './intake/sources'",
+          },
+        ],
+      },
+    ])
+    expect(res).toEqual([])
+  })
+
   it('counts a guard spec as a test source too', () => {
     expect(
       findOrderViolations([
@@ -383,6 +678,18 @@ describe('tdd-order (spawned)', () => {
     expect(res.code).toBe(0)
     expect(res.stdout).toContain('PASS')
     expect(res.stderr).not.toContain('could not fetch')
+  })
+
+  // REGRESSION (#398), CLI level: the PR #396 commit shape exactly — a tests-only
+  // commit citing through the barrel, then the implementation together with the
+  // barrel's re-export line, then a later commit moving the import to the literal
+  // path. Before the fix this exited 1 with `implementation first`.
+  it('exits 0 when the earlier test cited the module through its public barrel', () => {
+    const res = runGuard('tdd-order-lint.mjs', caseDir('tdd-order', 'barrel-citation'), {
+      env: env('barrel-citation'),
+    })
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('PASS')
   })
 
   it('exits 1 when the PR commit list cannot be read — fail closed', () => {
