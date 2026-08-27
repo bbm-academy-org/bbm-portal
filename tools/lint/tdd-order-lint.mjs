@@ -216,6 +216,63 @@ export function findOrderViolations(commits) {
 /** A short sha for a human-readable finding line. */
 const short = (sha) => String(sha ?? '').slice(0, 8)
 
+/** The endpoint's page size, and the number of pages its 300-file cap allows. */
+const FILE_PAGE_SIZE = 100
+export const MAX_FILE_PAGES = 3
+
+/**
+ * True when the file list is provably INCOMPLETE: the final allowed page came
+ * back full, so `repos/{owner}/{repo}/commits/{sha}` hit its 300-file ceiling —
+ * a ceiling paging cannot lift.
+ *
+ * It matters because a dropped TEST file loses its citation, and a module whose
+ * citing test went missing reads as `impl-first`: a false BLOCK on a PR that did
+ * everything right (review of PR #394, blocker 2.2). The caller fails closed on
+ * a true here — canon §8 gives a CI guard only exit 0 and exit 1, and judging
+ * order on a list known to be partial is the one thing a BLOCK guard must not do.
+ *
+ * @param {number} pageCount pages fetched so far (1-based)
+ * @param {number} lastPageFiles files the last page returned
+ * @param {number} pageSize the page size asked for
+ * @param {number} maxPages
+ */
+export function hitsFileCap(pageCount, lastPageFiles, pageSize, maxPages = MAX_FILE_PAGES) {
+  return pageCount >= maxPages && lastPageFiles >= pageSize
+}
+
+/**
+ * One commit, paged to completion. `{ ok: true, data }` or `{ ok: false, error }`
+ * — including the truncation case, which is an error on purpose.
+ *
+ * TEST SEAM `LINT_TDD_ORDER_PAGE_SIZE` shrinks the page size so a fixture can
+ * reach the cap without 300 entries. Inert in production: unset == 100.
+ */
+function readCommit(sha, root) {
+  const pageSize = Number(process.env.LINT_TDD_ORDER_PAGE_SIZE) || FILE_PAGE_SIZE
+  const files = []
+  let head = null
+
+  for (let page = 1; page <= MAX_FILE_PAGES; page++) {
+    const res = ghCommit(sha, root, page, pageSize)
+    if (!res.ok) return res
+    if (page === 1) head = res.data
+    const pageFiles = res.data.files ?? []
+    files.push(...pageFiles)
+
+    if (pageFiles.length < pageSize) return { ok: true, data: { ...head, files } }
+    if (hitsFileCap(page, pageFiles.length, pageSize)) {
+      return {
+        ok: false,
+        error:
+          `the file list of commit ${short(sha)} is truncated — the commits endpoint caps it ` +
+          `at ${MAX_FILE_PAGES * pageSize} files and every page came back full, so a test ` +
+          'citing a new module may be missing from it',
+      }
+    }
+  }
+  return { ok: true, data: { ...head, files } }
+}
+
 async function main() {
   const out = reporter(TAG)
   if (!isPrEvent()) {
@@ -234,11 +291,13 @@ async function main() {
     out.ok(`PR #${prNumber} lists no commits, nothing to check`)
   }
 
-  // Fail closed on a commit that cannot be read: a partial sequence would make
-  // an impl-first PR look test-first by simply losing the commit that proves it.
+  // Fail closed on a commit that cannot be read, and equally on one whose file
+  // list is truncated: a partial sequence — or a complete sequence with a partial
+  // FILE list — makes a correct PR look impl-first by losing the commit, or the
+  // test, that proves otherwise. `readCommit` pages to completion first.
   const commits = []
   for (const entry of listed.data) {
-    const detail = ghCommit(entry.sha, root)
+    const detail = readCommit(entry.sha, root)
     if (!detail.ok) {
       out.fail(`could not fetch commit ${short(entry.sha)} of PR #${prNumber}: ${detail.error}`)
     }

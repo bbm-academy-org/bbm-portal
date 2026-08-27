@@ -14,6 +14,7 @@
 //       gh api .../issues/<n>/sub_issues          -> <dir>/sub-issues-<n>.json
 //       gh api .../pulls/<n>/commits              -> <dir>/pr-commits-<n>.json
 //       gh api .../commits/<sha>                  -> <dir>/commit-<sha>.json
+//       gh api .../commits/<sha>?page=<N>         -> <dir>/commit-<sha>-page<N>.json
 //   A missing or invalid fixture resolves to `{ ok: false }`, matching the real
 //   CLI's failure path, so a guard's fail-closed branch is testable too.
 //
@@ -108,18 +109,32 @@ export function ghPrCommits(number, cwd) {
 }
 
 /**
- * One commit with its file list: `{ sha, files: [{ filename, status, patch }] }`.
+ * ONE PAGE of a commit: `{ sha, parents, files: [{ filename, status, patch }] }`.
  * `status` is git's own verdict for that commit (`added` / `modified` /
  * `renamed` / …), which is what lets a caller tell a NEW file from a rename
- * without re-deriving it.
+ * without re-deriving it; `parents` is what tells a merge from a commit.
  *
- * Fixture seam: `<LINT_GH_FIXTURE_DIR>/commit-<sha>.json`.
+ * The endpoint pages its `files` array and caps it at 300 entries however you
+ * page, so this is deliberately a SINGLE-PAGE primitive: the caller owns the
+ * loop and owns what to do when the cap is hit. `--paginate` is not usable here
+ * — it concatenates whole JSON objects for an object-shaped response rather
+ * than merging their arrays.
+ *
+ * Fixture seam: `<LINT_GH_FIXTURE_DIR>/commit-<sha>.json` for page 1, and
+ * `commit-<sha>-page<N>.json` for each page after it.
+ *
+ * @param {string} sha
+ * @param {string} cwd
+ * @param {number} page 1-based page number
+ * @param {number} perPage page size (the endpoint's own maximum is 100)
  */
-export function ghCommit(sha, cwd) {
+export function ghCommit(sha, cwd, page = 1, perPage = 100) {
   const fixtureDir = process.env.LINT_GH_FIXTURE_DIR
   const res = fixtureDir
-    ? fixtureRead(resolve(fixtureDir, `commit-${sha}.json`))
-    : ghRun(['api', `repos/{owner}/{repo}/commits/${sha}`], cwd)
+    ? fixtureRead(
+        resolve(fixtureDir, page === 1 ? `commit-${sha}.json` : `commit-${sha}-page${page}.json`),
+      )
+    : ghRun(['api', `repos/{owner}/{repo}/commits/${sha}?per_page=${perPage}&page=${page}`], cwd)
   if (!res.ok) return res
   return { ok: true, data: res.data ?? {} }
 }

@@ -82,7 +82,9 @@ describe('normaliseCommit', () => {
   })
 
   it('carries the parent COUNT, because that is what tells a merge from a commit', () => {
-    expect(normaliseCommit({ sha: 'm1', parents: [{ sha: 'a' }, { sha: 'b' }] }).parentCount).toBe(2)
+    expect(normaliseCommit({ sha: 'm1', parents: [{ sha: 'a' }, { sha: 'b' }] }).parentCount).toBe(
+      2,
+    )
     // A root commit, and a payload that omits `parents` entirely.
     expect(normaliseCommit({ sha: 'r0', parents: [] }).parentCount).toBe(0)
     expect(normaliseCommit({ sha: 'x0' }).parentCount).toBe(0)
