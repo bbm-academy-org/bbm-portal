@@ -1,0 +1,10 @@
+{
+  "sha": "aaa1",
+  "files": [
+    {
+      "filename": "src/lib/leads/intake.ts",
+      "status": "added",
+      "patch": "@@ -0,0 +1,1 @@\n+export const intake = () => true"
+    }
+  ]
+}

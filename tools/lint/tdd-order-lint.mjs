@@ -128,12 +128,35 @@ export function addedLines(patch) {
 export function normaliseCommit(commit) {
   return {
     sha: commit?.sha,
+    parentCount: (commit?.parents ?? []).length,
     files: (commit?.files ?? []).map((f) => ({
       path: toPosix(f.filename ?? ''),
       status: f.status,
       patch: f.patch,
     })),
   }
+}
+
+/**
+ * A merge commit — more than one parent.
+ *
+ * It matters because `repos/{owner}/{repo}/commits/{sha}` reports a merge's
+ * `files` as the diff against its FIRST PARENT: on a branch that merged
+ * `origin/main` in rather than rebasing, that diff is everything main landed
+ * since the branch point, every bit of it `status: "added"`. Reading a merge as
+ * authorship makes another team's module look like this PR's new file and can
+ * BLOCK a PR over code it never wrote (review of PR #394, blocker 2.1).
+ *
+ * A merge is therefore skipped in BOTH directions — it neither introduces a
+ * module nor supplies the citing test. Nothing is lost: whatever the merge
+ * brings in was authored in the commits it merges, which are already on main and
+ * were judged by that branch's own run.
+ *
+ * @param {{parentCount?: number}} commit
+ * @returns {boolean}
+ */
+export function isMergeCommit(commit) {
+  return (commit?.parentCount ?? 0) > 1
 }
 
 /**
@@ -151,6 +174,7 @@ export function findOrderViolations(commits) {
   // not a new module at all.
   const firstTouch = new Map()
   for (const [index, commit] of commits.entries()) {
+    if (isMergeCommit(commit)) continue
     for (const file of commit.files ?? []) {
       if (!firstTouch.has(file.path)) {
         firstTouch.set(file.path, { index, sha: commit.sha, status: file.status })
@@ -164,11 +188,13 @@ export function findOrderViolations(commits) {
 
     const needles = needlesFor(path)
     const citing = commits.findIndex((commit) =>
-      (commit.files ?? []).some(
-        (file) =>
-          isTestSource(file.path) &&
-          addedLines(file.patch).some((line) => needles.some((n) => line.includes(n))),
-      ),
+      isMergeCommit(commit)
+        ? false
+        : (commit.files ?? []).some(
+            (file) =>
+              isTestSource(file.path) &&
+              addedLines(file.patch).some((line) => needles.some((n) => line.includes(n))),
+          ),
     )
     // No commit of this PR cites the module: `test-presence`'s question, not
     // this guard's. Silent on purpose — see the header.
