@@ -37,6 +37,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import ts from 'typescript'
+
 import { isEntryPoint, reporter, repoRoot, runMain, walkFiles } from './lib/guard.mjs'
 
 const TAG = 'endpoint-authz'
@@ -52,25 +54,42 @@ export const MODULE_ROUTE_RE = /^src\/app\/.*\/api\/p\/.+\/route\.tsx?$/
 
 /** The HTTP methods Next routes from a `route.ts`. */
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
-const METHOD_ALT = METHODS.join('|')
-
-/** `export async function GET(` / `export function GET(` */
-const FN_EXPORT_RE = new RegExp(`^\\s*export\\s+(?:async\\s+)?function\\s+(${METHOD_ALT})\\b`)
-/** `export const GET = adminRoute({` / `export const GET: Handler = …` */
-const CONST_EXPORT_RE = new RegExp(
-  `^\\s*export\\s+(?:const|let|var)\\s+(${METHOD_ALT})\\b[^=]*=\\s*([A-Za-z_$][\\w$]*)?`,
-)
+const METHOD_SET = new Set(METHODS)
 
 /** The factories that carry the gate. Anything else has to gate itself. */
 const ADMIN_FACTORY = 'adminRoute'
 const MEMBER_FACTORY = 'memberRoute'
 const SANCTIONED = new Set([ADMIN_FACTORY, MEMBER_FACTORY])
 
-/** The hand-gated escape: the file calls the claim gate helper itself. */
-const HAND_GATE_RE = /\bclaimGateResponse\s*\(/
-
 /** Suppression, reason required — a bare marker is not a record. */
 const SUPPRESS_RE = /\bendpoint-authz-ok\s*:\s*\S/
+
+/** An explicit admin claim in a hand gate under `/admin/`. */
+const ADMIN_CLAIM_RE = /\bPLATFORM_ADMIN_ROLE\b|['"]platform-admin['"]/
+
+function hasExportModifier(node) {
+  return node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false
+}
+
+function identifierText(node) {
+  return node && ts.isIdentifier(node) ? node.text : null
+}
+
+function claimGateCalls(node) {
+  const calls = []
+  function visit(current) {
+    if (
+      ts.isCallExpression(current) &&
+      ts.isIdentifier(current.expression) &&
+      current.expression.text === 'claimGateResponse'
+    ) {
+      calls.push(current)
+    }
+    ts.forEachChild(current, visit)
+  }
+  visit(node)
+  return calls
+}
 
 /**
  * The path segments of a module API route, module slug first.
@@ -111,39 +130,110 @@ export function scanHandlerFile(rel, source) {
   })
 
   const underAdmin = segments[1] === 'admin'
-  const handGated = HAND_GATE_RE.test(source)
   const lines = source.split(/\r?\n/)
+  const sourceFile = ts.createSourceFile(
+    rel,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    rel.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  )
 
-  lines.forEach((raw, i) => {
-    const fn = FN_EXPORT_RE.exec(raw)
-    const konst = fn ? null : CONST_EXPORT_RE.exec(raw)
-    if (!fn && !konst) return
+  function location(node) {
+    const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
+    const raw = lines[line] ?? ''
+    return { line: line + 1, raw, text: raw.trim().slice(0, 120) }
+  }
 
-    const method = (fn ?? konst)[1]
-    const factory = konst ? konst[2] : null
-    if (SUPPRESS_RE.test(raw)) return
+  function checkHandler(method, node, factory = null) {
+    const at = location(node)
+    if (SUPPRESS_RE.test(at.raw)) return
 
     if (factory && SANCTIONED.has(factory)) {
       if (underAdmin && factory === MEMBER_FACTORY) {
         findings.push({
           kind: 'member-claim-under-admin',
-          line: i + 1,
+          line: at.line,
           method,
-          text: raw.trim().slice(0, 120),
+          text: at.text,
         })
       }
       return
     }
 
-    if (handGated) return
+    const handGates = claimGateCalls(node)
+    if (handGates.length > 0) {
+      const hasAdminClaim = handGates.some((call) => ADMIN_CLAIM_RE.test(call.getText(sourceFile)))
+      if (underAdmin && !hasAdminClaim) {
+        findings.push({
+          kind: 'member-claim-under-admin',
+          line: at.line,
+          method,
+          text: at.text,
+        })
+      }
+      return
+    }
 
     findings.push({
       kind: 'ungated-handler',
-      line: i + 1,
+      line: at.line,
       method,
-      text: raw.trim().slice(0, 120),
+      text: at.text,
     })
-  })
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && hasExportModifier(statement)) {
+      const method = identifierText(statement.name)
+      if (method && METHOD_SET.has(method)) checkHandler(method, statement)
+      continue
+    }
+
+    if (ts.isVariableStatement(statement) && hasExportModifier(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const method = identifierText(declaration.name)
+        if (!method || !METHOD_SET.has(method)) continue
+        const factory =
+          declaration.initializer && ts.isCallExpression(declaration.initializer)
+            ? identifierText(declaration.initializer.expression)
+            : null
+        checkHandler(method, declaration, factory)
+      }
+      continue
+    }
+
+    if (!ts.isExportDeclaration(statement)) continue
+    if (statement.isTypeOnly) continue
+    const at = location(statement)
+    if (SUPPRESS_RE.test(at.raw)) continue
+
+    if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      for (const element of statement.exportClause.elements) {
+        if (element.isTypeOnly) continue
+        const method = element.name.text
+        if (!METHOD_SET.has(method)) continue
+        findings.push({
+          kind: 'ungated-handler',
+          line: at.line,
+          method,
+          text: at.text,
+        })
+      }
+      continue
+    }
+
+    // `export *` can surface any Next HTTP method while proving no gate in the
+    // route file. Fail closed; a genuine exception uses the recorded marker.
+    if (!statement.exportClause && statement.moduleSpecifier) {
+      findings.push({
+        kind: 'ungated-handler',
+        line: at.line,
+        method: null,
+        text: at.text,
+      })
+    }
+  }
 
   return findings
 }
