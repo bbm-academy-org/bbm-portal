@@ -307,6 +307,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
+  # BLOCK from day 0 — an ungated route handler on the modules' HTTP surface
+  # `/api/p/*` (#315, the deferred §11 row of the consolidation spec). Recorded
+  # mandate: docs/ci-guardrails.md §5, row `endpoint-authz` (§3 classes 1 and 2
+  # together — a deterministic tree check over this repo's own handler
+  # convention, over a failure spec 311 EARS-461/EARS-462 records as a
+  # data-protection defect, so a WARN soak would itself be the risk). Escape
+  # hatch on the CI plane: `// endpoint-authz-ok: <reason>` in the diff.
+  endpoint-authz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:endpoint-authz
+
   # WARN — dev placeholder / untracked stub marker on the render surface.
   no-stub:
     continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
@@ -508,6 +528,7 @@ jobs:
         platform-int,
         ssot-freshness,
         design-fidelity,
+        endpoint-authz,
       ]
     if: always()
     runs-on: ubuntu-latest

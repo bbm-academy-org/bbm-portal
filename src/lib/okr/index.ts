@@ -6,7 +6,12 @@
  * dependency-cruiser in CI.
  */
 export { getOkrTree, OkrUnavailableError } from './cache'
-export { GRACE_DAYS, OKR_PERIOD, TEAM } from './config'
+export { getOkrParameters, GRACE_DAYS, OKR_PERIOD, TEAM } from './config'
+// The module's wire contract and its cabinet section (spec 311 §G). Exported
+// from the public API because the cabinet reads it — and from `./contract`
+// rather than `./workspace`, because it must stay client-safe (see that file).
+export { describeOkrReadError, okrAdminSection, okrParametersSchema } from './contract'
+export type { OkrParametersRecord } from './contract'
 export { expectedShare, inGracePeriod } from './rollup'
 export type { Health, OkrAction, OkrKr, OkrObjective, OkrTask, OkrTree, StateGroup } from './types'
 

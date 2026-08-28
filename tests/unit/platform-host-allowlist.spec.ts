@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   evaluateRequest,
   isCmsSurfaceHost,
+  isModuleApiPath,
   isPlatformPath,
   isPlatformSurfaceHost,
   modeFromNodeEnv,
@@ -151,6 +152,14 @@ describe('evaluateRequest — production host × path matrix (spec 060 req.3)', 
     '/api/auth/signin',
     '/api/auth/callback/zitadel',
     '/api/auth/session',
+    // The modules' HTTP surface (spec 311 EARS-463…EARS-465, D-11). It is a
+    // PLATFORM path on every row of this matrix — admitted on the portal,
+    // refused on the CMS host and on the internal `app` host — exactly as
+    // `/api/auth/*` is.
+    '/api/p',
+    '/api/p/hours/periods',
+    '/api/p/hours/admin/periods',
+    '/api/p/okr/admin/parameters',
   ]
   const frameworkPaths = ['/_next/static/chunks/main.js', '/_next/image', '/favicon.ico']
   const noSurfacePaths = ['/okr', '/players', '/example']
@@ -263,6 +272,76 @@ describe('evaluateRequest — development mode (dev ergonomics, spec 060 req.5)'
         expect(evaluateRequest(host, path, 'development'), `${host} ${path}`).toBe('not-found')
       }
     }
+  })
+})
+
+describe('the modules HTTP surface /api/p/* (spec 311 EARS-463, EARS-464, EARS-465)', () => {
+  // D-11: the module API keeps the `/api/p/<slug>/*` shape consolidation §5
+  // fixes, and the allowlist changes to meet it. Before this pair of edits
+  // EVERY module API in spec 311 was 404 on `portal.bbm.academy` while
+  // `isCmsSurfacePath`'s generic `/api/*` clause served it on
+  // `cms.bbm.academy` — both halves wrong, in opposite directions.
+
+  it('EARS-463: `isModuleApiPath` matches /api/p and everything under /api/p/', () => {
+    expect(isModuleApiPath('/api/p')).toBe(true)
+    expect(isModuleApiPath('/api/p/')).toBe(true)
+    expect(isModuleApiPath('/api/p/hours/periods')).toBe(true)
+    expect(isModuleApiPath('/api/p/okr/admin/parameters')).toBe(true)
+  })
+
+  it('EARS-463: it does NOT over-match a sibling Payload slug that merely starts with /api/p', () => {
+    // `/api/pages` and `/api/products` are legitimate Payload `/api/[...slug]`
+    // paths on the CMS host. A `startsWith('/api/p')` written without the
+    // separator would silently move them onto the portal and off the CMS —
+    // the exact bypass class PR #64 recorded for the host header.
+    expect(isModuleApiPath('/api/pages')).toBe(false)
+    expect(isModuleApiPath('/api/products')).toBe(false)
+    expect(isModuleApiPath('/api/posts')).toBe(false)
+    expect(isModuleApiPath('/api')).toBe(false)
+    expect(isModuleApiPath('/p/hours')).toBe(false)
+  })
+
+  it('EARS-463: the portal host serves the module API in production and in development', () => {
+    for (const host of ['portal.bbm.academy', 'PORTAL.BBM.ACADEMY', 'portal.bbm.academy.']) {
+      for (const path of ['/api/p', '/api/p/hours/periods', '/api/p/hours/admin/periods']) {
+        expect(evaluateRequest(host, path, 'production'), `${host} ${path}`).toBe('pass')
+        expect(evaluateRequest(host, path, 'development'), `${host} ${path}`).toBe('pass')
+      }
+    }
+  })
+
+  it('EARS-464: the CMS host refuses it — the carve-out beats the generic /api/* clause', () => {
+    for (const host of ['cms.bbm.academy', 'CMS.BBM.ACADEMY', 'cms.bbm.academy:443']) {
+      for (const path of ['/api/p', '/api/p/hours/periods', '/api/p/hours/admin/periods']) {
+        expect(evaluateRequest(host, path, 'production'), `${host} ${path}`).toBe('not-found')
+        expect(evaluateRequest(host, path, 'development'), `${host} ${path}`).toBe('not-found')
+      }
+    }
+  })
+
+  it('EARS-464: the carve-out leaves the Payload slugs it looks like alone', () => {
+    expect(evaluateRequest('cms.bbm.academy', '/api/pages', 'production')).toBe('pass')
+    expect(evaluateRequest('cms.bbm.academy', '/api/products', 'production')).toBe('pass')
+    expect(evaluateRequest('portal.bbm.academy', '/api/pages', 'production')).toBe('not-found')
+  })
+
+  it('EARS-465: the internal `app` host refuses it — live preview is a CMS consumer', () => {
+    expect(evaluateRequest('app:3000', '/api/p/hours/periods', 'production')).toBe('not-found')
+    expect(evaluateRequest('app', '/api/p/okr/admin/parameters', 'production')).toBe('not-found')
+  })
+
+  it('EARS-465: the dev origin serves it in development and 404s it in production', () => {
+    for (const host of ['localhost', 'localhost:3000', '127.0.0.1']) {
+      expect(evaluateRequest(host, '/api/p/hours/periods', 'development'), host).toBe('pass')
+      expect(evaluateRequest(host, '/api/p/hours/periods', 'production'), host).toBe('not-found')
+    }
+  })
+
+  it('EARS-465: an unknown host still 404s it — default-deny is untouched', () => {
+    expect(evaluateRequest('unknown.example.com', '/api/p/hours/periods', 'production')).toBe(
+      'not-found',
+    )
+    expect(evaluateRequest(null, '/api/p/hours/periods', 'development')).toBe('not-found')
   })
 })
 

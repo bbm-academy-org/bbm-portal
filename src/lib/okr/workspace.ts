@@ -1,6 +1,7 @@
 import type { WorkspaceModule } from '@/lib/workspace/contract'
 
 import { getOkrTree } from './cache'
+import { okrAdminSection } from './contract'
 
 /**
  * The OKR module's own workspace declaration (spec 311 EARS-401).
@@ -39,7 +40,10 @@ export const okrWorkspaceEntry: WorkspaceModule = {
   href: '/p/okr',
   icon: 'okr',
   status: okrStatusLine,
-  // The OKR cabinet section (EARS-453, one read-only item) is #315's, declared
-  // here when that shell exists. Until then: no presence under /p/admin
-  // (EARS-410).
+  // The cabinet section (EARS-453) — one read-only item, «Источник и
+  // параметры». The section itself is declared in `./contract.ts` rather than
+  // inline here, because the cabinet's data provider needs its schemas in the
+  // BROWSER and this file is server-only (the `status` provider above reads the
+  // tree). One object, two importers, no copy to drift.
+  admin: okrAdminSection,
 }

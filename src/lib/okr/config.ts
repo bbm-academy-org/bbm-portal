@@ -107,6 +107,38 @@ export function planeApiToken(): string | undefined {
   return process.env.PLANE_API_TOKEN || undefined
 }
 
+/**
+ * The module's EFFECTIVE configuration, read-only (spec 311 EARS-475).
+ *
+ * The single named widening of `src/lib/okr`'s public API that §G needs: today
+ * `index.ts` exports `OKR_PERIOD` and `TEAM` but not `OKR_WORKSPACE`, not
+ * `OKR_PROJECTS` and not the Plane web base URL, and the cabinet must not reach
+ * past the module's door to get them (ADR-004 §6). One accessor over the values
+ * already in this file — so the raw constants stay unexported from `index.ts`
+ * and no caller can start depending on their shapes.
+ *
+ * It is a SNAPSHOT, not a live handle: the projects are copied, so a cabinet
+ * screen cannot mutate the module's own configuration by holding the array.
+ */
+export function getOkrParameters(): {
+  workspace: string
+  planeWebBaseUrl: string
+  period: { start: string; end: string }
+  projects: { ident: string; projectId: string; mission: Mission; order: number }[]
+} {
+  return {
+    workspace: OKR_WORKSPACE,
+    planeWebBaseUrl: planeWebBaseUrl(),
+    period: { ...OKR_PERIOD },
+    projects: OKR_PROJECTS.map((project) => ({
+      ident: project.ident,
+      projectId: project.projectId,
+      mission: project.mission,
+      order: project.order,
+    })),
+  }
+}
+
 /** Snapshot TTL (FR-6): 5–15 min make sense; default 10, clamped to that range. */
 export function cacheTtlMs(): number {
   const raw = Number(process.env.OKR_CACHE_TTL_SECONDS)

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 
 import { hoursWorkspaceEntry } from '@/lib/hours'
 import { okrWorkspaceEntry } from '@/lib/okr'
@@ -81,6 +82,11 @@ describe('the module plug-in contract (spec 311 EARS-401, D-10, D-13a)', () => {
    * runtime body only keeps the constant alive for the linter.
    */
   it('EARS-413: the contract accommodates every app of the target portfolio', () => {
+    // Every cabinet resource carries its module's own zod schema (EARS-436);
+    // one stand-in is enough here, because what this test proves is that the
+    // CONTRACT compiles for the whole portfolio, not what any app's records
+    // look like.
+    const portfolioSchema = z.object({ id: z.string() })
     const portfolio: WorkspaceModule[] = [
       {
         kind: 'internal',
@@ -90,7 +96,12 @@ describe('the module plug-in contract (spec 311 EARS-401, D-10, D-13a)', () => {
         href: '/p/hours',
         icon: 'hours',
         status: async () => null,
-        admin: { label: 'Часы', resources: [{ name: 'periods', label: 'Периоды' }] },
+        admin: {
+          label: 'Часы',
+          resources: [
+            { name: 'periods', label: 'Периоды', operations: ['list'], schema: portfolioSchema },
+          ],
+        },
       },
       {
         kind: 'internal',
@@ -100,7 +111,17 @@ describe('the module plug-in contract (spec 311 EARS-401, D-10, D-13a)', () => {
         href: '/p/okr',
         icon: 'okr',
         status: () => null,
-        admin: { label: 'OKR', resources: [{ name: 'config', label: 'Конфигурация' }] },
+        admin: {
+          label: 'OKR',
+          resources: [
+            {
+              name: 'config',
+              label: 'Конфигурация',
+              operations: ['list'],
+              schema: portfolioSchema,
+            },
+          ],
+        },
       },
       {
         kind: 'internal',
