@@ -21,6 +21,7 @@ const s3Mock = vi.hoisted(() => ({
   objects: new Map<string, Buffer>(),
   denyHeads: false,
   delayHeads: false,
+  putConflicts: 0,
   commands: [] as Array<{ name: string; input: Record<string, unknown> }>,
 }))
 
@@ -46,6 +47,10 @@ vi.mock('@aws-sdk/client-s3', () => {
       }
 
       if (command instanceof PutObjectCommand) {
+        if (s3Mock.putConflicts > 0) {
+          s3Mock.putConflicts -= 1
+          throw s3Error(409)
+        }
         if (command.input.IfNoneMatch === '*' && s3Mock.objects.has(key)) throw s3Error(412)
         s3Mock.objects.set(key, Buffer.from(command.input.Body as Uint8Array))
         return {}
@@ -102,6 +107,7 @@ beforeEach(() => {
   s3Mock.objects.clear()
   s3Mock.denyHeads = false
   s3Mock.delayHeads = false
+  s3Mock.putConflicts = 0
   s3Mock.commands.length = 0
 })
 
@@ -121,6 +127,18 @@ describe('where a finance document is stored (spec 339 EARS-514)', () => {
     expect(readFileSync(path.join(dir, 'finance/documents/2026/08/abc.pdf'), 'utf8')).toBe(
       '%PDF-1.7 fixture',
     )
+  })
+
+  it('EARS-514/516: local recovery accepts identical bytes and refuses replacement bytes', async () => {
+    const storage = resolveFinanceDocumentStorage({ FINANCE_DOCUMENTS_DIR: tempDir() })
+    const key = 'finance/documents/2026/08/recovery.pdf'
+    const original = Buffer.from('%PDF-1.7 original')
+
+    await storage.put(key, original)
+    await storage.put(key, original)
+    await expect(storage.put(key, Buffer.from('%PDF-1.7 changed!'))).rejects.toThrow(FinanceRefusal)
+
+    expect(await storage.get(key)).toEqual(original)
   })
 
   it('EARS-514: production refuses to start the archive without its private bucket', () => {
@@ -218,6 +236,41 @@ describe('where a finance document is stored (spec 339 EARS-514)', () => {
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+  })
+
+  it('EARS-514: a conditional S3 conflict is retried instead of becoming a permanent refusal', async () => {
+    const storage = resolveFinanceDocumentStorage({
+      FINANCE_DOCUMENTS_S3_BUCKET: 'bbm-portal-finance-private',
+      FINANCE_DOCUMENTS_S3_ACCESS_KEY_ID: 'key',
+      FINANCE_DOCUMENTS_S3_SECRET_ACCESS_KEY: 'secret',
+    })
+    const key = 'finance/documents/2026/08/retry.pdf'
+    const bytes = Buffer.from('%PDF-1.7 retry')
+    s3Mock.putConflicts = 1
+
+    await storage.put(key, bytes)
+
+    expect(s3Mock.objects.get(key)).toEqual(bytes)
+    expect(s3Mock.commands.map((command) => command.name)).toEqual([
+      'PutObjectCommand',
+      'PutObjectCommand',
+    ])
+  })
+
+  it('EARS-514/516: repeating a create with identical bytes is a no-op, never a replacement', async () => {
+    const storage = resolveFinanceDocumentStorage({
+      FINANCE_DOCUMENTS_S3_BUCKET: 'bbm-portal-finance-private',
+      FINANCE_DOCUMENTS_S3_ACCESS_KEY_ID: 'key',
+      FINANCE_DOCUMENTS_S3_SECRET_ACCESS_KEY: 'secret',
+    })
+    const key = 'finance/documents/2026/08/idempotent.pdf'
+    const original = Buffer.from('%PDF-1.7 original')
+
+    await storage.put(key, original)
+    await storage.put(key, original)
+    await expect(storage.put(key, Buffer.from('%PDF-1.7 changed!'))).rejects.toThrow(FinanceRefusal)
+
+    expect(s3Mock.objects.get(key)).toEqual(original)
   })
 })
 

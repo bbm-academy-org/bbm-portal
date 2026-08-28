@@ -1,17 +1,23 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { FinanceDocumentUploadPending } from '@/lib/finance'
 import { PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 const routeState = vi.hoisted(() => ({
   session: null as unknown,
+  resume: vi.fn(),
   upload: vi.fn(),
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => routeState.session }))
 vi.mock('@/lib/finance', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/finance')>()
-  return { ...actual, uploadFinanceDocument: routeState.upload }
+  return {
+    ...actual,
+    resumeFinanceDocumentUpload: routeState.resume,
+    uploadFinanceDocument: routeState.upload,
+  }
 })
 
 const URL = 'http://portal.test/p/finance/api/documents'
@@ -23,6 +29,14 @@ beforeEach(() => {
       roles: [PLATFORM_USER_ROLE, 'finance-entry'],
     },
   }
+  routeState.resume.mockReset().mockResolvedValue({
+    id: 17,
+    filename: 'invoice.pdf',
+    mime: 'application/pdf',
+    size: 20,
+    kind: 'ru_invoice',
+    uploadedAt: new Date('2026-08-28T00:00:00Z'),
+  })
   routeState.upload.mockReset().mockResolvedValue({
     id: 1,
     filename: 'invoice.pdf',
@@ -36,6 +50,13 @@ beforeEach(() => {
 async function post(form: FormData): Promise<Response> {
   const route = await import('@/app/(platform)/p/finance/api/documents/route')
   return route.POST(new Request(URL, { method: 'POST', body: form }))
+}
+
+async function resume(id: string, bytes = Buffer.from('%PDF-1.7\nfixture')): Promise<Response> {
+  const route = await import('@/app/(platform)/p/finance/api/documents/[id]/route')
+  return route.PUT(new Request(`${URL}/${id}`, { method: 'PUT', body: bytes }), {
+    params: Promise.resolve({ id }),
+  })
 }
 
 function validForm(bytes: Uint8Array = Buffer.from('%PDF-1.7\nfixture')): FormData {
@@ -72,6 +93,48 @@ describe('finance document upload trust boundary (spec 339 EARS-514)', () => {
     const body = await response.json()
     expect(body).toEqual({
       id: 1,
+      filename: 'invoice.pdf',
+      mime: 'application/pdf',
+      size: 20,
+      kind: 'ru_invoice',
+      uploadedAt: '2026-08-28T00:00:00.000Z',
+    })
+    expect(JSON.stringify(body)).not.toMatch(/storage|bucket|key/i)
+  })
+
+  it('EARS-514: a partial upload response exposes a stable id and authenticated recovery address', async () => {
+    routeState.upload.mockRejectedValue(new FinanceDocumentUploadPending(17))
+
+    const response = await post(validForm())
+
+    expect(response.status).toBe(503)
+    const body = await response.json()
+    expect(body).toEqual({
+      id: 17,
+      uploadStatus: 'pending',
+      recovery: {
+        method: 'PUT',
+        href: '/p/finance/api/documents/17',
+      },
+    })
+    expect(JSON.stringify(body)).not.toMatch(/storageKey|bucket/i)
+  })
+
+  it('EARS-514: PUT retries a pending upload through the module and returns no raw storage internals', async () => {
+    const response = await resume('17')
+
+    expect(response.status).toBe(200)
+    expect(routeState.resume).toHaveBeenCalledWith(
+      {
+        email: 'entry@bbm.academy',
+        roles: [PLATFORM_USER_ROLE, 'finance-entry'],
+      },
+      17,
+      expect.any(Buffer),
+    )
+    const body = await response.json()
+    expect(body).toEqual({
+      id: 17,
       filename: 'invoice.pdf',
       mime: 'application/pdf',
       size: 20,

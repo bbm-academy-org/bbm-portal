@@ -11,9 +11,11 @@ import {
   deleteFinanceDocument,
   detachFinanceDocument,
   FinanceAccessRefusal,
+  FinanceDocumentUploadPending,
   FinanceRefusal,
   listFinanceDocuments,
   readFinanceDocument,
+  resumeFinanceDocumentUpload,
   setFinanceDocumentKind,
   uploadFinanceDocument,
 } from '@/lib/finance'
@@ -46,6 +48,15 @@ async function expectTriggerRefusal(work: Promise<unknown>, pattern: RegExp): Pr
   )
   const cause = (error as { cause?: { message?: string } })?.cause
   expect(String(cause?.message ?? (error as Error)?.message)).toMatch(pattern)
+}
+
+async function pendingDocumentId(work: Promise<unknown>): Promise<number> {
+  const cause = await work.then(
+    () => null,
+    (caught: unknown) => caught,
+  )
+  expect(cause).toBeInstanceOf(FinanceDocumentUploadPending)
+  return (cause as FinanceDocumentUploadPending).documentId
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -273,13 +284,17 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     expect(events[0].diff.storage_state?.new).toBe('pending_upload')
   })
 
-  it('EARS-514: a final database failure keeps the stored object reachable by pending metadata', async () => {
+  it('EARS-514: a final database failure returns a handle that idempotently finishes the stored object', async () => {
     const refs = await seedIntakeReferences()
     const item = await seedIntakeItemFor(ENTRY, refs)
+    let documentId = 0
 
     await withFailingDocumentDml('UPDATE', async () => {
-      await expect(uploadFor(ENTRY, [item.id])).rejects.toThrow()
+      documentId = await pendingDocumentId(uploadFor(ENTRY, [item.id]))
     })
+
+    const resumed = await resumeFinanceDocumentUpload(ENTRY, documentId, PDF)
+    const repeated = await resumeFinanceDocumentUpload(ENTRY, documentId, PDF)
 
     const pending = await db.execute(sql`
       select storage_key, storage_state, uploaded_by
@@ -287,12 +302,110 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     `)
     expect(pending.rows).toEqual([
       expect.objectContaining({
-        storage_state: 'pending_upload',
+        storage_state: 'ready',
         uploaded_by: refs.entryMemberId,
       }),
     ])
     const key = String((pending.rows[0] as { storage_key: string }).storage_key)
     expect(readFileSync(path.join(storageDir, key)).equals(PDF)).toBe(true)
+    expect(resumed.id).toBe(documentId)
+    expect(repeated).toEqual(resumed)
+  })
+
+  it('EARS-514: recovery keeps the original authorization, validation, links and audit contract', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const mark = await auditWatermark(db)
+    const base = localStorage()
+    let fail = true
+    const retryableStorage: FinanceDocumentStorage = {
+      ...base,
+      async put(key, bytes) {
+        if (fail) {
+          fail = false
+          throw new Error('injected object PUT failure')
+        }
+        await base.put(key, bytes)
+      },
+    }
+    const documentId = await pendingDocumentId(
+      uploadFinanceDocument(
+        ENTRY,
+        {
+          filename: 'invoice.pdf',
+          mime: 'application/pdf',
+          bytes: PDF,
+          kind: 'ru_invoice',
+          intakeItemIds: [item.id],
+        },
+        retryableStorage,
+      ),
+    )
+
+    await expect(
+      resumeFinanceDocumentUpload(MEMBER, documentId, PDF, retryableStorage),
+    ).rejects.toThrow(FinanceAccessRefusal)
+    await expect(
+      resumeFinanceDocumentUpload(ENTRY, documentId, Buffer.from('not a PDF'), retryableStorage),
+    ).rejects.toThrow(FinanceRefusal)
+
+    const resumed = await resumeFinanceDocumentUpload(ENTRY, documentId, PDF, retryableStorage)
+    const links = await db.execute(sql`
+      select document_id, intake_item_id
+      from core.finance_document_link
+      where document_id = ${documentId}
+    `)
+    const events = await auditEventsFor(db, mark, 'finance_document')
+
+    expect(resumed.id).toBe(documentId)
+    expect(links.rows).toEqual([{ document_id: documentId, intake_item_id: item.id }])
+    expect(events.map((event) => event.diff.storage_state?.new)).toEqual([
+      'pending_upload',
+      'ready',
+    ])
+  })
+
+  it('EARS-514/516: an ambiguous PUT on a terminal correction resumes without replacing bytes', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    await uploadFor(ENTRY, [item.id])
+    await postIntakeItem(item.id)
+
+    const base = localStorage()
+    let ambiguous = true
+    const ambiguousStorage: FinanceDocumentStorage = {
+      ...base,
+      async put(key, bytes) {
+        await base.put(key, bytes)
+        if (ambiguous) {
+          ambiguous = false
+          throw new Error('injected ambiguous PUT outcome')
+        }
+      },
+    }
+    const documentId = await pendingDocumentId(
+      uploadFinanceDocument(
+        ENTRY,
+        {
+          filename: 'correction.pdf',
+          mime: 'application/pdf',
+          bytes: PDF,
+          kind: 'fiscal_receipt',
+          intakeItemIds: [item.id],
+        },
+        ambiguousStorage,
+      ),
+    )
+
+    const recovered = await resumeFinanceDocumentUpload(ENTRY, documentId, PDF, ambiguousStorage)
+    const changed = Buffer.from(PDF)
+    changed[changed.length - 1] ^= 1
+
+    expect(recovered.id).toBe(documentId)
+    await expect(
+      resumeFinanceDocumentUpload(ENTRY, documentId, changed, ambiguousStorage),
+    ).rejects.toThrow(FinanceRefusal)
+    expect((await readFinanceDocument(ENTRY, documentId)).bytes.equals(PDF)).toBe(true)
   })
 
   it('EARS-514: only the entry role uploads outside its own request', async () => {
