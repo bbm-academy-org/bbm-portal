@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -18,10 +18,17 @@ import {
   uploadFinanceDocument,
 } from '@/lib/finance'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
+import { platformTransaction } from '@/lib/platform/db/transaction'
+import {
+  resolveFinanceDocumentStorage,
+  type FinanceDocumentStorage,
+} from '@/lib/finance/documents/storage'
 
+import { auditEventsFor, auditWatermark } from './audit-helpers'
 import {
   APPROVER,
   ENTRY,
+  FIXTURE_AUDIT_CTX,
   fixtureWrite,
   MEMBER,
   postIntakeItem,
@@ -29,6 +36,7 @@ import {
   seedIntakeReferences,
   truncateFinanceTables,
 } from './finance-helpers'
+import { asMigrator, assertSplitWhereMandatory, privilegeSplitState } from './privilege-helpers'
 
 async function expectTriggerRefusal(work: Promise<unknown>, pattern: RegExp): Promise<void> {
   await expect(work).rejects.toThrow()
@@ -38,6 +46,43 @@ async function expectTriggerRefusal(work: Promise<unknown>, pattern: RegExp): Pr
   )
   const cause = (error as { cause?: { message?: string } })?.cause
   expect(String(cause?.message ?? (error as Error)?.message)).toMatch(pattern)
+}
+
+async function withFailingDocumentDml<T>(
+  event: 'INSERT' | 'UPDATE' | 'DELETE',
+  work: () => Promise<T>,
+): Promise<T> {
+  const suffix = event.toLowerCase()
+  const functionName = `test_finance_document_fail_${suffix}`
+  const triggerName = `test_finance_document_fail_${suffix}_trigger`
+  await asMigrator(async (client) => {
+    await client.query(`
+      drop trigger if exists ${triggerName} on core.finance_document;
+      drop function if exists core.${functionName}();
+      create function core.${functionName}() returns trigger language plpgsql as $$
+      begin
+        raise exception 'injected finance_document ${event} failure';
+      end;
+      $$;
+      create trigger ${triggerName}
+        before ${event} on core.finance_document
+        for each row execute function core.${functionName}();
+    `)
+  })
+  try {
+    return await work()
+  } finally {
+    await asMigrator(async (client) => {
+      await client.query(`
+        drop trigger if exists ${triggerName} on core.finance_document;
+        drop function if exists core.${functionName}();
+      `)
+    })
+  }
+}
+
+function localStorage(): FinanceDocumentStorage {
+  return resolveFinanceDocumentStorage({ FINANCE_DOCUMENTS_DIR: storageDir })
 }
 
 /**
@@ -59,6 +104,13 @@ async function expectTriggerRefusal(work: Promise<unknown>, pattern: RegExp): Pr
  * `.claude/rules/parallel-sessions.md`, "Platform database").
  */
 const db = getPlatformDb()
+const privilegeSplit = await privilegeSplitState({
+  query: async (text: string) => {
+    const { rows } = await db.execute(sql.raw(text))
+    return { rows: rows as Record<string, unknown>[] }
+  },
+})
+assertSplitWhereMandatory(privilegeSplit, process.env)
 
 let storageDir: string
 
@@ -137,6 +189,101 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     ])
     expect(new Set(captured.map((row) => row.actor_email))).toEqual(new Set([ENTRY.email]))
     expect(doc.id).toBeGreaterThan(0)
+  })
+
+  it('EARS-514: a database refusal before metadata commit writes no object', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const storage = localStorage()
+    let puts = 0
+    const observingStorage: FinanceDocumentStorage = {
+      ...storage,
+      async put(key, bytes) {
+        puts += 1
+        await storage.put(key, bytes)
+      },
+    }
+
+    await withFailingDocumentDml('INSERT', async () => {
+      await expect(
+        uploadFinanceDocument(
+          ENTRY,
+          {
+            filename: 'invoice.pdf',
+            mime: 'application/pdf',
+            bytes: PDF,
+            kind: 'ru_invoice',
+            intakeItemIds: [item.id],
+          },
+          observingStorage,
+        ),
+      ).rejects.toThrow()
+    })
+
+    expect(puts).toBe(0)
+  })
+
+  it('EARS-514: a storage failure keeps audited pending metadata and uploader', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const mark = await auditWatermark(db)
+    const storage: FinanceDocumentStorage = {
+      ...localStorage(),
+      async put() {
+        throw new Error('injected object PUT failure')
+      },
+    }
+
+    await expect(
+      uploadFinanceDocument(
+        ENTRY,
+        {
+          filename: 'invoice.pdf',
+          mime: 'application/pdf',
+          bytes: PDF,
+          kind: 'ru_invoice',
+          intakeItemIds: [item.id],
+        },
+        storage,
+      ),
+    ).rejects.toThrow(/injected object PUT failure/)
+
+    const pending = await db.execute(sql`
+      select id, uploaded_by, storage_state
+      from core.finance_document
+    `)
+    expect(pending.rows).toEqual([
+      expect.objectContaining({
+        uploaded_by: refs.entryMemberId,
+        storage_state: 'pending_upload',
+      }),
+    ])
+    const events = await auditEventsFor(db, mark, 'finance_document')
+    expect(events).toHaveLength(1)
+    expect(events[0].actor_email).toBe(ENTRY.email)
+    expect(events[0].diff.storage_state?.new).toBe('pending_upload')
+  })
+
+  it('EARS-514: a final database failure keeps the stored object reachable by pending metadata', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+
+    await withFailingDocumentDml('UPDATE', async () => {
+      await expect(uploadFor(ENTRY, [item.id])).rejects.toThrow()
+    })
+
+    const pending = await db.execute(sql`
+      select storage_key, storage_state, uploaded_by
+      from core.finance_document
+    `)
+    expect(pending.rows).toEqual([
+      expect.objectContaining({
+        storage_state: 'pending_upload',
+        uploaded_by: refs.entryMemberId,
+      }),
+    ])
+    const key = String((pending.rows[0] as { storage_key: string }).storage_key)
+    expect(readFileSync(path.join(storageDir, key)).equals(PDF)).toBe(true)
   })
 
   it('EARS-514: only the entry role uploads outside its own request', async () => {
@@ -218,6 +365,19 @@ describe('who may read a document (spec 339 EARS-523)', () => {
 
     expect((await readFinanceDocument(ENTRY, doc.id)).bytes.equals(PDF)).toBe(true)
     expect((await readFinanceDocument(APPROVER, doc.id)).bytes.equals(PDF)).toBe(true)
+  })
+
+  it('EARS-523: uploader provenance grants no read after their owned link is detached', async () => {
+    const refs = await seedIntakeReferences()
+    const mine = await seedIntakeItemFor(MEMBER, refs, { source: 'request' })
+    const theirs = await seedIntakeItemFor(ENTRY, refs)
+    const doc = await uploadFor(MEMBER, [mine.id])
+    await attachFinanceDocument(ENTRY, { documentId: doc.id, intakeItemId: theirs.id })
+
+    await detachFinanceDocument(MEMBER, { documentId: doc.id, intakeItemId: mine.id })
+
+    await expect(readFinanceDocument(MEMBER, doc.id)).rejects.toThrow(FinanceAccessRefusal)
+    expect((await readFinanceDocument(ENTRY, doc.id)).bytes.equals(PDF)).toBe(true)
   })
 
   it('EARS-523: the open member-wide read of /p/finance does not reach document content', async () => {
@@ -373,5 +533,140 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
       db.execute(sql`truncate table core.finance_document cascade`),
       /EARS-516/,
     )
+  })
+
+  it('EARS-516: the application role cannot rewrite a terminal status and erase its archive', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const doc = await uploadFor(ENTRY, [item.id])
+    await postIntakeItem(item.id)
+
+    const actorRole = await db.execute<{
+      in_app: boolean
+      in_owner: boolean
+      is_super: boolean
+    }>(sql`
+      select pg_has_role(current_user, 'platform_app', 'usage') as in_app,
+             pg_has_role(current_user, 'platform_migrator', 'usage') as in_owner,
+             (select rolsuper from pg_roles where rolname = current_user) as is_super
+    `)
+    if (privilegeSplit.split) {
+      expect(actorRole.rows[0]).toEqual({ in_app: true, in_owner: false, is_super: false })
+    }
+
+    await expectTriggerRefusal(
+      fixtureWrite(async (tx) => {
+        await tx.execute(sql`
+          update core.finance_intake_item
+          set status = 'draft', operation_id = null, posted_by = null, posted_at = null
+          where id = ${item.id}
+        `)
+        await tx.execute(sql`delete from core.finance_document_link where document_id = ${doc.id}`)
+        await tx.execute(sql`delete from core.finance_document where id = ${doc.id}`)
+      }),
+      /EARS-516/,
+    )
+
+    expect(
+      (await db.execute(sql`select id from core.finance_document where id = ${doc.id}`)).rows,
+    ).toHaveLength(1)
+  })
+
+  it('EARS-516: a terminal transition wins its race with a document-link deletion', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const doc = await uploadFor(ENTRY, [item.id])
+    const statusWritten = Promise.withResolvers<void>()
+    const releaseTransition = Promise.withResolvers<void>()
+
+    const transition = platformTransaction(FIXTURE_AUDIT_CTX, async (tx) => {
+      await tx.execute(sql`
+        update core.finance_intake_item
+        set status = 'refused', refusal_reason = 'fixture refusal'
+        where id = ${item.id}
+      `)
+      statusWritten.resolve()
+      await releaseTransition.promise
+    })
+    await statusWritten.promise
+
+    let deletionSettled = false
+    const deletion = fixtureWrite((tx) =>
+      tx
+        .execute(sql`delete from core.finance_document_link where document_id = ${doc.id}`)
+        .finally(() => {
+          deletionSettled = true
+        }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(deletionSettled).toBe(false)
+
+    releaseTransition.resolve()
+    await transition
+    await expectTriggerRefusal(deletion, /EARS-516/)
+  })
+
+  it('EARS-516: an object-delete failure keeps a retryable audited database handle', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const doc = await uploadFor(ENTRY, [item.id])
+    const mark = await auditWatermark(db)
+    const storage: FinanceDocumentStorage = {
+      ...localStorage(),
+      async remove() {
+        throw new Error('injected object DELETE failure')
+      },
+    }
+
+    await expect(deleteFinanceDocument(ENTRY, doc.id, storage)).rejects.toThrow(
+      /injected object DELETE failure/,
+    )
+
+    const pending = await db.execute(sql`
+      select storage_state from core.finance_document where id = ${doc.id}
+    `)
+    expect(pending.rows).toEqual([{ storage_state: 'pending_delete' }])
+    expect((await auditEventsFor(db, mark, 'finance_document')).at(-1)?.diff.storage_state).toEqual(
+      {
+        old: 'ready',
+        new: 'pending_delete',
+      },
+    )
+
+    await deleteFinanceDocument(ENTRY, doc.id)
+    expect(
+      (await db.execute(sql`select id from core.finance_document where id = ${doc.id}`)).rows,
+    ).toHaveLength(0)
+  })
+
+  it('EARS-516: a final database-delete failure remains retryable after object removal', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const doc = await uploadFor(ENTRY, [item.id])
+    let removals = 0
+    const storage = localStorage()
+    const observingStorage: FinanceDocumentStorage = {
+      ...storage,
+      async remove(key) {
+        removals += 1
+        await storage.remove(key)
+      },
+    }
+
+    await withFailingDocumentDml('DELETE', async () => {
+      await expect(deleteFinanceDocument(ENTRY, doc.id, observingStorage)).rejects.toThrow()
+    })
+
+    expect(removals).toBe(1)
+    const pending = await db.execute(sql`
+      select storage_state from core.finance_document where id = ${doc.id}
+    `)
+    expect(pending.rows).toEqual([{ storage_state: 'pending_delete' }])
+
+    await deleteFinanceDocument(ENTRY, doc.id, observingStorage)
+    expect(removals).toBe(2)
+    expect(
+      (await db.execute(sql`select id from core.finance_document where id = ${doc.id}`)).rows,
+    ).toHaveLength(0)
   })
 })
