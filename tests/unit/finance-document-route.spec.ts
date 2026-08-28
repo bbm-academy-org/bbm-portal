@@ -51,6 +51,36 @@ function validForm(bytes: Uint8Array = Buffer.from('%PDF-1.7\nfixture')): FormDa
 }
 
 describe('finance document upload trust boundary (spec 339 EARS-514)', () => {
+  it('EARS-514: a valid multipart upload reaches the module and returns only the public document contract', async () => {
+    const response = await post(validForm())
+
+    expect(response.status).toBe(201)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(routeState.upload).toHaveBeenCalledWith(
+      {
+        email: 'entry@bbm.academy',
+        roles: [PLATFORM_USER_ROLE, 'finance-entry'],
+      },
+      {
+        filename: 'invoice.pdf',
+        mime: 'application/pdf',
+        bytes: expect.any(Buffer),
+        kind: 'ru_invoice',
+        intakeItemIds: [1],
+      },
+    )
+    const body = await response.json()
+    expect(body).toEqual({
+      id: 1,
+      filename: 'invoice.pdf',
+      mime: 'application/pdf',
+      size: 20,
+      kind: 'ru_invoice',
+      uploadedAt: '2026-08-28T00:00:00.000Z',
+    })
+    expect(JSON.stringify(body)).not.toMatch(/storage|bucket|key/i)
+  })
+
   it('EARS-514: refuses declared PDF content whose bytes are not a PDF', async () => {
     const response = await post(validForm(Buffer.from('<script>alert(1)</script>')))
 
