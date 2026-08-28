@@ -59,13 +59,13 @@ function momentLabel(at: Date): string {
 export default async function OkrParametersPage() {
   const parameters = getOkrParameters()
 
-  // EARS-476: the module's CURRENT read state and when it was obtained — the
-  // same read `/p/okr` is running on, cache included. Not stored anywhere,
-  // which is why §G needs no read-health store.
+  // EARS-476: the module's CURRENT snapshot and when its Plane read was
+  // obtained — the same snapshot `/p/okr` is running on, cache and stale
+  // fallback included.
   let read: { ok: boolean; at: Date; message?: string }
   try {
-    await getOkrTree()
-    read = { ok: true, at: new Date() }
+    const tree = await getOkrTree()
+    read = { ok: true, at: new Date(tree.asOf) }
   } catch (error) {
     read = { ok: false, at: new Date(), message: describeOkrReadError(error) }
   }

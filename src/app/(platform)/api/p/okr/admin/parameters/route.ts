@@ -35,13 +35,12 @@ export const GET = adminRoute<undefined, OkrParametersRecord>({
   handler: async () => {
     const parameters = getOkrParameters()
 
-    // EARS-476: the module's CURRENT read state and when it was obtained. The
-    // result is not stored anywhere, which is why §G needs no read-health
-    // store — the page probes live and reports what it saw.
+    // EARS-476: the module's CURRENT snapshot and when its Plane read was
+    // obtained. Cache hits and stale fallbacks retain that snapshot timestamp.
     let read: OkrParametersRecord['read']
     try {
-      await getOkrTree()
-      read = { state: 'ok', at: new Date().toISOString() }
+      const tree = await getOkrTree()
+      read = { state: 'ok', at: tree.asOf }
     } catch (error) {
       // A failed READ is not a failed PAGE. Answering 503 here would hide the
       // configuration from the admin at exactly the moment they came to check

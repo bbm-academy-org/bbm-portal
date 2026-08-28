@@ -25,13 +25,12 @@ export const okrProjectParameterSchema = z.object({
 })
 
 /**
- * The module's read state at the moment the page asked (EARS-476).
+ * The module's current snapshot state when the page asks (EARS-476).
  *
- * `at` is the moment the READ was performed, not the moment Plane answered:
- * `getOkrTree` is served through the module's cache, and a hit inside the TTL
- * returns the stored read. That is the honest thing to show — the question an
- * admin is asking is «what is the OKR module seeing right now», not «is Plane
- * up this second» — and no cache bypass is added.
+ * For a successful read, `at` is the successful Plane fetch that produced the
+ * snapshot. `getOkrTree` preserves it across cache hits and stale fallbacks, so
+ * the cabinet reports the age of the same data `/p/okr` is showing instead of
+ * the time the cabinet happened to ask for it. No cache bypass is added.
  */
 export const okrReadStateSchema = z.object({
   state: z.enum(['ok', 'error']),
