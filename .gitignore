@@ -65,6 +65,10 @@ next-env.d.ts
 
 /media
 
+# The local-disk fallback for finance documents (spec 339 EARS-514):
+# accounting records, never committed.
+/.finance-documents
+
 # Historical: the hours module kept its JSON document at data/hours.json in dev
 # (#81, spec 081 req.12) until the 2026-08-18 cutover to the `core` schema (#256).
 # Nothing writes it any more; the pattern stays because a local scratch copy of a

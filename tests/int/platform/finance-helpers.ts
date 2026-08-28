@@ -1,6 +1,13 @@
 import { sql } from 'drizzle-orm'
 
-import type { FinanceActor } from '@/lib/finance'
+import {
+  createAccount,
+  createCurrency,
+  createIntakeItem,
+  createPurpose,
+  type FinanceActor,
+  type FinanceIntakeItemView,
+} from '@/lib/finance'
 import {
   platformTransaction,
   type AuditContext,
@@ -75,6 +82,7 @@ export function fixtureWrite<T>(fn: (tx: PlatformTx) => Promise<T>): Promise<T> 
  */
 export async function truncateFinanceTables(): Promise<void> {
   await truncateAsFixture(`truncate table
+    core.finance_document_link, core.finance_document,
     core.finance_intake_item, core.finance_counterparty,
     core.finance_posting, core.finance_conversion_step, core.finance_operation,
     core.finance_purpose, core.finance_category, core.finance_product,
@@ -124,5 +132,107 @@ export async function seedMember(email: string, name: string): Promise<number> {
       returning id
     `)
     return Number((result.rows[0] as { id: number }).id)
+  })
+}
+
+/**
+ * Everything an intake item needs to name, plus the member ids of the three
+ * actors — a document row records its uploader as a `core.member(id)`, so a
+ * document fixture has to be able to say WHICH id it expects.
+ *
+ * `tests/int/platform/finance-intake.int.spec.ts` (#381) keeps its own narrower
+ * local copy; this one is the shared seed the document suite (#382) builds on
+ * and is deliberately additive rather than a rewrite of an acceptance-critical
+ * file from another task.
+ */
+export async function seedIntakeReferences() {
+  const entryMemberId = await seedMember(ENTRY.email, 'Entry Clerk')
+  const approverMemberId = await seedMember(APPROVER.email, 'Approver Person')
+  const memberMemberId = await seedMember(MEMBER.email, 'Plain Member')
+  await createCurrency(ADMIN, { code: 'RUB', name: 'Рубль', precision: 2 })
+  const account = await createAccount(ADMIN, {
+    name: 'Тинькофф RUB',
+    kind: 'bank',
+    currency: 'RUB',
+  })
+  const purpose = await createPurpose(ADMIN, { name: 'Хостинг', productBinding: 'forbidden' })
+  const projectId = await fundProjectId()
+  const counterpartyId = await seedCounterparty('Anthropic', entryMemberId)
+  return {
+    accountId: account.id,
+    purposeId: purpose.id,
+    projectId,
+    counterpartyId,
+    entryMemberId,
+    approverMemberId,
+    memberMemberId,
+  }
+}
+
+export type FinanceIntakeRefs = Awaited<ReturnType<typeof seedIntakeReferences>>
+
+/**
+ * One intake item created BY `actor`, optionally forced into a terminal status.
+ *
+ * `source` defaults to `manual` (the entry role's own path); pass `request` for
+ * the EARS-502 carve-out. A `status` override is written RAW: `refused` and
+ * `cancelled` are reached through the status machine in real life, and driving
+ * the machine here would make every document test also a test of #381.
+ */
+export async function seedIntakeItemFor(
+  actor: FinanceActor,
+  refs: FinanceIntakeRefs,
+  overrides: { source?: 'manual' | 'request'; status?: 'refused' | 'cancelled' } = {},
+): Promise<FinanceIntakeItemView> {
+  const item = await createIntakeItem(actor, {
+    source: overrides.source ?? 'manual',
+    kind: 'expense',
+    occurredOn: '2026-08-20',
+    accountId: refs.accountId,
+    amount: 120_000n,
+    currency: 'RUB',
+    purposeId: refs.purposeId,
+    projectId: refs.projectId,
+    counterpartyId: refs.counterpartyId,
+  })
+  if (overrides.status === undefined) return item
+  await fixtureWrite(async (tx) => {
+    await tx.execute(sql`
+      update core.finance_intake_item
+      set status = ${overrides.status},
+          refusal_reason = ${overrides.status === 'refused' ? 'фикстура' : null}
+      where id = ${item.id}
+    `)
+  })
+  return { ...item, status: overrides.status }
+}
+
+/**
+ * Drive an intake item to `posted`, RAW — the EARS-516 precondition.
+ *
+ * Posting is #385's clause (EARS-505/506) and the spine deliberately refuses
+ * `approved → posted` today. The document layer only needs the STATE, so the
+ * fixture writes the operation and the terminal row itself rather than waiting
+ * for a sibling task; when #385 lands, this helper is what it replaces.
+ */
+export async function postIntakeItem(itemId: number): Promise<number> {
+  return fixtureWrite(async (tx) => {
+    const item = await tx.execute(sql`
+      select occurred_on, purpose_id, created_by from core.finance_intake_item where id = ${itemId}
+    `)
+    const row = item.rows[0] as { occurred_on: string; purpose_id: number; created_by: number }
+    const operation = await tx.execute(sql`
+      insert into core.finance_operation (occurred_on, purpose_id, source)
+      values (${row.occurred_on}, ${row.purpose_id}, 'manual')
+      returning id
+    `)
+    const operationId = Number((operation.rows[0] as { id: number }).id)
+    await tx.execute(sql`
+      update core.finance_intake_item
+      set status = 'posted', operation_id = ${operationId},
+          posted_by = ${row.created_by}, posted_at = now()
+      where id = ${itemId}
+    `)
+    return operationId
   })
 }

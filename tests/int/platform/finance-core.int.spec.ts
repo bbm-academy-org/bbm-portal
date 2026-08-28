@@ -507,11 +507,15 @@ describe('the person dimension (EARS-322)', () => {
     // intake spine (#381) added five: an intake item records who filed it, who
     // decided and who posted, and a counterparty records who created it — all of
     // them RESTRICT for the same reason the posting's is, so the registry cannot
-    // delete a person out from under an act recorded to their name.
+    // delete a person out from under an act recorded to their name. Documents
+    // (#382) added two more on the same rule: an upload and an attachment are
+    // each an act with a name on it.
     expect(
       constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`).sort(),
     ).toEqual([
       'finance_counterparty.created_by → RESTRICT',
+      'finance_document.uploaded_by → RESTRICT',
+      'finance_document_link.linked_by → RESTRICT',
       'finance_intake_item.created_by → RESTRICT',
       'finance_intake_item.decided_by → RESTRICT',
       'finance_intake_item.member_id → RESTRICT',
