@@ -3,6 +3,7 @@ import {
   FinanceAccessRefusal,
   FinanceRefusal,
   FINANCE_DOCUMENT_MAX_BYTES,
+  assertFinanceDocumentBytes,
   uploadFinanceDocument,
 } from '@/lib/finance'
 import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
@@ -24,12 +25,66 @@ import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
  * refuse a forged request that somehow reached this function anyway.
  *
  * The body is `multipart/form-data` — `file` plus `kind` plus repeated
- * `intakeItemId` fields. `Request.formData()` buffers, so the size ceiling is
- * checked against the parsed part rather than trusting `content-length`; a
- * lying header would otherwise be the whole limit.
+ * `intakeItemId` fields. The raw stream is bounded before `formData()` sees it;
+ * `content-length` is only an early refusal and never the load-bearing limit.
  */
 
 export const dynamic = 'force-dynamic'
+
+const MULTIPART_OVERHEAD_BYTES = 64 * 1024
+const MAX_MULTIPART_BYTES = FINANCE_DOCUMENT_MAX_BYTES + MULTIPART_OVERHEAD_BYTES
+const MAX_INTAKE_ITEM_IDS = 64
+
+class MultipartTooLarge extends Error {}
+
+async function boundedFormData(request: Request): Promise<FormData> {
+  const declared = Number(request.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_MULTIPART_BYTES) throw new MultipartTooLarge()
+  if (request.body === null) throw new TypeError('missing multipart body')
+
+  const reader = request.body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_MULTIPART_BYTES) {
+      await reader.cancel()
+      throw new MultipartTooLarge()
+    }
+    chunks.push(Buffer.from(value))
+  }
+
+  const bounded = new Request(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: Buffer.concat(chunks, total),
+  })
+  return bounded.formData()
+}
+
+function multipartShapeRefusal(form: FormData): string | null {
+  const entries = [...form.entries()]
+  const allowed = new Set(['file', 'kind', 'intakeItemId'])
+  if (entries.some(([name]) => !allowed.has(name))) {
+    return 'Multipart содержит неизвестное поле: разрешены только file, kind и intakeItemId.'
+  }
+  if (form.getAll('file').length !== 1 || form.getAll('kind').length !== 1) {
+    return 'Поля file и kind должны встречаться ровно по одному разу.'
+  }
+  if (form.getAll('intakeItemId').length > MAX_INTAKE_ITEM_IDS) {
+    return `Один документ нельзя связать более чем с ${MAX_INTAKE_ITEM_IDS} позициями.`
+  }
+  if (
+    entries.some(
+      ([name, value]) => name !== 'file' && (typeof value !== 'string' || value.length > 128),
+    )
+  ) {
+    return 'Текстовое поле multipart длиннее допустимого предела.'
+  }
+  return null
+}
 
 export async function POST(request: Request): Promise<Response> {
   const session = await auth()
@@ -47,19 +102,38 @@ export async function POST(request: Request): Promise<Response> {
 
   let form: FormData
   try {
-    form = await request.formData()
-  } catch {
+    form = await boundedFormData(request)
+  } catch (cause) {
+    if (cause instanceof MultipartTooLarge) {
+      return text(413, `Запрос больше предела в ${MAX_MULTIPART_BYTES} байт (EARS-514).`)
+    }
     return text(400, 'Ожидается multipart/form-data с полями file, kind и intakeItemId.')
+  }
+
+  const shapeRefusal = multipartShapeRefusal(form)
+  if (shapeRefusal !== null) {
+    return text(400, shapeRefusal)
   }
 
   const file = form.get('file')
   if (!(file instanceof File)) {
     return text(400, 'Поле «file» обязательно и должно быть файлом.')
   }
+  if (file.name.length > 255) {
+    return text(400, 'Имя файла длиннее 255 символов.')
+  }
   if (file.size > FINANCE_DOCUMENT_MAX_BYTES) {
-    // Answered before the bytes are materialised into a Buffer — a 25 MiB
-    // ceiling that first allocates the file is not a ceiling.
     return text(413, `Файл больше предела в ${FINANCE_DOCUMENT_MAX_BYTES} байт (EARS-514).`)
+  }
+
+  const bytes = Buffer.from(await file.arrayBuffer())
+  try {
+    assertFinanceDocumentBytes({ filename: file.name, mime: file.type, bytes })
+  } catch {
+    return text(
+      422,
+      'Содержимое, тип или расширение файла не входят в допустимый набор (EARS-514).',
+    )
   }
 
   const intakeItemIds: number[] = []
@@ -73,7 +147,7 @@ export async function POST(request: Request): Promise<Response> {
     const document = await uploadFinanceDocument(actor, {
       filename: file.name,
       mime: file.type,
-      bytes: Buffer.from(await file.arrayBuffer()),
+      bytes,
       kind: String(form.get('kind') ?? ''),
       intakeItemIds,
     })

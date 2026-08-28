@@ -71,7 +71,118 @@ BEGIN
 END $$;--> statement-breakpoint
 
 -- ---------------------------------------------------------------------------
--- 3. The universal edit audit -- spec 201 EARS-15/16/17, EARS-21, EARS-27
+-- 3. Database backstop for document retention -- spec 339 EARS-516
+-- ---------------------------------------------------------------------------
+--
+-- Module checks give callers readable refusals; these triggers protect the
+-- same invariant from direct DML and synchronize it with a concurrent status
+-- transition by locking the linked intake rows. The app role intentionally has
+-- full DML on module tables (ADR-004 A1), so this is a database invariant, not
+-- an assumption that every future caller remembers the module API.
+
+CREATE OR REPLACE FUNCTION "core"."finance_document_retained"() RETURNS trigger
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = pg_catalog, core
+AS $$
+BEGIN
+	IF TG_OP = 'TRUNCATE' THEN
+		RAISE EXCEPTION 'core.% cannot be truncated: retained finance documents are immutable (spec 339, EARS-516).', TG_TABLE_NAME;
+	END IF;
+
+	IF TG_OP = 'UPDATE' AND (
+		NEW.storage_key IS DISTINCT FROM OLD.storage_key
+		OR NEW.filename IS DISTINCT FROM OLD.filename
+		OR NEW.mime IS DISTINCT FROM OLD.mime
+		OR NEW.size IS DISTINCT FROM OLD.size
+		OR NEW.uploaded_by IS DISTINCT FROM OLD.uploaded_by
+		OR NEW.uploaded_at IS DISTINCT FROM OLD.uploaded_at
+	) THEN
+		RAISE EXCEPTION 'core.finance_document bytes and provenance cannot be replaced (spec 339, EARS-516).';
+	END IF;
+
+	PERFORM 1
+	FROM core.finance_document_link AS link
+	JOIN core.finance_intake_item AS item ON item.id = link.intake_item_id
+	WHERE link.document_id = OLD.id
+		AND (
+			item.status = 'posted'
+			OR (TG_OP = 'DELETE' AND item.status IN ('refused', 'cancelled'))
+		)
+	FOR UPDATE OF item;
+	IF FOUND THEN
+		RAISE EXCEPTION 'core.finance_document % is retained by a terminal intake item (spec 339, EARS-516).', OLD.id;
+	END IF;
+
+	IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+	RETURN NEW;
+END;
+$$;--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "core"."finance_document_link_retained"() RETURNS trigger
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = pg_catalog, core
+AS $$
+DECLARE
+	item_status text;
+BEGIN
+	IF TG_OP = 'TRUNCATE' THEN
+		RAISE EXCEPTION 'core.finance_document_link cannot be truncated: retained links are immutable (spec 339, EARS-516).';
+	END IF;
+	IF TG_OP = 'UPDATE' THEN
+		RAISE EXCEPTION 'core.finance_document_link is never replaced; detach and attach through the module (spec 339, EARS-516).';
+	END IF;
+
+	SELECT status INTO item_status
+	FROM core.finance_intake_item
+	WHERE id = OLD.intake_item_id
+	FOR UPDATE;
+	IF item_status IN ('posted', 'refused', 'cancelled') THEN
+		RAISE EXCEPTION 'core.finance_document_link % is retained by a terminal intake item (spec 339, EARS-516).', OLD.id;
+	END IF;
+	RETURN OLD;
+END;
+$$;--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "core"."finance_intake_document_retained"() RETURNS trigger
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = pg_catalog, core
+AS $$
+BEGIN
+	IF OLD.status IN ('posted', 'refused', 'cancelled')
+		AND EXISTS (
+			SELECT 1 FROM core.finance_document_link WHERE intake_item_id = OLD.id
+		) THEN
+		RAISE EXCEPTION 'core.finance_intake_item % retains documents and cannot be deleted (spec 339, EARS-516).', OLD.id;
+	END IF;
+	RETURN OLD;
+END;
+$$;--> statement-breakpoint
+
+CREATE OR REPLACE TRIGGER "finance_document_retained_row"
+	BEFORE UPDATE OR DELETE ON "core"."finance_document"
+	FOR EACH ROW EXECUTE FUNCTION "core"."finance_document_retained"();--> statement-breakpoint
+
+CREATE OR REPLACE TRIGGER "finance_document_retained_truncate"
+	BEFORE TRUNCATE ON "core"."finance_document"
+	FOR EACH STATEMENT EXECUTE FUNCTION "core"."finance_document_retained"();--> statement-breakpoint
+
+CREATE OR REPLACE TRIGGER "finance_document_link_retained_row"
+	BEFORE UPDATE OR DELETE ON "core"."finance_document_link"
+	FOR EACH ROW EXECUTE FUNCTION "core"."finance_document_link_retained"();--> statement-breakpoint
+
+CREATE OR REPLACE TRIGGER "finance_document_link_retained_truncate"
+	BEFORE TRUNCATE ON "core"."finance_document_link"
+	FOR EACH STATEMENT EXECUTE FUNCTION "core"."finance_document_link_retained"();--> statement-breakpoint
+
+CREATE OR REPLACE TRIGGER "finance_intake_document_retained_delete"
+	BEFORE DELETE ON "core"."finance_intake_item"
+	FOR EACH ROW EXECUTE FUNCTION "core"."finance_intake_document_retained"();--> statement-breakpoint
+
+-- ---------------------------------------------------------------------------
+-- 4. The universal edit audit -- spec 201 EARS-15/16/17, EARS-21, EARS-27
 -- ---------------------------------------------------------------------------
 --
 -- Coverage of `core` is defined BY CONSTRUCTION (spec 201, owner decision Q6):

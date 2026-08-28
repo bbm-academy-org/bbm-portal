@@ -19,10 +19,11 @@
  *
  * `ON DELETE cascade` on both parents, and each half has its own reason. A
  * document's deletion is already gated by EARS-516 (`deleteFinanceDocument`
- * refuses while any linked item has posted), so by the time a row here can be
+ * refuses while any linked item is terminal), so by the time a row here can be
  * cascaded away the module has already decided it may be; an intake item can
  * only be deleted while `draft`, and a link to a draft that no longer exists is
- * not a record of anything. `linked_by` is RESTRICT like every other member
+ * not a record of anything. Database triggers in migration `0010` enforce the
+ * same rule against direct DML. `linked_by` is RESTRICT like every other member
  * reference in this tree: the registry must not delete a person out from under
  * an act recorded to their name.
  *

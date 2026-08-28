@@ -3,12 +3,9 @@
  * `docs/specs/339-ledger-intake.md` §D EARS-514, issue #382).
  *
  * **One decision, taken from the environment, in one place.** A private bucket
- * in production; local disk when none is configured, «exactly as the media
- * adapter does» — `src/payload.config.ts` gates `s3Storage` on
- * `Boolean(process.env.S3_BUCKET)` and lets Payload fall back to disk when it
- * is empty, and this file gates on `FINANCE_DOCUMENTS_S3_BUCKET` the same way.
- * That symmetry is the point of the clause: a dev stand needs no credentials to
- * work, and CI needs none either.
+ * is mandatory in production; local disk is the explicit dev/CI fallback from
+ * EARS-514. A missing production bucket is therefore a refusal rather than an
+ * ephemeral archive inside the app container.
  *
  * **What is NOT symmetric with the media adapter, deliberately.** The media
  * bucket is configured with `disablePayloadAccessControl`, i.e. the file's URL
@@ -29,7 +26,7 @@
  *
  * The prod bucket itself is not created here — Terraform is centralized in the
  * `bbm` ops repo (ADR-002 §2), tracked as `sidorovanthon/bbm#172`. This module
- * runs on the disk fallback until it exists.
+ * must not ship until it exists.
  */
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -45,6 +42,7 @@ export const FINANCE_DOCUMENTS_DEFAULT_DIR = '.finance-documents'
  * the decision is a pure function a unit test can put through every branch.
  */
 export type FinanceDocumentStorageEnv = {
+  NODE_ENV?: string
   FINANCE_DOCUMENTS_S3_BUCKET?: string
   FINANCE_DOCUMENTS_S3_ENDPOINT?: string
   FINANCE_DOCUMENTS_S3_REGION?: string
@@ -68,8 +66,8 @@ export type FinanceDocumentStorage = {
   put(key: string, body: Buffer): Promise<void>
   get(key: string): Promise<Buffer>
   /**
-   * Removes an object. Only ever reached after `deleteFinanceDocument` has
-   * decided EARS-516 permits it; storage takes no view of its own.
+   * Removes an object. Only reached after `deleteFinanceDocument` has decided
+   * the linked items do not retain it under EARS-516.
    */
   remove(key: string): Promise<void>
 }
@@ -182,24 +180,31 @@ function s3Storage(config: {
     bucket: config.bucket,
     async put(key, body) {
       const client = await s3Client(config)
-      const { HeadObjectCommand, PutObjectCommand } = await import('@aws-sdk/client-s3')
-      // The `wx` of the disk driver, spelled out: S3 PUT overwrites silently,
-      // and a silent overwrite is exactly the replacement EARS-516 forbids.
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
       try {
-        await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: key }))
-        throw new FinanceRefusal(
-          `Объект «${key}» в архиве уже существует. Документ не заменяется — ` +
-            'исправление неверного документа это прикрепление другого (EARS-516).',
+        // `If-None-Match: *` is the S3 equivalent of local `wx`: the create and
+        // the occupied-key check are one operation, so racing writers cannot
+        // both pass a preceding HEAD and then overwrite each other.
+        await client.send(
+          new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: key,
+            Body: body,
+            ACL: 'private',
+            IfNoneMatch: '*',
+          }),
         )
       } catch (cause) {
-        if (cause instanceof FinanceRefusal) throw cause
         const status = (cause as { $metadata?: { httpStatusCode?: number } })?.$metadata
           ?.httpStatusCode
-        if (status !== 404 && status !== 403) throw cause
+        if (status === 409 || status === 412) {
+          throw new FinanceRefusal(
+            `Объект «${key}» в архиве уже существует. Документ не заменяется — ` +
+              'исправление неверного документа это прикрепление другого (EARS-516).',
+          )
+        }
+        throw cause
       }
-      await client.send(
-        new PutObjectCommand({ Bucket: config.bucket, Key: key, Body: body, ACL: 'private' }),
-      )
     },
     async get(key) {
       const client = await s3Client(config)
@@ -231,8 +236,13 @@ export function resolveFinanceDocumentStorage(
 ): FinanceDocumentStorage {
   const bucket = trimmed(env.FINANCE_DOCUMENTS_S3_BUCKET)
   if (bucket === '') {
-    // The media adapter's fallback, and the acceptance criterion of #382: a
-    // stand with no bucket configured works.
+    if (trimmed(env.NODE_ENV) === 'production') {
+      throw new FinanceRefusal(
+        'FINANCE_DOCUMENTS_S3_BUCKET обязателен в production: локальный архив допустим только в dev/CI ' +
+          '(EARS-514; приватный бакет — sidorovanthon/bbm#172).',
+      )
+    }
+    // The acceptance criterion of #382: a dev stand with no bucket works.
     return localStorage(trimmed(env.FINANCE_DOCUMENTS_DIR) || FINANCE_DOCUMENTS_DEFAULT_DIR)
   }
 

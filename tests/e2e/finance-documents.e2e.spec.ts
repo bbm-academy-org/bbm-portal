@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm'
 
 import { expect, test } from '@playwright/test'
 
-import { FINANCE_DOCUMENTS_DEFAULT_DIR } from '@/lib/finance'
+import { FINANCE_DOCUMENTS_DEFAULT_DIR } from '@/lib/finance/documents/storage'
 import { closePlatformDb } from '@/lib/platform/db/client'
 import { platformTransaction } from '@/lib/platform/db/transaction'
 

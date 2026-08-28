@@ -161,12 +161,12 @@ export type {
 } from './intake/status'
 
 // ── the confirming documents (spec 339 EARS-514/515/516/523) ─────────────────
-// `FinanceDocumentStorage` is exported as a TYPE only, and its resolver only so
-// a stand can be diagnosed: nothing outside the module composes an archive of
-// its own, and there is deliberately no export anywhere that turns a
-// `storage_key` into an address — that absence IS EARS-523.
+// The raw storage capability and `storage_key` stay inside this module. Public
+// callers get only gated document operations; diagnostics must not become an
+// authorization or immutability bypass (EARS-516/523).
 export {
   assertFinanceDocumentUpload,
+  assertFinanceDocumentBytes,
   attachFinanceDocument,
   deleteFinanceDocument,
   detachFinanceDocument,
@@ -181,12 +181,6 @@ export type {
   FinanceDocumentView,
   UploadFinanceDocumentInput,
 } from './documents/documents'
-export {
-  buildFinanceDocumentStorageKey,
-  resolveFinanceDocumentStorage,
-  FINANCE_DOCUMENTS_DEFAULT_DIR,
-} from './documents/storage'
-export type { FinanceDocumentStorage, FinanceDocumentStorageEnv } from './documents/storage'
 export {
   FINANCE_DOCUMENT_KINDS,
   FINANCE_DOCUMENT_MIME_TYPES,

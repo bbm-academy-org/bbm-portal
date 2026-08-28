@@ -19,9 +19,9 @@
  *    everything; `platform-user` — the role that opens `/p/finance` for
  *    everyone (EARS-530) — buys nothing here. That exclusion is written into
  *    EARS-530 itself.
- *  - *May it MOVE?* — EARS-516, which is not about the actor at all. Once any
- *    linked item has posted, no one deletes, unlinks or retypes the document —
- *    not the uploader, not an approver, not an admin.
+ *  - *May it MOVE?* — EARS-516, which is not about the actor at all. Posted
+ *    items freeze every mutation; refused/cancelled items retain their links
+ *    and bytes. No uploader, approver or admin bypass exists.
  *
  * **What this file deliberately does not do.** It does not enforce the document
  * gate at posting time (EARS-506 — #385): «an item may not post without a
@@ -29,6 +29,8 @@
  * give #385 something to unpick. It renders nothing (#357 owns `/p/finance`),
  * and it reads no `kind` to decide anything (EARS-515: the kind is data).
  */
+import path from 'node:path'
+
 import { and, eq, inArray } from 'drizzle-orm'
 
 import { findMemberByEmail } from '@/lib/member'
@@ -68,7 +70,6 @@ export const FINANCE_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024
 /** A document as the module hands it out. Never the storage key's contents. */
 export type FinanceDocumentView = {
   id: number
-  storageKey: string
   filename: string
   mime: string
   size: number
@@ -93,13 +94,69 @@ export type UploadFinanceDocumentInput = {
 function toView(row: typeof financeDocument.$inferSelect): FinanceDocumentView {
   return {
     id: row.id,
-    storageKey: row.storageKey,
     filename: row.filename,
     mime: row.mime,
     size: Number(row.size),
     kind: row.kind as FinanceDocumentKind,
     uploadedBy: row.uploadedBy,
     uploadedAt: row.uploadedAt,
+  }
+}
+
+const EXTENSIONS_BY_MIME: Readonly<Record<string, readonly string[]>> = {
+  'application/pdf': ['.pdf'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+  'image/webp': ['.webp'],
+  'image/gif': ['.gif'],
+  'image/tiff': ['.tif', '.tiff'],
+  'image/heic': ['.heic', '.heif'],
+}
+
+function startsWith(bytes: Buffer, signature: readonly number[]): boolean {
+  return signature.every((byte, index) => bytes[index] === byte)
+}
+
+function detectedMime(bytes: Buffer): string | null {
+  if (bytes.subarray(0, 5).toString('ascii') === '%PDF-') return 'application/pdf'
+  if (startsWith(bytes, [0xff, 0xd8, 0xff])) return 'image/jpeg'
+  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png'
+  if (
+    bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return 'image/webp'
+  }
+  const gif = bytes.subarray(0, 6).toString('ascii')
+  if (gif === 'GIF87a' || gif === 'GIF89a') return 'image/gif'
+  if (startsWith(bytes, [0x49, 0x49, 0x2a, 0x00]) || startsWith(bytes, [0x4d, 0x4d, 0x00, 0x2a])) {
+    return 'image/tiff'
+  }
+  if (bytes.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brands = bytes.subarray(8, Math.min(bytes.length, 32)).toString('ascii')
+    if (/(heic|heix|hevc|hevx|heim|heis|mif1|msf1)/.test(brands)) return 'image/heic'
+  }
+  return null
+}
+
+/** Match caller-controlled multipart metadata to the file's actual signature. */
+export function assertFinanceDocumentBytes(input: {
+  filename: string
+  mime: string
+  bytes: Buffer
+}): void {
+  const actual = detectedMime(input.bytes)
+  if (actual === null || actual !== input.mime) {
+    throw new FinanceRefusal(
+      `Содержимое файла не совпадает с заявленным типом «${input.mime}» (EARS-514). ` +
+        'Допустимы только настоящие PDF и изображения.',
+    )
+  }
+  const extension = path.extname(input.filename).toLowerCase()
+  if (!(EXTENSIONS_BY_MIME[actual] ?? []).includes(extension)) {
+    throw new FinanceRefusal(
+      `Расширение файла «${extension || '(нет)'}» не соответствует его формату «${actual}» (EARS-514).`,
+    )
   }
 }
 
@@ -167,6 +224,7 @@ async function loadItems(tx: PlatformTx, ids: readonly number[]) {
     .select()
     .from(financeIntakeItem)
     .where(inArray(financeIntakeItem.id, [...ids]))
+    .for('update')
   const found = new Set(rows.map((row) => row.id))
   const missing = ids.filter((id) => !found.has(id))
   if (missing.length > 0) {
@@ -218,6 +276,7 @@ export async function uploadFinanceDocument(
     size: bytes.byteLength,
     kind: input.kind,
   })
+  assertFinanceDocumentBytes({ filename: input.filename, mime: input.mime, bytes })
 
   const uploadedBy = await requireMemberId(actor)
   const itemIds = [...new Set(input.intakeItemIds ?? [])]
@@ -254,15 +313,16 @@ export async function uploadFinanceDocument(
 }
 
 /** The document row, or a readable refusal. */
-async function requireDocument(tx: PlatformTx, documentId: number) {
-  const [row] = await tx.select().from(financeDocument).where(eq(financeDocument.id, documentId))
+async function requireDocument(tx: PlatformTx, documentId: number, lock = false) {
+  const query = tx.select().from(financeDocument).where(eq(financeDocument.id, documentId))
+  const [row] = lock ? await query.for('update') : await query
   if (row === undefined) throw new FinanceRefusal(`Документа #${documentId} не существует.`)
   return row
 }
 
 /** Every intake item this document confirms — the EARS-516 and EARS-523 input. */
-async function linkedItems(tx: PlatformTx, documentId: number) {
-  return tx
+async function linkedItems(tx: PlatformTx, documentId: number, lock = false) {
+  const query = tx
     .select({
       id: financeIntakeItem.id,
       status: financeIntakeItem.status,
@@ -273,6 +333,20 @@ async function linkedItems(tx: PlatformTx, documentId: number) {
     .from(financeDocumentLink)
     .innerJoin(financeIntakeItem, eq(financeDocumentLink.intakeItemId, financeIntakeItem.id))
     .where(eq(financeDocumentLink.documentId, documentId))
+  return lock ? query.for('update') : query
+}
+
+function assertLinkMayBeRemoved(
+  documentId: number,
+  items: readonly { status: string; id: number }[],
+  act: string,
+): void {
+  const retained = items.filter((item) => ['posted', 'refused', 'cancelled'].includes(item.status))
+  if (retained.length === 0) return
+  throw new FinanceRefusal(
+    `Документ #${documentId} хранится с терминальной позицией (${retained.map((item) => `#${item.id}`).join(', ')}), ` +
+      `поэтому ${act} нельзя (EARS-516).`,
+  )
 }
 
 /**
@@ -387,7 +461,7 @@ export async function attachFinanceDocument(
 ): Promise<void> {
   const linkedBy = await requireMemberId(actor)
   await platformTransaction(financeAuditContext(actor), async (tx) => {
-    const document = await requireDocument(tx, input.documentId)
+    const document = await requireDocument(tx, input.documentId, true)
     const [item] = await loadItems(tx, [input.intakeItemId])
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], linkedBy) })
     // Attaching to an item that ALREADY posted would put a document behind a
@@ -415,17 +489,17 @@ export async function attachFinanceDocument(
   })
 }
 
-/** Detach a document from an item — never once that item has posted (EARS-516). */
+/** Detach a document from a mutable item; terminal items retain it (EARS-516). */
 export async function detachFinanceDocument(
   actor: FinanceActor,
   input: { documentId: number; intakeItemId: number },
 ): Promise<void> {
   const memberId = await requireMemberId(actor)
   await platformTransaction(financeAuditContext(actor), async (tx) => {
-    const document = await requireDocument(tx, input.documentId)
+    const document = await requireDocument(tx, input.documentId, true)
     const [item] = await loadItems(tx, [input.intakeItemId])
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], memberId) })
-    assertNotPosted(document.id, [item], 'откреплять его')
+    assertLinkMayBeRemoved(document.id, [item], 'откреплять его')
 
     await tx
       .delete(financeDocumentLink)
@@ -455,8 +529,8 @@ export async function setFinanceDocumentKind(
   }
   const memberId = await requireMemberId(actor)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const document = await requireDocument(tx, documentId)
-    const items = await linkedItems(tx, document.id)
+    const document = await requireDocument(tx, documentId, true)
+    const items = await linkedItems(tx, document.id, true)
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
     assertNotPosted(document.id, items, 'менять его вид')
 
@@ -470,7 +544,8 @@ export async function setFinanceDocumentKind(
 }
 
 /**
- * Delete a document — «while unlinked or all linked items unposted» (EARS-516).
+ * Delete a document only while unlinked or linked exclusively to mutable items.
+ * Posted, refused and cancelled items retain their documents (EARS-516).
  *
  * The row goes first and the object second, which is the reverse of the upload
  * order and for the same reason: the honest failure is an orphaned object, not
@@ -484,10 +559,10 @@ export async function deleteFinanceDocument(
 ): Promise<void> {
   const memberId = await requireMemberId(actor)
   const storageKey = await platformTransaction(financeAuditContext(actor), async (tx) => {
-    const document = await requireDocument(tx, documentId)
-    const items = await linkedItems(tx, document.id)
+    const document = await requireDocument(tx, documentId, true)
+    const items = await linkedItems(tx, document.id, true)
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
-    assertNotPosted(document.id, items, 'удалять его')
+    assertLinkMayBeRemoved(document.id, items, 'удалять его')
 
     await tx.delete(financeDocument).where(eq(financeDocument.id, document.id))
     return document.storageKey
