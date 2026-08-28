@@ -241,6 +241,107 @@ describe('scanHandlerFile — the pure decision seam', () => {
     ])
   })
 
+  it('rejects a direct canonical claim gate shadowed by a hoisted handler function', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '  function claimGateResponse() { return null }',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects an aliased canonical claim gate shadowed by a hoisted handler function', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse as enforceClaim } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = enforceClaim(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '  function enforceClaim() { return null }',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a local fake that merely uses the admin role name', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        "const PLATFORM_ADMIN_ROLE = 'platform-user'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'member-claim-under-admin', method: 'GET' },
+    ])
+  })
+
+  it('rejects the member role imported under the admin role name', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_USER_ROLE as PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'member-claim-under-admin', method: 'GET' },
+    ])
+  })
+
+  it('accepts the canonical admin role imported under a local alias', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_ADMIN_ROLE as adminClaim } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), adminClaim)',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('accepts the literal admin claim without an imported role binding', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings).toEqual([])
+  })
+
   it('rejects a gate hidden in a never-called nested function', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
@@ -413,6 +514,23 @@ describe('endpoint-authz (spawned)', () => {
     const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'unsafe-hand-gate'))
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when a canonical claim gate import is shadowed inside the handler', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'shadowed-hand-gate'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when the member role is imported under the admin role name', () => {
+    const res = runGuard(
+      'endpoint-authz-lint.mjs',
+      caseDir('endpoint-authz', 'spoofed-admin-claim'),
+    )
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('member-claim-under-admin')
     expect(res.stderr).toContain('GET')
   })
 
