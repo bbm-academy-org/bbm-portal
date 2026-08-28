@@ -10,6 +10,7 @@
 /.claude/parallel-sessions.flag.json
 /.claude/*-guard-state/
 /.claude/codex-write-state/
+/.claude/codex-executor-turns/
 /.claude/hook-session-registry/
 /.claude/stop-gate-budget-state/
 

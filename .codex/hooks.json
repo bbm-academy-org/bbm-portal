@@ -54,6 +54,42 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-subagent-turn-recorder.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-subagent-turn-recorder.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-subagent-turn-recorder.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-subagent-turn-recorder.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-subagent-turn-recorder.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-subagent-turn-recorder.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
@@ -84,6 +120,17 @@
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/dispatch-guard.mjs\"",
             "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/dispatch-guard.mjs'); exit $LASTEXITCODE",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task|Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/zero-dispatch-guard.mjs\"",
+            "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/zero-dispatch-guard.mjs'); exit $LASTEXITCODE",
             "timeout": 10
           }
         ]
