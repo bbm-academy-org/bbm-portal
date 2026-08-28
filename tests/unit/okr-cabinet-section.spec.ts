@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
@@ -29,10 +30,11 @@ vi.mock('@/lib/okr/cache', async (importOriginal) => {
 })
 
 const admin = { user: { email: 'admin@bbm.local', roles: [PLATFORM_ADMIN_ROLE] } }
+const SNAPSHOT_AS_OF = '2026-08-21T06:15:00.000Z'
 
 beforeEach(() => {
   authState.session = null
-  treeState.result = { objectives: [] }
+  treeState.result = { asOf: SNAPSHOT_AS_OF, stale: false, objectives: [] }
   treeState.error = null
   vi.resetModules()
 })
@@ -105,17 +107,39 @@ describe('EARS-476: the page shows the module’s current read state and when it
   })
 
   it('EARS-476: a successful read reports `ok` and the moment it was obtained', async () => {
-    const before = Date.now()
     const res = await get(admin)
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
       data: { read: { state: string; at: string; message?: string } }
     }
     expect(body.data.read.state).toBe('ok')
-    expect(Date.parse(body.data.read.at)).toBeGreaterThanOrEqual(before - 1000)
+    expect(body.data.read.at).toBe(SNAPSHOT_AS_OF)
     // The result itself is NOT stored anywhere — which is why §G needs no
     // read-health store (EARS-455, Out of scope).
     expect(body.data.read.message).toBeUndefined()
+  })
+
+  it('EARS-476: a stale fallback keeps the original snapshot time in the API', async () => {
+    treeState.result = { asOf: SNAPSHOT_AS_OF, stale: true, objectives: [] }
+
+    const res = await get(admin)
+    const body = (await res.json()) as { data: { read: { at: string } } }
+    expect(body.data.read.at).toBe(SNAPSHOT_AS_OF)
+  })
+
+  it('EARS-476: a stale fallback keeps the original snapshot time on the page', async () => {
+    treeState.result = { asOf: SNAPSHOT_AS_OF, stale: true, objectives: [] }
+
+    const page = await import('@/app/(platform)/p/admin/okr/parameters/page')
+    const markup = renderToStaticMarkup(await page.default())
+    const snapshotLabel = new Intl.DateTimeFormat('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Moscow',
+    }).format(new Date(SNAPSHOT_AS_OF))
+    expect(markup).toContain(snapshotLabel)
   })
 
   it('EARS-476: a failed read reports the error the module raised, and the page still answers 200', async () => {
