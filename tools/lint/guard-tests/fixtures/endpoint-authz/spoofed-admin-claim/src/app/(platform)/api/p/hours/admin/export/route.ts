@@ -1,3 +1,4 @@
+import { auth } from '@/auth'
 import {
   claimGateResponse,
   PLATFORM_USER_ROLE as PLATFORM_ADMIN_ROLE,

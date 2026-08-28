@@ -105,6 +105,7 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/periods/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
         'export async function GET() {',
         '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
@@ -133,6 +134,7 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/periods/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'",
         'export async function GET() {',
         '  const refusal = claimGateResponse(await auth(), PLATFORM_USER_ROLE)',
@@ -163,6 +165,7 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
         'export async function GET() {',
         '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
@@ -213,6 +216,7 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse as enforceClaim, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
         'export async function GET() {',
         '  const refusal = enforceClaim(await auth(), PLATFORM_ADMIN_ROLE)',
@@ -245,6 +249,7 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse } from '@/lib/platform/authGate'",
         'export async function GET() {',
         "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
@@ -299,6 +304,7 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse, PLATFORM_USER_ROLE as PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
         'export async function GET() {',
         '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
@@ -316,6 +322,7 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse, PLATFORM_ADMIN_ROLE as adminClaim } from '@/lib/platform/authGate'",
         'export async function GET() {',
         '  const refusal = claimGateResponse(await auth(), adminClaim)',
@@ -331,9 +338,171 @@ describe('scanHandlerFile — the pure decision seam', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
       [
+        "import { auth } from '@/auth'",
         "import { claimGateResponse } from '@/lib/platform/authGate'",
         'export async function GET() {',
         "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('rejects a fabricated session object passed directly to the claim gate', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(',
+        "    { user: { roles: ['platform-admin'] } },",
+        "    'platform-admin',",
+        '  )',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a module-local fake auth function', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        "async function auth() { return { user: { roles: ['platform-admin'] } } }",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects canonical auth shadowed by a hoisted handler function', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        "  async function auth() { return { user: { roles: ['platform-admin'] } } }",
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects an aliased canonical auth import shadowed inside the handler', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth as getSession } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await getSession(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        "  async function getSession() { return { user: { roles: ['platform-admin'] } } }",
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects an auth alias imported from an unknown module', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth as getSession } from './unsafe'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await getSession(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a different export hidden behind the canonical auth name', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { unsafeAuth as auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('accepts a direct call to canonical auth as the session proof', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('accepts a safe local alias of canonical auth', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth as getSession } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await getSession(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('accepts a handler-local session initialized by canonical auth', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const session = await auth()',
+        "  const refusal = claimGateResponse(session, 'platform-admin')",
         '  if (refusal) return refusal',
         '  return Response.json(await readProtectedData())',
         '}',
@@ -531,6 +700,20 @@ describe('endpoint-authz (spawned)', () => {
     )
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('member-claim-under-admin')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when a fabricated session object is passed to the gate', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'fabricated-session'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when canonical auth is shadowed inside the handler', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'shadowed-auth'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
     expect(res.stderr).toContain('GET')
   })
 

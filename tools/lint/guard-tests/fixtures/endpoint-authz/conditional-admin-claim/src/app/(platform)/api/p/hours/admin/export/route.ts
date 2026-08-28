@@ -1,4 +1,5 @@
 // FIXTURE — an admin handler may not choose a weaker claim at runtime.
+import { auth } from '@/auth'
 import {
   claimGateResponse,
   PLATFORM_ADMIN_ROLE,
