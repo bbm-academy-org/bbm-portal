@@ -201,6 +201,28 @@ describe('EARS-436: one zod schema types the client and validates the handler', 
     expect(parsed.success).toBe(true)
     expect(parsed.success && parsed.data.total).toBe(2)
   })
+
+  it('EARS-436: a paged list preserves the handler total beyond the current page', async () => {
+    authState.session = admin
+    const { adminRoute, listEnvelopeSchema } = await api()
+    const GET = adminRoute({
+      output: periodSchema,
+      handler: async () => ({
+        items: [{ id: '26', label: 'август 2026', weekdays: 5 }],
+        total: 57,
+      }),
+    })
+
+    const response = await GET(request(`${request().url}?page=2&pageSize=1`))
+    expect(response.status).toBe(200)
+
+    const parsed = listEnvelopeSchema(periodSchema).safeParse(await response.json())
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data).toMatchObject({
+      data: [{ id: '26' }],
+      total: 57,
+    })
+  })
 })
 
 describe('EARS-473: a refusal the module produces is readable, never a raw error and never a 500', () => {

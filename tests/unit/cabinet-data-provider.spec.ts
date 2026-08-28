@@ -101,6 +101,20 @@ describe('EARS-436: the provider parses every answer with the module’s own sch
     expect(res.data[0]).toMatchObject({ label: 'август 2026' })
   })
 
+  it('EARS-436: server pagination keeps the unpaginated total', async () => {
+    const { dp } = provider(() =>
+      ok({ data: [{ id: '26', label: 'август 2026', weekdays: 5 }], total: 57 }),
+    )
+
+    const res = await dp.getList({
+      resource: 'hours.periods',
+      pagination: { currentPage: 2, pageSize: 1, mode: 'server' },
+    })
+
+    expect(res.data).toHaveLength(1)
+    expect(res.total).toBe(57)
+  })
+
   it('EARS-436: an answer that drifts from the schema is refused, naming the resource', async () => {
     // The failure this catches is a handler and a client that agree on a URL
     // and disagree on a shape — which without a shared schema is discovered by
