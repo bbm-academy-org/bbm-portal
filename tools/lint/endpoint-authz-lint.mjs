@@ -61,6 +61,9 @@ const ADMIN_FACTORY = 'adminRoute'
 const MEMBER_FACTORY = 'memberRoute'
 const SANCTIONED = new Set([ADMIN_FACTORY, MEMBER_FACTORY])
 const FACTORY_MODULE = '@/lib/platform/api'
+const CLAIM_GATE = 'claimGateResponse'
+const AUTH_GATE_MODULE = '@/lib/platform/authGate'
+const SANCTIONED_CLAIM_GATES = new Set([CLAIM_GATE])
 
 /** Suppression, reason required — a bare marker is not a record. */
 const SUPPRESS_RE = /\bendpoint-authz-ok\s*:\s*\S/
@@ -118,7 +121,7 @@ function authPrelude(statement) {
   )
 }
 
-function gateDeclaration(statement) {
+function gateDeclaration(statement, claimGateBindings) {
   if (
     !statement ||
     !ts.isVariableStatement(statement) ||
@@ -128,7 +131,10 @@ function gateDeclaration(statement) {
   }
   const declaration = statement.declarationList.declarations[0]
   const binding = identifierText(declaration.name)
-  const call = directCall(declaration.initializer, 'claimGateResponse')
+  const initializer = unwrapExpression(declaration.initializer)
+  const localGate =
+    initializer && ts.isCallExpression(initializer) ? identifierText(initializer.expression) : null
+  const call = localGate && claimGateBindings.get(localGate) === CLAIM_GATE ? initializer : null
   return binding && call ? { binding, call } : null
 }
 
@@ -163,14 +169,14 @@ function isAdminClaim(node) {
   )
 }
 
-function sanctionedFactoryBindings(sourceFile) {
+function canonicalNamedBindings(sourceFile, moduleName, sanctioned) {
   const bindings = new Map()
 
   for (const statement of sourceFile.statements) {
     if (
       !ts.isImportDeclaration(statement) ||
       !ts.isStringLiteral(statement.moduleSpecifier) ||
-      statement.moduleSpecifier.text !== FACTORY_MODULE
+      statement.moduleSpecifier.text !== moduleName
     ) {
       continue
     }
@@ -188,11 +194,19 @@ function sanctionedFactoryBindings(sourceFile) {
     for (const element of clause.namedBindings.elements) {
       if (element.isTypeOnly) continue
       const imported = element.propertyName?.text ?? element.name.text
-      if (SANCTIONED.has(imported)) bindings.set(element.name.text, imported)
+      if (sanctioned.has(imported)) bindings.set(element.name.text, imported)
     }
   }
 
   return bindings
+}
+
+function sanctionedFactoryBindings(sourceFile) {
+  return canonicalNamedBindings(sourceFile, FACTORY_MODULE, SANCTIONED)
+}
+
+function sanctionedClaimGateBindings(sourceFile) {
+  return canonicalNamedBindings(sourceFile, AUTH_GATE_MODULE, SANCTIONED_CLAIM_GATES)
 }
 
 /**
@@ -206,7 +220,7 @@ function sanctionedFactoryBindings(sourceFile) {
  * Looking through descendants is deliberately forbidden: a gate in an unused
  * nested function proves nothing about the exported handler.
  */
-function handGateProof(node, underAdmin) {
+function handGateProof(node, underAdmin, claimGateBindings) {
   const body = functionBody(node)
   if (!body || !ts.isBlock(body)) return { valid: false, topLevel: false, adminClaim: false }
 
@@ -215,7 +229,7 @@ function handGateProof(node, underAdmin) {
     gateIndex += 1
   }
 
-  const gate = gateDeclaration(body.statements[gateIndex])
+  const gate = gateDeclaration(body.statements[gateIndex], claimGateBindings)
   if (!gate) return { valid: false, topLevel: false, adminClaim: false }
 
   const claim = directClaim(gate.call.arguments[1])
@@ -276,6 +290,7 @@ export function scanHandlerFile(rel, source) {
     rel.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   )
   const factoryBindings = sanctionedFactoryBindings(sourceFile)
+  const claimGateBindings = sanctionedClaimGateBindings(sourceFile)
 
   function location(node) {
     const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
@@ -299,7 +314,7 @@ export function scanHandlerFile(rel, source) {
       return
     }
 
-    const handGate = handGateProof(node, underAdmin)
+    const handGate = handGateProof(node, underAdmin, claimGateBindings)
     if (handGate.valid) return
     if (underAdmin && handGate.topLevel && !handGate.adminClaim) {
       findings.push({
