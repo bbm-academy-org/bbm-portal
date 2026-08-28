@@ -172,10 +172,13 @@ export const AUDIT_VALUE_WHITELIST = {
   // not their contact data (the class EARS-17 keeps out), and `storage_key` is
   // an opaque key inside a private location — never a URL and never a
   // credential (EARS-514) — so recording it is what makes an attempt to
-  // re-point a document at different bytes visible as an old/new pair.
+  // re-point a document at different bytes visible as an old/new pair. The
+  // server-computed digest is the byte identity used by upload recovery, so it
+  // is equally part of that provenance.
   finance_document: [
     'id',
     'storage_key',
+    'content_digest',
     'filename',
     'mime',
     'size',
