@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -285,6 +286,97 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     expect(events[0].diff.storage_state?.new).toBe('pending_upload')
   })
 
+  it('EARS-514: a pre-write failure recovers only the original bytes, not a same-length valid file', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const original = Buffer.from(PDF)
+    const different = Buffer.from(PDF)
+    different[different.length - 1] ^= 1
+    expect(different.byteLength).toBe(original.byteLength)
+
+    const base = localStorage()
+    let failBeforeCreate = true
+    const storage: FinanceDocumentStorage = {
+      ...base,
+      async put(key, bytes) {
+        if (failBeforeCreate) {
+          failBeforeCreate = false
+          throw new Error('injected PUT failure before object creation')
+        }
+        await base.put(key, bytes)
+      },
+    }
+    const documentId = await pendingDocumentId(
+      uploadFinanceDocument(
+        ENTRY,
+        {
+          filename: 'invoice.pdf',
+          mime: 'application/pdf',
+          bytes: original,
+          kind: 'ru_invoice',
+          intakeItemIds: [item.id],
+        },
+        storage,
+      ),
+    )
+
+    await expect(
+      resumeFinanceDocumentUpload(ENTRY, documentId, different, storage),
+    ).rejects.toThrow(FinanceRefusal)
+    const recovered = await resumeFinanceDocumentUpload(ENTRY, documentId, original, storage)
+
+    expect(recovered.id).toBe(documentId)
+    expect((await readFinanceDocument(ENTRY, documentId, storage)).bytes.equals(original)).toBe(
+      true,
+    )
+  })
+
+  it('EARS-514/516: the original digest is durable, audited, immutable and mandatory for new rows', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const mark = await auditWatermark(db)
+    const expected = `sha256:${createHash('sha256').update(PDF).digest('hex')}`
+
+    const doc = await uploadFor(ENTRY, [item.id])
+
+    const stored = await db.execute(sql`
+      select content_digest from core.finance_document where id = ${doc.id}
+    `)
+    expect(stored.rows).toEqual([{ content_digest: expected }])
+    const events = await auditEventsFor(db, mark, 'finance_document')
+    expect(events[0].diff.content_digest?.new).toBe(expected)
+
+    await expectTriggerRefusal(
+      fixtureWrite((tx) =>
+        tx.execute(sql`
+          update core.finance_document
+          set content_digest = ${`sha256:${'0'.repeat(64)}`}
+          where id = ${doc.id}
+        `),
+      ),
+      /EARS-516/,
+    )
+
+    const column = await db.execute(sql`
+      select is_nullable, column_default
+      from information_schema.columns
+      where table_schema = 'core'
+        and table_name = 'finance_document'
+        and column_name = 'content_digest'
+    `)
+    expect(column.rows).toEqual([{ is_nullable: 'NO', column_default: null }])
+    await expect(
+      fixtureWrite((tx) =>
+        tx.execute(sql`
+          insert into core.finance_document
+            (storage_key, filename, mime, size, kind, uploaded_by)
+          values (${`finance/documents/no-digest-${Date.now()}.pdf`}, 'no-digest.pdf',
+                  'application/pdf', ${PDF.byteLength}, 'other', ${refs.entryMemberId})
+        `),
+      ),
+    ).rejects.toThrow()
+  })
+
   it('EARS-514: a final database failure returns a handle that idempotently finishes the stored object', async () => {
     const refs = await seedIntakeReferences()
     const item = await seedIntakeItemFor(ENTRY, refs)
@@ -448,6 +540,32 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     await expect(
       attachFinanceDocument(ENTRY, { documentId: doc.id, intakeItemId: first.id }),
     ).rejects.toThrow(FinanceRefusal)
+  })
+
+  it('EARS-514/523: the scenario-9 direct fixture is ready before its positive control reads bytes', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const storage = localStorage()
+    const storageKey = `finance/documents/scenario-9-${Date.now()}.pdf`
+
+    await storage.put(storageKey, PDF)
+    const documentId = await fixtureWrite(async (tx) => {
+      const inserted = await tx.execute(sql`
+        insert into core.finance_document
+          (storage_key, filename, mime, size, kind, uploaded_by)
+        values (${storageKey}, 'scenario-9.pdf', 'application/pdf', ${PDF.byteLength},
+                'ru_invoice', ${refs.entryMemberId})
+        returning id
+      `)
+      const id = Number((inserted.rows[0] as { id: number }).id)
+      await tx.execute(sql`
+        insert into core.finance_document_link (document_id, intake_item_id, linked_by)
+        values (${id}, ${item.id}, ${refs.entryMemberId})
+      `)
+      return id
+    })
+
+    expect((await readFinanceDocument(ENTRY, documentId, storage)).bytes.equals(PDF)).toBe(true)
   })
 
   it('EARS-515: any kind may be attached — the kind gates nothing', async () => {
