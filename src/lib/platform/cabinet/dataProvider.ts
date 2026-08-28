@@ -1,7 +1,5 @@
 import type { DataProvider, HttpError } from '@refinedev/core'
-import type { ZodType } from 'zod'
-
-import { errorEnvelopeSchema, listEnvelopeSchema, oneEnvelopeSchema } from '../api/contract'
+import { errorEnvelopeSchema } from '../api/contract'
 
 /**
  * The cabinet's HAND-WRITTEN Refine data provider (spec 311 EARS-431,
@@ -22,18 +20,32 @@ import { errorEnvelopeSchema, listEnvelopeSchema, oneEnvelopeSchema } from '../a
  * `pnpm lint:endpoint-authz` refuses it anywhere else.
  *
  * EVERY ANSWER IS PARSED (EARS-436). Not «typed as» — parsed, with the module's
- * OWN schema, the same object its handler validates with. A handler and a
- * client that agree on a URL and disagree on a shape otherwise show an admin an
- * empty table, which is the failure mode this costs a few milliseconds to make
- * impossible.
+ * OWN schema, the same object its handler validates with. The provider asks an
+ * authenticated Server Function to run that parse against the one composition
+ * root: Zod objects cannot cross React's serializable server/client boundary,
+ * while importing the registry here would pull module status providers and PG
+ * into the client graph. The extra round trip is deliberate and bounded to the
+ * internal admin; it removes the shell-owned module list without weakening the
+ * runtime parse.
  */
 
 /** The module API root. Not the cabinet's route root — those are different things. */
 export const MODULE_API_ROOT = '/api/p'
 
+export type CabinetEnvelopeKind = 'list' | 'one'
+
+export type CabinetValidationResult =
+  { success: true; data: unknown } | { success: false; issues: string }
+
+export type CabinetResponseValidator = (
+  resource: string,
+  envelope: CabinetEnvelopeKind,
+  payload: unknown,
+) => Promise<CabinetValidationResult>
+
 export interface CabinetDataProviderOptions {
-  /** Resource name (`<slug>.<resource>`) → the module's schema for one record. */
-  schemas: Record<string, ZodType>
+  /** Authenticated registry lookup + parse with the module's own schema. */
+  validateResponse: CabinetResponseValidator
   /** Overridable for tests; defaults to the ambient `fetch`. */
   fetchImpl?: typeof fetch
   /** Overridable for a server-side call that needs an absolute origin. */
@@ -65,25 +77,13 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
   const apiRoot = options.apiRoot ?? MODULE_API_ROOT
   const doFetch: typeof fetch = options.fetchImpl ?? ((...args) => fetch(...args))
 
-  function schemaFor(resource: string): ZodType {
-    const schema = options.schemas[resource]
-    if (!schema) {
-      // A resource the cabinet renders but nobody declared a schema for is a
-      // registration bug, and it must be loud: parsing it as `unknown` would
-      // pass EARS-436 in form while abandoning it in substance.
-      throw httpError(500, `Для ресурса «${resource}» не объявлена схема модуля (EARS-436).`)
-    }
-    return schema
-  }
-
   /** One request, one parse. Every non-2xx becomes a refusal that names itself. */
   async function call<T>(
     resource: string,
     url: string,
     init: RequestInit | undefined,
-    envelope: (schema: ZodType) => ZodType,
+    envelope: CabinetEnvelopeKind,
   ): Promise<T> {
-    const schema = schemaFor(resource)
     const response = await doFetch(url, {
       ...init,
       headers: {
@@ -108,14 +108,9 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
       throw httpError(response.status, message)
     }
 
-    const parsed = envelope(schema).safeParse(await response.json())
+    const parsed = await options.validateResponse(resource, envelope, await response.json())
     if (!parsed.success) {
-      throw httpError(
-        500,
-        `Ответ «${resource}» не соответствует схеме модуля: ${parsed.error.issues
-          .map((issue) => `${issue.path.join('.')} ${issue.message}`)
-          .join('; ')}`,
-      )
+      throw httpError(500, `Ответ «${resource}» не соответствует схеме модуля: ${parsed.issues}`)
     }
     return parsed.data as T
   }
@@ -144,7 +139,7 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
         resource,
         `${url.pathname}${url.search}`,
         undefined,
-        listEnvelopeSchema,
+        'list',
       )
       return { data: body.data as never, total: body.total }
     },
@@ -154,7 +149,7 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
         resource,
         `${resourceUrl(apiRoot, resource)}/${encodeURIComponent(String(id))}`,
         undefined,
-        oneEnvelopeSchema,
+        'one',
       )
       return { data: body.data as never }
     },
@@ -164,7 +159,7 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
         resource,
         resourceUrl(apiRoot, resource),
         { method: 'POST', body: JSON.stringify(variables) },
-        oneEnvelopeSchema,
+        'one',
       )
       return { data: body.data as never }
     },
@@ -174,7 +169,7 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
         resource,
         `${resourceUrl(apiRoot, resource)}/${encodeURIComponent(String(id))}`,
         { method: 'PATCH', body: JSON.stringify(variables) },
-        oneEnvelopeSchema,
+        'one',
       )
       return { data: body.data as never }
     },
@@ -184,7 +179,7 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
         resource,
         `${resourceUrl(apiRoot, resource)}/${encodeURIComponent(String(id))}`,
         { method: 'DELETE' },
-        oneEnvelopeSchema,
+        'one',
       )
       return { data: body.data as never }
     },

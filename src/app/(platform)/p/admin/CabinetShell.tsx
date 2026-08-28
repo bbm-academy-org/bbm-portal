@@ -7,9 +7,9 @@ import React from 'react'
 
 import { createCabinetDataProvider } from '@/lib/platform/cabinet'
 
+import { validateCabinetResponse } from './actions'
 import { CabinetSidebar } from './CabinetSidebar'
 import { breadcrumbFromResources } from './resources'
-import { CABINET_SCHEMAS } from './schemas'
 
 /**
  * The `/p/admin` cabinet shell (spec 311 §D — EARS-431, EARS-432, EARS-433,
@@ -64,14 +64,16 @@ export function CabinetShell({
 }: {
   /**
    * Built on the SERVER from `WORKSPACE_REGISTRY` and passed down, because the
-   * composition root cannot cross into the client bundle (see `schemas.ts`).
-   * `ResourceProps` is plain data, so this crosses as JSON.
+   * composition root cannot cross into the client bundle: its module entries
+   * carry server-only status providers. `ResourceProps` is plain data, so this
+   * crosses as JSON; response validation crosses the other way through the
+   * authenticated Server Function in `actions.ts`.
    */
   resources: ResourceProps[]
   children: React.ReactNode
 }) {
   const dataProvider = React.useMemo(
-    () => createCabinetDataProvider({ schemas: CABINET_SCHEMAS }),
+    () => createCabinetDataProvider({ validateResponse: validateCabinetResponse }),
     [],
   )
 

@@ -9,7 +9,10 @@
  * and must not start.
  */
 export {
+  type CabinetEnvelopeKind,
   type CabinetDataProviderOptions,
+  type CabinetResponseValidator,
+  type CabinetValidationResult,
   createCabinetDataProvider,
   MODULE_API_ROOT,
 } from './dataProvider'
