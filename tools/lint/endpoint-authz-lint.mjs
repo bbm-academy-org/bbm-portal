@@ -60,6 +60,7 @@ const METHOD_SET = new Set(METHODS)
 const ADMIN_FACTORY = 'adminRoute'
 const MEMBER_FACTORY = 'memberRoute'
 const SANCTIONED = new Set([ADMIN_FACTORY, MEMBER_FACTORY])
+const FACTORY_MODULE = '@/lib/platform/api'
 
 /** Suppression, reason required — a bare marker is not a record. */
 const SUPPRESS_RE = /\bendpoint-authz-ok\s*:\s*\S/
@@ -162,6 +163,38 @@ function isAdminClaim(node) {
   )
 }
 
+function sanctionedFactoryBindings(sourceFile) {
+  const bindings = new Map()
+
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== FACTORY_MODULE
+    ) {
+      continue
+    }
+
+    const clause = statement.importClause
+    if (
+      !clause ||
+      clause.isTypeOnly ||
+      !clause.namedBindings ||
+      !ts.isNamedImports(clause.namedBindings)
+    ) {
+      continue
+    }
+
+    for (const element of clause.namedBindings.elements) {
+      if (element.isTypeOnly) continue
+      const imported = element.propertyName?.text ?? element.name.text
+      if (SANCTIONED.has(imported)) bindings.set(element.name.text, imported)
+    }
+  }
+
+  return bindings
+}
+
 /**
  * A hand gate is accepted only in the canonical fail-closed shape:
  *
@@ -242,6 +275,7 @@ export function scanHandlerFile(rel, source) {
     true,
     rel.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   )
+  const factoryBindings = sanctionedFactoryBindings(sourceFile)
 
   function location(node) {
     const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
@@ -296,10 +330,11 @@ export function scanHandlerFile(rel, source) {
       for (const declaration of statement.declarationList.declarations) {
         const method = identifierText(declaration.name)
         if (!method || !METHOD_SET.has(method)) continue
-        const factory =
+        const localFactory =
           declaration.initializer && ts.isCallExpression(declaration.initializer)
             ? identifierText(declaration.initializer.expression)
             : null
+        const factory = localFactory ? (factoryBindings.get(localFactory) ?? null) : null
         checkHandler(method, declaration, factory)
       }
       continue
