@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import {
   FinanceAccessRefusal,
+  FinanceDocumentUploadPending,
   FinanceRefusal,
   FINANCE_DOCUMENT_MAX_BYTES,
   assertFinanceDocumentBytes,
@@ -165,10 +166,27 @@ export async function POST(request: Request): Promise<Response> {
       { status: 201, headers: { 'cache-control': 'no-store' } },
     )
   } catch (cause) {
+    if (cause instanceof FinanceDocumentUploadPending) {
+      return pendingUpload(cause.documentId)
+    }
     if (cause instanceof FinanceAccessRefusal) return text(403, cause.message)
     if (cause instanceof FinanceRefusal) return text(422, cause.message)
     throw cause
   }
+}
+
+function pendingUpload(documentId: number): Response {
+  return Response.json(
+    {
+      id: documentId,
+      uploadStatus: 'pending',
+      recovery: {
+        method: 'PUT',
+        href: `/p/finance/api/documents/${documentId}`,
+      },
+    },
+    { status: 503, headers: { 'cache-control': 'no-store' } },
+  )
 }
 
 function text(status: number, body: string): Response {

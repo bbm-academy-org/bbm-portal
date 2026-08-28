@@ -254,7 +254,7 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
       },
     }
 
-    await expect(
+    const documentId = await pendingDocumentId(
       uploadFinanceDocument(
         ENTRY,
         {
@@ -266,7 +266,7 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
         },
         storage,
       ),
-    ).rejects.toThrow(/injected object PUT failure/)
+    )
 
     const pending = await db.execute(sql`
       select id, uploaded_by, storage_state
@@ -276,6 +276,7 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
       expect.objectContaining({
         uploaded_by: refs.entryMemberId,
         storage_state: 'pending_upload',
+        id: documentId,
       }),
     ])
     const events = await auditEventsFor(db, mark, 'finance_document')

@@ -1,5 +1,12 @@
 import { auth } from '@/auth'
-import { FinanceAccessRefusal, FinanceRefusal, readFinanceDocument } from '@/lib/finance'
+import {
+  FinanceAccessRefusal,
+  FinanceDocumentUploadPending,
+  FinanceRefusal,
+  FINANCE_DOCUMENT_MAX_BYTES,
+  readFinanceDocument,
+  resumeFinanceDocumentUpload,
+} from '@/lib/finance'
 import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 /**
@@ -30,6 +37,31 @@ import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
  */
 
 export const dynamic = 'force-dynamic'
+
+class UploadBodyTooLarge extends Error {}
+
+async function boundedBytes(request: Request): Promise<Buffer> {
+  const declared = Number(request.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > FINANCE_DOCUMENT_MAX_BYTES) {
+    throw new UploadBodyTooLarge()
+  }
+  if (request.body === null) return Buffer.alloc(0)
+
+  const reader = request.body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > FINANCE_DOCUMENT_MAX_BYTES) {
+      await reader.cancel()
+      throw new UploadBodyTooLarge()
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks, total)
+}
 
 export async function GET(
   _request: Request,
@@ -68,6 +100,70 @@ export async function GET(
   } catch (cause) {
     if (cause instanceof FinanceAccessRefusal) return text(403, cause.message)
     if (cause instanceof FinanceRefusal) return text(404, cause.message)
+    throw cause
+  }
+}
+
+/** Retry the exact bytes of a durable `pending_upload` by its stable id. */
+export async function PUT(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await auth()
+  const refusal = claimGateResponse(session, PLATFORM_USER_ROLE)
+  if (refusal) return refusal
+
+  const email = session?.user?.email
+  if (typeof email !== 'string' || email === '') {
+    return text(403, 'Сессия без email не может возобновлять документы бухгалтерии.')
+  }
+  const actor = { email, roles: (session?.user as { roles?: string[] })?.roles ?? [] }
+
+  const { id } = await context.params
+  const documentId = Number(id)
+  if (!Number.isInteger(documentId) || documentId <= 0) {
+    return text(400, 'Идентификатор документа — целое положительное число.')
+  }
+
+  let bytes: Buffer
+  try {
+    bytes = await boundedBytes(request)
+  } catch (cause) {
+    if (cause instanceof UploadBodyTooLarge) {
+      return text(413, `Файл больше предела в ${FINANCE_DOCUMENT_MAX_BYTES} байт (EARS-514).`)
+    }
+    throw cause
+  }
+
+  try {
+    const document = await resumeFinanceDocumentUpload(actor, documentId, bytes)
+    return Response.json(
+      {
+        id: document.id,
+        filename: document.filename,
+        mime: document.mime,
+        size: document.size,
+        kind: document.kind,
+        uploadedAt: document.uploadedAt,
+      },
+      { status: 200, headers: { 'cache-control': 'no-store' } },
+    )
+  } catch (cause) {
+    if (cause instanceof FinanceDocumentUploadPending) {
+      return Response.json(
+        {
+          id: cause.documentId,
+          uploadStatus: 'pending',
+          recovery: {
+            method: 'PUT',
+            href: `/p/finance/api/documents/${cause.documentId}`,
+          },
+        },
+        { status: 503, headers: { 'cache-control': 'no-store' } },
+      )
+    }
+    if (cause instanceof FinanceAccessRefusal) return text(403, cause.message)
+    if (cause instanceof FinanceRefusal) return text(422, cause.message)
     throw cause
   }
 }

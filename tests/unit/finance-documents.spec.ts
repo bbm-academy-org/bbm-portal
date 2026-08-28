@@ -212,12 +212,11 @@ describe('where a finance document is stored (spec 339 EARS-514)', () => {
 
     await expect(storage.put(key, Buffer.from('replacement'))).rejects.toThrow(FinanceRefusal)
     expect(s3Mock.objects.get(key)?.toString()).toBe('original')
-    expect(s3Mock.commands).toEqual([
-      expect.objectContaining({
-        name: 'PutObjectCommand',
-        input: expect.objectContaining({ IfNoneMatch: '*' }),
-      }),
+    expect(s3Mock.commands.map((command) => command.name)).toEqual([
+      'PutObjectCommand',
+      'GetObjectCommand',
     ])
+    expect(s3Mock.commands[0].input).toEqual(expect.objectContaining({ IfNoneMatch: '*' }))
   })
 
   it('EARS-516: concurrent S3 writers cannot both create the same object key', async () => {

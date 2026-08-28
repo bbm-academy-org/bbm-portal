@@ -62,7 +62,7 @@ export type FinanceDocumentStorage = {
   readonly driver: 'local' | 's3'
   /** The bucket, when there is one — for diagnostics and for the tests. */
   readonly bucket: string | null
-  /** Writes bytes at `key`. Refuses an OCCUPIED key: a document is never replaced. */
+  /** Creates `key`; an exact repeat is a no-op, while different bytes are never replaced. */
   put(key: string, body: Buffer): Promise<void>
   get(key: string): Promise<Buffer>
   /**
@@ -73,6 +73,13 @@ export type FinanceDocumentStorage = {
 }
 
 const trimmed = (value: string | undefined): string => (value ?? '').trim()
+
+function occupiedByDifferentBytes(key: string): FinanceRefusal {
+  return new FinanceRefusal(
+    `Объект «${key}» в архиве уже существует с другим содержимым. Документ не заменяется — ` +
+      'исправление неверного документа это прикрепление другого (EARS-516).',
+  )
+}
 
 /**
  * The object key for a new document.
@@ -128,10 +135,17 @@ function localStorage(dir: string): FinanceDocumentStorage {
     async put(key, body) {
       const target = resolveInsideRoot(dir, key)
       await mkdir(path.dirname(target), { recursive: true })
-      // `wx` — fail if it exists. A document is never replaced (EARS-516), and
-      // the flag is what makes that true against a racing second writer rather
-      // than only against a caller that remembered to check.
-      await writeFile(target, body, { flag: 'wx' })
+      // `wx` makes creation atomic. Recovery may repeat the same bytes after an
+      // ambiguous outcome; equality is a no-op, while different bytes remain a
+      // replacement refusal (EARS-516).
+      try {
+        await writeFile(target, body, { flag: 'wx' })
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException)?.code !== 'EEXIST') throw cause
+        const existing = await readFile(target)
+        if (existing.equals(body)) return
+        throw occupiedByDifferentBytes(key)
+      }
     },
     async get(key) {
       return readFile(resolveInsideRoot(dir, key))
@@ -180,30 +194,38 @@ function s3Storage(config: {
     bucket: config.bucket,
     async put(key, body) {
       const client = await s3Client(config)
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
-      try {
-        // `If-None-Match: *` is the S3 equivalent of local `wx`: the create and
-        // the occupied-key check are one operation, so racing writers cannot
-        // both pass a preceding HEAD and then overwrite each other.
-        await client.send(
-          new PutObjectCommand({
-            Bucket: config.bucket,
-            Key: key,
-            Body: body,
-            ACL: 'private',
-            IfNoneMatch: '*',
-          }),
-        )
-      } catch (cause) {
-        const status = (cause as { $metadata?: { httpStatusCode?: number } })?.$metadata
-          ?.httpStatusCode
-        if (status === 409 || status === 412) {
-          throw new FinanceRefusal(
-            `Объект «${key}» в архиве уже существует. Документ не заменяется — ` +
-              'исправление неверного документа это прикрепление другого (EARS-516).',
+      const { GetObjectCommand, PutObjectCommand } = await import('@aws-sdk/client-s3')
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          // `If-None-Match: *` is the S3 equivalent of local `wx`: the create and
+          // the occupied-key check are one operation, so racing writers cannot
+          // both pass a preceding HEAD and then overwrite each other.
+          await client.send(
+            new PutObjectCommand({
+              Bucket: config.bucket,
+              Key: key,
+              Body: body,
+              ACL: 'private',
+              IfNoneMatch: '*',
+            }),
           )
+          return
+        } catch (cause) {
+          const status = (cause as { $metadata?: { httpStatusCode?: number } })?.$metadata
+            ?.httpStatusCode
+          // S3 defines a conditional 409 as a race to retry, not proof that the
+          // key is occupied. A later 412 resolves an ambiguous first outcome.
+          if (status === 409 && attempt < 3) continue
+          if (status === 412) {
+            const answer = await client.send(
+              new GetObjectCommand({ Bucket: config.bucket, Key: key }),
+            )
+            const bytes = await answer.Body?.transformToByteArray()
+            if (bytes !== undefined && Buffer.from(bytes).equals(body)) return
+            throw occupiedByDifferentBytes(key)
+          }
+          throw cause
         }
-        throw cause
       }
     },
     async get(key) {

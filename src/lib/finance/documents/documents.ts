@@ -81,6 +81,18 @@ export type FinanceDocumentView = {
   uploadedAt: Date
 }
 
+/** A durable upload exists and the caller must retry it by this public id. */
+export class FinanceDocumentUploadPending extends Error {
+  override readonly name = 'FinanceDocumentUploadPending'
+
+  constructor(
+    readonly documentId: number,
+    readonly cause?: unknown,
+  ) {
+    super(`Загрузка документа #${documentId} не завершена; повторите её по этому идентификатору.`)
+  }
+}
+
 export type UploadFinanceDocumentInput = {
   filename: string
   mime: string
@@ -310,22 +322,14 @@ export async function uploadFinanceDocument(
     return row
   })
 
-  await storage.put(storageKey, bytes)
-
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const row = await requireDocument(tx, pending.id, true)
-    if (row.storageState !== 'pending_upload') {
-      throw new FinanceRefusal(
-        `Документ #${row.id} нельзя завершить из состояния «${row.storageState}» (EARS-514).`,
-      )
-    }
-    const [ready] = await tx
-      .update(financeDocument)
-      .set({ storageState: 'ready' })
-      .where(eq(financeDocument.id, row.id))
-      .returning()
-    return toView(ready)
-  })
+  try {
+    return await resumeFinanceDocumentUpload(actor, pending.id, bytes, storage)
+  } catch (cause) {
+    if (cause instanceof FinanceDocumentUploadPending) throw cause
+    // The initial caller does not yet know the id. Once metadata committed,
+    // every later refusal/failure must carry that stable recovery handle.
+    throw new FinanceDocumentUploadPending(pending.id, cause)
+  }
 }
 
 /** The document row, or a readable refusal. */
@@ -334,6 +338,76 @@ async function requireDocument(tx: PlatformTx, documentId: number, lock = false)
   const [row] = lock ? await query.for('update') : await query
   if (row === undefined) throw new FinanceRefusal(`Документа #${documentId} не существует.`)
   return row
+}
+
+function assertRecoveryBytes(document: typeof financeDocument.$inferSelect, bytes: Buffer): void {
+  if (!Buffer.isBuffer(bytes)) {
+    throw new FinanceRefusal('Содержимое документа должно быть буфером байтов.')
+  }
+  if (bytes.byteLength !== Number(document.size)) {
+    throw new FinanceRefusal(
+      `Повтор документа #${document.id} содержит ${bytes.byteLength} байт вместо исходных ${document.size} (EARS-514/516).`,
+    )
+  }
+  assertFinanceDocumentUpload({
+    filename: document.filename,
+    mime: document.mime,
+    size: bytes.byteLength,
+    kind: document.kind,
+  })
+  assertFinanceDocumentBytes({ filename: document.filename, mime: document.mime, bytes })
+}
+
+/**
+ * Finish one durable `pending_upload` by its public id (EARS-514).
+ *
+ * The row and its linked intake items stay locked while storage is checked and
+ * written. S3 still does not join the database transaction: if PUT succeeds and
+ * commit fails, the row remains pending and the exact repeat is a storage no-op.
+ * Holding the locks only prevents a supported delete/status act from racing the
+ * recovery into an anonymous object.
+ */
+export async function resumeFinanceDocumentUpload(
+  actor: FinanceActor,
+  documentId: number,
+  bytes: Buffer,
+  storage: FinanceDocumentStorage = resolveFinanceDocumentStorage(),
+): Promise<FinanceDocumentView> {
+  const memberId = await requireMemberId(actor)
+  try {
+    return await platformTransaction(financeAuditContext(actor), async (tx) => {
+      const document = await requireDocument(tx, documentId, true)
+      const items = await linkedItems(tx, document.id, true)
+      assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
+      assertRecoveryBytes(document, bytes)
+
+      if (document.storageState === 'pending_delete') {
+        throw new FinanceRefusal(
+          `Документ #${document.id} уже удаляется и не может возобновить загрузку (EARS-514/516).`,
+        )
+      }
+      if (document.storageState === 'ready') {
+        const existing = await storage.get(document.storageKey)
+        if (!existing.equals(bytes)) {
+          throw new FinanceRefusal(
+            `Готовый документ #${document.id} нельзя заменить другими байтами (EARS-516).`,
+          )
+        }
+        return toView(document)
+      }
+
+      await storage.put(document.storageKey, bytes)
+      const [ready] = await tx
+        .update(financeDocument)
+        .set({ storageState: 'ready' })
+        .where(eq(financeDocument.id, document.id))
+        .returning()
+      return toView(ready)
+    })
+  } catch (cause) {
+    if (cause instanceof FinanceAccessRefusal || cause instanceof FinanceRefusal) throw cause
+    throw new FinanceDocumentUploadPending(documentId, cause)
+  }
 }
 
 function assertDocumentReady(document: typeof financeDocument.$inferSelect, act: string): void {

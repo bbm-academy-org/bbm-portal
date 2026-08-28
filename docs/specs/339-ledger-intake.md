@@ -438,6 +438,12 @@ a declared clause.
   system shall commit audited `pending_upload` metadata before writing bytes
   and mark the row `ready` afterward, so a storage or later database failure
   cannot leave an object without its key, metadata, uploader and audit handle.
+  An incomplete upload shall expose its document id and authenticated retry
+  address. Retrying the exact bytes by that id shall be idempotent when no
+  object exists, when the first write outcome was ambiguous, or when the final
+  database commit failed; a different byte sequence shall be refused. A
+  conditional S3 conflict shall be retried, while an already-present object
+  shall be compared with the retry bytes before the upload is finalized.
 - **EARS-523.** A document's content shall be readable **only** through the
   module's own authorized handler: the submitter reads documents currently
   linked to their own items; upload provenance alone grants no read;
