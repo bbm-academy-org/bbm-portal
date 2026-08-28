@@ -174,6 +174,73 @@ describe('scanHandlerFile — the pure decision seam', () => {
     expect(findings).toEqual([])
   })
 
+  it('rejects a locally declared function that merely uses the claim gate name', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        'function claimGateResponse() { return null }',
+        "const PLATFORM_ADMIN_ROLE = 'platform-admin'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects the claim gate name imported from an unknown module', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_ADMIN_ROLE } from './unsafe'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('accepts a canonical claim gate imported under a local alias', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse as enforceClaim, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = enforceClaim(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings).toEqual([])
+  })
+
+  it('rejects a different canonical export hidden behind the claim gate alias', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { unsafeGate as claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
   it('rejects a gate hidden in a never-called nested function', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
@@ -330,6 +397,20 @@ describe('endpoint-authz (spawned)', () => {
 
   it('exits 1 when the admin factory name comes from an unknown module', () => {
     const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'unsafe-factory'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when a local fake uses the claim gate name', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'local-hand-gate'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when the claim gate name comes from an unknown module', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'unsafe-hand-gate'))
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('ungated-handler')
     expect(res.stderr).toContain('GET')
