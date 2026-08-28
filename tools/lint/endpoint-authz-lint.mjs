@@ -216,9 +216,13 @@ function gateDeclaration(statement, node, authBindings) {
   const initializer = unwrapExpression(declaration.initializer)
   const localGate =
     initializer && ts.isCallExpression(initializer) ? identifierText(initializer.expression) : null
-  const call = resolvesToImportedBinding(node, localGate, CLAIM_GATE, authBindings)
-    ? initializer
-    : null
+  const call =
+    initializer &&
+    ts.isCallExpression(initializer) &&
+    initializer.arguments.length === 2 &&
+    resolvesToImportedBinding(node, localGate, CLAIM_GATE, authBindings)
+      ? initializer
+      : null
   return binding && call ? { binding, call } : null
 }
 
