@@ -18,6 +18,8 @@ export {
   type ListQuery,
   listEnvelopeSchema,
   listQuerySchema,
+  type ModuleListResult,
+  moduleListResultSchema,
   ModuleApiError,
   oneEnvelopeSchema,
 } from './contract'

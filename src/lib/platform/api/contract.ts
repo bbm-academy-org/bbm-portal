@@ -75,6 +75,17 @@ export const errorEnvelopeSchema = z.object({
 
 export type ErrorEnvelope = z.infer<typeof errorEnvelopeSchema>
 
+/** A module list handler's page, including the count before pagination. */
+export interface ModuleListResult<T> {
+  items: T[]
+  total: number
+}
+
+/** Runtime validation for the page a module list handler returns. */
+export function moduleListResultSchema<T extends z.ZodTypeAny>(item: T) {
+  return z.object({ items: z.array(item), total: z.number().int().min(0) })
+}
+
 /**
  * The envelope of a LIST answer. `total` is the unpaginated count — Refine's
  * data provider needs it to render a pager at all, and a provider that has to

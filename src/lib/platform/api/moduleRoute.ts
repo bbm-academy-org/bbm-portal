@@ -14,6 +14,8 @@ import {
   API_ERROR_STATUS,
   type ApiErrorCode,
   listQuerySchema,
+  type ModuleListResult,
+  moduleListResultSchema,
   ModuleApiError,
   type ListQuery,
 } from './contract'
@@ -82,7 +84,11 @@ export interface ModuleRouteSpec<TBody, TOut> {
    * something else fails here, on the server, and not in the browser.
    */
   output: z.ZodType<TOut>
-  handler: (ctx: ModuleRouteContext<TBody>) => Promise<TOut | TOut[]>
+  /**
+   * Arrays are a convenience for unpaginated lists. A paginated handler returns
+   * `{ items, total }` so the wire envelope keeps the count beyond this page.
+   */
+  handler: (ctx: ModuleRouteContext<TBody>) => Promise<TOut | TOut[] | ModuleListResult<TOut>>
 }
 
 /** The Next 16 second argument of a route handler: dynamic segment values. */
@@ -158,7 +164,7 @@ function moduleRoute<TBody, TOut>(
 
     const actorEmail = sessionActorEmail(session)
 
-    let result: TOut | TOut[]
+    let result: TOut | TOut[] | ModuleListResult<TOut>
     try {
       result = await spec.handler({
         session: session as SessionLike,
@@ -194,6 +200,15 @@ function moduleRoute<TBody, TOut>(
         items.push(parsed.data)
       }
       return Response.json({ data: items, total: items.length })
+    }
+
+    if (typeof result === 'object' && result !== null && 'items' in result && 'total' in result) {
+      const parsed = moduleListResultSchema(spec.output).safeParse(result)
+      if (!parsed.success) {
+        console.error('[api/p] handler answer violates its own schema', parsed.error.issues)
+        return fail('internal', 'Внутренняя ошибка. Повторите попытку или обратитесь к владельцу.')
+      }
+      return Response.json({ data: parsed.data.items, total: parsed.data.total })
     }
 
     const parsed = spec.output.safeParse(result)
