@@ -3,17 +3,73 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   assertFinanceDocumentUpload,
-  buildFinanceDocumentStorageKey,
   FinanceRefusal,
   FINANCE_DOCUMENT_KINDS,
   FINANCE_DOCUMENT_MAX_BYTES,
   FINANCE_DOCUMENT_MIME_TYPES,
-  resolveFinanceDocumentStorage,
 } from '@/lib/finance'
+import {
+  buildFinanceDocumentStorageKey,
+  resolveFinanceDocumentStorage,
+} from '@/lib/finance/documents/storage'
+
+const s3Mock = vi.hoisted(() => ({
+  objects: new Map<string, Buffer>(),
+  denyHeads: false,
+  delayHeads: false,
+  commands: [] as Array<{ name: string; input: Record<string, unknown> }>,
+}))
+
+vi.mock('@aws-sdk/client-s3', () => {
+  class S3Command {
+    constructor(readonly input: Record<string, unknown>) {}
+  }
+  class HeadObjectCommand extends S3Command {}
+  class PutObjectCommand extends S3Command {}
+  class GetObjectCommand extends S3Command {}
+  class DeleteObjectCommand extends S3Command {}
+
+  class S3Client {
+    async send(command: S3Command): Promise<Record<string, unknown>> {
+      s3Mock.commands.push({ name: command.constructor.name, input: command.input })
+      const key = String(command.input.Key)
+
+      if (command instanceof HeadObjectCommand) {
+        if (s3Mock.delayHeads) await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        if (s3Mock.denyHeads) throw s3Error(403)
+        if (!s3Mock.objects.has(key)) throw s3Error(404)
+        return {}
+      }
+
+      if (command instanceof PutObjectCommand) {
+        if (command.input.IfNoneMatch === '*' && s3Mock.objects.has(key)) throw s3Error(412)
+        s3Mock.objects.set(key, Buffer.from(command.input.Body as Uint8Array))
+        return {}
+      }
+
+      if (command instanceof DeleteObjectCommand) {
+        s3Mock.objects.delete(key)
+        return {}
+      }
+
+      return {
+        Body: {
+          transformToByteArray: async () => s3Mock.objects.get(key),
+        },
+      }
+    }
+  }
+
+  return { S3Client, HeadObjectCommand, PutObjectCommand, GetObjectCommand, DeleteObjectCommand }
+})
+
+function s3Error(status: number): Error {
+  return Object.assign(new Error(`S3 ${status}`), { $metadata: { httpStatusCode: status } })
+}
 
 /**
  * The document layer's pure half (spec `docs/specs/339-ledger-intake.md` §D,
@@ -42,6 +98,13 @@ afterEach(() => {
   }
 })
 
+beforeEach(() => {
+  s3Mock.objects.clear()
+  s3Mock.denyHeads = false
+  s3Mock.delayHeads = false
+  s3Mock.commands.length = 0
+})
+
 describe('where a finance document is stored (spec 339 EARS-514)', () => {
   it('EARS-514: with no private bucket configured, storage falls back to local disk', async () => {
     const dir = tempDir()
@@ -58,6 +121,15 @@ describe('where a finance document is stored (spec 339 EARS-514)', () => {
     expect(readFileSync(path.join(dir, 'finance/documents/2026/08/abc.pdf'), 'utf8')).toBe(
       '%PDF-1.7 fixture',
     )
+  })
+
+  it('EARS-514: production refuses to start the archive without its private bucket', () => {
+    expect(() =>
+      resolveFinanceDocumentStorage({
+        NODE_ENV: 'production',
+        FINANCE_DOCUMENTS_DIR: tempDir(),
+      }),
+    ).toThrow(FinanceRefusal)
   })
 
   it('EARS-514: a configured private bucket selects object storage instead of disk', () => {
@@ -108,6 +180,44 @@ describe('where a finance document is stored (spec 339 EARS-514)', () => {
     expect(first).not.toBe(second)
     expect(first).toMatch(/^finance\/documents\/2026\/08\/[0-9a-f-]{36}\.pdf$/)
     expect(first).not.toContain('счёт')
+  })
+
+  it('EARS-516: S3 uses one atomic create-only write and never treats denied HEAD as absence', async () => {
+    const storage = resolveFinanceDocumentStorage({
+      FINANCE_DOCUMENTS_S3_BUCKET: 'bbm-portal-finance-private',
+      FINANCE_DOCUMENTS_S3_ACCESS_KEY_ID: 'key',
+      FINANCE_DOCUMENTS_S3_SECRET_ACCESS_KEY: 'secret',
+    })
+    const key = 'finance/documents/2026/08/occupied.pdf'
+    s3Mock.objects.set(key, Buffer.from('original'))
+    s3Mock.denyHeads = true
+
+    await expect(storage.put(key, Buffer.from('replacement'))).rejects.toThrow(FinanceRefusal)
+    expect(s3Mock.objects.get(key)?.toString()).toBe('original')
+    expect(s3Mock.commands).toEqual([
+      expect.objectContaining({
+        name: 'PutObjectCommand',
+        input: expect.objectContaining({ IfNoneMatch: '*' }),
+      }),
+    ])
+  })
+
+  it('EARS-516: concurrent S3 writers cannot both create the same object key', async () => {
+    const storage = resolveFinanceDocumentStorage({
+      FINANCE_DOCUMENTS_S3_BUCKET: 'bbm-portal-finance-private',
+      FINANCE_DOCUMENTS_S3_ACCESS_KEY_ID: 'key',
+      FINANCE_DOCUMENTS_S3_SECRET_ACCESS_KEY: 'secret',
+    })
+    const key = 'finance/documents/2026/08/race.pdf'
+    s3Mock.delayHeads = true
+
+    const results = await Promise.allSettled([
+      storage.put(key, Buffer.from('first')),
+      storage.put(key, Buffer.from('second')),
+    ])
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
   })
 })
 

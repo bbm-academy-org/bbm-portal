@@ -30,6 +30,16 @@ import {
   truncateFinanceTables,
 } from './finance-helpers'
 
+async function expectTriggerRefusal(work: Promise<unknown>, pattern: RegExp): Promise<void> {
+  await expect(work).rejects.toThrow()
+  const error = await work.then(
+    () => null,
+    (caught: unknown) => caught,
+  )
+  const cause = (error as { cause?: { message?: string } })?.cause
+  expect(String(cause?.message ?? (error as Error)?.message)).toMatch(pattern)
+}
+
 /**
  * Documents against the REAL `core` tables (spec
  * `docs/specs/339-ledger-intake.md` §D, issue #382).
@@ -90,11 +100,12 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     expect(doc.mime).toBe('application/pdf')
     expect(doc.size).toBe(PDF.byteLength)
     expect(doc.kind).toBe('ru_invoice')
-    expect(doc.storageKey).toMatch(/^finance\/documents\//)
+    expect(doc).not.toHaveProperty('storageKey')
     expect(doc.uploadedBy).toBe(refs.entryMemberId)
 
     const rows = await db.execute(sql`select storage_key, mime from core.finance_document`)
     expect(rows.rows).toHaveLength(1)
+    expect((rows.rows[0] as { storage_key: string }).storage_key).toMatch(/^finance\/documents\//)
 
     // The content really is retrievable through the module, and ONLY the
     // module's own key knows where it went.
@@ -291,8 +302,16 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
     expect((await listFinanceDocuments(APPROVER, { intakeItemId: cancelled.id }))[0].id).toBe(
       onCancelled.id,
     )
-    // Kept, not frozen: a terminal item that never posted is not the EARS-516 case.
     expect((await readFinanceDocument(ENTRY, onRefused.id)).bytes.equals(PDF)).toBe(true)
+
+    await expect(
+      detachFinanceDocument(ENTRY, { documentId: onRefused.id, intakeItemId: refused.id }),
+    ).rejects.toThrow(FinanceRefusal)
+    await expect(deleteFinanceDocument(ENTRY, onRefused.id)).rejects.toThrow(FinanceRefusal)
+    await expect(
+      detachFinanceDocument(ENTRY, { documentId: onCancelled.id, intakeItemId: cancelled.id }),
+    ).rejects.toThrow(FinanceRefusal)
+    await expect(deleteFinanceDocument(ENTRY, onCancelled.id)).rejects.toThrow(FinanceRefusal)
   })
 
   it('EARS-516: the same storage key is never written twice', async () => {
@@ -300,14 +319,59 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
     const item = await seedIntakeItemFor(ENTRY, refs)
     const doc = await uploadFor(ENTRY, [item.id])
 
+    const storageKey = String(
+      (await db.execute(sql`select storage_key from core.finance_document where id = ${doc.id}`))
+        .rows[0]?.storage_key,
+    )
     await expect(
       fixtureWrite(async (tx) =>
         tx.execute(sql`
           insert into core.finance_document (storage_key, filename, mime, size, kind, uploaded_by)
-          values (${doc.storageKey}, 'copy.pdf', 'application/pdf', 10, 'other',
+          values (${storageKey}, 'copy.pdf', 'application/pdf', 10, 'other',
                   ${refs.entryMemberId})
         `),
       ),
     ).rejects.toThrow()
+  })
+
+  it('EARS-516: the database refuses direct mutation of a document linked to a posted item', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const doc = await uploadFor(ENTRY, [item.id])
+    await postIntakeItem(item.id)
+
+    await expectTriggerRefusal(
+      fixtureWrite((tx) =>
+        tx.execute(sql`update core.finance_document set kind = 'other' where id = ${doc.id}`),
+      ),
+      /EARS-516/,
+    )
+    await expectTriggerRefusal(
+      fixtureWrite((tx) =>
+        tx.execute(sql`delete from core.finance_document_link where document_id = ${doc.id}`),
+      ),
+      /EARS-516/,
+    )
+    await expectTriggerRefusal(
+      fixtureWrite((tx) => tx.execute(sql`delete from core.finance_document where id = ${doc.id}`)),
+      /EARS-516/,
+    )
+  })
+
+  it('EARS-516: database cascades and truncation cannot erase retained document links', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs, { status: 'refused' })
+    await uploadFor(ENTRY, [item.id])
+
+    await expectTriggerRefusal(
+      fixtureWrite((tx) =>
+        tx.execute(sql`delete from core.finance_intake_item where id = ${item.id}`),
+      ),
+      /EARS-516/,
+    )
+    await expectTriggerRefusal(
+      db.execute(sql`truncate table core.finance_document cascade`),
+      /EARS-516/,
+    )
   })
 })

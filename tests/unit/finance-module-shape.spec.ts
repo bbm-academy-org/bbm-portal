@@ -56,6 +56,13 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
     }
   })
 
+  it('EARS-516/523: the public API exposes neither raw document storage nor storage keys', async () => {
+    const api = await import('@/lib/finance')
+    expect(api).not.toHaveProperty('resolveFinanceDocumentStorage')
+    expect(api).not.toHaveProperty('buildFinanceDocumentStorageKey')
+    expect(api).not.toHaveProperty('FINANCE_DOCUMENTS_DEFAULT_DIR')
+  })
+
   it('EARS-323: only the finance module imports schema/finance, and no route imports a table file', () => {
     const offenders: string[] = []
     for (const file of walk(join(REPO_ROOT, 'src'))) {
