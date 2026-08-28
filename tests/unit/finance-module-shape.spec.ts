@@ -99,6 +99,8 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       '0010_finance_documents.sql',
       // The durable Postgres/object-storage lifecycle added by the #382 review.
       '0011_finance_document_lifecycle.sql',
+      // The server-computed byte identity required for exact upload recovery.
+      '0012_finance_document_content_digest.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {
