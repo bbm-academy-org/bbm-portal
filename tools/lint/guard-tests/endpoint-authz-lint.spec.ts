@@ -593,6 +593,80 @@ describe('scanHandlerFile — the pure decision seam', () => {
     ])
   })
 
+  it('rejects a direct-session handler with side-effecting computed destructuring', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET(',
+        '  { [protectedWork()]: value }: Record<string, unknown>,',
+        ') {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json({ value })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a bound-session handler with a side-effecting default parameter', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET(request = protectedWork()) {',
+        '  const session = await auth()',
+        "  const refusal = claimGateResponse(session, 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json({ request })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a rest parameter on a hand-gated handler', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET(...requests: Request[]) {',
+        "  const refusal = claimGateResponse(await auth(), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json({ count: requests.length })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('accepts identifier-only request and context parameters', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET(request: Request, context: { params: Promise<unknown> }) {',
+        '  const session = await auth()',
+        "  const refusal = claimGateResponse(session, 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json({ url: request.url, context })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings).toEqual([])
+  })
+
   it('rejects a gate hidden in a never-called nested function', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
