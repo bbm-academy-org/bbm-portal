@@ -76,12 +76,59 @@ describe('scanHandlerFile — the pure decision seam', () => {
     expect(findings.map((f) => f.method)).toEqual(['POST'])
   })
 
+  it('checks a hand gate per exported method instead of blessing the whole file', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/periods/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json({ data: [] })',
+        '}',
+        'export async function POST() {',
+        '  return Response.json({ ok: true })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'POST' },
+    ])
+  })
+
   it('EARS-462: flags a handler under an `/admin/` segment that only asks for the member claim', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/periods/route.ts',
       "import { memberRoute } from '@/lib/platform/api'\nexport const GET = memberRoute({ output: s, handler: async () => [] })\n",
     )
     expect(findings.map((f) => f.kind)).toEqual(['member-claim-under-admin'])
+  })
+
+  it('EARS-462: flags a hand-gated `/admin/` handler that asks only for `platform-user`', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/periods/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_USER_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json({ data: [] })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'member-claim-under-admin', method: 'GET' },
+    ])
+  })
+
+  it('flags a re-exported HTTP method because the route file proves no gate', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/periods/route.ts',
+      "export { GET } from './handler'\n",
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
   })
 
   it('accepts a hand-gated handler that calls the claim gate itself, and says which claim', () => {
@@ -137,6 +184,27 @@ describe('endpoint-authz (spawned)', () => {
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('src/app/(platform)/api/p/hours/periods/route.ts:3')
     expect(res.stderr).toContain('ungated-handler')
+  })
+
+  it('exits 1 when one method is hand-gated and another method is not', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'mixed'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('POST')
+  })
+
+  it('exits 1 when an admin handler hand-gates only `platform-user`', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'wrong-admin-claim'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('member-claim-under-admin')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when a route re-exports an HTTP method without proving its gate', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 're-export'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
   })
 
   it('exits 0 on a tree whose handlers are all built by the factories', () => {
