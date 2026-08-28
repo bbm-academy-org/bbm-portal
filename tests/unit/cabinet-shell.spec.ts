@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import React from 'react'
@@ -170,23 +170,31 @@ describe('EARS-436: the resource schema the provider parses with is the module�
     expect(schemas['hours.periods']).toBe(schema)
   })
 
-  it('EARS-436: the CLIENT-side schema map is the same objects the registry declares', async () => {
-    // The one seam this design has: the composition root is server-only (a
-    // module's declaration reaches its data layer), so the browser gets its
-    // schemas through `schemas.ts`. Identity — not deep equality — is what
-    // makes that a re-export rather than a copy, so a resource declared in the
-    // registry and forgotten there fails HERE, by name, the way EARS-403 makes
-    // a forgotten registration fail.
-    const [{ CABINET_SCHEMAS }, { WORKSPACE_REGISTRY }] = await Promise.all([
-      import('@/app/(platform)/p/admin/schemas'),
+  it('EARS-402/436: validation derives the module’s own schema from the composition root', async () => {
+    const [{ okrParametersSchema }, { WORKSPACE_REGISTRY }] = await Promise.all([
+      import('@/lib/okr/contract'),
       import('@/lib/workspace'),
     ])
     const fromRegistry = cabinetSchemas(WORKSPACE_REGISTRY)
-    expect(Object.keys(CABINET_SCHEMAS).sort()).toEqual(Object.keys(fromRegistry).sort())
-    for (const [name, declared] of Object.entries(fromRegistry)) {
-      expect(CABINET_SCHEMAS[name], `schema for ${name} is a copy, not the module's own`).toBe(
-        declared,
+    expect(fromRegistry['okr.parameters']).toBe(okrParametersSchema)
+
+    const frameFiles = [
+      'src/app/(platform)/p/admin/CabinetShell.tsx',
+      'src/app/(platform)/p/admin/CabinetSidebar.tsx',
+      'src/app/(platform)/p/admin/layout.tsx',
+      'src/app/(platform)/p/admin/page.tsx',
+      'src/app/(platform)/p/admin/resources.ts',
+      'src/app/(platform)/p/admin/schemas.ts',
+    ]
+      .map((file) => resolve(root, file))
+      .filter(existsSync)
+
+    for (const file of frameFiles) {
+      const source = readFileSync(file, 'utf8')
+      expect(source, `${file} imports a module contract`).not.toMatch(
+        /from ['"]@\/lib\/(?!workspace(?:\/|['"])|platform(?:\/|['"]))[^'"]+\/contract['"]/,
       )
+      expect(source, `${file} owns a second module list`).not.toContain('CABINET_SECTIONS')
     }
   })
 })

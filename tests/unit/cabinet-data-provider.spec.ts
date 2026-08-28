@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import { createCabinetResponseValidator } from '@/app/(platform)/p/admin/validation'
 import { createCabinetDataProvider } from '@/lib/platform/cabinet'
+import type { WorkspaceEntry } from '@/lib/workspace/contract'
 
 /**
  * The cabinet's HAND-WRITTEN data provider (spec 311 EARS-431, EARS-436,
@@ -17,7 +19,19 @@ import { createCabinetDataProvider } from '@/lib/platform/cabinet'
  */
 
 const periodSchema = z.object({ id: z.string(), label: z.string(), weekdays: z.number() })
-const schemas = { 'hours.periods': periodSchema }
+const HOURS: WorkspaceEntry = {
+  kind: 'internal',
+  slug: 'hours',
+  name: 'Часы',
+  description: 'Самооценка часов',
+  href: '/p/hours',
+  icon: 'hours',
+  admin: {
+    label: 'Часы',
+    resources: [{ name: 'periods', label: 'Периоды', operations: ['list'], schema: periodSchema }],
+  },
+}
+const validateResponse = createCabinetResponseValidator([HOURS])
 
 function provider(reply: (url: string, init?: RequestInit) => Response) {
   const calls: { url: string; init?: RequestInit }[] = []
@@ -26,7 +40,7 @@ function provider(reply: (url: string, init?: RequestInit) => Response) {
     calls.push({ url, init })
     return reply(url, init)
   }) as unknown as typeof fetch
-  return { dp: createCabinetDataProvider({ schemas, fetchImpl }), calls }
+  return { dp: createCabinetDataProvider({ validateResponse, fetchImpl }), calls }
 }
 
 const ok = (body: unknown) =>
@@ -98,6 +112,36 @@ describe('EARS-436: the provider parses every answer with the module’s own sch
   it('EARS-436: a resource with no registered schema is a programming error, not a silent pass', async () => {
     const { dp } = provider(() => ok({ data: [], total: 0 }))
     await expect(dp.getList({ resource: 'members.aliases' })).rejects.toThrow(/members\.aliases/)
+  })
+
+  it('EARS-402/409/412: a second module is validated from the registry without a shell edit', async () => {
+    const parsedByModuleSchema = vi.fn()
+    const aliasSchema = z
+      .object({ id: z.string(), alias: z.string() })
+      .superRefine(() => parsedByModuleSchema())
+    const members: WorkspaceEntry = {
+      kind: 'internal',
+      slug: 'members',
+      name: 'Участники',
+      description: 'Состав команды',
+      href: '/p/members',
+      icon: 'members',
+      admin: {
+        label: 'Участники',
+        resources: [
+          { name: 'aliases', label: 'Алиасы', operations: ['list'], schema: aliasSchema },
+        ],
+      },
+    }
+
+    const validate = createCabinetResponseValidator([HOURS, members])
+    const result = await validate('members.aliases', 'list', {
+      data: [{ id: '1', alias: 'mattermost:@anna' }],
+      total: 1,
+    })
+
+    expect(result).toMatchObject({ success: true })
+    expect(parsedByModuleSchema).toHaveBeenCalledOnce()
   })
 })
 
