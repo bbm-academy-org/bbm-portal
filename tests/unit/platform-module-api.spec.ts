@@ -187,6 +187,26 @@ describe('EARS-436: one zod schema types the client and validates the handler', 
     expect(body.error.code).toBe('internal')
   })
 
+  it('EARS-436: a valid single record with `items` and `total` stays a single record', async () => {
+    authState.session = admin
+    const { adminRoute } = await api()
+    const summarySchema = z.object({
+      items: z.array(z.string()),
+      total: z.number().int().min(0),
+    })
+    const GET = adminRoute({
+      output: summarySchema,
+      handler: async () => ({ items: ['active', 'paused'], total: 2 }),
+    })
+
+    const response = await GET(request())
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      data: { items: ['active', 'paused'], total: 2 },
+    })
+  })
+
   it('EARS-436: a list answer carries `data` and `total` — the envelope the provider parses', async () => {
     authState.session = admin
     const { adminRoute, listEnvelopeSchema } = await api()
