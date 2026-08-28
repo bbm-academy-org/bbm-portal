@@ -34,13 +34,18 @@ nested working directory still reaches the repository-local scripts.
 
 ## Compatibility boundary
 
-The adapters cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, and
-Stop without claiming impossible byte-for-byte harness parity:
+The adapters cover SessionStart, UserPromptSubmit, SubagentStart, PreToolUse,
+PostToolUse, SubagentStop, and Stop without claiming impossible byte-for-byte
+harness parity:
 
 - `apply_patch`, `spawn_agent`, and shell payloads are normalized to the
   contracts consumed by the existing Claude hooks;
 - SessionStart and prompt events register their transcript paths for
   cross-harness parallel-session detection;
+- SubagentStart registers the executor's stable `session_id` + `turn_id` pair,
+  SubagentStop retires it, and PreToolUse checks that exact pair before applying
+  the zero-dispatch lead guard; the parent turn with the same session id remains
+  guarded and Codex JSONL is not parsed;
 - PostToolUse records conservative per-session write evidence; Stop reads the
   stable `last_assistant_message` field and that evidence instead of depending
   on Codex's explicitly unstable JSONL transcript format;
@@ -52,9 +57,9 @@ Stop without claiming impossible byte-for-byte harness parity:
 - malformed or unknown payloads remain fail-open, and read-only tool calls do
   not turn on completion-report enforcement.
 
-Critical worktree-write, dispatch/model, secret-output, merge, handoff-prompt,
-and Stop gates are covered for their representative Codex payloads. Two
-advisory paths do not have a safe exact mapping:
+Critical worktree-write, zero-dispatch, dispatch/model, secret-output, merge,
+handoff-prompt, and Stop gates are covered for their representative Codex
+payloads. Two advisory paths do not have a safe exact mapping:
 
 - arbitrary Codex shell reads cannot be classified as Claude `Read`, `Grep`, or
   `Glob` calls, so the main-tree read advisory remains fail-open/manual for
@@ -86,13 +91,15 @@ a harness adapter, not a change to the task lifecycle; update it when the
 available Codex model catalog changes.
 
 Generated state under `.claude/codex-write-state/` and
-`.claude/hook-session-registry/` is git-ignored and safe to delete between
+`.claude/hook-session-registry/`, plus executor markers under
+`.claude/codex-executor-turns/`, is git-ignored and safe to delete between
 sessions. `BBM_HOOKS_DISABLE=1` remains the emergency kill switch for the whole
-stack.
+stack. After pulling any change to `.codex/hooks.json`, open `/hooks`, inspect
+the project definitions, and trust them again before relying on enforcement.
 
 DesignSync is deliberately excluded. This compatibility layer does not install,
 configure, or invoke DesignSync, and it does not change product UI, deployment,
 or runtime application behavior.
 
-Official references: [Codex hooks](https://developers.openai.com/codex/hooks)
+Official references: [Codex hooks](https://learn.chatgpt.com/docs/hooks)
 and [Agent Skills](https://developers.openai.com/codex/skills).

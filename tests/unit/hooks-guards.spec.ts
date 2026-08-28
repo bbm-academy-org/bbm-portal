@@ -502,6 +502,7 @@ describe('fail-open: битый stdin не даёт ненулевого код�
     'main-tree-read-guard.mjs',
     'dispatch-guard.mjs',
     'zero-dispatch-guard.mjs',
+    'codex-subagent-turn-recorder.mjs',
     'agent-model-guard.mjs',
     'askuserquestion-context-guard.mjs',
     'secret-echo-guard.mjs',

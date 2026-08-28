@@ -36,7 +36,11 @@
 //      ЛИД под этот маркер тоже подойдёт. Дискриминатор №1 — единственный
 //      измеренный на самом харнесе; №2 остаётся эвристикой, и полярность у него
 //      выбрана соответствующая;
-//   3) сессия внутри `.claude/worktrees/…` — carve-out, общий с dispatch-guard.
+//   3) Codex executor turn — стабильная пара `session_id` + `turn_id`, которую
+//      `codex-subagent-turn-recorder.mjs` регистрирует на `SubagentStart` и
+//      удаляет на `SubagentStop`. Это turn-scoped exemption: parent turn с тем
+//      же session_id остаётся под гардом, Codex JSONL не читается;
+//   4) сессия внутри `.claude/worktrees/…` — carve-out, общий с dispatch-guard.
 // Слои складываются через ИЛИ: промах в сторону освобождения — это молчащий
 // гард, промах в другую сторону — ложный блок исполнителя, и он дороже.
 //
@@ -94,6 +98,7 @@ import {
   WRITE_TOOLS,
   stripNonCommandText,
 } from './completion-report-gate.mjs'
+import { isCodexExecutorTurn } from './codex-subagent-turn-recorder.mjs'
 import {
   ZERO_DISPATCH_STATE_DIR_REL,
   hooksDisabled,
@@ -498,6 +503,7 @@ function main() {
     const payload = readHookPayload()
     const cwd = payload.cwd || ''
     const projectDir = mainRepoRoot(cwd)
+    if (isCodexExecutorTurn(payload, { root: projectDir })) process.exit(0)
     const statePath = stateFilePath(
       projectDir,
       ZERO_DISPATCH_STATE_DIR_REL,

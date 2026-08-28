@@ -489,20 +489,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-25-3f7ac91d02 -->
 
-- [ ] 2026-08-25 The Codex lead runs **without** the zero-dispatch guard (#322):
-      `.codex/hooks.json` is tracked and already carries `dispatch-guard` and
-      `agent-model-guard` under PreToolUse, but PR #346 wires the new guard only
-      into `.claude/settings.json`. Not wired blind, and the reason is
-      structural rather than effort: **neither** of the guard's subagent
-      discriminators exists under Codex — no `AI_AGENT` spawn marker, and no
-      `"promptSource":"sdk"` / `"isSidechain":true` records in the transcript —
-      so a naive port would read every Codex `spawn_agent` executor as a lead and
-      BLOCK it. Wiring it needs a Codex-side discriminator designed first. Stated
-      in `tools/hooks/README.md` § "Codex compatibility", which is where the next
-      session looks — return condition: the next Codex lead session that mutates
-      its way through a task with zero dispatches, or the next change to
-      `.codex/hooks.json` (#322, PR #346)
-
 <!-- debt-entry-end: 2026-08-25-b71e40cc59 -->
 
 - [ ] 2026-08-25 The dispatched-agent/SDK discriminator now lives in TWO places:

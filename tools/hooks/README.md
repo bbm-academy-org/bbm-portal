@@ -89,17 +89,18 @@ Stop. Exact advisory parity is not claimed: arbitrary shell reads do not map
 safely to Claude read tools, and Codex prompts expose no stable token count for
 the context-budget advisory. Both advisory paths stay fail-open/manual.
 
-**`zero-dispatch-guard.mjs` is deliberately NOT wired into `.codex/hooks.json`
-(#322 / PR #346), so a Codex lead session runs unguarded by it.** This is a
-deferral with a stated reason, not an oversight. Neither of the guard's two
-subagent discriminators exists under Codex: there is no `AI_AGENT` spawn marker,
-and the transcript carries no `"promptSource":"sdk"` / `"isSidechain":true`
-records. A naive port would therefore classify every Codex executor as a lead and
-**false-block `spawn_agent` executors** — the exact failure mode the guard's
-fail-toward-exemption polarity exists to avoid, and one that would land as a
-BLOCK. Wiring it needs a Codex-side discriminator first. Tracked in `DEBT.md`;
-return condition: the next Codex lead session that mutates its way through a task
-inline, or the next change to `.codex/hooks.json`.
+`codex-subagent-turn-recorder.mjs` closes the lead-vs-executor gap without
+reading Codex JSONL. `SubagentStart` writes a marker for the stable
+`session_id` + `turn_id` pair; `SubagentStop` removes it. A PreToolUse call is
+executor-exempt only for that exact active turn, so the parent lead remains
+guarded even though Codex subagent hooks use the parent's `session_id`.
+`zero-dispatch-guard.mjs` is therefore wired for Codex too: the lead blocks on
+mutation 6 with zero `spawn_agent`, the first dispatch disarms it, and the same
+recorded one-shot bypass remains available. A present but unreadable executor
+marker fails toward exemption rather than false-blocking an executor.
+
+Changes to `.codex/hooks.json` alter the project-hook trust definition. After
+pulling such a change, inspect and trust the exact definitions again in `/hooks`.
 
 Setup, Node 22, one-time `/hooks` trust, generated skill discovery, and the
 explicit DesignSync exclusion are documented in

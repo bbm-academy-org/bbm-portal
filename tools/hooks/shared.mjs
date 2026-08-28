@@ -59,6 +59,9 @@ export const STOP_BLOCK_BUDGET_STATE_DIR_REL = '.claude/stop-gate-budget-state'
 /** Stable per-session write evidence recorded from Codex PostToolUse payloads. */
 export const CODEX_WRITE_STATE_DIR_REL = '.claude/codex-write-state'
 
+/** Stable Codex executor-turn markers recorded from SubagentStart/SubagentStop. */
+export const CODEX_EXECUTOR_TURN_DIR_REL = '.claude/codex-executor-turns'
+
 /** Per-session transcript registry shared by Claude and Codex hook invocations. */
 export const HOOK_SESSION_REGISTRY_DIR_REL = '.claude/hook-session-registry'
 
