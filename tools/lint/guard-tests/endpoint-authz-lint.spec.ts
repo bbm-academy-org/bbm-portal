@@ -52,6 +52,31 @@ describe('scanHandlerFile — the pure decision seam', () => {
     expect(scanHandlerFile('src/app/(platform)/api/p/okr/admin/x/route.ts', gated)).toEqual([])
   })
 
+  it('rejects a locally declared function that merely uses a sanctioned factory name', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/okr/admin/x/route.ts',
+      [
+        'function adminRoute() {',
+        '  return async () => Response.json(await readProtectedData())',
+        '}',
+        'export const GET = adminRoute({})',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a sanctioned factory name imported from an unknown module', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/okr/admin/x/route.ts',
+      "import { adminRoute } from './unsafe'\nexport const GET = adminRoute({})\n",
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
   it('flags an exported method that is not built by one', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/okr/admin/x/route.ts',
@@ -293,6 +318,20 @@ describe('endpoint-authz (spawned)', () => {
     )
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('member-claim-under-admin')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when a local fake uses the sanctioned admin factory name', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'local-factory'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when the admin factory name comes from an unknown module', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'unsafe-factory'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
     expect(res.stderr).toContain('GET')
   })
 
