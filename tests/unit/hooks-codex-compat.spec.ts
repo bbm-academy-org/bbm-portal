@@ -356,7 +356,7 @@ describe('repository-local Codex hooks', () => {
       .flatMap((groups: unknown) => groups as Array<{ hooks: Array<Record<string, string>> }>)
       .flatMap((group) => group.hooks)
 
-    expect(commands).toHaveLength(23)
+    expect(commands).toHaveLength(24)
     for (const hook of commands) {
       expect(hook.commandWindows).not.toMatch(/^powershell(?:\.exe)?\s/i)
       expect(hook.commandWindows).toMatch(/;\s*exit \$LASTEXITCODE$/)

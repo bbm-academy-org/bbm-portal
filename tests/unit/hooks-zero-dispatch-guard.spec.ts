@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { isCodexExecutorTurn } from '../../tools/hooks/codex-subagent-turn-recorder.mjs'
 import {
   ARM_BYPASS_FLAG,
   BYPASS_ENV,
@@ -632,7 +633,7 @@ describe('zero-dispatch-guard как процесс', () => {
     expect(last.status).toBe(2)
   })
 
-  it('Codex executor turn from SubagentStart stays exempt without exempting the parent turn', () => {
+  it('SubagentStart marks only the executor turn and confirms dispatch for the lead session', () => {
     const session = `zdg-codex-executor-${Date.now()}`
     const turn = `turn-executor-${Date.now()}`
     expect(
@@ -643,6 +644,8 @@ describe('zero-dispatch-guard как процесс', () => {
       ).status,
     ).toBe(0)
 
+    const executorPayload = JSON.parse(codexPayload(session, turn))
+    expect(isCodexExecutorTurn(executorPayload, { root: FAKE_TREE })).toBe(true)
     for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
       expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
         0,
@@ -650,14 +653,13 @@ describe('zero-dispatch-guard как процесс', () => {
     }
 
     const leadTurn = `turn-parent-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
+    const leadPayload = JSON.parse(codexPayload(session, leadTurn))
+    expect(isCodexExecutorTurn(leadPayload, { root: FAKE_TREE })).toBe(false)
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
       expect(
         runHook('zero-dispatch-guard.mjs', codexPayload(session, leadTurn), LEAD_ENV).status,
       ).toBe(0)
     }
-    expect(
-      runHook('zero-dispatch-guard.mjs', codexPayload(session, leadTurn), LEAD_ENV).status,
-    ).toBe(2)
   })
 
   it('SubagentStop keeps the executor exempt when another hook continues it', () => {
@@ -703,12 +705,9 @@ describe('zero-dispatch-guard как процесс', () => {
         LEAD_ENV,
       ).status,
     ).toBe(0)
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
-      expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
-        0,
-      )
-    }
-    expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(2)
+    expect(isCodexExecutorTurn(JSON.parse(codexPayload(session, turn)), { root: FAKE_TREE })).toBe(
+      false,
+    )
   })
 
   it('a Codex spawn rejected by another PreToolUse hook does not disarm the guard', () => {

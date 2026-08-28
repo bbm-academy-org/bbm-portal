@@ -38,8 +38,9 @@
 //      выбрана соответствующая;
 //   3) Codex executor turn — стабильная пара `session_id` + `turn_id`, которую
 //      `codex-subagent-turn-recorder.mjs` регистрирует на `SubagentStart` и
-//      удаляет на `SubagentStop`. Это turn-scoped exemption: parent turn с тем
-//      же session_id остаётся под гардом, Codex JSONL не читается;
+//      удаляет на terminal `SessionEnd`. Это turn-scoped identity: parent turn с тем
+//      же session_id не становится executor; сам `SubagentStart` отдельно подтверждает
+//      dispatch и снимает session-wide guard, Codex JSONL не читается;
 //   4) сессия внутри `.claude/worktrees/…` — carve-out, общий с dispatch-guard.
 // Слои складываются через ИЛИ: промах в сторону освобождения — это молчащий
 // гард, промах в другую сторону — ложный блок исполнителя, и он дороже.
@@ -504,6 +505,11 @@ function main() {
     const cwd = payload.cwd || ''
     const projectDir = mainRepoRoot(cwd)
     if (isCodexExecutorTurn(payload, { root: projectDir })) process.exit(0)
+    // Matching Codex PreToolUse hooks run concurrently, so an Agent attempt can
+    // still be rejected by another guard. SubagentStart records the confirmed dispatch.
+    if (DISPATCH_TOOL_RE.test(payload.tool_name || '') && String(payload.turn_id || '').trim()) {
+      process.exit(0)
+    }
     const statePath = stateFilePath(
       projectDir,
       ZERO_DISPATCH_STATE_DIR_REL,

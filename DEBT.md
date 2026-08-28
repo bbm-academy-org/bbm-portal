@@ -469,24 +469,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-25-6b0d4c1a83 -->
 
-- [ ] 2026-08-25 `zero-dispatch-guard.mjs` (#322) disarms itself at **PreToolUse**,
-      i.e. BEFORE the `Agent` call has actually run — so a dispatch that never
-      happens still turns the guard off for the rest of the session. Two real
-      ways it never happens: `agent-model-guard.mjs` exits 2 on an `Agent`
-      without an explicit `model`, and the owner can reject the call at the
-      permission prompt. This is the same asymmetry the guard argues against for
-      mutations («заблокированный вызов НЕ ИСПОЛНИЛСЯ, поэтому счётчик не
-      растёт») applied in the other direction, and the review of PR #346 named it
-      (MAJOR 2). Not fixed now because PreToolUse carries **no** clean signal for
-      it: the hook sees the intent, never the outcome, and the honest fix is to
-      confirm the disarm at `PostToolUse` — a second wiring, a second state
-      write, and a window in which the counter must keep counting between the two
-      events. Direction of the error is the mitigation: it fails toward NOT
-      blocking, which is the polarity the whole guard is built on — return
-      condition: the first session that reports the guard silent after a rejected
-      or denied `Agent` call, or the next substantive change to
-      `zero-dispatch-guard.mjs`'s state shape (#322, PR #346)
-
 <!-- debt-entry-end: 2026-08-25-3f7ac91d02 -->
 
 <!-- debt-entry-end: 2026-08-25-b71e40cc59 -->

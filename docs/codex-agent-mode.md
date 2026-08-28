@@ -34,18 +34,22 @@ nested working directory still reaches the repository-local scripts.
 
 ## Compatibility boundary
 
-The adapters cover SessionStart, UserPromptSubmit, SubagentStart, PreToolUse,
-PostToolUse, SubagentStop, and Stop without claiming impossible byte-for-byte
+The adapters cover SessionStart, SessionEnd, UserPromptSubmit, SubagentStart,
+PreToolUse, PostToolUse, SubagentStop, and Stop without claiming impossible byte-for-byte
 harness parity:
 
 - `apply_patch`, `spawn_agent`, and shell payloads are normalized to the
   contracts consumed by the existing Claude hooks;
 - SessionStart and prompt events register their transcript paths for
   cross-harness parallel-session detection;
-- SubagentStart registers the executor's stable `session_id` + `turn_id` pair,
-  SubagentStop retires it, and PreToolUse checks that exact pair before applying
-  the zero-dispatch lead guard; the parent turn with the same session id remains
-  guarded and Codex JSONL is not parsed;
+- SubagentStart confirms a successful dispatch and registers the executor's
+  stable `session_id` + `turn_id` pair; PreToolUse checks that exact pair before
+  applying the zero-dispatch lead guard; the parent turn with the same session
+  id does not acquire executor identity, while the confirmed dispatch separately
+  disarms the session-wide guard; Codex JSONL is not parsed;
+- SubagentStop does not retire the marker because another matching hook can
+  continue that exact child turn; terminal SessionEnd removes every executor
+  marker owned by the session;
 - PostToolUse records conservative per-session write evidence; Stop reads the
   stable `last_assistant_message` field and that evidence instead of depending
   on Codex's explicitly unstable JSONL transcript format;
