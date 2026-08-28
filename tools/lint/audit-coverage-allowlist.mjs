@@ -180,6 +180,7 @@ export const AUDIT_VALUE_WHITELIST = {
     'mime',
     'size',
     'kind',
+    'storage_state',
     'uploaded_by',
     'uploaded_at',
   ],

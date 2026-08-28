@@ -48,6 +48,14 @@ async function expectTriggerRefusal(work: Promise<unknown>, pattern: RegExp): Pr
   expect(String(cause?.message ?? (error as Error)?.message)).toMatch(pattern)
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 async function withFailingDocumentDml<T>(
   event: 'INSERT' | 'UPDATE' | 'DELETE',
   work: () => Promise<T>,
@@ -184,6 +192,7 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     `)
     const captured = events.rows as { table_name: string; actor_email: string }[]
     expect(captured.map((row) => row.table_name)).toEqual([
+      'finance_document',
       'finance_document',
       'finance_document_link',
     ])
@@ -576,8 +585,8 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
     const refs = await seedIntakeReferences()
     const item = await seedIntakeItemFor(ENTRY, refs)
     const doc = await uploadFor(ENTRY, [item.id])
-    const statusWritten = Promise.withResolvers<void>()
-    const releaseTransition = Promise.withResolvers<void>()
+    const statusWritten = deferred()
+    const releaseTransition = deferred()
 
     const transition = platformTransaction(FIXTURE_AUDIT_CTX, async (tx) => {
       await tx.execute(sql`

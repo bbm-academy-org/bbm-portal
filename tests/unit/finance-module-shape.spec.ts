@@ -97,6 +97,8 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // `finance_document_link`. Same rule again: the archive's TABLES are a
       // committed migration, and the module creates none of them at runtime.
       '0010_finance_documents.sql',
+      // The durable Postgres/object-storage lifecycle added by the #382 review.
+      '0011_finance_document_lifecycle.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

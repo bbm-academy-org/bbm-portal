@@ -14,11 +14,11 @@
  *    intake. `finance-entry` anywhere; a role-less member only onto items they
  *    submitted (EARS-502). An approver is not admitted, for the reason
  *    `core/actor.ts` argues at length: EARS-501 splits the roles BY ACT.
- *  - *May you READ its content?* — EARS-523, which is NOT a role question at
- *    all. The submitter reads their own items' documents; both flow roles read
- *    everything; `platform-user` — the role that opens `/p/finance` for
- *    everyone (EARS-530) — buys nothing here. That exclusion is written into
- *    EARS-530 itself.
+ *  - *May you READ its content?* — EARS-523, which is NOT upload provenance.
+ *    The submitter reads documents currently linked to their own items; both
+ *    flow roles read everything; `platform-user` — the role that opens
+ *    `/p/finance` for everyone (EARS-530) — buys nothing here. That exclusion
+ *    is written into EARS-530 itself.
  *  - *May it MOVE?* — EARS-516, which is not about the actor at all. Posted
  *    items freeze every mutation; refused/cancelled items retain their links
  *    and bytes. No uploader, approver or admin bypass exists.
@@ -28,6 +28,9 @@
  * document» is the posting handler's clause, and half-enforcing it here would
  * give #385 something to unpick. It renders nothing (#357 owns `/p/finance`),
  * and it reads no `kind` to decide anything (EARS-515: the kind is data).
+ * Object storage and Postgres cannot share a transaction; `storage_state`
+ * records audited intent before either external side effect and leaves a
+ * retryable handle instead of an anonymous blob after a failure.
  */
 import path from 'node:path'
 
@@ -253,13 +256,11 @@ function isOwnRequestSet(
 /**
  * Upload one document and link it to the items it confirms (EARS-514/515).
  *
- * Order: the shape, then the actor's member row, then the gate over the REAL
- * items, then the bytes, then the transaction. The bytes go to storage BEFORE
- * the row exists, and the row is what makes them findable — an object with no
- * row is invisible garbage the operator can sweep, while a row with no object
- * is a document the archive claims to hold and cannot produce. Of the two
- * failure modes only the first is honest, so it is the one this order can
- * produce.
+ * Three monotone acts: commit `pending_upload` metadata and links; PUT bytes;
+ * commit `ready`. A failure before PUT creates no object, and a failure during
+ * or after PUT leaves the storage key, uploader, metadata and audit trail in
+ * Postgres. That is a durable recovery handle, not a claim that S3 joined the
+ * database transaction.
  */
 export async function uploadFinanceDocument(
   actor: FinanceActor,
@@ -280,13 +281,11 @@ export async function uploadFinanceDocument(
 
   const uploadedBy = await requireMemberId(actor)
   const itemIds = [...new Set(input.intakeItemIds ?? [])]
+  const storageKey = buildFinanceDocumentStorageKey(input.filename)
 
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
+  const pending = await platformTransaction(financeAuditContext(actor), async (tx) => {
     const items = await loadItems(tx, itemIds)
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, uploadedBy) })
-
-    const storageKey = buildFinanceDocumentStorageKey(input.filename)
-    await storage.put(storageKey, bytes)
 
     const [row] = await tx
       .insert(financeDocument)
@@ -308,7 +307,24 @@ export async function uploadFinanceDocument(
         })),
       )
     }
-    return toView(row)
+    return row
+  })
+
+  await storage.put(storageKey, bytes)
+
+  return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const row = await requireDocument(tx, pending.id, true)
+    if (row.storageState !== 'pending_upload') {
+      throw new FinanceRefusal(
+        `Документ #${row.id} нельзя завершить из состояния «${row.storageState}» (EARS-514).`,
+      )
+    }
+    const [ready] = await tx
+      .update(financeDocument)
+      .set({ storageState: 'ready' })
+      .where(eq(financeDocument.id, row.id))
+      .returning()
+    return toView(ready)
   })
 }
 
@@ -318,6 +334,14 @@ async function requireDocument(tx: PlatformTx, documentId: number, lock = false)
   const [row] = lock ? await query.for('update') : await query
   if (row === undefined) throw new FinanceRefusal(`Документа #${documentId} не существует.`)
   return row
+}
+
+function assertDocumentReady(document: typeof financeDocument.$inferSelect, act: string): void {
+  if (document.storageState === 'ready') return
+  throw new FinanceRefusal(
+    `Документ #${document.id} ещё не завершил действие с приватным хранилищем ` +
+      `(состояние «${document.storageState}»), поэтому ${act} нельзя (EARS-514/516).`,
+  )
 }
 
 /** Every intake item this document confirms — the EARS-516 and EARS-523 input. */
@@ -386,9 +410,7 @@ async function assertReadAccess(
 
   const memberId = await memberIdOrNull(actor)
   if (memberId !== null) {
-    // The uploader always reads back what they themselves put in — otherwise a
-    // submitter could attach a file and immediately lose sight of it.
-    if (document.uploadedBy === memberId) return
+    // EARS-523 follows current owned links; upload provenance grants no read.
     const items = await linkedItems(tx, document.id)
     if (items.some((item) => item.source === 'request' && item.createdBy === memberId)) return
   }
@@ -418,6 +440,7 @@ export async function readFinanceDocument(
   const document = await platformTransaction(financeAuditContext(actor), async (tx) => {
     const row = await requireDocument(tx, documentId)
     await assertReadAccess(tx, actor, row)
+    assertDocumentReady(row, 'читать его содержимое')
     return row
   })
   return { ...toView(document), bytes: await storage.get(document.storageKey) }
@@ -449,7 +472,12 @@ export async function listFinanceDocuments(
       .select({ document: financeDocument })
       .from(financeDocumentLink)
       .innerJoin(financeDocument, eq(financeDocumentLink.documentId, financeDocument.id))
-      .where(eq(financeDocumentLink.intakeItemId, item.id))
+      .where(
+        and(
+          eq(financeDocumentLink.intakeItemId, item.id),
+          eq(financeDocument.storageState, 'ready'),
+        ),
+      )
     return rows.map((row) => toView(row.document))
   })
 }
@@ -462,6 +490,7 @@ export async function attachFinanceDocument(
   const linkedBy = await requireMemberId(actor)
   await platformTransaction(financeAuditContext(actor), async (tx) => {
     const document = await requireDocument(tx, input.documentId, true)
+    assertDocumentReady(document, 'прикреплять его')
     const [item] = await loadItems(tx, [input.intakeItemId])
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], linkedBy) })
     // Attaching to an item that ALREADY posted would put a document behind a
@@ -497,6 +526,7 @@ export async function detachFinanceDocument(
   const memberId = await requireMemberId(actor)
   await platformTransaction(financeAuditContext(actor), async (tx) => {
     const document = await requireDocument(tx, input.documentId, true)
+    assertDocumentReady(document, 'откреплять его')
     const [item] = await loadItems(tx, [input.intakeItemId])
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], memberId) })
     assertLinkMayBeRemoved(document.id, [item], 'откреплять его')
@@ -530,6 +560,7 @@ export async function setFinanceDocumentKind(
   const memberId = await requireMemberId(actor)
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const document = await requireDocument(tx, documentId, true)
+    assertDocumentReady(document, 'менять его вид')
     const items = await linkedItems(tx, document.id, true)
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
     assertNotPosted(document.id, items, 'менять его вид')
@@ -547,10 +578,10 @@ export async function setFinanceDocumentKind(
  * Delete a document only while unlinked or linked exclusively to mutable items.
  * Posted, refused and cancelled items retain their documents (EARS-516).
  *
- * The row goes first and the object second, which is the reverse of the upload
- * order and for the same reason: the honest failure is an orphaned object, not
- * a row pointing at bytes that are gone. The links go with the row through the
- * cascade the link table declares.
+ * Three monotone acts: commit `pending_delete`; remove bytes; delete the row.
+ * Either failure leaves the row, links, storage key and audit trail in place,
+ * so the same document id can retry. The links go only with the final row delete
+ * through the cascade the link table declares.
  */
 export async function deleteFinanceDocument(
   actor: FinanceActor,
@@ -564,8 +595,25 @@ export async function deleteFinanceDocument(
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
     assertLinkMayBeRemoved(document.id, items, 'удалять его')
 
-    await tx.delete(financeDocument).where(eq(financeDocument.id, document.id))
+    if (document.storageState !== 'pending_delete') {
+      await tx
+        .update(financeDocument)
+        .set({ storageState: 'pending_delete' })
+        .where(eq(financeDocument.id, document.id))
+    }
     return document.storageKey
   })
   await storage.remove(storageKey)
+  await platformTransaction(financeAuditContext(actor), async (tx) => {
+    const document = await requireDocument(tx, documentId, true)
+    const items = await linkedItems(tx, document.id, true)
+    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
+    assertLinkMayBeRemoved(document.id, items, 'удалять его')
+    if (document.storageState !== 'pending_delete') {
+      throw new FinanceRefusal(
+        `Документ #${document.id} нельзя удалить из состояния «${document.storageState}» (EARS-516).`,
+      )
+    }
+    await tx.delete(financeDocument).where(eq(financeDocument.id, document.id))
+  })
 }

@@ -37,9 +37,15 @@
  * ADR-004 §6 keeps out of a module. Same shape as
  * `finance_intake_item.created_by`.
  *
- * Rows here are practically immutable: `kind` is the one editable column and
- * only while no linked item has posted (EARS-516). The bytes never change at
- * all — `put` refuses an occupied key, and `storage_key` is unique, so a
+ * `storage_state` is the durable seam between Postgres and object storage. The
+ * row is committed as `pending_upload` before PUT, becomes `ready` only after
+ * PUT succeeds, and moves to `pending_delete` before DELETE. A storage or later
+ * database failure therefore always leaves an audited row and key that can be
+ * retried; this does not pretend the two systems share a transaction.
+ *
+ * Rows here are otherwise practically immutable: `kind` is the one editable
+ * column and only while no linked item has posted (EARS-516). The bytes never
+ * change at all — `put` refuses an occupied key, and `storage_key` is unique, so a
  * "replacement" cannot be smuggled in under an existing row.
  */
 import { sql } from 'drizzle-orm'
@@ -82,6 +88,13 @@ export const FINANCE_DOCUMENT_MIME_TYPES = [
 ] as const
 export type FinanceDocumentMimeType = (typeof FINANCE_DOCUMENT_MIME_TYPES)[number]
 
+export const FINANCE_DOCUMENT_STORAGE_STATES = [
+  'pending_upload',
+  'ready',
+  'pending_delete',
+] as const
+export type FinanceDocumentStorageState = (typeof FINANCE_DOCUMENT_STORAGE_STATES)[number]
+
 export const financeDocument = core.table(
   'finance_document',
   {
@@ -94,6 +107,7 @@ export const financeDocument = core.table(
     /** Bytes. `bigint` for the same reason the money columns are (spec 338 EARS-310). */
     size: bigint('size', { mode: 'number' }).notNull(),
     kind: text('kind').notNull(),
+    storageState: text('storage_state').notNull().default('pending_upload'),
     /** FK → `core.member(id)`, added as SQL in the migration. */
     uploadedBy: integer('uploaded_by').notNull(),
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
@@ -110,6 +124,10 @@ export const financeDocument = core.table(
     // An empty object is not a document: it is an upload that went wrong and
     // would sit in the archive looking like proof of something.
     check('finance_document_size_positive', sql`${table.size} > 0`),
+    check(
+      'finance_document_storage_state_allowed',
+      sql`${table.storageState} in ('pending_upload', 'ready', 'pending_delete')`,
+    ),
     index('finance_document_uploaded_by_idx').on(table.uploadedBy),
   ],
 )
