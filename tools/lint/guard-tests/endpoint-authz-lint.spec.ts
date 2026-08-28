@@ -149,6 +149,78 @@ describe('scanHandlerFile — the pure decision seam', () => {
     expect(findings).toEqual([])
   })
 
+  it('rejects a gate hidden in a never-called nested function', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  async function neverCalled() {',
+        '    return claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  }',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a conditional admin-or-member claim under `/admin/`', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const refusal = claimGateResponse(',
+        '    await auth(),',
+        '    useAdmin ? PLATFORM_ADMIN_ROLE : PLATFORM_USER_ROLE,',
+        '  )',
+        '  if (refusal) return refusal',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'member-claim-under-admin', method: 'GET' },
+    ])
+  })
+
+  it('rejects a top-level admin gate that runs after handler work', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const data = await readProtectedData()',
+        '  const refusal = claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  if (refusal) return refusal',
+        '  return Response.json(data)',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a top-level admin gate whose refusal is never returned', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)',
+        '  return Response.json(await readProtectedData())',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
   it('honours an explicit suppression carrying a reason', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/periods/route.ts',
@@ -204,6 +276,23 @@ describe('endpoint-authz (spawned)', () => {
     const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 're-export'))
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when the only admin gate is inside a never-called nested function', () => {
+    const res = runGuard('endpoint-authz-lint.mjs', caseDir('endpoint-authz', 'nested-gate'))
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('ungated-handler')
+    expect(res.stderr).toContain('GET')
+  })
+
+  it('exits 1 when an admin gate chooses between admin and member claims', () => {
+    const res = runGuard(
+      'endpoint-authz-lint.mjs',
+      caseDir('endpoint-authz', 'conditional-admin-claim'),
+    )
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('member-claim-under-admin')
     expect(res.stderr).toContain('GET')
   })
 
