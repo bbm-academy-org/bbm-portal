@@ -62,8 +62,9 @@ const MEMBER_FACTORY = 'memberRoute'
 const SANCTIONED = new Set([ADMIN_FACTORY, MEMBER_FACTORY])
 const FACTORY_MODULE = '@/lib/platform/api'
 const CLAIM_GATE = 'claimGateResponse'
+const ADMIN_ROLE = 'PLATFORM_ADMIN_ROLE'
 const AUTH_GATE_MODULE = '@/lib/platform/authGate'
-const SANCTIONED_CLAIM_GATES = new Set([CLAIM_GATE])
+const SANCTIONED_AUTH_BINDINGS = new Set([CLAIM_GATE, ADMIN_ROLE])
 
 /** Suppression, reason required — a bare marker is not a record. */
 const SUPPRESS_RE = /\bendpoint-authz-ok\s*:\s*\S/
@@ -101,13 +102,81 @@ function directCall(node, callee) {
     : null
 }
 
-function functionBody(node) {
-  if (ts.isFunctionDeclaration(node)) return node.body ?? null
+function handlerFunction(node) {
+  if (ts.isFunctionDeclaration(node)) return node
   if (!ts.isVariableDeclaration(node) || !node.initializer) return null
   const initializer = unwrapExpression(node.initializer)
   return initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))
-    ? initializer.body
+    ? initializer
     : null
+}
+
+function functionBody(node) {
+  const handler = handlerFunction(node)
+  return handler && 'body' in handler ? handler.body : null
+}
+
+function bindingContains(name, target) {
+  if (ts.isIdentifier(name)) return name.text === target
+  return name.elements.some(
+    (element) => !ts.isOmittedExpression(element) && bindingContains(element.name, target),
+  )
+}
+
+function hasHandlerLocalBinding(node, name) {
+  const handler = handlerFunction(node)
+  const body = handler && 'body' in handler ? handler.body : null
+  if (!handler || !body || !ts.isBlock(body)) return true
+
+  if (handler.parameters.some((parameter) => bindingContains(parameter.name, name))) return true
+
+  let found = false
+  function visit(current) {
+    if (found) return
+
+    if (ts.isFunctionLike(current)) {
+      if (
+        ts.isFunctionDeclaration(current) &&
+        current.parent === body &&
+        current.name?.text === name
+      ) {
+        found = true
+      }
+      return
+    }
+
+    if (ts.isClassDeclaration(current)) {
+      if (current.parent === body && current.name?.text === name) found = true
+      return
+    }
+
+    if (ts.isVariableDeclaration(current)) {
+      const declarationList = current.parent
+      const declarationStatement = declarationList.parent
+      const functionScoped =
+        ts.isVariableDeclarationList(declarationList) &&
+        !(declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))
+      const topLevel =
+        ts.isVariableStatement(declarationStatement) && declarationStatement.parent === body
+      if ((functionScoped || topLevel) && bindingContains(current.name, name)) {
+        found = true
+        return
+      }
+    }
+
+    ts.forEachChild(current, visit)
+  }
+
+  for (const statement of body.statements) visit(statement)
+  return found
+}
+
+function resolvesToImportedBinding(node, localName, importedName, bindings) {
+  return (
+    Boolean(localName) &&
+    bindings.get(localName) === importedName &&
+    !hasHandlerLocalBinding(node, localName)
+  )
 }
 
 function authPrelude(statement) {
@@ -121,7 +190,7 @@ function authPrelude(statement) {
   )
 }
 
-function gateDeclaration(statement, claimGateBindings) {
+function gateDeclaration(statement, node, authBindings) {
   if (
     !statement ||
     !ts.isVariableStatement(statement) ||
@@ -134,7 +203,9 @@ function gateDeclaration(statement, claimGateBindings) {
   const initializer = unwrapExpression(declaration.initializer)
   const localGate =
     initializer && ts.isCallExpression(initializer) ? identifierText(initializer.expression) : null
-  const call = localGate && claimGateBindings.get(localGate) === CLAIM_GATE ? initializer : null
+  const call = resolvesToImportedBinding(node, localGate, CLAIM_GATE, authBindings)
+    ? initializer
+    : null
   return binding && call ? { binding, call } : null
 }
 
@@ -160,11 +231,12 @@ function directClaim(node) {
   return claim && (ts.isIdentifier(claim) || ts.isStringLiteral(claim)) ? claim : null
 }
 
-function isAdminClaim(node) {
+function isAdminClaim(node, handler, authBindings) {
   const claim = directClaim(node)
   return Boolean(
     claim &&
-    ((ts.isIdentifier(claim) && claim.text === 'PLATFORM_ADMIN_ROLE') ||
+    ((ts.isIdentifier(claim) &&
+      resolvesToImportedBinding(handler, claim.text, ADMIN_ROLE, authBindings)) ||
       (ts.isStringLiteral(claim) && claim.text === 'platform-admin')),
   )
 }
@@ -205,8 +277,8 @@ function sanctionedFactoryBindings(sourceFile) {
   return canonicalNamedBindings(sourceFile, FACTORY_MODULE, SANCTIONED)
 }
 
-function sanctionedClaimGateBindings(sourceFile) {
-  return canonicalNamedBindings(sourceFile, AUTH_GATE_MODULE, SANCTIONED_CLAIM_GATES)
+function sanctionedAuthBindings(sourceFile) {
+  return canonicalNamedBindings(sourceFile, AUTH_GATE_MODULE, SANCTIONED_AUTH_BINDINGS)
 }
 
 /**
@@ -220,7 +292,7 @@ function sanctionedClaimGateBindings(sourceFile) {
  * Looking through descendants is deliberately forbidden: a gate in an unused
  * nested function proves nothing about the exported handler.
  */
-function handGateProof(node, underAdmin, claimGateBindings) {
+function handGateProof(node, underAdmin, authBindings) {
   const body = functionBody(node)
   if (!body || !ts.isBlock(body)) return { valid: false, topLevel: false, adminClaim: false }
 
@@ -229,11 +301,11 @@ function handGateProof(node, underAdmin, claimGateBindings) {
     gateIndex += 1
   }
 
-  const gate = gateDeclaration(body.statements[gateIndex], claimGateBindings)
+  const gate = gateDeclaration(body.statements[gateIndex], node, authBindings)
   if (!gate) return { valid: false, topLevel: false, adminClaim: false }
 
   const claim = directClaim(gate.call.arguments[1])
-  const adminClaim = isAdminClaim(gate.call.arguments[1])
+  const adminClaim = isAdminClaim(gate.call.arguments[1], node, authBindings)
   const failClosed = returnedBinding(body.statements[gateIndex + 1], gate.binding)
   return {
     valid: Boolean(claim && failClosed && (!underAdmin || adminClaim)),
@@ -290,7 +362,7 @@ export function scanHandlerFile(rel, source) {
     rel.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   )
   const factoryBindings = sanctionedFactoryBindings(sourceFile)
-  const claimGateBindings = sanctionedClaimGateBindings(sourceFile)
+  const authBindings = sanctionedAuthBindings(sourceFile)
 
   function location(node) {
     const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
@@ -314,7 +386,7 @@ export function scanHandlerFile(rel, source) {
       return
     }
 
-    const handGate = handGateProof(node, underAdmin, claimGateBindings)
+    const handGate = handGateProof(node, underAdmin, authBindings)
     if (handGate.valid) return
     if (underAdmin && handGate.topLevel && !handGate.adminClaim) {
       findings.push({
