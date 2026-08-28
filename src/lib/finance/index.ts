@@ -160,6 +160,38 @@ export type {
   FinanceIntakeTransition,
 } from './intake/status'
 
+// ── the confirming documents (spec 339 EARS-514/515/516/523) ─────────────────
+// The raw storage capability and `storage_key` stay inside this module. Public
+// callers get only gated document operations; diagnostics must not become an
+// authorization or immutability bypass (EARS-516/523).
+export {
+  assertFinanceDocumentUpload,
+  assertFinanceDocumentBytes,
+  attachFinanceDocument,
+  deleteFinanceDocument,
+  detachFinanceDocument,
+  FinanceDocumentUploadPending,
+  listFinanceDocuments,
+  readFinanceDocument,
+  resumeFinanceDocumentUpload,
+  setFinanceDocumentKind,
+  uploadFinanceDocument,
+  FINANCE_DOCUMENT_MAX_BYTES,
+} from './documents/documents'
+export type {
+  FinanceDocumentContent,
+  FinanceDocumentView,
+  UploadFinanceDocumentInput,
+} from './documents/documents'
+export {
+  FINANCE_DOCUMENT_KINDS,
+  FINANCE_DOCUMENT_MIME_TYPES,
+} from '@/lib/platform/db/schema/finance/finance-document'
+export type {
+  FinanceDocumentKind,
+  FinanceDocumentMimeType,
+} from '@/lib/platform/db/schema/finance/finance-document'
+
 // ── the read side: balances, register, the exception list (EARS-317/333) ─────
 export { accountBalances, listRegister, postingsMissingOptionalProduct } from './queries'
 export type { AccountBalance, RegisterEntry, MissingProductPosting } from './queries'

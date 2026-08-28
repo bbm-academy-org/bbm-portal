@@ -10,6 +10,7 @@
 /.claude/parallel-sessions.flag.json
 /.claude/*-guard-state/
 /.claude/codex-write-state/
+/.claude/codex-executor-turns/
 /.claude/hook-session-registry/
 /.claude/stop-gate-budget-state/
 
@@ -63,6 +64,10 @@ next-env.d.ts
 /deploy/.env.preview
 
 /media
+
+# The local-disk fallback for finance documents (spec 339 EARS-514):
+# accounting records, never committed.
+/.finance-documents
 
 # Historical: the hours module kept its JSON document at data/hours.json in dev
 # (#81, spec 081 req.12) until the 2026-08-18 cutover to the `core` schema (#256).

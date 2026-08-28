@@ -75,6 +75,8 @@ export function truncateAsFixture(statement: string): Promise<void> {
 const FACT_CORE_TRUNCATE_GUARDS = [
   { table: 'core.finance_operation', name: 'finance_operation_immutable_truncate' },
   { table: 'core.finance_posting', name: 'finance_posting_immutable_truncate' },
+  { table: 'core.finance_document', name: 'finance_document_retained_truncate' },
+  { table: 'core.finance_document_link', name: 'finance_document_link_retained_truncate' },
 ] as const
 
 export type PrivilegeSplitState = { split: boolean; reason: string }

@@ -56,6 +56,13 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
     }
   })
 
+  it('EARS-516/523: the public API exposes neither raw document storage nor storage keys', async () => {
+    const api = await import('@/lib/finance')
+    expect(api).not.toHaveProperty('resolveFinanceDocumentStorage')
+    expect(api).not.toHaveProperty('buildFinanceDocumentStorageKey')
+    expect(api).not.toHaveProperty('FINANCE_DOCUMENTS_DEFAULT_DIR')
+  })
+
   it('EARS-323: only the finance module imports schema/finance, and no route imports a table file', () => {
     const offenders: string[] = []
     for (const file of walk(join(REPO_ROOT, 'src'))) {
@@ -86,6 +93,14 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // `finance_counterparty` its FK needs. Still a committed migration, still
       // no DDL in the module: the list grows, the rule does not move.
       '0009_finance_intake_spine.sql',
+      // The confirming documents (spec 339 §D, #382) — `finance_document` and
+      // `finance_document_link`. Same rule again: the archive's TABLES are a
+      // committed migration, and the module creates none of them at runtime.
+      '0010_finance_documents.sql',
+      // The durable Postgres/object-storage lifecycle added by the #382 review.
+      '0011_finance_document_lifecycle.sql',
+      // The server-computed byte identity required for exact upload recovery.
+      '0012_finance_document_content_digest.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

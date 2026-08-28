@@ -70,6 +70,10 @@ node tools/hooks/zero-dispatch-guard.mjs --arm-bypass "<путь из сообщ
 | `screenshot-path-guard.mjs`             | PreToolUse `mcp__.*__browser_(take_screenshot\|pdf_save)`                        | **WARN** (#134; promotion → BLOCK per `docs/ci-guardrails.md` §4/§6): a browser screenshot/pdf targeted at repo working trees instead of the git-ignored artifact sinks (`.playwright-mcp/`, `test-results/`, `playwright-report/`)                                                                                                                                                                          | target already under an allowed sink; paths outside the guarded roots (incl. the session scratchpad — silent, but the warn text says not to retarget there)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `askuserquestion-calibration-guard.mjs` | PreToolUse `AskUserQuestion`                                                     | **WARN** calibration of the question itself: whose decision is it (lead-decidable → don't ask), option copy quality, repo jargon the owner can't parse. Jurisdiction split with the context-guard is deliberate: that one owns askability/self-containment, this one owns quality                                                                                                                            | clean questions; the context-guard's subjects (bare `#N`, unanswered repeats) are excluded here by design                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
+Для Codex формулировка «первый `Agent` снимает гард» в таблице означает первый
+подтверждённый `SubagentStart`: отклонённая параллельным PreToolUse-гардом попытка
+`spawn_agent` состояние не меняет.
+
 Не гейт, но живёт в том же стеке настроек: `tools/gh/session-bootstrap.mjs`
 (SessionStart) печатает снапшот ≤2 KB — git/PR/board/рекомендация; never-throw,
 любая внутренняя ошибка деградирует в диагностическую строку с `exit 0`.
@@ -89,17 +93,22 @@ Stop. Exact advisory parity is not claimed: arbitrary shell reads do not map
 safely to Claude read tools, and Codex prompts expose no stable token count for
 the context-budget advisory. Both advisory paths stay fail-open/manual.
 
-**`zero-dispatch-guard.mjs` is deliberately NOT wired into `.codex/hooks.json`
-(#322 / PR #346), so a Codex lead session runs unguarded by it.** This is a
-deferral with a stated reason, not an oversight. Neither of the guard's two
-subagent discriminators exists under Codex: there is no `AI_AGENT` spawn marker,
-and the transcript carries no `"promptSource":"sdk"` / `"isSidechain":true`
-records. A naive port would therefore classify every Codex executor as a lead and
-**false-block `spawn_agent` executors** — the exact failure mode the guard's
-fail-toward-exemption polarity exists to avoid, and one that would land as a
-BLOCK. Wiring it needs a Codex-side discriminator first. Tracked in `DEBT.md`;
-return condition: the next Codex lead session that mutates its way through a task
-inline, or the next change to `.codex/hooks.json`.
+`codex-subagent-turn-recorder.mjs` closes the lead-vs-executor gap without
+reading Codex JSONL. `SubagentStart` confirms a successful dispatch and writes a
+marker for the stable `session_id` + `turn_id` pair. `SubagentStop` preserves it
+because another matching hook can continue that exact child turn; terminal
+`SessionEnd` removes every executor marker owned by the session. A PreToolUse
+call has executor identity only for that exact turn, so the parent does not
+inherit it even though Codex subagent hooks use the parent's `session_id`; the
+confirmed dispatch separately disarms the session-wide guard.
+`zero-dispatch-guard.mjs` is therefore wired for Codex too: the lead blocks on
+mutation 6 with zero successful `spawn_agent`; a rejected PreToolUse attempt
+does not disarm it, while the first SubagentStart does. The same recorded
+one-shot bypass remains available. A present but unreadable executor marker
+fails toward exemption rather than false-blocking an executor.
+
+Changes to `.codex/hooks.json` alter the project-hook trust definition. After
+pulling such a change, inspect and trust the exact definitions again in `/hooks`.
 
 Setup, Node 22, one-time `/hooks` trust, generated skill discovery, and the
 explicit DesignSync exclusion are documented in

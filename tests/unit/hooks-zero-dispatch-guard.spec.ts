@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { isCodexExecutorTurn } from '../../tools/hooks/codex-subagent-turn-recorder.mjs'
 import {
   ARM_BYPASS_FLAG,
   BYPASS_ENV,
@@ -572,6 +573,41 @@ describe('zero-dispatch-guard как процесс', () => {
     })
   }
 
+  function codexPayload(session: string, turn: string, tool = 'apply_patch') {
+    return JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: tool,
+      tool_input:
+        tool === 'apply_patch'
+          ? {
+              command: ['*** Begin Patch', '*** Update File: src/x.ts', '*** End Patch'].join('\n'),
+            }
+          : {
+              task_name: 'executor',
+              message: 'Implement the scoped change.',
+              ...(tool === 'spawn_agent' ? { fork_turns: 'none' } : {}),
+            },
+      cwd: FAKE_TREE,
+      session_id: session,
+      turn_id: turn,
+    })
+  }
+
+  function lifecyclePayload(
+    event: 'SessionEnd' | 'SubagentStart' | 'SubagentStop',
+    session: string,
+    turn: string,
+  ) {
+    return JSON.stringify({
+      hook_event_name: event,
+      cwd: FAKE_TREE,
+      session_id: session,
+      turn_id: turn,
+      agent_id: 'agent-405',
+      agent_type: 'general-purpose',
+    })
+  }
+
   it('мусор во входе даёт exit 0 (fail-open)', () => {
     expect(runHook('zero-dispatch-guard.mjs', '{ это не JSON').status).toBe(0)
   })
@@ -585,6 +621,105 @@ describe('zero-dispatch-guard как процесс', () => {
     expect(last.status).toBe(2)
     expect(last.stderr).toContain('zero-dispatch guard')
     expect(last.stderr).toContain('lead-delegates-even-small-prep')
+  })
+
+  it('Codex lead блокируется на шестом apply_patch при zero spawn_agent', () => {
+    const session = `zdg-codex-lead-${Date.now()}`
+    const turn = `turn-lead-${Date.now()}`
+    let last: ReturnType<typeof runHook> = { status: 0, stderr: '', stdout: '' }
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
+      last = runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV)
+    }
+    expect(last.status).toBe(2)
+  })
+
+  it('SubagentStart marks only the executor turn and confirms dispatch for the lead session', () => {
+    const session = `zdg-codex-executor-${Date.now()}`
+    const turn = `turn-executor-${Date.now()}`
+    expect(
+      runHook(
+        'codex-subagent-turn-recorder.mjs',
+        lifecyclePayload('SubagentStart', session, turn),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
+
+    const executorPayload = JSON.parse(codexPayload(session, turn))
+    expect(isCodexExecutorTurn(executorPayload, { root: FAKE_TREE })).toBe(true)
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+      expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
+        0,
+      )
+    }
+
+    const leadTurn = `turn-parent-${Date.now()}`
+    const leadPayload = JSON.parse(codexPayload(session, leadTurn))
+    expect(isCodexExecutorTurn(leadPayload, { root: FAKE_TREE })).toBe(false)
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+      expect(
+        runHook('zero-dispatch-guard.mjs', codexPayload(session, leadTurn), LEAD_ENV).status,
+      ).toBe(0)
+    }
+  })
+
+  it('SubagentStop keeps the executor exempt when another hook continues it', () => {
+    const session = `zdg-codex-stop-${Date.now()}`
+    const turn = `turn-stop-${Date.now()}`
+    expect(
+      runHook(
+        'codex-subagent-turn-recorder.mjs',
+        lifecyclePayload('SubagentStart', session, turn),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
+
+    expect(
+      runHook(
+        'codex-subagent-turn-recorder.mjs',
+        lifecyclePayload('SubagentStop', session, turn),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+      expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
+        0,
+      )
+    }
+  })
+
+  it('SessionEnd retires every executor exemption owned by the session', () => {
+    const session = `zdg-codex-session-end-${Date.now()}`
+    const turn = `turn-session-end-${Date.now()}`
+    expect(
+      runHook(
+        'codex-subagent-turn-recorder.mjs',
+        lifecyclePayload('SubagentStart', session, turn),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
+
+    expect(
+      runHook(
+        'codex-subagent-turn-recorder.mjs',
+        lifecyclePayload('SessionEnd', session, turn),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
+    expect(isCodexExecutorTurn(JSON.parse(codexPayload(session, turn)), { root: FAKE_TREE })).toBe(
+      false,
+    )
+  })
+
+  it('a Codex spawn rejected by another PreToolUse hook does not disarm the guard', () => {
+    const session = `zdg-codex-dispatch-${Date.now()}`
+    const turn = `turn-dispatch-${Date.now()}`
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
+      runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV)
+    }
+    const attempt = codexPayload(session, turn, 'spawn_agent')
+    expect(runHook('zero-dispatch-guard.mjs', attempt, LEAD_ENV).status).toBe(0)
+    expect(runHook('agent-model-guard.mjs', attempt, LEAD_ENV).status).toBe(2)
+    expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(2)
   })
 
   it('рубильник BBM_HOOKS_DISABLE=1 снимает блок', () => {
