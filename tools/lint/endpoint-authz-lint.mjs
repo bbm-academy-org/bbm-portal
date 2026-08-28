@@ -110,6 +110,17 @@ function functionBody(node) {
   return handler && 'body' in handler ? handler.body : null
 }
 
+function hasSafeHandlerParameters(node) {
+  const handler = handlerFunction(node)
+  return Boolean(
+    handler &&
+    handler.parameters.every(
+      (parameter) =>
+        ts.isIdentifier(parameter.name) && !parameter.initializer && !parameter.dotDotDotToken,
+    ),
+  )
+}
+
 function bindingContains(name, target) {
   if (ts.isIdentifier(name)) return name.text === target
   return name.elements.some(
@@ -315,7 +326,9 @@ function sanctionedSessionBindings(sourceFile) {
  */
 function handGateProof(node, underAdmin, authBindings, sessionBindings) {
   const body = functionBody(node)
-  if (!body || !ts.isBlock(body)) return { valid: false, topLevel: false, adminClaim: false }
+  if (!body || !ts.isBlock(body) || !hasSafeHandlerParameters(node)) {
+    return { valid: false, topLevel: false, adminClaim: false }
+  }
 
   let gateIndex = 0
   const localSessions = new Set()
