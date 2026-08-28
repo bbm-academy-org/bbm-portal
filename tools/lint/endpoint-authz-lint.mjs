@@ -65,6 +65,9 @@ const CLAIM_GATE = 'claimGateResponse'
 const ADMIN_ROLE = 'PLATFORM_ADMIN_ROLE'
 const AUTH_GATE_MODULE = '@/lib/platform/authGate'
 const SANCTIONED_AUTH_BINDINGS = new Set([CLAIM_GATE, ADMIN_ROLE])
+const SESSION_PROVIDER = 'auth'
+const SESSION_MODULE = '@/auth'
+const SANCTIONED_SESSION_BINDINGS = new Set([SESSION_PROVIDER])
 
 /** Suppression, reason required — a bare marker is not a record. */
 const SUPPRESS_RE = /\bendpoint-authz-ok\s*:\s*\S/
@@ -91,15 +94,6 @@ function unwrapExpression(node) {
     current = current.expression
   }
   return current
-}
-
-function directCall(node, callee) {
-  const expression = unwrapExpression(node)
-  return expression &&
-    ts.isCallExpression(expression) &&
-    identifierText(expression.expression) === callee
-    ? expression
-    : null
 }
 
 function handlerFunction(node) {
@@ -179,15 +173,33 @@ function resolvesToImportedBinding(node, localName, importedName, bindings) {
   )
 }
 
-function authPrelude(statement) {
-  return (
-    ts.isVariableStatement(statement) &&
-    statement.declarationList.declarations.length > 0 &&
-    statement.declarationList.declarations.every(
-      (declaration) =>
-        ts.isIdentifier(declaration.name) && directCall(declaration.initializer, 'auth'),
-    )
-  )
+function directImportedCall(expression, node, importedName, bindings) {
+  const call = unwrapExpression(expression)
+  const localName = call && ts.isCallExpression(call) ? identifierText(call.expression) : null
+  return call &&
+    ts.isCallExpression(call) &&
+    resolvesToImportedBinding(node, localName, importedName, bindings)
+    ? call
+    : null
+}
+
+function authPrelude(statement, node, sessionBindings) {
+  if (!ts.isVariableStatement(statement) || statement.declarationList.declarations.length === 0) {
+    return null
+  }
+
+  const sessions = []
+  for (const declaration of statement.declarationList.declarations) {
+    const binding = identifierText(declaration.name)
+    if (
+      !binding ||
+      !directImportedCall(declaration.initializer, node, SESSION_PROVIDER, sessionBindings)
+    ) {
+      return null
+    }
+    sessions.push(binding)
+  }
+  return sessions
 }
 
 function gateDeclaration(statement, node, authBindings) {
@@ -281,6 +293,10 @@ function sanctionedAuthBindings(sourceFile) {
   return canonicalNamedBindings(sourceFile, AUTH_GATE_MODULE, SANCTIONED_AUTH_BINDINGS)
 }
 
+function sanctionedSessionBindings(sourceFile) {
+  return canonicalNamedBindings(sourceFile, SESSION_MODULE, SANCTIONED_SESSION_BINDINGS)
+}
+
 /**
  * A hand gate is accepted only in the canonical fail-closed shape:
  *
@@ -292,12 +308,16 @@ function sanctionedAuthBindings(sourceFile) {
  * Looking through descendants is deliberately forbidden: a gate in an unused
  * nested function proves nothing about the exported handler.
  */
-function handGateProof(node, underAdmin, authBindings) {
+function handGateProof(node, underAdmin, authBindings, sessionBindings) {
   const body = functionBody(node)
   if (!body || !ts.isBlock(body)) return { valid: false, topLevel: false, adminClaim: false }
 
   let gateIndex = 0
-  while (gateIndex < body.statements.length && authPrelude(body.statements[gateIndex])) {
+  const localSessions = new Set()
+  while (gateIndex < body.statements.length) {
+    const sessions = authPrelude(body.statements[gateIndex], node, sessionBindings)
+    if (!sessions) break
+    for (const session of sessions) localSessions.add(session)
     gateIndex += 1
   }
 
@@ -306,9 +326,16 @@ function handGateProof(node, underAdmin, authBindings) {
 
   const claim = directClaim(gate.call.arguments[1])
   const adminClaim = isAdminClaim(gate.call.arguments[1], node, authBindings)
+  const sessionArgument = unwrapExpression(gate.call.arguments[0])
+  const canonicalSession = Boolean(
+    directImportedCall(gate.call.arguments[0], node, SESSION_PROVIDER, sessionBindings) ||
+    (sessionArgument &&
+      ts.isIdentifier(sessionArgument) &&
+      localSessions.has(sessionArgument.text)),
+  )
   const failClosed = returnedBinding(body.statements[gateIndex + 1], gate.binding)
   return {
-    valid: Boolean(claim && failClosed && (!underAdmin || adminClaim)),
+    valid: Boolean(canonicalSession && claim && failClosed && (!underAdmin || adminClaim)),
     topLevel: true,
     adminClaim,
   }
@@ -363,6 +390,7 @@ export function scanHandlerFile(rel, source) {
   )
   const factoryBindings = sanctionedFactoryBindings(sourceFile)
   const authBindings = sanctionedAuthBindings(sourceFile)
+  const sessionBindings = sanctionedSessionBindings(sourceFile)
 
   function location(node) {
     const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
@@ -386,7 +414,7 @@ export function scanHandlerFile(rel, source) {
       return
     }
 
-    const handGate = handGateProof(node, underAdmin, authBindings)
+    const handGate = handGateProof(node, underAdmin, authBindings, sessionBindings)
     if (handGate.valid) return
     if (underAdmin && handGate.topLevel && !handGate.adminClaim) {
       findings.push({
