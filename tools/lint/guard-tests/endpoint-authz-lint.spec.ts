@@ -511,6 +511,43 @@ describe('scanHandlerFile — the pure decision seam', () => {
     expect(findings).toEqual([])
   })
 
+  it('rejects a direct canonical auth call whose argument runs protected work', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        "  const refusal = claimGateResponse(await auth(protectedWork()), 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json({ ok: true })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
+  it('rejects a session binding initialized by canonical auth with protected work', () => {
+    const findings = scanHandlerFile(
+      'src/app/(platform)/api/p/hours/admin/export/route.ts',
+      [
+        "import { auth } from '@/auth'",
+        "import { claimGateResponse } from '@/lib/platform/authGate'",
+        'export async function GET() {',
+        '  const session = await auth(protectedWork())',
+        "  const refusal = claimGateResponse(session, 'platform-admin')",
+        '  if (refusal) return refusal',
+        '  return Response.json({ ok: true })',
+        '}',
+      ].join('\n'),
+    )
+    expect(findings.map(({ kind, method }) => ({ kind, method }))).toEqual([
+      { kind: 'ungated-handler', method: 'GET' },
+    ])
+  })
+
   it('rejects a gate hidden in a never-called nested function', () => {
     const findings = scanHandlerFile(
       'src/app/(platform)/api/p/hours/admin/export/route.ts',
