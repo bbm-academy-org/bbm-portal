@@ -72,7 +72,7 @@ describe('EARS-475: the module publishes its effective configuration through its
   })
 })
 
-describe('EARS-453/EARS-455: the section is one read-only resource', () => {
+describe('EARS-453/455: the section is one read-only resource', () => {
   it('EARS-453: the OKR entry declares an admin section with exactly one resource', async () => {
     const { okrWorkspaceEntry } = await import('@/lib/okr')
     expect(okrWorkspaceEntry.kind).toBe('internal')
@@ -120,7 +120,7 @@ describe('EARS-476: the page shows the module’s current read state and when it
 
   it('EARS-476: a failed read reports the error the module raised, and the page still answers 200', async () => {
     const { OkrUnavailableError } = await import('@/lib/okr')
-    treeState.error = new OkrUnavailableError('Plane ответил 502')
+    treeState.error = new OkrUnavailableError(new Error('Plane ответил 502'))
     const res = await get(admin)
     // The READ failed; the settings page did not. Answering 503 here would make
     // the admin unable to see the configuration precisely when they came to
@@ -128,6 +128,11 @@ describe('EARS-476: the page shows the module’s current read state and when it
     expect(res.status).toBe(200)
     const body = (await res.json()) as { data: { read: { state: string; message: string } } }
     expect(body.data.read.state).toBe('error')
+    // BOTH halves: the module's own readable line, and the cause it carries.
+    // `OkrUnavailableError`'s message is fixed («Plane недоступен и кэша ещё
+    // нет») and the real failure rides in `cause` — showing only the first
+    // would leave an admin unable to tell an expired token from a dead host.
+    expect(body.data.read.message).toContain('Plane недоступен')
     expect(body.data.read.message).toContain('Plane ответил 502')
   })
 

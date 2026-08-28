@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import {
@@ -96,7 +96,7 @@ describe('EARS-409: a module that declares an admin section becomes a navigation
       slug: 'finance',
       admin: {
         label: 'Финансы',
-        resources: [{ name: 'ledger', label: 'Реестр', operations: ['list'], schema }],
+        resources: [{ name: 'ledger', label: 'Реестр', operations: ['list'] as const, schema }],
       },
     }
     const names = cabinetResources([HOURS, second]).map((r) => r.name)
@@ -168,6 +168,26 @@ describe('EARS-436: the resource schema the provider parses with is the module�
     const schemas = cabinetSchemas([HOURS])
     expect(Object.keys(schemas)).toEqual(['hours.periods', 'hours.participants'])
     expect(schemas['hours.periods']).toBe(schema)
+  })
+
+  it('EARS-436: the CLIENT-side schema map is the same objects the registry declares', async () => {
+    // The one seam this design has: the composition root is server-only (a
+    // module's declaration reaches its data layer), so the browser gets its
+    // schemas through `schemas.ts`. Identity — not deep equality — is what
+    // makes that a re-export rather than a copy, so a resource declared in the
+    // registry and forgotten there fails HERE, by name, the way EARS-403 makes
+    // a forgotten registration fail.
+    const [{ CABINET_SCHEMAS }, { WORKSPACE_REGISTRY }] = await Promise.all([
+      import('@/app/(platform)/p/admin/schemas'),
+      import('@/lib/workspace'),
+    ])
+    const fromRegistry = cabinetSchemas(WORKSPACE_REGISTRY)
+    expect(Object.keys(CABINET_SCHEMAS).sort()).toEqual(Object.keys(fromRegistry).sort())
+    for (const [name, declared] of Object.entries(fromRegistry)) {
+      expect(CABINET_SCHEMAS[name], `schema for ${name} is a copy, not the module's own`).toBe(
+        declared,
+      )
+    }
   })
 })
 
@@ -247,6 +267,77 @@ describe('EARS-433: the sidebar renders the nesting visibly, not as a heading ov
       const html = renderToStaticMarkup(el(CabinetSidebar, { selectedKey: '', items: [] }))
       expect(html).toContain('Разделов пока нет')
     })
+  })
+})
+
+describe('EARS-432: the navigation is a persistent left sidebar grouped by module', () => {
+  it('EARS-432: one group per module that declares a section, in registry order', async () => {
+    const { CabinetSidebar } = await import('@/app/(platform)/p/admin/CabinetSidebar')
+    const second: WorkspaceEntry = {
+      ...HOURS,
+      slug: 'members',
+      admin: {
+        label: 'Участники',
+        resources: [{ name: 'members', label: 'Участники', operations: ['list'] as const, schema }],
+      },
+    }
+    // The menu tree Refine builds from `meta.parent`, mirrored here in the
+    // shape `useMenu()` returns it.
+    const tree = cabinetResources([HOURS, second])
+      .filter((r) => !r.meta?.parent)
+      .map((group) => ({
+        key: group.name,
+        name: group.name,
+        label: String(group.meta?.label),
+        children: cabinetResources([HOURS, second])
+          .filter((r) => r.meta?.parent === group.name)
+          .map((child) => ({
+            key: child.name,
+            name: child.name,
+            label: String(child.meta?.label),
+            route: child.list as string,
+            children: [],
+          })),
+      }))
+
+    const html = renderToStaticMarkup(el(CabinetSidebar, { items: tree, selectedKey: '' }))
+    expect(html.indexOf('data-nav-group="hours"')).toBeGreaterThan(-1)
+    expect(html.indexOf('data-nav-group="members"')).toBeGreaterThan(
+      html.indexOf('data-nav-group="hours"'),
+    )
+    // «Persistent» is the shell's business: the nav is a column of the cabinet
+    // grid, not something a screen renders, so every screen has it by existing.
+    const shell = readFileSync(resolve(root, 'src/app/(platform)/p/admin/CabinetShell.tsx'), 'utf8')
+    expect(shell).toContain('<CabinetSidebar')
+    expect(shell).toMatch(/grid-cols-\[248px_minmax\(0,1fr\)\]/)
+  })
+})
+
+describe('EARS-434: /p/admin opens on an index of sections', () => {
+  it('EARS-434: it lists the sections and their items — not a dashboard, not a jump into the first resource', async () => {
+    vi.resetModules()
+    vi.doMock('@/lib/workspace', () => ({ WORKSPACE_REGISTRY: [HOURS, OKR_NO_SECTION, PLANNED] }))
+    const { default: AdminIndexPage } = await import('@/app/(platform)/p/admin/page')
+    const html = renderToStaticMarkup(el(AdminIndexPage))
+
+    expect(html).toContain('data-section="hours"')
+    expect(html).toContain('data-section-item="hours.periods"')
+    // EARS-410 again, on this screen: a module with no section is not listed.
+    expect(html).not.toContain('data-section="okr"')
+    // A dashboard would put numbers here and a redirect would put nothing —
+    // both were rejected by the clause. What is here is the list of sections.
+    expect(html).toContain('Админка')
+    vi.doUnmock('@/lib/workspace')
+    vi.resetModules()
+  })
+
+  it('EARS-434: a cabinet with no declared section says so rather than showing a blank page', async () => {
+    vi.resetModules()
+    vi.doMock('@/lib/workspace', () => ({ WORKSPACE_REGISTRY: [OKR_NO_SECTION] }))
+    const { default: AdminIndexPage } = await import('@/app/(platform)/p/admin/page')
+    expect(renderToStaticMarkup(el(AdminIndexPage))).toContain('Ни один модуль пока не объявил')
+    vi.doUnmock('@/lib/workspace')
+    vi.resetModules()
   })
 })
 

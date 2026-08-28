@@ -174,8 +174,12 @@ describe('EARS-436: one zod schema types the client and validates the handler', 
     const { adminRoute } = await api()
     const GET = adminRoute({
       output: periodSchema,
-      // @ts-expect-error — deliberately wrong shape; the guarantee is runtime.
-      handler: async () => [{ id: '1', label: 'август' }],
+      // Deliberately the wrong shape. The cast is what a real drift looks like
+      // — a handler whose author believed it matched — and the guarantee under
+      // test is the RUNTIME one: `tsc` cannot see a handler that changed on the
+      // other side of a refactor.
+      handler: async () =>
+        [{ id: '1', label: 'август' }] as unknown as z.infer<typeof periodSchema>[],
     })
     const res = await GET(request())
     expect(res.status).toBe(500)

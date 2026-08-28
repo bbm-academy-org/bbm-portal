@@ -101,7 +101,7 @@ describe('EARS-436: the provider parses every answer with the module’s own sch
   })
 })
 
-describe('EARS-472/EARS-473: a refusal reaches the screen as its own reason', () => {
+describe('EARS-472/473: a refusal reaches the screen as its own reason', () => {
   it('EARS-472: the error envelope’s message becomes the thrown error’s message', async () => {
     const { dp } = provider(
       () =>
