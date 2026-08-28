@@ -179,12 +179,14 @@ describe('EARS-436: the resource schema the provider parses with is the moduleâ€
     expect(fromRegistry['okr.parameters']).toBe(okrParametersSchema)
 
     const frameFiles = [
+      'src/app/(platform)/p/admin/actions.ts',
       'src/app/(platform)/p/admin/CabinetShell.tsx',
       'src/app/(platform)/p/admin/CabinetSidebar.tsx',
       'src/app/(platform)/p/admin/layout.tsx',
       'src/app/(platform)/p/admin/page.tsx',
       'src/app/(platform)/p/admin/resources.ts',
       'src/app/(platform)/p/admin/schemas.ts',
+      'src/app/(platform)/p/admin/validation.ts',
     ]
       .map((file) => resolve(root, file))
       .filter(existsSync)
