@@ -64,9 +64,6 @@ const SANCTIONED = new Set([ADMIN_FACTORY, MEMBER_FACTORY])
 /** Suppression, reason required — a bare marker is not a record. */
 const SUPPRESS_RE = /\bendpoint-authz-ok\s*:\s*\S/
 
-/** An explicit admin claim in a hand gate under `/admin/`. */
-const ADMIN_CLAIM_RE = /\bPLATFORM_ADMIN_ROLE\b|['"]platform-admin['"]/
-
 function hasExportModifier(node) {
   return node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false
 }
@@ -75,20 +72,127 @@ function identifierText(node) {
   return node && ts.isIdentifier(node) ? node.text : null
 }
 
-function claimGateCalls(node) {
-  const calls = []
-  function visit(current) {
-    if (
-      ts.isCallExpression(current) &&
-      ts.isIdentifier(current.expression) &&
-      current.expression.text === 'claimGateResponse'
-    ) {
-      calls.push(current)
-    }
-    ts.forEachChild(current, visit)
+function unwrapExpression(node) {
+  let current = node
+  while (
+    current &&
+    (ts.isAwaitExpression(current) ||
+      ts.isParenthesizedExpression(current) ||
+      ts.isAsExpression(current) ||
+      ts.isTypeAssertionExpression(current) ||
+      ts.isNonNullExpression(current) ||
+      ts.isSatisfiesExpression(current))
+  ) {
+    current = current.expression
   }
-  visit(node)
-  return calls
+  return current
+}
+
+function directCall(node, callee) {
+  const expression = unwrapExpression(node)
+  return expression &&
+    ts.isCallExpression(expression) &&
+    identifierText(expression.expression) === callee
+    ? expression
+    : null
+}
+
+function functionBody(node) {
+  if (ts.isFunctionDeclaration(node)) return node.body ?? null
+  if (!ts.isVariableDeclaration(node) || !node.initializer) return null
+  const initializer = unwrapExpression(node.initializer)
+  return initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))
+    ? initializer.body
+    : null
+}
+
+function authPrelude(statement) {
+  return (
+    ts.isVariableStatement(statement) &&
+    statement.declarationList.declarations.length > 0 &&
+    statement.declarationList.declarations.every(
+      (declaration) =>
+        ts.isIdentifier(declaration.name) && directCall(declaration.initializer, 'auth'),
+    )
+  )
+}
+
+function gateDeclaration(statement) {
+  if (
+    !statement ||
+    !ts.isVariableStatement(statement) ||
+    statement.declarationList.declarations.length !== 1
+  ) {
+    return null
+  }
+  const declaration = statement.declarationList.declarations[0]
+  const binding = identifierText(declaration.name)
+  const call = directCall(declaration.initializer, 'claimGateResponse')
+  return binding && call ? { binding, call } : null
+}
+
+function returnedBinding(statement, binding) {
+  if (!statement || !ts.isIfStatement(statement)) return false
+  const condition = unwrapExpression(statement.expression)
+  if (!condition || !ts.isIdentifier(condition) || condition.text !== binding) return false
+
+  const branch = statement.thenStatement
+  const returned = ts.isBlock(branch)
+    ? branch.statements.length === 1 && ts.isReturnStatement(branch.statements[0])
+      ? branch.statements[0]
+      : null
+    : ts.isReturnStatement(branch)
+      ? branch
+      : null
+  const expression = returned?.expression ? unwrapExpression(returned.expression) : null
+  return Boolean(expression && ts.isIdentifier(expression) && expression.text === binding)
+}
+
+function directClaim(node) {
+  const claim = unwrapExpression(node)
+  return claim && (ts.isIdentifier(claim) || ts.isStringLiteral(claim)) ? claim : null
+}
+
+function isAdminClaim(node) {
+  const claim = directClaim(node)
+  return Boolean(
+    claim &&
+    ((ts.isIdentifier(claim) && claim.text === 'PLATFORM_ADMIN_ROLE') ||
+      (ts.isStringLiteral(claim) && claim.text === 'platform-admin')),
+  )
+}
+
+/**
+ * A hand gate is accepted only in the canonical fail-closed shape:
+ *
+ *   const session = await auth() // optional gate preparation
+ *   const refusal = claimGateResponse(session, DIRECT_CLAIM)
+ *   if (refusal) return refusal
+ *   // handler work starts here
+ *
+ * Looking through descendants is deliberately forbidden: a gate in an unused
+ * nested function proves nothing about the exported handler.
+ */
+function handGateProof(node, underAdmin) {
+  const body = functionBody(node)
+  if (!body || !ts.isBlock(body)) return { valid: false, topLevel: false, adminClaim: false }
+
+  let gateIndex = 0
+  while (gateIndex < body.statements.length && authPrelude(body.statements[gateIndex])) {
+    gateIndex += 1
+  }
+
+  const gate = gateDeclaration(body.statements[gateIndex])
+  if (!gate) return { valid: false, topLevel: false, adminClaim: false }
+
+  const claim = directClaim(gate.call.arguments[1])
+  const adminClaim = isAdminClaim(gate.call.arguments[1])
+  const failClosed = returnedBinding(body.statements[gateIndex + 1], gate.binding)
+  return {
+    valid: Boolean(claim && failClosed && (!underAdmin || adminClaim)),
+    topLevel: true,
+    adminClaim,
+  }
 }
 
 /**
@@ -161,17 +265,15 @@ export function scanHandlerFile(rel, source) {
       return
     }
 
-    const handGates = claimGateCalls(node)
-    if (handGates.length > 0) {
-      const hasAdminClaim = handGates.some((call) => ADMIN_CLAIM_RE.test(call.getText(sourceFile)))
-      if (underAdmin && !hasAdminClaim) {
-        findings.push({
-          kind: 'member-claim-under-admin',
-          line: at.line,
-          method,
-          text: at.text,
-        })
-      }
+    const handGate = handGateProof(node, underAdmin)
+    if (handGate.valid) return
+    if (underAdmin && handGate.topLevel && !handGate.adminClaim) {
+      findings.push({
+        kind: 'member-claim-under-admin',
+        line: at.line,
+        method,
+        text: at.text,
+      })
       return
     }
 
