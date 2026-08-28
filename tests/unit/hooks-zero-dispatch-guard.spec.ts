@@ -581,7 +581,11 @@ describe('zero-dispatch-guard как процесс', () => {
           ? {
               command: ['*** Begin Patch', '*** Update File: src/x.ts', '*** End Patch'].join('\n'),
             }
-          : { task_name: 'executor', message: 'Implement the scoped change.' },
+          : {
+              task_name: 'executor',
+              message: 'Implement the scoped change.',
+              ...(tool === 'spawn_agent' ? { fork_turns: 'none' } : {}),
+            },
       cwd: FAKE_TREE,
       session_id: session,
       turn_id: turn,
@@ -589,7 +593,7 @@ describe('zero-dispatch-guard как процесс', () => {
   }
 
   function lifecyclePayload(
-    event: 'SubagentStart' | 'SubagentStop',
+    event: 'SessionEnd' | 'SubagentStart' | 'SubagentStop',
     session: string,
     turn: string,
   ) {
@@ -656,7 +660,7 @@ describe('zero-dispatch-guard как процесс', () => {
     ).toBe(2)
   })
 
-  it('SubagentStop retires the executor turn exemption', () => {
+  it('SubagentStop keeps the executor exempt when another hook continues it', () => {
     const session = `zdg-codex-stop-${Date.now()}`
     const turn = `turn-stop-${Date.now()}`
     expect(
@@ -674,6 +678,31 @@ describe('zero-dispatch-guard как процесс', () => {
         LEAD_ENV,
       ).status,
     ).toBe(0)
+    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+      expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
+        0,
+      )
+    }
+  })
+
+  it('SessionEnd retires every executor exemption owned by the session', () => {
+    const session = `zdg-codex-session-end-${Date.now()}`
+    const turn = `turn-session-end-${Date.now()}`
+    expect(
+      runHook(
+        'codex-subagent-turn-recorder.mjs',
+        lifecyclePayload('SubagentStart', session, turn),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
+
+    expect(
+      runHook(
+        'codex-subagent-turn-recorder.mjs',
+        lifecyclePayload('SessionEnd', session, turn),
+        LEAD_ENV,
+      ).status,
+    ).toBe(0)
     for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
       expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
         0,
@@ -682,21 +711,16 @@ describe('zero-dispatch-guard как процесс', () => {
     expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(2)
   })
 
-  it('первый Codex spawn_agent снимает guard до конца lead-сессии', () => {
+  it('a Codex spawn rejected by another PreToolUse hook does not disarm the guard', () => {
     const session = `zdg-codex-dispatch-${Date.now()}`
     const turn = `turn-dispatch-${Date.now()}`
     for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
       runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV)
     }
-    expect(
-      runHook('zero-dispatch-guard.mjs', codexPayload(session, turn, 'spawn_agent'), LEAD_ENV)
-        .status,
-    ).toBe(0)
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
-      expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
-        0,
-      )
-    }
+    const attempt = codexPayload(session, turn, 'spawn_agent')
+    expect(runHook('zero-dispatch-guard.mjs', attempt, LEAD_ENV).status).toBe(0)
+    expect(runHook('agent-model-guard.mjs', attempt, LEAD_ENV).status).toBe(2)
+    expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(2)
   })
 
   it('рубильник BBM_HOOKS_DISABLE=1 снимает блок', () => {

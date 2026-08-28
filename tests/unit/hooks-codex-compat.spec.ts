@@ -412,7 +412,7 @@ describe('repository-local Codex hooks', () => {
     30_000,
   )
 
-  it('configures all seven event families and resolves commands from git root', () => {
+  it('configures all eight event families and resolves commands from git root', () => {
     const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
     expect(Object.keys(hooks.hooks)).toEqual(
       expect.arrayContaining([
@@ -420,6 +420,7 @@ describe('repository-local Codex hooks', () => {
         'UserPromptSubmit',
         'PreToolUse',
         'PostToolUse',
+        'SessionEnd',
         'SubagentStart',
         'SubagentStop',
         'Stop',
@@ -439,6 +440,7 @@ describe('repository-local Codex hooks', () => {
     expect(hooks.hooks.UserPromptSubmit[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.Stop[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.PostToolUse[0].matcher).toBe('.*')
+    expect(hooks.hooks.SessionEnd[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.SubagentStart[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.SubagentStop[0]).not.toHaveProperty('matcher')
     expect(JSON.stringify(hooks)).not.toContain('"matcher":"*"')
@@ -452,7 +454,7 @@ describe('repository-local Codex hooks', () => {
   it('wires the Codex executor lifecycle and zero-dispatch guard through real config', () => {
     const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
 
-    for (const event of ['SubagentStart', 'SubagentStop']) {
+    for (const event of ['SessionEnd', 'SubagentStart', 'SubagentStop']) {
       expect(hooks.hooks[event][0].hooks).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
