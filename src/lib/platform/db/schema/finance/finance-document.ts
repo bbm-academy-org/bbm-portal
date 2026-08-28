@@ -43,6 +43,12 @@
  * database failure therefore always leaves an audited row and key that can be
  * retried; this does not pretend the two systems share a transaction.
  *
+ * `content_digest` is the immutable identity of the bytes the uploader first
+ * submitted. The module computes it before the pending row commits and checks
+ * it again before recovery can create an absent object. `legacy-unverified` is
+ * reserved for rows that predate the column: a migration cannot read object
+ * storage and therefore must not invent a digest for them.
+ *
  * Rows here are otherwise practically immutable: `kind` is the one editable
  * column and only while no linked item has posted (EARS-516). The bytes never
  * change at all — `put` refuses an occupied key, and `storage_key` is unique, so a
@@ -95,12 +101,17 @@ export const FINANCE_DOCUMENT_STORAGE_STATES = [
 ] as const
 export type FinanceDocumentStorageState = (typeof FINANCE_DOCUMENT_STORAGE_STATES)[number]
 
+/** Explicit migration sentinel: old rows have no byte identity Postgres can derive. */
+export const FINANCE_DOCUMENT_LEGACY_DIGEST = 'legacy-unverified'
+
 export const financeDocument = core.table(
   'finance_document',
   {
     id: serial('id').primaryKey(),
     /** The object's key in the PRIVATE location — not a URL, see the docblock. */
     storageKey: text('storage_key').notNull().unique(),
+    /** Server-computed `sha256:<lowercase hex>`; never caller metadata. */
+    contentDigest: text('content_digest').notNull(),
     /** What the uploader called it. Shown to people; never used as a path. */
     filename: text('filename').notNull(),
     mime: text('mime').notNull(),
@@ -127,6 +138,10 @@ export const financeDocument = core.table(
     check(
       'finance_document_storage_state_allowed',
       sql`${table.storageState} in ('pending_upload', 'ready', 'pending_delete')`,
+    ),
+    check(
+      'finance_document_content_digest_allowed',
+      sql`${table.contentDigest} = 'legacy-unverified' or ${table.contentDigest} ~ '^sha256:[0-9a-f]{64}$'`,
     ),
     index('finance_document_uploaded_by_idx').on(table.uploadedBy),
   ],

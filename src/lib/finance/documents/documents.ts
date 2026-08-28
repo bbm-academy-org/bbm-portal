@@ -32,6 +32,7 @@
  * records audited intent before either external side effect and leaves a
  * retryable handle instead of an anonymous blob after a failure.
  */
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { and, eq, inArray } from 'drizzle-orm'
@@ -40,6 +41,7 @@ import { findMemberByEmail } from '@/lib/member'
 import {
   financeDocument,
   FINANCE_DOCUMENT_KINDS,
+  FINANCE_DOCUMENT_LEGACY_DIGEST,
   FINANCE_DOCUMENT_MIME_TYPES,
   type FinanceDocumentKind,
 } from '@/lib/platform/db/schema/finance/finance-document'
@@ -69,6 +71,10 @@ import {
  * refused rather than truncated: half a document is not a smaller document.
  */
 export const FINANCE_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024
+
+function financeDocumentDigest(bytes: Buffer): string {
+  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
+}
 
 /** A document as the module hands it out. Never the storage key's contents. */
 export type FinanceDocumentView = {
@@ -303,6 +309,7 @@ export async function uploadFinanceDocument(
       .insert(financeDocument)
       .values({
         storageKey,
+        contentDigest: financeDocumentDigest(bytes),
         filename: input.filename,
         mime: input.mime,
         size: bytes.byteLength,
@@ -347,6 +354,24 @@ function assertRecoveryBytes(document: typeof financeDocument.$inferSelect, byte
   if (bytes.byteLength !== Number(document.size)) {
     throw new FinanceRefusal(
       `Повтор документа #${document.id} содержит ${bytes.byteLength} байт вместо исходных ${document.size} (EARS-514/516).`,
+    )
+  }
+  const actualDigest = financeDocumentDigest(bytes)
+  if (
+    document.contentDigest !== FINANCE_DOCUMENT_LEGACY_DIGEST &&
+    actualDigest !== document.contentDigest
+  ) {
+    throw new FinanceRefusal(
+      `Повтор документа #${document.id} не совпадает с исходно загруженными байтами (EARS-514/516).`,
+    )
+  }
+  if (
+    document.contentDigest === FINANCE_DOCUMENT_LEGACY_DIGEST &&
+    document.storageState === 'pending_upload'
+  ) {
+    throw new FinanceRefusal(
+      `Незавершённый документ #${document.id} создан до учёта контрольной суммы, поэтому его исходные байты нельзя подтвердить. ` +
+        'Удалите незавершённую запись и загрузите документ заново (EARS-514/516).',
     )
   }
   assertFinanceDocumentUpload({

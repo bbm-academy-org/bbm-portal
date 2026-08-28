@@ -547,14 +547,14 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     const item = await seedIntakeItemFor(ENTRY, refs)
     const storage = localStorage()
     const storageKey = `finance/documents/scenario-9-${Date.now()}.pdf`
+    const contentDigest = `sha256:${createHash('sha256').update(PDF).digest('hex')}`
 
-    await storage.put(storageKey, PDF)
     const documentId = await fixtureWrite(async (tx) => {
       const inserted = await tx.execute(sql`
         insert into core.finance_document
-          (storage_key, filename, mime, size, kind, uploaded_by)
-        values (${storageKey}, 'scenario-9.pdf', 'application/pdf', ${PDF.byteLength},
-                'ru_invoice', ${refs.entryMemberId})
+          (storage_key, content_digest, filename, mime, size, kind, uploaded_by)
+        values (${storageKey}, ${contentDigest}, 'scenario-9.pdf', 'application/pdf',
+                ${PDF.byteLength}, 'ru_invoice', ${refs.entryMemberId})
         returning id
       `)
       const id = Number((inserted.rows[0] as { id: number }).id)
@@ -564,6 +564,12 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
       `)
       return id
     })
+    await storage.put(storageKey, PDF)
+    await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_document set storage_state = 'ready' where id = ${documentId}
+      `),
+    )
 
     expect((await readFinanceDocument(ENTRY, documentId, storage)).bytes.equals(PDF)).toBe(true)
   })
@@ -727,9 +733,10 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
     await expect(
       fixtureWrite(async (tx) =>
         tx.execute(sql`
-          insert into core.finance_document (storage_key, filename, mime, size, kind, uploaded_by)
-          values (${storageKey}, 'copy.pdf', 'application/pdf', 10, 'other',
-                  ${refs.entryMemberId})
+          insert into core.finance_document
+            (storage_key, content_digest, filename, mime, size, kind, uploaded_by)
+          values (${storageKey}, ${`sha256:${createHash('sha256').update('copy').digest('hex')}`},
+                  'copy.pdf', 'application/pdf', 10, 'other', ${refs.entryMemberId})
         `),
       ),
     ).rejects.toThrow()

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -28,8 +29,9 @@ import { signInAsPlatformMember } from './support/platform-session'
  * place that may set the audit context — spec 201 EARS-24) rather than through
  * the finance module: this spec is about what the SERVER answers, and a fixture
  * that went through the module would be testing the module twice. The blob
- * itself is never written — an authorized read is not what is being proved
- * here, and the access decision is taken before any byte is fetched.
+ * itself is written directly to the local fallback, but only after a pending
+ * metadata row exists; the fixture then marks that row ready. This owns the
+ * test-fixture level while preserving the production lifecycle invariant.
  *
  * **The role-less member is MINTED, not signed in through the IdP.** The
  * witness this scenario needs holds `platform-user` and NEITHER flow role, and
@@ -76,7 +78,7 @@ const FIXTURE_DOOR = { actorEmail: null, source: 'cli:e2e-fixture' } as const
 const one = (rows: unknown[]): number => Number((rows[0] as { id: number }).id)
 
 async function seedDocument(): Promise<number> {
-  return platformTransaction(FIXTURE_DOOR, async (tx) => {
+  const seeded = await platformTransaction(FIXTURE_DOOR, async (tx) => {
     await tx.execute(sql`
       insert into core.member (slug, email, name)
       values ('e2e-document-owner', ${OWNER_EMAIL}, 'E2E Document Owner')
@@ -121,17 +123,13 @@ async function seedDocument(): Promise<number> {
       ).rows,
     )
     storageKey = `finance/documents/e2e/${Date.now()}.pdf`
-    // The bytes go where the DISK FALLBACK expects them (EARS-514): this stand
-    // has no bucket configured, which is the acceptance criterion, so writing
-    // here is also the proof that the fallback is the path actually in use.
-    const blob = path.resolve(FINANCE_DOCUMENTS_DEFAULT_DIR, storageKey)
-    mkdirSync(path.dirname(blob), { recursive: true })
-    writeFileSync(blob, PDF)
+    const contentDigest = `sha256:${createHash('sha256').update(PDF).digest('hex')}`
     const docId = one(
       (
         await tx.execute(sql`
-          insert into core.finance_document (storage_key, filename, mime, size, kind, uploaded_by)
-          values (${storageKey}, 'e2e-invoice.pdf',
+          insert into core.finance_document
+            (storage_key, content_digest, filename, mime, size, kind, uploaded_by)
+          values (${storageKey}, ${contentDigest}, 'e2e-invoice.pdf',
                   ${'application/pdf'}, ${PDF.byteLength}, 'ru_invoice', ${ownerId})
           returning id
         `)
@@ -141,8 +139,21 @@ async function seedDocument(): Promise<number> {
       insert into core.finance_document_link (document_id, intake_item_id, linked_by)
       values (${docId}, ${itemId}, ${ownerId})
     `)
-    return docId
+    return { docId, key: storageKey }
   })
+
+  // The bytes go where the DISK FALLBACK expects them (EARS-514): this stand
+  // has no bucket configured, which is the acceptance criterion, so writing
+  // here is also the proof that the fallback is the path actually in use.
+  const blob = path.resolve(FINANCE_DOCUMENTS_DEFAULT_DIR, seeded.key)
+  mkdirSync(path.dirname(blob), { recursive: true })
+  writeFileSync(blob, PDF)
+  await platformTransaction(FIXTURE_DOOR, (tx) =>
+    tx.execute(sql`
+      update core.finance_document set storage_state = 'ready' where id = ${seeded.docId}
+    `),
+  )
+  return seeded.docId
 }
 
 test.beforeAll(async () => {
