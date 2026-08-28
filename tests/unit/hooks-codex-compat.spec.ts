@@ -356,7 +356,7 @@ describe('repository-local Codex hooks', () => {
       .flatMap((groups: unknown) => groups as Array<{ hooks: Array<Record<string, string>> }>)
       .flatMap((group) => group.hooks)
 
-    expect(commands).toHaveLength(20)
+    expect(commands).toHaveLength(23)
     for (const hook of commands) {
       expect(hook.commandWindows).not.toMatch(/^powershell(?:\.exe)?\s/i)
       expect(hook.commandWindows).toMatch(/;\s*exit \$LASTEXITCODE$/)
@@ -412,7 +412,7 @@ describe('repository-local Codex hooks', () => {
     30_000,
   )
 
-  it('configures all five event families and resolves commands from git root', () => {
+  it('configures all seven event families and resolves commands from git root', () => {
     const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
     expect(Object.keys(hooks.hooks)).toEqual(
       expect.arrayContaining([
@@ -420,6 +420,8 @@ describe('repository-local Codex hooks', () => {
         'UserPromptSubmit',
         'PreToolUse',
         'PostToolUse',
+        'SubagentStart',
+        'SubagentStop',
         'Stop',
       ]),
     )
@@ -437,12 +439,42 @@ describe('repository-local Codex hooks', () => {
     expect(hooks.hooks.UserPromptSubmit[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.Stop[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.PostToolUse[0].matcher).toBe('.*')
+    expect(hooks.hooks.SubagentStart[0]).not.toHaveProperty('matcher')
+    expect(hooks.hooks.SubagentStop[0]).not.toHaveProperty('matcher')
     expect(JSON.stringify(hooks)).not.toContain('"matcher":"*"')
     expect(
       hooks.hooks.UserPromptSubmit[0].hooks.some((hook: { command: string }) =>
         hook.command.includes('write-evidence-recorder.mjs'),
       ),
     ).toBe(true)
+  })
+
+  it('wires the Codex executor lifecycle and zero-dispatch guard through real config', () => {
+    const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
+
+    for (const event of ['SubagentStart', 'SubagentStop']) {
+      expect(hooks.hooks[event][0].hooks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            command: expect.stringContaining('codex-subagent-turn-recorder.mjs'),
+            commandWindows: expect.stringContaining('codex-subagent-turn-recorder.mjs'),
+          }),
+        ]),
+      )
+    }
+
+    const guardGroup = hooks.hooks.PreToolUse.find(
+      (candidate: { matcher?: string }) =>
+        candidate.matcher === 'Agent|Task|Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell',
+    )
+    expect(guardGroup.hooks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          command: expect.stringContaining('zero-dispatch-guard.mjs'),
+          commandWindows: expect.stringContaining('zero-dispatch-guard.mjs'),
+        }),
+      ]),
+    )
   })
 
   it('the Codex PostToolUse recorder is fail-open on malformed payloads', () => {
