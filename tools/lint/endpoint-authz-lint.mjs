@@ -178,6 +178,7 @@ function directImportedCall(expression, node, importedName, bindings) {
   const localName = call && ts.isCallExpression(call) ? identifierText(call.expression) : null
   return call &&
     ts.isCallExpression(call) &&
+    call.arguments.length === 0 &&
     resolvesToImportedBinding(node, localName, importedName, bindings)
     ? call
     : null
