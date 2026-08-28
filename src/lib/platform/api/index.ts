@@ -18,6 +18,7 @@ export {
   type ListQuery,
   listEnvelopeSchema,
   listQuerySchema,
+  moduleListResult,
   type ModuleListResult,
   moduleListResultSchema,
   ModuleApiError,

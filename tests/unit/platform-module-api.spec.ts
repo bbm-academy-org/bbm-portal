@@ -224,13 +224,14 @@ describe('EARS-436: one zod schema types the client and validates the handler', 
 
   it('EARS-436: a paged list preserves the handler total beyond the current page', async () => {
     authState.session = admin
-    const { adminRoute, listEnvelopeSchema } = await api()
+    const { adminRoute, listEnvelopeSchema, moduleListResult } = await api()
     const GET = adminRoute({
       output: periodSchema,
-      handler: async () => ({
-        items: [{ id: '26', label: 'август 2026', weekdays: 5 }],
-        total: 57,
-      }),
+      handler: async () =>
+        moduleListResult({
+          items: [{ id: '26', label: 'август 2026', weekdays: 5 }],
+          total: 57,
+        }),
     })
 
     const response = await GET(request(`${request().url}?page=2&pageSize=1`))

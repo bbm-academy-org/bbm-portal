@@ -13,6 +13,7 @@ import {
 import {
   API_ERROR_STATUS,
   type ApiErrorCode,
+  isModuleListResult,
   listQuerySchema,
   type ModuleListResult,
   moduleListResultSchema,
@@ -85,8 +86,9 @@ export interface ModuleRouteSpec<TBody, TOut> {
    */
   output: z.ZodType<TOut>
   /**
-   * Arrays are a convenience for unpaginated lists. A paginated handler returns
-   * `{ items, total }` so the wire envelope keeps the count beyond this page.
+   * Arrays are a convenience for unpaginated lists. A paginated handler uses
+   * `moduleListResult({ items, total })`, whose hidden brand cannot collide
+   * with an arbitrary record carrying the same public fields.
    */
   handler: (ctx: ModuleRouteContext<TBody>) => Promise<TOut | TOut[] | ModuleListResult<TOut>>
 }
@@ -202,7 +204,7 @@ function moduleRoute<TBody, TOut>(
       return Response.json({ data: items, total: items.length })
     }
 
-    if (typeof result === 'object' && result !== null && 'items' in result && 'total' in result) {
+    if (isModuleListResult(result)) {
       const parsed = moduleListResultSchema(spec.output).safeParse(result)
       if (!parsed.success) {
         console.error('[api/p] handler answer violates its own schema', parsed.error.issues)

@@ -75,10 +75,31 @@ export const errorEnvelopeSchema = z.object({
 
 export type ErrorEnvelope = z.infer<typeof errorEnvelopeSchema>
 
-/** A module list handler's page, including the count before pagination. */
+const MODULE_LIST_RESULT = Symbol('module-list-result')
+
+/**
+ * A module list handler's page, including the count before pagination.
+ * Construct it through `moduleListResult` so it cannot collide with a record.
+ */
 export interface ModuleListResult<T> {
+  readonly [MODULE_LIST_RESULT]: true
   items: T[]
   total: number
+}
+
+/** Brand a page result without putting the internal discriminant on the wire. */
+export function moduleListResult<T>(result: { items: T[]; total: number }): ModuleListResult<T> {
+  return { [MODULE_LIST_RESULT]: true, ...result }
+}
+
+/** Distinguish an intentional page from an arbitrary record with the same keys. */
+export function isModuleListResult(value: unknown): value is ModuleListResult<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    MODULE_LIST_RESULT in value &&
+    value[MODULE_LIST_RESULT] === true
+  )
 }
 
 /** Runtime validation for the page a module list handler returns. */
