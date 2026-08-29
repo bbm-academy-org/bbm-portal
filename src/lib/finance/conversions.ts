@@ -103,9 +103,23 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 export async function recordConversion(
   actor: FinanceActor,
   input: RecordConversionInput,
-  callerTx?: PlatformTx,
 ): Promise<RecordedOperation> {
+  if (arguments.length > 2) {
+    throw new FinanceRefusal(
+      'A caller-supplied transaction is not accepted by the public ledger API: authorization and audit identity must stay bound.',
+    )
+  }
   assertFinanceLedgerAccess(actor)
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    recordConversionInTransaction(tx, input),
+  )
+}
+
+/** Module-private writer. The audited outer door already bound the actor to `tx`. */
+export async function recordConversionInTransaction(
+  tx: PlatformTx,
+  input: RecordConversionInput,
+): Promise<RecordedOperation> {
   if (!ISO_DATE.test(input.occurredOn)) {
     throw new FinanceRefusal(
       `Дата операции «${input.occurredOn}» записана не в формате ГГГГ-ММ-ДД.`,
@@ -118,14 +132,15 @@ export async function recordConversion(
         'по нему нет: леджер не знает для него курса (EARS-329).',
     )
   }
-  for (const [index, step] of input.steps.entries()) {
+  const steps = input.steps as readonly ConversionStepInput[]
+  for (const [index, step] of steps.entries()) {
     parseRate(step.rate)
     if (step.fromAmount <= 0n || step.toAmount <= 0n) {
       throw new FinanceRefusal(
         `Шаг обмена #${index + 1}: суммы обмена — положительные количества минимальных единиц.`,
       )
     }
-    const previous = input.steps[index - 1]
+    const previous = steps[index - 1]
     if (previous !== undefined && previous.toCurrency !== step.fromCurrency) {
       throw new FinanceRefusal(
         `Шаги обмена не стыкуются: шаг #${index} закончился в ${previous.toCurrency}, ` +
@@ -146,182 +161,177 @@ export async function recordConversion(
     }
   }
 
-  const record = async (tx: PlatformTx) => {
-    const first = input.steps[0]
-    const last = input.steps[input.steps.length - 1]
-    const sourceAccount = await requireAccount(tx, input.sourceAccountId)
-    const targetAccount = await requireAccount(tx, input.targetAccountId)
-    // A chain runs between the owner's OWN accounts. Letting a system account in
-    // is not merely untidy: pass the `conversion` account as source and a fee
-    // leg lands on a conversion account WITH a step link — the one combination
-    // that would contaminate the EARS-328 average, which is read off exactly
-    // those legs.
-    for (const [role, account] of [
-      ['списания', sourceAccount],
-      ['зачисления', targetAccount],
-    ] as const) {
-      if (account.isSystem) {
+  const first = steps[0]
+  const last = steps[steps.length - 1]
+  const sourceAccount = await requireAccount(tx, input.sourceAccountId)
+  const targetAccount = await requireAccount(tx, input.targetAccountId)
+  // A chain runs between the owner's OWN accounts. Letting a system account in
+  // is not merely untidy: pass the `conversion` account as source and a fee
+  // leg lands on a conversion account WITH a step link — the one combination
+  // that would contaminate the EARS-328 average, which is read off exactly
+  // those legs.
+  for (const [role, account] of [
+    ['списания', sourceAccount],
+    ['зачисления', targetAccount],
+  ] as const) {
+    if (account.isSystem) {
+      throw new FinanceRefusal(
+        `Счётом ${role} в конвертации не может быть системный счёт «${account.name}» ` +
+          `(вид ${account.kind}, EARS-305): модуль ведёт его сам, и через него проходят ` +
+          'служебные плечи обмена. Обмен идёт между денежными счетами — bank, card, crypto, cash.',
+      )
+    }
+  }
+  if (sourceAccount.currency !== first.fromCurrency) {
+    throw new FinanceRefusal(
+      `Счёт списания ведётся в ${sourceAccount.currency}, а обмен начинается с ${first.fromCurrency} (EARS-312).`,
+    )
+  }
+  if (targetAccount.currency !== last.toCurrency) {
+    throw new FinanceRefusal(
+      `Счёт зачисления ведётся в ${targetAccount.currency}, а обмен заканчивается в ${last.toCurrency} (EARS-312).`,
+    )
+  }
+
+  const fund = await requireFundProject(tx)
+  const postings: PostingDraft[] = []
+
+  // The chain's two ends: the money actually left one account and arrived in
+  // another. Everything between them rests on the conversion account.
+  postings.push({
+    accountId: sourceAccount.id,
+    amount: -first.fromAmount,
+    currency: first.fromCurrency,
+  })
+  postings.push({
+    accountId: targetAccount.id,
+    amount: last.toAmount,
+    currency: last.toCurrency,
+  })
+
+  for (const [index, step] of steps.entries()) {
+    await requireCurrency(tx, step.fromCurrency)
+    await requireCurrency(tx, step.toCurrency)
+    const stepNo = index + 1
+    const conversionFrom = await ensureSystemAccount(tx, 'conversion', step.fromCurrency)
+    const conversionTo = await ensureSystemAccount(tx, 'conversion', step.toCurrency)
+    // Both legs of the exchange carry the step, not only the fee: that is what
+    // makes the weighted average of EARS-328 readable off recorded postings.
+    postings.push({
+      accountId: conversionFrom.id,
+      amount: step.fromAmount,
+      currency: step.fromCurrency,
+      conversionStepNo: stepNo,
+    })
+    postings.push({
+      accountId: conversionTo.id,
+      amount: -step.toAmount,
+      currency: step.toCurrency,
+      conversionStepNo: stepNo,
+    })
+
+    if (step.fee != null && step.fee.amount !== 0n) {
+      if (step.fee.amount < 0n) {
+        throw new FinanceRefusal(`Комиссия шага #${stepNo} — положительная сумма расхода.`)
+      }
+      // The fee is charged against the MONEY account it was actually taken
+      // from, not against the conversion clearing: a bank debits your account
+      // for it. Keeping it off the conversion account also keeps that
+      // account's step-linked legs exactly the two exchange legs, which is
+      // what makes the weighted average of EARS-328 exact rather than
+      // approximately right.
+      const feeMoneyAccount =
+        step.fee.currency === sourceAccount.currency
+          ? sourceAccount
+          : step.fee.currency === targetAccount.currency
+            ? targetAccount
+            : null
+      if (feeMoneyAccount === null) {
         throw new FinanceRefusal(
-          `Счётом ${role} в конвертации не может быть системный счёт «${account.name}» ` +
-            `(вид ${account.kind}, EARS-305): модуль ведёт его сам, и через него проходят ` +
-            'служебные плечи обмена. Обмен идёт между денежными счетами — bank, card, crypto, cash.',
+          `Комиссия шага #${stepNo} в ${step.fee.currency} не может быть списана: ни счёт ` +
+            `списания (${sourceAccount.currency}), ни счёт зачисления (${targetAccount.currency}) ` +
+            'не ведётся в этой валюте. Комиссия в третьей валюте — это отдельная операция.',
         )
       }
-    }
-    if (sourceAccount.currency !== first.fromCurrency) {
-      throw new FinanceRefusal(
-        `Счёт списания ведётся в ${sourceAccount.currency}, а обмен начинается с ${first.fromCurrency} (EARS-312).`,
-      )
-    }
-    if (targetAccount.currency !== last.toCurrency) {
-      throw new FinanceRefusal(
-        `Счёт зачисления ведётся в ${targetAccount.currency}, а обмен заканчивается в ${last.toCurrency} (EARS-312).`,
-      )
-    }
-
-    const fund = await requireFundProject(tx)
-    const postings: PostingDraft[] = []
-
-    // The chain's two ends: the money actually left one account and arrived in
-    // another. Everything between them rests on the conversion account.
-    postings.push({
-      accountId: sourceAccount.id,
-      amount: -first.fromAmount,
-      currency: first.fromCurrency,
-    })
-    postings.push({
-      accountId: targetAccount.id,
-      amount: last.toAmount,
-      currency: last.toCurrency,
-    })
-
-    for (const [index, step] of input.steps.entries()) {
-      await requireCurrency(tx, step.fromCurrency)
-      await requireCurrency(tx, step.toCurrency)
-      const stepNo = index + 1
-      const conversionFrom = await ensureSystemAccount(tx, 'conversion', step.fromCurrency)
-      const conversionTo = await ensureSystemAccount(tx, 'conversion', step.toCurrency)
-      // Both legs of the exchange carry the step, not only the fee: that is what
-      // makes the weighted average of EARS-328 readable off recorded postings.
+      const feeExpense = await ensureSystemAccount(tx, 'expense', step.fee.currency)
       postings.push({
-        accountId: conversionFrom.id,
-        amount: step.fromAmount,
-        currency: step.fromCurrency,
+        accountId: feeExpense.id,
+        amount: step.fee.amount,
+        currency: step.fee.currency,
+        projectId: step.fee.projectId ?? fund.id,
         conversionStepNo: stepNo,
       })
       postings.push({
-        accountId: conversionTo.id,
-        amount: -step.toAmount,
+        accountId: feeMoneyAccount.id,
+        amount: -step.fee.amount,
+        currency: step.fee.currency,
+        conversionStepNo: stepNo,
+      })
+    }
+
+    // EARS-328 — the realized difference on THIS step's disposal, if the
+    // ledger holds an average to compare the actual rate against.
+    //
+    // The two FX legs deliberately carry NO conversion-step link: the average
+    // is read off step-linked conversion-account legs, and an FX leg is not an
+    // exchange leg. Linking it would let this operation's own result silently
+    // re-enter the average that prices the next disposal.
+    const realized = await realizedFxResult(tx, step)
+    if (realized !== 0n) {
+      const fxAccount = await ensureSystemAccount(tx, 'fx_result', step.toCurrency)
+      const fxCounter = await ensureSystemAccount(tx, 'conversion', step.toCurrency)
+      postings.push({
+        accountId: fxAccount.id,
+        amount: -realized,
         currency: step.toCurrency,
-        conversionStepNo: stepNo,
+        projectId: fund.id,
       })
-
-      if (step.fee != null && step.fee.amount !== 0n) {
-        if (step.fee.amount < 0n) {
-          throw new FinanceRefusal(`Комиссия шага #${stepNo} — положительная сумма расхода.`)
-        }
-        // The fee is charged against the MONEY account it was actually taken
-        // from, not against the conversion clearing: a bank debits your account
-        // for it. Keeping it off the conversion account also keeps that
-        // account's step-linked legs exactly the two exchange legs, which is
-        // what makes the weighted average of EARS-328 exact rather than
-        // approximately right.
-        const feeMoneyAccount =
-          step.fee.currency === sourceAccount.currency
-            ? sourceAccount
-            : step.fee.currency === targetAccount.currency
-              ? targetAccount
-              : null
-        if (feeMoneyAccount === null) {
-          throw new FinanceRefusal(
-            `Комиссия шага #${stepNo} в ${step.fee.currency} не может быть списана: ни счёт ` +
-              `списания (${sourceAccount.currency}), ни счёт зачисления (${targetAccount.currency}) ` +
-              'не ведётся в этой валюте. Комиссия в третьей валюте — это отдельная операция.',
-          )
-        }
-        const feeExpense = await ensureSystemAccount(tx, 'expense', step.fee.currency)
-        postings.push({
-          accountId: feeExpense.id,
-          amount: step.fee.amount,
-          currency: step.fee.currency,
-          projectId: step.fee.projectId ?? fund.id,
-          conversionStepNo: stepNo,
-        })
-        postings.push({
-          accountId: feeMoneyAccount.id,
-          amount: -step.fee.amount,
-          currency: step.fee.currency,
-          conversionStepNo: stepNo,
-        })
-      }
-
-      // EARS-328 — the realized difference on THIS step's disposal, if the
-      // ledger holds an average to compare the actual rate against.
-      //
-      // The two FX legs deliberately carry NO conversion-step link: the average
-      // is read off step-linked conversion-account legs, and an FX leg is not an
-      // exchange leg. Linking it would let this operation's own result silently
-      // re-enter the average that prices the next disposal.
-      const realized = await realizedFxResult(tx, step)
-      if (realized !== 0n) {
-        const fxAccount = await ensureSystemAccount(tx, 'fx_result', step.toCurrency)
-        const fxCounter = await ensureSystemAccount(tx, 'conversion', step.toCurrency)
-        postings.push({
-          accountId: fxAccount.id,
-          amount: -realized,
-          currency: step.toCurrency,
-          projectId: fund.id,
-        })
-        postings.push({
-          accountId: fxCounter.id,
-          amount: realized,
-          currency: step.toCurrency,
-        })
-      }
+      postings.push({
+        accountId: fxCounter.id,
+        amount: realized,
+        currency: step.toCurrency,
+      })
     }
-
-    const accounts = await loadAccountFacts(tx, postings)
-    assertNoRetiredAccount(accounts)
-    assertPostingCurrencyMatchesAccount(postings, accounts)
-    assertProjectOnResultPostings(postings, accounts)
-    assertBalancedPerCurrency(postings)
-
-    // The operation row first, then its steps, then the postings that name them.
-    const stepIdByNo = new Map<number, number>()
-    const operation = await insertOperation(
-      tx,
-      {
-        occurredOn: input.occurredOn,
-        source: input.source ?? 'manual',
-        // A conversion carries no purpose — it is a movement, not a spend
-        // (the spec's data-model table).
-        purposeId: null,
-        sourceRef: input.sourceRef ?? null,
-        backdated: input.backdated ?? false,
-        reverses: null,
-        postings: [],
-      },
-      stepIdByNo,
-    )
-    for (const [index, step] of input.steps.entries()) {
-      const [row] = await tx
-        .insert(financeConversionStep)
-        .values({
-          operationId: operation.id,
-          stepNo: index + 1,
-          fromCurrency: step.fromCurrency,
-          toCurrency: step.toCurrency,
-          rate: step.rate,
-        })
-        .returning()
-      stepIdByNo.set(index + 1, row.id)
-    }
-    const withPostings = await appendPostings(tx, operation, postings, stepIdByNo)
-    return withPostings
   }
-  return callerTx === undefined
-    ? platformTransaction(financeAuditContext(actor), record)
-    : record(callerTx)
+
+  const accounts = await loadAccountFacts(tx, postings)
+  assertNoRetiredAccount(accounts)
+  assertPostingCurrencyMatchesAccount(postings, accounts)
+  assertProjectOnResultPostings(postings, accounts)
+  assertBalancedPerCurrency(postings)
+
+  // The operation row first, then its steps, then the postings that name them.
+  const stepIdByNo = new Map<number, number>()
+  const operation = await insertOperation(
+    tx,
+    {
+      occurredOn: input.occurredOn,
+      source: input.source ?? 'manual',
+      // A conversion carries no purpose — it is a movement, not a spend
+      // (the spec's data-model table).
+      purposeId: null,
+      sourceRef: input.sourceRef ?? null,
+      backdated: input.backdated ?? false,
+      reverses: null,
+      postings: [],
+    },
+    stepIdByNo,
+  )
+  for (const [index, step] of steps.entries()) {
+    const [row] = await tx
+      .insert(financeConversionStep)
+      .values({
+        operationId: operation.id,
+        stepNo: index + 1,
+        fromCurrency: step.fromCurrency,
+        toCurrency: step.toCurrency,
+        rate: step.rate,
+      })
+      .returning()
+    stepIdByNo.set(index + 1, row.id)
+  }
+  const withPostings = await appendPostings(tx, operation, postings, stepIdByNo)
+  return withPostings
 }
 
 /**

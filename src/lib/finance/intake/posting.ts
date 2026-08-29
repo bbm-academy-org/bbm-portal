@@ -18,7 +18,7 @@ import {
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
-import { appendPostings, recordConversion } from '../conversions'
+import { appendPostings, recordConversionInTransaction } from '../conversions'
 import { assertFinanceLedgerAccess, financeAuditContext, type FinanceActor } from '../core/actor'
 import { FinanceRefusal } from '../core/errors'
 import {
@@ -32,7 +32,7 @@ import {
   insertOperation,
   loadAccountFacts,
   prepareDimensions,
-  recordOperation,
+  recordOperationInTransaction,
   type RecordedOperation,
 } from '../operations'
 import { assertRequestPurposeReady } from '../purpose-proposals'
@@ -66,7 +66,7 @@ export async function postIntakeItem(
     await assertRequestPurposeReady(tx, item.id)
     await requireReadyDocument(tx, item.id)
     const postedBy = await requireActorMemberId(tx, actor)
-    const operation = await recordItemOperation(actor, tx, item as PostingItem)
+    const operation = await recordItemOperation(tx, item as PostingItem)
     const postedAt = new Date()
     const [updated] = await tx
       .update(financeIntakeItem)
@@ -110,21 +110,17 @@ async function requireActorMemberId(tx: PlatformTx, actor: FinanceActor): Promis
   return Number(row.id)
 }
 
-async function recordItemOperation(
-  actor: FinanceActor,
-  tx: PlatformTx,
-  item: PostingItem,
-): Promise<RecordedOperation> {
+async function recordItemOperation(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {
   assertPositiveAmounts(item)
   switch (item.kind) {
     case 'expense':
-      return recordExpense(actor, tx, item)
+      return recordExpense(tx, item)
     case 'income':
-      return recordIncome(actor, tx, item)
+      return recordIncome(tx, item)
     case 'transfer':
-      return recordTransfer(actor, tx, item)
+      return recordTransfer(tx, item)
     case 'conversion':
-      return recordOwnConversion(actor, tx, item)
+      return recordOwnConversion(tx, item)
     default:
       throw new FinanceRefusal(`Вид позиции «${item.kind}» не проводится.`)
   }
@@ -139,11 +135,7 @@ function assertPositiveAmounts(item: PostingItem): void {
   }
 }
 
-async function recordExpense(
-  actor: FinanceActor,
-  tx: PlatformTx,
-  item: PostingItem,
-): Promise<RecordedOperation> {
+async function recordExpense(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {
   if (item.purposeId === null) {
     throw new FinanceRefusal('Расход без назначения не проводится.')
   }
@@ -174,14 +166,10 @@ async function recordExpense(
     moneyPosting(item, payer.id, -item.amount),
     ...(await feePostings(tx, item, payer)),
   ]
-  return recordOperation(actor, operationInput(item, postings), tx)
+  return recordOperationInTransaction(tx, operationInput(item, postings))
 }
 
-async function recordIncome(
-  actor: FinanceActor,
-  tx: PlatformTx,
-  item: PostingItem,
-): Promise<RecordedOperation> {
+async function recordIncome(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {
   assertNoPurpose(item)
   if (item.accountId === null || item.personalFunds) {
     throw new FinanceRefusal('Доход обязан назвать денежный счёт компании.')
@@ -213,14 +201,10 @@ async function recordIncome(
     moneyPosting(item, money.id, item.amount),
     ...(await feePostings(tx, item, money)),
   ]
-  return recordOperation(actor, operationInput(item, postings), tx)
+  return recordOperationInTransaction(tx, operationInput(item, postings))
 }
 
-async function recordTransfer(
-  actor: FinanceActor,
-  tx: PlatformTx,
-  item: PostingItem,
-): Promise<RecordedOperation> {
+async function recordTransfer(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {
   assertNoPurpose(item)
   if (item.accountId === null || item.counterAccountId === null) {
     throw new FinanceRefusal('Перевод обязан назвать счёт списания и счёт зачисления.')
@@ -253,14 +237,10 @@ async function recordTransfer(
     },
     ...(await feePostings(tx, item, source)),
   ]
-  return recordOperation(actor, operationInput(item, postings), tx)
+  return recordOperationInTransaction(tx, operationInput(item, postings))
 }
 
-async function recordOwnConversion(
-  actor: FinanceActor,
-  tx: PlatformTx,
-  item: PostingItem,
-): Promise<RecordedOperation> {
+async function recordOwnConversion(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {
   assertNoPurpose(item)
   if (
     item.accountId === null ||
@@ -273,30 +253,26 @@ async function recordOwnConversion(
   const from = await requireCurrency(tx, item.currency)
   const to = await requireCurrency(tx, item.paidCurrency)
   const rate = deriveRate(item.amount, from.precision, item.paidAmount, to.precision)
-  return recordConversion(
-    actor,
-    {
-      occurredOn: item.occurredOn,
-      sourceAccountId: item.accountId,
-      targetAccountId: item.counterAccountId,
-      steps: [
-        {
-          fromCurrency: item.currency,
-          toCurrency: item.paidCurrency,
-          fromAmount: item.amount,
-          toAmount: item.paidAmount,
-          rate,
-          fee:
-            item.feeAmount === null || item.feeCurrency === null
-              ? null
-              : { amount: item.feeAmount, currency: item.feeCurrency, projectId: item.projectId },
-        },
-      ],
-      source: item.source,
-      sourceRef: item.sourceRef,
-    },
-    tx,
-  )
+  return recordConversionInTransaction(tx, {
+    occurredOn: item.occurredOn,
+    sourceAccountId: item.accountId,
+    targetAccountId: item.counterAccountId,
+    steps: [
+      {
+        fromCurrency: item.currency,
+        toCurrency: item.paidCurrency,
+        fromAmount: item.amount,
+        toAmount: item.paidAmount,
+        rate,
+        fee:
+          item.feeAmount === null || item.feeCurrency === null
+            ? null
+            : { amount: item.feeAmount, currency: item.feeCurrency, projectId: item.projectId },
+      },
+    ],
+    source: item.source,
+    sourceRef: item.sourceRef,
+  })
 }
 
 type CrossCurrencyResult = {

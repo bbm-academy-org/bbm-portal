@@ -126,35 +126,44 @@ export function parseRecordOperationInput(input: RecordOperationInput): RecordOp
 export async function recordOperation(
   actor: FinanceActor,
   input: RecordOperationInput,
-  callerTx?: PlatformTx,
 ): Promise<RecordedOperation> {
+  if (arguments.length > 2) {
+    throw new FinanceRefusal(
+      'A caller-supplied transaction is not accepted by the public ledger API: authorization and audit identity must stay bound.',
+    )
+  }
   assertFinanceLedgerAccess(actor)
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    recordOperationInTransaction(tx, input),
+  )
+}
+
+/** Module-private writer. The audited outer door already bound the actor to `tx`. */
+export async function recordOperationInTransaction(
+  tx: PlatformTx,
+  input: RecordOperationInput,
+): Promise<RecordedOperation> {
   const parsed = parseRecordOperationInput(input)
   if (parsed.source === 'reversal') {
     throw new FinanceRefusal(
       "source = 'reversal' проставляет только сторно: используйте reverseOperation (EARS-314).",
     )
   }
-  const record = async (tx: PlatformTx) => {
-    const accounts = await loadAccountFacts(tx, parsed.postings)
-    assertNoRetiredAccount(accounts)
-    const postings = await prepareDimensions(tx, parsed, accounts)
-    assertPostingCurrencyMatchesAccount(postings, accounts)
-    assertBalancedPerCurrency(postings)
-    assertProjectOnResultPostings(postings, accounts)
-    return insertOperation(tx, {
-      occurredOn: parsed.occurredOn,
-      source: parsed.source,
-      purposeId: parsed.purposeId ?? null,
-      sourceRef: parsed.sourceRef ?? null,
-      backdated: parsed.backdated ?? false,
-      reverses: null,
-      postings,
-    })
-  }
-  return callerTx === undefined
-    ? platformTransaction(financeAuditContext(actor), record)
-    : record(callerTx)
+  const accounts = await loadAccountFacts(tx, parsed.postings)
+  assertNoRetiredAccount(accounts)
+  const postings = await prepareDimensions(tx, parsed, accounts)
+  assertPostingCurrencyMatchesAccount(postings, accounts)
+  assertBalancedPerCurrency(postings)
+  assertProjectOnResultPostings(postings, accounts)
+  return insertOperation(tx, {
+    occurredOn: parsed.occurredOn,
+    source: parsed.source,
+    purposeId: parsed.purposeId ?? null,
+    sourceRef: parsed.sourceRef ?? null,
+    backdated: parsed.backdated ?? false,
+    reverses: null,
+    postings,
+  })
 }
 
 /**
