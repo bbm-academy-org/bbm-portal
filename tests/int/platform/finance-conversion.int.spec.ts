@@ -545,6 +545,27 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     expect(await fxResultOf(sale.id, 'THB')).toBe(-50_000n)
   })
 
+  it('EARS-314/328: refuses reversing an acquisition after a dependent disposal', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+    const balancesBefore = await accountBalances()
+    const registerBefore = await listRegister()
+    const fxBefore = await fxResultOf(disposal.id, 'THB')
+
+    const refusal = await reverseOperation(APPROVER, acquisition.id).then(
+      () => null,
+      (error: unknown) => error,
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain('2026-03-10')
+    expect(await accountBalances()).toEqual(balancesBefore)
+    expect(await fxResultOf(disposal.id, 'THB')).toBe(fxBefore)
+    expect(await listRegister()).toEqual(registerBefore)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
   it('EARS-314/328: a reversal waits for an in-flight disposal of the same FX pool', async () => {
     const wallets = await seedWallets()
     const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
