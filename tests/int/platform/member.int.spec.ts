@@ -284,19 +284,19 @@ describe('core.member_alias', () => {
     expect(await listMembers()).toHaveLength(1)
   })
 
-  it('EARS-19: aliases are seed/SQL-only this cycle — the only writer on the API is the cutover seed', () => {
+  it('EARS-444: aliases now expose cabinet CRUD in addition to the cutover seed', () => {
     const aliasSurface = Object.keys(memberModule)
       .filter((name) => /alias/i.test(name))
       .sort()
-    // Reads, plus ONE writer: `upsertMemberWithAliases`, the manual cutover seed
-    // (EARS-14) — which is precisely the «seed» half of EARS-19's «seed and the
-    // owner's SQL escape hatch». No per-alias `addAlias`/`removeAlias` on the API,
-    // because that is the shape an admin UI would need and the UI arrives with
-    // `/p/admin` (epic #112), not here.
+    // Spec 311 EARS-444 retires the old seed/SQL-only surface. The cabinet owns
+    // one named create/update/delete path through this same public door.
     expect(aliasSurface).toEqual([
+      'createMemberAlias',
+      'deleteMemberAlias',
       'findMemberOwningAliasValue',
       'listAliases',
       'normalizeAliasValue',
+      'updateMemberAlias',
       'upsertMemberWithAliases',
     ])
   })
