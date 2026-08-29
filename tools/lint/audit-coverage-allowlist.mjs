@@ -135,6 +135,15 @@ export const AUDIT_VALUE_WHITELIST = {
   // here that is EDITABLE by design, so its old/new pairs are the record of the
   // status machine in motion — the approval, the bounce, the refusal reason.
   finance_counterparty: ['id', 'name', 'created_by', 'created_at'],
+  finance_purpose_proposal: [
+    'id',
+    'intake_item_id',
+    'text',
+    'proposed_by',
+    'created_at',
+    'resolved_purpose_id',
+    'resolved_at',
+  ],
   finance_intake_item: [
     'id',
     'source',

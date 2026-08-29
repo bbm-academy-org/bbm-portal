@@ -101,6 +101,8 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       '0011_finance_document_lifecycle.sql',
       // The server-computed byte identity required for exact upload recovery.
       '0012_finance_document_content_digest.sql',
+      // The request-bound purpose proposal and its universal audit trigger (#383).
+      '0013_finance_reference_proposals.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

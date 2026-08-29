@@ -36,6 +36,7 @@ import {
 import { getPlatformDb } from '@/lib/platform/db/client'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
+import { assertNoPendingPurposeProposal, assertRequestPurposeReady } from '../purpose-proposals'
 import {
   assertFinanceIntakeAccess,
   assertFinanceLedgerAccess,
@@ -607,6 +608,10 @@ export async function transitionIntakeItem(
     })
     assertTransitionGate(actor, transition, row, actorMemberId)
 
+    if (act === 'submit' || act === 'post') {
+      await assertRequestPurposeReady(tx, row.id)
+    }
+
     if (act === 'post') {
       throw new FinanceRefusal(
         'Проводка позиции приёмки в этот слой не входит: она атомарна, требует приложенного ' +
@@ -616,6 +621,7 @@ export async function transitionIntakeItem(
     }
 
     if (transition.to === null) {
+      await assertNoPendingPurposeProposal(tx, row.id)
       await tx.delete(financeIntakeItem).where(eq(financeIntakeItem.id, id))
       return null
     }
