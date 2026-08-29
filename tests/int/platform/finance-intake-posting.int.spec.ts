@@ -303,6 +303,88 @@ describe('intake posting is never an hours event (EARS-507)', () => {
   })
 })
 
+describe('every intake posting branch enters through the same atomic door (EARS-505)', () => {
+  it('EARS-505: posts income to the named money account and the income result account', async () => {
+    const refs = await seedPostingReferences()
+    const item = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'income',
+      occurredOn: '2026-08-20',
+      accountId: refs.thbAccountId,
+      amount: 250_000n,
+      currency: 'THB',
+      projectId: refs.projectId,
+      counterpartyId: refs.counterpartyId,
+    })
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    const posted = await postIntakeItem(APPROVER, item.id)
+    expect(await postingsOf(posted.operationId!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'income',
+          amount: -250_000n,
+          currency: 'THB',
+        }),
+        expect.objectContaining({
+          accountId: refs.thbAccountId,
+          amount: 250_000n,
+          currency: 'THB',
+        }),
+      ]),
+    )
+  })
+
+  it('EARS-505: posts an ordinary same-currency transfer between two money accounts', async () => {
+    const refs = await seedPostingReferences()
+    const target = await createAccount(ADMIN, {
+      name: 'Reserve RUB',
+      kind: 'bank',
+      currency: 'RUB',
+    })
+    const item = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'transfer',
+      occurredOn: '2026-08-20',
+      accountId: refs.rubAccountId,
+      counterAccountId: target.id,
+      amount: 75_000n,
+      currency: 'RUB',
+      projectId: refs.projectId,
+    })
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    const posted = await postIntakeItem(APPROVER, item.id)
+    expect(await postingsOf(posted.operationId!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: refs.rubAccountId, amount: -75_000n }),
+        expect.objectContaining({ accountId: target.id, amount: 75_000n }),
+      ]),
+    )
+  })
+
+  it('EARS-505: serializes simultaneous posting attempts into one operation and one refusal', async () => {
+    const refs = await seedPostingReferences()
+    const item = await createIntakeItem(ENTRY, expenseInput(refs))
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    const attempts = await Promise.allSettled([
+      postIntakeItem(APPROVER, item.id),
+      postIntakeItem(APPROVER, item.id),
+    ])
+    expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1)
+    expect(attempts.filter((attempt) => attempt.status === 'rejected')).toHaveLength(1)
+    const posted = await getIntakeItem(APPROVER, item.id)
+    if (posted === null) throw new Error('the concurrently posted item disappeared')
+    expect(posted.status).toBe('posted')
+    const operations = await db.execute(sql`select id from core.finance_operation order by id`)
+    expect(operations.rows).toEqual([{ id: posted.operationId }])
+  })
+})
+
 describe('cross-currency intake builds one authoritative conversion step', () => {
   it('EARS-505: posts the 3,500 THB / 8,750 RUB worked example and its fee without computing either amount', async () => {
     const refs = await seedPostingReferences()
