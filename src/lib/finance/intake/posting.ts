@@ -182,18 +182,9 @@ async function recordIncome(tx: PlatformTx, item: PostingItem): Promise<Recorded
   assertFeeCurrency(item, receivedCurrency)
 
   if (receivedCurrency !== item.currency) {
-    return recordCrossCurrencyResult(tx, item, {
-      result,
-      resultAmount: item.amount,
-      resultSign: -1n,
-      money,
-      moneyAmount: receivedAmount,
-      moneySign: 1n,
-      fromCurrency: item.currency,
-      fromAmount: item.amount,
-      toCurrency: receivedCurrency,
-      toAmount: receivedAmount,
-    })
+    throw new FinanceRefusal(
+      'Межвалютный доход через intake не поддерживается: утверждённый cross-currency путь описывает только расход, где валюта списания действительно выбывает из денежного счёта.',
+    )
   }
   assertNoRedundantPaidAmount(item)
   const postings: PostingDraft[] = [
