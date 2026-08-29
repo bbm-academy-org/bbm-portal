@@ -1,0 +1,421 @@
+// @vitest-environment node
+import { sql } from 'drizzle-orm'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+
+import {
+  createAccount,
+  createCurrency,
+  createIntakeItem,
+  createPurpose,
+  editIntakeItem,
+  financeAuditContext,
+  FinanceRefusal,
+  getIntakeItem,
+  liabilityBalances,
+  postIntakeItem,
+  recordConversion,
+  recordOperation,
+  systemAccount,
+} from '@/lib/finance'
+import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
+import { platformTransaction } from '@/lib/platform/db/transaction'
+
+import {
+  ADMIN,
+  APPROVER,
+  ENTRY,
+  fixtureWrite,
+  fundProjectId,
+  seedCounterparty,
+  seedMember,
+  truncateFinanceTables,
+} from './finance-helpers'
+import { asMigrator } from './privilege-helpers'
+
+const db = getPlatformDb()
+
+beforeEach(async () => {
+  await truncateFinanceTables()
+})
+
+afterAll(async () => {
+  await closePlatformDb()
+})
+
+async function seedPostingReferences() {
+  const entryMemberId = await seedMember(ENTRY.email, 'Entry Clerk')
+  const approverMemberId = await seedMember(APPROVER.email, 'Approver Person')
+  const payerMemberId = await seedMember('payer@bbm.academy', 'Payer Person')
+  await createCurrency(ADMIN, { code: 'RUB', name: 'Рубль', precision: 2 })
+  await createCurrency(ADMIN, { code: 'THB', name: 'Бат', precision: 2 })
+  const rubAccount = await createAccount(ADMIN, {
+    name: 'Карта RUB',
+    kind: 'card',
+    currency: 'RUB',
+  })
+  const thbAccount = await createAccount(ADMIN, {
+    name: 'Счёт THB',
+    kind: 'bank',
+    currency: 'THB',
+  })
+  const purpose = await createPurpose(ADMIN, {
+    name: 'Хостинг',
+    productBinding: 'forbidden',
+  })
+  const projectId = await fundProjectId()
+  const counterpartyId = await seedCounterparty('Vendor', entryMemberId)
+  return {
+    approverMemberId,
+    payerMemberId,
+    rubAccountId: rubAccount.id,
+    thbAccountId: thbAccount.id,
+    purposeId: purpose.id,
+    projectId,
+    counterpartyId,
+  }
+}
+
+type Refs = Awaited<ReturnType<typeof seedPostingReferences>>
+
+function expenseInput(refs: Refs, overrides: Record<string, unknown> = {}) {
+  return {
+    source: 'manual' as const,
+    kind: 'expense' as const,
+    occurredOn: '2026-08-20',
+    accountId: refs.rubAccountId,
+    amount: 120_000n,
+    currency: 'RUB',
+    purposeId: refs.purposeId,
+    projectId: refs.projectId,
+    counterpartyId: refs.counterpartyId,
+    ...overrides,
+  }
+}
+
+async function approve(itemId: number, approverMemberId: number): Promise<void> {
+  await fixtureWrite((tx) =>
+    tx.execute(sql`
+      update core.finance_intake_item
+         set status = 'approved', decided_by = ${approverMemberId}, decided_at = now()
+       where id = ${itemId}
+    `),
+  )
+}
+
+async function attachDocument(itemId: number, linkedBy: number): Promise<number> {
+  return fixtureWrite(async (tx) => {
+    const inserted = await tx.execute(sql`
+      insert into core.finance_document
+        (storage_key, content_digest, filename, mime, size, kind, storage_state, uploaded_by)
+      values (${`finance/documents/posting-${itemId}.pdf`},
+              ${`sha256:${'0'.repeat(64)}`}, 'receipt.pdf', 'application/pdf', 10,
+              'fiscal_receipt', 'ready', ${linkedBy})
+      returning id
+    `)
+    const documentId = Number((inserted.rows[0] as { id: number }).id)
+    await tx.execute(sql`
+      insert into core.finance_document_link (document_id, intake_item_id, linked_by)
+      values (${documentId}, ${itemId}, ${linkedBy})
+    `)
+    return documentId
+  })
+}
+
+async function postingsOf(operationId: number) {
+  const result = await db.execute(sql`
+    select a.kind, p.account_id, p.amount::text as amount, p.currency, p.member_id,
+           p.conversion_step_id
+      from core.finance_posting p
+      join core.finance_account a on a.id = p.account_id
+     where p.operation_id = ${operationId}
+     order by p.id
+  `)
+  return (result.rows as Record<string, unknown>[]).map((row) => ({
+    kind: String(row.kind),
+    accountId: Number(row.account_id),
+    amount: BigInt(String(row.amount)),
+    currency: String(row.currency),
+    memberId: row.member_id === null ? null : Number(row.member_id),
+    conversionStepId: row.conversion_step_id === null ? null : Number(row.conversion_step_id),
+  }))
+}
+
+describe('posting an intake item is one document-gated fact (EARS-505/506)', () => {
+  it('EARS-505: records and links the operation with documents and poster metadata, then locks edits', async () => {
+    const refs = await seedPostingReferences()
+    const item = await createIntakeItem(ENTRY, expenseInput(refs))
+    await approve(item.id, refs.approverMemberId)
+    const documentId = await attachDocument(item.id, refs.approverMemberId)
+
+    const posted = await postIntakeItem(APPROVER, item.id)
+
+    expect(posted.status).toBe('posted')
+    expect(posted.operationId).not.toBeNull()
+    expect(posted.postedBy).toBe(refs.approverMemberId)
+    expect(posted.postedAt).toBeInstanceOf(Date)
+    const carried = await db.execute(sql`
+      select dl.document_id
+        from core.finance_document_link dl
+        join core.finance_intake_item i on i.id = dl.intake_item_id
+       where i.operation_id = ${posted.operationId}
+    `)
+    expect(carried.rows).toEqual([{ document_id: documentId }])
+    await expect(editIntakeItem(ENTRY, item.id, { amount: 130_000n })).rejects.toBeInstanceOf(
+      FinanceRefusal,
+    )
+  })
+
+  it('EARS-505: recordOperation and recordConversion join a caller-supplied platformTransaction', async () => {
+    const refs = await seedPostingReferences()
+
+    await expect(
+      platformTransaction(financeAuditContext(APPROVER), async (tx) => {
+        await recordOperation(
+          APPROVER,
+          {
+            occurredOn: '2026-08-20',
+            source: 'manual',
+            postings: [
+              {
+                accountId: refs.rubAccountId,
+                amount: -100n,
+                currency: 'RUB',
+              },
+              {
+                accountId: (await systemAccount(ADMIN, 'expense', 'RUB')).id,
+                amount: 100n,
+                currency: 'RUB',
+                projectId: refs.projectId,
+              },
+            ],
+          },
+          tx,
+        )
+        await recordConversion(
+          APPROVER,
+          {
+            occurredOn: '2026-08-20',
+            sourceAccountId: refs.rubAccountId,
+            targetAccountId: refs.thbAccountId,
+            steps: [
+              {
+                fromCurrency: 'RUB',
+                toCurrency: 'THB',
+                fromAmount: 250n,
+                toAmount: 100n,
+                rate: '0.4',
+              },
+            ],
+          },
+          tx,
+        )
+        throw new Error('rollback the caller transaction')
+      }),
+    ).rejects.toThrow('rollback the caller transaction')
+
+    const operations = await db.execute(
+      sql`select count(*)::int as count from core.finance_operation`,
+    )
+    expect(Number((operations.rows[0] as { count: number }).count)).toBe(0)
+  })
+
+  it('EARS-505: a failure while linking the item rolls the operation back too', async () => {
+    const refs = await seedPostingReferences()
+    const item = await createIntakeItem(ENTRY, expenseInput(refs))
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    await asMigrator(async (client) => {
+      await client.query(`
+        create or replace function core.finance_test_fail_post() returns trigger language plpgsql as $$
+        begin
+          if new.status = 'posted' then raise exception 'fixture link failure'; end if;
+          return new;
+        end $$;
+        create trigger finance_test_fail_post before update on core.finance_intake_item
+        for each row execute function core.finance_test_fail_post();
+      `)
+    })
+    try {
+      await expect(postIntakeItem(APPROVER, item.id)).rejects.toThrow(/fixture link failure/)
+    } finally {
+      await asMigrator(async (client) => {
+        await client.query(
+          'drop trigger if exists finance_test_fail_post on core.finance_intake_item',
+        )
+        await client.query('drop function if exists core.finance_test_fail_post()')
+      })
+    }
+
+    expect(await getIntakeItem(APPROVER, item.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+      postedBy: null,
+      postedAt: null,
+    })
+    const operations = await db.execute(
+      sql`select count(*)::int as count from core.finance_operation`,
+    )
+    expect(Number((operations.rows[0] as { count: number }).count)).toBe(0)
+  })
+
+  it('EARS-506: refuses an approved item without a document and posts nothing', async () => {
+    const refs = await seedPostingReferences()
+    const item = await createIntakeItem(ENTRY, expenseInput(refs))
+    await approve(item.id, refs.approverMemberId)
+
+    await expect(postIntakeItem(APPROVER, item.id)).rejects.toThrow(/EARS-506/)
+    expect(await getIntakeItem(APPROVER, item.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+    })
+    const operations = await db.execute(
+      sql`select count(*)::int as count from core.finance_operation`,
+    )
+    expect(Number((operations.rows[0] as { count: number }).count)).toBe(0)
+  })
+})
+
+describe('intake posting is never an hours event (EARS-507)', () => {
+  it('EARS-507: refuses `hours` as an intake source and creates no operation', async () => {
+    const refs = await seedPostingReferences()
+    await expect(
+      createIntakeItem(ENTRY, { ...expenseInput(refs), source: 'hours' } as never),
+    ).rejects.toThrow(/EARS-503\/525/)
+    const operations = await db.execute(
+      sql`select count(*)::int as count from core.finance_operation`,
+    )
+    expect(Number((operations.rows[0] as { count: number }).count)).toBe(0)
+  })
+})
+
+describe('cross-currency intake builds one authoritative conversion step', () => {
+  it('EARS-505: posts the 3,500 THB / 8,750 RUB worked example and its fee without computing either amount', async () => {
+    const refs = await seedPostingReferences()
+    const item = await createIntakeItem(
+      ENTRY,
+      expenseInput(refs, {
+        amount: 350_000n,
+        currency: 'THB',
+        paidAmount: 875_000n,
+        paidCurrency: 'RUB',
+        feeAmount: 1_000n,
+        feeCurrency: 'RUB',
+      }),
+    )
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    const posted = await postIntakeItem(APPROVER, item.id)
+    const legs = await postingsOf(posted.operationId!)
+
+    expect(
+      legs
+        .filter((leg) => leg.currency === 'THB')
+        .map((leg) => leg.amount)
+        .sort(),
+    ).toEqual([-350_000n, 350_000n])
+    expect(
+      legs
+        .filter((leg) => leg.currency === 'RUB')
+        .map((leg) => leg.amount)
+        .sort(),
+    ).toEqual([-875_000n, -1_000n, 1_000n, 875_000n])
+    const steps = await db.execute(sql`
+      select from_currency, to_currency, rate
+        from core.finance_conversion_step where operation_id = ${posted.operationId}
+    `)
+    expect(steps.rows).toEqual([{ from_currency: 'RUB', to_currency: 'THB', rate: '0.4' }])
+    expect(legs.filter((leg) => leg.conversionStepId !== null)).toHaveLength(4)
+  })
+
+  it('EARS-505: kind=conversion uses the same pair as one implicit own-account step', async () => {
+    const refs = await seedPostingReferences()
+    const item = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'conversion',
+      occurredOn: '2026-08-20',
+      accountId: refs.rubAccountId,
+      counterAccountId: refs.thbAccountId,
+      amount: 875_000n,
+      currency: 'RUB',
+      paidAmount: 350_000n,
+      paidCurrency: 'THB',
+      projectId: refs.projectId,
+    })
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    const posted = await postIntakeItem(APPROVER, item.id)
+    const legs = await postingsOf(posted.operationId!)
+    expect(legs.find((leg) => leg.accountId === refs.rubAccountId)?.amount).toBe(-875_000n)
+    expect(legs.find((leg) => leg.accountId === refs.thbAccountId)?.amount).toBe(350_000n)
+    const steps = await db.execute(sql`
+      select count(*)::int as count from core.finance_conversion_step
+       where operation_id = ${posted.operationId}
+    `)
+    expect(Number((steps.rows[0] as { count: number }).count)).toBe(1)
+  })
+})
+
+describe('personal funds and reimbursements share the liability cut (EARS-513/527/528)', () => {
+  it('EARS-513/527/528: records debt in the charged currency, filters it by member, then settles it with a transfer', async () => {
+    const refs = await seedPostingReferences()
+    const debt = await createIntakeItem(
+      ENTRY,
+      expenseInput(refs, {
+        accountId: null,
+        amount: 350_000n,
+        currency: 'THB',
+        paidAmount: 875_000n,
+        paidCurrency: 'RUB',
+        alreadyPaid: true,
+        personalFunds: true,
+        memberId: refs.payerMemberId,
+      }),
+    )
+    await approve(debt.id, refs.approverMemberId)
+    await attachDocument(debt.id, refs.approverMemberId)
+    const postedDebt = await postIntakeItem(APPROVER, debt.id)
+    const liability = await systemAccount(ADMIN, 'liability', 'RUB')
+    expect(await postingsOf(postedDebt.operationId!)).toContainEqual(
+      expect.objectContaining({
+        accountId: liability.id,
+        amount: -875_000n,
+        currency: 'RUB',
+        memberId: refs.payerMemberId,
+      }),
+    )
+    expect(await liabilityBalances({ memberId: refs.payerMemberId })).toEqual([
+      expect.objectContaining({
+        memberId: refs.payerMemberId,
+        currency: 'RUB',
+        balance: -875_000n,
+      }),
+    ])
+    expect(await liabilityBalances({ memberId: refs.approverMemberId })).toEqual([])
+
+    const repayment = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'transfer',
+      occurredOn: '2026-08-21',
+      accountId: refs.rubAccountId,
+      counterAccountId: liability.id,
+      amount: 875_000n,
+      currency: 'RUB',
+      projectId: refs.projectId,
+      memberId: refs.payerMemberId,
+    })
+    await approve(repayment.id, refs.approverMemberId)
+    await attachDocument(repayment.id, refs.approverMemberId)
+    const postedRepayment = await postIntakeItem(APPROVER, repayment.id)
+    expect(await postingsOf(postedRepayment.operationId!)).toContainEqual(
+      expect.objectContaining({
+        accountId: liability.id,
+        amount: 875_000n,
+        memberId: refs.payerMemberId,
+      }),
+    )
+    expect(await liabilityBalances({ memberId: refs.payerMemberId })).toEqual([])
+  })
+})
