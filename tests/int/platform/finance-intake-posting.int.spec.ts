@@ -336,6 +336,57 @@ describe('every intake posting branch enters through the same atomic door (EARS-
     )
   })
 
+  it('marks ordinary, own-conversion and cross-currency backfill postings as backdated', async () => {
+    const refs = await seedPostingReferences()
+    const inputs = [
+      expenseInput(refs, {
+        source: 'backfill',
+        sourceRef: 'review-backfill-ordinary',
+      }),
+      {
+        source: 'backfill' as const,
+        sourceRef: 'review-backfill-own-conversion',
+        kind: 'conversion' as const,
+        occurredOn: '2026-08-20',
+        accountId: refs.rubAccountId,
+        counterAccountId: refs.thbAccountId,
+        amount: 875_000n,
+        currency: 'RUB',
+        paidAmount: 350_000n,
+        paidCurrency: 'THB',
+        projectId: refs.projectId,
+      },
+      expenseInput(refs, {
+        source: 'backfill',
+        sourceRef: 'review-backfill-cross-currency',
+        amount: 350_000n,
+        currency: 'THB',
+        paidAmount: 875_000n,
+        paidCurrency: 'RUB',
+      }),
+    ]
+    const operationIds: number[] = []
+    for (const input of inputs) {
+      const item = await createIntakeItem(ENTRY, input)
+      await approve(item.id, refs.approverMemberId)
+      await attachDocument(item.id, refs.approverMemberId)
+      const posted = await postIntakeItem(APPROVER, item.id)
+      operationIds.push(posted.operationId!)
+    }
+
+    const operations = await db.execute(sql`
+      select source, backdated
+        from core.finance_operation
+       where id in (${operationIds[0]}, ${operationIds[1]}, ${operationIds[2]})
+       order by id
+    `)
+    expect(operations.rows).toEqual([
+      { source: 'backfill', backdated: true },
+      { source: 'backfill', backdated: true },
+      { source: 'backfill', backdated: true },
+    ])
+  })
+
   it('EARS-505: posts an ordinary same-currency transfer between two money accounts', async () => {
     const refs = await seedPostingReferences()
     const target = await createAccount(ADMIN, {
