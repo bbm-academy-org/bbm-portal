@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { sql } from 'drizzle-orm'
+import type { Client } from 'pg'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -138,6 +139,32 @@ async function postingsOf(operationId: number) {
     memberId: row.member_id === null ? null : Number(row.member_id),
     conversionStepId: row.conversion_step_id === null ? null : Number(row.conversion_step_id),
   }))
+}
+
+async function waitForBlockedBy(
+  blocker: Client,
+  blockerPid: number,
+  expected: number,
+): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const result = await blocker.query<{ blocked: number }>(
+      `with recursive waiters(pid) as (
+         select pid
+           from pg_stat_activity
+          where $1 = any(pg_blocking_pids(pid))
+         union
+         select activity.pid
+           from pg_stat_activity activity
+           join waiters on waiters.pid = any(pg_blocking_pids(activity.pid))
+       )
+       select count(*)::int as blocked from waiters`,
+      [blockerPid],
+    )
+    if (Number(result.rows[0]?.blocked ?? 0) >= expected) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`Expected ${expected} transaction(s) to wait behind backend ${blockerPid}.`)
 }
 
 describe('posting an intake item is one document-gated fact (EARS-505/506)', () => {
@@ -536,6 +563,96 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     `)
     expect(steps.rows).toEqual([{ from_currency: 'RUB', to_currency: 'THB', rate: '0.4' }])
     expect(legs.filter((leg) => leg.conversionStepId !== null)).toHaveLength(4)
+  })
+
+  it('serializes the FX pool across two different concurrent intake items', async () => {
+    const refs = await seedPostingReferences()
+    await systemAccount(ADMIN, 'conversion', 'RUB')
+    await systemAccount(ADMIN, 'conversion', 'THB')
+    const acquisition = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'conversion',
+      occurredOn: '2026-01-10',
+      accountId: refs.thbAccountId,
+      counterAccountId: refs.rubAccountId,
+      amount: 300_000n,
+      currency: 'THB',
+      paidAmount: 100_000n,
+      paidCurrency: 'RUB',
+      projectId: refs.projectId,
+    })
+    const disposal = await createIntakeItem(
+      ENTRY,
+      expenseInput(refs, {
+        occurredOn: '2026-03-10',
+        amount: 380_000n,
+        currency: 'THB',
+        paidAmount: 100_000n,
+        paidCurrency: 'RUB',
+      }),
+    )
+    for (const item of [acquisition, disposal]) {
+      await approve(item.id, refs.approverMemberId)
+      await attachDocument(item.id, refs.approverMemberId)
+    }
+
+    const barrierKey = 385_003
+    let results: Awaited<ReturnType<typeof postIntakeItem>>[] = []
+    await asMigrator(async (client) => {
+      await client.query(`
+        create or replace function core.finance_test_fx_barrier() returns trigger language plpgsql as $$
+        begin
+          perform pg_advisory_xact_lock(${barrierKey}::bigint);
+          return new;
+        end $$;
+        drop trigger if exists finance_test_fx_barrier on core.finance_conversion_step;
+        create trigger finance_test_fx_barrier before insert on core.finance_conversion_step
+        for each row execute function core.finance_test_fx_barrier();
+      `)
+      await client.query('select pg_advisory_lock($1::bigint)', [barrierKey])
+      let lockHeld = true
+      try {
+        const pid = Number(
+          (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
+        )
+        const pending = Promise.all([
+          postIntakeItem(APPROVER, acquisition.id),
+          postIntakeItem(APPROVER, disposal.id),
+        ])
+        await waitForBlockedBy(client, pid, 2)
+        await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        lockHeld = false
+        results = await pending
+      } finally {
+        if (lockHeld) await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        await client.query(
+          'drop trigger if exists finance_test_fx_barrier on core.finance_conversion_step',
+        )
+        await client.query('drop function if exists core.finance_test_fx_barrier()')
+      }
+    })
+
+    const fx = await db.execute(sql`
+      select p.amount::text as amount
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where p.operation_id = ${results[1].operationId}
+         and a.kind = 'fx_result'
+         and p.currency = 'THB'
+    `)
+    expect(fx.rows).toEqual([{ amount: '-80000' }])
+    const clearing = await db.execute(sql`
+      select p.currency, sum(p.amount)::text as balance
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where a.kind = 'conversion' and p.currency in ('RUB', 'THB')
+       group by p.currency
+       order by p.currency
+    `)
+    expect(clearing.rows).toEqual([
+      { currency: 'RUB', balance: '0' },
+      { currency: 'THB', balance: '0' },
+    ])
   })
 
   it('EARS-505/328: prices a vendor disposal from the realized-FX pool and leaves no clearing residue', async () => {
