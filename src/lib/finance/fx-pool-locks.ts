@@ -95,3 +95,45 @@ export async function assertRealizedFxWriteOrder(
     }
   }
 }
+
+/** Refuse retroactive cancellation once a later immutable fact used the pair. */
+export async function assertRealizedFxReversalOrder(
+  tx: PlatformTx,
+  steps: readonly FxPoolPairInput[],
+  locks: RealizedFxPoolLocks,
+  operation: { id: number; occurredOn: string },
+): Promise<void> {
+  const affectedPairs = new Map<string, readonly [string, string]>()
+  for (const step of steps) {
+    const currencies = [step.fromCurrency, step.toCurrency].sort() as [string, string]
+    affectedPairs.set(currencies.join('/'), currencies)
+  }
+
+  for (const [pair, [leftCurrency, rightCurrency]] of [...affectedPairs].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    if (!locks.pairs.has(pair)) {
+      throw new Error('The realized-FX pool must be locked before a reversal order is checked.')
+    }
+    const later = await tx.execute(sql`
+      select o.id, o.occurred_on::text as occurred_on
+        from core.finance_operation o
+        join core.finance_posting p on p.operation_id = o.id
+        join core.finance_conversion_step cs on cs.id = p.conversion_step_id
+       where ((cs.from_currency = ${leftCurrency} and cs.to_currency = ${rightCurrency})
+          or  (cs.from_currency = ${rightCurrency} and cs.to_currency = ${leftCurrency}))
+         and (o.occurred_on > ${operation.occurredOn}
+          or (o.occurred_on = ${operation.occurredOn} and o.id > ${operation.id}))
+       order by o.occurred_on, o.id
+       limit 1
+    `)
+    const dependency = later.rows[0] as { id: number; occurred_on: string } | undefined
+    if (dependency !== undefined) {
+      throw new FinanceRefusal(
+        `Операцию #${operation.id} нельзя сторнировать после операции #${dependency.id} от ${dependency.occurred_on}: ` +
+          `более поздняя операция уже использовала валютную пару ${pair}, а неизменяемый ledger не пересчитывает признанный FX-результат (EARS-314/328). ` +
+          'Сначала сторнируйте более поздние операции этой пары в обратном порядке.',
+      )
+    }
+  }
+}

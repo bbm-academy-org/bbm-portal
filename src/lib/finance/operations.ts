@@ -15,7 +15,10 @@
  */
 import { eq, inArray } from 'drizzle-orm'
 
-import { financeAccount } from '@/lib/platform/db/schema/finance/finance-account'
+import {
+  financeAccount,
+  type FinanceSystemAccountKind,
+} from '@/lib/platform/db/schema/finance/finance-account'
 import { financeConversionStep } from '@/lib/platform/db/schema/finance/finance-conversion-step'
 import { financeOperation } from '@/lib/platform/db/schema/finance/finance-operation'
 import type { FinanceOperationSource } from '@/lib/platform/db/schema/finance/finance-operation'
@@ -33,7 +36,11 @@ import {
   type AccountFacts,
   type PostingDraft,
 } from './core/invariants'
-import { lockRealizedFxPools } from './fx-pool-locks'
+import {
+  assertRealizedFxReversalOrder,
+  lockFxSystemAccounts,
+  lockRealizedFxPools,
+} from './fx-pool-locks'
 import { requirePurpose } from './references'
 
 /** What a caller offers when recording a fact. */
@@ -231,7 +238,22 @@ export async function reverseOperation(
         })
         .from(financeConversionStep)
         .where(inArray(financeConversionStep.id, conversionStepIds))
-      await lockRealizedFxPools(tx, affectedSteps)
+      const fxPoolLocks = await lockRealizedFxPools(tx, affectedSteps)
+      const accounts = await loadAccountFacts(tx, originalPostings)
+      await lockFxSystemAccounts(
+        tx,
+        [...accounts.values()]
+          .filter((account) => account.isSystem)
+          .map((account) => ({
+            // `is_system` and `kind` agree by the table constraint.
+            kind: account.kind as FinanceSystemAccountKind,
+            currency: account.currency,
+          })),
+      )
+      await assertRealizedFxReversalOrder(tx, affectedSteps, fxPoolLocks, {
+        id: original.id,
+        occurredOn: original.occurredOn,
+      })
     }
 
     // The mirror is built COMPLETE, conversion-step link included, and inserted

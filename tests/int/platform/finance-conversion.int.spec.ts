@@ -587,11 +587,13 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
   })
 
-  it('EARS-314/328: a reversal waits for an in-flight disposal of the same FX pool', async () => {
+  it('EARS-314/328: a reversal waits for and then refuses an in-flight later disposal', async () => {
     const wallets = await seedWallets()
     const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
     const barrierKey = 385_005
     let reversalWasBlocked = false
+    let reversalError: unknown = null
+    let disposalOperationId: number | null = null
 
     await asMigrator(async (client) => {
       await client.query(`
@@ -616,7 +618,11 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
         reversalWasBlocked = await hasBlockedTransactions(client, pid, 2)
         await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
         lockHeld = false
-        await Promise.all([disposalPending, reversalPending])
+        disposalOperationId = (await disposalPending).id
+        reversalError = await reversalPending.then(
+          () => null,
+          (error: unknown) => error,
+        )
       } finally {
         if (lockHeld) await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
         await client.query(
@@ -627,6 +633,9 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     })
 
     expect(reversalWasBlocked).toBe(true)
+    expect(reversalError).toBeInstanceOf(FinanceRefusal)
+    expect(await fxResultOf(disposalOperationId!, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
   })
 
   it('EARS-329: an operation with no conversion step posts no FX result at all', async () => {
