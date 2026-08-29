@@ -24,9 +24,9 @@
  *    and bytes. No uploader, approver or admin bypass exists.
  *
  * **What this file deliberately does not do.** It does not enforce the document
- * gate at posting time (EARS-506 — #385): «an item may not post without a
- * document» is the posting handler's clause, and half-enforcing it here would
- * give #385 something to unpick. It renders nothing (#357 owns `/p/finance`),
+ * gate at posting time: `intake/posting.ts` asks whether a ready document is
+ * linked (EARS-506), while this layer owns attachment and storage lifecycle.
+ * It renders nothing (#357 owns `/p/finance`),
  * and it reads no `kind` to decide anything (EARS-515: the kind is data).
  * Object storage and Postgres cannot share a transaction; `storage_state`
  * records audited intent before either external side effect and leaves a

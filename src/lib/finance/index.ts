@@ -127,6 +127,7 @@ export {
   listIntakeItems,
   transitionIntakeItem,
 } from './intake/items'
+export { postIntakeItem } from './intake/posting'
 export type {
   CreateIntakeItemInput,
   EditIntakeItemPatch,
@@ -205,8 +206,18 @@ export type {
 } from '@/lib/platform/db/schema/finance/finance-document'
 
 // ── the read side: balances, register, the exception list (EARS-317/333) ─────
-export { accountBalances, listRegister, postingsMissingOptionalProduct } from './queries'
-export type { AccountBalance, RegisterEntry, MissingProductPosting } from './queries'
+export {
+  accountBalances,
+  liabilityBalances,
+  listRegister,
+  postingsMissingOptionalProduct,
+} from './queries'
+export type {
+  AccountBalance,
+  LiabilityBalance,
+  RegisterEntry,
+  MissingProductPosting,
+} from './queries'
 
 // ── the enums the ledger fixes (EARS-305/306/316) ────────────────────────────
 export {

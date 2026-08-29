@@ -15,12 +15,10 @@
  * move has different gates depending on the row (`cancel` is the submitter's,
  * `approve` is the approve role's, and only the caller holds the row).
  *
- * **`post` is listed and not implemented.** `approved → posted` is a real
- * transition of the spec, so the machine knows it; the posting ACT — the atomic
- * write of the operation, the document gate, the cross-currency legs — is
- * EARS-505/506 and ships with #385. `transitionIntakeItem` therefore refuses it
- * by NAME rather than by silence: a caller who reaches for it gets told which
- * child owns it, not «нельзя».
+ * **`post` is listed but not performed by the generic transition handler.**
+ * `approved → posted` is a real transition, so the machine knows it; the actual
+ * move belongs to `./posting.ts`, which records the operation, applies the
+ * document gate and links the item atomically (EARS-505/506).
  */
 import type { FinanceIntakeStatus } from '@/lib/platform/db/schema/finance/finance-intake-item'
 
@@ -195,9 +193,9 @@ export type FinanceIntakeEditPlan = {
  *    where it is.
  *
  * The ONE sanctioned exception the spec names — the poster setting `occurred_on`
- * at EARS-511's one-act confirmation without bouncing — belongs to the posting
- * path and lands with #385; it is deliberately not a flag here, because a
- * general «skip the bounce» option is exactly how the clause would leak.
+ * at EARS-511's one-act confirmation without bouncing — belongs to #386's
+ * confirmation act; it is deliberately not a flag here, because a general
+ * «skip the bounce» option is exactly how the clause would leak.
  */
 export function planIntakeEdit(
   status: FinanceIntakeStatus,

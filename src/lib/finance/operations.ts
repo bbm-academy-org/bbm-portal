@@ -126,6 +126,7 @@ export function parseRecordOperationInput(input: RecordOperationInput): RecordOp
 export async function recordOperation(
   actor: FinanceActor,
   input: RecordOperationInput,
+  callerTx?: PlatformTx,
 ): Promise<RecordedOperation> {
   assertFinanceLedgerAccess(actor)
   const parsed = parseRecordOperationInput(input)
@@ -134,7 +135,7 @@ export async function recordOperation(
       "source = 'reversal' проставляет только сторно: используйте reverseOperation (EARS-314).",
     )
   }
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
+  const record = async (tx: PlatformTx) => {
     const accounts = await loadAccountFacts(tx, parsed.postings)
     assertNoRetiredAccount(accounts)
     const postings = await prepareDimensions(tx, parsed, accounts)
@@ -150,7 +151,10 @@ export async function recordOperation(
       reverses: null,
       postings,
     })
-  })
+  }
+  return callerTx === undefined
+    ? platformTransaction(financeAuditContext(actor), record)
+    : record(callerTx)
 }
 
 /**

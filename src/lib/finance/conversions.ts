@@ -103,6 +103,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 export async function recordConversion(
   actor: FinanceActor,
   input: RecordConversionInput,
+  callerTx?: PlatformTx,
 ): Promise<RecordedOperation> {
   assertFinanceLedgerAccess(actor)
   if (!ISO_DATE.test(input.occurredOn)) {
@@ -145,7 +146,7 @@ export async function recordConversion(
     }
   }
 
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
+  const record = async (tx: PlatformTx) => {
     const first = input.steps[0]
     const last = input.steps[input.steps.length - 1]
     const sourceAccount = await requireAccount(tx, input.sourceAccountId)
@@ -317,7 +318,10 @@ export async function recordConversion(
     }
     const withPostings = await appendPostings(tx, operation, postings, stepIdByNo)
     return withPostings
-  })
+  }
+  return callerTx === undefined
+    ? platformTransaction(financeAuditContext(actor), record)
+    : record(callerTx)
 }
 
 /**
@@ -413,7 +417,7 @@ async function realizedFxResult(tx: PlatformTx, step: ConversionStepInput): Prom
 }
 
 /** The postings of a conversion, written after its steps exist to be named. */
-async function appendPostings(
+export async function appendPostings(
   tx: PlatformTx,
   operation: RecordedOperation,
   postings: readonly PostingDraft[],

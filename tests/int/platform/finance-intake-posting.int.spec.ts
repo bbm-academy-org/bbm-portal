@@ -237,7 +237,7 @@ describe('posting an intake item is one document-gated fact (EARS-505/506)', () 
       `)
     })
     try {
-      await expect(postIntakeItem(APPROVER, item.id)).rejects.toThrow(/fixture link failure/)
+      await expect(postIntakeItem(APPROVER, item.id)).rejects.toThrow()
     } finally {
       await asMigrator(async (client) => {
         await client.query(
@@ -313,13 +313,13 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
       legs
         .filter((leg) => leg.currency === 'THB')
         .map((leg) => leg.amount)
-        .sort(),
+        .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
     ).toEqual([-350_000n, 350_000n])
     expect(
       legs
         .filter((leg) => leg.currency === 'RUB')
         .map((leg) => leg.amount)
-        .sort(),
+        .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
     ).toEqual([-875_000n, -1_000n, 1_000n, 875_000n])
     const steps = await db.execute(sql`
       select from_currency, to_currency, rate

@@ -16,11 +16,12 @@
  * own-request carve-out), `assertFinanceLedgerAccess` for the approve role's
  * decisions. No fourth guard is invented here.
  *
- * **What this file deliberately does not do.** It does not post (EARS-505/506 —
- * #385), it does not touch documents (#382) and it runs no request-flow act of
- * its own (#386). `approved → posted` is a transition the machine knows and this
- * file refuses by name: the spine is the substrate those children write into,
- * and a half-posting here would be the thing #385 has to unpick.
+ * **What this file deliberately does not do.** Posting, including its document
+ * gate, lives in `./posting.ts` (EARS-505/506); document lifecycle lives in
+ * `../documents/` (#382), and request-flow acts belong to #386.
+ * `approved → posted` is a transition the machine knows, but this generic
+ * transition function refuses it by name so nobody can advance the status
+ * without recording the operation atomically.
  */
 import { and, eq, inArray } from 'drizzle-orm'
 
@@ -210,7 +211,9 @@ const EDIT_PATCH_KEYS = new Set([
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
-function toView(row: typeof financeIntakeItem.$inferSelect): FinanceIntakeItemView {
+export function intakeItemToView(
+  row: typeof financeIntakeItem.$inferSelect,
+): FinanceIntakeItemView {
   return {
     ...row,
     source: row.source as FinanceIntakeSource,
@@ -377,13 +380,13 @@ export async function createIntakeItem(
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     if (sourceRef !== null) {
       const existing = await findBySourceRef(tx, input.source, sourceRef)
-      if (existing !== undefined) throw new FinanceIntakeDuplicate(toView(existing))
+      if (existing !== undefined) throw new FinanceIntakeDuplicate(intakeItemToView(existing))
     }
     const [row] = await tx
       .insert(financeIntakeItem)
       .values({ ...values, sourceRef, status: 'draft', createdBy })
       .returning()
-    return toView(row)
+    return intakeItemToView(row)
   })
 }
 
@@ -458,7 +461,7 @@ export async function createIntakeItems(
  * `reverseOperation` reads inside its transaction for exactly this reason, and
  * `createIntakeItem` already argues the point in its own docstring.
  */
-async function lockItem(
+export async function lockIntakeItem(
   tx: PlatformTx,
   id: number,
 ): Promise<typeof financeIntakeItem.$inferSelect> {
@@ -528,7 +531,7 @@ export async function editIntakeItem(
   const actorMemberId = await requireMemberId(actor)
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const row = await lockItem(tx, id)
+    const row = await lockIntakeItem(tx, id)
     assertItemVisible(actor, row, actorMemberId)
 
     const plan = planIntakeEdit(row.status as FinanceIntakeStatus, changedFields(row, patch))
@@ -559,7 +562,7 @@ export async function editIntakeItem(
       })
       .where(eq(financeIntakeItem.id, id))
       .returning()
-    return toView(updated)
+    return intakeItemToView(updated)
   })
 }
 
@@ -585,7 +588,7 @@ function isOwnEditableRequest(
  * that would not help. VISIBILITY is asked before both, so that ordering does
  * not turn the refusal text into a status oracle for a stranger.
  *
- * The row is read and written inside ONE transaction, locked — see `lockItem`.
+ * The row is read and written inside ONE transaction, locked — see `lockIntakeItem`.
  *
  * Returns `null` for the one act that ends with no row — `delete` from `draft`.
  */
@@ -598,7 +601,7 @@ export async function transitionIntakeItem(
   const actorMemberId = await requireMemberId(actor)
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const row = await lockItem(tx, id)
+    const row = await lockIntakeItem(tx, id)
     assertItemVisible(actor, row, actorMemberId)
 
     const transition = assertIntakeTransition({
@@ -614,9 +617,8 @@ export async function transitionIntakeItem(
 
     if (act === 'post') {
       throw new FinanceRefusal(
-        'Проводка позиции приёмки в этот слой не входит: она атомарна, требует приложенного ' +
-          'документа и строит кросс-валютные ноги (EARS-505/506) — это задача #385. ' +
-          'Машина статусов знает переход approved → posted, но выполняет его путь проведения.',
+        'Статус posted нельзя поставить обычным переходом: используйте postIntakeItem — он в одной ' +
+          'транзакции проверяет документ, записывает операцию и связывает её с позицией (EARS-505/506).',
       )
     }
 
@@ -638,7 +640,7 @@ export async function transitionIntakeItem(
       })
       .where(eq(financeIntakeItem.id, id))
       .returning()
-    return toView(updated)
+    return intakeItemToView(updated)
   })
 }
 
@@ -703,7 +705,7 @@ export async function listIntakeItems(
     .from(financeIntakeItem)
     .where(conditions.length === 0 ? undefined : and(...conditions))
     .orderBy(financeIntakeItem.id)
-  return rows.map(toView)
+  return rows.map(intakeItemToView)
 }
 
 /** One item, subject to the same visibility rule as the list. */
@@ -717,5 +719,5 @@ export async function getIntakeItem(
     .where(eq(financeIntakeItem.id, id))
   if (row === undefined) return null
   assertItemVisible(actor, row, await requireMemberId(actor))
-  return toView(row)
+  return intakeItemToView(row)
 }

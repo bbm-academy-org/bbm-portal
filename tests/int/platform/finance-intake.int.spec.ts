@@ -295,7 +295,7 @@ describe('The status machine over real rows (EARS-524)', () => {
   it('EARS-524: an edit racing a refusal cannot overwrite the terminal status it never read', async () => {
     // `editIntakeItem` writes `status` UNCONDITIONALLY on every edit, so an edit
     // that read `submitted` and committed after a refusal silently resurrects the
-    // item — and once #385 lands, the same shape overwrites `posted`.
+    // item — and the same shape could overwrite `posted` from the posting path.
     const refs = await seedIntakeReferences()
     const item = await createIntakeItem(MEMBER, requestLine(refs))
     await transitionIntakeItem(MEMBER, item.id, 'submit')
@@ -439,7 +439,7 @@ describe('The status machine over real rows (EARS-524)', () => {
     )
   })
 
-  it('EARS-524: the posting ACT is not in this spine — approved → posted refuses and names #385', async () => {
+  it('EARS-524: the generic transition cannot bypass the atomic posting path', async () => {
     const refs = await seedIntakeReferences()
     const item = await createIntakeItem(MEMBER, requestLine(refs))
     await transitionIntakeItem(MEMBER, item.id, 'submit')
