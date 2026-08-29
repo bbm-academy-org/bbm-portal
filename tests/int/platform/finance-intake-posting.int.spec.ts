@@ -437,6 +437,68 @@ describe('every intake posting branch enters through the same atomic door (EARS-
 })
 
 describe('cross-currency intake builds one authoritative conversion step', () => {
+  it('refuses cross-currency income instead of disposing an unrelated FX holding', async () => {
+    const refs = await seedPostingReferences()
+    await recordConversion(APPROVER, {
+      occurredOn: '2026-01-10',
+      sourceAccountId: refs.rubAccountId,
+      targetAccountId: refs.thbAccountId,
+      steps: [
+        {
+          fromCurrency: 'RUB',
+          toCurrency: 'THB',
+          fromAmount: 875_000n,
+          toAmount: 350_000n,
+          rate: '0.4',
+        },
+      ],
+    })
+    const poolBefore = await db.execute(sql`
+      select p.currency, sum(p.amount)::text as balance
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where a.kind = 'conversion'
+       group by p.currency
+       order by p.currency
+    `)
+    const item = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'income',
+      occurredOn: '2026-03-10',
+      accountId: refs.rubAccountId,
+      amount: 350_000n,
+      currency: 'THB',
+      paidAmount: 1_000_000n,
+      paidCurrency: 'RUB',
+      projectId: refs.projectId,
+      counterpartyId: refs.counterpartyId,
+    })
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    await expect(postIntakeItem(APPROVER, item.id)).rejects.toThrow(/Межвалютный доход/)
+    expect(await getIntakeItem(APPROVER, item.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+    })
+    const poolAfter = await db.execute(sql`
+      select p.currency, sum(p.amount)::text as balance
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where a.kind = 'conversion'
+       group by p.currency
+       order by p.currency
+    `)
+    expect(poolAfter.rows).toEqual(poolBefore.rows)
+    const fx = await db.execute(sql`
+      select count(*)::int as count
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where a.kind = 'fx_result'
+    `)
+    expect(fx.rows).toEqual([{ count: 0 }])
+  })
+
   it('EARS-505: posts the 3,500 THB / 8,750 RUB worked example and its fee without computing either amount', async () => {
     const refs = await seedPostingReferences()
     const item = await createIntakeItem(
