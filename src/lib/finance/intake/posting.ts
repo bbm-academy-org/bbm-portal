@@ -272,6 +272,11 @@ async function recordOwnConversion(tx: PlatformTx, item: PostingItem): Promise<R
   ) {
     throw new FinanceRefusal('kind = conversion обязан назвать два счёта и две фактические суммы.')
   }
+  if (item.currency === item.paidCurrency) {
+    throw new FinanceRefusal(
+      'kind = conversion требует две разные валюты; движение между счетами одной валюты записывается как kind = transfer.',
+    )
+  }
   const from = await requireCurrency(tx, item.currency)
   const to = await requireCurrency(tx, item.paidCurrency)
   const rate = deriveRate(item.amount, from.precision, item.paidAmount, to.precision)
