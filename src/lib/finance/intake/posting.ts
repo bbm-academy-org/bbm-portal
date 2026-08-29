@@ -181,7 +181,6 @@ async function recordIncome(tx: PlatformTx, item: PostingItem): Promise<Recorded
   }
   const money = await requireMoneyAccount(tx, item.accountId, 'счёта зачисления')
   const result = await ensureSystemAccount(tx, 'income', item.currency)
-  const receivedAmount = item.paidAmount ?? item.amount
   const receivedCurrency = item.paidCurrency ?? item.currency
   assertAccountCurrency(money, receivedCurrency, 'счёта зачисления')
   assertFeeCurrency(item, receivedCurrency)
