@@ -586,6 +586,44 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     expect(await listRegister()).toHaveLength(4)
   })
 
+  it('EARS-313/314/328: refuses restoring a disposal while its acquisition is inactive', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+    const disposalReversal = await reverseOperation(APPROVER, disposal.id)
+    await reverseOperation(APPROVER, acquisition.id)
+    const balancesBefore = await accountBalances()
+    const registerBefore = await listRegister()
+
+    const refusal = await reverseOperation(APPROVER, disposalReversal.id).then(
+      () => null,
+      (error: unknown) => error,
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain(`#${acquisition.id}`)
+    expect(await accountBalances()).toEqual(balancesBefore)
+    expect(await listRegister()).toEqual(registerBefore)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
+  it('EARS-313/314/328: restores inactive FX roots in chronological order', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+    const activeBalances = await accountBalances()
+    const disposalReversal = await reverseOperation(APPROVER, disposal.id)
+    const acquisitionReversal = await reverseOperation(APPROVER, acquisition.id)
+
+    await reverseOperation(APPROVER, acquisitionReversal.id)
+    await reverseOperation(APPROVER, disposalReversal.id)
+
+    expect(await accountBalances()).toEqual(activeBalances)
+    expect(await fxResultOf(disposal.id, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+    expect(await listRegister()).toHaveLength(6)
+  })
+
   it('EARS-314/328: immutable operation id orders same-date reversal dependencies', async () => {
     const wallets = await seedWallets()
     const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-03-10')
