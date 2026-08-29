@@ -27,6 +27,13 @@ vi.mock('@refinedev/core', async (importOriginal) => {
   }
 })
 
+vi.mock('@/app/(platform)/p/admin/member/members/alias-actions', () => ({
+  validateAliasResponse: async (_envelope: string, payload: { data?: unknown }) => ({
+    success: true,
+    data: payload.data,
+  }),
+}))
+
 const member = {
   id: 7,
   slug: 'anna',
