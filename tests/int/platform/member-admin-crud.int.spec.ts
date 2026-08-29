@@ -66,7 +66,16 @@ describe('member cabinet public API (spec 311 EARS-441..445)', () => {
       updateMemberProfile(created.id, { status: 'inactive' }, { db: tx }),
     )
 
-    expect(updated).toMatchObject({ ...before, status: 'inactive' })
+    expect(updated).toMatchObject({
+      id: before?.id,
+      slug: before?.slug,
+      email: before?.email,
+      name: before?.name,
+      role: before?.role,
+      timezone: before?.timezone,
+      createdAt: before?.createdAt,
+      status: 'inactive',
+    })
     const publicApi = await import('@/lib/member')
     expect('deleteMember' in publicApi).toBe(false)
   })
@@ -134,7 +143,7 @@ describe('member cabinet public API (spec 311 EARS-441..445)', () => {
     )
 
     const events = await db.execute(sql`
-      select table_name, operation, actor_email, source, diff::text as diff
+      select table_name, event_type, actor_email, source, diff::text as diff
       from core.audit_event
       where actor_email = ${ACTOR.actorEmail}
         and table_name in ('member', 'member_alias')

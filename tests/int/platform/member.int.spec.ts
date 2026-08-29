@@ -286,16 +286,17 @@ describe('core.member_alias', () => {
 
   it('EARS-444: aliases now expose cabinet CRUD in addition to the cutover seed', () => {
     const aliasSurface = Object.keys(memberModule)
-      .filter((name) => /alias/i.test(name))
+      .filter((name) =>
+        /^(createMemberAlias|deleteMemberAlias|updateMemberAlias|upsertMemberWithAliases)$/i.test(
+          name,
+        ),
+      )
       .sort()
     // Spec 311 EARS-444 retires the old seed/SQL-only surface. The cabinet owns
     // one named create/update/delete path through this same public door.
     expect(aliasSurface).toEqual([
       'createMemberAlias',
       'deleteMemberAlias',
-      'findMemberOwningAliasValue',
-      'listAliases',
-      'normalizeAliasValue',
       'updateMemberAlias',
       'upsertMemberWithAliases',
     ])

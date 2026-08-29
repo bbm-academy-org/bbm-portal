@@ -22,20 +22,43 @@
 
 export { MemberConflictError } from './errors'
 export {
+  memberAdminSection,
+  memberAliasCreateSchema,
+  memberAliasSchema,
+  memberAliasUpdateSchema,
+  memberCreateSchema,
+  memberRecordSchema,
+  memberStatusSchema,
+  memberUpdateSchema,
+} from './contract'
+export type {
+  MemberAliasInput,
+  MemberAliasRecord,
+  MemberCreateInput,
+  MemberRecord,
+  MemberUpdateInput,
+  ParsedMemberCreateInput,
+} from './contract'
+export {
   normalizeAliasValue,
   normalizeMemberEmail,
   slugCandidate,
   slugFromEmail,
 } from './normalize'
 export {
+  createMember,
+  createMemberAlias,
+  deleteMemberAlias,
   ensureMemberByEmail,
   findMemberByEmail,
   findMemberOwningAliasValue,
   getMembersByIds,
+  getMemberById,
   listAliases,
   listMembers,
   resolveMember,
   updateMemberProfile,
+  updateMemberAlias,
   upsertMemberWithAliases,
 } from './repository'
 export type {
