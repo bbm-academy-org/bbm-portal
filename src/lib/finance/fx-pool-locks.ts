@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 
+import type { FinanceSystemAccountKind } from '@/lib/platform/db/schema/finance/finance-account'
 import type { PlatformTx } from '@/lib/platform/db/transaction'
 
 import { FinanceRefusal } from './core/errors'
@@ -11,6 +12,11 @@ export type FxPoolPairInput = {
 
 export type RealizedFxPoolLocks = {
   readonly pairs: ReadonlySet<string>
+}
+
+export type FxSystemAccountResource = {
+  kind: FinanceSystemAccountKind
+  currency: string
 }
 
 export function realizedFxPair(step: FxPoolPairInput): string {
@@ -29,6 +35,23 @@ export async function lockRealizedFxPools(
     )
   }
   return { pairs: new Set(pairs) }
+}
+
+/**
+ * Pair locks always come first; every possibly-needed system account then locks
+ * by one global kind/currency order. Distinct pairs may share these unique rows,
+ * so ordering only inside each writer can otherwise deadlock on first creation.
+ */
+export async function lockFxSystemAccounts(
+  tx: PlatformTx,
+  resources: readonly FxSystemAccountResource[],
+): Promise<void> {
+  const keys = [...new Set(resources.map(({ kind, currency }) => `${kind}/${currency}`))].sort()
+  for (const key of keys) {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`finance:fx-system-account:${key}`}, 0))`,
+    )
+  }
 }
 
 /** Refuse a live write that would make immutable realized-FX history arrive out of order. */

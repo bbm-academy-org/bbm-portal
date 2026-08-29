@@ -29,6 +29,7 @@ import {
 } from '../core/invariants'
 import {
   assertRealizedFxWriteOrder,
+  lockFxSystemAccounts,
   lockRealizedFxPools,
   type RealizedFxPoolLocks,
 } from '../fx-pool-locks'
@@ -153,6 +154,16 @@ async function recordExpense(tx: PlatformTx, item: PostingItem): Promise<Recorde
           { fromCurrency: chargedCurrency, toCurrency: item.currency },
         ])
   if (fxPoolLocks !== null) {
+    await lockFxSystemAccounts(tx, [
+      { kind: 'expense', currency: item.currency },
+      { kind: 'conversion', currency: chargedCurrency },
+      { kind: 'conversion', currency: item.currency },
+      { kind: 'fx_result', currency: item.currency },
+      ...(item.personalFunds ? [{ kind: 'liability' as const, currency: chargedCurrency }] : []),
+      ...(item.feeCurrency === null
+        ? []
+        : [{ kind: 'expense' as const, currency: item.feeCurrency }]),
+    ])
     await assertRealizedFxWriteOrder(
       tx,
       [{ fromCurrency: chargedCurrency, toCurrency: item.currency }],

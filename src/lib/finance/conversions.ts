@@ -67,6 +67,7 @@ import {
 } from './operations'
 import {
   assertRealizedFxWriteOrder,
+  lockFxSystemAccounts,
   lockRealizedFxPools,
   realizedFxPair,
   type RealizedFxPoolLocks,
@@ -202,6 +203,17 @@ export async function recordConversionInTransaction(
   const fund = await requireFundProject(tx)
   const postings: PostingDraft[] = []
   const fxPoolLocks = await lockRealizedFxPools(tx, steps)
+  await lockFxSystemAccounts(
+    tx,
+    steps.flatMap((step) => [
+      { kind: 'conversion', currency: step.fromCurrency },
+      { kind: 'conversion', currency: step.toCurrency },
+      { kind: 'fx_result', currency: step.toCurrency },
+      ...(step.fee !== null && step.fee !== undefined && step.fee.amount !== 0n
+        ? [{ kind: 'expense' as const, currency: step.fee.currency }]
+        : []),
+    ]),
+  )
   await assertRealizedFxWriteOrder(
     tx,
     steps,
