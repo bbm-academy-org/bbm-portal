@@ -329,6 +329,61 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     expect(legs.filter((leg) => leg.conversionStepId !== null)).toHaveLength(4)
   })
 
+  it('EARS-505/328: prices a vendor disposal from the realized-FX pool and leaves no clearing residue', async () => {
+    const refs = await seedPostingReferences()
+    await recordConversion(APPROVER, {
+      occurredOn: '2026-01-10',
+      sourceAccountId: refs.thbAccountId,
+      targetAccountId: refs.rubAccountId,
+      steps: [
+        {
+          fromCurrency: 'THB',
+          toCurrency: 'RUB',
+          fromAmount: 300_000n,
+          toAmount: 100_000n,
+          rate: '0.333333333333333333',
+        },
+      ],
+      backdated: true,
+    })
+    const item = await createIntakeItem(
+      ENTRY,
+      expenseInput(refs, {
+        occurredOn: '2026-03-10',
+        amount: 380_000n,
+        currency: 'THB',
+        paidAmount: 100_000n,
+        paidCurrency: 'RUB',
+      }),
+    )
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    const posted = await postIntakeItem(APPROVER, item.id)
+    const fx = await db.execute(sql`
+      select p.amount::text as amount
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where p.operation_id = ${posted.operationId}
+         and a.kind = 'fx_result'
+         and p.currency = 'THB'
+    `)
+    expect(fx.rows).toEqual([{ amount: '-80000' }])
+
+    const clearing = await db.execute(sql`
+      select p.currency, sum(p.amount)::text as balance
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where a.kind = 'conversion' and p.currency in ('RUB', 'THB')
+       group by p.currency
+       order by p.currency
+    `)
+    expect(clearing.rows).toEqual([
+      { currency: 'RUB', balance: '0' },
+      { currency: 'THB', balance: '0' },
+    ])
+  })
+
   it('EARS-505: kind=conversion uses the same pair as one implicit own-account step', async () => {
     const refs = await seedPostingReferences()
     const item = await createIntakeItem(ENTRY, {
