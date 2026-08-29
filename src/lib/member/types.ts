@@ -30,7 +30,7 @@ export type MemberAlias = MemberAliasRow
  * `resolveMember` as a VIRTUAL kind, which is what makes one lookup answer both
  * halves of the registry (EARS-18).
  */
-export type AliasKind =
+export type DocumentedAliasKind =
   | 'phone'
   | 'telegram'
   | 'instagram'
@@ -38,7 +38,8 @@ export type AliasKind =
   | 'mattermost_email'
   | 'zoom_id'
   | 'email_personal'
-  | (string & {})
+
+export type AliasKind = DocumentedAliasKind | (string & {})
 
 /** The virtual kind that resolves against `core.member.email` (EARS-18). */
 export const VIRTUAL_EMAIL_KIND = 'email'

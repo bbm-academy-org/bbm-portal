@@ -10,9 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/
 import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Skeleton } from '@/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 import { Textarea } from '@/ui/textarea'
 
 import { validateAliasResponse } from './alias-actions'
+import { MEMBER_ALIAS_KIND_OPTIONS, withSavedReference } from './constants'
 
 interface AliasEnvelope {
   data?: unknown
@@ -225,11 +227,12 @@ function AliasForm({
   const [value, setValue] = React.useState(initial?.value ?? '')
   const [note, setNote] = React.useState(initial?.note ?? '')
   const [validation, setValidation] = React.useState<string>()
+  const kindOptions = withSavedReference(MEMBER_ALIAS_KIND_OPTIONS, kind, 'Сохранённый тип')
 
   function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (!/^[a-z][a-z0-9_]*$/.test(kind.trim())) {
-      setValidation('Тип алиаса должен быть в lower_snake_case.')
+    if (!kind) {
+      setValidation('Выберите тип алиаса.')
       return
     }
     if (!value.trim()) {
@@ -245,13 +248,18 @@ function AliasForm({
       {validation ? <p className="text-sm text-destructive">{validation}</p> : null}
       <div className="grid gap-2">
         <Label htmlFor="alias-kind">Тип алиаса</Label>
-        <Input
-          id="alias-kind"
-          value={kind}
-          disabled={pending}
-          placeholder="mattermost"
-          onChange={(event) => setKind(event.target.value)}
-        />
+        <Select value={kind} disabled={pending} onValueChange={setKind}>
+          <SelectTrigger id="alias-kind" className="w-full">
+            <SelectValue placeholder="Выберите тип алиаса" />
+          </SelectTrigger>
+          <SelectContent data-bbm-ui>
+            {kindOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid gap-2">
         <Label htmlFor="alias-value">Значение алиаса</Label>

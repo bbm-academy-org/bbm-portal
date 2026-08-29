@@ -12,3 +12,8 @@ The already accepted `design-source/p-admin-shell.html` remains the source for t
 Design-fidelity: GO — Anton Sidorov, 2026-08-29 — member list uses the accepted admin wireframe; member create/edit/detail uses Option A with profile and aliases side by side on the adopted shadcn/Refine neutral system.
 
 States not depicted by the described happy-path layout and required in delivery: hover, focus-visible, disabled/pending save, loading, empty member list, empty aliases, validation error, read/save failure, duplicate-alias refusal, permission-denied. Narrow behavior is specified as vertical stacking.
+
+Stage-B correction (Anton, 2026-08-29):
+- alias kind is a labelled selector over the member module's documented reference values, with Russian user labels; storage and integration APIs remain open, and an existing unlisted kind is shown as a preserved saved option;
+- member timezone is a labelled selector over a stable curated list of relevant IANA zones, defaulting to `Europe/Moscow`; an existing unlisted zone is shown as a preserved saved option;
+- these control corrections do not change the picked two-column Option A composition.

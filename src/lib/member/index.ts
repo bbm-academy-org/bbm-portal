@@ -70,5 +70,5 @@ export type {
   MemberUpsertOutcome,
 } from './repository'
 export { VIRTUAL_EMAIL_KIND } from './types'
-export type { AliasKind, AliasLookup, Member, MemberAlias } from './types'
+export type { AliasKind, AliasLookup, DocumentedAliasKind, Member, MemberAlias } from './types'
 export { memberWorkspaceEntry } from './workspace'

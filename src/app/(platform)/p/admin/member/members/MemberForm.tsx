@@ -9,6 +9,8 @@ import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 
+import { MEMBER_TIMEZONE_OPTIONS, withSavedReference } from './constants'
+
 export interface MemberFormValue {
   name: string
   email: string
@@ -55,6 +57,11 @@ export function MemberForm({
 }) {
   const [value, setValue] = React.useState(initial)
   const [validation, setValidation] = React.useState<string[]>([])
+  const timezoneOptions = withSavedReference(
+    MEMBER_TIMEZONE_OPTIONS,
+    value.timezone,
+    'Сохранённый пояс',
+  )
 
   function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -122,13 +129,22 @@ export function MemberForm({
       </div>
       <div className="grid gap-2">
         <Label htmlFor="member-timezone">Часовой пояс</Label>
-        <Input
-          id="member-timezone"
+        <Select
           value={value.timezone}
-          readOnly={readOnly}
-          disabled={pending}
-          onChange={(event) => setValue({ ...value, timezone: event.target.value })}
-        />
+          disabled={pending || readOnly}
+          onValueChange={(timezone) => setValue({ ...value, timezone })}
+        >
+          <SelectTrigger id="member-timezone" className="w-full">
+            <SelectValue placeholder="Выберите часовой пояс" />
+          </SelectTrigger>
+          <SelectContent data-bbm-ui>
+            {timezoneOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid gap-2">
         <Label htmlFor="member-status">Статус</Label>

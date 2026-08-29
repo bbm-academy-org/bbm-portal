@@ -54,6 +54,8 @@ test.describe('members cabinet (spec 311 EARS-441..445)', () => {
     await expect(page.getByRole('heading', { name: 'Алиасы' })).toHaveCount(0)
     await page.getByLabel('Имя').fill(name)
     await page.getByLabel('Email').fill(email)
+    await page.getByLabel('Часовой пояс').click()
+    await page.getByRole('option', { name: 'Бангкок — Asia/Bangkok' }).click()
     const createResponse = page.waitForResponse(isResponse(MEMBERS_API, 'POST'))
     await page.getByRole('button', { name: 'Создать участника' }).click()
     await createResponse
@@ -70,18 +72,23 @@ test.describe('members cabinet (spec 311 EARS-441..445)', () => {
     await expect(composition.getByRole('heading', { name: 'Алиасы' })).toBeVisible()
     await expect(page.getByLabel('Email')).toHaveValue(email)
     await expect(page.getByLabel('Email')).toHaveAttribute('readonly', '')
+    await expect(page.getByLabel('Часовой пояс')).toContainText('Бангкок — Asia/Bangkok')
     await expect(page.getByRole('button', { name: /Удалить участника/ })).toHaveCount(0)
 
     await page.getByLabel('Роль').fill(role)
+    await page.getByLabel('Часовой пояс').click()
+    await page.getByRole('option', { name: 'Тбилиси — Asia/Tbilisi' }).click()
     const profileResponse = page.waitForResponse(isResponse(memberPath, 'PATCH'))
     await page.getByRole('button', { name: 'Сохранить профиль' }).click()
     await profileResponse
     await page.reload()
     await expect(page.getByLabel('Роль')).toHaveValue(role)
+    await expect(page.getByLabel('Часовой пояс')).toContainText('Тбилиси — Asia/Tbilisi')
 
     await expect(page.getByText('Алиасов пока нет')).toBeVisible()
     await page.getByRole('button', { name: 'Добавить алиас' }).click()
-    await page.getByLabel('Тип алиаса').fill('mattermost_id')
+    await page.getByLabel('Тип алиаса').click()
+    await page.getByRole('option', { name: 'Mattermost — логин' }).click()
     await page.getByLabel('Значение алиаса').fill(alias)
     const aliasCreateResponse = page.waitForResponse(isResponse(aliasesPath, 'POST'))
     await page.getByRole('button', { name: 'Сохранить алиас' }).click()
@@ -91,6 +98,7 @@ test.describe('members cabinet (spec 311 EARS-441..445)', () => {
     await expect(page.getByText(alias, { exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: `Изменить алиас ${alias}` }).click()
+    await expect(page.getByLabel('Тип алиаса')).toContainText('Mattermost — логин')
     await page.getByLabel('Значение алиаса').fill(updatedAlias)
     const aliasUpdateResponse = page.waitForResponse(isResponse(aliasPath, 'PATCH'))
     await page.getByRole('button', { name: 'Сохранить алиас' }).click()

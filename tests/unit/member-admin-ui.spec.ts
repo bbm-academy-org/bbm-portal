@@ -2,6 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver
 Element.prototype.hasPointerCapture ??= () => false
 Element.prototype.setPointerCapture ??= () => {}
 Element.prototype.releasePointerCapture ??= () => {}
@@ -176,7 +182,7 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
       expect.objectContaining({ timezone: 'America/New_York' }),
     )
 
-    fireEvent.pointerDown(timezone, { button: 0 })
+    fireEvent.keyDown(timezone, { key: 'ArrowDown' })
     expect(screen.getByRole('option', { name: 'Москва — Europe/Moscow' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Новосибирск — Asia/Novosibirsk' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Бангкок — Asia/Bangkok' })).toBeTruthy()
@@ -216,7 +222,7 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Добавить алиас' }))
     const aliasKind = screen.getByLabelText('Тип алиаса')
     expect(aliasKind.getAttribute('role')).toBe('combobox')
-    fireEvent.pointerDown(aliasKind, { button: 0 })
+    fireEvent.keyDown(aliasKind, { key: 'ArrowDown' })
     expect(screen.getByRole('option', { name: 'Телефон' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Telegram' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Instagram' })).toBeTruthy()

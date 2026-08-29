@@ -669,7 +669,13 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   person deletes the history that is the product.)_
 - **EARS-443.** WHILE editing an existing member, `email` shall be read-only: it
   is the identity join key with Zitadel and with the hours history (spec 124
-  EARS-2/EARS-9). Correcting an email stays the owner-run SQL escape hatch.
+  EARS-2/EARS-9). Correcting an email stays the owner-run SQL escape hatch. The
+  member form shall expose `timezone` as a labelled selector over a stable,
+  curated reference of relevant IANA zones (including `Europe/Moscow`,
+  `Asia/Novosibirsk`, `Asia/Bangkok` and `Asia/Tbilisi`), with
+  `Europe/Moscow` as the create default. Storage remains open: IF an existing
+  member carries an unlisted zone, THEN the selector shall show and preserve it
+  as a saved option until the administrator deliberately chooses another zone.
 - **EARS-444.** The cabinet shall expose the member's **aliases**
   (`core.member_alias`) as a nested resource supporting create, read, update and
   delete, retiring spec 124's EARS-19 («WHILE no admin UI exists (until
@@ -678,7 +684,13 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   `(kind, value)` already held by another member, THEN the save shall be refused
   with a message naming that member (spec 124 EARS-17/EARS-20). The alias update
   and delete operations do not exist on `src/lib/member`'s public API today and
-  are added there by #316 (EARS-441).
+  are added there by #316 (EARS-441). In the cabinet, alias `kind` shall be a
+  labelled selector over the member module's documented vocabulary (`phone`,
+  `telegram`, `instagram`, `mattermost_id`, `mattermost_email`, `zoom_id`,
+  `email_personal`) with Russian user labels, never free text. The storage and
+  integration API vocabulary remains open: IF an existing alias carries an
+  unlisted kind, THEN the selector shall show and preserve it as a saved option
+  until the administrator deliberately chooses another kind.
 - **EARS-445.** Deactivating a member shall change `status` and nothing else in
   this spec — no cascading effect on hours participation, no role revocation in
   Zitadel. Projecting membership into Zitadel is Access Sync, epic #113.
