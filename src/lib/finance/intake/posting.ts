@@ -272,6 +272,7 @@ async function recordOwnConversion(tx: PlatformTx, item: PostingItem): Promise<R
     ],
     source: item.source,
     sourceRef: item.sourceRef,
+    backdated: item.source === 'backfill',
   })
 }
 
@@ -336,7 +337,7 @@ async function recordCrossCurrencyResult(
     source: item.source,
     purposeId: item.kind === 'expense' ? item.purposeId : null,
     sourceRef: item.sourceRef,
-    backdated: false,
+    backdated: item.source === 'backfill',
     reverses: null,
     postings: [],
   })
@@ -418,6 +419,7 @@ function operationInput(item: PostingItem, postings: readonly PostingDraft[]) {
     postings,
     purposeId: item.kind === 'expense' ? item.purposeId : null,
     sourceRef: item.sourceRef,
+    backdated: item.source === 'backfill',
   }
 }
 
