@@ -27,7 +27,11 @@ import {
   assertProjectOnResultPostings,
   type PostingDraft,
 } from '../core/invariants'
-import { lockRealizedFxPools, type RealizedFxPoolLocks } from '../fx-pool-locks'
+import {
+  assertRealizedFxWriteOrder,
+  lockRealizedFxPools,
+  type RealizedFxPoolLocks,
+} from '../fx-pool-locks'
 import {
   assertNoRetiredAccount,
   insertOperation,
@@ -148,6 +152,15 @@ async function recordExpense(tx: PlatformTx, item: PostingItem): Promise<Recorde
       : await lockRealizedFxPools(tx, [
           { fromCurrency: chargedCurrency, toCurrency: item.currency },
         ])
+  if (fxPoolLocks !== null) {
+    await assertRealizedFxWriteOrder(
+      tx,
+      [{ fromCurrency: chargedCurrency, toCurrency: item.currency }],
+      fxPoolLocks,
+      item.occurredOn,
+      item.source,
+    )
+  }
   const payer = await resolveExpensePayer(tx, item)
   assertAccountCurrency(payer, chargedCurrency, 'счёта списания')
   assertFeeCurrency(item, chargedCurrency)

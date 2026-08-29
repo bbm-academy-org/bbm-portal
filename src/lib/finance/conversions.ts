@@ -65,7 +65,12 @@ import {
   resolveConversionStepId,
   type RecordedOperation,
 } from './operations'
-import { lockRealizedFxPools, realizedFxPair, type RealizedFxPoolLocks } from './fx-pool-locks'
+import {
+  assertRealizedFxWriteOrder,
+  lockRealizedFxPools,
+  realizedFxPair,
+  type RealizedFxPoolLocks,
+} from './fx-pool-locks'
 import {
   ensureSystemAccount,
   requireAccount,
@@ -197,6 +202,13 @@ export async function recordConversionInTransaction(
   const fund = await requireFundProject(tx)
   const postings: PostingDraft[] = []
   const fxPoolLocks = await lockRealizedFxPools(tx, steps)
+  await assertRealizedFxWriteOrder(
+    tx,
+    steps,
+    fxPoolLocks,
+    input.occurredOn,
+    input.source ?? 'manual',
+  )
 
   // The chain's two ends: the money actually left one account and arrived in
   // another. Everything between them rests on the conversion account.
