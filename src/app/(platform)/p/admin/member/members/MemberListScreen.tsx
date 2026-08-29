@@ -25,8 +25,12 @@ export function MemberListScreen() {
     filters: search ? [{ field: 'q', operator: 'contains', value: search }] : [],
   })
 
-  function deactivate(member: MemberRecord) {
-    update.mutate({ resource: MEMBER_RESOURCE, id: member.id, values: { status: 'inactive' } })
+  function toggleStatus(member: MemberRecord) {
+    update.mutate({
+      resource: MEMBER_RESOURCE,
+      id: member.id,
+      values: { status: member.status === 'active' ? 'inactive' : 'active' },
+    })
   }
 
   return (
@@ -63,7 +67,7 @@ export function MemberListScreen() {
       {update.mutation.error ? (
         <Alert variant="destructive" role="alert">
           <AlertDescription>
-            {errorMessage(update.mutation.error, 'Не удалось деактивировать участника.')}
+            {errorMessage(update.mutation.error, 'Не удалось изменить статус участника.')}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -121,17 +125,15 @@ export function MemberListScreen() {
                       >
                         Открыть
                       </Button>
-                      {member.status === 'active' ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={update.mutation.isPending}
-                          aria-label={`Деактивировать ${member.name}`}
-                          onClick={() => deactivate(member)}
-                        >
-                          Деактивировать
-                        </Button>
-                      ) : null}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={update.mutation.isPending}
+                        aria-label={`${member.status === 'active' ? 'Деактивировать' : 'Активировать'} ${member.name}`}
+                        onClick={() => toggleStatus(member)}
+                      >
+                        {member.status === 'active' ? 'Деактивировать' : 'Активировать'}
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
