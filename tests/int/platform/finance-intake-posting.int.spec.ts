@@ -642,6 +642,92 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2)
   })
 
+  it('orders shared system accounts across different FX pairs without deadlocking', async () => {
+    const refs = await seedPostingReferences()
+    await createCurrency(ADMIN, { code: 'USD', name: 'Доллар', precision: 2 })
+    const usdAccount = await createAccount(ADMIN, {
+      name: 'Счёт USD',
+      kind: 'bank',
+      currency: 'USD',
+    })
+    const vendorExpense = await createIntakeItem(
+      ENTRY,
+      expenseInput(refs, {
+        occurredOn: '2026-03-10',
+        amount: 380_000n,
+        currency: 'THB',
+        paidAmount: 100_000n,
+        paidCurrency: 'RUB',
+      }),
+    )
+    const ownConversion = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'conversion',
+      occurredOn: '2026-03-10',
+      accountId: refs.thbAccountId,
+      counterAccountId: usdAccount.id,
+      amount: 300_000n,
+      currency: 'THB',
+      paidAmount: 10_000n,
+      paidCurrency: 'USD',
+      feeAmount: 1_000n,
+      feeCurrency: 'THB',
+      projectId: refs.projectId,
+    })
+    for (const item of [vendorExpense, ownConversion]) {
+      await approve(item.id, refs.approverMemberId)
+      await attachDocument(item.id, refs.approverMemberId)
+    }
+
+    const barrierKey = 385_006
+    let results: PromiseSettledResult<Awaited<ReturnType<typeof postIntakeItem>>>[] = []
+    await asMigrator(async (client) => {
+      await client.query(`
+        create or replace function core.finance_test_cross_pair_account_barrier() returns trigger language plpgsql as $$
+        begin
+          if new.kind = 'expense' and new.currency = 'THB' then
+            perform pg_advisory_xact_lock(${barrierKey}::bigint);
+          end if;
+          return new;
+        end $$;
+        drop trigger if exists finance_test_cross_pair_account_barrier on core.finance_account;
+        create trigger finance_test_cross_pair_account_barrier after insert on core.finance_account
+        for each row execute function core.finance_test_cross_pair_account_barrier();
+      `)
+      await client.query('select pg_advisory_lock($1::bigint)', [barrierKey])
+      let lockHeld = true
+      try {
+        const pid = Number(
+          (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
+        )
+        const vendorPending = postIntakeItem(APPROVER, vendorExpense.id)
+        await waitForBlockedBy(client, pid, 1)
+        const pending = Promise.allSettled([
+          vendorPending,
+          postIntakeItem(APPROVER, ownConversion.id),
+        ])
+        await waitForBlockedBy(client, pid, 2)
+        await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        lockHeld = false
+        results = await pending
+      } finally {
+        if (lockHeld) await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        await client.query(
+          'drop trigger if exists finance_test_cross_pair_account_barrier on core.finance_account',
+        )
+        await client.query('drop function if exists core.finance_test_cross_pair_account_barrier()')
+      }
+    })
+
+    const errorCodes = results.flatMap((result) => {
+      if (result.status === 'fulfilled') return []
+      const error = result.reason as { code?: string; cause?: { code?: string } }
+      return [error.cause?.code ?? error.code ?? 'unknown']
+    })
+    expect(errorCodes).toEqual([])
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2)
+  })
+
   it('refuses a non-backfill conversion that would precede an already-recorded pair step', async () => {
     const refs = await seedPostingReferences()
     await systemAccount(ADMIN, 'conversion', 'RUB')
