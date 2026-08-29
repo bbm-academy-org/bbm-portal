@@ -17,6 +17,7 @@
  */
 
 export type {
+  CabinetWorkspaceEntry,
   ExternalWorkspaceEntry,
   InternalWorkspaceEntry,
   OpenableWorkspaceEntry,

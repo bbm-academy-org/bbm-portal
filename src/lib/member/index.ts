@@ -20,7 +20,25 @@
  * EARS-14) — и владельческий SQL-хатч. Форма появится с `/p/admin` (эпик #112).
  */
 
-export { MemberConflictError } from './errors'
+export { MemberAliasUniqueConflictError, MemberConflictError } from './errors'
+export {
+  memberAdminSection,
+  memberAliasCreateSchema,
+  memberAliasSchema,
+  memberAliasUpdateSchema,
+  memberCreateSchema,
+  memberRecordSchema,
+  memberStatusSchema,
+  memberUpdateSchema,
+} from './contract'
+export type {
+  MemberAliasInput,
+  MemberAliasRecord,
+  MemberCreateInput,
+  MemberRecord,
+  MemberUpdateInput,
+  ParsedMemberCreateInput,
+} from './contract'
 export {
   normalizeAliasValue,
   normalizeMemberEmail,
@@ -28,14 +46,20 @@ export {
   slugFromEmail,
 } from './normalize'
 export {
+  createMember,
+  createMemberAlias,
+  deleteMemberAlias,
   ensureMemberByEmail,
   findMemberByEmail,
   findMemberOwningAliasValue,
   getMembersByIds,
+  getMemberById,
   listAliases,
   listMembers,
   resolveMember,
+  resolveMemberAliasUniqueConflict,
   updateMemberProfile,
+  updateMemberAlias,
   upsertMemberWithAliases,
 } from './repository'
 export type {
@@ -46,4 +70,5 @@ export type {
   MemberUpsertOutcome,
 } from './repository'
 export { VIRTUAL_EMAIL_KIND } from './types'
-export type { AliasKind, AliasLookup, Member, MemberAlias } from './types'
+export type { AliasKind, AliasLookup, DocumentedAliasKind, Member, MemberAlias } from './types'
+export { memberWorkspaceEntry } from './workspace'

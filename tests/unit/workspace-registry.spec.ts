@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { hoursWorkspaceEntry } from '@/lib/hours'
+import { memberWorkspaceEntry } from '@/lib/member'
 import { okrWorkspaceEntry } from '@/lib/okr'
 import type {
   ExternalWorkspaceEntry,
@@ -214,7 +215,7 @@ describe('the composition root (spec 311 EARS-402, EARS-403, D-2)', () => {
         if (file.includes(`${join('lib', 'workspace')}`)) continue
         const source = readFileSync(file, 'utf8')
         for (const m of source.matchAll(
-          /export const (\w+)\s*(?::\s*WorkspaceModule|satisfies WorkspaceModule)/g,
+          /export const (\w+)\s*(?::\s*(?:WorkspaceModule|CabinetWorkspaceEntry)|satisfies WorkspaceModule)/g,
         )) {
           declared.push({ file, name: m[1] })
         }
@@ -223,7 +224,11 @@ describe('the composition root (spec 311 EARS-402, EARS-403, D-2)', () => {
 
     // The scan is the point of the clause: it must actually find something, or
     // a rename of the type would turn this test into a silent pass.
-    expect(declared.map((d) => d.name).sort()).toEqual(['hoursWorkspaceEntry', 'okrWorkspaceEntry'])
+    expect(declared.map((d) => d.name).sort()).toEqual([
+      'hoursWorkspaceEntry',
+      'memberWorkspaceEntry',
+      'okrWorkspaceEntry',
+    ])
 
     const unregistered = declared.filter((d) => !registrySource.includes(d.name))
     expect(
@@ -234,6 +239,7 @@ describe('the composition root (spec 311 EARS-402, EARS-403, D-2)', () => {
 
   it('EARS-403: the registry lists the module’s OWN declaration object, not a copy of it', () => {
     expect(WORKSPACE_REGISTRY).toContain(hoursWorkspaceEntry)
+    expect(WORKSPACE_REGISTRY).toContain(memberWorkspaceEntry)
     expect(WORKSPACE_REGISTRY).toContain(okrWorkspaceEntry)
   })
 

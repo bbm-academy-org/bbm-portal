@@ -90,6 +90,11 @@ interface NoStatusNoAdmin {
   admin?: never
 }
 
+/** Fields a cabinet-only module may never expose to the launcher or switcher. */
+type NoLauncherPresence = Partial<
+  Record<'href' | 'url' | 'description' | 'icon' | 'requiredClaim' | 'status', never>
+>
+
 /**
  * A module that lives inside the portal: it has a slug, a route under `/p/`, and
  * may publish a pulse and a cabinet section.
@@ -145,18 +150,28 @@ export interface PlannedWorkspaceEntry
   description: string
 }
 
+/** A module whose only product surface is a cabinet section. */
+export type CabinetWorkspaceEntry = NoLauncherPresence & {
+  kind: 'cabinet'
+  slug: string
+  name: string
+  admin: WorkspaceAdminSection
+}
+
 /** The discriminated union every registry entry is one of (EARS-401). */
-export type WorkspaceEntry = InternalWorkspaceEntry | ExternalWorkspaceEntry | PlannedWorkspaceEntry
+export type WorkspaceEntry =
+  InternalWorkspaceEntry | ExternalWorkspaceEntry | PlannedWorkspaceEntry | CabinetWorkspaceEntry
 
 /** What a module exports from its public API (`src/lib/<module>/index.ts`), per ADR-002 §3. */
-export type WorkspaceModule = InternalWorkspaceEntry | ExternalWorkspaceEntry
+export type WorkspaceModule =
+  InternalWorkspaceEntry | ExternalWorkspaceEntry | CabinetWorkspaceEntry
 
 /** An entry a member can actually open — the two variants that carry a target. */
 export type OpenableWorkspaceEntry = InternalWorkspaceEntry | ExternalWorkspaceEntry
 
 /** Narrowing helper: does this entry have somewhere to go? */
 export function isOpenable(entry: WorkspaceEntry): entry is OpenableWorkspaceEntry {
-  return entry.kind !== 'planned'
+  return entry.kind === 'internal' || entry.kind === 'external'
 }
 
 /** Where an openable entry points. */

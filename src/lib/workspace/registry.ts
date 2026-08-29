@@ -1,4 +1,5 @@
 import { hoursWorkspaceEntry } from '@/lib/hours'
+import { memberWorkspaceEntry } from '@/lib/member'
 import { okrWorkspaceEntry } from '@/lib/okr'
 
 import type { PlannedWorkspaceEntry, WorkspaceEntry } from './contract'
@@ -41,6 +42,9 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceEntry[] = [
   // ── live internal apps ────────────────────────────────────────────────────
   hoursWorkspaceEntry,
   okrWorkspaceEntry,
+
+  // Cabinet-only modules live in the same composition root but render no tile.
+  memberWorkspaceEntry,
 
   // ── the frame's own cabinet (D-4) ─────────────────────────────────────────
   // Not a special case in the launcher: a registry entry like any other, which

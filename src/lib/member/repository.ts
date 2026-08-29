@@ -15,13 +15,17 @@
  * therefore resolved by READING the taken slugs first; the 23505 handler below is
  * the backstop for a genuine race, and it refuses in words rather than retrying.
  */
-import { and, asc, eq, inArray, like, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, like, ne, or, sql } from 'drizzle-orm'
 
 import { getPlatformDb } from '@/lib/platform/db/client'
 import { member } from '@/lib/platform/db/schema/member/member'
 import { memberAlias } from '@/lib/platform/db/schema/member/member-alias'
 
-import { aliasOwnedByAnotherMember, MemberConflictError } from './errors'
+import {
+  aliasOwnedByAnotherMember,
+  MemberAliasUniqueConflictError,
+  MemberConflictError,
+} from './errors'
 import {
   normalizeAliasValue,
   normalizeMemberEmail,
@@ -35,7 +39,10 @@ import { VIRTUAL_EMAIL_KIND, type AliasLookup, type Member, type MemberAlias } f
  * `NodePgDatabase`, precisely so a transaction handle (which has the builders but
  * not the pool-bound `$client`) satisfies it — see the header.
  */
-export type MemberDb = Pick<ReturnType<typeof getPlatformDb>, 'select' | 'insert' | 'update'>
+export type MemberDb = Pick<
+  ReturnType<typeof getPlatformDb>,
+  'select' | 'insert' | 'update' | 'delete'
+>
 
 /** The optional executor every function in this module accepts. */
 export type MemberDbOptions = { db?: MemberDb }
@@ -74,6 +81,12 @@ export async function getMembersByIds(ids: number[], options?: MemberDbOptions):
     .from(member)
     .where(inArray(member.id, ids))
     .orderBy(asc(member.id))
+}
+
+/** One member by the registry's surrogate key. */
+export async function getMemberById(id: number, options?: MemberDbOptions): Promise<Member | null> {
+  const rows = await executor(options).select().from(member).where(eq(member.id, id)).limit(1)
+  return rows[0] ?? null
 }
 
 /** A member by canonical email, normalized the way the CHECK demands (EARS-2). */
@@ -208,6 +221,42 @@ export async function ensureMemberByEmail(
 
   const slug = await freeSlug(slugFromEmail(email), db)
   return insertMember(db, { slug, email, name: input.name, role: input.role ?? null })
+}
+
+/** Create a registry record explicitly from the members cabinet (EARS-441). */
+export async function createMember(
+  input: {
+    email: string
+    name: string
+    role?: string | null
+    timezone?: string
+  },
+  options?: MemberDbOptions,
+): Promise<Member> {
+  const db = executor(options)
+  const email = normalizeMemberEmail(input.email)
+  if (email === '') {
+    throw new MemberConflictError('Email обязателен: без него участника не создать.')
+  }
+
+  const existing = await findMemberByEmail(email, { db })
+  if (existing) {
+    throw new MemberConflictError(
+      `Участник «${existing.name}» уже зарегистрирован с email «${existing.email}».`,
+      { member: existing },
+    )
+  }
+
+  const owner = await findMemberOwningAliasValue(email, { db })
+  if (owner) throw aliasOwnedByAnotherMember(email, owner.member, owner.alias.kind)
+
+  return insertMember(db, {
+    slug: await freeSlug(slugFromEmail(email), db),
+    email,
+    name: input.name,
+    role: input.role ?? null,
+    ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+  })
 }
 
 /**
@@ -363,6 +412,120 @@ async function insertAliasIfMissing(
 
   await db.insert(memberAlias).values({ memberId, kind, value, note: alias.note ?? null })
   return 'inserted'
+}
+
+async function findAliasWithOwner(
+  db: MemberDb,
+  kind: string,
+  value: string,
+  exceptAliasId?: number,
+): Promise<{ alias: MemberAlias; member: Member } | null> {
+  const conditions = [eq(memberAlias.kind, kind), normalizedEquals(memberAlias.value, value)]
+  if (exceptAliasId !== undefined) conditions.push(ne(memberAlias.id, exceptAliasId))
+
+  const rows = await db
+    .select({ alias: memberAlias, member })
+    .from(memberAlias)
+    .innerJoin(member, eq(member.id, memberAlias.memberId))
+    .where(and(...conditions))
+    .limit(1)
+  return rows[0] ?? null
+}
+
+function aliasConflict(kind: string, value: string, owner: Member, cause?: unknown) {
+  return new MemberConflictError(
+    `Алиас (${kind}) «${value}» уже принадлежит участнику «${owner.name}» (${owner.email}).`,
+    { member: owner, cause },
+  )
+}
+
+/** Explain a rolled-back alias unique race using a fresh, usable DB handle. */
+export async function resolveMemberAliasUniqueConflict(
+  error: MemberAliasUniqueConflictError,
+  options?: MemberDbOptions,
+): Promise<MemberConflictError> {
+  const found = await findAliasWithOwner(
+    executor(options),
+    error.kind,
+    error.value,
+    error.exceptAliasId,
+  )
+  if (found) return aliasConflict(error.kind, error.value, found.member, error)
+  return new MemberConflictError(`Алиас (${error.kind}) «${error.value}» уже существует.`, {
+    cause: error,
+  })
+}
+
+/** Add one nested lookup row from the cabinet (EARS-444). */
+export async function createMemberAlias(
+  memberId: number,
+  input: MemberAliasSeed,
+  options?: MemberDbOptions,
+): Promise<MemberAlias> {
+  const db = executor(options)
+  const kind = input.kind.trim()
+  const value = normalizeAliasValue(input.value)
+  const found = await findAliasWithOwner(db, kind, value)
+  if (found) throw aliasConflict(kind, value, found.member)
+
+  try {
+    const rows = await db
+      .insert(memberAlias)
+      .values({ memberId, kind, value, note: input.note ?? null })
+      .returning()
+    const created = rows[0]
+    if (!created) throw new MemberConflictError('Не удалось добавить алиас.')
+    return created
+  } catch (error) {
+    if (pgErrorCode(error) === '23505') {
+      throw new MemberAliasUniqueConflictError(kind, value, { cause: error })
+    }
+    throw error
+  }
+}
+
+/** Replace one nested alias while keeping its identity and owner (EARS-444). */
+export async function updateMemberAlias(
+  memberId: number,
+  aliasId: number,
+  input: MemberAliasSeed,
+  options?: MemberDbOptions,
+): Promise<MemberAlias | null> {
+  const db = executor(options)
+  const kind = input.kind.trim()
+  const value = normalizeAliasValue(input.value)
+  const found = await findAliasWithOwner(db, kind, value, aliasId)
+  if (found) throw aliasConflict(kind, value, found.member)
+
+  try {
+    const rows = await db
+      .update(memberAlias)
+      .set({ kind, value, note: input.note ?? null })
+      .where(and(eq(memberAlias.id, aliasId), eq(memberAlias.memberId, memberId)))
+      .returning()
+    return rows[0] ?? null
+  } catch (error) {
+    if (pgErrorCode(error) === '23505') {
+      throw new MemberAliasUniqueConflictError(kind, value, {
+        exceptAliasId: aliasId,
+        cause: error,
+      })
+    }
+    throw error
+  }
+}
+
+/** Delete a lookup row; member history itself has deliberately no counterpart. */
+export async function deleteMemberAlias(
+  memberId: number,
+  aliasId: number,
+  options?: MemberDbOptions,
+): Promise<MemberAlias | null> {
+  const rows = await executor(options)
+    .delete(memberAlias)
+    .where(and(eq(memberAlias.id, aliasId), eq(memberAlias.memberId, memberId)))
+    .returning()
+  return rows[0] ?? null
 }
 
 /**

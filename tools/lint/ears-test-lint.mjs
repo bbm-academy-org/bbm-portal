@@ -182,9 +182,9 @@ const DEFERRALS_BY_ISSUE = {
       "spec 311 §D (the /p/admin Refine shell, its navigation, breadcrumbs, save answers and attribution) and §G (the OKR cabinet section and the one read-only accessor it needs), which the spec's Follow-up tasks both assign to #315. The list is EMPTY because #315 landed: §D and §G are asserted in tests/unit/cabinet-shell.spec.ts, cabinet-data-provider.spec.ts, okr-cabinet-section.spec.ts and platform-module-api.spec.ts, and EARS-463..465 (the /api/p/* host-allowlist change and its Host-matrix rows) in platform-host-allowlist.spec.ts. One id did NOT stay here and did not become covered either: EARS-439, cabinet WRITE attribution, moved to the #316 entry — #315 opens no write at all (the OKR section is read-only by EARS-455), so a test for it here could only re-read a type, which is the green light for a surface nobody built that EARS-409/EARS-410 were moved OUT of #314 to avoid",
   },
   316: {
-    ids: ['EARS-439', 'EARS-441', 'EARS-442', 'EARS-443', 'EARS-444', 'EARS-445'],
+    ids: [],
     reason:
-      "spec 311 §E — the members resource, its aliases, the read-only email and deactivation-instead-of-delete. #316 both builds the screens and extends src/lib/member's public API with the create/alias operations they need. EARS-439 (every cabinet WRITE runs through platformTransaction with the signed-in admin, ADR-004 A1) moved here from #315 when the shell landed: #315 built the frame that HANDS a handler its audit context (ModuleRouteContext.audit in src/lib/platform/api/moduleRoute.ts) but opened no write to attribute — the members resource is the first, so the clause is asserted where a row actually reaches core.audit_event",
+      'spec 311 §E — the members resource, its aliases, the read-only email and deactivation-instead-of-delete. The list is EMPTY because #316 landed: EARS-439 and EARS-441…445 are asserted by the member contract, handler, UI and core.audit_event integration tests.',
   },
   317: {
     ids: [

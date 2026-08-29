@@ -24,17 +24,21 @@ imports — `radix-ui`, `lucide-react`, `class-variance-authority`, `clsx`,
 `tailwind-merge`, `tw-animate-css` — plus Tailwind and the `shadcn` CLI as dev
 dependencies. Those are pinned exactly.
 
-| File                                                                                 | What it is                                                                                               |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `theme.css`                                                                          | the theme entry — the ONE place a colour value is written. Imported by `src/app/(platform)/p/layout.tsx` |
-| `utils.ts`                                                                           | `cn()` — the `clsx` + `tailwind-merge` helper every copied component imports                             |
-| `button.tsx` `card.tsx` `badge.tsx` `avatar.tsx` `separator.tsx` `dropdown-menu.tsx` | the copied shadcn primitives                                                                             |
+| File                                                                                       | What it is                                                                                               |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `theme.css`                                                                                | the theme entry — the ONE place a colour value is written. Imported by `src/app/(platform)/p/layout.tsx` |
+| `utils.ts`                                                                                 | `cn()` — the `clsx` + `tailwind-merge` helper every copied component imports                             |
+| `button.tsx` `card.tsx` `badge.tsx` `avatar.tsx` `separator.tsx` `dropdown-menu.tsx`       | the launcher and shell primitives                                                                        |
+| `input.tsx` `label.tsx` `textarea.tsx` `select.tsx` `table.tsx` `alert.tsx` `skeleton.tsx` | the member cabinet CRUD and explicit loading/error/form states (#316)                                    |
 
-**Why exactly those six.** They are the set the frozen `/p` launcher (PR #354)
+**Why this set.** The first six are the set the frozen `/p` launcher (PR #354)
 actually renders: a tile per app (card), the external marker (badge), the admin
 flag (badge), the top bar's avatar and its rule (avatar, separator), and the app
-switcher's trigger and menu (button, dropdown-menu). The kit grows by the same
-rule — a component is copied in when a surface needs it, not in anticipation.
+switcher's trigger and menu (button, dropdown-menu). The second row arrived with
+the first editable cabinet tenant (#316): its searchable table, profile and alias
+forms, plus explicit loading, validation and read/save failure states. The kit
+grows by the same rule — a component is copied in when a surface needs it, not in
+anticipation.
 
 ## Adding to the kit
 
