@@ -2,6 +2,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.setPointerCapture ??= () => {}
+Element.prototype.releasePointerCapture ??= () => {}
+Element.prototype.scrollIntoView ??= () => {}
+
 const refine = vi.hoisted(() => ({
   list: {} as Record<string, unknown>,
   one: {} as Record<string, unknown>,
@@ -149,6 +154,38 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.getByText('Укажите корректный email.')).toBeTruthy()
   })
 
+  it('EARS-443: uses a curated timezone selector and preserves an unlisted saved zone', async () => {
+    const submit = vi.fn()
+    const { MemberForm, memberFormValue } =
+      await import('@/app/(platform)/p/admin/member/members/MemberForm')
+    render(
+      React.createElement(MemberForm, {
+        initial: memberFormValue({ ...member, timezone: 'America/New_York' }),
+        emailReadOnly: true,
+        submitLabel: 'Сохранить профиль',
+        pending: false,
+        onSubmit: submit,
+      }),
+    )
+
+    const timezone = screen.getByLabelText('Часовой пояс')
+    expect(timezone.getAttribute('role')).toBe('combobox')
+    expect(timezone.textContent).toContain('Сохранённый пояс — America/New_York')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить профиль' }))
+    expect(submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ timezone: 'America/New_York' }),
+    )
+
+    fireEvent.pointerDown(timezone, { button: 0 })
+    expect(screen.getByRole('option', { name: 'Москва — Europe/Moscow' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Новосибирск — Asia/Novosibirsk' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Бангкок — Asia/Bangkok' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Тбилиси — Asia/Tbilisi' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('option', { name: 'Бангкок — Asia/Bangkok' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить профиль' }))
+    expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ timezone: 'Asia/Bangkok' }))
+  })
+
   it('renders profile left and aliases right, stacking narrowly; existing email is read-only', async () => {
     const { MemberRecordScreen } =
       await import('@/app/(platform)/p/admin/member/members/MemberRecordScreen')
@@ -177,11 +214,55 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
     await waitFor(() => expect(screen.getByText('Алиасов пока нет')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Добавить алиас' }))
-    fireEvent.change(screen.getByLabelText('Тип алиаса'), { target: { value: 'mattermost' } })
+    const aliasKind = screen.getByLabelText('Тип алиаса')
+    expect(aliasKind.getAttribute('role')).toBe('combobox')
+    fireEvent.pointerDown(aliasKind, { button: 0 })
+    expect(screen.getByRole('option', { name: 'Телефон' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Telegram' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Instagram' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Mattermost — логин' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Mattermost — email' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Zoom — идентификатор' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Личный email' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('option', { name: 'Mattermost — логин' }))
     fireEvent.change(screen.getByLabelText('Значение алиаса'), { target: { value: 'boris' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить алиас' }))
     await waitFor(() =>
       expect(screen.getByText('Алиас уже принадлежит участнику «Борис».')).toBeTruthy(),
     )
+  })
+
+  it('EARS-444: preserves an unlisted saved alias kind during an unrelated edit', async () => {
+    const legacy = {
+      id: 11,
+      memberId: 7,
+      kind: 'mattermost',
+      value: 'anna',
+      note: null,
+    }
+    const fetchMock = vi.mocked(fetch)
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ data: [legacy], total: 1 }))
+      .mockResolvedValueOnce(Response.json({ data: { ...legacy, note: 'Основной аккаунт' } }))
+    const { AliasPanel } = await import('@/app/(platform)/p/admin/member/members/AliasPanel')
+    render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
+    await waitFor(() => expect(screen.getByText('anna', { exact: true })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna' }))
+
+    const aliasKind = screen.getByLabelText('Тип алиаса')
+    expect(aliasKind.getAttribute('role')).toBe('combobox')
+    expect(aliasKind.textContent).toContain('Сохранённый тип — mattermost')
+    fireEvent.change(screen.getByLabelText('Примечание'), {
+      target: { value: 'Основной аккаунт' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить алиас' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const request = fetchMock.mock.calls[1]?.[1]
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      kind: 'mattermost',
+      value: 'anna',
+      note: 'Основной аккаунт',
+    })
   })
 })
