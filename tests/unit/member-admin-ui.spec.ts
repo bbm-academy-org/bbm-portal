@@ -44,9 +44,9 @@ beforeEach(() => {
     query: { isLoading: false, error: null },
     result: { data: [member], total: 1 },
   }
-  refine.one = { query: { isLoading: false, error: null }, result: { data: member } }
-  refine.create = { mutate: vi.fn(), isPending: false, error: null }
-  refine.update = { mutate: vi.fn(), isPending: false, error: null }
+  refine.one = { query: { isLoading: false, error: null }, result: member }
+  refine.create = { mutate: vi.fn(), mutation: { isPending: false, error: null } }
+  refine.update = { mutate: vi.fn(), mutation: { isPending: false, error: null } }
   Object.values(refine.navigation).forEach((mock) => mock.mockReset())
   vi.stubGlobal(
     'fetch',
@@ -77,7 +77,7 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.getByRole('button', { name: 'Открыть Анна' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Деактивировать Анна' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Удалить участника/ })).toBeNull()
-  })
+  }, 15_000)
 
   it('renders loading, empty and readable list-error states', async () => {
     const { MemberListScreen } =

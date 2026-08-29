@@ -146,7 +146,7 @@ describe('member cabinet HTTP surface (spec 311 EARS-441..445)', () => {
 
   it('EARS-443: record update rejects email and member DELETE does not exist', async () => {
     const route = await import('@/app/(platform)/api/p/member/admin/members/[id]/route')
-    expect(route.DELETE).toBeUndefined()
+    expect((route as Record<string, unknown>).DELETE).toBeUndefined()
     const response = await route.PATCH(
       request('/api/p/member/admin/members/7', 'PATCH', { email: 'other@bbm.local' }),
       segment({ id: '7' }),
