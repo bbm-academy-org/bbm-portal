@@ -37,9 +37,9 @@ import {
   type PostingDraft,
 } from './core/invariants'
 import {
-  assertRealizedFxReversalOrder,
   lockFxSystemAccounts,
   lockRealizedFxPools,
+  resolveRealizedFxReversalOccurredOn,
 } from './fx-pool-locks'
 import { requirePurpose } from './references'
 
@@ -230,6 +230,7 @@ export async function reverseOperation(
           .filter((stepId): stepId is number => stepId !== null),
       ),
     ]
+    let reversalOccurredOn = options.occurredOn ?? original.occurredOn
     if (conversionStepIds.length > 0) {
       const affectedSteps = await tx
         .select({
@@ -250,10 +251,13 @@ export async function reverseOperation(
             currency: account.currency,
           })),
       )
-      await assertRealizedFxReversalOrder(tx, affectedSteps, fxPoolLocks, {
-        id: original.id,
-        occurredOn: original.occurredOn,
-      })
+      reversalOccurredOn = await resolveRealizedFxReversalOccurredOn(
+        tx,
+        affectedSteps,
+        fxPoolLocks,
+        original.id,
+        options.occurredOn,
+      )
     }
 
     // The mirror is built COMPLETE, conversion-step link included, and inserted
@@ -281,7 +285,7 @@ export async function reverseOperation(
     assertBalancedPerCurrency(mirrored)
 
     return insertOperation(tx, {
-      occurredOn: options.occurredOn ?? original.occurredOn,
+      occurredOn: reversalOccurredOn,
       source: 'reversal',
       purposeId: original.purposeId,
       sourceRef: original.sourceRef,

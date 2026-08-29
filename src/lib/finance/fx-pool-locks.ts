@@ -19,6 +19,17 @@ export type FxSystemAccountResource = {
   currency: string
 }
 
+type FxPair = {
+  key: string
+  leftCurrency: string
+  rightCurrency: string
+}
+
+type PairEvent = {
+  id: number
+  occurredOn: string
+}
+
 export function realizedFxPair(step: FxPoolPairInput): string {
   return [step.fromCurrency, step.toCurrency].sort().join('/')
 }
@@ -54,6 +65,40 @@ export async function lockFxSystemAccounts(
   }
 }
 
+function affectedPairs(steps: readonly FxPoolPairInput[]): FxPair[] {
+  const pairs = new Map<string, FxPair>()
+  for (const step of steps) {
+    const [leftCurrency, rightCurrency] = [step.fromCurrency, step.toCurrency].sort() as [
+      string,
+      string,
+    ]
+    const key = `${leftCurrency}/${rightCurrency}`
+    pairs.set(key, { key, leftCurrency, rightCurrency })
+  }
+  return [...pairs.values()].sort((left, right) => left.key.localeCompare(right.key))
+}
+
+function requirePairLock(locks: RealizedFxPoolLocks, pair: FxPair): void {
+  if (!locks.pairs.has(pair.key)) {
+    throw new Error('The realized-FX pool must be locked before its chronology is read.')
+  }
+}
+
+async function latestPairEvent(tx: PlatformTx, pair: FxPair): Promise<PairEvent | null> {
+  const latest = await tx.execute(sql`
+    select o.id, o.occurred_on::text as occurred_on
+      from core.finance_operation o
+      join core.finance_posting p on p.operation_id = o.id
+      join core.finance_conversion_step cs on cs.id = p.conversion_step_id
+     where ((cs.from_currency = ${pair.leftCurrency} and cs.to_currency = ${pair.rightCurrency})
+        or  (cs.from_currency = ${pair.rightCurrency} and cs.to_currency = ${pair.leftCurrency}))
+     order by o.occurred_on desc, o.id desc
+     limit 1
+  `)
+  const row = latest.rows[0] as { id: number; occurred_on: string } | undefined
+  return row === undefined ? null : { id: Number(row.id), occurredOn: row.occurred_on }
+}
+
 /** Refuse a live write that would make immutable realized-FX history arrive out of order. */
 export async function assertRealizedFxWriteOrder(
   tx: PlatformTx,
@@ -66,29 +111,12 @@ export async function assertRealizedFxWriteOrder(
   // guard keeps live/manual writes safe without inventing that rebuild here.
   if (source === 'backfill') return
 
-  const affectedPairs = new Map<string, readonly [string, string]>()
-  for (const step of steps) {
-    const currencies = [step.fromCurrency, step.toCurrency].sort() as [string, string]
-    affectedPairs.set(currencies.join('/'), currencies)
-  }
-
-  for (const [pair, [leftCurrency, rightCurrency]] of [...affectedPairs].sort(([a], [b]) =>
-    a.localeCompare(b),
-  )) {
-    if (!locks.pairs.has(pair)) {
-      throw new Error('The realized-FX pool must be locked before its write order is checked.')
-    }
-    const latest = await tx.execute(sql`
-      select max(o.occurred_on)::text as occurred_on
-        from core.finance_conversion_step cs
-        join core.finance_operation o on o.id = cs.operation_id
-       where (cs.from_currency = ${leftCurrency} and cs.to_currency = ${rightCurrency})
-          or (cs.from_currency = ${rightCurrency} and cs.to_currency = ${leftCurrency})
-    `)
-    const latestOccurredOn = (latest.rows[0] as { occurred_on: string | null }).occurred_on
-    if (latestOccurredOn !== null && occurredOn < latestOccurredOn) {
+  for (const pair of affectedPairs(steps)) {
+    requirePairLock(locks, pair)
+    const latest = await latestPairEvent(tx, pair)
+    if (latest !== null && occurredOn < latest.occurredOn) {
       throw new FinanceRefusal(
-        `Операция от ${occurredOn} не может быть записана после уже проведённой операции валютной пары ${pair} от ${latestOccurredOn}: ` +
+        `Операция от ${occurredOn} не может быть записана после уже проведённой операции валютной пары ${pair.key} от ${latest.occurredOn}: ` +
           'неизменяемый ledger не пересчитывает уже признанный FX-результат (EARS-319/328). ' +
           'История вносится источником backfill в хронологическом порядке.',
       )
@@ -96,44 +124,104 @@ export async function assertRealizedFxWriteOrder(
   }
 }
 
-/** Refuse retroactive cancellation once a later immutable fact used the pair. */
-export async function assertRealizedFxReversalOrder(
+async function reversalRoot(tx: PlatformTx, operationId: number): Promise<PairEvent> {
+  const result = await tx.execute(sql`
+    with recursive lineage as (
+      select o.id, o.occurred_on, o.reverses, 0 as depth
+        from core.finance_operation o
+       where o.id = ${operationId}
+      union all
+      select parent.id, parent.occurred_on, parent.reverses, child.depth + 1
+        from lineage child
+        join core.finance_operation parent on parent.id = child.reverses
+    )
+    select id, occurred_on::text as occurred_on
+      from lineage
+     order by depth desc
+     limit 1
+  `)
+  const row = result.rows[0] as { id: number; occurred_on: string } | undefined
+  if (row === undefined) {
+    throw new Error(`FX reversal root for operation #${operationId} is absent.`)
+  }
+  return { id: Number(row.id), occurredOn: row.occurred_on }
+}
+
+async function laterActiveRoot(
+  tx: PlatformTx,
+  pair: FxPair,
+  root: PairEvent,
+): Promise<PairEvent | null> {
+  const result = await tx.execute(sql`
+    with recursive pair_roots as (
+      select distinct o.id, o.occurred_on
+        from core.finance_operation o
+        join core.finance_conversion_step cs on cs.operation_id = o.id
+       where (cs.from_currency = ${pair.leftCurrency} and cs.to_currency = ${pair.rightCurrency})
+          or (cs.from_currency = ${pair.rightCurrency} and cs.to_currency = ${pair.leftCurrency})
+    ), chains as (
+      select root.id as root_id, root.occurred_on as root_occurred_on,
+             root.id as event_id, 0 as depth
+        from pair_roots root
+      union all
+      select chain.root_id, chain.root_occurred_on, child.id, chain.depth + 1
+        from chains chain
+        join core.finance_operation child on child.reverses = chain.event_id
+    ), states as (
+      select root_id, root_occurred_on, max(depth) as tip_depth
+        from chains
+       group by root_id, root_occurred_on
+    )
+    select root_id as id, root_occurred_on::text as occurred_on
+      from states
+     where mod(tip_depth, 2) = 0
+       and (root_occurred_on > ${root.occurredOn}
+        or (root_occurred_on = ${root.occurredOn} and root_id > ${root.id}))
+     order by root_occurred_on, root_id
+     limit 1
+  `)
+  const row = result.rows[0] as { id: number; occurred_on: string } | undefined
+  return row === undefined ? null : { id: Number(row.id), occurredOn: row.occurred_on }
+}
+
+/** Resolve an append-only FX reversal after checking the active root stack. */
+export async function resolveRealizedFxReversalOccurredOn(
   tx: PlatformTx,
   steps: readonly FxPoolPairInput[],
   locks: RealizedFxPoolLocks,
-  operation: { id: number; occurredOn: string },
-): Promise<void> {
-  const affectedPairs = new Map<string, readonly [string, string]>()
-  for (const step of steps) {
-    const currencies = [step.fromCurrency, step.toCurrency].sort() as [string, string]
-    affectedPairs.set(currencies.join('/'), currencies)
+  targetOperationId: number,
+  requestedOccurredOn?: string,
+): Promise<string> {
+  const childResult = await tx.execute(sql`
+    select id from core.finance_operation where reverses = ${targetOperationId} limit 1
+  `)
+  const existingChild = childResult.rows[0] as { id: number } | undefined
+  if (existingChild !== undefined) {
+    throw new FinanceRefusal(
+      `Операция #${targetOperationId} уже сторнирована операцией #${existingChild.id} (EARS-315).`,
+    )
   }
 
-  for (const [pair, [leftCurrency, rightCurrency]] of [...affectedPairs].sort(([a], [b]) =>
-    a.localeCompare(b),
-  )) {
-    if (!locks.pairs.has(pair)) {
-      throw new Error('The realized-FX pool must be locked before a reversal order is checked.')
-    }
-    const later = await tx.execute(sql`
-      select o.id, o.occurred_on::text as occurred_on
-        from core.finance_operation o
-        join core.finance_posting p on p.operation_id = o.id
-        join core.finance_conversion_step cs on cs.id = p.conversion_step_id
-       where ((cs.from_currency = ${leftCurrency} and cs.to_currency = ${rightCurrency})
-          or  (cs.from_currency = ${rightCurrency} and cs.to_currency = ${leftCurrency}))
-         and (o.occurred_on > ${operation.occurredOn}
-          or (o.occurred_on = ${operation.occurredOn} and o.id > ${operation.id}))
-       order by o.occurred_on, o.id
-       limit 1
-    `)
-    const dependency = later.rows[0] as { id: number; occurred_on: string } | undefined
-    if (dependency !== undefined) {
+  const root = await reversalRoot(tx, targetOperationId)
+  let occurredOn = requestedOccurredOn ?? root.occurredOn
+  for (const pair of affectedPairs(steps)) {
+    requirePairLock(locks, pair)
+    const dependency = await laterActiveRoot(tx, pair, root)
+    if (dependency !== null) {
       throw new FinanceRefusal(
-        `Операцию #${operation.id} нельзя сторнировать после операции #${dependency.id} от ${dependency.occurred_on}: ` +
-          `более поздняя операция уже использовала валютную пару ${pair}, а неизменяемый ledger не пересчитывает признанный FX-результат (EARS-314/328). ` +
+        `Операцию #${targetOperationId} нельзя сторнировать, пока активна более поздняя операция #${dependency.id} от ${dependency.occurredOn} валютной пары ${pair.key}: ` +
+          'неизменяемый ledger не пересчитывает признанный FX-результат (EARS-314/328). ' +
           'Сначала сторнируйте более поздние операции этой пары в обратном порядке.',
       )
     }
+    const frontier = await latestPairEvent(tx, pair)
+    if (frontier === null) continue
+    if (requestedOccurredOn !== undefined && requestedOccurredOn < frontier.occurredOn) {
+      throw new FinanceRefusal(
+        `Сторно операции #${targetOperationId} от ${requestedOccurredOn} не может предшествовать последнему событию валютной пары ${pair.key} от ${frontier.occurredOn} (EARS-314/319/328).`,
+      )
+    }
+    if (occurredOn < frontier.occurredOn) occurredOn = frontier.occurredOn
   }
+  return occurredOn
 }
