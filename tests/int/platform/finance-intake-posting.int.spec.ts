@@ -18,7 +18,7 @@ import {
   systemAccount,
 } from '@/lib/finance'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
-import { platformTransaction } from '@/lib/platform/db/transaction'
+import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
 import {
   ADMIN,
@@ -165,12 +165,17 @@ describe('posting an intake item is one document-gated fact (EARS-505/506)', () 
     )
   })
 
-  it('EARS-505: recordOperation and recordConversion join a caller-supplied platformTransaction', async () => {
+  it('EARS-505: public ledger doors reject a caller transaction that could split authorization from audit identity', async () => {
     const refs = await seedPostingReferences()
-
+    const expense = await systemAccount(ADMIN, 'expense', 'RUB')
+    const unsafeRecordOperation = recordOperation as unknown as (
+      actor: Parameters<typeof recordOperation>[0],
+      input: Parameters<typeof recordOperation>[1],
+      tx: PlatformTx,
+    ) => ReturnType<typeof recordOperation>
     await expect(
-      platformTransaction(financeAuditContext(APPROVER), async (tx) => {
-        await recordOperation(
+      platformTransaction(financeAuditContext(ENTRY), (tx) =>
+        unsafeRecordOperation(
           APPROVER,
           {
             occurredOn: '2026-08-20',
@@ -182,7 +187,7 @@ describe('posting an intake item is one document-gated fact (EARS-505/506)', () 
                 currency: 'RUB',
               },
               {
-                accountId: (await systemAccount(ADMIN, 'expense', 'RUB')).id,
+                accountId: expense.id,
                 amount: 100n,
                 currency: 'RUB',
                 projectId: refs.projectId,
@@ -190,8 +195,18 @@ describe('posting an intake item is one document-gated fact (EARS-505/506)', () 
             ],
           },
           tx,
-        )
-        await recordConversion(
+        ),
+      ),
+    ).rejects.toThrow(/caller-supplied transaction/)
+
+    const unsafeRecordConversion = recordConversion as unknown as (
+      actor: Parameters<typeof recordConversion>[0],
+      input: Parameters<typeof recordConversion>[1],
+      tx: PlatformTx,
+    ) => ReturnType<typeof recordConversion>
+    await expect(
+      platformTransaction(financeAuditContext(ENTRY), (tx) =>
+        unsafeRecordConversion(
           APPROVER,
           {
             occurredOn: '2026-08-20',
@@ -208,10 +223,9 @@ describe('posting an intake item is one document-gated fact (EARS-505/506)', () 
             ],
           },
           tx,
-        )
-        throw new Error('rollback the caller transaction')
-      }),
-    ).rejects.toThrow('rollback the caller transaction')
+        ),
+      ),
+    ).rejects.toThrow(/caller-supplied transaction/)
 
     const operations = await db.execute(
       sql`select count(*)::int as count from core.finance_operation`,
