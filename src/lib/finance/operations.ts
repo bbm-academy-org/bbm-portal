@@ -16,6 +16,7 @@
 import { eq, inArray } from 'drizzle-orm'
 
 import { financeAccount } from '@/lib/platform/db/schema/finance/finance-account'
+import { financeConversionStep } from '@/lib/platform/db/schema/finance/finance-conversion-step'
 import { financeOperation } from '@/lib/platform/db/schema/finance/finance-operation'
 import type { FinanceOperationSource } from '@/lib/platform/db/schema/finance/finance-operation'
 import { financePosting } from '@/lib/platform/db/schema/finance/finance-posting'
@@ -32,6 +33,7 @@ import {
   type AccountFacts,
   type PostingDraft,
 } from './core/invariants'
+import { lockRealizedFxPools } from './fx-pool-locks'
 import { requirePurpose } from './references'
 
 /** What a caller offers when recording a fact. */
@@ -213,6 +215,24 @@ export async function reverseOperation(
       .select()
       .from(financePosting)
       .where(eq(financePosting.operationId, operationId))
+
+    const conversionStepIds = [
+      ...new Set(
+        originalPostings
+          .map((posting) => posting.conversionStepId)
+          .filter((stepId): stepId is number => stepId !== null),
+      ),
+    ]
+    if (conversionStepIds.length > 0) {
+      const affectedSteps = await tx
+        .select({
+          fromCurrency: financeConversionStep.fromCurrency,
+          toCurrency: financeConversionStep.toCurrency,
+        })
+        .from(financeConversionStep)
+        .where(inArray(financeConversionStep.id, conversionStepIds))
+      await lockRealizedFxPools(tx, affectedSteps)
+    }
 
     // The mirror is built COMPLETE, conversion-step link included, and inserted
     // once. It used to be inserted bare and then patched, which the EARS-313

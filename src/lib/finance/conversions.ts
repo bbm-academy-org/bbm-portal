@@ -65,6 +65,7 @@ import {
   resolveConversionStepId,
   type RecordedOperation,
 } from './operations'
+import { lockRealizedFxPools, realizedFxPair, type RealizedFxPoolLocks } from './fx-pool-locks'
 import {
   ensureSystemAccount,
   requireAccount,
@@ -410,28 +411,6 @@ async function realizedFxResult(tx: PlatformTx, step: ConversionStepInput): Prom
       ? heldCost
       : costBasisAtAverage(step.fromAmount, heldCost, heldQuantity)
   return step.toAmount - basis
-}
-
-type RealizedFxPoolLocks = {
-  readonly pairs: ReadonlySet<string>
-}
-
-function realizedFxPair(step: ConversionStepInput): string {
-  return [step.fromCurrency, step.toCurrency].sort().join('/')
-}
-
-/** Lock every affected pair in stable order before any realized-FX pool read. */
-export async function lockRealizedFxPools(
-  tx: PlatformTx,
-  steps: readonly ConversionStepInput[],
-): Promise<RealizedFxPoolLocks> {
-  const pairs = [...new Set(steps.map(realizedFxPair))].sort()
-  for (const pair of pairs) {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${`finance:fx-pool:${pair}`}, 0))`,
-    )
-  }
-  return { pairs: new Set(pairs) }
 }
 
 /** Module-private realized-FX pair shared by every path that records a conversion step. */

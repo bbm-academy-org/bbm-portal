@@ -18,12 +18,7 @@ import {
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
-import {
-  appendPostings,
-  lockRealizedFxPools,
-  realizedFxPostings,
-  recordConversionInTransaction,
-} from '../conversions'
+import { appendPostings, realizedFxPostings, recordConversionInTransaction } from '../conversions'
 import { assertFinanceLedgerAccess, financeAuditContext, type FinanceActor } from '../core/actor'
 import { FinanceRefusal } from '../core/errors'
 import {
@@ -32,6 +27,7 @@ import {
   assertProjectOnResultPostings,
   type PostingDraft,
 } from '../core/invariants'
+import { lockRealizedFxPools } from '../fx-pool-locks'
 import {
   assertNoRetiredAccount,
   insertOperation,
