@@ -565,6 +565,84 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     expect(legs.filter((leg) => leg.conversionStepId !== null)).toHaveLength(4)
   })
 
+  it('serializes first use of an FX pair without deadlocking opposing posting paths', async () => {
+    const refs = await seedPostingReferences()
+    const ownConversion = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'conversion',
+      occurredOn: '2026-01-10',
+      accountId: refs.rubAccountId,
+      counterAccountId: refs.thbAccountId,
+      amount: 100_000n,
+      currency: 'RUB',
+      paidAmount: 300_000n,
+      paidCurrency: 'THB',
+      projectId: refs.projectId,
+    })
+    const vendorExpense = await createIntakeItem(
+      ENTRY,
+      expenseInput(refs, {
+        occurredOn: '2026-03-10',
+        amount: 380_000n,
+        currency: 'THB',
+        paidAmount: 100_000n,
+        paidCurrency: 'RUB',
+      }),
+    )
+    for (const item of [ownConversion, vendorExpense]) {
+      await approve(item.id, refs.approverMemberId)
+      await attachDocument(item.id, refs.approverMemberId)
+    }
+
+    const barrierKey = 385_004
+    let results: PromiseSettledResult<Awaited<ReturnType<typeof postIntakeItem>>>[] = []
+    await asMigrator(async (client) => {
+      await client.query(`
+        create or replace function core.finance_test_first_pair_barrier() returns trigger language plpgsql as $$
+        begin
+          if new.kind = 'conversion' then
+            perform pg_advisory_xact_lock(${barrierKey}::bigint);
+          end if;
+          return new;
+        end $$;
+        drop trigger if exists finance_test_first_pair_barrier on core.finance_account;
+        create trigger finance_test_first_pair_barrier after insert on core.finance_account
+        for each row execute function core.finance_test_first_pair_barrier();
+      `)
+      await client.query('select pg_advisory_lock($1::bigint)', [barrierKey])
+      let lockHeld = true
+      try {
+        const pid = Number(
+          (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
+        )
+        const vendorPending = postIntakeItem(APPROVER, vendorExpense.id)
+        await waitForBlockedBy(client, pid, 1)
+        const pending = Promise.allSettled([
+          postIntakeItem(APPROVER, ownConversion.id),
+          vendorPending,
+        ])
+        await waitForBlockedBy(client, pid, 2)
+        await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        lockHeld = false
+        results = await pending
+      } finally {
+        if (lockHeld) await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        await client.query(
+          'drop trigger if exists finance_test_first_pair_barrier on core.finance_account',
+        )
+        await client.query('drop function if exists core.finance_test_first_pair_barrier()')
+      }
+    })
+
+    const errorCodes = results.flatMap((result) => {
+      if (result.status === 'fulfilled') return []
+      const error = result.reason as { code?: string; cause?: { code?: string } }
+      return [error.cause?.code ?? error.code ?? 'unknown']
+    })
+    expect(errorCodes).toEqual([])
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2)
+  })
+
   it('serializes the FX pool across two different concurrent intake items', async () => {
     const refs = await seedPostingReferences()
     await systemAccount(ADMIN, 'conversion', 'RUB')
