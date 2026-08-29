@@ -83,6 +83,7 @@ export function fixtureWrite<T>(fn: (tx: PlatformTx) => Promise<T>): Promise<T> 
 export async function truncateFinanceTables(): Promise<void> {
   await truncateAsFixture(`truncate table
     core.finance_document_link, core.finance_document,
+    core.finance_purpose_proposal,
     core.finance_intake_item, core.finance_counterparty,
     core.finance_posting, core.finance_conversion_step, core.finance_operation,
     core.finance_purpose, core.finance_category, core.finance_product,

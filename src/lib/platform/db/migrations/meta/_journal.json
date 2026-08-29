@@ -92,6 +92,13 @@
       "when": 1787913555032,
       "tag": "0012_finance_document_content_digest",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787988046956,
+      "tag": "0013_finance_reference_proposals",
+      "breakpoints": true
     }
   ]
 }

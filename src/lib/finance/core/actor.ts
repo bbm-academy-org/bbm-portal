@@ -110,6 +110,11 @@ export function assertFinanceReferenceAccess(actor: FinanceActor): void {
   }
 }
 
+/** The same reference-role fact for read paths that split admin/all from proposer/own. */
+export function holdsFinanceReferenceRole(actor: FinanceActor): boolean {
+  return holds(actor, PLATFORM_ADMIN_ROLE)
+}
+
 /**
  * The ledger — posting an operation and reversing one (EARS-501, EARS-529).
  *
