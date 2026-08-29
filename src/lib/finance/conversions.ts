@@ -195,6 +195,7 @@ export async function recordConversionInTransaction(
 
   const fund = await requireFundProject(tx)
   const postings: PostingDraft[] = []
+  const fxPoolLocks = await lockRealizedFxPools(tx, steps)
 
   // The chain's two ends: the money actually left one account and arrived in
   // another. Everything between them rests on the conversion account.
@@ -276,7 +277,7 @@ export async function recordConversionInTransaction(
     // is read off step-linked conversion-account legs, and an FX leg is not an
     // exchange leg. Linking it would let this operation's own result silently
     // re-enter the average that prices the next disposal.
-    postings.push(...(await realizedFxPostings(tx, step)))
+    postings.push(...(await realizedFxPostings(tx, step, fxPoolLocks)))
   }
 
   const accounts = await loadAccountFacts(tx, postings)
@@ -411,11 +412,37 @@ async function realizedFxResult(tx: PlatformTx, step: ConversionStepInput): Prom
   return step.toAmount - basis
 }
 
+type RealizedFxPoolLocks = {
+  readonly pairs: ReadonlySet<string>
+}
+
+function realizedFxPair(step: ConversionStepInput): string {
+  return [step.fromCurrency, step.toCurrency].sort().join('/')
+}
+
+/** Lock every affected pair in stable order before any realized-FX pool read. */
+export async function lockRealizedFxPools(
+  tx: PlatformTx,
+  steps: readonly ConversionStepInput[],
+): Promise<RealizedFxPoolLocks> {
+  const pairs = [...new Set(steps.map(realizedFxPair))].sort()
+  for (const pair of pairs) {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`finance:fx-pool:${pair}`}, 0))`,
+    )
+  }
+  return { pairs: new Set(pairs) }
+}
+
 /** Module-private realized-FX pair shared by every path that records a conversion step. */
 export async function realizedFxPostings(
   tx: PlatformTx,
   step: ConversionStepInput,
+  locks: RealizedFxPoolLocks,
 ): Promise<PostingDraft[]> {
+  if (!locks.pairs.has(realizedFxPair(step))) {
+    throw new Error('The realized-FX pool must be locked before it is read.')
+  }
   const realized = await realizedFxResult(tx, step)
   if (realized === 0n) return []
   const fund = await requireFundProject(tx)

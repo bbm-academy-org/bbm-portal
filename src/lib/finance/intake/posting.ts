@@ -18,7 +18,12 @@ import {
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
-import { appendPostings, realizedFxPostings, recordConversionInTransaction } from '../conversions'
+import {
+  appendPostings,
+  lockRealizedFxPools,
+  realizedFxPostings,
+  recordConversionInTransaction,
+} from '../conversions'
 import { assertFinanceLedgerAccess, financeAuditContext, type FinanceActor } from '../core/actor'
 import { FinanceRefusal } from '../core/errors'
 import {
@@ -298,6 +303,7 @@ async function recordCrossCurrencyResult(
     toAmount: cross.toAmount,
     rate,
   }
+  const fxPoolLocks = await lockRealizedFxPools(tx, [conversionStep])
   const postings: PostingDraft[] = [
     resultPosting(item, cross.result.id, cross.resultSign * cross.resultAmount),
     moneyPosting(item, cross.money.id, cross.moneySign * cross.moneyAmount),
@@ -314,7 +320,7 @@ async function recordCrossCurrencyResult(
       conversionStepNo: 1,
     },
     ...(await feePostings(tx, item, cross.money, 1)),
-    ...(await realizedFxPostings(tx, conversionStep)),
+    ...(await realizedFxPostings(tx, conversionStep, fxPoolLocks)),
   ]
   const accounts = await loadAccountFacts(tx, postings)
   assertNoRetiredAccount(accounts)
