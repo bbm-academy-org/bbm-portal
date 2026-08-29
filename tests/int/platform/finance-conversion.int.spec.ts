@@ -587,6 +587,33 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
   })
 
+  it('EARS-314/319/328: a reversal event advances the pair frontier', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const reversal = await reverseOperation(APPROVER, acquisition.id, {
+      occurredOn: '2026-08-20',
+    })
+    const balancesAtFrontier = await accountBalances()
+    const registerAtFrontier = await listRegister()
+
+    const refusal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10').then(
+      () => null,
+      (error: unknown) => error,
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain('2026-08-20')
+    expect(await accountBalances()).toEqual(balancesAtFrontier)
+    expect(await listRegister()).toEqual(registerAtFrontier)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+
+    const undo = await reverseOperation(APPROVER, reversal.id)
+    expect(undo.occurredOn).toBe('2026-08-20')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-09-10')
+    expect(await fxResultOf(disposal.id, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
   it('EARS-314/328: a reversal waits for and then refuses an in-flight later disposal', async () => {
     const wallets = await seedWallets()
     const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
