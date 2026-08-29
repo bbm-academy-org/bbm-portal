@@ -292,8 +292,6 @@ async function recordCrossCurrencyResult(
 ): Promise<RecordedOperation> {
   const from = await requireCurrency(tx, cross.fromCurrency)
   const to = await requireCurrency(tx, cross.toCurrency)
-  const conversionFrom = await ensureSystemAccount(tx, 'conversion', cross.fromCurrency)
-  const conversionTo = await ensureSystemAccount(tx, 'conversion', cross.toCurrency)
   const rate = deriveRate(cross.fromAmount, from.precision, cross.toAmount, to.precision)
   const conversionStep = {
     fromCurrency: cross.fromCurrency,
@@ -303,6 +301,8 @@ async function recordCrossCurrencyResult(
     rate,
   }
   const fxPoolLocks = await lockRealizedFxPools(tx, [conversionStep])
+  const conversionFrom = await ensureSystemAccount(tx, 'conversion', cross.fromCurrency)
+  const conversionTo = await ensureSystemAccount(tx, 'conversion', cross.toCurrency)
   const postings: PostingDraft[] = [
     resultPosting(item, cross.result.id, cross.resultSign * cross.resultAmount),
     moneyPosting(item, cross.money.id, cross.moneySign * cross.moneyAmount),
