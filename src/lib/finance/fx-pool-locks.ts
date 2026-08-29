@@ -30,6 +30,15 @@ type PairEvent = {
   occurredOn: string
 }
 
+type ReversalChain = {
+  root: PairEvent
+  tipDepth: number
+}
+
+type BlockingRoot = PairEvent & {
+  reason: 'earlier_inactive' | 'later_active'
+}
+
 export function realizedFxPair(step: FxPoolPairInput): string {
   return [step.fromCurrency, step.toCurrency].sort().join('/')
 }
@@ -124,7 +133,7 @@ export async function assertRealizedFxWriteOrder(
   }
 }
 
-async function reversalRoot(tx: PlatformTx, operationId: number): Promise<PairEvent> {
+async function reversalChain(tx: PlatformTx, operationId: number): Promise<ReversalChain> {
   const result = await tx.execute(sql`
     with recursive lineage as (
       select o.id, o.occurred_on, o.reverses, 0 as depth
@@ -135,23 +144,27 @@ async function reversalRoot(tx: PlatformTx, operationId: number): Promise<PairEv
         from lineage child
         join core.finance_operation parent on parent.id = child.reverses
     )
-    select id, occurred_on::text as occurred_on
+    select id, occurred_on::text as occurred_on, depth
       from lineage
      order by depth desc
      limit 1
   `)
-  const row = result.rows[0] as { id: number; occurred_on: string } | undefined
+  const row = result.rows[0] as { id: number; occurred_on: string; depth: number } | undefined
   if (row === undefined) {
     throw new Error(`FX reversal root for operation #${operationId} is absent.`)
   }
-  return { id: Number(row.id), occurredOn: row.occurred_on }
+  return {
+    root: { id: Number(row.id), occurredOn: row.occurred_on },
+    tipDepth: Number(row.depth),
+  }
 }
 
-async function laterActiveRoot(
+async function blockingRoot(
   tx: PlatformTx,
   pair: FxPair,
   root: PairEvent,
-): Promise<PairEvent | null> {
+  restoring: boolean,
+): Promise<BlockingRoot | null> {
   const result = await tx.execute(sql`
     with recursive pair_roots as (
       select distinct o.id, o.occurred_on
@@ -172,16 +185,23 @@ async function laterActiveRoot(
         from chains
        group by root_id, root_occurred_on
     )
-    select root_id as id, root_occurred_on::text as occurred_on
+    select root_id as id, root_occurred_on::text as occurred_on,
+           case when mod(tip_depth, 2) = 0 then 'later_active' else 'earlier_inactive' end as reason
       from states
-     where mod(tip_depth, 2) = 0
-       and (root_occurred_on > ${root.occurredOn}
-        or (root_occurred_on = ${root.occurredOn} and root_id > ${root.id}))
+     where (mod(tip_depth, 2) = 0
+        and (root_occurred_on > ${root.occurredOn}
+         or (root_occurred_on = ${root.occurredOn} and root_id > ${root.id})))
+        or (${restoring} and mod(tip_depth, 2) = 1
+        and (root_occurred_on < ${root.occurredOn}
+         or (root_occurred_on = ${root.occurredOn} and root_id < ${root.id})))
      order by root_occurred_on, root_id
      limit 1
   `)
-  const row = result.rows[0] as { id: number; occurred_on: string } | undefined
-  return row === undefined ? null : { id: Number(row.id), occurredOn: row.occurred_on }
+  const row = result.rows[0] as
+    { id: number; occurred_on: string; reason: BlockingRoot['reason'] } | undefined
+  return row === undefined
+    ? null
+    : { id: Number(row.id), occurredOn: row.occurred_on, reason: row.reason }
 }
 
 /** Resolve an append-only FX reversal after checking the active root stack. */
@@ -202,12 +222,18 @@ export async function resolveRealizedFxReversalOccurredOn(
     )
   }
 
-  const root = await reversalRoot(tx, targetOperationId)
-  let occurredOn = requestedOccurredOn ?? root.occurredOn
+  const chain = await reversalChain(tx, targetOperationId)
+  let occurredOn = requestedOccurredOn ?? chain.root.occurredOn
   for (const pair of affectedPairs(steps)) {
     requirePairLock(locks, pair)
-    const dependency = await laterActiveRoot(tx, pair, root)
+    const dependency = await blockingRoot(tx, pair, chain.root, chain.tipDepth % 2 === 1)
     if (dependency !== null) {
+      if (dependency.reason === 'earlier_inactive') {
+        throw new FinanceRefusal(
+          `Операцию #${targetOperationId} нельзя восстановить, пока отменена более ранняя операция #${dependency.id} от ${dependency.occurredOn} валютной пары ${pair.key}: ` +
+            'сначала восстановите более ранние операции этой пары в прямом хронологическом порядке (EARS-314/328).',
+        )
+      }
       throw new FinanceRefusal(
         `Операцию #${targetOperationId} нельзя сторнировать, пока активна более поздняя операция #${dependency.id} от ${dependency.occurredOn} валютной пары ${pair.key}: ` +
           'неизменяемый ledger не пересчитывает признанный FX-результат (EARS-314/328). ' +
