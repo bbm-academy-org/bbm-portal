@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { sql } from 'drizzle-orm'
+import type { Client } from 'pg'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -18,6 +19,7 @@ import {
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import { ADMIN, APPROVER, fundProjectId, truncateFinanceTables } from './finance-helpers'
+import { asMigrator } from './privilege-helpers'
 
 /**
  * Conversions, frozen rates and realized FX (spec 338 EARS-318/319/328/329;
@@ -120,6 +122,33 @@ async function fxResultOf(operationId: number, currency: string): Promise<bigint
      where p.operation_id = ${operationId} and a.kind = 'fx_result' and p.currency = ${currency}
   `)
   return BigInt((result.rows[0] as { total: string }).total)
+}
+
+async function hasBlockedTransactions(
+  blocker: Client,
+  blockerPid: number,
+  expected: number,
+  timeoutMs = 1_500,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const result = await blocker.query<{ blocked: number }>(
+      `with recursive waiters(pid) as (
+         select pid
+           from pg_stat_activity
+          where $1 = any(pg_blocking_pids(pid))
+         union
+         select activity.pid
+           from pg_stat_activity activity
+           join waiters on waiters.pid = any(pg_blocking_pids(activity.pid))
+       )
+       select count(*)::int as blocked from waiters`,
+      [blockerPid],
+    )
+    if (Number(result.rows[0]?.blocked ?? 0) >= expected) return true
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  return false
 }
 
 describe('the conversion door is a ledger door (EARS-501, EARS-529)', () => {
@@ -491,6 +520,15 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     expect(thb?.balance).toBe(20_000n)
   })
 
+  it('EARS-319/328: same-date conversions use immutable operation order as the tie-break', async () => {
+    const wallets = await seedWallets()
+    await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-03-10')
+    const sale = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+
+    expect(await fxResultOf(sale.id, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
   it('EARS-314/328: a reversed acquisition does not price a later disposal', async () => {
     const wallets = await seedWallets()
     // A purchase entered wrong, сторнирована, then entered again at the real
@@ -505,6 +543,184 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     // Basis is the surviving 2 000.00 alone, so the gain is 500.00 — not the
     // 1 000.00 a (1 000 + 2 000)/20 average would produce.
     expect(await fxResultOf(sale.id, 'THB')).toBe(-50_000n)
+  })
+
+  it('EARS-314/328: refuses reversing an acquisition after a dependent disposal', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+    const balancesBefore = await accountBalances()
+    const registerBefore = await listRegister()
+    const fxBefore = await fxResultOf(disposal.id, 'THB')
+
+    const refusal = await reverseOperation(APPROVER, acquisition.id).then(
+      () => null,
+      (error: unknown) => error,
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain('2026-03-10')
+    expect(await accountBalances()).toEqual(balancesBefore)
+    expect(await fxResultOf(disposal.id, 'THB')).toBe(fxBefore)
+    expect(await listRegister()).toEqual(registerBefore)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
+  it('EARS-313/314/328: reversing a later disposal releases its acquisition predecessor', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+
+    await reverseOperation(APPROVER, disposal.id)
+    await reverseOperation(APPROVER, acquisition.id)
+
+    const balances = await accountBalances()
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+    expect(
+      balances
+        .filter((row) => row.kind === 'fx_result')
+        .reduce((sum, row) => sum + row.balance, 0n),
+    ).toBe(0n)
+    expect(balances.find((row) => row.accountId === wallets.thb.id)?.balance).toBe(0n)
+    expect(balances.find((row) => row.accountId === wallets.usdt.id)?.balance).toBe(0n)
+    expect(await listRegister()).toHaveLength(4)
+  })
+
+  it('EARS-313/314/328: refuses restoring a disposal while its acquisition is inactive', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+    const disposalReversal = await reverseOperation(APPROVER, disposal.id)
+    await reverseOperation(APPROVER, acquisition.id)
+    const balancesBefore = await accountBalances()
+    const registerBefore = await listRegister()
+
+    const refusal = await reverseOperation(APPROVER, disposalReversal.id).then(
+      () => null,
+      (error: unknown) => error,
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain(`#${acquisition.id}`)
+    expect(await accountBalances()).toEqual(balancesBefore)
+    expect(await listRegister()).toEqual(registerBefore)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
+  it('EARS-313/314/328: restores inactive FX roots in chronological order', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+    const activeBalances = await accountBalances()
+    const disposalReversal = await reverseOperation(APPROVER, disposal.id)
+    const acquisitionReversal = await reverseOperation(APPROVER, acquisition.id)
+
+    await reverseOperation(APPROVER, acquisitionReversal.id)
+    await reverseOperation(APPROVER, disposalReversal.id)
+
+    expect(await accountBalances()).toEqual(activeBalances)
+    expect(await fxResultOf(disposal.id, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+    expect(await listRegister()).toHaveLength(6)
+  })
+
+  it('EARS-314/328: immutable operation id orders same-date reversal dependencies', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-03-10')
+    await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+
+    await expect(reverseOperation(APPROVER, acquisition.id)).rejects.toBeInstanceOf(FinanceRefusal)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
+  it('EARS-314/315/328: the latest FX reversal may itself be reversed', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const reversal = await reverseOperation(APPROVER, acquisition.id)
+
+    await reverseOperation(APPROVER, reversal.id)
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+
+    expect(await fxResultOf(disposal.id, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
+  it('EARS-314/319/328: a reversal event advances the pair frontier', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const reversal = await reverseOperation(APPROVER, acquisition.id, {
+      occurredOn: '2026-08-20',
+    })
+    const balancesAtFrontier = await accountBalances()
+    const registerAtFrontier = await listRegister()
+
+    const refusal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10').then(
+      () => null,
+      (error: unknown) => error,
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain('2026-08-20')
+    expect(await accountBalances()).toEqual(balancesAtFrontier)
+    expect(await listRegister()).toEqual(registerAtFrontier)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+
+    const undo = await reverseOperation(APPROVER, reversal.id)
+    expect(undo.occurredOn).toBe('2026-08-20')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-09-10')
+    expect(await fxResultOf(disposal.id, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
+  it('EARS-314/328: a reversal waits for and then refuses an in-flight later disposal', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const barrierKey = 385_005
+    let reversalWasBlocked = false
+    let reversalError: unknown = null
+    let disposalOperationId: number | null = null
+
+    await asMigrator(async (client) => {
+      await client.query(`
+        create or replace function core.finance_test_reversal_barrier() returns trigger language plpgsql as $$
+        begin
+          perform pg_advisory_xact_lock(${barrierKey}::bigint);
+          return new;
+        end $$;
+        drop trigger if exists finance_test_reversal_barrier on core.finance_conversion_step;
+        create trigger finance_test_reversal_barrier before insert on core.finance_conversion_step
+        for each row execute function core.finance_test_reversal_barrier();
+      `)
+      await client.query('select pg_advisory_lock($1::bigint)', [barrierKey])
+      let lockHeld = true
+      try {
+        const pid = Number(
+          (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
+        )
+        const disposalPending = sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+        expect(await hasBlockedTransactions(client, pid, 1, 5_000)).toBe(true)
+        const reversalPending = reverseOperation(APPROVER, acquisition.id)
+        reversalWasBlocked = await hasBlockedTransactions(client, pid, 2)
+        await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        lockHeld = false
+        disposalOperationId = (await disposalPending).id
+        reversalError = await reversalPending.then(
+          () => null,
+          (error: unknown) => error,
+        )
+      } finally {
+        if (lockHeld) await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        await client.query(
+          'drop trigger if exists finance_test_reversal_barrier on core.finance_conversion_step',
+        )
+        await client.query('drop function if exists core.finance_test_reversal_barrier()')
+      }
+    })
+
+    expect(reversalWasBlocked).toBe(true)
+    expect(reversalError).toBeInstanceOf(FinanceRefusal)
+    expect(await fxResultOf(disposalOperationId!, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
   })
 
   it('EARS-329: an operation with no conversion step posts no FX result at all', async () => {

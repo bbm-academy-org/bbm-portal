@@ -15,7 +15,11 @@
  */
 import { eq, inArray } from 'drizzle-orm'
 
-import { financeAccount } from '@/lib/platform/db/schema/finance/finance-account'
+import {
+  financeAccount,
+  type FinanceSystemAccountKind,
+} from '@/lib/platform/db/schema/finance/finance-account'
+import { financeConversionStep } from '@/lib/platform/db/schema/finance/finance-conversion-step'
 import { financeOperation } from '@/lib/platform/db/schema/finance/finance-operation'
 import type { FinanceOperationSource } from '@/lib/platform/db/schema/finance/finance-operation'
 import { financePosting } from '@/lib/platform/db/schema/finance/finance-posting'
@@ -32,6 +36,11 @@ import {
   type AccountFacts,
   type PostingDraft,
 } from './core/invariants'
+import {
+  lockFxSystemAccounts,
+  lockRealizedFxPools,
+  resolveRealizedFxReversalOccurredOn,
+} from './fx-pool-locks'
 import { requirePurpose } from './references'
 
 /** What a caller offers when recording a fact. */
@@ -127,29 +136,42 @@ export async function recordOperation(
   actor: FinanceActor,
   input: RecordOperationInput,
 ): Promise<RecordedOperation> {
+  if (arguments.length > 2) {
+    throw new FinanceRefusal(
+      'A caller-supplied transaction is not accepted by the public ledger API: authorization and audit identity must stay bound.',
+    )
+  }
   assertFinanceLedgerAccess(actor)
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    recordOperationInTransaction(tx, input),
+  )
+}
+
+/** Module-private writer. The audited outer door already bound the actor to `tx`. */
+export async function recordOperationInTransaction(
+  tx: PlatformTx,
+  input: RecordOperationInput,
+): Promise<RecordedOperation> {
   const parsed = parseRecordOperationInput(input)
   if (parsed.source === 'reversal') {
     throw new FinanceRefusal(
       "source = 'reversal' проставляет только сторно: используйте reverseOperation (EARS-314).",
     )
   }
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const accounts = await loadAccountFacts(tx, parsed.postings)
-    assertNoRetiredAccount(accounts)
-    const postings = await prepareDimensions(tx, parsed, accounts)
-    assertPostingCurrencyMatchesAccount(postings, accounts)
-    assertBalancedPerCurrency(postings)
-    assertProjectOnResultPostings(postings, accounts)
-    return insertOperation(tx, {
-      occurredOn: parsed.occurredOn,
-      source: parsed.source,
-      purposeId: parsed.purposeId ?? null,
-      sourceRef: parsed.sourceRef ?? null,
-      backdated: parsed.backdated ?? false,
-      reverses: null,
-      postings,
-    })
+  const accounts = await loadAccountFacts(tx, parsed.postings)
+  assertNoRetiredAccount(accounts)
+  const postings = await prepareDimensions(tx, parsed, accounts)
+  assertPostingCurrencyMatchesAccount(postings, accounts)
+  assertBalancedPerCurrency(postings)
+  assertProjectOnResultPostings(postings, accounts)
+  return insertOperation(tx, {
+    occurredOn: parsed.occurredOn,
+    source: parsed.source,
+    purposeId: parsed.purposeId ?? null,
+    sourceRef: parsed.sourceRef ?? null,
+    backdated: parsed.backdated ?? false,
+    reverses: null,
+    postings,
   })
 }
 
@@ -201,6 +223,43 @@ export async function reverseOperation(
       .from(financePosting)
       .where(eq(financePosting.operationId, operationId))
 
+    const conversionStepIds = [
+      ...new Set(
+        originalPostings
+          .map((posting) => posting.conversionStepId)
+          .filter((stepId): stepId is number => stepId !== null),
+      ),
+    ]
+    let reversalOccurredOn = options.occurredOn ?? original.occurredOn
+    if (conversionStepIds.length > 0) {
+      const affectedSteps = await tx
+        .select({
+          fromCurrency: financeConversionStep.fromCurrency,
+          toCurrency: financeConversionStep.toCurrency,
+        })
+        .from(financeConversionStep)
+        .where(inArray(financeConversionStep.id, conversionStepIds))
+      const fxPoolLocks = await lockRealizedFxPools(tx, affectedSteps)
+      const accounts = await loadAccountFacts(tx, originalPostings)
+      await lockFxSystemAccounts(
+        tx,
+        [...accounts.values()]
+          .filter((account) => account.isSystem)
+          .map((account) => ({
+            // `is_system` and `kind` agree by the table constraint.
+            kind: account.kind as FinanceSystemAccountKind,
+            currency: account.currency,
+          })),
+      )
+      reversalOccurredOn = await resolveRealizedFxReversalOccurredOn(
+        tx,
+        affectedSteps,
+        fxPoolLocks,
+        original.id,
+        options.occurredOn,
+      )
+    }
+
     // The mirror is built COMPLETE, conversion-step link included, and inserted
     // once. It used to be inserted bare and then patched, which the EARS-313
     // trigger refused outright — so сторно of any conversion was impossible —
@@ -226,7 +285,7 @@ export async function reverseOperation(
     assertBalancedPerCurrency(mirrored)
 
     return insertOperation(tx, {
-      occurredOn: options.occurredOn ?? original.occurredOn,
+      occurredOn: reversalOccurredOn,
       source: 'reversal',
       purposeId: original.purposeId,
       sourceRef: original.sourceRef,

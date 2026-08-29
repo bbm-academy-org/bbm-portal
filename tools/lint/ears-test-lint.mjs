@@ -140,22 +140,16 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
 const DEFERRALS_BY_ISSUE = {
   339: {
     ids: [
-      'EARS-505',
-      'EARS-506',
-      'EARS-507',
       'EARS-508',
       'EARS-509',
       'EARS-510',
       'EARS-511',
       'EARS-512',
-      'EARS-513',
       'EARS-517',
       'EARS-518',
       'EARS-519',
       'EARS-520',
       'EARS-521',
-      'EARS-527',
-      'EARS-528',
       'EARS-531',
     ],
     reason:

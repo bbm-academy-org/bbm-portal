@@ -61,6 +61,15 @@ export type MissingProductPosting = {
   projectId: number | null
 }
 
+export type LiabilityBalance = {
+  accountId: number
+  memberId: number
+  memberName: string
+  currency: string
+  /** Signed ledger balance: a credit (what BBM owes) is negative. */
+  balance: bigint
+}
+
 /**
  * Every account with its balance, each in ITS OWN currency (EARS-317, EARS-325).
  *
@@ -85,6 +94,33 @@ export async function accountBalances(): Promise<AccountBalance[]> {
     currency: String(row.currency),
     isSystem: Boolean(row.is_system),
     retiredAt: row.retired_at === null ? null : new Date(String(row.retired_at)),
+    balance: BigInt(String(row.balance)),
+  }))
+}
+
+/** Who BBM owes, per member and currency (spec 339 EARS-527). */
+export async function liabilityBalances(
+  filter: { memberId?: number } = {},
+): Promise<LiabilityBalance[]> {
+  const db = getPlatformDb()
+  const memberFilter =
+    filter.memberId === undefined ? sql`` : sql`and p.member_id = ${filter.memberId}`
+  const result = await db.execute(sql`
+    select a.id as account_id, p.member_id, m.name as member_name, a.currency,
+           sum(p.amount)::text as balance
+      from core.finance_posting p
+      join core.finance_account a on a.id = p.account_id and a.kind = 'liability'
+      join core.member m on m.id = p.member_id
+     where p.member_id is not null ${memberFilter}
+     group by a.id, p.member_id, m.name, a.currency
+    having sum(p.amount) <> 0
+     order by p.member_id, a.currency
+  `)
+  return (result.rows as Record<string, unknown>[]).map((row) => ({
+    accountId: Number(row.account_id),
+    memberId: Number(row.member_id),
+    memberName: String(row.member_name),
+    currency: String(row.currency),
     balance: BigInt(String(row.balance)),
   }))
 }

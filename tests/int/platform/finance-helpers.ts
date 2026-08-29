@@ -211,10 +211,9 @@ export async function seedIntakeItemFor(
 /**
  * Drive an intake item to `posted`, RAW — the EARS-516 precondition.
  *
- * Posting is #385's clause (EARS-505/506) and the spine deliberately refuses
- * `approved → posted` today. The document layer only needs the STATE, so the
- * fixture writes the operation and the terminal row itself rather than waiting
- * for a sibling task; when #385 lands, this helper is what it replaces.
+ * The document layer only needs the terminal STATE, not posting semantics, so
+ * this fixture keeps writing the minimum raw operation and item link. The real
+ * posting path is covered independently by `finance-intake-posting.int.spec.ts`.
  */
 export async function postIntakeItem(itemId: number): Promise<number> {
   return fixtureWrite(async (tx) => {
