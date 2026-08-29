@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 311
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # Portal workspace — `/p` launcher, `/p/admin` shell, module plug-in contract — spec (issue #311)
@@ -299,9 +299,17 @@ recorded owner decisions do not settle.
   entry's `slug` is the module directory name, the admin route segment
   (`/p/admin/<slug>/<resource>`) and the API namespace (`/api/p/<slug>/*`).
   Three spellings of one thing is how they drift.
-- **D-10 — `internal` and `external` are a discriminated union**, so "an
-  external link has no admin section and no status provider" is a type error
-  rather than a runtime validation with a message nobody reads.
+- **D-10 — `internal`, `external`, `planned` and `cabinet` are a discriminated
+  union.** An external link has no admin section and no status provider; a
+  planned entry has no target or module; and a cabinet-only module has
+  `slug`, `name` and `admin` but no launcher target, status or claim. Each
+  invalid combination is a type error rather than a runtime validation with a
+  message nobody reads. **Buildability correction (2026-08-29, #316):** the
+  earlier three-variant wording made the first admin-only tenant expressible
+  only as an `internal` entry with a fake `href`, which would create an
+  unapproved second launcher tile. The `cabinet` variant records the already
+  required cabinet tenant without changing product scope or special-casing the
+  shell.
 - **D-11 — the module API keeps the `/api/p/<slug>/*` shape and the allowlist
   changes to meet it.** The alternative — moving module APIs under `/p/api/…` so
   the existing `/p/*` entry covers them with no allowlist edit — was rejected:
@@ -347,7 +355,7 @@ recorded owner decisions do not settle.
   claim-gated entry is absent from the response body entirely (D-7). The
   **admin tile's** distinct treatment is likewise built (EARS-468) — it is a real
   entry with a real target.
-- **D-13a — a placeholder is a third variant of the registry entry, not a
+- **D-13a — a placeholder is the `planned` variant of the registry entry, not a
   second list.** The mechanism for EARS-477 is a `planned` member of the same
   discriminated union: `kind: 'planned'` carrying a display `name`, a short
   `description` and nothing else — no `href`, no `url`, no `slug`, no
@@ -358,8 +366,8 @@ recorded owner decisions do not settle.
   cabinet to disagree with, against EARS-402/EARS-427), and a `planned: true` flag
   on an `internal` entry (it would make `href` optional on the variant that is
   defined by having one, dissolving the type-level guarantee of D-10).
-  **D-10 stays intact:** «an external link has no admin section and no status
-  provider» remains a type error, and so now does «a planned app has a target».
+  **D-10 stays intact:** «an external link has an admin section or status
+  provider» remains a type error, and so does «a planned app has a target».
   **D-2 stays intact and is not excepted:** placeholders are registry content
   listed in the composition root, so the launcher, the top bar and the cabinet
   still hold **zero** lines naming an app — promoting a placeholder to a live
@@ -384,10 +392,12 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   optional `status` provider and an optional `admin` section; an `external`
   entry carrying `slug`, `name`, `description`, an absolute `url` and an
   optional `requiredClaim`, and **no** `status` and **no** `admin` field
-  (D-10); and a `planned` entry carrying a display `name` and a short
+  (D-10); a `cabinet` entry carrying `slug`, `name` and a required `admin`
+  section, and **no** `href`, **no** `url`, **no** `description`, **no** icon,
+  **no** `requiredClaim` and **no** `status`; and a `planned` entry carrying a display `name` and a short
   `description` and **no** `href`, **no** `url`, **no** `slug`, **no**
   `requiredClaim`, **no** `status` and **no** `admin` field (D-13a). A module
-  shall declare at most one `internal` or `external` entry and shall export it
+  shall declare at most one `internal`, `external` or `cabinet` entry and shall export it
   from its public API (`src/lib/<module>/index.ts`), per ADR-002 §3; a `planned`
   entry has no module and is written directly in the composition root (EARS-402).
 - **EARS-402.** The platform shall hold exactly one composition root,
@@ -421,23 +431,26 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   block the workspace home.
 - **EARS-408.** The launcher shall render an entry that declares no `status`
   provider as a complete, openable tile — the normal case, not a degraded one.
-- **EARS-409.** WHERE an `internal` entry declares an `admin` section, the cabinet
+- **EARS-409.** WHERE an `internal` or `cabinet` entry declares an `admin` section, the cabinet
   shall render that section as a navigation group carrying the declared
   resources, mounted at `/p/admin/<slug>/<resource>` (D-9), without any edit to
   the shell.
 - **EARS-410.** WHERE an entry declares no `admin` section, the cabinet shall
   give that module no presence anywhere under `/p/admin` — no group, no item, no
-  route.
+  route. A `cabinet` entry has no presence in the launcher or app switcher by
+  type, while its declared admin section is composed normally in the cabinet.
 - **EARS-412.** WHEN a module's declaration is removed, the module shall
-  disappear from the launcher, the app switcher and the cabinet navigation with
-  no other file edited.
+  disappear from every surface in which its variant participates with no other
+  file edited: openable entries from launcher, switcher and cabinet; a
+  cabinet-only entry from the cabinet.
 - **EARS-413.** The contract shall accommodate every app of the target portfolio
   (consolidation spec §4, revision -f: hours, OKR, finance, decks, CRM, task
   management, team search & recruiting, project launch, calculators, Mattermost
   integration) without a new frame concept per app. The evidence is a
   **type-level test** that constructs one declaration per portfolio app —
   including a `decks`-shaped entry whose `href` is a section root and a
-  Mattermost-shaped `external` entry — and compiles; the "Portfolio walk" table
+  Mattermost-shaped `external` entry, plus an admin-only `cabinet` fixture with
+  no launcher target — and compiles; the "Portfolio walk" table
   below is the discovery record behind it, not the proof.
 
 ### B. Workspace access and roles
@@ -635,8 +648,11 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
 
 ### E. `members` — the first tenant (#316)
 
-- **EARS-441.** The cabinet shall expose a `members` resource under the member
-  module's section: a searchable list (name, email, role, status), a record
+- **EARS-441.** The member module shall export `memberWorkspaceEntry` as a
+  cabinet-only declaration with `kind: 'cabinet'`, `slug: 'member'` and one
+  admin resource named `members`. The cabinet shall expose it at
+  `/p/admin/member/members` over `/api/p/member/admin/members`: a searchable
+  list (name, email, role, status), a record
   view, a create form and an edit form, reaching `core.member` only through the
   member module's public API (`src/lib/member/index.ts`, ADR-004 §6). That
   public API does not yet carry every operation this needs — today it exports

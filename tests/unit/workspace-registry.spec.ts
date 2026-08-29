@@ -215,7 +215,7 @@ describe('the composition root (spec 311 EARS-402, EARS-403, D-2)', () => {
         if (file.includes(`${join('lib', 'workspace')}`)) continue
         const source = readFileSync(file, 'utf8')
         for (const m of source.matchAll(
-          /export const (\w+)\s*(?::\s*WorkspaceModule|satisfies WorkspaceModule)/g,
+          /export const (\w+)\s*(?::\s*(?:WorkspaceModule|CabinetWorkspaceEntry)|satisfies WorkspaceModule)/g,
         )) {
           declared.push({ file, name: m[1] })
         }

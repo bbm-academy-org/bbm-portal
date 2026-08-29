@@ -1,4 +1,5 @@
 import type {
+  CabinetWorkspaceEntry,
   InternalWorkspaceEntry,
   OpenableWorkspaceEntry,
   WorkspaceEntry,
@@ -23,6 +24,8 @@ export const STATUS_DEADLINE_MS = 1000
 
 /** «Does this session hold `claim`?» — supplied by the caller, so this file knows nothing about auth. */
 export type ClaimPredicate = (claim: string) => boolean
+
+type LauncherWorkspaceEntry = Exclude<WorkspaceEntry, CabinetWorkspaceEntry>
 
 /** The four tile forms of EARS-468, and the only four. */
 export type LauncherTileForm = 'internal' | 'external' | 'admin' | 'planned'
@@ -52,8 +55,9 @@ export interface LauncherTile {
 export function visibleEntries(
   entries: readonly WorkspaceEntry[],
   hasClaim: ClaimPredicate,
-): WorkspaceEntry[] {
-  return entries.filter((entry) => {
+): LauncherWorkspaceEntry[] {
+  return entries.filter((entry): entry is LauncherWorkspaceEntry => {
+    if (entry.kind === 'cabinet') return false
     if (entry.kind === 'planned') return true
     return entry.requiredClaim ? hasClaim(entry.requiredClaim) : true
   })
@@ -126,7 +130,7 @@ export async function resolveStatus(
 }
 
 /** The tile form an entry takes (EARS-468). */
-export function tileForm(entry: WorkspaceEntry): LauncherTileForm {
+export function tileForm(entry: LauncherWorkspaceEntry): LauncherTileForm {
   if (entry.kind === 'planned') return 'planned'
   if (entry.kind === 'external') return 'external'
   // A claim-gated INTERNAL entry is the admin form: dashed border, and its

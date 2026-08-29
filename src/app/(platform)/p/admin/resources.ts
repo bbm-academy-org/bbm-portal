@@ -52,7 +52,7 @@ export function cabinetResources(entries: readonly WorkspaceEntry[]): ResourcePr
   const resources: ResourceProps[] = []
 
   for (const entry of entries) {
-    if (entry.kind !== 'internal' || !entry.admin) continue
+    if ((entry.kind !== 'internal' && entry.kind !== 'cabinet') || !entry.admin) continue
 
     resources.push({
       name: groupName(entry.slug),
@@ -90,7 +90,7 @@ export function cabinetResources(entries: readonly WorkspaceEntry[]): ResourcePr
 export function cabinetSchemas(entries: readonly WorkspaceEntry[]): Record<string, ZodType> {
   const schemas: Record<string, ZodType> = {}
   for (const entry of entries) {
-    if (entry.kind !== 'internal' || !entry.admin) continue
+    if ((entry.kind !== 'internal' && entry.kind !== 'cabinet') || !entry.admin) continue
     for (const resource of entry.admin.resources) {
       schemas[resourceName(entry.slug, resource.name)] = resource.schema
     }

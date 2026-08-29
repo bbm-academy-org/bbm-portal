@@ -37,7 +37,7 @@ export const metadata = {
 
 export default function AdminIndexPage() {
   const sections = WORKSPACE_REGISTRY.flatMap((entry) =>
-    entry.kind === 'internal' && entry.admin
+    (entry.kind === 'internal' || entry.kind === 'cabinet') && entry.admin
       ? [{ slug: entry.slug, label: entry.admin.label, resources: entry.admin.resources }]
       : [],
   )
