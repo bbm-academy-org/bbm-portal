@@ -284,7 +284,7 @@ describe('core.member_alias', () => {
     expect(await listMembers()).toHaveLength(1)
   })
 
-  it('EARS-19/EARS-444: aliases now expose cabinet CRUD in addition to the cutover seed', () => {
+  it('EARS-19/444: aliases now expose cabinet CRUD in addition to the cutover seed', () => {
     const aliasSurface = Object.keys(memberModule)
       .filter((name) =>
         /^(createMemberAlias|deleteMemberAlias|updateMemberAlias|upsertMemberWithAliases)$/i.test(

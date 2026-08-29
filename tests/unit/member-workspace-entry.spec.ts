@@ -9,14 +9,14 @@ import { WORKSPACE_REGISTRY } from '@/lib/workspace/registry'
 import { buildLauncherView, isOpenable, switcherEntries } from '@/lib/workspace'
 
 describe('cabinet-only workspace entries (spec 311 buildability correction, EARS-401/409/441)', () => {
-  it('EARS-401/D-10: carries only cabinet identity and its admin section', () => {
+  it('EARS-401: carries only cabinet identity and its admin section (D-10)', () => {
     const entry: CabinetWorkspaceEntry = memberWorkspaceEntry
     expect(Object.keys(entry).sort()).toEqual(['admin', 'kind', 'name', 'slug'])
     expect(entry.kind).toBe('cabinet')
     expect(isOpenable(entry)).toBe(false)
   })
 
-  it('EARS-401/D-10: a cabinet-only entry cannot grow a launcher target by type', () => {
+  it('EARS-401: a cabinet-only entry cannot grow a launcher target by type (D-10)', () => {
     const entry: CabinetWorkspaceEntry = {
       kind: 'cabinet',
       slug: 'fixture',
@@ -33,7 +33,7 @@ describe('cabinet-only workspace entries (spec 311 buildability correction, EARS
     expect(switcherEntries([memberWorkspaceEntry], () => true)).toEqual([])
   })
 
-  it('EARS-409/441/D-9: appears in the cabinet under the singular member slug', () => {
+  it('EARS-409/441: appears in the cabinet under the singular member slug (D-9)', () => {
     expect(memberWorkspaceEntry.slug).toBe('member')
     expect(WORKSPACE_REGISTRY).toContain(memberWorkspaceEntry)
     const resources = cabinetResources(WORKSPACE_REGISTRY)

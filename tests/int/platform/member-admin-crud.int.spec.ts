@@ -133,7 +133,7 @@ describe('member cabinet public API (spec 311 EARS-441..445)', () => {
     ).rejects.toThrow(/Анна Ковалёва/)
   })
 
-  it('EARS-439/spec 201: writes are attributed and alias contact values stay out of the ledger', async () => {
+  it('EARS-439: writes are attributed and alias contact values stay out of the ledger (spec 201)', async () => {
     const member = await write((tx) =>
       createMember({ name: 'Анна', email: 'anna@bbm.academy' }, { db: tx }),
     )
