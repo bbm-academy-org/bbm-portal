@@ -27,7 +27,7 @@ import {
   assertProjectOnResultPostings,
   type PostingDraft,
 } from '../core/invariants'
-import { lockRealizedFxPools } from '../fx-pool-locks'
+import { lockRealizedFxPools, type RealizedFxPoolLocks } from '../fx-pool-locks'
 import {
   assertNoRetiredAccount,
   insertOperation,
@@ -140,15 +140,22 @@ async function recordExpense(tx: PlatformTx, item: PostingItem): Promise<Recorde
   if (item.purposeId === null) {
     throw new FinanceRefusal('Расход без назначения не проводится.')
   }
-  const result = await ensureSystemAccount(tx, 'expense', item.currency)
-  const payer = await resolveExpensePayer(tx, item)
   const chargedAmount = item.paidAmount ?? item.amount
   const chargedCurrency = item.paidCurrency ?? item.currency
+  const fxPoolLocks =
+    chargedCurrency === item.currency
+      ? null
+      : await lockRealizedFxPools(tx, [
+          { fromCurrency: chargedCurrency, toCurrency: item.currency },
+        ])
+  const payer = await resolveExpensePayer(tx, item)
   assertAccountCurrency(payer, chargedCurrency, 'счёта списания')
   assertFeeCurrency(item, chargedCurrency)
+  const result = await ensureSystemAccount(tx, 'expense', item.currency)
 
   if (chargedCurrency !== item.currency) {
     return recordCrossCurrencyResult(tx, item, {
+      fxPoolLocks: fxPoolLocks!,
       result,
       resultAmount: item.amount,
       resultSign: 1n,
@@ -268,6 +275,7 @@ async function recordOwnConversion(tx: PlatformTx, item: PostingItem): Promise<R
 }
 
 type CrossCurrencyResult = {
+  fxPoolLocks: RealizedFxPoolLocks
   result: FinanceAccountView
   resultAmount: bigint
   resultSign: 1n | -1n
@@ -296,7 +304,6 @@ async function recordCrossCurrencyResult(
     toAmount: cross.toAmount,
     rate,
   }
-  const fxPoolLocks = await lockRealizedFxPools(tx, [conversionStep])
   const conversionFrom = await ensureSystemAccount(tx, 'conversion', cross.fromCurrency)
   const conversionTo = await ensureSystemAccount(tx, 'conversion', cross.toCurrency)
   const postings: PostingDraft[] = [
@@ -315,7 +322,7 @@ async function recordCrossCurrencyResult(
       conversionStepNo: 1,
     },
     ...(await feePostings(tx, item, cross.money, 1)),
-    ...(await realizedFxPostings(tx, conversionStep, fxPoolLocks)),
+    ...(await realizedFxPostings(tx, conversionStep, cross.fxPoolLocks)),
   ]
   const accounts = await loadAccountFacts(tx, postings)
   assertNoRetiredAccount(accounts)
