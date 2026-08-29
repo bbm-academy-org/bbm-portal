@@ -18,7 +18,7 @@ import {
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
-import { appendPostings, recordConversionInTransaction } from '../conversions'
+import { appendPostings, realizedFxPostings, recordConversionInTransaction } from '../conversions'
 import { assertFinanceLedgerAccess, financeAuditContext, type FinanceActor } from '../core/actor'
 import { FinanceRefusal } from '../core/errors'
 import {
@@ -299,6 +299,13 @@ async function recordCrossCurrencyResult(
   const conversionFrom = await ensureSystemAccount(tx, 'conversion', cross.fromCurrency)
   const conversionTo = await ensureSystemAccount(tx, 'conversion', cross.toCurrency)
   const rate = deriveRate(cross.fromAmount, from.precision, cross.toAmount, to.precision)
+  const conversionStep = {
+    fromCurrency: cross.fromCurrency,
+    toCurrency: cross.toCurrency,
+    fromAmount: cross.fromAmount,
+    toAmount: cross.toAmount,
+    rate,
+  }
   const postings: PostingDraft[] = [
     resultPosting(item, cross.result.id, cross.resultSign * cross.resultAmount),
     moneyPosting(item, cross.money.id, cross.moneySign * cross.moneyAmount),
@@ -315,6 +322,7 @@ async function recordCrossCurrencyResult(
       conversionStepNo: 1,
     },
     ...(await feePostings(tx, item, cross.money, 1)),
+    ...(await realizedFxPostings(tx, conversionStep)),
   ]
   const accounts = await loadAccountFacts(tx, postings)
   assertNoRetiredAccount(accounts)
@@ -337,9 +345,9 @@ async function recordCrossCurrencyResult(
     .values({
       operationId: operation.id,
       stepNo: 1,
-      fromCurrency: cross.fromCurrency,
-      toCurrency: cross.toCurrency,
-      rate,
+      fromCurrency: conversionStep.fromCurrency,
+      toCurrency: conversionStep.toCurrency,
+      rate: conversionStep.rate,
     })
     .returning()
   return appendPostings(tx, operation, prepared, new Map([[1, step.id]]))

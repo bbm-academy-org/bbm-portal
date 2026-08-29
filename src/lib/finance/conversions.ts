@@ -276,22 +276,7 @@ export async function recordConversionInTransaction(
     // is read off step-linked conversion-account legs, and an FX leg is not an
     // exchange leg. Linking it would let this operation's own result silently
     // re-enter the average that prices the next disposal.
-    const realized = await realizedFxResult(tx, step)
-    if (realized !== 0n) {
-      const fxAccount = await ensureSystemAccount(tx, 'fx_result', step.toCurrency)
-      const fxCounter = await ensureSystemAccount(tx, 'conversion', step.toCurrency)
-      postings.push({
-        accountId: fxAccount.id,
-        amount: -realized,
-        currency: step.toCurrency,
-        projectId: fund.id,
-      })
-      postings.push({
-        accountId: fxCounter.id,
-        amount: realized,
-        currency: step.toCurrency,
-      })
-    }
+    postings.push(...(await realizedFxPostings(tx, step)))
   }
 
   const accounts = await loadAccountFacts(tx, postings)
@@ -424,6 +409,31 @@ async function realizedFxResult(tx: PlatformTx, step: ConversionStepInput): Prom
       ? heldCost
       : costBasisAtAverage(step.fromAmount, heldCost, heldQuantity)
   return step.toAmount - basis
+}
+
+/** Module-private realized-FX pair shared by every path that records a conversion step. */
+export async function realizedFxPostings(
+  tx: PlatformTx,
+  step: ConversionStepInput,
+): Promise<PostingDraft[]> {
+  const realized = await realizedFxResult(tx, step)
+  if (realized === 0n) return []
+  const fund = await requireFundProject(tx)
+  const fxAccount = await ensureSystemAccount(tx, 'fx_result', step.toCurrency)
+  const fxCounter = await ensureSystemAccount(tx, 'conversion', step.toCurrency)
+  return [
+    {
+      accountId: fxAccount.id,
+      amount: -realized,
+      currency: step.toCurrency,
+      projectId: fund.id,
+    },
+    {
+      accountId: fxCounter.id,
+      amount: realized,
+      currency: step.toCurrency,
+    },
+  ]
 }
 
 /** The postings of a conversion, written after its steps exist to be named. */
