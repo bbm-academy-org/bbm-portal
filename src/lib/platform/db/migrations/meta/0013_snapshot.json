@@ -1,0 +1,2104 @@
+{
+  "id": "32105196-6edd-494c-b80c-83e5f52017a9",
+  "prevId": "2b35756e-4223-4c8f-af65-a2a536314fb0",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "core.finance_account": {
+      "name": "finance_account",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_system": {
+          "name": "is_system",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "finance_account_system_kind_currency_unique": {
+          "name": "finance_account_system_kind_currency_unique",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "currency",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"core\".\"finance_account\".\"is_system\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "finance_account_currency_finance_currency_code_fk": {
+          "name": "finance_account_currency_finance_currency_code_fk",
+          "tableFrom": "finance_account",
+          "tableTo": "finance_currency",
+          "schemaTo": "core",
+          "columnsFrom": ["currency"],
+          "columnsTo": ["code"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_account_kind_allowed": {
+          "name": "finance_account_kind_allowed",
+          "value": "\"core\".\"finance_account\".\"kind\" in ('bank', 'card', 'crypto', 'cash', 'income', 'expense', 'conversion', 'fx_result', 'liability')"
+        },
+        "finance_account_system_kind_agreement": {
+          "name": "finance_account_system_kind_agreement",
+          "value": "\"core\".\"finance_account\".\"is_system\" = (\"core\".\"finance_account\".\"kind\" in ('income', 'expense', 'conversion', 'fx_result', 'liability'))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_category": {
+      "name": "finance_category",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allocable": {
+          "name": "allocable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.finance_conversion_step": {
+      "name": "finance_conversion_step",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "step_no": {
+          "name": "step_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_currency": {
+          "name": "from_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_currency": {
+          "name": "to_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rate": {
+          "name": "rate",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "finance_conversion_step_operation_no_unique": {
+          "name": "finance_conversion_step_operation_no_unique",
+          "columns": [
+            {
+              "expression": "operation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "step_no",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "finance_conversion_step_operation_id_finance_operation_id_fk": {
+          "name": "finance_conversion_step_operation_id_finance_operation_id_fk",
+          "tableFrom": "finance_conversion_step",
+          "tableTo": "finance_operation",
+          "schemaTo": "core",
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_conversion_step_from_currency_finance_currency_code_fk": {
+          "name": "finance_conversion_step_from_currency_finance_currency_code_fk",
+          "tableFrom": "finance_conversion_step",
+          "tableTo": "finance_currency",
+          "schemaTo": "core",
+          "columnsFrom": ["from_currency"],
+          "columnsTo": ["code"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_conversion_step_to_currency_finance_currency_code_fk": {
+          "name": "finance_conversion_step_to_currency_finance_currency_code_fk",
+          "tableFrom": "finance_conversion_step",
+          "tableTo": "finance_currency",
+          "schemaTo": "core",
+          "columnsFrom": ["to_currency"],
+          "columnsTo": ["code"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_conversion_step_no_positive": {
+          "name": "finance_conversion_step_no_positive",
+          "value": "\"core\".\"finance_conversion_step\".\"step_no\" >= 1"
+        },
+        "finance_conversion_step_rate_decimal": {
+          "name": "finance_conversion_step_rate_decimal",
+          "value": "\"core\".\"finance_conversion_step\".\"rate\" ~ '^[0-9]+(\\.[0-9]+)?$'"
+        },
+        "finance_conversion_step_rate_nonzero": {
+          "name": "finance_conversion_step_rate_nonzero",
+          "value": "(\"core\".\"finance_conversion_step\".\"rate\")::numeric > 0"
+        },
+        "finance_conversion_step_currencies_differ": {
+          "name": "finance_conversion_step_currencies_differ",
+          "value": "\"core\".\"finance_conversion_step\".\"from_currency\" <> \"core\".\"finance_conversion_step\".\"to_currency\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_counterparty": {
+      "name": "finance_counterparty",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "finance_counterparty_name_unique": {
+          "name": "finance_counterparty_name_unique",
+          "columns": [
+            {
+              "expression": "lower(btrim(\"name\"))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.finance_currency": {
+      "name": "finance_currency",
+      "schema": "core",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "precision": {
+          "name": "precision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_currency_code_shape": {
+          "name": "finance_currency_code_shape",
+          "value": "\"core\".\"finance_currency\".\"code\" = upper(btrim(\"core\".\"finance_currency\".\"code\"))"
+        },
+        "finance_currency_precision_range": {
+          "name": "finance_currency_precision_range",
+          "value": "\"core\".\"finance_currency\".\"precision\" between 0 and 18"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_document_link": {
+      "name": "finance_document_link",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intake_item_id": {
+          "name": "intake_item_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linked_by": {
+          "name": "linked_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linked_at": {
+          "name": "linked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "finance_document_link_pair_unique": {
+          "name": "finance_document_link_pair_unique",
+          "columns": [
+            {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "intake_item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "finance_document_link_intake_item_idx": {
+          "name": "finance_document_link_intake_item_idx",
+          "columns": [
+            {
+              "expression": "intake_item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "finance_document_link_document_id_finance_document_id_fk": {
+          "name": "finance_document_link_document_id_finance_document_id_fk",
+          "tableFrom": "finance_document_link",
+          "tableTo": "finance_document",
+          "schemaTo": "core",
+          "columnsFrom": ["document_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "finance_document_link_intake_item_id_finance_intake_item_id_fk": {
+          "name": "finance_document_link_intake_item_id_finance_intake_item_id_fk",
+          "tableFrom": "finance_document_link",
+          "tableTo": "finance_intake_item",
+          "schemaTo": "core",
+          "columnsFrom": ["intake_item_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.finance_document": {
+      "name": "finance_document",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_digest": {
+          "name": "content_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime": {
+          "name": "mime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_state": {
+          "name": "storage_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending_upload'"
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "finance_document_uploaded_by_idx": {
+          "name": "finance_document_uploaded_by_idx",
+          "columns": [
+            {
+              "expression": "uploaded_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "finance_document_storage_key_unique": {
+          "name": "finance_document_storage_key_unique",
+          "nullsNotDistinct": false,
+          "columns": ["storage_key"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "finance_document_kind_allowed": {
+          "name": "finance_document_kind_allowed",
+          "value": "\"core\".\"finance_document\".\"kind\" in ('ru_invoice', 'fiscal_receipt', 'foreign_invoice', 'payment_order', 'bank_screenshot', 'bank_statement', 'other')"
+        },
+        "finance_document_mime_allowed": {
+          "name": "finance_document_mime_allowed",
+          "value": "\"core\".\"finance_document\".\"mime\" in ('application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'image/heic')"
+        },
+        "finance_document_size_positive": {
+          "name": "finance_document_size_positive",
+          "value": "\"core\".\"finance_document\".\"size\" > 0"
+        },
+        "finance_document_storage_state_allowed": {
+          "name": "finance_document_storage_state_allowed",
+          "value": "\"core\".\"finance_document\".\"storage_state\" in ('pending_upload', 'ready', 'pending_delete')"
+        },
+        "finance_document_content_digest_allowed": {
+          "name": "finance_document_content_digest_allowed",
+          "value": "\"core\".\"finance_document\".\"content_digest\" = 'legacy-unverified' or \"core\".\"finance_document\".\"content_digest\" ~ '^sha256:[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_intake_item": {
+      "name": "finance_intake_item",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "occurred_on": {
+          "name": "occurred_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "counter_account_id": {
+          "name": "counter_account_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paid_amount": {
+          "name": "paid_amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paid_currency": {
+          "name": "paid_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fee_amount": {
+          "name": "fee_amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fee_currency": {
+          "name": "fee_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "purpose_id": {
+          "name": "purpose_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "counterparty_id": {
+          "name": "counterparty_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "member_id": {
+          "name": "member_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "already_paid": {
+          "name": "already_paid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "personal_funds": {
+          "name": "personal_funds",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refusal_reason": {
+          "name": "refusal_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posted_by": {
+          "name": "posted_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posted_at": {
+          "name": "posted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "finance_intake_item_source_ref_unique": {
+          "name": "finance_intake_item_source_ref_unique",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"core\".\"finance_intake_item\".\"source_ref\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "finance_intake_item_operation_unique": {
+          "name": "finance_intake_item_operation_unique",
+          "columns": [
+            {
+              "expression": "operation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "finance_intake_item_status_idx": {
+          "name": "finance_intake_item_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "finance_intake_item_created_by_idx": {
+          "name": "finance_intake_item_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "finance_intake_item_account_id_finance_account_id_fk": {
+          "name": "finance_intake_item_account_id_finance_account_id_fk",
+          "tableFrom": "finance_intake_item",
+          "tableTo": "finance_account",
+          "schemaTo": "core",
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_intake_item_counter_account_id_finance_account_id_fk": {
+          "name": "finance_intake_item_counter_account_id_finance_account_id_fk",
+          "tableFrom": "finance_intake_item",
+          "tableTo": "finance_account",
+          "schemaTo": "core",
+          "columnsFrom": ["counter_account_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_intake_item_purpose_id_finance_purpose_id_fk": {
+          "name": "finance_intake_item_purpose_id_finance_purpose_id_fk",
+          "tableFrom": "finance_intake_item",
+          "tableTo": "finance_purpose",
+          "schemaTo": "core",
+          "columnsFrom": ["purpose_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_intake_item_project_id_finance_project_id_fk": {
+          "name": "finance_intake_item_project_id_finance_project_id_fk",
+          "tableFrom": "finance_intake_item",
+          "tableTo": "finance_project",
+          "schemaTo": "core",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_intake_item_product_id_finance_product_id_fk": {
+          "name": "finance_intake_item_product_id_finance_product_id_fk",
+          "tableFrom": "finance_intake_item",
+          "tableTo": "finance_product",
+          "schemaTo": "core",
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_intake_item_counterparty_id_finance_counterparty_id_fk": {
+          "name": "finance_intake_item_counterparty_id_finance_counterparty_id_fk",
+          "tableFrom": "finance_intake_item",
+          "tableTo": "finance_counterparty",
+          "schemaTo": "core",
+          "columnsFrom": ["counterparty_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_intake_item_operation_id_finance_operation_id_fk": {
+          "name": "finance_intake_item_operation_id_finance_operation_id_fk",
+          "tableFrom": "finance_intake_item",
+          "tableTo": "finance_operation",
+          "schemaTo": "core",
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_intake_item_source_allowed": {
+          "name": "finance_intake_item_source_allowed",
+          "value": "\"core\".\"finance_intake_item\".\"source\" in ('request', 'manual', 'backfill', 'bank_import')"
+        },
+        "finance_intake_item_kind_allowed": {
+          "name": "finance_intake_item_kind_allowed",
+          "value": "\"core\".\"finance_intake_item\".\"kind\" in ('expense', 'income', 'transfer', 'conversion')"
+        },
+        "finance_intake_item_status_allowed": {
+          "name": "finance_intake_item_status_allowed",
+          "value": "\"core\".\"finance_intake_item\".\"status\" in ('draft', 'submitted', 'approved', 'refused', 'cancelled', 'posted')"
+        },
+        "finance_intake_item_source_ref_policy": {
+          "name": "finance_intake_item_source_ref_policy",
+          "value": "(\"core\".\"finance_intake_item\".\"source\" in ('bank_import', 'backfill')) = (\"core\".\"finance_intake_item\".\"source_ref\" is not null)"
+        },
+        "finance_intake_item_personal_funds_account": {
+          "name": "finance_intake_item_personal_funds_account",
+          "value": "\"core\".\"finance_intake_item\".\"personal_funds\" = (\"core\".\"finance_intake_item\".\"account_id\" is null)"
+        },
+        "finance_intake_item_personal_funds_already_paid": {
+          "name": "finance_intake_item_personal_funds_already_paid",
+          "value": "(not \"core\".\"finance_intake_item\".\"personal_funds\") or \"core\".\"finance_intake_item\".\"already_paid\""
+        },
+        "finance_intake_item_personal_funds_member": {
+          "name": "finance_intake_item_personal_funds_member",
+          "value": "(not \"core\".\"finance_intake_item\".\"personal_funds\") or (\"core\".\"finance_intake_item\".\"member_id\" is not null)"
+        },
+        "finance_intake_item_paid_pair": {
+          "name": "finance_intake_item_paid_pair",
+          "value": "(\"core\".\"finance_intake_item\".\"paid_amount\" is null) = (\"core\".\"finance_intake_item\".\"paid_currency\" is null)"
+        },
+        "finance_intake_item_fee_pair": {
+          "name": "finance_intake_item_fee_pair",
+          "value": "(\"core\".\"finance_intake_item\".\"fee_amount\" is null) = (\"core\".\"finance_intake_item\".\"fee_currency\" is null)"
+        },
+        "finance_intake_item_decision_pair": {
+          "name": "finance_intake_item_decision_pair",
+          "value": "(\"core\".\"finance_intake_item\".\"decided_by\" is null) = (\"core\".\"finance_intake_item\".\"decided_at\" is null)"
+        },
+        "finance_intake_item_refusal_reason": {
+          "name": "finance_intake_item_refusal_reason",
+          "value": "(\"core\".\"finance_intake_item\".\"status\" <> 'refused') or (\"core\".\"finance_intake_item\".\"refusal_reason\" is not null)"
+        },
+        "finance_intake_item_posting_shape": {
+          "name": "finance_intake_item_posting_shape",
+          "value": "(\"core\".\"finance_intake_item\".\"status\" = 'posted') = (\"core\".\"finance_intake_item\".\"operation_id\" is not null)"
+        },
+        "finance_intake_item_posted_pair": {
+          "name": "finance_intake_item_posted_pair",
+          "value": "(\"core\".\"finance_intake_item\".\"posted_by\" is null) = (\"core\".\"finance_intake_item\".\"posted_at\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_operation": {
+      "name": "finance_operation",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "occurred_on": {
+          "name": "occurred_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose_id": {
+          "name": "purpose_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "backdated": {
+          "name": "backdated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reverses": {
+          "name": "reverses",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "finance_operation_reverses_unique": {
+          "name": "finance_operation_reverses_unique",
+          "columns": [
+            {
+              "expression": "reverses",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "finance_operation_purpose_id_finance_purpose_id_fk": {
+          "name": "finance_operation_purpose_id_finance_purpose_id_fk",
+          "tableFrom": "finance_operation",
+          "tableTo": "finance_purpose",
+          "schemaTo": "core",
+          "columnsFrom": ["purpose_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_operation_reverses_finance_operation_id_fk": {
+          "name": "finance_operation_reverses_finance_operation_id_fk",
+          "tableFrom": "finance_operation",
+          "tableTo": "finance_operation",
+          "schemaTo": "core",
+          "columnsFrom": ["reverses"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_operation_source_allowed": {
+          "name": "finance_operation_source_allowed",
+          "value": "\"core\".\"finance_operation\".\"source\" in ('request', 'bank_import', 'hours', 'manual', 'backfill', 'reversal')"
+        },
+        "finance_operation_reversal_shape": {
+          "name": "finance_operation_reversal_shape",
+          "value": "(\"core\".\"finance_operation\".\"source\" = 'reversal') = (\"core\".\"finance_operation\".\"reverses\" is not null)"
+        },
+        "finance_operation_no_self_reversal": {
+          "name": "finance_operation_no_self_reversal",
+          "value": "\"core\".\"finance_operation\".\"reverses\" <> \"core\".\"finance_operation\".\"id\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_posting": {
+      "name": "finance_posting",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "member_id": {
+          "name": "member_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "conversion_step_id": {
+          "name": "conversion_step_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "finance_posting_operation_id_finance_operation_id_fk": {
+          "name": "finance_posting_operation_id_finance_operation_id_fk",
+          "tableFrom": "finance_posting",
+          "tableTo": "finance_operation",
+          "schemaTo": "core",
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_posting_account_id_finance_account_id_fk": {
+          "name": "finance_posting_account_id_finance_account_id_fk",
+          "tableFrom": "finance_posting",
+          "tableTo": "finance_account",
+          "schemaTo": "core",
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_posting_project_id_finance_project_id_fk": {
+          "name": "finance_posting_project_id_finance_project_id_fk",
+          "tableFrom": "finance_posting",
+          "tableTo": "finance_project",
+          "schemaTo": "core",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_posting_category_id_finance_category_id_fk": {
+          "name": "finance_posting_category_id_finance_category_id_fk",
+          "tableFrom": "finance_posting",
+          "tableTo": "finance_category",
+          "schemaTo": "core",
+          "columnsFrom": ["category_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_posting_product_id_finance_product_id_fk": {
+          "name": "finance_posting_product_id_finance_product_id_fk",
+          "tableFrom": "finance_posting",
+          "tableTo": "finance_product",
+          "schemaTo": "core",
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_posting_conversion_step_id_finance_conversion_step_id_fk": {
+          "name": "finance_posting_conversion_step_id_finance_conversion_step_id_fk",
+          "tableFrom": "finance_posting",
+          "tableTo": "finance_conversion_step",
+          "schemaTo": "core",
+          "columnsFrom": ["conversion_step_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.finance_product": {
+      "name": "finance_product",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sale_price": {
+          "name": "sale_price",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sale_price_currency": {
+          "name": "sale_price_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "finance_product_project_id_finance_project_id_fk": {
+          "name": "finance_product_project_id_finance_project_id_fk",
+          "tableFrom": "finance_product",
+          "tableTo": "finance_project",
+          "schemaTo": "core",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "finance_product_sale_price_currency_finance_currency_code_fk": {
+          "name": "finance_product_sale_price_currency_finance_currency_code_fk",
+          "tableFrom": "finance_product",
+          "tableTo": "finance_currency",
+          "schemaTo": "core",
+          "columnsFrom": ["sale_price_currency"],
+          "columnsTo": ["code"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_product_sale_price_paired": {
+          "name": "finance_product_sale_price_paired",
+          "value": "(\"core\".\"finance_product\".\"sale_price\" is null) = (\"core\".\"finance_product\".\"sale_price_currency\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_project": {
+      "name": "finance_project",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_fund": {
+          "name": "is_fund",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "finance_project_single_fund": {
+          "name": "finance_project_single_fund",
+          "columns": [
+            {
+              "expression": "is_fund",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"core\".\"finance_project\".\"is_fund\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.finance_purpose_proposal": {
+      "name": "finance_purpose_proposal",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "intake_item_id": {
+          "name": "intake_item_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proposed_by": {
+          "name": "proposed_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "resolved_purpose_id": {
+          "name": "resolved_purpose_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "finance_purpose_proposal_pending_request_unique": {
+          "name": "finance_purpose_proposal_pending_request_unique",
+          "columns": [
+            {
+              "expression": "intake_item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"core\".\"finance_purpose_proposal\".\"resolved_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "finance_purpose_proposal_proposed_by_idx": {
+          "name": "finance_purpose_proposal_proposed_by_idx",
+          "columns": [
+            {
+              "expression": "proposed_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "finance_purpose_proposal_resolved_purpose_idx": {
+          "name": "finance_purpose_proposal_resolved_purpose_idx",
+          "columns": [
+            {
+              "expression": "resolved_purpose_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "finance_purpose_proposal_intake_item_id_finance_intake_item_id_fk": {
+          "name": "finance_purpose_proposal_intake_item_id_finance_intake_item_id_fk",
+          "tableFrom": "finance_purpose_proposal",
+          "tableTo": "finance_intake_item",
+          "schemaTo": "core",
+          "columnsFrom": ["intake_item_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "finance_purpose_proposal_resolved_purpose_id_finance_purpose_id_fk": {
+          "name": "finance_purpose_proposal_resolved_purpose_id_finance_purpose_id_fk",
+          "tableFrom": "finance_purpose_proposal",
+          "tableTo": "finance_purpose",
+          "schemaTo": "core",
+          "columnsFrom": ["resolved_purpose_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_purpose_proposal_resolution_shape": {
+          "name": "finance_purpose_proposal_resolution_shape",
+          "value": "\"core\".\"finance_purpose_proposal\".\"resolved_at\" is not null or \"core\".\"finance_purpose_proposal\".\"resolved_purpose_id\" is null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_purpose": {
+      "name": "finance_purpose",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_binding": {
+          "name": "product_binding",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "finance_purpose_category_id_finance_category_id_fk": {
+          "name": "finance_purpose_category_id_finance_category_id_fk",
+          "tableFrom": "finance_purpose",
+          "tableTo": "finance_category",
+          "schemaTo": "core",
+          "columnsFrom": ["category_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_purpose_product_binding_allowed": {
+          "name": "finance_purpose_product_binding_allowed",
+          "value": "\"core\".\"finance_purpose\".\"product_binding\" in ('required', 'forbidden', 'optional')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.hours_assessment": {
+      "name": "hours_assessment",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "period_id": {
+          "name": "period_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_id": {
+          "name": "member_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hours": {
+          "name": "hours",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekend_hours": {
+          "name": "weekend_hours",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "split_percent": {
+          "name": "split_percent",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "monthly_rate": {
+          "name": "monthly_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hourly_rate": {
+          "name": "hourly_rate",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accrual": {
+          "name": "accrual",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cash_amount": {
+          "name": "cash_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invest_amount": {
+          "name": "invest_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekday_count": {
+          "name": "weekday_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "saved_at": {
+          "name": "saved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "hours_assessment_period_member_unique": {
+          "name": "hours_assessment_period_member_unique",
+          "columns": [
+            {
+              "expression": "period_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hours_assessment_period_id_hours_period_id_fk": {
+          "name": "hours_assessment_period_id_hours_period_id_fk",
+          "tableFrom": "hours_assessment",
+          "tableTo": "hours_period",
+          "schemaTo": "core",
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hours_assessment_method_allowed": {
+          "name": "hours_assessment_method_allowed",
+          "value": "\"core\".\"hours_assessment\".\"method\" in ('period', 'week', 'day')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.hours_participant": {
+      "name": "hours_participant",
+      "schema": "core",
+      "columns": {
+        "member_id": {
+          "name": "member_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "fork_min": {
+          "name": "fork_min",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fork_max": {
+          "name": "fork_max",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grade": {
+          "name": "grade",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sort_key": {
+          "name": "sort_key",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hours_participant_grade_allowed": {
+          "name": "hours_participant_grade_allowed",
+          "value": "\"core\".\"hours_participant\".\"grade\" in ('I', 'II', 'III')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.hours_period": {
+      "name": "hours_period",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_from": {
+          "name": "date_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_to": {
+          "name": "date_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_key": {
+          "name": "sort_key",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "hours_period_single_open": {
+          "name": "hours_period_single_open",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"core\".\"hours_period\".\"status\" = 'open'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hours_period_status_allowed": {
+          "name": "hours_period_status_allowed",
+          "value": "\"core\".\"hours_period\".\"status\" in ('open', 'closed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.hours_publication_message": {
+      "name": "hours_publication_message",
+      "schema": "core",
+      "columns": {
+        "period_id": {
+          "name": "period_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delivery": {
+          "name": "delivery",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hours_publication_message_period_id_hours_publication_period_id_fk": {
+          "name": "hours_publication_message_period_id_hours_publication_period_id_fk",
+          "tableFrom": "hours_publication_message",
+          "tableTo": "hours_publication",
+          "schemaTo": "core",
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["period_id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "hours_publication_message_period_position_pk": {
+          "name": "hours_publication_message_period_position_pk",
+          "columns": ["period_id", "position"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hours_publication_message_delivery_allowed": {
+          "name": "hours_publication_message_delivery_allowed",
+          "value": "\"core\".\"hours_publication_message\".\"delivery\" in ('pending', 'sent', 'failed', 'unknown')"
+        },
+        "hours_publication_message_position_non_negative": {
+          "name": "hours_publication_message_position_non_negative",
+          "value": "\"core\".\"hours_publication_message\".\"position\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.hours_publication": {
+      "name": "hours_publication",
+      "schema": "core",
+      "columns": {
+        "period_id": {
+          "name": "period_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "preview_fingerprint": {
+          "name": "preview_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hours_publication_period_id_hours_period_id_fk": {
+          "name": "hours_publication_period_id_hours_period_id_fk",
+          "tableFrom": "hours_publication",
+          "tableTo": "hours_period",
+          "schemaTo": "core",
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hours_publication_status_allowed": {
+          "name": "hours_publication_status_allowed",
+          "value": "\"core\".\"hours_publication\".\"status\" in ('sending', 'published', 'incomplete')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.member_alias": {
+      "name": "member_alias",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "member_id": {
+          "name": "member_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "member_alias_kind_value_unique": {
+          "name": "member_alias_kind_value_unique",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(btrim(\"value\"))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "member_alias_member_id_member_id_fk": {
+          "name": "member_alias_member_id_member_id_fk",
+          "tableFrom": "member_alias",
+          "tableTo": "member",
+          "schemaTo": "core",
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.member": {
+      "name": "member",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Europe/Moscow'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "member_slug_unique": {
+          "name": "member_slug_unique",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "member_email_unique": {
+          "name": "member_email_unique",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "member_email_normalized": {
+          "name": "member_email_normalized",
+          "value": "\"core\".\"member\".\"email\" = lower(btrim(\"core\".\"member\".\"email\"))"
+        },
+        "member_status_allowed": {
+          "name": "member_status_allowed",
+          "value": "\"core\".\"member\".\"status\" in ('active', 'inactive')"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "core": "core"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

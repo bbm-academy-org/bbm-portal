@@ -97,6 +97,17 @@ export type {
   FinanceReferenceTable,
 } from './references'
 
+// ── counterparty + missing-purpose references (spec 339 EARS-532/526) ───────
+export { createCounterparty, listCounterparties, renameCounterparty } from './counterparties'
+export type { FinanceCounterpartyView } from './counterparties'
+export {
+  createPurposeProposal,
+  dismissPurposeProposal,
+  listPurposeProposals,
+  resolvePurposeProposal,
+} from './purpose-proposals'
+export type { FinancePurposeProposalStatus, FinancePurposeProposalView } from './purpose-proposals'
+
 // ── the fact core (EARS-310…316, EARS-320…322, EARS-327) ─────────────────────
 export { recordOperation, reverseOperation } from './operations'
 export type { RecordOperationInput, RecordedOperation } from './operations'

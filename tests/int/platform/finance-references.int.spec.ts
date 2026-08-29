@@ -10,6 +10,7 @@ import {
   createPurpose,
   createPurposeProposal,
   dismissPurposeProposal,
+  editIntakeItem,
   FinanceAccessRefusal,
   FinanceRefusal,
   getIntakeItem,
@@ -150,6 +151,9 @@ describe('a missing-purpose proposal bound to its draft request (spec 339 EARS-5
       name: proposal.text,
       productBinding: 'forbidden',
     })
+    await editIntakeItem(MEMBER, request.id, { purposeId: purpose.id })
+    await expect(transitionIntakeItem(MEMBER, request.id, 'submit')).rejects.toThrow(/EARS-526/)
+    await editIntakeItem(MEMBER, request.id, { purposeId: null })
     const resolved = await resolvePurposeProposal(ADMIN, proposal.id, {
       purposeId: purpose.id,
     })
@@ -198,7 +202,9 @@ describe('a missing-purpose proposal bound to its draft request (spec 339 EARS-5
       resolvedPurposeId: null,
     })
     expect(dismissed.resolvedAt).toBeInstanceOf(Date)
-    expect(await listPurposeProposals(MEMBER)).toEqual([dismissed])
+    expect(dismissed.resolvedAt?.getTime()).toBeGreaterThanOrEqual(dismissed.createdAt.getTime())
+    expect(await listPurposeProposals(ENTRY)).toEqual([dismissed])
+    expect(await listPurposeProposals(MEMBER)).toEqual([])
     await expect(transitionIntakeItem(MEMBER, request.id, 'submit')).rejects.toThrow(/EARS-526/)
 
     const persisted = await db.execute(sql`

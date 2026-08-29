@@ -509,7 +509,8 @@ describe('the person dimension (EARS-322)', () => {
     // them RESTRICT for the same reason the posting's is, so the registry cannot
     // delete a person out from under an act recorded to their name. Documents
     // (#382) added two more on the same rule: an upload and an attachment are
-    // each an act with a name on it.
+    // each an act with a name on it. A purpose proposal (#383) adds its proposer
+    // for the same reason.
     expect(
       constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`).sort(),
     ).toEqual([
@@ -521,6 +522,7 @@ describe('the person dimension (EARS-322)', () => {
       'finance_intake_item.member_id → RESTRICT',
       'finance_intake_item.posted_by → RESTRICT',
       'finance_posting.member_id → RESTRICT',
+      'finance_purpose_proposal.proposed_by → RESTRICT',
     ])
   })
 

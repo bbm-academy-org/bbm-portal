@@ -22,7 +22,7 @@
  * file refuses by name: the spine is the substrate those children write into,
  * and a half-posting here would be the thing #385 has to unpick.
  */
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 
 import { findMemberByEmail } from '@/lib/member'
 import {
@@ -33,6 +33,7 @@ import {
   type FinanceIntakeSource,
   type FinanceIntakeStatus,
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
+import { financePurposeProposal } from '@/lib/platform/db/schema/finance/finance-purpose-proposal'
 import { getPlatformDb } from '@/lib/platform/db/client'
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
@@ -607,6 +608,10 @@ export async function transitionIntakeItem(
     })
     assertTransitionGate(actor, transition, row, actorMemberId)
 
+    if (act === 'submit' || act === 'post') {
+      await assertRequestPurposeReady(tx, row)
+    }
+
     if (act === 'post') {
       throw new FinanceRefusal(
         'Проводка позиции приёмки в этот слой не входит: она атомарна, требует приложенного ' +
@@ -634,6 +639,34 @@ export async function transitionIntakeItem(
       .returning()
     return toView(updated)
   })
+}
+
+async function assertRequestPurposeReady(
+  tx: PlatformTx,
+  row: typeof financeIntakeItem.$inferSelect,
+): Promise<void> {
+  if (row.source !== 'request' || row.kind !== 'expense') return
+  const [pending] = await tx
+    .select({ id: financePurposeProposal.id })
+    .from(financePurposeProposal)
+    .where(
+      and(
+        eq(financePurposeProposal.intakeItemId, row.id),
+        isNull(financePurposeProposal.resolvedAt),
+      ),
+    )
+  if (pending !== undefined) {
+    throw new FinanceRefusal(
+      `Заявка #${row.id} ждёт решения по предложению назначения #${pending.id}; свободный ` +
+        'текст не становится назначением и не достигает проводки (EARS-526).',
+    )
+  }
+  if (row.purposeId === null) {
+    throw new FinanceRefusal(
+      `Заявка #${row.id} не отправляется без назначения: выберите строку справочника или ` +
+        'подайте предложение назначения (EARS-526).',
+    )
+  }
 }
 
 function assertTransitionGate(
