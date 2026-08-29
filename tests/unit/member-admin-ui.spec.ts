@@ -86,6 +86,38 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.queryByRole('button', { name: /Удалить участника/ })).toBeNull()
   }, 15_000)
 
+  it('toggles active and inactive members from the accepted list actions', async () => {
+    const inactive = {
+      ...member,
+      id: 8,
+      name: 'Борис',
+      email: 'boris@bbm.local',
+      status: 'inactive' as const,
+    }
+    refine.list = {
+      query: { isLoading: false, error: null },
+      result: { data: [member, inactive], total: 2 },
+    }
+    const mutate = vi.fn()
+    refine.update = { mutate, mutation: { isPending: false, error: null } }
+    const { MemberListScreen } =
+      await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
+    render(React.createElement(MemberListScreen))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Деактивировать Анна' }))
+    expect(mutate).toHaveBeenCalledWith({
+      resource: 'member.members',
+      id: 7,
+      values: { status: 'inactive' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Активировать Борис' }))
+    expect(mutate).toHaveBeenLastCalledWith({
+      resource: 'member.members',
+      id: 8,
+      values: { status: 'active' },
+    })
+  })
+
   it('renders loading, empty and readable list-error states', async () => {
     const { MemberListScreen } =
       await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
