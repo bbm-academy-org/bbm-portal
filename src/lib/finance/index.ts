@@ -101,6 +101,7 @@ export type {
 export { createCounterparty, listCounterparties, renameCounterparty } from './counterparties'
 export type { FinanceCounterpartyView } from './counterparties'
 export {
+  assertRequestPurposeReady,
   createPurposeProposal,
   dismissPurposeProposal,
   listPurposeProposals,

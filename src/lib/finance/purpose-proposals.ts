@@ -21,7 +21,7 @@ export type FinancePurposeProposalStatus = 'pending' | 'resolved' | 'dismissed'
 
 export type FinancePurposeProposalView = {
   id: number
-  intakeItemId: number
+  intakeItemId: number | null
   text: string
   proposedBy: number
   createdAt: Date
@@ -64,13 +64,16 @@ async function lockRequest(tx: PlatformTx, id: number) {
   return row
 }
 
-async function lockProposal(tx: PlatformTx, id: number) {
+async function requireProposal(tx: PlatformTx, id: number) {
   const [row] = await tx
     .select()
     .from(financePurposeProposal)
     .where(eq(financePurposeProposal.id, id))
-    .for('update')
   if (row === undefined) throw new FinanceRefusal(`Предложения назначения #${id} не существует.`)
+  return row
+}
+
+function pendingRequestId(row: typeof financePurposeProposal.$inferSelect, id: number): number {
   if (row.resolvedAt !== null) {
     throw new FinanceRefusal(
       `Предложение назначения #${id} уже ${
@@ -78,7 +81,73 @@ async function lockProposal(tx: PlatformTx, id: number) {
       } и повторно не меняется (EARS-526).`,
     )
   }
+  if (row.intakeItemId === null) {
+    throw new FinanceRefusal(
+      `Ожидающее предложение назначения #${id} потеряло связь с заявкой; ` +
+        'такое состояние запрещено EARS-526.',
+    )
+  }
+  return row.intakeItemId
+}
+
+async function lockPendingProposalForRequest(tx: PlatformTx, id: number, requestId: number) {
+  const [row] = await tx
+    .select()
+    .from(financePurposeProposal)
+    .where(eq(financePurposeProposal.id, id))
+    .for('update')
+  if (row === undefined) throw new FinanceRefusal(`Предложения назначения #${id} не существует.`)
+  const currentRequestId = pendingRequestId(row, id)
+  if (currentRequestId !== requestId) {
+    throw new FinanceRefusal(
+      `Предложение назначения #${id} больше не связано с заявкой #${requestId}; ` +
+        'повторите действие по его текущему состоянию (EARS-526).',
+    )
+  }
   return row
+}
+
+async function pendingProposal(tx: PlatformTx, intakeItemId: number) {
+  const [row] = await tx
+    .select({ id: financePurposeProposal.id })
+    .from(financePurposeProposal)
+    .where(
+      and(
+        eq(financePurposeProposal.intakeItemId, intakeItemId),
+        isNull(financePurposeProposal.resolvedAt),
+      ),
+    )
+  return row
+}
+
+/** The caller holds the request row, so lifecycle writes serialize before this read. */
+export async function assertNoPendingPurposeProposal(
+  tx: PlatformTx,
+  intakeItemId: number,
+): Promise<void> {
+  const pending = await pendingProposal(tx, intakeItemId)
+  if (pending !== undefined) {
+    throw new FinanceRefusal(
+      `Заявка #${intakeItemId} ждёт решения по предложению назначения #${pending.id}; ` +
+        'сначала разрешите или отклоните предложение (EARS-526).',
+    )
+  }
+}
+
+/** The transaction-scoped invariant the atomic posting path in #385 consumes. */
+export async function assertRequestPurposeReady(
+  tx: PlatformTx,
+  intakeItemId: number,
+): Promise<void> {
+  const request = await lockRequest(tx, intakeItemId)
+  if (request.source !== 'request' || request.kind !== 'expense') return
+  await assertNoPendingPurposeProposal(tx, request.id)
+  if (request.purposeId === null) {
+    throw new FinanceRefusal(
+      `Заявка #${request.id} не отправляется без назначения: выберите строку справочника или ` +
+        'подайте предложение назначения (EARS-526).',
+    )
+  }
 }
 
 /** A member proposes only from their own draft request; finance-entry may assist. */
@@ -106,15 +175,7 @@ export async function createPurposeProposal(
           'нужно только когда подходящего назначения нет (EARS-526).',
       )
     }
-    const [pending] = await tx
-      .select()
-      .from(financePurposeProposal)
-      .where(
-        and(
-          eq(financePurposeProposal.intakeItemId, request.id),
-          isNull(financePurposeProposal.resolvedAt),
-        ),
-      )
+    const pending = await pendingProposal(tx, request.id)
     if (pending !== undefined) {
       throw new FinanceRefusal(
         `У заявки #${request.id} уже есть ожидающее предложение назначения #${pending.id} ` +
@@ -151,7 +212,10 @@ export async function resolvePurposeProposal(
   assertFinanceReferenceAccess(actor)
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const proposal = await lockProposal(tx, id)
+    const observed = await requireProposal(tx, id)
+    const requestId = pendingRequestId(observed, id)
+    const request = await lockRequest(tx, requestId)
+    await lockPendingProposalForRequest(tx, id, request.id)
     const [purpose] = await tx
       .select()
       .from(financePurpose)
@@ -162,8 +226,6 @@ export async function resolvePurposeProposal(
           'предложение можно разрешить только в действующее назначение (EARS-526).',
       )
     }
-
-    const request = await lockRequest(tx, proposal.intakeItemId)
     if (request.source !== 'request' || request.status !== 'draft' || request.purposeId !== null) {
       throw new FinanceRefusal(
         `Заявка #${request.id} уже не является черновиком без назначения; предложение #${id} ` +
@@ -192,7 +254,10 @@ export async function dismissPurposeProposal(
   assertFinanceReferenceAccess(actor)
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
-    await lockProposal(tx, id)
+    const observed = await requireProposal(tx, id)
+    const requestId = pendingRequestId(observed, id)
+    await lockRequest(tx, requestId)
+    await lockPendingProposalForRequest(tx, id, requestId)
     const [dismissed] = await tx
       .update(financePurposeProposal)
       .set({ resolvedAt: sql`now()`, resolvedPurposeId: null })

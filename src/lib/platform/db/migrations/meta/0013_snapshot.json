@@ -1,5 +1,5 @@
 {
-  "id": "32105196-6edd-494c-b80c-83e5f52017a9",
+  "id": "406fd103-7fb1-4a16-b8a6-efefc8783f61",
   "prevId": "2b35756e-4223-4c8f-af65-a2a536314fb0",
   "version": "7",
   "dialect": "postgresql",
@@ -1339,7 +1339,7 @@
           "name": "intake_item_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "text": {
           "name": "text",
@@ -1429,7 +1429,7 @@
           "schemaTo": "core",
           "columnsFrom": ["intake_item_id"],
           "columnsTo": ["id"],
-          "onDelete": "cascade",
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "finance_purpose_proposal_resolved_purpose_id_finance_purpose_id_fk": {
@@ -1450,6 +1450,10 @@
         "finance_purpose_proposal_resolution_shape": {
           "name": "finance_purpose_proposal_resolution_shape",
           "value": "\"core\".\"finance_purpose_proposal\".\"resolved_at\" is not null or \"core\".\"finance_purpose_proposal\".\"resolved_purpose_id\" is null"
+        },
+        "finance_purpose_proposal_pending_request": {
+          "name": "finance_purpose_proposal_pending_request",
+          "value": "\"core\".\"finance_purpose_proposal\".\"resolved_at\" is not null or \"core\".\"finance_purpose_proposal\".\"intake_item_id\" is not null"
         }
       },
       "isRLSEnabled": false

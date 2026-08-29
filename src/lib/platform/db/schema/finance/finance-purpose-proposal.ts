@@ -4,8 +4,11 @@
  *
  * `resolved_at` is the state marker: NULL is pending, a timestamp plus
  * `resolved_purpose_id` is resolved, and a timestamp without a purpose is
- * dismissed. Both terminal outcomes retain the proposal row. The request link
- * is what lets one admin act unblock the exact draft that proposed the text;
+ * dismissed. Both terminal outcomes retain the proposal row even if its draft
+ * is later deleted, so `intake_item_id` becomes NULL through `ON DELETE SET
+ * NULL`. A pending row must remain linked: the CHECK makes even a direct SQL
+ * delete refuse until an admin resolves or dismisses it. The request link is
+ * what lets one admin act unblock the exact draft that proposed the text;
  * without it EARS-526's request-level acceptance scenario is not representable.
  *
  * `proposed_by` is an integer with no drizzle reference. Its FK to
@@ -23,9 +26,9 @@ export const financePurposeProposal = core.table(
   'finance_purpose_proposal',
   {
     id: serial('id').primaryKey(),
-    intakeItemId: integer('intake_item_id')
-      .notNull()
-      .references(() => financeIntakeItem.id, { onDelete: 'cascade' }),
+    intakeItemId: integer('intake_item_id').references(() => financeIntakeItem.id, {
+      onDelete: 'set null',
+    }),
     text: text('text').notNull(),
     /** FK → `core.member(id)`, added as SQL in the migration. */
     proposedBy: integer('proposed_by').notNull(),
@@ -37,6 +40,10 @@ export const financePurposeProposal = core.table(
     check(
       'finance_purpose_proposal_resolution_shape',
       sql`${table.resolvedAt} is not null or ${table.resolvedPurposeId} is null`,
+    ),
+    check(
+      'finance_purpose_proposal_pending_request',
+      sql`${table.resolvedAt} is not null or ${table.intakeItemId} is not null`,
     ),
     uniqueIndex('finance_purpose_proposal_pending_request_unique')
       .on(table.intakeItemId)

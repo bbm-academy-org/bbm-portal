@@ -32,6 +32,12 @@ function normalizedEquals(value: string) {
   return sql`lower(btrim(${financeCounterparty.name})) = ${value.trim().toLowerCase()}`
 }
 
+function pgErrorCode(error: unknown): string | undefined {
+  const node = error as { code?: string; cause?: unknown } | undefined
+  if (typeof node?.code === 'string') return node.code
+  return node?.cause ? pgErrorCode(node.cause) : undefined
+}
+
 async function requireMemberId(actor: FinanceActor): Promise<number> {
   const member = await findMemberByEmail(actor.email)
   if (member === null) {
@@ -98,21 +104,31 @@ export async function renameCounterparty(
   assertFinanceReferenceAccess(actor)
   const name = requireName(patch.name)
 
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const current = await requireCounterparty(tx, id)
-    const [collision] = await tx.select().from(financeCounterparty).where(normalizedEquals(name))
-    if (collision !== undefined && collision.id !== id) {
+  try {
+    return await platformTransaction(financeAuditContext(actor), async (tx) => {
+      const current = await requireCounterparty(tx, id)
+      const [collision] = await tx.select().from(financeCounterparty).where(normalizedEquals(name))
+      if (collision !== undefined && collision.id !== id) {
+        throw new FinanceRefusal(
+          `Контрагент «${collision.name}» уже есть в справочнике: дубликат создать нельзя ` +
+            '(EARS-532). Слияние дублей не входит в v1.',
+        )
+      }
+      if (current.name === name) return current
+      const [updated] = await tx
+        .update(financeCounterparty)
+        .set({ name })
+        .where(eq(financeCounterparty.id, id))
+        .returning()
+      return updated
+    })
+  } catch (error) {
+    if (pgErrorCode(error) === '23505') {
       throw new FinanceRefusal(
-        `Контрагент «${collision.name}» уже есть в справочнике: дубликат создать нельзя ` +
-          '(EARS-532). Слияние дублей не входит в v1.',
+        `Контрагент с названием «${name}» уже создаётся или переименовывается другой ` +
+          'операцией: названия не различаются регистром и пробелами по краям (EARS-532).',
       )
     }
-    if (current.name === name) return current
-    const [updated] = await tx
-      .update(financeCounterparty)
-      .set({ name })
-      .where(eq(financeCounterparty.id, id))
-      .returning()
-    return updated
-  })
+    throw error
+  }
 }
