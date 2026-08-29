@@ -566,6 +566,26 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
   })
 
+  it('EARS-313/314/328: reversing a later disposal releases its acquisition predecessor', async () => {
+    const wallets = await seedWallets()
+    const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-01-10')
+    const disposal = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+
+    await reverseOperation(APPROVER, disposal.id)
+    await reverseOperation(APPROVER, acquisition.id)
+
+    const balances = await accountBalances()
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+    expect(
+      balances
+        .filter((row) => row.kind === 'fx_result')
+        .reduce((sum, row) => sum + row.balance, 0n),
+    ).toBe(0n)
+    expect(balances.find((row) => row.accountId === wallets.thb.id)?.balance).toBe(0n)
+    expect(balances.find((row) => row.accountId === wallets.usdt.id)?.balance).toBe(0n)
+    expect(await listRegister()).toHaveLength(4)
+  })
+
   it('EARS-314/328: immutable operation id orders same-date reversal dependencies', async () => {
     const wallets = await seedWallets()
     const acquisition = await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-03-10')
