@@ -913,6 +913,47 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     `)
     expect(Number((steps.rows[0] as { count: number }).count)).toBe(1)
   })
+
+  it('EARS-505: refuses a same-currency conversion before mutating the item or ledger', async () => {
+    const refs = await seedPostingReferences()
+    const target = await createAccount(ADMIN, {
+      name: 'Другой счёт RUB',
+      kind: 'bank',
+      currency: 'RUB',
+    })
+    const item = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'conversion',
+      occurredOn: '2026-08-20',
+      accountId: refs.rubAccountId,
+      counterAccountId: target.id,
+      amount: 875_000n,
+      currency: 'RUB',
+      paidAmount: 350_000n,
+      paidCurrency: 'RUB',
+      projectId: refs.projectId,
+    })
+    await approve(item.id, refs.approverMemberId)
+    await attachDocument(item.id, refs.approverMemberId)
+
+    const refusal = await postIntakeItem(APPROVER, item.id).then(
+      () => null,
+      (error: unknown) => error,
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain('kind = transfer')
+    expect(await getIntakeItem(APPROVER, item.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+      postedBy: null,
+      postedAt: null,
+    })
+    const operations = await db.execute(
+      sql`select count(*)::int as count from core.finance_operation`,
+    )
+    expect(Number((operations.rows[0] as { count: number }).count)).toBe(0)
+  })
 })
 
 describe('personal funds and reimbursements share the liability cut (EARS-513/527/528)', () => {
