@@ -2,7 +2,7 @@
 
 import React from 'react'
 
-import { memberAliasSchema, type MemberAliasInput, type MemberAliasRecord } from '@/lib/member'
+import type { MemberAliasInput, MemberAliasRecord } from '@/lib/member'
 import { Alert, AlertDescription } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
@@ -11,6 +11,8 @@ import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Skeleton } from '@/ui/skeleton'
 import { Textarea } from '@/ui/textarea'
+
+import { validateAliasResponse } from './alias-actions'
 
 interface AliasEnvelope {
   data?: unknown
@@ -48,11 +50,13 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
     let cancelled = false
     void fetch(aliasesUrl(memberId), { headers: { accept: 'application/json' } })
       .then(async (response) => ({ response, body: await responseBody(response) }))
-      .then(({ response, body }) => {
+      .then(async ({ response, body }) => {
         if (!response.ok) throw new Error(refusal(response, body))
-        const parsed = memberAliasSchema.array().safeParse(body.data)
-        if (!parsed.success) throw new Error('Ответ алиасов не соответствует схеме модуля.')
-        if (!cancelled) setAliases(parsed.data)
+        const parsed = await validateAliasResponse('list', body)
+        if (!parsed.success) {
+          throw new Error(`Ответ алиасов не соответствует схеме модуля: ${parsed.issues}`)
+        }
+        if (!cancelled) setAliases(parsed.data as MemberAliasRecord[])
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -78,12 +82,15 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
       })
       const body = await responseBody(response)
       if (!response.ok) throw new Error(refusal(response, body))
-      const parsed = memberAliasSchema.safeParse(body.data)
-      if (!parsed.success) throw new Error('Сохранённый алиас не соответствует схеме модуля.')
+      const parsed = await validateAliasResponse('one', body)
+      if (!parsed.success) {
+        throw new Error(`Сохранённый алиас не соответствует схеме модуля: ${parsed.issues}`)
+      }
+      const saved = parsed.data as MemberAliasRecord
       setAliases((current) =>
         editing
-          ? current.map((item) => (item.id === parsed.data.id ? parsed.data : item))
-          : [...current, parsed.data],
+          ? current.map((item) => (item.id === saved.id ? saved : item))
+          : [...current, saved],
       )
       setAdding(false)
       setEditing(null)
