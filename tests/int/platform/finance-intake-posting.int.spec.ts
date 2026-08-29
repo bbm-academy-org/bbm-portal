@@ -642,7 +642,7 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2)
   })
 
-  it('serializes the FX pool across two different concurrent intake items', async () => {
+  it('refuses a non-backfill conversion that would precede an already-recorded pair step', async () => {
     const refs = await seedPostingReferences()
     await systemAccount(ADMIN, 'conversion', 'RUB')
     await systemAccount(ADMIN, 'conversion', 'THB')
@@ -674,7 +674,7 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     }
 
     const barrierKey = 385_003
-    let results: Awaited<ReturnType<typeof postIntakeItem>>[] = []
+    let results: PromiseSettledResult<Awaited<ReturnType<typeof postIntakeItem>>>[] = []
     await asMigrator(async (client) => {
       await client.query(`
         create or replace function core.finance_test_fx_barrier() returns trigger language plpgsql as $$
@@ -692,9 +692,11 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
         const pid = Number(
           (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
         )
-        const pending = Promise.all([
+        const disposalPending = postIntakeItem(APPROVER, disposal.id)
+        await waitForBlockedBy(client, pid, 1)
+        const pending = Promise.allSettled([
+          disposalPending,
           postIntakeItem(APPROVER, acquisition.id),
-          postIntakeItem(APPROVER, disposal.id),
         ])
         await waitForBlockedBy(client, pid, 2)
         await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
@@ -709,15 +711,26 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
       }
     })
 
+    expect(results[0]?.status).toBe('fulfilled')
+    expect(results[1]?.status).toBe('rejected')
+    if (results[1]?.status !== 'rejected') throw new Error('The earlier acquisition was posted.')
+    expect(results[1].reason).toBeInstanceOf(FinanceRefusal)
+    expect(String((results[1].reason as Error).message)).toMatch(/2026-01-10.*2026-03-10/)
+    expect(await getIntakeItem(APPROVER, acquisition.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+    })
+    const operations = await db.execute(
+      sql`select count(*)::int as count from core.finance_operation`,
+    )
+    expect(operations.rows).toEqual([{ count: 1 }])
     const fx = await db.execute(sql`
-      select p.amount::text as amount
+      select count(*)::int as count
         from core.finance_posting p
         join core.finance_account a on a.id = p.account_id
-       where p.operation_id = ${results[1].operationId}
-         and a.kind = 'fx_result'
-         and p.currency = 'THB'
+       where a.kind = 'fx_result'
     `)
-    expect(fx.rows).toEqual([{ amount: '-80000' }])
+    expect(fx.rows).toEqual([{ count: 0 }])
     const clearing = await db.execute(sql`
       select p.currency, sum(p.amount)::text as balance
         from core.finance_posting p
@@ -727,8 +740,8 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
        order by p.currency
     `)
     expect(clearing.rows).toEqual([
-      { currency: 'RUB', balance: '0' },
-      { currency: 'THB', balance: '0' },
+      { currency: 'RUB', balance: '100000' },
+      { currency: 'THB', balance: '-380000' },
     ])
   })
 

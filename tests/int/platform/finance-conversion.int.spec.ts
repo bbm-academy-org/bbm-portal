@@ -520,6 +520,15 @@ describe('realized FX on a disposal (EARS-328, EARS-329)', () => {
     expect(thb?.balance).toBe(20_000n)
   })
 
+  it('EARS-319/328: same-date conversions use immutable operation order as the tie-break', async () => {
+    const wallets = await seedWallets()
+    await buyUsdt(wallets, 300_000n, 10_000_000n, '30', '2026-03-10')
+    const sale = await sellUsdt(wallets, 10_000_000n, 380_000n, '38', '2026-03-10')
+
+    expect(await fxResultOf(sale.id, 'THB')).toBe(-80_000n)
+    expect(await clearingBalances()).toEqual({ THB: 0n, USDT: 0n })
+  })
+
   it('EARS-314/328: a reversed acquisition does not price a later disposal', async () => {
     const wallets = await seedWallets()
     // A purchase entered wrong, сторнирована, then entered again at the real
