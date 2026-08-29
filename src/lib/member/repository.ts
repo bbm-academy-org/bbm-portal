@@ -21,7 +21,11 @@ import { getPlatformDb } from '@/lib/platform/db/client'
 import { member } from '@/lib/platform/db/schema/member/member'
 import { memberAlias } from '@/lib/platform/db/schema/member/member-alias'
 
-import { aliasOwnedByAnotherMember, MemberConflictError } from './errors'
+import {
+  aliasOwnedByAnotherMember,
+  MemberAliasUniqueConflictError,
+  MemberConflictError,
+} from './errors'
 import {
   normalizeAliasValue,
   normalizeMemberEmail,
@@ -435,6 +439,23 @@ function aliasConflict(kind: string, value: string, owner: Member, cause?: unkno
   )
 }
 
+/** Explain a rolled-back alias unique race using a fresh, usable DB handle. */
+export async function resolveMemberAliasUniqueConflict(
+  error: MemberAliasUniqueConflictError,
+  options?: MemberDbOptions,
+): Promise<MemberConflictError> {
+  const found = await findAliasWithOwner(
+    executor(options),
+    error.kind,
+    error.value,
+    error.exceptAliasId,
+  )
+  if (found) return aliasConflict(error.kind, error.value, found.member, error)
+  return new MemberConflictError(`Алиас (${error.kind}) «${error.value}» уже существует.`, {
+    cause: error,
+  })
+}
+
 /** Add one nested lookup row from the cabinet (EARS-444). */
 export async function createMemberAlias(
   memberId: number,
@@ -457,11 +478,7 @@ export async function createMemberAlias(
     return created
   } catch (error) {
     if (pgErrorCode(error) === '23505') {
-      const raced = await findAliasWithOwner(db, kind, value)
-      if (raced) throw aliasConflict(kind, value, raced.member, error)
-      throw new MemberConflictError(`Алиас (${kind}) «${value}» уже существует.`, {
-        cause: error,
-      })
+      throw new MemberAliasUniqueConflictError(kind, value, { cause: error })
     }
     throw error
   }
@@ -489,9 +506,8 @@ export async function updateMemberAlias(
     return rows[0] ?? null
   } catch (error) {
     if (pgErrorCode(error) === '23505') {
-      const raced = await findAliasWithOwner(db, kind, value, aliasId)
-      if (raced) throw aliasConflict(kind, value, raced.member, error)
-      throw new MemberConflictError(`Алиас (${kind}) «${value}» уже существует.`, {
+      throw new MemberAliasUniqueConflictError(kind, value, {
+        exceptAliasId: aliasId,
         cause: error,
       })
     }

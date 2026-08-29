@@ -20,7 +20,7 @@
  * EARS-14) — и владельческий SQL-хатч. Форма появится с `/p/admin` (эпик #112).
  */
 
-export { MemberConflictError } from './errors'
+export { MemberAliasUniqueConflictError, MemberConflictError } from './errors'
 export {
   memberAdminSection,
   memberAliasCreateSchema,
@@ -57,6 +57,7 @@ export {
   listAliases,
   listMembers,
   resolveMember,
+  resolveMemberAliasUniqueConflict,
   updateMemberProfile,
   updateMemberAlias,
   upsertMemberWithAliases,

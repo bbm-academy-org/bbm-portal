@@ -21,6 +21,25 @@ export class MemberConflictError extends Error {
   }
 }
 
+/**
+ * A unique-index race detected inside a transaction that PostgreSQL has aborted.
+ * The caller must let that transaction roll back before resolving the owner on a
+ * fresh application handle.
+ */
+export class MemberAliasUniqueConflictError extends Error {
+  readonly kind: string
+  readonly value: string
+  readonly exceptAliasId?: number
+
+  constructor(kind: string, value: string, options?: { exceptAliasId?: number; cause?: unknown }) {
+    super(`Alias unique conflict: ${kind}/${value}`, { cause: options?.cause })
+    this.name = 'MemberAliasUniqueConflictError'
+    this.kind = kind
+    this.value = value
+    this.exceptAliasId = options?.exceptAliasId
+  }
+}
+
 /** «Этот email уже записан как алиас участника „X" — сначала разберись с ним.» */
 export function aliasOwnedByAnotherMember(email: string, owner: Member, kind: string): Error {
   return new MemberConflictError(

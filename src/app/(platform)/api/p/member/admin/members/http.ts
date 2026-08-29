@@ -1,6 +1,8 @@
 import {
+  MemberAliasUniqueConflictError,
   MemberConflictError,
   memberRecordSchema,
+  resolveMemberAliasUniqueConflict,
   type Member,
   type MemberDb,
   type MemberRecord,
@@ -44,12 +46,15 @@ export async function memberWrite<T>(
   try {
     return await platformTransaction(audit, (tx: PlatformTx) => write(tx))
   } catch (error) {
-    if (error instanceof MemberConflictError) {
-      throw new ModuleApiError('conflict', error.message, {
-        memberId: error.member?.id,
-        memberName: error.member?.name,
+    const conflict =
+      error instanceof MemberAliasUniqueConflictError
+        ? await resolveMemberAliasUniqueConflict(error)
+        : error
+    if (conflict instanceof MemberConflictError)
+      throw new ModuleApiError('conflict', conflict.message, {
+        memberId: conflict.member?.id,
+        memberName: conflict.member?.name,
       })
-    }
     throw error
   }
 }

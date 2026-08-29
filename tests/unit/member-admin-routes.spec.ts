@@ -8,6 +8,7 @@ const routeState = vi.hoisted(() => ({
   members: [] as Array<Record<string, unknown>>,
   aliases: [] as Array<Record<string, unknown>>,
   conflict: null as Error | null,
+  resolvedAliasConflict: null as Error | null,
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => routeState.session }))
@@ -63,6 +64,10 @@ vi.mock('@/lib/member', async (importOriginal) => {
       expect(options).toEqual({ db: {} })
       return routeState.aliases.find((alias) => alias.id === aliasId) ?? null
     }),
+    resolveMemberAliasUniqueConflict: vi.fn(async () => {
+      if (!routeState.resolvedAliasConflict) throw new Error('missing resolved alias conflict')
+      return routeState.resolvedAliasConflict
+    }),
   }
 })
 
@@ -84,6 +89,7 @@ beforeEach(async () => {
   routeState.session = admin
   routeState.audit = null
   routeState.conflict = null
+  routeState.resolvedAliasConflict = null
   routeState.members = [
     {
       id: 7,
@@ -220,5 +226,30 @@ describe('member cabinet HTTP surface (spec 311 EARS-441..445)', () => {
     )
     expect(response.status).toBe(409)
     expect(JSON.stringify(await response.json())).toContain('Анна')
+  })
+
+  it('EARS-444: an alias index race is explained only after its transaction rejects', async () => {
+    const { MemberAliasUniqueConflictError, MemberConflictError } = await import('@/lib/member')
+    routeState.conflict = new MemberAliasUniqueConflictError('mattermost', 'anna')
+    routeState.resolvedAliasConflict = new MemberConflictError(
+      'Алиас (mattermost) «anna» уже принадлежит участнику «Анна».',
+      { member: routeState.members[0] as unknown as import('@/lib/member').Member },
+    )
+    const { POST } = await import('@/app/(platform)/api/p/member/admin/members/[id]/aliases/route')
+    const response = await POST(
+      request('/api/p/member/admin/members/7/aliases', 'POST', {
+        kind: 'mattermost',
+        value: 'anna',
+      }),
+      segment({ id: '7' }),
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: expect.objectContaining({
+        message: expect.stringContaining('Анна'),
+        details: { memberId: 7, memberName: 'Анна' },
+      }),
+    })
   })
 })
