@@ -39,10 +39,18 @@ vi.mock('@refinedev/core', async (importOriginal) => {
 })
 
 vi.mock('@/app/(platform)/p/admin/member/members/alias-actions', () => ({
-  validateAliasResponse: async (_envelope: string, payload: { data?: unknown }) => ({
-    success: true,
-    data: payload.data,
-  }),
+  validateAliasResponse: async (envelope: string, payload: { data?: unknown }) => {
+    if (
+      envelope === 'one' &&
+      (!payload.data ||
+        typeof payload.data !== 'object' ||
+        typeof (payload.data as { id?: unknown }).id !== 'number')
+    ) {
+      return { success: false, issues: 'data.id: expected number' }
+    }
+
+    return { success: true, data: payload.data }
+  },
 }))
 
 const member = {
@@ -154,6 +162,7 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     render(React.createElement(MemberCreateScreen))
     expect(screen.getByRole('heading', { name: 'Новый участник' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Алиасы' })).toBeNull()
+    expect(screen.queryByLabelText('Статус')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Создать участника' }))
     expect(screen.getByText('Укажите имя.')).toBeTruthy()
@@ -168,6 +177,7 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
       React.createElement(MemberForm, {
         initial: memberFormValue({ ...member, timezone: 'America/New_York' }),
         emailReadOnly: true,
+        canEditStatus: true,
         submitLabel: 'Сохранить профиль',
         pending: false,
         onSubmit: submit,
@@ -199,8 +209,25 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.getByRole('heading', { name: 'Профиль' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Алиасы' })).toBeTruthy()
     expect(screen.getByDisplayValue('anna@bbm.local')).toHaveProperty('readOnly', true)
+    expect(screen.getByLabelText('Статус')).toBeTruthy()
     expect(container.querySelector('[data-member-composition]')?.className).toContain('grid-cols-1')
     await waitFor(() => expect(screen.getByText('mattermost')).toBeTruthy())
+  })
+
+  it('EARS-472: acknowledges a saved profile and clears the acknowledgement after a change', async () => {
+    const mutate = vi.fn((_variables: unknown, options?: { onSuccess?: () => void }) =>
+      options?.onSuccess?.(),
+    )
+    refine.update = { mutate, mutation: { isPending: false, error: null } }
+    const { MemberRecordScreen } =
+      await import('@/app/(platform)/p/admin/member/members/MemberRecordScreen')
+    render(React.createElement(MemberRecordScreen, { id: 7, mode: 'edit' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить профиль' }))
+    expect(await screen.findByText('Профиль сохранён.')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Роль'), { target: { value: 'Новая роль' } })
+    expect(screen.queryByText('Профиль сохранён.')).toBeNull()
   })
 
   it('supports alias add/edit/delete controls and names a duplicate refusal', async () => {
@@ -270,5 +297,65 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
       value: 'anna',
       note: 'Основной аккаунт',
     })
+  })
+
+  it('EARS-444: resets the alias form when editing moves from alias A to alias B', async () => {
+    const aliasA = { id: 11, memberId: 7, kind: 'telegram', value: 'anna_a', note: null }
+    const aliasB = { id: 12, memberId: 7, kind: 'zoom_id', value: 'anna_b', note: null }
+    const fetchMock = vi.mocked(fetch)
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ data: [aliasA, aliasB], total: 2 }))
+      .mockResolvedValueOnce(Response.json({ data: { ...aliasB, note: 'Рабочий' } }))
+    const { AliasPanel } = await import('@/app/(platform)/p/admin/member/members/AliasPanel')
+    render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
+    await waitFor(() => expect(screen.getByText('anna_a', { exact: true })).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna_a' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna_b' }))
+
+    expect(screen.getByLabelText('Тип алиаса').textContent).toContain('Zoom — идентификатор')
+    expect(screen.getByLabelText('Значение алиаса')).toHaveProperty('value', 'anna_b')
+    fireEvent.change(screen.getByLabelText('Примечание'), { target: { value: 'Рабочий' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить алиас' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/p/member/admin/members/7/aliases/12')
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      kind: 'zoom_id',
+      value: 'anna_b',
+      note: 'Рабочий',
+    })
+  })
+
+  it('EARS-444: resets the alias form when add changes to edit', async () => {
+    const alias = { id: 11, memberId: 7, kind: 'telegram', value: 'anna', note: null }
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValueOnce(Response.json({ data: [alias], total: 1 }))
+    const { AliasPanel } = await import('@/app/(platform)/p/admin/member/members/AliasPanel')
+    render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
+    await waitFor(() => expect(screen.getByText('anna', { exact: true })).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить алиас' }))
+    fireEvent.change(screen.getByLabelText('Значение алиаса'), { target: { value: 'draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna' }))
+
+    expect(screen.getByLabelText('Тип алиаса').textContent).toContain('Telegram')
+    expect(screen.getByLabelText('Значение алиаса')).toHaveProperty('value', 'anna')
+  })
+
+  it('EARS-436: keeps an alias and reports a readable failure for malformed delete success', async () => {
+    const alias = { id: 11, memberId: 7, kind: 'telegram', value: 'anna', note: null }
+    const fetchMock = vi.mocked(fetch)
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ data: [alias], total: 1 }))
+      .mockResolvedValueOnce(Response.json({ data: { broken: true } }))
+    const { AliasPanel } = await import('@/app/(platform)/p/admin/member/members/AliasPanel')
+    render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
+    await waitFor(() => expect(screen.getByText('anna', { exact: true })).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить алиас anna' }))
+
+    expect(await screen.findByText(/Удалённый алиас не соответствует схеме модуля/)).toBeTruthy()
+    expect(screen.getByText('anna', { exact: true })).toBeTruthy()
   })
 })

@@ -52,6 +52,7 @@ test.describe('members cabinet (spec 311 EARS-441..445)', () => {
     await page.getByRole('button', { name: 'Добавить участника' }).click()
     await expect(page.getByRole('heading', { name: 'Новый участник' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Алиасы' })).toHaveCount(0)
+    await expect(page.getByLabel('Статус')).toHaveCount(0)
     await page.getByLabel('Имя').fill(name)
     await page.getByLabel('Email').fill(email)
     await page.getByLabel('Часовой пояс').click()
@@ -72,6 +73,7 @@ test.describe('members cabinet (spec 311 EARS-441..445)', () => {
     await expect(composition.getByRole('heading', { name: 'Алиасы' })).toBeVisible()
     await expect(page.getByLabel('Email')).toHaveValue(email)
     await expect(page.getByLabel('Email')).toHaveAttribute('readonly', '')
+    await expect(page.getByLabel('Статус')).toBeVisible()
     await expect(page.getByLabel('Часовой пояс')).toContainText('Бангкок — Asia/Bangkok')
     await expect(page.getByRole('button', { name: /Удалить участника/ })).toHaveCount(0)
 
@@ -81,6 +83,7 @@ test.describe('members cabinet (spec 311 EARS-441..445)', () => {
     const profileResponse = page.waitForResponse(isResponse(memberPath, 'PATCH'))
     await page.getByRole('button', { name: 'Сохранить профиль' }).click()
     await profileResponse
+    await expect(page.getByText('Профиль сохранён.')).toBeVisible()
     await page.reload()
     await expect(page.getByLabel('Роль')).toHaveValue(role)
     await expect(page.getByLabel('Часовой пояс')).toContainText('Тбилиси — Asia/Tbilisi')
