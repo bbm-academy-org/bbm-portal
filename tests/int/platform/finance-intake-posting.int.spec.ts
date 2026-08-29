@@ -565,7 +565,7 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
     expect(legs.filter((leg) => leg.conversionStepId !== null)).toHaveLength(4)
   })
 
-  it('serializes first use of an FX pair without deadlocking opposing posting paths', async () => {
+  it('serializes fee-bearing first use without inverting pair and result-account locks', async () => {
     const refs = await seedPostingReferences()
     const ownConversion = await createIntakeItem(ENTRY, {
       source: 'manual',
@@ -577,6 +577,8 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
       currency: 'RUB',
       paidAmount: 300_000n,
       paidCurrency: 'THB',
+      feeAmount: 1_000n,
+      feeCurrency: 'THB',
       projectId: refs.projectId,
     })
     const vendorExpense = await createIntakeItem(
@@ -615,12 +617,9 @@ describe('cross-currency intake builds one authoritative conversion step', () =>
         const pid = Number(
           (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
         )
-        const vendorPending = postIntakeItem(APPROVER, vendorExpense.id)
+        const ownPending = postIntakeItem(APPROVER, ownConversion.id)
         await waitForBlockedBy(client, pid, 1)
-        const pending = Promise.allSettled([
-          postIntakeItem(APPROVER, ownConversion.id),
-          vendorPending,
-        ])
+        const pending = Promise.allSettled([ownPending, postIntakeItem(APPROVER, vendorExpense.id)])
         await waitForBlockedBy(client, pid, 2)
         await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
         lockHeld = false
