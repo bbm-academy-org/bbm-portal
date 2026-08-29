@@ -44,6 +44,7 @@ export function MemberCreateScreen() {
           <MemberForm
             initial={memberFormValue()}
             emailReadOnly={false}
+            canEditStatus={false}
             submitLabel="Создать участника"
             pending={create.mutation.isPending}
             failure={

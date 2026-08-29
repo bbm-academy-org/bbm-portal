@@ -113,6 +113,10 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
       })
       const body = await responseBody(response)
       if (!response.ok) throw new Error(refusal(response, body))
+      const parsed = await validateAliasResponse('one', body)
+      if (!parsed.success) {
+        throw new Error(`Удалённый алиас не соответствует схеме модуля: ${parsed.issues}`)
+      }
       setAliases((current) => current.filter((item) => item.id !== alias.id))
       if (editing?.id === alias.id) setEditing(null)
     } catch (error) {
@@ -198,6 +202,7 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
         )}
         {editable && (adding || editing) ? (
           <AliasForm
+            key={editing ? `edit-${editing.id}` : 'add'}
             initial={editing ?? undefined}
             pending={pending}
             onCancel={() => {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useNavigation, useOne, useUpdate, type HttpError } from '@refinedev/core'
+import React from 'react'
 
 import type { MemberRecord, MemberUpdateInput } from '@/lib/member'
 import { Alert, AlertDescription } from '@/ui/alert'
@@ -16,6 +17,7 @@ export function MemberRecordScreen({ id, mode }: { id: number; mode: 'show' | 'e
   const navigation = useNavigation()
   const update = useUpdate<MemberRecord, HttpError, MemberUpdateInput>()
   const { query, result } = useOne<MemberRecord, HttpError>({ resource: MEMBER_RESOURCE, id })
+  const [saved, setSaved] = React.useState(false)
 
   if (query.isLoading) {
     return (
@@ -37,7 +39,11 @@ export function MemberRecordScreen({ id, mode }: { id: number; mode: 'show' | 'e
 
   const member = result
   function save(value: MemberFormValue) {
-    update.mutate({ resource: MEMBER_RESOURCE, id, values: memberUpdateValue(value) })
+    setSaved(false)
+    update.mutate(
+      { resource: MEMBER_RESOURCE, id, values: memberUpdateValue(value) },
+      { onSuccess: () => setSaved(true) },
+    )
   }
 
   return (
@@ -48,9 +54,22 @@ export function MemberRecordScreen({ id, mode }: { id: number; mode: 'show' | 'e
           <p className="mt-1 text-sm text-muted-foreground">{member.email}</p>
         </div>
         {mode === 'show' ? (
-          <Button onClick={() => navigation.edit(MEMBER_RESOURCE, id)}>Редактировать</Button>
+          <Button
+            onClick={() => {
+              setSaved(false)
+              navigation.edit(MEMBER_RESOURCE, id)
+            }}
+          >
+            Редактировать
+          </Button>
         ) : (
-          <Button variant="outline" onClick={() => navigation.show(MEMBER_RESOURCE, id)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSaved(false)
+              navigation.show(MEMBER_RESOURCE, id)
+            }}
+          >
             Открыть карточку
           </Button>
         )}
@@ -66,11 +85,17 @@ export function MemberRecordScreen({ id, mode }: { id: number; mode: 'show' | 'e
             </CardTitle>
             <CardDescription>Основная запись в реестре участников.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {saved ? (
+              <Alert>
+                <AlertDescription>Профиль сохранён.</AlertDescription>
+              </Alert>
+            ) : null}
             <MemberForm
               key={`${member.id}-${member.updatedAt}-${mode}`}
               initial={memberFormValue(member)}
               emailReadOnly
+              canEditStatus
               readOnly={mode === 'show'}
               submitLabel="Сохранить профиль"
               pending={update.mutation.isPending}
@@ -79,6 +104,7 @@ export function MemberRecordScreen({ id, mode }: { id: number; mode: 'show' | 'e
                   ? errorMessage(update.mutation.error, 'Не удалось сохранить профиль.')
                   : undefined
               }
+              onChange={() => setSaved(false)}
               onSubmit={save}
             />
           </CardContent>

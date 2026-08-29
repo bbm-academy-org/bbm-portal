@@ -41,18 +41,22 @@ export function memberUpdateValue(value: MemberFormValue): MemberUpdateInput {
 export function MemberForm({
   initial,
   emailReadOnly,
+  canEditStatus,
   submitLabel,
   pending,
   failure,
   readOnly = false,
+  onChange,
   onSubmit,
 }: {
   initial: MemberFormValue
   emailReadOnly: boolean
+  canEditStatus: boolean
   submitLabel: string
   pending: boolean
   failure?: string
   readOnly?: boolean
+  onChange?: () => void
   onSubmit: (value: MemberFormValue) => void
 }) {
   const [value, setValue] = React.useState(initial)
@@ -62,6 +66,11 @@ export function MemberForm({
     value.timezone,
     'Сохранённый пояс',
   )
+
+  function change(next: MemberFormValue) {
+    setValue(next)
+    onChange?.()
+  }
 
   function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -97,7 +106,7 @@ export function MemberForm({
           value={value.name}
           readOnly={readOnly}
           disabled={pending}
-          onChange={(event) => setValue({ ...value, name: event.target.value })}
+          onChange={(event) => change({ ...value, name: event.target.value })}
         />
       </div>
       <div className="grid gap-2">
@@ -109,7 +118,7 @@ export function MemberForm({
           readOnly={readOnly || emailReadOnly}
           disabled={pending}
           aria-describedby={emailReadOnly ? 'member-email-hint' : undefined}
-          onChange={(event) => setValue({ ...value, email: event.target.value })}
+          onChange={(event) => change({ ...value, email: event.target.value })}
         />
         {emailReadOnly ? (
           <p id="member-email-hint" className="text-xs text-muted-foreground">
@@ -124,7 +133,7 @@ export function MemberForm({
           value={value.role}
           readOnly={readOnly}
           disabled={pending}
-          onChange={(event) => setValue({ ...value, role: event.target.value })}
+          onChange={(event) => change({ ...value, role: event.target.value })}
         />
       </div>
       <div className="grid gap-2">
@@ -132,7 +141,7 @@ export function MemberForm({
         <Select
           value={value.timezone}
           disabled={pending || readOnly}
-          onValueChange={(timezone) => setValue({ ...value, timezone })}
+          onValueChange={(timezone) => change({ ...value, timezone })}
         >
           <SelectTrigger id="member-timezone" className="w-full">
             <SelectValue placeholder="Выберите часовой пояс" />
@@ -146,24 +155,26 @@ export function MemberForm({
           </SelectContent>
         </Select>
       </div>
-      <div className="grid gap-2">
-        <Label htmlFor="member-status">Статус</Label>
-        <Select
-          value={value.status}
-          disabled={pending || readOnly}
-          onValueChange={(status) =>
-            setValue({ ...value, status: status as MemberRecord['status'] })
-          }
-        >
-          <SelectTrigger id="member-status" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent data-bbm-ui>
-            <SelectItem value="active">Активен</SelectItem>
-            <SelectItem value="inactive">Неактивен</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {canEditStatus ? (
+        <div className="grid gap-2">
+          <Label htmlFor="member-status">Статус</Label>
+          <Select
+            value={value.status}
+            disabled={pending || readOnly}
+            onValueChange={(status) =>
+              change({ ...value, status: status as MemberRecord['status'] })
+            }
+          >
+            <SelectTrigger id="member-status" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent data-bbm-ui>
+              <SelectItem value="active">Активен</SelectItem>
+              <SelectItem value="inactive">Неактивен</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
       {!readOnly ? (
         <Button type="submit" disabled={pending}>
