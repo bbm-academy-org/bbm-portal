@@ -10,8 +10,8 @@
 // the CI plane's ONLY input is PR metadata fetched over the network, judged with
 // a substring match — which is why that plane is WARN and soaks. (The staged
 // plane below is the class-1 half and does block.) Three concrete paths to a
-// false BLOCK were named in review of PR #394; two are now closed in code, one
-// remains:
+// false BLOCK were named in review of PR #394; later incidents extended that
+// list. The closed cases stay named so the same bug class does not return:
 //
 //   CLOSED  a merge commit's first-parent diff read as authorship — a branch
 //           that merged `origin/main` in saw main's modules as its own new
@@ -34,6 +34,10 @@
 //           narrow, and a needle that is too narrow rejects. `reexportEdges` /
 //           `barrelsFor` now resolve the barrels that re-export a new module and
 //           accept a citation of THOSE paths, for THAT module only.
+//   CLOSED  a module introduced and then deleted before PR HEAD was still
+//           judged from its historical first touch. A later retirement test
+//           could therefore turn code that does not ship into `impl-first`.
+//           `findOrderViolations` now evaluates only paths present at HEAD.
 //   OPEN    `needlesFor` is still SUBSTRING matching against added patch lines,
 //           so `lib/leads/intake` is satisfied by any longer path containing it.
 //           THAT direction is a false PASS — the guard stays silent where it
@@ -56,8 +60,8 @@
 // task-cycle stage 3 asks. ORDER is, and until this guard nothing read it.
 //
 // ── The rule (exact) ─────────────────────────────────────────────────────────
-// For every NEW production file the PR introduces under the platform-module
-// paths (`src/lib/**`, `src/app/(platform)/p/**`):
+// For every NEW production file the PR introduces and still carries at HEAD
+// under the platform-module paths (`src/lib/**`, `src/app/(platform)/p/**`):
 //
 //   PASS    if some EARLIER commit of this PR introduces a test citing it
 //   FINDING if the citing commit is the SAME commit (`same-commit`)
@@ -71,7 +75,9 @@
 //
 // NEW means git said `added` on the EARLIEST commit that touched the path. A
 // `renamed` status is therefore not new — moving a tracked module does not
-// re-open its TDD obligation — and neither is `modified`.
+// re-open its TDD obligation — and neither is `modified`. A path whose latest
+// status is `removed` is absent from the proposed tree and has no shipping TDD
+// obligation for this guard to adjudicate.
 //
 // ── Known blind spots, named rather than discovered ──────────────────────────
 //   * MODIFIED-ONLY files are out of scope in v1. Adding a function to an
@@ -475,12 +481,15 @@ export function findOrderViolations(commits) {
   // `modified` in commit 2 is one new module, and a `renamed` first touch is
   // not a new module at all.
   const firstTouch = new Map()
+  const pathsAtHead = new Set()
   for (const [index, commit] of commits.entries()) {
     if (isMergeCommit(commit)) continue
     for (const file of commit.files ?? []) {
       if (!firstTouch.has(file.path)) {
         firstTouch.set(file.path, { index, sha: commit.sha, status: file.status })
       }
+      if (file.status === 'removed') pathsAtHead.delete(file.path)
+      else pathsAtHead.add(file.path)
     }
   }
 
@@ -493,7 +502,7 @@ export function findOrderViolations(commits) {
 
   const violations = []
   for (const [path, touch] of firstTouch) {
-    if (touch.status !== 'added' || !isPlatformModule(path)) continue
+    if (!pathsAtHead.has(path) || touch.status !== 'added' || !isPlatformModule(path)) continue
 
     const needles = needlesFor(path)
     // Barrel needles are matched at a path boundary, module needles as
