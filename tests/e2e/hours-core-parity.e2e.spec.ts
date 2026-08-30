@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+
 import { expect, test, type Page } from '@playwright/test'
 
 import { isAllowedE2EIdpOrigin } from './support/idp-origin'
@@ -177,5 +179,183 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
     await page.getByRole('searchbox', { name: 'Поиск участников' }).fill(email)
     const row = page.getByRole('row').filter({ hasText: name })
     await expect(row).toHaveCount(1, { timeout: 30_000 })
+  })
+
+  test('EARS-447/448/449/450: the cabinet preserves period lifecycle, read-only assessments, JSON export and publication preview', async ({
+    page,
+  }) => {
+    test.skip(
+      !adminUsername || !adminPassword,
+      'set E2E_HOURS_ADMIN_USERNAME / E2E_HOURS_ADMIN_PASSWORD to run',
+    )
+    test.slow()
+
+    const label = `E2E кабинет часов ${Date.now()}`
+    const dateFrom = '2026-08-17'
+    const initialDateTo = '2026-08-21'
+    const updatedDateTo = '2026-08-24'
+    let periodId = ''
+    let publicationPosts = 0
+
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname === '/api/p/hours/admin/publication'
+      ) {
+        publicationPosts += 1
+      }
+    })
+
+    await signIn(page, '/p/admin/hours/participants/create', {
+      username: adminUsername!,
+      password: adminPassword!,
+    })
+
+    // Make the signed-in admin a fully rated participant through the same
+    // upsert seam the cabinet exposes. Re-runs deliberately update that record.
+    await page.getByLabel('Email').fill(adminUsername!)
+    await page.getByLabel('Имя').fill('BBM Test E2E')
+    await page.getByLabel('Роль').fill('Acceptance')
+    await page.getByLabel('Вилка от, ₽/мес').fill('120000')
+    await page.getByLabel('Вилка до, ₽/мес').fill('180000')
+    await page.getByLabel('Грейд').click()
+    await page.getByRole('option', { name: 'II — середина вилки' }).click()
+    await page.getByRole('button', { name: 'Создать участника' }).click()
+    await expect(page.getByRole('heading', { name: 'BBM Test E2E' })).toBeVisible({
+      timeout: 30_000,
+    })
+
+    // A failed prior rehearsal may have left an open period. The test owns the
+    // isolated branch database, so restore the one-open-period invariant before
+    // driving the lifecycle itself through the browser.
+    const periodsResponse = await page.request.get('/api/p/hours/admin/periods')
+    expect(periodsResponse.ok()).toBe(true)
+    const periodsEnvelope = (await periodsResponse.json()) as {
+      data: Array<{ id: string; status: 'open' | 'closed' }>
+    }
+    for (const period of periodsEnvelope.data) {
+      if (period.status !== 'open') continue
+      const closeResponse = await page.request.patch(`/api/p/hours/admin/periods/${period.id}`, {
+        data: { status: 'closed' },
+      })
+      expect(closeResponse.ok()).toBe(true)
+    }
+
+    try {
+      await page.goto('/p/admin/hours/periods/create')
+      await page.getByLabel('Название').fill(label)
+      await page.getByLabel('Начало').fill(dateFrom)
+      await page.getByLabel('Окончание').fill(initialDateTo)
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/p/hours/admin/periods',
+      )
+      await page.getByRole('button', { name: 'Создать период' }).click()
+      const createResponse = await createResponsePromise
+      expect(createResponse.ok()).toBe(true)
+      const created = (await createResponse.json()) as { data: { id: string } }
+      periodId = created.data.id
+      await page.waitForURL(`/p/admin/hours/periods/edit/${periodId}`)
+      await expect(page.getByText('Закрыт', { exact: true })).toBeVisible()
+
+      await page.getByRole('button', { name: 'Открыть период' }).click()
+      await expect(page.getByText('Период открыт.', { exact: true })).toBeVisible()
+      await expect(page.getByText('Открыт', { exact: true })).toBeVisible()
+
+      await page.goto('/p/hours')
+      const declared = page.locator('#hours-period-num')
+      await expect(declared).toBeVisible()
+      await declared.fill('7')
+      await declared.blur()
+      await page.getByRole('button', { name: 'Сохранить оценку' }).click()
+      await expect(page.locator('.hours-saved')).toBeVisible({ timeout: 30_000 })
+
+      await page.goto(`/p/admin/hours/periods/edit/${periodId}`)
+      const assessments = page.locator('[data-slot="card"]', {
+        has: page.getByText('Самооценки', { exact: true }),
+      })
+      await expect(assessments).toContainText(adminUsername!)
+      await expect(assessments.getByText('Только просмотр:', { exact: false })).toBeVisible()
+      await expect(assessments.getByRole('button')).toHaveCount(0)
+      await expect(assessments.getByRole('link')).toHaveCount(0)
+
+      await page.getByLabel('Окончание').fill(updatedDateTo)
+      await page.getByRole('button', { name: 'Сохранить период' }).click()
+      await expect(page.getByText(/Пересчитано по новым датам: 1 оценка/)).toBeVisible()
+
+      await page.getByRole('button', { name: 'Закрыть период' }).click()
+      await expect(page.getByText('Период закрыт.', { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Открыть период' }).click()
+      await expect(page.getByText('Период открыт.', { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Закрыть период' }).click()
+      await expect(page.getByText('Период закрыт.', { exact: true })).toBeVisible()
+
+      await page.goto('/p/admin/hours/export')
+      const downloadPromise = page.waitForEvent('download')
+      await page.getByRole('link', { name: 'Скачать JSON' }).click()
+      const download = await downloadPromise
+      expect(download.suggestedFilename()).toBe('hours.json')
+      const downloadPath = await download.path()
+      expect(downloadPath).not.toBeNull()
+      const exported: unknown = JSON.parse(await readFile(downloadPath!, 'utf8'))
+      expect(Object.keys(exported as object).sort()).toEqual([
+        'assessments',
+        'participants',
+        'periods',
+        'publications',
+      ])
+      const document = exported as {
+        participants: Array<Record<string, unknown>>
+        periods: Array<Record<string, unknown>>
+        assessments: Array<Record<string, unknown>>
+        publications: Array<Record<string, unknown>>
+      }
+      expect(document.participants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ email: adminUsername!.toLowerCase(), grade: 'II' }),
+        ]),
+      )
+      expect(document.periods).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: periodId,
+            label,
+            date_from: dateFrom,
+            date_to: updatedDateTo,
+            status: 'closed',
+          }),
+        ]),
+      )
+      expect(document.assessments).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ period_id: periodId, email: adminUsername!.toLowerCase() }),
+        ]),
+      )
+      expect(Array.isArray(document.publications)).toBe(true)
+
+      await page.goto('/p/admin/hours/publication')
+      await page.getByLabel('Период').click()
+      await page.getByRole('option', { name: label }).click()
+      const preview = page.locator('[data-slot="card"]', {
+        has: page.getByText('Предпросмотр', { exact: true }),
+      })
+      await expect(preview).toContainText(adminUsername!)
+      await expect(preview.getByText('Готово', { exact: true })).toBeVisible()
+      await expect(preview.getByRole('button', { name: 'Опубликовать в Mattermost' })).toBeEnabled()
+      expect(publicationPosts, 'the acceptance pre-pass must stop before actual delivery').toBe(0)
+    } finally {
+      if (periodId) {
+        const response = await page.request.get(`/api/p/hours/admin/periods/${periodId}`)
+        if (response.ok()) {
+          const envelope = (await response.json()) as { data: { status: 'open' | 'closed' } }
+          if (envelope.data.status === 'open') {
+            await page.request.patch(`/api/p/hours/admin/periods/${periodId}`, {
+              data: { status: 'closed' },
+            })
+          }
+        }
+      }
+    }
   })
 })
