@@ -39,9 +39,12 @@ async function signIn(page: Page, target: string, credentials: typeof adminCrede
 }
 
 async function saveCreated(page: Page, apiPath: string) {
-  const response = page.waitForResponse(successful(apiPath, 'POST'))
+  const response = page.waitForResponse(
+    (candidate) =>
+      new URL(candidate.url()).pathname === apiPath && candidate.request().method() === 'POST',
+  )
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
-  await response
+  expect((await response).status()).toBe(200)
   await expect(page.getByRole('status')).toContainText('Запись сохранена')
 }
 
@@ -158,7 +161,7 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     }
   })
 
-  test('EARS-301..307/472: admin creates the accepted reference chain through the actual UI', async ({
+  test('EARS-301/472: admin creates the accepted reference chain through the actual UI', async ({
     page,
   }) => {
     test.skip(
@@ -167,7 +170,9 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     )
 
     const stamp = `${Date.now()}${test.info().parallelIndex}`
-    const accountName = `E2E счёт THB ${stamp}`
+    const currencyCode = `T${stamp}`
+    const currencyName = `E2E валюта ${stamp}`
+    const accountName = `E2E счёт ${currencyCode}`
     const projectName = `E2E проект ${stamp}`
     const productName = `E2E продукт ${stamp}`
     const purposeName = `E2E назначение ${stamp}`
@@ -178,8 +183,6 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
 
     await page.goto(CURRENCIES)
     await page.getByRole('button', { name: 'Добавить валюту' }).click()
-    const currencyCode = `T${stamp}`
-    const currencyName = `E2E валюта ${stamp}`
     await page.getByLabel('Код').fill(currencyCode)
     await page.getByLabel('Название').fill(currencyName)
     await page.getByLabel('Точность').fill('2')
@@ -211,15 +214,20 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     await page.goto(PURPOSES)
     await page.getByRole('button', { name: 'Добавить назначение' }).click()
     await page.getByLabel('Название').fill(purposeName)
+    await page.getByLabel('Статья расходов').click()
+    await page.getByRole('option', { name: 'Операционные расходы', exact: true }).click()
     await page.getByLabel('Привязка продукта').click()
     await page.getByRole('option', { name: 'Обязательна', exact: true }).click()
     await saveCreated(page, PURPOSES_API)
 
     await page.goto(FINANCE)
     await expectThemedFinanceCanvas(page)
-    await expect(page.getByText(accountName, { exact: true })).toBeVisible()
-    await expect(page.getByText('0,00', { exact: true })).toBeVisible()
-    await expect(page.getByText(currencyCode, { exact: true })).toBeVisible()
+    const balanceRow = page
+      .locator('[data-slot="card"] .divide-y > div')
+      .filter({ hasText: accountName })
+    await expect(balanceRow.getByText(accountName, { exact: true })).toBeVisible()
+    await expect(balanceRow.getByText('0,00', { exact: true })).toBeVisible()
+    await expect(balanceRow.getByText(currencyCode, { exact: true })).toBeVisible()
 
     await page.goto(CURRENCIES)
     const deleteResponse = page.waitForResponse(
