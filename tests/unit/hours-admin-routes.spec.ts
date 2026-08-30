@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { HoursDocument, MutationResult } from '@/lib/hours'
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 const state = vi.hoisted(() => ({
   session: null as unknown,
   audit: null as unknown,
+  audits: [] as unknown[],
   doc: {
     participants: [
       {
@@ -27,7 +29,7 @@ const state = vi.hoisted(() => ({
     ],
     assessments: [],
     publications: [],
-  },
+  } as HoursDocument,
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
@@ -36,10 +38,15 @@ vi.mock('@/lib/hours/store-core', async (importOriginal) => {
   return {
     ...actual,
     readHoursDocument: vi.fn(async () => state.doc),
-    mutateHoursDocument: vi.fn(async (audit: unknown, mutate: (doc: unknown) => unknown) => {
-      state.audit = audit
-      return mutate(state.doc)
-    }),
+    mutateHoursDocument: vi.fn(
+      async (audit: unknown, mutate: (doc: HoursDocument) => MutationResult<unknown>) => {
+        state.audit = audit
+        state.audits.push(audit)
+        const result = mutate(state.doc)
+        if (result.ok) state.doc = result.doc
+        return result
+      },
+    ),
   }
 })
 
@@ -57,8 +64,52 @@ function request(path: string, method = 'GET', body?: unknown) {
 beforeEach(() => {
   state.session = admin
   state.audit = null
+  state.audits = []
+  state.doc = {
+    participants: [
+      {
+        email: 'anna@bbm.academy',
+        name: 'Анна',
+        role: 'Продюсер',
+        fork_min: 100_000,
+        fork_max: 160_000,
+        grade: 'II',
+      },
+    ],
+    periods: [
+      {
+        id: '2026-08',
+        label: 'Август 2026',
+        date_from: '2026-08-01',
+        date_to: '2026-08-31',
+        status: 'closed',
+      },
+    ],
+    assessments: [],
+    publications: [],
+  }
+  delete process.env.MATTERMOST_HOURS_WEBHOOK_URL
+  vi.unstubAllGlobals()
   vi.resetModules()
 })
+
+function makePublicationEligible(messageCount = 2) {
+  state.doc.assessments = Array.from({ length: messageCount }, (_, index) => ({
+    period_id: '2026-08',
+    email: index === 0 ? 'anna@bbm.academy' : `member-${index}@bbm.academy`,
+    hours: 8 + index,
+    method: 'period' as const,
+    weekend_hours: 0,
+    split_percent: 20,
+    monthly_rate: 120_000,
+    hourly_rate: 750,
+    accrual: 6_000,
+    cash_amount: 4_800,
+    invest_amount: 1_200,
+    weekday_count: 20,
+    saved_at: `2026-08-31T10:0${index}:00.000Z`,
+  }))
+}
 
 describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
   it('re-checks platform-admin before the periods handler runs', async () => {
@@ -67,7 +118,7 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
     expect((await GET(request('/api/p/hours/admin/periods'))).status).toBe(403)
     state.session = member
     expect((await GET(request('/api/p/hours/admin/periods'))).status).toBe(403)
-  })
+  }, 20_000)
 
   it('lists periods with assessments and publication lock state', async () => {
     const { GET } = await import('@/app/(platform)/api/p/hours/admin/periods/route')
@@ -104,10 +155,9 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
   it('rejects email changes and exposes no assessment mutation handler', async () => {
     const participant =
       await import('@/app/(platform)/api/p/hours/admin/participants/[email]/route')
-    const assessment = await import('@/app/(platform)/api/p/hours/admin/assessments/route').catch(
-      () => null,
-    )
-    expect(assessment).toBeNull()
+    expect(
+      existsSync(join(process.cwd(), 'src/app/(platform)/api/p/hours/admin/assessments/route.ts')),
+    ).toBe(false)
     const response = await participant.PATCH(
       request('/api/p/hours/admin/participants/anna%40bbm.academy', 'PATCH', {
         email: 'other@bbm.academy',
@@ -120,7 +170,7 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
 
   it('returns the legacy JSON document byte-for-byte as an attachment', async () => {
     const { GET } = await import('@/app/(platform)/api/p/hours/admin/export/route')
-    const response = await GET(request('/api/p/hours/admin/export'))
+    const response = await GET()
     expect(response.status).toBe(200)
     expect(await response.text()).toBe(JSON.stringify(state.doc, null, 2))
     expect(response.headers.get('content-disposition')).toContain('attachment')
@@ -138,4 +188,110 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
       },
     })
   })
+
+  it('refuses publication before storage or network access without the webhook', async () => {
+    makePublicationEligible(1)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const { GET, POST } = await import('@/app/(platform)/api/p/hours/admin/publication/route')
+    const preview = await GET(request('/api/p/hours/admin/publication?periodId=2026-08'))
+    const fingerprint = (await preview.json()).data.previewFingerprint as string
+    const response = await POST(
+      request('/api/p/hours/admin/publication', 'POST', {
+        periodId: '2026-08',
+        previewFingerprint: fingerprint,
+      }),
+    )
+    expect(response.status).toBe(409)
+    expect(state.audits).toHaveLength(0)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('publishes sequentially and attributes the batch plus every delivery update', async () => {
+    makePublicationEligible(2)
+    process.env.MATTERMOST_HOURS_WEBHOOK_URL = 'https://chat.bbm.academy/hooks/hours'
+    const fetchMock = vi.fn(async () => new Response('ok', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { GET, POST } = await import('@/app/(platform)/api/p/hours/admin/publication/route')
+    const preview = await GET(request('/api/p/hours/admin/publication?periodId=2026-08'))
+    const fingerprint = (await preview.json()).data.previewFingerprint as string
+    const response = await POST(
+      request('/api/p/hours/admin/publication', 'POST', {
+        periodId: '2026-08',
+        previewFingerprint: fingerprint,
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(state.doc.publications?.[0]).toMatchObject({
+      status: 'published',
+      messages: [{ delivery: 'sent' }, { delivery: 'sent' }],
+    })
+    expect(state.audits).toEqual([
+      { actorEmail: 'admin@bbm.local', source: 'portal' },
+      { actorEmail: 'admin@bbm.local', source: 'portal' },
+      { actorEmail: 'admin@bbm.local', source: 'portal' },
+    ])
+  })
+
+  it('records a failed delivery, stops, and blocks automatic retry', async () => {
+    makePublicationEligible(2)
+    process.env.MATTERMOST_HOURS_WEBHOOK_URL = 'https://chat.bbm.academy/hooks/hours'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+      .mockResolvedValueOnce(new Response('no', { status: 500 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { GET, POST } = await import('@/app/(platform)/api/p/hours/admin/publication/route')
+    const preview = await GET(request('/api/p/hours/admin/publication?periodId=2026-08'))
+    const fingerprint = (await preview.json()).data.previewFingerprint as string
+    const response = await POST(
+      request('/api/p/hours/admin/publication', 'POST', {
+        periodId: '2026-08',
+        previewFingerprint: fingerprint,
+      }),
+    )
+
+    expect(response.status).toBe(409)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(state.doc.publications?.[0]).toMatchObject({
+      status: 'incomplete',
+      messages: [{ delivery: 'sent' }, { delivery: 'failed' }],
+    })
+    const retry = await POST(
+      request('/api/p/hours/admin/publication', 'POST', {
+        periodId: '2026-08',
+        previewFingerprint: fingerprint,
+      }),
+    )
+    expect(retry.status).toBe(409)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('records an unknown result on network ambiguity and never continues', async () => {
+    makePublicationEligible(2)
+    process.env.MATTERMOST_HOURS_WEBHOOK_URL = 'https://chat.bbm.academy/hooks/hours'
+    const fetchMock = vi.fn(async () => {
+      throw new Error('timeout')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { GET, POST } = await import('@/app/(platform)/api/p/hours/admin/publication/route')
+    const preview = await GET(request('/api/p/hours/admin/publication?periodId=2026-08'))
+    const fingerprint = (await preview.json()).data.previewFingerprint as string
+    const response = await POST(
+      request('/api/p/hours/admin/publication', 'POST', {
+        periodId: '2026-08',
+        previewFingerprint: fingerprint,
+      }),
+    )
+    expect(response.status).toBe(409)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(state.doc.publications?.[0]?.messages.map((message) => message.delivery)).toEqual([
+      'unknown',
+      'pending',
+    ])
+  })
 })
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'

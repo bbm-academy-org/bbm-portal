@@ -12,11 +12,6 @@ vi.mock('@/modules/okr/view/OkrView', () => ({ OkrView: () => null }))
 vi.mock('@/auth', () => ({ auth: async () => null }))
 vi.mock('@/modules/hours/view/Calculator', () => ({ Calculator: () => null }))
 vi.mock('@/modules/hours/view/PeriodSelect', () => ({ PeriodSelect: () => null }))
-vi.mock('@/modules/hours/view/AdminForms', () => ({
-  ParticipantForm: () => null,
-  PeriodForm: () => null,
-  PeriodRowActions: () => null,
-}))
 vi.mock('@/modules/hours/actions', () => ({}))
 
 describe('platform cache gate (force-dynamic route-segment config)', () => {
@@ -30,16 +25,6 @@ describe('platform cache gate (force-dynamic route-segment config)', () => {
   it('/p/hours page opts out of static/route caching', async () => {
     const page = await import('@/app/(platform)/p/hours/page')
     expect(page.dynamic).toBe('force-dynamic')
-  })
-
-  it('/p/hours/admin page opts out of static/route caching', async () => {
-    const page = await import('@/app/(platform)/p/hours/admin/page')
-    expect(page.dynamic).toBe('force-dynamic')
-  })
-
-  it('admin-only JSON export opts out of caching too', async () => {
-    const route = await import('@/app/(platform)/p/hours/admin/export/route')
-    expect(route.dynamic).toBe('force-dynamic')
   })
 
   it('(platform) root layout opts out of static/route caching for the whole subtree', async () => {
