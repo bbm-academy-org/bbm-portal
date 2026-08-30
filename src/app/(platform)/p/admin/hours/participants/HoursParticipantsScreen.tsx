@@ -18,7 +18,7 @@ export function HoursParticipantsScreen() {
   const { create, edit } = useNavigation()
   const { query, result } = useList<HoursParticipantRecord, HttpError>({
     resource: HOURS_PARTICIPANT_RESOURCE,
-    pagination: { currentPage: 1, pageSize: 100 },
+    pagination: { mode: 'off' },
     filters: search ? [{ field: 'q', operator: 'contains', value: search }] : [],
   })
 

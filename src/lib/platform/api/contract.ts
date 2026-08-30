@@ -130,9 +130,11 @@ export function oneEnvelopeSchema<T extends z.ZodTypeAny>(item: T) {
  * everything. `.max()` refusing is the honest answer to a request the surface
  * will not serve.
  */
+export const MODULE_LIST_MAX_PAGE_SIZE = 200
+
 export const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(25),
+  pageSize: z.coerce.number().int().min(1).max(MODULE_LIST_MAX_PAGE_SIZE).default(25),
   /** Field name; which fields are sortable is the module's business. */
   sort: z.string().min(1).optional(),
   order: z.enum(['asc', 'desc']).default('asc'),

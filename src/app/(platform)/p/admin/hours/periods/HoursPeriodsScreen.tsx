@@ -17,7 +17,7 @@ export function HoursPeriodsScreen() {
   const { create, edit } = useNavigation()
   const { query, result } = useList<HoursPeriodRecord, HttpError>({
     resource: HOURS_PERIOD_RESOURCE,
-    pagination: { currentPage: 1, pageSize: 100 },
+    pagination: { mode: 'off' },
   })
 
   return (

@@ -1,5 +1,5 @@
 import type { DataProvider, HttpError } from '@refinedev/core'
-import { errorEnvelopeSchema } from '../api/contract'
+import { errorEnvelopeSchema, MODULE_LIST_MAX_PAGE_SIZE } from '../api/contract'
 
 /**
  * The cabinet's HAND-WRITTEN Refine data provider (spec 311 EARS-431,
@@ -120,8 +120,6 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
 
     async getList({ resource, pagination, sorters, filters }) {
       const url = new URL(resourceUrl(apiRoot, resource), 'http://relative.invalid')
-      url.searchParams.set('page', String(pagination?.currentPage ?? 1))
-      url.searchParams.set('pageSize', String(pagination?.pageSize ?? 25))
       const sorter = sorters?.[0]
       if (sorter) {
         url.searchParams.set('sort', sorter.field)
@@ -135,13 +133,39 @@ export function createCabinetDataProvider(options: CabinetDataProviderOptions): 
         url.searchParams.set('q', search.value)
       }
 
-      const body = await call<{ data: unknown[]; total: number }>(
-        resource,
-        `${url.pathname}${url.search}`,
-        undefined,
-        'list',
-      )
-      return { data: body.data as never, total: body.total }
+      async function loadPage(page: number, pageSize: number) {
+        url.searchParams.set('page', String(page))
+        url.searchParams.set('pageSize', String(pageSize))
+        return call<{ data: unknown[]; total: number }>(
+          resource,
+          `${url.pathname}${url.search}`,
+          undefined,
+          'list',
+        )
+      }
+
+      if (pagination?.mode !== 'off') {
+        const body = await loadPage(pagination?.currentPage ?? 1, pagination?.pageSize ?? 25)
+        return { data: body.data as never, total: body.total }
+      }
+
+      const data: unknown[] = []
+      let page = 1
+      let expectedTotal = 0
+      do {
+        const body = await loadPage(page, MODULE_LIST_MAX_PAGE_SIZE)
+        expectedTotal = Math.max(expectedTotal, body.total)
+        data.push(...body.data)
+        if (body.data.length === 0 && data.length < expectedTotal) {
+          throw httpError(
+            500,
+            `Ответ «${resource}» завершился до загрузки всех ${expectedTotal} записей.`,
+          )
+        }
+        page += 1
+      } while (data.length < expectedTotal)
+
+      return { data: data as never, total: data.length }
     },
 
     async getOne({ resource, id }) {
