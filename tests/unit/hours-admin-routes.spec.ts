@@ -112,13 +112,110 @@ function makePublicationEligible(messageCount = 2) {
 }
 
 describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
-  it('re-checks platform-admin before the periods handler runs', async () => {
-    const { GET } = await import('@/app/(platform)/api/p/hours/admin/periods/route')
-    state.session = null
-    expect((await GET(request('/api/p/hours/admin/periods'))).status).toBe(403)
-    state.session = member
-    expect((await GET(request('/api/p/hours/admin/periods'))).status).toBe(403)
-  }, 20_000)
+  it('EARS-451: every hours admin handler re-checks platform-admin', async () => {
+    const [periods, period, participants, participant, exportRoute, publication] =
+      await Promise.all([
+        import('@/app/(platform)/api/p/hours/admin/periods/route'),
+        import('@/app/(platform)/api/p/hours/admin/periods/[id]/route'),
+        import('@/app/(platform)/api/p/hours/admin/participants/route'),
+        import('@/app/(platform)/api/p/hours/admin/participants/[email]/route'),
+        import('@/app/(platform)/api/p/hours/admin/export/route'),
+        import('@/app/(platform)/api/p/hours/admin/publication/route'),
+      ])
+    const periodContext = { params: Promise.resolve({ id: '2026-08' }) }
+    const participantContext = {
+      params: Promise.resolve({ email: 'anna%40bbm.academy' }),
+    }
+    const attempts: Array<[string, () => Promise<Response>]> = [
+      ['period list', () => periods.GET(request('/api/p/hours/admin/periods'))],
+      [
+        'period create',
+        () =>
+          periods.POST(
+            request('/api/p/hours/admin/periods', 'POST', {
+              label: 'Сентябрь 2026',
+              dateFrom: '2026-09-01',
+              dateTo: '2026-09-30',
+            }),
+          ),
+      ],
+      [
+        'period read',
+        () => period.GET(request('/api/p/hours/admin/periods/2026-08'), periodContext),
+      ],
+      [
+        'period update',
+        () =>
+          period.PATCH(
+            request('/api/p/hours/admin/periods/2026-08', 'PATCH', { status: 'closed' }),
+            periodContext,
+          ),
+      ],
+      [
+        'period delete',
+        () => period.DELETE(request('/api/p/hours/admin/periods/2026-08', 'DELETE'), periodContext),
+      ],
+      ['participant list', () => participants.GET(request('/api/p/hours/admin/participants'))],
+      [
+        'participant create',
+        () =>
+          participants.POST(
+            request('/api/p/hours/admin/participants', 'POST', {
+              email: 'new@bbm.academy',
+              name: 'Новый участник',
+              role: null,
+              forkMin: null,
+              forkMax: null,
+              grade: null,
+            }),
+          ),
+      ],
+      [
+        'participant read',
+        () =>
+          participant.GET(
+            request('/api/p/hours/admin/participants/anna%40bbm.academy'),
+            participantContext,
+          ),
+      ],
+      [
+        'participant update',
+        () =>
+          participant.PATCH(
+            request('/api/p/hours/admin/participants/anna%40bbm.academy', 'PATCH', {
+              name: 'Анна',
+              role: null,
+              forkMin: null,
+              forkMax: null,
+              grade: null,
+            }),
+            participantContext,
+          ),
+      ],
+      ['export', () => exportRoute.GET()],
+      [
+        'publication preview',
+        () => publication.GET(request('/api/p/hours/admin/publication?periodId=2026-08')),
+      ],
+      [
+        'publication publish',
+        () =>
+          publication.POST(
+            request('/api/p/hours/admin/publication', 'POST', {
+              periodId: '2026-08',
+              previewFingerprint: 'fingerprint',
+            }),
+          ),
+      ],
+    ]
+
+    for (const deniedSession of [null, member]) {
+      state.session = deniedSession
+      for (const [label, attempt] of attempts) {
+        expect((await attempt()).status, label).toBe(403)
+      }
+    }
+  }, 30_000)
 
   it('lists periods with assessments and publication lock state', async () => {
     const { GET } = await import('@/app/(platform)/api/p/hours/admin/periods/route')
