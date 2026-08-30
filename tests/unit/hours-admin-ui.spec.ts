@@ -48,6 +48,91 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+const defaultPublicationPeriodCases: Array<{
+  scenario: string
+  periods: HoursPeriodRecord[]
+  expectedId: string
+}> = [
+  {
+    scenario: 'the open period when an older closed period comes first',
+    periods: [
+      {
+        id: 'p-old',
+        label: 'Old closed',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-30',
+        status: 'closed',
+        locked: false,
+        publicationStatus: null,
+        warnings: [],
+        assessments: [],
+      },
+      {
+        id: 'p-latest-closed',
+        label: 'Latest closed',
+        dateFrom: '2026-08-01',
+        dateTo: '2026-08-31',
+        status: 'closed',
+        locked: false,
+        publicationStatus: null,
+        warnings: [],
+        assessments: [],
+      },
+      {
+        id: 'p-open',
+        label: 'Open',
+        dateFrom: '2026-07-01',
+        dateTo: '2026-07-31',
+        status: 'open',
+        locked: false,
+        publicationStatus: null,
+        warnings: [],
+        assessments: [],
+      },
+    ],
+    expectedId: 'p-open',
+  },
+  {
+    scenario: 'the latest closed period by dateTo when none is open',
+    periods: [
+      {
+        id: 'p-old',
+        label: 'Old closed',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-30',
+        status: 'closed',
+        locked: false,
+        publicationStatus: null,
+        warnings: [],
+        assessments: [],
+      },
+      {
+        id: 'p-latest-closed',
+        label: 'Latest closed',
+        dateFrom: '2026-08-01',
+        dateTo: '2026-08-31',
+        status: 'closed',
+        locked: false,
+        publicationStatus: null,
+        warnings: [],
+        assessments: [],
+      },
+      {
+        id: 'p-middle',
+        label: 'Middle closed',
+        dateFrom: '2026-07-01',
+        dateTo: '2026-07-31',
+        status: 'closed',
+        locked: false,
+        publicationStatus: null,
+        warnings: [],
+        assessments: [],
+      },
+    ],
+    expectedId: 'p-latest-closed',
+  },
+]
+
 describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
   it('renders separate calm periods list and create pages', async () => {
     const view = render(React.createElement(HoursPeriodsScreen))
@@ -70,6 +155,39 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     expect(screen.getByRole('heading', { name: 'Публикация в Mattermost' })).toBeTruthy()
     expect(screen.getByLabelText('Период')).toBeTruthy()
   })
+
+  it.each(defaultPublicationPeriodCases)(
+    'EARS-447/450: defaults publication to $scenario',
+    async ({ periods, expectedId }) => {
+      refine.list = {
+        query: { isLoading: false, error: null },
+        result: { data: periods, total: periods.length },
+      }
+      const fetchMock = vi.fn(async (input: string | URL | Request) => {
+        const requestedPeriodId =
+          new URL(String(input), 'http://localhost').searchParams.get('periodId') ?? ''
+        return Response.json({
+          data: {
+            id: 'mattermost-publication',
+            periodId: requestedPeriodId,
+            previewFingerprint: `sha256:${requestedPeriodId}`,
+            messages: [],
+            eligibility: { status: 'empty', canPublish: false, reason: 'No assessments.' },
+            publicationStatus: null,
+            startedAt: null,
+            publishedAt: null,
+          },
+        })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(React.createElement(HoursPublicationScreen))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      const requestedUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
+      expect(requestedUrl.searchParams.get('periodId')).toBe(expectedId)
+    },
+  )
 
   it('leaves participant and period order to the canonical module response', () => {
     const participants = render(React.createElement(HoursParticipantsScreen))
