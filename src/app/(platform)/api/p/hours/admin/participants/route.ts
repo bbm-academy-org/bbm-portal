@@ -5,15 +5,14 @@ import {
   type HoursParticipantCreate,
   type HoursParticipantRecord,
 } from '@/lib/hours'
-import { readHoursDocument } from '@/lib/hours/store-core'
 import { adminRoute, moduleListResult } from '@/lib/platform/api'
 
-import { hoursWrite, participantRecord } from '../http'
+import { hoursRead, hoursWrite, participantRecord } from '../http'
 
 export const GET = adminRoute<undefined, HoursParticipantRecord>({
   output: hoursParticipantRecordSchema,
   handler: async ({ query }) => {
-    const doc = await readHoursDocument()
+    const doc = await hoursRead()
     const needle = query.q?.trim().toLocaleLowerCase('ru') ?? ''
     const records = doc.participants
       .map(participantRecord)

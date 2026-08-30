@@ -11,7 +11,25 @@ import {
 import { ModuleApiError } from '@/lib/platform/api'
 import type { AuditContext } from '@/lib/platform/db/transaction'
 
-import { mutateHoursDocument } from '@/lib/hours/store-core'
+import { HoursDataError, mutateHoursDocument, readHoursDocument } from '@/lib/hours/store-core'
+
+const HOURS_DATA_UNAVAILABLE_MESSAGE =
+  'Данные недоступны: база модуля часов не отвечает. Повторите попытку позже или обратитесь к владельцу.'
+
+async function withHoursData<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (error instanceof HoursDataError) {
+      throw new ModuleApiError('unavailable', HOURS_DATA_UNAVAILABLE_MESSAGE)
+    }
+    throw error
+  }
+}
+
+export async function hoursRead(): Promise<HoursDocument> {
+  return withHoursData(readHoursDocument)
+}
 
 export function routeText(value: string | string[] | undefined, field: string): string {
   const raw = Array.isArray(value) ? value[0] : value
@@ -116,7 +134,7 @@ export async function hoursWrite<T>(
   audit: AuditContext,
   mutate: (doc: HoursDocument) => MutationResult<T>,
 ): Promise<{ saved: T; warnings: string[]; doc: HoursDocument }> {
-  const result = await mutateHoursDocument(audit, mutate)
+  const result = await withHoursData(() => mutateHoursDocument(audit, mutate))
   if (!result.ok) throw new ModuleApiError('conflict', result.error)
   return { saved: result.saved, warnings: result.warnings, doc: result.doc }
 }

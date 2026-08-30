@@ -6,10 +6,9 @@ import {
   type HoursPublicationRecord,
   type HoursPublicationRequest,
 } from '@/lib/hours'
-import { readHoursDocument } from '@/lib/hours/store-core'
 import { adminRoute, ModuleApiError } from '@/lib/platform/api'
 
-import { hoursWrite, publicationRecord } from '../http'
+import { hoursRead, hoursWrite, publicationRecord } from '../http'
 
 const DELIVERY_TIMEOUT_MS = 10_000
 
@@ -18,7 +17,7 @@ export const GET = adminRoute<undefined, HoursPublicationRecord>({
   handler: async ({ searchParams }) => {
     const periodId = searchParams.get('periodId')?.trim()
     if (!periodId) throw new ModuleApiError('bad-request', 'periodId: выберите период.')
-    return publicationRecord(await readHoursDocument(), periodId)
+    return publicationRecord(await hoursRead(), periodId)
   },
 })
 
@@ -67,6 +66,6 @@ export const POST = adminRoute<HoursPublicationRequest, HoursPublicationRecord>(
       }
     }
 
-    return publicationRecord(await readHoursDocument(), body.periodId)
+    return publicationRecord(await hoursRead(), body.periodId)
   },
 })

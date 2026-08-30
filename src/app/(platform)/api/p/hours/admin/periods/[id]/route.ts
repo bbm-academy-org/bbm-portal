@@ -7,15 +7,14 @@ import {
   type HoursPeriodRecord,
   type HoursPeriodUpdate,
 } from '@/lib/hours'
-import { readHoursDocument } from '@/lib/hours/store-core'
 import { adminRoute } from '@/lib/platform/api'
 
-import { hoursWrite, periodRecord, routeText } from '../../http'
+import { hoursRead, hoursWrite, periodRecord, routeText } from '../../http'
 
 export const GET = adminRoute<undefined, HoursPeriodRecord>({
   output: hoursPeriodRecordSchema,
   handler: async ({ params }) => {
-    const doc = await readHoursDocument()
+    const doc = await hoursRead()
     return periodRecord(doc, routeText(params.id, 'id'))
   },
 })
@@ -36,7 +35,7 @@ export const DELETE = adminRoute<undefined, HoursPeriodRecord>({
   output: hoursPeriodRecordSchema,
   handler: async ({ audit, params }) => {
     const id = routeText(params.id, 'id')
-    const before = await readHoursDocument()
+    const before = await hoursRead()
     const record = periodRecord(before, id)
     await hoursWrite(audit, (doc) => deletePeriod(doc, id))
     return record
