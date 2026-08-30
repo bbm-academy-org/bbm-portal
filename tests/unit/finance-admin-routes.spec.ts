@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
+import { scanHandlerFile } from '../../tools/lint/endpoint-authz-lint.mjs'
 
 const state = vi.hoisted(() => ({
   session: null as unknown,
@@ -41,6 +45,17 @@ beforeEach(() => {
 })
 
 describe('finance reference HTTP surface (spec 338 EARS-326/330)', () => {
+  it('EARS-462: exports every admin method through the sanctioned adminRoute factory', () => {
+    const routes = [
+      'src/app/(platform)/api/p/finance/admin/[resource]/route.ts',
+      'src/app/(platform)/api/p/finance/admin/[resource]/[id]/route.ts',
+    ]
+
+    for (const route of routes) {
+      expect(scanHandlerFile(route, readFileSync(resolve(route), 'utf8')), route).toEqual([])
+    }
+  })
+
   it('EARS-330: refuses unauthenticated and non-admin sessions in the handler', async () => {
     const { GET } = await import('@/app/(platform)/api/p/finance/admin/[resource]/route')
     state.session = null
