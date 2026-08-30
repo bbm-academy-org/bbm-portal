@@ -212,6 +212,11 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
 
     expect(refine.listCalls).toHaveLength(3)
     expect(refine.listCalls.map((call) => call.sorters)).toEqual([undefined, undefined, undefined])
+    expect(refine.listCalls.map((call) => call.pagination)).toEqual([
+      { mode: 'off' },
+      { mode: 'off' },
+      { mode: 'off' },
+    ])
   })
 
   it('renders locked periods and assessments as a read-only table', () => {

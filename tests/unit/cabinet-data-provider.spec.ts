@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import { createCabinetResponseValidator } from '@/app/(platform)/p/admin/validation'
+import { pickDefaultPeriod } from '@/lib/hours/period-selection'
 import { createCabinetDataProvider } from '@/lib/platform/cabinet'
 import type { WorkspaceEntry } from '@/lib/workspace/contract'
 
@@ -18,7 +19,13 @@ import type { WorkspaceEntry } from '@/lib/workspace/contract'
  * about the provider and none is about the environment.
  */
 
-const periodSchema = z.object({ id: z.string(), label: z.string(), weekdays: z.number() })
+const periodSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  weekdays: z.number(),
+  status: z.enum(['open', 'closed']).optional(),
+  dateTo: z.string().optional(),
+})
 const HOURS: WorkspaceEntry = {
   kind: 'internal',
   slug: 'hours',
@@ -113,6 +120,33 @@ describe('EARS-436: the provider parses every answer with the module’s own sch
 
     expect(res.data).toHaveLength(1)
     expect(res.total).toBe(57)
+  })
+
+  it('loads every canonical page and can select an open period beyond the first 100 records', async () => {
+    const records = Array.from({ length: 205 }, (_, index) => ({
+      id: `period-${String(index + 1).padStart(3, '0')}`,
+      label: `Period ${index + 1}`,
+      weekdays: 5,
+      status: index === 204 ? ('open' as const) : ('closed' as const),
+      dateTo: `2026-${String((index % 12) + 1).padStart(2, '0')}-28`,
+    }))
+    const { dp, calls } = provider((rawUrl) => {
+      const url = new URL(rawUrl, 'https://portal.bbm.academy')
+      const page = Number(url.searchParams.get('page'))
+      const pageSize = Number(url.searchParams.get('pageSize'))
+      const start = (page - 1) * pageSize
+      return ok({ data: records.slice(start, start + pageSize), total: records.length })
+    })
+
+    const result = await dp.getList({
+      resource: 'hours.periods',
+      pagination: { mode: 'off' },
+    })
+    const loaded = result.data as Array<(typeof records)[number]>
+
+    expect(loaded.map((period) => period.id)).toEqual(records.map((period) => period.id))
+    expect(calls.length).toBeGreaterThan(1)
+    expect(pickDefaultPeriod(loaded, (period) => period.dateTo)?.id).toBe('period-205')
   })
 
   it('EARS-436: an answer that drifts from the schema is refused, naming the resource', async () => {
