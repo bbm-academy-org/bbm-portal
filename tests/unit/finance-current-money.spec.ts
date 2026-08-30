@@ -227,7 +227,7 @@ function value(
   })
 }
 
-describe('EARS-325 current-money recorded-cost replay', () => {
+describe('EARS-325: current-money recorded-cost replay', () => {
   it('replays chronologically, aggregates two RUB accounts, and carries direct and multi-step basis', () => {
     const operations = [
       ordinary(1, '2026-01-01', [{ account: BANK_RUB, amount: 150_000_000n }]),

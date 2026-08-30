@@ -21,7 +21,7 @@ afterAll(async () => {
   await closePlatformDb()
 })
 
-describe('EARS-325 current-money public read model', () => {
+describe('EARS-325: current-money public read model', () => {
   it('reads immutable postings and steps into the exact complete RUB and incomplete THB views', async () => {
     for (const input of [
       { code: 'RUB', name: 'Рубль', precision: 2 },
