@@ -240,12 +240,10 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
 
     await page.goto(FINANCE)
     await expectThemedFinanceCanvas(page)
-    const balanceRow = page
-      .locator('[data-slot="card"] .divide-y > div')
-      .filter({ hasText: accountName })
-    await expect(balanceRow.getByText(accountName, { exact: true })).toBeVisible()
-    await expect(balanceRow.getByText('0,00', { exact: true })).toBeVisible()
-    await expect(balanceRow.getByText(currencyCode, { exact: true })).toBeVisible()
+    const balanceTile = page.getByRole('group', { name: accountName })
+    await expect(balanceTile).toContainText(accountName)
+    await expect(balanceTile).toContainText('0,00')
+    await expect(balanceTile).toContainText(currencyCode)
 
     await page.goto(CURRENCIES)
     const deleteResponse = page.waitForResponse(
