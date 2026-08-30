@@ -19,7 +19,6 @@ export function HoursParticipantsScreen() {
   const { query, result } = useList<HoursParticipantRecord, HttpError>({
     resource: HOURS_PARTICIPANT_RESOURCE,
     pagination: { currentPage: 1, pageSize: 100 },
-    sorters: [{ field: 'name', order: 'asc' }],
     filters: search ? [{ field: 'q', operator: 'contains', value: search }] : [],
   })
 

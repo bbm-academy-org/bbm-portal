@@ -24,7 +24,6 @@ export const GET = adminRoute<undefined, HoursParticipantRecord>({
             )
           : true,
       )
-      .sort((left, right) => left.name.localeCompare(right.name, 'ru'))
     const start = (query.page - 1) * query.pageSize
     return moduleListResult({
       items: records.slice(start, start + query.pageSize),

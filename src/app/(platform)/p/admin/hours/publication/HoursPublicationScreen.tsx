@@ -70,7 +70,6 @@ export function HoursPublicationScreen() {
   const { query, result } = useList<HoursPeriodRecord, HttpError>({
     resource: HOURS_PERIOD_RESOURCE,
     pagination: { currentPage: 1, pageSize: 100 },
-    sorters: [{ field: 'dateFrom', order: 'desc' }],
   })
   const [periodId, setPeriodId] = React.useState('')
   const [preview, setPreview] = React.useState<HoursPublicationRecord | null>(null)
