@@ -169,8 +169,11 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     )
     await page.getByRole('button', { name: 'Удалить Тайский бат' }).click()
     await deleteResponse
-    await expect(page.getByRole('alert')).toContainText('нельзя удалить')
-    await expect(page.getByRole('alert')).toContainText('выводят из обращения')
+    const currencyRefusal = page
+      .locator('main [data-slot="alert"]:visible')
+      .filter({ hasText: 'нельзя удалить' })
+    await expect(currencyRefusal).toContainText('нельзя удалить')
+    await expect(currencyRefusal).toContainText('выводят из обращения')
 
     await page.goto(PROJECTS)
     const fundRow = page.getByRole('row').filter({ hasText: 'Фонд BBM' })
