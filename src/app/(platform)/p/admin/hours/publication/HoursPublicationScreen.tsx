@@ -32,6 +32,40 @@ async function responseData(response: Response): Promise<HoursPublicationRecord>
   return parsed.data.data
 }
 
+async function publicationData(periodId: string, signal?: AbortSignal) {
+  return responseData(
+    await fetch(`/api/p/hours/admin/publication?periodId=${encodeURIComponent(periodId)}`, {
+      signal,
+    }),
+  )
+}
+
+function publicationTime(value: string): string {
+  const instant = new Date(value)
+  return Number.isNaN(instant.getTime())
+    ? value
+    : new Intl.DateTimeFormat('ru-RU', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'Europe/Moscow',
+      }).format(instant)
+}
+
+function deliveryLabel(delivery: HoursPublicationRecord['messages'][number]['delivery']) {
+  switch (delivery) {
+    case 'sent':
+      return 'Отправлено'
+    case 'failed':
+      return 'Не доставлено'
+    case 'unknown':
+      return 'Результат неизвестен'
+    case 'pending':
+      return 'Ожидает отправки'
+    default:
+      return null
+  }
+}
+
 export function HoursPublicationScreen() {
   const { query, result } = useList<HoursPeriodRecord, HttpError>({
     resource: HOURS_PERIOD_RESOURCE,
@@ -55,11 +89,7 @@ export function HoursPublicationScreen() {
       setFailure(null)
       setSuccess(null)
       try {
-        const response = await fetch(
-          `/api/p/hours/admin/publication?periodId=${encodeURIComponent(effectivePeriodId)}`,
-          { signal: controller.signal },
-        )
-        const value = await responseData(response)
+        const value = await publicationData(effectivePeriodId, controller.signal)
         if (!controller.signal.aborted) setPreview(value)
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -92,11 +122,38 @@ export function HoursPublicationScreen() {
       setPreview(next)
       setSuccess(`Опубликовано ${next.messages.length} сообщений в Mattermost.`)
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : 'Не удалось опубликовать сообщения.')
+      const message = error instanceof Error ? error.message : 'Не удалось опубликовать сообщения.'
+      try {
+        setPreview(await publicationData(visiblePreview.periodId))
+        setFailure(message)
+      } catch {
+        setPreview(null)
+        setFailure(`${message} Обновите страницу перед любым следующим действием.`)
+      }
     } finally {
       setPublishing(false)
     }
   }
+
+  const sentCount = visiblePreview?.messages.filter((message) => message.delivery === 'sent').length
+  const publicationTitle =
+    visiblePreview?.publicationStatus === 'published'
+      ? 'Опубликовано'
+      : visiblePreview?.publicationStatus === 'incomplete'
+        ? 'Публикация не завершена'
+        : visiblePreview?.publicationStatus === 'sending'
+          ? 'Публикация выполняется'
+          : null
+  const statusBadge =
+    visiblePreview?.publicationStatus === 'published'
+      ? 'Опубликовано'
+      : visiblePreview?.publicationStatus === 'incomplete'
+        ? 'Не завершено'
+        : visiblePreview?.publicationStatus === 'sending'
+          ? 'Отправка'
+          : visiblePreview?.eligibility.canPublish
+            ? 'Готово'
+            : 'Недоступно'
 
   return (
     <section className="space-y-6">
@@ -175,11 +232,37 @@ export function HoursPublicationScreen() {
                 </CardDescription>
               </div>
               <Badge variant={visiblePreview.eligibility.canPublish ? 'secondary' : 'outline'}>
-                {visiblePreview.eligibility.canPublish ? 'Готово' : 'Недоступно'}
+                {statusBadge}
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
+            {publicationTitle ? (
+              <Alert>
+                <AlertTitle>{publicationTitle}</AlertTitle>
+                <AlertDescription className="space-y-1">
+                  <p>
+                    Отправлено {sentCount} из {visiblePreview.messages.length} сообщений.
+                  </p>
+                  {visiblePreview.startedAt ? (
+                    <p>
+                      <span className="font-medium text-foreground">Начато</span>{' '}
+                      <time dateTime={visiblePreview.startedAt}>
+                        {publicationTime(visiblePreview.startedAt)}
+                      </time>
+                    </p>
+                  ) : null}
+                  {visiblePreview.publishedAt ? (
+                    <p>
+                      <span className="font-medium text-foreground">Завершено</span>{' '}
+                      <time dateTime={visiblePreview.publishedAt}>
+                        {publicationTime(visiblePreview.publishedAt)}
+                      </time>
+                    </p>
+                  ) : null}
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {visiblePreview.eligibility.reason ? (
               <Alert>
                 <AlertTitle>Публикация недоступна</AlertTitle>
@@ -187,9 +270,17 @@ export function HoursPublicationScreen() {
               </Alert>
             ) : null}
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {visiblePreview.messages.map((message) => (
-                <article key={message.email} className="min-w-0 rounded-md border bg-muted/20 p-4">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">{message.email}</p>
+              {visiblePreview.messages.map((message, position) => (
+                <article
+                  key={`${position}:${message.email}`}
+                  className="min-w-0 rounded-md border bg-muted/20 p-4"
+                >
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">{message.email}</p>
+                    {deliveryLabel(message.delivery) ? (
+                      <Badge variant="outline">{deliveryLabel(message.delivery)}</Badge>
+                    ) : null}
+                  </div>
                   <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">
                     {message.text}
                   </pre>

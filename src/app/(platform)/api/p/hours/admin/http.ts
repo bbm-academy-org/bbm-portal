@@ -92,14 +92,23 @@ export function publicationRecord(doc: HoursDocument, periodId: string): HoursPu
   return {
     id: 'mattermost-publication',
     periodId,
-    previewFingerprint: preview.preview_fingerprint,
-    messages: preview.messages,
+    previewFingerprint: publication?.preview_fingerprint ?? preview.preview_fingerprint,
+    messages: publication
+      ? publication.messages.map((message) => ({
+          email: message.email,
+          text: message.text,
+          delivery: message.delivery,
+          sentAt: message.sent_at,
+        }))
+      : preview.messages.map((message) => ({ ...message, delivery: null, sentAt: null })),
     eligibility: {
       status: preview.eligibility.status,
       canPublish: preview.eligibility.can_publish,
       reason: preview.eligibility.reason,
     },
     publicationStatus: publication?.status ?? null,
+    startedAt: publication?.started_at ?? null,
+    publishedAt: publication?.published_at ?? null,
   }
 }
 

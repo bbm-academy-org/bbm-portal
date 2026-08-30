@@ -124,9 +124,18 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
       id: 'mattermost-publication',
       periodId: period.id,
       previewFingerprint: 'sha256:preview',
-      messages: [{ email: 'anna@bbm.academy', text: '**Верификация часов — Анна**' }],
+      messages: [
+        {
+          email: 'anna@bbm.academy',
+          text: '**Верификация часов — Анна**',
+          delivery: null,
+          sentAt: null,
+        },
+      ],
       eligibility: { status: 'eligible', canPublish: true, reason: null },
       publicationStatus: null,
+      startedAt: null,
+      publishedAt: null,
     }
     refine.list = { query: { isLoading: false, error: null }, result: { data: [period], total: 1 } }
     const fetchMock = vi
@@ -136,12 +145,19 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
         Response.json({
           data: {
             ...preview,
+            messages: preview.messages.map((message) => ({
+              ...message,
+              delivery: 'sent',
+              sentAt: '2026-08-31T12:01:00.000Z',
+            })),
             eligibility: {
               status: 'published',
               canPublish: false,
               reason: 'Период уже опубликован в Mattermost.',
             },
             publicationStatus: 'published',
+            startedAt: '2026-08-31T12:00:00.000Z',
+            publishedAt: '2026-08-31T12:01:00.000Z',
           },
         }),
       )
@@ -173,9 +189,18 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
       id: 'mattermost-publication',
       periodId: period.id,
       previewFingerprint: 'sha256:preview',
-      messages: [{ email: 'anna@bbm.academy', text: 'Текущий предпросмотр' }],
+      messages: [
+        {
+          email: 'anna@bbm.academy',
+          text: 'Текущий предпросмотр',
+          delivery: null,
+          sentAt: null,
+        },
+      ],
       eligibility: { status: 'eligible', canPublish: true, reason: null },
       publicationStatus: null,
+      startedAt: null,
+      publishedAt: null,
     }
     const persistedAttempt = {
       id: 'mattermost-publication',
@@ -274,6 +299,8 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
               reason: 'За этот период нет сохранённых оценок.',
             },
             publicationStatus: null,
+            startedAt: null,
+            publishedAt: null,
           },
         }),
       ),

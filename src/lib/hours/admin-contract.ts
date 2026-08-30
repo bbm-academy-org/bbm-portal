@@ -82,9 +82,20 @@ export const hoursPublicationRecordSchema = z
     id: z.literal('mattermost-publication'),
     periodId: z.string(),
     previewFingerprint: z.string(),
-    messages: z.array(z.object({ email: z.string().email(), text: z.string() }).strict()),
+    messages: z.array(
+      z
+        .object({
+          email: z.string().email(),
+          text: z.string(),
+          delivery: z.enum(['pending', 'sent', 'failed', 'unknown']).nullable(),
+          sentAt: z.string().nullable(),
+        })
+        .strict(),
+    ),
     eligibility: publicationEligibilitySchema.strict(),
     publicationStatus: z.enum(['sending', 'published', 'incomplete']).nullable(),
+    startedAt: z.string().nullable(),
+    publishedAt: z.string().nullable(),
   })
   .strict()
 
