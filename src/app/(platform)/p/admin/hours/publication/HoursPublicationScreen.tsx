@@ -9,6 +9,7 @@ import {
   type HoursPeriodRecord,
   type HoursPublicationRecord,
 } from '@/lib/hours/admin-contract'
+import { pickDefaultPeriod } from '@/lib/hours/period-selection'
 import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
@@ -77,7 +78,8 @@ export function HoursPublicationScreen() {
   const [publishing, setPublishing] = React.useState(false)
   const [failure, setFailure] = React.useState<string | null>(null)
   const [success, setSuccess] = React.useState<string | null>(null)
-  const effectivePeriodId = periodId || result.data[0]?.id || ''
+  const defaultPeriod = pickDefaultPeriod(result.data, (period) => period.dateTo)
+  const effectivePeriodId = periodId || defaultPeriod?.id || ''
   const visiblePreview = preview?.periodId === effectivePeriodId ? preview : null
 
   React.useEffect(() => {

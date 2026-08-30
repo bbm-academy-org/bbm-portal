@@ -14,6 +14,7 @@
 import { countWeekdays, isValidIsoDate } from './calendar'
 import { normalizeEmail } from './access'
 import { periodAlreadyOpen, REFUSAL } from './messages'
+import { pickDefaultPeriod } from './period-selection'
 // Склонение по числу живёт в format.ts (там же, где METHOD_LABELS): это домен,
 // а не вью, и второй копии правила «11–14 — исключение» быть не должно.
 import { formatHoursCount, plural } from './format'
@@ -93,12 +94,7 @@ export function pickSummaryPeriod(
     const requested = findPeriod(doc, requestedId)
     if (requested) return requested
   }
-  const open = findOpenPeriod(doc)
-  if (open) return open
-  return doc.periods.reduce<Period | undefined>((latest, period) => {
-    if (!latest) return period
-    return period.date_to >= latest.date_to ? period : latest
-  }, undefined)
+  return pickDefaultPeriod(doc.periods, (period) => period.date_to)
 }
 
 export interface SaveAssessmentInput {
