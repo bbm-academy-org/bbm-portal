@@ -842,8 +842,10 @@ These are the issue's acceptance criteria, made performable. Scenarios 1–4 map
 one-to-one onto the four AC checkboxes of #201; 5–12 cover the clauses those four
 do not reach.
 
-1. **Attributed edit from the live stand.** The owner opens `/p/hours/admin` on a
-   live stand and edits a participant's role — a column of `core.member`, the shared registry the hours admin writes through (spec 124 EARS-9), not of `core.hours_participant`. An agent then queries the platform
+1. **Attributed edit from the live stand.** The owner opens the hours section of
+   `/p/admin` on a live stand and edits a participant's role — a column of
+   `core.member`, the shared registry the hours cabinet writes through (spec 124
+   EARS-9), not of `core.hours_participant`. An agent then queries the platform
    database and pastes the resulting `core.audit_event` row into the issue: it
    shows `event_type = data.member.update`, a `diff` naming exactly the changed
    column with its old and new value, `actor_email` = the owner's address, and
@@ -871,7 +873,7 @@ do not reach.
    leaves the ledger unchanged; changing one field writes exactly one row naming
    that one field. (EARS-2, EARS-3)
 7. **A deletion keeps the whole row.** Deleting a period that has no assessments
-   — the one delete `/p/hours/admin` supports (spec 081 §16) — writes a row whose
+   — the one delete the hours cabinet supports (spec 081 §16) — writes a row whose
    diff carries **every whitelisted** column of the removed row under `old`
    (every column of `hours_period`, by EARS-17), so the deleted record is
    reconstructable, together with its primary key read from the catalog.

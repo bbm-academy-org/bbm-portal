@@ -353,6 +353,16 @@ describe('findOrderViolations', () => {
     expect(res[0]).toMatchObject({ kind: 'impl-first', implSha: 'aaa1', testSha: 'bbb2' })
   })
 
+  it('ignores an added module that is deleted before HEAD', () => {
+    expect(
+      findOrderViolations([
+        { sha: 'aaa1', files: [impl()] },
+        { sha: 'bbb2', files: [test()] },
+        { sha: 'ccc3', files: [{ ...impl('removed'), patch: '' }] },
+      ]),
+    ).toEqual([])
+  })
+
   it('leaves a module with NO test anywhere in the PR to test-presence — not a second finding', () => {
     expect(findOrderViolations([{ sha: 'aaa1', files: [impl()] }])).toEqual([])
   })

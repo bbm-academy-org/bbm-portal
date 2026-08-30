@@ -90,10 +90,10 @@ was reached.
 
 **Hours administration after the retirement.**
 Hours admin actions are authorized by `platform-admin`. The old
-`/p/hours/admin` surface — including its export route and the Mattermost-publish
-panel — moves **entirely** into `/p/admin`, and the old URL returns **404**:
-explicitly no redirect. _(owner-approved 2026-08-24, overriding the redirect
-recommendation)_
+`/p/hours/admin` surface is retired: periods, rates and grades, and Mattermost
+preview/publish are available from `/p/admin`; the former page and its JSON-export
+route return **404**, explicitly with no redirect. _(owner-approved 2026-08-24;
+JSON export retired by the owner in #317)_
 
 **Granting a role.**
 Today: the owner grants the role in Zitadel by hand. Later: Access Sync (#113)
@@ -113,11 +113,11 @@ without the product rule changing.
   directly.
 - A member without `platform-admin` is refused when calling an admin endpoint
   directly.
-- A member with `platform-admin` can perform every hours administration action
-  that was previously available through the email allowlist.
+- A member with `platform-admin` can administer hours periods, rates and grades,
+  and preview or publish the Mattermost message from the cabinet.
 - No environment variable grants administrative access after this feature ships.
-- The old `/p/hours/admin` URL and its export route return 404 — no redirect and
-  no reachable leftover.
+- The old `/p/hours/admin` URL and `/p/hours/admin/export` route return 404 — no
+  redirect and no reachable leftover.
 - A member whose role is revoked is denied on their next request.
 - Granting a role to a person takes effect for them without a redeploy.
 - Adding a further role later requires no change to the frame's own screens.

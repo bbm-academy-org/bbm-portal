@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { HoursDocument } from '@/lib/hours'
 
@@ -28,7 +28,6 @@ vi.mock('@/modules/hours/actions', () => {
   }
 })
 
-const originalAdmins = process.env.HOURS_ADMIN_EMAILS
 /**
  * Хранилище модуля часов — ин-мемори двойник (`tests/helpers/hours-store-double.ts`).
  *
@@ -96,29 +95,14 @@ const seed: HoursDocument = {
   ],
 }
 
-beforeAll(() => {
-  process.env.HOURS_ADMIN_EMAILS = 'anton@bbm.academy'
-})
-
 beforeEach(() => {
   setDocument(seed)
-})
-
-afterAll(() => {
-  if (originalAdmins === undefined) delete process.env.HOURS_ADMIN_EMAILS
-  else process.env.HOURS_ADMIN_EMAILS = originalAdmins
 })
 
 async function renderPage(params: Record<string, string> = {}): Promise<string> {
   const { default: HoursPage } = await import('@/app/(platform)/p/hours/page')
   const element = await HoursPage({ searchParams: Promise.resolve(params) })
   // Неразрывные пробелы разрядов — к обычным, иначе ожидания нечитаемы.
-  return renderToStaticMarkup(element).replace(/ /g, ' ')
-}
-
-async function renderAdminPage(params: Record<string, string> = {}): Promise<string> {
-  const { default: HoursAdminPage } = await import('@/app/(platform)/p/hours/admin/page')
-  const element = await HoursAdminPage({ searchParams: Promise.resolve(params) })
   return renderToStaticMarkup(element).replace(/ /g, ' ')
 }
 
@@ -170,17 +154,6 @@ describe('страница /p/hours собирается целиком', () => 
     expect(summarySection.querySelector('option[selected]')?.getAttribute('value')).toBe(
       'p-may-june',
     )
-  })
-
-  it('admin page passes the same selected summary period into its shared participants table', async () => {
-    const html = await renderAdminPage({ period: 'p-may-june' })
-    const participantsSection = sectionByHeading(html, 'Участники')
-
-    expect(participantsSection.textContent).toContain('Май–июнь 2026')
-    expect(participantsSection.textContent).toContain('1 163 ₽')
-    expect(
-      [...participantsSection.querySelectorAll('thead th')].map((cell) => cell.textContent),
-    ).toEqual(['Участник', 'Вилка и грейд', 'Ставка, ₽/мес', 'Ставка, ₽/ч', 'Правка'])
   })
 
   it('показывает сводку с сохранённой оценкой (открытая верификация)', async () => {
@@ -315,11 +288,8 @@ describe('страницы без периодов (spec 102)', () => {
     setDocument({ participants: seed.participants, periods: [], assessments: [] })
   })
 
-  it.each([
-    ['public', renderPage],
-    ['admin', renderAdminPage],
-  ])('%s page explains why hourly rates are unavailable', async (_name, renderTarget) => {
-    const html = await renderTarget()
+  it('public page explains why hourly rates are unavailable', async () => {
+    const html = await renderPage()
     const participantsSection = sectionByHeading(html, 'Участники')
     expect(participantsSection.textContent).toContain('Нет периода для расчёта часовой ставки.')
     expect(participantsSection.querySelectorAll('tbody td:nth-child(4)')).toHaveLength(1)

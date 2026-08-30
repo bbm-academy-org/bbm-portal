@@ -21,7 +21,7 @@
  *  - the SEMANTIC one produces the paths;
  *  - the BYTE one catches what a semantic diff cannot see — a key-order or
  *    formatting difference. That is not cosmetics here: the legacy participant
- *    field order is part of what the owner's download has always looked like, and
+ *    field order is part of the archived legacy document, and
  *    `jsonb` does not preserve key order (hence the hand-rebuilt message objects
  *    in `src/lib/hours/core/load.ts`). A key-order-only difference is reported as
  *    the single path `<serialization>` rather than silently blessed as identical.
@@ -52,7 +52,7 @@ export type ExportComparison = {
 /** How long a rendered value may get in the log before it is elided. */
 const MAX_VALUE_CHARS = 120
 
-/** The exact serialization the owner's «Скачать данные (JSON)» produces (EARS-11). */
+/** The exact internal legacy-document serialization used by EARS-11 verification. */
 export function serializeExport(doc: unknown): string {
   return JSON.stringify(doc, null, 2)
 }
@@ -132,9 +132,9 @@ function walk(source: unknown, core: unknown, path: string, out: ExportDiffEntry
  * Compare the pre-import export with the post-import one (EARS-27).
  *
  * Both sides are normalized through the serialization the export uses, so this
- * answers the question the clause asks — «is what the owner would download now
- * the same document as before the cutover?» — rather than a question about
- * in-memory objects.
+ * answers the question the clause asks — «is the reconstructed legacy document
+ * the same as before the cutover?» — rather than a question about in-memory
+ * objects.
  */
 export function compareExports(source: unknown, core: unknown): ExportComparison {
   const sourceText = serializeExport(source)

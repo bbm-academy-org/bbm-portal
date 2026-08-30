@@ -11,7 +11,7 @@
  * за вилку (п.23) или пересечь периоды (п.24).
  */
 
-import { countWeekdays, isValidIsoDate } from './calendar'
+import { countWeekdays, isValidIsoDate, pickDefaultPeriod } from './calendar'
 import { normalizeEmail } from './access'
 import { periodAlreadyOpen, REFUSAL } from './messages'
 // Склонение по числу живёт в format.ts (там же, где METHOD_LABELS): это домен,
@@ -93,12 +93,7 @@ export function pickSummaryPeriod(
     const requested = findPeriod(doc, requestedId)
     if (requested) return requested
   }
-  const open = findOpenPeriod(doc)
-  if (open) return open
-  return doc.periods.reduce<Period | undefined>((latest, period) => {
-    if (!latest) return period
-    return period.date_to >= latest.date_to ? period : latest
-  }, undefined)
+  return pickDefaultPeriod(doc.periods, (period) => period.date_to)
 }
 
 export interface SaveAssessmentInput {

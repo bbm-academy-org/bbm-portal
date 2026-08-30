@@ -7,32 +7,26 @@ import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate
  * REAL route handler.
  *
  * A route handler does not run layouts, so the `(platform)/p/layout.tsx` gate
- * covers no `/p/*` route handler at all — `src/app/(platform)/p/hours/admin/export/route.ts`
- * is a live `/p/*` path outside it. `claimGateResponse` exists exactly for that
- * seam, and a helper with no call site proves nothing: this pins the boundary on
- * the one handler that lives under `/p` today. (EARS-421/EARS-452 retire this
- * handler with the hours cutover; until then it is gated by the claim, not only
- * by its own `HOURS_ADMIN_EMAILS` allowlist.)
- *
- * The hours data layer is mocked wholesale so the assertion is about the gate
- * and nothing else: `isHoursAdmin` always says yes here, so a 403 can only come
- * from the claim gate.
+ * covers no `/api/p/*` route handler. This pins the boundary on the hours periods
+ * resource after the cabinet cutover (EARS-447, EARS-462).
  */
 
 const authState: { session: unknown } = { session: null }
 
 vi.mock('@/auth', () => ({ auth: async () => authState.session }))
-vi.mock('@/lib/hours', () => ({
-  HoursDataError: class HoursDataError extends Error {},
-  isHoursAdmin: () => true,
-  sessionEmail: () => 'operator@bbm.local',
-  readHoursDocument: async () => ({ participants: [], periods: [] }),
+vi.mock('@/lib/hours/store-core', () => ({
+  readHoursDocument: async () => ({
+    participants: [],
+    periods: [],
+    assessments: [],
+    publications: [],
+  }),
 }))
 
 async function get(session: unknown): Promise<Response> {
   authState.session = session
-  const route = await import('@/app/(platform)/p/hours/admin/export/route')
-  return route.GET()
+  const route = await import('@/app/(platform)/api/p/hours/admin/periods/route')
+  return route.GET(new Request('https://portal.bbm.academy/api/p/hours/admin/periods'))
 }
 
 describe('a route handler under /p re-checks the claim itself (EARS-461, EARS-462)', () => {

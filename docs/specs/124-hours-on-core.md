@@ -1,13 +1,19 @@
 ---
-status: Shipped
+status: In dev
 issue: 124
-updated: 2026-08-19
+updated: 2026-08-30
 ---
 
 # /p/hours on the `core` schema — data model & migration off JSON — spec (issue #124)
 
 - **Issues:** #124 (spec task), #111 (epic), #255 (implementation), #256 (cutover); #201 (edit audit, adjacent).
 - **Owner acceptance:** Anton, session 2026-08-17 (recorded on #124).
+
+**Cabinet amendment, issue #317 (owner GO 2026-08-30).** Storage and domain
+semantics below do not change. Their administrative surface moves to
+`/p/admin/hours/*` under claim-gated `/api/p/hours/admin/*` handlers. EARS-19
+and EARS-32 are superseded as stated inline; the old `/p/hours/admin` routes
+are deleted per spec 311 EARS-452.
 
 ## Why
 
@@ -132,9 +138,9 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   (`lower(btrim(value))` — «Dobroyar» finds `dobroyar`), and shall list a
   member's aliases — the recognition contract for consumers such as
   meeting-transcript processing («dobroyar» → the member's name).
-- **EARS-19.** WHILE no admin UI exists (until `/p/admin`, epic #112), aliases
-  shall be populated by the manual seed and maintained through the owner-run
-  SQL escape hatch; this cycle adds no alias UI.
+- **EARS-19 (superseded by spec 311 EARS-444, #316).** The temporary SQL-only
+  alias maintenance ended when the member cabinet shipped create/update/delete
+  alias controls. The manual seed remains valid historical bootstrap data.
 
 #### Column types (the digit-for-digit contract lives here)
 
@@ -153,8 +159,8 @@ migration off JSON — **with no product change**: the owner's decision in sessi
 
 ### Module behavior
 
-- **EARS-7.** The `/p/hours` and `/p/hours/admin` surfaces shall keep the
-  spec 081 (rev. #83/#85) and spec 100 behavior with **no UI change** —
+- **EARS-7.** The `/p/hours` surface and the hours cabinet resources shall keep the
+  spec 081 (rev. #83/#85) and spec 100 behavior with **no domain change** —
   umbrella parity clause, exercised by keeping the existing unit/E2E suites
   green plus one E2E smoke named for this clause. The parity points the storage
   swap specifically touches are broken out as EARS-28..32 below.
@@ -222,12 +228,14 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   member-only columns (`id`, `status`, `timezone`, timestamps) are excluded,
   so an unrelated member touch does not invalidate a correct preview and the
   identity drift spec 100 req. 9 guards is still covered.
-- **EARS-11.** The admin «Скачать данные (JSON)» export shall reconstitute
-  exactly the legacy document: top-level keys `participants`, `periods`,
-  `assessments`, `publications` in that order, participant shape of
-  `types.ts`, serialized as `JSON.stringify(doc, null, 2)` — no member-only
-  columns, no members who are not hours participants, and the legacy
-  `participant.monthly_rate` field stays dropped (081 §14).
+- **EARS-11.** For internal migration/cutover verification only, the tooling
+  shall reconstitute exactly the legacy document: top-level keys
+  `participants`, `periods`, `assessments`, `publications` in that order,
+  participant shape of `types.ts`, serialized as `JSON.stringify(doc, null, 2)`
+  — no member-only columns, no members who are not hours participants, and the
+  legacy `participant.monthly_rate` field stays dropped (081 §14). The former
+  admin «Скачать данные (JSON)» action is retired by spec 311 EARS-449; this
+  clause shall not expose a page, button or module API handler.
 - **EARS-12.** IF `PLATFORM_DATABASE_URL` is unset or the database is
   unreachable, THEN pages shall say the data is unavailable (081 §17 semantics)
   and mutations shall refuse loudly; the module shall never fall back to the
@@ -250,8 +258,9 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   `published`, period label/date edits and reopening shall be refused
   (spec 100 req. 12); this lock survives a crash of the delivering process
   (req. 15).
-- **EARS-32.** Every admin mutation shall re-check the `HOURS_ADMIN_EMAILS`
-  allowlist fail-closed (081 §10) — unchanged by the storage swap.
+- **EARS-32 (superseded by spec 311 EARS-451, #317).** Every admin mutation now
+  re-checks the Zitadel `platform-admin` claim in its
+  `/api/p/hours/admin/*` handler. The temporary module email allowlist is removed.
 
 ### Migration & cutover
 
@@ -299,13 +308,13 @@ migration off JSON — **with no product change**: the owner's decision in sessi
 
 ### CRUD check (task-cycle stage 1a — forms unchanged, storage semantics restated)
 
-| Form                       | Create                                                        | Read                                       | Update                                                                                                                                | Delete                                                     |
-| -------------------------- | ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Participant (admin)        | upsert by email; unknown email also creates `member` (EARS-9) | table on `/p/hours` (member ∪ hours attrs) | «Изменить» pre-fills; email read-only; edits `name`/`role` on the shared registry                                                     | **not supported** (deliberate, 081 §16) — SQL escape hatch |
-| Period (admin)             | label + dates; ≥1 weekday                                     | list with status                           | label/dates with recompute (081 §24) **unless publication-locked** (spec 100 req. 12; EARS-31); open/close/reopen under the same lock | only while no assessments (081 §16)                        |
-| Assessment (participant)   | self-only save in open period                                 | summary table, all logged-in               | re-save while open re-freezes snapshots (upsert, EARS-4)                                                                              | **not supported** (deliberate — history is the product)    |
-| Publication (admin)        | preview → publish per spec 100; one batch per period (EARS-6) | panel state                                | delivery updates the batch per spec 100                                                                                               | **not supported** (delivery record)                        |
-| Alias (no form this cycle) | seed / SQL escape hatch (EARS-19)                             | member module API (EARS-18)                | SQL escape hatch                                                                                                                      | SQL escape hatch                                           |
+| Form                     | Create                                                        | Read                                       | Update                                                                                                                                | Delete                                                     |
+| ------------------------ | ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Participant (admin)      | upsert by email; unknown email also creates `member` (EARS-9) | table on `/p/hours` (member ∪ hours attrs) | «Изменить» pre-fills; email read-only; edits `name`/`role` on the shared registry                                                     | **not supported** (deliberate, 081 §16) — SQL escape hatch |
+| Period (admin)           | label + dates; ≥1 weekday                                     | list with status                           | label/dates with recompute (081 §24) **unless publication-locked** (spec 100 req. 12; EARS-31); open/close/reopen under the same lock | only while no assessments (081 §16)                        |
+| Assessment (participant) | self-only save in open period                                 | summary table, all logged-in               | re-save while open re-freezes snapshots (upsert, EARS-4)                                                                              | **not supported** (deliberate — history is the product)    |
+| Publication (admin)      | preview → publish per spec 100; one batch per period (EARS-6) | panel state                                | delivery updates the batch per spec 100                                                                                               | **not supported** (delivery record)                        |
+| Alias (member cabinet)   | kind + value (+ note), spec 311 EARS-444                      | member cabinet + member API (EARS-18)      | yes                                                                                                                                   | yes                                                        |
 
 ## Acceptance scenarios
 
@@ -314,7 +323,8 @@ migration off JSON — **with no product change**: the owner's decision in sessi
    hero, participants table in the same order, open period, calculator), saves
    a self-assessment, sees it in the summary. (EARS-1, EARS-7, EARS-10,
    EARS-21)
-2. **Parity, admin.** On `/p/hours/admin` the owner creates a participant with
+2. **Parity, admin.** In `/p/admin/hours/participants` and `/p/admin/hours/periods`
+   the owner creates a participant with
    a brand-new email + name only (dash-filled row appears; a `member` now
    exists for it), adds fork + grade (computed rate appears), edits the role
    (it saves — shared registry), edits a period's dates over existing
@@ -336,19 +346,17 @@ migration off JSON — **with no product change**: the owner's decision in sessi
 6. **Failure honesty.** With `PLATFORM_DATABASE_URL` deliberately broken on a
    dev stand, `/p/hours` says data is unavailable instead of rendering zeros or
    falling back to JSON. (EARS-12)
-7. **Alias resolution** (agent-run evidence, pasted into the issue — no owner
-   surface exists this cycle by design, EARS-19). The owner names a known
-   external handle (e.g. the Mattermost login «dobroyar»); the agent runs the
-   member-module lookup against the production database and pastes the
-   resolved name; a lookup by a canonical `@bbm.academy` email resolves too.
-   (EARS-14, EARS-17, EARS-18)
+7. **Alias resolution.** In the member cabinet the owner creates or edits a
+   known external handle (e.g. the Mattermost login «dobroyar»); the member
+   module lookup resolves it to the same person, and canonical email lookup
+   resolves too. (EARS-14, EARS-17, EARS-18; spec 311 EARS-444)
 
 ## Out of scope
 
 - Any UI or behavior change: approval flows, edit journals, post-publication
   locking beyond what spec 100 already ships — separate tasks if ever (owner,
   2026-08-11).
-- `/p/admin` and replacing `HOURS_ADMIN_EMAILS` with a claim gate — epic #112.
+- Further hours-cabinet redesign beyond the behavior-preserving move in #317.
 - `membership`, `event_log`, `outbox` tables and any propagation — epics #111
   tail / #113; this spec creates only `member` (+ `member_alias`) and the hours
   tables.

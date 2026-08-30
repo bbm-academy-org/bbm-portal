@@ -61,7 +61,19 @@ describe('the hours declaration (spec 311 EARS-401, EARS-406)', () => {
     expect(openUntilLabel('2026-08-31')).toBe('1 сентября')
     expect(openUntilLabel('2026-12-31')).toBe('1 января')
     expect(await hoursStatusLine()).toBe('Период «август 2026» открыт до 1 сентября')
-    expect(hoursWorkspaceEntry).toMatchObject({ kind: 'internal', slug: 'hours', href: '/p/hours' })
+    expect(hoursWorkspaceEntry).toMatchObject({
+      kind: 'internal',
+      slug: 'hours',
+      href: '/p/hours',
+      admin: {
+        label: 'Часы',
+        resources: [
+          { name: 'periods', label: 'Периоды' },
+          { name: 'participants', label: 'Ставки и грейды' },
+          { name: 'publication', label: 'Публикация в Mattermost' },
+        ],
+      },
+    })
   })
 })
 

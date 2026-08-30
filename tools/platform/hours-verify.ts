@@ -41,9 +41,9 @@ export type VerifyOutcome = {
 /**
  * The verdict against whatever `core` currently holds (EARS-26, EARS-27).
  *
- * The `core` side is read through the module's own public read path — the same
- * one `/p/hours/admin/export` uses — so the answer is «what would the owner
- * download now», not «what do these tables contain if I query them my way».
+ * The `core` side is read through the module's own public read path, so this
+ * internal migration check reconstitutes the archived document without
+ * exposing a user download route or querying the tables through a second path.
  */
 export async function verifyHours(file: string): Promise<VerifyOutcome> {
   const source = await readJsonDocument(file)

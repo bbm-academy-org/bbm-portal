@@ -18,6 +18,7 @@ export {
   type ListQuery,
   listEnvelopeSchema,
   listQuerySchema,
+  MODULE_LIST_MAX_PAGE_SIZE,
   moduleListResult,
   type ModuleListResult,
   moduleListResultSchema,

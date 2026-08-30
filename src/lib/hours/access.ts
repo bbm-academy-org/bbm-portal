@@ -6,12 +6,9 @@
  * Два разных решения не путать:
  *   - OIDC-гейт группы `(platform)` (src/lib/platform/authGate.ts) решает,
  *     пускать ли вообще на `/p/*`;
- *   - здесь решается, ЧТО залогиненный может менять: за себя (email сессии) и
- *     администратор ли он (env-allowlist до появления ролей в Zitadel).
- *
- * Fail-closed: незаданная или пустая `HOURS_ADMIN_EMAILS` ⇒ администраторов нет
- * ни у кого. Предикат применяется и к странице админки, и к КАЖДОЙ мутации —
- * на layout не полагаемся (п.11).
+ *   - здесь решается, можно ли сохранять самооценку за указанный email.
+ * Административный доступ теперь принадлежит общей роли `platform-admin` и
+ * проверяется на каждой кабинетной HTTP-границе.
  */
 
 /** Минимальный вид сессии Auth.js — достаточный для решения. */
@@ -30,24 +27,6 @@ export function normalizeEmail(value: unknown): string {
  */
 export function sessionEmail(session: HoursSessionLike | null | undefined): string {
   return normalizeEmail(session?.user?.email)
-}
-
-/** Разбирает `HOURS_ADMIN_EMAILS` (comma-separated) в нормализованный список. */
-export function parseAdminEmails(raw: string | undefined | null): string[] {
-  if (typeof raw !== 'string') return []
-  const seen = new Set<string>()
-  for (const part of raw.split(',')) {
-    const email = normalizeEmail(part)
-    if (email) seen.add(email)
-  }
-  return [...seen]
-}
-
-/** Админ ли этот email по allowlist'у. Без allowlist'а — никто (fail-closed). */
-export function isHoursAdmin(email: unknown, raw: string | undefined | null): boolean {
-  const normalized = normalizeEmail(email)
-  if (!normalized) return false
-  return parseAdminEmails(raw).includes(normalized)
 }
 
 /** Оценку можно сохранять только за себя (п.9). Пустая сторона не совпадает. */

@@ -41,9 +41,8 @@ import '@/ui/theme.css'
  * What this layout does NOT cover: a ROUTE HANDLER. Next does not run layouts
  * for `route.ts`, so «every path under `/p`» (EARS-416) is true of pages and
  * server components only — a handler under `/p` is gated when it calls
- * `claimGateResponse` itself, and not before. The one such handler today
- * (`p/hours/admin/export/route.ts`) does; #315 inherits the obligation, not the
- * coverage.
+ * `claimGateResponse` itself, and not before. The hand-written `/api/p/*`
+ * handlers carry that obligation themselves; the layout does not cover them.
  *
  * The trust boundary is this server component and the handler-side
  * `claimGateResponse` (EARS-461, EARS-462) — never the UI. A tile the launcher
