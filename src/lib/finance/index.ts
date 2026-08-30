@@ -119,17 +119,17 @@ export type { ConversionStepInput, RecordConversionInput } from './conversions'
 
 // ── the intake spine (spec 339 EARS-503/504/524/525) ─────────────────────────
 export {
-  createIntakeItem,
-  createIntakeItems,
-  editIntakeItem,
+  createIntakeItemPublic as createIntakeItem,
+  createIntakeItemsPublic as createIntakeItems,
+  editIntakeItemPublic as editIntakeItem,
   FinanceIntakeDuplicate,
   getIntakeItem,
   listIntakeItems,
-  transitionIntakeItem,
+  transitionIntakeItemPublic as transitionIntakeItem,
 } from './intake/items'
 export { postIntakeItemPublic as postIntakeItem } from './intake/posting'
 export type {
-  CreateIntakeItemInput,
+  CreateDirectIntakeItemInput as CreateIntakeItemInput,
   EditIntakeItemPatch,
   FinanceIntakeBulkOutcome,
   FinanceIntakeDuplicateLine,

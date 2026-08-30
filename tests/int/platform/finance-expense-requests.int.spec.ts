@@ -192,6 +192,25 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
     })
   })
 
+  it('EARS-503/524: the public generic APIs still create, edit and transition non-request intake', async () => {
+    const refs = await seedIntakeReferences()
+    const directInput = {
+      source: 'manual' as const,
+      kind: 'expense' as const,
+      ...requestInput(refs),
+    }
+    const item = await createIntakeItem(ENTRY, directInput)
+    const bulk = await createIntakeItems(ENTRY, [{ ...directInput, amount: 121_000n }])
+    const edited = await editIntakeItem(ENTRY, item.id, { note: 'Direct intake remains public' })
+    const submitted = await transitionIntakeItem(ENTRY, item.id, 'submit')
+    const approved = await transitionIntakeItem(APPROVER, item.id, 'approve')
+
+    expect(bulk.created).toHaveLength(1)
+    expect(edited.note).toBe('Direct intake remains public')
+    expect(submitted).toMatchObject({ status: 'submitted' })
+    expect(approved).toMatchObject({ status: 'approved', decidedBy: refs.approverMemberId })
+  })
+
   it('EARS-502: a role-less member creates, edits, submits, lists and cancels only their own request, including its documents', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs))

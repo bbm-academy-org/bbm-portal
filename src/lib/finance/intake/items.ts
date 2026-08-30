@@ -136,10 +136,17 @@ export type CreateIntakeItemInput = {
   natural?: FinanceIntakeNaturalKey
 }
 
+/** The generic public intake door owns machine/direct sources, never member requests. */
+export type CreateDirectIntakeItemInput = Omit<CreateIntakeItemInput, 'source'> & {
+  source: Exclude<FinanceIntakeSource, 'request'>
+}
+
 export type CreateIntakeItemOptions = {
   /** Source-specific checks that must see the same transaction as the insert. */
   validate?: (tx: PlatformTx) => Promise<void>
 }
+
+type PublicRequestGuard = Readonly<{ facade: string; ears: 508 | 510 }>
 
 /** The keys an intake line accepts — and the ONLY ones (the `operations.ts` habit). */
 const CREATE_INPUT_KEYS = new Set([
@@ -397,6 +404,15 @@ export async function createIntakeItem(
   })
 }
 
+/** Public callers create requests only through `createExpenseRequest` (EARS-508). */
+export async function createIntakeItemPublic(
+  actor: FinanceActor,
+  input: CreateDirectIntakeItemInput,
+): Promise<FinanceIntakeItemView> {
+  assertDirectIntakeSource((input as CreateIntakeItemInput).source, 'createExpenseRequest', 508)
+  return createIntakeItem(actor, input)
+}
+
 async function findBySourceRef(tx: PlatformTx, source: string, sourceRef: string) {
   const [row] = await tx
     .select()
@@ -449,6 +465,17 @@ export async function createIntakeItems(
     }
   }
   return { created, duplicates }
+}
+
+/** Bulk intake remains public for producers; human requests remain facade-only. */
+export async function createIntakeItemsPublic(
+  actor: FinanceActor,
+  inputs: readonly CreateDirectIntakeItemInput[],
+): Promise<FinanceIntakeBulkOutcome> {
+  for (const input of inputs) {
+    assertDirectIntakeSource((input as CreateIntakeItemInput).source, 'createExpenseRequest', 508)
+  }
+  return createIntakeItems(actor, inputs)
 }
 
 /**
@@ -532,6 +559,8 @@ export async function editIntakeItem(
   options: {
     /** Source-specific validation of the final merged row while its lock is held. */
     validate?: (tx: PlatformTx, next: FinanceIntakeItemView) => Promise<void>
+    /** Public barrel guard; internal source-specific facades omit it. */
+    publicRequestGuard?: PublicRequestGuard
   } = {},
 ): Promise<FinanceIntakeItemView> {
   for (const key of Object.keys(patch)) {
@@ -544,6 +573,13 @@ export async function editIntakeItem(
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const row = await lockIntakeItem(tx, id)
     assertItemVisible(actor, row, actorMemberId)
+    if (options.publicRequestGuard !== undefined) {
+      assertDirectIntakeSource(
+        row.source as FinanceIntakeSource,
+        options.publicRequestGuard.facade,
+        options.publicRequestGuard.ears,
+      )
+    }
 
     const plan = planIntakeEdit(row.status as FinanceIntakeStatus, changedFields(row, patch))
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnEditableRequest(row, actorMemberId) })
@@ -575,6 +611,17 @@ export async function editIntakeItem(
       .where(eq(financeIntakeItem.id, id))
       .returning()
     return intakeItemToView(updated)
+  })
+}
+
+/** Public generic edits cannot skip the request-specific locked validator. */
+export async function editIntakeItemPublic(
+  actor: FinanceActor,
+  id: number,
+  patch: EditIntakeItemPatch,
+): Promise<FinanceIntakeItemView> {
+  return editIntakeItem(actor, id, patch, {
+    publicRequestGuard: { facade: 'editExpenseRequest', ears: 508 },
   })
 }
 
@@ -612,6 +659,8 @@ export async function transitionIntakeItem(
     reason?: string | null
     /** Source-specific precondition checked on the locked transition row. */
     validate?: (tx: PlatformTx, current: FinanceIntakeItemView) => Promise<void>
+    /** Public barrel guard; internal source-specific facades omit it. */
+    publicRequestGuard?: PublicRequestGuard
   } = {},
 ): Promise<FinanceIntakeItemView | null> {
   const actorMemberId = await requireMemberId(actor)
@@ -619,6 +668,13 @@ export async function transitionIntakeItem(
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const row = await lockIntakeItem(tx, id)
     assertItemVisible(actor, row, actorMemberId)
+    if (options.publicRequestGuard !== undefined) {
+      assertDirectIntakeSource(
+        row.source as FinanceIntakeSource,
+        options.publicRequestGuard.facade,
+        options.publicRequestGuard.ears,
+      )
+    }
 
     const transition = assertIntakeTransition({
       act,
@@ -659,6 +715,42 @@ export async function transitionIntakeItem(
       .returning()
     return intakeItemToView(updated)
   })
+}
+
+/** Public generic transitions cannot skip request submission, decision or verifier acts. */
+export async function transitionIntakeItemPublic(
+  actor: FinanceActor,
+  id: number,
+  act: FinanceIntakeTransitionAct,
+  options: { reason?: string | null } = {},
+): Promise<FinanceIntakeItemView | null> {
+  const facade =
+    act === 'approve'
+      ? 'approveExpenseRequest'
+      : act === 'refuse'
+        ? 'refuseExpenseRequest'
+        : act === 'submit'
+          ? 'submitExpenseRequest'
+          : act === 'cancel'
+            ? 'cancelExpenseRequest'
+            : 'expense-request facade'
+  return transitionIntakeItem(actor, id, act, {
+    ...options,
+    publicRequestGuard: { facade, ears: act === 'approve' ? 510 : 508 },
+  })
+}
+
+function assertDirectIntakeSource(
+  source: FinanceIntakeSource,
+  facade: string,
+  ears: 508 | 510,
+): void {
+  if (source === 'request') {
+    throw new FinanceRefusal(
+      `Заявка на расход изменяется только через ${facade}; generic intake API не обходит ` +
+        `request validator или verifier (EARS-${ears}/531).`,
+    )
+  }
 }
 
 function assertTransitionGate(
