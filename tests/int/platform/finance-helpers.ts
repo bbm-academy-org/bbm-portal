@@ -3,11 +3,11 @@ import { sql } from 'drizzle-orm'
 import {
   createAccount,
   createCurrency,
-  createIntakeItem,
   createPurpose,
   type FinanceActor,
   type FinanceIntakeItemView,
 } from '@/lib/finance'
+import { createIntakeItem } from '@/lib/finance/intake/items'
 import {
   platformTransaction,
   type AuditContext,

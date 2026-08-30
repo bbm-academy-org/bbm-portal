@@ -5,17 +5,19 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   createAccount,
   createCurrency,
-  createIntakeItem,
-  createIntakeItems,
   createPurpose,
-  editIntakeItem,
   FinanceAccessRefusal,
   FinanceIntakeDuplicate,
   FinanceRefusal,
   getIntakeItem,
   listIntakeItems,
-  transitionIntakeItem,
 } from '@/lib/finance'
+import {
+  createIntakeItem,
+  createIntakeItems,
+  editIntakeItem,
+  transitionIntakeItem,
+} from '@/lib/finance/intake/items'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import {
