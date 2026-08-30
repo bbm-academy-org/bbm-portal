@@ -22,7 +22,7 @@ afterAll(async () => {
 })
 
 describe('EARS-325: current-money public read model', () => {
-  it('reads immutable postings and steps into the exact complete RUB and incomplete THB views', async () => {
+  it('reads immutable postings and steps into exact complete RUB, USD and THB views', async () => {
     for (const input of [
       { code: 'RUB', name: 'Рубль', precision: 2 },
       { code: 'USD', name: 'Доллар США', precision: 2 },
@@ -122,6 +122,7 @@ describe('EARS-325: current-money public read model', () => {
       status: 'complete',
       total: 201_000_000n,
       missingCurrencies: [],
+      availableReportingCurrencies: ['RUB', 'USD', 'THB'],
     })
     expect(
       rub.accounts.map(({ name, balance, currency }) => ({ name, balance, currency })),
@@ -132,11 +133,17 @@ describe('EARS-325: current-money public read model', () => {
       { name: 'Карта THB', balance: 14_000_000n, currency: 'THB' },
     ])
 
+    await expect(currentMoneyOverview('USD')).resolves.toMatchObject({
+      reportingCurrency: 'USD',
+      status: 'complete',
+      total: 3_182_500n,
+      missingCurrencies: [],
+    })
     await expect(currentMoneyOverview('THB')).resolves.toMatchObject({
       reportingCurrency: 'THB',
-      status: 'incomplete',
-      total: null,
-      missingCurrencies: ['RUB', 'USD'],
+      status: 'complete',
+      total: 111_387_500n,
+      missingCurrencies: [],
     })
   })
 })

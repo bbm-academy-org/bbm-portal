@@ -103,7 +103,7 @@ describe('/p/finance F1b overview (spec 338 EARS-325)', () => {
     expect(html).toContain('5 500,00')
     expect(html).toContain('2 010 000,00')
     expect(html).toContain('RUB')
-    expect(html).toContain('По записанной стоимости')
+    expect(html).toContain('По фактическим курсам операций')
     expect(html).toContain('selector:RUB:RUB,USD,THB')
     for (const deferred of ['P&amp;L', 'Обязательства', 'Заявки', 'Сверка', 'Сценарии']) {
       expect(html).not.toContain(deferred)

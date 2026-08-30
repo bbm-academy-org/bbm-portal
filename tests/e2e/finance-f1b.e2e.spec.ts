@@ -131,7 +131,7 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     }
   })
 
-  test('EARS-317/325: representative money has an exact RUB total and an honest incomplete THB view', async ({
+  test('EARS-317/325: representative money has exact switchable RUB, USD and THB totals', async ({
     page,
   }) => {
     test.skip(
@@ -154,15 +154,19 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     const total = page.getByRole('group', { name: 'Итого' })
     await expect(total).toContainText('2 010 000,00')
     await expect(total).toContainText('RUB')
-    await expect(total).toContainText('По записанной стоимости')
+    await expect(total).toContainText('По фактическим курсам операций')
+
+    await page.getByRole('combobox', { name: 'Валюта итога' }).click()
+    await page.getByRole('option', { name: /USD/ }).click()
+    await expect(page).toHaveURL(/\/p\/finance\?currency=USD$/)
+    await expect(page.getByRole('group', { name: 'Итого' })).toContainText('31 825,00')
+    await expect(page.getByRole('group', { name: 'Итого' })).toContainText('USD')
 
     await page.getByRole('combobox', { name: 'Валюта итога' }).click()
     await page.getByRole('option', { name: /THB/ }).click()
     await expect(page).toHaveURL(/\/p\/finance\?currency=THB$/)
-    await expect(page.getByRole('group', { name: 'Итого' })).toContainText(
-      'Итого пока не рассчитано',
-    )
-    await expect(page.getByRole('group', { name: 'Итого' })).toContainText('RUB, USD')
+    await expect(page.getByRole('group', { name: 'Итого' })).toContainText('1 113 875,00')
+    await expect(page.getByRole('group', { name: 'Итого' })).toContainText('THB')
 
     for (const account of ['Основной банк', 'Наличные RUB', 'Корпоративная карта', 'Карта THB']) {
       await expect(page.getByRole('group', { name: account })).toBeVisible()

@@ -28,6 +28,11 @@ export default async function FinancePage({
   const precisionByCurrency = new Map(
     currencies.map((currency) => [currency.code, currency.precision]),
   )
+  const currencyByCode = new Map(currencies.map((currency) => [currency.code, currency]))
+  const availableCurrencies = overview.availableReportingCurrencies.map((code) => {
+    const currency = currencyByCode.get(code)
+    return { code, name: currency?.name ?? code }
+  })
 
   return (
     <section aria-labelledby="finance-heading" className="space-y-6">
@@ -86,7 +91,7 @@ export default async function FinancePage({
                 <p className="text-xs font-medium text-muted-foreground">Итого</p>
                 <ReportingCurrencySelect
                   value={overview.reportingCurrency}
-                  currencies={currencies.map(({ code, name }) => ({ code, name }))}
+                  currencies={availableCurrencies}
                 />
               </div>
 
@@ -102,7 +107,7 @@ export default async function FinancePage({
                     <Badge variant="outline">{overview.reportingCurrency}</Badge>
                   </div>
                   <p className="mt-2 text-xs font-medium text-foreground">
-                    По записанной стоимости
+                    По фактическим курсам операций
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Из операций и конвертаций; текущий рыночный курс не используется.

@@ -31,107 +31,36 @@ export type CurrentMoneyOperationFact = {
   postings: CurrentMoneyPostingFact[]
 }
 
-export type CurrentMoneyPool = {
-  quantity: bigint
-  cost: bigint | null
-  known: boolean
-}
+export type CurrentMoneyPool =
+  | { status: 'empty' }
+  | {
+      status: 'available'
+      heldCurrency: string
+      heldQuantity: bigint
+      costCurrency: string
+      heldCost: bigint
+    }
+  | { status: 'unavailable' }
 
 export type CurrentMoneyValuation = {
   accounts: CurrentMoneyAccount[]
   reportingCurrency: string
+  availableReportingCurrencies: string[]
   status: 'complete' | 'incomplete'
   total: bigint | null
   missingCurrencies: string[]
-  currencyPools: Record<string, CurrentMoneyPool>
 }
 
-type MutablePool = CurrentMoneyPool & { invalid: boolean }
+type Ratio = { numerator: bigint; denominator: bigint }
+type GraphEdge = Ratio & { to: string }
+type RateGraph = Map<string, GraphEdge[]>
+
+function compareCodes(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
 
 function operationOrder(a: CurrentMoneyOperationFact, b: CurrentMoneyOperationFact): number {
-  return a.occurredOn.localeCompare(b.occurredOn) || a.operationId - b.operationId
-}
-
-function poolFor(pools: Map<string, MutablePool>, currency: string): MutablePool {
-  let pool = pools.get(currency)
-  if (pool === undefined) {
-    pool = { quantity: 0n, cost: 0n, known: true, invalid: false }
-    pools.set(currency, pool)
-  }
-  return pool
-}
-
-function resetIfEmpty(pool: MutablePool): void {
-  if (pool.quantity === 0n) {
-    pool.cost = 0n
-    pool.known = true
-  }
-}
-
-function markInvalid(pools: Map<string, MutablePool>, currencies: Iterable<string>): void {
-  for (const currency of currencies) poolFor(pools, currency).invalid = true
-}
-
-function removeForeign(
-  pools: Map<string, MutablePool>,
-  currency: string,
-  quantity: bigint,
-): bigint | null {
-  const pool = poolFor(pools, currency)
-  if (quantity <= 0n || pool.quantity <= 0n || quantity > pool.quantity) {
-    pool.invalid = true
-    pool.quantity -= quantity
-    pool.cost = null
-    pool.known = false
-    return null
-  }
-
-  const removedCost =
-    pool.known && pool.cost !== null ? costBasisAtAverage(quantity, pool.cost, pool.quantity) : null
-  pool.quantity -= quantity
-  if (removedCost === null) {
-    pool.cost = null
-    pool.known = false
-  } else {
-    pool.cost = (pool.cost ?? 0n) - removedCost
-  }
-  resetIfEmpty(pool)
-  return removedCost
-}
-
-function addForeign(
-  pools: Map<string, MutablePool>,
-  currency: string,
-  quantity: bigint,
-  transferredCost: bigint | null,
-): void {
-  const pool = poolFor(pools, currency)
-  resetIfEmpty(pool)
-  if (quantity <= 0n) {
-    pool.invalid = true
-    return
-  }
-  pool.quantity += quantity
-  if (!pool.known || pool.cost === null || transferredCost === null) {
-    pool.cost = null
-    pool.known = false
-    return
-  }
-  pool.cost += transferredCost
-}
-
-function ordinaryMovement(
-  pools: Map<string, MutablePool>,
-  reportingCurrency: string,
-  currency: string,
-  movement: bigint,
-): void {
-  if (movement === 0n || currency === reportingCurrency) return
-  if (movement > 0n) {
-    addForeign(pools, currency, movement, null)
-    return
-  }
-  removeForeign(pools, currency, -movement)
+  return compareCodes(a.occurredOn, b.occurredOn) || a.operationId - b.operationId
 }
 
 function activeOperations(operations: CurrentMoneyOperationFact[]): CurrentMoneyOperationFact[] {
@@ -144,168 +73,276 @@ function activeOperations(operations: CurrentMoneyOperationFact[]): CurrentMoney
   return operations.filter((operation) => !excluded.has(operation.operationId)).sort(operationOrder)
 }
 
-function operationCurrencies(operation: CurrentMoneyOperationFact): Set<string> {
-  return new Set([
-    ...operation.steps.flatMap((step) => [step.fromCurrency, step.toCurrency]),
-    ...operation.postings.map((posting) => posting.currency),
-  ])
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}\0${b}` : `${b}\0${a}`
 }
 
-function replayConversion(
-  operation: CurrentMoneyOperationFact,
-  pools: Map<string, MutablePool>,
-  reportingCurrency: string,
-): void {
-  const touched = operationCurrencies(operation)
-  const orderedSteps = [...operation.steps].sort((a, b) => a.stepNo - b.stepNo)
-  const endpoints: Array<{ currency: string; amount: bigint }> = []
-
-  for (const step of orderedSteps) {
-    const exchange = operation.postings.filter(
-      (posting) =>
-        posting.isSystem &&
-        posting.accountKind === 'conversion' &&
-        posting.conversionStepNo === step.stepNo,
-    )
-    const fromNet = exchange
-      .filter((posting) => posting.currency === step.fromCurrency)
-      .reduce((sum, posting) => sum + posting.amount, 0n)
-    const toNet = exchange
-      .filter((posting) => posting.currency === step.toCurrency)
-      .reduce((sum, posting) => sum + posting.amount, 0n)
-    const hasOtherCurrency = exchange.some(
-      (posting) => posting.currency !== step.fromCurrency && posting.currency !== step.toCurrency,
-    )
-    if (fromNet <= 0n || toNet >= 0n || hasOtherCurrency) {
-      markInvalid(pools, touched)
-      continue
-    }
-
-    const disposed = fromNet
-    const received = -toNet
-    endpoints.push({ currency: step.fromCurrency, amount: -disposed })
-    endpoints.push({ currency: step.toCurrency, amount: received })
-
-    let transferredCost: bigint | null
-    if (step.fromCurrency === reportingCurrency) {
-      transferredCost = disposed
-    } else {
-      transferredCost = removeForeign(pools, step.fromCurrency, disposed)
-    }
-
-    if (step.toCurrency !== reportingCurrency) {
-      addForeign(pools, step.toCurrency, received, transferredCost)
-    }
-
-    const feePostings = operation.postings.filter(
-      (posting) => !posting.isSystem && posting.conversionStepNo === step.stepNo,
-    )
-    if (feePostings.length > 1 || feePostings.some((posting) => posting.amount >= 0n)) {
-      markInvalid(pools, touched)
-      continue
-    }
-    const fee = feePostings[0]
-    if (fee !== undefined) {
-      ordinaryMovement(pools, reportingCurrency, fee.currency, fee.amount)
-    }
-  }
-
-  const first = orderedSteps[0]
-  const last = orderedSteps.at(-1)
-  if (first === undefined || last === undefined) return
-  const expectedEndpoints = new Map<string, number>()
-  for (const endpoint of [endpoints[0], endpoints.at(-1)]) {
-    if (endpoint === undefined) continue
-    const key = `${endpoint.currency}:${endpoint.amount.toString()}`
-    expectedEndpoints.set(key, (expectedEndpoints.get(key) ?? 0) + 1)
-  }
-  for (const posting of operation.postings.filter(
-    (candidate) => !candidate.isSystem && candidate.conversionStepNo === null,
-  )) {
-    const key = `${posting.currency}:${posting.amount.toString()}`
-    const remaining = expectedEndpoints.get(key) ?? 0
-    if (remaining === 0) {
-      markInvalid(pools, touched)
-    } else {
-      expectedEndpoints.set(key, remaining - 1)
-    }
-  }
+function pairPool(pools: Map<string, CurrentMoneyPool>, key: string): CurrentMoneyPool {
+  const existing = pools.get(key)
+  if (existing !== undefined) return existing
+  const empty: CurrentMoneyPool = { status: 'empty' }
+  pools.set(key, empty)
+  return empty
 }
 
-function replayOrdinary(
+function markUnavailable(pools: Map<string, CurrentMoneyPool>, key: string): void {
+  pools.set(key, { status: 'unavailable' })
+}
+
+function replayStep(
   operation: CurrentMoneyOperationFact,
-  pools: Map<string, MutablePool>,
-  reportingCurrency: string,
+  step: CurrentMoneyConversionStepFact,
+  pools: Map<string, CurrentMoneyPool>,
 ): void {
-  const net = new Map<string, bigint>()
-  for (const posting of operation.postings) {
-    if (posting.isSystem) continue
-    net.set(posting.currency, (net.get(posting.currency) ?? 0n) + posting.amount)
+  const key = pairKey(step.fromCurrency, step.toCurrency)
+  const exchange = operation.postings.filter(
+    (posting) =>
+      posting.isSystem &&
+      posting.accountKind === 'conversion' &&
+      posting.conversionStepNo === step.stepNo,
+  )
+  const fromNet = exchange
+    .filter((posting) => posting.currency === step.fromCurrency)
+    .reduce((sum, posting) => sum + posting.amount, 0n)
+  const toNet = exchange
+    .filter((posting) => posting.currency === step.toCurrency)
+    .reduce((sum, posting) => sum + posting.amount, 0n)
+  const hasThirdCurrency = exchange.some(
+    (posting) => posting.currency !== step.fromCurrency && posting.currency !== step.toCurrency,
+  )
+
+  if (step.fromCurrency === step.toCurrency || fromNet <= 0n || toNet >= 0n || hasThirdCurrency) {
+    markUnavailable(pools, key)
+    return
   }
-  for (const currency of [...net.keys()].sort()) {
-    ordinaryMovement(pools, reportingCurrency, currency, net.get(currency) ?? 0n)
+
+  const current = pairPool(pools, key)
+  if (current.status === 'unavailable') return
+
+  const disposed = fromNet
+  const received = -toNet
+  if (current.status === 'empty') {
+    pools.set(key, {
+      status: 'available',
+      heldCurrency: step.toCurrency,
+      heldQuantity: received,
+      costCurrency: step.fromCurrency,
+      heldCost: disposed,
+    })
+    return
   }
+
+  if (current.heldCurrency === step.toCurrency) {
+    pools.set(key, {
+      ...current,
+      heldQuantity: current.heldQuantity + received,
+      heldCost: current.heldCost + disposed,
+    })
+    return
+  }
+
+  if (current.heldCurrency !== step.fromCurrency) {
+    markUnavailable(pools, key)
+    return
+  }
+
+  if (disposed < current.heldQuantity) {
+    const removedCost = costBasisAtAverage(disposed, current.heldCost, current.heldQuantity)
+    pools.set(key, {
+      ...current,
+      heldQuantity: current.heldQuantity - disposed,
+      heldCost: current.heldCost - removedCost,
+    })
+    return
+  }
+
+  if (disposed === current.heldQuantity) {
+    pools.set(key, { status: 'empty' })
+    return
+  }
+
+  const attributedReceived = costBasisAtAverage(current.heldQuantity, received, disposed)
+  const residualQuantity = received - attributedReceived
+  const residualCost = disposed - current.heldQuantity
+  if (residualQuantity <= 0n || residualCost <= 0n) {
+    markUnavailable(pools, key)
+    return
+  }
+  pools.set(key, {
+    status: 'available',
+    heldCurrency: step.toCurrency,
+    heldQuantity: residualQuantity,
+    costCurrency: step.fromCurrency,
+    heldCost: residualCost,
+  })
+}
+
+function replayPairPools(operations: CurrentMoneyOperationFact[]): Map<string, CurrentMoneyPool> {
+  const pools = new Map<string, CurrentMoneyPool>()
+  for (const operation of activeOperations(operations)) {
+    for (const step of [...operation.steps].sort((a, b) => a.stepNo - b.stepNo)) {
+      replayStep(operation, step, pools)
+    }
+  }
+  return pools
+}
+
+function addEdge(graph: RateGraph, from: string, edge: GraphEdge): void {
+  const adjacent = graph.get(from) ?? []
+  adjacent.push(edge)
+  adjacent.sort((a, b) => compareCodes(a.to, b.to))
+  graph.set(from, adjacent)
+}
+
+function rateGraph(pools: Map<string, CurrentMoneyPool>): RateGraph {
+  const graph: RateGraph = new Map()
+  for (const pool of pools.values()) {
+    if (pool.status !== 'available' || pool.heldQuantity <= 0n || pool.heldCost <= 0n) continue
+    addEdge(graph, pool.heldCurrency, {
+      to: pool.costCurrency,
+      numerator: pool.heldCost,
+      denominator: pool.heldQuantity,
+    })
+    addEdge(graph, pool.costCurrency, {
+      to: pool.heldCurrency,
+      numerator: pool.heldQuantity,
+      denominator: pool.heldCost,
+    })
+  }
+  return graph
+}
+
+function greatestCommonDivisor(a: bigint, b: bigint): bigint {
+  let left = a < 0n ? -a : a
+  let right = b < 0n ? -b : b
+  while (right !== 0n) {
+    const remainder = left % right
+    left = right
+    right = remainder
+  }
+  return left
+}
+
+function multiplyRatios(left: Ratio, right: Ratio): Ratio {
+  const numerator = left.numerator * right.numerator
+  const denominator = left.denominator * right.denominator
+  const divisor = greatestCommonDivisor(numerator, denominator)
+  return { numerator: numerator / divisor, denominator: denominator / divisor }
+}
+
+function comparePaths(a: string[], b: string[]): number {
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    const comparison = compareCodes(a[index] ?? '', b[index] ?? '')
+    if (comparison !== 0) return comparison
+  }
+  return a.length - b.length
+}
+
+function findRatio(graph: RateGraph, from: string, to: string): Ratio | null {
+  if (from === to) return { numerator: 1n, denominator: 1n }
+
+  let frontier: Array<{ path: string[]; ratio: Ratio }> = [
+    { path: [from], ratio: { numerator: 1n, denominator: 1n } },
+  ]
+  while (frontier.length > 0) {
+    const next: typeof frontier = []
+    for (const candidate of frontier) {
+      const last = candidate.path.at(-1)
+      if (last === undefined) continue
+      for (const edge of graph.get(last) ?? []) {
+        if (candidate.path.includes(edge.to)) continue
+        next.push({
+          path: [...candidate.path, edge.to],
+          ratio: multiplyRatios(candidate.ratio, edge),
+        })
+      }
+    }
+    next.sort((a, b) => comparePaths(a.path, b.path))
+    const match = next.find((candidate) => candidate.path.at(-1) === to)
+    if (match !== undefined) return match.ratio
+    frontier = next
+  }
+  return null
+}
+
+function roundHalfAwayFromZero(numerator: bigint, denominator: bigint): bigint {
+  const negative = numerator < 0n !== denominator < 0n
+  const absoluteNumerator = numerator < 0n ? -numerator : numerator
+  const absoluteDenominator = denominator < 0n ? -denominator : denominator
+  const rounded = (2n * absoluteNumerator + absoluteDenominator) / (2n * absoluteDenominator)
+  return negative ? -rounded : rounded
+}
+
+function aggregateBalances(accounts: CurrentMoneyAccount[]): Map<string, bigint> {
+  const aggregates = new Map<string, bigint>()
+  for (const account of accounts) {
+    aggregates.set(account.currency, (aggregates.get(account.currency) ?? 0n) + account.balance)
+  }
+  return aggregates
+}
+
+function reportingCurrencyCandidates(accounts: CurrentMoneyAccount[]): string[] {
+  const candidates = ['RUB']
+  const seen = new Set(candidates)
+  for (const account of accounts) {
+    if (seen.has(account.currency)) continue
+    seen.add(account.currency)
+    candidates.push(account.currency)
+  }
+  return candidates
+}
+
+function availableReportingCurrencies(
+  accounts: CurrentMoneyAccount[],
+  aggregates: Map<string, bigint>,
+  graph: RateGraph,
+): string[] {
+  const candidates = reportingCurrencyCandidates(accounts)
+  const nonzeroAggregates = [...aggregates.entries()].filter(([, balance]) => balance !== 0n)
+  if (nonzeroAggregates.length === 0) return candidates
+
+  return candidates.filter(
+    (candidate) =>
+      candidate === 'RUB' ||
+      nonzeroAggregates.every(
+        ([currency]) => currency === candidate || findRatio(graph, currency, candidate) !== null,
+      ),
+  )
 }
 
 /** Pure EARS-325 replay; the DB read side supplies immutable facts and final balances. */
 export function evaluateCurrentMoney(input: {
-  reportingCurrency: string
+  reportingCurrency?: string
   accounts: CurrentMoneyAccount[]
   operations: CurrentMoneyOperationFact[]
 }): CurrentMoneyValuation {
-  const pools = new Map<string, MutablePool>()
-  for (const account of input.accounts) {
-    if (account.currency !== input.reportingCurrency) poolFor(pools, account.currency)
-  }
+  const graph = rateGraph(replayPairPools(input.operations))
+  const aggregates = aggregateBalances(input.accounts)
+  const available = availableReportingCurrencies(input.accounts, aggregates, graph)
+  const requestedCurrency = input.reportingCurrency ?? 'RUB'
+  const reportingCurrency = available.includes(requestedCurrency) ? requestedCurrency : 'RUB'
 
-  for (const operation of activeOperations(input.operations)) {
-    if (operation.steps.length === 0) {
-      replayOrdinary(operation, pools, input.reportingCurrency)
-    } else {
-      replayConversion(operation, pools, input.reportingCurrency)
-    }
-  }
-
-  const aggregates = new Map<string, bigint>()
-  for (const account of input.accounts) {
-    aggregates.set(account.currency, (aggregates.get(account.currency) ?? 0n) + account.balance)
-  }
-
-  let total = aggregates.get(input.reportingCurrency) ?? 0n
+  let total = 0n
   const missingCurrencies: string[] = []
   for (const [currency, balance] of [...aggregates.entries()].sort(([a], [b]) =>
-    a.localeCompare(b),
+    compareCodes(a, b),
   )) {
-    if (currency === input.reportingCurrency || balance === 0n) continue
-    const pool = poolFor(pools, currency)
-    if (
-      balance < 0n ||
-      pool.invalid ||
-      !pool.known ||
-      pool.cost === null ||
-      pool.quantity !== balance
-    ) {
+    if (balance === 0n) continue
+    const ratio = findRatio(graph, currency, reportingCurrency)
+    if (ratio === null) {
       missingCurrencies.push(currency)
       continue
     }
-    total += pool.cost
+    total += roundHalfAwayFromZero(balance * ratio.numerator, ratio.denominator)
   }
 
-  const currencyPools = Object.fromEntries(
-    [...pools.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([currency, pool]) => [
-        currency,
-        { quantity: pool.quantity, cost: pool.cost, known: pool.known },
-      ]),
-  )
   const complete = missingCurrencies.length === 0
   return {
     accounts: input.accounts,
-    reportingCurrency: input.reportingCurrency,
+    reportingCurrency,
+    availableReportingCurrencies: available,
     status: complete ? 'complete' : 'incomplete',
     total: complete ? total : null,
     missingCurrencies,
-    currencyPools,
   }
 }
