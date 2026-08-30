@@ -127,7 +127,7 @@ export {
   listIntakeItems,
   transitionIntakeItem,
 } from './intake/items'
-export { postIntakeItem } from './intake/posting'
+export { postIntakeItemPublic as postIntakeItem } from './intake/posting'
 export type {
   CreateIntakeItemInput,
   EditIntakeItemPatch,

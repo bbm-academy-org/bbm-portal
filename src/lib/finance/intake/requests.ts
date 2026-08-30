@@ -384,11 +384,13 @@ async function verifyAndPostExpenseRequest(
   options: ConfirmExpenseRequestOptions & { approveSubmittedRequest?: boolean },
 ): Promise<FinanceIntakeItemView> {
   const verifier = options.verifier ?? humanFinanceDocumentVerifier
-  const expectedSnapshot = createIntakePostingSnapshot(request, documents)
+  const effectiveRequest =
+    options.occurredOn === undefined ? request : { ...request, occurredOn: options.occurredOn }
+  const expectedSnapshot = createIntakePostingSnapshot(effectiveRequest, documents)
   if (verifier.id.trim() === '') {
     throw new FinanceRefusal('Document verifier обязан иметь непустой id (EARS-531).')
   }
-  const verification = await verifier.verify({ actor, request, documents })
+  const verification = await verifier.verify({ actor, request: effectiveRequest, documents })
   if (verification.verdict !== 'verified') {
     throw new FinanceRefusal(
       `Verifier «${verifier.id}» не подтвердил заявку #${request.id}: ${verification.reason}. ` +

@@ -97,7 +97,7 @@ export function createIntakePostingSnapshot(
   })
 }
 
-export type PostIntakeItemOptions = {
+type PostIntakeItemOptions = {
   /**
    * The actual money date supplied by EARS-511's confirmation act. It is
    * written with the posting in this transaction, so the sanctioned approved
@@ -122,6 +122,12 @@ export async function postIntakeItem(
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const item = await lockIntakeItem(tx, itemId)
+    if (item.source === 'request' && options.expectedSnapshot === undefined) {
+      throw new FinanceRefusal(
+        `Заявка #${item.id} проводится только по снимку, который подтвердил document verifier ` +
+          '(EARS-531).',
+      )
+    }
     const approveAndPost = options.approveSubmittedRequest === true
     const expectedStatus = approveAndPost ? 'submitted' : 'approved'
     if (item.status !== expectedStatus) {
@@ -151,16 +157,16 @@ export async function postIntakeItem(
         )
       }
     }
-    if (options.expectedSnapshot !== undefined) {
-      await assertIntakePostingSnapshot(tx, intakeItemToView(item), options.expectedSnapshot)
-    }
-    await assertRequestPurposeReady(tx, item.id)
-    await requireReadyDocument(tx, item.id)
-    const postedBy = await requireActorMemberId(tx, actor)
     const postingItem = {
       ...item,
       occurredOn: options.occurredOn ?? item.occurredOn,
     } as PostingItem
+    if (options.expectedSnapshot !== undefined) {
+      await assertIntakePostingSnapshot(tx, intakeItemToView(postingItem), options.expectedSnapshot)
+    }
+    await assertRequestPurposeReady(tx, item.id)
+    await requireReadyDocument(tx, item.id)
+    const postedBy = await requireActorMemberId(tx, actor)
     const operation = await recordItemOperation(tx, postingItem)
     const postedAt = new Date()
     const [updated] = await tx
@@ -177,6 +183,14 @@ export async function postIntakeItem(
       .returning()
     return intakeItemToView(updated)
   })
+}
+
+/** Public posting keeps request confirmation behind the verifier-owned workflow. */
+export function postIntakeItemPublic(
+  actor: FinanceActor,
+  itemId: number,
+): Promise<FinanceIntakeItemView> {
+  return postIntakeItem(actor, itemId)
 }
 
 /** Re-check the verifier's optimistic snapshot while the intake row lock is held. */
