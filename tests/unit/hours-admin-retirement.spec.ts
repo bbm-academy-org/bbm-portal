@@ -11,7 +11,7 @@ describe('legacy hours admin retirement (spec 311 EARS-421, EARS-452)', () => {
     expect(existsSync(join(root, 'src/app/(platform)/p/hours/admin/export/route.ts'))).toBe(false)
   })
 
-  it('EARS-421 / donor EARS-32: removes the temporary HOURS_ADMIN_EMAILS authority everywhere', () => {
+  it('EARS-421/32: removes the temporary HOURS_ADMIN_EMAILS authority everywhere', () => {
     const files = [
       '.env.example',
       'deploy/.env.prod.example',
