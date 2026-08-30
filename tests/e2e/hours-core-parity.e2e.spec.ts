@@ -264,12 +264,20 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
       await page.goto('/p/admin/hours/publication')
       await page.getByLabel('Период').click()
       await page.getByRole('option', { name: label }).click()
+      const disclosure = page.locator('[data-slot="card"]', {
+        has: page.getByText('Верификация в Mattermost', { exact: true }),
+      })
+      await expect(disclosure).toContainText('1 сохранённая оценка')
+      await expect(disclosure).not.toContainText(adminUsername!)
+      await disclosure.getByRole('button', { name: 'Предпросмотр сообщений' }).click()
       const preview = page.locator('[data-slot="card"]', {
         has: page.getByText('Предпросмотр', { exact: true }),
       })
       await expect(preview).toContainText(adminUsername!)
       await expect(preview.getByText('Готово', { exact: true })).toBeVisible()
-      await expect(preview.getByRole('button', { name: 'Опубликовать в Mattermost' })).toBeEnabled()
+      await expect(
+        preview.getByRole('button', { name: 'Отправить 1 сообщение в „BBM Финансы“' }),
+      ).toBeEnabled()
       expect(publicationPosts, 'the acceptance pre-pass must stop before actual delivery').toBe(0)
     } finally {
       if (periodId) {
