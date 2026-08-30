@@ -16,7 +16,7 @@ import { isAllowedE2EIdpOrigin } from './support/idp-origin'
  *   1. participant: `/p/hours` renders the participants table and the open-period
  *      calculator; a self-assessment saves and appears in the summary
  *      (acceptance scenario 1 of the spec — EARS-1, EARS-10, EARS-21);
- *   2. admin: `/p/hours/admin` upserts a participant from a brand-new email with a
+ *   2. admin: `/p/admin/hours/participants/create` upserts a participant from a brand-new email with a
  *      NAME ONLY, and the row appears — which is the same statement as «a `member`
  *      was created inside that save» (acceptance scenario 2 — EARS-9).
  *
@@ -153,22 +153,28 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
     )
     test.slow()
 
-    await signIn(page, '/p/hours/admin', { username: adminUsername!, password: adminPassword! })
-    await expect(page.locator(HOURS_ROOT)).toBeVisible()
+    await signIn(page, '/p/admin/hours/participants/create', {
+      username: adminUsername!,
+      password: adminPassword!,
+    })
+    await expect(page.getByRole('heading', { name: 'Новый участник' })).toBeVisible()
 
     // A fake, obviously non-human email, unique per run: the surfaces support no
     // deletion (081 §16), so the row this creates is expected to stay behind.
     const email = `e2e-parity-${Date.now()}@bbm.academy`
     const name = 'E2E Проверка Паритета'
 
-    await page.locator('input[name="email"]:not([readonly])').first().fill(email)
-    await page.locator('input[name="name"]').first().fill(name)
-    await page.getByRole('button', { name: 'Сохранить участника' }).click()
+    await page.getByLabel('Email').fill(email)
+    await page.getByLabel('Имя').fill(name)
+    await page.getByRole('button', { name: 'Создать участника' }).click()
 
     // The row appearing IS the statement that a `core.member` now exists for that
     // email — the participant row's PK is the FK to the registry (EARS-9).
-    const row = page.locator('.hours-participants-table tbody tr').filter({ hasText: name })
+    await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByDisplayValue(email)).toHaveAttribute('readonly')
+    await page.goto('/p/admin/hours/participants')
+    await page.getByRole('searchbox', { name: 'Поиск участников' }).fill(email)
+    const row = page.getByRole('row').filter({ hasText: name })
     await expect(row).toHaveCount(1, { timeout: 30_000 })
-    await expect(page.getByRole('button', { name: `Изменить ${name}` })).toBeVisible()
   })
 })

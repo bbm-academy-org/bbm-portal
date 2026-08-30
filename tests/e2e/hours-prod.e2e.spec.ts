@@ -9,9 +9,8 @@ import { isAllowedE2EIdpOrigin } from './support/idp-origin'
  *
  * Автоматизируется только то, что можно проверить без изменения прод-данных:
  *   - сценарий 1 (логин): анониму контент не отдаётся;
- *   - сценарий 9 (не-админ): админка и выгрузка JSON закрыты — здесь в самом
- *     жёстком виде, для полностью анонимного вызова, который проходит мимо
- *     layout'а группы (route handler своим гейтом отвечает сам);
+ *   - сценарий 9/311 EARS-452: old admin URLs are hard 404, while the new JSON
+ *     handler refuses an anonymous caller itself;
  *   - сценарий 11 (CMS-поверхность): cms.bbm.academy/p/hours отвечает 404.
  * Сохранение оценки, открытие/закрытие периода и заведение участника —
  * мутации прод-данных: это шаги ЖИВОЙ приёмки владельцем, а не автотест.
@@ -99,15 +98,17 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
     await expect(page.getByText(HOURS_HEADING)).toHaveCount(0)
   })
 
-  test('сценарий 9: админка и выгрузка JSON закрыты для не-админа', async ({ page }) => {
-    // Страница админки — за OIDC-гейтом группы: анонима уносит на логин.
-    await page.goto(`${portalBase}/p/hours/admin`, { waitUntil: 'domcontentloaded' })
-    expect(new URL(page.url()).pathname).not.toBe('/p/hours/admin')
-    await expect(page.locator(HOURS_ROOT)).toHaveCount(0)
+  test('сценарий 9: old admin URLs are 404 and the new export re-checks the claim', async ({
+    page,
+  }) => {
+    for (const path of ['/p/hours/admin', '/p/hours/admin/export']) {
+      const response = await page.request.get(`${portalBase}${path}`, { maxRedirects: 0 })
+      expect(response.status(), `${path} must be deleted, not redirected`).toBe(404)
+    }
 
-    // Выгрузка — route handler: он идёт МИМО layout'а, поэтому обязан
-    // отказывать сам. Ни при каких условиях не 200 с данными.
-    const res = await page.request.get(`${portalBase}/p/hours/admin/export`, { maxRedirects: 0 })
+    const res = await page.request.get(`${portalBase}/api/p/hours/admin/export`, {
+      maxRedirects: 0,
+    })
     expect(res.status(), 'выгрузка JSON не должна открываться анониму').not.toBe(200)
     const body = await res.text().catch(() => '')
     expect(body).not.toContain('"participants"')
@@ -115,7 +116,12 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
   })
 
   test('сценарий 11: CMS-хост не знает про /p/hours', async ({ page }) => {
-    for (const path of ['/p/hours', '/p/hours/admin', '/p/hours/admin/export']) {
+    for (const path of [
+      '/p/hours',
+      '/p/hours/admin',
+      '/p/hours/admin/export',
+      '/api/p/hours/admin/periods',
+    ]) {
       const res = await page.request.get(`${cmsBase}${path}`, { maxRedirects: 0 })
       expect(res.status(), `${cmsBase}${path}`).toBe(404)
     }
@@ -137,7 +143,9 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
     expect(person.trim().length, 'под заголовком обязано стоять имя или email').toBeGreaterThan(0)
   })
 
-  test('spec 102: grouped admin table fits both approved desktop viewports', async ({ page }) => {
+  test('spec 311: rates table and edit page work at both accepted desktop viewports', async ({
+    page,
+  }) => {
     test.skip(
       !hoursAdminUsername || !hoursAdminPassword,
       'set E2E_HOURS_ADMIN_USERNAME / E2E_HOURS_ADMIN_PASSWORD to run',
@@ -145,7 +153,7 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
     test.slow()
 
     await page.setViewportSize({ width: 1189, height: 838 })
-    await signIn(page, '/p/hours/admin', {
+    await signIn(page, '/p/admin/hours/participants', {
       username: hoursAdminUsername!,
       password: hoursAdminPassword!,
     })
@@ -157,14 +165,14 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
       await page.setViewportSize(viewport)
       await page.reload({ waitUntil: 'domcontentloaded' })
 
-      const wrapper = page.locator('.hours-table-scroll').first()
-      const table = wrapper.locator('table')
-      await expect(table.getByRole('columnheader', { name: 'Ставка, ₽/ч' })).toBeVisible()
-      await expect(table.getByRole('columnheader', { name: 'Правка' })).toBeVisible()
+      const table = page.getByRole('table')
+      await expect(table.getByRole('columnheader', { name: 'Вилка' })).toBeVisible()
+      await expect(table.getByRole('columnheader', { name: 'Ставка' })).toBeVisible()
+      await expect(table.getByRole('columnheader', { name: 'Действие' })).toBeVisible()
 
       const overflow = await page.evaluate(() => {
-        const wrapper = document.querySelector('.hours-table-scroll') as HTMLElement
-        const table = wrapper.querySelector('table') as HTMLElement
+        const table = document.querySelector('table') as HTMLElement
+        const wrapper = table.parentElement as HTMLElement
         return {
           wrapper: [wrapper.scrollWidth, wrapper.clientWidth],
           table: [table.scrollWidth, table.clientWidth],
@@ -180,53 +188,10 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
       expect(overflow.document[0], `${viewport.width}px document overflow`).toBeLessThanOrEqual(
         overflow.document[1],
       )
-
-      const longestRole = page.locator('.hours-participant-role').filter({ hasText: /\S/ })
-      await expect(longestRole.first()).toBeVisible()
-      const roleGeometry = await longestRole.evaluateAll((roles) => {
-        const role = roles.reduce((longest, candidate) =>
-          (candidate.textContent?.length ?? 0) > (longest.textContent?.length ?? 0)
-            ? candidate
-            : longest,
-        ) as HTMLElement
-        const style = getComputedStyle(role)
-        const range = document.createRange()
-        range.selectNodeContents(role)
-        const textLines = new Set(
-          [...range.getClientRects()].map((rect) => Math.round(rect.top * 10) / 10),
-        ).size
-        const lineHeight = Number.parseFloat(style.lineHeight)
-        const visibleLines = Number.isFinite(lineHeight)
-          ? Math.max(1, Math.round(role.getBoundingClientRect().height / lineHeight))
-          : textLines
-        return {
-          whiteSpace: style.whiteSpace,
-          overflowWrap: style.overflowWrap,
-          textOverflow: style.textOverflow,
-          overflowX: style.overflowX,
-          textLines,
-          visibleLines,
-          clippedVertically: role.scrollHeight > role.clientHeight + 1,
-        }
-      })
-      expect(roleGeometry.whiteSpace, `${viewport.width}px role white-space`).toBe('normal')
-      expect(roleGeometry.overflowWrap, `${viewport.width}px role wrapping`).toBe('anywhere')
-      expect(roleGeometry.textOverflow, `${viewport.width}px role ellipsis`).not.toBe('ellipsis')
-      expect(roleGeometry.overflowX, `${viewport.width}px role clipping`).toBe('visible')
-      expect(roleGeometry.textLines, `${viewport.width}px role line boxes`).toBeGreaterThanOrEqual(
-        1,
-      )
-      expect(roleGeometry.visibleLines, `${viewport.width}px visible role lines`).toBe(
-        roleGeometry.textLines,
-      )
-      if (roleGeometry.textLines > 1) {
-        expect(roleGeometry.visibleLines, `${viewport.width}px multiline role`).toBeGreaterThan(1)
-      }
-      expect(roleGeometry.clippedVertically, `${viewport.width}px vertical clipping`).toBe(false)
     }
 
-    const edit = page.getByRole('button', { name: /^Изменить / }).first()
+    const edit = page.getByRole('button', { name: 'Открыть' }).first()
     await edit.click()
-    await expect(page.locator('input[name="email"][readonly]')).not.toHaveValue('')
+    await expect(page.getByLabel('Email')).toHaveAttribute('readonly')
   })
 })
