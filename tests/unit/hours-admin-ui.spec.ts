@@ -242,7 +242,7 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     expect(within(assessments).queryByRole('button')).toBeNull()
   })
 
-  it('shows an eligible exact preview and publishes only after the explicit action', async () => {
+  it('EARS-447/450: keeps exact messages and the channel-specific send action behind explicit preview', async () => {
     const period = {
       id: '2026-08',
       label: 'Август 2026',
@@ -252,7 +252,38 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
       locked: false,
       publicationStatus: null,
       warnings: [],
-      assessments: [],
+      assessments: [
+        {
+          email: 'anna@bbm.academy',
+          name: 'Анна',
+          hours: 8,
+          method: 'period',
+          weekendHours: 0,
+          splitPercent: 20,
+          monthlyRate: 120_000,
+          hourlyRate: 750,
+          accrual: 6_000,
+          cashAmount: 4_800,
+          investAmount: 1_200,
+          weekdayCount: 20,
+          savedAt: '2026-08-31T10:00:00.000Z',
+        },
+        {
+          email: 'boris@bbm.academy',
+          name: 'Борис',
+          hours: 7,
+          method: 'period',
+          weekendHours: 0,
+          splitPercent: 20,
+          monthlyRate: 120_000,
+          hourlyRate: 750,
+          accrual: 5_250,
+          cashAmount: 4_200,
+          investAmount: 1_050,
+          weekdayCount: 20,
+          savedAt: '2026-08-31T10:01:00.000Z',
+        },
+      ],
     } satisfies HoursPeriodRecord
     const preview = {
       id: 'mattermost-publication',
@@ -262,6 +293,12 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
         {
           email: 'anna@bbm.academy',
           text: '**Верификация часов — Анна**',
+          delivery: null,
+          sentAt: null,
+        },
+        {
+          email: 'boris@bbm.academy',
+          text: '**Верификация часов — Борис**',
           delivery: null,
           sentAt: null,
         },
@@ -298,13 +335,23 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(React.createElement(HoursPublicationScreen))
 
+    expect(screen.getByText('2 сохранённые оценки')).toBeTruthy()
+    const disclose = screen.getByRole('button', { name: 'Предпросмотр сообщений' })
+    expect(screen.queryByText('**Верификация часов — Анна**')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Отправить .*BBM Финансы/ })).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    fireEvent.click(disclose)
     expect(await screen.findByText('**Верификация часов — Анна**')).toBeTruthy()
-    const publish = screen.getByRole('button', { name: 'Опубликовать в Mattermost' })
+    expect(screen.getByText('**Верификация часов — Борис**')).toBeTruthy()
+    const publish = screen.getByRole('button', {
+      name: 'Отправить 2 сообщения в „BBM Финансы“',
+    })
     expect(publish).toHaveProperty('disabled', false)
     fireEvent.click(publish)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST' })
-    expect(await screen.findByText('Опубликовано 1 сообщений в Mattermost.')).toBeTruthy()
+    expect(await screen.findByText('Опубликовано 2 сообщений в Mattermost.')).toBeTruthy()
   })
 
   it('refreshes persisted progress and keeps publish locked after a failed attempt', async () => {
