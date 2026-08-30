@@ -11,6 +11,7 @@ import {
   FinanceAccessRefusal,
   FinanceRefusal,
   financeAccountCreateSchema,
+  financeAccountRecordSchema,
   financeAccountUpdateSchema,
   financeCategoryCreateSchema,
   financeCategoryUpdateSchema,
@@ -49,11 +50,15 @@ import {
   type ModuleRouteHandler,
   type RouteSegment,
 } from '@/lib/platform/api'
+import { sessionRoles } from '@/lib/platform/authGate'
 
 type ResourceContext = ModuleRouteContext<unknown>
 
 function actor(ctx: ResourceContext): FinanceActor {
-  return { email: ctx.audit.actorEmail, roles: ctx.session.user?.roles ?? [] }
+  if (!ctx.audit.actorEmail) {
+    throw new ModuleApiError('forbidden', 'Не удалось определить автора изменения.')
+  }
+  return { email: ctx.audit.actorEmail, roles: sessionRoles(ctx.session) }
 }
 
 function iso(value: Date | null): string | null {
@@ -76,7 +81,7 @@ function serializeCurrency(row: Awaited<ReturnType<typeof listCurrencies>>[numbe
   return { ...row, id: row.code, retiredAt: iso(row.retiredAt) }
 }
 function serializeAccount(row: Awaited<ReturnType<typeof listAccounts>>[number]) {
-  return { ...row, retiredAt: iso(row.retiredAt) }
+  return financeAccountRecordSchema.parse({ ...row, retiredAt: iso(row.retiredAt) })
 }
 function serializeProject(row: Awaited<ReturnType<typeof listProjects>>[number]) {
   return { ...row, retiredAt: iso(row.retiredAt) }
