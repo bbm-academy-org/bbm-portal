@@ -1,5 +1,6 @@
 import type { WorkspaceModule } from '@/lib/workspace/contract'
 
+import { hoursAdminSection } from './admin-contract'
 import { findOpenPeriod } from './document'
 import { readHoursDocument } from './store-core'
 
@@ -65,7 +66,5 @@ export const hoursWorkspaceEntry: WorkspaceModule = {
   href: '/p/hours',
   icon: 'hours',
   status: hoursStatusLine,
-  // No `admin` section yet: the cabinet's hours resources are #317, and until
-  // they are declared here the module has NO presence under /p/admin at all
-  // (EARS-410) — which is the honest state while /p/hours/admin still exists.
+  admin: hoursAdminSection,
 }

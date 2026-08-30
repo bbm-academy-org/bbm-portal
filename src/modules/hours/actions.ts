@@ -23,7 +23,6 @@ import {
   createPeriod,
   deletePeriod,
   HoursDataError,
-  isHoursAdmin,
   isOwnEmail,
   mutateHoursDocument,
   recordPublicationDelivery,
@@ -43,6 +42,7 @@ import type {
 } from '@/lib/hours'
 
 import type { HoursActionState } from './actionState'
+import { hasClaim, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'
 
 const MATTERMOST_DELIVERY_TIMEOUT_MS = 10_000
 
@@ -102,14 +102,18 @@ async function requireEmail(): Promise<{ email: string } | HoursActionState> {
   return { email }
 }
 
-/** Тот же предбанник плюс allowlist администраторов (п.10, fail-closed). */
+/** Административные legacy actions проверяют ту же роль, что кабинетные routes. */
 async function requireAdmin(): Promise<{ email: string } | HoursActionState> {
-  const gate = await requireEmail()
-  if ('status' in gate) return gate
-  if (!isHoursAdmin(gate.email, process.env.HOURS_ADMIN_EMAILS)) {
+  const session = await auth()
+  if (!session?.user) return error('Сессия истекла — войди заново.')
+  const email = sessionEmail(session)
+  if (!email) {
+    return error('В сессии нет email — сохранять нельзя.')
+  }
+  if (!hasClaim(session, PLATFORM_ADMIN_ROLE)) {
     return error('Доступ к админке часов есть только у администраторов.')
   }
-  return gate
+  return { email }
 }
 
 /**
@@ -127,7 +131,9 @@ function actorOf(gate: { email: string }): AuditContext {
 
 function refresh(): void {
   revalidatePath('/p/hours')
-  revalidatePath('/p/hours/admin')
+  revalidatePath('/p/admin/hours/periods')
+  revalidatePath('/p/admin/hours/participants')
+  revalidatePath('/p/admin/hours/publication')
 }
 
 /** Приводит результат доменной операции к состоянию формы. */
