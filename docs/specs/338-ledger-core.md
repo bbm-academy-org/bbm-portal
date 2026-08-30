@@ -64,9 +64,10 @@ owner on the wireframe prototype (Stage A, 2026-08-25 — see "Design gate").
   reporting view defaults to RUB and can switch currency without changing a
   posting; any cross-currency amount uses recorded actual conversion facts,
   never a market/current rate fetched at read time. For F1b's **current
-  holdings** total, this spec applies that ruling through the remaining
-  holding's recorded cost basis (EARS-328), while period reports continue to
-  apply each operation's own actual rate in F3.
+  holdings** total, this spec applies that ruling as a conservative
+  chronological read-model replay over immutable ledger facts (EARS-325),
+  separate from EARS-328's write-time realized-FX pair pool. Period reports
+  continue to apply their broader per-operation actual-rate semantics in F3.
 - **Spec 311 §A, §D** (EARS-401/402/409, EARS-431…439) — the workspace
   declaration contract: finance declares one `internal` entry with an `admin`
   section; its resources mount at `/p/admin/finance/<resource>` through the
@@ -151,9 +152,11 @@ pick is needed.
 
 Directory `src/lib/platform/db/schema/finance/`, Postgres schema `core`, table
 prefix `finance_`. No table stores a balance or a capitalization — both are
-sums over postings, always. The balances-card total is likewise a read model
-over existing postings and conversion steps: it stores no total, display rate
-or valuation fact and requires no F1a schema or domain-model change.
+sums over postings, always. The balances-card total is likewise a chronological
+read-model replay over existing immutable operations, postings and conversion
+steps: it stores no total, display rate, valuation pool or valuation fact and
+requires no F1a schema, migration, write-path or domain-model change. It does
+not reuse or widen EARS-328's realized-FX pair pool.
 
 | Table                     | Carries                                                                                                                                                                                                                                                                                                 | Key points                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -323,27 +326,63 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   decision 13).
 
   The total shall be a reproducible reading of recorded facts, never a silent
-  conversion: a balance already in the selected currency contributes 1:1; a
-  foreign-currency balance contributes only where the ledger provides a
-  recorded valuation path to the selected currency through actual conversion
-  facts (EARS-318/319), using the remaining holding's moving weighted-average
-  recorded cost basis defined by EARS-328. A path may be direct or consist of
-  multiple recorded conversion-pair steps; each step must carry a remaining
-  recorded basis sufficient for the amount being valued. WHERE more than one
-  complete path exists, the system shall choose the path with the fewest steps,
-  breaking an equal-length tie by the lexicographic sequence of currency codes,
-  and shall make the chosen currency path visible. The same ledger state
-  therefore always produces the same total. It shall never use a market,
-  current or period-end rate fetched or supplied at read time (owner decision
-  18). The card shall state this recorded-cost policy.
+  conversion. For the selected reporting currency, the finance public API shall
+  replay the existing immutable operations, postings and conversion steps in
+  chronological `(occurred_on, operation_id)` order, and conversion steps
+  within one operation in ascending `step_no` order, and derive a
+  **currency-wide** moving-average valuation pool for each currency. It shall
+  first aggregate all non-system money-account balances by currency for the
+  valuation check; the card shall still display the individual account rows.
+  The reporting-currency aggregate contributes 1:1.
 
-  IF every nonzero money-account balance has such a path (or is already in the
-  selected currency), THEN the card shall show the numeric grand total. IF any
-  nonzero balance lacks a complete recorded valuation path, THEN the card shall
-  withhold the numeric grand total — never show a partial total or treat the
-  missing value as zero — and shall name every missing currency while leaving
-  all native-currency account balances visible. Switching the reporting
-  currency shall re-evaluate the same rule for that currency.
+  Before replay, the read model shall remove both members of every fully
+  reversed operation pair, so a reversal is exact even when unrelated
+  operations occurred between the original and its reversal (EARS-314). For a
+  reversal-of-reversal chain it shall cancel pairs from the newest reversal
+  backwards; an odd number of reversal acts therefore removes the original fact
+  from the replay, while an even number leaves it.
+
+  Each foreign-currency pool shall carry a quantity in that currency's minor
+  units and, only while fully known, its cost in reporting-currency minor units.
+  A recorded conversion step shall remove the disposed source quantity and its
+  proportional known cost from the source pool and shall add the received
+  quantity with that transferred cost to the destination pool. This
+  chronological transfer — not a graph of EARS-328 pair pools — naturally
+  carries known basis through an actual multi-step conversion. When the
+  reporting currency is the disposed source, its transferred cost is the
+  disposed quantity 1:1; when it is the received destination, that received
+  money contributes through the reporting-currency aggregate 1:1 rather than
+  through a foreign pool. IF the disposed foreign source basis is unknown, THEN
+  the received foreign basis is unknown. An ordinary money inflow in the
+  reporting currency is known 1:1; an ordinary foreign inflow has unknown
+  reporting-currency basis. Same-currency transfers between non-system money
+  accounts net to zero in the currency-wide replay. Once a positive pool
+  contains any unknown basis, it remains unknown until its quantity returns
+  exactly to zero, at which point the empty pool resets. An ordinary outflow
+  reduces the quantity and, only for a fully known positive pool, removes
+  proportional known cost. Explicit conversion fees follow the same
+  ordinary-outflow rule in the currency in which they were posted.
+
+  All quantities and costs shall remain `bigint` minor units. Each proportional
+  removal or transfer shall compute
+  `disposed_quantity × pool_cost ÷ pool_quantity` and apply the existing
+  half-away-from-zero rule exactly once at that removal; the grand total shall
+  be the integer sum of the reporting-currency aggregate and every known
+  foreign pool cost, with no further conversion rounding. A negative foreign
+  aggregate balance, an over-disposal, a non-positive pool used as a source, or
+  any replay state whose pool quantity does not equal the final aggregate
+  balance shall mark that currency unvalued rather than crash or produce a
+  partial number.
+
+  IF every nonzero foreign aggregate balance is positive, fully known and equal
+  to its replayed pool quantity, THEN the card shall show the numeric grand
+  total. Otherwise it shall withhold the numeric grand total — never show a
+  partial total or treat missing basis as zero — and shall name every unvalued
+  currency in ascending currency-code order while leaving all native-currency
+  account balances visible. The card shall state that it uses recorded cost
+  rather than a market/current rate.
+  Switching the reporting currency shall run the replay anew; a selected
+  currency may honestly produce an incomplete state.
 
   The rest of the overview is F3's and shall not be stubbed. A request that does
   not carry `platform-user` (or `platform-admin`, which implies it — spec 311
@@ -560,25 +599,30 @@ Owner walkthrough, on a live stand, after the go and the build:
    «Урок» under it, purpose «Продакшн урока» with binding `required` — each
    save answers with a visible confirmation (EARS-301/302/306, spec 311
    EARS-472).
-2. **Representative money and a reproducible RUB total.** On the acceptance
-   stand, use representative data with nonzero RUB, USD and THB money accounts
-   and recorded RUB↔USD and RUB↔THB conversions whose remaining-holding cost
-   bases are non-empty. Open `/p/finance`: every account remains visible in its
-   own currency, the selector defaults to RUB, and «Итого» is numeric in RUB.
-   The card states that the total uses recorded cost rather than a current or
-   market rate (EARS-310/317/318/319/325/328).
-3. **The same holdings switch reporting currency.** Switch «Итого» from RUB to
-   THB. The native RUB/USD/THB account rows do not change; the total is
-   recomputed in THB only from the recorded valuation paths, and reloading the
-   page produces the same number (EARS-319/325).
-4. **A missing valuation is explicit, never a partial total.** Add a nonzero
-   holding in a fourth currency without recording any conversion path from it
-   to RUB, then select RUB. Every native-currency account balance stays visible,
-   but the card withholds the numeric grand total and names the missing currency
-   instead of silently omitting it, treating it as zero or fetching a rate.
-   Record a representative conversion that establishes its remaining-holding
-   RUB cost basis and reload: the complete numeric RUB total appears
-   (EARS-318/319/325/328/329).
+2. **Representative money and an exact RUB total.** Seed four money accounts
+   (all currencies precision 2): «Банк RUB» receives 1,500,000.00 RUB and
+   «Наличные RUB» receives 500,000.00 RUB; convert 600,000.00 RUB → 10,000.00
+   USD, then 4,000.00 USD → 140,000.00 THB; dispose 2,000.00 USD for 130,000.00
+   RUB; then acquire 1,500.00 USD for 120,000.00 RUB. Open `/p/finance` and see
+   the separate native rows «Банк RUB» 910,000.00 RUB, «Наличные RUB»
+   500,000.00 RUB, «Карта USD» 5,500.00 USD and «Карта THB» 140,000.00 THB.
+   The selector defaults to RUB. The USD pool carries 360,000.00 RUB recorded
+   cost after the partial disposal and later acquisition; the THB pool carries
+   240,000.00 RUB; «Итого» is therefore exactly **2,010,000.00 RUB** and the
+   card says «по записанной стоимости», not market/current rate
+   (EARS-310/317/318/319/325).
+3. **The same holdings can switch into an honest incomplete state.** Switch
+   «Итого» from RUB to THB. All four native account rows stay unchanged. The
+   RUB origin was an ordinary foreign inflow relative to a THB view, so its THB
+   basis is unknown; the basis transferred onward into the remaining USD is
+   unknown too. The numeric total is withheld and the card names `RUB, USD` as
+   unvalued. Reloading produces the same state (EARS-319/325).
+4. **Unknown foreign money does not become a partial total.** Return to RUB and
+   add an ordinary 100.00 EUR inflow: every native row remains visible, but the
+   total is withheld and `EUR` is named. Spend 40.00 EUR: the remaining 60.00
+   EUR pool is still unknown and the total stays withheld. Spend the remaining
+   60.00 EUR: the EUR pool returns to zero and resets, and the exact
+   2,010,000.00 RUB total returns. No step fetches a rate (EARS-319/325/329).
 5. **Money is visible to the team, references editable by the admin.** Sign in
    as a member holding `platform-user` but not `platform-admin`: `/p/finance`
    opens and shows the same balances card (EARS-324/325), while
@@ -612,6 +656,41 @@ write-side claim gate (EARS-330), the binding as master data (EARS-331), a
 binding change leaving history intact (EARS-332), the product-less `optional`
 exception query (EARS-333), and the absence of any allocation posting
 (EARS-334).
+
+EARS-325's read model additionally has the following exact CI fixtures. Unless
+stated otherwise currencies have precision 2 and values below are minor units:
+
+1. **Representative replay.** The five operations of owner scenario 2 start
+   with `200_000_000` RUB across two RUB accounts and end with aggregate
+   quantities RUB `141_000_000`, USD `550_000`, THB `14_000_000`; known RUB
+   costs are respectively `141_000_000`, `36_000_000`, `24_000_000`, so the
+   final integer sum is exactly `201_000_000` and the separate RUB rows still
+   sum to their aggregate.
+2. **Intervening operation plus reversal.** RUB ordinary inflow `100_000`, a
+   conversion RUB `60_000` → USD `1_000`, an unrelated later RUB inflow `5_000`,
+   then the exact reversal of the conversion shall replay as RUB `105_000`, USD
+   zero and total `105_000`: both conversion members are excluded before
+   chronology, not replayed as a late disposal/acquisition.
+3. **Half-away-from-zero tie.** RUB inflow `1`, conversion RUB `1` → AAA `2`,
+   then conversion AAA `1` → BBB `1` shall transfer
+   `round_half_away_from_zero(1 × 1 ÷ 2) = 1`: final AAA quantity `1`, known RUB
+   cost `0`; BBB quantity `1`, known RUB cost `1`; total RUB `1`, with no second
+   rounding at total time.
+4. **Unknown ordinary foreign inflow.** USD inflow `10_000` in a RUB view is
+   unknown; outflow `4_000` leaves an unknown USD pool of `6_000`; outflow of
+   the final `6_000` resets it to known-empty. The first two cuts withhold the
+   total naming `USD`; the final cut permits total RUB `0`.
+5. **Negative and over-disposed foreign currency.** An ordinary USD outflow
+   `100` from zero yields aggregate USD `-100` and withholds the total naming
+   `USD`. A conversion fixture that disposes `101` from a known USD pool of
+   quantity `100` shall mark the source and received basis unvalued, return all
+   affected currency codes in ascending code order, and never throw.
+6. **Replay/account mismatch.** A replayed USD pool of quantity `10_000` beside
+   a final aggregate money-account balance of `9_999` shall withhold the total
+   naming `USD`, never adjust either figure to make them agree.
+7. **Reporting-currency switch.** Replaying fixture 1 in THB shall leave the
+   native balances unchanged and withhold the numeric total naming `RUB, USD`;
+   the test shall not manufacture a THB basis for the ordinary RUB origin.
 
 ## Out of scope
 
