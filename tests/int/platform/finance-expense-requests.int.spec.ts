@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { sql } from 'drizzle-orm'
 import { Client } from 'pg'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
   approveExpenseRequest,
@@ -9,11 +9,14 @@ import {
   confirmExpenseRequest,
   createCurrency,
   createExpenseRequest,
+  createIntakeItem,
+  createIntakeItems,
   createProduct,
   createProject,
   createPurpose,
   detachFinanceDocument,
   editExpenseRequest,
+  editIntakeItem,
   FinanceAccessRefusal,
   FinanceRefusal,
   getExpenseRequest,
@@ -23,6 +26,7 @@ import {
   readFinanceDocument,
   refuseExpenseRequest,
   submitExpenseRequest,
+  transitionIntakeItem,
   type CreateExpenseRequestInput,
   type FinanceActor,
   type FinanceDocumentVerifier,
@@ -138,6 +142,56 @@ async function uploadReceipt(actor: FinanceActor, intakeItemId: number) {
 }
 
 describe('expense request member lifecycle (EARS-502/508/509)', () => {
+  it('EARS-508: the public generic create APIs exclude and refuse request-source input', async () => {
+    type PublicIntakeSource = Parameters<typeof createIntakeItem>[1]['source']
+    expectTypeOf<Extract<PublicIntakeSource, 'request'>>().toEqualTypeOf<never>()
+
+    const refs = await seedIntakeReferences()
+    const rawRequest = {
+      source: 'request',
+      kind: 'expense',
+      ...requestInput(refs),
+    }
+    const attempts = await Promise.allSettled([
+      createIntakeItem(MEMBER, rawRequest as never),
+      createIntakeItems(MEMBER, [rawRequest] as never),
+    ])
+
+    expect(attempts.map((attempt) => attempt.status)).toEqual(['rejected', 'rejected'])
+    for (const attempt of attempts) {
+      expect(attempt).toMatchObject({
+        reason: expect.objectContaining({
+          message: expect.stringMatching(/createExpenseRequest|EARS-508/i),
+        }),
+      })
+    }
+    expect(await listExpenseRequests(MEMBER)).toEqual([])
+  })
+
+  it('EARS-508: the public generic edit API refuses a facade-owned request', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs))
+
+    await expect(editIntakeItem(MEMBER, request.id, { amount: 1n })).rejects.toThrow(
+      /editExpenseRequest|EARS-508/i,
+    )
+    expect(await getExpenseRequest(MEMBER, request.id)).toMatchObject({ amount: 120_000n })
+  })
+
+  it('EARS-510/531: the public generic transition API cannot approve a request', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs))
+    await submitExpenseRequest(MEMBER, request.id)
+
+    await expect(transitionIntakeItem(APPROVER, request.id, 'approve')).rejects.toThrow(
+      /approveExpenseRequest|EARS-510|EARS-531/i,
+    )
+    expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({
+      status: 'submitted',
+      decidedBy: null,
+    })
+  })
+
   it('EARS-502: a role-less member creates, edits, submits, lists and cancels only their own request, including its documents', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs))
