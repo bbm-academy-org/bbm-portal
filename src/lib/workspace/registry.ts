@@ -1,4 +1,5 @@
 import { hoursWorkspaceEntry } from '@/lib/hours'
+import { financeWorkspaceEntry } from '@/lib/finance'
 import { memberWorkspaceEntry } from '@/lib/member'
 import { okrWorkspaceEntry } from '@/lib/okr'
 
@@ -42,6 +43,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceEntry[] = [
   // ── live internal apps ────────────────────────────────────────────────────
   hoursWorkspaceEntry,
   okrWorkspaceEntry,
+  financeWorkspaceEntry,
 
   // Cabinet-only modules live in the same composition root but render no tile.
   memberWorkspaceEntry,
@@ -102,7 +104,6 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceEntry[] = [
   // leaves seven — and управление задачами is served today by the Plane entry,
   // so it carries no placeholder. That is exactly these six, and exactly the six
   // the vendored file draws. Shipping one is a swap of ITS OWN element here.
-  planned('Финансы'),
   planned('Колоды'),
   planned('CRM'),
   planned('Поиск команды'),

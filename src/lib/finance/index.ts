@@ -31,8 +31,8 @@
  *  - NO edit or delete of a recorded fact (EARS-313): the only correction is
  *    `reverseOperation`.
  *
- * The workspace declaration, `/p/finance` and the `/p/admin/finance/*` resources
- * (EARS-324/325/326) are #357 and are not exported here yet.
+ * The workspace declaration and the schemas shared by the F1b surfaces are
+ * exported here too; routes still reach the module through this one door.
  */
 
 // ── who may write, and how the write is attributed (EARS-330/501/502/529; spec 201) ──
@@ -48,6 +48,33 @@ export {
 export type { FinanceActor, FinanceFlowRole, FinanceIntakeAct } from './core/actor'
 export { FinanceAccessRefusal, FinanceRefusal } from './core/errors'
 export type { AuditContext, AuditSource } from '@/lib/platform/db/transaction'
+
+// ── F1b workspace and cabinet wire contract (EARS-324/326) ────────────────
+export {
+  financeAccountCreateSchema,
+  financeAccountRecordSchema,
+  financeAccountUpdateSchema,
+  financeAdminSection,
+  financeCategoryCreateSchema,
+  financeCategoryRecordSchema,
+  financeCategoryUpdateSchema,
+  financeCurrencyCreateSchema,
+  financeCurrencyRecordSchema,
+  financeCurrencyUpdateSchema,
+  financeProductCreateSchema,
+  financeProductRecordSchema,
+  financeProductUpdateSchema,
+  financeProjectCreateSchema,
+  financeProjectRecordSchema,
+  financeProjectUpdateSchema,
+  financePurposeCreateSchema,
+  financePurposeRecordSchema,
+  financePurposeUpdateSchema,
+  financeReferenceContracts,
+  isFinanceReferenceResource,
+} from './contract'
+export type { FinanceReferenceRecord, FinanceReferenceResource } from './contract'
+export { financeWorkspaceEntry } from './workspace'
 
 // ── the invariants of a fact (EARS-311/312/320/321/327/331) ──────────────────
 export {
