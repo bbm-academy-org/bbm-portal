@@ -128,6 +128,36 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     }
   })
 
+  test('EARS-317/325: the live stand carries representative linked rows and varied balances', async ({
+    page,
+  }) => {
+    test.skip(
+      !adminUsername || !adminPassword,
+      'set E2E_ADMIN_USERNAME / E2E_ADMIN_PASSWORD (holding platform-admin) to run',
+    )
+
+    await signIn(page, FINANCE, adminCredentials)
+    for (const balance of [
+      { account: 'Основной банк', amount: '1 284 500,00', currency: 'RUB' },
+      { account: 'Корпоративная карта', amount: '8 750,00', currency: 'USD' },
+      { account: 'Операционная касса', amount: '64 320,50', currency: 'THB' },
+    ]) {
+      const row = page.locator('main[data-bbm-ui] > div').filter({ hasText: balance.account })
+      await expect(row).toContainText(balance.amount)
+      await expect(row).toContainText(balance.currency)
+    }
+
+    for (const [path, rows] of [
+      [PROJECTS, ['Doctor School', 'BBM Academy']],
+      [PRODUCTS, ['Курс «Основы нутрициологии»', 'Клуб BBM']],
+      [PURPOSES, ['Продажи курса', 'Партнёрская программа', 'Операционные расходы']],
+      [CATEGORIES, ['Маркетинг', 'Комиссии', 'Операционные расходы']],
+    ] as const) {
+      await page.goto(path)
+      for (const row of rows) await expect(page.getByText(row, { exact: true })).toBeVisible()
+    }
+  })
+
   test('EARS-301..307/472: admin creates the accepted reference chain through the actual UI', async ({
     page,
   }) => {
@@ -143,13 +173,15 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     const purposeName = `E2E назначение ${stamp}`
 
     await signIn(page, CATEGORIES, adminCredentials)
-    await expect(page.getByText(/статей расходов пока нет/i)).toBeVisible()
+    await expect(page.getByText('Маркетинг', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Добавить статью расходов' })).toBeVisible()
 
     await page.goto(CURRENCIES)
     await page.getByRole('button', { name: 'Добавить валюту' }).click()
-    await page.getByLabel('Код').fill('THB')
-    await page.getByLabel('Название').fill('Тайский бат')
+    const currencyCode = `T${stamp}`
+    const currencyName = `E2E валюта ${stamp}`
+    await page.getByLabel('Код').fill(currencyCode)
+    await page.getByLabel('Название').fill(currencyName)
     await page.getByLabel('Точность').fill('2')
     await saveCreated(page, CURRENCIES_API)
 
@@ -159,7 +191,9 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     await page.getByLabel('Тип').click()
     await page.getByRole('option', { name: 'Банк', exact: true }).click()
     await page.getByLabel('Валюта').click()
-    await page.getByRole('option', { name: 'THB — Тайский бат', exact: true }).click()
+    await page
+      .getByRole('option', { name: `${currencyCode} — ${currencyName}`, exact: true })
+      .click()
     await saveCreated(page, ACCOUNTS_API)
 
     await page.goto(PROJECTS)
@@ -185,16 +219,16 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     await expectThemedFinanceCanvas(page)
     await expect(page.getByText(accountName, { exact: true })).toBeVisible()
     await expect(page.getByText('0,00', { exact: true })).toBeVisible()
-    await expect(page.getByText('THB', { exact: true })).toBeVisible()
+    await expect(page.getByText(currencyCode, { exact: true })).toBeVisible()
 
     await page.goto(CURRENCIES)
     const deleteResponse = page.waitForResponse(
       (response) =>
-        new URL(response.url()).pathname === `${CURRENCIES_API}/THB` &&
+        new URL(response.url()).pathname === `${CURRENCIES_API}/${currencyCode}` &&
         response.request().method() === 'DELETE' &&
         response.status() === 409,
     )
-    await page.getByRole('button', { name: 'Удалить Тайский бат' }).click()
+    await page.getByRole('button', { name: `Удалить ${currencyName}` }).click()
     await deleteResponse
     const currencyRefusal = page
       .locator('main [data-slot="alert"]:visible')
@@ -223,7 +257,7 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     await page.goto(ACCOUNTS)
     const originalRow = page.getByRole('row').filter({ hasText: accountName })
     await expect(originalRow).toContainText('Банк')
-    await expect(originalRow).toContainText('THB')
+    await expect(originalRow).toContainText(currencyCode)
     await originalRow.getByRole('button', { name: `Изменить ${accountName}` }).click()
     const renamedAccount = `${accountName} — переименован`
     await page.getByLabel('Название').fill(renamedAccount)
@@ -240,6 +274,6 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     await page.goto(ACCOUNTS)
     const renamedRow = page.getByRole('row').filter({ hasText: renamedAccount })
     await expect(renamedRow).toContainText('Банк')
-    await expect(renamedRow).toContainText('THB')
+    await expect(renamedRow).toContainText(currencyCode)
   })
 })
