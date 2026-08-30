@@ -183,9 +183,10 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
 
       render(React.createElement(HoursPublicationScreen))
 
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-      const requestedUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
-      expect(requestedUrl.searchParams.get('periodId')).toBe(expectedId)
+      expect(screen.getByRole('combobox').textContent).toContain(
+        periods.find((period) => period.id === expectedId)?.label,
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
     },
   )
 
@@ -436,7 +437,10 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(React.createElement(HoursPublicationScreen))
 
-    const publish = await screen.findByRole('button', { name: 'Опубликовать в Mattermost' })
+    fireEvent.click(screen.getByRole('button', { name: 'Предпросмотр сообщений' }))
+    const publish = await screen.findByRole('button', {
+      name: 'Отправить 1 сообщение в „BBM Финансы“',
+    })
     fireEvent.click(publish)
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
@@ -446,10 +450,9 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     expect(screen.getByText('Не доставлено')).toBeTruthy()
     expect(screen.getByText('Начато')).toBeTruthy()
     expect(screen.getByText('Сохранённое сообщение 1')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Опубликовать в Mattermost' })).toHaveProperty(
-      'disabled',
-      true,
-    )
+    expect(
+      screen.getByRole('button', { name: 'Отправить 3 сообщения в „BBM Финансы“' }),
+    ).toHaveProperty('disabled', true)
   })
 
   it('names preview refusal and disables publication for an empty period', async () => {
@@ -487,11 +490,11 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
       ),
     )
     render(React.createElement(HoursPublicationScreen))
+    fireEvent.click(screen.getByRole('button', { name: 'Предпросмотр сообщений' }))
     expect(await screen.findByText('За этот период нет сохранённых оценок.')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Опубликовать в Mattermost' })).toHaveProperty(
-      'disabled',
-      true,
-    )
+    expect(
+      screen.getByRole('button', { name: 'Отправить 0 сообщений в „BBM Финансы“' }),
+    ).toHaveProperty('disabled', true)
   })
 
   it('renders a readable preview transport error', async () => {
@@ -514,6 +517,7 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
       ),
     )
     render(React.createElement(HoursPublicationScreen))
+    fireEvent.click(screen.getByRole('button', { name: 'Предпросмотр сообщений' }))
     expect(await screen.findByText('Mattermost временно недоступен')).toBeTruthy()
   })
 })

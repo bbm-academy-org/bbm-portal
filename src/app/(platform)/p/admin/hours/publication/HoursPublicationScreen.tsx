@@ -9,6 +9,7 @@ import {
   type HoursPeriodRecord,
   type HoursPublicationRecord,
 } from '@/lib/hours/admin-contract'
+import { plural } from '@/lib/hours/format'
 import { pickDefaultPeriod } from '@/lib/hours/period-selection'
 import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
@@ -67,6 +68,19 @@ function deliveryLabel(delivery: HoursPublicationRecord['messages'][number]['del
   }
 }
 
+function assessmentCount(count: number): string {
+  return `${count} ${plural(
+    count,
+    'сохранённая оценка',
+    'сохранённые оценки',
+    'сохранённых оценок',
+  )}`
+}
+
+function sendLabel(count: number): string {
+  return `Отправить ${count} ${plural(count, 'сообщение', 'сообщения', 'сообщений')} в „BBM Финансы“`
+}
+
 export function HoursPublicationScreen() {
   const { query, result } = useList<HoursPeriodRecord, HttpError>({
     resource: HOURS_PERIOD_RESOURCE,
@@ -74,35 +88,47 @@ export function HoursPublicationScreen() {
   })
   const [periodId, setPeriodId] = React.useState('')
   const [preview, setPreview] = React.useState<HoursPublicationRecord | null>(null)
+  const [previewExpanded, setPreviewExpanded] = React.useState(false)
   const [loadingPreview, setLoadingPreview] = React.useState(false)
   const [publishing, setPublishing] = React.useState(false)
   const [failure, setFailure] = React.useState<string | null>(null)
   const [success, setSuccess] = React.useState<string | null>(null)
   const defaultPeriod = pickDefaultPeriod(result.data, (period) => period.dateTo)
   const effectivePeriodId = periodId || defaultPeriod?.id || ''
+  const selectedPeriod = result.data.find((period) => period.id === effectivePeriodId)
   const visiblePreview = preview?.periodId === effectivePeriodId ? preview : null
 
-  React.useEffect(() => {
+  function selectPeriod(value: string) {
+    setPeriodId(value)
+    setPreview(null)
+    setPreviewExpanded(false)
+    setFailure(null)
+    setSuccess(null)
+  }
+
+  async function togglePreview() {
+    if (previewExpanded) {
+      setPreviewExpanded(false)
+      return
+    }
+    setPreviewExpanded(true)
+    if (visiblePreview) return
     if (!effectivePeriodId) return
     const controller = new AbortController()
-    async function loadPreview() {
-      setLoadingPreview(true)
-      setFailure(null)
-      setSuccess(null)
-      try {
-        const value = await publicationData(effectivePeriodId, controller.signal)
-        if (!controller.signal.aborted) setPreview(value)
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setFailure(error instanceof Error ? error.message : 'Не удалось собрать предпросмотр.')
-        }
-      } finally {
-        if (!controller.signal.aborted) setLoadingPreview(false)
+    setLoadingPreview(true)
+    setFailure(null)
+    setSuccess(null)
+    try {
+      const value = await publicationData(effectivePeriodId, controller.signal)
+      if (!controller.signal.aborted) setPreview(value)
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setFailure(error instanceof Error ? error.message : 'Не удалось собрать предпросмотр.')
       }
+    } finally {
+      if (!controller.signal.aborted) setLoadingPreview(false)
     }
-    void loadPreview()
-    return () => controller.abort()
-  }, [effectivePeriodId])
+  }
 
   async function publish() {
     if (!visiblePreview) return
@@ -187,7 +213,7 @@ export function HoursPublicationScreen() {
             <Select
               value={effectivePeriodId}
               disabled={query.isLoading || result.data.length === 0}
-              onValueChange={setPeriodId}
+              onValueChange={selectPeriod}
             >
               <SelectTrigger id="hours-publication-period" className="w-full">
                 <SelectValue placeholder={query.isLoading ? 'Загружаем…' : 'Выберите период'} />
@@ -211,6 +237,24 @@ export function HoursPublicationScreen() {
         </CardContent>
       </Card>
 
+      {selectedPeriod ? (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Верификация в Mattermost</CardTitle>
+                <CardDescription>
+                  {assessmentCount(selectedPeriod.assessments.length)}
+                </CardDescription>
+              </div>
+              <Button variant="outline" onClick={() => void togglePreview()}>
+                {previewExpanded ? 'Скрыть предпросмотр сообщений' : 'Предпросмотр сообщений'}
+              </Button>
+            </div>
+          </CardHeader>
+        </Card>
+      ) : null}
+
       {failure ? (
         <Alert variant="destructive" role="alert">
           <AlertDescription>{failure}</AlertDescription>
@@ -221,8 +265,8 @@ export function HoursPublicationScreen() {
           <AlertDescription>{success}</AlertDescription>
         </Alert>
       ) : null}
-      {loadingPreview ? <Skeleton className="h-64 w-full" /> : null}
-      {!loadingPreview && visiblePreview ? (
+      {previewExpanded && loadingPreview ? <Skeleton className="h-64 w-full" /> : null}
+      {previewExpanded && !loadingPreview && visiblePreview ? (
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -292,7 +336,7 @@ export function HoursPublicationScreen() {
               disabled={!visiblePreview.eligibility.canPublish || publishing}
               onClick={publish}
             >
-              {publishing ? 'Публикуем…' : 'Опубликовать в Mattermost'}
+              {publishing ? 'Отправляем…' : sendLabel(visiblePreview.messages.length)}
             </Button>
           </CardContent>
         </Card>
