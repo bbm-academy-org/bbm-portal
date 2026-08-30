@@ -71,6 +71,7 @@ export {
   financePurposeRecordSchema,
   financePurposeUpdateSchema,
   financeReferenceContracts,
+  financeReferenceRecordSchema,
   isFinanceReferenceResource,
 } from './contract'
 export type { FinanceReferenceRecord, FinanceReferenceResource } from './contract'

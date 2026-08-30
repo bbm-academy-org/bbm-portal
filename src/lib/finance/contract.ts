@@ -141,6 +141,16 @@ export const financeCategoryUpdateSchema = patch({
   allocable: z.boolean().optional(),
 })
 
+/** The one response schema shared by the dynamic finance cabinet route files. */
+export const financeReferenceRecordSchema = z.union([
+  financeCurrencyRecordSchema,
+  financeAccountRecordSchema,
+  financeProjectRecordSchema,
+  financeProductRecordSchema,
+  financePurposeRecordSchema,
+  financeCategoryRecordSchema,
+])
+
 export const financeReferenceContracts = {
   currencies: {
     label: 'Валюты',
@@ -187,13 +197,7 @@ export const financeReferenceContracts = {
 } as const
 
 export type FinanceReferenceResource = keyof typeof financeReferenceContracts
-export type FinanceReferenceRecord =
-  | z.infer<typeof financeCurrencyRecordSchema>
-  | z.infer<typeof financeAccountRecordSchema>
-  | z.infer<typeof financeProjectRecordSchema>
-  | z.infer<typeof financeProductRecordSchema>
-  | z.infer<typeof financePurposeRecordSchema>
-  | z.infer<typeof financeCategoryRecordSchema>
+export type FinanceReferenceRecord = z.infer<typeof financeReferenceRecordSchema>
 
 export function isFinanceReferenceResource(value: string): value is FinanceReferenceResource {
   return value in financeReferenceContracts

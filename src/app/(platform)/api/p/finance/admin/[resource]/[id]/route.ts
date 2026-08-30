@@ -1,9 +1,26 @@
-import type { RouteSegment } from '@/lib/platform/api'
+import { z } from 'zod'
 
-import { itemRoute } from '../../references'
+import { financeReferenceRecordSchema, type FinanceReferenceRecord } from '@/lib/finance'
+import { adminRoute } from '@/lib/platform/api'
 
-export const GET = (request: Request, segment?: RouteSegment) => itemRoute('GET', request, segment)
-export const PATCH = (request: Request, segment?: RouteSegment) =>
-  itemRoute('PATCH', request, segment)
-export const DELETE = (request: Request, segment?: RouteSegment) =>
-  itemRoute('DELETE', request, segment)
+import {
+  deleteFinanceReference,
+  getFinanceReference,
+  updateFinanceReference,
+} from '../../references'
+
+export const GET = adminRoute<undefined, FinanceReferenceRecord>({
+  output: financeReferenceRecordSchema,
+  handler: getFinanceReference,
+})
+
+export const PATCH = adminRoute<unknown, FinanceReferenceRecord>({
+  input: z.unknown(),
+  output: financeReferenceRecordSchema,
+  handler: updateFinanceReference,
+})
+
+export const DELETE = adminRoute<undefined, FinanceReferenceRecord>({
+  output: financeReferenceRecordSchema,
+  handler: deleteFinanceReference,
+})

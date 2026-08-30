@@ -1,4 +1,4 @@
-import type { z } from 'zod'
+import { ZodError } from 'zod'
 
 import {
   createAccount,
@@ -42,14 +42,7 @@ import {
   type FinanceReferenceRecord,
   type FinanceReferenceResource,
 } from '@/lib/finance'
-import {
-  adminRoute,
-  moduleListResult,
-  ModuleApiError,
-  type ModuleRouteContext,
-  type ModuleRouteHandler,
-  type RouteSegment,
-} from '@/lib/platform/api'
+import { moduleListResult, ModuleApiError, type ModuleRouteContext } from '@/lib/platform/api'
 import { sessionRoles } from '@/lib/platform/authGate'
 
 type ResourceContext = ModuleRouteContext<unknown>
@@ -227,105 +220,61 @@ async function readable<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation()
   } catch (error) {
+    if (error instanceof ZodError) {
+      const issues = error.issues
+        .map((issue) => `${issue.path.join('.') || 'запись'}: ${issue.message}`)
+        .join('; ')
+      throw new ModuleApiError('bad-request', `Проверьте поля справочника: ${issues}`)
+    }
     if (error instanceof FinanceAccessRefusal) throw new ModuleApiError('forbidden', error.message)
     if (error instanceof FinanceRefusal) throw new ModuleApiError('conflict', error.message)
     throw error
   }
 }
 
-function recordSchema(resource: FinanceReferenceResource): z.ZodType<FinanceReferenceRecord> {
-  return financeReferenceContracts[resource].record as z.ZodType<FinanceReferenceRecord>
+function contextResource(ctx: ResourceContext): FinanceReferenceResource {
+  const resource = String(ctx.params.resource ?? '')
+  if (!isFinanceReferenceResource(resource)) {
+    throw new ModuleApiError('not-found', `Справочник «${resource}» не найден.`)
+  }
+  return resource
 }
 
-const collection = Object.fromEntries(
-  (Object.keys(financeReferenceContracts) as FinanceReferenceResource[]).map((resource) => [
-    resource,
-    {
-      GET: adminRoute<undefined, FinanceReferenceRecord>({
-        output: recordSchema(resource),
-        handler: async ({ query }) => {
-          const all = await readable(() => list(resource))
-          const q = query.q?.trim().toLocaleLowerCase('ru')
-          const filtered = q
-            ? all.filter((row) => JSON.stringify(row).toLocaleLowerCase('ru').includes(q))
-            : all
-          const start = (query.page - 1) * query.pageSize
-          return moduleListResult({
-            items: filtered.slice(start, start + query.pageSize),
-            total: filtered.length,
-          })
-        },
-      }),
-      POST: adminRoute<unknown, FinanceReferenceRecord>({
-        input: financeReferenceContracts[resource].create as z.ZodType<unknown>,
-        output: recordSchema(resource),
-        handler: async (ctx) => readable(() => create(resource, ctx)),
-      }),
-    },
-  ]),
-) as Record<FinanceReferenceResource, { GET: ModuleRouteHandler; POST: ModuleRouteHandler }>
-
-const item = Object.fromEntries(
-  (Object.keys(financeReferenceContracts) as FinanceReferenceResource[]).map((resource) => [
-    resource,
-    {
-      GET: adminRoute<undefined, FinanceReferenceRecord>({
-        output: recordSchema(resource),
-        handler: async ({ params }) => {
-          const id = referenceId(resource, String(params.id ?? ''))
-          const found = await readable(() => get(resource, id))
-          if (!found) throw new ModuleApiError('not-found', 'Запись справочника не найдена.')
-          return found
-        },
-      }),
-      PATCH: adminRoute<unknown, FinanceReferenceRecord>({
-        input: financeReferenceContracts[resource].update as z.ZodType<unknown>,
-        output: recordSchema(resource),
-        handler: async (ctx) => {
-          const id = referenceId(resource, String(ctx.params.id ?? ''))
-          return readable(() => update(resource, id, ctx))
-        },
-      }),
-      DELETE: adminRoute<undefined, FinanceReferenceRecord>({
-        output: recordSchema(resource),
-        handler: async (ctx) => {
-          const id = referenceId(resource, String(ctx.params.id ?? ''))
-          return readable(() => remove(resource, id, ctx))
-        },
-      }),
-    },
-  ]),
-) as Record<
-  FinanceReferenceResource,
-  { GET: ModuleRouteHandler; PATCH: ModuleRouteHandler; DELETE: ModuleRouteHandler }
->
-
-async function selected(
-  segment: RouteSegment | undefined,
-): Promise<FinanceReferenceResource | Response> {
-  const resource = String((await segment?.params)?.resource ?? '')
-  return isFinanceReferenceResource(resource)
-    ? resource
-    : Response.json(
-        { error: { code: 'not-found', message: `Справочник «${resource}» не найден.` } },
-        { status: 404 },
-      )
+export async function listFinanceReferences(ctx: ModuleRouteContext<undefined>) {
+  const resource = contextResource(ctx)
+  const all = await readable(() => list(resource))
+  const q = ctx.query.q?.trim().toLocaleLowerCase('ru')
+  const filtered = q
+    ? all.filter((row) => JSON.stringify(row).toLocaleLowerCase('ru').includes(q))
+    : all
+  const start = (ctx.query.page - 1) * ctx.query.pageSize
+  return moduleListResult({
+    items: filtered.slice(start, start + ctx.query.pageSize),
+    total: filtered.length,
+  })
 }
 
-export async function collectionRoute(
-  method: 'GET' | 'POST',
-  request: Request,
-  segment?: RouteSegment,
-): Promise<Response> {
-  const resource = await selected(segment)
-  return resource instanceof Response ? resource : collection[resource][method](request, segment)
+export async function createFinanceReference(ctx: ResourceContext) {
+  const resource = contextResource(ctx)
+  return readable(() => create(resource, ctx))
 }
 
-export async function itemRoute(
-  method: 'GET' | 'PATCH' | 'DELETE',
-  request: Request,
-  segment?: RouteSegment,
-): Promise<Response> {
-  const resource = await selected(segment)
-  return resource instanceof Response ? resource : item[resource][method](request, segment)
+export async function getFinanceReference(ctx: ModuleRouteContext<undefined>) {
+  const resource = contextResource(ctx)
+  const id = referenceId(resource, String(ctx.params.id ?? ''))
+  const found = await readable(() => get(resource, id))
+  if (!found) throw new ModuleApiError('not-found', 'Запись справочника не найдена.')
+  return found
+}
+
+export async function updateFinanceReference(ctx: ResourceContext) {
+  const resource = contextResource(ctx)
+  const id = referenceId(resource, String(ctx.params.id ?? ''))
+  return readable(() => update(resource, id, ctx))
+}
+
+export async function deleteFinanceReference(ctx: ModuleRouteContext<undefined>) {
+  const resource = contextResource(ctx)
+  const id = referenceId(resource, String(ctx.params.id ?? ''))
+  return readable(() => remove(resource, id, ctx))
 }
