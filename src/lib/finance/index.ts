@@ -136,6 +136,27 @@ export type {
   FinanceIntakeItemView,
   ListIntakeItemsFilter,
 } from './intake/items'
+// ── expense requests (spec 339 EARS-502/508…512/531) ─────────────────────────
+export {
+  approveExpenseRequest,
+  cancelExpenseRequest,
+  confirmExpenseRequest,
+  createExpenseRequest,
+  editExpenseRequest,
+  getExpenseRequest,
+  humanFinanceDocumentVerifier,
+  listExpenseRequests,
+  refuseExpenseRequest,
+  submitExpenseRequest,
+} from './intake/requests'
+export type {
+  ConfirmExpenseRequestOptions,
+  CreateExpenseRequestInput,
+  EditExpenseRequestPatch,
+  FinanceDocumentVerificationContext,
+  FinanceDocumentVerificationVerdict,
+  FinanceDocumentVerifier,
+} from './intake/requests'
 // `registerIntakeProducer` is deliberately NOT re-exported. Registration is a
 // LOAD-TIME act inside the module (`./intake/sources` registers the four sources
 // spec 339 fixes), and the registry is a module-global `Map` keyed by source: a

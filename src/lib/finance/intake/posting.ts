@@ -55,29 +55,73 @@ type PostingItem = Omit<FinanceIntakeItemRow, 'kind' | 'source'> & {
   source: FinanceIntakeSource
 }
 
-/** Post one already-approved item. Approval/confirmation orchestration belongs to #386. */
+export type PostIntakeItemOptions = {
+  /**
+   * The actual money date supplied by EARS-511's confirmation act. It is
+   * written with the posting in this transaction, so the sanctioned approved
+   * edit never exists as an intermediate state and never bounces approval.
+   */
+  occurredOn?: string
+  /** EARS-510: approve a submitted expense request and post it in this transaction. */
+  approveSubmittedRequest?: boolean
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** Post one authorized item; EARS-510 may approve a submitted request in the same transaction. */
 export async function postIntakeItem(
   actor: FinanceActor,
   itemId: number,
+  options: PostIntakeItemOptions = {},
 ): Promise<FinanceIntakeItemView> {
   assertFinanceLedgerAccess(actor)
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const item = await lockIntakeItem(tx, itemId)
-    if (item.status !== 'approved') {
+    const approveAndPost = options.approveSubmittedRequest === true
+    const expectedStatus = approveAndPost ? 'submitted' : 'approved'
+    if (item.status !== expectedStatus) {
       throw new FinanceRefusal(
-        `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: проводка доступна только после approved (EARS-505).`,
+        `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: ` +
+          `${approveAndPost ? 'одноактное согласование ожидает submitted' : 'проводка доступна только после approved'} ` +
+          '(EARS-505/510).',
       )
+    }
+    if (approveAndPost && (item.source !== 'request' || item.kind !== 'expense')) {
+      throw new FinanceRefusal(
+        'Одноактное согласование и проведение относится только к заявке на расход ' +
+          '(EARS-510). Остальные позиции сначала проходят обычный approved.',
+      )
+    }
+    if (options.occurredOn !== undefined) {
+      if (item.source !== 'request' || item.kind !== 'expense') {
+        throw new FinanceRefusal(
+          'Фактическая дата в момент подтверждения меняется только у заявки на расход ' +
+            '(EARS-508/511).',
+        )
+      }
+      if (!ISO_DATE.test(options.occurredOn)) {
+        throw new FinanceRefusal(
+          `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
+            '(EARS-508/511).',
+        )
+      }
     }
     await assertRequestPurposeReady(tx, item.id)
     await requireReadyDocument(tx, item.id)
     const postedBy = await requireActorMemberId(tx, actor)
-    const operation = await recordItemOperation(tx, item as PostingItem)
+    const postingItem = {
+      ...item,
+      occurredOn: options.occurredOn ?? item.occurredOn,
+    } as PostingItem
+    const operation = await recordItemOperation(tx, postingItem)
     const postedAt = new Date()
     const [updated] = await tx
       .update(financeIntakeItem)
       .set({
         status: 'posted',
+        occurredOn: postingItem.occurredOn,
+        ...(approveAndPost ? { decidedBy: postedBy, decidedAt: postedAt } : {}),
         operationId: operation.id,
         postedBy,
         postedAt,

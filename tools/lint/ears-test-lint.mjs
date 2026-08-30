@@ -139,21 +139,9 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
  */
 const DEFERRALS_BY_ISSUE = {
   339: {
-    ids: [
-      'EARS-508',
-      'EARS-509',
-      'EARS-510',
-      'EARS-511',
-      'EARS-512',
-      'EARS-517',
-      'EARS-518',
-      'EARS-519',
-      'EARS-520',
-      'EARS-521',
-      'EARS-531',
-    ],
+    ids: ['EARS-517', 'EARS-518', 'EARS-519', 'EARS-520', 'EARS-521'],
     reason:
-      'spec 339 (docs/specs/339-ledger-intake.md, finance F2 — filling the ledger) is the same shape as spec 311 above: owner-approved and `In dev` BEFORE its first line of code, numbered EARS-501… precisely so the flat keyspace does not swallow it, so every clause is genuinely uncovered on the day the spec lands. #339 is the parent issue; as its sub-tasks land their TDD slices these ids drain from this entry and the stale check fails until they are dropped — #380 drained the first four (EARS-501/502/529/530: the two flow roles, the submitter carve-out and the narrowing of spec 338 EARS-330). #381 drained the spine four (EARS-503/504/524/525: the source_ref semantics, the duplicate refusal that answers with the existing item, the status machine and producer isolation) — the finance_intake_item table, src/lib/finance/intake/ and tests/unit/finance-intake-spine.spec.ts + tests/int/platform/finance-intake.int.spec.ts. #382 drained the document four (EARS-514/515/516/523: private storage with the dev disk fallback, the kind as data rather than a gate, immutability once a linked item has posted, and the authorized read that is the only address document content has) — the finance_document / finance_document_link tables, src/lib/finance/documents/, the two handlers under src/app/(platform)/p/finance/api/documents/ and tests/unit/finance-documents.spec.ts + tests/int/platform/finance-documents.int.spec.ts + tests/e2e/finance-documents.e2e.spec.ts. #383 drained EARS-526/532: the audited counterparty reference, the request-bound purpose proposal and its admin resolution/dismissal path — src/lib/finance/counterparties.ts + src/lib/finance/purpose-proposals.ts + tests/int/platform/finance-references.int.spec.ts. The list has no entry for the one number spec 339 retired before the go: that clause is a process note under its §G and the spec deliberately does not write it as an id token, so the guard never counts it as declared and a deferral for it would sit here forever',
+      'spec 339 (docs/specs/339-ledger-intake.md, finance F2 — filling the ledger) is the same shape as spec 311 above: owner-approved and `In dev` BEFORE its first line of code, numbered EARS-501… precisely so the flat keyspace does not swallow it, so every clause is genuinely uncovered on the day the spec lands. #339 is the parent issue; as its sub-tasks land their TDD slices these ids drain from this entry and the stale check fails until they are dropped — #380 drained the first four (EARS-501/502/529/530: the two flow roles, the submitter carve-out and the narrowing of spec 338 EARS-330). #381 drained the spine four (EARS-503/504/524/525: the source_ref semantics, the duplicate refusal that answers with the existing item, the status machine and producer isolation) — the finance_intake_item table, src/lib/finance/intake/ and tests/unit/finance-intake-spine.spec.ts + tests/int/platform/finance-intake.int.spec.ts. #382 drained the document four (EARS-514/515/516/523: private storage with the dev disk fallback, the kind as data rather than a gate, immutability once a linked item has posted, and the authorized read that is the only address document content has) — the finance_document / finance_document_link tables, src/lib/finance/documents/, the two handlers under src/app/(platform)/p/finance/api/documents/ and tests/unit/finance-documents.spec.ts + tests/int/platform/finance-documents.int.spec.ts + tests/e2e/finance-documents.e2e.spec.ts. #383 drained EARS-526/532: the audited counterparty reference, the request-bound purpose proposal and its admin resolution/dismissal path — src/lib/finance/counterparties.ts + src/lib/finance/purpose-proposals.ts + tests/int/platform/finance-references.int.spec.ts. #386 drained EARS-508/509/510/511/512/531: the member-owned expense-request facade, one-act approval/posting, pre-spend authorization/confirmation, refusal and the pluggable document-verifier seam — src/lib/finance/intake/requests.ts + tests/int/platform/finance-expense-requests.int.spec.ts. The list has no entry for the one number spec 339 retired before the go: that clause is a process note under its §G and the spec deliberately does not write it as an id token, so the guard never counts it as declared and a deferral for it would sit here forever',
   },
   357: {
     ids: ['EARS-324', 'EARS-325', 'EARS-326'],
