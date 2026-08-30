@@ -70,8 +70,8 @@ describe('the JSON store code path is removed (EARS-15)', () => {
     // The sharpest available statement of «the code path is removed»: the store
     // was the module's only reason to open a file, and a future fallback would
     // have to start by importing `node:fs`. Asserted on the module rather than on
-    // the word `hours.json`, which legitimately survives elsewhere in `src/` as
-    // the DOWNLOAD filename of `/p/hours/admin/export` (EARS-11).
+    // the word `hours.json`, which legitimately survives in frozen archives,
+    // migration fixtures and tools outside `src/` (EARS-11).
     const offenders = filesUnder(join(ROOT, 'src/lib/hours'))
       .filter((file) => !file.endsWith('.md'))
       .filter((file) => /from 'node:fs(?:\/promises)?'/.test(read(file)))

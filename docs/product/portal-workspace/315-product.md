@@ -52,9 +52,9 @@ admin shell went to him there, the **pick** is recorded as a comment on #315
   destructive delete is unsupported by design and feeds the spec's CRUD check.
   _(`lead-decided`; spec §6 names `members` as a first resource)_
 - **US-5** — As a platform admin, I administer hours periods and member hours
-  here — everything the old `/p/hours/admin` screen let me do, including the
-  export and the Mattermost-publish panel, which move here in full.
-  _(owner-approved 2026-08-24; spec §6, owner decision 5)_
+  here — including rate and grade edits, and Mattermost preview and publication.
+  The user-visible JSON export is retired. _(owner-approved 2026-08-24; export
+  retirement owner-approved in #317; spec §6, owner decision 5)_
 - **US-6** — As a platform admin, a form tells me plainly when an operation is
   not supported here rather than offering a control that fails. _(`lead-decided`
   — the issue asks for an explicit CRUD check per form; this is its
@@ -110,10 +110,11 @@ Plane is no argument for keeping it outside the cabinet. The section's content
 is defined by the spec. This reverses the earlier `lead-decided` exclusion.)_
 
 **Hours administration after the move.**
-Admin performs period open/close, rate and grade edits, the export and the
-Mattermost publication from the cabinet. The old `/p/hours/admin` surface and its
-export route are gone: those URLs return 404, with no redirect.
-_(owner-approved 2026-08-24)_
+Admin performs period open/close, rate and grade edits, and Mattermost
+preview/publication from the cabinet. The user-visible JSON export is retired.
+The old `/p/hours/admin` surface and `/p/hours/admin/export` route are gone:
+those URLs return 404, with no redirect. _(owner-approved 2026-08-24; export
+retirement owner-approved in #317)_
 
 **A non-admin reaching an admin URL.**
 Refused by the server (#313). The shell never renders a partial cabinet.
@@ -128,9 +129,8 @@ Refused by the server (#313). The shell never renders a partial cabinet.
 - A platform admin can find and correct a member record.
 - A platform admin can deactivate a member; no screen offers a destructive
   delete.
-- A platform admin can perform every hours administration operation that the old
-  `/p/hours/admin` screen supported, including the export and the Mattermost
-  publication.
+- A platform admin can open/close hours periods, edit rates and grades, and
+  preview or publish the Mattermost message.
 - The cabinet opens on an index of the sections available to the admin.
 - Nothing in `/p/admin` is reachable by a member holding only `platform-user`.
 - Every form makes clear which operations it supports; unsupported operations
@@ -156,8 +156,10 @@ Refused by the server (#313). The shell never renders a partial cabinet.
 
 ## Settled during the 2026-08-24 confirmation round
 
-- The hours export and the Mattermost-publish panel move into the cabinet in
-  full; the old URLs 404 (owner-approved).
+- The 2026-08-24 decision moved the hours export and Mattermost-publish panel
+  into the cabinet. It was superseded in #317: the user-visible JSON export is
+  retired, while Mattermost preview/publish remains in the cabinet; the old URLs
+  404 (owner-approved).
 - The cabinet is admin-only — nothing in it is available to a plain
   `platform-user` (`lead-decided`).
 - The cabinet opens on a minimal index of sections (`lead-decided`).

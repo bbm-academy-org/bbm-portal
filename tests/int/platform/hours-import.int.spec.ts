@@ -91,11 +91,11 @@ type ImportOutcome = {
 /**
  * Read a fixture through the frozen archive reader and import it into `core`, in
  * ONE transaction that first takes the module advisory lock (EARS-10, EARS-13),
- * then produce the EARS-27 verdict against what `core` would export afterwards.
+ * then produce the EARS-27 verdict against the document reconstructed from `core`.
  *
- * The post-import export is read AFTER the transaction commits, deliberately:
- * EARS-27's question is «what would the owner download now», and the only honest
- * answer comes from the same read path `/p/hours/admin/export` uses.
+ * The post-import document is read AFTER the transaction commits, deliberately:
+ * EARS-27 verifies what the migration verifier would reconstruct from `core`.
+ * The retired user-visible JSON-export route is not part of that verification.
  */
 async function importFixture(file: string): Promise<ImportOutcome> {
   const source: HoursDocument = await readJsonDocument(file)
