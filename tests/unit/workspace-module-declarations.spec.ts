@@ -70,7 +70,6 @@ describe('the hours declaration (spec 311 EARS-401, EARS-406)', () => {
         resources: [
           { name: 'periods', label: 'Периоды' },
           { name: 'participants', label: 'Ставки и грейды' },
-          { name: 'export', label: 'Экспорт' },
           { name: 'publication', label: 'Публикация в Mattermost' },
         ],
       },

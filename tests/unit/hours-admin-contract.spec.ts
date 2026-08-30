@@ -9,7 +9,7 @@ import {
 } from '@/lib/hours/admin-contract'
 
 describe('hours cabinet contract (spec 311 EARS-421, EARS-446..452)', () => {
-  it('EARS-446: declares exactly the four owner-approved Option A resources', () => {
+  it('EARS-446: declares exactly the three owner-approved cabinet resources', () => {
     expect(hoursAdminSection.label).toBe('Часы')
     expect(
       hoursAdminSection.resources.map(({ name, label, operations }) => ({
@@ -28,7 +28,6 @@ describe('hours cabinet contract (spec 311 EARS-421, EARS-446..452)', () => {
         label: 'Ставки и грейды',
         operations: ['list', 'create', 'edit'],
       },
-      { name: 'export', label: 'Экспорт', operations: ['list'] },
       { name: 'publication', label: 'Публикация в Mattermost', operations: ['list'] },
     ])
   })
