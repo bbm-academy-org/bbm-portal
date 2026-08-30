@@ -91,8 +91,8 @@ test.describe('the /p launcher (spec 311 §C)', () => {
     // The «портфель, позже» placeholders: below the live apps, no status line,
     // no link, and not reachable by Tab (EARS-477, EARS-478).
     const planned = page.locator('[data-tile-form="planned"]')
-    await expect(planned).toHaveCount(6)
-    for (let i = 0; i < 6; i += 1) {
+    await expect(planned).toHaveCount(5)
+    for (let i = 0; i < 5; i += 1) {
       const tile = planned.nth(i)
       await expect(tile).toHaveText(/портфель, позже/)
       expect(await tile.evaluate((el) => el.tagName)).toBe('DIV')
@@ -198,7 +198,7 @@ test.describe('the /p launcher (spec 311 §C)', () => {
 
     // A placeholder is NOT claim-gated: an admin sees exactly what a member sees
     // (EARS-478, scenario 5).
-    await expect(page.locator('[data-tile-form="planned"]')).toHaveCount(6)
+    await expect(page.locator('[data-tile-form="planned"]')).toHaveCount(5)
   })
 
   test('EARS-428: on a narrow viewport the grid reflows and the switcher stays reachable', async ({
