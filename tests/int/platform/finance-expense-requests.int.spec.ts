@@ -34,6 +34,7 @@ import {
   seedMember,
   truncateFinanceTables,
 } from './finance-helpers'
+import { asMigrator } from './privilege-helpers'
 
 const db = getPlatformDb()
 const PDF = Buffer.from('%PDF-1.7 expense request receipt')
@@ -224,6 +225,44 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
       sql`select count(*)::int as count from core.finance_operation where id = ${posted.operationId}`,
     )
     expect(Number((operations.rows[0] as { count: number }).count)).toBe(1)
+  })
+
+  it('EARS-510: a failed one-act post leaves the request submitted and records no decision', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs, { alreadyPaid: true }))
+    await uploadReceipt(MEMBER, request.id)
+    await submitExpenseRequest(MEMBER, request.id)
+
+    await asMigrator(async (client) => {
+      await client.query(`
+        create or replace function core.finance_test_fail_request_post()
+        returns trigger language plpgsql as $$
+        begin
+          raise exception 'injected request posting failure';
+        end $$;
+        create trigger finance_test_fail_request_post
+        before insert on core.finance_operation
+        for each row execute function core.finance_test_fail_request_post();
+      `)
+    })
+    try {
+      await expect(approveExpenseRequest(APPROVER, request.id)).rejects.toThrow()
+    } finally {
+      await asMigrator(async (client) => {
+        await client.query(
+          'drop trigger if exists finance_test_fail_request_post on core.finance_operation',
+        )
+        await client.query('drop function if exists core.finance_test_fail_request_post()')
+      })
+    }
+
+    expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({
+      status: 'submitted',
+      decidedBy: null,
+      decidedAt: null,
+      postedBy: null,
+      operationId: null,
+    })
   })
 
   it('EARS-511: pre-spend approval posts nothing; entry attaches the receipt and approve confirms with the actual money date', async () => {
