@@ -82,6 +82,23 @@ export function isValidIsoDate(value: unknown): boolean {
   return parseIsoDate(value) !== null
 }
 
+type PeriodSelectionCandidate = {
+  status: 'open' | 'closed'
+}
+
+/** Spec 081 requirement 22: open first, otherwise latest by end date. */
+export function pickDefaultPeriod<T extends PeriodSelectionCandidate>(
+  periods: readonly T[],
+  dateTo: (period: T) => string,
+): T | undefined {
+  const open = periods.find((period) => period.status === 'open')
+  if (open) return open
+  return periods.reduce<T | undefined>((latest, period) => {
+    if (!latest) return period
+    return dateTo(period) >= dateTo(latest) ? period : latest
+  }, undefined)
+}
+
 /** Собирает ISO-строку из компонентов (нули слева). */
 export function toIsoDate({ year, month, day }: IsoDateParts): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`

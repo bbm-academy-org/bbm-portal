@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import { createCabinetResponseValidator } from '@/app/(platform)/p/admin/validation'
-import { pickDefaultPeriod } from '@/lib/hours/period-selection'
+import { pickDefaultPeriod } from '@/lib/hours/calendar'
 import { createCabinetDataProvider } from '@/lib/platform/cabinet'
 import type { WorkspaceEntry } from '@/lib/workspace/contract'
 

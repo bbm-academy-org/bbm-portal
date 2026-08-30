@@ -10,7 +10,7 @@ import {
   type HoursPublicationRecord,
 } from '@/lib/hours/admin-contract'
 import { plural } from '@/lib/hours/format'
-import { pickDefaultPeriod } from '@/lib/hours/period-selection'
+import { pickDefaultPeriod } from '@/lib/hours/calendar'
 import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'

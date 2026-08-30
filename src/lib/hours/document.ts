@@ -11,10 +11,9 @@
  * за вилку (п.23) или пересечь периоды (п.24).
  */
 
-import { countWeekdays, isValidIsoDate } from './calendar'
+import { countWeekdays, isValidIsoDate, pickDefaultPeriod } from './calendar'
 import { normalizeEmail } from './access'
 import { periodAlreadyOpen, REFUSAL } from './messages'
-import { pickDefaultPeriod } from './period-selection'
 // Склонение по числу живёт в format.ts (там же, где METHOD_LABELS): это домен,
 // а не вью, и второй копии правила «11–14 — исключение» быть не должно.
 import { formatHoursCount, plural } from './format'
