@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { sql } from 'drizzle-orm'
+import { Client } from 'pg'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -9,6 +10,9 @@ import {
   createCurrency,
   createExpenseRequest,
   createProduct,
+  createProject,
+  createPurpose,
+  detachFinanceDocument,
   editExpenseRequest,
   FinanceAccessRefusal,
   FinanceRefusal,
@@ -24,6 +28,7 @@ import {
 } from '@/lib/finance'
 import type { FinanceDocumentStorage } from '@/lib/finance/documents/storage'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
+import { requirePlatformMigrateDatabaseUrl } from '@/lib/platform/db/config'
 
 import {
   ADMIN,
@@ -53,6 +58,40 @@ const storage: FinanceDocumentStorage = {
   async remove(key) {
     blobs.delete(key)
   },
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = () => {}
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+async function waitForBlockedBy(
+  blocker: Client,
+  blockerPid: number,
+  expected: number,
+): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const result = await blocker.query<{ blocked: number }>(
+      `with recursive waiters(pid) as (
+         select pid
+           from pg_stat_activity
+          where $1 = any(pg_blocking_pids(pid))
+         union
+         select activity.pid
+           from pg_stat_activity activity
+           join waiters on waiters.pid = any(pg_blocking_pids(activity.pid))
+       )
+       select count(*)::int as blocked from waiters`,
+      [blockerPid],
+    )
+    if (Number(result.rows[0]?.blocked ?? 0) >= expected) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`Expected ${expected} transaction(s) to wait behind backend ${blockerPid}.`)
 }
 
 beforeEach(async () => {
@@ -179,6 +218,60 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
     })
   })
 
+  it('EARS-508: a racing request edit validates the final merged row under its write lock', async () => {
+    const refs = await seedIntakeReferences()
+    const firstProject = await createProject(ADMIN, { name: 'First request project' })
+    const secondProject = await createProject(ADMIN, { name: 'Second request project' })
+    const purpose = await createPurpose(ADMIN, {
+      name: 'Optional request product',
+      productBinding: 'optional',
+    })
+    const product = await createProduct(ADMIN, {
+      projectId: firstProject.id,
+      name: 'First project product',
+    })
+    const request = await createExpenseRequest(
+      MEMBER,
+      requestInput(refs, {
+        purposeId: purpose.id,
+        projectId: firstProject.id,
+        productId: null,
+      }),
+    )
+    const blocker = new Client({
+      connectionString: requirePlatformMigrateDatabaseUrl(process.env),
+    })
+    await blocker.connect()
+
+    let transactionOpen = false
+    let edit: PromiseSettledResult<unknown> | undefined
+    try {
+      await blocker.query('begin')
+      transactionOpen = true
+      const pid = Number(
+        (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
+      )
+      await blocker.query('update core.finance_intake_item set project_id = $1 where id = $2', [
+        secondProject.id,
+        request.id,
+      ])
+
+      const addProduct = editExpenseRequest(MEMBER, request.id, { productId: product.id })
+      await waitForBlockedBy(blocker, pid, 1)
+
+      await blocker.query('commit')
+      transactionOpen = false
+      ;[edit] = await Promise.allSettled([addProduct])
+    } finally {
+      if (transactionOpen) await blocker.query('rollback')
+      await blocker.end()
+    }
+
+    expect(edit?.status).toBe('rejected')
+    const final = await getExpenseRequest(MEMBER, request.id)
+    expect(final).toMatchObject({ projectId: secondProject.id, productId: null })
+  }, 10_000)
+
   it('EARS-509: submit exposes the request to the approver queue and every later status to its member', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs))
@@ -263,6 +356,47 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
       postedBy: null,
       operationId: null,
     })
+  })
+
+  it('EARS-510/531: verifier approval cannot post a different request and document snapshot', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs, { alreadyPaid: true }))
+    const originalDocument = await uploadReceipt(MEMBER, request.id)
+    await submitExpenseRequest(MEMBER, request.id)
+    const verifierStarted = deferred()
+    const releaseVerifier = deferred()
+    const verifier: FinanceDocumentVerifier = {
+      id: 'interleaving-verifier',
+      async verify(context) {
+        expect(context.request).toMatchObject({ id: request.id, amount: 120_000n })
+        expect(context.documents.map((document) => document.id)).toEqual([originalDocument.id])
+        verifierStarted.resolve()
+        await releaseVerifier.promise
+        return { verdict: 'verified' }
+      },
+    }
+
+    const approval = approveExpenseRequest(APPROVER, request.id, { verifier })
+    await verifierStarted.promise
+    await editExpenseRequest(MEMBER, request.id, { amount: 125_000n })
+    await detachFinanceDocument(ENTRY, {
+      documentId: originalDocument.id,
+      intakeItemId: request.id,
+    })
+    const replacementDocument = await uploadReceipt(ENTRY, request.id)
+    releaseVerifier.resolve()
+
+    await expect(approval).rejects.toThrow(/changed|snapshot|verification/i)
+    expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({
+      status: 'submitted',
+      amount: 125_000n,
+      operationId: null,
+    })
+    expect(
+      (await listFinanceDocuments(APPROVER, { intakeItemId: request.id })).map(
+        (document) => document.id,
+      ),
+    ).toEqual([replacementDocument.id])
   })
 
   it('EARS-511: pre-spend approval posts nothing; entry attaches the receipt and approve confirms with the actual money date', async () => {
