@@ -19,6 +19,7 @@ import {
   getExpenseRequest,
   listExpenseRequests,
   listFinanceDocuments,
+  postIntakeItem,
   readFinanceDocument,
   refuseExpenseRequest,
   submitExpenseRequest,
@@ -419,6 +420,45 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
       postedBy: refs.approverMemberId,
     })
     expect(posted.operationId).not.toBeNull()
+  })
+
+  it('EARS-511/531: the verifier approves the actual confirmation date that is posted', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs))
+    await submitExpenseRequest(MEMBER, request.id)
+    await approveExpenseRequest(APPROVER, request.id)
+    await uploadReceipt(ENTRY, request.id)
+    const verifiedDates: string[] = []
+    const verifier: FinanceDocumentVerifier = {
+      id: 'actual-date-verifier',
+      async verify(context) {
+        verifiedDates.push(context.request.occurredOn)
+        return { verdict: 'verified' }
+      },
+    }
+
+    const posted = await confirmExpenseRequest(APPROVER, request.id, {
+      occurredOn: '2026-08-23',
+      verifier,
+    })
+
+    expect(verifiedDates).toEqual(['2026-08-23'])
+    expect(posted).toMatchObject({ status: 'posted', occurredOn: '2026-08-23' })
+  })
+
+  it('EARS-531: the public posting API cannot post a request without verifier-bound evidence', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs))
+    await submitExpenseRequest(MEMBER, request.id)
+    await approveExpenseRequest(APPROVER, request.id)
+    await uploadReceipt(ENTRY, request.id)
+
+    await expect(postIntakeItem(APPROVER, request.id)).rejects.toThrow(/вериф|провер|EARS-531/i)
+    expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+      postedBy: null,
+    })
   })
 
   it('EARS-512: refusal requires a reason, keeps an already-paid claim and its document, and may revoke an unposted approval', async () => {
