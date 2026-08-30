@@ -576,6 +576,17 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-27-5c8f2a1d94 -->
 
+- [ ] 2026-08-30 `pnpm lint:tdd-order` cannot complete its PR-mode GitHub
+      pagination on Windows: the guard's shell-backed `ghRun` passes an API URL
+      containing `&page=` through `cmd.exe`, which executes `page=` as a second
+      command (`'page' is not recognized`). Exact-head Linux CI still runs the
+      same guard successfully, so this is a local-verification gap rather than a
+      release blocker — return condition: the next edit to `tdd-order-lint.mjs`'s
+      GitHub pagination/runner, or the next Windows session that needs a local
+      PR-mode verdict before CI is available (#317)
+
+<!-- debt-entry-end: 2026-08-30-317-tdd-order-windows -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
