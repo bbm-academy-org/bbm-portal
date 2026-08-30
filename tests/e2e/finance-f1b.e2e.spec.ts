@@ -131,7 +131,7 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     }
   })
 
-  test('EARS-317/325: the live stand carries representative linked rows and varied balances', async ({
+  test('EARS-317/325: representative money has an exact RUB total and an honest incomplete THB view', async ({
     page,
   }) => {
     test.skip(
@@ -141,13 +141,31 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
 
     await signIn(page, FINANCE, adminCredentials)
     for (const balance of [
-      { account: 'Основной банк', amount: '1 284 500,00', currency: 'RUB' },
-      { account: 'Корпоративная карта', amount: '8 750,00', currency: 'USD' },
-      { account: 'Операционная касса', amount: '64 320,50', currency: 'THB' },
+      { account: 'Основной банк', amount: '910 000,00', currency: 'RUB' },
+      { account: 'Наличные RUB', amount: '500 000,00', currency: 'RUB' },
+      { account: 'Корпоративная карта', amount: '5 500,00', currency: 'USD' },
+      { account: 'Карта THB', amount: '140 000,00', currency: 'THB' },
     ]) {
-      const row = page.locator('main[data-bbm-ui] > div').filter({ hasText: balance.account })
+      const row = page.getByRole('group', { name: balance.account })
       await expect(row).toContainText(balance.amount)
       await expect(row).toContainText(balance.currency)
+    }
+
+    const total = page.getByRole('group', { name: 'Итого' })
+    await expect(total).toContainText('2 010 000,00')
+    await expect(total).toContainText('RUB')
+    await expect(total).toContainText('По записанной стоимости')
+
+    await page.getByRole('combobox', { name: 'Валюта итога' }).click()
+    await page.getByRole('option', { name: /THB/ }).click()
+    await expect(page).toHaveURL(/\/p\/finance\?currency=THB$/)
+    await expect(page.getByRole('group', { name: 'Итого' })).toContainText(
+      'Итого пока не рассчитано',
+    )
+    await expect(page.getByRole('group', { name: 'Итого' })).toContainText('RUB, USD')
+
+    for (const account of ['Основной банк', 'Наличные RUB', 'Корпоративная карта', 'Карта THB']) {
+      await expect(page.getByRole('group', { name: account })).toBeVisible()
     }
 
     for (const [path, rows] of [

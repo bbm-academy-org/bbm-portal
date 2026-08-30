@@ -100,6 +100,26 @@ function fakeFinanceApi() {
       register.push(row)
       return row
     }),
+    recordConversion: vi.fn(async (_actor, input) => {
+      const source = accounts.find((account) => account.id === input.sourceAccountId)
+      const destination = accounts.find((account) => account.id === input.targetAccountId)
+      const first = input.steps[0]
+      const last = input.steps.at(-1)
+      if (!source || !destination || !first || !last) throw new Error('invalid fake conversion')
+      const row = {
+        operationId: nextId++,
+        occurredOn: input.occurredOn,
+        source: input.source ?? 'manual',
+        purposeId: null,
+        sourceRef: input.sourceRef ?? null,
+        postings: [
+          { accountId: source.id, amount: -first.fromAmount, currency: first.fromCurrency },
+          { accountId: destination.id, amount: last.toAmount, currency: last.toCurrency },
+        ],
+      }
+      register.push(row)
+      return row
+    }),
   }
 
   return {
@@ -133,8 +153,9 @@ describe('finance acceptance seed (#357)', () => {
     expect(state.currencies.map((row) => row.code)).toEqual(['RUB', 'USD', 'THB'])
     expect(state.accounts.filter((row) => row.isSystem === false)).toMatchObject([
       { name: 'Основной банк', kind: 'bank', currency: 'RUB' },
+      { name: 'Наличные RUB', kind: 'cash', currency: 'RUB' },
       { name: 'Корпоративная карта', kind: 'card', currency: 'USD' },
-      { name: 'Операционная касса', kind: 'cash', currency: 'THB' },
+      { name: 'Карта THB', kind: 'card', currency: 'THB' },
     ])
     expect(state.projects.map((row) => row.name)).toEqual([
       'Фонд BBM',
@@ -144,7 +165,8 @@ describe('finance acceptance seed (#357)', () => {
     expect(state.products).toHaveLength(2)
     expect(state.purposes.length).toBeGreaterThanOrEqual(4)
     expect(state.categories.length).toBeGreaterThanOrEqual(3)
-    expect(state.register).toHaveLength(3)
+    expect(state.register).toHaveLength(5)
+    expect(api.recordConversion).toHaveBeenCalledTimes(4)
 
     const moneyBalances = new Map<number, bigint>()
     for (const operation of state.register) {
@@ -158,7 +180,7 @@ describe('finance acceptance seed (#357)', () => {
     const visibleBalances = state.accounts
       .filter((row) => row.isSystem === false)
       .map((row) => moneyBalances.get(Number(row.id)))
-    expect(visibleBalances).toEqual([128_450_000n, 875_000n, 6_432_050n])
+    expect(visibleBalances).toEqual([91_000_000n, 50_000_000n, 550_000n, 14_000_000n])
   })
 
   it('is wired as a Node-22 package command and writes finance data only through the public API', () => {
