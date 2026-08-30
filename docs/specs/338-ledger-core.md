@@ -64,9 +64,10 @@ owner on the wireframe prototype (Stage A, 2026-08-25 — see "Design gate").
   reporting view defaults to RUB and can switch currency without changing a
   posting; any cross-currency amount uses recorded actual conversion facts,
   never a market/current rate fetched at read time. For F1b's **current
-  holdings** total, this spec applies that ruling as a conservative
-  chronological read-model replay over immutable ledger facts (EARS-325),
-  separate from EARS-328's write-time realized-FX pair pool. Period reports
+  holdings** total, this spec applies that ruling as a chronological remaining-
+  holding replay per currency pair and a deterministic graph over those pair
+  rates (EARS-325), separate from EARS-328's write-time realized-FX calculation.
+  Period reports
   continue to apply their broader per-operation actual-rate semantics in F3.
 - **Spec 311 §A, §D** (EARS-401/402/409, EARS-431…439) — the workspace
   declaration contract: finance declares one `internal` entry with an `admin`
@@ -91,6 +92,13 @@ and the Garrison segment-margin statement — and the resulting rulings in
 "Accounting policy" below were **accepted by the owner at the stage-2 go
 (2026-08-26, #338)**, the overhead ladder with five amendments. No owner
 question in this spec asks what public research answers.
+
+The F1b total correction on 2026-08-30 re-read the primary owner register
+(#115 decisions 13 and 18) and the owner-validated `Overview.dc.html` artifact
+rather than introducing another benchmark: the product policy is already
+settled as switchable presentation over actual operation rates, with no
+read-time market rate. EARS-325's deterministic pair-rate graph is the read-
+model mechanism for that accepted policy.
 
 **Scope note on IFRS.** No IFRS standard governs management accounting; this
 register is an internal decision ledger, not a statutory measurement. Where a
@@ -138,9 +146,9 @@ builds against are vendored verbatim in `design-source/finance/`:
 - `References.dc.html` — the `/p/admin` reference tables;
 - `Overview.dc.html` — `/p/finance`; F1 ships only its cash-balances card.
 
-For avoidance of doubt, that accepted cash card includes its «Итого» column,
-the reporting-currency switch and the explicit incomplete-valuation state in
-EARS-325. «The rest of the overview is F3» means the other cards and report
+For avoidance of doubt, that accepted cash card includes its «Итого» column and
+the reporting-currency switch in EARS-325. «The rest of the overview is F3»
+means the other cards and report
 navigation in `Overview.dc.html`; it does not remove part of the cash card.
 
 The remaining nine artboards belong to F2–F5 and are vendored on their first
@@ -326,14 +334,18 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   decision 13).
 
   The total shall be a reproducible reading of recorded facts, never a silent
-  conversion. For the selected reporting currency, the finance public API shall
-  replay the existing immutable operations, postings and conversion steps in
-  chronological `(occurred_on, operation_id)` order, and conversion steps
-  within one operation in ascending `step_no` order, and derive a
-  **currency-wide** moving-average valuation pool for each currency. It shall
-  first aggregate all non-system money-account balances by currency for the
-  valuation check; the card shall still display the individual account rows.
-  The reporting-currency aggregate contributes 1:1.
+  conversion. The finance public API shall first aggregate all non-system money-
+  account balances by currency while the card still displays the individual
+  account rows. It shall then replay the existing immutable conversion steps in
+  chronological `(occurred_on, operation_id, step_no)` order into exactly one
+  canonical remaining-holding pool for each unordered currency pair. The replay
+  derives each step's disposed amount as the positive net of its step-linked
+  system `conversion` postings in `from_currency`, and its received amount as
+  the absolute negative net of those postings in `to_currency`. A missing or
+  non-positive side, or a step-linked system conversion posting in any third
+  currency, makes that pair unavailable. The stored rate text is shown as
+  testimony but is not re-applied to restate the posted amounts (decisions 13
+  and 18, EARS-318/319).
 
   Before replay, the read model shall remove both members of every fully
   reversed operation pair, so a reversal is exact even when unrelated
@@ -342,72 +354,58 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   backwards; an odd number of reversal acts therefore removes the original fact
   from the replay, while an even number leaves it.
 
-  The replay shall extract events from each remaining operation exactly once:
+  A pair pool carries `held_currency`, its positive `held_quantity`, the other
+  `cost_currency`, and non-negative `held_cost`, all in their own minor units;
+  initialization always starts with positive cost, while rounded partial
+  disposal may leave zero cost. An
+  empty pair has no direction; its first valid step `A→B` initializes it as
+  `held_currency=B`, `held_quantity=received_B`, `cost_currency=A`,
+  `held_cost=disposed_A`. A later step that receives the currently held currency
+  adds its received quantity and disposed cost. A step that disposes the held
+  currency removes quantity and
+  `round_half_away_from_zero(disposed_quantity × held_cost ÷ held_quantity)`
+  of its proportional moving-average cost. If a step disposes exactly the held
+  quantity, the pair becomes empty. If it disposes more, the replay consumes
+  the old pool, attributes
+  `round_half_away_from_zero(step_received × held_quantity ÷ step_disposed)` to
+  that consumption, and uses `step_disposed - held_quantity` as the opposite
+  pool's cost and `step_received - attributed_received` as its held quantity. If
+  either residual is non-positive, the pair becomes unavailable; a half-empty
+  pool never creates an edge. Once a malformed fact makes a pair unavailable,
+  that pair remains unavailable through the end of the replay; a later valid
+  step cannot hide the earlier immutable defect.
+  A non-positive or malformed leg makes that pair unavailable rather than
+  inventing a rate. Conversion endpoints, fees, system postings and ordinary
+  non-conversion operations do not create pair-rate events: only actual
+  conversion-step amounts establish a cross-currency rate.
 
-  - WHERE the operation has conversion steps, it shall process the steps in
-    ascending `step_no`. For each step, the disposed quantity is the positive
-    net of its step-linked system `conversion` postings in `from_currency`, and
-    the received quantity is the absolute value of their negative net in
-    `to_currency`; a non-positive leg, a leg in another currency or a missing
-    side makes the currencies touched by the operation unvalued. It shall first
-    transfer the disposed source basis into the received destination, then
-    process that step's step-linked non-system money posting, if present, as an
-    ordinary fee outflow in the fee money account's currency; that posting must
-    be negative and its absolute amount is the fee. The operation's non-step
-    money endpoint postings and its step-linked exchange legs are structural
-    evidence of the same conversion and shall not also become ordinary
-    inflow/outflow events; system `expense`, `conversion` and `fx_result`
-    counter-postings likewise create no valuation event. A non-system money
-    posting on a conversion operation that is neither a structural endpoint nor
-    a step-linked fee shall make every currency touched by that operation
-    unvalued rather than be silently classified.
-  - WHERE the operation has no conversion step, it shall net all non-system
-    money-account postings within that operation per currency, then apply one
-    ordinary movement per currency in ascending currency-code order: a positive
-    net is an inflow, a negative net is an outflow, and zero creates no event.
-    System-account postings create no separate valuation event.
+  A positive pair pool `Q_A` held in currency `A` at cost `K_B` in currency `B`
+  creates two exact reciprocal graph edges: `A→B = K_B / Q_A` and
+  `B→A = Q_A / K_B`. A zero or negative quantity or cost creates no edge. To
+  value one nonzero native-currency aggregate in the selected reporting
+  currency, the read model shall choose the simple path with the fewest edges;
+  among equal-length paths it shall choose the lexicographically smallest full
+  sequence of currency codes. It shall never traverse a cycle. Direct recorded
+  pairs therefore win over inferred multi-hop paths.
 
-  Each foreign-currency pool shall carry a quantity in that currency's minor
-  units and, only while fully known, its cost in reporting-currency minor units.
-  A recorded conversion step shall remove the disposed source quantity and its
-  proportional known cost from the source pool and shall add the received
-  quantity with that transferred cost to the destination pool. This
-  chronological transfer — not a graph of EARS-328 pair pools — naturally
-  carries known basis through an actual multi-step conversion. When the
-  reporting currency is the disposed source, its transferred cost is the
-  disposed quantity 1:1; when it is the received destination, that received
-  money contributes through the reporting-currency aggregate 1:1 rather than
-  through a foreign pool. IF the disposed foreign source basis is unknown, THEN
-  the received foreign basis is unknown. An ordinary money inflow in the
-  reporting currency is known 1:1; an ordinary foreign inflow has unknown
-  reporting-currency basis. Same-currency transfers between non-system money
-  accounts net to zero in the currency-wide replay. Once a positive pool
-  contains any unknown basis, it remains unknown until its quantity returns
-  exactly to zero, at which point the empty pool resets. An ordinary outflow
-  reduces the quantity and, only for a fully known positive pool, removes
-  proportional known cost. Explicit conversion fees follow the same
-  ordinary-outflow rule in the currency in which they were posted.
+  All path ratios shall be multiplied as exact `bigint` numerators and
+  denominators. The read model shall apply half-away-from-zero exactly once to
+  the final converted amount of each source-currency aggregate, then sum those
+  converted integer amounts. The selected currency's own aggregate contributes
+  1:1. There is no second rounding at total time.
 
-  All quantities and costs shall remain `bigint` minor units. Each proportional
-  removal or transfer shall compute
-  `disposed_quantity × pool_cost ÷ pool_quantity` and apply the existing
-  half-away-from-zero rule exactly once at that removal; the grand total shall
-  be the integer sum of the reporting-currency aggregate and every known
-  foreign pool cost, with no further conversion rounding. A negative foreign
-  aggregate balance, an over-disposal, a non-positive pool used as a source, or
-  any replay state whose pool quantity does not equal the final aggregate
-  balance shall mark that currency unvalued rather than crash or produce a
-  partial number.
-
-  IF every nonzero foreign aggregate balance is positive, fully known and equal
-  to its replayed pool quantity, THEN the card shall show the numeric grand
-  total. Otherwise it shall withhold the numeric grand total — never show a
-  partial total or treat missing basis as zero — and shall name every unvalued
-  currency in ascending currency-code order while leaving all native-currency
-  account balances visible. The card shall state that it uses recorded cost
-  rather than a market/current rate.
-  Switching the reporting currency shall run the replay anew; a selected
-  currency may honestly produce an incomplete state.
+  The reporting-currency selector shall start from `RUB ∪ account currencies`.
+  RUB is always present and is the default. A non-RUB candidate shall be offered
+  only when every nonzero native-currency aggregate has a path to it; when every
+  aggregate is zero, every candidate is offered and every total is zero. Every
+  offered non-RUB option shall therefore produce a numeric total. A stale or
+  hand-written unavailable `currency` query shall fall back to RUB. IF RUB is
+  unreachable from a nonzero aggregate, THEN the default RUB view shall keep
+  every exact native balance visible, withhold the numeric total and name the
+  unreachable currencies in ascending code order; this is a degraded data-
+  quality state, not an enabled incomplete non-RUB selection. The card shall
+  state that it uses actual recorded operation rates and never a market or read-
+  time rate.
 
   The rest of the overview is F3's and shall not be stubbed. A request that does
   not carry `platform-user` (or `platform-admin`, which implies it — spec 311
@@ -631,17 +629,19 @@ Owner walkthrough, on a live stand, after the go and the build:
    RUB; then acquire 1,500.00 USD for 120,000.00 RUB. Open `/p/finance` and see
    the separate native rows «Банк RUB» 910,000.00 RUB, «Наличные RUB»
    500,000.00 RUB, «Карта USD» 5,500.00 USD and «Карта THB» 140,000.00 THB.
-   The selector defaults to RUB. The USD pool carries 360,000.00 RUB recorded
-   cost after the partial disposal and later acquisition; the THB pool carries
-   240,000.00 RUB; «Итого» is therefore exactly **2,010,000.00 RUB** and the
-   card says «по записанной стоимости», not market/current rate
-   (EARS-310/317/318/319/325).
-3. **The same holdings can switch into an honest incomplete state.** Switch
-   «Итого» from RUB to THB. All four native account rows stay unchanged. The
-   RUB origin was an ordinary foreign inflow relative to a THB view, so its THB
-   basis is unknown; the basis transferred onward into the remaining USD is
-   unknown too. The numeric total is withheld and the card names `RUB, USD` as
-   unvalued. Reloading produces the same state (EARS-319/325).
+   The selector defaults to RUB. The remaining RUB/USD pair pool carries
+   9,500.00 USD at 600,000.00 RUB recorded cost, and the USD/THB pair pool
+   carries 140,000.00 THB at 4,000.00 USD recorded cost. Converting each native
+   aggregate over the shortest pair path makes «Итого» exactly
+   **2,010,000.00 RUB**. The card says «по фактическим курсам операций», not
+   market/current rate (EARS-310/317/318/319/325).
+3. **The same holdings produce complete totals in every offered currency.**
+   Switch «Итого» from RUB to USD and then THB. All four native account rows
+   stay unchanged. The pair-rate graph converts each native aggregate
+   separately: USD is exactly **31,825.00 USD**, and THB is exactly
+   **1,113,875.00 THB**.
+   Reloading preserves the selected numeric total, and no market/current rate is
+   fetched (EARS-318/319/325).
 4. **Unknown foreign money does not become a partial total.** Return to RUB and
    add an ordinary 100.00 EUR inflow: every native row remains visible, but the
    total is withheld and `EUR` is named. Spend 40.00 EUR: the remaining 60.00
@@ -687,47 +687,67 @@ stated otherwise currencies have precision 2 and values below are minor units:
 
 1. **Representative replay.** The five operations of owner scenario 2 start
    with `200_000_000` RUB across two RUB accounts and end with aggregate
-   quantities RUB `141_000_000`, USD `550_000`, THB `14_000_000`; known RUB
-   costs are respectively `141_000_000`, `36_000_000`, `24_000_000`, so the
-   final integer sum is exactly `201_000_000` and the separate RUB rows still
-   sum to their aggregate.
+   quantities RUB `141_000_000`, USD `550_000`, THB `14_000_000`. The canonical
+   RUB/USD pair ends holding USD `950_000` at RUB cost `60_000_000`; the USD/THB
+   pair ends holding THB `14_000_000` at USD cost `400_000`. In the RUB view,
+   USD contributes `34_736_842`, THB contributes `25_263_158`, and the exact
+   final sum is `201_000_000`; the separate RUB rows still sum to their native
+   aggregate.
 2. **Intervening operation plus reversal.** RUB ordinary inflow `100_000`, a
    conversion RUB `60_000` → USD `1_000`, an unrelated later RUB inflow `5_000`,
    then the exact reversal of the conversion shall replay as RUB `105_000`, USD
    zero and total `105_000`: both conversion members are excluded before
    chronology, not replayed as a late disposal/acquisition.
-3. **Half-away-from-zero tie.** RUB inflow `1`, conversion RUB `1` → AAA `2`,
-   then conversion AAA `1` → BBB `1` shall transfer
-   `round_half_away_from_zero(1 × 1 ÷ 2) = 1`: final AAA quantity `1`, known RUB
-   cost `0`; BBB quantity `1`, known RUB cost `1`; total RUB `1`, with no second
-   rounding at total time.
-4. **Unknown ordinary foreign inflow.** USD inflow `10_000` in a RUB view is
-   unknown; outflow `4_000` leaves an unknown USD pool of `6_000`; outflow of
-   the final `6_000` resets it to known-empty. The first two cuts withhold the
-   total naming `USD`; the final cut permits total RUB `0`.
-5. **Negative and over-disposed foreign currency.** An ordinary USD outflow
-   `100` from zero yields aggregate USD `-100` and withholds the total naming
-   `USD`. A conversion fixture that disposes `101` from a known USD pool of
-   quantity `100` shall mark the source and received basis unvalued, return all
-   affected currency codes in ascending code order, and never throw.
-6. **Replay/account mismatch.** A replayed USD pool of quantity `10_000` beside
-   a final aggregate money-account balance of `9_999` shall withhold the total
-   naming `USD`, never adjust either figure to make them agree.
-7. **Reporting-currency switch.** Replaying fixture 1 in THB shall leave the
-   native balances unchanged and withhold the numeric total naming `RUB, USD`;
-   the test shall not manufacture a THB basis for the ordinary RUB origin.
-8. **Step before fee, with no posting double count.** In a RUB view, an ordinary
+3. **Half-away-from-zero only after a full path, once per source.** Given pair
+   edges AAA→BBB `1/2` and BBB→CCC `1/2`, an aggregate AAA `1` in a CCC view
+   shall multiply the exact path ratio first and produce CCC `0`; rounding after
+   each edge would incorrectly produce `1`. Given two separate source
+   aggregates AAA `1` and DDD `1`, each with a direct `1/2` edge to CCC, each
+   source rounds independently to CCC `1` and the total is `2`; summing the two
+   fractional conversions before rounding would incorrectly produce `1`.
+4. **Disconnected ordinary foreign inflow.** A USD inflow `10_000` with no
+   recorded RUB/USD conversion leaves USD unreachable in the default RUB view;
+   the card keeps the native USD amount, withholds the total and names `USD`.
+   An outflow `4_000` leaves the same degraded state at USD `6_000`; outflow of
+   the final `6_000` makes every aggregate zero, after which RUB and USD are both
+   offered with total zero.
+5. **Pair pool crosses through zero.** A RUB/USD pool holding USD `100` at RUB
+   cost `6_000`, followed by a step USD `150` → RUB `9_750`, shall consume the
+   USD pool, attribute RUB `6_500` of proceeds to that disposal, and establish
+   the opposite pool holding RUB `3_250` at USD cost `50`. The graph exposes one
+   reciprocal edge from that positive opposite pool and never two contradictory
+   directional pools for the pair. With a pool holding USD `1` at RUB cost `1`,
+   a step USD `2` → RUB `1` attributes the one received RUB unit to the old pool
+   and leaves residual quantity RUB `0` at cost USD `1`; it shall mark the pair
+   unavailable rather than create that half-empty edge.
+6. **Partial disposal rounds moving-average cost half away from zero.** A pool
+   holding USD `2` at RUB cost `1`, followed by a step USD `1` → RUB `1`, shall
+   remove
+   `round_half_away_from_zero(1 × 1 ÷ 2) = 1` RUB of cost and leave a pool
+   holding USD `1` at RUB cost `0`; truncation would incorrectly remove zero.
+   Because a zero-cost remainder cannot create a reciprocal rate, the pair has
+   no graph edge until a later same-direction conversion adds positive cost.
+   Separately, once a malformed step has marked a pair unavailable, later valid
+   steps shall not restore it during the same replay.
+7. **Path selection is stable.** When both a direct USD→RUB edge and a longer
+   USD→THB→RUB path exist, the direct edge wins. When two equal-length simple
+   paths exist, the lexicographically smaller complete currency-code sequence
+   wins. Insertion order, object-key order and graph traversal order shall not
+   change the selected path; cycles are never candidates.
+8. **Reporting-currency switch.** Fixture 1 shall offer RUB, USD and THB. Its
+   RUB total `201_000_000` shall become exact selected totals USD `3_182_500`
+   and THB `111_387_500` through the pair graph. Native balances shall remain
+   unchanged. A currency unreachable from any nonzero aggregate shall not be
+   offered, and a stale query naming it shall fall back to the RUB default,
+   which shows the degraded state if RUB itself is unreachable.
+9. **Fees and endpoints do not contaminate pair rates.** In a RUB view, an ordinary
    inflow of RUB `40_000`, followed by a conversion RUB `20_000` → USD `10_000`,
-   establishes a pre-existing USD pool of quantity `10_000` and RUB cost
-   `20_000`. A later conversion RUB `10_000` → USD `10_000` whose same step
-   charges a USD fee of `5_000` shall first produce a USD pool of quantity
-   `20_000` and RUB cost `30_000`, then remove fee cost
-   `round_half_away_from_zero(5_000 × 30_000 ÷ 20_000) = 7_500`. The final
-   aggregates shall be RUB `10_000` and USD `15_000`, the remaining USD cost
-   shall be RUB `22_500`, and the numeric total shall be exactly RUB `32_500`.
-   Replaying the fee before its step would incorrectly yield RUB `30_000`; the
-   test shall also assert that the endpoint money postings and system exchange
-   legs create no additional events or pool quantity.
+   then a conversion RUB `10_000` → USD `10_000` whose step charges a USD fee of
+   `5_000`, shall produce a RUB/USD pair pool holding USD `20_000` at RUB cost
+   `30_000`: the fee changes the native USD account balance to `15_000` but does
+   not alter the pair rate. The final RUB aggregate `10_000` plus converted USD
+   `22_500` makes an exact RUB total `32_500`. Endpoint money postings, the fee
+   and system legs create no additional pair-rate event.
 
 ## Out of scope
 

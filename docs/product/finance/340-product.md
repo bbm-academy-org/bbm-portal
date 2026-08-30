@@ -48,9 +48,10 @@ first open question.
 
 **Current money is already F1b, not a sixth F3 report.** The accepted
 `Overview.dc.html` card that lists current non-system money-account balances and
-its conservative current-holdings total moved to #357 / spec 338 EARS-325. Its
-formula is deliberately narrower: chronological remaining-cost replay, with the
-number withheld when basis is incomplete. F3 retains the broader semantics of
+its reproducible current-holdings total moved to #357 / spec 338 EARS-325. Its
+formula is deliberately narrower: chronological remaining-pool replay per
+currency pair, followed by deterministic conversion of each native balance
+through recorded pair rates. F3 retains the broader semantics of
 decision 18 for **period activity and report lines** — each operation is
 re-presented at its own actual recorded rate — plus the register, period cash
 flow and P&L, cuts, drill-down, unit cost, break-even and capitalization. The two
@@ -105,7 +106,7 @@ the two that decide the rest.
   and understand why that cash flow differs from the P&L result.
   _(decision 5)_
 - **US-5** — _Moved to F1b #357 / spec 338 EARS-325._ The current balance of
-  each account in its own currency and the conservative current-holdings total
+  each account in its own currency and the switchable current-holdings total
   ship before F3. The id stays here so the remaining US ids are stable.
   _(decisions 4, 13, 18)_
 - **US-15** — As the owner, I read a report in roubles by default and can switch
@@ -230,7 +231,7 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
    rate at each operation's date, or one rate at period end?~~ **Closed by
    decision 18** (owner 2026-08-25): each operation's own actual rate, frozen at
    its date. _(The reporting currency itself was already settled by decision 13
-   — RUB by default, switchable. The conservative current-holdings total is the
+   — RUB by default, switchable. The recorded-cost current-holdings total is the
    distinct F1b EARS-325 read model.)_
 2. **What counts as a unit produced in a period?** Decision 19 (owner 2026-08-25,
    wireframe review) settled the **unit** — the production units are **lessons

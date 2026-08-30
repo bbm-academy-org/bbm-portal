@@ -16,11 +16,11 @@ from here or writes into here.
 F1 is delivered in two cuts. F1a is the ledger backend. F1b (#357) is the
 accepted `design-source/finance/Overview.dc.html` **current-money card** plus the
 finance references in `/p/admin`: every non-system money account stays visible
-in its own currency, and the card carries a conservative current-holdings total
-in RUB by default. That total is a read-model replay of immutable facts, not a
-stored balance, a new valuation table or a market quote; when recorded cost is
-incomplete it withholds the number and names the currencies instead of showing
-a partial total (spec 338 EARS-325).
+in its own currency, and the card carries a reproducible current-holdings total
+in RUB by default, switchable to another currency. That total is a read-model
+replay of immutable facts and the actual rates frozen on their operations, not a
+stored balance, a new valuation table or a market quote (decisions 13, 18; spec
+338 EARS-325).
 
 The owner chose **full accounting with the ledger as the source of truth** over a
 manual-aggregates calculator (decision 1). That choice is what this feature
@@ -239,11 +239,11 @@ form)_
 **Reading current money.**
 `/p/finance` shows every non-system money account separately in its native
 currency. For «Итого», F1b aggregates account balances by currency and replays
-immutable operations chronologically in the selected reporting currency (RUB
-by default), carrying only fully known recorded cost through actual conversion
-steps. The selector may reveal an incomplete view: then the native rows remain
-and the number is withheld with all unvalued currencies named. F3 does not own
-this one card; it owns register, period cash flow/P&L and their wider
+immutable conversion operations chronologically into one remaining-holding pool
+per currency pair. Each native-currency aggregate follows the shortest recorded
+pair path to the selected reporting currency, so each offered currency produces
+a numeric total while every native row remains unchanged. F3 does not own this
+one card; it owns register, period cash flow/P&L and their wider
 per-operation report-rate semantics. _(decisions 13, 18; spec 338 EARS-325)_
 
 ## Product acceptance criteria
@@ -287,9 +287,9 @@ per-operation report-rate semantics. _(decisions 13, 18; spec 338 EARS-325)_
 - Every current non-system money account is visible in its own currency on
   `/p/finance`.
 - The current-money total defaults to RUB, can be reevaluated in another
-  reporting currency, and is numeric only when every nonzero foreign aggregate
-  has a complete recorded-cost basis; otherwise all unvalued currencies are
-  named and no partial total is shown.
+  offered reporting currency, and every offered currency produces a numeric
+  result derived only from actual rates recorded on operations. Native balances
+  do not change when the reporting currency changes.
 
 ## Out of scope
 
@@ -324,8 +324,9 @@ per-operation report-rate semantics. _(decisions 13, 18; spec 338 EARS-325)_
 3. ~~**Are crypto holdings revalued** when the rate moves, or held at the
    recorded rate until they move again?~~ **Closed by spec 338, Accounting
    policy ruling 3:** no revaluation posting; F1b's current-money total carries
-   only recorded remaining-holding cost and withholds an incomplete number,
-   while F3 may later show a separately labelled unrealised market equivalent.
+   recorded remaining-holding rates per currency pair and converts only through
+   those operation facts, while F3 may later show a separately labelled
+   unrealised market equivalent.
 4. **What is the standard treatment of product-less overhead?** Decision 22 fixes
    that proper-accounting best practice governs and that the **F1 feature spec**
    researches and proposes it (direct → cost object; overhead → period cost or an

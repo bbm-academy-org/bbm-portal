@@ -155,10 +155,11 @@ Seven structural facts:
 7. **Presentation currency is a view, and plan is never a fact.** Every
    operation keeps the currency it happened in _(decision 13)_. F1b's accepted
    current-money card shows each account in that native currency and offers a
-   conservative total, RUB by default: a chronological replay carries only
-   recorded, fully known remaining-holding cost into the selected currency and
-   withholds the number when any nonzero foreign holding is unvalued. It never
-   fetches a current/market rate _(decision 18; spec 338 EARS-325)_. F3 owns the
+   reproducible total, RUB by default: a chronological replay builds remaining-
+   holding rates for each currency pair from the actual conversion operations.
+   Each native-currency aggregate is converted separately to the selected
+   currency through those recorded pair rates; it never fetches a current/market
+   rate _(decisions 13, 18; spec 338 EARS-325)_. F3 owns the
    broader report semantics: register, period cash flow and P&L, cuts and
    drill-down convert the operations they report at each operation's own actual
    rate, frozen at its date. Whether an expense is recognised on accrual or on
