@@ -9,9 +9,8 @@
  *     pnpm platform:finance:acceptance-seed
  *
  * Every finance read and write goes through `@/lib/finance`. Stable names and
- * one dedicated purpose per operation make a rerun a no-op: references are
- * reused, and a ledger operation is recorded only while its purpose has no
- * operation in the public register.
+ * source references make a rerun a no-op: references are reused, and each
+ * representative ledger operation is recorded at most once.
  */
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -31,6 +30,7 @@ import {
   listProjects,
   listPurposes,
   listRegister,
+  recordConversion,
   recordOperation,
   systemAccount,
   type FinanceActor,
@@ -58,6 +58,7 @@ export type FinanceAcceptanceSeedApi = {
   systemAccount: typeof systemAccount
   listRegister: typeof listRegister
   recordOperation: typeof recordOperation
+  recordConversion: typeof recordConversion
 }
 
 const PUBLIC_FINANCE_API: FinanceAcceptanceSeedApi = {
@@ -76,6 +77,7 @@ const PUBLIC_FINANCE_API: FinanceAcceptanceSeedApi = {
   systemAccount,
   listRegister,
   recordOperation,
+  recordConversion,
 }
 
 type SeedEnvironment = Record<string, string | undefined>
@@ -179,12 +181,13 @@ export async function seedFinanceAcceptance(
   }
 
   const bank = await ensureAccount({ name: 'Основной банк', kind: 'bank', currency: 'RUB' })
+  const rubCash = await ensureAccount({ name: 'Наличные RUB', kind: 'cash', currency: 'RUB' })
   const card = await ensureAccount({
     name: 'Корпоративная карта',
     kind: 'card',
     currency: 'USD',
   })
-  const cash = await ensureAccount({ name: 'Операционная касса', kind: 'cash', currency: 'THB' })
+  const thbCard = await ensureAccount({ name: 'Карта THB', kind: 'card', currency: 'THB' })
 
   const projects = await api.listProjects({ includeRetired: true })
   async function ensureProject(name: string) {
@@ -235,7 +238,7 @@ export async function seedFinanceAcceptance(
     salePrice: 4_990_000n,
     salePriceCurrency: 'RUB',
   })
-  const club = await ensureProduct({
+  await ensureProduct({
     projectId: bbmAcademy.id,
     name: 'Клуб BBM',
     salePrice: 120_000n,
@@ -284,12 +287,12 @@ export async function seedFinanceAcceptance(
     productBinding: 'required',
     categoryId: marketing.id,
   })
-  const partnerships = await ensurePurpose({
+  await ensurePurpose({
     name: 'Партнёрская программа',
     productBinding: 'required',
     categoryId: fees.id,
   })
-  const meetingSales = await ensurePurpose({
+  await ensurePurpose({
     name: 'Продажи встреч BBM',
     productBinding: 'required',
     categoryId: marketing.id,
@@ -301,61 +304,119 @@ export async function seedFinanceAcceptance(
   })
 
   const register = await api.listRegister({ limit: 50_000 })
-  async function ensureIncome(input: {
-    moneyAccount: { id: number; currency: string }
-    amount: bigint
-    purpose: { id: number; name: string }
-    projectId: number
-    productId: number
-  }) {
-    if (register.some((entry) => entry.purposeId === input.purpose.id)) {
+  async function ensureOrigin() {
+    const sourceRef = 'acceptance-seed:rub-origin'
+    if (register.some((entry) => entry.sourceRef === sourceRef)) {
       summary.operationsReused += 1
       return
     }
-    const income = await api.systemAccount(actor, 'income', input.moneyAccount.currency)
+    const income = await api.systemAccount(actor, 'income', 'RUB')
     await api.recordOperation(actor, {
-      occurredOn: '2026-08-30',
+      occurredOn: '2026-08-20',
       source: 'manual',
-      purposeId: input.purpose.id,
-      sourceRef: `acceptance-seed:${input.moneyAccount.currency.toLowerCase()}`,
+      purposeId: courseSales.id,
+      sourceRef,
       postings: [
         {
-          accountId: input.moneyAccount.id,
-          amount: input.amount,
-          currency: input.moneyAccount.currency,
+          accountId: bank.id,
+          amount: 150_000_000n,
+          currency: 'RUB',
+        },
+        {
+          accountId: rubCash.id,
+          amount: 50_000_000n,
+          currency: 'RUB',
         },
         {
           accountId: income.id,
-          amount: -input.amount,
-          currency: input.moneyAccount.currency,
-          projectId: input.projectId,
-          productId: input.productId,
+          amount: -200_000_000n,
+          currency: 'RUB',
+          projectId: doctorSchool.id,
+          productId: course.id,
         },
       ],
     })
     summary.operationsCreated += 1
   }
 
-  await ensureIncome({
-    moneyAccount: bank,
-    amount: 128_450_000n,
-    purpose: courseSales,
-    projectId: doctorSchool.id,
-    productId: course.id,
+  async function ensureConversion(input: {
+    sourceRef: string
+    occurredOn: string
+    sourceAccountId: number
+    targetAccountId: number
+    fromCurrency: string
+    toCurrency: string
+    fromAmount: bigint
+    toAmount: bigint
+    rate: string
+  }) {
+    if (register.some((entry) => entry.sourceRef === input.sourceRef)) {
+      summary.operationsReused += 1
+      return
+    }
+    await api.recordConversion(actor, {
+      occurredOn: input.occurredOn,
+      source: 'manual',
+      sourceRef: input.sourceRef,
+      sourceAccountId: input.sourceAccountId,
+      targetAccountId: input.targetAccountId,
+      steps: [
+        {
+          fromCurrency: input.fromCurrency,
+          toCurrency: input.toCurrency,
+          fromAmount: input.fromAmount,
+          toAmount: input.toAmount,
+          rate: input.rate,
+        },
+      ],
+    })
+    summary.operationsCreated += 1
+  }
+
+  await ensureOrigin()
+  await ensureConversion({
+    sourceRef: 'acceptance-seed:rub-usd-acquisition',
+    occurredOn: '2026-08-21',
+    sourceAccountId: bank.id,
+    targetAccountId: card.id,
+    fromCurrency: 'RUB',
+    toCurrency: 'USD',
+    fromAmount: 60_000_000n,
+    toAmount: 1_000_000n,
+    rate: '60',
   })
-  await ensureIncome({
-    moneyAccount: card,
-    amount: 875_000n,
-    purpose: partnerships,
-    projectId: doctorSchool.id,
-    productId: course.id,
+  await ensureConversion({
+    sourceRef: 'acceptance-seed:usd-thb-acquisition',
+    occurredOn: '2026-08-22',
+    sourceAccountId: card.id,
+    targetAccountId: thbCard.id,
+    fromCurrency: 'USD',
+    toCurrency: 'THB',
+    fromAmount: 400_000n,
+    toAmount: 14_000_000n,
+    rate: '35',
   })
-  await ensureIncome({
-    moneyAccount: cash,
-    amount: 6_432_050n,
-    purpose: meetingSales,
-    projectId: bbmAcademy.id,
-    productId: club.id,
+  await ensureConversion({
+    sourceRef: 'acceptance-seed:usd-rub-disposal',
+    occurredOn: '2026-08-23',
+    sourceAccountId: card.id,
+    targetAccountId: bank.id,
+    fromCurrency: 'USD',
+    toCurrency: 'RUB',
+    fromAmount: 200_000n,
+    toAmount: 13_000_000n,
+    rate: '65',
+  })
+  await ensureConversion({
+    sourceRef: 'acceptance-seed:rub-usd-later-acquisition',
+    occurredOn: '2026-08-24',
+    sourceAccountId: bank.id,
+    targetAccountId: card.id,
+    fromCurrency: 'RUB',
+    toCurrency: 'USD',
+    fromAmount: 12_000_000n,
+    toAmount: 150_000n,
+    rate: '80',
   })
 
   return summary
@@ -383,7 +444,10 @@ async function main(): Promise<void> {
   console.log(
     `  ledger operations: ${summary.operationsCreated} created · ${summary.operationsReused} reused`,
   )
-  console.log('  representative balances: RUB 1 284 500,00 · USD 8 750,00 · THB 64 320,50\n')
+  console.log(
+    '  representative balances: RUB 910 000,00 + 500 000,00 · USD 5 500,00 · THB 140 000,00',
+  )
+  console.log('  recorded-cost total: RUB 2 010 000,00\n')
 }
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : ''
