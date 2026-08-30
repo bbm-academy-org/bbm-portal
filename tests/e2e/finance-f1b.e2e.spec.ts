@@ -45,6 +45,31 @@ async function saveCreated(page: Page, apiPath: string) {
   await expect(page.getByRole('status')).toContainText('Запись сохранена')
 }
 
+async function expectThemedFinanceCanvas(page: Page) {
+  const canvas = page.locator('main[data-bbm-ui]')
+  const heading = canvas.getByRole('heading', { name: 'Финансы', level: 1 })
+  const card = canvas.locator('[data-slot="card"]').first()
+  await expect(canvas).toBeVisible()
+  await expect(card).toBeVisible()
+
+  const headingStyle = await heading.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      contentGutter: element.getBoundingClientRect().left,
+    }
+  })
+  const cardRadius = await card.evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
+  )
+
+  expect(headingStyle.fontFamily).not.toMatch(/times new roman|^serif$/i)
+  expect(headingStyle.fontSize).toBe('24px')
+  expect(headingStyle.contentGutter).toBeGreaterThanOrEqual(16)
+  expect(cardRadius).toBeGreaterThan(0)
+}
+
 test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', () => {
   test.describe.configure({ mode: 'serial' })
   test.setTimeout(120_000)
@@ -66,6 +91,7 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     await signIn(page, FINANCE, memberCredentials)
     await expect(page.getByRole('heading', { name: 'Финансы', level: 1 })).toBeVisible()
     await expect(page.getByText('Деньги сейчас', { exact: true })).toBeVisible()
+    await expectThemedFinanceCanvas(page)
 
     const read = await page.context().request.get(CURRENCIES_API, { maxRedirects: 0 })
     expect(read.status()).toBe(403)
@@ -156,6 +182,7 @@ test.describe('finance F1b browser acceptance (#357, spec 338 EARS-324..326)', (
     await saveCreated(page, PURPOSES_API)
 
     await page.goto(FINANCE)
+    await expectThemedFinanceCanvas(page)
     await expect(page.getByText(accountName, { exact: true })).toBeVisible()
     await expect(page.getByText('0,00', { exact: true })).toBeVisible()
     await expect(page.getByText('THB', { exact: true })).toBeVisible()
