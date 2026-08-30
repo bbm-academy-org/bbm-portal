@@ -171,7 +171,8 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
     // The row appearing IS the statement that a `core.member` now exists for that
     // email — the participant row's PK is the FK to the registry (EARS-9).
     await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByDisplayValue(email)).toHaveAttribute('readonly')
+    await expect(page.getByLabel('Email')).toHaveValue(email)
+    await expect(page.getByLabel('Email')).toHaveAttribute('readonly')
     await page.goto('/p/admin/hours/participants')
     await page.getByRole('searchbox', { name: 'Поиск участников' }).fill(email)
     const row = page.getByRole('row').filter({ hasText: name })
