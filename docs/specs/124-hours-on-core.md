@@ -228,12 +228,14 @@ migration off JSON — **with no product change**: the owner's decision in sessi
   member-only columns (`id`, `status`, `timezone`, timestamps) are excluded,
   so an unrelated member touch does not invalidate a correct preview and the
   identity drift spec 100 req. 9 guards is still covered.
-- **EARS-11.** The admin «Скачать данные (JSON)» export shall reconstitute
-  exactly the legacy document: top-level keys `participants`, `periods`,
-  `assessments`, `publications` in that order, participant shape of
-  `types.ts`, serialized as `JSON.stringify(doc, null, 2)` — no member-only
-  columns, no members who are not hours participants, and the legacy
-  `participant.monthly_rate` field stays dropped (081 §14).
+- **EARS-11.** For internal migration/cutover verification only, the tooling
+  shall reconstitute exactly the legacy document: top-level keys
+  `participants`, `periods`, `assessments`, `publications` in that order,
+  participant shape of `types.ts`, serialized as `JSON.stringify(doc, null, 2)`
+  — no member-only columns, no members who are not hours participants, and the
+  legacy `participant.monthly_rate` field stays dropped (081 §14). The former
+  admin «Скачать данные (JSON)» action is retired by spec 311 EARS-449; this
+  clause shall not expose a page, button or module API handler.
 - **EARS-12.** IF `PLATFORM_DATABASE_URL` is unset or the database is
   unreachable, THEN pages shall say the data is unavailable (081 §17 semantics)
   and mutations shall refuse loudly; the module shall never fall back to the

@@ -5,9 +5,9 @@
  * The shape produced here is a CONTRACT, not a convenience:
  *
  *  - the top-level key order (`participants`, `periods`, `assessments`,
- *    `publications`) and each record's field order are what makes the owner's
- *    «Скачать данные (JSON)» export byte-comparable across the cutover (EARS-11,
- *    EARS-27's diff verdict);
+ *    `publications`) and each record's field order make the internal legacy
+ *    document byte-comparable across the cutover (EARS-11, EARS-27's diff
+ *    verdict);
  *  - a participant carries ONLY the six legacy fields, so the fingerprint the
  *    publication preview digests cannot move when an unrelated `member` column
  *    (`status`, `timezone`, timestamps) is touched (EARS-22);
@@ -67,7 +67,7 @@ async function membersById(tx: HoursTx, ids: number[]): Promise<Map<number, Memb
  * order the database happens to return is never trusted. The contiguity check
  * below is what keeps «array index» and «position» from drifting apart above this
  * layer: every consumer of `Publication.messages` (the delivery loop, the panel,
- * the export) may therefore keep reading the array positionally, and
+ * the migration verifier) may therefore keep reading the array positionally, and
  * `recordPublicationDelivery` addresses a message by the position it is given.
  *
  * The per-message KEY order is restored here, exactly as it was when the batch
