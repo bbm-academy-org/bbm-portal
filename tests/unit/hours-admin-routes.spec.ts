@@ -224,6 +224,61 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
     })
   })
 
+  it('preserves non-alphabetic participant and non-chronological period insertion order', async () => {
+    state.doc.participants = [
+      {
+        email: 'yana@bbm.academy',
+        name: 'Яна',
+        role: null,
+        fork_min: null,
+        fork_max: null,
+        grade: null,
+      },
+      {
+        email: 'anna@bbm.academy',
+        name: 'Анна',
+        role: null,
+        fork_min: null,
+        fork_max: null,
+        grade: null,
+      },
+    ]
+    state.doc.periods = [
+      {
+        id: 'first-in-document',
+        label: 'Первый в документе',
+        date_from: '2026-01-01',
+        date_to: '2026-01-31',
+        status: 'closed',
+      },
+      {
+        id: 'second-in-document',
+        label: 'Второй в документе',
+        date_from: '2026-12-01',
+        date_to: '2026-12-31',
+        status: 'closed',
+      },
+    ]
+
+    const participants = await import('@/app/(platform)/api/p/hours/admin/participants/route')
+    const periods = await import('@/app/(platform)/api/p/hours/admin/periods/route')
+    const participantResponse = await participants.GET(
+      request('/api/p/hours/admin/participants?pageSize=100'),
+    )
+    const periodResponse = await periods.GET(request('/api/p/hours/admin/periods?pageSize=100'))
+    const participantPayload = await participantResponse.json()
+    const periodPayload = await periodResponse.json()
+
+    expect(participantPayload.data.map((record: { email: string }) => record.email)).toEqual([
+      'yana@bbm.academy',
+      'anna@bbm.academy',
+    ])
+    expect(periodPayload.data.map((record: { id: string }) => record.id)).toEqual([
+      'first-in-document',
+      'second-in-document',
+    ])
+  })
+
   it('attributes a period write to the signed-in platform admin', async () => {
     const { POST } = await import('@/app/(platform)/api/p/hours/admin/periods/route')
     const response = await POST(

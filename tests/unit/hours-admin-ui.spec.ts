@@ -12,6 +12,7 @@ import type { HoursPeriodRecord } from '@/lib/hours'
 
 const refine = vi.hoisted(() => ({
   list: {} as Record<string, unknown>,
+  listCalls: [] as Array<Record<string, unknown>>,
   one: {} as Record<string, unknown>,
   create: { mutate: vi.fn(), mutation: { isPending: false, error: null } },
   update: { mutate: vi.fn(), mutation: { isPending: false, error: null } },
@@ -21,7 +22,10 @@ const refine = vi.hoisted(() => ({
 
 vi.mock('@refinedev/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@refinedev/core')>()),
-  useList: () => refine.list,
+  useList: (params: Record<string, unknown>) => {
+    refine.listCalls.push(params)
+    return refine.list
+  },
   useOne: () => refine.one,
   useCreate: () => refine.create,
   useUpdate: () => refine.update,
@@ -31,6 +35,7 @@ vi.mock('@refinedev/core', async (importOriginal) => ({
 
 beforeEach(() => {
   refine.list = { query: { isLoading: false, error: null }, result: { data: [], total: 0 } }
+  refine.listCalls = []
   refine.one = { query: { isLoading: false, error: null }, result: undefined }
   vi.stubGlobal(
     'fetch',
@@ -64,6 +69,17 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     render(React.createElement(HoursPublicationScreen))
     expect(screen.getByRole('heading', { name: 'Публикация в Mattermost' })).toBeTruthy()
     expect(screen.getByLabelText('Период')).toBeTruthy()
+  })
+
+  it('leaves participant and period order to the canonical module response', () => {
+    const participants = render(React.createElement(HoursParticipantsScreen))
+    participants.unmount()
+    const periods = render(React.createElement(HoursPeriodsScreen))
+    periods.unmount()
+    render(React.createElement(HoursPublicationScreen))
+
+    expect(refine.listCalls).toHaveLength(3)
+    expect(refine.listCalls.map((call) => call.sorters)).toEqual([undefined, undefined, undefined])
   })
 
   it('renders locked periods and assessments as a read-only table', () => {
