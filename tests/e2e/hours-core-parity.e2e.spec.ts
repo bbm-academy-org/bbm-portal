@@ -1,6 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-import { isAllowedE2EIdpOrigin } from './support/idp-origin'
+import { signInThroughZitadel } from './support/zitadel-sign-in'
 
 /**
  * EARS-7 — the parity smoke of the storage swap (spec 124, `/p/hours` on `core`).
@@ -36,17 +36,10 @@ import { isAllowedE2EIdpOrigin } from './support/idp-origin'
  *   E2E_HOURS_ADMIN_USERNAME=… E2E_HOURS_ADMIN_PASSWORD=… \
  *   pnpm test:e2e tests/e2e/hours-core-parity.e2e.spec.ts
  *
- * The sign-in flow is a local copy of the one in `hours-prod.e2e.spec.ts` rather
- * than a shared helper: that file drives a DEPLOYED stand through an absolute
- * `PORTAL_E2E_BASE_URL` and this one drives a named stand through `baseURL`, and
- * #255 part 3 is not allowed to reshape the prod suite. Extracting one helper for
- * both is a small follow-up, not a silent edit of an acceptance-critical file.
- *
- * That follow-up now has a destination: `tests/e2e/support/zitadel-sign-in.ts`
- * holds the hardened version (it waits for login-v2 to hydrate instead of racing
- * it). The copy below still presses Enter at the pre-hydration form and carries
- * the flake that fix removes; migrating it needs a run of THIS file, which
- * mutates the stand, so it is left to the task that next touches it.
+ * The sign-in flow uses the shared hardened login-v2 helper, which waits for
+ * hydration before submitting credentials. This file drives a named stand
+ * through Playwright's `baseURL`; the separate prod suite still owns its
+ * absolute-URL flow.
  */
 
 const idpUsername = process.env.E2E_IDP_USERNAME
@@ -59,41 +52,6 @@ const adminPassword = process.env.E2E_HOURS_ADMIN_PASSWORD
 const HOURS_ROOT = '.hours-root'
 const HOURS_HEADING = 'Сколько было отработано'
 
-async function signIn(
-  page: Page,
-  targetPath: string,
-  credentials: { username: string; password: string },
-): Promise<void> {
-  await page.goto(targetPath, { waitUntil: 'domcontentloaded' })
-
-  if (new URL(page.url()).pathname.startsWith('/api/auth/signin')) {
-    await page
-      .getByRole('button', { name: /zitadel|sign in/i })
-      .first()
-      .click()
-  }
-
-  if (new URL(page.url()).pathname !== targetPath) {
-    const loginName = page.locator('input[name="loginName"], input#loginName').first()
-    await loginName.waitFor({ state: 'visible', timeout: 30_000 })
-    // Credentials are never typed into an origin the operator did not name.
-    if (!isAllowedE2EIdpOrigin(page.url(), idpHost)) {
-      throw new Error(`Refusing to submit E2E username to untrusted IdP origin: ${page.url()}`)
-    }
-    await loginName.fill(credentials.username)
-    await page.keyboard.press('Enter')
-    const password = page.locator('input[type="password"]').first()
-    await password.waitFor({ state: 'visible' })
-    if (!isAllowedE2EIdpOrigin(page.url(), idpHost)) {
-      throw new Error(`Refusing to submit E2E password to untrusted IdP origin: ${page.url()}`)
-    }
-    await password.fill(credentials.password)
-    await page.keyboard.press('Enter')
-  }
-
-  await page.waitForURL((url) => url.pathname === targetPath, { timeout: 45_000 })
-}
-
 test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
   test('EARS-7: a participant sees the table and the open period, saves a self-assessment and finds it in the summary', async ({
     page,
@@ -101,7 +59,12 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
     test.skip(!idpUsername || !idpPassword, 'set E2E_IDP_USERNAME / E2E_IDP_PASSWORD to run')
     test.slow() // full OIDC round-trip plus a write
 
-    await signIn(page, '/p/hours', { username: idpUsername!, password: idpPassword! })
+    await signInThroughZitadel(
+      page,
+      '/p/hours',
+      { username: idpUsername!, password: idpPassword! },
+      { idpHost },
+    )
 
     await expect(page.locator(HOURS_ROOT)).toBeVisible()
     await expect(page.getByRole('heading', { name: HOURS_HEADING })).toBeVisible()
@@ -153,10 +116,12 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
     )
     test.slow()
 
-    await signIn(page, '/p/admin/hours/participants/create', {
-      username: adminUsername!,
-      password: adminPassword!,
-    })
+    await signInThroughZitadel(
+      page,
+      '/p/admin/hours/participants/create',
+      { username: adminUsername!, password: adminPassword! },
+      { idpHost },
+    )
     await expect(page.getByRole('heading', { name: 'Новый участник' })).toBeVisible()
 
     // A fake, obviously non-human email, unique per run: the surfaces support no
@@ -204,10 +169,12 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
       }
     })
 
-    await signIn(page, '/p/admin/hours/participants/create', {
-      username: adminUsername!,
-      password: adminPassword!,
-    })
+    await signInThroughZitadel(
+      page,
+      '/p/admin/hours/participants/create',
+      { username: adminUsername!, password: adminPassword! },
+      { idpHost },
+    )
 
     // Make the signed-in admin a fully rated participant through the same
     // upsert seam the cabinet exposes. Re-runs deliberately update that record.
