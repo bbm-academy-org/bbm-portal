@@ -342,6 +342,31 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   backwards; an odd number of reversal acts therefore removes the original fact
   from the replay, while an even number leaves it.
 
+  The replay shall extract events from each remaining operation exactly once:
+
+  - WHERE the operation has conversion steps, it shall process the steps in
+    ascending `step_no`. For each step, the disposed quantity is the positive
+    net of its step-linked system `conversion` postings in `from_currency`, and
+    the received quantity is the absolute value of their negative net in
+    `to_currency`; a non-positive leg, a leg in another currency or a missing
+    side makes the currencies touched by the operation unvalued. It shall first
+    transfer the disposed source basis into the received destination, then
+    process that step's step-linked non-system money posting, if present, as an
+    ordinary fee outflow in the fee money account's currency; that posting must
+    be negative and its absolute amount is the fee. The operation's non-step
+    money endpoint postings and its step-linked exchange legs are structural
+    evidence of the same conversion and shall not also become ordinary
+    inflow/outflow events; system `expense`, `conversion` and `fx_result`
+    counter-postings likewise create no valuation event. A non-system money
+    posting on a conversion operation that is neither a structural endpoint nor
+    a step-linked fee shall make every currency touched by that operation
+    unvalued rather than be silently classified.
+  - WHERE the operation has no conversion step, it shall net all non-system
+    money-account postings within that operation per currency, then apply one
+    ordinary movement per currency in ascending currency-code order: a positive
+    net is an inflow, a negative net is an outflow, and zero creates no event.
+    System-account postings create no separate valuation event.
+
   Each foreign-currency pool shall carry a quantity in that currency's minor
   units and, only while fully known, its cost in reporting-currency minor units.
   A recorded conversion step shall remove the disposed source quantity and its
@@ -691,6 +716,18 @@ stated otherwise currencies have precision 2 and values below are minor units:
 7. **Reporting-currency switch.** Replaying fixture 1 in THB shall leave the
    native balances unchanged and withhold the numeric total naming `RUB, USD`;
    the test shall not manufacture a THB basis for the ordinary RUB origin.
+8. **Step before fee, with no posting double count.** In a RUB view, an ordinary
+   inflow of RUB `40_000`, followed by a conversion RUB `20_000` → USD `10_000`,
+   establishes a pre-existing USD pool of quantity `10_000` and RUB cost
+   `20_000`. A later conversion RUB `10_000` → USD `10_000` whose same step
+   charges a USD fee of `5_000` shall first produce a USD pool of quantity
+   `20_000` and RUB cost `30_000`, then remove fee cost
+   `round_half_away_from_zero(5_000 × 30_000 ÷ 20_000) = 7_500`. The final
+   aggregates shall be RUB `10_000` and USD `15_000`, the remaining USD cost
+   shall be RUB `22_500`, and the numeric total shall be exactly RUB `32_500`.
+   Replaying the fee before its step would incorrectly yield RUB `30_000`; the
+   test shall also assert that the endpoint money postings and system exchange
+   legs create no additional events or pool quantity.
 
 ## Out of scope
 
