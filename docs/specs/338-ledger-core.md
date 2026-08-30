@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 338
-updated: 2026-08-26
+updated: 2026-08-30
 ---
 
 # Finance F1 — ledger core — spec (issue #338)
@@ -59,6 +59,14 @@ owner on the wireframe prototype (Stage A, 2026-08-25 — see "Design gate").
   currency's minimal units with currency-dependent precision; a conversion is a
   linked group of postings with each step's fee explicit and the rate frozen at
   the operation; links to `member` and the `/p/hours` data.
+- **Finance PRDs, owner decisions 13 and 18**
+  (`docs/product/finance/brief.md`, `docs/product/finance/340-product.md`) — a
+  reporting view defaults to RUB and can switch currency without changing a
+  posting; any cross-currency amount uses recorded actual conversion facts,
+  never a market/current rate fetched at read time. For F1b's **current
+  holdings** total, this spec applies that ruling through the remaining
+  holding's recorded cost basis (EARS-328), while period reports continue to
+  apply each operation's own actual rate in F3.
 - **Spec 311 §A, §D** (EARS-401/402/409, EARS-431…439) — the workspace
   declaration contract: finance declares one `internal` entry with an `admin`
   section; its resources mount at `/p/admin/finance/<resource>` through the
@@ -129,6 +137,11 @@ builds against are vendored verbatim in `design-source/finance/`:
 - `References.dc.html` — the `/p/admin` reference tables;
 - `Overview.dc.html` — `/p/finance`; F1 ships only its cash-balances card.
 
+For avoidance of doubt, that accepted cash card includes its «Итого» column,
+the reporting-currency switch and the explicit incomplete-valuation state in
+EARS-325. «The rest of the overview is F3» means the other cards and report
+navigation in `Overview.dc.html`; it does not remove part of the cash card.
+
 The remaining nine artboards belong to F2–F5 and are vendored on their first
 touch (design-source rule 4). F1's admin screens follow the accepted admin-shell
 design (`design-source/p-admin-shell.html`, spec 311 EARS-432) — no new Stage-A
@@ -138,7 +151,9 @@ pick is needed.
 
 Directory `src/lib/platform/db/schema/finance/`, Postgres schema `core`, table
 prefix `finance_`. No table stores a balance or a capitalization — both are
-sums over postings, always.
+sums over postings, always. The balances-card total is likewise a read model
+over existing postings and conversion steps: it stores no total, display rate
+or valuation fact and requires no F1a schema or domain-model change.
 
 | Table                     | Carries                                                                                                                                                                                                                                                                                                 | Key points                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -200,7 +215,9 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
 - **EARS-310.** The finance module shall record money only as operations made
   of postings: each posting names its account, a signed `bigint` amount in the
   currency's minimal units, and its currency; each amount keeps the currency it
-  happened in, with conversion for display left to reports (F3).
+  happened in. The one F1b cross-currency view is the current-holdings total in
+  the balances card (EARS-325); conversion of period activity and every other
+  reporting view is F3.
 - **EARS-311.** The system shall refuse to record an operation whose postings
   do not sum to zero per currency.
 - **EARS-312.** IF a posting's currency differs from its account's currency,
@@ -297,15 +314,44 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   EARS-401/402), so they mount at `/p/admin/finance/<resource>` with no edit to
   the shell (EARS-409).
 - **EARS-325.** WHEN any signed-in platform member opens `/p/finance`, the page
-  shall render the accounts with their balances computed live from postings,
-  each in its own currency (the cash card of the vendored
-  `design-source/finance/Overview.dc.html`); the rest of the overview is F3's
-  and shall not be stubbed. A request that does not carry `platform-user` (or
-  `platform-admin`, which implies it — spec 311 EARS-417) shall be refused by
-  the module's own handlers regardless of how the URL was reached (spec 311
-  EARS-405/416): an unauthenticated request, and equally an **authenticated**
-  session carrying neither role, which spec 311 answers with a bare 403
-  (EARS-418). F1 exposes no public finance surface.
+  shall render the cash card of the vendored
+  `design-source/finance/Overview.dc.html`: every non-system money account with
+  its balance computed live from postings and shown in that account's own
+  currency, plus an overall total in a selected reporting currency. The
+  reporting currency shall default to RUB and shall be switchable without
+  changing any operation, posting or native-currency account balance (owner
+  decision 13).
+
+  The total shall be a reproducible reading of recorded facts, never a silent
+  conversion: a balance already in the selected currency contributes 1:1; a
+  foreign-currency balance contributes only where the ledger provides a
+  recorded valuation path to the selected currency through actual conversion
+  facts (EARS-318/319), using the remaining holding's moving weighted-average
+  recorded cost basis defined by EARS-328. A path may be direct or consist of
+  multiple recorded conversion-pair steps; each step must carry a remaining
+  recorded basis sufficient for the amount being valued. WHERE more than one
+  complete path exists, the system shall choose the path with the fewest steps,
+  breaking an equal-length tie by the lexicographic sequence of currency codes,
+  and shall make the chosen currency path visible. The same ledger state
+  therefore always produces the same total. It shall never use a market,
+  current or period-end rate fetched or supplied at read time (owner decision
+  18). The card shall state this recorded-cost policy.
+
+  IF every nonzero money-account balance has such a path (or is already in the
+  selected currency), THEN the card shall show the numeric grand total. IF any
+  nonzero balance lacks a complete recorded valuation path, THEN the card shall
+  withhold the numeric grand total — never show a partial total or treat the
+  missing value as zero — and shall name every missing currency while leaving
+  all native-currency account balances visible. Switching the reporting
+  currency shall re-evaluate the same rule for that currency.
+
+  The rest of the overview is F3's and shall not be stubbed. A request that does
+  not carry `platform-user` (or `platform-admin`, which implies it — spec 311
+  EARS-417) shall be refused by the module's own handlers regardless of how the
+  URL was reached (spec 311 EARS-405/416): an unauthenticated request, and
+  equally an **authenticated** session carrying neither role, which spec 311
+  answers with a bare 403 (EARS-418). F1 exposes no public finance surface.
+
 - **EARS-326.** Every cabinet write to a finance reference shall run through
   `platformTransaction` with the signed-in admin as actor (spec 311 EARS-439),
   and shall validate against the module's zod schemas (EARS-436); a refusal
@@ -514,10 +560,26 @@ Owner walkthrough, on a live stand, after the go and the build:
    «Урок» under it, purpose «Продакшн урока» with binding `required` — each
    save answers with a visible confirmation (EARS-301/302/306, spec 311
    EARS-472).
-2. **The ledger starts honest.** Open `/p/finance` — every account shows
-   balance 0 in its own currency, because no operation exists yet
-   (EARS-317/325).
-3. **Money is visible to the team, references editable by the admin.** Sign in
+2. **Representative money and a reproducible RUB total.** On the acceptance
+   stand, use representative data with nonzero RUB, USD and THB money accounts
+   and recorded RUB↔USD and RUB↔THB conversions whose remaining-holding cost
+   bases are non-empty. Open `/p/finance`: every account remains visible in its
+   own currency, the selector defaults to RUB, and «Итого» is numeric in RUB.
+   The card states that the total uses recorded cost rather than a current or
+   market rate (EARS-310/317/318/319/325/328).
+3. **The same holdings switch reporting currency.** Switch «Итого» from RUB to
+   THB. The native RUB/USD/THB account rows do not change; the total is
+   recomputed in THB only from the recorded valuation paths, and reloading the
+   page produces the same number (EARS-319/325).
+4. **A missing valuation is explicit, never a partial total.** Add a nonzero
+   holding in a fourth currency without recording any conversion path from it
+   to RUB, then select RUB. Every native-currency account balance stays visible,
+   but the card withholds the numeric grand total and names the missing currency
+   instead of silently omitting it, treating it as zero or fetching a rate.
+   Record a representative conversion that establishes its remaining-holding
+   RUB cost basis and reload: the complete numeric RUB total appears
+   (EARS-318/319/325/328/329).
+5. **Money is visible to the team, references editable by the admin.** Sign in
    as a member holding `platform-user` but not `platform-admin`: `/p/finance`
    opens and shows the same balances card (EARS-324/325), while
    `/p/admin/finance/purposes` is refused (EARS-330, spec 311 EARS-405). Sign
@@ -528,13 +590,13 @@ Owner walkthrough, on a live stand, after the go and the build:
    — posting and reversal — are gated by `finance-entry` / `finance-approve`,
    so `platform-admin` alone is no longer the write role to walk here; that
    part of the walkthrough lives in spec 339's scenario 1.)_
-4. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
+6. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
    that the account uses — a readable refusal offers retirement instead
    (EARS-308/326). Rename the account — the rename is visible, nothing else
    changes (EARS-309).
-5. **The fund is fixed.** Try retiring «Фонд BBM» — a readable refusal
+7. **The fund is fixed.** Try retiring «Фонд BBM» — a readable refusal
    (EARS-304).
-6. **Categories are not pre-invented.** Open the categories resource — the
+8. **Categories are not pre-invented.** Open the categories resource — the
    table is empty, with creation available (EARS-307).
 
 ### Verified by CI, not by the owner
@@ -571,9 +633,12 @@ exception query (EARS-333), and the absence of any allocation posting
   correction; no posting-mutation reclassification will be built.)_
 - Any allocation, absorption or ABC run: F1 posts none by design (EARS-334) and
   F3 computes such views as overlays.
-- Reports beyond the balances card: register UI, P&L, cash flow, unit cost,
-  capitalization display — **F3 (#340)**; reconciliation — **F4 (#341)**;
-  scenarios — **F5 (#342)**.
+- Reports beyond the balances card: operations register UI; period P&L and
+  period cash flow; project/category/product cuts; unit cost, break-even and
+  capitalization display; comparison and drill-down — **F3 (#340)**. The
+  selected-currency total of **current money-account balances** is part of the
+  EARS-325 F1b cash card, not an F3 report. Reconciliation remains **F4
+  (#341)**; scenarios remain **F5 (#342)**.
 - Obligations (decision 14): the `liability` account kind exists in the enum so
   F2's accruals and reimbursements have a home, but no obligation flow ships in
   F1.
