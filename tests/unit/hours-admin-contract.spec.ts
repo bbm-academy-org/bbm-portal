@@ -9,7 +9,7 @@ import {
 } from '@/lib/hours/admin-contract'
 
 describe('hours cabinet contract (spec 311 EARS-421, EARS-446..452)', () => {
-  it('declares exactly the four owner-approved Option A resources', () => {
+  it('EARS-446: declares exactly the four owner-approved Option A resources', () => {
     expect(hoursAdminSection.label).toBe('Часы')
     expect(
       hoursAdminSection.resources.map(({ name, label, operations }) => ({

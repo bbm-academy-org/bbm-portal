@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest'
 const root = process.cwd()
 
 describe('legacy hours admin retirement (spec 311 EARS-421, EARS-452)', () => {
-  it('removes both old /p/hours/admin entry points', () => {
+  it('EARS-452: removes both old /p/hours/admin entry points', () => {
     expect(existsSync(join(root, 'src/app/(platform)/p/hours/admin/page.tsx'))).toBe(false)
     expect(existsSync(join(root, 'src/app/(platform)/p/hours/admin/export/route.ts'))).toBe(false)
   })
 
-  it('removes the temporary HOURS_ADMIN_EMAILS authority everywhere', () => {
+  it('EARS-421 / donor EARS-32: removes the temporary HOURS_ADMIN_EMAILS authority everywhere', () => {
     const files = [
       '.env.example',
       'deploy/.env.prod.example',

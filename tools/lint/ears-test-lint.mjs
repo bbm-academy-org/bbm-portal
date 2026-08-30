@@ -181,16 +181,7 @@ const DEFERRALS_BY_ISSUE = {
       'spec 311 §E — the members resource, its aliases, the read-only email and deactivation-instead-of-delete. The list is EMPTY because #316 landed: EARS-439 and EARS-441…445 are asserted by the member contract, handler, UI and core.audit_event integration tests.',
   },
   317: {
-    ids: [
-      'EARS-421',
-      'EARS-446',
-      'EARS-447',
-      'EARS-448',
-      'EARS-449',
-      'EARS-450',
-      'EARS-451',
-      'EARS-452',
-    ],
+    ids: ['EARS-447', 'EARS-448', 'EARS-449', 'EARS-450', 'EARS-451'],
     reason:
       "spec 311 §F — moving the hours administration into the cabinet and retiring /p/hours/admin. EARS-421 (HOURS_ADMIN_EMAILS gone from the shipped code) sits here rather than in §B because the spec's «Frame-level work» table gives #317 the rewrite-or-retire of the five unit specs that assert the old env gate",
   },
