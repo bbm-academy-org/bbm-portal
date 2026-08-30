@@ -276,8 +276,8 @@ describe('display order and the portfolio placeholders (spec 311 EARS-422, EARS-
   it('EARS-477: one placeholder per not-yet-live portfolio app that no entry already represents', () => {
     // Consolidation §4 (revision -f). This is the SOURCE; the wireframe's six
     // tiles are its illustration. The exclusions are what the clause asserts:
-    // hours/OKR are live internal entries, Mattermost is a live external one,
-    // and управление задачами is served today by the Plane entry.
+    // hours/OKR/finance are live internal entries, Mattermost is a live external
+    // one, and управление задачами is served today by the Plane entry.
     const portfolio = [
       'учёт часов',
       'OKR',
@@ -290,13 +290,18 @@ describe('display order and the portfolio placeholders (spec 311 EARS-422, EARS-
       'калькуляторы и рабочие инструменты',
       'связка с внутренней коммуникацией',
     ]
-    const live = ['учёт часов', 'OKR', 'связка с внутренней коммуникацией', 'управление задачами']
+    const live = [
+      'учёт часов',
+      'OKR',
+      'финансы',
+      'связка с внутренней коммуникацией',
+      'управление задачами',
+    ]
     const expectedPlaceholders = portfolio.filter((app) => !live.includes(app))
 
     const planned = WORKSPACE_REGISTRY.filter((e) => e.kind === 'planned')
     expect(planned).toHaveLength(expectedPlaceholders.length)
     expect(planned.map((e) => e.name)).toEqual([
-      'Финансы',
       'Колоды',
       'CRM',
       'Поиск команды',
