@@ -8,7 +8,7 @@ import {
   hoursPublicationRecordSchema,
   type HoursPeriodRecord,
   type HoursPublicationRecord,
-} from '@/lib/hours'
+} from '@/lib/hours/admin-contract'
 import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
