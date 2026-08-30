@@ -386,7 +386,7 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
     const replacementDocument = await uploadReceipt(ENTRY, request.id)
     releaseVerifier.resolve()
 
-    await expect(approval).rejects.toThrow(/changed|snapshot|verification/i)
+    await expect(approval).rejects.toThrow(/измен|сним|провер/i)
     expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({
       status: 'submitted',
       amount: 125_000n,

@@ -12,7 +12,7 @@ import { eq } from 'drizzle-orm'
 
 import { findMemberByEmail } from '@/lib/member'
 import { financeCounterparty } from '@/lib/platform/db/schema/finance/finance-counterparty'
-import { platformReadTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
+import type { PlatformTx } from '@/lib/platform/db/transaction'
 
 import { assertFinanceLedgerAccess, type FinanceActor } from '../core/actor'
 import { FinanceAccessRefusal, FinanceRefusal } from '../core/errors'
@@ -35,7 +35,7 @@ import {
   type FinanceIntakeItemView,
   type ListIntakeItemsFilter,
 } from './items'
-import { postIntakeItem } from './posting'
+import { assertIntakePostingSnapshot, createIntakePostingSnapshot, postIntakeItem } from './posting'
 
 /** The fields the member-facing request form owns (EARS-508). */
 export type CreateExpenseRequestInput = {
@@ -87,91 +87,95 @@ async function requireCounterparty(tx: PlatformTx, id: number): Promise<void> {
     .select({ id: financeCounterparty.id })
     .from(financeCounterparty)
     .where(eq(financeCounterparty.id, id))
+    .for('share')
   if (row === undefined) {
     throw new FinanceRefusal(`Контрагента #${id} нет в справочнике (EARS-508/532).`)
   }
 }
 
 /** Validate the reference and cross-currency parts the generic spine cannot know. */
-async function assertExpenseRequestState(state: ExpenseRequestState): Promise<void> {
+async function assertExpenseRequestState(
+  tx: PlatformTx,
+  state: ExpenseRequestState,
+): Promise<void> {
   positiveId(state.purposeId, 'Назначение')
   positiveId(state.projectId, 'Проект')
   positiveId(state.counterpartyId, 'Контрагент')
 
-  await platformReadTransaction(async (tx) => {
-    const documentCurrency = await requireCurrency(tx, state.currency)
-    if (documentCurrency.retiredAt !== null) {
+  const documentCurrency = await requireCurrency(tx, state.currency, { forShare: true })
+  if (documentCurrency.retiredAt !== null) {
+    throw new FinanceRefusal(
+      `Валюта документа «${state.currency}» выведена из обращения (EARS-508).`,
+    )
+  }
+
+  const project = await requireProject(tx, state.projectId, { forShare: true })
+  if (project.retiredAt !== null) {
+    throw new FinanceRefusal(`Проект «${project.name}» выведен из обращения (EARS-508).`)
+  }
+
+  const purpose = await requirePurpose(tx, state.purposeId, { forShare: true })
+  if (purpose.retiredAt !== null) {
+    throw new FinanceRefusal(`Назначение «${purpose.name}» выведено из обращения (EARS-508).`)
+  }
+  assertProductBinding(purpose.productBinding, state.productId, purpose.name)
+
+  if (state.productId !== null) {
+    const product = await requireProduct(tx, state.productId, { forShare: true })
+    if (product.retiredAt !== null) {
+      throw new FinanceRefusal(`Продукт «${product.name}» выведен из обращения (EARS-508).`)
+    }
+    if (product.projectId !== state.projectId) {
       throw new FinanceRefusal(
-        `Валюта документа «${state.currency}» выведена из обращения (EARS-508).`,
+        `Продукт «${product.name}» относится к проекту #${product.projectId}, а заявка — к ` +
+          `проекту #${state.projectId} (EARS-508).`,
       )
     }
+  }
+  await requireCounterparty(tx, state.counterpartyId)
 
-    const project = await requireProject(tx, state.projectId)
-    if (project.retiredAt !== null) {
-      throw new FinanceRefusal(`Проект «${project.name}» выведен из обращения (EARS-508).`)
+  if (state.personalFunds) {
+    if (state.paidCurrency !== null) {
+      await requireCurrency(tx, state.paidCurrency, { forShare: true })
     }
+    return
+  }
+  if (state.accountId === null) return // `items.ts` gives the EARS-513 refusal.
 
-    const purpose = await requirePurpose(tx, state.purposeId)
-    if (purpose.retiredAt !== null) {
-      throw new FinanceRefusal(`Назначение «${purpose.name}» выведено из обращения (EARS-508).`)
-    }
-    assertProductBinding(purpose.productBinding, state.productId, purpose.name)
-
-    if (state.productId !== null) {
-      const product = await requireProduct(tx, state.productId)
-      if (product.retiredAt !== null) {
-        throw new FinanceRefusal(`Продукт «${product.name}» выведен из обращения (EARS-508).`)
-      }
-      if (product.projectId !== state.projectId) {
-        throw new FinanceRefusal(
-          `Продукт «${product.name}» относится к проекту #${product.projectId}, а заявка — к ` +
-            `проекту #${state.projectId} (EARS-508).`,
-        )
-      }
-    }
-    await requireCounterparty(tx, state.counterpartyId)
-
-    if (state.personalFunds) {
-      if (state.paidCurrency !== null) await requireCurrency(tx, state.paidCurrency)
-      return
-    }
-    if (state.accountId === null) return // `items.ts` gives the EARS-513 refusal.
-
-    const account = await requireAccount(tx, state.accountId)
-    if (account.isSystem || account.retiredAt !== null) {
+  const account = await requireAccount(tx, state.accountId, { forShare: true })
+  if (account.isSystem || account.retiredAt !== null) {
+    throw new FinanceRefusal(
+      `Платящий счёт «${account.name}» недоступен для новой заявки (EARS-508).`,
+    )
+  }
+  if (account.currency !== state.currency) {
+    if (state.paidAmount === null || state.paidCurrency === null) {
       throw new FinanceRefusal(
-        `Платящий счёт «${account.name}» недоступен для новой заявки (EARS-508).`,
+        `Документ выставлен в ${state.currency}, а счёт «${account.name}» ведётся в ` +
+          `${account.currency}: укажите фактическую списанную сумму и валюту счёта ` +
+          '(EARS-508, кросс-валютный платёж).',
       )
     }
-    if (account.currency !== state.currency) {
-      if (state.paidAmount === null || state.paidCurrency === null) {
-        throw new FinanceRefusal(
-          `Документ выставлен в ${state.currency}, а счёт «${account.name}» ведётся в ` +
-            `${account.currency}: укажите фактическую списанную сумму и валюту счёта ` +
-            '(EARS-508, кросс-валютный платёж).',
-        )
-      }
-      if (state.paidCurrency !== account.currency) {
-        throw new FinanceRefusal(
-          `Фактическая валюта списания должна быть ${account.currency} — валютой платящего ` +
-            `счёта «${account.name}», а не ${state.paidCurrency} (EARS-508).`,
-        )
-      }
-      return
+    if (state.paidCurrency !== account.currency) {
+      throw new FinanceRefusal(
+        `Фактическая валюта списания должна быть ${account.currency} — валютой платящего ` +
+          `счёта «${account.name}», а не ${state.paidCurrency} (EARS-508).`,
+      )
     }
+    return
+  }
 
-    if (state.paidCurrency !== null && state.paidCurrency !== account.currency) {
-      throw new FinanceRefusal(
-        `Платящий счёт «${account.name}» ведётся в ${account.currency}, а фактическая сумма ` +
-          `названа в ${state.paidCurrency} (EARS-508).`,
-      )
-    }
-    if (state.paidAmount !== null && state.paidAmount !== state.amount) {
-      throw new FinanceRefusal(
-        'Вторая сумма нужна только для другой валюты; в валюте документа сумма одна (EARS-508).',
-      )
-    }
-  })
+  if (state.paidCurrency !== null && state.paidCurrency !== account.currency) {
+    throw new FinanceRefusal(
+      `Платящий счёт «${account.name}» ведётся в ${account.currency}, а фактическая сумма ` +
+        `названа в ${state.paidCurrency} (EARS-508).`,
+    )
+  }
+  if (state.paidAmount !== null && state.paidAmount !== state.amount) {
+    throw new FinanceRefusal(
+      'Вторая сумма нужна только для другой валюты; в валюте документа сумма одна (EARS-508).',
+    )
+  }
 }
 
 function createState(input: CreateExpenseRequestInput): ExpenseRequestState {
@@ -216,40 +220,23 @@ function itemState(item: FinanceIntakeItemView): ExpenseRequestState {
   }
 }
 
-function mergeState(
-  current: ExpenseRequestState,
-  patch: EditExpenseRequestPatch,
-): ExpenseRequestState {
-  return {
-    occurredOn: patch.occurredOn ?? current.occurredOn,
-    accountId: patch.accountId === undefined ? current.accountId : patch.accountId,
-    amount: patch.amount ?? current.amount,
-    currency: patch.currency ?? current.currency,
-    paidAmount: patch.paidAmount === undefined ? current.paidAmount : patch.paidAmount,
-    paidCurrency: patch.paidCurrency === undefined ? current.paidCurrency : patch.paidCurrency,
-    purposeId: patch.purposeId ?? current.purposeId,
-    projectId: patch.projectId ?? current.projectId,
-    productId: patch.productId === undefined ? current.productId : patch.productId,
-    counterpartyId: patch.counterpartyId ?? current.counterpartyId,
-    note: patch.note === undefined ? current.note : patch.note,
-    alreadyPaid: patch.alreadyPaid ?? current.alreadyPaid,
-    personalFunds: patch.personalFunds ?? current.personalFunds,
-  }
-}
-
 async function requireExpenseRequest(
   actor: FinanceActor,
   id: number,
 ): Promise<FinanceIntakeItemView> {
   const item = await getIntakeItem(actor, id)
   if (item === null) throw new FinanceRefusal(`Заявки #${id} не существует.`)
+  assertExpenseRequest(item)
+  return item
+}
+
+function assertExpenseRequest(item: FinanceIntakeItemView): void {
   if (item.source !== 'request' || item.kind !== 'expense') {
     throw new FinanceRefusal(
-      `Позиция #${id} не является заявкой на расход: source = «${item.source}», ` +
+      `Позиция #${item.id} не является заявкой на расход: source = «${item.source}», ` +
         `kind = «${item.kind}».`,
     )
   }
-  return item
 }
 
 /** Create a member-owned draft. Submission is a separate explicit act. */
@@ -258,7 +245,6 @@ export async function createExpenseRequest(
   input: CreateExpenseRequestInput,
 ): Promise<FinanceIntakeItemView> {
   const state = createState(input)
-  await assertExpenseRequestState(state)
   const member = state.personalFunds ? await findMemberByEmail(actor.email) : null
   if (state.personalFunds && member === null) {
     throw new FinanceAccessRefusal(
@@ -266,12 +252,16 @@ export async function createExpenseRequest(
         'некому связать с будущим возмещением (EARS-508/513).',
     )
   }
-  return createIntakeItem(actor, {
-    source: 'request',
-    kind: 'expense',
-    ...state,
-    memberId: member?.id ?? null,
-  })
+  return createIntakeItem(
+    actor,
+    {
+      source: 'request',
+      kind: 'expense',
+      ...state,
+      memberId: member?.id ?? null,
+    },
+    { validate: (tx) => assertExpenseRequestState(tx, state) },
+  )
 }
 
 /** Edit only through the status/ownership rules of the common spine. */
@@ -281,24 +271,31 @@ export async function editExpenseRequest(
   patch: EditExpenseRequestPatch,
 ): Promise<FinanceIntakeItemView> {
   const item = await requireExpenseRequest(actor, id)
-  const next = mergeState(itemState(item), patch)
-  await assertExpenseRequestState(next)
   const spinePatch: EditIntakeItemPatch = {
     ...patch,
     ...(patch.personalFunds === undefined
       ? {}
       : { memberId: patch.personalFunds ? item.createdBy : null }),
   }
-  return editIntakeItem(actor, id, spinePatch)
+  return editIntakeItem(actor, id, spinePatch, {
+    async validate(tx, next) {
+      assertExpenseRequest(next)
+      await assertExpenseRequestState(tx, itemState(next))
+    },
+  })
 }
 
 export async function submitExpenseRequest(
   actor: FinanceActor,
   id: number,
 ): Promise<FinanceIntakeItemView> {
-  const item = await requireExpenseRequest(actor, id)
-  await assertExpenseRequestState(itemState(item))
-  return (await transitionIntakeItem(actor, id, 'submit'))!
+  await requireExpenseRequest(actor, id)
+  return (await transitionIntakeItem(actor, id, 'submit', {
+    async validate(tx, current) {
+      assertExpenseRequest(current)
+      await assertExpenseRequestState(tx, itemState(current))
+    },
+  }))!
 }
 
 export async function cancelExpenseRequest(
@@ -387,6 +384,7 @@ async function verifyAndPostExpenseRequest(
   options: ConfirmExpenseRequestOptions & { approveSubmittedRequest?: boolean },
 ): Promise<FinanceIntakeItemView> {
   const verifier = options.verifier ?? humanFinanceDocumentVerifier
+  const expectedSnapshot = createIntakePostingSnapshot(request, documents)
   if (verifier.id.trim() === '') {
     throw new FinanceRefusal('Document verifier обязан иметь непустой id (EARS-531).')
   }
@@ -401,6 +399,7 @@ async function verifyAndPostExpenseRequest(
   return postIntakeItem(actor, request.id, {
     occurredOn: options.occurredOn,
     approveSubmittedRequest: options.approveSubmittedRequest,
+    expectedSnapshot,
   })
 }
 
@@ -414,7 +413,13 @@ export async function approveExpenseRequest(
   const request = await requireExpenseRequest(actor, id)
   const documents = await listFinanceDocuments(actor, { intakeItemId: id })
   if (documents.length === 0) {
-    return (await transitionIntakeItem(actor, id, 'approve'))!
+    const expectedSnapshot = createIntakePostingSnapshot(request, documents)
+    return (await transitionIntakeItem(actor, id, 'approve', {
+      async validate(tx, current) {
+        assertExpenseRequest(current)
+        await assertIntakePostingSnapshot(tx, current, expectedSnapshot)
+      },
+    }))!
   }
   return verifyAndPostExpenseRequest(actor, request, documents, {
     ...options,

@@ -7,9 +7,13 @@
  * linked and made terminal. All of it runs inside the same
  * `platformTransaction`; there is no operation-first recovery state to repair.
  */
-import { eq, sql } from 'drizzle-orm'
+import { createHash } from 'node:crypto'
+
+import { and, eq, sql } from 'drizzle-orm'
 
 import { financeConversionStep } from '@/lib/platform/db/schema/finance/finance-conversion-step'
+import { financeDocument } from '@/lib/platform/db/schema/finance/finance-document'
+import { financeDocumentLink } from '@/lib/platform/db/schema/finance/finance-document-link'
 import {
   financeIntakeItem,
   type FinanceIntakeKind,
@@ -55,6 +59,44 @@ type PostingItem = Omit<FinanceIntakeItemRow, 'kind' | 'source'> & {
   source: FinanceIntakeSource
 }
 
+type PostingSnapshotDocument = {
+  id: number
+  filename: string
+  mime: string
+  size: number
+  kind: string
+  uploadedBy: number
+  uploadedAt: Date
+}
+
+/** Opaque optimistic identity of the request and ready documents a verifier saw. */
+export type IntakePostingSnapshot = Readonly<{ fingerprint: string }>
+
+export function createIntakePostingSnapshot(
+  item: FinanceIntakeItemView,
+  documents: readonly PostingSnapshotDocument[],
+): IntakePostingSnapshot {
+  const normalizedItem = {
+    ...item,
+    amount: item.amount.toString(),
+    paidAmount: item.paidAmount?.toString() ?? null,
+    feeAmount: item.feeAmount?.toString() ?? null,
+    decidedAt: item.decidedAt?.toISOString() ?? null,
+    postedAt: item.postedAt?.toISOString() ?? null,
+  }
+  const normalizedDocuments = [...documents]
+    .sort((left, right) => left.id - right.id)
+    .map((document) => ({
+      ...document,
+      uploadedAt: document.uploadedAt.toISOString(),
+    }))
+  return Object.freeze({
+    fingerprint: createHash('sha256')
+      .update(JSON.stringify({ item: normalizedItem, documents: normalizedDocuments }))
+      .digest('hex'),
+  })
+}
+
 export type PostIntakeItemOptions = {
   /**
    * The actual money date supplied by EARS-511's confirmation act. It is
@@ -64,6 +106,8 @@ export type PostIntakeItemOptions = {
   occurredOn?: string
   /** EARS-510: approve a submitted expense request and post it in this transaction. */
   approveSubmittedRequest?: boolean
+  /** The exact request/document identity approved by the verifier (EARS-510/531). */
+  expectedSnapshot?: IntakePostingSnapshot
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -107,6 +151,9 @@ export async function postIntakeItem(
         )
       }
     }
+    if (options.expectedSnapshot !== undefined) {
+      await assertIntakePostingSnapshot(tx, intakeItemToView(item), options.expectedSnapshot)
+    }
     await assertRequestPurposeReady(tx, item.id)
     await requireReadyDocument(tx, item.id)
     const postedBy = await requireActorMemberId(tx, actor)
@@ -130,6 +177,39 @@ export async function postIntakeItem(
       .returning()
     return intakeItemToView(updated)
   })
+}
+
+/** Re-check the verifier's optimistic snapshot while the intake row lock is held. */
+export async function assertIntakePostingSnapshot(
+  tx: PlatformTx,
+  item: FinanceIntakeItemView,
+  expected: IntakePostingSnapshot,
+): Promise<void> {
+  const rows = await tx
+    .select({ document: financeDocument })
+    .from(financeDocumentLink)
+    .innerJoin(financeDocument, eq(financeDocumentLink.documentId, financeDocument.id))
+    .where(
+      and(eq(financeDocumentLink.intakeItemId, item.id), eq(financeDocument.storageState, 'ready')),
+    )
+  const actual = createIntakePostingSnapshot(
+    item,
+    rows.map(({ document }) => ({
+      id: document.id,
+      filename: document.filename,
+      mime: document.mime,
+      size: Number(document.size),
+      kind: document.kind,
+      uploadedBy: document.uploadedBy,
+      uploadedAt: document.uploadedAt,
+    })),
+  )
+  if (actual.fingerprint !== expected.fingerprint) {
+    throw new FinanceRefusal(
+      `Заявка #${item.id} или её документы изменились после проверки; согласование относится к прежнему снимку, ` +
+        'поэтому проведение отменено и требуется повторная проверка (EARS-510/531).',
+    )
+  }
 }
 
 async function requireReadyDocument(tx: PlatformTx, itemId: number): Promise<void> {

@@ -136,6 +136,11 @@ export type CreateIntakeItemInput = {
   natural?: FinanceIntakeNaturalKey
 }
 
+export type CreateIntakeItemOptions = {
+  /** Source-specific checks that must see the same transaction as the insert. */
+  validate?: (tx: PlatformTx) => Promise<void>
+}
+
 /** The keys an intake line accepts — and the ONLY ones (the `operations.ts` habit). */
 const CREATE_INPUT_KEYS = new Set([
   'source',
@@ -335,6 +340,7 @@ function assertKnownSource(source: string): void {
 export async function createIntakeItem(
   actor: FinanceActor,
   input: CreateIntakeItemInput,
+  options: CreateIntakeItemOptions = {},
 ): Promise<FinanceIntakeItemView> {
   for (const key of Object.keys(input)) {
     if (!CREATE_INPUT_KEYS.has(key)) {
@@ -378,6 +384,7 @@ export async function createIntakeItem(
   const createdBy = await requireMemberId(actor)
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
+    await options.validate?.(tx)
     if (sourceRef !== null) {
       const existing = await findBySourceRef(tx, input.source, sourceRef)
       if (existing !== undefined) throw new FinanceIntakeDuplicate(intakeItemToView(existing))
@@ -522,6 +529,10 @@ export async function editIntakeItem(
   actor: FinanceActor,
   id: number,
   patch: EditIntakeItemPatch,
+  options: {
+    /** Source-specific validation of the final merged row while its lock is held. */
+    validate?: (tx: PlatformTx, next: FinanceIntakeItemView) => Promise<void>
+  } = {},
 ): Promise<FinanceIntakeItemView> {
   for (const key of Object.keys(patch)) {
     if (!EDIT_PATCH_KEYS.has(key)) {
@@ -552,6 +563,7 @@ export async function editIntakeItem(
       alreadyPaid: next.alreadyPaid,
       personalFunds: next.personalFunds,
     })
+    await options.validate?.(tx, intakeItemToView(next))
 
     const [updated] = await tx
       .update(financeIntakeItem)
@@ -596,7 +608,11 @@ export async function transitionIntakeItem(
   actor: FinanceActor,
   id: number,
   act: FinanceIntakeTransitionAct,
-  options: { reason?: string | null } = {},
+  options: {
+    reason?: string | null
+    /** Source-specific precondition checked on the locked transition row. */
+    validate?: (tx: PlatformTx, current: FinanceIntakeItemView) => Promise<void>
+  } = {},
 ): Promise<FinanceIntakeItemView | null> {
   const actorMemberId = await requireMemberId(actor)
 
@@ -610,6 +626,7 @@ export async function transitionIntakeItem(
       reason: options.reason,
     })
     assertTransitionGate(actor, transition, row, actorMemberId)
+    await options.validate?.(tx, intakeItemToView(row))
 
     if (act === 'submit' || act === 'post') {
       await assertRequestPurposeReady(tx, row.id)
