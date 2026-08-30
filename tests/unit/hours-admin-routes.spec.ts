@@ -275,6 +275,111 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
     })
   })
 
+  it('returns the immutable published batch after participant identity drift', async () => {
+    makePublicationEligible(1)
+    state.doc.participants[0] = {
+      ...state.doc.participants[0],
+      name: 'Анна после публикации',
+      role: 'Новая роль',
+      grade: 'III',
+    }
+    state.doc.publications = [
+      {
+        period_id: '2026-08',
+        status: 'published',
+        started_at: '2026-08-31T12:00:00.000Z',
+        published_at: '2026-08-31T12:01:00.000Z',
+        preview_fingerprint: 'sha256:frozen',
+        messages: [
+          {
+            email: 'anna@bbm.academy',
+            text: '**Верификация часов — Анна на момент публикации**',
+            delivery: 'sent',
+            sent_at: '2026-08-31T12:01:00.000Z',
+          },
+        ],
+      },
+    ]
+
+    const { GET } = await import('@/app/(platform)/api/p/hours/admin/publication/route')
+    const response = await GET(request('/api/p/hours/admin/publication?periodId=2026-08'))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      data: {
+        id: 'mattermost-publication',
+        periodId: '2026-08',
+        previewFingerprint: 'sha256:frozen',
+        messages: [
+          {
+            email: 'anna@bbm.academy',
+            text: '**Верификация часов — Анна на момент публикации**',
+            delivery: 'sent',
+            sentAt: '2026-08-31T12:01:00.000Z',
+          },
+        ],
+        eligibility: {
+          status: 'published',
+          canPublish: false,
+          reason: 'Период уже опубликован в Mattermost.',
+        },
+        publicationStatus: 'published',
+        startedAt: '2026-08-31T12:00:00.000Z',
+        publishedAt: '2026-08-31T12:01:00.000Z',
+      },
+    })
+  })
+
+  it('returns persisted sent, unknown and failed delivery progress', async () => {
+    makePublicationEligible(3)
+    state.doc.publications = [
+      {
+        period_id: '2026-08',
+        status: 'incomplete',
+        started_at: '2026-08-31T12:00:00.000Z',
+        published_at: null,
+        preview_fingerprint: 'sha256:incomplete',
+        messages: [
+          {
+            email: 'anna@bbm.academy',
+            text: 'Сохранённое сообщение 1',
+            delivery: 'sent',
+            sent_at: '2026-08-31T12:00:10.000Z',
+          },
+          {
+            email: 'member-1@bbm.academy',
+            text: 'Сохранённое сообщение 2',
+            delivery: 'unknown',
+            sent_at: null,
+          },
+          {
+            email: 'member-2@bbm.academy',
+            text: 'Сохранённое сообщение 3',
+            delivery: 'failed',
+            sent_at: null,
+          },
+        ],
+      },
+    ]
+
+    const { GET } = await import('@/app/(platform)/api/p/hours/admin/publication/route')
+    const response = await GET(request('/api/p/hours/admin/publication?periodId=2026-08'))
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.data).toMatchObject({
+      previewFingerprint: 'sha256:incomplete',
+      publicationStatus: 'incomplete',
+      startedAt: '2026-08-31T12:00:00.000Z',
+      publishedAt: null,
+      messages: [
+        { text: 'Сохранённое сообщение 1', delivery: 'sent' },
+        { text: 'Сохранённое сообщение 2', delivery: 'unknown' },
+        { text: 'Сохранённое сообщение 3', delivery: 'failed' },
+      ],
+    })
+  })
+
   it('refuses publication before storage or network access without the webhook', async () => {
     makePublicationEligible(1)
     const fetchMock = vi.fn()

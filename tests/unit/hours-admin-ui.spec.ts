@@ -8,7 +8,7 @@ import { HoursPeriodCreateScreen } from '@/app/(platform)/p/admin/hours/periods/
 import { HoursPeriodRecordScreen } from '@/app/(platform)/p/admin/hours/periods/HoursPeriodRecordScreen'
 import { HoursPeriodsScreen } from '@/app/(platform)/p/admin/hours/periods/HoursPeriodsScreen'
 import { HoursPublicationScreen } from '@/app/(platform)/p/admin/hours/publication/HoursPublicationScreen'
-import type { HoursPeriodRecord, HoursPublicationRecord } from '@/lib/hours'
+import type { HoursPeriodRecord } from '@/lib/hours'
 
 const refine = vi.hoisted(() => ({
   list: {} as Record<string, unknown>,
@@ -127,7 +127,7 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
       messages: [{ email: 'anna@bbm.academy', text: '**Верификация часов — Анна**' }],
       eligibility: { status: 'eligible', canPublish: true, reason: null },
       publicationStatus: null,
-    } satisfies HoursPublicationRecord
+    }
     refine.list = { query: { isLoading: false, error: null }, result: { data: [period], total: 1 } }
     const fetchMock = vi
       .fn()
@@ -155,6 +155,95 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST' })
     expect(await screen.findByText('Опубликовано 1 сообщений в Mattermost.')).toBeTruthy()
+  })
+
+  it('refreshes persisted progress and keeps publish locked after a failed attempt', async () => {
+    const period = {
+      id: '2026-08',
+      label: 'Август 2026',
+      dateFrom: '2026-08-01',
+      dateTo: '2026-08-31',
+      status: 'closed',
+      locked: false,
+      publicationStatus: null,
+      warnings: [],
+      assessments: [],
+    } satisfies HoursPeriodRecord
+    const eligiblePreview = {
+      id: 'mattermost-publication',
+      periodId: period.id,
+      previewFingerprint: 'sha256:preview',
+      messages: [{ email: 'anna@bbm.academy', text: 'Текущий предпросмотр' }],
+      eligibility: { status: 'eligible', canPublish: true, reason: null },
+      publicationStatus: null,
+    }
+    const persistedAttempt = {
+      id: 'mattermost-publication',
+      periodId: period.id,
+      previewFingerprint: 'sha256:frozen',
+      messages: [
+        {
+          email: 'anna@bbm.academy',
+          text: 'Сохранённое сообщение 1',
+          delivery: 'sent',
+          sentAt: '2026-08-31T12:00:10.000Z',
+        },
+        {
+          email: 'boris@bbm.academy',
+          text: 'Сохранённое сообщение 2',
+          delivery: 'unknown',
+          sentAt: null,
+        },
+        {
+          email: 'vera@bbm.academy',
+          text: 'Сохранённое сообщение 3',
+          delivery: 'failed',
+          sentAt: null,
+        },
+      ],
+      eligibility: {
+        status: 'incomplete',
+        canPublish: false,
+        reason: 'У периода уже есть незавершённая попытка публикации.',
+      },
+      publicationStatus: 'incomplete',
+      startedAt: '2026-08-31T12:00:00.000Z',
+      publishedAt: null,
+    }
+    refine.list = { query: { isLoading: false, error: null }, result: { data: [period], total: 1 } }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ data: eligiblePreview }))
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            error: {
+              code: 'conflict',
+              message:
+                'Результат доставки неизвестен. Отправлено 1 из 3; автоматический повтор заблокирован.',
+            },
+          },
+          { status: 409 },
+        ),
+      )
+      .mockResolvedValueOnce(Response.json({ data: persistedAttempt }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(React.createElement(HoursPublicationScreen))
+
+    const publish = await screen.findByRole('button', { name: 'Опубликовать в Mattermost' })
+    fireEvent.click(publish)
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    expect(await screen.findByText('Публикация не завершена')).toBeTruthy()
+    expect(screen.getByText('Отправлено 1 из 3 сообщений.')).toBeTruthy()
+    expect(screen.getByText('Результат неизвестен')).toBeTruthy()
+    expect(screen.getByText('Не доставлено')).toBeTruthy()
+    expect(screen.getByText('Начато')).toBeTruthy()
+    expect(screen.getByText('Сохранённое сообщение 1')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Опубликовать в Mattermost' })).toHaveProperty(
+      'disabled',
+      true,
+    )
   })
 
   it('names preview refusal and disables publication for an empty period', async () => {
