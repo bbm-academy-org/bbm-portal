@@ -18,7 +18,11 @@ describe('hours cabinet contract (spec 311 EARS-421, EARS-446..452)', () => {
         operations,
       })),
     ).toEqual([
-      { name: 'periods', label: 'Периоды', operations: ['list', 'create', 'edit'] },
+      {
+        name: 'periods',
+        label: 'Периоды',
+        operations: ['list', 'create', 'edit', 'delete'],
+      },
       {
         name: 'participants',
         label: 'Ставки и грейды',

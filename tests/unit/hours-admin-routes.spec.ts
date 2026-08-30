@@ -92,6 +92,15 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
     expect(state.audit).toEqual({ actorEmail: 'admin@bbm.local', source: 'portal' })
   })
 
+  it('keeps period deletion only for records without assessments', async () => {
+    const { DELETE } = await import('@/app/(platform)/api/p/hours/admin/periods/[id]/route')
+    const response = await DELETE(request('/api/p/hours/admin/periods/2026-08', 'DELETE'), {
+      params: Promise.resolve({ id: '2026-08' }),
+    })
+    expect(response.status).toBe(200)
+    expect(state.audit).toEqual({ actorEmail: 'admin@bbm.local', source: 'portal' })
+  })
+
   it('rejects email changes and exposes no assessment mutation handler', async () => {
     const participant =
       await import('@/app/(platform)/api/p/hours/admin/participants/[email]/route')
