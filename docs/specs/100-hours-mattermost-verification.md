@@ -1,7 +1,7 @@
 ---
-status: Shipped
+status: In dev
 issue: 100
-updated: 2026-08-19
+updated: 2026-08-30
 ---
 
 # Верификация часов в Mattermost — spec (issue #100)
@@ -24,6 +24,12 @@ Design gate закрыт владельцем в issue #100: блок встра
 сервис и bot-account не создаются. Согласованный wireframe содержит счётчик
 сохранённых оценок, отдельную кнопку «Предпросмотр сообщений», раскрывающую
 карточки, и кнопку публикации под раскрытым preview.
+
+**Surface amendment, issue #317 (owner GO 2026-08-30).** The behavior below is
+unchanged, but its UI moves in full to the dedicated cabinet page
+`/p/admin/hours/publication`; the old `/p/hours/admin` route is deleted. The
+accepted layout is `design-source/p-admin-hours.md`. The route handler re-checks
+`platform-admin`; the former module email allowlist no longer exists.
 
 ## Why
 
@@ -71,9 +77,10 @@ Design gate закрыт владельцем в issue #100: блок встра
 
 ## Requirements
 
-1. На `/p/hours/admin` выбранный существующим селектором период управляет и
-   сводкой, и новым inline-блоком «Верификация в Mattermost». Блок стоит сразу
-   после таблицы сводки и до скачивания JSON.
+1. На `/p/admin/hours/publication` выбранный период управляет dedicated-блоком
+   «Верификация в Mattermost»: владелец сначала видит eligibility, затем точные
+   сообщения, затем кнопку отправки. Read-only оценки того же периода доступны
+   на `/p/admin/hours/periods/edit/<id>`.
 2. В свёрнутом состоянии блок показывает «N сохранённых оценок» и кнопку
    «Предпросмотр сообщений». После клика раскрывается полный preview: одна
    карточка на одну сохранённую оценку, в том же стабильном порядке, в котором
@@ -122,9 +129,9 @@ Design gate закрыт владельцем в issue #100: блок встра
    хотя бы одну оценку и ещё не имеет публикации или незавершённой попытки.
    Для открытого, пустого, уже опубликованного или незавершённого периода UI
    называет конкретную причину, а не просто прячет кнопку.
-7. Publish Server Action заново применяет `auth()` и
-   `HOURS_ADMIN_EMAILS` fail-closed gate. Наличие кнопки на странице не считается
-   защитой; прямой вызов не-админом ничего не отправляет и не меняет JSON.
+7. Publish handler `/api/p/hours/admin/publication` заново применяет `auth()` и
+   claim-gate `platform-admin`. Наличие кнопки на странице не считается
+   защитой; прямой вызов не-админом ничего не отправляет и не меняет данные.
 8. Перед первым сетевым запросом сервер атомарно фиксирует в том же
    хранилище модуля неизменяемый batch: точные тексты сообщений, время начала и
    состояние доставки каждого сообщения. Одновременный или повторный action
@@ -217,7 +224,7 @@ Design gate закрыт владельцем в issue #100: блок встра
 
 ## Acceptance scenarios — owner on live stand
 
-Целевой URL: `https://portal.bbm.academy/p/hours/admin`. До merge владелец
+Целевой URL: `https://portal.bbm.academy/p/admin/hours/publication`. До merge владелец
 получает URL live stand с тем же путём, логин и место получения пароля по
 task-cycle stage 5.
 
@@ -249,8 +256,8 @@ task-cycle stage 5.
 1. **Identity drift.** После сохранения оценки тест меняет role/grade участника.
    Preview показывает текущие role/grade, строку «Ставка на момент самооценки»
    со старыми денежными снэпшотами и сохраняет этот точный текст в batch.
-2. **Direct access.** Прямой publish action от пользователя вне
-   `HOURS_ADMIN_EMAILS` отклоняется до чтения secret и сетевых запросов.
+2. **Direct access.** Прямой publish request от пользователя без
+   `platform-admin` отклоняется до чтения secret и сетевых запросов.
 3. **Конфигурационная ошибка.** Без `MATTERMOST_HOURS_WEBHOOK_URL` publish
    возвращает понятную ошибку, не делает запросов и не создаёт batch.
 4. **Частичный сбой.** Контролируемый webhook принимает первое из трёх сообщений
@@ -269,7 +276,7 @@ task-cycle stage 5.
 - Автоматическая отправка в 00:00 второго числа.
 - Чтение и подсчёт реакций или комментариев обратно в портал.
 - Технический запрет 👎 без комментария.
-- Отдельная страница, worker, сервис или Mattermost bot-account.
+- Worker, отдельный сервис или Mattermost bot-account.
 - Редактирование, удаление и повторная публикация отправленных сообщений из
   портала; автоматическое восстановление частичного/неизвестного результата.
 - Шаг третьего числа: выплаты, бухгалтерские заявки и Реестр вкладов.
