@@ -11,7 +11,7 @@ describe('legacy hours admin retirement (spec 311 EARS-421, EARS-452)', () => {
     expect(existsSync(join(root, 'src/app/(platform)/p/hours/admin/export/route.ts'))).toBe(false)
   })
 
-  it('removes the temporary cabinet export rejected during owner acceptance', () => {
+  it('EARS-449: removes the temporary cabinet export rejected during owner acceptance', () => {
     expect(existsSync(join(root, 'src/app/(platform)/p/admin/hours/export/page.tsx'))).toBe(false)
     expect(
       existsSync(join(root, 'src/app/(platform)/p/admin/hours/export/HoursExportScreen.tsx')),
