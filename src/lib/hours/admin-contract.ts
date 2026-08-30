@@ -71,13 +71,6 @@ export const hoursParticipantCreateSchema = z
 
 export const hoursParticipantUpdateSchema = z.object(participantProfile).strict()
 
-export const hoursExportRecordSchema = z.object({
-  id: z.literal('hours-export'),
-  participantCount: z.number().int().nonnegative(),
-  periodCount: z.number().int().nonnegative(),
-  assessmentCount: z.number().int().nonnegative(),
-})
-
 const publicationEligibilitySchema = z.object({
   status: z.enum(['eligible', 'open', 'empty', 'published', 'incomplete']),
   canPublish: z.boolean(),
@@ -122,12 +115,6 @@ export const hoursAdminSection: WorkspaceAdminSection = {
       label: 'Ставки и грейды',
       operations: ['list', 'create', 'edit'],
       schema: hoursParticipantRecordSchema,
-    },
-    {
-      name: 'export',
-      label: 'Экспорт',
-      operations: ['list'],
-      schema: hoursExportRecordSchema,
     },
     {
       name: 'publication',

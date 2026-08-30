@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises'
-
 import { expect, test, type Page } from '@playwright/test'
 
 import { isAllowedE2EIdpOrigin } from './support/idp-origin'
@@ -181,7 +179,7 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
     await expect(row).toHaveCount(1, { timeout: 30_000 })
   })
 
-  test('EARS-447/448/449/450: the cabinet preserves period lifecycle, read-only assessments, JSON export and publication preview', async ({
+  test('EARS-447/448/450: the cabinet preserves period lifecycle, read-only assessments and publication preview', async ({
     page,
   }) => {
     test.skip(
@@ -291,48 +289,10 @@ test.describe('/p/hours on the core schema — parity smoke (spec 124)', () => {
       await page.getByRole('button', { name: 'Закрыть период' }).click()
       await expect(page.getByText('Период закрыт.', { exact: true })).toBeVisible()
 
-      await page.goto('/p/admin/hours/export')
-      const downloadPromise = page.waitForEvent('download')
-      await page.getByRole('link', { name: 'Скачать JSON' }).click()
-      const download = await downloadPromise
-      expect(download.suggestedFilename()).toBe('hours.json')
-      const downloadPath = await download.path()
-      expect(downloadPath).not.toBeNull()
-      const exported: unknown = JSON.parse(await readFile(downloadPath!, 'utf8'))
-      expect(Object.keys(exported as object).sort()).toEqual([
-        'assessments',
-        'participants',
-        'periods',
-        'publications',
-      ])
-      const document = exported as {
-        participants: Array<Record<string, unknown>>
-        periods: Array<Record<string, unknown>>
-        assessments: Array<Record<string, unknown>>
-        publications: Array<Record<string, unknown>>
-      }
-      expect(document.participants).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ email: adminUsername!.toLowerCase(), grade: 'II' }),
-        ]),
-      )
-      expect(document.periods).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: periodId,
-            label,
-            date_from: dateFrom,
-            date_to: updatedDateTo,
-            status: 'closed',
-          }),
-        ]),
-      )
-      expect(document.assessments).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ period_id: periodId, email: adminUsername!.toLowerCase() }),
-        ]),
-      )
-      expect(Array.isArray(document.publications)).toBe(true)
+      const removedExport = await page.request.get('/p/admin/hours/export', { maxRedirects: 0 })
+      expect(removedExport.status()).toBe(404)
+      await page.goto('/p/admin/hours/periods')
+      await expect(page.getByRole('link', { name: 'Экспорт' })).toHaveCount(0)
 
       await page.goto('/p/admin/hours/publication')
       await page.getByLabel('Период').click()

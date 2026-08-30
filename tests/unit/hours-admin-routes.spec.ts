@@ -113,15 +113,13 @@ function makePublicationEligible(messageCount = 2) {
 
 describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
   it('EARS-451: every hours admin handler re-checks platform-admin', async () => {
-    const [periods, period, participants, participant, exportRoute, publication] =
-      await Promise.all([
-        import('@/app/(platform)/api/p/hours/admin/periods/route'),
-        import('@/app/(platform)/api/p/hours/admin/periods/[id]/route'),
-        import('@/app/(platform)/api/p/hours/admin/participants/route'),
-        import('@/app/(platform)/api/p/hours/admin/participants/[email]/route'),
-        import('@/app/(platform)/api/p/hours/admin/export/route'),
-        import('@/app/(platform)/api/p/hours/admin/publication/route'),
-      ])
+    const [periods, period, participants, participant, publication] = await Promise.all([
+      import('@/app/(platform)/api/p/hours/admin/periods/route'),
+      import('@/app/(platform)/api/p/hours/admin/periods/[id]/route'),
+      import('@/app/(platform)/api/p/hours/admin/participants/route'),
+      import('@/app/(platform)/api/p/hours/admin/participants/[email]/route'),
+      import('@/app/(platform)/api/p/hours/admin/publication/route'),
+    ])
     const periodContext = { params: Promise.resolve({ id: '2026-08' }) }
     const participantContext = {
       params: Promise.resolve({ email: 'anna%40bbm.academy' }),
@@ -192,7 +190,6 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
             participantContext,
           ),
       ],
-      ['export', () => exportRoute.GET()],
       [
         'publication preview',
         () => publication.GET(request('/api/p/hours/admin/publication?periodId=2026-08')),
@@ -263,14 +260,6 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
       { params: Promise.resolve({ email: 'anna%40bbm.academy' }) },
     )
     expect(response.status).toBe(400)
-  })
-
-  it('returns the legacy JSON document byte-for-byte as an attachment', async () => {
-    const { GET } = await import('@/app/(platform)/api/p/hours/admin/export/route')
-    const response = await GET()
-    expect(response.status).toBe(200)
-    expect(await response.text()).toBe(JSON.stringify(state.doc, null, 2))
-    expect(response.headers.get('content-disposition')).toContain('attachment')
   })
 
   it('builds a publication preview without publishing it', async () => {

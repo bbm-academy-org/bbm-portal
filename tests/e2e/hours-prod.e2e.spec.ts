@@ -98,21 +98,16 @@ test.describe('portal.bbm.academy · модуль часов (спека 081, с
     await expect(page.getByText(HOURS_HEADING)).toHaveCount(0)
   })
 
-  test('сценарий 9: old admin URLs are 404 and the new export re-checks the claim', async ({
-    page,
-  }) => {
+  test('сценарий 9: old admin URLs and the rejected cabinet export are 404', async ({ page }) => {
     for (const path of ['/p/hours/admin', '/p/hours/admin/export']) {
       const response = await page.request.get(`${portalBase}${path}`, { maxRedirects: 0 })
       expect(response.status(), `${path} must be deleted, not redirected`).toBe(404)
     }
 
-    const res = await page.request.get(`${portalBase}/api/p/hours/admin/export`, {
-      maxRedirects: 0,
-    })
-    expect(res.status(), 'выгрузка JSON не должна открываться анониму').not.toBe(200)
-    const body = await res.text().catch(() => '')
-    expect(body).not.toContain('"participants"')
-    expect(body).not.toContain('"assessments"')
+    for (const path of ['/p/admin/hours/export', '/api/p/hours/admin/export']) {
+      const response = await page.request.get(`${portalBase}${path}`, { maxRedirects: 0 })
+      expect(response.status(), `${path} must be deleted, not gated or redirected`).toBe(404)
+    }
   })
 
   test('сценарий 11: CMS-хост не знает про /p/hours', async ({ page }) => {

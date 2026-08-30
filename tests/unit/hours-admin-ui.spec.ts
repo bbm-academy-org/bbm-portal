@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { HoursExportScreen } from '@/app/(platform)/p/admin/hours/export/HoursExportScreen'
 import { HoursParticipantCreateScreen } from '@/app/(platform)/p/admin/hours/participants/HoursParticipantCreateScreen'
 import { HoursParticipantsScreen } from '@/app/(platform)/p/admin/hours/participants/HoursParticipantsScreen'
 import { HoursPeriodCreateScreen } from '@/app/(platform)/p/admin/hours/periods/HoursPeriodCreateScreen'
@@ -61,11 +60,8 @@ describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
     expect(screen.getByRole('heading', { name: 'Новый участник' })).toBeTruthy()
   })
 
-  it('renders dedicated export and Mattermost publication action pages', async () => {
-    const view = render(React.createElement(HoursExportScreen))
-    expect(screen.getByRole('heading', { name: 'Экспорт' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Скачать JSON' })).toBeTruthy()
-    view.rerender(React.createElement(HoursPublicationScreen))
+  it('renders the dedicated Mattermost publication action page', async () => {
+    render(React.createElement(HoursPublicationScreen))
     expect(screen.getByRole('heading', { name: 'Публикация в Mattermost' })).toBeTruthy()
     expect(screen.getByLabelText('Период')).toBeTruthy()
   })

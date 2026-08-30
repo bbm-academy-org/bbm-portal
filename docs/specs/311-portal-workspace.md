@@ -698,8 +698,8 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
 ### F. `hours` — the second tenant (#317)
 
 - **EARS-446.** The cabinet shall expose the hours module's admin section
-  carrying four items, matching the vendored sidebar: **Периоды**, **Ставки и
-  грейды** (participants), **Экспорт** and **Публикация в Mattermost**.
+  carrying three items, matching the owner-accepted sidebar: **Периоды**,
+  **Ставки и грейды** (participants) and **Публикация в Mattermost**.
 - **EARS-447.** The hours cabinet resources shall reproduce the behaviour of the
   retiring `/p/hours/admin` screen exactly, per specs 081 (rev. #83/#85), 100
   and 124 — participant upsert by email with implicit `member` creation
@@ -710,10 +710,10 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
 - **EARS-448.** Assessments shall be **read-only** in the cabinet: they are
   created and re-saved by the participant on `/p/hours` (spec 081), and the old
   admin screen never edited them either.
-- **EARS-449.** The JSON export shall be an **action**, not a CRUD resource: a
-  download producing byte-identical output to spec 124 EARS-11, served from a
-  handler at `/api/p/hours/admin/export` that re-checks `platform-admin`
-  (EARS-462).
+- **EARS-449.** The temporary application's user-visible JSON export shall not
+  move into the cabinet: no sidebar item, page or handler shall exist at
+  `/p/admin/hours/export` or `/api/p/hours/admin/export`. Spec 124's migration
+  export/diff tooling remains an internal cutover tool, not a product surface.
 - **EARS-450.** The Mattermost publication panel shall move into the cabinet in
   full, keeping the spec 100 flow (preview → publish, one batch per period,
   sequential per-message delivery) unchanged.
@@ -837,7 +837,6 @@ failing.
 | **Hours period**              | yes — label + dates, ≥1 weekday                              | list with status               | yes — label/dates with recompute; refused while publication-locked | only while the period has no assessments (spec 081 item 16)                                 |
 | **Hours assessment**          | **not supported** — the participant creates it on `/p/hours` | read-only summary              | **not supported** — re-saving is the participant's act (081)       | **not supported** — history is the product (124)                                            |
 | **Hours publication**         | yes — preview then publish, one batch per period             | panel state                    | delivery updates the batch per spec 100                            | **not supported** — it is a delivery record                                                 |
-| **Hours export**              | n/a — an action, not a resource (EARS-449)                   | the download itself            | n/a                                                                | n/a                                                                                         |
 | **OKR source & parameters**   | **not supported** — no settings store in `core`              | yes — read-only page           | **not supported** — deploy-time configuration (EARS-455)           | **not supported** — nothing to delete                                                       |
 
 ## Acceptance scenarios
@@ -908,13 +907,14 @@ scenarios (task-cycle stage 3) and the stage-5 acceptance script.
     creates a participant with a new email, sets fork and grade and sees the
     computed rate; edits a period's dates over existing assessments and gets the
     same recompute warning as before; opens a period's assessments and finds
-    them readable but with no edit or delete control; downloads the JSON export
-    and finds it identical in shape to yesterday's; opens the Mattermost panel
+    them readable but with no edit or delete control; finds no legacy JSON
+    export in the sidebar or by direct cabinet/API URL; opens the Mattermost panel
     and sees the preview. (EARS-446, EARS-447, EARS-448, EARS-449, EARS-450,
     EARS-451)
 11. **The old admin is gone.** `https://portal.bbm.academy/p/hours/admin` and
-    `https://portal.bbm.academy/p/hours/admin/export` both return 404, and
-    neither redirects anywhere. `/p/hours` itself works unchanged. Neither
+    `https://portal.bbm.academy/p/hours/admin/export` both return 404, and so do
+    `/p/admin/hours/export` and `/api/p/hours/admin/export`; none redirects
+    anywhere. `/p/hours` itself works unchanged. Neither
     `.env.example` nor `deploy/.env.prod.example` mentions `HOURS_ADMIN_EMAILS`,
     and the value still sitting in the live `deploy/.env.prod` grants nothing
     because no code reads it. (EARS-421, EARS-452)

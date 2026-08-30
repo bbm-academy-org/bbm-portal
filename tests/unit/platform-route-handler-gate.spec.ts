@@ -7,21 +7,26 @@ import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate
  * REAL route handler.
  *
  * A route handler does not run layouts, so the `(platform)/p/layout.tsx` gate
- * covers no `/api/p/*` route handler. This pins the boundary on the hours export
- * action after the cabinet cutover (EARS-449, EARS-462).
+ * covers no `/api/p/*` route handler. This pins the boundary on the hours periods
+ * resource after the cabinet cutover (EARS-447, EARS-462).
  */
 
 const authState: { session: unknown } = { session: null }
 
 vi.mock('@/auth', () => ({ auth: async () => authState.session }))
 vi.mock('@/lib/hours/store-core', () => ({
-  readHoursDocument: async () => ({ participants: [], periods: [] }),
+  readHoursDocument: async () => ({
+    participants: [],
+    periods: [],
+    assessments: [],
+    publications: [],
+  }),
 }))
 
 async function get(session: unknown): Promise<Response> {
   authState.session = session
-  const route = await import('@/app/(platform)/api/p/hours/admin/export/route')
-  return route.GET()
+  const route = await import('@/app/(platform)/api/p/hours/admin/periods/route')
+  return route.GET(new Request('https://portal.bbm.academy/api/p/hours/admin/periods'))
 }
 
 describe('a route handler under /p re-checks the claim itself (EARS-461, EARS-462)', () => {

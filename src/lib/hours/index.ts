@@ -40,7 +40,6 @@ export type { HoursSessionLike } from './access'
 export {
   hoursAdminSection,
   hoursAssessmentRecordSchema,
-  hoursExportRecordSchema,
   hoursParticipantCreateSchema,
   hoursParticipantRecordSchema,
   hoursParticipantUpdateSchema,
