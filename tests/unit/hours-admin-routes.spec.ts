@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { HoursDocument, MutationResult } from '@/lib/hours'
+import { HoursDataError, type HoursDocument, type MutationResult } from '@/lib/hours'
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 const state = vi.hoisted(() => ({
   session: null as unknown,
   audit: null as unknown,
   audits: [] as unknown[],
+  dataError: null as Error | null,
   doc: {
     participants: [
       {
@@ -37,9 +38,13 @@ vi.mock('@/lib/hours/store-core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/hours/store-core')>()
   return {
     ...actual,
-    readHoursDocument: vi.fn(async () => state.doc),
+    readHoursDocument: vi.fn(async () => {
+      if (state.dataError) throw state.dataError
+      return state.doc
+    }),
     mutateHoursDocument: vi.fn(
       async (audit: unknown, mutate: (doc: HoursDocument) => MutationResult<unknown>) => {
+        if (state.dataError) throw state.dataError
         state.audit = audit
         state.audits.push(audit)
         const result = mutate(state.doc)
@@ -65,6 +70,7 @@ beforeEach(() => {
   state.session = admin
   state.audit = null
   state.audits = []
+  state.dataError = null
   state.doc = {
     participants: [
       {
@@ -112,6 +118,105 @@ function makePublicationEligible(messageCount = 2) {
 }
 
 describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
+  it('EARS-472: safely names unavailable Hours data across list, read and save handlers', async () => {
+    const [periods, period, participants, participant, publication] = await Promise.all([
+      import('@/app/(platform)/api/p/hours/admin/periods/route'),
+      import('@/app/(platform)/api/p/hours/admin/periods/[id]/route'),
+      import('@/app/(platform)/api/p/hours/admin/participants/route'),
+      import('@/app/(platform)/api/p/hours/admin/participants/[email]/route'),
+      import('@/app/(platform)/api/p/hours/admin/publication/route'),
+    ])
+    const periodContext = { params: Promise.resolve({ id: '2026-08' }) }
+    const participantContext = {
+      params: Promise.resolve({ email: 'anna%40bbm.academy' }),
+    }
+    const attempts: Array<[string, () => Promise<Response>]> = [
+      ['period list', () => periods.GET(request('/api/p/hours/admin/periods'))],
+      [
+        'period create',
+        () =>
+          periods.POST(
+            request('/api/p/hours/admin/periods', 'POST', {
+              label: 'September 2026',
+              dateFrom: '2026-09-01',
+              dateTo: '2026-09-30',
+            }),
+          ),
+      ],
+      [
+        'period read',
+        () => period.GET(request('/api/p/hours/admin/periods/2026-08'), periodContext),
+      ],
+      [
+        'period update',
+        () =>
+          period.PATCH(
+            request('/api/p/hours/admin/periods/2026-08', 'PATCH', { status: 'closed' }),
+            periodContext,
+          ),
+      ],
+      [
+        'period delete',
+        () => period.DELETE(request('/api/p/hours/admin/periods/2026-08', 'DELETE'), periodContext),
+      ],
+      ['participant list', () => participants.GET(request('/api/p/hours/admin/participants'))],
+      [
+        'participant create',
+        () =>
+          participants.POST(
+            request('/api/p/hours/admin/participants', 'POST', {
+              email: 'new@bbm.academy',
+              name: 'New participant',
+              role: null,
+              forkMin: null,
+              forkMax: null,
+              grade: null,
+            }),
+          ),
+      ],
+      [
+        'participant read',
+        () =>
+          participant.GET(
+            request('/api/p/hours/admin/participants/anna%40bbm.academy'),
+            participantContext,
+          ),
+      ],
+      [
+        'participant update',
+        () =>
+          participant.PATCH(
+            request('/api/p/hours/admin/participants/anna%40bbm.academy', 'PATCH', {
+              name: 'Anna',
+              role: null,
+              forkMin: null,
+              forkMax: null,
+              grade: null,
+            }),
+            participantContext,
+          ),
+      ],
+      [
+        'publication preview',
+        () => publication.GET(request('/api/p/hours/admin/publication?periodId=2026-08')),
+      ],
+    ]
+
+    state.dataError = new HoursDataError(
+      'connect ECONNREFUSED postgres://hours_writer:secret@private-host/hours',
+    )
+    const safeMessage =
+      'Данные недоступны: база модуля часов не отвечает. Повторите попытку позже или обратитесь к владельцу.'
+
+    for (const [label, attempt] of attempts) {
+      const response = await attempt()
+      expect(response.status, label).toBe(503)
+      expect(await response.json(), label).toEqual({
+        error: { code: 'unavailable', message: safeMessage },
+      })
+    }
+  })
+
   it('EARS-451: every hours admin handler re-checks platform-admin', async () => {
     const [periods, period, participants, participant, publication] = await Promise.all([
       import('@/app/(platform)/api/p/hours/admin/periods/route'),

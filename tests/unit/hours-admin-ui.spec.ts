@@ -134,6 +134,19 @@ const defaultPublicationPeriodCases: Array<{
 ]
 
 describe('hours cabinet UI (owner Option A, spec 311 EARS-446..452)', () => {
+  it('shows the safe data-unavailable reason returned by an Hours handler', () => {
+    const safeMessage =
+      'Данные недоступны: база модуля часов не отвечает. Повторите попытку позже или обратитесь к владельцу.'
+    refine.list = {
+      query: { isLoading: false, error: { message: safeMessage, statusCode: 503 } },
+      result: { data: [], total: 0 },
+    }
+
+    render(React.createElement(HoursPeriodsScreen))
+
+    expect(screen.getByRole('alert').textContent).toContain(safeMessage)
+  })
+
   it('renders separate calm periods list and create pages', async () => {
     const view = render(React.createElement(HoursPeriodsScreen))
     expect(screen.getByRole('heading', { name: 'Периоды' })).toBeTruthy()
