@@ -257,6 +257,7 @@ export type {
 // ── the read side: balances, register, the exception list (EARS-317/333) ─────
 export {
   accountBalances,
+  currentMoneyOverview,
   liabilityBalances,
   listRegister,
   postingsMissingOptionalProduct,
@@ -267,6 +268,7 @@ export type {
   RegisterEntry,
   MissingProductPosting,
 } from './queries'
+export type { CurrentMoneyAccount, CurrentMoneyPool, CurrentMoneyValuation } from './current-money'
 
 // ── the enums the ledger fixes (EARS-305/306/316) ────────────────────────────
 export {
