@@ -8,11 +8,9 @@ import {
   createAccount,
   createCounterparty,
   createCurrency,
-  createIntakeItem,
   createPurpose,
   createPurposeProposal,
   dismissPurposeProposal,
-  editIntakeItem,
   FinanceAccessRefusal,
   FinanceRefusal,
   getIntakeItem,
@@ -20,8 +18,8 @@ import {
   listPurposeProposals,
   renameCounterparty,
   resolvePurposeProposal,
-  transitionIntakeItem,
 } from '@/lib/finance'
+import { createIntakeItem, editIntakeItem, transitionIntakeItem } from '@/lib/finance/intake/items'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 import { requirePlatformDatabaseUrl } from '@/lib/platform/db/config'
 import type { PlatformTx } from '@/lib/platform/db/transaction'

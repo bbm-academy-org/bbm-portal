@@ -791,32 +791,59 @@ async function referenceUsage(
   }
 }
 
-export async function requireCurrency(tx: PlatformTx, code: string): Promise<FinanceCurrencyView> {
-  const [row] = await tx.select().from(financeCurrency).where(eq(financeCurrency.code, code))
+type RequireReferenceOptions = { forShare?: boolean }
+
+export async function requireCurrency(
+  tx: PlatformTx,
+  code: string,
+  options: RequireReferenceOptions = {},
+): Promise<FinanceCurrencyView> {
+  const query = tx.select().from(financeCurrency).where(eq(financeCurrency.code, code))
+  const [row] = options.forShare ? await query.for('share') : await query
   if (row === undefined) throw new FinanceRefusal(`Валюты «${code}» нет в справочнике.`)
   return row as FinanceCurrencyView
 }
 
-export async function requireAccount(tx: PlatformTx, id: number): Promise<FinanceAccountView> {
-  const [row] = await tx.select().from(financeAccount).where(eq(financeAccount.id, id))
+export async function requireAccount(
+  tx: PlatformTx,
+  id: number,
+  options: RequireReferenceOptions = {},
+): Promise<FinanceAccountView> {
+  const query = tx.select().from(financeAccount).where(eq(financeAccount.id, id))
+  const [row] = options.forShare ? await query.for('share') : await query
   if (row === undefined) throw new FinanceRefusal(`Счёта #${id} нет в плане счетов.`)
   return row as FinanceAccountView
 }
 
-export async function requireProject(tx: PlatformTx, id: number): Promise<FinanceProjectView> {
-  const [row] = await tx.select().from(financeProject).where(eq(financeProject.id, id))
+export async function requireProject(
+  tx: PlatformTx,
+  id: number,
+  options: RequireReferenceOptions = {},
+): Promise<FinanceProjectView> {
+  const query = tx.select().from(financeProject).where(eq(financeProject.id, id))
+  const [row] = options.forShare ? await query.for('share') : await query
   if (row === undefined) throw new FinanceRefusal(`Проекта #${id} нет в справочнике.`)
   return row as FinanceProjectView
 }
 
-export async function requireProduct(tx: PlatformTx, id: number): Promise<FinanceProductView> {
-  const [row] = await tx.select().from(financeProduct).where(eq(financeProduct.id, id))
+export async function requireProduct(
+  tx: PlatformTx,
+  id: number,
+  options: RequireReferenceOptions = {},
+): Promise<FinanceProductView> {
+  const query = tx.select().from(financeProduct).where(eq(financeProduct.id, id))
+  const [row] = options.forShare ? await query.for('share') : await query
   if (row === undefined) throw new FinanceRefusal(`Продукта #${id} нет в справочнике.`)
   return row as FinanceProductView
 }
 
-export async function requirePurpose(tx: PlatformTx, id: number): Promise<FinancePurposeView> {
-  const [row] = await tx.select().from(financePurpose).where(eq(financePurpose.id, id))
+export async function requirePurpose(
+  tx: PlatformTx,
+  id: number,
+  options: RequireReferenceOptions = {},
+): Promise<FinancePurposeView> {
+  const query = tx.select().from(financePurpose).where(eq(financePurpose.id, id))
+  const [row] = options.forShare ? await query.for('share') : await query
   if (row === undefined) throw new FinanceRefusal(`Назначения #${id} нет в справочнике.`)
   return { ...row, productBinding: row.productBinding as FinanceProductBinding }
 }

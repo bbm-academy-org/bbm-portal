@@ -7,9 +7,13 @@
  * linked and made terminal. All of it runs inside the same
  * `platformTransaction`; there is no operation-first recovery state to repair.
  */
-import { eq, sql } from 'drizzle-orm'
+import { createHash } from 'node:crypto'
+
+import { and, eq, sql } from 'drizzle-orm'
 
 import { financeConversionStep } from '@/lib/platform/db/schema/finance/finance-conversion-step'
+import { financeDocument } from '@/lib/platform/db/schema/finance/finance-document'
+import { financeDocumentLink } from '@/lib/platform/db/schema/finance/finance-document-link'
 import {
   financeIntakeItem,
   type FinanceIntakeKind,
@@ -55,29 +59,122 @@ type PostingItem = Omit<FinanceIntakeItemRow, 'kind' | 'source'> & {
   source: FinanceIntakeSource
 }
 
-/** Post one already-approved item. Approval/confirmation orchestration belongs to #386. */
+type PostingSnapshotDocument = {
+  id: number
+  filename: string
+  mime: string
+  size: number
+  kind: string
+  uploadedBy: number
+  uploadedAt: Date
+}
+
+/** Opaque optimistic identity of the request and ready documents a verifier saw. */
+export type IntakePostingSnapshot = Readonly<{ fingerprint: string }>
+
+export function createIntakePostingSnapshot(
+  item: FinanceIntakeItemView,
+  documents: readonly PostingSnapshotDocument[],
+): IntakePostingSnapshot {
+  const normalizedItem = {
+    ...item,
+    amount: item.amount.toString(),
+    paidAmount: item.paidAmount?.toString() ?? null,
+    feeAmount: item.feeAmount?.toString() ?? null,
+    decidedAt: item.decidedAt?.toISOString() ?? null,
+    postedAt: item.postedAt?.toISOString() ?? null,
+  }
+  const normalizedDocuments = [...documents]
+    .sort((left, right) => left.id - right.id)
+    .map((document) => ({
+      ...document,
+      uploadedAt: document.uploadedAt.toISOString(),
+    }))
+  return Object.freeze({
+    fingerprint: createHash('sha256')
+      .update(JSON.stringify({ item: normalizedItem, documents: normalizedDocuments }))
+      .digest('hex'),
+  })
+}
+
+type PostIntakeItemOptions = {
+  /**
+   * The actual money date supplied by EARS-511's confirmation act. It is
+   * written with the posting in this transaction, so the sanctioned approved
+   * edit never exists as an intermediate state and never bounces approval.
+   */
+  occurredOn?: string
+  /** EARS-510: approve a submitted expense request and post it in this transaction. */
+  approveSubmittedRequest?: boolean
+  /** The exact request/document identity approved by the verifier (EARS-510/531). */
+  expectedSnapshot?: IntakePostingSnapshot
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** Post one authorized item; EARS-510 may approve a submitted request in the same transaction. */
 export async function postIntakeItem(
   actor: FinanceActor,
   itemId: number,
+  options: PostIntakeItemOptions = {},
 ): Promise<FinanceIntakeItemView> {
   assertFinanceLedgerAccess(actor)
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const item = await lockIntakeItem(tx, itemId)
-    if (item.status !== 'approved') {
+    if (item.source === 'request' && options.expectedSnapshot === undefined) {
       throw new FinanceRefusal(
-        `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: проводка доступна только после approved (EARS-505).`,
+        `Заявка #${item.id} проводится только по снимку, который подтвердил document verifier ` +
+          '(EARS-531).',
       )
+    }
+    const approveAndPost = options.approveSubmittedRequest === true
+    const expectedStatus = approveAndPost ? 'submitted' : 'approved'
+    if (item.status !== expectedStatus) {
+      throw new FinanceRefusal(
+        `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: ` +
+          `${approveAndPost ? 'одноактное согласование ожидает submitted' : 'проводка доступна только после approved'} ` +
+          '(EARS-505/510).',
+      )
+    }
+    if (approveAndPost && (item.source !== 'request' || item.kind !== 'expense')) {
+      throw new FinanceRefusal(
+        'Одноактное согласование и проведение относится только к заявке на расход ' +
+          '(EARS-510). Остальные позиции сначала проходят обычный approved.',
+      )
+    }
+    if (options.occurredOn !== undefined) {
+      if (item.source !== 'request' || item.kind !== 'expense') {
+        throw new FinanceRefusal(
+          'Фактическая дата в момент подтверждения меняется только у заявки на расход ' +
+            '(EARS-508/511).',
+        )
+      }
+      if (!ISO_DATE.test(options.occurredOn)) {
+        throw new FinanceRefusal(
+          `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
+            '(EARS-508/511).',
+        )
+      }
+    }
+    const postingItem = {
+      ...item,
+      occurredOn: options.occurredOn ?? item.occurredOn,
+    } as PostingItem
+    if (options.expectedSnapshot !== undefined) {
+      await assertIntakePostingSnapshot(tx, intakeItemToView(postingItem), options.expectedSnapshot)
     }
     await assertRequestPurposeReady(tx, item.id)
     await requireReadyDocument(tx, item.id)
     const postedBy = await requireActorMemberId(tx, actor)
-    const operation = await recordItemOperation(tx, item as PostingItem)
+    const operation = await recordItemOperation(tx, postingItem)
     const postedAt = new Date()
     const [updated] = await tx
       .update(financeIntakeItem)
       .set({
         status: 'posted',
+        occurredOn: postingItem.occurredOn,
+        ...(approveAndPost ? { decidedBy: postedBy, decidedAt: postedAt } : {}),
         operationId: operation.id,
         postedBy,
         postedAt,
@@ -86,6 +183,47 @@ export async function postIntakeItem(
       .returning()
     return intakeItemToView(updated)
   })
+}
+
+/** Public posting keeps request confirmation behind the verifier-owned workflow. */
+export function postIntakeItemPublic(
+  actor: FinanceActor,
+  itemId: number,
+): Promise<FinanceIntakeItemView> {
+  return postIntakeItem(actor, itemId)
+}
+
+/** Re-check the verifier's optimistic snapshot while the intake row lock is held. */
+export async function assertIntakePostingSnapshot(
+  tx: PlatformTx,
+  item: FinanceIntakeItemView,
+  expected: IntakePostingSnapshot,
+): Promise<void> {
+  const rows = await tx
+    .select({ document: financeDocument })
+    .from(financeDocumentLink)
+    .innerJoin(financeDocument, eq(financeDocumentLink.documentId, financeDocument.id))
+    .where(
+      and(eq(financeDocumentLink.intakeItemId, item.id), eq(financeDocument.storageState, 'ready')),
+    )
+  const actual = createIntakePostingSnapshot(
+    item,
+    rows.map(({ document }) => ({
+      id: document.id,
+      filename: document.filename,
+      mime: document.mime,
+      size: Number(document.size),
+      kind: document.kind,
+      uploadedBy: document.uploadedBy,
+      uploadedAt: document.uploadedAt,
+    })),
+  )
+  if (actual.fingerprint !== expected.fingerprint) {
+    throw new FinanceRefusal(
+      `Заявка #${item.id} или её документы изменились после проверки; согласование относится к прежнему снимку, ` +
+        'поэтому проведение отменено и требуется повторная проверка (EARS-510/531).',
+    )
+  }
 }
 
 async function requireReadyDocument(tx: PlatformTx, itemId: number): Promise<void> {

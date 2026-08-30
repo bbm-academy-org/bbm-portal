@@ -119,23 +119,44 @@ export type { ConversionStepInput, RecordConversionInput } from './conversions'
 
 // ── the intake spine (spec 339 EARS-503/504/524/525) ─────────────────────────
 export {
-  createIntakeItem,
-  createIntakeItems,
-  editIntakeItem,
+  createIntakeItemPublic as createIntakeItem,
+  createIntakeItemsPublic as createIntakeItems,
+  editIntakeItemPublic as editIntakeItem,
   FinanceIntakeDuplicate,
   getIntakeItem,
   listIntakeItems,
-  transitionIntakeItem,
+  transitionIntakeItemPublic as transitionIntakeItem,
 } from './intake/items'
-export { postIntakeItem } from './intake/posting'
+export { postIntakeItemPublic as postIntakeItem } from './intake/posting'
 export type {
-  CreateIntakeItemInput,
+  CreateDirectIntakeItemInput as CreateIntakeItemInput,
   EditIntakeItemPatch,
   FinanceIntakeBulkOutcome,
   FinanceIntakeDuplicateLine,
   FinanceIntakeItemView,
   ListIntakeItemsFilter,
 } from './intake/items'
+// ── expense requests (spec 339 EARS-502/508…512/531) ─────────────────────────
+export {
+  approveExpenseRequest,
+  cancelExpenseRequest,
+  confirmExpenseRequest,
+  createExpenseRequest,
+  editExpenseRequest,
+  getExpenseRequest,
+  humanFinanceDocumentVerifier,
+  listExpenseRequests,
+  refuseExpenseRequest,
+  submitExpenseRequest,
+} from './intake/requests'
+export type {
+  ConfirmExpenseRequestOptions,
+  CreateExpenseRequestInput,
+  EditExpenseRequestPatch,
+  FinanceDocumentVerificationContext,
+  FinanceDocumentVerificationVerdict,
+  FinanceDocumentVerifier,
+} from './intake/requests'
 // `registerIntakeProducer` is deliberately NOT re-exported. Registration is a
 // LOAD-TIME act inside the module (`./intake/sources` registers the four sources
 // spec 339 fixes), and the registry is a module-global `Map` keyed by source: a
