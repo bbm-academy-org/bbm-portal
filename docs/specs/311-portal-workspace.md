@@ -796,7 +796,7 @@ frame concept the contract does not already carry.
 
 | Portfolio app                | Entry kind             | `status` provider         | `requiredClaim`  | `admin` section                   |
 | ---------------------------- | ---------------------- | ------------------------- | ---------------- | --------------------------------- |
-| Hours (`/p/hours`)           | internal               | yes — open period         | —                | yes — 4 items (EARS-446)          |
+| Hours (`/p/hours`)           | internal               | yes — open period         | —                | yes — 3 items (EARS-446)          |
 | OKR (`/p/okr`)               | internal               | yes — cycle progress      | —                | yes — 1 read-only item (EARS-453) |
 | Finance (`/p/finance`, #115) | internal               | likely — unclosed month   | likely, later    | yes, its own spec                 |
 | Decks (`/p/decks`, #118)     | internal, section root | optional                  | —                | likely — deck registry            |
