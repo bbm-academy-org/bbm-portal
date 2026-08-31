@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   evaluateCurrentMoney,
   isCurrentMoneyAccount,
+  selectCurrentMoneyAccounts,
   type CurrentMoneyAccount,
   type CurrentMoneyOperationFact,
   type CurrentMoneyPostingFact,
@@ -200,6 +201,65 @@ describe('EARS-325: which accounts are «Деньги сейчас»', () => {
       expect(isCurrentMoneyAccount({ kind, isSystem: true })).toBe(false)
     }
     expect(isCurrentMoneyAccount({ kind: 'bank', isSystem: true })).toBe(false)
+  })
+
+  /**
+   * Owner ruling by Антон, 2026-08-31 (#357): retirement is judged by the
+   * BALANCE. A retired account holding nothing leaves the card; a retired
+   * account still holding money keeps its tile, marked «архивный», and counts
+   * in the total exactly like any other — retirement never moves a number.
+   */
+  it('EARS-325: hides a retired money account at zero and keeps a retired one that still holds money', () => {
+    const rows = [
+      {
+        accountId: 1,
+        name: 'Банк RUB',
+        kind: 'bank',
+        currency: 'RUB',
+        isSystem: false,
+        retiredAt: null,
+        balance: 100_000n,
+      },
+      {
+        accountId: 2,
+        name: 'Закрытая карта RUB',
+        kind: 'card',
+        currency: 'RUB',
+        isSystem: false,
+        retiredAt: new Date('2026-08-01T00:00:00Z'),
+        balance: 0n,
+      },
+      {
+        accountId: 3,
+        name: 'Архивный крипто-кошелёк RUB',
+        kind: 'crypto',
+        currency: 'RUB',
+        isSystem: false,
+        retiredAt: new Date('2026-08-02T00:00:00Z'),
+        balance: 25_000n,
+      },
+      {
+        accountId: 4,
+        name: 'expense:RUB',
+        kind: 'expense',
+        currency: 'RUB',
+        isSystem: true,
+        retiredAt: null,
+        balance: -125_000n,
+      },
+    ]
+
+    const selected = selectCurrentMoneyAccounts(rows)
+    expect(selected.map(({ accountId, retired }) => ({ accountId, retired }))).toEqual([
+      { accountId: 1, retired: false },
+      { accountId: 3, retired: true },
+    ])
+
+    // …and the retired holding is still money: it counts in the total.
+    expect(evaluateCurrentMoney({ accounts: selected, operations: [] })).toMatchObject({
+      status: 'complete',
+      total: 125_000n,
+    })
   })
 })
 

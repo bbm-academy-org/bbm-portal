@@ -8,6 +8,7 @@ import {
   currentMoneyOverview,
   recordConversion,
   recordOperation,
+  retireReferenceRow,
   reverseOperation,
   systemAccount,
 } from '@/lib/finance'
@@ -279,6 +280,46 @@ describe('EARS-325: current-money public read model', () => {
       missingCurrencies: [],
       availableReportingCurrencies: ['RUB', 'USD'],
     })
+  })
+
+  /**
+   * Owner ruling by Антон, 2026-08-31 (#357), against the real retirement path:
+   * `retireReferenceRow` on an emptied account removes its tile, and on an
+   * account that still holds money leaves the tile — flagged — and the total
+   * untouched.
+   */
+  it('EARS-325/308: retirement hides an emptied account and never moves a number', async () => {
+    const { bank, card } = await seedRubUsd()
+    const wallet = await createAccount(ADMIN, {
+      name: 'Кошелёк RUB',
+      kind: 'crypto',
+      currency: 'RUB',
+    })
+    const emptied = await createAccount(ADMIN, {
+      name: 'Закрытая карта RUB',
+      kind: 'card',
+      currency: 'RUB',
+    })
+    await creditRub(bank.id, 100_000n)
+    await creditRub(wallet.id, 25_000n)
+
+    await retireReferenceRow(ADMIN, 'account', wallet.id)
+    await retireReferenceRow(ADMIN, 'account', emptied.id)
+
+    const overview = await currentMoneyOverview()
+    expect(
+      overview.accounts.map(({ accountId, name, balance, retired }) => ({
+        accountId,
+        name,
+        balance,
+        retired,
+      })),
+    ).toEqual([
+      { accountId: bank.id, name: 'Банк RUB', balance: 100_000n, retired: false },
+      { accountId: card.id, name: 'Карта USD', balance: 0n, retired: false },
+      { accountId: wallet.id, name: 'Кошелёк RUB', balance: 25_000n, retired: true },
+    ])
+    expect(overview).toMatchObject({ status: 'complete', total: 125_000n })
   })
 
   /**

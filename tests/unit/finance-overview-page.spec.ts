@@ -110,6 +110,44 @@ describe('/p/finance F1b overview (spec 338 EARS-325)', () => {
     }
   })
 
+  it('EARS-325: marks a retired account that still holds money «архивный» (owner ruling 2026-08-31)', async () => {
+    currentMoneyOverviewMock.mockImplementation(async () => ({
+      accounts: [
+        {
+          accountId: 1,
+          name: 'Банк RUB',
+          kind: 'bank',
+          currency: 'RUB',
+          balance: 141_000_000n,
+          retired: false,
+        },
+        {
+          accountId: 3,
+          name: 'Архивный кошелёк RUB',
+          kind: 'crypto',
+          currency: 'RUB',
+          balance: 2_500_000n,
+          retired: true,
+        },
+      ],
+      reportingCurrency: 'RUB',
+      status: 'complete',
+      total: 143_500_000n,
+      missingCurrencies: [],
+      availableReportingCurrencies: ['RUB'],
+    }))
+    const page = await import('@/app/(platform)/p/finance/page')
+    const html = renderToStaticMarkup(
+      await page.default({ searchParams: Promise.resolve({ currency: 'RUB' }) }),
+    )
+
+    expect(html).toContain('Архивный кошелёк RUB')
+    expect(html).toContain('архивный')
+    expect(html).toContain('1 435 000,00')
+    // The live account carries no such mark.
+    expect(html.split('Банк RUB')[1]?.split('Архивный')[0]).not.toContain('архивный')
+  })
+
   it('EARS-325: a switched THB view keeps native rows and renders the exact numeric total', async () => {
     const page = await import('@/app/(platform)/p/finance/page')
     const html = renderToStaticMarkup(
