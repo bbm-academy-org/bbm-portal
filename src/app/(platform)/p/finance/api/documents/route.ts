@@ -57,9 +57,12 @@ async function boundedFormData(request: Request): Promise<FormData> {
     chunks.push(Buffer.from(value))
   }
 
+  const headers = new Headers()
+  const contentType = request.headers.get('content-type')
+  if (contentType !== null) headers.set('content-type', contentType)
   const bounded = new Request(request.url, {
     method: request.method,
-    headers: request.headers,
+    headers,
     body: Buffer.concat(chunks, total),
   })
   return bounded.formData()

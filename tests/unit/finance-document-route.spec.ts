@@ -230,9 +230,10 @@ describe('finance document upload trust boundary (spec 339 EARS-514)', () => {
       const response = await route.POST(request)
 
       expect(response.status).toBe(201)
-      expect(rebuiltHeaders?.get('content-type')).toBe(original.headers.get('content-type'))
-      expect(rebuiltHeaders?.has('content-length')).toBe(false)
-      expect(rebuiltHeaders?.has('transfer-encoding')).toBe(false)
+      const captured = rebuiltHeaders as Headers | null
+      expect(captured?.get('content-type')).toBe(original.headers.get('content-type'))
+      expect(captured?.has('content-length')).toBe(false)
+      expect(captured?.has('transfer-encoding')).toBe(false)
     } finally {
       vi.unstubAllGlobals()
     }
