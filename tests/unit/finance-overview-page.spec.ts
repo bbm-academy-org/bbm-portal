@@ -1,8 +1,14 @@
+// Specifies the /p/finance overview surface: src/app/(platform)/p/finance/page.tsx
+// and its reporting-currency control src/app/(platform)/p/finance/reporting-currency-select.tsx.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const currentMoneyOverviewMock = vi.hoisted(() => vi.fn())
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}))
 
 vi.mock('@/lib/finance', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/finance')>()
@@ -11,6 +17,7 @@ vi.mock('@/lib/finance', async (importOriginal) => {
     currentMoneyOverview: currentMoneyOverviewMock,
     listCurrencies: async () => [
       { code: 'RUB', name: 'Российский рубль', precision: 2, retiredAt: null },
+      { code: 'USD', name: 'Доллар США', precision: 2, retiredAt: null },
       { code: 'THB', name: 'Тайский бат', precision: 2, retiredAt: null },
     ],
   }
@@ -76,7 +83,7 @@ describe('/p/finance F1b overview (spec 338 EARS-325)', () => {
     expect(html).toContain('2 010 000,00')
     expect(html).toContain('RUB')
     expect(html).toContain('По записанной стоимости')
-    expect(html).toContain('Тайский бат')
+    expect(html).toContain('aria-label="Валюта итога"')
     for (const deferred of ['P&amp;L', 'Обязательства', 'Заявки', 'Сверка', 'Сценарии']) {
       expect(html).not.toContain(deferred)
     }
