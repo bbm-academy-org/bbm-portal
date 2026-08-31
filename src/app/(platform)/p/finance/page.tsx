@@ -55,74 +55,78 @@ export default async function FinancePage({
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {overview.accounts.length === 0 ? (
-              <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground sm:col-span-2 xl:col-span-4">
-                Денежных счетов пока нет. Их можно добавить в финансовых справочниках.
-              </div>
+              <Card size="sm" className="sm:col-span-2 xl:col-span-4">
+                <CardContent className="text-sm text-muted-foreground">
+                  Денежных счетов пока нет. Их можно добавить в финансовых справочниках.
+                </CardContent>
+              </Card>
             ) : (
               overview.accounts.map((account) => (
-                <div
+                <Card
                   key={account.accountId}
+                  size="sm"
                   role="group"
                   aria-label={account.name}
-                  className="min-w-0 rounded-lg bg-muted/40 p-3"
+                  className="min-w-0"
                 >
-                  <p className="truncate text-xs font-medium text-muted-foreground">
-                    {account.name}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-baseline gap-2">
-                    <span className="font-heading text-xl font-semibold tabular-nums">
-                      {formatMinorUnits(
-                        account.balance,
-                        precisionByCurrency.get(account.currency) ?? 0,
-                      )}
-                    </span>
-                    <Badge variant="outline">{account.currency}</Badge>
-                  </div>
-                </div>
+                  <CardContent className="space-y-2">
+                    <p className="truncate text-sm text-muted-foreground">{account.name}</p>
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span className="font-heading text-xl font-semibold tabular-nums">
+                        {formatMinorUnits(
+                          account.balance,
+                          precisionByCurrency.get(account.currency) ?? 0,
+                        )}
+                      </span>
+                      <Badge variant="outline">{account.currency}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
               ))
             )}
 
-            <div
+            <Card
+              size="sm"
               role="group"
               aria-label="Итого"
-              className="min-w-0 border-t pt-3 sm:col-span-2 xl:col-span-1 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-3"
+              className="min-w-0 sm:col-span-2 xl:col-span-1"
             >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-muted-foreground">Итого</p>
-                <ReportingCurrencySelect
-                  value={overview.reportingCurrency}
-                  currencies={availableCurrencies}
-                />
-              </div>
-
-              {overview.status === 'complete' && overview.total !== null ? (
-                <div className="mt-2">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="font-heading text-xl font-semibold tabular-nums">
-                      {formatMinorUnits(
-                        overview.total,
-                        precisionByCurrency.get(overview.reportingCurrency) ?? 0,
-                      )}
-                    </span>
-                    <Badge variant="outline">{overview.reportingCurrency}</Badge>
-                  </div>
-                  <p className="mt-2 text-xs font-medium text-foreground">
-                    По фактическим курсам операций
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Из операций и конвертаций; текущий рыночный курс не используется.
-                  </p>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Итого</p>
+                  <ReportingCurrencySelect
+                    value={overview.reportingCurrency}
+                    currencies={availableCurrencies}
+                  />
                 </div>
-              ) : (
-                <Alert className="mt-2 py-2">
-                  <AlertTitle>Итого пока не рассчитано</AlertTitle>
-                  <AlertDescription>
-                    Нет полной записанной стоимости: {overview.missingCurrencies.join(', ')}.
-                    Остатки по счетам выше остаются точными.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
+
+                {overview.status === 'complete' && overview.total !== null ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span className="font-heading text-xl font-semibold tabular-nums">
+                        {formatMinorUnits(
+                          overview.total,
+                          precisionByCurrency.get(overview.reportingCurrency) ?? 0,
+                        )}
+                      </span>
+                      <Badge variant="outline">{overview.reportingCurrency}</Badge>
+                    </div>
+                    <p className="text-sm">По фактическим курсам операций</p>
+                    <p className="text-sm text-muted-foreground">
+                      Из операций и конвертаций; текущий рыночный курс не используется.
+                    </p>
+                  </div>
+                ) : (
+                  <Alert>
+                    <AlertTitle>Итого пока не рассчитано</AlertTitle>
+                    <AlertDescription>
+                      Нет полной записанной стоимости: {overview.missingCurrencies.join(', ')}.
+                      Остатки по счетам выше остаются точными.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </CardContent>
       </Card>
