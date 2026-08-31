@@ -11,9 +11,17 @@ describe('0014_finance_document_link_insert_guard.sql (#416)', () => {
       readFileSync(resolve(migrationsDir, 'meta/_journal.json'), 'utf8'),
     ) as { entries: Array<{ idx: number; tag: string }> }
 
-    expect(journal.entries.at(-1)).toMatchObject({
+    const migrationIndex = journal.entries.findIndex(
+      (entry) => entry.tag === '0014_finance_document_link_insert_guard',
+    )
+
+    expect(journal.entries[migrationIndex]).toMatchObject({
       idx: 14,
       tag: '0014_finance_document_link_insert_guard',
+    })
+    expect(journal.entries[migrationIndex - 1]).toMatchObject({
+      idx: 13,
+      tag: '0013_finance_reference_proposals',
     })
   })
 

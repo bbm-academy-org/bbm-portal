@@ -105,6 +105,8 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       '0013_finance_reference_proposals.sql',
       // #416 closes the missing INSERT arm on the terminal-item link guard.
       '0014_finance_document_link_insert_guard.sql',
+      // The one-off historical finance backfill support committed for #387.
+      '0015_finance_history_backfill.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {
