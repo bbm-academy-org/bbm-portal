@@ -827,6 +827,8 @@ export async function getIntakeItem(
     .from(financeIntakeItem)
     .where(eq(financeIntakeItem.id, id))
   if (row === undefined) return null
-  assertItemVisible(actor, row, await requireMemberId(actor))
+  if (!holdsFinanceFlowRole(actor)) {
+    assertItemVisible(actor, row, await requireMemberId(actor))
+  }
   return intakeItemToView(row)
 }

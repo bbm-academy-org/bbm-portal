@@ -1,22 +1,20 @@
 'use server'
 
-import { z } from 'zod'
-
 import { auth } from '@/auth'
 import { memberAliasSchema } from '@/lib/member'
+import { listEnvelopeSchema, oneEnvelopeSchema } from '@/lib/platform/api'
 import { claimGateResponse, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'
+import type { CabinetValidationResult } from '@/lib/platform/cabinet'
 
-export type AliasValidationResult =
-  { success: true; data: unknown } | { success: false; issues: string }
-
-const listSchema = z.object({ data: z.array(memberAliasSchema), total: z.number().int().min(0) })
-const oneSchema = z.object({ data: memberAliasSchema })
+const listSchema = listEnvelopeSchema(memberAliasSchema)
+const oneSchema = oneEnvelopeSchema(memberAliasSchema)
 
 /** Parse nested alias responses on the server, where the member public API is safe to load. */
 export async function validateAliasResponse(
+  _resource: string,
   envelope: 'list' | 'one',
   payload: unknown,
-): Promise<AliasValidationResult> {
+): Promise<CabinetValidationResult> {
   if (claimGateResponse(await auth(), PLATFORM_ADMIN_ROLE)) throw new Error('Forbidden')
   const parsed = (envelope === 'list' ? listSchema : oneSchema).safeParse(payload)
   if (!parsed.success) {
@@ -27,5 +25,5 @@ export async function validateAliasResponse(
         .join('; '),
     }
   }
-  return { success: true, data: parsed.data.data }
+  return { success: true, data: parsed.data }
 }

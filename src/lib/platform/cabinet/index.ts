@@ -8,11 +8,12 @@
  * the composition root may be read (EARS-457) — the provider reads no registry
  * and must not start.
  */
+export { type CabinetDataProviderOptions, createCabinetDataProvider } from './dataProvider'
 export {
   type CabinetEnvelopeKind,
-  type CabinetDataProviderOptions,
   type CabinetResponseValidator,
   type CabinetValidationResult,
-  createCabinetDataProvider,
+  createModuleApiClient,
+  createSchemaResponseValidator,
   MODULE_API_ROOT,
-} from './dataProvider'
+} from './moduleApiClient'

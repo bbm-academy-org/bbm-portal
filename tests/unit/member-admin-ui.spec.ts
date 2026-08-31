@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -14,6 +14,7 @@ Element.prototype.releasePointerCapture ??= () => {}
 Element.prototype.scrollIntoView ??= () => {}
 
 const refine = vi.hoisted(() => ({
+  listArgs: [] as Array<Record<string, unknown>>,
   list: {} as Record<string, unknown>,
   one: {} as Record<string, unknown>,
   create: {} as Record<string, unknown>,
@@ -30,7 +31,10 @@ vi.mock('@refinedev/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@refinedev/core')>()
   return {
     ...actual,
-    useList: () => refine.list,
+    useList: (args: Record<string, unknown>) => {
+      refine.listArgs.push(args)
+      return refine.list
+    },
     useOne: () => refine.one,
     useCreate: () => refine.create,
     useUpdate: () => refine.update,
@@ -39,7 +43,11 @@ vi.mock('@refinedev/core', async (importOriginal) => {
 })
 
 vi.mock('@/app/(platform)/p/admin/member/members/alias-actions', () => ({
-  validateAliasResponse: async (envelope: string, payload: { data?: unknown }) => {
+  validateAliasResponse: async (
+    _resource: string,
+    envelope: string,
+    payload: { data?: unknown },
+  ) => {
     if (
       envelope === 'one' &&
       (!payload.data ||
@@ -49,7 +57,7 @@ vi.mock('@/app/(platform)/p/admin/member/members/alias-actions', () => ({
       return { success: false, issues: 'data.id: expected number' }
     }
 
-    return { success: true, data: payload.data }
+    return { success: true, data: payload }
   },
 }))
 
@@ -66,6 +74,7 @@ const member = {
 }
 
 beforeEach(() => {
+  refine.listArgs = []
   refine.list = {
     query: { isLoading: false, error: null },
     result: { data: [member], total: 1 },
@@ -86,6 +95,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   cleanup()
   vi.unstubAllGlobals()
 })
@@ -104,6 +114,65 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.getByRole('button', { name: 'Деактивировать Анна' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Удалить участника/ })).toBeNull()
   }, 15_000)
+
+  it('pages through every member beyond the first 50 records', async () => {
+    refine.list = {
+      query: { isLoading: false, error: null },
+      result: { data: [member], total: 101 },
+    }
+    const { MemberListScreen } =
+      await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
+    render(React.createElement(MemberListScreen))
+
+    expect(screen.getByText(/1.+50 .+ 101/)).toBeTruthy()
+    expect(
+      screen.getByRole('button', {
+        name: /\u041f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0430\u044f/,
+      }),
+    ).toHaveProperty('disabled', true)
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f/,
+      }),
+    )
+
+    expect(refine.listArgs.at(-1)).toMatchObject({
+      pagination: { currentPage: 2, pageSize: 50 },
+    })
+  })
+
+  it('debounces member search and returns to the first page for a new query', async () => {
+    vi.useFakeTimers()
+    refine.list = {
+      query: { isLoading: false, error: null },
+      result: { data: [member], total: 101 },
+    }
+    const { MemberListScreen } =
+      await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
+    render(React.createElement(MemberListScreen))
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f/,
+      }),
+    )
+    const callsBeforeTyping = refine.listArgs.length
+
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: 'anna' },
+    })
+    expect(refine.listArgs.slice(callsBeforeTyping)).not.toContainEqual(
+      expect.objectContaining({ filters: [expect.objectContaining({ value: 'anna' })] }),
+    )
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(refine.listArgs.at(-1)).toMatchObject({
+      pagination: { currentPage: 1, pageSize: 50 },
+      filters: [{ field: 'q', operator: 'contains', value: 'anna' }],
+    })
+    vi.useRealTimers()
+  })
 
   it('toggles active and inactive members from the accepted list actions', async () => {
     const inactive = {
@@ -355,7 +424,9 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Удалить алиас anna' }))
 
-    expect(await screen.findByText(/Удалённый алиас не соответствует схеме модуля/)).toBeTruthy()
+    expect(
+      await screen.findByText(/Ответ «member\.aliases» не соответствует схеме модуля/),
+    ).toBeTruthy()
     expect(screen.getByText('anna', { exact: true })).toBeTruthy()
   })
 })

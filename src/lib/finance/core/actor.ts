@@ -88,6 +88,11 @@ function assertAttributable(actor: FinanceActor): void {
   }
 }
 
+/** Any signed-in platform member may perform this attributable finance act. */
+export function assertFinancePlatformMember(actor: FinanceActor): void {
+  assertAttributable(actor)
+}
+
 /** Does this actor hold `role` outright? No implication reaches a flow role (EARS-417/466). */
 function holds(actor: FinanceActor, role: string): boolean {
   return hasClaim({ user: { roles: [...actor.roles] } }, role)

@@ -271,6 +271,14 @@ function isOwnRequestSet(
   return items.every((item) => item.source === 'request' && item.createdBy === memberId)
 }
 
+function assertItemsAcceptDocument(items: readonly { status: string; id: number }[]): void {
+  const terminal = items.filter((item) => ['posted', 'refused', 'cancelled'].includes(item.status))
+  if (terminal.length === 0) return
+  throw new FinanceRefusal(
+    `К терминальным позициям приёмки (${terminal.map((item) => `#${item.id}`).join(', ')}) нельзя прикреплять новые документы (EARS-516).`,
+  )
+}
+
 /**
  * Upload one document and link it to the items it confirms (EARS-514/515).
  *
@@ -304,6 +312,7 @@ export async function uploadFinanceDocument(
   const pending = await platformTransaction(financeAuditContext(actor), async (tx) => {
     const items = await loadItems(tx, itemIds)
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, uploadedBy) })
+    assertItemsAcceptDocument(items)
 
     const [row] = await tx
       .insert(financeDocument)
@@ -542,7 +551,13 @@ export async function readFinanceDocument(
     assertDocumentReady(row, 'читать его содержимое')
     return row
   })
-  return { ...toView(document), bytes: await storage.get(document.storageKey) }
+  try {
+    return { ...toView(document), bytes: await storage.get(document.storageKey) }
+  } catch (cause) {
+    if (cause instanceof FinanceRefusal) throw cause
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    throw new FinanceRefusal(`Документ #${document.id} не удалось прочитать из архива: ${detail}`)
+  }
 }
 
 /** The documents confirming one intake item, metadata only — same gate as the content. */
@@ -592,9 +607,7 @@ export async function attachFinanceDocument(
     assertDocumentReady(document, 'прикреплять его')
     const [item] = await loadItems(tx, [input.intakeItemId])
     assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], linkedBy) })
-    // Attaching to an item that ALREADY posted would put a document behind a
-    // posting nobody weighed when they posted it (EARS-516's other direction).
-    assertNotPosted(item.id, [item], 'прикреплять к ней документы')
+    assertItemsAcceptDocument([item])
 
     const [existing] = await tx
       .select()

@@ -1,6 +1,7 @@
 import {
   hoursParticipantRecordSchema,
   hoursParticipantUpdateSchema,
+  findParticipant,
   normalizeEmail,
   upsertParticipant,
   type HoursParticipantRecord,
@@ -30,7 +31,12 @@ export const PATCH = adminRoute<HoursParticipantUpdate, HoursParticipantRecord>(
   output: hoursParticipantRecordSchema,
   handler: async ({ audit, body, params }) => {
     const email = emailParam(params.email)
-    const result = await hoursWrite(audit, (doc) => upsertParticipant(doc, { email, ...body }))
+    const result = await hoursWrite(audit, (doc) => {
+      if (!findParticipant(doc, email)) {
+        throw new ModuleApiError('not-found', `Участник ${email} не найден.`)
+      }
+      return upsertParticipant(doc, { email, ...body })
+    })
     return participantRecord(result.saved)
   },
 })

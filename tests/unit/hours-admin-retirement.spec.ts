@@ -6,6 +6,21 @@ import { describe, expect, it } from 'vitest'
 const root = process.cwd()
 
 describe('legacy hours admin retirement (spec 311 EARS-421, EARS-452)', () => {
+  it('removes the orphaned parallel admin component and its six duplicate Server Actions', () => {
+    expect(existsSync(join(root, 'src/modules/hours/view/AdminForms.tsx'))).toBe(false)
+    const actions = readFileSync(join(root, 'src/modules/hours/actions.ts'), 'utf8')
+    for (const name of [
+      'saveParticipantAction',
+      'createPeriodAction',
+      'updatePeriodAction',
+      'deletePeriodAction',
+      'setPeriodStatusAction',
+      'publishHoursToMattermostAction',
+    ]) {
+      expect(actions, name).not.toContain(name)
+    }
+  })
+
   it('EARS-452: removes both old /p/hours/admin entry points', () => {
     expect(existsSync(join(root, 'src/app/(platform)/p/hours/admin/page.tsx'))).toBe(false)
     expect(existsSync(join(root, 'src/app/(platform)/p/hours/admin/export/route.ts'))).toBe(false)

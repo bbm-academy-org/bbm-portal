@@ -2,7 +2,6 @@
 
 import { useList, type HttpError } from '@refinedev/core'
 import React from 'react'
-import { z } from 'zod'
 
 import {
   hoursPublicationRecordSchema,
@@ -11,6 +10,7 @@ import {
 } from '@/lib/hours/admin-contract'
 import { plural } from '@/lib/hours/format'
 import { pickDefaultPeriod } from '@/lib/hours/calendar'
+import { createModuleApiClient, createSchemaResponseValidator } from '@/lib/platform/cabinet'
 import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
@@ -21,25 +21,16 @@ import { Skeleton } from '@/ui/skeleton'
 
 import { errorMessage, HOURS_PERIOD_RESOURCE } from '../constants'
 
-const envelopeSchema = z.object({ data: hoursPublicationRecordSchema })
+const PUBLICATION_RESOURCE = 'hours.publication'
+const publicationClient = createModuleApiClient({
+  validateResponse: createSchemaResponseValidator(hoursPublicationRecordSchema),
+})
 
-async function responseData(response: Response): Promise<HoursPublicationRecord> {
-  const raw: unknown = await response.json()
-  if (!response.ok) {
-    const message = z.object({ error: z.object({ message: z.string() }) }).safeParse(raw)
-    throw new Error(message.success ? message.data.error.message : 'Запрос публикации отклонён.')
-  }
-  const parsed = envelopeSchema.safeParse(raw)
-  if (!parsed.success) throw new Error('Ответ публикации не соответствует контракту модуля.')
-  return parsed.data.data
-}
-
-async function publicationData(periodId: string, signal?: AbortSignal) {
-  return responseData(
-    await fetch(`/api/p/hours/admin/publication?periodId=${encodeURIComponent(periodId)}`, {
-      signal,
-    }),
-  )
+async function publicationData(periodId: string) {
+  return publicationClient.one<HoursPublicationRecord>({
+    resource: PUBLICATION_RESOURCE,
+    path: `/hours/admin/publication?periodId=${encodeURIComponent(periodId)}`,
+  })
 }
 
 function publicationTime(value: string): string {
@@ -114,19 +105,16 @@ export function HoursPublicationScreen() {
     setPreviewExpanded(true)
     if (visiblePreview) return
     if (!effectivePeriodId) return
-    const controller = new AbortController()
     setLoadingPreview(true)
     setFailure(null)
     setSuccess(null)
     try {
-      const value = await publicationData(effectivePeriodId, controller.signal)
-      if (!controller.signal.aborted) setPreview(value)
+      const value = await publicationData(effectivePeriodId)
+      setPreview(value)
     } catch (error) {
-      if (!controller.signal.aborted) {
-        setFailure(error instanceof Error ? error.message : 'Не удалось собрать предпросмотр.')
-      }
+      setFailure(errorMessage(error as HttpError, 'Не удалось собрать предпросмотр.'))
     } finally {
-      if (!controller.signal.aborted) setLoadingPreview(false)
+      setLoadingPreview(false)
     }
   }
 
@@ -136,20 +124,21 @@ export function HoursPublicationScreen() {
     setFailure(null)
     setSuccess(null)
     try {
-      const next = await responseData(
-        await fetch('/api/p/hours/admin/publication', {
+      const next = await publicationClient.one<HoursPublicationRecord>({
+        resource: PUBLICATION_RESOURCE,
+        path: '/hours/admin/publication',
+        init: {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             periodId: visiblePreview.periodId,
             previewFingerprint: visiblePreview.previewFingerprint,
           }),
-        }),
-      )
+        },
+      })
       setPreview(next)
       setSuccess(`Опубликовано ${next.messages.length} сообщений в Mattermost.`)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Не удалось опубликовать сообщения.'
+      const message = errorMessage(error as HttpError, 'Не удалось опубликовать сообщения.')
       try {
         setPreview(await publicationData(visiblePreview.periodId))
         setFailure(message)

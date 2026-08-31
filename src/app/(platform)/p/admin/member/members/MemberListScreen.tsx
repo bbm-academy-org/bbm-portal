@@ -14,16 +14,32 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 import { errorMessage, MEMBER_RESOURCE } from './constants'
 
+const PAGE_SIZE = 50
+const SEARCH_DEBOUNCE_MS = 300
+
+function useDebouncedValue(value: string): string {
+  const [debounced, setDebounced] = React.useState(value)
+  React.useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(timeout)
+  }, [value])
+  return debounced
+}
+
 export function MemberListScreen() {
   const [search, setSearch] = React.useState('')
+  const [page, setPage] = React.useState(1)
+  const debouncedSearch = useDebouncedValue(search)
   const { create, show } = useNavigation()
   const update = useUpdate<MemberRecord, HttpError, MemberUpdateInput>()
   const { query, result } = useList<MemberRecord, HttpError>({
     resource: MEMBER_RESOURCE,
-    pagination: { currentPage: 1, pageSize: 50 },
+    pagination: { currentPage: page, pageSize: PAGE_SIZE },
     sorters: [{ field: 'name', order: 'asc' }],
-    filters: search ? [{ field: 'q', operator: 'contains', value: search }] : [],
+    filters: debouncedSearch ? [{ field: 'q', operator: 'contains', value: debouncedSearch }] : [],
   })
+  const total = result.total ?? result.data.length
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   function toggleStatus(member: MemberRecord) {
     update.mutate({
@@ -53,7 +69,10 @@ export function MemberListScreen() {
         aria-label="Поиск участников"
         placeholder="Имя или email"
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => {
+          setSearch(event.target.value)
+          setPage(1)
+        }}
         className="max-w-md"
       />
 
@@ -93,53 +112,83 @@ export function MemberListScreen() {
           </CardContent>
         </Card>
       ) : !query.error ? (
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Имя</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Роль</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead className="text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {result.data.map((member) => (
-                <TableRow key={member.id}>
-                  <TableCell className="font-medium">{member.name}</TableCell>
-                  <TableCell>{member.email}</TableCell>
-                  <TableCell>{member.role ?? '—'}</TableCell>
-                  <TableCell>
-                    <Badge variant={member.status === 'active' ? 'secondary' : 'outline'}>
-                      {member.status === 'active' ? 'Активен' : 'Неактивен'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Открыть ${member.name}`}
-                        onClick={() => show(MEMBER_RESOURCE, member.id)}
-                      >
-                        Открыть
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={update.mutation.isPending}
-                        aria-label={`${member.status === 'active' ? 'Деактивировать' : 'Активировать'} ${member.name}`}
-                        onClick={() => toggleStatus(member)}
-                      >
-                        {member.status === 'active' ? 'Деактивировать' : 'Активировать'}
-                      </Button>
-                    </div>
-                  </TableCell>
+        <div className="space-y-3">
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Имя</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Роль</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead className="text-right">Действия</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {result.data.map((member) => (
+                  <TableRow key={member.id}>
+                    <TableCell className="font-medium">{member.name}</TableCell>
+                    <TableCell>{member.email}</TableCell>
+                    <TableCell>{member.role ?? '—'}</TableCell>
+                    <TableCell>
+                      <Badge variant={member.status === 'active' ? 'secondary' : 'outline'}>
+                        {member.status === 'active' ? 'Активен' : 'Неактивен'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={`Открыть ${member.name}`}
+                          onClick={() => show(MEMBER_RESOURCE, member.id)}
+                        >
+                          Открыть
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={update.mutation.isPending}
+                          aria-label={`${member.status === 'active' ? 'Деактивировать' : 'Активировать'} ${member.name}`}
+                          onClick={() => toggleStatus(member)}
+                        >
+                          {member.status === 'active' ? 'Деактивировать' : 'Активировать'}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <nav
+            aria-label="Страницы участников"
+            className="flex flex-wrap items-center gap-2 text-sm"
+          >
+            <span className="text-muted-foreground">
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} из {total}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-label="Предыдущая страница"
+              disabled={page <= 1 || query.isLoading}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Назад
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-label="Следующая страница"
+              disabled={page >= pageCount || query.isLoading}
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+            >
+              Вперёд
+            </Button>
+          </nav>
         </div>
       ) : null}
     </section>

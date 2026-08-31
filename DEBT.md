@@ -587,6 +587,39 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-30-317-tdd-order-windows -->
 
+- [ ] 2026-08-31 PR #402 merged with a genuine historical TDD-order inversion:
+      production route code preceded its test, the exact-head `tdd-order` guard
+      was red, and the final review acknowledged the finding rather than
+      classifying it as a false positive. Rewriting merged history is not a
+      remedy; this record closes only when recurrence is mechanically prevented
+      — return condition: the `tdd-order` WARN→BLOCK promotion review (earliest
+      2026-09-24), or the next proposed merge with a genuine `tdd-order` finding,
+      whichever comes first (#382, PR #402, #416)
+
+<!-- debt-entry-end: 2026-08-31-416-tdd-order-402 -->
+
+- [ ] 2026-08-31 `GET /api/p/member/admin/members` calls `listMembers()` without
+      query bounds, then filters, sorts and slices in JavaScript, so every page
+      reads the full `core.member` table. This is correct at the current registry
+      scale but must not become the copied server-pagination pattern — return
+      condition: the next material edit to `listMembers` or the admin members
+      list route, or the registry reaching 500 members, whichever comes first;
+      move filtering, numeric sorting and paging into the database query then
+      (#416)
+
+<!-- debt-entry-end: 2026-08-31-416-member-list-query -->
+
+- [ ] 2026-08-31 `endpoint-authz-lint` covers platform API `route.ts` boundaries
+      but not equally reachable `'use server'` boundaries. The existing Server
+      Actions gate correctly, so this is a guard-coverage gap rather than a live
+      authorization defect; changing process canon or guard machinery is outside
+      this remediation PR — return condition: the next task that adds or
+      materially edits a `'use server'` boundary, or the next separate
+      process-canon/guard task touching `endpoint-authz-lint`, whichever comes
+      first; extend this guard or add a sibling in that separate PR (#416)
+
+<!-- debt-entry-end: 2026-08-31-416-server-action-authz -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
