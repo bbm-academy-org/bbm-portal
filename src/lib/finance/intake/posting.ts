@@ -42,6 +42,7 @@ import {
   insertOperation,
   loadAccountFacts,
   prepareDimensions,
+  parseRecordOperationInput,
   recordOperationInTransaction,
   type RecordedOperation,
 } from '../operations'
@@ -92,9 +93,21 @@ export function createIntakePostingSnapshot(
     }))
   return Object.freeze({
     fingerprint: createHash('sha256')
-      .update(JSON.stringify({ item: normalizedItem, documents: normalizedDocuments }))
+      .update(
+        JSON.stringify(canonicalizeJson({ item: normalizedItem, documents: normalizedDocuments })),
+      )
       .digest('hex'),
   })
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson)
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, nested]) => [key, canonicalizeJson(nested)]),
+  )
 }
 
 type PostIntakeItemOptions = {
@@ -491,19 +504,20 @@ async function recordCrossCurrencyResult(
     ...(await feePostings(tx, item, cross.money, 1)),
     ...(await realizedFxPostings(tx, conversionStep, cross.fxPoolLocks)),
   ]
-  const accounts = await loadAccountFacts(tx, postings)
+  const parsed = parseRecordOperationInput(operationInput(item, postings))
+  const accounts = await loadAccountFacts(tx, parsed.postings)
   assertNoRetiredAccount(accounts)
-  const prepared = await prepareDimensions(tx, operationInput(item, postings), accounts)
+  const prepared = await prepareDimensions(tx, parsed, accounts)
   assertPostingCurrencyMatchesAccount(prepared, accounts)
   assertProjectOnResultPostings(prepared, accounts)
   assertBalancedPerCurrency(prepared)
 
   const operation = await insertOperation(tx, {
-    occurredOn: item.occurredOn,
-    source: item.source,
-    purposeId: item.kind === 'expense' ? item.purposeId : null,
-    sourceRef: item.sourceRef,
-    backdated: item.source === 'backfill',
+    occurredOn: parsed.occurredOn,
+    source: parsed.source,
+    purposeId: parsed.purposeId ?? null,
+    sourceRef: parsed.sourceRef ?? null,
+    backdated: parsed.backdated ?? false,
     reverses: null,
     postings: [],
   })
@@ -659,5 +673,6 @@ export function deriveRate(
   if (whole === 0n && !/[1-9]/.test(fraction)) {
     throw new FinanceRefusal('Из двух сумм не удалось выразить положительный десятичный курс.')
   }
+  if (fraction === '') return whole.toString()
   return `${whole}.${fraction}`
 }

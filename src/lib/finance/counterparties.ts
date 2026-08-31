@@ -7,7 +7,7 @@ import { financeCounterparty } from '@/lib/platform/db/schema/finance/finance-co
 import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
 
 import {
-  assertFinanceIntakeAccess,
+  assertFinancePlatformMember,
   assertFinanceReferenceAccess,
   financeAuditContext,
   type FinanceActor,
@@ -72,27 +72,37 @@ export async function createCounterparty(
   actor: FinanceActor,
   input: { name: string },
 ): Promise<FinanceCounterpartyView> {
-  assertFinanceIntakeAccess(actor, { ownRequest: true })
+  assertFinancePlatformMember(actor)
   const name = requireName(input.name)
   const createdBy = await requireMemberId(actor)
 
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const [row] = await tx
-      .insert(financeCounterparty)
-      .values({ name, createdBy })
-      .onConflictDoNothing()
-      .returning()
-    if (row !== undefined) return row
+  try {
+    return await platformTransaction(financeAuditContext(actor), async (tx) => {
+      const [row] = await tx
+        .insert(financeCounterparty)
+        .values({ name, createdBy })
+        .onConflictDoNothing()
+        .returning()
+      if (row !== undefined) return row
 
-    const [existing] = await tx.select().from(financeCounterparty).where(normalizedEquals(name))
-    if (existing !== undefined) {
+      const [existing] = await tx.select().from(financeCounterparty).where(normalizedEquals(name))
+      if (existing !== undefined) {
+        throw new FinanceRefusal(
+          `Контрагент «${existing.name}» уже есть в справочнике: названия не различаются ` +
+            'регистром и пробелами по краям (EARS-532).',
+        )
+      }
+      throw new FinanceRefusal(`Контрагента «${name}» не удалось создать.`)
+    })
+  } catch (error) {
+    if (pgErrorCode(error) === '23505') {
       throw new FinanceRefusal(
-        `Контрагент «${existing.name}» уже есть в справочнике: названия не различаются ` +
+        `Контрагент с названием «${name}» уже создаётся другой операцией: названия не различаются ` +
           'регистром и пробелами по краям (EARS-532).',
       )
     }
-    throw new FinanceRefusal(`Контрагента «${name}» не удалось создать.`)
-  })
+    throw error
+  }
 }
 
 /** Rename is reference administration and therefore remains platform-admin only. */

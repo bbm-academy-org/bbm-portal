@@ -7,7 +7,9 @@ const state = vi.hoisted(() => ({
   session: null as unknown,
   audit: null as unknown,
   audits: [] as unknown[],
+  readCalls: 0,
   dataError: null as Error | null,
+  previewError: null as Error | null,
   doc: {
     participants: [
       {
@@ -34,11 +36,22 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
+vi.mock('@/lib/hours', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/hours')>()
+  return {
+    ...actual,
+    buildMattermostPreview: (...args: Parameters<typeof actual.buildMattermostPreview>) => {
+      if (state.previewError) throw state.previewError
+      return actual.buildMattermostPreview(...args)
+    },
+  }
+})
 vi.mock('@/lib/hours/store-core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/hours/store-core')>()
   return {
     ...actual,
     readHoursDocument: vi.fn(async () => {
+      state.readCalls += 1
       if (state.dataError) throw state.dataError
       return state.doc
     }),
@@ -70,7 +83,9 @@ beforeEach(() => {
   state.session = admin
   state.audit = null
   state.audits = []
+  state.readCalls = 0
   state.dataError = null
+  state.previewError = null
   state.doc = {
     participants: [
       {
@@ -403,7 +418,32 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
       params: Promise.resolve({ id: '2026-08' }),
     })
     expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data: { id: '2026-08' } })
     expect(state.audit).toEqual({ actorEmail: 'admin@bbm.local', source: 'portal' })
+    expect(state.readCalls).toBe(0)
+  })
+
+  it('does not create an unknown participant through PATCH', async () => {
+    const participant =
+      await import('@/app/(platform)/api/p/hours/admin/participants/[email]/route')
+    const response = await participant.PATCH(
+      request('/api/p/hours/admin/participants/missing%40bbm.academy', 'PATCH', {
+        name: 'Missing',
+        role: null,
+        forkMin: null,
+        forkMax: null,
+        grade: null,
+      }),
+      { params: Promise.resolve({ email: 'missing@bbm.academy' }) },
+    )
+
+    expect(response.status).toBe(404)
+    expect(state.doc.participants.some(({ email }) => email === 'missing@bbm.academy')).toBe(false)
+  })
+
+  it('uses Next-decoded route params without decoding them a second time', async () => {
+    const { routeText } = await import('@/app/(platform)/api/p/hours/admin/http')
+    expect(routeText('literal%2Fsegment', 'id')).toBe('literal%2Fsegment')
   })
 
   it('rejects email changes and exposes no assessment mutation handler', async () => {
@@ -433,6 +473,17 @@ describe('hours cabinet HTTP surface (spec 311 EARS-446..452)', () => {
         messages: [],
       },
     })
+  })
+
+  it('maps only a missing preview period to 404 and unexpected preview failures to 500', async () => {
+    const { GET } = await import('@/app/(platform)/api/p/hours/admin/publication/route')
+    const missing = await GET(request('/api/p/hours/admin/publication?periodId=missing-period'))
+    expect(missing.status).toBe(404)
+
+    state.previewError = new Error('unexpected preview formatter failure')
+    const unexpected = await GET(request('/api/p/hours/admin/publication?periodId=2026-08'))
+    expect(unexpected.status).toBe(500)
+    expect(await unexpected.json()).toMatchObject({ error: { code: 'internal' } })
   })
 
   it('returns the immutable published batch after participant identity drift', async () => {

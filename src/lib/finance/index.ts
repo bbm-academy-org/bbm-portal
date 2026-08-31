@@ -39,6 +39,7 @@
 export {
   assertFinanceIntakeAccess,
   assertFinanceLedgerAccess,
+  assertFinancePlatformMember,
   assertFinanceReferenceAccess,
   financeAuditContext,
   FINANCE_APPROVE_ROLE,

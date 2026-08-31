@@ -1,50 +1,18 @@
 'use server'
 
-/**
- * Server Actions модуля часов (спека 081 п.11) — единственный способ что-либо
- * изменить. Same-origin, Auth.js/`AUTH_URL` за Caddy уже настроены (#60).
- *
- * КАЖДЫЙ action сам вызывает `auth()` и сам применяет свои гейты (сессия, email,
- * админство) — на `(platform)/layout.tsx` здесь НЕ полагаемся: layout защищает
- * рендер страницы, а action вызывается напрямую, минуя её.
- *
- * Это первые Server Actions репозитория на проде за реверс-прокси. Если
- * origin-check Next (Origin vs X-Forwarded-Host) за Caddy не пройдёт — лечится
- * `serverActions.allowedOrigins` в next.config.ts; первая мутация на проде —
- * явный шаг приёмки, не допущение.
- */
-
-import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 
 import { auth } from '@/auth'
 import {
-  createPublicationBatch,
-  createPeriod,
-  deletePeriod,
   HoursDataError,
   isOwnEmail,
   mutateHoursDocument,
-  recordPublicationDelivery,
   saveAssessment,
   sessionEmail,
-  setPeriodStatus,
-  updatePeriod,
-  upsertParticipant,
 } from '@/lib/hours'
-import type {
-  Assessment,
-  AssessmentMethod,
-  AuditContext,
-  Grade,
-  MutationResult,
-  PeriodStatus,
-} from '@/lib/hours'
+import type { Assessment, AssessmentMethod, AuditContext, MutationResult } from '@/lib/hours'
 
 import type { HoursActionState } from './actionState'
-import { hasClaim, PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'
-
-const MATTERMOST_DELIVERY_TIMEOUT_MS = 10_000
 
 function error(message: string): HoursActionState {
   return { status: 'error', message, warnings: [], saved: null }
@@ -63,33 +31,11 @@ function text(formData: FormData, key: string): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-/** Число из формы; запятая как разделитель принимается наравне с точкой. */
 function number(formData: FormData, key: string): number {
   const raw = text(formData, key).replace(',', '.')
-  if (raw === '') return Number.NaN
-  return Number(raw)
+  return raw === '' ? Number.NaN : Number(raw)
 }
 
-/**
- * Необязательное число: пустое поле — осознанный null («не задано»), мусор —
- * NaN, который доменная валидация отвергнет вслух (пустое ≠ ошибка ввода).
- */
-function optionalNumber(formData: FormData, key: string): number | null {
-  const raw = text(formData, key)
-  if (raw === '') return null
-  return Number(raw.replace(',', '.'))
-}
-
-/** Необязательный текст: пустое поле — null. */
-function optionalText(formData: FormData, key: string): string | null {
-  const raw = text(formData, key)
-  return raw === '' ? null : raw
-}
-
-/**
- * Общий предбанник любой мутации: сессия есть и в ней есть email. Сессия без
- * email читать страницы может, менять — нет (п.8).
- */
 async function requireEmail(): Promise<{ email: string } | HoursActionState> {
   const session = await auth()
   if (!session?.user) return error('Сессия истекла — войди заново.')
@@ -102,41 +48,14 @@ async function requireEmail(): Promise<{ email: string } | HoursActionState> {
   return { email }
 }
 
-/** Административные legacy actions проверяют ту же роль, что кабинетные routes. */
-async function requireAdmin(): Promise<{ email: string } | HoursActionState> {
-  const session = await auth()
-  if (!session?.user) return error('Сессия истекла — войди заново.')
-  const email = sessionEmail(session)
-  if (!email) {
-    return error('В сессии нет email — сохранять нельзя.')
-  }
-  if (!hasClaim(session, PLATFORM_ADMIN_ROLE)) {
-    return error('Доступ к админке часов есть только у администраторов.')
-  }
-  return { email }
-}
-
-/**
- * Кто пишет — из сессии, которую гейт выше уже разрешил (спека 201 EARS-25).
- *
- * `source: 'portal'` означает «за этой записью стоит человек», и триггер
- * `core.audit_row_change()` требует при нём непустого actor (EARS-7). Email тут
- * — уже нормализованный `sessionEmail(session)`, тот же вид, в котором он лежит
- * в `core.member.email` (спека 124 EARS-2), так что строка аудита джойнится к
- * реестру равенством.
- */
 function actorOf(gate: { email: string }): AuditContext {
   return { actorEmail: gate.email, source: 'portal' }
 }
 
 function refresh(): void {
   revalidatePath('/p/hours')
-  revalidatePath('/p/admin/hours/periods')
-  revalidatePath('/p/admin/hours/participants')
-  revalidatePath('/p/admin/hours/publication')
 }
 
-/** Приводит результат доменной операции к состоянию формы. */
 function toState<T>(
   result: MutationResult<T>,
   okMessage: string,
@@ -160,7 +79,7 @@ async function guarded(run: () => Promise<HoursActionState>): Promise<HoursActio
   }
 }
 
-/** Сохранение самооценки (п.21). Только за себя (п.9) и только в открытый период. */
+/** Saves only the signed-in member's assessment for an open period. */
 export async function saveAssessmentAction(
   _prev: HoursActionState,
   formData: FormData,
@@ -189,189 +108,5 @@ export async function saveAssessmentAction(
       ),
     )
     return toState(result, 'Оценка сохранена.', (assessment) => assessment)
-  })
-}
-
-/** Добавление/правка участника (п.23) — только админ. */
-export async function saveParticipantAction(
-  _prev: HoursActionState,
-  formData: FormData,
-): Promise<HoursActionState> {
-  return guarded(async () => {
-    const gate = await requireAdmin()
-    if ('status' in gate) return gate
-
-    // Роль, вилка и грейд необязательны (решение владельца 2026-07-30);
-    // ставка не передаётся вовсе — она вычисляется из вилки и грейда.
-    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
-      upsertParticipant(doc, {
-        email: text(formData, 'email'),
-        name: text(formData, 'name'),
-        role: optionalText(formData, 'role'),
-        forkMin: optionalNumber(formData, 'forkMin'),
-        forkMax: optionalNumber(formData, 'forkMax'),
-        grade: optionalText(formData, 'grade') as Grade | null,
-      }),
-    )
-    return toState(result, 'Участник сохранён.')
-  })
-}
-
-/** Создание периода (п.24) — только админ; новый период закрыт. */
-export async function createPeriodAction(
-  _prev: HoursActionState,
-  formData: FormData,
-): Promise<HoursActionState> {
-  return guarded(async () => {
-    const gate = await requireAdmin()
-    if ('status' in gate) return gate
-
-    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
-      createPeriod(
-        doc,
-        {
-          label: text(formData, 'label'),
-          dateFrom: text(formData, 'dateFrom'),
-          dateTo: text(formData, 'dateTo'),
-        },
-        randomUUID(),
-      ),
-    )
-    return toState(result, 'Период создан — открой его, когда будет пора.')
-  })
-}
-
-/**
- * Правка label/дат периода (пп. 16, 24) — только админ. Оценки правку не
- * блокируют (issue #85); смена дат пересчитывает производные поля оценок
- * периода и возвращает предупреждение с их числом.
- */
-export async function updatePeriodAction(
-  _prev: HoursActionState,
-  formData: FormData,
-): Promise<HoursActionState> {
-  return guarded(async () => {
-    const gate = await requireAdmin()
-    if ('status' in gate) return gate
-
-    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
-      updatePeriod(doc, {
-        id: text(formData, 'periodId'),
-        label: text(formData, 'label'),
-        dateFrom: text(formData, 'dateFrom'),
-        dateTo: text(formData, 'dateTo'),
-      }),
-    )
-    return toState(result, 'Период обновлён.')
-  })
-}
-
-/** Удаление периода, пока по нему нет оценок (п.16) — только админ. */
-export async function deletePeriodAction(
-  _prev: HoursActionState,
-  formData: FormData,
-): Promise<HoursActionState> {
-  return guarded(async () => {
-    const gate = await requireAdmin()
-    if ('status' in gate) return gate
-
-    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
-      deletePeriod(doc, text(formData, 'periodId')),
-    )
-    return toState(result, 'Период удалён.')
-  })
-}
-
-/** Открытие/закрытие периода (п.24) — только админ. */
-export async function setPeriodStatusAction(
-  _prev: HoursActionState,
-  formData: FormData,
-): Promise<HoursActionState> {
-  return guarded(async () => {
-    const gate = await requireAdmin()
-    if ('status' in gate) return gate
-
-    const status = text(formData, 'status') as PeriodStatus
-    if (status !== 'open' && status !== 'closed') return error('Неизвестный статус периода.')
-
-    const result = await mutateHoursDocument(actorOf(gate), (doc) =>
-      setPeriodStatus(doc, text(formData, 'periodId'), status),
-    )
-    return toState(result, status === 'open' ? 'Период открыт.' : 'Период закрыт.')
-  })
-}
-
-/**
- * Publishes one immutable period batch to the channel-bound Mattermost
- * incoming webhook. Auth and configuration gates run before the atomic batch
- * write; every delivery result is persisted before the next request.
- */
-export async function publishHoursToMattermostAction(
-  _prev: HoursActionState,
-  formData: FormData,
-): Promise<HoursActionState> {
-  return guarded(async () => {
-    const gate = await requireAdmin()
-    if ('status' in gate) return gate
-
-    const webhookUrl = process.env.MATTERMOST_HOURS_WEBHOOK_URL?.trim()
-    if (!webhookUrl) {
-      return error('Публикация в Mattermost не настроена — позови администратора.')
-    }
-
-    const periodId = text(formData, 'periodId')
-    const previewFingerprint = text(formData, 'previewFingerprint')
-    if (!periodId || !previewFingerprint) {
-      return error('Предпросмотр устарел — обнови страницу и проверь сообщения снова.')
-    }
-
-    const created = await mutateHoursDocument(actorOf(gate), (doc) =>
-      createPublicationBatch(doc, periodId, previewFingerprint, new Date().toISOString()),
-    )
-    if (!created.ok) return error(created.error)
-
-    // The array index IS the message's `position` — the column
-    // `core.hours_publication_message` is keyed on (#274, spec 201 EARS-31), and
-    // the array `load.ts` rebuilds is sorted on it and refuses a gap. Delivery
-    // therefore goes in preview order and addresses one row per outcome.
-    for (const [position, message] of created.saved.messages.entries()) {
-      let delivery: 'sent' | 'failed' | 'unknown'
-      try {
-        const response = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text: message.text }),
-          signal: AbortSignal.timeout(MATTERMOST_DELIVERY_TIMEOUT_MS),
-        })
-        const responseBody = await response.text()
-        delivery = response.status === 200 && responseBody.trim() === 'ok' ? 'sent' : 'failed'
-      } catch {
-        delivery = 'unknown'
-      }
-
-      const progressed = await mutateHoursDocument(actorOf(gate), (doc) =>
-        recordPublicationDelivery(doc, periodId, position, delivery, new Date().toISOString()),
-      )
-      if (!progressed.ok) {
-        return error(
-          'Не удалось сохранить прогресс публикации — автоматический повтор заблокирован.',
-        )
-      }
-
-      if (delivery !== 'sent') {
-        refresh()
-        const sent = progressed.saved.messages.filter(
-          (candidate) => candidate.delivery === 'sent',
-        ).length
-        return error(
-          delivery === 'unknown'
-            ? `Результат доставки неизвестен. Отправлено ${sent} из ${progressed.saved.messages.length}; автоматический повтор заблокирован.`
-            : `Mattermost не подтвердил доставку. Отправлено ${sent} из ${progressed.saved.messages.length}; автоматический повтор заблокирован.`,
-        )
-      }
-    }
-
-    refresh()
-    return success(`Опубликовано ${created.saved.messages.length} сообщений в Mattermost.`, [])
   })
 }

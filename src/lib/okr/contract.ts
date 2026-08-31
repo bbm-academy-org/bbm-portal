@@ -73,7 +73,7 @@ export function describeOkrReadError(error: unknown): string {
  * The OKR cabinet section (EARS-453, owner amendment (b), 2026-08-25 — «источник
  * данных не аргумент для выноса из админки»).
  *
- * ONE resource, and it declares `list` and nothing else. EARS-455 makes create,
+ * ONE resource, and it declares `singleton` and nothing else. EARS-455 makes create,
  * update and delete all unsupported: the OKR records are mastered in Plane, and
  * these parameters are deploy-time configuration with no settings store in
  * `core` to write to. Expressing that as an absent operation rather than as a
@@ -86,7 +86,7 @@ export const okrAdminSection: WorkspaceAdminSection = {
     {
       name: 'parameters',
       label: 'Источник и параметры',
-      operations: ['list'],
+      operations: ['singleton'],
       schema: okrParametersSchema,
     },
   ],

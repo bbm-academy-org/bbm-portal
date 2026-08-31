@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
+import { cleanup, render, screen } from '@testing-library/react'
+import React from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
@@ -37,6 +38,11 @@ beforeEach(() => {
   treeState.result = { asOf: SNAPSHOT_AS_OF, stale: false, objectives: [] }
   treeState.error = null
   vi.resetModules()
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
 })
 
 describe('EARS-475: the module publishes its effective configuration through its own door', () => {
@@ -88,7 +94,7 @@ describe('EARS-453/455: the section is one read-only resource', () => {
     const section = okrWorkspaceEntry.kind === 'internal' ? okrWorkspaceEntry.admin : undefined
     // EARS-437 is the mechanism: an operation absent from this array gets no
     // route and therefore no control that could fail on click.
-    expect(section?.resources[0].operations).toEqual(['list'])
+    expect(section?.resources[0].operations).toEqual(['singleton'])
   })
 })
 
@@ -129,9 +135,15 @@ describe('EARS-476: the page shows the module’s current read state and when it
 
   it('EARS-476: a stale fallback keeps the original snapshot time on the page', async () => {
     treeState.result = { asOf: SNAPSHOT_AS_OF, stale: true, objectives: [] }
-
-    const page = await import('@/app/(platform)/p/admin/okr/parameters/page')
-    const markup = renderToStaticMarkup(await page.default())
+    const response = await get(admin)
+    const payload = await response.json()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(payload)),
+    )
+    authState.session = admin
+    const { OkrParametersScreen } =
+      await import('@/app/(platform)/p/admin/okr/parameters/OkrParametersScreen')
     const snapshotLabel = new Intl.DateTimeFormat('ru-RU', {
       day: 'numeric',
       month: 'long',
@@ -139,7 +151,8 @@ describe('EARS-476: the page shows the module’s current read state and when it
       minute: '2-digit',
       timeZone: 'Europe/Moscow',
     }).format(new Date(SNAPSHOT_AS_OF))
-    expect(markup).toContain(snapshotLabel)
+    render(React.createElement(OkrParametersScreen))
+    expect(await screen.findByText(snapshotLabel)).toBeTruthy()
   })
 
   it('EARS-476: a failed read reports the error the module raised, and the page still answers 200', async () => {

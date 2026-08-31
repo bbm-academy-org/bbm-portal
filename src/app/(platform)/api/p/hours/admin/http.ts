@@ -34,11 +34,7 @@ export async function hoursRead(): Promise<HoursDocument> {
 export function routeText(value: string | string[] | undefined, field: string): string {
   const raw = Array.isArray(value) ? value[0] : value
   if (!raw) throw new ModuleApiError('bad-request', `${field}: значение обязательно.`)
-  try {
-    return decodeURIComponent(raw)
-  } catch {
-    throw new ModuleApiError('bad-request', `${field}: некорректное значение.`)
-  }
+  return raw
 }
 
 export function periodRecord(
@@ -97,15 +93,10 @@ export function participantRecord(
 }
 
 export function publicationRecord(doc: HoursDocument, periodId: string): HoursPublicationRecord {
-  let preview
-  try {
-    preview = buildMattermostPreview(doc, periodId)
-  } catch (error) {
-    throw new ModuleApiError(
-      'not-found',
-      error instanceof Error ? error.message : 'Период не найден.',
-    )
+  if (!doc.periods.some((period) => period.id === periodId)) {
+    throw new ModuleApiError('not-found', 'Период не найден.')
   }
+  const preview = buildMattermostPreview(doc, periodId)
   const publication = doc.publications?.find((candidate) => candidate.period_id === periodId)
   return {
     id: 'mattermost-publication',

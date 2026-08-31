@@ -89,7 +89,7 @@ export async function GET(
       status: 200,
       headers: {
         'content-type': document.mime,
-        'content-length': String(document.size),
+        'content-length': String(document.bytes.byteLength),
         'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(document.filename)}`,
         'x-content-type-options': 'nosniff',
         // Never a shared cache, never a disk cache: the access decision is

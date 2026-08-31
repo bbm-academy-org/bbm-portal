@@ -13,6 +13,11 @@ import { memberRecord, memberWrite } from './http'
 const sortable = new Set<keyof MemberRecord>(['id', 'name', 'email', 'role', 'status'])
 
 function compare(a: MemberRecord, b: MemberRecord, field: keyof MemberRecord): number {
+  const left = a[field]
+  const right = b[field]
+  if (typeof left === 'number' && typeof right === 'number') {
+    return left - right
+  }
   return String(a[field] ?? '').localeCompare(String(b[field] ?? ''), 'ru')
 }
 
