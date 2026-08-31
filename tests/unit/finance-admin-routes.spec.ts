@@ -137,6 +137,15 @@ describe('finance reference HTTP surface (spec 338 EARS-326/330)', () => {
     })
   })
 
+  it('EARS-326: answers 404 for a prototype key in the resource segment', async () => {
+    const { GET } = await import('@/app/(platform)/api/p/finance/admin/[resource]/route')
+    const response = await GET(
+      request('/api/p/finance/admin/toString'),
+      segment({ resource: 'toString' }),
+    )
+    expect(response.status).toBe(404)
+  })
+
   it('EARS-326: refuses a non-object PATCH body with a readable 400, not a TypeError', async () => {
     const { PATCH } = await import('@/app/(platform)/api/p/finance/admin/[resource]/[id]/route')
     const response = await PATCH(

@@ -29,6 +29,21 @@ describe('finance cabinet contracts (spec 338 EARS-301/306/307/326)', () => {
     }
   })
 
+  /**
+   * The guard decides whether a `[resource]` segment names a real reference.
+   * An `in` check also answers true for every Object.prototype key, so
+   * `/api/p/finance/admin/toString` slipped past it and blew up downstream
+   * instead of answering 404.
+   */
+  it('EARS-326: rejects inherited prototype keys as reference names', async () => {
+    const { isFinanceReferenceResource } = await import('@/lib/finance')
+
+    for (const name of ['toString', 'constructor', 'hasOwnProperty', '__proto__', 'valueOf']) {
+      expect(isFinanceReferenceResource(name), name).toBe(false)
+    }
+    expect(isFinanceReferenceResource('categories')).toBe(true)
+  })
+
   it('EARS-306/307: requires purpose binding and category allocability', async () => {
     const { financeReferenceContracts } = await import('@/lib/finance')
 

@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 338
-updated: 2026-08-30
+updated: 2026-08-31
 ---
 
 # Finance F1 — ledger core — spec (issue #338)

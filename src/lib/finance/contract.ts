@@ -200,7 +200,7 @@ export type FinanceReferenceResource = keyof typeof financeReferenceContracts
 export type FinanceReferenceRecord = z.infer<typeof financeReferenceRecordSchema>
 
 export function isFinanceReferenceResource(value: string): value is FinanceReferenceResource {
-  return value in financeReferenceContracts
+  return Object.hasOwn(financeReferenceContracts, value)
 }
 
 export const financeAdminSection: WorkspaceAdminSection = {
