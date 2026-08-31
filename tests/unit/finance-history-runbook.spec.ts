@@ -38,12 +38,23 @@ describe('docs/runbooks/finance-history-reconstruction.md', () => {
     const text = runbook()
     const dryRunAt = text.indexOf('platform:finance:history dry-run')
     const authorizationAt = text.indexOf('OWNER AUTHORIZATION GATE')
+    const storageNamesInitAt = text.indexOf('$FinanceStorageNames = @()')
+    const storagePreflightAt = text.indexOf(
+      "$FinanceStorageNames = @(\n  'FINANCE_DOCUMENTS_S3_BUCKET'",
+    )
+    const productionModeAt = text.indexOf("$env:NODE_ENV = 'production'")
     const applyAt = text.indexOf('platform:finance:history apply')
 
+    expect(storageNamesInitAt).toBeGreaterThan(-1)
+    expect(storageNamesInitAt).toBeLessThan(dryRunAt)
     expect(dryRunAt).toBeGreaterThan(-1)
     expect(authorizationAt).toBeGreaterThan(dryRunAt)
+    expect(storagePreflightAt).toBeGreaterThan(authorizationAt)
+    expect(productionModeAt).toBeGreaterThan(storagePreflightAt)
+    expect(applyAt).toBeGreaterThan(productionModeAt)
     expect(applyAt).toBeGreaterThan(authorizationAt)
     expect(text).toMatch(/--digest\s+\$PlanDigest/)
+    expect(text).toMatch(/\$env:FINANCE_DOCUMENTS_S3_BUCKET\s+-eq\s+\$env:S3_BUCKET[\s\S]+?throw/i)
   })
 
   it('requires verified cleanup without commands that print credentials', () => {
