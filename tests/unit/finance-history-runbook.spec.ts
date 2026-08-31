@@ -57,6 +57,23 @@ describe('docs/runbooks/finance-history-reconstruction.md', () => {
     expect(text).toMatch(/\$env:FINANCE_DOCUMENTS_S3_BUCKET\s+-eq\s+\$env:S3_BUCKET[\s\S]+?throw/i)
   })
 
+  it('EARS-517: requires three private representative samples before exact-digest authorization', () => {
+    const text = runbook()
+    const dryRunAt = text.indexOf('platform:finance:history dry-run')
+    const samplesAt = text.indexOf('PRIVATE REPRESENTATIVE SAMPLE REVIEW')
+    const authorizationAt = text.indexOf('OWNER AUTHORIZATION GATE')
+
+    expect(samplesAt).toBeGreaterThan(dryRunAt)
+    expect(samplesAt).toBeLessThan(authorizationAt)
+    expect(text).toContain('$SamplesPath')
+    expect(text).toMatch(/ordinary expense[\s\S]+confirming document/i)
+    expect(text).toMatch(/transfer[\s\S]+source[\s\S]+target/i)
+    expect(text).toMatch(/conversion[\s\S]+two actual amounts[\s\S]+fee/i)
+    expect(text).toMatch(/duplicate|refused|category-derived/i)
+    expect(text).toMatch(/reviewed all three private samples/i)
+    expect(text).toMatch(/never[^\n]+(?:issue|pull request|GitHub)/i)
+  })
+
   it('requires verified cleanup without commands that print credentials', () => {
     const text = runbook()
 

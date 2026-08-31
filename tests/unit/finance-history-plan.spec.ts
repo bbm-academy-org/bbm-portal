@@ -190,6 +190,97 @@ describe('the one-time finance history plan', () => {
     expect(plan.operations.some((row) => row.kind === ('opening_balance' as 'expense'))).toBe(false)
   })
 
+  it('EARS-517: marks every shape the posting path already refuses as invalid during planning', () => {
+    const cases: { name: string; operation: FinanceHistoryMapping['operation'] }[] = [
+      {
+        name: 'transfer carrying a second amount',
+        operation: {
+          ...mappings[1].operation,
+          paidAmount: '900',
+          paidCurrency: 'RUB',
+        },
+      },
+      {
+        name: 'same-currency expense carrying a conflicting second amount',
+        operation: {
+          ...mappings[0].operation,
+          paidAmount: '2999',
+          paidCurrency: 'RUB',
+        },
+      },
+      {
+        name: 'personal-funds expense still naming a company account and no member',
+        operation: {
+          ...mappings[0].operation,
+          personalFunds: true,
+          alreadyPaid: true,
+          memberId: null,
+        },
+      },
+      {
+        name: 'expense fee in a currency other than the paying side',
+        operation: {
+          ...mappings[0].operation,
+          feeAmount: '10',
+          feeCurrency: 'USD',
+        },
+      },
+      {
+        name: 'non-expense carrying a purpose',
+        operation: {
+          ...mappings[1].operation,
+          purpose: { id: 30, name: 'Hosting', categoryId: null },
+        },
+      },
+    ]
+
+    for (const candidate of cases) {
+      const plan = buildFinanceHistoryPlan({
+        snapshot,
+        mappings: [{ sourcePostId: 'post-expense', operation: candidate.operation }],
+        existingOperations: [],
+      })
+      expect(plan.operations[0].validation, candidate.name).toMatchObject({ valid: false })
+      expect(plan.operations[0].validation.reasons, candidate.name).not.toHaveLength(0)
+      expect(plan.summary.validCount, candidate.name).toBe(0)
+    }
+  })
+
+  it('EARS-517: classifies a repeated source ref inside the plan deterministically and counts neither row as actionable', () => {
+    const duplicated = [
+      { ...mappings[2], documentNumber: 'DUP-42' },
+      { ...mappings[1], documentNumber: 'DUP-42' },
+    ]
+    const first = buildFinanceHistoryPlan({
+      snapshot,
+      mappings: duplicated,
+      existingOperations: [],
+    })
+    const second = buildFinanceHistoryPlan({
+      snapshot,
+      mappings: [...duplicated].reverse(),
+      existingOperations: [],
+    })
+
+    expect(first).toEqual(second)
+    expect(first.duplicates).toEqual([
+      {
+        sourcePostId: 'post-conversion',
+        sourceRef: 'DUP-42',
+        existingOperationId: null,
+        duplicateOfSourcePostId: 'post-transfer',
+      },
+    ])
+    expect(first.summary).toMatchObject({ validCount: 0, duplicateCount: 1 })
+    expect(first.summary.kindCounts).toEqual({
+      expense: 0,
+      income: 0,
+      transfer: 0,
+      conversion: 0,
+    })
+    expect(first.purposeGroups).toEqual([])
+  })
+
   it('EARS-519: groups recorded spend by purpose and names uncategorised expense rows', () => {
     const plan = buildFinanceHistoryPlan({ snapshot, mappings, existingOperations: [] })
 
