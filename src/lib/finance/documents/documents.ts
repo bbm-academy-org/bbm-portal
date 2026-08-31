@@ -47,7 +47,11 @@ import {
 } from '@/lib/platform/db/schema/finance/finance-document'
 import { financeDocumentLink } from '@/lib/platform/db/schema/finance/finance-document-link'
 import { financeIntakeItem } from '@/lib/platform/db/schema/finance/finance-intake-item'
-import { platformTransaction, type PlatformTx } from '@/lib/platform/db/transaction'
+import {
+  platformTransaction,
+  type AuditContext,
+  type PlatformTx,
+} from '@/lib/platform/db/transaction'
 
 import {
   assertFinanceIntakeAccess,
@@ -110,6 +114,15 @@ export type UploadFinanceDocumentInput = {
    * whose whole permission is «their own items» (EARS-502).
    */
   intakeItemIds?: readonly number[]
+}
+
+export type UploadFinanceHistoryDocumentInput = {
+  storageKey: string
+  filename: string
+  mime: string
+  bytes: Buffer
+  kind: FinanceDocumentKind
+  uploadedBy: number
 }
 
 function toView(row: typeof financeDocument.$inferSelect): FinanceDocumentView {
@@ -348,6 +361,88 @@ export async function uploadFinanceDocument(
   }
 }
 
+/**
+ * The history command joins the same durable upload state machine without
+ * borrowing a portal actor. Its deterministic, non-enumerable key is the
+ * recovery identity: a rerun finds the committed pending row and resumes it.
+ */
+export async function uploadFinanceHistoryDocument(
+  input: UploadFinanceHistoryDocumentInput,
+  auditContext: AuditContext,
+  storage: FinanceDocumentStorage,
+): Promise<FinanceDocumentView> {
+  if (!Buffer.isBuffer(input.bytes)) {
+    throw new FinanceRefusal('Содержимое документа должно быть буфером байтов.')
+  }
+  assertFinanceDocumentUpload({
+    filename: input.filename,
+    mime: input.mime,
+    size: input.bytes.byteLength,
+    kind: input.kind,
+  })
+  assertFinanceDocumentBytes({
+    filename: input.filename,
+    mime: input.mime,
+    bytes: input.bytes,
+  })
+
+  const pending = await platformTransaction(auditContext, async (tx) => {
+    const [observed] = await tx
+      .select()
+      .from(financeDocument)
+      .where(eq(financeDocument.storageKey, input.storageKey))
+      .for('update')
+    if (observed !== undefined) return observed
+
+    const [created] = await tx
+      .insert(financeDocument)
+      .values({
+        storageKey: input.storageKey,
+        contentDigest: financeDocumentDigest(input.bytes),
+        filename: input.filename,
+        mime: input.mime,
+        size: input.bytes.byteLength,
+        kind: input.kind,
+        uploadedBy: input.uploadedBy,
+      })
+      .onConflictDoNothing()
+      .returning()
+    if (created !== undefined) return created
+
+    const [raced] = await tx
+      .select()
+      .from(financeDocument)
+      .where(eq(financeDocument.storageKey, input.storageKey))
+      .for('update')
+    if (raced === undefined) {
+      throw new FinanceRefusal(
+        `Документ истории с ключом «${input.storageKey}» столкнулся с записью, которую нельзя прочитать.`,
+      )
+    }
+    return raced
+  })
+
+  if (pending.uploadedBy !== input.uploadedBy) {
+    throw new FinanceRefusal(
+      `Незавершённый документ #${pending.id} принадлежит другому оператору; автоматическая подмена автора запрещена.`,
+    )
+  }
+  assertRecoveryBytes(pending, input.bytes)
+  return resumeFinanceDocumentUploadWithContext(
+    auditContext,
+    pending.id,
+    input.bytes,
+    storage,
+    async (_tx, document) => {
+      if (document.uploadedBy !== input.uploadedBy) {
+        throw new FinanceRefusal(
+          `Документ #${document.id} нельзя возобновить от имени другого оператора.`,
+        )
+      }
+    },
+  )
+}
+
 /** The document row, or a readable refusal. */
 async function requireDocument(tx: PlatformTx, documentId: number, lock = false) {
   const query = tx.select().from(financeDocument).where(eq(financeDocument.id, documentId))
@@ -408,11 +503,29 @@ export async function resumeFinanceDocumentUpload(
   storage: FinanceDocumentStorage = resolveFinanceDocumentStorage(),
 ): Promise<FinanceDocumentView> {
   const memberId = await requireMemberId(actor)
-  try {
-    return await platformTransaction(financeAuditContext(actor), async (tx) => {
-      const document = await requireDocument(tx, documentId, true)
+  return resumeFinanceDocumentUploadWithContext(
+    financeAuditContext(actor),
+    documentId,
+    bytes,
+    storage,
+    async (tx, document) => {
       const items = await linkedItems(tx, document.id, true)
       assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
+    },
+  )
+}
+
+async function resumeFinanceDocumentUploadWithContext(
+  auditContext: AuditContext,
+  documentId: number,
+  bytes: Buffer,
+  storage: FinanceDocumentStorage,
+  authorize: (tx: PlatformTx, document: typeof financeDocument.$inferSelect) => Promise<void>,
+): Promise<FinanceDocumentView> {
+  try {
+    return await platformTransaction(auditContext, async (tx) => {
+      const document = await requireDocument(tx, documentId, true)
+      await authorize(tx, document)
       assertRecoveryBytes(document, bytes)
 
       if (document.storageState === 'pending_delete') {

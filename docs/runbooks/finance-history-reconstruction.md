@@ -58,6 +58,7 @@ $HistoryRoot = Join-Path $env:LOCALAPPDATA ("bbm-finance-history-" + [guid]::New
 $FilesDir = Join-Path $HistoryRoot 'mattermost-files'
 $MappingPath = Join-Path $HistoryRoot 'mapping.private.json'
 $PlanPath = Join-Path $HistoryRoot 'plan.private.json'
+$SamplesPath = Join-Path $HistoryRoot 'samples.private.json'
 $BundlePath = Join-Path $HistoryRoot 'bundle.private.tar.gz'
 $MattermostTunnel = $null
 $PlatformTunnel = $null
@@ -271,11 +272,91 @@ if ($Plan.summary.operationsWithoutDocuments -ne 0) {
 if ($PlanDigest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Plan digest is invalid.' }
 ```
 
-Present only the digest and the non-sensitive summary counts/date range to the
-owner. Keep the plan itself private; it contains finance facts and Mattermost
-identifiers.
+## 5. PRIVATE REPRESENTATIVE SAMPLE REVIEW
 
-## 5. OWNER AUTHORIZATION GATE
+Authorization is not meaningful from counts alone. Before presenting the
+digest, render three representative rows from the exact private plan: an
+ordinary expense with a confirming document, a transfer naming source and
+target accounts, and a conversion carrying two actual amounts and its fee. The
+review file deliberately removes Mattermost ids, source refs, notes and
+filenames; it still contains private finance details and therefore stays in the
+protected workspace.
+
+Also render one validation marker: a duplicate, a refused/invalid row, or a
+category-derived candidate. This confirms that the owner saw how the dry run
+classifies a non-ordinary case rather than only three happy paths.
+
+```powershell
+if (Test-Path -LiteralPath $SamplesPath) {
+  throw 'Refusing to overwrite an earlier private sample review.'
+}
+$Expense = @($Plan.operations | Where-Object {
+  $_.kind -eq 'expense' -and $_.validation.valid -and $_.documents.Count -gt 0
+})[0]
+$Transfer = @($Plan.operations | Where-Object {
+  $_.kind -eq 'transfer' -and $_.validation.valid
+})[0]
+$Conversion = @($Plan.operations | Where-Object {
+  $_.kind -eq 'conversion' -and $_.validation.valid -and
+  $null -ne $_.paidAmount -and $null -ne $_.paidCurrency
+})[0]
+if ($null -eq $Expense -or $null -eq $Transfer -or $null -eq $Conversion) {
+  throw 'The exact plan lacks an ordinary expense, transfer, or conversion sample.'
+}
+
+$Marker = if ($Plan.duplicates.Count -gt 0) {
+  [ordered]@{ kind = 'duplicate'; count = $Plan.duplicates.Count }
+} elseif ($Plan.invalidRows.Count -gt 0) {
+  [ordered]@{
+    kind = 'refused'
+    reasons = @($Plan.invalidRows[0].reasons)
+  }
+} elseif ($Plan.summary.uncategorizedCount -gt 0) {
+  [ordered]@{ kind = 'category-derived'; count = $Plan.summary.uncategorizedCount }
+} else {
+  throw 'The private review needs a duplicate, refused, or category-derived marker.'
+}
+
+$ReviewSamples = [ordered]@{
+  ordinaryExpense = [ordered]@{
+    occurredOn = $Expense.occurredOn
+    amount = $Expense.amount
+    currency = $Expense.currency
+    accountId = $Expense.accountId
+    purpose = $Expense.purpose.name
+    confirmingDocument = ($Expense.documents.Count -gt 0)
+  }
+  transfer = [ordered]@{
+    occurredOn = $Transfer.occurredOn
+    amount = $Transfer.amount
+    currency = $Transfer.currency
+    sourceAccountId = $Transfer.accountId
+    targetAccountId = $Transfer.counterAccountId
+  }
+  conversion = [ordered]@{
+    occurredOn = $Conversion.occurredOn
+    sourceAmount = $Conversion.amount
+    sourceCurrency = $Conversion.currency
+    targetAmount = $Conversion.paidAmount
+    targetCurrency = $Conversion.paidCurrency
+    feeAmount = $Conversion.feeAmount
+    feeCurrency = $Conversion.feeCurrency
+    sourceAccountId = $Conversion.accountId
+    targetAccountId = $Conversion.counterAccountId
+  }
+  validationMarker = $Marker
+}
+$ReviewSamples | ConvertTo-Json -Depth 8 |
+  Set-Content -LiteralPath $SamplesPath -Encoding UTF8 -NoNewline
+```
+
+Open `$SamplesPath` only in a local editor or private screen share. The owner
+must review all three private samples and the validation marker before exact
+digest authorization. Never paste finance details into a GitHub issue or pull request.
+GitHub receives only the digest, non-sensitive summary counts/date range, and
+the sentence “reviewed all three private samples”.
+
+## 6. OWNER AUTHORIZATION GATE
 
 **STOP.** The implementation `go` is not permission to write this data. Apply
 only after the owner explicitly authorizes this exact `sha256:...` plan digest
@@ -298,7 +379,7 @@ if ($AuthorizedDigest -ne $PlanDigest) {
 If the workstation or tunnels were stopped while awaiting authorization, repeat
 section 2 before continuing. Do not reconstruct a plan from memory.
 
-## 6. Apply through the audited ledger path
+## 7. Apply through the audited ledger path
 
 Use the real operator's `core.member.email`. The CLI independently recomputes
 and verifies the digest, uploads the selected private documents, creates
@@ -340,10 +421,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Finance history apply failed; do not clean up 
 
 Save only the returned counts and digest in the issue. Do not attach the plan,
 mapping, bundle, document paths, credentials or raw Mattermost text. A retry
-with the same authorized plan is safe: the `(source, source_ref)` database
-constraint and apply path skip already-created operations.
+with the same authorized plan is safe: a failed document upload prints its
+stable document id, and the deterministic private key resumes that pending row
+instead of creating another object; the `(source, source_ref)` database
+constraints point a concurrent operation race at the winner and skip it.
 
-## 7. Cleanup and verify
+## 8. Cleanup and verify
 
 On success, close both tunnels, remove the process environment values and all
 private artifacts. The remote bundle script has already removed its staging

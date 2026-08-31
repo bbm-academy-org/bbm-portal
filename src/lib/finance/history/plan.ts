@@ -4,6 +4,7 @@ import type { FinanceDocumentKind } from '@/lib/platform/db/schema/finance/finan
 import type { FinanceIntakeKind } from '@/lib/platform/db/schema/finance/finance-intake-item'
 
 import { FinanceRefusal } from '../core/errors'
+import { financePostingShapeRefusals } from '../intake/posting-shape'
 
 export const FINANCE_HISTORY_PLAN_VERSION = 1 as const
 
@@ -112,7 +113,8 @@ export type FinanceHistoryPlan = {
   duplicates: readonly {
     sourcePostId: string | null
     sourceRef: string
-    existingOperationId: number
+    existingOperationId: number | null
+    duplicateOfSourcePostId: string | null
   }[]
   invalidRows: readonly {
     sourcePostId: string | null
@@ -237,23 +239,40 @@ function planOperation(
     positiveId(counterAccountId, 'counterAccountId', reasons)
   }
   const paidAmount = operation.paidAmount ?? null
-  const paidCurrency = operation.paidCurrency?.trim() || null
-  if ((paidAmount === null) !== (paidCurrency === null)) {
-    reasons.push('paidAmount and paidCurrency must be supplied together')
-  }
-  if (operation.kind === 'conversion') {
-    positiveInteger(paidAmount, 'paidAmount', reasons)
-    if (paidCurrency === operation.currency) reasons.push('a conversion requires two currencies')
-  }
+  const paidCurrency = operation.paidCurrency?.trim().toUpperCase() || null
   const feeAmount = operation.feeAmount ?? null
-  const feeCurrency = operation.feeCurrency?.trim() || null
-  if ((feeAmount === null) !== (feeCurrency === null)) {
-    reasons.push('feeAmount and feeCurrency must be supplied together')
-  }
-  if (feeAmount !== null) positiveInteger(feeAmount, 'feeAmount', reasons)
-  if (operation.personalFunds && operation.alreadyPaid !== true) {
-    reasons.push('personal funds require alreadyPaid')
-  }
+  const feeCurrency = operation.feeCurrency?.trim().toUpperCase() || null
+  const normalizedCurrency = operation.currency.trim().toUpperCase()
+  const parsedAmount = /^[1-9]\d*$/.test(operation.amount) ? BigInt(operation.amount) : 0n
+  const parsedPaidAmount =
+    paidAmount !== null && /^[1-9]\d*$/.test(paidAmount)
+      ? BigInt(paidAmount)
+      : paidAmount === null
+        ? null
+        : 0n
+  const parsedFeeAmount =
+    feeAmount !== null && /^[1-9]\d*$/.test(feeAmount)
+      ? BigInt(feeAmount)
+      : feeAmount === null
+        ? null
+        : 0n
+  reasons.push(
+    ...financePostingShapeRefusals({
+      kind: operation.kind,
+      amount: parsedAmount,
+      currency: normalizedCurrency,
+      accountId,
+      counterAccountId,
+      paidAmount: parsedPaidAmount,
+      paidCurrency,
+      feeAmount: parsedFeeAmount,
+      feeCurrency,
+      purposeId: operation.purpose?.id ?? null,
+      memberId: operation.memberId ?? null,
+      alreadyPaid: operation.alreadyPaid ?? true,
+      personalFunds: operation.personalFunds ?? false,
+    }),
+  )
 
   const documents = operation.documentFileIds.flatMap((fileId) => {
     const file = files.get(fileId)
@@ -271,7 +290,7 @@ function planOperation(
     kind: operation.kind,
     occurredOn: operation.occurredOn,
     amount: operation.amount,
-    currency: operation.currency.trim().toUpperCase(),
+    currency: normalizedCurrency,
     projectId: operation.projectId,
     accountId,
     counterAccountId,
@@ -348,7 +367,9 @@ export function buildFinanceHistoryPlan(input: BuildFinanceHistoryPlanInput): Fi
     .sort(
       (left, right) =>
         left.occurredOn.localeCompare(right.occurredOn) ||
-        left.sourceRef.localeCompare(right.sourceRef),
+        left.sourceRef.localeCompare(right.sourceRef) ||
+        (left.sourcePostId ?? '').localeCompare(right.sourcePostId ?? '') ||
+        digest(left).localeCompare(digest(right)),
     )
   const existingByRef = new Map(
     input.existingOperations
@@ -358,20 +379,39 @@ export function buildFinanceHistoryPlan(input: BuildFinanceHistoryPlanInput): Fi
       )
       .map((operation) => [operation.sourceRef, operation]),
   )
-  const duplicates = operations
-    .flatMap((operation) => {
-      const existing = existingByRef.get(operation.sourceRef)
-      return existing === undefined
-        ? []
-        : [
-            {
-              sourcePostId: operation.sourcePostId,
-              sourceRef: operation.sourceRef,
-              existingOperationId: existing.id,
-            },
-          ]
-    })
-    .sort((left, right) => left.sourceRef.localeCompare(right.sourceRef))
+  const existingDuplicates: FinanceHistoryPlan['duplicates'] = operations.flatMap((operation) => {
+    const existing = existingByRef.get(operation.sourceRef)
+    return existing === undefined
+      ? []
+      : [
+          {
+            sourcePostId: operation.sourcePostId,
+            sourceRef: operation.sourceRef,
+            existingOperationId: existing.id,
+            duplicateOfSourcePostId: null,
+          },
+        ]
+  })
+  const firstInPlan = new Map<string, FinanceHistoryPlanOperation>()
+  const planDuplicates: Array<FinanceHistoryPlan['duplicates'][number]> = []
+  for (const operation of operations) {
+    const first = firstInPlan.get(operation.sourceRef)
+    if (first === undefined) {
+      firstInPlan.set(operation.sourceRef, operation)
+    } else if (!existingByRef.has(operation.sourceRef)) {
+      planDuplicates.push({
+        sourcePostId: operation.sourcePostId,
+        sourceRef: operation.sourceRef,
+        existingOperationId: null,
+        duplicateOfSourcePostId: first.sourcePostId,
+      })
+    }
+  }
+  const duplicates = [...existingDuplicates, ...planDuplicates].sort(
+    (left, right) =>
+      left.sourceRef.localeCompare(right.sourceRef) ||
+      (left.sourcePostId ?? '').localeCompare(right.sourcePostId ?? ''),
+  )
   const duplicateRefs = new Set(duplicates.map((duplicate) => duplicate.sourceRef))
   const invalidRows = operations
     .filter((operation) => !operation.validation.valid)
@@ -419,9 +459,9 @@ export function buildFinanceHistoryPlan(input: BuildFinanceHistoryPlanInput): Fi
       referencedDocumentCount: new Set(
         actionable.flatMap((operation) => operation.documents.map((d) => d.id)),
       ).size,
-      operationsWithDocuments: operations.filter((operation) => operation.documents.length > 0)
+      operationsWithDocuments: actionable.filter((operation) => operation.documents.length > 0)
         .length,
-      operationsWithoutDocuments: operations.filter((operation) => operation.documents.length === 0)
+      operationsWithoutDocuments: actionable.filter((operation) => operation.documents.length === 0)
         .length,
       uncategorizedCount: purposeGroups.reduce(
         (total, group) => total + group.uncategorizedSourceRefs.length,

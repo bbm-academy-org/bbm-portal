@@ -54,6 +54,7 @@ import {
   type FinanceAccountView,
 } from '../references'
 import { intakeItemToView, lockIntakeItem, type FinanceIntakeItemView } from './items'
+import { assertFinancePostingShape } from './posting-shape'
 
 type PostingItem = Omit<FinanceIntakeItemRow, 'kind' | 'source'> & {
   kind: FinanceIntakeKind
@@ -278,7 +279,7 @@ async function requireActorMemberId(tx: PlatformTx, actor: FinanceActor): Promis
 }
 
 async function recordItemOperation(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {
-  assertPositiveAmounts(item)
+  assertFinancePostingShape(item)
   switch (item.kind) {
     case 'expense':
       return recordExpense(tx, item)
@@ -290,15 +291,6 @@ async function recordItemOperation(tx: PlatformTx, item: PostingItem): Promise<R
       return recordOwnConversion(tx, item)
     default:
       throw new FinanceRefusal(`Вид позиции «${item.kind}» не проводится.`)
-  }
-}
-
-function assertPositiveAmounts(item: PostingItem): void {
-  if (item.amount <= 0n || (item.paidAmount !== null && item.paidAmount <= 0n)) {
-    throw new FinanceRefusal('Проводимые суммы должны быть положительными.')
-  }
-  if (item.feeAmount !== null && item.feeAmount <= 0n) {
-    throw new FinanceRefusal('Комиссия должна быть положительной суммой расхода.')
   }
 }
 

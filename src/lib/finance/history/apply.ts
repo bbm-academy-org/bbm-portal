@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 
 import { and, eq, sql } from 'drizzle-orm'
 
-import { financeDocument } from '@/lib/platform/db/schema/finance/finance-document'
 import { financeDocumentLink } from '@/lib/platform/db/schema/finance/finance-document-link'
 import { financeIntakeItem } from '@/lib/platform/db/schema/finance/finance-intake-item'
 import { financeOperation } from '@/lib/platform/db/schema/finance/finance-operation'
@@ -11,12 +10,8 @@ import { platformTransaction } from '@/lib/platform/db/transaction'
 
 import type { FinanceActor } from '../core/actor'
 import { FinanceRefusal } from '../core/errors'
-import { assertFinanceDocumentBytes, assertFinanceDocumentUpload } from '../documents/documents'
-import {
-  buildFinanceDocumentStorageKey,
-  resolveFinanceDocumentStorage,
-  type FinanceDocumentStorage,
-} from '../documents/storage'
+import { uploadFinanceHistoryDocument } from '../documents/documents'
+import { resolveFinanceDocumentStorage, type FinanceDocumentStorage } from '../documents/storage'
 import { postIntakeItemInTransaction } from '../intake/posting'
 import type {
   FinanceHistoryPlan,
@@ -85,37 +80,38 @@ async function stageDocument(
       `Mattermost file ${file.id} no longer matches the authorized source snapshot (size or digest changed).`,
     )
   }
-  assertFinanceDocumentUpload({
-    filename: file.filename,
-    mime: file.mime,
-    size: bytes.byteLength,
-    kind: file.kind,
-  })
-  assertFinanceDocumentBytes({ filename: file.filename, mime: file.mime, bytes })
-  const storageKey = buildFinanceDocumentStorageKey(file.filename)
-  const pending = await platformTransaction(BACKFILL_AUDIT_CONTEXT, async (tx) => {
-    const [row] = await tx
-      .insert(financeDocument)
-      .values({
-        storageKey,
-        contentDigest: sha256(bytes),
-        filename: file.filename,
-        mime: file.mime,
-        size: bytes.byteLength,
-        kind: file.kind,
-        uploadedBy,
-      })
-      .returning({ id: financeDocument.id })
-    return row.id
-  })
-  await storage.put(storageKey, bytes)
-  await platformTransaction(BACKFILL_AUDIT_CONTEXT, async (tx) => {
-    await tx
-      .update(financeDocument)
-      .set({ storageState: 'ready' })
-      .where(eq(financeDocument.id, pending))
-  })
-  return pending
+  const extension = /\.[a-z0-9]{1,8}$/i.exec(file.filename)?.[0].toLowerCase() ?? ''
+  const identity = createHash('sha256')
+    .update(`mattermost:${file.id}:${file.contentDigest}`)
+    .digest('hex')
+  const document = await uploadFinanceHistoryDocument(
+    {
+      storageKey: `finance/documents/history/${identity}${extension}`,
+      filename: file.filename,
+      mime: file.mime,
+      bytes,
+      kind: file.kind,
+      uploadedBy,
+    },
+    BACKFILL_AUDIT_CONTEXT,
+    storage,
+  )
+  return document.id
+}
+
+function pgFailure(error: unknown): { code?: string; constraint?: string } {
+  const node = error as { code?: string; constraint?: string; cause?: unknown } | null | undefined
+  if (typeof node?.code === 'string') return { code: node.code, constraint: node.constraint }
+  return node?.cause === undefined ? {} : pgFailure(node.cause)
+}
+
+function isBackfillUniqueRace(error: unknown): boolean {
+  const failure = pgFailure(error)
+  return (
+    failure.code === '23505' &&
+    (failure.constraint === 'finance_intake_item_source_ref_unique' ||
+      failure.constraint === 'finance_operation_backfill_source_ref_unique')
+  )
 }
 
 function intakeValues(operation: FinanceHistoryPlanOperation, createdBy: number) {
@@ -157,8 +153,24 @@ export async function applyFinanceHistoryPlan(
       `Finance history plan contains ${plan.invalidRows.length} invalid row(s); apply is refused.`,
     )
   }
+  const intraPlanDuplicates = plan.duplicates.filter(
+    (duplicate) => duplicate.existingOperationId === null,
+  )
+  if (intraPlanDuplicates.length > 0) {
+    throw new FinanceRefusal(
+      `Finance history plan contains ${intraPlanDuplicates.length} duplicate source ref(s) inside the plan; apply is refused.`,
+    )
+  }
+  const existingDuplicateRefs = new Set(
+    plan.duplicates
+      .filter((duplicate) => duplicate.existingOperationId !== null)
+      .map((duplicate) => duplicate.sourceRef),
+  )
   const withoutDocuments = plan.operations.filter(
-    (operation) => operation.validation.valid && operation.documents.length === 0,
+    (operation) =>
+      operation.validation.valid &&
+      !existingDuplicateRefs.has(operation.sourceRef) &&
+      operation.documents.length === 0,
   )
   if (withoutDocuments.length > 0) {
     throw new FinanceRefusal(
@@ -191,31 +203,57 @@ export async function applyFinanceHistoryPlan(
       documentIds.set(document.id, await stageDocument(document, uploadedBy, bytes, storage))
     }
 
-    const applied = await platformTransaction(BACKFILL_AUDIT_CONTEXT, async (tx) => {
-      const [already] = await tx
-        .select({ id: financeOperation.id })
-        .from(financeOperation)
-        .where(
-          and(
-            eq(financeOperation.source, 'backfill'),
-            eq(financeOperation.sourceRef, operation.sourceRef),
-          ),
+    let applied: { operationId: number; intakeItemId: number | null }
+    try {
+      applied = await platformTransaction(BACKFILL_AUDIT_CONTEXT, async (tx) => {
+        const [already] = await tx
+          .select({ id: financeOperation.id })
+          .from(financeOperation)
+          .where(
+            and(
+              eq(financeOperation.source, 'backfill'),
+              eq(financeOperation.sourceRef, operation.sourceRef),
+            ),
+          )
+        if (already !== undefined) return { operationId: already.id, intakeItemId: null }
+        const [item] = await tx
+          .insert(financeIntakeItem)
+          .values(intakeValues(operation, uploadedBy))
+          .onConflictDoNothing()
+          .returning({ id: financeIntakeItem.id })
+        if (item === undefined) {
+          const [raced] = await tx
+            .select({ id: financeOperation.id })
+            .from(financeOperation)
+            .where(
+              and(
+                eq(financeOperation.source, 'backfill'),
+                eq(financeOperation.sourceRef, operation.sourceRef),
+              ),
+            )
+          if (raced === undefined) {
+            throw new FinanceRefusal(
+              `Backfill intake ${operation.sourceRef} already exists without a posted operation.`,
+            )
+          }
+          return { operationId: raced.id, intakeItemId: null }
+        }
+        await tx.insert(financeDocumentLink).values(
+          operation.documents.map((document) => ({
+            documentId: documentIds.get(document.id)!,
+            intakeItemId: item.id,
+            linkedBy: uploadedBy,
+          })),
         )
-      if (already !== undefined) return { operationId: already.id, intakeItemId: null }
-      const [item] = await tx
-        .insert(financeIntakeItem)
-        .values(intakeValues(operation, uploadedBy))
-        .returning({ id: financeIntakeItem.id })
-      await tx.insert(financeDocumentLink).values(
-        operation.documents.map((document) => ({
-          documentId: documentIds.get(document.id)!,
-          intakeItemId: item.id,
-          linkedBy: uploadedBy,
-        })),
-      )
-      const posted = await postIntakeItemInTransaction(tx, actor, item.id)
-      return { operationId: posted.operationId!, intakeItemId: item.id }
-    })
+        const posted = await postIntakeItemInTransaction(tx, actor, item.id)
+        return { operationId: posted.operationId!, intakeItemId: item.id }
+      })
+    } catch (error) {
+      if (!isBackfillUniqueRace(error)) throw error
+      const raced = await existingBackfillOperation(operation.sourceRef)
+      if (raced === null) throw error
+      applied = { operationId: raced, intakeItemId: null }
+    }
     if (applied.intakeItemId === null) {
       result.skipped.push({ sourceRef: operation.sourceRef, operationId: applied.operationId })
     } else {
