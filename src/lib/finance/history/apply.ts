@@ -13,6 +13,7 @@ import { FinanceRefusal } from '../core/errors'
 import { uploadFinanceHistoryDocument } from '../documents/documents'
 import { resolveFinanceDocumentStorage, type FinanceDocumentStorage } from '../documents/storage'
 import { postIntakeItemInTransaction } from '../intake/posting'
+import { FinanceBackfillOperationConflict } from '../operations'
 import type {
   FinanceHistoryPlan,
   FinanceHistoryPlanOperation,
@@ -249,10 +250,15 @@ export async function applyFinanceHistoryPlan(
         return { operationId: posted.operationId!, intakeItemId: item.id }
       })
     } catch (error) {
-      if (!isBackfillUniqueRace(error)) throw error
-      const raced = await existingBackfillOperation(operation.sourceRef)
-      if (raced === null) throw error
-      applied = { operationId: raced, intakeItemId: null }
+      if (error instanceof FinanceBackfillOperationConflict) {
+        if (error.operation.sourceRef !== operation.sourceRef) throw error
+        applied = { operationId: error.operation.id, intakeItemId: null }
+      } else {
+        if (!isBackfillUniqueRace(error)) throw error
+        const raced = await existingBackfillOperation(operation.sourceRef)
+        if (raced === null) throw error
+        applied = { operationId: raced, intakeItemId: null }
+      }
     }
     if (applied.intakeItemId === null) {
       result.skipped.push({ sourceRef: operation.sourceRef, operationId: applied.operationId })

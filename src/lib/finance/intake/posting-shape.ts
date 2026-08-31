@@ -33,17 +33,21 @@ export function financePostingShapeRefusals(item: FinancePostingShape): string[]
   if ((item.feeAmount === null) !== (item.feeCurrency === null)) {
     reasons.push('Сумма комиссии и её валюта должны быть указаны вместе.')
   }
-  if (item.personalFunds && !item.alreadyPaid) {
+  const personalFundsExpense = item.kind === 'expense' && item.personalFunds
+  if (item.personalFunds && item.kind !== 'expense') {
+    reasons.push('personal_funds поддерживается только для расхода.')
+  }
+  if (personalFundsExpense && !item.alreadyPaid) {
     reasons.push('Расход personal_funds требует alreadyPaid.')
   }
-  if (item.personalFunds && item.accountId !== null) {
+  if (personalFundsExpense && item.accountId !== null) {
     reasons.push('Расход personal_funds не называет счёт компании.')
   }
-  if (item.personalFunds && item.memberId === null) {
+  if (personalFundsExpense && item.memberId === null) {
     reasons.push('Расход personal_funds обязан назвать участника.')
   }
-  if (!item.personalFunds && item.accountId === null) {
-    reasons.push('Операция не из personal_funds обязана назвать денежный счёт.')
+  if (!personalFundsExpense && item.accountId === null) {
+    reasons.push('Операция обязана назвать денежный счёт; исключение — расход personal_funds.')
   }
 
   const paidCurrency = item.paidCurrency ?? item.currency

@@ -65,6 +65,18 @@ export type RecordedOperation = {
   postings: { id: number; accountId: number; amount: bigint; currency: string }[]
 }
 
+export type OperationInsertOutcome =
+  | { status: 'inserted'; operation: RecordedOperation }
+  | { status: 'existing'; operation: RecordedOperation }
+
+/** Internal control signal: the caller must roll back work around a losing backfill insert. */
+export class FinanceBackfillOperationConflict extends Error {
+  constructor(readonly operation: RecordedOperation) {
+    super(`Backfill operation ${operation.sourceRef ?? operation.id} already exists.`)
+    this.name = 'FinanceBackfillOperationConflict'
+  }
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /**
@@ -142,9 +154,14 @@ export async function recordOperation(
     )
   }
   assertFinanceLedgerAccess(actor)
-  return platformTransaction(financeAuditContext(actor), (tx) =>
-    recordOperationInTransaction(tx, input),
-  )
+  try {
+    return await platformTransaction(financeAuditContext(actor), (tx) =>
+      recordOperationInTransaction(tx, input),
+    )
+  } catch (error) {
+    if (error instanceof FinanceBackfillOperationConflict) return error.operation
+    throw error
+  }
 }
 
 /** Module-private writer. The audited outer door already bound the actor to `tx`. */
@@ -159,7 +176,7 @@ export async function recordOperationInTransaction(
     )
   }
   const existing = await findExistingBackfillOperation(tx, parsed.source, parsed.sourceRef ?? null)
-  if (existing !== null) return existing
+  if (existing !== null) throw new FinanceBackfillOperationConflict(existing)
   const accounts = await loadAccountFacts(tx, parsed.postings)
   assertNoRetiredAccount(accounts)
   const postings = await prepareDimensions(tx, parsed, accounts)
@@ -335,6 +352,19 @@ export async function insertOperation(
   draft: OperationRowDraft,
   stepIdByNo: ReadonlyMap<number, number> = new Map(),
 ): Promise<RecordedOperation> {
+  const outcome = await insertOperationOutcome(tx, draft, stepIdByNo)
+  if (outcome.status === 'existing') {
+    throw new FinanceBackfillOperationConflict(outcome.operation)
+  }
+  return outcome.operation
+}
+
+/** Insert while preserving whether the unique backfill fact was won or already existed. */
+export async function insertOperationOutcome(
+  tx: PlatformTx,
+  draft: OperationRowDraft,
+  stepIdByNo: ReadonlyMap<number, number> = new Map(),
+): Promise<OperationInsertOutcome> {
   const values = {
     occurredOn: draft.occurredOn,
     source: draft.source,
@@ -357,7 +387,7 @@ export async function insertOperation(
   const operation = rows[0]
   if (operation === undefined) {
     const existing = await findExistingBackfillOperation(tx, draft.source, draft.sourceRef)
-    if (existing !== null) return existing
+    if (existing !== null) return { status: 'existing', operation: existing }
     throw new FinanceRefusal(
       'The operation conflicted but the existing ledger fact could not be read.',
     )
@@ -368,14 +398,17 @@ export async function insertOperation(
   // itself. Every other caller passes them together.
   if (draft.postings.length === 0) {
     return {
-      id: operation.id,
-      occurredOn: operation.occurredOn,
-      source: operation.source as FinanceOperationSource,
-      purposeId: operation.purposeId,
-      sourceRef: operation.sourceRef,
-      backdated: operation.backdated,
-      reverses: operation.reverses,
-      postings: [],
+      status: 'inserted',
+      operation: {
+        id: operation.id,
+        occurredOn: operation.occurredOn,
+        source: operation.source as FinanceOperationSource,
+        purposeId: operation.purposeId,
+        sourceRef: operation.sourceRef,
+        backdated: operation.backdated,
+        reverses: operation.reverses,
+        postings: [],
+      },
     }
   }
 
@@ -397,19 +430,22 @@ export async function insertOperation(
     .returning()
 
   return {
-    id: operation.id,
-    occurredOn: operation.occurredOn,
-    source: operation.source as FinanceOperationSource,
-    purposeId: operation.purposeId,
-    sourceRef: operation.sourceRef,
-    backdated: operation.backdated,
-    reverses: operation.reverses,
-    postings: inserted.map((row) => ({
-      id: row.id,
-      accountId: row.accountId,
-      amount: row.amount,
-      currency: row.currency,
-    })),
+    status: 'inserted',
+    operation: {
+      id: operation.id,
+      occurredOn: operation.occurredOn,
+      source: operation.source as FinanceOperationSource,
+      purposeId: operation.purposeId,
+      sourceRef: operation.sourceRef,
+      backdated: operation.backdated,
+      reverses: operation.reverses,
+      postings: inserted.map((row) => ({
+        id: row.id,
+        accountId: row.accountId,
+        amount: row.amount,
+        currency: row.currency,
+      })),
+    },
   }
 }
 

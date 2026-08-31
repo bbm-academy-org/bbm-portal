@@ -60,6 +60,7 @@ import {
 import { costBasisAtAverage, parseRate } from './core/money'
 import {
   assertNoRetiredAccount,
+  FinanceBackfillOperationConflict,
   insertOperation,
   loadAccountFacts,
   resolveConversionStepId,
@@ -117,9 +118,14 @@ export async function recordConversion(
     )
   }
   assertFinanceLedgerAccess(actor)
-  return platformTransaction(financeAuditContext(actor), (tx) =>
-    recordConversionInTransaction(tx, input),
-  )
+  try {
+    return await platformTransaction(financeAuditContext(actor), (tx) =>
+      recordConversionInTransaction(tx, input),
+    )
+  } catch (error) {
+    if (error instanceof FinanceBackfillOperationConflict) return error.operation
+    throw error
+  }
 }
 
 /** Module-private writer. The audited outer door already bound the actor to `tx`. */
