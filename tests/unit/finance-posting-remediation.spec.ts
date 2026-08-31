@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { parseRate } from '@/lib/finance'
+import { FinanceRefusal, parseRate } from '@/lib/finance'
 import { createIntakePostingSnapshot, deriveRate } from '@/lib/finance/intake/posting'
 import type { FinanceIntakeItemView } from '@/lib/finance/intake/items'
 
@@ -57,6 +57,10 @@ describe('finance posting remediation (#416)', () => {
 
     expect(rate).toBe('1')
     expect(() => parseRate(rate)).not.toThrow()
+  })
+
+  it('keeps the existing refusal when a positive rate is too small for the decimal contract', () => {
+    expect(() => deriveRate(10n ** 49n, 0, 1n, 0)).toThrow(FinanceRefusal)
   })
 
   it('hashes the same posting snapshot identically regardless of object insertion order', () => {
