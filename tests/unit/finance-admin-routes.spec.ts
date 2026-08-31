@@ -6,9 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 import { scanHandlerFile } from '../../tools/lint/endpoint-authz-lint.mjs'
 
+type CategoryRow = { id: number; name: string; allocable: boolean; retiredAt: Date | null }
+
 const state = vi.hoisted(() => ({
   session: null as unknown,
   actor: null as unknown,
+  categories: [] as Array<{ id: number; name: string; allocable: boolean; retiredAt: Date | null }>,
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
@@ -17,7 +20,7 @@ vi.mock('@/lib/finance', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/finance')>()
   return {
     ...actual,
-    listCategories: vi.fn(async () => []),
+    listCategories: vi.fn(async () => state.categories),
     createCurrency: vi.fn(async (actor: unknown, input: Record<string, unknown>) => {
       state.actor = actor
       return { ...input, retiredAt: null }
@@ -41,6 +44,7 @@ const segment = (params: Record<string, string>) => ({ params: Promise.resolve(p
 beforeEach(() => {
   state.session = admin
   state.actor = null
+  state.categories = []
   vi.resetModules()
 })
 
@@ -102,5 +106,44 @@ describe('finance reference HTTP surface (spec 338 EARS-326/330)', () => {
     )
     expect(response.status).toBe(200)
     expect(state.actor).toEqual({ email: 'admin@bbm.local', roles: [PLATFORM_ADMIN_ROLE] })
+  })
+
+  /**
+   * The search box searches the NAMES an admin can see, not the serialization.
+   * Matching `JSON.stringify(row)` makes every field name searchable, so `q=id`,
+   * `q=name` or `q=true` silently returns the whole table as if it matched.
+   */
+  it('EARS-326: searches display fields only — a field-name query matches nothing', async () => {
+    const rows: CategoryRow[] = [
+      { id: 1, name: 'Инфраструктура', allocable: false, retiredAt: null },
+      { id: 2, name: 'Продакшн', allocable: true, retiredAt: null },
+    ]
+    state.categories = rows
+    const { GET } = await import('@/app/(platform)/api/p/finance/admin/[resource]/route')
+
+    const noise = await GET(
+      request('/api/p/finance/admin/categories?q=id'),
+      segment({ resource: 'categories' }),
+    )
+    expect(await noise.json()).toEqual({ data: [], total: 0 })
+
+    const hit = await GET(
+      request('/api/p/finance/admin/categories?q=продакшн'),
+      segment({ resource: 'categories' }),
+    )
+    expect(await hit.json()).toEqual({
+      data: [{ id: 2, name: 'Продакшн', allocable: true, retiredAt: null }],
+      total: 1,
+    })
+  })
+
+  it('EARS-326: refuses a non-object PATCH body with a readable 400, not a TypeError', async () => {
+    const { PATCH } = await import('@/app/(platform)/api/p/finance/admin/[resource]/[id]/route')
+    const response = await PATCH(
+      request('/api/p/finance/admin/categories/1', 'PATCH', null),
+      segment({ resource: 'categories', id: '1' }),
+    )
+    expect(response.status).toBe(400)
+    expect(JSON.stringify(await response.json())).toMatch(/объект/i)
   })
 })

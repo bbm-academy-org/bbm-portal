@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   evaluateCurrentMoney,
+  isCurrentMoneyAccount,
   type CurrentMoneyAccount,
   type CurrentMoneyOperationFact,
   type CurrentMoneyPostingFact,
@@ -182,6 +183,25 @@ function value(
     operations,
   })
 }
+
+describe('EARS-325: which accounts are «Деньги сейчас»', () => {
+  /**
+   * The clause is written over MONEY accounts. `!isSystem` coincides with that
+   * today only because two other files happen to agree; the kind is the
+   * predicate, so an `income`/`expense`/`liability` row never joins the tiles or
+   * the total whatever its `is_system` flag says.
+   */
+  it('EARS-325: selects money kinds, not merely non-system rows', () => {
+    for (const kind of ['bank', 'card', 'crypto', 'cash']) {
+      expect(isCurrentMoneyAccount({ kind, isSystem: false })).toBe(true)
+    }
+    for (const kind of ['income', 'expense', 'liability', 'conversion', 'fx_result']) {
+      expect(isCurrentMoneyAccount({ kind, isSystem: false })).toBe(false)
+      expect(isCurrentMoneyAccount({ kind, isSystem: true })).toBe(false)
+    }
+    expect(isCurrentMoneyAccount({ kind: 'bank', isSystem: true })).toBe(false)
+  })
+})
 
 describe('EARS-325: current-money recorded-cost replay', () => {
   function representativeOperations(): CurrentMoneyOperationFact[] {
@@ -505,6 +525,59 @@ describe('EARS-325: current-money recorded-cost replay', () => {
     expect(value('RUB', [BANK_RUB, CARD_USD], operations)).toMatchObject({
       status: 'complete',
       total: 105_000n,
+    })
+  })
+
+  /**
+   * The spec's rule is a property of the reversal CHAIN, not of dates: cancel
+   * from the reversal nobody has reversed, downward in pairs. An even number of
+   * reversals therefore restores the original conversion into the replay.
+   */
+  it('EARS-325: restores a conversion whose reversal was itself reversed', () => {
+    const original = conversion(2, '2026-07-02', {
+      source: BANK_RUB,
+      destination: CARD_USD,
+      fromAmount: 60_000n,
+      toAmount: 1_000n,
+    })
+    const undo = reverse(3, '2026-07-03', original)
+    const operations = [
+      ordinary(1, '2026-07-01', [{ account: BANK_RUB, amount: 100_000n }]),
+      original,
+      undo,
+      reverse(4, '2026-07-04', undo),
+    ]
+
+    // The conversion is back in the replay, so the RUB/USD rate exists again.
+    expect(value('RUB', [BANK_RUB, CARD_USD], operations)).toMatchObject({
+      status: 'complete',
+      total: 100_000n,
+      missingCurrencies: [],
+    })
+  })
+
+  it('EARS-325: resolves the chain by its reverses pointer, not by the order the reversals are dated', () => {
+    const original = conversion(2, '2026-07-02', {
+      source: BANK_RUB,
+      destination: CARD_USD,
+      fromAmount: 60_000n,
+      toAmount: 1_000n,
+    })
+    const undo = reverse(3, '2026-07-04', original)
+    // Recorded later, dated EARLIER than the reversal it undoes: date order and
+    // chain order disagree, and only the chain is normative.
+    const redo = reverse(4, '2026-07-03', undo)
+    const operations = [
+      ordinary(1, '2026-07-01', [{ account: BANK_RUB, amount: 100_000n }]),
+      original,
+      undo,
+      redo,
+    ]
+
+    expect(value('RUB', [BANK_RUB, CARD_USD], operations)).toMatchObject({
+      status: 'complete',
+      total: 100_000n,
+      missingCurrencies: [],
     })
   })
 
