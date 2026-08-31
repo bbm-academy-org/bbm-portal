@@ -59,6 +59,9 @@ $FilesDir = Join-Path $HistoryRoot 'mattermost-files'
 $MappingPath = Join-Path $HistoryRoot 'mapping.private.json'
 $PlanPath = Join-Path $HistoryRoot 'plan.private.json'
 $BundlePath = Join-Path $HistoryRoot 'bundle.private.tar.gz'
+$MattermostTunnel = $null
+$PlatformTunnel = $null
+$FinanceStorageNames = @()
 
 New-Item -ItemType Directory -Path $FilesDir -Force | Out-Null
 $CurrentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -142,25 +145,6 @@ if (-not (Test-NetConnection 127.0.0.1 -Port 15433 -InformationLevel Quiet -Warn
 
 $env:MATTERMOST_DATABASE_URL = ConvertTo-TunnelDsn $MattermostRemoteDsn 15432
 $env:PLATFORM_DATABASE_URL = ConvertTo-TunnelDsn $PlatformRemoteDsn 15433
-
-# Production document writes must never fall back to the local dev archive.
-$FinanceStorageNames = @(
-  'FINANCE_DOCUMENTS_S3_BUCKET',
-  'FINANCE_DOCUMENTS_S3_ENDPOINT',
-  'FINANCE_DOCUMENTS_S3_REGION',
-  'FINANCE_DOCUMENTS_S3_ACCESS_KEY_ID',
-  'FINANCE_DOCUMENTS_S3_SECRET_ACCESS_KEY',
-  'S3_BUCKET'
-)
-foreach ($Name in $FinanceStorageNames) {
-  $Value = ($ReadPlatformValue | & ssh.exe portal-prod-tw bash -s -- $Name).Trim()
-  if ([string]::IsNullOrWhiteSpace($Value)) {
-    throw "Production finance storage is not provisioned: $Name is empty (sidorovanthon/bbm#172)."
-  }
-  Set-Item -Path "Env:$Name" -Value $Value
-  $Value = $null
-}
-$env:NODE_ENV = 'production'
 ```
 
 Do not inspect, interpolate into another command, or print the four DSN
@@ -322,6 +306,30 @@ operator-only backfill intake rows and posts them through the existing finance
 transaction path with audit source `cli:finance-history-backfill`.
 
 ```powershell
+# Production document writes must never fall back to the local dev archive or
+# reuse the public CMS media bucket. Dry-run intentionally does not need these
+# values; load and validate them only after the exact plan is authorized.
+$FinanceStorageNames = @(
+  'FINANCE_DOCUMENTS_S3_BUCKET',
+  'FINANCE_DOCUMENTS_S3_ENDPOINT',
+  'FINANCE_DOCUMENTS_S3_REGION',
+  'FINANCE_DOCUMENTS_S3_ACCESS_KEY_ID',
+  'FINANCE_DOCUMENTS_S3_SECRET_ACCESS_KEY',
+  'S3_BUCKET'
+)
+foreach ($Name in $FinanceStorageNames) {
+  $Value = ($ReadPlatformValue | & ssh.exe portal-prod-tw bash -s -- $Name).Trim()
+  if ([string]::IsNullOrWhiteSpace($Value)) {
+    throw "Production finance storage is not provisioned: $Name is empty (sidorovanthon/bbm#172)."
+  }
+  Set-Item -Path "Env:$Name" -Value $Value
+  $Value = $null
+}
+if ($env:FINANCE_DOCUMENTS_S3_BUCKET -eq $env:S3_BUCKET) {
+  throw 'The private finance bucket must not reuse the public CMS media bucket.'
+}
+$env:NODE_ENV = 'production'
+
 $OperatorEmail = 'REPLACE_WITH_OPERATOR_CORE_MEMBER_EMAIL'
 pnpm --use-node-version=22.23.1 platform:finance:history apply `
   --plan $PlanPath `
