@@ -199,29 +199,37 @@ export async function updateCurrency(
   patch: { name?: string; precision?: number },
 ): Promise<FinanceCurrencyView> {
   assertFinanceReferenceAccess(actor)
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const current = await requireCurrency(tx, code)
-    const next: Partial<typeof financeCurrency.$inferInsert> = {}
-    if (patch.name !== undefined) next.name = requireName(patch.name, 'Валюту')
-    if (patch.precision !== undefined && patch.precision !== current.precision) {
-      const used = await countPostingsInCurrency(tx, code)
-      if (used > 0) {
-        throw new FinanceRefusal(
-          `Точность валюты ${code} изменить нельзя: в ней уже записано проводок — ${used} (EARS-303). ` +
-            'Точность — это показатель степени, которым сохранённая сумма превращается в число; ' +
-            'сменить её задним числом значит переписать каждую уже записанную сумму.',
-        )
-      }
-      next.precision = patch.precision
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    updateCurrencyInTransaction(tx, code, patch),
+  )
+}
+
+async function updateCurrencyInTransaction(
+  tx: PlatformTx,
+  code: string,
+  patch: { name?: string; precision?: number },
+): Promise<FinanceCurrencyView> {
+  const current = await requireCurrency(tx, code)
+  const next: Partial<typeof financeCurrency.$inferInsert> = {}
+  if (patch.name !== undefined) next.name = requireName(patch.name, 'Валюту')
+  if (patch.precision !== undefined && patch.precision !== current.precision) {
+    const used = await countPostingsInCurrency(tx, code)
+    if (used > 0) {
+      throw new FinanceRefusal(
+        `Точность валюты ${code} изменить нельзя: в ней уже записано проводок — ${used} (EARS-303). ` +
+          'Точность — это показатель степени, которым сохранённая сумма превращается в число; ' +
+          'сменить её задним числом значит переписать каждую уже записанную сумму.',
+      )
     }
-    if (Object.keys(next).length === 0) return current
-    const [row] = await tx
-      .update(financeCurrency)
-      .set(next)
-      .where(eq(financeCurrency.code, code))
-      .returning()
-    return row as FinanceCurrencyView
-  })
+    next.precision = patch.precision
+  }
+  if (Object.keys(next).length === 0) return current
+  const [row] = await tx
+    .update(financeCurrency)
+    .set(next)
+    .where(eq(financeCurrency.code, code))
+    .returning()
+  return row as FinanceCurrencyView
 }
 
 /** EARS-305 — the cabinet creates MONEY accounts only; system kinds are ours. */
@@ -255,21 +263,29 @@ export async function updateAccount(
   patch: { name?: string },
 ): Promise<FinanceAccountView> {
   assertFinanceReferenceAccess(actor)
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const current = await requireAccount(tx, id)
-    if (current.isSystem) {
-      throw new FinanceRefusal(
-        `Счёт «${current.name}» системный: модуль ведёт его сам, и переименовать его из кабинета нельзя (EARS-305).`,
-      )
-    }
-    if (patch.name === undefined) return current
-    const [row] = await tx
-      .update(financeAccount)
-      .set({ name: requireName(patch.name, 'Счёт') })
-      .where(eq(financeAccount.id, id))
-      .returning()
-    return row as FinanceAccountView
-  })
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    updateAccountInTransaction(tx, id, patch),
+  )
+}
+
+async function updateAccountInTransaction(
+  tx: PlatformTx,
+  id: number,
+  patch: { name?: string },
+): Promise<FinanceAccountView> {
+  const current = await requireAccount(tx, id)
+  if (current.isSystem) {
+    throw new FinanceRefusal(
+      `Счёт «${current.name}» системный: модуль ведёт его сам, и переименовать его из кабинета нельзя (EARS-305).`,
+    )
+  }
+  if (patch.name === undefined) return current
+  const [row] = await tx
+    .update(financeAccount)
+    .set({ name: requireName(patch.name, 'Счёт') })
+    .where(eq(financeAccount.id, id))
+    .returning()
+  return row as FinanceAccountView
 }
 
 /**
@@ -356,16 +372,24 @@ export async function updateProject(
   patch: { name?: string },
 ): Promise<FinanceProjectView> {
   assertFinanceReferenceAccess(actor)
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const current = await requireProject(tx, id)
-    if (patch.name === undefined) return current
-    const [row] = await tx
-      .update(financeProject)
-      .set({ name: requireName(patch.name, 'Проект') })
-      .where(eq(financeProject.id, id))
-      .returning()
-    return row as FinanceProjectView
-  })
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    updateProjectInTransaction(tx, id, patch),
+  )
+}
+
+async function updateProjectInTransaction(
+  tx: PlatformTx,
+  id: number,
+  patch: { name?: string },
+): Promise<FinanceProjectView> {
+  const current = await requireProject(tx, id)
+  if (patch.name === undefined) return current
+  const [row] = await tx
+    .update(financeProject)
+    .set({ name: requireName(patch.name, 'Проект') })
+    .where(eq(financeProject.id, id))
+    .returning()
+  return row as FinanceProjectView
 }
 
 export async function createProduct(
@@ -401,31 +425,37 @@ export async function updateProduct(
   patch: { name?: string; salePrice?: bigint | null; salePriceCurrency?: string | null },
 ): Promise<FinanceProductView> {
   assertFinanceReferenceAccess(actor)
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const current = await requireProduct(tx, id)
-    const next: Partial<typeof financeProduct.$inferInsert> = {}
-    if (patch.name !== undefined) next.name = requireName(patch.name, 'Продукт')
-    const salePrice = patch.salePrice === undefined ? current.salePrice : patch.salePrice
-    const salePriceCurrency =
-      patch.salePriceCurrency === undefined ? current.salePriceCurrency : patch.salePriceCurrency
-    if ((salePrice === null) !== (salePriceCurrency === null)) {
-      throw new FinanceRefusal(
-        'Цена продукта задаётся вместе с валютой: сумма без валюты — не цена.',
-      )
-    }
-    if (patch.salePrice !== undefined) next.salePrice = salePrice
-    if (patch.salePriceCurrency !== undefined) {
-      if (salePriceCurrency !== null) await requireCurrency(tx, salePriceCurrency)
-      next.salePriceCurrency = salePriceCurrency
-    }
-    if (Object.keys(next).length === 0) return current
-    const [row] = await tx
-      .update(financeProduct)
-      .set(next)
-      .where(eq(financeProduct.id, id))
-      .returning()
-    return row as FinanceProductView
-  })
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    updateProductInTransaction(tx, id, patch),
+  )
+}
+
+async function updateProductInTransaction(
+  tx: PlatformTx,
+  id: number,
+  patch: { name?: string; salePrice?: bigint | null; salePriceCurrency?: string | null },
+): Promise<FinanceProductView> {
+  const current = await requireProduct(tx, id)
+  const next: Partial<typeof financeProduct.$inferInsert> = {}
+  if (patch.name !== undefined) next.name = requireName(patch.name, 'Продукт')
+  const salePrice = patch.salePrice === undefined ? current.salePrice : patch.salePrice
+  const salePriceCurrency =
+    patch.salePriceCurrency === undefined ? current.salePriceCurrency : patch.salePriceCurrency
+  if ((salePrice === null) !== (salePriceCurrency === null)) {
+    throw new FinanceRefusal('Цена продукта задаётся вместе с валютой: сумма без валюты — не цена.')
+  }
+  if (patch.salePrice !== undefined) next.salePrice = salePrice
+  if (patch.salePriceCurrency !== undefined) {
+    if (salePriceCurrency !== null) await requireCurrency(tx, salePriceCurrency)
+    next.salePriceCurrency = salePriceCurrency
+  }
+  if (Object.keys(next).length === 0) return current
+  const [row] = await tx
+    .update(financeProduct)
+    .set(next)
+    .where(eq(financeProduct.id, id))
+    .returning()
+  return row as FinanceProductView
 }
 
 /**
@@ -461,23 +491,31 @@ export async function updatePurpose(
   patch: { name?: string; categoryId?: number | null; productBinding?: FinanceProductBinding },
 ): Promise<FinancePurposeView> {
   assertFinanceReferenceAccess(actor)
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    updatePurposeInTransaction(tx, id, patch),
+  )
+}
+
+async function updatePurposeInTransaction(
+  tx: PlatformTx,
+  id: number,
+  patch: { name?: string; categoryId?: number | null; productBinding?: FinanceProductBinding },
+): Promise<FinancePurposeView> {
   if (patch.productBinding !== undefined) assertKnownBinding(patch.productBinding)
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const current = await requirePurpose(tx, id)
-    const next: Partial<typeof financePurpose.$inferInsert> = {}
-    if (patch.name !== undefined) next.name = requireName(patch.name, 'Назначение')
-    if (patch.productBinding !== undefined) next.productBinding = patch.productBinding
-    if (patch.categoryId !== undefined) {
-      next.categoryId = await resolveRequiredCategory(tx, patch.categoryId, current.name)
-    }
-    if (Object.keys(next).length === 0) return current
-    const [row] = await tx
-      .update(financePurpose)
-      .set(next)
-      .where(eq(financePurpose.id, id))
-      .returning()
-    return { ...row, productBinding: row.productBinding as FinanceProductBinding }
-  })
+  const current = await requirePurpose(tx, id)
+  const next: Partial<typeof financePurpose.$inferInsert> = {}
+  if (patch.name !== undefined) next.name = requireName(patch.name, 'Назначение')
+  if (patch.productBinding !== undefined) next.productBinding = patch.productBinding
+  if (patch.categoryId !== undefined) {
+    next.categoryId = await resolveRequiredCategory(tx, patch.categoryId, current.name)
+  }
+  if (Object.keys(next).length === 0) return current
+  const [row] = await tx
+    .update(financePurpose)
+    .set(next)
+    .where(eq(financePurpose.id, id))
+    .returning()
+  return { ...row, productBinding: row.productBinding as FinanceProductBinding }
 }
 
 /**
@@ -513,19 +551,27 @@ export async function updateCategory(
   patch: { name?: string; allocable?: boolean },
 ): Promise<FinanceCategoryView> {
   assertFinanceReferenceAccess(actor)
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const current = await requireCategory(tx, id)
-    const next: Partial<typeof financeCategory.$inferInsert> = {}
-    if (patch.name !== undefined) next.name = requireName(patch.name, 'Статью расходов')
-    if (patch.allocable !== undefined) next.allocable = patch.allocable
-    if (Object.keys(next).length === 0) return current
-    const [row] = await tx
-      .update(financeCategory)
-      .set(next)
-      .where(eq(financeCategory.id, id))
-      .returning()
-    return row as FinanceCategoryView
-  })
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    updateCategoryInTransaction(tx, id, patch),
+  )
+}
+
+async function updateCategoryInTransaction(
+  tx: PlatformTx,
+  id: number,
+  patch: { name?: string; allocable?: boolean },
+): Promise<FinanceCategoryView> {
+  const current = await requireCategory(tx, id)
+  const next: Partial<typeof financeCategory.$inferInsert> = {}
+  if (patch.name !== undefined) next.name = requireName(patch.name, 'Статью расходов')
+  if (patch.allocable !== undefined) next.allocable = patch.allocable
+  if (Object.keys(next).length === 0) return current
+  const [row] = await tx
+    .update(financeCategory)
+    .set(next)
+    .where(eq(financeCategory.id, id))
+    .returning()
+  return row as FinanceCategoryView
 }
 
 // ── retirement and deletion (EARS-304, EARS-305, EARS-308, EARS-309) ─────────
@@ -543,71 +589,170 @@ export async function retireReferenceRow(
   id: string | number,
 ): Promise<void> {
   assertFinanceReferenceAccess(actor)
-  await platformTransaction(financeAuditContext(actor), async (tx) => {
-    const retiredAt = new Date()
-    switch (table) {
-      case 'currency': {
-        await requireCurrency(tx, String(id))
-        await tx
-          .update(financeCurrency)
-          .set({ retiredAt })
-          .where(eq(financeCurrency.code, String(id)))
-        return
-      }
-      case 'account': {
-        const account = await requireAccount(tx, Number(id))
-        if (account.isSystem) {
-          throw new FinanceRefusal(
-            `Системный счёт «${account.name}» вывести из обращения нельзя: он нужен леджеру, ` +
-              'пока в нём есть хоть одна операция в этой валюте (EARS-305).',
-          )
-        }
-        await tx
-          .update(financeAccount)
-          .set({ retiredAt })
-          .where(eq(financeAccount.id, Number(id)))
-        return
-      }
-      case 'project': {
-        const project = await requireProject(tx, Number(id))
-        if (project.isFund) {
-          throw new FinanceRefusal(
-            `Проект «${project.name}» — это фонд BBM: единственная строка, на которую садится всё, ` +
-              'что не отнесено к именованному проекту. Вывести её из обращения нельзя (EARS-304).',
-          )
-        }
-        await tx
-          .update(financeProject)
-          .set({ retiredAt })
-          .where(eq(financeProject.id, Number(id)))
-        return
-      }
-      case 'product': {
-        await requireProduct(tx, Number(id))
-        await tx
-          .update(financeProduct)
-          .set({ retiredAt })
-          .where(eq(financeProduct.id, Number(id)))
-        return
-      }
-      case 'purpose': {
-        await requirePurpose(tx, Number(id))
-        await tx
-          .update(financePurpose)
-          .set({ retiredAt })
-          .where(eq(financePurpose.id, Number(id)))
-        return
-      }
-      case 'category': {
-        await requireCategory(tx, Number(id))
-        await tx
-          .update(financeCategory)
-          .set({ retiredAt })
-          .where(eq(financeCategory.id, Number(id)))
-        return
-      }
+  await platformTransaction(financeAuditContext(actor), (tx) =>
+    retireReferenceRowInTransaction(tx, table, id),
+  )
+}
+
+async function retireReferenceRowInTransaction(
+  tx: PlatformTx,
+  table: FinanceReferenceTable,
+  id: string | number,
+): Promise<void> {
+  const retiredAt = new Date()
+  switch (table) {
+    case 'currency': {
+      await requireCurrency(tx, String(id))
+      await tx
+        .update(financeCurrency)
+        .set({ retiredAt })
+        .where(eq(financeCurrency.code, String(id)))
+      return
     }
+    case 'account': {
+      const account = await requireAccount(tx, Number(id))
+      if (account.isSystem) {
+        throw new FinanceRefusal(
+          `Системный счёт «${account.name}» вывести из обращения нельзя: он нужен леджеру, ` +
+            'пока в нём есть хоть одна операция в этой валюте (EARS-305).',
+        )
+      }
+      await tx
+        .update(financeAccount)
+        .set({ retiredAt })
+        .where(eq(financeAccount.id, Number(id)))
+      return
+    }
+    case 'project': {
+      const project = await requireProject(tx, Number(id))
+      if (project.isFund) {
+        throw new FinanceRefusal(
+          `Проект «${project.name}» — это фонд BBM: единственная строка, на которую садится всё, ` +
+            'что не отнесено к именованному проекту. Вывести её из обращения нельзя (EARS-304).',
+        )
+      }
+      await tx
+        .update(financeProject)
+        .set({ retiredAt })
+        .where(eq(financeProject.id, Number(id)))
+      return
+    }
+    case 'product': {
+      await requireProduct(tx, Number(id))
+      await tx
+        .update(financeProduct)
+        .set({ retiredAt })
+        .where(eq(financeProduct.id, Number(id)))
+      return
+    }
+    case 'purpose': {
+      await requirePurpose(tx, Number(id))
+      await tx
+        .update(financePurpose)
+        .set({ retiredAt })
+        .where(eq(financePurpose.id, Number(id)))
+      return
+    }
+    case 'category': {
+      await requireCategory(tx, Number(id))
+      await tx
+        .update(financeCategory)
+        .set({ retiredAt })
+        .where(eq(financeCategory.id, Number(id)))
+      return
+    }
+  }
+}
+
+/**
+ * EARS-326 — ONE cabinet act is ONE transaction.
+ *
+ * A `PATCH {name, retire: true}` is a single thing the admin did. Running the
+ * rename and the retirement as two transactions lets the rename become durable
+ * and the retirement then be refused (a system account — EARS-305, «Фонд BBM» —
+ * EARS-304), so the operator gets a 409 over a change that silently stuck, and
+ * `core.audit_event` records two acts where there was one. This is the single
+ * entry point the cabinet writes through: both halves inside one transaction,
+ * one audit trail, all-or-nothing.
+ */
+export type FinanceReferenceUpdate =
+  | { table: 'currency'; id: string | number; patch: { name?: string; precision?: number } }
+  | { table: 'account'; id: string | number; patch: { name?: string } }
+  | { table: 'project'; id: string | number; patch: { name?: string } }
+  | {
+      table: 'product'
+      id: string | number
+      patch: { name?: string; salePrice?: bigint | null; salePriceCurrency?: string | null }
+    }
+  | {
+      table: 'purpose'
+      id: string | number
+      patch: { name?: string; categoryId?: number | null; productBinding?: FinanceProductBinding }
+    }
+  | { table: 'category'; id: string | number; patch: { name?: string; allocable?: boolean } }
+
+export type FinanceReferenceView =
+  | FinanceCurrencyView
+  | FinanceAccountView
+  | FinanceProjectView
+  | FinanceProductView
+  | FinancePurposeView
+  | FinanceCategoryView
+
+export async function updateReferenceRow(
+  actor: FinanceActor,
+  input: FinanceReferenceUpdate & { retire?: boolean },
+): Promise<FinanceReferenceView> {
+  assertFinanceReferenceAccess(actor)
+  return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const updated = await applyReferenceUpdate(tx, input)
+    if (input.retire !== true) return updated
+    await retireReferenceRowInTransaction(tx, input.table, input.id)
+    // Re-read INSIDE the same transaction: the caller is told the state its own
+    // act left behind, `retired_at` included.
+    return readReferenceRow(tx, input.table, input.id)
   })
+}
+
+async function applyReferenceUpdate(
+  tx: PlatformTx,
+  input: FinanceReferenceUpdate,
+): Promise<FinanceReferenceView> {
+  switch (input.table) {
+    case 'currency':
+      return updateCurrencyInTransaction(tx, String(input.id), input.patch)
+    case 'account':
+      return updateAccountInTransaction(tx, Number(input.id), input.patch)
+    case 'project':
+      return updateProjectInTransaction(tx, Number(input.id), input.patch)
+    case 'product':
+      return updateProductInTransaction(tx, Number(input.id), input.patch)
+    case 'purpose':
+      return updatePurposeInTransaction(tx, Number(input.id), input.patch)
+    case 'category':
+      return updateCategoryInTransaction(tx, Number(input.id), input.patch)
+  }
+}
+
+async function readReferenceRow(
+  tx: PlatformTx,
+  table: FinanceReferenceTable,
+  id: string | number,
+): Promise<FinanceReferenceView> {
+  switch (table) {
+    case 'currency':
+      return requireCurrency(tx, String(id))
+    case 'account':
+      return requireAccount(tx, Number(id))
+    case 'project':
+      return requireProject(tx, Number(id))
+    case 'product':
+      return requireProduct(tx, Number(id))
+    case 'purpose':
+      return requirePurpose(tx, Number(id))
+    case 'category':
+      return requireCategory(tx, Number(id))
+  }
 }
 
 /**

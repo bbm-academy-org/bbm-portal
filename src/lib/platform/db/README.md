@@ -58,10 +58,23 @@ the document that was imported?» outlives the import — it reads the archived
 `hours.json.<date>` through the frozen parser in `tools/platform/hours-json.ts`,
 never writing to either side (EARS-16).
 
-Both carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
+The representative dataset a finance stand is accepted on (spec 338) is seeded by
+its own command — currencies, money accounts, the reference rows they need, and
+five ledger operations carrying their recorded rates. It is idempotent (stable
+names make a rerun a no-op), it **refuses production** (any of `NODE_ENV`,
+`VERCEL_ENV`, `APP_ENV`, `DEPLOY_ENV` reading `production`), and it is opt-in —
+without `FINANCE_ACCEPTANCE_SEED=1` it refuses to touch the database at all:
+
+```bash
+FINANCE_ACCEPTANCE_SEED=1 FINANCE_ACCEPTANCE_ACTOR_EMAIL=<owner@example.com> \
+  pnpm platform:finance:acceptance-seed            # the finance acceptance seed
+```
+
+All three carry the repo's `pre*` Node-22 guard (`node scripts/require-node.mjs`),
 like the Payload `migrate*` scripts next to them in `package.json`, and run through
 `tsx` rather than as plain `.mjs`, because they go through the module APIs
-(`@/lib/member`, `@/lib/hours`) instead of SQL of their own — see «Boundaries» below.
+(`@/lib/member`, `@/lib/hours`, `@/lib/finance`) instead of SQL of their own — see
+«Boundaries» below.
 
 ### The integration tier runs in CI
 

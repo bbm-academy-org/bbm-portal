@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 338
-updated: 2026-08-26
+updated: 2026-08-31
 ---
 
 # Finance F1 — ledger core — spec (issue #338)
@@ -59,6 +59,16 @@ owner on the wireframe prototype (Stage A, 2026-08-25 — see "Design gate").
   currency's minimal units with currency-dependent precision; a conversion is a
   linked group of postings with each step's fee explicit and the rate frozen at
   the operation; links to `member` and the `/p/hours` data.
+- **Finance PRDs, owner decisions 13 and 18**
+  (`docs/product/finance/brief.md`, `docs/product/finance/340-product.md`) — a
+  reporting view defaults to RUB and can switch currency without changing a
+  posting; any cross-currency amount uses recorded actual conversion facts,
+  never a market/current rate fetched at read time. For F1b's **current
+  holdings** total, this spec applies that ruling as a chronological remaining-
+  holding replay per currency pair and a deterministic graph over those pair
+  rates (EARS-325), separate from EARS-328's write-time realized-FX calculation.
+  Period reports
+  continue to apply their broader per-operation actual-rate semantics in F3.
 - **Spec 311 §A, §D** (EARS-401/402/409, EARS-431…439) — the workspace
   declaration contract: finance declares one `internal` entry with an `admin`
   section; its resources mount at `/p/admin/finance/<resource>` through the
@@ -82,6 +92,13 @@ and the Garrison segment-margin statement — and the resulting rulings in
 "Accounting policy" below were **accepted by the owner at the stage-2 go
 (2026-08-26, #338)**, the overhead ladder with five amendments. No owner
 question in this spec asks what public research answers.
+
+The F1b total correction on 2026-08-30 re-read the primary owner register
+(#115 decisions 13 and 18) and the owner-validated `Overview.dc.html` artifact
+rather than introducing another benchmark: the product policy is already
+settled as switchable presentation over actual operation rates, with no
+read-time market rate. EARS-325's deterministic pair-rate graph is the read-
+model mechanism for that accepted policy.
 
 **Scope note on IFRS.** No IFRS standard governs management accounting; this
 register is an internal decision ledger, not a statutory measurement. Where a
@@ -129,6 +146,11 @@ builds against are vendored verbatim in `design-source/finance/`:
 - `References.dc.html` — the `/p/admin` reference tables;
 - `Overview.dc.html` — `/p/finance`; F1 ships only its cash-balances card.
 
+For avoidance of doubt, that accepted cash card includes its «Итого» column and
+the reporting-currency switch in EARS-325. «The rest of the overview is F3»
+means the other cards and report
+navigation in `Overview.dc.html`; it does not remove part of the cash card.
+
 The remaining nine artboards belong to F2–F5 and are vendored on their first
 touch (design-source rule 4). F1's admin screens follow the accepted admin-shell
 design (`design-source/p-admin-shell.html`, spec 311 EARS-432) — no new Stage-A
@@ -138,7 +160,11 @@ pick is needed.
 
 Directory `src/lib/platform/db/schema/finance/`, Postgres schema `core`, table
 prefix `finance_`. No table stores a balance or a capitalization — both are
-sums over postings, always.
+sums over postings, always. The balances-card total is likewise a chronological
+read-model replay over existing immutable operations, postings and conversion
+steps: it stores no total, display rate, valuation pool or valuation fact and
+requires no F1a schema, migration, write-path or domain-model change. It does
+not reuse or widen EARS-328's realized-FX pair pool.
 
 | Table                     | Carries                                                                                                                                                                                                                                                                                                 | Key points                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -200,7 +226,9 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
 - **EARS-310.** The finance module shall record money only as operations made
   of postings: each posting names its account, a signed `bigint` amount in the
   currency's minimal units, and its currency; each amount keeps the currency it
-  happened in, with conversion for display left to reports (F3).
+  happened in. The one F1b cross-currency view is the current-holdings total in
+  the balances card (EARS-325); conversion of period activity and every other
+  reporting view is F3.
 - **EARS-311.** The system shall refuse to record an operation whose postings
   do not sum to zero per currency.
 - **EARS-312.** IF a posting's currency differs from its account's currency,
@@ -297,15 +325,117 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   EARS-401/402), so they mount at `/p/admin/finance/<resource>` with no edit to
   the shell (EARS-409).
 - **EARS-325.** WHEN any signed-in platform member opens `/p/finance`, the page
-  shall render the accounts with their balances computed live from postings,
-  each in its own currency (the cash card of the vendored
-  `design-source/finance/Overview.dc.html`); the rest of the overview is F3's
-  and shall not be stubbed. A request that does not carry `platform-user` (or
-  `platform-admin`, which implies it — spec 311 EARS-417) shall be refused by
-  the module's own handlers regardless of how the URL was reached (spec 311
-  EARS-405/416): an unauthenticated request, and equally an **authenticated**
-  session carrying neither role, which spec 311 answers with a bare 403
-  (EARS-418). F1 exposes no public finance surface.
+  shall render the cash card of the vendored
+  `design-source/finance/Overview.dc.html`: every money account with
+  its balance computed live from postings and shown in that account's own
+  currency, plus an overall total in a selected reporting currency. The
+  reporting currency shall default to RUB and shall be switchable without
+  changing any operation, posting or native-currency account balance (owner
+  decision 13).
+
+  «Money account» is normatively the KIND, not the `is_system` flag: an account
+  of kind `bank`, `card`, `crypto` or `cash` that is not system-managed. A row of
+  any other kind — `income`, `expense`, `liability`, `conversion`, `fx_result` —
+  is never a cash tile and never enters the total, whatever its flag says.
+
+  A RETIRED money account is treated by its BALANCE, not by its retirement
+  (owner ruling by Антон, 2026-08-31, recorded on #357): a retired account whose
+  balance is zero shall be hidden from the card entirely — it holds nothing and
+  is no longer offered for new postings (EARS-308) — while a retired account
+  with a NONZERO balance shall keep its tile, marked «архивный», and shall
+  count in the aggregates and the total exactly like any other money account.
+  The money is still BBM's while the balance is not zero; retirement changes
+  what the account is offered for, never what it holds. Retirement therefore
+  never moves a number.
+
+  A conversion step whose `from_currency` equals its `to_currency` is malformed:
+  it establishes no rate and makes that pair unavailable.
+
+  The total shall be a reproducible reading of recorded facts, never a silent
+  conversion. The finance public API shall first aggregate all money-account
+  balances by currency while the card still displays the individual
+  account rows. It shall then replay the existing immutable conversion steps in
+  chronological `(occurred_on, operation_id, step_no)` order into exactly one
+  canonical remaining-holding pool for each unordered currency pair. The replay
+  derives each step's disposed amount as the positive net of its step-linked
+  system `conversion` postings in `from_currency`, and its received amount as
+  the absolute negative net of those postings in `to_currency`. A missing or
+  non-positive side, or a step-linked system conversion posting in any third
+  currency, makes that pair unavailable. The stored rate text is shown as
+  testimony but is not re-applied to restate the posted amounts (decisions 13
+  and 18, EARS-318/319).
+
+  Before replay, the read model shall remove both members of every fully
+  reversed operation pair, so a reversal is exact even when unrelated
+  operations occurred between the original and its reversal (EARS-314). The
+  chain shall be resolved along the `reverses` pointer and NOT by date order:
+  starting from the chain TIP — the reversal that is itself not reversed — it
+  shall cancel pairs downward, so an odd number of reversal acts removes the
+  original fact from the replay and an even number leaves it. Dates are not
+  normative here: a backdated reversal must not change which facts survive.
+  This is the same walk `resolveRealizedFxReversalOccurredOn`
+  (`src/lib/finance/fx-pool-locks.ts`) already performs at write time.
+
+  A pair pool carries `held_currency`, its positive `held_quantity`, the other
+  `cost_currency`, and non-negative `held_cost`, all in their own minor units;
+  initialization always starts with positive cost, while rounded partial
+  disposal may leave zero cost. An
+  empty pair has no direction; its first valid step `A→B` initializes it as
+  `held_currency=B`, `held_quantity=received_B`, `cost_currency=A`,
+  `held_cost=disposed_A`. A later step that receives the currently held currency
+  adds its received quantity and disposed cost. A step that disposes the held
+  currency removes quantity and
+  `round_half_away_from_zero(disposed_quantity × held_cost ÷ held_quantity)`
+  of its proportional moving-average cost. If a step disposes exactly the held
+  quantity, the pair becomes empty. If it disposes more, the replay consumes
+  the old pool, attributes
+  `round_half_away_from_zero(step_received × held_quantity ÷ step_disposed)` to
+  that consumption, and uses `step_disposed - held_quantity` as the opposite
+  pool's cost and `step_received - attributed_received` as its held quantity. If
+  either residual is non-positive, the pair becomes unavailable; a half-empty
+  pool never creates an edge. Once a malformed fact makes a pair unavailable,
+  that pair remains unavailable through the end of the replay; a later valid
+  step cannot hide the earlier immutable defect.
+  A non-positive or malformed leg makes that pair unavailable rather than
+  inventing a rate. Conversion endpoints, fees, system postings and ordinary
+  non-conversion operations do not create pair-rate events: only actual
+  conversion-step amounts establish a cross-currency rate.
+
+  A positive pair pool `Q_A` held in currency `A` at cost `K_B` in currency `B`
+  creates two exact reciprocal graph edges: `A→B = K_B / Q_A` and
+  `B→A = Q_A / K_B`. A zero or negative quantity or cost creates no edge. To
+  value one nonzero native-currency aggregate in the selected reporting
+  currency, the read model shall choose the simple path with the fewest edges;
+  among equal-length paths it shall choose the lexicographically smallest full
+  sequence of currency codes. It shall never traverse a cycle. Direct recorded
+  pairs therefore win over inferred multi-hop paths.
+
+  All path ratios shall be multiplied as exact `bigint` numerators and
+  denominators. The read model shall apply half-away-from-zero exactly once to
+  the final converted amount of each source-currency aggregate, then sum those
+  converted integer amounts. The selected currency's own aggregate contributes
+  1:1. There is no second rounding at total time.
+
+  The reporting-currency selector shall start from `RUB ∪ account currencies`.
+  RUB is always present and is the default. A non-RUB candidate shall be offered
+  only when every nonzero native-currency aggregate has a path to it; when every
+  aggregate is zero, every candidate is offered and every total is zero. Every
+  offered non-RUB option shall therefore produce a numeric total. A stale or
+  hand-written unavailable `currency` query shall fall back to RUB. IF RUB is
+  unreachable from a nonzero aggregate, THEN the default RUB view shall keep
+  every exact native balance visible, withhold the numeric total and name the
+  unreachable currencies in ascending code order; this is a degraded data-
+  quality state, not an enabled incomplete non-RUB selection. The card shall
+  state that it uses actual recorded operation rates and never a market or read-
+  time rate.
+
+  The rest of the overview is F3's and shall not be stubbed. A request that does
+  not carry `platform-user` (or `platform-admin`, which implies it — spec 311
+  EARS-417) shall be refused by the module's own handlers regardless of how the
+  URL was reached (spec 311 EARS-405/416): an unauthenticated request, and
+  equally an **authenticated** session carrying neither role, which spec 311
+  answers with a bare 403 (EARS-418). F1 exposes no public finance surface.
+
 - **EARS-326.** Every cabinet write to a finance reference shall run through
   `platformTransaction` with the signed-in admin as actor (spec 311 EARS-439),
   and shall validate against the module's zod schemas (EARS-436); a refusal
@@ -514,10 +644,33 @@ Owner walkthrough, on a live stand, after the go and the build:
    «Урок» under it, purpose «Продакшн урока» with binding `required` — each
    save answers with a visible confirmation (EARS-301/302/306, spec 311
    EARS-472).
-2. **The ledger starts honest.** Open `/p/finance` — every account shows
-   balance 0 in its own currency, because no operation exists yet
-   (EARS-317/325).
-3. **Money is visible to the team, references editable by the admin.** Sign in
+2. **Representative money and an exact RUB total.** Seed four money accounts
+   (all currencies precision 2): «Банк RUB» receives 1,500,000.00 RUB and
+   «Наличные RUB» receives 500,000.00 RUB; convert 600,000.00 RUB → 10,000.00
+   USD, then 4,000.00 USD → 140,000.00 THB; dispose 2,000.00 USD for 130,000.00
+   RUB; then acquire 1,500.00 USD for 120,000.00 RUB. Open `/p/finance` and see
+   the separate native rows «Банк RUB» 910,000.00 RUB, «Наличные RUB»
+   500,000.00 RUB, «Карта USD» 5,500.00 USD and «Карта THB» 140,000.00 THB.
+   The selector defaults to RUB. The remaining RUB/USD pair pool carries
+   9,500.00 USD at 600,000.00 RUB recorded cost, and the USD/THB pair pool
+   carries 140,000.00 THB at 4,000.00 USD recorded cost. Converting each native
+   aggregate over the shortest pair path makes «Итого» exactly
+   **2,010,000.00 RUB**. The card says «по фактическим курсам операций», not
+   market/current rate (EARS-310/317/318/319/325).
+3. **The same holdings produce complete totals in every offered currency.**
+   Switch «Итого» from RUB to USD and then THB. All four native account rows
+   stay unchanged. The pair-rate graph converts each native aggregate
+   separately: USD is exactly **31,825.00 USD**, and THB is exactly
+   **1,113,875.00 THB**.
+   Reloading preserves the selected numeric total, and no market/current rate is
+   fetched (EARS-318/319/325).
+4. **Unknown foreign money does not become a partial total.** Return to RUB and
+   add an ordinary 100.00 EUR inflow: every native row remains visible, but the
+   total is withheld and `EUR` is named. Spend 40.00 EUR: the remaining 60.00
+   EUR pool is still unknown and the total stays withheld. Spend the remaining
+   60.00 EUR: the EUR pool returns to zero and resets, and the exact
+   2,010,000.00 RUB total returns. No step fetches a rate (EARS-319/325/329).
+5. **Money is visible to the team, references editable by the admin.** Sign in
    as a member holding `platform-user` but not `platform-admin`: `/p/finance`
    opens and shows the same balances card (EARS-324/325), while
    `/p/admin/finance/purposes` is refused (EARS-330, spec 311 EARS-405). Sign
@@ -528,13 +681,13 @@ Owner walkthrough, on a live stand, after the go and the build:
    — posting and reversal — are gated by `finance-entry` / `finance-approve`,
    so `platform-admin` alone is no longer the write role to walk here; that
    part of the walkthrough lives in spec 339's scenario 1.)_
-4. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
+6. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
    that the account uses — a readable refusal offers retirement instead
    (EARS-308/326). Rename the account — the rename is visible, nothing else
    changes (EARS-309).
-5. **The fund is fixed.** Try retiring «Фонд BBM» — a readable refusal
+7. **The fund is fixed.** Try retiring «Фонд BBM» — a readable refusal
    (EARS-304).
-6. **Categories are not pre-invented.** Open the categories resource — the
+8. **Categories are not pre-invented.** Open the categories resource — the
    table is empty, with creation available (EARS-307).
 
 ### Verified by CI, not by the owner
@@ -550,6 +703,87 @@ write-side claim gate (EARS-330), the binding as master data (EARS-331), a
 binding change leaving history intact (EARS-332), the product-less `optional`
 exception query (EARS-333), and the absence of any allocation posting
 (EARS-334).
+
+EARS-325's read model additionally has the following exact CI fixtures. Unless
+stated otherwise currencies have precision 2 and values below are minor units.
+
+**What is a fixture and what is a derivation.** Only the read model's public
+output is asserted by CI — `total`, `status`, `missingCurrencies`,
+`availableReportingCurrencies` and the account rows. The intermediate pair-pool
+states quoted below are hand derivations offered so a reader can reproduce a
+total by pencil; they are NOT asserted anywhere and no test imports the pool
+type. Two of these fixtures — the fee (9) and the reversal (2) — additionally
+run through the REAL writers `recordConversion` / `reverseOperation` in
+`tests/int/platform/finance-current-money.int.spec.ts`, so the unit fixtures'
+assumption about the posting shape a conversion and a сторно actually produce is
+pinned rather than assumed.
+
+1. **Representative replay.** The five operations of owner scenario 2 start
+   with `200_000_000` RUB across two RUB accounts and end with aggregate
+   quantities RUB `141_000_000`, USD `550_000`, THB `14_000_000`. The canonical
+   RUB/USD pair ends holding USD `950_000` at RUB cost `60_000_000`; the USD/THB
+   pair ends holding THB `14_000_000` at USD cost `400_000`. In the RUB view,
+   USD contributes `34_736_842`, THB contributes `25_263_158`, and the exact
+   final sum is `201_000_000`; the separate RUB rows still sum to their native
+   aggregate.
+2. **Intervening operation plus reversal.** RUB ordinary inflow `100_000`, a
+   conversion RUB `60_000` → USD `1_000`, an unrelated later RUB inflow `5_000`,
+   then the exact reversal of the conversion shall replay as RUB `105_000`, USD
+   zero and total `105_000`: both conversion members are excluded before
+   chronology, not replayed as a late disposal/acquisition. Reversing that
+   reversal in turn restores the conversion into the replay — the chain's
+   parity decides, and a reversal dated EARLIER than the reversal it undoes
+   changes nothing about which facts survive.
+3. **Half-away-from-zero only after a full path, once per source.** Given pair
+   edges AAA→BBB `1/2` and BBB→CCC `1/2`, an aggregate AAA `1` in a CCC view
+   shall multiply the exact path ratio first and produce CCC `0`; rounding after
+   each edge would incorrectly produce `1`. Given two separate source
+   aggregates AAA `1` and DDD `1`, each with a direct `1/2` edge to CCC, each
+   source rounds independently to CCC `1` and the total is `2`; summing the two
+   fractional conversions before rounding would incorrectly produce `1`.
+4. **Disconnected ordinary foreign inflow.** A USD inflow `10_000` with no
+   recorded RUB/USD conversion leaves USD unreachable in the default RUB view;
+   the card keeps the native USD amount, withholds the total and names `USD`.
+   An outflow `4_000` leaves the same degraded state at USD `6_000`; outflow of
+   the final `6_000` makes every aggregate zero, after which RUB and USD are both
+   offered with total zero.
+5. **Pair pool crosses through zero.** A RUB/USD pool holding USD `100` at RUB
+   cost `6_000`, followed by a step USD `150` → RUB `9_750`, shall consume the
+   USD pool, attribute RUB `6_500` of proceeds to that disposal, and establish
+   the opposite pool holding RUB `3_250` at USD cost `50`. The graph exposes one
+   reciprocal edge from that positive opposite pool and never two contradictory
+   directional pools for the pair. With a pool holding USD `1` at RUB cost `1`,
+   a step USD `2` → RUB `1` attributes the one received RUB unit to the old pool
+   and leaves residual quantity RUB `0` at cost USD `1`; it shall mark the pair
+   unavailable rather than create that half-empty edge.
+6. **Partial disposal rounds moving-average cost half away from zero.** A pool
+   holding USD `2` at RUB cost `1`, followed by a step USD `1` → RUB `1`, shall
+   remove
+   `round_half_away_from_zero(1 × 1 ÷ 2) = 1` RUB of cost and leave a pool
+   holding USD `1` at RUB cost `0`; truncation would incorrectly remove zero.
+   Because a zero-cost remainder cannot create a reciprocal rate, the pair has
+   no graph edge until a later same-direction conversion adds positive cost.
+   Separately, once a malformed step has marked a pair unavailable, later valid
+   steps shall not restore it during the same replay.
+7. **Path selection is stable.** When both a direct USD→RUB edge and a longer
+   USD→THB→RUB path exist, the direct edge wins. When two equal-length simple
+   paths exist, the lexicographically smaller complete currency-code sequence
+   wins. Insertion order, object-key order and graph traversal order shall not
+   change the selected path; cycles are never candidates.
+8. **Reporting-currency switch.** Fixture 1 shall offer RUB, USD and THB. Its
+   RUB total `201_000_000` shall become exact selected totals USD `3_182_500`
+   and THB `111_387_500` through the pair graph. Native balances shall remain
+   unchanged. A currency unreachable from any nonzero aggregate shall not be
+   offered, and a stale query naming it shall fall back to the RUB default,
+   which shows the degraded state if RUB itself is unreachable.
+9. **Fees and endpoints do not contaminate pair rates.** In a RUB view, an ordinary
+   inflow of RUB `40_000`, followed by a conversion RUB `20_000` → USD `10_000`,
+   then a conversion RUB `10_000` → USD `10_000` whose step charges a USD fee of
+   `5_000`, shall produce a RUB/USD pair pool holding USD `20_000` at RUB cost
+   `30_000`: the fee changes the native USD account balance to `15_000` but does
+   not alter the pair rate. The final RUB aggregate `10_000` plus converted USD
+   `22_500` makes an exact RUB total `32_500`. Endpoint money postings, the fee
+   and system legs create no additional pair-rate event.
 
 ## Out of scope
 
@@ -571,9 +805,12 @@ exception query (EARS-333), and the absence of any allocation posting
   correction; no posting-mutation reclassification will be built.)_
 - Any allocation, absorption or ABC run: F1 posts none by design (EARS-334) and
   F3 computes such views as overlays.
-- Reports beyond the balances card: register UI, P&L, cash flow, unit cost,
-  capitalization display — **F3 (#340)**; reconciliation — **F4 (#341)**;
-  scenarios — **F5 (#342)**.
+- Reports beyond the balances card: operations register UI; period P&L and
+  period cash flow; project/category/product cuts; unit cost, break-even and
+  capitalization display; comparison and drill-down — **F3 (#340)**. The
+  selected-currency total of **current money-account balances** is part of the
+  EARS-325 F1b cash card, not an F3 report. Reconciliation remains **F4
+  (#341)**; scenarios remain **F5 (#342)**.
 - Obligations (decision 14): the `liability` account kind exists in the enum so
   F2's accruals and reimbursements have a home, but no obligation flow ships in
   F1.

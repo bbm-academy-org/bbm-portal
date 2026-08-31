@@ -1,8 +1,8 @@
 ---
 status: Draft
 epic: finance (#115) — see ./brief.md
-surface: backend-only # the ledger itself has no screen; its reference tables are administered in /p/admin (epic #112)
-updated: 2026-08-25
+surface: mixed # F1a ledger backend + F1b /p/finance current-money card and /p/admin references
+updated: 2026-08-30
 ---
 
 # F1 — Ledger core: accounts, project dimension, postings, currencies, reversal (#338)
@@ -12,6 +12,15 @@ updated: 2026-08-25
 The definition of "a fact of money" for BBM: what is recorded, in what unit,
 against what, and how a mistake is undone. Everything else in the epic reads
 from here or writes into here.
+
+F1 is delivered in two cuts. F1a is the ledger backend. F1b (#357) is the
+accepted `design-source/finance/Overview.dc.html` **current-money card** plus the
+finance references in `/p/admin`: every non-system money account stays visible
+in its own currency, and the card carries a reproducible current-holdings total
+in RUB by default, switchable to another currency. That total is a read-model
+replay of immutable facts and the actual rates frozen on their operations, not a
+stored balance, a new valuation table or a market quote (decisions 13, 18; spec
+338 EARS-325).
 
 The owner chose **full accounting with the ledger as the source of truth** over a
 manual-aggregates calculator (decision 1). That choice is what this feature
@@ -59,7 +68,8 @@ the requirement, not the accounting rule.
 
 **Currencies from day one:** RUB, crypto, and other fiat — THB is live spend
 today (decision 4). Multi-currency is a product property, not only a schema
-property: it reaches the UI in F2 and F3.
+property: it first reaches F1b's current-money card, then the intake UI in F2
+and the broader reports in F3.
 
 **Reference data is editable, not hard-coded** (decisions 10, 11, 21): accounts,
 expense categories, **request purposes**, projects, products, currencies and
@@ -173,8 +183,13 @@ external vendors and a contingency buffer (prior art §4).
 - **US-17** — _Not a story of this feature._ The filer-facing act of picking a
   purpose belongs to F2 — see **#339, US-20**. F1 owns only the purpose reference
   table and the purpose → category link (US-7 covers reference-table
-  editability); this backend-only PRD carries no filer story. The id is kept so
-  the other US ids stay stable. _(decision 21)_
+  editability); the F1a/F1b feature carries no filer story. The id is kept so the
+  other US ids stay stable. _(decision 21)_
+- **US-18** — As the owner, I see every current money-account balance in its
+  own currency and a RUB-default total only when every nonzero foreign holding
+  has reproducible recorded cost in that view; if it does not, I see which
+  currencies are unvalued rather than a plausible but partial number.
+  _(decisions 4, 13, 18; F1b #357)_
 
 ## Flows
 
@@ -221,6 +236,16 @@ recordable immediately, and every report gains it. No release is needed.
 _(`agent-proposed — UNCONFIRMED` as a product rule; §8 fixes only the storage
 form)_
 
+**Reading current money.**
+`/p/finance` shows every non-system money account separately in its native
+currency. For «Итого», F1b aggregates account balances by currency and replays
+immutable conversion operations chronologically into one remaining-holding pool
+per currency pair. Each native-currency aggregate follows the shortest recorded
+pair path to the selected reporting currency, so each offered currency produces
+a numeric total while every native row remains unchanged. F3 does not own this
+one card; it owns register, period cash flow/P&L and their wider
+per-operation report-rate semantics. _(decisions 13, 18; spec 338 EARS-325)_
+
 ## Product acceptance criteria
 
 - The owner can see every recorded operation of BBM in one place, with its date,
@@ -259,6 +284,12 @@ form)_
 - Money attributable to a member can be listed per member.
 - An hours accrual and a bank payment appear in the same P&L without a manual
   merge step.
+- Every current non-system money account is visible in its own currency on
+  `/p/finance`.
+- The current-money total defaults to RUB, can be reevaluated in another
+  offered reporting currency, and every offered currency produces a numeric
+  result derived only from actual rates recorded on operations. Native balances
+  do not change when the reporting currency changes.
 
 ## Out of scope
 
@@ -268,7 +299,10 @@ form)_
 - **Deriving the actual list of expense categories** — that step runs in F2, off
   the backfilled spend, and ends with the owner's approval (decision 11). F1 owns
   only the reference table it lands in.
-- Any report — F3.
+- Reports beyond F1b's current-money balances card and conservative
+  current-holdings total — operations register, period cash flow and P&L,
+  project/category/product cuts, drill-down, unit cost, break-even and
+  capitalization display — F3.
 - Payout, token and waterfall mechanics: the profit-share proportions, the
   royalty cascade and the OPEX-tier fork are holding-level questions with open
   owner forks (prior art §2, §3). The ledger records what happened; it does not
@@ -287,9 +321,12 @@ form)_
    17** (owner 2026-08-25): back to BBM's very first operation, which the owner
    locates; accounts open at zero and no synthetic opening-balance operation
    exists. _(The bulk-entry mechanism remains F2's.)_
-3. **Are crypto holdings revalued** when the rate moves, or held at the recorded
-   rate until they move again? The frozen-rate rule (§8) and decision 18 cover
-   the operation, not the holding.
+3. ~~**Are crypto holdings revalued** when the rate moves, or held at the
+   recorded rate until they move again?~~ **Closed by spec 338, Accounting
+   policy ruling 3:** no revaluation posting; F1b's current-money total carries
+   recorded remaining-holding rates per currency pair and converts only through
+   those operation facts, while F3 may later show a separately labelled
+   unrealised market equivalent.
 4. **What is the standard treatment of product-less overhead?** Decision 22 fixes
    that proper-accounting best practice governs and that the **F1 feature spec**
    researches and proposes it (direct → cost object; overhead → period cost or an

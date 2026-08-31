@@ -15,6 +15,7 @@ import {
   FinanceRefusal,
   listAccounts,
   listCategories,
+  listProjects,
   listRegister,
   postingsMissingOptionalProduct,
   recordOperation,
@@ -24,9 +25,11 @@ import {
   updateAccount,
   updateCurrency,
   updatePurpose,
+  updateReferenceRow,
 } from '@/lib/finance'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
+import { auditEventsFor, auditWatermark } from './audit-helpers'
 import {
   ADMIN,
   APPROVER,
@@ -273,6 +276,70 @@ describe('the reference tables (EARS-301…309)', () => {
       (posting) => posting.accountId === bank.id,
     )
     expect(bankLeg?.accountName).toBe('Т-Банк')
+  })
+
+  /**
+   * EARS-326 — one cabinet act is ONE transaction.
+   *
+   * A `PATCH {name, retire: true}` is a single thing the admin did, so it either
+   * lands whole or leaves no trace at all. Two transactions could commit the
+   * rename and then refuse the retirement, handing back a 409 over an already
+   * durable rename and two audit events for one act.
+   */
+  it('EARS-326: a rename whose retirement is refused leaves the name unchanged and writes no audit event', async () => {
+    const fund = await fundProjectId()
+    const mark = await auditWatermark(db)
+
+    await expect(
+      updateReferenceRow(ADMIN, {
+        table: 'project',
+        id: fund,
+        patch: { name: 'Фонд BBM (переименован)' },
+        retire: true,
+      }),
+    ).rejects.toThrow(/EARS-304/)
+
+    const row = await db.execute(
+      sql`select name, retired_at from core.finance_project where id = ${fund}`,
+    )
+    expect(row.rows[0]).toMatchObject({ name: 'Фонд BBM', retired_at: null })
+    expect(await auditEventsFor(db, mark, 'finance_project')).toEqual([])
+  })
+
+  it('EARS-326: a rename whose retirement is refused rolls back for every resource, not only projects', async () => {
+    await createCurrency(ADMIN, { code: 'RUB', name: 'Рубль', precision: 2 })
+    const expense = await systemAccount(ADMIN, 'expense', 'RUB')
+    const mark = await auditWatermark(db)
+
+    await expect(
+      updateReferenceRow(ADMIN, {
+        table: 'account',
+        id: expense.id,
+        patch: { name: 'Переименованный системный' },
+        retire: true,
+      }),
+    ).rejects.toThrow(/EARS-305/)
+
+    const row = await db.execute(
+      sql`select name, retired_at from core.finance_account where id = ${expense.id}`,
+    )
+    expect(row.rows[0]).toMatchObject({ name: expense.name, retired_at: null })
+    expect(await auditEventsFor(db, mark, 'finance_account')).toEqual([])
+  })
+
+  it('EARS-326: an accepted rename + retirement commits both and reports the retired row', async () => {
+    const project = await createProject(ADMIN, { name: 'Черновик' })
+
+    const updated = await updateReferenceRow(ADMIN, {
+      table: 'project',
+      id: project.id,
+      patch: { name: 'Черновик 2026' },
+      retire: true,
+    })
+
+    expect(updated).toMatchObject({ name: 'Черновик 2026' })
+    expect(updated.retiredAt).not.toBeNull()
+    expect((await listProjects()).map((row) => row.id)).not.toContain(project.id)
   })
 })
 

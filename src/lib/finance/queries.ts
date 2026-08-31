@@ -16,6 +16,13 @@ import { sql } from 'drizzle-orm'
 
 import { getPlatformDb } from '@/lib/platform/db/client'
 
+import {
+  evaluateCurrentMoney,
+  selectCurrentMoneyAccounts,
+  type CurrentMoneyOperationFact,
+  type CurrentMoneyValuation,
+} from './current-money'
+
 export type AccountBalance = {
   accountId: number
   name: string
@@ -31,6 +38,7 @@ export type RegisterEntry = {
   operationId: number
   occurredOn: string
   source: string
+  sourceRef: string | null
   purposeId: number | null
   purposeName: string | null
   backdated: boolean
@@ -73,9 +81,9 @@ export type LiabilityBalance = {
 /**
  * Every account with its balance, each in ITS OWN currency (EARS-317, EARS-325).
  *
- * Conversion for display is deliberately absent: an amount keeps the currency it
- * happened in (EARS-310), and a single-number total across currencies is an F3
- * reporting decision with a rate source behind it, not a ledger fact.
+ * Conversion is deliberately absent from this primitive: an amount keeps the
+ * currency it happened in (EARS-310). F1b's conservative total is the separate
+ * `currentMoneyOverview()` read model below; F3 owns period-report conversion.
  */
 export async function accountBalances(): Promise<AccountBalance[]> {
   const db = getPlatformDb()
@@ -96,6 +104,85 @@ export async function accountBalances(): Promise<AccountBalance[]> {
     retiredAt: row.retired_at === null ? null : new Date(String(row.retired_at)),
     balance: BigInt(String(row.balance)),
   }))
+}
+
+/**
+ * The whole ledger, read into memory and replayed on every `/p/finance` view.
+ *
+ * Three UNBOUNDED selects — every operation, every conversion step, every
+ * posting joined to its account — with no LIMIT, no date window and no cache, on
+ * a page open to every `platform-user`. At F1b's data volume that is invisible;
+ * the cost is linear in the lifetime size of the ledger from then on. The
+ * windowed / materialized read model is filed as #420 and is deliberately not
+ * done here: EARS-325's arithmetic is correct, only its access pattern is not.
+ */
+async function currentMoneyOperationFacts(): Promise<CurrentMoneyOperationFact[]> {
+  const db = getPlatformDb()
+  const [operationResult, stepResult, postingResult] = await Promise.all([
+    db.execute(sql`
+      select id, occurred_on, reverses
+        from core.finance_operation
+       order by occurred_on, id
+    `),
+    db.execute(sql`
+      select operation_id, step_no, from_currency, to_currency
+        from core.finance_conversion_step
+       order by operation_id, step_no
+    `),
+    db.execute(sql`
+      select p.operation_id, p.account_id, a.kind as account_kind, a.is_system,
+             p.currency, p.amount::text as amount, cs.step_no as conversion_step_no
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+        left join core.finance_conversion_step cs on cs.id = p.conversion_step_id
+       order by p.operation_id, p.id
+    `),
+  ])
+
+  const operations = new Map<number, CurrentMoneyOperationFact>()
+  for (const row of operationResult.rows as Record<string, unknown>[]) {
+    const operationId = Number(row.id)
+    operations.set(operationId, {
+      operationId,
+      occurredOn: String(row.occurred_on).slice(0, 10),
+      reverses: row.reverses === null ? null : Number(row.reverses),
+      steps: [],
+      postings: [],
+    })
+  }
+  for (const row of stepResult.rows as Record<string, unknown>[]) {
+    operations.get(Number(row.operation_id))?.steps.push({
+      stepNo: Number(row.step_no),
+      fromCurrency: String(row.from_currency),
+      toCurrency: String(row.to_currency),
+    })
+  }
+  for (const row of postingResult.rows as Record<string, unknown>[]) {
+    operations.get(Number(row.operation_id))?.postings.push({
+      accountId: Number(row.account_id),
+      accountKind: String(row.account_kind),
+      isSystem: Boolean(row.is_system),
+      currency: String(row.currency),
+      amount: BigInt(String(row.amount)),
+      conversionStepNo: row.conversion_step_no === null ? null : Number(row.conversion_step_no),
+    })
+  }
+  return [...operations.values()]
+}
+
+/** The complete F1b cash card read model (EARS-325), defaulting to RUB. */
+export async function currentMoneyOverview(
+  reportingCurrency = 'RUB',
+): Promise<CurrentMoneyValuation> {
+  const [balances, operations] = await Promise.all([
+    accountBalances(),
+    currentMoneyOperationFacts(),
+  ])
+  return evaluateCurrentMoney({
+    reportingCurrency,
+    accounts: selectCurrentMoneyAccounts(balances),
+    operations,
+  })
 }
 
 /** Who BBM owes, per member and currency (spec 339 EARS-527). */
@@ -136,7 +223,7 @@ export async function listRegister(options: { limit?: number } = {}): Promise<Re
   const db = getPlatformDb()
   const limit = options.limit ?? 200
   const result = await db.execute(sql`
-    select o.id, o.occurred_on, o.source, o.purpose_id, o.backdated, o.reverses,
+    select o.id, o.occurred_on, o.source, o.source_ref, o.purpose_id, o.backdated, o.reverses,
            pu.name as purpose_name,
            (select r.id from core.finance_operation r where r.reverses = o.id) as reversed_by,
            p.id as posting_id, p.account_id, a.name as account_name, p.amount::text as amount,
@@ -157,6 +244,7 @@ export async function listRegister(options: { limit?: number } = {}): Promise<Re
         operationId,
         occurredOn: String(raw.occurred_on).slice(0, 10),
         source: String(raw.source),
+        sourceRef: raw.source_ref === null ? null : String(raw.source_ref),
         purposeId: raw.purpose_id === null ? null : Number(raw.purpose_id),
         purposeName: raw.purpose_name === null ? null : String(raw.purpose_name),
         backdated: Boolean(raw.backdated),

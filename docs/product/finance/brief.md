@@ -2,12 +2,12 @@
 status: Draft
 epic: 115
 features:
-  - F1 (#338) — Ledger core: accounts, project dimension, postings, currencies, reversal (backend-only)
+  - F1 (#338) — Ledger core plus F1b current-money balances card and conservative recorded-cost total
   - F2 (#339) — Filling the ledger: manual entry, expense requests, history backfill, bank import (user-facing)
   - F3 (#340) — Reports: register, P&L, cash flow, unit cost, break-even (user-facing)
   - F4 (#341) — Fact-vs-finmodel reconciliation (user-facing)
   - F5 (#342) — Scenario calculator on top of the fact (user-facing)
-updated: 2026-08-25
+updated: 2026-08-30
 ---
 
 # Finance — epic brief (#115)
@@ -102,7 +102,7 @@ at the design gate, not here.
 ```
 portal.bbm.academy  (Zitadel OIDC gate over /p/*, ADR-003 §3; ADR-005 §2: a tool → the portal)
 └── /p/finance                     the finance module (ADR-002 §3: route + isolated library)
-    ├── /p/finance                 overview: cash position per account, current period P&L   ← F3
+    ├── /p/finance                 overview: current-money card ← F1b; current period P&L ← F3
     ├── /p/finance/register        the operations register — every posting, filterable       ← F3
     ├── /p/finance/reports         P&L · cash flow · unit cost · break-even                  ← F3
     ├── /p/finance/requests        expense requests: submit (everyone) / approve (owners)    ← F2
@@ -152,27 +152,33 @@ Seven structural facts:
    database, §6 in `src/lib/platform/db/schema/finance/`, importable only by the
    finance module; `core` deliberately does not predetermine the finance schema
    (consolidation spec §8, epic #111).
-7. **Presentation currency is a view, and plan is never a fact.** Reports default
-   to RUB and can be switched to another reporting currency, while every
-   operation keeps the currency it happened in _(decision 13)_, and a report that
-   crosses currencies converts at **each operation's own actual rate, frozen at
-   its date** — never at a period-end market rate _(decision 18)_. Whether an
-   expense is recognised on accrual or on cash is deliberately **not** decided
-   yet — the owner decides it from practice; the binding principles are that the
-   math is honest, that debts and obligations (including accrued-unpaid team
-   accruals) are counted and shown, and that plan stays plan until the fact, with
-   plan-vs-fact an explicit distinction _(decision 14)_. Both live in F3, with
-   the plan side in F5.
+7. **Presentation currency is a view, and plan is never a fact.** Every
+   operation keeps the currency it happened in _(decision 13)_. F1b's accepted
+   current-money card shows each account in that native currency and offers a
+   reproducible total, RUB by default: a chronological replay builds remaining-
+   holding rates for each currency pair from the actual conversion operations.
+   Each native-currency aggregate is converted separately to the selected
+   currency through those recorded pair rates; it never fetches a current/market
+   rate _(decisions 13, 18; spec 338 EARS-325)_. F3 owns the
+   broader report semantics: register, period cash flow and P&L, cuts and
+   drill-down convert the operations they report at each operation's own actual
+   rate, frozen at its date. Whether an expense is recognised on accrual or on
+   cash is deliberately **not** decided yet — the owner decides it from
+   practice; the binding principles are that the math is honest, that debts and
+   obligations (including accrued-unpaid team accruals) are counted and shown,
+   and that plan stays plan until the fact, with plan-vs-fact an explicit
+   distinction _(decision 14)_. The period-report side lives in F3, with the plan
+   side in F5.
 
 ## Feature decomposition
 
-| Feature | Issue | PRD              | Blocked by | Surface      | What it settles                                                                                                                                                                                            |
-| ------- | ----- | ---------------- | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1      | #338  | `338-product.md` | —          | backend-only | what a fact of money is here: accounts, the project dimension, postings, currencies, reversal — including the empty, editable category table, but no category list                                         |
-| F2      | #339  | `339-product.md` | #338       | user-facing  | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve |
-| F3      | #340  | `340-product.md` | #338       | user-facing  | what the owner reads: register, P&L, cash flow, unit cost, break-even price                                                                                                                                |
-| F4      | #341  | `341-product.md` | #340       | user-facing  | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                  |
-| F5      | #342  | `342-product.md` | #340       | user-facing  | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                              |
+| Feature | Issue | PRD              | Blocked by | Surface     | What it settles                                                                                                                                                                                              |
+| ------- | ----- | ---------------- | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F1      | #338  | `338-product.md` | —          | mixed       | what a fact of money is here plus F1b's `/p/finance` current-money card: native account balances and a conservative recorded-cost total — including the empty, editable category table, but no category list |
+| F2      | #339  | `339-product.md` | #338       | user-facing | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve   |
+| F3      | #340  | `340-product.md` | #338       | user-facing | broader readings: register, period cash flow and P&L, cuts, drill-down, unit cost, break-even price                                                                                                          |
+| F4      | #341  | `341-product.md` | #340       | user-facing | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                    |
+| F5      | #342  | `342-product.md` | #340       | user-facing | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                                |
 
 **The graph:** F1 is the head of the critical path and the only takeable issue at
 filing time; F2 and F3 are blocked by F1 (nothing fills or reads a ledger that
@@ -256,9 +262,10 @@ and product attribution. Those rulings are absorbed into the PRDs below.
 - Artifact: <https://claude.ai/code/artifact/ead41905-c726-42b8-bcdb-4f79b80aab09>
 - Record: [issue #115, comment of 2026-08-25](https://github.com/bbm-academy-org/bbm-portal/issues/115#issuecomment-5410131406)
 
-**The per-feature Stage A is still pending.** The wireframe pass validated the
-data model; it is **not** the Stage-A layout pick for F2–F5. Each of those is
-`user-facing` and carries an empty "Design pick (Stage A)" slot; per
-`.claude/rules/design-process.md`, none of those surfaces is ready to build until
-its own design is vendored into `design-source/`. F1 is backend-only and owns no
-visual surface.
+**The per-feature Stage A is still pending for F2–F5.** The wireframe pass
+validated the data model and the F1b current-money card now vendored as
+`design-source/finance/Overview.dc.html`; that accepted card includes its
+«Итого» column and reporting-currency switch. It is **not** the Stage-A layout
+pick for F2–F5. Each of those is `user-facing` and carries an empty "Design pick
+(Stage A)" slot; per `.claude/rules/design-process.md`, none of those surfaces
+is ready to build until its own design is vendored into `design-source/`.

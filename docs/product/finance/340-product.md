@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-08-25
+updated: 2026-08-30
 ---
 
 # F3 — Reports: register, P&L, cash flow, unit cost, break-even (#340)
@@ -15,8 +15,8 @@ ledger (decision 5):
 - **the operations register** — every posting, filterable, the audit view;
 - **P&L** — income and expense by category, per period, for the fund and for
   each project;
-- **cash flow** — what actually moved in and out, and what is on the accounts
-  now, which is a different question from P&L;
+- **period cash flow** — what actually moved in and out during the selected
+  period, which is a different question from P&L;
 - **unit cost (себестоимость)** — what one sellable unit of a project costs to
   produce, where the unit is a **lesson or a course** — the production units the
   owner confirmed at the wireframe review (decisions 9, 19);
@@ -45,6 +45,17 @@ RUB→USDT conversion records the factual rate it happened at, and that rate is
 what every later reading uses, so any total is reproducible from the postings
 behind it. This settles the rate-policy fork this PRD previously carried as its
 first open question.
+
+**Current money is already F1b, not a sixth F3 report.** The accepted
+`Overview.dc.html` card that lists current non-system money-account balances and
+its reproducible current-holdings total moved to #357 / spec 338 EARS-325. Its
+formula is deliberately narrower: chronological remaining-pool replay per
+currency pair, followed by deterministic conversion of each native balance
+through recorded pair rates. F3 retains the broader semantics of
+decision 18 for **period activity and report lines** — each operation is
+re-presented at its own actual recorded rate — plus the register, period cash
+flow and P&L, cuts, drill-down, unit cost, break-even and capitalization. The two
+views read the same immutable facts but answer different questions.
 
 **Product capitalization is a reading of this layer — decision 22 (owner
 2026-08-25).** Because every product-attributable expense carries its product
@@ -91,12 +102,13 @@ the two that decide the rest.
   category, and the result. _(decision 5)_
 - **US-3** — As the owner, I see that same P&L for one project alone, and for the
   fund alone. _(decision 2)_
-- **US-4** — As the owner, I see cash flow — what came in, what went out, and
-  what is on each account now — and I understand why it differs from the P&L
-  result. _(decision 5)_
-- **US-5** — As the owner, I see the balance of each account in its own currency,
-  and a total in the reporting currency with the rate policy stated.
-  _(decisions 4, 13)_
+- **US-4** — As the owner, I see what came in and what went out during a period,
+  and understand why that cash flow differs from the P&L result.
+  _(decision 5)_
+- **US-5** — _Moved to F1b #357 / spec 338 EARS-325._ The current balance of
+  each account in its own currency and the switchable current-holdings total
+  ship before F3. The id stays here so the remaining US ids are stable.
+  _(decisions 4, 13, 18)_
 - **US-15** — As the owner, I read a report in roubles by default and can switch
   it to another currency without the underlying operations changing currency.
   _(decision 13)_
@@ -160,12 +172,13 @@ units the period produced, and the cost per unit → beside it, the break-even
 price and the current price if one is set.
 
 **Multi-currency total.**
-A report opens in RUB and converts amounts to it at **each operation's own actual
-rate, frozen at its date** _(decision 18)_, saying so and showing the rates it
-used; the owner can switch the reporting currency to another one and the same
-report re-presents itself there _(decision 13)_. Amounts in their own currency
-remain visible next to the converted total, and the operations themselves keep
-their currency.
+A period report opens in RUB and converts its operation amounts at **each
+operation's own actual rate, frozen at its date** _(decision 18)_, saying so and
+showing the rates it used; the owner can switch the reporting currency to
+another one and the same period report re-presents itself there _(decision 13)_.
+Amounts in their own currency remain visible next to the converted report line,
+and the operations themselves keep their currency. This is not F1b's
+current-holdings replay.
 
 **An empty period.**
 A period with no operations reports zero and says so, rather than showing a blank
@@ -180,10 +193,9 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 - The owner can read a P&L for any period for the whole of BBM.
 - The owner can read that P&L for a single project.
 - The owner can see what actually moved in and out of each account in a period.
-- The owner can see the current balance of every account in its own currency.
-- A total that spans currencies states the rate policy it used, and that policy
-  is each operation's own recorded rate — the total is reproducible from the
-  register and does not move with the market.
+- A period-report total that spans currencies states the rate policy it used,
+  and that policy is each operation's own recorded rate — the total is
+  reproducible from the register and does not move with the market.
 - Unit cost is reported per lesson and per course.
 - The owner can see the accumulated invested cost (capitalization) of a product.
 - A report opens in RUB and can be switched to another reporting currency without
@@ -215,11 +227,12 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 
 ## Open questions
 
-1. ~~**The conversion policy for a multi-currency total** — the rate at each
-   operation's date, or one rate at period end?~~ **Closed by decision 18** (owner
-   2026-08-25): each operation's own actual rate, frozen at its date. _(The
-   reporting currency itself was already settled by decision 13 — RUB by default,
-   switchable.)_
+1. ~~**The conversion policy for a multi-currency period-report total** — the
+   rate at each operation's date, or one rate at period end?~~ **Closed by
+   decision 18** (owner 2026-08-25): each operation's own actual rate, frozen at
+   its date. _(The reporting currency itself was already settled by decision 13
+   — RUB by default, switchable. The recorded-cost current-holdings total is the
+   distinct F1b EARS-325 read model.)_
 2. **What counts as a unit produced in a period?** Decision 19 (owner 2026-08-25,
    wireframe review) settled the **unit** — the production units are **lessons
    and courses**, as drawn on the wireframe — but not the **counting rule**: when
