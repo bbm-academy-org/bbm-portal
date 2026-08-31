@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 339
-updated: 2026-08-27
+updated: 2026-08-31
 ---
 
 # Finance F2 — filling the ledger: requests, documents, backfill, intake layer — spec (issue #339)
@@ -16,14 +16,13 @@ updated: 2026-08-27
   proposals) ← #380, and the admin cabinet rows (counterparty rename,
   purpose-proposal resolution) #384 ← #383 + #315. The two strands meet at
   #386 (expense-request flow: submit, approve, refuse, one-act post) ← #385 +
-  #383, while #387 (backfill bulk entry, category derivation, import contract)
-  ← #385 alone. UI: #388 (requests board — Stage-A pick D) ← #386 + #314 +
-  #315, and #389 (intake workspace — entry, bulk backfill, derivation and
-  liability views) ← #387 + #314 + #315; both plug into the portal-workspace
+  #383, while #387 (one-time direct history reconstruction + read-time category
+  resolution) ← #385 alone. UI: #388 (requests board — Stage-A pick D) ← #386 +
+  #314 + #315, and #389 (intake workspace — manual entry and liability views) ←
+  #314 + #315; both plug into the portal-workspace
   frame exactly as F1b does, which is why each also carries #314 (`/p`
-  launcher/registry) and #315 (`/p/admin` shell), while the intake backend is
-  buildable on merged F1a (#356) alone — the graph records that split with
-  edges, not prose. The Hermes document-verifier
+  launcher/registry) and #315 (`/p/admin` shell). The one-time reconstruction is
+  an operator task, not a runtime dependency of either UI. The Hermes document-verifier
   integration is #390 (on #386), filed under epic #115. The private prod bucket
   the documents need is an infra step in the ops repo
   (`sidorovanthon/bbm#172`), not an issue here.
@@ -36,10 +35,11 @@ the corpus shows what happens without a system: requests and receipts live as
 markdown posts and attachments in one Mattermost channel, currencies are
 written three different ways, «дата» means three different things, and the
 link from a request to its payment fact arrives weeks later as a separate
-post. F2 replaces that channel with a structured intake: expense requests
-with documents, direct entry, history backfill — all flowing into the F1
-ledger through one pluggable layer, gated by two roles and by the rule that
-**nothing posts without its confirming document** (decision 24).
+post. F2 replaces that channel for future work with structured requests and
+direct entry. The finite pre-system history is reconstructed once by an
+operator-owned direct database run; it is not promoted into a permanent runtime
+backend or user interface. Both paths land in the same F1 ledger and keep the
+confirming documents that make the facts inspectable.
 
 Product source: `docs/product/finance/339-product.md` (US-1…US-22); owner
 decisions 1–27 live in the #115 issue body — decisions 23–27 were taken in
@@ -66,9 +66,12 @@ records); both rounds' blockers and majors are folded into this revision.
 - **Spec 311 §A, §D** (EARS-401/402/405/409, 431…439) — surfaces and admin
   resources follow the workspace contract: zod validation, readable refusals,
   role checks in the module's own handlers, audited cabinet writes.
-- **Spec 201 / ADR-004 A1** — every reference and intake write runs through
-  `platformTransaction` with the signed-in actor; `core.audit_event` is the
-  who/when/what record. F2 adds no parallel journal.
+- **Spec 201 / ADR-004 A1** — application writes run through
+  `platformTransaction` with the signed-in actor. The one-time repo-owned
+  reconstruction writes directly to the database with audit source
+  `cli:finance-history-backfill`; the generic database trigger captures every
+  row in the same transaction. `core.audit_event` remains the only
+  who/when/what record; F2 adds no parallel journal.
 - **Spec 338 (F1, In dev)** — the ledger contract F2 writes into and does not
   re-decide: immutability + reversal (EARS-313/314), per-currency zero-sum
   (EARS-311), conversion groups with actual rates (EARS-318), the source enum
@@ -140,12 +143,12 @@ the same thread or weeks later. The dominant real payment is
 **cross-currency**: a foreign service invoiced in USD/THB, paid from a RUB
 card — two amounts, one operation.
 
-**Artifact passport:** corpus digest + samples — session scratchpad
-`mm-payments-corpus.md`, `mm-samples/` (11 files); produced by this session's
-read-only export from the Mattermost production database (`tools-prod-tw`),
-2026-08-26; type: **export** of the originals living in Mattermost. The
-originals stay in Mattermost; the backfill (§E) works from them and from
-documents the owner supplies per operation (decision 25).
+**Artifact passport:** originals — Mattermost production channel «BBM Финансы»
+and its file storage on `tools-prod-tw`, owner **BBM**, type: **original**. The
+2026-08-26 read-only export (`mm-payments-corpus.md`, `mm-samples/`) was an
+ephemeral session scratchpad and is no longer available; the operator re-exports
+the originals before the reconstruction. Documents the owner supplies outside
+Mattermost join the same private reconstruction workspace (decision 25).
 
 Replacement: requests, entry, documents and statuses move into
 `/p/finance/*`; the Mattermost channel remains a chat and gets no integration
@@ -166,27 +169,32 @@ alongside as its layout evidence. All three are **layout** only (fidelity axis,
 incident 2026-08-26/#359): the visual layer is the `src/ui` kit per #359/#360,
 unchanged by this pick. The build is #388.
 
-**`/p/finance/intake` — still pending.** The entry / bulk-backfill /
-derivation / liability workspace has no Stage-A pick yet; it runs at #389
-pickup, before any markup.
+**`/p/finance/intake` — still pending.** The reduced manual-entry / liability
+workspace has no Stage-A pick yet; it runs at #389 pickup, before any markup.
 
 ## Data model (lead-level engineering decisions)
 
-Additions to `src/lib/platform/db/schema/finance/` (prefix `finance_`).
-The spine idea: **every source produces an intake item; only intake items
-post; posting calls the F1 API.** A request is an intake item with a
-submitter-facing lifecycle, not a second pipeline. An intake item must be
-able to express everything the backfill has to reconstruct from zero
-(decision 17) — expenses, income, transfers between own accounts and
-conversions — or the books cannot be rebuilt.
+Additions to `src/lib/platform/db/schema/finance/` (prefix `finance_`). The
+runtime spine serves requests and manual entry: each produces an intake item,
+and posting calls the F1 API. The finite historical reconstruction is an
+operator command, not another runtime producer. It connects directly to the
+platform database and reuses the existing backfill intake row as internal
+staging for document linkage, idempotence and the existing posting path; no
+endpoint or user-facing lifecycle is added for it.
 
 | Table                      | Carries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Key points                                                                                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `finance_intake_item`      | `id`, `source` (`request`\|`manual`\|`backfill`\|`bank_import`), `source_ref` (nullable; **unique per source where set**), `kind` (`expense`\|`income`\|`transfer`\|`conversion`), `status` (`draft`\|`submitted`\|`approved`\|`refused`\|`cancelled`\|`posted`), `occurred_on` (always the date money moved — EARS-508), `account` FK (the money account; **nullable — empty exactly when `personal_funds`**, EARS-513), `counter_account` FK (nullable — transfer/conversion target; a system `liability` account only per EARS-528), `amount` + `currency` (document side, bigint minimal units), `paid_amount` + `paid_currency` (nullable — the account side when it differs; for `kind = conversion` — the target side), `fee_amount` + `fee_currency` (nullable), `purpose` FK (nullable — expense only), `project` FK, `product` FK (per binding), `counterparty` FK → `finance_counterparty` (EARS-532), `member` FK (nullable — the person the payment is attributable to, spec 338 EARS-322; required for `personal_funds` and liability transfers), `note`, `already_paid`, `personal_funds`, `created_by` → `core.member`, `decided_by`, `decided_at`, `refusal_reason`, `posted_by`, `posted_at`, `operation` FK (nullable, unique) | one spine for all sources (decision 3); items are editable until posted per the status machine below — the ledger stays immutable; `operation` filled at posting                                                                         |
+| `finance_intake_item`      | `id`, `source` (`request`\|`manual`\|`backfill`\|`bank_import`), `source_ref` (nullable; **unique per source where set**), `kind` (`expense`\|`income`\|`transfer`\|`conversion`), `status` (`draft`\|`submitted`\|`approved`\|`refused`\|`cancelled`\|`posted`), `occurred_on` (always the date money moved — EARS-508), `account` FK (the money account; **nullable — empty exactly when `personal_funds`**, EARS-513), `counter_account` FK (nullable — transfer/conversion target; a system `liability` account only per EARS-528), `amount` + `currency` (document side, bigint minimal units), `paid_amount` + `paid_currency` (nullable — the account side when it differs; for `kind = conversion` — the target side), `fee_amount` + `fee_currency` (nullable), `purpose` FK (nullable — expense only), `project` FK, `product` FK (per binding), `counterparty` FK → `finance_counterparty` (EARS-532), `member` FK (nullable — the person the payment is attributable to, spec 338 EARS-322; required for `personal_funds` and liability transfers), `note`, `already_paid`, `personal_funds`, `created_by` → `core.member`, `decided_by`, `decided_at`, `refusal_reason`, `posted_by`, `posted_at`, `operation` FK (nullable, unique) | runtime spine for `request`/`manual`; `backfill` is operator-only staging; `bank_import` has no producer; items are editable until posted and `operation` is filled at posting                                                           |
 | `finance_document`         | `id`, `storage_key` (private object storage), `content_digest` (server-computed immutable SHA-256), `storage_state` (`pending_upload`\|`ready`\|`pending_delete`), `filename`, `mime`, `size`, `kind` (`ru_invoice`\|`fiscal_receipt`\|`foreign_invoice`\|`payment_order`\|`bank_screenshot`\|`bank_statement`\|`other`), `uploaded_by`, `uploaded_at`; items linked via `finance_document_link`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | files in a **private** bucket/prefix, never the public media bucket (EARS-514); the durable state records intent before storage side effects and leaves an audited retry handle on failure; **not** in Payload — owner ruling 2026-08-26 |
 | `finance_document_link`    | `document` FK, `intake_item` FK (pair unique)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | **one document may confirm several items** (corpus: one screenshot proving two consultations; «$370 + $22» in one payment); the operation link is derived through each item's `operation` FK                                             |
 | `finance_counterparty`     | `id`, `name` (case-insensitively unique), `created_by`, `created_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | who is being paid — a reference, not free text (owner decision 30, 2026-08-26); inline creation from the forms, renaming is admin (EARS-532)                                                                                             |
 | `finance_purpose_proposal` | `id`, `text`, `proposed_by`, `created_at`, `resolved_purpose` FK (nullable), `resolved_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | US-21: a missing purpose is proposed as free text that only an admin can turn into a purpose — free text never becomes a purpose by itself (decision 21)                                                                                 |
+
+`finance_operation` additionally carries a partial unique index on
+(`source`, `source_ref`) where `source = 'backfill'` and `source_ref IS NOT
+NULL`. The intake-item constraint remains the first idempotence gate; the
+operation constraint makes the same identity a database fact even for a direct
+operator or manual DBA mistake.
 
 **Status machine** (every transition not listed is refused — EARS-524):
 
@@ -293,22 +301,11 @@ a declared clause.
 
 ### B. The intake spine (pluggable source layer)
 
-- **EARS-503.** Every intake path shall produce an intake item carrying its
-  source — one of the intake subset of the spec-338 EARS-316 enum
-  (`request`\|`manual`\|`backfill`\|`bank_import`; `hours` and `reversal`
-  are not intake sources) — and a `source_ref` with fixed per-source
-  semantics: `bank_import` — the statement line's stable identity,
-  **always**; `backfill` — **always**: the source document's number where it
-  has one, otherwise the Mattermost post id, otherwise a deterministic
-  natural key the entry surface composes (date + account + amount +
-  counterparty) — so re-running the same history can never double-post
-  (EARS-504, scenario 6); `manual` and `request` — none (a human act has no
-  external identity to deduplicate on).
-- **EARS-504.** IF an intake item arrives with a (`source`, `source_ref`)
-  pair that already exists, THEN the system shall refuse that item and answer
-  with the existing one; in a bulk arrival (an import file, a backfill batch)
-  the refusal is **per line** — duplicates are skipped and reported, the rest
-  proceed (US-8).
+- **EARS-503.** Every runtime intake item shall carry `source = request` or
+  `source = manual` and no `source_ref`: these human acts have no external
+  identity. `backfill` is reserved for the one-time operator command of
+  EARS-517; `bank_import` remains only a ledger enum token until a real
+  statement creates a separately approved producer.
 - **EARS-505.** WHEN an intake item is posted, the system shall record the
   operation and link it to the item **atomically** — one
   `platformTransaction`, a failure of either leaves neither (Prior-decisions
@@ -455,7 +452,7 @@ a declared clause.
   to document content, and no public or unauthenticated URL to a document
   shall exist.
 - **EARS-515.** Every document shall carry a `kind` picked at upload — the
-  five real classes of the corpus, the bank statement (EARS-521) and a rest
+  five real classes of the corpus, a reserved bank-statement kind and a rest
   bucket. The kind is **data, not a gate** (owner decision 29, 2026-08-26):
   any kind may accompany a posting, because the fact of payment is asserted
   by the confirming act (EARS-506/511/531), whose author is recorded and
@@ -475,28 +472,44 @@ a declared clause.
 
 ### E. History backfill
 
-- **EARS-517.** The intake surface shall offer bulk entry — many rows, one
-  save — creating intake items with `source = backfill` of any kind
-  (expense, income, transfer, conversion: everything the reconstruction of
-  real balances from zero requires — decision 17, US-13, US-22; spec 338
-  EARS-317), posting as backdated operations (spec 338 EARS-316), with each
-  row's `source_ref` filled per EARS-503 (always, for backfill). A
-  conversion row uses the data model's two-sided pair semantics (one
-  implicit step, `fee_amount`/`fee_currency` where a fee was taken) — the
-  kinds the rebuild needs are all expressible through the spine.
-- **EARS-518.** A backfilled item shall pass the same gates as a live one —
-  the document rule (EARS-506) and the approve-role posting — and the
-  resulting operation shall behave in every report exactly like a live one
-  while staying distinguishable by its source and `backdated` flag (US-14).
+- **EARS-517.** WHEN the owner authorizes the one-time history reconstruction,
+  the repo-owned operator command shall read the original Mattermost posts,
+  threads and files directly and pass them through a pure planning function;
+  CI shall feed the same function a local fixture. The function shall return a
+  deterministic, versioned `FinanceHistoryPlan`, sorted by operation date and
+  source identity, containing: a source snapshot digest; candidate operations
+  with kind, stable `source_ref`, validation result and document references;
+  duplicates pointing at existing operations; invalid rows with reasons;
+  first/last dates and source/document counts; and the purpose grouping of
+  EARS-519. The command shall write that plan as JSON for review and require its
+  digest on apply. Apply shall create internal backfill staging items and post
+  the approved expense, income, transfer and conversion operations in
+  chronological order through the existing posting path. A backfill
+  `source_ref` shall be the source document number where present, otherwise the
+  Mattermost post id, otherwise the deterministic natural key (date + account +
+  amount + counterparty). A conflict at either unique constraint shall point at
+  and skip the existing operation. No opening-balance operation, runtime
+  endpoint or user-facing bulk-entry surface shall be created.
+- **EARS-518.** The reconstruction command shall preserve the F1 ledger
+  invariants for every row (per-currency zero-sum, actual two-sided conversion
+  amounts and separate fees). It shall stage each original document through the
+  existing private-storage lifecycle until `ready`, then execute the staging
+  item, operation, postings and document links in one
+  `platformTransaction({ actorEmail: null, source:
+'cli:finance-history-backfill' }, …)` transaction. The universal audit
+  trigger shall therefore reject an unmarked application connection and record
+  the named CLI source for every domain row. The resulting operation shall
+  behave in every query and report exactly like a live one while remaining
+  distinguishable by `source = backfill` and `backdated = true`.
 
 ### F. Category derivation
 
-- **EARS-519.** The intake surface (`/p/finance/intake`) shall show the
-  **derivation view**, backed by a module query: recorded spend grouped by
-  purpose, with postings that carry no category listed — the input from
-  which the owner derives and approves the category list (decision 11); the
-  list itself is then created as ordinary, audited reference edits (spec 338
-  EARS-301/307/308), and no seed ships.
+- **EARS-519.** WHEN the reconstruction dry run completes, the operator command
+  shall include recorded spend grouped by purpose and list postings that carry
+  no category. This one-time artifact is the input from which the owner derives
+  and approves the initial category list (decision 11); the list itself is then
+  created as ordinary, audited reference edits (spec 338 EARS-301/307/308), and
+  no seed or permanent derivation view ships.
 - **EARS-520.** WHERE a posting stores no category (recorded before the
   taxonomy existed) and its purpose is linked to one, every query and report
   shall resolve the category through the purpose's **current** link at read
@@ -511,22 +524,13 @@ a declared clause.
   queries gain the read-time fallback, and the spec-338 ruling-2 journal
   sentence is amended in this PR (Prior-decisions change 2 — on the go list).
 
-### G. Bank-statement import — contract now, build on real statements
+### G. Bank-statement import — deferred until there is a real statement
 
-- **EARS-521.** Statement import shall be an intake producer and nothing
-  more: it parses a statement file into draft intake items
-  (`source = bank_import`, `source_ref` = the line's stable identity, the
-  statement itself linked as the confirming document with kind
-  `bank_statement`), deduplicated per line
-  (EARS-504), reviewed and posted through the same queue by the same roles.
-  Nothing posts on upload alone.
-  _Process note (owner ruling 2026-08-26, decision 25): the format parser is
-  built only against real statement files once supplied — until then the
-  import ships as the contract above with no parser, and this deliberately
-  blocks nothing else in F2. (This note carried number 522 before the go and was
-  retired there: a build-process commitment, not a testable system behaviour.
-  The number is not reused, and it is not written as an id token so that no
-  guard counts a retired clause as declared.)_
+The former contract-only statement producer is retired unbuilt by the owner's
+2026-08-31 ruling: a speculative interface without a real bank format is not a
+product capability. When the owner supplies a real statement, its parser and
+review flow get their own scoped task and spec revision. The existing
+`bank_import` source token reserves no implementation by itself.
 
 ### H. The status machine
 
@@ -538,20 +542,20 @@ a declared clause.
 
 ## CRUD check (task-cycle stage 1a)
 
-| Resource                                | Create                                                      | Read                                                        | Update                                                                                      | Delete                                                                                                |
-| --------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| requests (`/p/finance/requests`)        | any platform member (EARS-502)                              | own — the submitter; all — entry/approve roles              | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512)           |
-| intake items (`/p/finance/intake`)      | `finance-entry` (manual, backfill bulk); producers (import) | entry/approve roles                                         | entry role per the status machine; **never after `posted`** (EARS-505)                      | creator or entry role deletes `draft` only (status machine); later — refuse/cancel, not delete        |
-| documents                               | submitter on own items; entry role anywhere                 | submitter — own items' docs; entry/approve — all (EARS-523) | `kind` only, while no linked item is posted                                                 | while unlinked or linked only to mutable items; `refused`/`cancelled`/`posted` retain them (EARS-516) |
-| counterparties                          | any member inline from the forms; entry role (EARS-532)     | every finance reader                                        | rename — admin (reference administration, EARS-529)                                         | none (referenced by postings); merge out of scope in v1                                               |
-| purpose proposals                       | any platform member from the request form (EARS-526)        | admin (reference cabinet), proposer sees own                | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                            |
-| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501)                           | queue — approve role                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                                   |
+| Resource                                | Create                                                                    | Read                                                        | Update                                                                                      | Delete                                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| requests (`/p/finance/requests`)        | any platform member (EARS-502)                                            | own — the submitter; all — entry/approve roles              | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512)           |
+| intake items (`/p/finance/intake`)      | `finance-entry` (manual); future producers only when separately specified | entry/approve roles                                         | entry role per the status machine; **never after `posted`** (EARS-505)                      | creator or entry role deletes `draft` only (status machine); later — refuse/cancel, not delete        |
+| documents                               | submitter on own items; entry role anywhere                               | submitter — own items' docs; entry/approve — all (EARS-523) | `kind` only, while no linked item is posted                                                 | while unlinked or linked only to mutable items; `refused`/`cancelled`/`posted` retain them (EARS-516) |
+| counterparties                          | any member inline from the forms; entry role (EARS-532)                   | every finance reader                                        | rename — admin (reference administration, EARS-529)                                         | none (referenced by postings); merge out of scope in v1                                               |
+| purpose proposals                       | any platform member from the request form (EARS-526)                      | admin (reference cabinet), proposer sees own                | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                            |
+| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501)                                         | queue — approve role                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                                   |
 
 Deliberately unsupported: editing or deleting anything already posted (the
 ledger's own EARS-313 stands); posting without a document (EARS-506);
 free-text purpose (decision 21; proposals are not purposes — EARS-526);
 income, transfers and conversions **through the request form** — those enter
-via the entry role (manual/backfill); `personal_funds` without `already_paid`
+via the entry role (manual); `personal_funds` without `already_paid`
 (EARS-508); multi-step conversion chains through intake (one implicit step
 only — the F1 API takes the rest); any cabinet surface for the calendar
 (#372).
@@ -586,13 +590,18 @@ register, that dependency is named in the step:
    posted operation's money leg sits on the liability account with your
    member id; the intake list's liability view shows the debt to you
    (EARS-513/527).
-6. **Backfill in bulk.** Open the bulk entry, enter three historical rows
-   from real Mattermost receipts — an expense, a transfer, a conversion —
-   attach documents, post (EARS-517/518). Re-enter the same rows with the
-   same source refs — refused per line, originals pointed at (EARS-503/504).
-7. **Derivation input.** Open the derivation view — spend grouped by purpose,
-   uncategorised postings listed; add a category, link a purpose to it — the
-   pre-taxonomy postings now read that category without any rewrite
+6. **One-time history reconstruction.** The agent presents the owner with the
+   dry-run report built from the original Mattermost corpus: source counts,
+   duplicate/invalid rows, the first and last operation dates, document coverage
+   and three rendered samples (expense, transfer, conversion). After the owner
+   authorizes that exact run, the command writes it once; the verification report
+   shows matching counts, `source = backfill`, `backdated = true`, linked private
+   documents and audit rows with `source = cli:finance-history-backfill`.
+   Re-running reports the same operations as skipped and changes no balances
+   (EARS-517/518).
+7. **Derivation input.** The dry-run report groups spend by purpose and lists
+   uncategorised rows; after the approved categories are created and purposes
+   linked, pre-taxonomy postings read the category without any rewrite
    (EARS-519/520).
 8. **Missing purpose.** On the request form, find no fitting purpose — file
    the proposal; as admin, turn it into a purpose; the request becomes
@@ -604,8 +613,8 @@ register, that dependency is named in the step:
 ### Verified by CI, not by the owner
 
 TDD tests named `it('EARS-N: …')` (stage 3) cover every clause of this spec —
-the role gates and the narrowing (EARS-501/502/529/530), spine semantics and
-per-line idempotency (EARS-503/504), atomic posting (EARS-505), the
+the role gates and the narrowing (EARS-501/502/529/530), runtime-source
+semantics (EARS-503), atomic posting (EARS-505), the
 document gate (EARS-506) with kinds as data (EARS-515), no hours-event
 posting (EARS-507), form validation incl. cross-currency and
 `personal_funds`⇒`already_paid` (EARS-508), status visibility (EARS-509),
@@ -613,9 +622,10 @@ one-act posting and the verifier boundary (EARS-510/511/531),
 refusal incl. `already_paid` (EARS-512), the liability counter-leg with
 `member_id` and its currency rule (EARS-513), the liability view (EARS-527),
 the reimbursement route (EARS-528), storage privacy and access
-(EARS-514/523), document immutability and retention (EARS-516), backfill
-kinds, refs and flags (EARS-517/518), the derivation view (EARS-519),
-read-time resolution (EARS-520), the import contract (EARS-521), the status
+(EARS-514/523), document immutability and retention (EARS-516), the direct
+reconstruction command, idempotence, audit and ledger invariants
+(EARS-517/518), its category derivation artifact (EARS-519), read-time
+resolution (EARS-520), the status
 machine (EARS-524), producer isolation (EARS-525), the counterparty
 reference (EARS-532), purpose proposals
 (EARS-526) — plus `pnpm boundaries` green on the module (ADR-004 §6).
@@ -626,9 +636,11 @@ reference (EARS-532), purpose proposals
   P&L, unit cost — **F3 (#340)**; reconciliation — **F4 (#341)**; scenarios —
   **F5 (#342)**.
 - **The payment calendar** — #372, its own brainstorm (decision 26).
-- Bank **format parsers** until real statements are supplied (§G process
-  note); bank APIs, AI-agent entry — future producers by design
-  (decision 3).
+- Every bank-statement producer, upload/review surface and format parser until
+  a real statement is supplied and a scoped task is approved (§G); bank APIs
+  and AI-agent entry are future producers by design (decision 3).
+- A permanent bulk-backfill endpoint, backend or user-facing grid. Historical
+  reconstruction is the one-time operator command of EARS-517/518.
 - The AI-agent document verifier integration (Hermes) — the slot is designed
   in (EARS-531), the integration is its own follow-up issue (decision 28).
 - Automatic hours-accrual posting — ruled out by decision 23; whether the
@@ -642,10 +654,18 @@ reference (EARS-532), purpose proposals
 
 ## Open questions
 
-None. The go-list below was walked with the owner **one item at a time** and
+None. On 2026-08-31 the owner additionally ruled that historical backfill is a
+one-time direct database operation, not a permanent product import flow; he
+explicitly gave the revised implementation go in session. The original go-list
+below was walked with the owner **one item at a time** and
 each item confirmed — Антон, 2026-08-26, in session (the go is recorded on
 #339; decisions 28–30 are appended to the #115 decision log). Kept as the
 record of what the go covered:
+
+Revision record: the previous EARS-504 bulk-arrival contract is no longer a
+product requirement; its already-landed generic helper may remain module-private
+but no runtime producer or surface is promised. EARS-521 is retired unbuilt with
+the statement producer above. Neither id is reused.
 
 1. The decision-27 mapping: submitting a request stays open to any platform
    login (decision 8); `finance-entry` gates direct entry (EARS-501/502).

@@ -17,7 +17,7 @@
  * `resolveFinanceDocumentStorage` refuses to be pointed at it by name.
  *
  * **`kind` is DATA, not a gate** (EARS-515, owner decision 29). The taxonomy is
- * the corpus's five real classes plus the bank statement (EARS-521) and a rest
+ * the corpus's five real classes plus a reserved bank-statement kind and a rest
  * bucket; the CHECK below fixes the set, and nothing anywhere reads the kind to
  * decide whether a posting may proceed. That is the point: a foreign invoice is
  * often generated only at payment and IS the proof, while a RU invoice attached
@@ -61,7 +61,7 @@ import { core } from '../core'
 
 /**
  * The classes of confirming document (EARS-515): the corpus's five, the bank
- * statement EARS-521 imports from, and a rest bucket so an unexpected file is
+ * statement kind reserved for a future real format, and a rest bucket so an unexpected file is
  * filed rather than refused.
  */
 export const FINANCE_DOCUMENT_KINDS = [

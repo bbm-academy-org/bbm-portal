@@ -71,6 +71,9 @@ export const financeOperation = core.table(
       sql`(${table.source} = 'reversal') = (${table.reverses} is not null)`,
     ),
     check('finance_operation_no_self_reversal', sql`${table.reverses} <> ${table.id}`),
+    uniqueIndex('finance_operation_backfill_source_ref_unique')
+      .on(table.source, table.sourceRef)
+      .where(sql`${table.source} = 'backfill' and ${table.sourceRef} is not null`),
     uniqueIndex('finance_operation_reverses_unique').on(table.reverses),
   ],
 )

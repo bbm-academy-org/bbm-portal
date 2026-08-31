@@ -132,70 +132,80 @@ export async function postIntakeItem(
   options: PostIntakeItemOptions = {},
 ): Promise<FinanceIntakeItemView> {
   assertFinanceLedgerAccess(actor)
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    postIntakeItemInTransaction(tx, actor, itemId, options),
+  )
+}
 
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const item = await lockIntakeItem(tx, itemId)
-    if (item.source === 'request' && options.expectedSnapshot === undefined) {
+/** Transaction-scoped posting primitive for another finance-module workflow. */
+export async function postIntakeItemInTransaction(
+  tx: PlatformTx,
+  actor: FinanceActor,
+  itemId: number,
+  options: PostIntakeItemOptions = {},
+): Promise<FinanceIntakeItemView> {
+  assertFinanceLedgerAccess(actor)
+  const item = await lockIntakeItem(tx, itemId)
+  if (item.source === 'request' && options.expectedSnapshot === undefined) {
+    throw new FinanceRefusal(
+      `Заявка #${item.id} проводится только по снимку, который подтвердил document verifier ` +
+        '(EARS-531).',
+    )
+  }
+  const approveAndPost = options.approveSubmittedRequest === true
+  const expectedStatus = approveAndPost ? 'submitted' : 'approved'
+  if (item.status !== expectedStatus) {
+    throw new FinanceRefusal(
+      `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: ` +
+        `${approveAndPost ? 'одноактное согласование ожидает submitted' : 'проводка доступна только после approved'} ` +
+        '(EARS-505/510).',
+    )
+  }
+  if (approveAndPost && (item.source !== 'request' || item.kind !== 'expense')) {
+    throw new FinanceRefusal(
+      'Одноактное согласование и проведение относится только к заявке на расход ' +
+        '(EARS-510). Остальные позиции сначала проходят обычный approved.',
+    )
+  }
+  if (options.occurredOn !== undefined) {
+    if (item.source !== 'request' || item.kind !== 'expense') {
       throw new FinanceRefusal(
-        `Заявка #${item.id} проводится только по снимку, который подтвердил document verifier ` +
-          '(EARS-531).',
+        'Фактическая дата в момент подтверждения меняется только у заявки на расход ' +
+          '(EARS-508/511).',
       )
     }
-    const approveAndPost = options.approveSubmittedRequest === true
-    const expectedStatus = approveAndPost ? 'submitted' : 'approved'
-    if (item.status !== expectedStatus) {
+    if (!ISO_DATE.test(options.occurredOn)) {
       throw new FinanceRefusal(
-        `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: ` +
-          `${approveAndPost ? 'одноактное согласование ожидает submitted' : 'проводка доступна только после approved'} ` +
-          '(EARS-505/510).',
+        `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
+          '(EARS-508/511).',
       )
     }
-    if (approveAndPost && (item.source !== 'request' || item.kind !== 'expense')) {
-      throw new FinanceRefusal(
-        'Одноактное согласование и проведение относится только к заявке на расход ' +
-          '(EARS-510). Остальные позиции сначала проходят обычный approved.',
-      )
-    }
-    if (options.occurredOn !== undefined) {
-      if (item.source !== 'request' || item.kind !== 'expense') {
-        throw new FinanceRefusal(
-          'Фактическая дата в момент подтверждения меняется только у заявки на расход ' +
-            '(EARS-508/511).',
-        )
-      }
-      if (!ISO_DATE.test(options.occurredOn)) {
-        throw new FinanceRefusal(
-          `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
-            '(EARS-508/511).',
-        )
-      }
-    }
-    const postingItem = {
-      ...item,
-      occurredOn: options.occurredOn ?? item.occurredOn,
-    } as PostingItem
-    if (options.expectedSnapshot !== undefined) {
-      await assertIntakePostingSnapshot(tx, intakeItemToView(postingItem), options.expectedSnapshot)
-    }
-    await assertRequestPurposeReady(tx, item.id)
-    await requireReadyDocument(tx, item.id)
-    const postedBy = await requireActorMemberId(tx, actor)
-    const operation = await recordItemOperation(tx, postingItem)
-    const postedAt = new Date()
-    const [updated] = await tx
-      .update(financeIntakeItem)
-      .set({
-        status: 'posted',
-        occurredOn: postingItem.occurredOn,
-        ...(approveAndPost ? { decidedBy: postedBy, decidedAt: postedAt } : {}),
-        operationId: operation.id,
-        postedBy,
-        postedAt,
-      })
-      .where(eq(financeIntakeItem.id, item.id))
-      .returning()
-    return intakeItemToView(updated)
-  })
+  }
+  const postingItem = {
+    ...item,
+    occurredOn: options.occurredOn ?? item.occurredOn,
+  } as PostingItem
+  if (options.expectedSnapshot !== undefined) {
+    await assertIntakePostingSnapshot(tx, intakeItemToView(postingItem), options.expectedSnapshot)
+  }
+  await assertRequestPurposeReady(tx, item.id)
+  await requireReadyDocument(tx, item.id)
+  const postedBy = await requireActorMemberId(tx, actor)
+  const operation = await recordItemOperation(tx, postingItem)
+  const postedAt = new Date()
+  const [updated] = await tx
+    .update(financeIntakeItem)
+    .set({
+      status: 'posted',
+      occurredOn: postingItem.occurredOn,
+      ...(approveAndPost ? { decidedBy: postedBy, decidedAt: postedAt } : {}),
+      operationId: operation.id,
+      postedBy,
+      postedAt,
+    })
+    .where(eq(financeIntakeItem.id, item.id))
+    .returning()
+  return intakeItemToView(updated)
 }
 
 /** Public posting keeps request confirmation behind the verifier-owned workflow. */

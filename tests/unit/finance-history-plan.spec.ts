@@ -169,6 +169,8 @@ describe('the one-time finance history plan', () => {
       invalidCount: 1,
       sourcePostCount: 3,
       sourceDocumentCount: 2,
+      operationsWithDocuments: 2,
+      operationsWithoutDocuments: 2,
     })
   })
 

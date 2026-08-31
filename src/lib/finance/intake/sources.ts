@@ -7,8 +7,8 @@
  * and no posting path». That is a statement about SHAPE, and it is only true if
  * the spine looks a source up instead of branching on it. So there is exactly
  * one registry here, `resolveIntakeSourceRef` is the single entry point every
- * create path uses, and nothing in `./items.ts` says the word `bank_import`.
- * A future bank API registers a producer and is done; a `switch` on `source`
+ * create path uses. A future bank source registers a producer only after its
+ * real input contract is specified; a `switch` on `source`
  * anywhere in the spine would be the regression this file exists to prevent.
  *
  * (The DATABASE enum is a separate, deliberate story: `finance_intake_item.source`
@@ -17,8 +17,8 @@
  * review, not a spine change — the producer is what the MODULE needs, and the
  * clause is about the module.)
  *
- * **EARS-503's semantics, per source.** `bank_import` — the statement line's
- * stable identity, always. `backfill` — always, and composed in a fixed order:
+ * **EARS-503's semantics, per implemented source.** `backfill` carries a stable
+ * identity, composed in a fixed order:
  * the document's number, else the Mattermost post id, else a deterministic
  * natural key. `manual` and `request` — none: a human act has no external
  * identity to deduplicate on, and inventing one would make two genuinely
@@ -109,7 +109,7 @@ function naturalKey(key: FinanceIntakeNaturalKey): string {
  * The ORDER is the clause, not a heuristic: a document number identifies the
  * fact for a human too, a post id identifies the corpus entry, and the natural
  * key is what remains when neither exists. Re-running the same history composes
- * the same string at every level, which is what makes EARS-504 able to refuse
+ * the same string at every level, which is what lets the duplicate guard refuse
  * the second pass.
  */
 export function backfillSourceRef(input: FinanceIntakeRefInput & FinanceIntakeNaturalKey): string {
@@ -152,7 +152,7 @@ export function resolveIntakeSourceRef(
   if (derived === null || derived.trim() === '') {
     throw new FinanceRefusal(
       `Источник «${source}» обязан приносить source_ref (EARS-503): без него повторный ` +
-        'разбор той же истории провёл бы её второй раз (EARS-504). Для backfill это номер ' +
+        'разбор той же истории провёл бы её второй раз. Для backfill это номер ' +
         'документа, иначе id поста Mattermost, иначе естественный ключ ' +
         '(дата + счёт + сумма + контрагент).',
     )
@@ -160,7 +160,7 @@ export function resolveIntakeSourceRef(
   return derived.trim()
 }
 
-// ── the four producers spec 339 fixes (EARS-503) ─────────────────────────────
+// ── the implemented producers (EARS-503) ─────────────────────────────────────
 //
 // Registered here, at module load, and each is a table row rather than a branch.
 // A fifth one is added the same way — by `registerIntakeProducer`, from wherever
@@ -174,8 +174,5 @@ registerIntakeProducer({
   deriveSourceRef: (input) =>
     input.natural === undefined ? null : backfillSourceRef({ ...input, ...input.natural }),
 })
-// The statement line's stable identity is the PARSER's output — there is nothing
-// to derive here, which is why this producer has no `deriveSourceRef` and the
-// spine refuses a `bank_import` line that arrived without one. The format parser
-// itself is spec 339 §G and is deliberately unbuilt until real statements exist.
-registerIntakeProducer({ source: 'bank_import', sourceRefPolicy: 'required' })
+// `bank_import` remains a schema provenance token, not an implemented producer.
+// A real statement format gets its own scoped producer only when evidence exists.

@@ -13,7 +13,7 @@
  * posting; no percentage base, absorption rate or allocation run exists here to
  * write one, and F3 computes such views as overlays over what is posted.
  */
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 
 import {
   financeAccount,
@@ -158,6 +158,8 @@ export async function recordOperationInTransaction(
       "source = 'reversal' проставляет только сторно: используйте reverseOperation (EARS-314).",
     )
   }
+  const existing = await findExistingBackfillOperation(tx, parsed.source, parsed.sourceRef ?? null)
+  if (existing !== null) return existing
   const accounts = await loadAccountFacts(tx, parsed.postings)
   assertNoRetiredAccount(accounts)
   const postings = await prepareDimensions(tx, parsed, accounts)
@@ -333,17 +335,33 @@ export async function insertOperation(
   draft: OperationRowDraft,
   stepIdByNo: ReadonlyMap<number, number> = new Map(),
 ): Promise<RecordedOperation> {
-  const [operation] = await tx
-    .insert(financeOperation)
-    .values({
-      occurredOn: draft.occurredOn,
-      source: draft.source,
-      purposeId: draft.purposeId,
-      sourceRef: draft.sourceRef,
-      backdated: draft.backdated,
-      reverses: draft.reverses,
-    })
-    .returning()
+  const values = {
+    occurredOn: draft.occurredOn,
+    source: draft.source,
+    purposeId: draft.purposeId,
+    sourceRef: draft.sourceRef,
+    backdated: draft.backdated,
+    reverses: draft.reverses,
+  }
+  const rows =
+    draft.source === 'backfill' && draft.sourceRef !== null
+      ? await tx
+          .insert(financeOperation)
+          .values(values)
+          .onConflictDoNothing({
+            target: [financeOperation.source, financeOperation.sourceRef],
+            where: sql`${financeOperation.source} = 'backfill' and ${financeOperation.sourceRef} is not null`,
+          })
+          .returning()
+      : await tx.insert(financeOperation).values(values).returning()
+  const operation = rows[0]
+  if (operation === undefined) {
+    const existing = await findExistingBackfillOperation(tx, draft.source, draft.sourceRef)
+    if (existing !== null) return existing
+    throw new FinanceRefusal(
+      'The operation conflicted but the existing ledger fact could not be read.',
+    )
+  }
 
   // A conversion inserts its operation row FIRST, so its steps exist by the time
   // its postings name them; that call passes no postings here and appends them
@@ -392,6 +410,39 @@ export async function insertOperation(
       amount: row.amount,
       currency: row.currency,
     })),
+  }
+}
+
+async function findExistingBackfillOperation(
+  tx: PlatformTx,
+  source: FinanceOperationSource,
+  sourceRef: string | null,
+): Promise<RecordedOperation | null> {
+  if (source !== 'backfill' || sourceRef === null) return null
+  const [operation] = await tx
+    .select()
+    .from(financeOperation)
+    .where(and(eq(financeOperation.source, 'backfill'), eq(financeOperation.sourceRef, sourceRef)))
+  if (operation === undefined) return null
+  const postings = await tx
+    .select({
+      id: financePosting.id,
+      accountId: financePosting.accountId,
+      amount: financePosting.amount,
+      currency: financePosting.currency,
+    })
+    .from(financePosting)
+    .where(eq(financePosting.operationId, operation.id))
+    .orderBy(financePosting.id)
+  return {
+    id: operation.id,
+    occurredOn: operation.occurredOn,
+    source: 'backfill',
+    purposeId: operation.purposeId,
+    sourceRef: operation.sourceRef,
+    backdated: operation.backdated,
+    reverses: operation.reverses,
+    postings,
   }
 }
 

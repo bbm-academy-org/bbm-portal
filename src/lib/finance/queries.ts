@@ -53,6 +53,8 @@ export type RegisterEntry = {
     currency: string
     projectId: number | null
     categoryId: number | null
+    /** True exactly when EARS-520 used the purpose's current category link. */
+    categoryDerived: boolean
     productId: number | null
     memberId: number | null
   }[]
@@ -227,7 +229,13 @@ export async function listRegister(options: { limit?: number } = {}): Promise<Re
            pu.name as purpose_name,
            (select r.id from core.finance_operation r where r.reverses = o.id) as reversed_by,
            p.id as posting_id, p.account_id, a.name as account_name, p.amount::text as amount,
-           p.currency, p.project_id, p.category_id, p.product_id, p.member_id
+           p.currency, p.project_id,
+           coalesce(p.category_id,
+             case when a.kind in ('income', 'expense') then pu.category_id end
+           ) as category_id,
+           (p.category_id is null and pu.category_id is not null
+             and a.kind in ('income', 'expense')) as category_derived,
+           p.product_id, p.member_id
       from core.finance_operation o
       left join core.finance_purpose pu on pu.id = o.purpose_id
       join core.finance_posting p on p.operation_id = o.id
@@ -262,6 +270,7 @@ export async function listRegister(options: { limit?: number } = {}): Promise<Re
       currency: String(raw.currency),
       projectId: raw.project_id === null ? null : Number(raw.project_id),
       categoryId: raw.category_id === null ? null : Number(raw.category_id),
+      categoryDerived: Boolean(raw.category_derived),
       productId: raw.product_id === null ? null : Number(raw.product_id),
       memberId: raw.member_id === null ? null : Number(raw.member_id),
     })

@@ -90,7 +90,7 @@ export type FinanceIntakeItemView = {
 }
 
 /**
- * EARS-504's refusal, and the reason it is its own class: the clause is «refuse
+ * The source-ref duplicate refusal is its own class because callers need to
  * that item and answer with the existing one». A bare message cannot be answered
  * with — a bulk caller has to POINT at the original to report the skipped line —
  * so the existing item rides on the error itself.
@@ -101,7 +101,7 @@ export class FinanceIntakeDuplicate extends FinanceRefusal {
   constructor(existing: FinanceIntakeItemView) {
     super(
       `Позиция с source = «${existing.source}» и source_ref = «${existing.sourceRef}» уже есть ` +
-        `в приёмке — это заявка #${existing.id} в статусе «${existing.status}» (EARS-504). ` +
+        `в приёмке — это заявка #${existing.id} в статусе «${existing.status}». ` +
         'Повторный разбор той же истории ничего не проводит второй раз.',
     )
     this.name = 'FinanceIntakeDuplicate'
@@ -434,7 +434,7 @@ export type FinanceIntakeBulkOutcome = {
 }
 
 /**
- * A bulk arrival — an import file, a backfill batch (EARS-504, US-8).
+ * Module-private multi-row helper retained as an internal regression seam.
  *
  * **The refusal is per LINE, and that is the whole clause.** Lines run one at a
  * time in their own transactions, so a duplicate is skipped and reported while
@@ -467,17 +467,6 @@ export async function createIntakeItems(
   return { created, duplicates }
 }
 
-/** Bulk intake remains public for producers; human requests remain facade-only. */
-export async function createIntakeItemsPublic(
-  actor: FinanceActor,
-  inputs: readonly CreateDirectIntakeItemInput[],
-): Promise<FinanceIntakeBulkOutcome> {
-  for (const input of inputs) {
-    assertDirectIntakeSource((input as CreateIntakeItemInput).source, 'createExpenseRequest', 508)
-  }
-  return createIntakeItems(actor, inputs)
-}
-
 /**
  * The row, locked, INSIDE the caller's transaction (`select … for update`).
  *
@@ -487,7 +476,7 @@ export async function createIntakeItemsPublic(
  * time: two callers both read `submitted`, both write, and the row lands in a
  * state no listed transition produced — `cancelled` carrying an approval's
  * decider, or a plain `cancelled → approved`. There is no CHECK that can catch
- * that, unlike EARS-504's unique index.
+ * that, unlike the source-ref unique index.
  *
  * The lock, rather than a compare-and-swap, because the decision needs the row
  * anyway: the gate reads `created_by` and `source`, the edit plan reads the

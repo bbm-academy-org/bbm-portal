@@ -30,7 +30,7 @@ import {
  * duplication: the status machine and the per-source `source_ref` semantics are
  * DECISIONS the module makes before anything reaches Postgres (spec 338
  * EARS-326), so they are asserted here without a database. What the database
- * itself makes true — the partial unique index behind EARS-504, the role gates
+ * itself makes true — the source-ref partial unique index, the role gates
  * on real rows — is `tests/int/platform/finance-intake.int.spec.ts`.
  */
 
@@ -146,17 +146,18 @@ describe('The intake status machine (EARS-524)', () => {
 })
 
 describe('Per-source source_ref semantics (EARS-503)', () => {
-  it('EARS-503: bank_import and backfill always carry a ref; manual and request never do', () => {
-    expect(resolveIntakeProducer('bank_import').sourceRefPolicy).toBe('required')
+  it('EARS-503: backfill carries a ref; manual and request never do; the bank token has no producer yet', () => {
+    expect(() => resolveIntakeProducer('bank_import')).toThrow(FinanceRefusal)
     expect(resolveIntakeProducer('backfill').sourceRefPolicy).toBe('required')
     expect(resolveIntakeProducer('manual').sourceRefPolicy).toBe('none')
     expect(resolveIntakeProducer('request').sourceRefPolicy).toBe('none')
-    // Every source of the enum has a producer — the spine has no gap.
+    // The enum reserves bank_import for a later real format; it is not a parser
+    // or producer by itself (owner ruling 2026-08-31).
     expect(
       listIntakeProducers()
         .map((producer) => producer.source)
         .sort(),
-    ).toEqual([...FINANCE_INTAKE_SOURCES].sort())
+    ).toEqual([...FINANCE_INTAKE_SOURCES].filter((source) => source !== 'bank_import').sort())
   })
 
   it('EARS-503: a human source that supplies a ref is refused rather than quietly stored', () => {
@@ -166,10 +167,10 @@ describe('Per-source source_ref semantics (EARS-503)', () => {
     }
   })
 
-  it('EARS-503: bank_import demands the statement line identity and cannot invent one', () => {
-    expect(resolveIntakeSourceRef('bank_import', { sourceRef: 'stmt:2026-08-01:17' })).toBe(
-      'stmt:2026-08-01:17',
-    )
+  it('EARS-503: the reserved bank_import token cannot create an item before a real producer exists', () => {
+    expect(() =>
+      resolveIntakeSourceRef('bank_import', { sourceRef: 'stmt:2026-08-01:17' }),
+    ).toThrow(FinanceRefusal)
     expect(() => resolveIntakeSourceRef('bank_import', {})).toThrow(FinanceRefusal)
   })
 
@@ -185,7 +186,7 @@ describe('Per-source source_ref semantics (EARS-503)', () => {
     ).toBe('INV-42')
     expect(backfillSourceRef({ ...natural, mattermostPostId: 'p9' })).toBe('p9')
     // The fallback is DETERMINISTIC — that is the whole point: re-running the
-    // same history composes the same key and EARS-504 refuses the second pass.
+    // same history composes the same key and the duplicate guard refuses the second pass.
     expect(backfillSourceRef(natural)).toBe(backfillSourceRef({ ...natural }))
     expect(backfillSourceRef(natural)).toContain('2026-04-17')
     expect(backfillSourceRef({ ...natural, amount: 875_001n })).not.toBe(backfillSourceRef(natural))

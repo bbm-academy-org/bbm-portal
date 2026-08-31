@@ -28,9 +28,9 @@
  *    `bank_import` and `backfill` ALWAYS carry a ref, `manual` and `request`
  *    never do (a human act has no external identity to deduplicate on). Without
  *    it a backfill row could land ref-less and re-running the same history would
- *    double-post, which is exactly the failure EARS-504 exists to prevent.
+ *    double-post, which is exactly the failure the source-ref guard prevents.
  *  - `finance_intake_item_source_ref_unique` — the partial unique index that
- *    MAKES EARS-504 true. The module refuses the duplicate with the existing
+ *    makes the duplicate refusal race-safe. The module returns the existing
  *    item in hand; this index is why a race cannot slip a second one past it.
  *  - `personal_funds_account` — EARS-513's «`account` is empty exactly when
  *    `personal_funds`», the model's one nullable-account case.
@@ -222,7 +222,7 @@ export const financeIntakeItem = core.table(
       'finance_intake_item_posted_pair',
       sql`(${table.postedBy} is null) = (${table.postedAt} is null)`,
     ),
-    // EARS-504's database half: a duplicate (source, source_ref) cannot exist,
+    // A duplicate (source, source_ref) cannot exist,
     // however many producers race for it.
     uniqueIndex('finance_intake_item_source_ref_unique')
       .on(table.source, table.sourceRef)

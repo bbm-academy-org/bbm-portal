@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "finance_operation_backfill_source_ref_unique" ON "core"."finance_operation" USING btree ("source","source_ref") WHERE "core"."finance_operation"."source" = 'backfill' and "core"."finance_operation"."source_ref" is not null;

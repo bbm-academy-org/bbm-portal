@@ -145,14 +145,32 @@ export type { FinancePurposeProposalStatus, FinancePurposeProposalView } from '.
 export { recordOperation, reverseOperation } from './operations'
 export type { RecordOperationInput, RecordedOperation } from './operations'
 
+// ── one-time historical reconstruction (spec 339 EARS-517…520) ─────────────
+export {
+  buildFinanceHistoryPlan,
+  verifyFinanceHistoryPlanDigest,
+  FINANCE_HISTORY_PLAN_VERSION,
+} from './history/plan'
+export type { FinanceHistoryApplyOptions, FinanceHistoryApplyResult } from './history/apply'
+export { applyFinanceHistoryPlan } from './history/apply'
+export type {
+  ExistingFinanceHistoryOperation,
+  FinanceHistoryMapping,
+  FinanceHistoryOperationMapping,
+  FinanceHistoryPlan,
+  FinanceHistoryPlanOperation,
+  FinanceHistorySnapshot,
+  FinanceHistorySourceFile,
+  FinanceHistorySourcePost,
+} from './history/plan'
+
 // ── conversions with frozen rates (EARS-318/319/328/329) ─────────────────────
 export { recordConversion } from './conversions'
 export type { ConversionStepInput, RecordConversionInput } from './conversions'
 
-// ── the intake spine (spec 339 EARS-503/504/524/525) ─────────────────────────
+// ── the intake spine (spec 339 EARS-503/524/525) ─────────────────────────────
 export {
   createIntakeItemPublic as createIntakeItem,
-  createIntakeItemsPublic as createIntakeItems,
   editIntakeItemPublic as editIntakeItem,
   FinanceIntakeDuplicate,
   getIntakeItem,
@@ -163,8 +181,6 @@ export { postIntakeItemPublic as postIntakeItem } from './intake/posting'
 export type {
   CreateDirectIntakeItemInput as CreateIntakeItemInput,
   EditIntakeItemPatch,
-  FinanceIntakeBulkOutcome,
-  FinanceIntakeDuplicateLine,
   FinanceIntakeItemView,
   ListIntakeItemsFilter,
 } from './intake/items'
@@ -244,6 +260,7 @@ export {
   uploadFinanceDocument,
   FINANCE_DOCUMENT_MAX_BYTES,
 } from './documents/documents'
+export type { FinanceDocumentStorage } from './documents/storage'
 export type {
   FinanceDocumentContent,
   FinanceDocumentView,

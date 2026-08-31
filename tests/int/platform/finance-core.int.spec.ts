@@ -33,6 +33,7 @@ import { auditEventsFor, auditWatermark } from './audit-helpers'
 import {
   ADMIN,
   APPROVER,
+  fixtureWrite,
   fundProjectId,
   MEMBER,
   seedMember,
@@ -594,23 +595,18 @@ describe('read-time category fallback (EARS-520)', () => {
       ],
     })
     await fixtureWrite(async (tx) => {
-      await tx
-        .execute(
-          sql`
+      const result = await tx.execute(sql`
         insert into core.finance_operation (occurred_on, purpose_id, source, source_ref, backdated)
         values ('2024-12-01', ${purpose.id}, 'backfill', 'MM-pre-taxonomy', true)
         returning id
-      `,
-        )
-        .then(async (result) => {
-          const operationId = Number((result.rows[0] as { id: number }).id)
-          await tx.execute(sql`
+      `)
+      const operationId = Number((result.rows[0] as { id: number }).id)
+      await tx.execute(sql`
           insert into core.finance_posting (operation_id, account_id, amount, currency, project_id, category_id)
           values
             (${operationId}, ${expense.id}, 2500, 'RUB', ${fund}, null),
             (${operationId}, ${bank.id}, -2500, 'RUB', null, null)
         `)
-        })
     })
 
     await updatePurpose(ADMIN, purpose.id, { categoryId: secondCategory.id })

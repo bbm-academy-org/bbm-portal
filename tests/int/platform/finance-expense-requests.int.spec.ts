@@ -10,7 +10,6 @@ import {
   createCurrency,
   createExpenseRequest,
   createIntakeItem,
-  createIntakeItems,
   createProduct,
   createProject,
   createPurpose,
@@ -152,12 +151,9 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
       kind: 'expense',
       ...requestInput(refs),
     }
-    const attempts = await Promise.allSettled([
-      createIntakeItem(MEMBER, rawRequest as never),
-      createIntakeItems(MEMBER, [rawRequest] as never),
-    ])
+    const attempts = await Promise.allSettled([createIntakeItem(MEMBER, rawRequest as never)])
 
-    expect(attempts.map((attempt) => attempt.status)).toEqual(['rejected', 'rejected'])
+    expect(attempts.map((attempt) => attempt.status)).toEqual(['rejected'])
     for (const attempt of attempts) {
       expect(attempt).toMatchObject({
         reason: expect.objectContaining({
@@ -200,12 +196,12 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
       ...requestInput(refs),
     }
     const item = await createIntakeItem(ENTRY, directInput)
-    const bulk = await createIntakeItems(ENTRY, [{ ...directInput, amount: 121_000n }])
+    const second = await createIntakeItem(ENTRY, { ...directInput, amount: 121_000n })
     const edited = await editIntakeItem(ENTRY, item.id, { note: 'Direct intake remains public' })
     const submitted = await transitionIntakeItem(ENTRY, item.id, 'submit')
     const approved = await transitionIntakeItem(APPROVER, item.id, 'approve')
 
-    expect(bulk.created).toHaveLength(1)
+    expect(second.amount).toBe(121_000n)
     expect(edited.note).toBe('Direct intake remains public')
     expect(submitted).toMatchObject({ status: 'submitted' })
     expect(approved).toMatchObject({ status: 'approved', decidedBy: refs.approverMemberId })
