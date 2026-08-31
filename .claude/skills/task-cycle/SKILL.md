@@ -165,12 +165,12 @@ showing. **Precondition for inviting the owner to any UI/auth flow: a green
 browser E2E pass (Playwright) of the acceptance scenarios first — curl + unit
 tests do not satisfy this.** (2026-07-24: the P2b invite nearly went out on
 curl evidence alone; the Playwright pre-pass caught a login-blocking IdP defect
-— «Ты проверял через Playwright CLI?».) **The invitation always carries the
-access line: URL + login + where to get the password. It also requires
+— «Ты проверял через Playwright CLI?».) **Second precondition: the stand carries
 representative scenario data that makes the accepted behavior meaningful; an
 empty state is sufficient only when that empty state is what is being accepted.**
-The stand stays up
-until the verdict; an unanswered design/visual question = merge stays blocked.
+**The invitation always carries the access line: URL + login + where to get the
+password.** The stand stays up until the verdict; an unanswered design/visual
+question = merge stays blocked.
 Invisible changes (internals, refactoring, docs, backend without UI) skip this
 stage — but the PR still records **which** case it is: every PR carries a
 `Stage-B:` line (`GO` / `batched at #N` / `N/A — lead-certified`), checked by
