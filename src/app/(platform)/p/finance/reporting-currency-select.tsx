@@ -8,9 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 export function ReportingCurrencySelect({
   currencies,
   value,
+  className,
 }: {
   currencies: { code: string; name: string }[]
   value: string
+  className?: string
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -23,7 +25,7 @@ export function ReportingCurrencySelect({
         startTransition(() => router.replace(`/p/finance?currency=${encodeURIComponent(currency)}`))
       }}
     >
-      <SelectTrigger size="sm" aria-label="Валюта итога">
+      <SelectTrigger size="sm" aria-label="Валюта итога" className={className}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent data-bbm-ui align="end">
