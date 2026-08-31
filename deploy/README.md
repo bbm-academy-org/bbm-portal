@@ -341,6 +341,11 @@ commands and day-to-day handling:
 [`src/lib/platform/db/README.md`](../src/lib/platform/db/README.md). What follows
 here is only what is true at the **host** level.
 
+The one-time cross-host finance history reconstruction is a separate operator
+procedure: [`docs/runbooks/finance-history-reconstruction.md`](../docs/runbooks/finance-history-reconstruction.md).
+It uses the application role through an SSH tunnel and must not be replaced by
+a published database port or a persistent import service.
+
 ### One-time upgrade step on an EXISTING install — do this before the first deploy
 
 `deploy/.env.prod` is host-only: it is gitignored, it is never shipped (the
