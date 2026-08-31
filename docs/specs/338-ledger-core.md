@@ -338,10 +338,15 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   any other kind — `income`, `expense`, `liability`, `conversion`, `fx_result` —
   is never a cash tile and never enters the total, whatever its flag says.
 
-  Whether a RETIRED money account keeps a tile is deliberately NOT settled here
-  and stands as an open owner question (PR #414 review, MAJOR 6): the read model
-  applies no `retired_at` predicate today, so a retired account renders whatever
-  its balance. That is the observed behaviour, recorded as such, not a decision.
+  A RETIRED money account is treated by its BALANCE, not by its retirement
+  (owner ruling by Антон, 2026-08-31, recorded on #357): a retired account whose
+  balance is zero shall be hidden from the card entirely — it holds nothing and
+  is no longer offered for new postings (EARS-308) — while a retired account
+  with a NONZERO balance shall keep its tile, marked «архивный», and shall
+  count in the aggregates and the total exactly like any other money account.
+  The money is still BBM's while the balance is not zero; retirement changes
+  what the account is offered for, never what it holds. Retirement therefore
+  never moves a number.
 
   A conversion step whose `from_currency` equals its `to_currency` is malformed:
   it establishes no rate and makes that pair unavailable.

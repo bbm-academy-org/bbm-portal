@@ -70,7 +70,12 @@ export default async function FinancePage({
                   className="min-w-0"
                 >
                   <CardContent className="space-y-2">
-                    <p className="truncate text-sm text-muted-foreground">{account.name}</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm text-muted-foreground">{account.name}</p>
+                      {account.retired === true ? (
+                        <Badge variant="secondary">архивный</Badge>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap items-baseline gap-2">
                       <span className="font-heading text-xl font-semibold tabular-nums">
                         {formatMinorUnits(

@@ -18,12 +18,48 @@ export function isCurrentMoneyAccount(account: { kind: string; isSystem: boolean
   )
 }
 
+/**
+ * EARS-325 — which balance rows are «Деньги сейчас», and which are archived.
+ *
+ * Retirement is judged by the BALANCE (owner ruling by Антон, 2026-08-31,
+ * recorded on #357). A retired account holding nothing leaves the card: it is no
+ * longer offered for new postings (EARS-308) and it holds nothing to show. A
+ * retired account that still holds money keeps its tile, flagged `retired` so
+ * the surface can mark it «архивный», and counts in the aggregates exactly like
+ * any other — the money is still BBM's. Retirement therefore never moves a
+ * number; it only removes an empty row.
+ */
+export function selectCurrentMoneyAccounts(
+  rows: readonly {
+    accountId: number
+    name: string
+    kind: string
+    currency: string
+    isSystem: boolean
+    retiredAt: Date | null
+    balance: bigint
+  }[],
+): CurrentMoneyAccount[] {
+  return rows
+    .filter((row) => isCurrentMoneyAccount(row) && !(row.retiredAt !== null && row.balance === 0n))
+    .map(({ accountId, name, kind, currency, balance, retiredAt }) => ({
+      accountId,
+      name,
+      kind,
+      currency,
+      balance,
+      retired: retiredAt !== null,
+    }))
+}
+
 export type CurrentMoneyAccount = {
   accountId: number
   name: string
   kind: string
   currency: string
   balance: bigint
+  /** EARS-325: withdrawn from circulation but still holding money — «архивный». */
+  retired?: boolean
 }
 
 export type CurrentMoneyPostingFact = {
