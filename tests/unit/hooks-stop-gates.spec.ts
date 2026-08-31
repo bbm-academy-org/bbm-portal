@@ -1222,7 +1222,6 @@ describe('#415: раздача агентов — не терминальный 
   it('формулировки фан-аута попадают в PROPOSAL_INFLIGHT_RE', () => {
     expect(isProposalOrInFlight('Агенты запущены, дальше по отчётам.')).toBe(true)
     expect(isProposalOrInFlight('Пять агентов работают в фоне.')).toBe(true)
-    expect(isProposalOrInFlight('Жду отчётов от субагентов.')).toBe(true)
     expect(isProposalOrInFlight('Соберу сводку, когда все пятеро отчитаются.')).toBe(true)
     expect(isProposalOrInFlight('Five background agents are running.')).toBe(true)
   })
@@ -1230,6 +1229,15 @@ describe('#415: раздача агентов — не терминальный 
   it('обычный отчёт о завершении по-прежнему отчёт', () => {
     expect(isProposalOrInFlight(REPORT_NO_MARKERS)).toBe(false)
     expect(isTerminalReport(REPORT_NO_MARKERS)).toBe(true)
+  })
+
+  // Ревью PR #417 (MINOR): семейство «жду отчёт…» в словарь НЕ входит — оно
+  // ловится внутри настоящего финального отчёта («жду отчёта CI») и освобождало
+  // бы его от всех трёх гейтов. Случай ожидания покрыт структурно, диспатчем.
+  it('«жду отчёта CI» в финальном отчёте гейты не снимает', () => {
+    const report = 'Готово: PR #92 смержен, issue #91 закрыт. Жду отчёта CI по деплою.'
+    expect(isProposalOrInFlight(report)).toBe(false)
+    expect(isTerminalReport(report)).toBe(true)
   })
 })
 
@@ -1245,6 +1253,8 @@ const dispatchUse = (id: string, msgId = 'd1') =>
     type: 'assistant',
     message: { id: msgId, content: [{ type: 'tool_use', id, name: 'Agent', input: {} }] },
   })
+
+const userSays = (text: string) => JSON.stringify({ type: 'user', message: { content: text } })
 
 const dispatchResult = (toolUseId: string) =>
   JSON.stringify({
@@ -1293,6 +1303,60 @@ describe('#415: невернувшийся фоновый агент', () => {
     expect(hasUnreturnedDispatch('')).toBe(false)
     expect(hasUnreturnedDispatch('{ битая строка')).toBe(false)
     expect(hasUnreturnedDispatch(null)).toBe(false)
+  })
+
+  // Ревью PR #417 (MAJOR): утверждение — «ждём агентов ПРЯМО СЕЙЧАС». Без
+  // границы хвоста один невернувшийся диспатч снимал бы гейты до конца сессии
+  // и во всякой сессии, продолженной на том же JSONL.
+  it('невернувшийся диспатч ДО последнего хода пользователя в хвост не входит', () => {
+    expect(
+      hasUnreturnedDispatch(
+        [
+          dispatchUse('t1'),
+          userSays('а теперь закрой задачу'),
+          assistantSays(REPORT_NO_MARKERS),
+        ].join('\n'),
+      ),
+    ).toBe(false)
+  })
+
+  it('диспатч, вернувшийся раньше в сессии, финальный отчёт не освобождает', () => {
+    expect(
+      hasUnreturnedDispatch(
+        [
+          dispatchUse('t1'),
+          dispatchResult('t1'),
+          userSays('дальше'),
+          toolUse('Edit', { file_path: 'src/a.ts' }),
+          assistantSays(REPORT_NO_MARKERS),
+        ].join('\n'),
+      ),
+    ).toBe(false)
+  })
+
+  // `tool_result` приходит записью `type:'user'` — если бы границей считалась
+  // всякая запись пользователя, хвост обрывался бы на первом вернувшемся агенте
+  // и второй, ещё висящий, был бы потерян.
+  it('возврат инструмента границей хвоста не является', () => {
+    expect(
+      hasUnreturnedDispatch(
+        [dispatchUse('t1'), dispatchUse('t2', 'd2'), dispatchResult('t2')].join('\n'),
+      ),
+    ).toBe(true)
+  })
+
+  it('диспатч ПОСЛЕ последнего хода пользователя остаётся уликой', () => {
+    expect(
+      hasUnreturnedDispatch(
+        [
+          dispatchUse('t1'),
+          dispatchResult('t1'),
+          userSays('раздай ревью'),
+          dispatchUse('t2', 'd2'),
+          assistantSays(FAN_OUT_DISPATCH),
+        ].join('\n'),
+      ),
+    ).toBe(true)
   })
 
   it('невернувшийся агент снимает все три гейта', () => {

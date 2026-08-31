@@ -274,9 +274,15 @@ export function isOwnerQuestionForm(text) {
  * Вторая половина списка — формулировки ФАН-АУТА (#415, наблюдение владельца
  * 2026-08-31). Ход, объявивший раздачу пяти агентов, не подошёл ни под одно
  * исключение: «запускаю» ловилось, «агенты запущены» и «работают в фоне» — нет,
- * и сработали все три гейта разом. Раздача работы — её начало, а не конец. */
+ * и сработали все три гейта разом. Раздача работы — её начало, а не конец.
+ *
+ * Чего в списке НЕТ и почему (ревью PR #417, MINOR): семейства «жду отчёт…».
+ * Оно ловится внутри настоящего финального отчёта — «жду отчёта CI» — и
+ * освобождало бы его от всех трёх гейтов. Случай ожидания и без словаря покрыт
+ * ТОЧНЕЕ, структурно: `hasUnreturnedDispatch()` смотрит на невернувшийся
+ * диспатч, а не на слово. */
 export const PROPOSAL_INFLIGHT_RE =
-  /предлага[ею]|приступа[ею]|запуска[ею]\s+\/?(?:wrap|агент)|субагент[а-яё\w]*\s+(?:ещё\s+)?(?:работает|в\s+работе|бежит)|жду\s+возврат|(?:суб)?агент[а-яё]*\s+(?:уже\s+)?запущен[а-яё]*|работа[ею]т\s+в\s+фоне|жду\s+отч[ёе]т[а-яё]*|отчита[ею]тся|\bbackground\s+agents?\b|\bproposing\b|\bdispatching\b/i
+  /предлага[ею]|приступа[ею]|запуска[ею]\s+\/?(?:wrap|агент)|субагент[а-яё\w]*\s+(?:ещё\s+)?(?:работает|в\s+работе|бежит)|жду\s+возврат|(?:суб)?агент[а-яё]*\s+(?:уже\s+)?запущен[а-яё]*|работа[ею]т\s+в\s+фоне|отчита[ею]тся|\bbackground\s+agents?\b|\bproposing\b|\bdispatching\b/i
 
 export function isProposalOrInFlight(text) {
   return PROPOSAL_INFLIGHT_RE.test(String(text || ''))
@@ -488,6 +494,21 @@ export function hasWriteAction(jsonl) {
 }
 
 /**
+ * Настоящий ход ПОЛЬЗОВАТЕЛЯ — граница хвоста для `hasUnreturnedDispatch`.
+ *
+ * `type: 'user'` в этом формате носят ДВЕ разные вещи: реплика человека и
+ * возврат инструмента (`tool_result` приходит записью пользователя). Считать
+ * границей всякую запись `user` значило бы обрывать хвост на первом же
+ * вернувшемся агенте — поэтому граница это запись `user`, в контенте которой
+ * НЕТ ни одного блока `tool_result`: строка-реплика либо массив без возвратов.
+ */
+export function isUserTurnBoundary(entry, content) {
+  if (!entry || entry.type !== 'user') return false
+  if (!Array.isArray(content)) return true
+  return !content.some((block) => block && block.type === 'tool_result')
+}
+
+/**
  * Невернувшийся фоновый агент (#415). Диспатч `Agent`/`Task`, на `tool_use_id`
  * которого в транскрипте нет ни одного `tool_result`, — это фан-аут В ПОЛЁТЕ, и
  * ход, который его объявляет, терминальным отчётом быть не может ПО ПОСТРОЕНИЮ,
@@ -499,16 +520,32 @@ export function hasWriteAction(jsonl) {
  * Блок `tool_use` БЕЗ `id` сопоставить не с чем и уликой не считается: иначе
  * транскрипт, в котором id не записаны, снимал бы гейты со всякой сессии,
  * раздавшей субагентов, — ровно та дыра, которую закрывает #158.
+ *
+ * ГРАНИЦА ХВОСТА (ревью PR #417, MAJOR). Утверждение здесь — «сессия ждёт
+ * фоновых агентов ПРЯМО СЕЙЧАС», а не «когда-то ждала»: без границы один
+ * невернувшийся диспатч снимал бы все три гейта до конца сессии и заодно во
+ * всякой сессии, продолженной на том же JSONL. Хвост — записи ПОСЛЕ ПОСЛЕДНЕГО
+ * хода пользователя (`isUserTurnBoundary`), и это единственная граница, которую
+ * формат реально даёт: транскрипт не пишет ни времени возврата агента, ни
+ * «конца хода», зато новый ход пользователя — точка, с которой сессия получила
+ * новое задание, и всё, что висело до неё, к текущему ответу отношения не
+ * имеет.
  */
 export function hasUnreturnedDispatch(jsonl) {
   const text = String(jsonl || '')
   if (!text) return false
-  const dispatched = new Set()
-  const returned = new Set()
+  let dispatched = new Set()
+  let returned = new Set()
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim()
-    // Дешёвый префильтр: JSON.parse только строк с tool_use / tool_result.
-    if (!trimmed || (!trimmed.includes('"tool_use"') && !trimmed.includes('"tool_result"')))
+    // Дешёвый префильтр: JSON.parse только строк с tool_use / tool_result либо
+    // границей хвоста (`"type":"user"`).
+    if (
+      !trimmed ||
+      (!trimmed.includes('"tool_use"') &&
+        !trimmed.includes('"tool_result"') &&
+        !trimmed.includes('"user"'))
+    )
       continue
     let entry
     try {
@@ -517,6 +554,12 @@ export function hasUnreturnedDispatch(jsonl) {
       continue // битая строка — пропускаем по одной, а не роняем чтение
     }
     const content = entry && entry.message && entry.message.content
+    if (isUserTurnBoundary(entry, content)) {
+      // Новый ход владельца — хвост начинается заново, всё раньше него забыто.
+      dispatched = new Set()
+      returned = new Set()
+      continue
+    }
     if (!Array.isArray(content)) continue
     for (const block of content) {
       if (!block) continue
