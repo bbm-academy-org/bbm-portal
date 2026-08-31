@@ -11,6 +11,7 @@ import {
   isCompletionReport,
   isEnforceableTerminalReport,
   isProposalOrInFlight,
+  isUserTurnBoundary,
   hasExplicitInterimMarker,
   hasOwnerQuestionMarker,
   isInterimStatus,
@@ -1261,6 +1262,38 @@ const dispatchResult = (toolUseId: string) =>
     type: 'user',
     message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'готово' }] },
   })
+
+describe('#415: граница хвоста — настоящий ход пользователя', () => {
+  // Ревью PR #417 (MAJOR): у ветки с МАССИВОМ контента (в реальном корпусе она
+  // и есть основная форма записи пользователя) должны быть прямые кейсы, а не
+  // только косвенное покрытие через строковый хелпер.
+  it('строковый контент — граница', () => {
+    expect(isUserTurnBoundary({ type: 'user' }, 'закрой задачу')).toBe(true)
+  })
+
+  it('массив без tool_result — граница', () => {
+    expect(isUserTurnBoundary({ type: 'user' }, [{ type: 'text', text: 'закрой задачу' }])).toBe(
+      true,
+    )
+  })
+
+  it('массив с tool_result — НЕ граница: это возврат инструмента', () => {
+    expect(isUserTurnBoundary({ type: 'user' }, [{ type: 'tool_result', tool_use_id: 't1' }])).toBe(
+      false,
+    )
+    expect(
+      isUserTurnBoundary({ type: 'user' }, [
+        { type: 'text', text: 'ок' },
+        { type: 'tool_result', tool_use_id: 't1' },
+      ]),
+    ).toBe(false)
+  })
+
+  it('запись не пользователя границей не является', () => {
+    expect(isUserTurnBoundary({ type: 'assistant' }, 'текст')).toBe(false)
+    expect(isUserTurnBoundary(null, 'текст')).toBe(false)
+  })
+})
 
 describe('#415: невернувшийся фоновый агент', () => {
   it('диспатч без tool_result — фан-аут в полёте', () => {
