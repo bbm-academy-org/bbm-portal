@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -43,7 +43,11 @@ vi.mock('@refinedev/core', async (importOriginal) => {
 })
 
 vi.mock('@/app/(platform)/p/admin/member/members/alias-actions', () => ({
-  validateAliasResponse: async (envelope: string, payload: { data?: unknown }) => {
+  validateAliasResponse: async (
+    _resource: string,
+    envelope: string,
+    payload: { data?: unknown },
+  ) => {
     if (
       envelope === 'one' &&
       (!payload.data ||
@@ -53,7 +57,7 @@ vi.mock('@/app/(platform)/p/admin/member/members/alias-actions', () => ({
       return { success: false, issues: 'data.id: expected number' }
     }
 
-    return { success: true, data: payload.data }
+    return { success: true, data: payload }
   },
 }))
 
@@ -160,7 +164,9 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
       expect.objectContaining({ filters: [expect.objectContaining({ value: 'anna' })] }),
     )
 
-    await vi.advanceTimersByTimeAsync(300)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
     expect(refine.listArgs.at(-1)).toMatchObject({
       pagination: { currentPage: 1, pageSize: 50 },
       filters: [{ field: 'q', operator: 'contains', value: 'anna' }],
@@ -418,7 +424,9 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Удалить алиас anna' }))
 
-    expect(await screen.findByText(/Удалённый алиас не соответствует схеме модуля/)).toBeTruthy()
+    expect(
+      await screen.findByText(/Ответ «member\.aliases» не соответствует схеме модуля/),
+    ).toBeTruthy()
     expect(screen.getByText('anna', { exact: true })).toBeTruthy()
   })
 })

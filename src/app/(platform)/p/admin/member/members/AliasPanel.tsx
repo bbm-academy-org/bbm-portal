@@ -3,6 +3,7 @@
 import React from 'react'
 
 import type { MemberAliasInput, MemberAliasRecord } from '@/lib/member'
+import { createModuleApiClient } from '@/lib/platform/cabinet'
 import { Alert, AlertDescription } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
@@ -14,30 +15,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/ui/textarea'
 
 import { validateAliasResponse } from './alias-actions'
-import { MEMBER_ALIAS_KIND_OPTIONS, withSavedReference } from './constants'
+import { errorMessage, MEMBER_ALIAS_KIND_OPTIONS, withSavedReference } from './constants'
 
-interface AliasEnvelope {
-  data?: unknown
-  error?: { message?: unknown }
-}
+const aliasClient = createModuleApiClient({ validateResponse: validateAliasResponse })
+const ALIAS_RESOURCE = 'member.aliases'
 
 function aliasesUrl(memberId: number, aliasId?: number): string {
-  const root = `/api/p/member/admin/members/${memberId}/aliases`
+  const root = `/member/admin/members/${memberId}/aliases`
   return aliasId === undefined ? root : `${root}/${aliasId}`
-}
-
-async function responseBody(response: Response): Promise<AliasEnvelope> {
-  try {
-    return (await response.json()) as AliasEnvelope
-  } catch {
-    return {}
-  }
-}
-
-function refusal(response: Response, body: AliasEnvelope): string {
-  return typeof body.error?.message === 'string' && body.error.message.trim()
-    ? body.error.message
-    : `Запрос алиасов отклонён (HTTP ${response.status}).`
 }
 
 export function AliasPanel({ memberId, editable }: { memberId: number; editable: boolean }) {
@@ -50,19 +35,14 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
 
   React.useEffect(() => {
     let cancelled = false
-    void fetch(aliasesUrl(memberId), { headers: { accept: 'application/json' } })
-      .then(async (response) => ({ response, body: await responseBody(response) }))
-      .then(async ({ response, body }) => {
-        if (!response.ok) throw new Error(refusal(response, body))
-        const parsed = await validateAliasResponse('list', body)
-        if (!parsed.success) {
-          throw new Error(`Ответ алиасов не соответствует схеме модуля: ${parsed.issues}`)
-        }
-        if (!cancelled) setAliases(parsed.data as MemberAliasRecord[])
+    void aliasClient
+      .list<MemberAliasRecord>({ resource: ALIAS_RESOURCE, path: aliasesUrl(memberId) })
+      .then(({ data }) => {
+        if (!cancelled) setAliases(data)
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setFailure(error instanceof Error ? error.message : 'Не удалось прочитать алиасы.')
+          setFailure(errorMessage(error, 'Не удалось прочитать алиасы.'))
         }
       })
       .finally(() => {
@@ -77,18 +57,14 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
     setPending(true)
     setFailure(undefined)
     try {
-      const response = await fetch(aliasesUrl(memberId, editing?.id), {
-        method: editing ? 'PATCH' : 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/json' },
-        body: JSON.stringify(alias),
+      const saved = await aliasClient.one<MemberAliasRecord>({
+        resource: ALIAS_RESOURCE,
+        path: aliasesUrl(memberId, editing?.id),
+        init: {
+          method: editing ? 'PATCH' : 'POST',
+          body: JSON.stringify(alias),
+        },
       })
-      const body = await responseBody(response)
-      if (!response.ok) throw new Error(refusal(response, body))
-      const parsed = await validateAliasResponse('one', body)
-      if (!parsed.success) {
-        throw new Error(`Сохранённый алиас не соответствует схеме модуля: ${parsed.issues}`)
-      }
-      const saved = parsed.data as MemberAliasRecord
       setAliases((current) =>
         editing
           ? current.map((item) => (item.id === saved.id ? saved : item))
@@ -97,7 +73,7 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
       setAdding(false)
       setEditing(null)
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : 'Не удалось сохранить алиас.')
+      setFailure(errorMessage(error, 'Не удалось сохранить алиас.'))
     } finally {
       setPending(false)
     }
@@ -107,20 +83,15 @@ export function AliasPanel({ memberId, editable }: { memberId: number; editable:
     setPending(true)
     setFailure(undefined)
     try {
-      const response = await fetch(aliasesUrl(memberId, alias.id), {
-        method: 'DELETE',
-        headers: { accept: 'application/json' },
+      await aliasClient.one<MemberAliasRecord>({
+        resource: ALIAS_RESOURCE,
+        path: aliasesUrl(memberId, alias.id),
+        init: { method: 'DELETE' },
       })
-      const body = await responseBody(response)
-      if (!response.ok) throw new Error(refusal(response, body))
-      const parsed = await validateAliasResponse('one', body)
-      if (!parsed.success) {
-        throw new Error(`Удалённый алиас не соответствует схеме модуля: ${parsed.issues}`)
-      }
       setAliases((current) => current.filter((item) => item.id !== alias.id))
       if (editing?.id === alias.id) setEditing(null)
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : 'Не удалось удалить алиас.')
+      setFailure(errorMessage(error, 'Не удалось удалить алиас.'))
     } finally {
       setPending(false)
     }

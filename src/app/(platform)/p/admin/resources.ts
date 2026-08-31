@@ -64,7 +64,7 @@ export function cabinetResources(entries: readonly WorkspaceEntry[]): ResourcePr
       const ops = resource.operations
       resources.push({
         name: resourceName(entry.slug, resource.name),
-        ...(ops.includes('list') ? { list: base } : {}),
+        ...(ops.includes('list') || ops.includes('singleton') ? { list: base } : {}),
         ...(ops.includes('show') ? { show: `${base}/show/:id` } : {}),
         ...(ops.includes('create') ? { create: `${base}/create` } : {}),
         ...(ops.includes('edit') ? { edit: `${base}/edit/:id` } : {}),

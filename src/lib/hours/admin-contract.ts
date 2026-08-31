@@ -130,7 +130,7 @@ export const hoursAdminSection: WorkspaceAdminSection = {
     {
       name: 'publication',
       label: 'Публикация в Mattermost',
-      operations: ['list'],
+      operations: ['singleton'],
       schema: hoursPublicationRecordSchema,
     },
   ],

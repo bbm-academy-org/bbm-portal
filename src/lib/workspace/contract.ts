@@ -50,7 +50,14 @@ export type WorkspaceStatusProvider = () => string | null | Promise<string | nul
  * operation absent from a resource's array gets no route in the shell, so there
  * is no control to remember to hide and none to disable.
  */
-export const RESOURCE_OPERATIONS = ['list', 'show', 'create', 'edit', 'delete'] as const
+export const RESOURCE_OPERATIONS = [
+  'list',
+  'singleton',
+  'show',
+  'create',
+  'edit',
+  'delete',
+] as const
 export type ResourceOperation = (typeof RESOURCE_OPERATIONS)[number]
 
 /** One CRUD resource of a module's cabinet section, mounted at `/p/admin/<slug>/<resource>` (D-9). */

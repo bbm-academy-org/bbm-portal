@@ -35,9 +35,11 @@ export const DELETE = adminRoute<undefined, HoursPeriodRecord>({
   output: hoursPeriodRecordSchema,
   handler: async ({ audit, params }) => {
     const id = routeText(params.id, 'id')
-    const before = await hoursRead()
-    const record = periodRecord(before, id)
-    await hoursWrite(audit, (doc) => deletePeriod(doc, id))
-    return record
+    const result = await hoursWrite(audit, (doc) => {
+      const record = periodRecord(doc, id)
+      const deleted = deletePeriod(doc, id)
+      return deleted.ok ? { ...deleted, saved: record } : deleted
+    })
+    return result.saved
   },
 })

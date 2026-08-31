@@ -86,7 +86,7 @@ export const okrAdminSection: WorkspaceAdminSection = {
     {
       name: 'parameters',
       label: 'Источник и параметры',
-      operations: ['list'],
+      operations: ['singleton'],
       schema: okrParametersSchema,
     },
   ],
