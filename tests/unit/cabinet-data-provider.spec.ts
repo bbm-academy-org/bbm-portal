@@ -77,6 +77,44 @@ describe('EARS-431: the provider maps Refine’s calls onto /api/p/<slug>/admin/
     expect(url.searchParams.get('order')).toBe('desc')
   })
 
+  it('passes the supported q filter to the module list handler', async () => {
+    const { dp, calls } = provider(() => ok({ data: [], total: 0 }))
+    await dp.getList({
+      resource: 'hours.periods',
+      filters: [{ field: 'q', operator: 'contains', value: 'august' }],
+    })
+
+    const url = new URL(calls[0].url, 'https://portal.bbm.academy')
+    expect(url.searchParams.get('q')).toBe('august')
+  })
+
+  it('refuses unsupported filters instead of silently returning unfiltered data', async () => {
+    const { dp, calls } = provider(() => ok({ data: [], total: 0 }))
+
+    await expect(
+      dp.getList({
+        resource: 'hours.periods',
+        filters: [{ field: 'status', operator: 'eq', value: 'closed' }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('status') })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('refuses multiple sorters instead of silently dropping all but the first', async () => {
+    const { dp, calls } = provider(() => ok({ data: [], total: 0 }))
+
+    await expect(
+      dp.getList({
+        resource: 'hours.periods',
+        sorters: [
+          { field: 'label', order: 'asc' },
+          { field: 'id', order: 'desc' },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('sort') })
+    expect(calls).toHaveLength(0)
+  })
+
   it('EARS-431: getOne/create/update/deleteOne use the record URL and the right method', async () => {
     const record = { id: '7', label: 'август 2026', weekdays: 5 }
     const { dp, calls } = provider(() => ok({ data: record }))

@@ -88,7 +88,7 @@ describe('EARS-453/455: the section is one read-only resource', () => {
     const section = okrWorkspaceEntry.kind === 'internal' ? okrWorkspaceEntry.admin : undefined
     // EARS-437 is the mechanism: an operation absent from this array gets no
     // route and therefore no control that could fail on click.
-    expect(section?.resources[0].operations).toEqual(['list'])
+    expect(section?.resources[0].operations).toEqual(['singleton'])
   })
 })
 

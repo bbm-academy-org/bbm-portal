@@ -28,7 +28,7 @@ describe('hours cabinet contract (spec 311 EARS-421, EARS-446..452)', () => {
         label: 'Ставки и грейды',
         operations: ['list', 'create', 'edit'],
       },
-      { name: 'publication', label: 'Публикация в Mattermost', operations: ['list'] },
+      { name: 'publication', label: 'Публикация в Mattermost', operations: ['singleton'] },
     ])
   })
 

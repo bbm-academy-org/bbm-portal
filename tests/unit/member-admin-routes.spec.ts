@@ -135,6 +135,21 @@ describe('member cabinet HTTP surface (spec 311 EARS-441..445)', () => {
     })
   })
 
+  it('sorts numeric member ids numerically by default', async () => {
+    routeState.members = [10, 2, 1].map((id) => ({
+      ...routeState.members[0],
+      id,
+      slug: `member-${id}`,
+      email: `member-${id}@bbm.local`,
+    }))
+    const { GET } = await import('@/app/(platform)/api/p/member/admin/members/route')
+
+    const response = await GET(request('/api/p/member/admin/members?pageSize=50'))
+    const body = (await response.json()) as { data: Array<{ id: number }> }
+
+    expect(body.data.map(({ id }) => id)).toEqual([1, 2, 10])
+  })
+
   it('EARS-441/439: create validates input and attributes its transaction', async () => {
     const { POST } = await import('@/app/(platform)/api/p/member/admin/members/route')
     const invalid = await POST(request('/api/p/member/admin/members', 'POST', { name: '' }))

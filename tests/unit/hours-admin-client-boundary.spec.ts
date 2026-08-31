@@ -16,6 +16,11 @@ const CLIENT_FILES = [
 ]
 
 describe('hours cabinet client boundary', () => {
+  it('does not carry an inert AbortController in the publication screen', () => {
+    const source = readFileSync(join(ROOT, 'publication/HoursPublicationScreen.tsx'), 'utf8')
+    expect(source).not.toContain('AbortController')
+  })
+
   it('keeps the server-only hours store and pg out of every client bundle', () => {
     const violations: string[] = []
     for (const file of CLIENT_FILES) {
