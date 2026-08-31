@@ -151,6 +151,7 @@ export {
   verifyFinanceHistoryPlanDigest,
   FINANCE_HISTORY_PLAN_VERSION,
 } from './history/plan'
+export { parseFinanceHistoryMappings, parseFinanceHistoryMappingsJson } from './history/contract'
 export type { FinanceHistoryApplyOptions, FinanceHistoryApplyResult } from './history/apply'
 export { applyFinanceHistoryPlan } from './history/apply'
 export type {

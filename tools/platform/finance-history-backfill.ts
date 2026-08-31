@@ -6,8 +6,8 @@ import { sql } from 'drizzle-orm'
 import {
   applyFinanceHistoryPlan,
   buildFinanceHistoryPlan,
+  parseFinanceHistoryMappingsJson,
   type ExistingFinanceHistoryOperation,
-  type FinanceHistoryMapping,
   type FinanceHistoryPlan,
   type FinanceHistorySnapshot,
 } from '@/lib/finance'
@@ -65,7 +65,9 @@ async function existingOperations(): Promise<ExistingFinanceHistoryOperation[]> 
 }
 
 async function dryRun(args: ParsedArgs): Promise<void> {
-  const mappings = await readJson<FinanceHistoryMapping[]>(required(args, 'mapping'))
+  const mappings = parseFinanceHistoryMappingsJson(
+    await readFile(path.resolve(required(args, 'mapping')), 'utf8'),
+  )
   const fixture = args.values.get('fixture')
   const snapshot =
     fixture === undefined

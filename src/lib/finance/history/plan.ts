@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
 
 import type { FinanceDocumentKind } from '@/lib/platform/db/schema/finance/finance-document'
-import type { FinanceIntakeKind } from '@/lib/platform/db/schema/finance/finance-intake-item'
+import {
+  FINANCE_INTAKE_KINDS,
+  type FinanceIntakeKind,
+} from '@/lib/platform/db/schema/finance/finance-intake-item'
 
 import { FinanceRefusal } from '../core/errors'
 import { financePostingShapeRefusals } from '../intake/posting-shape'
@@ -194,6 +197,10 @@ function positiveId(value: number | null, label: string, reasons: string[]): voi
   if (value === null || !Number.isInteger(value) || value <= 0) reasons.push(`${label} is required`)
 }
 
+function isFinanceIntakeKind(value: unknown): value is FinanceIntakeKind {
+  return FINANCE_INTAKE_KINDS.some((kind) => kind === value)
+}
+
 function naturalSourceRef(operation: FinanceHistoryOperationMapping): string {
   return [
     operation.occurredOn,
@@ -218,6 +225,10 @@ function planOperation(
 ): FinanceHistoryPlanOperation {
   const operation = mapping.operation
   const reasons: string[] = []
+  const supportedKind = isFinanceIntakeKind(operation.kind)
+  if (!supportedKind) {
+    reasons.push(`kind must be one of ${FINANCE_INTAKE_KINDS.join(', ')}`)
+  }
   if (mapping.sourcePostId !== null && !posts.has(mapping.sourcePostId)) {
     reasons.push(`Mattermost post ${mapping.sourcePostId} is absent from the source snapshot`)
   }
@@ -256,23 +267,25 @@ function planOperation(
       : feeAmount === null
         ? null
         : 0n
-  reasons.push(
-    ...financePostingShapeRefusals({
-      kind: operation.kind,
-      amount: parsedAmount,
-      currency: normalizedCurrency,
-      accountId,
-      counterAccountId,
-      paidAmount: parsedPaidAmount,
-      paidCurrency,
-      feeAmount: parsedFeeAmount,
-      feeCurrency,
-      purposeId: operation.purpose?.id ?? null,
-      memberId: operation.memberId ?? null,
-      alreadyPaid: operation.alreadyPaid ?? true,
-      personalFunds: operation.personalFunds ?? false,
-    }),
-  )
+  if (supportedKind) {
+    reasons.push(
+      ...financePostingShapeRefusals({
+        kind: operation.kind,
+        amount: parsedAmount,
+        currency: normalizedCurrency,
+        accountId,
+        counterAccountId,
+        paidAmount: parsedPaidAmount,
+        paidCurrency,
+        feeAmount: parsedFeeAmount,
+        feeCurrency,
+        purposeId: operation.purpose?.id ?? null,
+        memberId: operation.memberId ?? null,
+        alreadyPaid: operation.alreadyPaid ?? true,
+        personalFunds: operation.personalFunds ?? false,
+      }),
+    )
+  }
 
   const documents = operation.documentFileIds.flatMap((fileId) => {
     const file = files.get(fileId)
