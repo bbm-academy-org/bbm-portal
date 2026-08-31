@@ -8,7 +8,10 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   applyFinanceHistoryPlan,
   buildFinanceHistoryPlan,
+  createAccount,
+  createCurrency,
   FinanceDocumentUploadPending,
+  systemAccount,
   type FinanceDocumentStorage,
   type FinanceHistoryApplyResult,
   type FinanceHistoryPlan,
@@ -17,7 +20,7 @@ import {
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import { auditEventsSince, auditWatermark } from './audit-helpers'
-import { ENTRY, seedIntakeReferences, truncateFinanceTables } from './finance-helpers'
+import { ADMIN, ENTRY, seedIntakeReferences, truncateFinanceTables } from './finance-helpers'
 import { asMigrator } from './privilege-helpers'
 
 const db = getPlatformDb()
@@ -362,6 +365,160 @@ describe('the controlled direct history reconstruction', () => {
              (select count(*)::int from core.finance_document) as documents
     `)
     expect(counts.rows[0]).toMatchObject({ operations: 1, documents: 1 })
+  })
+
+  it('EARS-517: an operation-index race skips a conversion without adding intake, steps or postings', async () => {
+    const sourceRef = 'post-concurrent-conversion-operation'
+    const refs = await seedIntakeReferences()
+    await createCurrency(ADMIN, { code: 'THB', name: 'Baht', precision: 2 })
+    const target = await createAccount(ADMIN, {
+      name: 'Kasikorn THB',
+      kind: 'bank',
+      currency: 'THB',
+    })
+    const conversionRub = await systemAccount(ADMIN, 'conversion', 'RUB')
+    const conversionThb = await systemAccount(ADMIN, 'conversion', 'THB')
+    const receipt = Buffer.from('%PDF-1.4\nconversion fixture\n%%EOF')
+    const contentDigest = `sha256:${createHash('sha256').update(receipt).digest('hex')}`
+    const plan = buildFinanceHistoryPlan({
+      snapshot: {
+        version: 1,
+        channel: { id: 'finance-channel', name: 'BBM Finance' },
+        posts: [
+          {
+            id: sourceRef,
+            rootId: null,
+            createdAt: '2025-01-15T12:00:00.000Z',
+            message: 'Converted RUB to THB',
+            fileIds: [`file-${sourceRef}`],
+          },
+        ],
+        files: [
+          {
+            id: `file-${sourceRef}`,
+            postId: sourceRef,
+            filename: 'conversion.pdf',
+            mime: 'application/pdf',
+            size: receipt.byteLength,
+            contentDigest,
+            sourcePath: `finance/${sourceRef}.pdf`,
+          },
+        ],
+      },
+      mappings: [
+        {
+          sourcePostId: sourceRef,
+          operation: {
+            kind: 'conversion',
+            occurredOn: '2025-01-15',
+            amount: '8750',
+            currency: 'RUB',
+            paidAmount: '3500',
+            paidCurrency: 'THB',
+            accountId: refs.accountId,
+            counterAccountId: target.id,
+            projectId: refs.projectId,
+            documentFileIds: [`file-${sourceRef}`],
+          },
+        },
+      ],
+      existingOperations: [],
+    })
+    expect(plan.invalidRows).toEqual([])
+
+    const barrierKey = 387_518
+    let outcome: FinanceHistoryApplyResult | undefined
+    let existingOperationId: number | undefined
+    await asMigrator(async (client) => {
+      await client.query(`
+        create or replace function core.finance_test_history_operation_barrier() returns trigger language plpgsql as $$
+        begin
+          if new.source = 'backfill' and new.source_ref = '${sourceRef}' then
+            perform pg_advisory_xact_lock(${barrierKey}::bigint);
+          end if;
+          return new;
+        end $$;
+        drop trigger if exists finance_test_history_operation_barrier on core.finance_operation;
+        create trigger finance_test_history_operation_barrier before insert on core.finance_operation
+        for each row execute function core.finance_test_history_operation_barrier();
+      `)
+      await client.query('select pg_advisory_lock($1::bigint)', [barrierKey])
+      let lockHeld = true
+      try {
+        const pid = Number(
+          (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid,
+        )
+        const pending = applyFinanceHistoryPlan(plan, plan.planDigest, {
+          operatorEmail: ENTRY.email,
+          storage: memoryStorage(),
+          loadDocumentBytes: async () => receipt,
+        })
+        await waitForBlockedBy(client, pid, 1)
+
+        await client.query('begin')
+        try {
+          const existing = await client.query<{ id: number }>(
+            `insert into core.finance_operation
+               (occurred_on, source, source_ref, backdated)
+             values ('2025-01-15', 'backfill', $1, true)
+             returning id`,
+            [sourceRef],
+          )
+          existingOperationId = Number(existing.rows[0].id)
+          const step = await client.query<{ id: number }>(
+            `insert into core.finance_conversion_step
+               (operation_id, step_no, from_currency, to_currency, rate)
+             values ($1, 1, 'RUB', 'THB', '0.4')
+             returning id`,
+            [existingOperationId],
+          )
+          const stepId = Number(step.rows[0].id)
+          await client.query(
+            `insert into core.finance_posting
+               (operation_id, account_id, amount, currency, conversion_step_id)
+             values
+               ($1, $2, -8750, 'RUB', null),
+               ($1, $3,  3500, 'THB', null),
+               ($1, $4,  8750, 'RUB', $6),
+               ($1, $5, -3500, 'THB', $6)`,
+            [
+              existingOperationId,
+              refs.accountId,
+              target.id,
+              conversionRub.id,
+              conversionThb.id,
+              stepId,
+            ],
+          )
+          await client.query('commit')
+        } catch (error) {
+          await client.query('rollback')
+          throw error
+        }
+
+        await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        lockHeld = false
+        outcome = await pending
+      } finally {
+        if (lockHeld) await client.query('select pg_advisory_unlock($1::bigint)', [barrierKey])
+        await client.query(
+          'drop trigger if exists finance_test_history_operation_barrier on core.finance_operation',
+        )
+        await client.query('drop function if exists core.finance_test_history_operation_barrier()')
+      }
+    })
+
+    expect(outcome).toMatchObject({
+      applied: [],
+      skipped: [{ sourceRef, operationId: existingOperationId }],
+    })
+    const counts = await db.execute(sql`
+      select (select count(*)::int from core.finance_operation) as operations,
+             (select count(*)::int from core.finance_intake_item) as intakes,
+             (select count(*)::int from core.finance_conversion_step) as steps,
+             (select count(*)::int from core.finance_posting) as postings
+    `)
+    expect(counts.rows[0]).toMatchObject({ operations: 1, intakes: 0, steps: 1, postings: 4 })
   })
 
   it('EARS-518: exposes and reuses the durable document id after a PUT failure', async () => {

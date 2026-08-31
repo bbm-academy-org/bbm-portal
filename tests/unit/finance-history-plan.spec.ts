@@ -246,6 +246,61 @@ describe('the one-time finance history plan', () => {
     }
   })
 
+  it('EARS-517: reserves personal funds for expenses and still accepts a correctly attributed expense', () => {
+    const invalid = [
+      {
+        sourcePostId: 'post-transfer',
+        operation: {
+          ...mappings[1].operation,
+          accountId: null,
+          alreadyPaid: true,
+          personalFunds: true,
+          memberId: 91,
+        },
+      },
+      {
+        sourcePostId: 'post-conversion',
+        operation: {
+          ...mappings[2].operation,
+          accountId: null,
+          alreadyPaid: true,
+          personalFunds: true,
+          memberId: 91,
+        },
+      },
+    ] satisfies FinanceHistoryMapping[]
+
+    for (const candidate of invalid) {
+      const plan = buildFinanceHistoryPlan({
+        snapshot,
+        mappings: [candidate],
+        existingOperations: [],
+      })
+      expect(plan.operations[0].validation, candidate.operation.kind).toMatchObject({
+        valid: false,
+      })
+      expect(plan.operations[0].validation.reasons, candidate.operation.kind).not.toHaveLength(0)
+    }
+
+    const expense = buildFinanceHistoryPlan({
+      snapshot,
+      mappings: [
+        {
+          sourcePostId: 'post-expense',
+          operation: {
+            ...mappings[0].operation,
+            accountId: null,
+            alreadyPaid: true,
+            personalFunds: true,
+            memberId: 91,
+          },
+        },
+      ],
+      existingOperations: [],
+    })
+    expect(expense.operations[0].validation).toEqual({ valid: true, reasons: [] })
+  })
+
   it('EARS-517: classifies a repeated source ref inside the plan deterministically and counts neither row as actionable', () => {
     const duplicated = [
       { ...mappings[2], documentNumber: 'DUP-42' },
