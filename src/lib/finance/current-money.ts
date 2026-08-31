@@ -1,4 +1,22 @@
+import { FINANCE_MONEY_ACCOUNT_KINDS } from '@/lib/platform/db/schema/finance/finance-account'
+
 import { costBasisAtAverage } from './core/money'
+
+/**
+ * EARS-325 is written over MONEY accounts, so the KIND is the predicate.
+ *
+ * `!isSystem` names the same set today only because two other files happen to
+ * agree — `createAccount` hard-codes `isSystem: false` and
+ * `financeAccountCreateSchema` restricts the cabinet to the money kinds — and
+ * the enum itself admits `income`, `expense`, `liability`, `conversion` and
+ * `fx_result`. Asking for the kind makes the read model's own claim true on its
+ * own terms; the `isSystem` half stays as the second lock.
+ */
+export function isCurrentMoneyAccount(account: { kind: string; isSystem: boolean }): boolean {
+  return (
+    !account.isSystem && (FINANCE_MONEY_ACCOUNT_KINDS as readonly string[]).includes(account.kind)
+  )
+}
 
 export type CurrentMoneyAccount = {
   accountId: number
@@ -63,12 +81,46 @@ function operationOrder(a: CurrentMoneyOperationFact, b: CurrentMoneyOperationFa
   return compareCodes(a.occurredOn, b.occurredOn) || a.operationId - b.operationId
 }
 
+/**
+ * EARS-325 — what is still standing, resolved along the reversal CHAIN.
+ *
+ * The rule the spec states is a property of the chain, not of dates: cancel from
+ * the reversal nobody has reversed, then downward in pairs, so an odd number of
+ * reversals removes the original and an even number restores it. Reading the
+ * chain off `(occurred_on, operation_id)` order instead only agrees with that
+ * while `resolveRealizedFxReversalOccurredOn` (`./fx-pool-locks.ts`) clamps a
+ * reversal's date — an invariant enforced in another module, unstated in the
+ * spec, and one that #387's backfill path already carries an exemption from.
+ * This walks the `reverses` pointer, the same thing `fx-pool-locks.ts` computes.
+ */
 function activeOperations(operations: CurrentMoneyOperationFact[]): CurrentMoneyOperationFact[] {
+  const present = new Set(operations.map((operation) => operation.operationId))
+  const reversedBy = new Map<number, number>()
+  for (const operation of [...operations].sort(operationOrder)) {
+    if (operation.reverses !== null && !reversedBy.has(operation.reverses)) {
+      reversedBy.set(operation.reverses, operation.operationId)
+    }
+  }
+
   const excluded = new Set<number>()
-  for (const operation of [...operations].sort(operationOrder).reverse()) {
-    if (operation.reverses === null || excluded.has(operation.operationId)) continue
-    excluded.add(operation.operationId)
-    excluded.add(operation.reverses)
+  for (const operation of [...operations].sort(operationOrder)) {
+    // A chain is walked from its root: the operation nothing in this set reverses.
+    if (operation.reverses !== null && present.has(operation.reverses)) continue
+    const chain = [operation.operationId]
+    const seen = new Set(chain)
+    for (
+      let next = reversedBy.get(operation.operationId);
+      next !== undefined && !seen.has(next);
+      next = reversedBy.get(next)
+    ) {
+      chain.push(next)
+      seen.add(next)
+    }
+    // Cancel in pairs from the tip downward; a lone root survives.
+    for (let index = chain.length - 1; index > 0; index -= 2) {
+      excluded.add(chain[index])
+      excluded.add(chain[index - 1])
+    }
   }
   return operations.filter((operation) => !excluded.has(operation.operationId)).sort(operationOrder)
 }

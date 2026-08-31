@@ -18,6 +18,7 @@ import { getPlatformDb } from '@/lib/platform/db/client'
 
 import {
   evaluateCurrentMoney,
+  isCurrentMoneyAccount,
   type CurrentMoneyOperationFact,
   type CurrentMoneyValuation,
 } from './current-money'
@@ -170,7 +171,7 @@ export async function currentMoneyOverview(
   return evaluateCurrentMoney({
     reportingCurrency,
     accounts: balances
-      .filter((account) => !account.isSystem)
+      .filter(isCurrentMoneyAccount)
       .map(({ accountId, name, kind, currency, balance }) => ({
         accountId,
         name,

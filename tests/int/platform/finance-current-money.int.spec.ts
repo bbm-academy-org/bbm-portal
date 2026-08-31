@@ -13,6 +13,7 @@ import {
 } from '@/lib/finance'
 import { closePlatformDb } from '@/lib/platform/db/client'
 
+import { refusalText } from './audit-helpers'
 import {
   ADMIN,
   APPROVER,
@@ -290,13 +291,15 @@ describe('EARS-325: current-money public read model', () => {
    */
   it('EARS-325/305: the database refuses a non-system account of a ledger kind', async () => {
     await seedRubUsd()
-    await expect(
-      fixtureWrite((tx) =>
-        tx.execute(sql`
-          insert into core.finance_account (name, kind, currency, is_system)
-          values ('Доход RUB (не системный)', 'income', 'RUB', false)
-        `),
-      ),
-    ).rejects.toThrow(/finance_account_system_kind_agreement/)
+    const refusal = await fixtureWrite((tx) =>
+      tx.execute(sql`
+        insert into core.finance_account (name, kind, currency, is_system)
+        values ('Доход RUB (не системный)', 'income', 'RUB', false)
+      `),
+    ).then(
+      () => null,
+      (error: unknown) => refusalText(error),
+    )
+    expect(refusal).toMatch(/finance_account_system_kind_agreement/)
   })
 })

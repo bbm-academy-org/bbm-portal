@@ -31,13 +31,7 @@ import {
   listProducts,
   listProjects,
   listPurposes,
-  retireReferenceRow,
-  updateAccount,
-  updateCategory,
-  updateCurrency,
-  updateProduct,
-  updateProject,
-  updatePurpose,
+  updateReferenceRow,
   type FinanceActor,
   type FinanceReferenceRecord,
   type FinanceReferenceResource,
@@ -142,62 +136,95 @@ async function create(
   }
 }
 
+/**
+ * One admin act — the rename and the retirement it carries — is ONE module call
+ * and therefore ONE transaction (EARS-326). See `updateReferenceRow` in
+ * `src/lib/finance/references.ts`: a refused retirement must take the rename
+ * down with it instead of leaving a durable half-act behind a 409.
+ */
 async function update(
   resource: FinanceReferenceResource,
   id: string | number,
   ctx: ResourceContext,
 ): Promise<FinanceReferenceRecord> {
   const by = actor(ctx)
-  let result: FinanceReferenceRecord
+  // The route's input schema is `z.unknown()`, so a `null`, a number or an array
+  // reaches here; every branch below reads the body as an object.
+  if (typeof ctx.body !== 'object' || ctx.body === null || Array.isArray(ctx.body)) {
+    throw new ModuleApiError(
+      'bad-request',
+      'Тело запроса должно быть объектом с изменениями справочника.',
+    )
+  }
   switch (resource) {
     case 'currencies': {
-      const { retire, ...changes } = financeCurrencyUpdateSchema.parse(ctx.body)
-      result = serializeCurrency(await updateCurrency(by, String(id), changes))
-      if (retire) await retireReferenceRow(by, 'currency', id)
-      break
+      const { retire, ...patch } = financeCurrencyUpdateSchema.parse(ctx.body)
+      return serializeCurrency(
+        (await updateReferenceRow(by, {
+          table: 'currency',
+          id,
+          patch,
+          retire,
+        })) as Awaited<ReturnType<typeof listCurrencies>>[number],
+      )
     }
     case 'accounts': {
-      const { retire, ...changes } = financeAccountUpdateSchema.parse(ctx.body)
-      result = serializeAccount(await updateAccount(by, Number(id), changes))
-      if (retire) await retireReferenceRow(by, 'account', id)
-      break
+      const { retire, ...patch } = financeAccountUpdateSchema.parse(ctx.body)
+      return serializeAccount(
+        (await updateReferenceRow(by, { table: 'account', id, patch, retire })) as Awaited<
+          ReturnType<typeof listAccounts>
+        >[number],
+      )
     }
     case 'projects': {
-      const { retire, ...changes } = financeProjectUpdateSchema.parse(ctx.body)
-      result = serializeProject(await updateProject(by, Number(id), changes))
-      if (retire) await retireReferenceRow(by, 'project', id)
-      break
+      const { retire, ...patch } = financeProjectUpdateSchema.parse(ctx.body)
+      return serializeProject(
+        (await updateReferenceRow(by, { table: 'project', id, patch, retire })) as Awaited<
+          ReturnType<typeof listProjects>
+        >[number],
+      )
     }
     case 'products': {
       const { retire, salePrice, ...changes } = financeProductUpdateSchema.parse(ctx.body)
-      result = serializeProduct(
-        await updateProduct(by, Number(id), {
-          ...changes,
-          ...(salePrice === undefined
-            ? {}
-            : { salePrice: salePrice === null ? null : BigInt(salePrice) }),
-        }),
+      const patch = {
+        ...changes,
+        ...(salePrice === undefined
+          ? {}
+          : { salePrice: salePrice === null ? null : BigInt(salePrice) }),
+      }
+      return serializeProduct(
+        (await updateReferenceRow(by, { table: 'product', id, patch, retire })) as Awaited<
+          ReturnType<typeof listProducts>
+        >[number],
       )
-      if (retire) await retireReferenceRow(by, 'product', id)
-      break
     }
     case 'purposes': {
-      const { retire, ...changes } = financePurposeUpdateSchema.parse(ctx.body)
-      result = serializePurpose(await updatePurpose(by, Number(id), changes))
-      if (retire) await retireReferenceRow(by, 'purpose', id)
-      break
+      const { retire, ...patch } = financePurposeUpdateSchema.parse(ctx.body)
+      return serializePurpose(
+        (await updateReferenceRow(by, { table: 'purpose', id, patch, retire })) as Awaited<
+          ReturnType<typeof listPurposes>
+        >[number],
+      )
     }
     case 'categories': {
-      const { retire, ...changes } = financeCategoryUpdateSchema.parse(ctx.body)
-      result = serializeCategory(await updateCategory(by, Number(id), changes))
-      if (retire) await retireReferenceRow(by, 'category', id)
-      break
+      const { retire, ...patch } = financeCategoryUpdateSchema.parse(ctx.body)
+      return serializeCategory(
+        (await updateReferenceRow(by, { table: 'category', id, patch, retire })) as Awaited<
+          ReturnType<typeof listCategories>
+        >[number],
+      )
     }
   }
-  if (!('retire' in (ctx.body as object))) return result
-  return (await get(resource, id)) ?? result
 }
 
+/**
+ * A single-row read served from the full list.
+ *
+ * Deliberate at reference-table cardinality: six tables of tens of rows, one
+ * serializer per resource, and the alternative is six more per-id module reads
+ * for no measurable gain. If a reference table ever grows into the thousands
+ * this is the line to revisit.
+ */
 async function get(
   resource: FinanceReferenceResource,
   id: string | number,
@@ -240,13 +267,38 @@ function contextResource(ctx: ResourceContext): FinanceReferenceResource {
   return resource
 }
 
+/**
+ * The fields the search box searches — the ones an admin can actually SEE.
+ *
+ * Matching `JSON.stringify(row)` matched field NAMES and serialized internals
+ * too, so `q=id`, `q=name` or `q=true` returned the whole table as if every row
+ * were a hit.
+ */
+const SEARCHABLE_FIELDS: Record<FinanceReferenceResource, readonly string[]> = {
+  currencies: ['code', 'name'],
+  accounts: ['name', 'kind', 'currency'],
+  projects: ['name'],
+  products: ['name'],
+  purposes: ['name'],
+  categories: ['name'],
+}
+
+function matchesQuery(
+  resource: FinanceReferenceResource,
+  row: FinanceReferenceRecord,
+  q: string,
+): boolean {
+  return SEARCHABLE_FIELDS[resource].some((field) => {
+    const value = (row as Record<string, unknown>)[field]
+    return typeof value === 'string' && value.toLocaleLowerCase('ru').includes(q)
+  })
+}
+
 export async function listFinanceReferences(ctx: ModuleRouteContext<undefined>) {
   const resource = contextResource(ctx)
   const all = await readable(() => list(resource))
   const q = ctx.query.q?.trim().toLocaleLowerCase('ru')
-  const filtered = q
-    ? all.filter((row) => JSON.stringify(row).toLocaleLowerCase('ru').includes(q))
-    : all
+  const filtered = q ? all.filter((row) => matchesQuery(resource, row, q)) : all
   const start = (ctx.query.page - 1) * ctx.query.pageSize
   return moduleListResult({
     items: filtered.slice(start, start + ctx.query.pageSize),

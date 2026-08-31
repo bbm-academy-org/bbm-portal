@@ -114,6 +114,7 @@ export {
   updateProduct,
   updateProject,
   updatePurpose,
+  updateReferenceRow,
 } from './references'
 export type {
   FinanceAccountView,
@@ -123,6 +124,8 @@ export type {
   FinanceProjectView,
   FinancePurposeView,
   FinanceReferenceTable,
+  FinanceReferenceUpdate,
+  FinanceReferenceView,
 } from './references'
 
 // ── counterparty + missing-purpose references (spec 339 EARS-532/526) ───────
