@@ -100,7 +100,9 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
 12. **Owner-visible change → acceptance recorded** —
     `.claude/skills/task-cycle/SKILL.md` stage 5. Trigger: the change alters
     something the owner can see. Look for the recorded «принято» and the live URL
-    on the issue; the stage says what counts as one. N/A for invisible changes
+    on the issue, plus evidence that representative scenario data was present
+    during acceptance (an empty state counts only when that state was being
+    accepted); the stage says what counts as one. N/A for invisible changes
     (internals, tooling, docs, backend with no UI).
 
 ## Output (mandatory format)
