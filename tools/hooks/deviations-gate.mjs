@@ -29,7 +29,9 @@ import { readFileSync } from 'node:fs'
 
 import {
   extractLastAssistantText,
+  hasUnreturnedDispatch,
   hasWriteAction,
+  isBelowVolumeFloor,
   isEnforceableTerminalReport,
 } from './completion-report-gate.mjs'
 import {
@@ -186,9 +188,20 @@ export function decideBlock({
   lastAssistantText,
   haltSignal = false,
   writeActionSeen = false,
+  unreturnedDispatchSeen = false,
+  belowVolumeFloor = false,
 }) {
   if (stopHookActive) return { block: false }
-  if (!isEnforceableTerminalReport({ lastAssistantText, writeActionSeen })) return { block: false }
+  if (
+    !isEnforceableTerminalReport({
+      lastAssistantText,
+      writeActionSeen,
+      unreturnedDispatchSeen,
+      belowVolumeFloor,
+    })
+  ) {
+    return { block: false }
+  }
   if (!hasDeviationsLine(lastAssistantText)) return { block: true }
   if (haltSignal && hasNoDeviationsValue(lastAssistantText)) {
     return { block: true, reason: 'self-cert' }
@@ -208,6 +221,8 @@ function main() {
       lastAssistantText: extractLastAssistantText(transcript),
       haltSignal: detectHaltSignal(transcript),
       writeActionSeen: hasWriteAction(transcript),
+      unreturnedDispatchSeen: hasUnreturnedDispatch(transcript),
+      belowVolumeFloor: isBelowVolumeFloor(transcript),
     })
     if (decision.block) {
       // PER-SESSION BLOCK BUDGET (#392): see the twin comment in

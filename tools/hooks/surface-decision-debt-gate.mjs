@@ -36,7 +36,9 @@ import { readFileSync } from 'node:fs'
 
 import {
   extractLastAssistantText,
+  hasUnreturnedDispatch,
   hasWriteAction,
+  isBelowVolumeFloor,
   isEnforceableTerminalReport,
 } from './completion-report-gate.mjs'
 import { emitWarn, hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
@@ -75,9 +77,24 @@ export function warnMessage() {
  * change of contract
  * and not a silent flip of a boolean's meaning.
  */
-export function decideWarn({ stopHookActive, lastAssistantText, writeActionSeen = false }) {
+export function decideWarn({
+  stopHookActive,
+  lastAssistantText,
+  writeActionSeen = false,
+  unreturnedDispatchSeen = false,
+  belowVolumeFloor = false,
+}) {
   if (stopHookActive) return { warn: false }
-  if (!isEnforceableTerminalReport({ lastAssistantText, writeActionSeen })) return { warn: false }
+  if (
+    !isEnforceableTerminalReport({
+      lastAssistantText,
+      writeActionSeen,
+      unreturnedDispatchSeen,
+      belowVolumeFloor,
+    })
+  ) {
+    return { warn: false }
+  }
   if (hasDecisionDebtLine(lastAssistantText)) return { warn: false }
   return { warn: true }
 }
@@ -93,6 +110,8 @@ function main() {
       stopHookActive: Boolean(payload.stop_hook_active),
       lastAssistantText: extractLastAssistantText(transcript),
       writeActionSeen: hasWriteAction(transcript),
+      unreturnedDispatchSeen: hasUnreturnedDispatch(transcript),
+      belowVolumeFloor: isBelowVolumeFloor(transcript),
     })
     if (decision.warn) emitWarn(warnMessage())
     process.exit(0)
