@@ -350,4 +350,29 @@ describe('the one-time finance history plan', () => {
     ])
     expect(plan.summary.uncategorizedCount).toBe(1)
   })
+
+  it('EARS-517: defensively classifies an unsupported operation kind as invalid', () => {
+    const malformed = {
+      ...mappings[0],
+      operation: { ...mappings[0].operation, kind: 'refund' },
+    } as unknown as FinanceHistoryMapping
+
+    const plan = buildFinanceHistoryPlan({
+      snapshot,
+      mappings: [malformed],
+      existingOperations: [],
+    })
+
+    expect(plan.operations[0].validation).toEqual({
+      valid: false,
+      reasons: ['kind must be one of expense, income, transfer, conversion'],
+    })
+    expect(plan.summary).toMatchObject({ validCount: 0, invalidCount: 1 })
+    expect(plan.summary.kindCounts).toEqual({
+      expense: 0,
+      income: 0,
+      transfer: 0,
+      conversion: 0,
+    })
+  })
 })
