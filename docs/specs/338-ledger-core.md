@@ -326,16 +326,29 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   the shell (EARS-409).
 - **EARS-325.** WHEN any signed-in platform member opens `/p/finance`, the page
   shall render the cash card of the vendored
-  `design-source/finance/Overview.dc.html`: every non-system money account with
+  `design-source/finance/Overview.dc.html`: every money account with
   its balance computed live from postings and shown in that account's own
   currency, plus an overall total in a selected reporting currency. The
   reporting currency shall default to RUB and shall be switchable without
   changing any operation, posting or native-currency account balance (owner
   decision 13).
 
+  «Money account» is normatively the KIND, not the `is_system` flag: an account
+  of kind `bank`, `card`, `crypto` or `cash` that is not system-managed. A row of
+  any other kind — `income`, `expense`, `liability`, `conversion`, `fx_result` —
+  is never a cash tile and never enters the total, whatever its flag says.
+
+  Whether a RETIRED money account keeps a tile is deliberately NOT settled here
+  and stands as an open owner question (PR #414 review, MAJOR 6): the read model
+  applies no `retired_at` predicate today, so a retired account renders whatever
+  its balance. That is the observed behaviour, recorded as such, not a decision.
+
+  A conversion step whose `from_currency` equals its `to_currency` is malformed:
+  it establishes no rate and makes that pair unavailable.
+
   The total shall be a reproducible reading of recorded facts, never a silent
-  conversion. The finance public API shall first aggregate all non-system money-
-  account balances by currency while the card still displays the individual
+  conversion. The finance public API shall first aggregate all money-account
+  balances by currency while the card still displays the individual
   account rows. It shall then replay the existing immutable conversion steps in
   chronological `(occurred_on, operation_id, step_no)` order into exactly one
   canonical remaining-holding pool for each unordered currency pair. The replay
@@ -349,10 +362,14 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
 
   Before replay, the read model shall remove both members of every fully
   reversed operation pair, so a reversal is exact even when unrelated
-  operations occurred between the original and its reversal (EARS-314). For a
-  reversal-of-reversal chain it shall cancel pairs from the newest reversal
-  backwards; an odd number of reversal acts therefore removes the original fact
-  from the replay, while an even number leaves it.
+  operations occurred between the original and its reversal (EARS-314). The
+  chain shall be resolved along the `reverses` pointer and NOT by date order:
+  starting from the chain TIP — the reversal that is itself not reversed — it
+  shall cancel pairs downward, so an odd number of reversal acts removes the
+  original fact from the replay and an even number leaves it. Dates are not
+  normative here: a backdated reversal must not change which facts survive.
+  This is the same walk `resolveRealizedFxReversalOccurredOn`
+  (`src/lib/finance/fx-pool-locks.ts`) already performs at write time.
 
   A pair pool carries `held_currency`, its positive `held_quantity`, the other
   `cost_currency`, and non-negative `held_cost`, all in their own minor units;
@@ -683,7 +700,18 @@ exception query (EARS-333), and the absence of any allocation posting
 (EARS-334).
 
 EARS-325's read model additionally has the following exact CI fixtures. Unless
-stated otherwise currencies have precision 2 and values below are minor units:
+stated otherwise currencies have precision 2 and values below are minor units.
+
+**What is a fixture and what is a derivation.** Only the read model's public
+output is asserted by CI — `total`, `status`, `missingCurrencies`,
+`availableReportingCurrencies` and the account rows. The intermediate pair-pool
+states quoted below are hand derivations offered so a reader can reproduce a
+total by pencil; they are NOT asserted anywhere and no test imports the pool
+type. Two of these fixtures — the fee (9) and the reversal (2) — additionally
+run through the REAL writers `recordConversion` / `reverseOperation` in
+`tests/int/platform/finance-current-money.int.spec.ts`, so the unit fixtures'
+assumption about the posting shape a conversion and a сторно actually produce is
+pinned rather than assumed.
 
 1. **Representative replay.** The five operations of owner scenario 2 start
    with `200_000_000` RUB across two RUB accounts and end with aggregate
@@ -697,7 +725,10 @@ stated otherwise currencies have precision 2 and values below are minor units:
    conversion RUB `60_000` → USD `1_000`, an unrelated later RUB inflow `5_000`,
    then the exact reversal of the conversion shall replay as RUB `105_000`, USD
    zero and total `105_000`: both conversion members are excluded before
-   chronology, not replayed as a late disposal/acquisition.
+   chronology, not replayed as a late disposal/acquisition. Reversing that
+   reversal in turn restores the conversion into the replay — the chain's
+   parity decides, and a reversal dated EARLIER than the reversal it undoes
+   changes nothing about which facts survive.
 3. **Half-away-from-zero only after a full path, once per source.** Given pair
    edges AAA→BBB `1/2` and BBB→CCC `1/2`, an aggregate AAA `1` in a CCC view
    shall multiply the exact path ratio first and produce CCC `0`; rounding after

@@ -106,6 +106,16 @@ export async function accountBalances(): Promise<AccountBalance[]> {
   }))
 }
 
+/**
+ * The whole ledger, read into memory and replayed on every `/p/finance` view.
+ *
+ * Three UNBOUNDED selects — every operation, every conversion step, every
+ * posting joined to its account — with no LIMIT, no date window and no cache, on
+ * a page open to every `platform-user`. At F1b's data volume that is invisible;
+ * the cost is linear in the lifetime size of the ledger from then on. The
+ * windowed / materialized read model is filed as #420 and is deliberately not
+ * done here: EARS-325's arithmetic is correct, only its access pattern is not.
+ */
 async function currentMoneyOperationFacts(): Promise<CurrentMoneyOperationFact[]> {
   const db = getPlatformDb()
   const [operationResult, stepResult, postingResult] = await Promise.all([
