@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { FinanceRefusal, parseFinanceHistoryMappings } from '@/lib/finance'
+import {
+  FinanceRefusal,
+  parseFinanceHistoryMappings,
+  parseFinanceHistoryMappingsJson,
+} from '@/lib/finance'
 
 const validMapping = {
   sourcePostId: 'post-expense',
@@ -67,6 +71,21 @@ describe('the finance history operator JSON boundary', () => {
         },
       ]),
     ).toThrowError(
+      expect.objectContaining({
+        message: expect.not.stringContaining(secret),
+      }),
+    )
+  })
+
+  it('EARS-517: does not echo private values from syntactically invalid JSON', () => {
+    const secret = 'PRIVATE-FINANCE-PAYLOAD-98273'
+
+    expect(() => parseFinanceHistoryMappingsJson(`{"note":"${secret}"`)).toThrowError(
+      expect.objectContaining({
+        message: 'Invalid finance history mapping JSON.',
+      }),
+    )
+    expect(() => parseFinanceHistoryMappingsJson(`{"note":"${secret}"`)).toThrowError(
       expect.objectContaining({
         message: expect.not.stringContaining(secret),
       }),
