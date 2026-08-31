@@ -269,9 +269,14 @@ export function isOwnerQuestionForm(text) {
 }
 
 /** Предложение следующего шага / работа в полёте: перечисление уже смерженных
- * подшагов в рамке «сейчас запускаю следующее» — тоже не терминальный отчёт. */
+ * подшагов в рамке «сейчас запускаю следующее» — тоже не терминальный отчёт.
+ *
+ * Вторая половина списка — формулировки ФАН-АУТА (#415, наблюдение владельца
+ * 2026-08-31). Ход, объявивший раздачу пяти агентов, не подошёл ни под одно
+ * исключение: «запускаю» ловилось, «агенты запущены» и «работают в фоне» — нет,
+ * и сработали все три гейта разом. Раздача работы — её начало, а не конец. */
 export const PROPOSAL_INFLIGHT_RE =
-  /предлага[ею]|приступа[ею]|запуска[ею]\s+\/?(?:wrap|агент)|субагент[а-яё\w]*\s+(?:ещё\s+)?(?:работает|в\s+работе|бежит)|жду\s+возврат|\bproposing\b|\bdispatching\b/i
+  /предлага[ею]|приступа[ею]|запуска[ею]\s+\/?(?:wrap|агент)|субагент[а-яё\w]*\s+(?:ещё\s+)?(?:работает|в\s+работе|бежит)|жду\s+возврат|(?:суб)?агент[а-яё]*\s+(?:уже\s+)?запущен[а-яё]*|работа[ею]т\s+в\s+фоне|жду\s+отч[ёе]т[а-яё]*|отчита[ею]тся|\bbackground\s+agents?\b|\bproposing\b|\bdispatching\b/i
 
 export function isProposalOrInFlight(text) {
   return PROPOSAL_INFLIGHT_RE.test(String(text || ''))
@@ -483,12 +488,121 @@ export function hasWriteAction(jsonl) {
 }
 
 /**
+ * Невернувшийся фоновый агент (#415). Диспатч `Agent`/`Task`, на `tool_use_id`
+ * которого в транскрипте нет ни одного `tool_result`, — это фан-аут В ПОЛЁТЕ, и
+ * ход, который его объявляет, терминальным отчётом быть не может ПО ПОСТРОЕНИЮ,
+ * какие бы глаголы завершения в нём ни стояли. Наблюдение владельца 2026-08-31:
+ * второй ход сессии перечислял, ЧТО ревьюят пять запущенных агентов («ревью
+ * кода смерженных PR #402, #407, …»), и собрал все три блока разом. Это
+ * СТРУКТУРНОЕ исключение, а не ещё одна формулировка в регулярке.
+ *
+ * Блок `tool_use` БЕЗ `id` сопоставить не с чем и уликой не считается: иначе
+ * транскрипт, в котором id не записаны, снимал бы гейты со всякой сессии,
+ * раздавшей субагентов, — ровно та дыра, которую закрывает #158.
+ */
+export function hasUnreturnedDispatch(jsonl) {
+  const text = String(jsonl || '')
+  if (!text) return false
+  const dispatched = new Set()
+  const returned = new Set()
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    // Дешёвый префильтр: JSON.parse только строк с tool_use / tool_result.
+    if (!trimmed || (!trimmed.includes('"tool_use"') && !trimmed.includes('"tool_result"')))
+      continue
+    let entry
+    try {
+      entry = JSON.parse(trimmed)
+    } catch {
+      continue // битая строка — пропускаем по одной, а не роняем чтение
+    }
+    const content = entry && entry.message && entry.message.content
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      if (!block) continue
+      if (block.type === 'tool_use' && block.id && DISPATCH_TOOLS.has(String(block.name))) {
+        dispatched.add(block.id)
+      } else if (block.type === 'tool_result' && block.tool_use_id) {
+        returned.add(block.tool_use_id)
+      }
+    }
+  }
+  for (const id of dispatched) {
+    if (!returned.has(id)) return true
+  }
+  return false
+}
+
+/**
+ * Пол объёма в БАЙТАХ (#415). Решение владельца, Антон, 2026-08-31: лог сессии
+ * такого размера концом задачи быть не может. Основание измерено по этому
+ * проекту: из 74 транскриптов с write- или dispatch-действием (только на них
+ * гейты и смотрят) 17 лежат ниже 850 КБ и лишь 2 — ниже 300 КБ. Порог взят по
+ * второму числу: поставленный выше, он молча выключил бы гейт в четверти
+ * реальных сессий.
+ */
+export const VOLUME_FLOOR_BYTES = 300 * 1024
+
+/**
+ * Пол объёма в АССИСТЕНТСКИХ ЗАПИСЯХ (`"type":"assistant"`) — то же решение
+ * владельца, Антон, 2026-08-31, и та же выборка из 74 транскриптов. Это
+ * отдельная ось, а не дубль байтов: размер искажают картинки, вшитые в блоки
+ * `tool_result`, — один скриншот приёмки весит больше, чем весь текст короткой
+ * сессии.
+ */
+export const VOLUME_FLOOR_ASSISTANT_TURNS = 25
+
+/**
+ * Число ассистентских ЗАПИСЕЙ (не ходов: Claude Code пишет по записи на блок
+ * контента одного `message.id`, поэтому записей всегда не меньше, чем ходов).
+ */
+export function countAssistantEntries(jsonl) {
+  let count = 0
+  for (const line of String(jsonl || '').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || !trimmed.includes('"assistant"')) continue
+    try {
+      const entry = JSON.parse(trimmed)
+      if (entry && entry.type === 'assistant') count += 1
+    } catch {
+      // битая строка — пропускаем
+    }
+  }
+  return count
+}
+
+/**
+ * Механический пол объёма (#415): транскрипт легче `VOLUME_FLOOR_BYTES` ИЛИ
+ * короче `VOLUME_FLOOR_ASSISTANT_TURNS` записей — не тот объём работы, которым
+ * заканчивают задачу; гейты на нём молчат.
+ *
+ * ИЛИ, а не И, — сознательно: байты искажает вшитая в `tool_result` картинка,
+ * число записей не искажает ничто, поэтому достаточно одной оси ниже порога.
+ */
+export function isBelowVolumeFloor(jsonl) {
+  const text = String(jsonl || '')
+  if (Buffer.byteLength(text, 'utf8') < VOLUME_FLOOR_BYTES) return true
+  return countAssistantEntries(text) < VOLUME_FLOOR_ASSISTANT_TURNS
+}
+
+/**
  * ПОЛНЫЙ распознаватель, через который ходят ВСЕ ТРИ Stop-гейта: текст читается
  * как терминальный отчёт И сессия действительно что-то сделала. Один seam, а не
  * три копии условия, — гейты не могут разъехаться (#158).
+ *
+ * Оба сигнала #415 — структурные исключения, и оба по умолчанию «улики нет»:
+ * вызов, который их не передал, ничего про транскрипт не утверждает, и гейт
+ * остаётся ровно там, где стоял до #415.
  */
-export function isEnforceableTerminalReport({ lastAssistantText, writeActionSeen = false }) {
+export function isEnforceableTerminalReport({
+  lastAssistantText,
+  writeActionSeen = false,
+  unreturnedDispatchSeen = false,
+  belowVolumeFloor = false,
+}) {
   if (!writeActionSeen) return false
+  if (unreturnedDispatchSeen) return false
+  if (belowVolumeFloor) return false
   return isTerminalReport(lastAssistantText)
 }
 
@@ -551,9 +665,24 @@ export function blockMessage() {
  * после блока, финальное сообщение — терминальный отчёт СЕССИИ, КОТОРАЯ ПИСАЛА
  * (#158), и маркера stage 6 в нём нет.
  */
-export function decideBlock({ stopHookActive, lastAssistantText, writeActionSeen = false }) {
+export function decideBlock({
+  stopHookActive,
+  lastAssistantText,
+  writeActionSeen = false,
+  unreturnedDispatchSeen = false,
+  belowVolumeFloor = false,
+}) {
   if (stopHookActive) return { block: false }
-  if (!isEnforceableTerminalReport({ lastAssistantText, writeActionSeen })) return { block: false }
+  if (
+    !isEnforceableTerminalReport({
+      lastAssistantText,
+      writeActionSeen,
+      unreturnedDispatchSeen,
+      belowVolumeFloor,
+    })
+  ) {
+    return { block: false }
+  }
   if (hasEyesOrNoVisualChange(lastAssistantText)) return { block: false }
   return { block: true }
 }
@@ -569,6 +698,8 @@ function main() {
       stopHookActive: Boolean(payload.stop_hook_active),
       lastAssistantText: extractLastAssistantText(transcript),
       writeActionSeen: hasWriteAction(transcript),
+      unreturnedDispatchSeen: hasUnreturnedDispatch(transcript),
+      belowVolumeFloor: isBelowVolumeFloor(transcript),
     })
     if (decision.block) {
       // PER-SESSION BLOCK BUDGET (#392): this gate blocks at most ONCE per

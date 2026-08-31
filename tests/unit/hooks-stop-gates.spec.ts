@@ -5,14 +5,19 @@ import {
   decideBlock as decideCompletionBlock,
   extractLastAssistantText,
   hasEyesOrNoVisualChange,
+  hasUnreturnedDispatch,
   hasWriteAction,
+  isBelowVolumeFloor,
   isCompletionReport,
   isEnforceableTerminalReport,
+  isProposalOrInFlight,
   hasExplicitInterimMarker,
   hasOwnerQuestionMarker,
   isInterimStatus,
   isOwnerQuestionForm,
   isTerminalReport,
+  VOLUME_FLOOR_ASSISTANT_TURNS,
+  VOLUME_FLOOR_BYTES,
 } from '../../tools/hooks/completion-report-gate.mjs'
 import {
   BUDGET_KEY as DEVIATIONS_BUDGET_KEY,
@@ -1186,5 +1191,184 @@ describe('#158: три Stop-гейта на read-only сессии', () => {
         writeActionSeen: true,
       }),
     ).toBe(false)
+  })
+})
+
+/**
+ * #415 — наблюдение владельца 2026-08-31: все три Stop-гейта сработали на ВТОРОМ
+ * ходе сессии, объявившем раздачу пяти агентов. Глаголы завершения принадлежали
+ * ОБЪЕКТУ работы агентов («ревью кода смерженных PR #402, #407…»), а не заявке
+ * сессии о том, что она что-то закончила. Тот же класс отходов, что #284, #299,
+ * #374 и #392, — каждый добавлял недостающее исключение.
+ */
+
+const FAN_OUT_DISPATCH = [
+  'Агенты запущены, работают в фоне — пять параллельных потоков:',
+  '',
+  '1. Ревью кода смерженных PR #402, #407, #410, #411 — bbm-reviewer.',
+  '2. Гигиена закрытий: закрытые issue #398 и #401 — есть ли итоговый комментарий.',
+  '3. Инвентарь хвостов эпика #115: что осталось после того, как PR #396 смержен.',
+  '4. Проверка доски: статусы задач, закрытых на прошлой неделе.',
+  '5. Разведка по гейтам: где живёт распознаватель отчёта.',
+  '',
+  'Жду отчётов; когда все пятеро отчитаются, соберу сводку и покажу.',
+].join('\n')
+
+describe('#415: раздача агентов — не терминальный отчёт', () => {
+  it('наблюдённое сообщение фан-аута не читается как отчёт о завершении', () => {
+    expect(isTerminalReport(FAN_OUT_DISPATCH)).toBe(false)
+  })
+
+  it('формулировки фан-аута попадают в PROPOSAL_INFLIGHT_RE', () => {
+    expect(isProposalOrInFlight('Агенты запущены, дальше по отчётам.')).toBe(true)
+    expect(isProposalOrInFlight('Пять агентов работают в фоне.')).toBe(true)
+    expect(isProposalOrInFlight('Жду отчётов от субагентов.')).toBe(true)
+    expect(isProposalOrInFlight('Соберу сводку, когда все пятеро отчитаются.')).toBe(true)
+    expect(isProposalOrInFlight('Five background agents are running.')).toBe(true)
+  })
+
+  it('обычный отчёт о завершении по-прежнему отчёт', () => {
+    expect(isProposalOrInFlight(REPORT_NO_MARKERS)).toBe(false)
+    expect(isTerminalReport(REPORT_NO_MARKERS)).toBe(true)
+  })
+})
+
+/**
+ * #415, структурное исключение: агент диспетчеризован, `tool_result` на его
+ * `tool_use_id` в транскрипте не появился — фан-аут В ПОЛЁТЕ, и ход, который его
+ * объявляет, терминальным отчётом быть не может по построению, независимо от
+ * того, какие глаголы в нём стоят.
+ */
+
+const dispatchUse = (id: string, msgId = 'd1') =>
+  JSON.stringify({
+    type: 'assistant',
+    message: { id: msgId, content: [{ type: 'tool_use', id, name: 'Agent', input: {} }] },
+  })
+
+const dispatchResult = (toolUseId: string) =>
+  JSON.stringify({
+    type: 'user',
+    message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'готово' }] },
+  })
+
+describe('#415: невернувшийся фоновый агент', () => {
+  it('диспатч без tool_result — фан-аут в полёте', () => {
+    expect(
+      hasUnreturnedDispatch([dispatchUse('t1'), assistantSays(FAN_OUT_DISPATCH)].join('\n')),
+    ).toBe(true)
+  })
+
+  it('все диспатчи вернулись — улики нет', () => {
+    expect(
+      hasUnreturnedDispatch(
+        [
+          dispatchUse('t1'),
+          dispatchUse('t2', 'd2'),
+          dispatchResult('t1'),
+          dispatchResult('t2'),
+        ].join('\n'),
+      ),
+    ).toBe(false)
+  })
+
+  it('вернулась только часть — этого достаточно', () => {
+    expect(
+      hasUnreturnedDispatch(
+        [dispatchUse('t1'), dispatchUse('t2', 'd2'), dispatchResult('t1')].join('\n'),
+      ),
+    ).toBe(true)
+  })
+
+  // Fail-open в другую сторону: блок `tool_use` без `id` сопоставить не с чем,
+  // и уликой он не является — иначе транскрипт без id молча снял бы гейты со
+  // всякой сессии, раздавшей субагентов (#158).
+  it('диспатч без id уликой не считается', () => {
+    expect(hasUnreturnedDispatch(toolUse('Agent', { subagent_type: 'general-purpose' }))).toBe(
+      false,
+    )
+  })
+
+  it('нечитаемый или пустой транскрипт улики не даёт', () => {
+    expect(hasUnreturnedDispatch('')).toBe(false)
+    expect(hasUnreturnedDispatch('{ битая строка')).toBe(false)
+    expect(hasUnreturnedDispatch(null)).toBe(false)
+  })
+
+  it('невернувшийся агент снимает все три гейта', () => {
+    const args = {
+      stopHookActive: false,
+      lastAssistantText: REPORT_NO_MARKERS,
+      writeActionSeen: true,
+      unreturnedDispatchSeen: true,
+    }
+    expect(decideCompletionBlock(args).block).toBe(false)
+    expect(decideDeviationsBlock(args).block).toBe(false)
+    expect(decideWarn(args).warn).toBe(false)
+  })
+})
+
+/**
+ * #415, порог объёма. Решение владельца, Антон, 2026-08-31: сессия такого
+ * размера концом задачи быть не может. Пороги соединены через ИЛИ намеренно —
+ * байты искажают картинки, вшитые в блоки `tool_result`.
+ */
+
+const bigTranscript = (entries: number, bytes: number) => {
+  const filler = 'п'.repeat(Math.max(1, Math.ceil(bytes / entries / 2)))
+  return Array.from({ length: entries }, (_, i) => assistantSays(filler, `m${i}`)).join('\n')
+}
+
+describe('#415: порог объёма транскрипта', () => {
+  it('пороги — именованные экспортированные константы', () => {
+    expect(VOLUME_FLOOR_BYTES).toBe(300 * 1024)
+    expect(VOLUME_FLOOR_ASSISTANT_TURNS).toBe(25)
+  })
+
+  it('короткий транскрипт — ниже порога по обоим осям', () => {
+    expect(isBelowVolumeFloor(bigTranscript(5, 1024))).toBe(true)
+    expect(isBelowVolumeFloor('')).toBe(true)
+  })
+
+  it('много ходов, но мало байт — всё ещё ниже порога (ИЛИ, а не И)', () => {
+    expect(isBelowVolumeFloor(bigTranscript(40, 10 * 1024))).toBe(true)
+  })
+
+  it('много байт, но мало ходов — тоже ниже порога', () => {
+    expect(isBelowVolumeFloor(bigTranscript(5, 500 * 1024))).toBe(true)
+  })
+
+  it('выше обоих порогов — гейты применимы', () => {
+    expect(isBelowVolumeFloor(bigTranscript(30, 400 * 1024))).toBe(false)
+  })
+
+  it('транскрипт ниже порога снимает все три гейта', () => {
+    const args = {
+      stopHookActive: false,
+      lastAssistantText: REPORT_NO_MARKERS,
+      writeActionSeen: true,
+      belowVolumeFloor: true,
+    }
+    expect(decideCompletionBlock(args).block).toBe(false)
+    expect(decideDeviationsBlock(args).block).toBe(false)
+    expect(decideWarn(args).warn).toBe(false)
+    expect(
+      isEnforceableTerminalReport({
+        lastAssistantText: REPORT_NO_MARKERS,
+        writeActionSeen: true,
+        belowVolumeFloor: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('транскрипт выше порога гейты не снимает', () => {
+    expect(
+      isEnforceableTerminalReport({
+        lastAssistantText: REPORT_NO_MARKERS,
+        writeActionSeen: true,
+        belowVolumeFloor: false,
+        unreturnedDispatchSeen: false,
+      }),
+    ).toBe(true)
   })
 })
