@@ -37,7 +37,7 @@ import {
  * `docs/specs/339-ledger-intake.md` §B/§H, issue #381).
  *
  * This tier exists for the same reason the F1a one does: half of what the spine
- * promises IS the database. EARS-504's «a duplicate cannot exist» is a partial
+ * promises IS the database. The source-ref duplicate guard is a partial
  * unique index, the `source_ref` policy of EARS-503 is a CHECK, and the role
  * gates of EARS-524 only mean something over rows a real actor created. A mock
  * would assert the module's opinion of all three.
@@ -148,8 +148,8 @@ describe('Every intake path carries its source and its ref semantics (EARS-503)'
   })
 })
 
-describe('A duplicate arrival is refused and answers with the existing item (EARS-504)', () => {
-  it('EARS-504: the second arrival of one (source, source_ref) is refused and carries the original', async () => {
+describe('the internal source-ref duplicate regression', () => {
+  it('refuses a second arrival and carries the original intake item', async () => {
     const refs = await seedIntakeReferences()
     const original = await createIntakeItem(ENTRY, backfillLine(refs))
 
@@ -167,7 +167,7 @@ describe('A duplicate arrival is refused and answers with the existing item (EAR
     expect(stored).toHaveLength(1)
   })
 
-  it('EARS-504: in a bulk arrival the refusal is per line — duplicates skipped, the rest proceed', async () => {
+  it('keeps the module-private multi-row helper line-isolated', async () => {
     const refs = await seedIntakeReferences()
     const first = await createIntakeItem(ENTRY, backfillLine(refs))
 
@@ -193,7 +193,7 @@ describe('A duplicate arrival is refused and answers with the existing item (EAR
     expect(await listIntakeItems(ENTRY)).toHaveLength(3)
   })
 
-  it('EARS-504: two identical lines INSIDE one batch deduplicate against each other', async () => {
+  it('deduplicates two identical lines inside the module-private helper', async () => {
     const refs = await seedIntakeReferences()
     const outcome = await createIntakeItems(ENTRY, [backfillLine(refs), backfillLine(refs)])
     expect(outcome.created).toHaveLength(1)

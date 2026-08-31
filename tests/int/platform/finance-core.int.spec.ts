@@ -541,6 +541,90 @@ describe('provenance and the absence of an opening balance (EARS-316, EARS-317)'
       -42_000n,
     )
   })
+
+  it('EARS-517: a repeated backfill source_ref returns the existing operation without adding postings', async () => {
+    const bank = await seedRubBank()
+    const fund = await fundProjectId()
+    const expense = await systemAccount(ADMIN, 'expense', 'RUB')
+    const input = {
+      occurredOn: '2025-01-15',
+      source: 'backfill' as const,
+      backdated: true,
+      sourceRef: 'MM-post-42',
+      postings: [
+        { accountId: expense.id, amount: 5_000n, currency: 'RUB', projectId: fund },
+        { accountId: bank.id, amount: -5_000n, currency: 'RUB' },
+      ],
+    }
+
+    const original = await recordOperation(APPROVER, input)
+    const repeated = await recordOperation(APPROVER, input)
+    expect(repeated.id).toBe(original.id)
+    const counts = await db.execute(sql`
+      select count(distinct o.id)::int as operations, count(p.id)::int as postings
+        from core.finance_operation o
+        join core.finance_posting p on p.operation_id = o.id
+       where o.source = 'backfill' and o.source_ref = 'MM-post-42'
+    `)
+    expect(counts.rows[0]).toMatchObject({ operations: 1, postings: 2 })
+  })
+})
+
+describe('read-time category fallback (EARS-520)', () => {
+  it('EARS-520: derives only a missing posting category from the purpose current link and labels it derived', async () => {
+    const bank = await seedRubBank()
+    const fund = await fundProjectId()
+    const firstCategory = await createCategory(ADMIN, { name: 'Infrastructure', allocable: false })
+    const secondCategory = await createCategory(ADMIN, { name: 'Operations', allocable: false })
+    const purpose = await createPurpose(ADMIN, {
+      name: 'Hosting',
+      productBinding: 'forbidden',
+      categoryId: firstCategory.id,
+    })
+    const expense = await systemAccount(ADMIN, 'expense', 'RUB')
+    const historical = await recordOperation(APPROVER, {
+      occurredOn: '2025-01-15',
+      source: 'backfill',
+      sourceRef: 'MM-history-category',
+      backdated: true,
+      purposeId: purpose.id,
+      postings: [
+        { accountId: expense.id, amount: 5_000n, currency: 'RUB', projectId: fund },
+        { accountId: bank.id, amount: -5_000n, currency: 'RUB' },
+      ],
+    })
+    await fixtureWrite(async (tx) => {
+      await tx
+        .execute(
+          sql`
+        insert into core.finance_operation (occurred_on, purpose_id, source, source_ref, backdated)
+        values ('2024-12-01', ${purpose.id}, 'backfill', 'MM-pre-taxonomy', true)
+        returning id
+      `,
+        )
+        .then(async (result) => {
+          const operationId = Number((result.rows[0] as { id: number }).id)
+          await tx.execute(sql`
+          insert into core.finance_posting (operation_id, account_id, amount, currency, project_id, category_id)
+          values
+            (${operationId}, ${expense.id}, 2500, 'RUB', ${fund}, null),
+            (${operationId}, ${bank.id}, -2500, 'RUB', null, null)
+        `)
+        })
+    })
+
+    await updatePurpose(ADMIN, purpose.id, { categoryId: secondCategory.id })
+    const register = await listRegister()
+    const stored = register
+      .find((row) => row.operationId === historical.id)
+      ?.postings.find((row) => row.accountId === expense.id)
+    const derived = register
+      .find((row) => row.sourceRef === 'MM-pre-taxonomy')
+      ?.postings.find((row) => row.accountId === expense.id)
+
+    expect(stored).toMatchObject({ categoryId: firstCategory.id, categoryDerived: false })
+    expect(derived).toMatchObject({ categoryId: secondCategory.id, categoryDerived: true })
+  })
 })
 
 describe('the person dimension (EARS-322)', () => {
