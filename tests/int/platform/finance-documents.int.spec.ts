@@ -458,11 +458,9 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     ])
   })
 
-  it('EARS-514/516: an ambiguous PUT on a terminal correction resumes without replacing bytes', async () => {
+  it('EARS-514/516: a recovered upload remains immutable after its item becomes terminal', async () => {
     const refs = await seedIntakeReferences()
     const item = await seedIntakeItemFor(ENTRY, refs)
-    await uploadFor(ENTRY, [item.id])
-    await postIntakeItem(item.id)
 
     const base = localStorage()
     let ambiguous = true
@@ -491,10 +489,13 @@ describe('storing a document (spec 339 EARS-514/515)', () => {
     )
 
     const recovered = await resumeFinanceDocumentUpload(ENTRY, documentId, PDF, ambiguousStorage)
+    await postIntakeItem(item.id)
+    const repeated = await resumeFinanceDocumentUpload(ENTRY, documentId, PDF, ambiguousStorage)
     const changed = Buffer.from(PDF)
     changed[changed.length - 1] ^= 1
 
     expect(recovered.id).toBe(documentId)
+    expect(repeated).toEqual(recovered)
     await expect(
       resumeFinanceDocumentUpload(ENTRY, documentId, changed, ambiguousStorage),
     ).rejects.toThrow(FinanceRefusal)
@@ -649,9 +650,76 @@ describe('who may read a document (spec 339 EARS-523)', () => {
       readFinanceDocument({ email: 'stranger@example.com', roles: ['platform-user'] }, doc.id),
     ).rejects.toThrow(FinanceAccessRefusal)
   })
+
+  it('EARS-523: a storage read failure stays inside the finance refusal taxonomy', async () => {
+    const refs = await seedIntakeReferences()
+    const item = await seedIntakeItemFor(ENTRY, refs)
+    const doc = await uploadFor(ENTRY, [item.id])
+    const storage: FinanceDocumentStorage = {
+      ...localStorage(),
+      async get() {
+        throw new Error('injected object GET failure')
+      },
+    }
+
+    await expect(readFinanceDocument(ENTRY, doc.id, storage)).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof FinanceRefusal && /injected object GET failure/.test(error.message),
+    )
+  })
 })
 
 describe('a document does not move once it confirmed a posting (spec 339 EARS-516)', () => {
+  it('EARS-516: upload refuses every terminal item and the database backstops direct link INSERT', async () => {
+    const refs = await seedIntakeReferences()
+    const posted = await seedIntakeItemFor(MEMBER, refs, { source: 'request' })
+    const refused = await seedIntakeItemFor(ENTRY, refs)
+    const cancelled = await seedIntakeItemFor(ENTRY, refs)
+    const postedDocument = await uploadFor(MEMBER, [posted.id])
+    await uploadFor(ENTRY, [refused.id])
+    await uploadFor(ENTRY, [cancelled.id])
+
+    await postIntakeItem(posted.id)
+    await fixtureWrite(async (tx) => {
+      await tx.execute(sql`
+        update core.finance_intake_item
+        set status = 'refused', refusal_reason = 'fixture refusal'
+        where id = ${refused.id}
+      `)
+      await tx.execute(sql`
+        update core.finance_intake_item
+        set status = 'cancelled'
+        where id = ${cancelled.id}
+      `)
+    })
+
+    await expect(uploadFor(MEMBER, [posted.id])).rejects.toThrow(FinanceRefusal)
+    await expect(uploadFor(ENTRY, [refused.id])).rejects.toThrow(FinanceRefusal)
+    await expect(uploadFor(ENTRY, [cancelled.id])).rejects.toThrow(FinanceRefusal)
+
+    await expectTriggerRefusal(
+      fixtureWrite(async (tx) => {
+        const inserted = await tx.execute(sql`
+          insert into core.finance_document
+            (storage_key, content_digest, filename, mime, size, kind, uploaded_by)
+          values (${`finance/documents/direct-insert-${Date.now()}.pdf`},
+                  ${`sha256:${createHash('sha256').update('direct').digest('hex')}`},
+                  'direct.pdf', 'application/pdf', 6, 'other', ${refs.entryMemberId})
+          returning id
+        `)
+        const documentId = Number((inserted.rows[0] as { id: number }).id)
+        await tx.execute(sql`
+          insert into core.finance_document_link (document_id, intake_item_id, linked_by)
+          values (${documentId}, ${posted.id}, ${refs.entryMemberId})
+        `)
+      }),
+      /EARS-516/,
+    )
+    expect(
+      (await listFinanceDocuments(MEMBER, { intakeItemId: posted.id })).map((d) => d.id),
+    ).toEqual([postedDocument.id])
+  })
+
   it('EARS-516: a document linked to a posted operation is never deleted', async () => {
     const refs = await seedIntakeReferences()
     const item = await seedIntakeItemFor(ENTRY, refs)
@@ -674,12 +742,12 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
 
     await postIntakeItem(item.id)
 
-    // Correcting a wrong document is attaching another one, which still works.
+    // A posted evidence set is immutable in both directions.
     await expect(setFinanceDocumentKind(ENTRY, doc.id, 'other')).rejects.toThrow(FinanceRefusal)
-    const replacement = await uploadFor(ENTRY, [item.id], 'fiscal_receipt')
+    await expect(uploadFor(ENTRY, [item.id], 'fiscal_receipt')).rejects.toThrow(FinanceRefusal)
     expect(
       (await listFinanceDocuments(ENTRY, { intakeItemId: item.id })).map((d) => d.id).sort(),
-    ).toEqual([doc.id, replacement.id].sort())
+    ).toEqual([doc.id])
   })
 
   it('EARS-516: an unlinked document and one on an unposted item are still deletable', async () => {
@@ -697,11 +765,21 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
 
   it('EARS-516: documents of refused and cancelled items are kept with them', async () => {
     const refs = await seedIntakeReferences()
-    const refused = await seedIntakeItemFor(ENTRY, refs, { status: 'refused' })
-    const cancelled = await seedIntakeItemFor(ENTRY, refs, { status: 'cancelled' })
+    const refused = await seedIntakeItemFor(ENTRY, refs)
+    const cancelled = await seedIntakeItemFor(ENTRY, refs)
 
     const onRefused = await uploadFor(ENTRY, [refused.id])
     const onCancelled = await uploadFor(ENTRY, [cancelled.id])
+    await fixtureWrite(async (tx) => {
+      await tx.execute(sql`
+        update core.finance_intake_item
+        set status = 'refused', refusal_reason = 'fixture refusal'
+        where id = ${refused.id}
+      `)
+      await tx.execute(sql`
+        update core.finance_intake_item set status = 'cancelled' where id = ${cancelled.id}
+      `)
+    })
 
     expect((await listFinanceDocuments(ENTRY, { intakeItemId: refused.id }))[0].id).toBe(
       onRefused.id,
@@ -768,8 +846,15 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
 
   it('EARS-516: database cascades and truncation cannot erase retained document links', async () => {
     const refs = await seedIntakeReferences()
-    const item = await seedIntakeItemFor(ENTRY, refs, { status: 'refused' })
+    const item = await seedIntakeItemFor(ENTRY, refs)
     await uploadFor(ENTRY, [item.id])
+    await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item
+        set status = 'refused', refusal_reason = 'fixture refusal'
+        where id = ${item.id}
+      `),
+    )
 
     await expectTriggerRefusal(
       fixtureWrite((tx) =>

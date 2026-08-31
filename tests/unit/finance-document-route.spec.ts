@@ -5,6 +5,7 @@ import { FinanceDocumentUploadPending } from '@/lib/finance'
 import { PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 const routeState = vi.hoisted(() => ({
+  read: vi.fn(),
   session: null as unknown,
   resume: vi.fn(),
   upload: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock('@/lib/finance', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/finance')>()
   return {
     ...actual,
+    readFinanceDocument: routeState.read,
     resumeFinanceDocumentUpload: routeState.resume,
     uploadFinanceDocument: routeState.upload,
   }
@@ -37,6 +39,16 @@ beforeEach(() => {
     kind: 'ru_invoice',
     uploadedAt: new Date('2026-08-28T00:00:00Z'),
   })
+  routeState.read.mockReset().mockResolvedValue({
+    id: 17,
+    filename: 'invoice.pdf',
+    mime: 'application/pdf',
+    size: 999,
+    kind: 'ru_invoice',
+    uploadedBy: 1,
+    uploadedAt: new Date('2026-08-28T00:00:00Z'),
+    bytes: Buffer.from('%PDF-1.7\nfixture'),
+  })
   routeState.upload.mockReset().mockResolvedValue({
     id: 1,
     filename: 'invoice.pdf',
@@ -57,6 +69,11 @@ async function resume(id: string, bytes = Buffer.from('%PDF-1.7\nfixture')): Pro
   return route.PUT(new Request(`${URL}/${id}`, { method: 'PUT', body: bytes }), {
     params: Promise.resolve({ id }),
   })
+}
+
+async function read(id: string): Promise<Response> {
+  const route = await import('@/app/(platform)/p/finance/api/documents/[id]/route')
+  return route.GET(new Request(`${URL}/${id}`), { params: Promise.resolve({ id }) })
 }
 
 function validForm(bytes: Uint8Array = Buffer.from('%PDF-1.7\nfixture')): FormData {
@@ -185,6 +202,42 @@ describe('finance document upload trust boundary (spec 339 EARS-514)', () => {
     expect(routeState.upload).not.toHaveBeenCalled()
   })
 
+  it('EARS-514: a rebuilt bounded multipart request keeps content type but drops caller framing headers', async () => {
+    const form = validForm()
+    const original = new Request(URL, { method: 'POST', body: form })
+    const bytes = Buffer.from(await original.arrayBuffer())
+    const request = new Request(URL, {
+      method: 'POST',
+      headers: {
+        'content-type': original.headers.get('content-type')!,
+        'content-length': '1',
+        'transfer-encoding': 'chunked',
+      },
+      body: bytes,
+    })
+    const NativeRequest = globalThis.Request
+    let rebuiltHeaders: Headers | null = null
+    class CapturingRequest extends NativeRequest {
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        super(input, init)
+        if (init?.body !== undefined) rebuiltHeaders = new Headers(init.headers)
+      }
+    }
+    vi.stubGlobal('Request', CapturingRequest)
+
+    try {
+      const route = await import('@/app/(platform)/p/finance/api/documents/route')
+      const response = await route.POST(request)
+
+      expect(response.status).toBe(201)
+      expect(rebuiltHeaders?.get('content-type')).toBe(original.headers.get('content-type'))
+      expect(rebuiltHeaders?.has('content-length')).toBe(false)
+      expect(rebuiltHeaders?.has('transfer-encoding')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('EARS-514: refuses unknown multipart parts instead of silently buffering and ignoring them', async () => {
     const form = validForm()
     form.set('ignored', 'x')
@@ -193,5 +246,16 @@ describe('finance document upload trust boundary (spec 339 EARS-514)', () => {
 
     expect(response.status).toBe(400)
     expect(routeState.upload).not.toHaveBeenCalled()
+  })
+})
+
+describe('finance document read response (spec 339 EARS-523)', () => {
+  it('uses the byte count actually read from storage for content-length', async () => {
+    const response = await read('17')
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-length')).toBe(
+      String(Buffer.from('%PDF-1.7\nfixture').byteLength),
+    )
   })
 })
