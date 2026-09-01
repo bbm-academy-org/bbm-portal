@@ -2,25 +2,25 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-08-25
+updated: 2026-09-01
 ---
 
-# F2 — Filling the ledger: manual entry, expense requests, history backfill, bank import (#339)
+# F2 — Filling the ledger: manual entry, expense requests and one-time history reconstruction (#339)
 
 ## Feature summary
 
 The ledger is only as good as what reaches it, and the owner ruled that reaching
-it must not be his own typing. This feature is the intake: **manual posting
-entry, history backfill of everything already spent, automatic accruals from
-`/p/hours`, and bank-statement import** (decision 3), plus the workflow that
-produces most future expenses — **expense requests with invoice attachments**
-(decision 6).
+it must not be his own typing. This feature is the lasting intake: **manual
+posting entry** plus the workflow that produces most future expenses —
+**expense requests with invoice attachments** (decision 6). Existing history is
+reconstructed once as private operator work through those already-shipped
+single-item primitives; it is not another product surface.
 
-**Ingestion is a pluggable layer, not a single form.** The owner's verbatim
-intent (decision 3): sources and formats will vary — invoice uploads, API pulls,
-AI-agent entry, manual UI. Bank-statement import is the **first** plugged source
-and the shape the layer is proven against; a fifth source later adds a source,
-not a second ledger.
+**Intake keeps a source boundary without pre-building hypothetical producers.**
+The owner's intent (decision 3) is that sources may vary later. F2 proves only
+the sources it actually has: requests and manual entry. A bank parser or agent
+producer is scoped when a real recurring input exists, not reserved through an
+unused implementation.
 
 **Roles (decision 8):** the whole team submits expense requests — any platform
 login, invoice attached. Owners approve, and approval is what posts to the
@@ -37,10 +37,11 @@ the approve-then-spend vs record-what-was-spent fork that this PRD previously
 carried as an open question.
 
 **The expense taxonomy is derived here, not shipped with F1 — decision 11.**
-Once the backfill and the first live sources have put real spend into the ledger,
-the category list is derived from those recorded expenses and brought to the
-owner for approval; it then lives on as the editable reference table F1 defines.
-Nothing seeds it in advance.
+The private historical mapping groups real spend before posting; the owner
+approves the initial categories, and the resulting purposes/categories are
+created through F1's editable references before the historical items are posted.
+Nothing is invented or seeded in advance, and no permanent derivation view is
+needed.
 
 **The purpose of a request is a pick, not prose — owner ruling, decision 21
 (owner 2026-08-25).** "What for" is chosen from the **purpose reference**
@@ -60,8 +61,8 @@ dimension on every entry.
 
 ## Design pick (Stage A)
 
-_Not yet run._ The expense-request form, the request queue and the import review
-screen are the epic's most-used surfaces and need a Stage-A pick vendored into
+_Not yet run._ The expense-request form, request queue and manual-entry surface
+need a Stage-A pick vendored into
 `design-source/` before any markup (`.claude/rules/design-process.md`).
 
 ## User stories
@@ -90,15 +91,9 @@ screen are the epic's most-used surfaces and need a Stage-A pick vendored into
   _(`agent-proposed — UNCONFIRMED`)_
 - **US-6** — As an owner, the invoice stays attached to the resulting operation,
   so a number in the register can be opened and its document read. _(decision 6)_
-- **US-7** — As an owner, I upload a bank statement and the operations in it
-  arrive in the ledger without me retyping them. _(decision 3)_
-- **US-8** — As an owner, an imported operation that the system has seen before
-  is not added twice, however many times I upload the statement.
-  _(`agent-proposed — UNCONFIRMED`; a property of import, never named by the
-  owner)_
-- **US-9** — As an owner, an imported operation that the system cannot classify
-  waits for me to name its category and project instead of guessing.
-  _(`agent-proposed — UNCONFIRMED`)_
+- **US-7–US-9 — retired unbuilt.** A bank-statement product was speculative
+  without a real statement format or demonstrated recurring operation. It gets
+  a separate product decision if that need appears.
 - **US-10** — As an owner, hours accruals reach the ledger automatically from
   `/p/hours` — hours × rates feed expenses with no manual duplication.
   _(decision 3)_
@@ -107,9 +102,10 @@ screen are the epic's most-used surfaces and need a Stage-A pick vendored into
   _(`agent-proposed — UNCONFIRMED`)_
 - **US-12** — As an owner, I enter an operation by hand when nothing else can
   produce it, and it is an operation like any other. _(decision 3)_
-- **US-13** — As an owner, I enter everything already spent historically, in a
-  form built for bulk rather than one screen at a time, so the first P&L is not
-  empty. _(decision 3)_
+- **US-13** — As an owner, I have everything already spent reconstructed once
+  from the records we already hold, so the first P&L is not empty and no
+  permanent import tool remains afterward. _(decision 3; owner correction
+  2026-09-01)_
 - **US-14** — As an owner, I can tell a backfilled historical operation from an
   operation captured live. _(`agent-proposed — UNCONFIRMED`)_
 - **US-15** — As the owner, adding a new source later — an API pull, an
@@ -159,18 +155,11 @@ decision 12 fixes the path and the approval, not the reimbursement obligation as
 a modelled entity)_
 
 **Deriving the category list.**
-Once the backfill and the first live sources have populated the ledger, the
-recorded expenses are read off into a proposed category list → the owner approves
-or reshapes it → it becomes the content of F1's editable reference table, and
-existing operations are classified against it. _(decision 11)_
-
-**Bank-statement import.**
-Owner uploads the statement file → the system parses it into candidate
-operations → each candidate is matched against what is already recorded, and
-duplicates are dropped → unclassified candidates are presented for category and
-project → the owner confirms → the operations are posted. Nothing is posted
-before the owner confirms. _(`agent-proposed — UNCONFIRMED` in its confirmation
-step; decision 3 fixes only that bank import is a source)_
+The private historical table groups recorded expenses by purpose before any
+production write → the owner approves or reshapes the category list → the
+categories and purpose links are created through F1's ordinary audited reference
+edits → historical operations store that approved classification when posted.
+_(decision 11; owner correction 2026-09-01)_
 
 **Hours accruals.**
 A hours period closes → its accruals (role rate × actual hours, cash and invest
@@ -180,12 +169,12 @@ _(decision 3; the accrual columns exist today — prior art §5)_
 
 **History backfill.**
 The owner locates BBM's **first operation ever**; that date opens the books
-_(decision 17)_ → every account starts at zero → the owner works forward through
-the past spend in a bulk-entry surface — many rows, one save — and the resulting
-operations are marked as backfilled. Balances are produced by those operations
-alone: **no opening-balance entry is created for any account**, because
-everything since the first operation is on record. A backfilled operation behaves
-exactly like a live one in every report.
+_(decision 17)_ → a private temporary table is prepared from Mattermost posts and
+documents → ambiguous mappings and the category list are approved → a temporary
+operator runner sends each row through the existing one-item finance path → the
+runner and private working files are removed after verification. Every account
+starts at zero; **no opening-balance entry is created**. No reusable backfill
+backend, CLI or UI is shipped.
 
 **A new source arrives.**
 A source declares what it produces; intake validates and posts it through the
@@ -209,16 +198,12 @@ same path as every other source. No existing source changes.
   the register.
 - A member without the owner role cannot post to the ledger by any route,
   including a direct request to the endpoint.
-- Uploading the same bank statement twice does not produce duplicate operations.
-- An imported line the system cannot classify is presented to the owner rather
-  than posted with a guessed category.
 - Closing an hours period produces the corresponding payroll expenses in the
   ledger without manual entry.
 - Re-publishing or re-closing an hours period does not double the payroll expense
   already recorded.
-- The owner can enter past spend in bulk and reach a populated P&L for a past
-  period, starting from the first operation of the books, with no account ever
-  given an opening balance.
+- The one-time reconstruction reaches a populated P&L from the first operation,
+  with no opening balance and no permanent import surface left in the product.
 - The request form offers the purpose as a pick from the purpose reference and
   accepts no free-text purpose; the category is derived from the picked purpose.
 - A request for an expense attributable to a product cannot be submitted without
@@ -235,24 +220,23 @@ same path as every other source. No existing source changes.
   further source — decision 3 names them as future sources the layer must admit,
   not as v1 deliverables.
 - Payment execution: nothing here moves money, it records that money moved.
+- Permanent bulk-backfill/import APIs, CLIs and UIs; the historical transfer is
+  one-time private operator work.
+- Bank statement parsing/import until a real format and recurring need are
+  presented and separately approved.
 - Reimbursement tracking as a workflow of its own — decision 12 confirms the
   retroactive filing path, not a payables/settlement workflow on top of it.
 - The workspace roles themselves — epic #112, feature #313.
 
 ## Open questions
 
-1. **Which banks and which statement formats** are in v1 — the format decides how
-   much of the import is parsing versus mapping.
-2. **Does a refusal need a reason**, and does a refused request stay visible in
+1. **Does a refusal need a reason**, and does a refused request stay visible in
    history?
-3. **Are accruals posted per member or per period aggregate?** Per member gives
+2. **Are accruals posted per member or per period aggregate?** Per member gives
    "what did we pay X"; per aggregate is one line per period.
-4. **Who besides the owner holds the approving role** — decision 8 says "owners",
+3. **Who besides the owner holds the approving role** — decision 8 says "owners",
    plural.
-5. **How much spend is enough to derive the taxonomy from?** Decision 11 fixes
-   that the list comes from the fact, not when the derivation is run — after the
-   backfill alone, or after some period of live operation.
-6. **What makes an expense "attributable" to a product?** This form blocks a
+4. **What makes an expense "attributable" to a product?** This form blocks a
    submit on it, and no owner decision defines the test — the definition is owned
    by F1's open question 5 (#338) and is answered at the F1 spec go, not here.
 

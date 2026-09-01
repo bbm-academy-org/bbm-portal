@@ -78,7 +78,13 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
 7. **`pnpm lint:instruction-budget`** PASS when the diff touches the always-on
    corpus (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`) — the deterministic
    half of "compact, never just append" (`.claude/skills/wrap/SKILL.md` phase 3).
-8. **Spec / ADR gate** — `.claude/skills/task-cycle/SKILL.md` stages 1a and 2.
+8. **Scope proportionality / spec / ADR gate** —
+   `.claude/skills/task-cycle/SKILL.md` stages 1, 1a and 2. Verify the plan's
+   `Соразмерность:` claim against the actual diff: a one-time operation has not
+   grown a permanent CLI/API/UI/runtime unless recurring use or a durable
+   security/data invariant specifically requires it. If review fixes expanded
+   the mechanism, verify that the proportionality decision was revisited rather
+   than merely hardened. Then apply the spec/ADR triggers below.
    Triggers: a new platform module, new user-facing behaviour, any added or
    changed form, any change to a computed/money formula, any architectural
    decision. Read the stage before ruling — it names what each trigger requires

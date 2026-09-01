@@ -3,7 +3,7 @@ status: Draft
 epic: 115
 features:
   - F1 (#338) — Ledger core plus F1b current-money balances card and conservative recorded-cost total
-  - F2 (#339) — Filling the ledger: manual entry, expense requests, history backfill, bank import (user-facing)
+  - F2 (#339) — Filling the ledger: manual entry, expense requests, one-time private history reconstruction
   - F3 (#340) — Reports: register, P&L, cash flow, unit cost, break-even (user-facing)
   - F4 (#341) — Fact-vs-finmodel reconciliation (user-facing)
   - F5 (#342) — Scenario calculator on top of the fact (user-facing)
@@ -35,9 +35,10 @@ BBM has money moving through it and no accounting of it.
   co-authors / …), which is an order of distribution, not a cost structure. The
   one real cost model — the Doctor.School lesson-cost calculator — is scoped to
   DS lessons (prior art §1, §3, §4). So "what did we spend it on" currently has
-  no answer that a system could give. The answer is not invented here either: the
-  owner ruled that the category list is derived from the spend once it is
-  recorded, not written up front _(decision 11)_.
+  no answer that a system could give. The answer is not invented here either:
+  before the one-time history reconstruction is posted, its private source table
+  is used to prepare the category list for the owner's approval _(decision 11 as
+  superseded by decision 31)_.
 - **Every number about BBM's money is a model, not a fact.** `finmodel`
   variables and the money-route calculator project the future from parameters;
   the cap-table figures in the prototype are an explicit hypothetical
@@ -67,8 +68,9 @@ the owner-approved discovery decisions 1–22 in issue #115.
   amount to carry the project it belongs to, so the fund and each project have
   their own P&L. _(decision 2)_
 - **J3 — "Filling it must not be my job."** As the owner, I want the ledger fed
-  from where the data already is — hours accruals, bank statements, invoices the
-  team uploads — with manual entry as the fallback, not the mechanism.
+  from where the data actually exists, with team requests and manual entry as
+  the present paths and future automation added only when a recurring source is
+  real.
   _(decision 3)_
 - **J4 — "Spending passes approval, before or after."** As a team member, I want
   to submit an expense request with its invoice and get an answer — asking before
@@ -106,7 +108,6 @@ portal.bbm.academy  (Zitadel OIDC gate over /p/*, ADR-003 §3; ADR-005 §2: a to
     ├── /p/finance/register        the operations register — every posting, filterable       ← F3
     ├── /p/finance/reports         P&L · cash flow · unit cost · break-even                  ← F3
     ├── /p/finance/requests        expense requests: submit (everyone) / approve (owners)    ← F2
-    ├── /p/finance/import          ingestion: bank statement, history backfill, sources      ← F2
     ├── /p/finance/reconciliation  fact vs finmodel — reserve %, pool sectors, royalty       ← F4
     ├── /p/finance/scenarios       what-if on top of the fact                                ← F5
     └── /p/admin → finance         reference tables: accounts, expense categories, request
@@ -125,10 +126,12 @@ Seven structural facts:
    group of postings with each step's fee explicit and the rate frozen at the
    moment of the operation. Consolidation spec §8 fixes this; this epic does not
    re-decide it, it designs the product on top.
-3. **Ingestion is a layer, not a form.** Manual entry, `/p/hours` accruals, bank
-   statements and invoice uploads are sources plugged into one intake; adding a
-   fifth source adds a source, not a second ledger. _(decision 3, owner's
-   verbatim intent)_
+3. **Intake is a module boundary, not a promise of universal import.** F2's
+   lasting paths are manual entry, expense requests with documents and the
+   explicitly scoped `/p/hours` path; the historical reconstruction is a
+   one-time private operation. A bank or other automated source earns its own
+   adapter only when a recurring source and its real format exist and the owner
+   approves that scope. _(decision 3 as superseded by decision 31)_
 4. **The project dimension is on the posting, not in the account tree.** Every
    posting carries fund-or-project; P&L and cost are the same computation with a
    different filter. **Projects are one flat level** — no sub-projects in v1, and
@@ -136,16 +139,16 @@ Seven structural facts:
    2026-08-25)_. `agent-proposed — UNCONFIRMED` as a modelling choice (the
    dimension on the posting rather than in the account tree); decisions 2 and 16
    fix that the dimension exists, is per project, and has exactly one level.
-5. **Reference data is editable, not hard-coded — and the taxonomy is derived,
-   not invented.** Expense categories, request purposes, accounts, projects,
+5. **Reference data is editable, not hard-coded — and the taxonomy comes from
+   real history, not invention.** Expense categories, request purposes, accounts, projects,
    products and currencies live as reference tables an owner edits
    _(decisions 10, 21)_. The purpose reference is finer-grained than the category
    list and each purpose is linked to its category, so an expense request picks
    its "what for" instead of typing it _(decision 21)_. The
-   category list in particular is **not** written up front: it is derived from
-   the real recorded expenses once the filling mechanism has put spend into the
-   ledger, and the owner approves the derived list _(decision 11)_. That
-   derivation step belongs to **F2**; F1 owns only the empty reference table it
+   category list in particular is **not** invented up front: it is prepared from
+   the private table of real historical expenses and approved by the owner before
+   reconstruction is posted _(decision 11 as superseded by decision 31)_. That
+   one-time preparation and owner-approval step belongs to **F2**; F1 owns only the empty reference table it
    lands in. The admin surface for all of them is the `/p/admin` shell of epic
    #112, not a second cabinet.
 6. **The module owns its own tables.** ADR-004 §1 puts them in the `platform`
@@ -175,7 +178,7 @@ Seven structural facts:
 | Feature | Issue | PRD              | Blocked by | Surface     | What it settles                                                                                                                                                                                              |
 | ------- | ----- | ---------------- | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | F1      | #338  | `338-product.md` | —          | mixed       | what a fact of money is here plus F1b's `/p/finance` current-money card: native account balances and a conservative recorded-cost total — including the empty, editable category table, but no category list |
-| F2      | #339  | `339-product.md` | #338       | user-facing | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve   |
+| F2      | #339  | `339-product.md` | #338       | mixed       | lasting intake through manual entry and expense requests; one-time private reconstruction of existing history and owner-approved categories, with no permanent import surface                                |
 | F3      | #340  | `340-product.md` | #338       | user-facing | broader readings: register, period cash flow and P&L, cuts, drill-down, unit cost, break-even price                                                                                                          |
 | F4      | #341  | `341-product.md` | #340       | user-facing | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                    |
 | F5      | #342  | `342-product.md` | #340       | user-facing | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                                |
