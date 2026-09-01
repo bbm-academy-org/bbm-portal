@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   findMemberByEmail: vi.fn(),
   getMembersByIds: vi.fn(),
   listRegister: vi.fn(),
+  registerEntriesByIds: vi.fn(),
   createCounterparty: vi.fn(),
   createExpenseRequest: vi.fn(),
   createPurposeProposal: vi.fn(),
@@ -134,6 +135,7 @@ beforeEach(() => {
     { id: 16, name: 'Антон Сидоров' },
   ])
   state.listRegister.mockResolvedValue([])
+  state.registerEntriesByIds.mockResolvedValue([])
   state.liabilityBalances.mockResolvedValue([
     {
       accountId: 99,
@@ -191,11 +193,11 @@ describe('/p/finance/api/requests read model', () => {
     expect(state.listExpenseRequests).not.toHaveBeenCalled()
   })
 
-  it('scenario 2: resolves human actors and the linked operation through public module APIs', async () => {
+  it('scenario 2: resolves human actors and the linked operation through an ID-scoped public module API', async () => {
     state.listExpenseRequests.mockResolvedValue([
       { ...request, status: 'posted', postedBy: 16, operationId: 71 },
     ])
-    state.listRegister.mockResolvedValue([
+    state.registerEntriesByIds.mockResolvedValue([
       {
         operationId: 71,
         occurredOn: '2026-06-30',
@@ -226,6 +228,8 @@ describe('/p/finance/api/requests read model', () => {
     const response = await route.GET()
 
     expect(state.getMembersByIds).toHaveBeenCalledWith([15, 16])
+    expect(state.registerEntriesByIds).toHaveBeenCalledWith([71])
+    expect(state.listRegister).not.toHaveBeenCalled()
     expect(await response.json()).toMatchObject({
       requests: [
         {
@@ -240,6 +244,54 @@ describe('/p/finance/api/requests read model', () => {
         },
       ],
     })
+  })
+
+  it('scenario 2: keeps operation affordances for more than 200 posted requests', async () => {
+    const postedRequests = Array.from({ length: 201 }, (_, index) => ({
+      ...request,
+      id: 1_000 + index,
+      status: 'posted',
+      postedBy: 16,
+      operationId: index + 1,
+    }))
+    state.listExpenseRequests.mockResolvedValue(postedRequests)
+    state.registerEntriesByIds.mockResolvedValue([
+      {
+        operationId: 1,
+        occurredOn: '2026-01-01',
+        source: 'request',
+        sourceRef: null,
+        purposeId: 11,
+        purposeName: 'Аренда студии',
+        backdated: false,
+        reverses: null,
+        reversedBy: null,
+        postings: [
+          {
+            id: 1,
+            accountId: 7,
+            accountName: 'Основной банк',
+            amount: -45_000_00n,
+            currency: 'RUB',
+            projectId: 12,
+            categoryId: 3,
+            productId: 13,
+            memberId: null,
+          },
+        ],
+      },
+    ])
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.GET()
+    const body = (await response.json()) as {
+      requests: Array<{ operationId: number; operation: unknown }>
+    }
+
+    expect(state.registerEntriesByIds).toHaveBeenCalledWith(
+      Array.from({ length: 201 }, (_, index) => index + 1),
+    )
+    expect(body.requests.find((item) => item.operationId === 1)?.operation).toMatchObject({ id: 1 })
   })
 })
 
@@ -315,6 +367,97 @@ describe('/p/finance/api/requests writes', () => {
       text: 'Новая статья для площадки',
     })
     expect(await response.json()).toMatchObject({ request: { id: 52 }, proposal: { id: 9 } })
+  })
+
+  it('EARS-508/526: rejects a request that supplies both a purpose and a proposal', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 53, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          occurredOn: '2026-09-01',
+          accountId: 7,
+          amount: '120000',
+          currency: 'RUB',
+          purposeId: 11,
+          purposeProposal: 'A second, contradictory purpose',
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+    expect(state.createPurposeProposal).not.toHaveBeenCalled()
+  })
+
+  it('EARS-526: exposes the durable draft and a proposal-only recovery when proposal creation fails', async () => {
+    state.createExpenseRequest.mockResolvedValue({
+      ...request,
+      id: 54,
+      status: 'draft',
+      purposeId: null,
+    })
+    state.createPurposeProposal.mockRejectedValue(new Error('temporary proposal failure'))
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          occurredOn: '2026-09-01',
+          accountId: 7,
+          amount: '120000',
+          currency: 'RUB',
+          purposeProposal: 'Новая статья для площадки',
+          projectId: 12,
+          productId: null,
+          counterpartyId: 14,
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({
+      status: 'saved-draft',
+      request: { id: 54, status: 'draft', purposeId: null },
+      proposal: null,
+      message: 'Черновик сохранён, но предложение назначения не создано.',
+      recovery: {
+        method: 'PATCH',
+        href: '/p/finance/api/requests/54',
+        purposeProposal: 'Новая статья для площадки',
+      },
+    })
+  })
+
+  it('EARS-526: PATCH recovery adds only the missing proposal to the existing draft', async () => {
+    state.createPurposeProposal.mockResolvedValue({ id: 10, intakeItemId: 54, status: 'pending' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+
+    const response = await route.PATCH(
+      new Request(`${BASE}/54`, {
+        method: 'PATCH',
+        body: JSON.stringify({ purposeProposal: 'Новая статья для площадки' }),
+      }),
+      { params: Promise.resolve({ id: '54' }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(state.createPurposeProposal).toHaveBeenCalledWith(expect.any(Object), {
+      intakeItemId: 54,
+      text: 'Новая статья для площадки',
+    })
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+    expect(await response.json()).toMatchObject({ requestId: 54, proposal: { id: 10 } })
   })
 
   it('EARS-510/511/512: exposes approve, refuse and one-act confirmation without a generic status setter', async () => {

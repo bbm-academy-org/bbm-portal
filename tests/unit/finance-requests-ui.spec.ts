@@ -206,6 +206,42 @@ describe('/p/finance/requests board', () => {
       'Основной банк',
     )
   })
+
+  it('EARS-509/523: reads a PDF inline in the sheet while keeping the explicit open action as a download', () => {
+    render(
+      React.createElement(RequestDetails, {
+        item: {
+          ...snapshot.requests[0],
+          documents: [
+            {
+              id: 17,
+              filename: 'invoice.pdf',
+              mime: 'application/pdf',
+              size: 20,
+              kind: 'foreign_invoice',
+              uploadedAt: '2026-09-01T00:00:00.000Z',
+            },
+          ],
+        },
+        snapshot,
+        open: true,
+        promptedAct: null,
+        pending: false,
+        failure: null,
+        onOpenChange: vi.fn(),
+        onAct: vi.fn(),
+        onEdit: vi.fn(),
+        onAttach: vi.fn(),
+      }),
+    )
+
+    expect(screen.getByTitle('Документ invoice.pdf').getAttribute('src')).toBe(
+      '/p/finance/api/documents/17?disposition=inline',
+    )
+    expect(screen.getByRole('link', { name: 'Открыть' }).getAttribute('href')).toBe(
+      '/p/finance/api/documents/17',
+    )
+  })
 })
 
 describe('new expense request sheet (spec 339 EARS-508/526/532)', () => {
@@ -419,5 +455,77 @@ describe('new expense request sheet (spec 339 EARS-508/526/532)', () => {
       body: file,
     })
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('EARS-526 recovery: reports the saved draft id and retries only its missing proposal', async () => {
+    const body = {
+      occurredOn: '2026-09-01',
+      accountId: 7,
+      amount: '10000',
+      currency: 'RUB',
+      purposeId: null,
+      purposeProposal: 'Новая статья для площадки',
+      projectId: 12,
+      productId: null,
+      counterpartyId: 14,
+      alreadyPaid: false,
+      personalFunds: false,
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'saved-draft',
+            request: { id: 77, status: 'draft', purposeId: null },
+            proposal: null,
+            message: 'Черновик сохранён, но предложение назначения не создано.',
+            recovery: {
+              method: 'PATCH',
+              href: '/p/finance/api/requests/77',
+              purposeProposal: 'Новая статья для площадки',
+            },
+          }),
+          { status: 503 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ requestId: 77, proposal: { id: 10 } }), { status: 200 }),
+      )
+
+    const outcome = await runRequestCreation(body, null, 'other', fetchMock)
+
+    expect(outcome).toMatchObject({
+      status: 'saved-draft',
+      requestId: 77,
+      stage: 'proposal',
+      recovery: {
+        href: '/p/finance/api/requests/77',
+        purposeProposal: 'Новая статья для площадки',
+      },
+    })
+    expect(outcome.message).toContain('№77')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const requestsModule = await import('@/app/(platform)/p/finance/requests/RequestsBoard')
+    const resumePurposeProposal = (
+      requestsModule as unknown as {
+        resumePurposeProposal: (
+          recovery: { href: string; purposeProposal: string; requestId: number },
+          fetcher: typeof fetchMock,
+        ) => Promise<void>
+      }
+    ).resumePurposeProposal
+    if (outcome.status !== 'saved-draft' || outcome.stage !== 'proposal') {
+      throw new Error('Expected proposal recovery for a saved draft.')
+    }
+    await resumePurposeProposal(outcome.recovery, fetchMock)
+
+    expect(fetchMock).toHaveBeenLastCalledWith('/p/finance/api/requests/77', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ purposeProposal: 'Новая статья для площадки' }),
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
