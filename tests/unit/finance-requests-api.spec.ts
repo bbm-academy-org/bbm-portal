@@ -23,6 +23,7 @@ const state = vi.hoisted(() => ({
   createExpenseRequest: vi.fn(),
   createPurposeProposal: vi.fn(),
   editExpenseRequest: vi.fn(),
+  getExpenseRequest: vi.fn(),
   submitExpenseRequest: vi.fn(),
   cancelExpenseRequest: vi.fn(),
   approveExpenseRequest: vi.fn(),
@@ -126,6 +127,7 @@ beforeEach(() => {
   ])
   state.listCategories.mockResolvedValue([{ id: 3, name: 'Операционные расходы', retiredAt: null }])
   state.listPurposeProposals.mockResolvedValue([])
+  state.getExpenseRequest.mockResolvedValue(request)
   state.findMemberByEmail.mockResolvedValue({ id: 15 })
   state.getMembersByIds.mockResolvedValue([
     { id: 15, name: 'Мария Иванова' },
