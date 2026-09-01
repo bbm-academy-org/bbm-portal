@@ -90,18 +90,18 @@ picks from it is F2 (#339).
 ## Expense taxonomy — derived from the fact, not invented upfront
 
 **Owner ruling, decision 11 (owner 2026-08-25):** the categories are **not**
-invented upfront — «не будем выдумывать того, чего нет». When the filling
-mechanism is built (F2, and in particular the backfill of what has actually been
-spent), the category list is **derived from the real recorded expenses** and
-brought to the owner for approval. This supersedes the "agents propose a starter
+invented upfront — «не будем выдумывать того, чего нет». Before the one-time
+history reconstruction is posted, its private source table is used to prepare a
+category list from real expenses and bring it to the owner for approval. This
+supersedes the "agents propose a starter
 taxonomy" half of decision 10; the other half stands — categories live as an
 **editable reference table** in the system, never hard-coded, and the owner adds,
 renames and retires them without a release.
 
 What F1 therefore delivers is the **slot, not the list**: a posting carries a
-category, and the category reference table ships empty. Filling it is F2's
-derivation step followed by the owner's approval; no seeded taxonomy is part of
-this feature.
+category, and the category reference table ships empty. The initial values are
+approved from the real historical source table before reconstruction is posted;
+no seeded taxonomy is part of this feature.
 
 ### Requirements on whatever taxonomy emerges — `agent-proposed — UNCONFIRMED`
 
@@ -113,7 +113,7 @@ external vendors and a contingency buffer (prior art §4).
 
 - **Allocatable-or-period is a flag on the category, and it is data** — some
   categories flow into a sellable unit's cost, others are period costs. Whichever
-  categories the derivation produces, the split must be settable per category
+  categories the owner approves from the real history, the split must be settable per category
   without a release, not compiled into code.
 - **Tax loading is visible as its own line, not a multiplier hidden in a rate** —
   the DS model's lesson is that the employment mode changes the true cost of a
@@ -296,9 +296,9 @@ per-operation report-rate semantics. _(decisions 13, 18; spec 338 EARS-325)_
 - The schema, table names and migration order — the feature spec's job
   (ADR-004 §6 fixes only where the tables live and who may import them).
 - Who is allowed to post — the roles are F2's subject (decision 8).
-- **Deriving the actual list of expense categories** — that step runs in F2, off
-  the backfilled spend, and ends with the owner's approval (decision 11). F1 owns
-  only the reference table it lands in.
+- **Preparing the actual list of expense categories** — F2 does this once from
+  the private historical source table and ends with the owner's approval
+  (decision 11). F1 owns only the reference table it lands in.
 - Reports beyond F1b's current-money balances card and conservative
   current-holdings total — operations register, period cash flow and P&L,
   project/category/product cuts, drill-down, unit cost, break-even and
@@ -320,7 +320,8 @@ per-operation report-rate semantics. _(decisions 13, 18; spec 338 EARS-325)_
    each account get an explicit opening-balance operation?~~ **Closed by decision
    17** (owner 2026-08-25): back to BBM's very first operation, which the owner
    locates; accounts open at zero and no synthetic opening-balance operation
-   exists. _(The bulk-entry mechanism remains F2's.)_
+   exists. The transfer is a one-time private operation, not a reusable bulk-entry
+   mechanism.
 3. ~~**Are crypto holdings revalued** when the rate moves, or held at the
    recorded rate until they move again?~~ **Closed by spec 338, Accounting
    policy ruling 3:** no revaluation posting; F1b's current-money total carries

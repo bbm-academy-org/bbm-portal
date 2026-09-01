@@ -236,10 +236,7 @@ same path as every other source. No existing source changes.
    "what did we pay X"; per aggregate is one line per period.
 3. **Who besides the owner holds the approving role** — decision 8 says "owners",
    plural.
-4. **How much spend is enough to derive the taxonomy from?** Decision 11 fixes
-   that the list comes from the fact, not when the derivation is run — after the
-   backfill alone, or after some period of live operation.
-5. **What makes an expense "attributable" to a product?** This form blocks a
+4. **What makes an expense "attributable" to a product?** This form blocks a
    submit on it, and no owner decision defines the test — the definition is owned
    by F1's open question 5 (#338) and is answered at the F1 spec go, not here.
 

@@ -173,7 +173,7 @@ not reuse or widen EARS-328's realized-FX pair pool.
 | `finance_project`         | `id`, `name`, `is_fund`, `retired_at`                                                                                                                                                                                                                                                                   | one flat level (decision 16); exactly one fund row («Фонд BBM») seeded by migration                                   |
 | `finance_product`         | `id`, `project` FK, `name`, `sale_price` + `sale_price_currency` (both nullable), `retired_at`                                                                                                                                                                                                          | sits directly under its project (decision 16); capitalization is derived, not stored                                  |
 | `finance_purpose`         | `id`, `name`, `category` FK (nullable while the category list is empty), `product_binding` (`required`\|`forbidden`\|`optional`), `retired_at`                                                                                                                                                          | decision 21: a purpose is a reference pick; the binding is declared at creation (Accounting policy, ruling 2)         |
-| `finance_category`        | `id`, `name`, `allocable` (boolean: flows into unit cost vs period cost), `retired_at`                                                                                                                                                                                                                  | ships **empty** (decision 11); first content is F2's derivation, owner-approved                                       |
+| `finance_category`        | `id`, `name`, `allocable` (boolean: flows into unit cost vs period cost), `retired_at`                                                                                                                                                                                                                  | ships **empty** (decision 11); first content is prepared from the real history and owner-approved                     |
 | `finance_operation`       | `id`, `occurred_on` (date), `purpose` FK (nullable — transfers, conversions and income carry none), `source` (`request`\|`bank_import`\|`hours`\|`manual`\|`backfill`\|`reversal`), `source_ref` (nullable text, filled by F2's intakes), `backdated` (boolean), `reverses` FK (nullable, unique, self) | the unit the register shows; a conversion chain is ONE operation                                                      |
 | `finance_posting`         | `id`, `operation` FK, `account` FK, `amount` (`bigint`, signed, minimal units; debit > 0, credit < 0), `currency` FK, `project` FK (nullable), `category` FK (nullable), `product` FK (nullable), `member_id` (nullable, SQL FK → `core.member`), `conversion_step` FK (nullable)                       | the atomic fact; immutable                                                                                            |
 | `finance_conversion_step` | `id`, `operation` FK, `step_no`, `from_currency` FK, `to_currency` FK, `rate` (numeric text, as recorded)                                                                                                                                                                                               | one row per exchange step; its fee is a separate posting referencing the step                                         |
@@ -248,8 +248,9 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
 - **EARS-316.** Every posting shall be traceable to its source: the operation
   carries one of `request` / `bank_import` / `hours` / `manual` / `backfill` /
   `reversal` (decision 3); backfilled operations carry the `backdated` flag
-  (decision 17 context). F1 fixes the enum and the columns; the intake flows
-  that fill `source_ref` are F2's.
+  (decision 17 context). F1 fixes the enum and the columns; F2 fills
+  `source_ref` for the sources it actually implements. `bank_import` remains a
+  reserved future source and does not imply an import surface in F2.
 - **EARS-317.** The system shall provide no opening-balance mechanism: every
   account starts at zero and its balance is exclusively the sum of its postings
   (decision 17).
@@ -470,13 +471,9 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   leave every already-recorded posting exactly as posted — it shall neither
   rewrite nor re-validate history against the new rule (EARS-309); the only
   correction of a recorded operation in F1 is reversal (EARS-313/314).
-  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`, its
-  read-time category resolution in §F): the reclassification path this clause
-  promised for F2 is **not**
-  built. F2 replaces it with read-time category resolution — a posting that
-  stored no category resolves it through its purpose's current link when read —
-  and keeps reversal as the only correction; no posting-mutation
-  reclassification will be built.)_
+  Spec 339 keeps that rule: historical categories are approved before posting
+  and stored on the reconstructed operations; later reference edits do not
+  reclassify them at read time.
 - **EARS-333.** The module's public API shall expose, as a query, the postings
   recorded against a purpose with `product_binding = optional` that carry no
   product — the exception list by which the taxonomy converges from use; its
@@ -577,14 +574,9 @@ defect, not a design anyone defends. Four consequences, all accepted at the go:
 - **the operator picks the value, never the binding** (EARS-331); the binding is
   a `platform-admin` edit of the purpose;
 - **corrections of already-posted entries are role-gated and audited** — the
-  only correction is reversal (EARS-313/314), with the actor recorded per spec 201. _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
-  EARS-520/529) on two counts. The **gate**: reversal is not an admin act — it
-  is gated by the flow role `finance-approve`, while `platform-admin` covers
-  reference administration only (EARS-330 as amended). The **journal**: the
-  «true reclassification journal (moving a dimension without reversing) arrives
-  with F2» promised here is not built — F2 replaces it with read-time category
-  resolution (EARS-520) and keeps reversal as the only correction; no
-  posting-mutation reclassification will be built.)_;
+  only correction is reversal (EARS-313/314), with the actor recorded per spec 201. Spec 339 gates reversal by `finance-approve`; `platform-admin` covers
+  reference administration only. No reclassification journal, read-time
+  category fallback or posting mutation is introduced;
 - **an exception report** lists `optional`-binding postings filed without a
   product (EARS-333), so the taxonomy converges from use;
 - **a binding change never rewrites history** (EARS-332): postings made under
@@ -620,14 +612,14 @@ migrations.
 
 ## CRUD check (task-cycle stage 1a)
 
-| Resource (`/p/admin/finance/…`) | Create                                               | Read                                  | Update                                                                        | Delete                                                             |
-| ------------------------------- | ---------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| currencies                      | yes (code, name, precision)                          | yes                                   | name; precision only while unused (EARS-303)                                  | retire; hard delete only if never referenced (EARS-308)            |
-| accounts                        | yes (money kinds only)                               | yes (system accounts shown read-only) | name                                                                          | retire; same rule                                                  |
-| projects                        | yes                                                  | yes                                   | name                                                                          | retire; the fund row is neither retirable nor deletable (EARS-304) |
-| products                        | yes (under a project)                                | yes                                   | name, sale price                                                              | retire; same rule                                                  |
-| purposes                        | yes (binding mandatory, EARS-306)                    | yes                                   | name, category link, binding (admin only, EARS-331; history stands, EARS-332) | retire; same rule                                                  |
-| categories                      | yes (from F2's derivation on; the table ships empty) | yes                                   | name, allocable flag                                                          | retire; same rule                                                  |
+| Resource (`/p/admin/finance/…`) | Create                                                                        | Read                                  | Update                                                                        | Delete                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| currencies                      | yes (code, name, precision)                                                   | yes                                   | name; precision only while unused (EARS-303)                                  | retire; hard delete only if never referenced (EARS-308)            |
+| accounts                        | yes (money kinds only)                                                        | yes (system accounts shown read-only) | name                                                                          | retire; same rule                                                  |
+| projects                        | yes                                                                           | yes                                   | name                                                                          | retire; the fund row is neither retirable nor deletable (EARS-304) |
+| products                        | yes (under a project)                                                         | yes                                   | name, sale price                                                              | retire; same rule                                                  |
+| purposes                        | yes (binding mandatory, EARS-306)                                             | yes                                   | name, category link, binding (admin only, EARS-331; history stands, EARS-332) | retire; same rule                                                  |
+| categories                      | yes (the table ships empty; first values follow owner review of real history) | yes                                   | name, allocable flag                                                          | retire; same rule                                                  |
 
 Deliberately unsupported: creating/editing system accounts (EARS-305); any
 cabinet surface for operations or postings — the fact core is written only by
@@ -787,9 +779,10 @@ pinned rather than assumed.
 
 ## Out of scope
 
-- Every intake: the request form, approval queue, bank import, backfill, hours
-  accruals — **F2 (#339)**, which also derives the category list (decision 11)
-  and settles the full role model (decision 8). F1 already opens **reading**
+- Every intake: the request form, approval queue, manual entry and hours
+  accruals — **F2 (#339)**. The one-time history reconstruction is #387; a bank
+  import surface is not part of F2. F2 also settles the full role model
+  (decision 8). F1 already opens **reading**
   `/p/finance` to every platform member (EARS-324/325, the owner's transparency
   policy) and keeps every reference catalogue at `platform-admin` (EARS-330).
   _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
@@ -798,11 +791,8 @@ pinned rather than assumed.
   are gated by the flow roles `finance-entry` / `finance-approve`, and
   `platform-admin` by itself no longer posts or reverses.)_
 - Reclassification of a posted operation (moving a dimension without reversing
-  it): in F1 the only correction is reversal (EARS-313/314/332).
-  _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
-  EARS-520): it is not F2's either. F2 replaces the promised reclassification
-  with read-time category resolution and keeps reversal as the only
-  correction; no posting-mutation reclassification will be built.)_
+  it): in F1 and F2 the only correction is reversal (EARS-313/314/332). There is
+  no read-time category substitution or posting-mutation reclassification.
 - Any allocation, absorption or ABC run: F1 posts none by design (EARS-334) and
   F3 computes such views as overlays.
 - Reports beyond the balances card: operations register UI; period P&L and

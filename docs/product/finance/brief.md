@@ -145,7 +145,7 @@ Seven structural facts:
    category list in particular is **not** written up front: it is derived from
    the real recorded expenses once the filling mechanism has put spend into the
    ledger, and the owner approves the derived list _(decision 11)_. That
-   derivation step belongs to **F2**; F1 owns only the empty reference table it
+   one-time preparation and owner-approval step belongs to **F2**; F1 owns only the empty reference table it
    lands in. The admin surface for all of them is the `/p/admin` shell of epic
    #112, not a second cabinet.
 6. **The module owns its own tables.** ADR-004 §1 puts them in the `platform`
