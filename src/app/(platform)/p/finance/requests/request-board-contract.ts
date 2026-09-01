@@ -24,10 +24,18 @@ export type RequestBoardItem = {
   alreadyPaid: boolean
   personalFunds: boolean
   createdBy?: number
+  createdByName?: string
   decidedBy?: number | null
+  decidedByName?: string | null
+  postedByName?: string | null
   decidedAt?: string | null
   refusalReason: string | null
   operationId: number | null
+  operation?: {
+    id: number
+    occurredOn: string
+    postings: Array<{ accountName: string; amount: string; currency: string }>
+  } | null
   purpose: (RequestReference & { categoryId: number | null; categoryName: string | null }) | null
   project: RequestReference
   product: RequestReference | null

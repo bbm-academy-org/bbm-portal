@@ -1,5 +1,3 @@
-import { z } from 'zod'
-
 import {
   createCounterparty,
   createExpenseRequest,
@@ -17,46 +15,21 @@ import {
   listProjects,
   listPurposeProposals,
   listPurposes,
+  listRegister,
   type FinanceIntakeItemView,
 } from '@/lib/finance'
-import { findMemberByEmail } from '@/lib/member'
+import { findMemberByEmail, getMembersByIds } from '@/lib/member'
 
-import { financeRequestActor, jsonResponse, requestApiError, textResponse } from './request-utils'
+import {
+  expenseRequestBodySchema,
+  expenseRequestInput,
+  financeRequestActor,
+  jsonResponse,
+  requestApiError,
+  textResponse,
+} from './request-utils'
 
 export const dynamic = 'force-dynamic'
-
-const createRequestSchema = z
-  .object({
-    occurredOn: z.iso.date(),
-    accountId: z.number().int().positive().nullable(),
-    amount: z.string().regex(/^\d+$/),
-    currency: z.string().trim().min(1).max(12),
-    paidAmount: z.string().regex(/^\d+$/).nullable().optional(),
-    paidCurrency: z.string().trim().min(1).max(12).nullable().optional(),
-    purposeId: z.number().int().positive().nullable().optional(),
-    purposeProposal: z.string().trim().min(1).max(500).nullable().optional(),
-    projectId: z.number().int().positive(),
-    productId: z.number().int().positive().nullable().optional(),
-    counterpartyId: z.number().int().positive().nullable().optional(),
-    counterpartyName: z.string().trim().min(1).max(200).nullable().optional(),
-    note: z.string().trim().max(2_000).nullable().optional(),
-    alreadyPaid: z.boolean(),
-    personalFunds: z.boolean(),
-  })
-  .superRefine((value, context) => {
-    if ((value.purposeId ?? null) === null && !value.purposeProposal) {
-      context.addIssue({ code: 'custom', message: 'Выберите назначение или предложите новое.' })
-    }
-    if ((value.counterpartyId ?? null) === null && !value.counterpartyName) {
-      context.addIssue({ code: 'custom', message: 'Выберите или создайте контрагента.' })
-    }
-    if (value.personalFunds && !value.alreadyPaid) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Оплата своими средствами возможна только для уже потраченных денег.',
-      })
-    }
-  })
 
 function byId<T extends { id: number }>(rows: T[]): Map<number, T> {
   return new Map(rows.map((row) => [row.id, row]))
@@ -72,6 +45,15 @@ function serializeItem(
     purposes: Map<number, { id: number; name: string; categoryId: number | null }>
     categories: Map<number, { id: number; name: string }>
     proposals: Map<number, { id: number; text: string; status: string }>
+    members: Map<number, { id: number; name: string }>
+    operations: Map<
+      number,
+      {
+        operationId: number
+        occurredOn: string
+        postings: Array<{ accountName: string; amount: bigint; currency: string }>
+      }
+    >
     actorMemberId: number | null
     documents: Awaited<ReturnType<typeof listFinanceDocuments>>
   },
@@ -92,10 +74,34 @@ function serializeItem(
     alreadyPaid: item.alreadyPaid,
     personalFunds: item.personalFunds,
     createdBy: item.createdBy,
+    createdByName: context.members.get(item.createdBy)?.name ?? `Участник #${item.createdBy}`,
     decidedBy: item.decidedBy,
+    decidedByName:
+      item.decidedBy === null
+        ? null
+        : (context.members.get(item.decidedBy)?.name ?? `Участник #${item.decidedBy}`),
     decidedAt: item.decidedAt?.toISOString() ?? null,
     refusalReason: item.refusalReason,
     operationId: item.operationId,
+    postedByName:
+      item.postedBy === null
+        ? null
+        : (context.members.get(item.postedBy)?.name ?? `Участник #${item.postedBy}`),
+    operation:
+      item.operationId === null
+        ? null
+        : ((operation) =>
+            operation
+              ? {
+                  id: operation.operationId,
+                  occurredOn: operation.occurredOn,
+                  postings: operation.postings.map((posting) => ({
+                    accountName: posting.accountName,
+                    amount: posting.amount.toString(),
+                    currency: posting.currency,
+                  })),
+                }
+              : null)(context.operations.get(item.operationId)),
     purpose: purpose
       ? {
           id: purpose.id,
@@ -158,6 +164,7 @@ export async function GET(): Promise<Response> {
       proposals,
       debts,
       actorMember,
+      register,
     ] = await Promise.all([
       listExpenseRequests(actor),
       listAccounts(),
@@ -170,7 +177,18 @@ export async function GET(): Promise<Response> {
       listPurposeProposals(actor),
       liabilityBalances(),
       findMemberByEmail(actor.email),
+      listRegister(),
     ])
+    const memberIds = [
+      ...new Set(
+        requests.flatMap((request) =>
+          [request.createdBy, request.decidedBy, request.postedBy].filter(
+            (id): id is number => id !== null,
+          ),
+        ),
+      ),
+    ].sort((left, right) => left - right)
+    const members = await getMembersByIds(memberIds)
     const documents = await Promise.all(
       requests.map((request) => listFinanceDocuments(actor, { intakeItemId: request.id })),
     )
@@ -180,6 +198,8 @@ export async function GET(): Promise<Response> {
     const projectMap = byId(projects)
     const purposeMap = byId(purposes)
     const categoryMap = byId(categories)
+    const memberMap = byId(members)
+    const operationMap = new Map(register.map((operation) => [operation.operationId, operation]))
     const proposalMap = new Map(
       proposals.flatMap((proposal) =>
         proposal.intakeItemId === null
@@ -230,6 +250,8 @@ export async function GET(): Promise<Response> {
           purposes: purposeMap,
           categories: categoryMap,
           proposals: proposalMap,
+          members: memberMap,
+          operations: operationMap,
           actorMemberId: actorMember?.id ?? null,
           documents: documents[index],
         }),
@@ -250,7 +272,7 @@ export async function POST(request: Request): Promise<Response> {
   const gate = await financeRequestActor()
   if (gate.refusal !== null) return gate.refusal
 
-  const parsed = createRequestSchema.safeParse(await request.json().catch(() => null))
+  const parsed = expenseRequestBodySchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return textResponse(400, parsed.error.issues[0]?.message)
   const body = parsed.data
 
@@ -258,21 +280,10 @@ export async function POST(request: Request): Promise<Response> {
     const counterpartyId = body.counterpartyName
       ? (await createCounterparty(gate.actor, { name: body.counterpartyName })).id
       : body.counterpartyId!
-    const expenseRequest = await createExpenseRequest(gate.actor, {
-      occurredOn: body.occurredOn,
-      accountId: body.accountId,
-      amount: BigInt(body.amount),
-      currency: body.currency,
-      paidAmount: body.paidAmount ? BigInt(body.paidAmount) : null,
-      paidCurrency: body.paidCurrency ?? null,
-      purposeId: body.purposeId ?? null,
-      projectId: body.projectId,
-      productId: body.productId ?? null,
-      counterpartyId,
-      note: body.note ?? null,
-      alreadyPaid: body.alreadyPaid,
-      personalFunds: body.personalFunds,
-    })
+    const expenseRequest = await createExpenseRequest(
+      gate.actor,
+      expenseRequestInput(body, counterpartyId),
+    )
     const proposal = body.purposeProposal
       ? await createPurposeProposal(gate.actor, {
           intakeItemId: expenseRequest.id,

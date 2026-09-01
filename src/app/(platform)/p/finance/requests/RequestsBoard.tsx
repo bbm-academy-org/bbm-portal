@@ -52,6 +52,35 @@ const STATUS_BADGES: Record<FinanceRequestBoardStatus, string> = {
   refused: 'отклонена',
 }
 
+const DOCUMENT_KIND_OPTIONS = [
+  ['ru_invoice', 'Счёт РФ'],
+  ['fiscal_receipt', 'Кассовый чек'],
+  ['foreign_invoice', 'Иностранный инвойс'],
+  ['payment_order', 'Платёжное поручение'],
+  ['bank_screenshot', 'Скриншот банка'],
+  ['bank_statement', 'Банковская выписка'],
+  ['other', 'Другое'],
+] as const
+
+type RequestFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+export type PendingUploadRecovery = {
+  href: string
+  file: File
+  requestId: number
+  submitAfterUpload: boolean
+}
+
+export type RequestCreationOutcome =
+  | { status: 'complete'; requestId: number; submitted: boolean; message: string }
+  | {
+      status: 'saved-draft'
+      requestId: number
+      stage: 'upload' | 'submit'
+      message: string
+      recovery: PendingUploadRecovery | null
+    }
+
 function apiMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
@@ -59,6 +88,115 @@ function apiMessage(error: unknown, fallback: string): string {
 async function responseMessage(response: Response): Promise<string> {
   const text = await response.text()
   return text || `Запрос завершился с кодом ${response.status}.`
+}
+
+async function uploadRequestDocument(
+  requestId: number,
+  file: File,
+  kind: string,
+  fetcher: RequestFetch,
+): Promise<{ recovery: PendingUploadRecovery | null; message: string | null }> {
+  const form = new FormData()
+  form.set('file', file)
+  form.set('kind', kind)
+  form.set('intakeItemId', String(requestId))
+  const response = await fetcher('/p/finance/api/documents', { method: 'POST', body: form })
+  if (response.ok) return { recovery: null, message: null }
+
+  if (response.status === 503) {
+    const pending = (await response.json().catch(() => null)) as {
+      recovery?: { href?: unknown }
+    } | null
+    if (typeof pending?.recovery?.href === 'string') {
+      return {
+        recovery: {
+          href: pending.recovery.href,
+          file,
+          requestId,
+          submitAfterUpload: true,
+        },
+        message: 'Хранилище не завершило загрузку; те же байты можно безопасно отправить повторно.',
+      }
+    }
+  }
+  return { recovery: null, message: await responseMessage(response) }
+}
+
+export async function resumePendingUpload(
+  recovery: PendingUploadRecovery,
+  fetcher: RequestFetch = fetch,
+): Promise<void> {
+  const response = await fetcher(recovery.href, {
+    method: 'PUT',
+    headers: { 'content-type': recovery.file.type },
+    body: recovery.file,
+  })
+  if (!response.ok) throw new Error(await responseMessage(response))
+}
+
+export async function runRequestCreation(
+  body: CreateRequestBody,
+  file: File | null,
+  kind = 'other',
+  fetcher: RequestFetch = fetch,
+): Promise<RequestCreationOutcome> {
+  const response = await fetcher('/p/finance/api/requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(await responseMessage(response))
+  const created = (await response.json()) as {
+    request: { id: number }
+    proposal: { id: number } | null
+  }
+  const requestId = created.request.id
+
+  if (file !== null) {
+    const upload = await uploadRequestDocument(requestId, file, kind, fetcher)
+    if (upload.message !== null) {
+      return {
+        status: 'saved-draft',
+        requestId,
+        stage: 'upload',
+        message: `Черновик №${requestId} сохранён. ${upload.message}`,
+        recovery:
+          upload.recovery === null
+            ? null
+            : { ...upload.recovery, submitAfterUpload: created.proposal === null },
+      }
+    }
+  }
+
+  if (created.proposal !== null) {
+    return {
+      status: 'complete',
+      requestId,
+      submitted: false,
+      message: 'Черновик создан и ждёт решения по предложению назначения.',
+    }
+  }
+
+  const submitted = await fetcher(`/p/finance/api/requests/${requestId}/actions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ act: 'submit' }),
+  })
+  if (!submitted.ok) {
+    return {
+      status: 'saved-draft',
+      requestId,
+      stage: 'submit',
+      message: `Черновик №${requestId} сохранён, но не отправлен: ${await responseMessage(submitted)}`,
+      recovery: null,
+    }
+  }
+  return {
+    status: 'complete',
+    requestId,
+    submitted: true,
+    message: 'Заявка создана и отправлена на одобрение.',
+  }
 }
 
 async function fetchRequestsSnapshot(): Promise<RequestsSnapshot> {
@@ -118,6 +256,8 @@ function BoardCard({
           {item.product ? ` · ${item.product.name}` : ''}
         </p>
         <p>{item.account?.name ?? (item.personalFunds ? 'Свои средства' : 'Счёт не выбран')}</p>
+        <p>Автор: {item.createdByName ?? `Участник #${item.createdBy ?? '—'}`}</p>
+        {item.decidedByName ? <p>Решение: {item.decidedByName}</p> : null}
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         <Badge variant="secondary">{STATUS_BADGES[item.status as FinanceRequestBoardStatus]}</Badge>
@@ -184,7 +324,7 @@ function Classification({ item }: { item: RequestBoardItem }) {
   )
 }
 
-function RequestDetails({
+export function RequestDetails({
   item,
   snapshot,
   open,
@@ -193,6 +333,7 @@ function RequestDetails({
   failure,
   onOpenChange,
   onAct,
+  onEdit,
   onAttach,
 }: {
   item: RequestBoardItem | null
@@ -203,15 +344,22 @@ function RequestDetails({
   failure: string | null
   onOpenChange: (open: boolean) => void
   onAct: (act: 'submit' | 'cancel' | FinanceRequestBoardAct, extra?: string) => Promise<void>
-  onAttach: (file: File) => Promise<void>
+  onEdit: (body: CreateRequestBody) => Promise<void>
+  onAttach: (file: File, kind: string) => Promise<void>
 }) {
   const [reason, setReason] = React.useState('')
   const [actualDate, setActualDate] = React.useState(item?.occurredOn ?? '')
+  const [attachmentKind, setAttachmentKind] = React.useState('other')
+  const [editing, setEditing] = React.useState(false)
+  const [operationOpen, setOperationOpen] = React.useState(false)
   const fileRef = React.useRef<HTMLInputElement>(null)
   if (item === null) return null
   const canApprove = snapshot.permissions.canApprove
   const mutable = ['draft', 'submitted', 'approved'].includes(item.status)
   const canMaintain = item.own || snapshot.permissions.canEnter
+  const canEdit =
+    (item.own && (item.status === 'draft' || item.status === 'submitted')) ||
+    (snapshot.permissions.canEnter && mutable)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -241,7 +389,81 @@ function RequestDetails({
             </Alert>
           ) : null}
 
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span>Автор: {item.createdByName ?? `Участник #${item.createdBy ?? '—'}`}</span>
+              {item.decidedByName ? <span>Решение: {item.decidedByName}</span> : null}
+              {item.postedByName && item.postedByName !== item.decidedByName ? (
+                <span>Провёл: {item.postedByName}</span>
+              ) : null}
+            </div>
+            {canEdit ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setEditing((value) => !value)}
+              >
+                {editing ? 'Закрыть редактирование' : 'Редактировать заявку'}
+              </Button>
+            ) : null}
+          </div>
+
+          {editing ? (
+            <div className="rounded-lg border p-4">
+              <RequestForm
+                references={snapshot.references}
+                pending={pending}
+                initialItem={item}
+                includeAttachment={false}
+                submitLabel="Сохранить изменения"
+                onCreate={async (body) => {
+                  await onEdit(body)
+                  setEditing(false)
+                }}
+              />
+            </div>
+          ) : null}
+
           <Classification item={item} />
+
+          {item.operation ? (
+            <section className="space-y-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOperationOpen((value) => !value)}
+              >
+                {operationOpen ? 'Закрыть операцию' : `Открыть операцию №${item.operation.id}`}
+              </Button>
+              {operationOpen ? (
+                <div
+                  role="region"
+                  aria-label={`Операция №${item.operation.id}`}
+                  className="space-y-2 rounded-lg border bg-muted/30 p-4"
+                >
+                  <p className="text-sm font-medium">
+                    Операция №{item.operation.id} · {item.operation.occurredOn}
+                  </p>
+                  {item.operation.postings.map((posting, index) => (
+                    <div
+                      key={`${posting.accountName}-${posting.currency}-${index}`}
+                      className="flex items-center justify-between gap-3 text-sm"
+                    >
+                      <span>{posting.accountName}</span>
+                      <span className="tabular-nums">
+                        {formatRequestMoney(
+                          posting.amount,
+                          posting.currency,
+                          precisionFor(snapshot, posting.currency),
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           {item.paidAmount && item.paidCurrency ? (
             <div className="rounded-lg border p-4 text-sm">
@@ -269,15 +491,32 @@ function RequestDetails({
                 Документы
               </h3>
               {mutable && canMaintain ? (
-                <>
+                <div className="flex flex-wrap items-end justify-end gap-2">
+                  <NativeSelect
+                    id={`request-attachment-kind-${item.id}`}
+                    label="Вид прикрепляемого документа"
+                    value={attachmentKind}
+                    disabled={pending}
+                    onChange={setAttachmentKind}
+                  >
+                    {DOCUMENT_KIND_OPTIONS.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <Label className="sr-only" htmlFor={`request-attachment-file-${item.id}`}>
+                    Файл документа
+                  </Label>
                   <input
                     ref={fileRef}
+                    id={`request-attachment-file-${item.id}`}
                     className="sr-only"
                     type="file"
                     accept="application/pdf,image/jpeg,image/png,image/webp"
                     onChange={(event) => {
                       const file = event.target.files?.[0]
-                      if (file) void onAttach(file)
+                      if (file) void onAttach(file, attachmentKind)
                     }}
                   />
                   <Button
@@ -289,7 +528,7 @@ function RequestDetails({
                   >
                     <Paperclip /> Приложить документ
                   </Button>
-                </>
+                </div>
               ) : null}
             </div>
             {item.documents.length === 0 ? (
@@ -417,6 +656,14 @@ function parseMoney(value: string, precision: number): string | null {
   return `${integer}${fraction.padEnd(precision, '0')}`.replace(/^0+(?=\d)/, '')
 }
 
+function minorUnitsInput(value: string, precision: number): string {
+  if (precision === 0) return value
+  const digits = value.padStart(precision + 1, '0')
+  const integer = digits.slice(0, -precision)
+  const fraction = digits.slice(-precision).replace(/0+$/, '')
+  return fraction === '' ? integer : `${integer}.${fraction}`
+}
+
 function NativeSelect({
   id,
   label,
@@ -452,36 +699,83 @@ export function RequestForm({
   references,
   pending,
   onCreate,
+  initialItem,
+  includeAttachment = true,
+  submitLabel = 'Создать заявку',
 }: {
   references: RequestBoardReferences
   pending: boolean
   onCreate: (body: CreateRequestBody, file: File | null, documentKind?: string) => Promise<void>
+  initialItem?: RequestBoardItem
+  includeAttachment?: boolean
+  submitLabel?: string
 }) {
   const firstCurrency = references.currencies[0]
-  const [amount, setAmount] = React.useState('')
-  const [currency, setCurrency] = React.useState(firstCurrency?.code ?? '')
-  const [paidAmount, setPaidAmount] = React.useState('')
-  const [paidCurrency, setPaidCurrency] = React.useState(firstCurrency?.code ?? '')
-  const [occurredOn, setOccurredOn] = React.useState('')
-  const [purposeId, setPurposeId] = React.useState(String(references.purposes[0]?.id ?? ''))
-  const [purposeMissing, setPurposeMissing] = React.useState(false)
-  const [purposeProposal, setPurposeProposal] = React.useState('')
-  const [projectId, setProjectId] = React.useState(String(references.projects[0]?.id ?? ''))
-  const [productId, setProductId] = React.useState(String(references.products[0]?.id ?? ''))
-  const [accountId, setAccountId] = React.useState(String(references.accounts[0]?.id ?? ''))
+  const initialCurrency = initialItem?.currency ?? firstCurrency?.code ?? ''
+  const [amount, setAmount] = React.useState(() =>
+    initialItem
+      ? minorUnitsInput(
+          initialItem.amount,
+          references.currencies.find((item) => item.code === initialCurrency)?.precision ?? 2,
+        )
+      : '',
+  )
+  const [currency, setCurrency] = React.useState(initialCurrency)
+  const [paidAmount, setPaidAmount] = React.useState(() =>
+    initialItem?.paidAmount && initialItem.paidCurrency
+      ? minorUnitsInput(
+          initialItem.paidAmount,
+          references.currencies.find((item) => item.code === initialItem.paidCurrency)?.precision ??
+            2,
+        )
+      : '',
+  )
+  const [paidCurrency, setPaidCurrency] = React.useState(
+    initialItem?.paidCurrency ?? firstCurrency?.code ?? '',
+  )
+  const [occurredOn, setOccurredOn] = React.useState(initialItem?.occurredOn ?? '')
+  const [purposeId, setPurposeId] = React.useState(
+    String(initialItem?.purpose?.id ?? references.purposes[0]?.id ?? ''),
+  )
+  const [purposeMissing, setPurposeMissing] = React.useState(
+    initialItem !== undefined && initialItem.purpose === null,
+  )
+  const [purposeProposal, setPurposeProposal] = React.useState(initialItem?.proposal?.text ?? '')
+  const [projectId, setProjectId] = React.useState(
+    String(initialItem?.project.id ?? references.projects[0]?.id ?? ''),
+  )
+  const [productId, setProductId] = React.useState(
+    String(initialItem?.product?.id ?? references.products[0]?.id ?? ''),
+  )
+  const [accountId, setAccountId] = React.useState(
+    String(initialItem?.account?.id ?? references.accounts[0]?.id ?? ''),
+  )
   const [counterpartyId, setCounterpartyId] = React.useState(
-    String(references.counterparties[0]?.id ?? ''),
+    String(initialItem?.counterparty?.id ?? references.counterparties[0]?.id ?? ''),
   )
   const [newCounterparty, setNewCounterparty] = React.useState(false)
   const [counterpartyName, setCounterpartyName] = React.useState('')
-  const [note, setNote] = React.useState('')
-  const [alreadyPaid, setAlreadyPaid] = React.useState(false)
-  const [personalFunds, setPersonalFunds] = React.useState(false)
+  const [note, setNote] = React.useState(initialItem?.note ?? '')
+  const [alreadyPaid, setAlreadyPaid] = React.useState(initialItem?.alreadyPaid ?? false)
+  const [personalFunds, setPersonalFunds] = React.useState(initialItem?.personalFunds ?? false)
   const [file, setFile] = React.useState<File | null>(null)
   const [documentKind, setDocumentKind] = React.useState('other')
   const [issues, setIssues] = React.useState<string[]>([])
   const account = references.accounts.find((item) => item.id === Number(accountId))
   const crossCurrency = personalFunds || (account !== undefined && account.currency !== currency)
+  const selectedPurpose = purposeMissing
+    ? undefined
+    : references.purposes.find((item) => item.id === Number(purposeId))
+  const productBinding = selectedPurpose?.productBinding ?? 'optional'
+  const availableProducts = references.products.filter(
+    (item) => !projectId || item.projectId === Number(projectId),
+  )
+  const effectiveProductId =
+    !purposeMissing &&
+    productBinding !== 'forbidden' &&
+    availableProducts.some((product) => product.id === Number(productId))
+      ? productId
+      : ''
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -493,6 +787,9 @@ export function RequestForm({
     if (!projectId) nextIssues.push('Выберите проект.')
     if (!purposeMissing && !purposeId) nextIssues.push('Выберите назначение.')
     if (purposeMissing && !purposeProposal.trim()) nextIssues.push('Опишите новое назначение.')
+    if (!purposeMissing && productBinding === 'required' && !effectiveProductId) {
+      nextIssues.push('Выберите продукт для этого назначения и проекта.')
+    }
     if (!newCounterparty && !counterpartyId) nextIssues.push('Выберите контрагента.')
     if (newCounterparty && !counterpartyName.trim()) nextIssues.push('Назовите контрагента.')
     if (!personalFunds && !accountId) nextIssues.push('Выберите счёт оплаты.')
@@ -523,7 +820,10 @@ export function RequestForm({
         purposeId: purposeMissing ? null : Number(purposeId),
         purposeProposal: purposeMissing ? purposeProposal.trim() : null,
         projectId: Number(projectId),
-        productId: productId ? Number(productId) : null,
+        productId:
+          purposeMissing || productBinding === 'forbidden' || !effectiveProductId
+            ? null
+            : Number(effectiveProductId),
         counterpartyId: newCounterparty ? null : Number(counterpartyId),
         counterpartyName: newCounterparty ? counterpartyName.trim() : null,
         note: note.trim() || null,
@@ -606,7 +906,13 @@ export function RequestForm({
           label="Назначение"
           value={purposeId}
           disabled={pending || purposeMissing}
-          onChange={setPurposeId}
+          onChange={(value) => {
+            setPurposeId(value)
+            const nextBinding = references.purposes.find(
+              (purpose) => purpose.id === Number(value),
+            )?.productBinding
+            if (nextBinding === 'forbidden') setProductId('')
+          }}
         >
           <option value="">Выберите назначение</option>
           {references.purposes.map((item) => (
@@ -620,7 +926,17 @@ export function RequestForm({
           label="Проект"
           value={projectId}
           disabled={pending}
-          onChange={setProjectId}
+          onChange={(value) => {
+            setProjectId(value)
+            if (
+              !references.products.some(
+                (product) =>
+                  product.id === Number(productId) && product.projectId === Number(value),
+              )
+            ) {
+              setProductId('')
+            }
+          }}
         >
           {references.projects.map((item) => (
             <option key={item.id} value={item.id}>
@@ -633,7 +949,7 @@ export function RequestForm({
         <Checkbox
           id="request-purpose-missing"
           checked={purposeMissing}
-          disabled={pending}
+          disabled={pending || initialItem !== undefined}
           onCheckedChange={(value) => setPurposeMissing(value === true)}
         />
         <span>Нужного назначения нет</span>
@@ -644,7 +960,7 @@ export function RequestForm({
           <Textarea
             id="request-purpose-proposal"
             value={purposeProposal}
-            disabled={pending}
+            disabled={pending || initialItem !== undefined}
             onChange={(event) => setPurposeProposal(event.target.value)}
           />
           <p className="text-xs text-muted-foreground">
@@ -657,18 +973,16 @@ export function RequestForm({
         <NativeSelect
           id="request-product"
           label="Продукт"
-          value={productId}
-          disabled={pending}
+          value={effectiveProductId}
+          disabled={pending || purposeMissing || productBinding === 'forbidden'}
           onChange={setProductId}
         >
           <option value="">Без продукта</option>
-          {references.products
-            .filter((item) => !projectId || item.projectId === Number(projectId))
-            .map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
+          {availableProducts.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
         </NativeSelect>
         <NativeSelect
           id="request-account"
@@ -769,35 +1083,36 @@ export function RequestForm({
         </label>
       </div>
 
-      <div className="grid gap-4 rounded-lg border border-dashed p-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Label htmlFor="request-document">Инвойс или чек</Label>
-          <Input
-            id="request-document"
-            type="file"
-            accept="application/pdf,image/jpeg,image/png,image/webp"
-            disabled={pending}
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          />
+      {includeAttachment ? (
+        <div className="grid gap-4 rounded-lg border border-dashed p-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="request-document">Инвойс или чек</Label>
+            <Input
+              id="request-document"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              disabled={pending}
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            />
+          </div>
+          <NativeSelect
+            id="request-document-kind"
+            label="Вид документа"
+            value={documentKind}
+            disabled={pending || file === null}
+            onChange={setDocumentKind}
+          >
+            {DOCUMENT_KIND_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </NativeSelect>
         </div>
-        <NativeSelect
-          id="request-document-kind"
-          label="Вид документа"
-          value={documentKind}
-          disabled={pending || file === null}
-          onChange={setDocumentKind}
-        >
-          <option value="ru_invoice">Счёт РФ</option>
-          <option value="fiscal_receipt">Кассовый чек</option>
-          <option value="foreign_invoice">Иностранный инвойс</option>
-          <option value="payment_order">Платёжное поручение</option>
-          <option value="bank_screenshot">Скриншот банка</option>
-          <option value="other">Другое</option>
-        </NativeSelect>
-      </div>
+      ) : null}
 
       <Button type="submit" disabled={pending}>
-        {pending ? 'Создаём…' : 'Создать заявку'}
+        {pending ? 'Сохраняем…' : submitLabel}
       </Button>
     </form>
   )
@@ -808,6 +1123,7 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
   const [loading, setLoading] = React.useState(initialSnapshot === undefined)
   const [failure, setFailure] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
+  const [uploadRecovery, setUploadRecovery] = React.useState<PendingUploadRecovery | null>(null)
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
   const [promptedAct, setPromptedAct] = React.useState<FinanceRequestBoardAct | null>(null)
   const [newOpen, setNewOpen] = React.useState(false)
@@ -917,21 +1233,18 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
     }
   }
 
-  async function uploadDocument(itemId: number, file: File, kind = 'other') {
-    const form = new FormData()
-    form.set('file', file)
-    form.set('kind', kind)
-    form.set('intakeItemId', String(itemId))
-    const response = await fetch('/p/finance/api/documents', { method: 'POST', body: form })
-    if (!response.ok) throw new Error(await responseMessage(response))
-  }
-
-  async function attach(file: File) {
+  async function attach(file: File, kind: string) {
     if (selected === null) return
     setPending(true)
     setFailure(null)
     try {
-      await uploadDocument(selected.id, file)
+      const upload = await uploadRequestDocument(selected.id, file, kind, fetch)
+      if (upload.message !== null) {
+        setUploadRecovery(
+          upload.recovery === null ? null : { ...upload.recovery, submitAfterUpload: false },
+        )
+        throw new Error(upload.message)
+      }
       setNotice('Документ приложен к заявке.')
       await load()
     } catch (cause) {
@@ -945,32 +1258,73 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
     setPending(true)
     setFailure(null)
     try {
-      const response = await fetch('/p/finance/api/requests', {
-        method: 'POST',
+      const outcome = await runRequestCreation(body, file, kind)
+      setNotice(outcome.message)
+      setNewOpen(false)
+      await load()
+      if (outcome.status === 'saved-draft') {
+        setSelectedId(outcome.requestId)
+        setUploadRecovery(outcome.recovery)
+      }
+    } catch (cause) {
+      setFailure(apiMessage(cause, 'Заявка не создана.'))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function edit(body: CreateRequestBody) {
+    if (selected === null) return
+    const wasApproved = selected.status === 'approved'
+    setPending(true)
+    setFailure(null)
+    try {
+      const response = await fetch(`/p/finance/api/requests/${selected.id}`, {
+        method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
       if (!response.ok) throw new Error(await responseMessage(response))
-      const created = (await response.json()) as {
-        request: { id: number }
-        proposal: { id: number } | null
-      }
-      if (file) await uploadDocument(created.request.id, file, kind)
-      if (created.proposal === null) {
-        const submitted = await fetch(`/p/finance/api/requests/${created.request.id}/actions`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ act: 'submit' }),
-        })
-        if (!submitted.ok) throw new Error(await responseMessage(submitted))
-        setNotice('Заявка создана и отправлена на одобрение.')
-      } else {
-        setNotice('Черновик создан и ждёт решения по предложению назначения.')
-      }
-      setNewOpen(false)
+      const result = (await response.json()) as { status: string; bounced: boolean }
+      setNotice(
+        wasApproved && result.bounced
+          ? 'Изменения сохранены: заявка вернулась на одобрение.'
+          : 'Изменения заявки сохранены.',
+      )
       await load()
     } catch (cause) {
-      setFailure(apiMessage(cause, 'Заявка не создана.'))
+      setFailure(apiMessage(cause, 'Изменения заявки не сохранены.'))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function retryPendingUpload() {
+    if (uploadRecovery === null) return
+    setPending(true)
+    setFailure(null)
+    try {
+      await resumePendingUpload(uploadRecovery)
+      if (uploadRecovery.submitAfterUpload) {
+        const submitted = await fetch(
+          `/p/finance/api/requests/${uploadRecovery.requestId}/actions`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ act: 'submit' }),
+          },
+        )
+        if (!submitted.ok) throw new Error(await responseMessage(submitted))
+      }
+      setNotice(
+        uploadRecovery.submitAfterUpload
+          ? `Документ загружен, черновик №${uploadRecovery.requestId} отправлен на одобрение.`
+          : 'Документ загружен.',
+      )
+      setUploadRecovery(null)
+      await load()
+    } catch (cause) {
+      setFailure(apiMessage(cause, 'Загрузку не удалось возобновить; черновик сохранён.'))
     } finally {
       setPending(false)
     }
@@ -1024,6 +1378,17 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
       {notice ? (
         <Alert role="status">
           <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      ) : null}
+      {uploadRecovery ? (
+        <Alert role="status">
+          <AlertTitle>Черновик сохранён</AlertTitle>
+          <AlertDescription className="space-y-3">
+            <p>Повторная попытка продолжит загрузку тех же байтов и не создаст вторую заявку.</p>
+            <Button variant="outline" disabled={pending} onClick={() => void retryPendingUpload()}>
+              Повторить загрузку документа
+            </Button>
+          </AlertDescription>
         </Alert>
       ) : null}
       {failure ? (
@@ -1199,6 +1564,7 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
           }
         }}
         onAct={mutateAction}
+        onEdit={edit}
         onAttach={attach}
       />
 
