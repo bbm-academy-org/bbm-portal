@@ -445,7 +445,11 @@ describe('new expense request sheet (spec 339 EARS-508/526/532)', () => {
       recovery: { href: '/p/finance/api/documents/88', file },
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    if (outcome.status !== 'saved-draft' || outcome.recovery === null) {
+    if (
+      outcome.status !== 'saved-draft' ||
+      outcome.stage !== 'upload' ||
+      outcome.recovery === null
+    ) {
       throw new Error('Expected a resumable saved draft.')
     }
     await resumePendingUpload(outcome.recovery, fetchMock)

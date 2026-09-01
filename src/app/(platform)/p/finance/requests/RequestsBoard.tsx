@@ -71,14 +71,34 @@ export type PendingUploadRecovery = {
   submitAfterUpload: boolean
 }
 
+export type PendingProposalRecovery = {
+  href: string
+  purposeProposal: string
+  requestId: number
+}
+
 export type RequestCreationOutcome =
   | { status: 'complete'; requestId: number; submitted: boolean; message: string }
   | {
       status: 'saved-draft'
       requestId: number
-      stage: 'upload' | 'submit'
+      stage: 'upload'
       message: string
       recovery: PendingUploadRecovery | null
+    }
+  | {
+      status: 'saved-draft'
+      requestId: number
+      stage: 'proposal'
+      message: string
+      recovery: PendingProposalRecovery
+    }
+  | {
+      status: 'saved-draft'
+      requestId: number
+      stage: 'submit'
+      message: string
+      recovery: null
     }
 
 function apiMessage(error: unknown, fallback: string): string {
@@ -134,6 +154,18 @@ export async function resumePendingUpload(
   if (!response.ok) throw new Error(await responseMessage(response))
 }
 
+export async function resumePurposeProposal(
+  recovery: PendingProposalRecovery,
+  fetcher: RequestFetch = fetch,
+): Promise<void> {
+  const response = await fetcher(recovery.href, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ purposeProposal: recovery.purposeProposal }),
+  })
+  if (!response.ok) throw new Error(await responseMessage(response))
+}
+
 export async function runRequestCreation(
   body: CreateRequestBody,
   file: File | null,
@@ -145,7 +177,42 @@ export async function runRequestCreation(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!response.ok) throw new Error(await responseMessage(response))
+  if (!response.ok) {
+    const responseBody = await response.text()
+    const saved = (() => {
+      try {
+        return JSON.parse(responseBody) as {
+          status?: unknown
+          request?: { id?: unknown }
+          message?: unknown
+          recovery?: { href?: unknown; purposeProposal?: unknown }
+        }
+      } catch {
+        return null
+      }
+    })()
+    if (
+      response.status === 503 &&
+      saved?.status === 'saved-draft' &&
+      typeof saved.request?.id === 'number' &&
+      typeof saved.message === 'string' &&
+      typeof saved.recovery?.href === 'string' &&
+      typeof saved.recovery.purposeProposal === 'string'
+    ) {
+      return {
+        status: 'saved-draft',
+        requestId: saved.request.id,
+        stage: 'proposal',
+        message: `Черновик №${saved.request.id} сохранён. ${saved.message}`,
+        recovery: {
+          href: saved.recovery.href,
+          purposeProposal: saved.recovery.purposeProposal,
+          requestId: saved.request.id,
+        },
+      }
+    }
+    throw new Error(responseBody || `Запрос завершился с кодом ${response.status}.`)
+  }
   const created = (await response.json()) as {
     request: { id: number }
     proposal: { id: number } | null
@@ -557,7 +624,7 @@ export function RequestDetails({
                     <iframe
                       className="h-72 w-full bg-muted/20"
                       title={`Документ ${document.filename}`}
-                      src={`/p/finance/api/documents/${document.id}`}
+                      src={`/p/finance/api/documents/${document.id}?disposition=inline`}
                     />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element -- private authenticated bytes, no stable optimization URL.
@@ -1124,6 +1191,9 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
   const [failure, setFailure] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
   const [uploadRecovery, setUploadRecovery] = React.useState<PendingUploadRecovery | null>(null)
+  const [proposalRecovery, setProposalRecovery] = React.useState<PendingProposalRecovery | null>(
+    null,
+  )
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
   const [promptedAct, setPromptedAct] = React.useState<FinanceRequestBoardAct | null>(null)
   const [newOpen, setNewOpen] = React.useState(false)
@@ -1264,7 +1334,8 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
       await load()
       if (outcome.status === 'saved-draft') {
         setSelectedId(outcome.requestId)
-        setUploadRecovery(outcome.recovery)
+        if (outcome.stage === 'upload') setUploadRecovery(outcome.recovery)
+        if (outcome.stage === 'proposal') setProposalRecovery(outcome.recovery)
       }
     } catch (cause) {
       setFailure(apiMessage(cause, 'Заявка не создана.'))
@@ -1330,6 +1401,29 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
     }
   }
 
+  async function retryPurposeProposal() {
+    if (proposalRecovery === null) return
+    setPending(true)
+    setFailure(null)
+    try {
+      await resumePurposeProposal(proposalRecovery)
+      setNotice(
+        `Предложение назначения сохранено для черновика №${proposalRecovery.requestId}; вторая заявка не создавалась.`,
+      )
+      setProposalRecovery(null)
+      await load()
+    } catch (cause) {
+      setFailure(
+        apiMessage(
+          cause,
+          `Предложение назначения для черновика №${proposalRecovery.requestId} не сохранено.`,
+        ),
+      )
+    } finally {
+      setPending(false)
+    }
+  }
+
   function drop(to: FinanceRequestBoardStatus) {
     if (dragged === null) return
     const plan = planRequestDrop(dragged.status, to)
@@ -1387,6 +1481,24 @@ export function RequestsBoard({ initialSnapshot }: { initialSnapshot?: RequestsS
             <p>Повторная попытка продолжит загрузку тех же байтов и не создаст вторую заявку.</p>
             <Button variant="outline" disabled={pending} onClick={() => void retryPendingUpload()}>
               Повторить загрузку документа
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {proposalRecovery ? (
+        <Alert role="status">
+          <AlertTitle>Черновик №{proposalRecovery.requestId} сохранён</AlertTitle>
+          <AlertDescription className="space-y-3">
+            <p>
+              Предложение назначения пока не сохранено. Повторная попытка дополнит этот черновик и
+              не создаст вторую заявку.
+            </p>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => void retryPurposeProposal()}
+            >
+              Повторить сохранение предложения
             </Button>
           </AlertDescription>
         </Alert>

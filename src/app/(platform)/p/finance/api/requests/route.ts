@@ -15,7 +15,7 @@ import {
   listProjects,
   listPurposeProposals,
   listPurposes,
-  listRegister,
+  registerEntriesByIds,
   type FinanceIntakeItemView,
 } from '@/lib/finance'
 import { findMemberByEmail, getMembersByIds } from '@/lib/member'
@@ -164,7 +164,6 @@ export async function GET(): Promise<Response> {
       proposals,
       debts,
       actorMember,
-      register,
     ] = await Promise.all([
       listExpenseRequests(actor),
       listAccounts(),
@@ -177,7 +176,6 @@ export async function GET(): Promise<Response> {
       listPurposeProposals(actor),
       liabilityBalances(),
       findMemberByEmail(actor.email),
-      listRegister(),
     ])
     const memberIds = [
       ...new Set(
@@ -188,10 +186,18 @@ export async function GET(): Promise<Response> {
         ),
       ),
     ].sort((left, right) => left - right)
-    const members = await getMembersByIds(memberIds)
-    const documents = await Promise.all(
-      requests.map((request) => listFinanceDocuments(actor, { intakeItemId: request.id })),
-    )
+    const operationIds = [
+      ...new Set(
+        requests.flatMap((request) => (request.operationId === null ? [] : [request.operationId])),
+      ),
+    ]
+    const [members, documents, register] = await Promise.all([
+      getMembersByIds(memberIds),
+      Promise.all(
+        requests.map((request) => listFinanceDocuments(actor, { intakeItemId: request.id })),
+      ),
+      registerEntriesByIds(operationIds),
+    ])
     const accountMap = byId(accounts)
     const counterpartyMap = byId(counterparties)
     const productMap = byId(products)
@@ -284,12 +290,34 @@ export async function POST(request: Request): Promise<Response> {
       gate.actor,
       expenseRequestInput(body, counterpartyId),
     )
-    const proposal = body.purposeProposal
-      ? await createPurposeProposal(gate.actor, {
+    let proposal = null
+    if (body.purposeProposal) {
+      try {
+        proposal = await createPurposeProposal(gate.actor, {
           intakeItemId: expenseRequest.id,
           text: body.purposeProposal,
         })
-      : null
+      } catch {
+        return jsonResponse(
+          {
+            status: 'saved-draft',
+            request: {
+              id: expenseRequest.id,
+              status: expenseRequest.status,
+              purposeId: expenseRequest.purposeId,
+            },
+            proposal: null,
+            message: 'Черновик сохранён, но предложение назначения не создано.',
+            recovery: {
+              method: 'PATCH',
+              href: `/p/finance/api/requests/${expenseRequest.id}`,
+              purposeProposal: body.purposeProposal,
+            },
+          },
+          503,
+        )
+      }
+    }
     return jsonResponse(
       {
         request: {

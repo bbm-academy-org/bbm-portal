@@ -1,10 +1,16 @@
-import { createCounterparty, editExpenseRequest, getExpenseRequest } from '@/lib/finance'
+import {
+  createCounterparty,
+  createPurposeProposal,
+  editExpenseRequest,
+  getExpenseRequest,
+} from '@/lib/finance'
 
 import {
   expenseRequestBodySchema,
   expenseRequestInput,
   financeRequestActor,
   jsonResponse,
+  purposeProposalRecoverySchema,
   requestApiError,
   textResponse,
 } from '../request-utils'
@@ -19,7 +25,21 @@ export async function PATCH(
   if (gate.refusal !== null) return gate.refusal
   const id = Number((await params).id)
   if (!Number.isInteger(id) || id <= 0) return textResponse(400, 'Некорректный номер заявки.')
-  const parsed = expenseRequestBodySchema.safeParse(await request.json().catch(() => null))
+  const rawBody = await request.json().catch(() => null)
+  const proposalRecovery = purposeProposalRecoverySchema.safeParse(rawBody)
+  if (proposalRecovery.success) {
+    try {
+      const proposal = await createPurposeProposal(gate.actor, {
+        intakeItemId: id,
+        text: proposalRecovery.data.purposeProposal,
+      })
+      return jsonResponse({ requestId: id, proposal })
+    } catch (cause) {
+      return requestApiError(cause)
+    }
+  }
+
+  const parsed = expenseRequestBodySchema.safeParse(rawBody)
   if (!parsed.success) return textResponse(400, parsed.error.issues[0]?.message)
 
   try {

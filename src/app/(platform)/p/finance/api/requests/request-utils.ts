@@ -26,6 +26,13 @@ export const expenseRequestBodySchema = z
     if ((value.purposeId ?? null) === null && !value.purposeProposal) {
       context.addIssue({ code: 'custom', message: 'Выберите назначение или предложите новое.' })
     }
+    if ((value.purposeId ?? null) !== null && value.purposeProposal) {
+      context.addIssue({
+        code: 'custom',
+        path: ['purposeProposal'],
+        message: 'Выберите назначение или предложите новое, но не оба варианта сразу.',
+      })
+    }
     if ((value.counterpartyId ?? null) === null && !value.counterpartyName) {
       context.addIssue({ code: 'custom', message: 'Выберите или создайте контрагента.' })
     }
@@ -36,6 +43,10 @@ export const expenseRequestBodySchema = z
       })
     }
   })
+
+export const purposeProposalRecoverySchema = z
+  .object({ purposeProposal: z.string().trim().min(1).max(500) })
+  .strict()
 
 export type ExpenseRequestBody = z.infer<typeof expenseRequestBodySchema>
 
