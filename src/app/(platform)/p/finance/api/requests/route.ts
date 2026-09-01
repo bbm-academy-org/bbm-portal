@@ -1,5 +1,4 @@
 import {
-  createCounterparty,
   createExpenseRequest,
   createPurposeProposal,
   FINANCE_APPROVE_ROLE,
@@ -26,6 +25,7 @@ import {
   financeRequestActor,
   jsonResponse,
   requestApiError,
+  resolveRequestCounterpartyId,
   textResponse,
 } from './request-utils'
 
@@ -283,9 +283,7 @@ export async function POST(request: Request): Promise<Response> {
   const body = parsed.data
 
   try {
-    const counterpartyId = body.counterpartyName
-      ? (await createCounterparty(gate.actor, { name: body.counterpartyName })).id
-      : body.counterpartyId!
+    const counterpartyId = await resolveRequestCounterpartyId(gate.actor, body)
     const expenseRequest = await createExpenseRequest(
       gate.actor,
       expenseRequestInput(body, counterpartyId),

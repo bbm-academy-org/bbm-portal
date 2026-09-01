@@ -1,7 +1,12 @@
 import { auth } from '@/auth'
 import { z } from 'zod'
 
-import type { CreateExpenseRequestInput, FinanceActor } from '@/lib/finance'
+import {
+  createCounterparty,
+  listCounterparties,
+  type CreateExpenseRequestInput,
+  type FinanceActor,
+} from '@/lib/finance'
 import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 export const expenseRequestBodySchema = z
@@ -49,6 +54,36 @@ export const purposeProposalRecoverySchema = z
   .strict()
 
 export type ExpenseRequestBody = z.infer<typeof expenseRequestBodySchema>
+
+function normalizeCounterpartyName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+async function findCounterpartyIdByName(name: string): Promise<number | null> {
+  const normalizedName = normalizeCounterpartyName(name)
+  const existing = (await listCounterparties()).find(
+    (counterparty) => normalizeCounterpartyName(counterparty.name) === normalizedName,
+  )
+  return existing?.id ?? null
+}
+
+export async function resolveRequestCounterpartyId(
+  actor: FinanceActor,
+  body: Pick<ExpenseRequestBody, 'counterpartyId' | 'counterpartyName'>,
+): Promise<number> {
+  if (!body.counterpartyName) return body.counterpartyId!
+
+  const existingId = await findCounterpartyIdByName(body.counterpartyName)
+  if (existingId !== null) return existingId
+
+  try {
+    return (await createCounterparty(actor, { name: body.counterpartyName })).id
+  } catch (cause) {
+    const racedId = await findCounterpartyIdByName(body.counterpartyName)
+    if (racedId !== null) return racedId
+    throw cause
+  }
+}
 
 export function expenseRequestInput(
   body: ExpenseRequestBody,

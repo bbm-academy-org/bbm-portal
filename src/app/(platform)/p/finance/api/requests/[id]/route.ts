@@ -1,9 +1,4 @@
-import {
-  createCounterparty,
-  createPurposeProposal,
-  editExpenseRequest,
-  getExpenseRequest,
-} from '@/lib/finance'
+import { createPurposeProposal, editExpenseRequest, getExpenseRequest } from '@/lib/finance'
 
 import {
   expenseRequestBodySchema,
@@ -12,6 +7,7 @@ import {
   jsonResponse,
   purposeProposalRecoverySchema,
   requestApiError,
+  resolveRequestCounterpartyId,
   textResponse,
 } from '../request-utils'
 
@@ -46,9 +42,7 @@ export async function PATCH(
     const before = await getExpenseRequest(gate.actor, id)
     if (before === null) return textResponse(404, `Заявки #${id} не существует.`)
     const body = parsed.data
-    const counterpartyId = body.counterpartyName
-      ? (await createCounterparty(gate.actor, { name: body.counterpartyName })).id
-      : body.counterpartyId!
+    const counterpartyId = await resolveRequestCounterpartyId(gate.actor, body)
     const item = await editExpenseRequest(gate.actor, id, expenseRequestInput(body, counterpartyId))
     return jsonResponse({
       id: item.id,
