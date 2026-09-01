@@ -17,9 +17,12 @@ const state = vi.hoisted(() => ({
   listPurposeProposals: vi.fn(),
   liabilityBalances: vi.fn(),
   findMemberByEmail: vi.fn(),
+  getMembersByIds: vi.fn(),
+  listRegister: vi.fn(),
   createCounterparty: vi.fn(),
   createExpenseRequest: vi.fn(),
   createPurposeProposal: vi.fn(),
+  editExpenseRequest: vi.fn(),
   submitExpenseRequest: vi.fn(),
   cancelExpenseRequest: vi.fn(),
   approveExpenseRequest: vi.fn(),
@@ -28,7 +31,10 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
-vi.mock('@/lib/member', () => ({ findMemberByEmail: state.findMemberByEmail }))
+vi.mock('@/lib/member', () => ({
+  findMemberByEmail: state.findMemberByEmail,
+  getMembersByIds: state.getMembersByIds,
+}))
 vi.mock('@/lib/finance', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/finance')>()
   return { ...actual, ...state }
@@ -121,6 +127,11 @@ beforeEach(() => {
   state.listCategories.mockResolvedValue([{ id: 3, name: 'Операционные расходы', retiredAt: null }])
   state.listPurposeProposals.mockResolvedValue([])
   state.findMemberByEmail.mockResolvedValue({ id: 15 })
+  state.getMembersByIds.mockResolvedValue([
+    { id: 15, name: 'Мария Иванова' },
+    { id: 16, name: 'Антон Сидоров' },
+  ])
+  state.listRegister.mockResolvedValue([])
   state.liabilityBalances.mockResolvedValue([
     {
       accountId: 99,
@@ -176,6 +187,57 @@ describe('/p/finance/api/requests read model', () => {
 
     expect(response.status).toBe(403)
     expect(state.listExpenseRequests).not.toHaveBeenCalled()
+  })
+
+  it('scenario 2: resolves human actors and the linked operation through public module APIs', async () => {
+    state.listExpenseRequests.mockResolvedValue([
+      { ...request, status: 'posted', postedBy: 16, operationId: 71 },
+    ])
+    state.listRegister.mockResolvedValue([
+      {
+        operationId: 71,
+        occurredOn: '2026-06-30',
+        source: 'request',
+        sourceRef: null,
+        purposeId: 11,
+        purposeName: 'Аренда студии',
+        backdated: false,
+        reverses: null,
+        reversedBy: null,
+        postings: [
+          {
+            id: 1,
+            accountId: 7,
+            accountName: 'Основной банк',
+            amount: -45_000_00n,
+            currency: 'RUB',
+            projectId: 12,
+            categoryId: 3,
+            productId: 13,
+            memberId: null,
+          },
+        ],
+      },
+    ])
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.GET()
+
+    expect(state.getMembersByIds).toHaveBeenCalledWith([15, 16])
+    expect(await response.json()).toMatchObject({
+      requests: [
+        {
+          createdByName: 'Мария Иванова',
+          decidedByName: 'Антон Сидоров',
+          postedByName: 'Антон Сидоров',
+          operation: {
+            id: 71,
+            occurredOn: '2026-06-30',
+            postings: [{ accountName: 'Основной банк', amount: '-4500000', currency: 'RUB' }],
+          },
+        },
+      ],
+    })
   })
 })
 
@@ -291,5 +353,46 @@ describe('/p/finance/api/requests writes', () => {
       41,
       'Уже оплачено другим способом',
     )
+  })
+
+  it('EARS-502/524 scenario 3: PATCH edits through the request facade and returns the approved bounce', async () => {
+    state.editExpenseRequest.mockResolvedValue({
+      ...request,
+      status: 'submitted',
+      amount: 46_000_00n,
+      decidedBy: null,
+      decidedAt: null,
+    })
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+
+    const response = await route.PATCH(
+      new Request(`${BASE}/41`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          occurredOn: '2026-09-02',
+          accountId: 7,
+          amount: '4600000',
+          currency: 'RUB',
+          paidAmount: null,
+          paidCurrency: null,
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          note: 'Изменённая сумма',
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(state.editExpenseRequest).toHaveBeenCalledWith(
+      expect.any(Object),
+      41,
+      expect.objectContaining({ amount: 4_600_000n, productId: 13 }),
+    )
+    expect(await response.json()).toMatchObject({ id: 41, status: 'submitted', bounced: true })
   })
 })

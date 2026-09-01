@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   RequestForm,
+  RequestDetails,
   RequestsBoard,
+  resumePendingUpload,
+  runRequestCreation,
   type RequestsSnapshot,
 } from '@/app/(platform)/p/finance/requests/RequestsBoard'
 
@@ -41,8 +44,14 @@ const snapshot: RequestsSnapshot = {
       note: 'Историческая аренда студии, документ ожидается',
       alreadyPaid: false,
       personalFunds: false,
+      createdBy: 15,
+      createdByName: 'Мария Иванова',
+      decidedBy: 16,
+      decidedByName: 'Антон Сидоров',
+      postedByName: null,
       refusalReason: null,
       operationId: null,
+      operation: null,
       purpose: {
         id: 11,
         name: 'Аренда студии',
@@ -130,6 +139,73 @@ describe('/p/finance/requests board', () => {
     expect(screen.getByText(/заявок пока нет/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /создать первую заявку/i })).toBeTruthy()
   })
+
+  it('EARS-502/524 scenario 3: an entry editor can change approved money data and sees the re-approval bounce', async () => {
+    const changed = {
+      ...snapshot,
+      permissions: { canApprove: true, canEnter: true },
+      requests: [{ ...snapshot.requests[0], status: 'submitted' as const, amount: '4600000' }],
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 41, status: 'submitted', bounced: true }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(changed), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      React.createElement(RequestsBoard, {
+        initialSnapshot: { ...snapshot, permissions: { canApprove: true, canEnter: true } },
+      }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: /аренда студии/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать заявку' }))
+    fireEvent.change(screen.getByLabelText('Сумма документа'), { target: { value: '46000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/p/finance/api/requests/41',
+        expect.objectContaining({ method: 'PATCH' }),
+      ),
+    )
+    expect(await screen.findByText(/вернулась на одобрение/i)).toBeTruthy()
+  })
+
+  it('scenario 2: shows human actors and opens the linked operation inside the details sheet', () => {
+    render(
+      React.createElement(RequestsBoard, {
+        initialSnapshot: {
+          ...snapshot,
+          requests: [
+            {
+              ...snapshot.requests[0],
+              status: 'posted',
+              operationId: 71,
+              postedByName: 'Антон Сидоров',
+              operation: {
+                id: 71,
+                occurredOn: '2026-06-30',
+                postings: [{ accountName: 'Основной банк', amount: '-4500000', currency: 'RUB' }],
+              },
+            },
+          ],
+        },
+      }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /аренда студии/i }))
+    const details = screen.getByRole('dialog', { name: /заявка №41/i })
+    expect(details.textContent).toContain('Автор: Мария Иванова')
+    expect(details.textContent).toContain('Решение: Антон Сидоров')
+    fireEvent.click(within(details).getByRole('button', { name: 'Открыть операцию №71' }))
+    expect(within(details).getByRole('region', { name: 'Операция №71' }).textContent).toContain(
+      'Основной банк',
+    )
+  })
 })
 
 describe('new expense request sheet (spec 339 EARS-508/526/532)', () => {
@@ -203,5 +279,145 @@ describe('new expense request sheet (spec 339 EARS-508/526/532)', () => {
         'other',
       ),
     )
+  })
+
+  it('EARS-508: clears a stale product when project or purpose binding makes it invalid', async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined)
+    const references = {
+      ...snapshot.references,
+      projects: [...snapshot.references.projects, { id: 22, name: 'BBM Fund' }],
+      products: [
+        ...snapshot.references.products,
+        { id: 23, name: 'Фондовый продукт', projectId: 22 },
+      ],
+      purposes: [
+        ...snapshot.references.purposes,
+        {
+          id: 24,
+          name: 'Банковская комиссия',
+          categoryId: 3,
+          productBinding: 'forbidden' as const,
+        },
+      ],
+    }
+    render(React.createElement(RequestForm, { references, pending: false, onCreate }))
+
+    fireEvent.change(screen.getByLabelText('Сумма документа'), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText('Дата движения денег'), {
+      target: { value: '2026-09-01' },
+    })
+    fireEvent.change(screen.getByLabelText('Назначение'), { target: { value: '24' } })
+    fireEvent.change(screen.getByLabelText('Проект'), { target: { value: '22' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Создать заявку' }))
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ purposeId: 24, projectId: 22, productId: null }),
+        null,
+        'other',
+      ),
+    )
+  })
+
+  it('EARS-508: refuses submit when a required binding has no product in the selected project', async () => {
+    const onCreate = vi.fn()
+    render(
+      React.createElement(RequestForm, {
+        references: {
+          ...snapshot.references,
+          projects: [...snapshot.references.projects, { id: 22, name: 'BBM Fund' }],
+        },
+        pending: false,
+        onCreate,
+      }),
+    )
+
+    fireEvent.change(screen.getByLabelText('Сумма документа'), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText('Дата движения денег'), {
+      target: { value: '2026-09-01' },
+    })
+    fireEvent.change(screen.getByLabelText('Проект'), { target: { value: '22' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Создать заявку' }))
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/выберите продукт/i)
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
+  it('EARS-515: attachment upload asks for the document kind instead of forcing other', async () => {
+    const onAttach = vi.fn().mockResolvedValue(undefined)
+    render(
+      React.createElement(RequestDetails, {
+        item: snapshot.requests[0],
+        snapshot,
+        open: true,
+        promptedAct: null,
+        pending: false,
+        failure: null,
+        onOpenChange: vi.fn(),
+        onAct: vi.fn(),
+        onEdit: vi.fn(),
+        onAttach,
+      }),
+    )
+    fireEvent.change(screen.getByLabelText('Вид прикрепляемого документа'), {
+      target: { value: 'bank_screenshot' },
+    })
+    const input = screen.getByLabelText('Файл документа')
+    const file = new File(['bytes'], 'receipt.png', { type: 'image/png' })
+    fireEvent.change(input, { target: { files: [file] } })
+
+    await waitFor(() => expect(onAttach).toHaveBeenCalledWith(file, 'bank_screenshot'))
+  })
+
+  it('EARS-514 recovery: reports the saved draft and resumes the pending upload without creating a duplicate', async () => {
+    const body = {
+      occurredOn: '2026-09-01',
+      accountId: 7,
+      amount: '10000',
+      currency: 'RUB',
+      purposeId: 11,
+      projectId: 12,
+      productId: 13,
+      counterpartyId: 14,
+      alreadyPaid: false,
+      personalFunds: false,
+    }
+    const file = new File(['same bytes'], 'receipt.png', { type: 'image/png' })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ request: { id: 77 }, proposal: null }), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: 88,
+            uploadStatus: 'pending',
+            recovery: { method: 'PUT', href: '/p/finance/api/documents/88' },
+          }),
+          { status: 503 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 88 }), { status: 200 }))
+
+    const outcome = await runRequestCreation(body, file, 'bank_screenshot', fetchMock)
+
+    expect(outcome).toMatchObject({
+      status: 'saved-draft',
+      requestId: 77,
+      stage: 'upload',
+      recovery: { href: '/p/finance/api/documents/88', file },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    if (outcome.status !== 'saved-draft' || outcome.recovery === null) {
+      throw new Error('Expected a resumable saved draft.')
+    }
+    await resumePendingUpload(outcome.recovery, fetchMock)
+    expect(fetchMock).toHaveBeenLastCalledWith('/p/finance/api/documents/88', {
+      method: 'PUT',
+      headers: { 'content-type': 'image/png' },
+      body: file,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
