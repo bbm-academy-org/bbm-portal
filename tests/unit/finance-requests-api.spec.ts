@@ -13,7 +13,10 @@ const state = vi.hoisted(() => ({
   listProducts: vi.fn(),
   listProjects: vi.fn(),
   listPurposes: vi.fn(),
+  listCategories: vi.fn(),
+  listPurposeProposals: vi.fn(),
   liabilityBalances: vi.fn(),
+  findMemberByEmail: vi.fn(),
   createCounterparty: vi.fn(),
   createExpenseRequest: vi.fn(),
   createPurposeProposal: vi.fn(),
@@ -25,6 +28,7 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
+vi.mock('@/lib/member', () => ({ findMemberByEmail: state.findMemberByEmail }))
 vi.mock('@/lib/finance', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/finance')>()
   return { ...actual, ...state }
@@ -71,7 +75,9 @@ beforeEach(() => {
       roles: [PLATFORM_USER_ROLE, 'finance-approve'],
     },
   }
-  for (const value of Object.values(state)) if (typeof value === 'function') value.mockReset()
+  for (const value of Object.values(state)) {
+    if (typeof value === 'function') (value as ReturnType<typeof vi.fn>).mockReset()
+  }
   state.listExpenseRequests.mockResolvedValue([request])
   state.listFinanceDocuments.mockResolvedValue([])
   state.listAccounts.mockResolvedValue([
@@ -112,6 +118,9 @@ beforeEach(() => {
       retiredAt: null,
     },
   ])
+  state.listCategories.mockResolvedValue([{ id: 3, name: 'Операционные расходы', retiredAt: null }])
+  state.listPurposeProposals.mockResolvedValue([])
+  state.findMemberByEmail.mockResolvedValue({ id: 15 })
   state.liabilityBalances.mockResolvedValue([
     {
       accountId: 99,
@@ -139,9 +148,15 @@ describe('/p/finance/api/requests read model', () => {
       requests: [
         {
           id: 41,
+          own: true,
           status: 'approved',
           amount: '4500000',
-          purpose: { id: 11, name: 'Аренда студии', categoryId: 3 },
+          purpose: {
+            id: 11,
+            name: 'Аренда студии',
+            categoryId: 3,
+            categoryName: 'Операционные расходы',
+          },
           project: { id: 12, name: 'Doctor School' },
           product: { id: 13, name: 'Урок №14' },
           account: { id: 7, name: 'Основной банк', currency: 'RUB' },

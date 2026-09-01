@@ -10,6 +10,14 @@ import {
 
 afterEach(cleanup)
 
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+
 const snapshot: RequestsSnapshot = {
   permissions: { canApprove: true, canEnter: false },
   references: {
@@ -23,6 +31,7 @@ const snapshot: RequestsSnapshot = {
   requests: [
     {
       id: 41,
+      own: true,
       status: 'approved',
       occurredOn: '2026-06-30',
       amount: '4500000',
@@ -34,7 +43,12 @@ const snapshot: RequestsSnapshot = {
       personalFunds: false,
       refusalReason: null,
       operationId: null,
-      purpose: { id: 11, name: 'Аренда студии', categoryId: 3 },
+      purpose: {
+        id: 11,
+        name: 'Аренда студии',
+        categoryId: 3,
+        categoryName: 'Операционные расходы',
+      },
       project: { id: 12, name: 'Doctor School' },
       product: { id: 13, name: 'Урок №14' },
       account: { id: 7, name: 'Основной банк', currency: 'RUB' },
@@ -63,17 +77,23 @@ describe('/p/finance/requests board', () => {
     fireEvent.click(card)
     const details = screen.getByRole('dialog', { name: /заявка №41/i })
     expect(details.textContent).toContain('Назначение')
-    expect(details.textContent).toContain('Статья #3')
+    expect(details.textContent).toContain('Операционные расходы')
     expect(details.textContent).toContain('Счёт оплаты')
     expect(details.textContent).toContain('Контрагент')
     expect(details.textContent).toContain('Историческая аренда студии')
-    expect(within(details).getByRole('button', { name: /подтвердить и провести/i })).toBeDisabled()
+    expect(
+      within(details)
+        .getByRole('button', { name: /подтвердить и провести/i })
+        .hasAttribute('disabled'),
+    ).toBe(true)
   })
 
   it('EARS-527: shows member-filtered liabilities beside, not inside, the status board', () => {
     render(React.createElement(RequestsBoard, { initialSnapshot: snapshot }))
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Обязательства' }))
+    const liabilitiesTab = screen.getByRole('tab', { name: 'Обязательства' })
+    fireEvent.mouseDown(liabilitiesTab)
+    fireEvent.click(liabilitiesTab)
 
     expect(screen.getByRole('tabpanel', { name: 'Обязательства' }).textContent).toContain(
       'Мария Иванова',
@@ -126,7 +146,7 @@ describe('new expense request sheet (spec 339 EARS-508/526/532)', () => {
     fireEvent.click(screen.getByLabelText('Оплачено своими средствами'))
     fireEvent.click(screen.getByRole('button', { name: 'Создать заявку' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
+    expect((await screen.findByRole('alert')).textContent).toMatch(
       /сначала отметьте «деньги уже потрачены»/i,
     )
     expect(onCreate).not.toHaveBeenCalled()
@@ -180,6 +200,7 @@ describe('new expense request sheet (spec 339 EARS-508/526/532)', () => {
       expect(onCreate).toHaveBeenCalledWith(
         expect.objectContaining({ amount: '4500000', currency: 'RUB', purposeId: 11 }),
         null,
+        'other',
       ),
     )
   })

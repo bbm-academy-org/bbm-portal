@@ -30,6 +30,7 @@ dependencies. Those are pinned exactly.
 | `utils.ts`                                                                                 | `cn()` — the `clsx` + `tailwind-merge` helper every copied component imports                             |
 | `button.tsx` `card.tsx` `badge.tsx` `avatar.tsx` `separator.tsx` `dropdown-menu.tsx`       | the launcher and shell primitives                                                                        |
 | `input.tsx` `label.tsx` `textarea.tsx` `select.tsx` `table.tsx` `alert.tsx` `skeleton.tsx` | the member cabinet CRUD and explicit loading/error/form states (#316)                                    |
+| `checkbox.tsx` `sheet.tsx` `tabs.tsx`                                                      | the finance request board's forms, detail drawer and adjacent liability view (#388)                      |
 
 **Why this set.** The first six are the set the frozen `/p` launcher (PR #354)
 actually renders: a tile per app (card), the external marker (badge), the admin
