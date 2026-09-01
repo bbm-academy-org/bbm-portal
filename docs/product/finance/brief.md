@@ -126,10 +126,12 @@ Seven structural facts:
    group of postings with each step's fee explicit and the rate frozen at the
    moment of the operation. Consolidation spec §8 fixes this; this epic does not
    re-decide it, it designs the product on top.
-3. **Ingestion is a layer, not a form.** Manual entry, `/p/hours` accruals, bank
-   statements and invoice uploads are sources plugged into one intake; adding a
-   fifth source adds a source, not a second ledger. _(decision 3, owner's
-   verbatim intent)_
+3. **Intake is a module boundary, not a promise of universal import.** F2's
+   lasting paths are manual entry, expense requests with documents and the
+   explicitly scoped `/p/hours` path; the historical reconstruction is a
+   one-time private operation. A bank or other automated source earns its own
+   adapter only when a recurring source and its real format exist and the owner
+   approves that scope. _(decision 3 as superseded by decision 31)_
 4. **The project dimension is on the posting, not in the account tree.** Every
    posting carries fund-or-project; P&L and cost are the same computation with a
    different filter. **Projects are one flat level** — no sub-projects in v1, and
