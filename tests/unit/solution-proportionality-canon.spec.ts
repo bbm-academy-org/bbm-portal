@@ -26,7 +26,9 @@ describe('solution proportionality canon', () => {
       '## Stage 1a — spec (new module / user-facing behavior only)',
     )
 
-    expect(taskCycle).toContain('`Соразмерность:')
+    expect(taskCycle).toContain(
+      '`Соразмерность: <one-time|recurring> → <smallest sufficient path>; permanent artifacts: <none|justified list>`',
+    )
     expect(taskCycle).toMatch(
       /one-time\s+data repair or backfill defaults to a private temporary script/i,
     )

@@ -35,9 +35,10 @@ BBM has money moving through it and no accounting of it.
   co-authors / …), which is an order of distribution, not a cost structure. The
   one real cost model — the Doctor.School lesson-cost calculator — is scoped to
   DS lessons (prior art §1, §3, §4). So "what did we spend it on" currently has
-  no answer that a system could give. The answer is not invented here either: the
-  owner ruled that the category list is derived from the spend once it is
-  recorded, not written up front _(decision 11)_.
+  no answer that a system could give. The answer is not invented here either:
+  before the one-time history reconstruction is posted, its private source table
+  is used to prepare the category list for the owner's approval _(decision 11 as
+  superseded by decision 31)_.
 - **Every number about BBM's money is a model, not a fact.** `finmodel`
   variables and the money-route calculator project the future from parameters;
   the cap-table figures in the prototype are an explicit hypothetical
@@ -136,15 +137,15 @@ Seven structural facts:
    2026-08-25)_. `agent-proposed — UNCONFIRMED` as a modelling choice (the
    dimension on the posting rather than in the account tree); decisions 2 and 16
    fix that the dimension exists, is per project, and has exactly one level.
-5. **Reference data is editable, not hard-coded — and the taxonomy is derived,
-   not invented.** Expense categories, request purposes, accounts, projects,
+5. **Reference data is editable, not hard-coded — and the taxonomy comes from
+   real history, not invention.** Expense categories, request purposes, accounts, projects,
    products and currencies live as reference tables an owner edits
    _(decisions 10, 21)_. The purpose reference is finer-grained than the category
    list and each purpose is linked to its category, so an expense request picks
    its "what for" instead of typing it _(decision 21)_. The
-   category list in particular is **not** written up front: it is derived from
-   the real recorded expenses once the filling mechanism has put spend into the
-   ledger, and the owner approves the derived list _(decision 11)_. That
+   category list in particular is **not** invented up front: it is prepared from
+   the private table of real historical expenses and approved by the owner before
+   reconstruction is posted _(decision 11 as superseded by decision 31)_. That
    one-time preparation and owner-approval step belongs to **F2**; F1 owns only the empty reference table it
    lands in. The admin surface for all of them is the `/p/admin` shell of epic
    #112, not a second cabinet.
