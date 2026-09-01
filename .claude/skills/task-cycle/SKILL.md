@@ -1,6 +1,6 @@
 ---
 name: task-cycle
-description: Mandatory lifecycle for every tracked task in this repo — issue → plan → design gate (UI) → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
+description: Mandatory lifecycle for every tracked task in this repo — issue → proportional plan → design gate (UI) → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
 ---
 
 # task-cycle — the task lifecycle regulation
@@ -27,6 +27,23 @@ why; scope — what is IN and what is explicitly OUT. Everything inherited from
 a handoff, task text, or config is a HYPOTHESIS: a mismatch with the tracker,
 or an unproven "already agreed" claim, goes to the owner as a question — it is
 not executed. (Memory: `orient-before-acting`.)
+
+**Proportionality check — mandatory before the plan is offered.** Ask four
+questions: is the need one-time or recurring; what is the smallest disposable
+action that achieves the real outcome; which permanent code, interface or
+process would the proposal add; and which of those permanent artifacts is
+required by recurring use or by a durable security/data invariant. A one-time
+data repair or backfill defaults to a private temporary script or direct
+operator action using existing public module boundaries — not a reusable
+runtime, CLI, API or UI. The plan carries this exact owner-visible line:
+
+`Соразмерность: <one-time|recurring> → <smallest sufficient path>; permanent artifacts: <none|justified list>`
+
+If the disposable and reusable approaches both remain plausible, or the
+reusable approach materially expands the requested surface, ask the owner
+before the go. A review finding that keeps expanding a one-time mechanism is a
+signal to return to this check, not an instruction to harden the mechanism
+indefinitely. (Owner correction 2026-09-01 after PR #426.)
 
 **The plan carries a mandatory `Диспатч:` line** — the split between what a
 subagent gets and what the lead keeps. Its exact template, the thresholds

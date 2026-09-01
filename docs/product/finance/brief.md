@@ -3,7 +3,7 @@ status: Draft
 epic: 115
 features:
   - F1 (#338) — Ledger core plus F1b current-money balances card and conservative recorded-cost total
-  - F2 (#339) — Filling the ledger: manual entry, expense requests, history backfill, bank import (user-facing)
+  - F2 (#339) — Filling the ledger: manual entry, expense requests, one-time private history reconstruction
   - F3 (#340) — Reports: register, P&L, cash flow, unit cost, break-even (user-facing)
   - F4 (#341) — Fact-vs-finmodel reconciliation (user-facing)
   - F5 (#342) — Scenario calculator on top of the fact (user-facing)
@@ -67,8 +67,9 @@ the owner-approved discovery decisions 1–22 in issue #115.
   amount to carry the project it belongs to, so the fund and each project have
   their own P&L. _(decision 2)_
 - **J3 — "Filling it must not be my job."** As the owner, I want the ledger fed
-  from where the data already is — hours accruals, bank statements, invoices the
-  team uploads — with manual entry as the fallback, not the mechanism.
+  from where the data actually exists, with team requests and manual entry as
+  the present paths and future automation added only when a recurring source is
+  real.
   _(decision 3)_
 - **J4 — "Spending passes approval, before or after."** As a team member, I want
   to submit an expense request with its invoice and get an answer — asking before
@@ -106,7 +107,6 @@ portal.bbm.academy  (Zitadel OIDC gate over /p/*, ADR-003 §3; ADR-005 §2: a to
     ├── /p/finance/register        the operations register — every posting, filterable       ← F3
     ├── /p/finance/reports         P&L · cash flow · unit cost · break-even                  ← F3
     ├── /p/finance/requests        expense requests: submit (everyone) / approve (owners)    ← F2
-    ├── /p/finance/import          ingestion: bank statement, history backfill, sources      ← F2
     ├── /p/finance/reconciliation  fact vs finmodel — reserve %, pool sectors, royalty       ← F4
     ├── /p/finance/scenarios       what-if on top of the fact                                ← F5
     └── /p/admin → finance         reference tables: accounts, expense categories, request
@@ -175,7 +175,7 @@ Seven structural facts:
 | Feature | Issue | PRD              | Blocked by | Surface     | What it settles                                                                                                                                                                                              |
 | ------- | ----- | ---------------- | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | F1      | #338  | `338-product.md` | —          | mixed       | what a fact of money is here plus F1b's `/p/finance` current-money card: native account balances and a conservative recorded-cost total — including the empty, editable category table, but no category list |
-| F2      | #339  | `339-product.md` | #338       | user-facing | how facts get in: manual entry, expense requests with invoices (pre-spend and retroactive), history backfill, bank import — and deriving the category list off the recorded spend for the owner to approve   |
+| F2      | #339  | `339-product.md` | #338       | mixed       | lasting intake through manual entry and expense requests; one-time private reconstruction of existing history and owner-approved categories, with no permanent import surface                                |
 | F3      | #340  | `340-product.md` | #338       | user-facing | broader readings: register, period cash flow and P&L, cuts, drill-down, unit cost, break-even price                                                                                                          |
 | F4      | #341  | `341-product.md` | #340       | user-facing | fact next to finmodel: reserve %, pool sectors, royalty — expected vs actual, and the gap                                                                                                                    |
 | F5      | #342  | `342-product.md` | #340       | user-facing | the epic's final deliverable: what-if on top of the fact, feeding back into P&L and cash flow                                                                                                                |
