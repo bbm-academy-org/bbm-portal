@@ -329,6 +329,84 @@ describe('/p/finance/api/requests writes', () => {
     )
   })
 
+  it('EARS-508/532: reuses the normalized counterparty when create is retried after the request write fails', async () => {
+    state.listCounterparties
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: 24, name: 'НОВЫЙ ПОСТАВЩИК', createdBy: 15, createdAt: new Date() },
+      ])
+    state.createCounterparty.mockResolvedValue({ id: 24, name: 'Новый поставщик' })
+    state.createExpenseRequest
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Заявку не удалось сохранить.'), { name: 'FinanceRefusal' }),
+      )
+      .mockResolvedValueOnce({ ...request, id: 51, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+    const body = JSON.stringify({
+      occurredOn: '2026-09-01',
+      accountId: 7,
+      amount: '4500000',
+      currency: 'RUB',
+      purposeId: 11,
+      projectId: 12,
+      productId: 13,
+      counterpartyName: '  Новый поставщик  ',
+      alreadyPaid: false,
+      personalFunds: false,
+    })
+
+    const failed = await route.POST(new Request(BASE, { method: 'POST', body }))
+    const retried = await route.POST(new Request(BASE, { method: 'POST', body }))
+
+    expect(failed.status).toBe(422)
+    expect(retried.status).toBe(201)
+    expect(state.createCounterparty).toHaveBeenCalledTimes(1)
+    expect(state.createExpenseRequest).toHaveBeenCalledTimes(2)
+    expect(state.createExpenseRequest).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ counterpartyId: 24 }),
+    )
+  })
+
+  it('EARS-532: re-reads and reuses a counterparty created by a concurrent request', async () => {
+    state.listCounterparties
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: 24, name: 'НОВЫЙ ПОСТАВЩИК', createdBy: 15, createdAt: new Date() },
+      ])
+    state.createCounterparty.mockRejectedValue(
+      Object.assign(new Error('Контрагент уже создаётся.'), { name: 'FinanceRefusal' }),
+    )
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 51, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          occurredOn: '2026-09-01',
+          accountId: 7,
+          amount: '4500000',
+          currency: 'RUB',
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyName: 'Новый поставщик',
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(state.createCounterparty).toHaveBeenCalledTimes(1)
+    expect(state.listCounterparties).toHaveBeenCalledTimes(2)
+    expect(state.createExpenseRequest).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ counterpartyId: 24 }),
+    )
+  })
+
   it('EARS-526: keeps a missing-purpose request as a draft and binds its proposal', async () => {
     state.createExpenseRequest.mockResolvedValue({
       ...request,
@@ -539,5 +617,51 @@ describe('/p/finance/api/requests writes', () => {
       expect.objectContaining({ amount: 4_600_000n, productId: 13 }),
     )
     expect(await response.json()).toMatchObject({ id: 41, status: 'submitted', bounced: true })
+  })
+
+  it('EARS-524/532: reuses the normalized counterparty when edit is retried after the request write fails', async () => {
+    state.listCounterparties
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: 25, name: 'ПОСТАВЩИК ДЛЯ ПРАВКИ', createdBy: 15, createdAt: new Date() },
+      ])
+    state.createCounterparty.mockResolvedValue({ id: 25, name: 'Поставщик для правки' })
+    state.editExpenseRequest
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Изменения не сохранены.'), { name: 'FinanceRefusal' }),
+      )
+      .mockResolvedValueOnce({ ...request, status: 'submitted', counterpartyId: 25 })
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+    const body = JSON.stringify({
+      occurredOn: '2026-09-02',
+      accountId: 7,
+      amount: '4600000',
+      currency: 'RUB',
+      paidAmount: null,
+      paidCurrency: null,
+      purposeId: 11,
+      projectId: 12,
+      productId: 13,
+      counterpartyName: '  Поставщик для правки  ',
+      note: 'Изменённая сумма',
+      alreadyPaid: false,
+      personalFunds: false,
+    })
+    const params = { params: Promise.resolve({ id: '41' }) }
+
+    const failed = await route.PATCH(new Request(`${BASE}/41`, { method: 'PATCH', body }), params)
+    const retried = await route.PATCH(new Request(`${BASE}/41`, { method: 'PATCH', body }), {
+      params: Promise.resolve({ id: '41' }),
+    })
+
+    expect(failed.status).toBe(422)
+    expect(retried.status).toBe(200)
+    expect(state.createCounterparty).toHaveBeenCalledTimes(1)
+    expect(state.editExpenseRequest).toHaveBeenCalledTimes(2)
+    expect(state.editExpenseRequest).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      41,
+      expect.objectContaining({ counterpartyId: 25 }),
+    )
   })
 })
