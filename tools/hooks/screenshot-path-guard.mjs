@@ -3,15 +3,20 @@
 // from ds-platform tools/hooks/screenshot-path-guard.mjs, where it landed as a
 // BLOCK after 18 stray PNGs / 5.8 MB accumulated in the repo root).
 //
-// SEVERITY (docs/ci-guardrails.md §6, decided 2026-08-05): WARN (exit 0 +
-// systemMessage), and the strongest promotion candidate of the hook set — the
-// rule it enforces is categorical (a screenshot is not acceptance, task-cycle
-// stage 5) and the detection is a path match, not a judgement. In ds-platform
-// the same guard is exit 2. Promote per canon §4: earliest 2026-09-02, and only
-// after a clean window with zero false denials of a legitimate image read. The
-// detection logic below is already the blocking one; only the emission is
-// downgraded, so promotion is a one-line change here plus the spec's exit-code
-// assertion.
+// SEVERITY (docs/ci-guardrails.md §6): **BLOCK** — exit 2 + stderr — since
+// 2026-09-02 (#438). It landed WARN on 2026-08-05 as the strongest promotion
+// candidate of the hook set, and the promotion review found the §4 clauses met:
+// the rule it enforces is categorical (a screenshot is not acceptance,
+// task-cycle stage 5), the detection is a path match rather than a judgement,
+// and the clean window closed with no false denial on record. ds-platform, where
+// this guard is ported from, has blocked at exit 2 all along.
+//
+// Blast radius, per §4 clause 4: exactly one tool call, and the caller unblocks
+// it from inside the same session by retargeting `filename` into
+// `.playwright-mcp/` — which the denial message prints. The guard stays silent
+// on an OMITTED filename, on the git-ignored artifact dirs and on anything
+// outside the tree, so the shapes it denies are the clutter class only.
+// Demotion per §4 on the first confirmed false denial.
 //
 // Mechanism the guard encodes — the MCP server resolves a caller-supplied
 // `filename` against ITS OWN cwd, which is the repository root, and only then
@@ -46,12 +51,12 @@
 //    git-ignored artifact dirs instead.
 //
 // Contract: stdin — JSON PreToolUse ({session_id, cwd, tool_name,
-// tool_input:{filename}}). exit 0 + `systemMessage` = WARN. exit 0 with no
-// output = nothing to say. FAIL-OPEN: any parse/logic error exits 0 — a guard
-// bug must never wedge a legitimate screenshot.
+// tool_input:{filename}}). exit 2 + stderr = BLOCK (the message reaches the
+// model, which is the only channel that can make it retarget the file). exit 0
+// with no output = nothing to say. FAIL-OPEN: any parse/logic error exits 0 — a
+// guard bug must never wedge a legitimate screenshot.
 
 import {
-  emitWarn,
   hooksDisabled,
   isAbsolutePath,
   isDirectRun,
@@ -131,7 +136,7 @@ export function guardedRoots(cwd) {
   return roots
 }
 
-export function warnMessage({ filename, resolved, cwd, toolName }) {
+export function blockMessage({ filename, resolved, cwd, toolName }) {
   const calledTool =
     String(toolName).match(/browser_(?:take_screenshot|pdf_save)$/)?.[0] ??
     'browser_take_screenshot'
@@ -143,7 +148,7 @@ export function warnMessage({ filename, resolved, cwd, toolName }) {
     : `Do NOT retarget outside the repo: the hook payload carried no cwd, so the server's allowed ` +
       `roots cannot be rendered here; Playwright MCP still adjudicates them with checkFile.\n`
   return (
-    `⚠ screenshot path guard (#134): ${calledTool} filename '${filename}' writes INSIDE the ` +
+    `⛔ screenshot path guard (#134): ${calledTool} filename '${filename}' writes INSIDE the ` +
     `working tree.\n` +
     `Resolved target: ${resolved}\n` +
     `Playwright MCP resolves a relative filename against its cwd — the repo root — so the file ` +
@@ -161,7 +166,7 @@ export function warnMessage({ filename, resolved, cwd, toolName }) {
     allowedRoots +
     `For a deliverable, copy the file out to the session scratchpad afterwards with the Bash ` +
     `tool — never leave the only copy in the working tree.\n` +
-    `Warning only: the call is not blocked.\n`
+    `The call is BLOCKED (canon §6): re-issue it with an allowed filename.\n`
   )
 }
 
@@ -221,9 +226,13 @@ function main() {
       toolInput: payload.tool_input,
       cwd: payload.cwd || '',
     })
-    // WARN today (canon §6). Promotion to BLOCK is exactly this line becoming
-    // `exit 2` + stderr, together with the spec's exit-code assertion.
-    if (decision.warn) emitWarn(warnMessage(decision))
+    // BLOCK since 2026-09-02 (canon §6, #438): exit 2 + stderr is the only
+    // channel whose message reaches the model, and retargeting the filename is
+    // exactly what the model has to do.
+    if (decision.warn) {
+      process.stderr.write(blockMessage(decision))
+      process.exit(2)
+    }
     process.exit(0)
   } catch {
     process.exit(0) // fail-open: never wedge a legitimate screenshot

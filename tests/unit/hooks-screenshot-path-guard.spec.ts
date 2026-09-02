@@ -124,19 +124,37 @@ const CLUTTER_PAYLOAD = JSON.stringify({
 })
 
 describe('screenshot-path-guard as a process', () => {
-  it('WARNs (exit 0 + systemMessage), it does NOT block — canon §6', () => {
+  // For a hook the EXIT CODE is the severity of record (canon §4, «promotion
+  // mechanics (hook guard)»), so it is asserted here rather than read off the
+  // prose. BLOCK since 2026-09-02 (#438); it was exit 0 + systemMessage before.
+  it('BLOCKs (exit 2 + stderr) — canon §6', () => {
     const res = runHook(CLUTTER_PAYLOAD)
+    expect(res.status).toBe(2)
+    expect(res.stdout).toBe('')
+    expect(res.stderr).toContain('screenshot path guard')
+    expect(res.stderr).toContain(SERVER_OUTPUT_DIR)
+    // The denial names the way out from inside the same session.
+    expect(res.stderr).toContain('BLOCKED')
+  })
+
+  it('stays silent on an allowed target — exit 0, no output', () => {
+    const res = runHook(
+      JSON.stringify({
+        tool_name: SHOT,
+        cwd: WT,
+        tool_input: { filename: `${SERVER_OUTPUT_DIR}/438-shot.png` },
+      }),
+    )
     expect(res.status).toBe(0)
+    expect(res.stdout).toBe('')
     expect(res.stderr).toBe('')
-    const out = JSON.parse(res.stdout)
-    expect(out.systemMessage).toContain('screenshot path guard')
-    expect(out.systemMessage).toContain(SERVER_OUTPUT_DIR)
-    // Stack convention (shared.mjs emitWarn): a warning never pre-authorises.
-    expect(out.hookSpecificOutput).toBeUndefined()
   })
 
   it('the BBM_HOOKS_DISABLE kill switch silences it', () => {
-    expect(runHook(CLUTTER_PAYLOAD, { BBM_HOOKS_DISABLE: '1' }).stdout).toBe('')
+    const res = runHook(CLUTTER_PAYLOAD, { BBM_HOOKS_DISABLE: '1' })
+    expect(res.status).toBe(0)
+    expect(res.stdout).toBe('')
+    expect(res.stderr).toBe('')
   })
 
   it('fail-open: garbage stdin exits 0 without output', () => {
