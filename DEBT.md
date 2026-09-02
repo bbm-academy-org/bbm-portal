@@ -642,6 +642,7 @@ Entry format:
       required (#438, PR #449)
 
 <!-- debt-entry-end: 2026-09-02-438-pr-body-guard-ui-merge-bypass -->
+
 - [ ] 2026-09-02 #439 removes a subagent DISPATCH from the write-evidence list of
       `isWriteToolUse()` (`tools/hooks/completion-report-gate.mjs`), inverting the
       #158 clause «the subagents wrote, the lead reports». The inversion is right
