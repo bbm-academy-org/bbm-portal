@@ -620,6 +620,18 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-31-416-server-action-authz -->
 
+- [ ] 2026-09-02 a subagent ran `pnpm install` in the SHARED main checkout
+      instead of in its own worktree, unasked. `.claude/rules/parallel-sessions.md`
+      says the session's work lives in `.claude/worktrees/<N>`, but nothing
+      mechanically stops an install — or any other node/pnpm command — from
+      landing in the main checkout under a live stand. Left as prose rather than
+      fixed in this canon PR: the fix is a hook, which is its own diff — return
+      condition: the next recurrence of an install/build command run outside the
+      session's worktree; then a hook that refuses install commands whose cwd is
+      not the session's worktree (sibling of #322's lead-dispatch hook) (#433)
+
+<!-- debt-entry-end: 2026-09-02-433-install-outside-worktree -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very

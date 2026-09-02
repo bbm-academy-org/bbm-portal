@@ -39,6 +39,18 @@ Canon: task-cycle stages 1b (Stage A) and 5 (Stage B); introduced by #138 (task
   launcher wireframe was built, pinned by a spec and defended in review as if it
   were the design; the owner rejected the stand.
 
+- **Who decides what: the split.** **Composition, control choice, grouping,
+  states, feedback and post-submit behaviour are the AGENT's decision** — taken
+  by the agent and RECORDED in the PR, escalated only when the choice is really a
+  product fork. **The visual language and the product forks are the OWNER's.**
+  Owner ruling, Антон, 2026-09-02. It follows that a `wireframe`-only source is a
+  STOP for the **visual language only**: it never licensed anyone to ship eleven
+  ungrouped fields while waiting for a mockup, and «no design source» is not an
+  answer to «how is this screen composed». The record is the `UX-record:` block
+  below; the procedure that produces it is
+  [`build-ui-from-design-system`](../skills/build-ui-from-design-system/SKILL.md)
+  step 4.
+
 **The check:** `pnpm lint:design-fidelity <PR>`
 (`tools/lint/design-fidelity-lint.mjs`) — a UI diff whose covering row is
 `fidelity: wireframe` needs an explicit owner record in the PR body or a
@@ -100,3 +112,10 @@ the `stage-b` job passes `--severity block` so the script gives a real signal, a
 `continue-on-error: true` so the plane stays WARN. Promotion to BLOCK follows the canon's
 §4 clauses (earliest 2026-09-02) and is a one-line workflow change. A guard **error** (the PR cannot be read at all) is not a
 violation and always exits non-zero: a check that never ran must not look clean.
+
+**The sibling check — the agent's half of the same diff.** `pnpm lint:ux-record <PR>`
+(`tools/lint/ux-record-lint.mjs`) reads the same UI diff for the `UX-record:` block
+required by §1's ownership split; its six facets and the procedure that produces them
+live in [`build-ui-from-design-system`](../skills/build-ui-from-design-system/SKILL.md)
+step 4 and are not restated here. Severity: WARN, same register row family
+([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5).

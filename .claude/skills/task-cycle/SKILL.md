@@ -188,10 +188,33 @@ empty state is sufficient only when that empty state is what is being accepted.*
 **The invitation always carries the access line: URL + login + where to get the
 password.** The stand stays up until the verdict; an unanswered design/visual
 question = merge stays blocked.
+**Third precondition — the UX sanity pass, before the invitation goes out
+(#423).** The lead dispatches a SHORT, fresh-context agent over the stand's
+SCREENSHOTS (not over the diff), which reports one verdict — either «clear» or
+the specific defect to fix before the owner sees it:
+
+- (a) the screen has a **dominant element** matching its purpose;
+- (b) **primary / secondary / archived tiers are visually distinct**;
+- (c) blocks are **not uniform equal-weight boxes**;
+- (d) **states (empty / degraded) stay legible**.
+
+Green scenarios are not readiness to show. 2026-08-31, #357 / PR #422: a stand
+with 8/8 green Playwright acceptance scenarios was rejected on sight — the
+`/p/finance` overview's total card was indistinguishable from an account tile,
+«всё стерильно-одинаковое». Every functional criterion passed and the screen was
+still not acceptable, because a Playwright run has no opinion about where the eye
+lands first. The four checks are about hierarchy and legibility, not taste: they
+are answerable from a screenshot by an agent with no context on the feature,
+which is what makes the pass cheap enough to be mandatory. A defect it names is
+fixed BEFORE the owner is invited; the verdict goes in the task's report. A diff
+with no visual surface skips this pass — no screenshot ceremony on backend work.
+
 Invisible changes (internals, refactoring, docs, backend without UI) skip this
 stage — but the PR still records **which** case it is: every PR carries a
 `Stage-B:` line (`GO` / `batched at #N` / `N/A — lead-certified`), checked by
-`pnpm lint:stage-b <PR>` (`.claude/rules/design-process.md`).
+`pnpm lint:stage-b <PR>`, and a UI diff also carries the agent's `UX-record:`
+block, checked by `pnpm lint:ux-record <PR>` (both:
+`.claude/rules/design-process.md`).
 
 ## Stage 6 — merge (autonomous)
 
