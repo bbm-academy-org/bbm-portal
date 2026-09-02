@@ -95,7 +95,15 @@ export function runBoardStatus(parsed, io = {}) {
   const mutate = io.mutate ?? ghGraphqlResult
   const out = io.out ?? ((msg) => process.stdout.write(msg))
   const err = io.err ?? ((msg) => process.stderr.write(msg))
-  const exit = io.exit ?? ((code) => process.exit(code))
+  // `process.exitCode` + return, NOT `process.exit(code)`: on a Windows TTY the
+  // preceding stdout write is asynchronous, so exiting immediately after it
+  // truncates the DONE line and `pr:land` reads completed work as silent. Same
+  // class as #132. The process still ends with this code once the loop drains.
+  const exit =
+    io.exit ??
+    ((code) => {
+      process.exitCode = code
+    })
 
   const { issueNumber, resolveOnly, status } = parsed
   const die = (msg) => {
@@ -139,12 +147,13 @@ function main() {
   const argv = process.argv.slice(2)
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(USAGE)
-    process.exit(0)
+    return
   }
   const parsed = parseArgs(argv)
   if (!parsed.ok) {
     process.stderr.write(`${TAG} ${parsed.error}\n${USAGE}`)
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
   runBoardStatus(parsed)
 }

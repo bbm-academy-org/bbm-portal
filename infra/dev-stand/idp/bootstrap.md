@@ -146,6 +146,23 @@ it never duplicates.
 > bounds the live app carries, so a full run leaves both as they are. Step 6 has
 > the counts, the print flags and the widening checklist.
 
+> **Ship the script from a PINNED COMMIT, never from a working tree.** The copy
+> under `~/bbm-portal-dev-stand/idp` on the box is whatever was last synced
+> there, and «last synced» is not «what is on `main` now». Refresh it from
+> `origin/main` immediately before the run — or pipe the script in without
+> touching the box copy at all:
+>
+> ```bash
+> git show origin/main:infra/dev-stand/idp/provision.sh \
+>   | ssh truenas 'cd ~/bbm-portal-dev-stand/idp && bash -s -- --pat-file ~/.bbm-portal/idp-bootstrap-pat.txt'
+> ```
+>
+> The 2026-08-07 incident is what this clause is: the #93 AC-verification run
+> `scp`'d the main checkout **before** it had been fast-forwarded to the
+> just-merged #179, so the OLD destructive default ran against the live dev IdP
+> and collapsed `postLogoutRedirectUris` 20 → 1 for ~3 minutes. The same rule
+> holds for ANY repo script shipped to a remote box for execution.
+
 ```bash
 ssh truenas 'cd ~/bbm-portal-dev-stand/idp && \
   IDP_BASE_URL=http://truenas.local:9180 \
