@@ -895,7 +895,9 @@ Entry format:
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
 real entries plus the `- [ ]` example inside the entry-format code fence, which
-is documentation and not an entry). **43 entries in, 40 out. Every return
+is documentation and not an entry). **43 entries in, 40 out — counted at the sweep's base commit `fe1508d`,
+not at the merged head, which carries later 2026-09-02 arrivals from `main`
+that this sweep did not cover. Every return
 condition was checked against the repo, the tracker and the guard register —
 none was assumed.**
 
