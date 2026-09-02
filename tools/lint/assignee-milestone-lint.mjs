@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // assignee-milestone — an open PR carries ≥1 assignee AND a milestone.
 //
-// Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05; earliest
-// promotion 2026-09-02 under the §4 clauses.
+// Canon: docs/ci-guardrails.md §5, which is the severity of record. WARN from
+// 2026-08-05, promoted to BLOCK on 2026-09-02 (#438) under the §4 clauses. Its job lives in
+// pr-body-guards.yml, so BLOCK there means no `continue-on-error` and no `if:`
+// fence (§2.1), not membership of the `ci` needs-list.
 //
 // Why it exists: the board shows every open PR as a row, and a row with no
 // assignee and no milestone is un-triageable at a glance — nobody can tell who
@@ -13,8 +15,10 @@
 //
 // Deviation from ds-platform, recorded in canon §7: there the script and its
 // spec exist with no workflow job and no package script at all — an orphan that
-// calls itself a hard gate and never runs. It is wired here, and it is WARN, not
-// a day-0 BLOCK: canon §3 has no exception for "the fields are easy to set".
+// calls itself a hard gate and never runs. It is wired here, and it was WARN, not
+// a day-0 BLOCK: canon §3 has no exception for "the fields are easy to set". It
+// soaked that posture and was promoted to BLOCK on 2026-09-02 (#438); the severity
+// of record is canon §5's row, not this comment.
 //
 // The rule (exact): `gh pr view <N>` — assignees non-empty AND milestone
 // non-null. Either missing is a finding naming the one-line fix. A PR that

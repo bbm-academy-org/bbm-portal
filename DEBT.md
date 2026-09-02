@@ -792,6 +792,30 @@ Entry format:
       decision-debt pass)
 
 <!-- debt-entry-end: 2026-09-02-440-duplicate-filing -->
+- [ ] 2026-09-02 the five `pr-body-guards.yml` guards promoted to BLOCK by #438 —
+      `epic-autoclose`, `assignee-milestone`, `spec-link`, `stage-b`,
+      `spec-deletion` — turn `pnpm pr:land` red but do NOT gate branch
+      protection: `needs` cannot span workflows and
+      `.github/branch-protection.json` still requires only the `ci` context, so a
+      merge performed by hand in the GitHub UI lands the PR with those five red.
+      What a bypass costs is tracker and process state, not data, money or access
+      (task-canon §6 clause 2, hence a line and not an issue): a live epic
+      auto-closed by a `Closes #<epic>` line, a spec or ADR deleted without the
+      sanctioned `spec-deletion:` escape, a UI diff with no `Stage-B:` record, a
+      feature PR resolving to no spec, an un-triageable PR row — each reversible
+      by reopening, reverting or editing after the fact. Adding a cross-workflow
+      context to the required list is the obvious fix and is rejected today
+      because it would wedge merges the day that job legitimately skips — return
+      condition: the first PR merged into `main` whose checks show any of those
+      five with conclusion `failure` (`gh pr checks <n>` on the merged PR), or the
+      next edit to `.github/branch-protection.json`, whichever comes first;
+      decide then between adding the required contexts and giving
+      `pr-body-guards.yml` its own `if: always()` aggregate job that CAN be
+      required (#438, PR #449)
+
+<!-- debt-entry-end: 2026-09-02-438-pr-body-guard-ui-merge-bypass -->
+
+<!-- debt-entry-end: 2026-09-02-438-unpaged-files-array -->
 
 - [ ] 2026-09-02 a subagent ran `pnpm install` in the SHARED main checkout
       instead of in its own worktree, unasked. `.claude/rules/parallel-sessions.md`

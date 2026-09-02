@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // epic-autoclose — `Closes #<epic>` would auto-close a live parent on merge.
 //
-// Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05; earliest
-// promotion 2026-09-02, and a promotion to BLOCK additionally needs the
-// cross-workflow decision recorded in canon §2.1 (this job lives in
-// pr-body-guards.yml, which cannot be in the `ci` needs-list).
+// Canon: docs/ci-guardrails.md §5, which is the severity of record. WARN from
+// 2026-08-05, promoted to BLOCK on 2026-09-02 (#438) once the cross-workflow
+// decision canon §2.1 required was made: this job lives in pr-body-guards.yml and
+// so can never be in the `ci` needs-list, and BLOCK on that plane means the job
+// carries no `continue-on-error` and no `if:` fence, turning `pnpm pr:land` red.
 //
 // Why it exists: GitHub closes every issue named by a `Closes #N` line the
 // moment the PR merges — it does not look at the native sub-issue graph. A child

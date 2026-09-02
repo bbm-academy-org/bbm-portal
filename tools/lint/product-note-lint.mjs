@@ -29,7 +29,7 @@
 //
 // Run: `pnpm lint:product-note`. Findings: stderr + exit 1. Clean/skip: exit 0.
 
-import { ghViewJson } from './lib/gh.mjs'
+import { ghPrFiles, ghViewJson } from './lib/gh.mjs'
 import {
   isEntryPoint,
   isPrEvent,
@@ -104,10 +104,14 @@ async function main() {
   if (!prNumber) out.ok('cannot resolve a PR number from the environment, nothing to check')
 
   const root = repoRoot()
-  const res = ghViewJson('pr', prNumber, 'number,body,files', root)
+  const res = ghViewJson('pr', prNumber, 'number,body', root)
   if (!res.ok) out.fail(`could not fetch PR #${prNumber} metadata: ${res.error}`)
 
-  const files = (res.data.files ?? []).map((f) => f.path)
+  // Paged, not the 100-entry view array (canon §8) — this guard is WARN today,
+  // but the array's silent truncation is a defect at either severity.
+  const filesRes = ghPrFiles(prNumber, root)
+  if (!filesRes.ok) out.fail(`could not fetch PR #${prNumber} files: ${filesRes.error}`)
+  const files = filesRes.data.map((f) => f.path)
   const v = verdict({ files, body: res.data.body })
   if (!v.applies)
     out.ok(`PR #${prNumber} changes nothing a user sees (${v.reason}), rule does not apply`)

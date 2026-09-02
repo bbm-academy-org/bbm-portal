@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // no-stub — no dev placeholder, no untracked stub marker on the render surface.
 //
-// Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05 (new-guard
-// posture, §3 — it matches regexes over human-written text, so it soaks).
-// Earliest promotion 2026-09-02 under the §4 clauses.
+// Canon: docs/ci-guardrails.md §5, which is the severity of record. WARN from
+// 2026-08-05 under the new-guard posture (§3 — it matches regexes over
+// human-written text, so it soaked), promoted to BLOCK on 2026-09-02 (#438) under
+// the §4 clauses: no `continue-on-error`, and the job is in the `ci` needs-list.
 //
 // Why it exists: CLAUDE.md already bans user-facing dev placeholders ("render
 // the real thing or nothing") and untracked scaffold, and the ban recurred

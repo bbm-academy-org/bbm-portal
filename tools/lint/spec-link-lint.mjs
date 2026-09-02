@@ -21,27 +21,29 @@
 //   Escape hatch: a `spec-exempt: <reason>` line in the PR body. The reason is
 //   mandatory — a reasonless exemption is not an exemption.
 //
-// SEVERITY: WARN, registered in docs/ci-guardrails.md §5. Mind the canon's two
-//   WARNs: run locally the guard reports and exits 0, while in the canon WARN
-//   means `continue-on-error` on the CI job. The `spec-link` job in
-//   `pr-body-guards.yml` uses both deliberately — it passes `--severity block`
-//   so the script gives a REAL signal (canon §4 promotion clause 1: a guard that
-//   prints and always exits 0 is a stub and is not promotable) while
-//   `continue-on-error: true` keeps the CI plane at WARN. Promotion to BLOCK
-//   follows the canon's §4 clauses (earliest 2026-09-02) and is the three-edit
-//   change described there — nothing in this file needs editing for it.
+// SEVERITY: BLOCK since 2026-09-02 (#438). The severity of record is the §5 row
+//   in docs/ci-guardrails.md plus the job in `.github/workflows/pr-body-guards.yml`
+//   — read the plane off those, not off this comment. Mind the canon's two WARNs
+//   when reading the flag below: run LOCALLY this script still reports and exits 0,
+//   while the CI plane is set by the job. The `spec-link` job passes
+//   `--severity block` so the script gives a REAL signal (canon §4 promotion
+//   clause 1: a guard that prints and always exits 0 is a stub and is not
+//   promotable) and, since the promotion, carries neither `continue-on-error` nor
+//   an `if:` fence — a finding turns `pnpm pr:land` red. Nothing in this file
+//   needed editing for that.
 //
 // Run: `pnpm lint:spec-link` (PR_NUMBER from Actions, or `--pr <n>` locally).
 // Outside a PR context it exits 0 with a skip note.
 //
 // Seams for tests: `LINT_FIXTURE_ROOT` (spec tree) and `LINT_GH_FIXTURE_DIR`
-// (canned `gh <kind> view <n> --json` payloads as `<kind>-view-<n>.json`), both
-// via the shared `lib/` modules the contract (§8) forbids re-implementing.
+// (canned `gh <kind> view <n> --json` payloads as `<kind>-view-<n>.json`, plus
+// `pr-files-<n>[-page<N>].json` for the paged file list), both via the shared
+// `lib/` modules the contract (§8) forbids re-implementing.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { ghViewJson } from './lib/gh.mjs'
+import { ghPrFiles, ghViewJson } from './lib/gh.mjs'
 import {
   extractPartOfIssues,
   isEntryPoint,
@@ -410,7 +412,8 @@ export function evaluateSpecLink({ pr, issues, tree }) {
   return { verdict: findings.length > 0 ? 'findings' : 'ok', notes, findings }
 }
 
-/** WARN today; `LINT_SEVERITY=block` promotes it (canon §4, see the header). */
+/** The SCRIPT's own default dial is warn; `LINT_SEVERITY=block` flips it. The CI
+ * plane is BLOCK — the job passes `--severity block` (canon §5, see the header). */
 export function severityFromEnv(env = {}) {
   return String(env.LINT_SEVERITY ?? '').toLowerCase() === 'block' ? 'block' : 'warn'
 }
@@ -478,15 +481,20 @@ function main() {
   // A guard ERROR is not a finding and does NOT follow the severity dial: it
   // exits non-zero under every severity. A check that never ran must not look
   // clean (canon §8, fail-closed).
-  const prRes = ghViewJson('pr', prNumber, 'number,title,body,files', repoRoot())
+  const prRes = ghViewJson('pr', prNumber, 'number,title,body', repoRoot())
   if (!prRes.ok) report.fail(`ERROR could not read PR #${prNumber}: ${prRes.error}`)
+  // The changed set is PAGED (canon §8): the view's `files` array stops at 100
+  // entries without saying so, which on the BLOCK plane clears a PR whose
+  // feature diff was never read.
+  const filesRes = ghPrFiles(prNumber, repoRoot())
+  if (!filesRes.ok) report.fail(`ERROR could not read PR #${prNumber} files: ${filesRes.error}`)
   const pr = {
     number: prRes.data.number,
     title: prRes.data.title,
     body: prRes.data.body ?? '',
     // Keep the whole entry: `additions`/`deletions` decide whether a touched
     // spec was actually worked on or merely grazed (`substantiallyEdited`).
-    files: prRes.data.files ?? [],
+    files: filesRes.data,
   }
 
   const issues = []
@@ -503,7 +511,9 @@ function main() {
   }
   if (result.verdict === 'ok') report.info('PASS — the feature PR resolves to a spec.')
   if (result.verdict === 'findings' && severity === 'warn') {
-    report.finding('WARN severity (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02)')
+    report.finding(
+      'WARN severity here only because --severity warn was passed (docs/ci-guardrails.md §5 — BLOCK on the CI plane since 2026-09-02)',
+    )
   }
   process.exit(exitCodeFor(result, severity))
 }

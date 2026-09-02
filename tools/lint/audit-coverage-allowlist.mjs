@@ -15,8 +15,8 @@
 //    in the BLOCK `platform-int` job, so the database-state half of coverage
 //    blocks from day 0.
 //  * `tools/lint/audit-coverage-lint.mjs` — the migration-chain guard of
-//    EARS-19/EARS-20, WARN, delivered by issue #276. It does not exist yet; this
-//    file is what it reads when it does, rather than a second list that drifts.
+//    EARS-19/EARS-20, WARN, delivered by issue #276. It reads this file rather
+//    than keeping a second list that drifts.
 //
 // It carries no guard plumbing on purpose (it imports no `lib/guard.mjs`), so
 // `guard-test-coverage` correctly does not treat it as a guard needing a spec.

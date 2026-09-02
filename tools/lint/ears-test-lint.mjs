@@ -58,7 +58,8 @@
 //
 // SEVERITY: WARN — docs/ci-guardrails.md §5, job in `.github/workflows/ci.yml`
 // with `continue-on-error: true`; the script exits 1 on a finding (canon §4
-// clause 1). Promotion per §4, earliest 2026-09-02.
+// clause 1). Promotion per §4; the earliest date lives in §5's row and in the
+// job's own `continue-on-error` comment, deliberately not restated here.
 //
 // Run: `pnpm lint:ears-test`. Findings: stderr + exit 1. Clean: stdout + exit 0.
 

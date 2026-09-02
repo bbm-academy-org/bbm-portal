@@ -18,25 +18,33 @@
 // A missing marker, or a placeholder value (`TBD`, the unfilled PR-template
 // angle-bracket line), is a violation. A PR with no UI diff is skipped.
 //
-// SEVERITY: WARN. A violation is reported and the process exits 0 by default;
-// `--severity block` (or `STAGE_B_SEVERITY=block`) makes the same violation exit
-// 1. Note the two WARNs are different mechanisms: HERE it means "exit 0 with a
-// WARN line", while in #136's canon WARN means `continue-on-error: true` on the
-// CI job. DECIDED in #136 (canon docs/ci-guardrails.md §5, row `stage-b`): the
-// `stage-b` job in .github/workflows/pr-body-guards.yml passes `--severity
-// block` and carries `continue-on-error: true`. The script therefore gives a
-// REAL signal (canon §4 clause 1: a guard that prints and exits 0 is a stub and
-// is not promotable) while the CI plane keeps it WARN. Promotion is then a
-// one-line workflow change; no code change is needed here.
+// SEVERITY: BLOCK since 2026-09-02 (#438). The severity of record is the §5 row
+// in docs/ci-guardrails.md plus the job in .github/workflows/pr-body-guards.yml
+// — read the plane off those, not off this comment. This SCRIPT still defaults to
+// reporting a violation and exiting 0; `--severity block` (or
+// `STAGE_B_SEVERITY=block`) makes the same violation exit 1. Note the two WARNs
+// are different mechanisms: HERE it means "exit 0 with a WARN line", while in
+// #136's canon WARN means `continue-on-error: true` on the CI job. The `stage-b`
+// job passes `--severity block` — it always did, so the script gives a REAL
+// signal (canon §4 clause 1: a guard that prints and exits 0 is a stub and is not
+// promotable) — and the promotion dropped its `continue-on-error` and its `if:`
+// fence. No code change was needed here.
 //
 // An `error` (the PR cannot be read at all — gh auth, a fork without token
 // scope, an API blip) is NOT a violation and does NOT follow the severity dial:
 // it exits 1 under every severity, by design. A violation is a finding about the
 // PR, which WARN may absorb; an unreadable PR means the guard never ran, and a
 // guard that exits 0 when it never ran is indistinguishable from a clean check.
-// Masking THAT is a job-level `continue-on-error` decision, and #136 made it:
-// the job is `continue-on-error`, so an unreadable PR shows in the job log
-// rather than blocking — acceptable only while the guard is WARN.
+// Masking THAT is a job-level `continue-on-error` decision. #136 made it one way
+// while the guard was WARN — the job carried `continue-on-error`, so an unreadable
+// PR showed in the job log rather than blocking — and the 2026-09-02 promotion
+// (#438) reversed it: the job carries no `continue-on-error`, so the exit 1 from an
+// unreadable PR now turns `pnpm pr:land` RED. That is the INTENDED outcome under
+// BLOCK, not a regression to route around. A BLOCK guard that cannot read the PR
+// has not cleared it, and a gate that goes green when it never ran is the exact
+// failure the canon's §4 clause 1 exists to prevent. The fix is to make the PR
+// readable (gh auth, token scope) and re-run — the workflow's `edited` trigger
+// re-runs this check without a rebuild.
 //
 // CI: the `stage-b` job of `.github/workflows/pr-body-guards.yml` (wired by #136
 // after this guard landed — the two ran in parallel, so the wiring is not in this
@@ -50,6 +58,7 @@
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { pagePrFiles, prFilesArgs, prFilesPageSize } from './lib/gh.mjs'
 import { extractPartOfIssues, stripNonEvidence } from './lib/guard.mjs'
 
 const TAG = '[stage-b]'
@@ -224,7 +233,16 @@ export function checkStageB(pr, issueComments = []) {
 // ── gh access (argv arrays, never a shell string — `tools/gh/lib/gh.mjs` canon) ─
 
 export function ghPrArgs(prNumber) {
-  return ['pr', 'view', String(prNumber), '--repo', REPO, '--json', 'number,body,files']
+  return ['pr', 'view', String(prNumber), '--repo', REPO, '--json', 'number,body']
+}
+/**
+ * ONE page of the PR's changed files. The `files` field of `gh pr view` stops at
+ * 100 entries and says nothing when it truncates, so the verdict is derived from
+ * the paged REST endpoint instead (canon docs/ci-guardrails.md §8). The loop and
+ * the page bound live in `lib/gh.mjs`; this guard owns only its runner.
+ */
+export function ghFilesArgs(prNumber, page, perPage = prFilesPageSize()) {
+  return prFilesArgs(prNumber, page, { repo: REPO, perPage })
 }
 
 export function ghIssueArgs(issueNumber) {
@@ -296,6 +314,18 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
     return { verdict: 'error', exitCode: 1, lines }
   }
 
+  // Fail-closed on a partial read: a guard that saw part of the diff has not
+  // cleared the diff (canon §8, the same principle as an unreadable PR above).
+  const perPage = prFilesPageSize()
+  const filesRes = pagePrFiles((page) => ghJson(gh, ghFilesArgs(prNumber, page, perPage)), {
+    perPage,
+  })
+  if (!filesRes.ok) {
+    lines.push(`${TAG} ERROR: cannot read the files of PR #${prNumber}: ${filesRes.error}`)
+    return { verdict: 'error', exitCode: 1, lines }
+  }
+  const prData = { ...prRes.data, files: filesRes.data }
+
   const comments = []
   for (const issue of extractLinkedIssues(prRes.data?.body ?? '')) {
     const issueRes = ghJson(gh, ghIssueArgs(issue))
@@ -310,12 +340,14 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
     comments.push(...(issueRes.data?.comments ?? []).map((c) => c?.body ?? ''))
   }
 
-  const result = checkStageB(prRes.data, comments)
+  const result = checkStageB(prData, comments)
   if (result.verdict === 'violation') {
     const level = severity === 'block' ? 'BLOCK' : 'WARN'
     lines.push(`${TAG} ${level}: ${result.message}`)
     if (level === 'WARN')
-      lines.push(`${TAG} WARN severity (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02)`)
+      lines.push(
+        `${TAG} WARN severity here only because --severity warn was passed (docs/ci-guardrails.md §5 — BLOCK on the CI plane since 2026-09-02)`,
+      )
     return { verdict: 'violation', exitCode: severity === 'block' ? 1 : 0, lines }
   }
   lines.push(`${TAG} OK: ${result.message}`)
@@ -329,7 +361,7 @@ function usage() {
     'Usage: pnpm lint:stage-b <PR number> [--severity warn|block]',
     '',
     'Checks that a UI PR records the owner Stage-B verdict before merge (#138).',
-    'Severity is WARN today (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02).',
+    'Severity of record: docs/ci-guardrails.md §5, row `stage-b` (BLOCK since 2026-09-02).',
   ].join('\n')
 }
 
