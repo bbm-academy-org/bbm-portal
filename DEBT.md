@@ -792,6 +792,7 @@ Entry format:
       decision-debt pass)
 
 <!-- debt-entry-end: 2026-09-02-440-duplicate-filing -->
+
 - [ ] 2026-09-02 the five `pr-body-guards.yml` guards promoted to BLOCK by #438 —
       `epic-autoclose`, `assignee-milestone`, `spec-link`, `stage-b`,
       `spec-deletion` — turn `pnpm pr:land` red but do NOT gate branch
