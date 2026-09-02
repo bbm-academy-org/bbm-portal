@@ -40,11 +40,13 @@
 // SEVERITY: WARN. A violation is reported and the process exits 0 by default;
 // `--severity block` (or `UX_RECORD_SEVERITY=block`) makes the same violation
 // exit 1. The `ux-record` job in `.github/workflows/pr-body-guards.yml` passes
-// `--severity block` and carries `continue-on-error: true`, exactly as `stage-b`
-// does: the script gives a REAL signal (canon §4 clause 1 — a guard that prints
-// and exits 0 is a stub and is not promotable) while the CI plane stays WARN.
-// Promotion is then a one-line workflow change. Canon: docs/ci-guardrails.md §5,
-// row `ux-record`.
+// `--severity block` and carries `continue-on-error: true` — the wiring `stage-b`
+// used while IT was still WARN (it was promoted to BLOCK on 2026-09-02, #438, and
+// dropped the flag): the script gives a REAL signal (canon §4 clause 1 — a guard
+// that prints and exits 0 is a stub and is not promotable) while the CI plane stays
+// WARN. Promotion is then a one-line workflow change. The severity of record is
+// docs/ci-guardrails.md §5, row `ux-record`, plus the job itself — not this
+// comment.
 //
 // An `error` (the PR cannot be read at all) is NOT a violation and does NOT
 // follow the severity dial: it exits 1 under every severity. A guard that exits

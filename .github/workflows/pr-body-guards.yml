@@ -241,10 +241,12 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
 
   # WARN — a UI diff whose PR body records no `UX-record:` block (guard from
-  # #433). Same wiring as `stage-b` and for the same reason: `--severity block`
-  # so the script gives a REAL signal (canon §4 clause 1 — a guard that prints
-  # and exits 0 is a stub and is not promotable), `continue-on-error` so the CI
-  # plane stays WARN. Promotion is then one line. It reads linked-issue comments
+  # #433). The wiring `stage-b` carried while it was WARN, for the same reason:
+  # `--severity block` so the script gives a REAL signal (canon §4 clause 1 — a
+  # guard that prints and exits 0 is a stub and is not promotable),
+  # `continue-on-error` so the CI plane stays WARN. `stage-b` kept the flag and
+  # dropped `continue-on-error` when it was promoted on 2026-09-02; promotion here
+  # is the same one line. It reads linked-issue comments
   # as well as the body, hence `issues: read`.
   ux-record:
     if: github.event.action != 'edited' || github.event.changes.body != null

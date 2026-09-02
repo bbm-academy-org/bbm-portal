@@ -362,8 +362,9 @@ the guard is renamed to what it checks, and `tdd-order` now reads the PR's commi
 for the half nobody was checking. They are deliberately non-overlapping — a module with no
 test anywhere is a `test-presence` finding and `tdd-order` stays silent on it, so one
 violation never shows up as two findings with two different fixes. The rename changed no
-rule, so `test-presence` keeps its original §4 clock (WARN since 2026-08-05, earliest
-promotion 2026-09-02). `tdd-order` carries **two enforcement points at two severities**: its
+rule, so `test-presence` kept its original §4 clock — WARN from 2026-08-05, and promoted
+to **BLOCK on 2026-09-02** (#438) when that clock ran out; §5's row is the severity of
+record. `tdd-order` carries **two enforcement points at two severities**: its
 pre-commit half blocks locally from day 1 (§3 class 1 — the local index through git plumbing,
 no network), while its CI half is WARN v1 by the **§3 default**, settled 2026-08-27 with
 earliest promotion 2026-09-24. That split is the point of the guard, not a compromise: the
@@ -660,15 +661,24 @@ triggered the run, so it wins.
 
 **Known limit of `--json files`.** `gh pr view <N> --json files` is page-limited (100
 files), so a guard deriving its verdict from that array under-reads a very large PR
-without saying so. `test-presence` and `product-note` both do (`tdd-order` reads the commit API instead and
-is not subject to this limit). Accepted for now — both are
-WARN, and a >100-file PR is its own review problem — but a guard promoted to BLOCK on this
-input must page the API first. Do not inherit the assumption silently.
+without saying so. Five guards derive their verdict from that array — `test-presence`,
+`spec-link`, `stage-b`, `ux-record` and `product-note` (`tdd-order` reads the commit API
+instead and is not subject to this limit). **The rule stands and is currently unmet:** a
+guard promoted to BLOCK on this input must page the API first, and the three of those five
+that §5 now records as BLOCK (`test-presence`, `spec-link`, `stage-b`) were promoted on
+2026-09-02 without the paging change. That gap is recorded as a DEBT.md line
+(`2026-09-02-438-unpaged-files-array`), not silently inherited: the failure mode is a false
+NEGATIVE on a >100-file PR — the guard under-reads and goes green — which is why it did not
+hold the promotion, and a >100-file PR is its own review problem. Do not add a sixth
+consumer of the unpaged array on the BLOCK plane.
 
-**Wiring convention for `pr-body-guards.yml`.** Every job there carries the no-op fence
-`if: github.event.action != 'edited' || github.event.changes.body != null` — a title-only
-edit changes no guard input, and a skipped check-run passes the merge gate. The workflow
-also does not cancel in-progress runs (§2.1).
+**Wiring convention for `pr-body-guards.yml`.** A job on the WARN plane there carries the
+no-op fence `if: github.event.action != 'edited' || github.event.changes.body != null` — a
+title-only edit changes no guard input, and a skipped check-run passes the merge gate. A job
+on the BLOCK plane carries **no** fence, for the reason §2.1 gives: `classifyChecks` passes a
+SKIPPED conclusion, so a fence a BLOCK guard could be skipped through is a hole in the gate.
+Which jobs are on which plane is §5's business, not this paragraph's. The workflow also does
+not cancel in-progress runs (§2.1).
 
 **Wiring convention for a batch job.** A job may run several guards as STEPS instead of
 one guard per job (the shape #205/PR #206 attempted). Severity then moves from the job to

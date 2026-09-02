@@ -18,16 +18,17 @@
 // A missing marker, or a placeholder value (`TBD`, the unfilled PR-template
 // angle-bracket line), is a violation. A PR with no UI diff is skipped.
 //
-// SEVERITY: WARN. A violation is reported and the process exits 0 by default;
-// `--severity block` (or `STAGE_B_SEVERITY=block`) makes the same violation exit
-// 1. Note the two WARNs are different mechanisms: HERE it means "exit 0 with a
-// WARN line", while in #136's canon WARN means `continue-on-error: true` on the
-// CI job. DECIDED in #136 (canon docs/ci-guardrails.md §5, row `stage-b`): the
-// `stage-b` job in .github/workflows/pr-body-guards.yml passes `--severity
-// block` and carries `continue-on-error: true`. The script therefore gives a
-// REAL signal (canon §4 clause 1: a guard that prints and exits 0 is a stub and
-// is not promotable) while the CI plane keeps it WARN. Promotion is then a
-// one-line workflow change; no code change is needed here.
+// SEVERITY: BLOCK since 2026-09-02 (#438). The severity of record is the §5 row
+// in docs/ci-guardrails.md plus the job in .github/workflows/pr-body-guards.yml
+// — read the plane off those, not off this comment. This SCRIPT still defaults to
+// reporting a violation and exiting 0; `--severity block` (or
+// `STAGE_B_SEVERITY=block`) makes the same violation exit 1. Note the two WARNs
+// are different mechanisms: HERE it means "exit 0 with a WARN line", while in
+// #136's canon WARN means `continue-on-error: true` on the CI job. The `stage-b`
+// job passes `--severity block` — it always did, so the script gives a REAL
+// signal (canon §4 clause 1: a guard that prints and exits 0 is a stub and is not
+// promotable) — and the promotion dropped its `continue-on-error` and its `if:`
+// fence. No code change was needed here.
 //
 // An `error` (the PR cannot be read at all — gh auth, a fork without token
 // scope, an API blip) is NOT a violation and does NOT follow the severity dial:

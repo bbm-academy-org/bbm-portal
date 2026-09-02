@@ -191,8 +191,9 @@ jobs:
   # source (#359). Recorded mandate: docs/ci-guardrails.md §5, row
   # `design-fidelity` (§3 class 3 — owner-mandated process guard whose WARN form
   # already failed: the prose rule was live in .claude/rules/design-process.md §1
-  # while #312/#314 built the `/p` wireframe as the design, and the WARN guards
-  # that flank it — `stage-b`, `ui-tokens` — were live too and changed nothing).
+  # while #312/#314 built the `/p` wireframe as the design, and the guards that
+  # flank it — `stage-b` and `ui-tokens`, both WARN at that time — were live too and
+  # changed nothing; `stage-b` has since been promoted, canon §5).
   #
   # It lives in `ci.yml` and in the `ci` needs-list because that IS what BLOCK
   # means here (§2.1): a job in `pr-body-guards.yml` cannot be in that list at all.

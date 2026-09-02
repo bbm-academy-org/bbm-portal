@@ -144,11 +144,15 @@ pointer is not a second declaration.
 `pnpm lint:spec-link` — on a feature PR (a linked issue of type `Feature`, or a
 `feat:` title, **and** a change under `src/`), it resolves the spec, then checks
 that the file exists, that its `status:` is a valid ladder value, and that it is
-not still `Draft`. **Severity: WARN**, registered in the guard register
-([`docs/ci-guardrails.md`](../ci-guardrails.md) §5). In CI it runs as the
-`spec-link` job of `pr-body-guards.yml`, invoked with `--severity block` so the
-script gives a real signal while `continue-on-error` keeps the plane at WARN;
-promotion to BLOCK follows the canon's §4 clauses (earliest 2026-09-02).
+not still `Draft`. **Severity: BLOCK since 2026-09-02** (#438), registered in
+the guard register ([`docs/ci-guardrails.md`](../ci-guardrails.md) §5), which is
+the severity of record — read the plane off that row, not off this paragraph. In
+CI it runs as the `spec-link` job of `pr-body-guards.yml`, invoked with
+`--severity block` and carrying no `continue-on-error`, so a finding turns
+`pnpm pr:land` red; the fix is a `Spec:` line (or a reasoned `spec-exempt:`) in
+the PR body, and the workflow's `edited` trigger re-runs the check without a
+rebuild. Run LOCALLY the script still exits 0 on a violation unless given
+`--severity block`.
 
 **Where the reference has to sit.** A spec path mentioned loosely in prose is
 background reading, not a declaration — the guard only reads these positions:

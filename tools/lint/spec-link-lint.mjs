@@ -21,15 +21,16 @@
 //   Escape hatch: a `spec-exempt: <reason>` line in the PR body. The reason is
 //   mandatory — a reasonless exemption is not an exemption.
 //
-// SEVERITY: WARN, registered in docs/ci-guardrails.md §5. Mind the canon's two
-//   WARNs: run locally the guard reports and exits 0, while in the canon WARN
-//   means `continue-on-error` on the CI job. The `spec-link` job in
-//   `pr-body-guards.yml` uses both deliberately — it passes `--severity block`
-//   so the script gives a REAL signal (canon §4 promotion clause 1: a guard that
-//   prints and always exits 0 is a stub and is not promotable) while
-//   `continue-on-error: true` keeps the CI plane at WARN. Promotion to BLOCK
-//   follows the canon's §4 clauses (earliest 2026-09-02) and is the three-edit
-//   change described there — nothing in this file needs editing for it.
+// SEVERITY: BLOCK since 2026-09-02 (#438). The severity of record is the §5 row
+//   in docs/ci-guardrails.md plus the job in `.github/workflows/pr-body-guards.yml`
+//   — read the plane off those, not off this comment. Mind the canon's two WARNs
+//   when reading the flag below: run LOCALLY this script still reports and exits 0,
+//   while the CI plane is set by the job. The `spec-link` job passes
+//   `--severity block` so the script gives a REAL signal (canon §4 promotion
+//   clause 1: a guard that prints and always exits 0 is a stub and is not
+//   promotable) and, since the promotion, carries neither `continue-on-error` nor
+//   an `if:` fence — a finding turns `pnpm pr:land` red. Nothing in this file
+//   needed editing for that.
 //
 // Run: `pnpm lint:spec-link` (PR_NUMBER from Actions, or `--pr <n>` locally).
 // Outside a PR context it exits 0 with a skip note.

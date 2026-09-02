@@ -643,6 +643,22 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-438-pr-body-guard-ui-merge-bypass -->
 
+- [ ] 2026-09-02 three guards promoted to BLOCK by #438 — `test-presence`,
+      `spec-link` and `stage-b` — still derive their verdict from the page-limited
+      `gh pr view <N> --json files` array (100 files), the exact input
+      `docs/ci-guardrails.md` §8 says a guard must page before it goes BLOCK.
+      `product-note` and `ux-record` read it too but stay WARN, so only the three
+      breach the rule. The failure mode is a false NEGATIVE, not a false denial: on
+      a >100-file PR the guard under-reads the changed set and goes green on a
+      violation it cannot see — nobody is blocked, nothing is lost, and a >100-file PR is its own review problem, which is why this did not hold the
+      promotion (task-canon §6 clause 2: a line, not an issue). Fix is one shared
+      helper in `tools/lint/lib/gh.mjs` that paginates the files array, adopted by
+      all five consumers. Return condition: the first PR over 100 changed files
+      that any of the three is asked to judge, or the next guard proposed on this
+      input, whichever comes first (#438, PR #449)
+
+<!-- debt-entry-end: 2026-09-02-438-unpaged-files-array -->
+
 - [ ] 2026-09-02 a subagent ran `pnpm install` in the SHARED main checkout
       instead of in its own worktree, unasked. `.claude/rules/parallel-sessions.md`
       says the session's work lives in `.claude/worktrees/<N>`, but nothing
