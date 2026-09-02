@@ -57,10 +57,11 @@ proves nothing, so a red upstream job must not vacuously green the aggregate.
 
 **Cross-workflow guards — decided 2026-09-02 (#438), no longer open.** `needs` cannot span
 workflows, so a BLOCK guard living in `.github/workflows/pr-body-guards.yml` cannot be in
-the `ci` needs-list. Five of that workflow's six guards were promoted on 2026-09-02
-(`epic-autoclose`, `assignee-milestone`, `spec-link`, `stage-b`, `spec-deletion`; only
-`product-note` is still WARN), so the mechanism this paragraph used to defer is now on
-record:
+the `ci` needs-list. Five of that workflow's guards were promoted on 2026-09-02
+(`epic-autoclose`, `assignee-milestone`, `spec-link`, `stage-b`, `spec-deletion`); the rest
+stay WARN, and §5 below is the per-guard record of which is which — deliberately not
+recounted here, because a guard added to that workflow later would stale the count. The
+mechanism this paragraph used to defer is now on record:
 
 - **Moving them into `ci.yml` was rejected**, for the reason `pr-body-guards.yml`'s own
   header gives: they must re-run on the `edited` activity type, and the `ci` aggregate
@@ -74,7 +75,8 @@ record:
   each of those jobs skipped on a title-only edit — so a title edit after a red run would
   have replaced the FAILURE check-run with a SKIPPED one and greened the gate. A guard that
   can be skipped on demand is not a BLOCK. The promoted jobs now run on every activity type
-  the workflow listens to; `product-note` keeps its fence because it is still WARN.
+  the workflow listens to; the jobs still on the WARN plane keep their fences because they
+  are WARN — §5 below says which those are.
 
 **Therefore, on this plane BLOCK means:** no `continue-on-error`, no `if:` fence, and the
 finding turns `pnpm pr:land` red. It does **not** mean branch protection: the required
@@ -158,10 +160,10 @@ server knows nothing about. WARN guards stay invisible to the server either way,
 the required context is `ci` and they are absent from its needs-list. What promotion costs
 now depends on which workflow the guard lives in:
 
-| Guard's home                                                           | Promoting it to BLOCK                                                                                                                                                                                                                                                                    |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                                                               | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                                                                                                   |
-| `pr-body-guards.yml` (`product-note`, the only guard still WARN there) | drop the job's `continue-on-error` **and** its `if:` fence, so it leaves `classifyChecks`'s WARN plane and its failure turns `pnpm pr:land` red — the route the five guards promoted on 2026-09-02 took (§2.1); the required context stays `ci`, so the protection is untouched here too |
+| Guard's home                                        | Promoting it to BLOCK                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                                            | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                                                                                                   |
+| `pr-body-guards.yml` (its guards still WARN per §5) | drop the job's `continue-on-error` **and** its `if:` fence, so it leaves `classifyChecks`'s WARN plane and its failure turns `pnpm pr:land` red — the route the five guards promoted on 2026-09-02 took (§2.1); the required context stays `ci`, so the protection is untouched here too |
 
 Both rows leave branch protection alone by design. Adding a cross-workflow job's own
 context to the payload — possible only since #216, and the only route that would make the

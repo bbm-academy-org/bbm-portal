@@ -5,8 +5,10 @@
 # build matrix. Folding `edited` into ci.yml was rejected: the `ci` aggregate
 # treats a skipped need as red (see ci.yml), so a body-only edit would poison it.
 #
-# Severity: five of the six jobs here are BLOCK since 2026-09-02 (#438);
-# `product-note` is the one that stays WARN. `needs` does not cross workflows, so
+# Severity: the five jobs promoted on 2026-09-02 (#438) are BLOCK; the rest of the
+# jobs here stay WARN. Which job is on which plane is NOT restated in this file —
+# the register (docs/ci-guardrails.md §5) owns it, one row per guard, so adding a
+# job here cannot stale a count in this comment. `needs` does not cross workflows, so
 # none of them can ever be in ci.yml's needs-list, and canon §2.1 required the
 # cross-workflow mechanism to be decided AT the promotion. It was, and the
 # decision is recorded in §2.1 — read it there. What it means for this file:
@@ -19,8 +21,9 @@
 #      SKIPPED conclusion, so a title-only edit after a red run would have
 #      replaced the FAILURE check-run with a SKIPPED one and greened the gate. A
 #      guard that can be skipped on demand is not a BLOCK, and these jobs are
-#      cheap — the fence bought nothing worth that hole. `product-note` keeps its
-#      fence precisely because it is still WARN.
+#      cheap — the fence bought nothing worth that hole. The jobs still on the
+#      WARN plane keep their fences precisely because they are WARN; which those
+#      are is the register's business (docs/ci-guardrails.md §5), not this comment's.
 #
 # The honest limit: `.github/branch-protection.json` still requires only the `ci`
 # context, so a merge performed by hand in the GitHub UI bypasses these five. The
