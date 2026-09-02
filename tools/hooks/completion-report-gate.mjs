@@ -28,6 +28,14 @@
 // `isEnforceableTerminalReport()` — тот самый общий seam — соединяет обе
 // половины. Все три Stop-гейта ходят через него.
 //
+// WHAT COUNTS AS «СЕССИЯ ЧТО-ТО СДЕЛАЛА» (#439, grooming/retro with Anton,
+// 2026-09-02 — the FOURTH incident of this family). A session that read canon
+// files, ran `gh issue view` and fanned out READ-ONLY recon agents — zero edits,
+// no PR, no issue touched — was held to the stage-6 report shape by both
+// blocking gates, because a subagent DISPATCH counted as a write action. The
+// condition is now enumerated in one place and stated in code, not inferred from
+// how the final message is worded: see the header of `isWriteToolUse()`.
+//
 // DECLARED FORMS BEAT HEURISTICS (#299, then #374). The recognizer knows two
 // forms the canon mandates and reads each as itself: «Статус промежуточный»
 // (`EXPLICIT_INTERIM_MARKER_RE`) and the FOUR BEATS of the owner question
@@ -320,10 +328,9 @@ export function isTerminalReport(text) {
 export const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
 /**
- * Диспетчеризация субагента. Лид, раздавший работу, сам мог не тронуть ни
- * строки — но писали ЕГО субагенты, а отчитывается за них он: оркестрирующая
- * сессия обязана ОСТАВАТЬСЯ под гейтами, иначе из-под них выпадает ровно тот
- * класс сессий, ради которых форма отчёта и заводилась.
+ * Диспетчеризация субагента. С #439 этот набор — ТОЛЬКО для
+ * `hasUnreturnedDispatch()`: он опознаёт фан-аут в полёте и уликой правки НЕ
+ * является. Почему именно так — развёрнуто в шапке `isWriteToolUse()`.
  */
 export const DISPATCH_TOOLS = new Set(['Agent', 'Task'])
 
@@ -445,10 +452,43 @@ export function isMutatingMcpDispatch(input) {
  */
 export const MCP_BROWSER_TAIL_RE = /^browser_/i
 
-/** Один блок `tool_use` — write-действие? */
+/**
+ * THE CONDITION, WRITTEN OUT (#439, acceptance criterion 4). One `tool_use`
+ * block is evidence that THIS SESSION produced something to report on when, and
+ * only when, it is one of:
+ *
+ *   1. a repo-file write — `WRITE_TOOLS` (`Edit`/`Write`/`MultiEdit`/`NotebookEdit`);
+ *   2. a mutating shell command from `MUTATING_COMMAND_RE` — a commit/push/merge,
+ *      a PR opened/merged/edited/commented/closed, an issue created/edited/
+ *      commented/closed, a mutating `gh api` call, `pnpm pr:land|issue:create|
+ *      board:status|deploy*`;
+ *   3. a mutating MCP call — `MCP_MUTATION_RE` on the tool-name tail, or, for a
+ *      dispatcher such as `plane_execute`, the operation in its own arguments.
+ *
+ * That list is the whole condition: repo edits, a PR, or an issue touched. It is
+ * read off the TRANSCRIPT the Stop hook already receives, never off the wording
+ * of the final message — the four incidents of this family (#392, #415, #417,
+ * #439) were all a recognizer judging prose.
+ *
+ * WHAT IS DELIBERATELY NOT ON THE LIST: a subagent DISPATCH (`DISPATCH_TOOLS`).
+ * Until #439 it was, on the #158 reasoning «the subagents wrote, the lead
+ * reports». The 2026-09-02 incident is that reasoning's cost: a grooming/retro
+ * session that only read canon files and fanned out READ-ONLY recon agents was
+ * booked as a writing session, and both blocking gates demanded a stage-6
+ * completion report for work that never happened. A dispatch says nothing about
+ * whether anything was produced — what the subagent did is in ITS transcript,
+ * not in this one — so it cannot answer the question the gates ask.
+ *
+ * The orchestrating lead is NOT thereby released: in this repo the lead is the
+ * one who lands the work (`pnpm pr:land` / `gh pr merge`) and writes the stage-7
+ * closing comment (`gh issue comment` / `gh issue close`), and every one of
+ * those is clause 2 above. What is released is exactly the session that
+ * dispatched and then landed nothing — which has, by construction, nothing to
+ * report as done. Both halves are pinned by test.
+ */
 export function isWriteToolUse(name, input) {
   const tool = String(name || '')
-  if (WRITE_TOOLS.has(tool) || DISPATCH_TOOLS.has(tool)) return true
+  if (WRITE_TOOLS.has(tool)) return true
   if (SHELL_TOOLS.has(tool)) {
     return MUTATING_COMMAND_RE.test(stripNonCommandText(input && input.command))
   }
