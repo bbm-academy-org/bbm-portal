@@ -146,6 +146,23 @@ it never duplicates.
 > bounds the live app carries, so a full run leaves both as they are. Step 6 has
 > the counts, the print flags and the widening checklist.
 
+> **Ship the script from a PINNED COMMIT, never from a working tree.** The copy
+> under `~/bbm-portal-dev-stand/idp` on the box is whatever was last synced
+> there, and «last synced» is not «what is on `main` now». Refresh it from
+> `origin/main` immediately before the run — or pipe the script in without
+> touching the box copy at all:
+>
+> ```bash
+> git show origin/main:infra/dev-stand/idp/provision.sh \
+>   | ssh truenas 'cd ~/bbm-portal-dev-stand/idp && bash -s -- --pat-file ~/.bbm-portal/idp-bootstrap-pat.txt'
+> ```
+>
+> The 2026-08-07 incident is what this clause is: the #93 AC-verification run
+> `scp`'d the main checkout **before** it had been fast-forwarded to the
+> just-merged #179, so the OLD destructive default ran against the live dev IdP
+> and collapsed `postLogoutRedirectUris` 20 → 1 for ~3 minutes. The same rule
+> holds for ANY repo script shipped to a remote box for execution.
+
 ```bash
 ssh truenas 'cd ~/bbm-portal-dev-stand/idp && \
   IDP_BASE_URL=http://truenas.local:9180 \
@@ -167,10 +184,10 @@ ssh truenas 'cd ~/bbm-portal-dev-stand && \
 
 Four roles, two groups, two owners — and the groups are not interchangeable.
 
-| Group                | Roles                                | Spelling owned by                | Clause                                                                                                             |
-| -------------------- | ------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| workspace (starting) | `platform-user`, `platform-admin`    | `src/lib/platform/authGate.ts`   | spec [311](../../../docs/specs/311-portal-workspace.md) §B, EARS-414                                                |
-| finance flow         | `finance-entry`, `finance-approve`   | `src/lib/finance/core/actor.ts`  | spec [339](../../../docs/specs/339-ledger-intake.md) §A, EARS-501 (seeded by #380)                                  |
+| Group                | Roles                              | Spelling owned by               | Clause                                                                             |
+| -------------------- | ---------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------- |
+| workspace (starting) | `platform-user`, `platform-admin`  | `src/lib/platform/authGate.ts`  | spec [311](../../../docs/specs/311-portal-workspace.md) §B, EARS-414               |
+| finance flow         | `finance-entry`, `finance-approve` | `src/lib/finance/core/actor.ts` | spec [339](../../../docs/specs/339-ledger-intake.md) §A, EARS-501 (seeded by #380) |
 
 The app reads all four from the token claim
 `urn:zitadel:iam:org:project:roles`; the script is asserted against both owners
@@ -190,10 +207,10 @@ alone — is the account that path is proved on.
 **Three things have to be true for a member to get in**, and only the first is
 what people mean by "create the role":
 
-| #   | Object                                             | Where it is set                                               | Symptom when missing                                       |
-| --- | -------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------- |
-| 1   | the project ROLES exist                            | `provision.sh` step 2, from `SEED_ROLE`                       | nothing to grant; the console offers no role to tick       |
-| 2   | `projectRoleAssertion: true` on the project        | `provision.sh` step 1                                         | the grant exists and the claim is absent from the token    |
+| #   | Object                                             | Where it is set                                                           | Symptom when missing                                       |
+| --- | -------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1   | the project ROLES exist                            | `provision.sh` step 2, from `SEED_ROLE`                                   | nothing to grant; the console offers no role to tick       |
+| 2   | `projectRoleAssertion: true` on the project        | `provision.sh` step 1                                                     | the grant exists and the claim is absent from the token    |
 | 3   | the member holds a USER GRANT carrying those roles | `provision.sh` step 7+8 (the seeded dev accounts only) / console (people) | the claim arrives EMPTY — a bare 403 that looks like a bug |
 
 Row 3 is the one that gets forgotten: a project role lives on the PROJECT, and
@@ -348,7 +365,9 @@ and the live IdP is only correct after the run at the end:
    is the sweep that finds them.
 6. Then a **supervised `provision.sh` run** against the dev IdP — until it runs,
    the widened range exists in the repo and not in Zitadel, which is exactly the
-   drift #93 was filed for.
+   drift #93 was filed for. Ship the script from a PINNED
+   COMMIT, not from a working tree — the rule and the 2026-08-07 incident
+   behind it are in §5.
 
 ## 7. Browsable admin Console (operator-only)
 

@@ -61,29 +61,26 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-11-6583582d65 -->
 
-- [ ] 2026-08-10 the `/p/okr` surface still has no vendored design source in
-      `design-source/` after another touch (#181, a geometry-only fix like
-      #79/#180 before it): the design-process rule back-fills a pre-#138 surface
-      "on first touch", but the original is a Claude.Design canvas only the
-      owner can export, and the owner declined to engage with the back-fill
-      question in-session (2026-08-10). Geometry fixes measure against live-stand
-      reference numbers (PR #180 / PR #188 comments), so nothing was built from
-      prose — return condition: the first task that changes the OKR surface's
-      DESIGN (layout/palette/composition) rather than its geometry vendors the
-      canvas before building (#181)
+- [ ] 2026-08-10 the `/p/okr` DASHBOARD surface (`src/app/(platform)/p/okr`)
+      still has no vendored design source in `design-source/` after another touch
+      (#181, a geometry-only fix like #79/#180 before it): the design-process rule
+      back-fills a pre-#138 surface "on first touch", but the original is a
+      Claude.Design canvas only the owner can export, and the owner declined to
+      engage with the back-fill question in-session (2026-08-10). Geometry fixes
+      measure against live-stand reference numbers (PR #180 / PR #188 comments),
+      so nothing was built from prose — return condition: the first task that
+      changes THIS surface's DESIGN (layout/palette/composition) rather than its
+      geometry vendors the canvas before building (#181). **Scope narrowed
+      2026-09-02 (#440 sweep), because the naked phrase "the OKR surface" was
+      about to catch the wrong screen.** `e38de64` (#404) and `7724147` (#416)
+      both touched `src/app/(platform)/p/admin/okr` — the OKR section of the
+      `/p/admin` cabinet, a DIFFERENT surface which already has its own
+      provenance row (`design-source/p-admin-shell.html`, `fidelity: wireframe`,
+      #315) and therefore its own, separate readiness question. The `/p/okr`
+      dashboard itself has had no commit since 2026-08-10, so THIS condition has
+      not fired.
 
 <!-- debt-entry-end: 2026-08-10-caa8c9f751 -->
-
-- [ ] 2026-08-07 supervised infra-script runs must ship the script from a
-      pinned commit (`git show origin/main:<path> | ssh <box> bash -s -- …`),
-      never `scp` from a working tree: the #93 AC-verification run scp'd the
-      main checkout BEFORE it was fast-forwarded to the just-merged #179, so the
-      OLD destructive default ran against the live dev IdP and collapsed
-      `postLogoutRedirectUris` 20 → 1 for ~3 minutes (restored, evidence on
-      #93). The recipe in `infra/dev-stand/idp/bootstrap.md` §6 still says
-      nothing about pinning — return condition: the next supervised
-      `provision.sh` run, or the next time any repo script is shipped to a
-      remote box for execution (#93)
 
 <!-- debt-entry-end: 2026-08-07-de2021c1b9 -->
 
@@ -99,9 +96,17 @@ Entry format:
       open: `gh pr create` sets neither assignee nor milestone, so each
       implementer patches both by hand and re-runs the job (bit #178 and #179 on
       the same day). Root fix is a create-side wrapper (or a `pr:land`-style
-      tail) copying assignee + milestone from the linked issue — return
-      condition: the guard trips on one more agent-opened PR despite the
-      dispatch brief carrying the `--assignee`/`--milestone` instruction (#80)
+      tail) copying assignee + milestone from the linked issue (#80).
+      **Return condition FIRED 2026-09-02 (#440 sweep): PR #430** (the finance
+      requests board, #388) is open with `assignees: []`, `milestone: null`
+      and a FAILING `assignee-milestone` check — the dispatch-brief instruction
+      is prose, and prose does not fire. Note what the merged history proves and
+      does not prove: the last 60 merged PRs all carry both fields, because each
+      implementer patched them by hand AFTER the guard went red. The guard works;
+      nothing sets the fields at create time. **Promoted 2026-09-02 to #442**
+      (the create-side wrapper). The line stays here until #442 lands, because
+      until the wrapper exists the deviation is still live — return condition,
+      superseding the above: #442 closed.
 
 <!-- debt-entry-end: 2026-08-07-01f12872fe -->
 
@@ -111,17 +116,18 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-06-620bacd10f -->
 
-- [ ] 2026-08-05 `deploy:smoke` / `deploy:notes` have no `pre*` Node-version
-      guard (`deploy:prod` checks Node 22, the standalone entries don't) —
-      return condition: first misrun of a standalone deploy subcommand on a
-      wrong Node (#137, review of PR #155)
-
 <!-- debt-entry-end: 2026-08-05-6f37d6258d -->
 
 - [ ] 2026-08-05 `deploy:prod --rollback <sha>` accepts any sha with no
       ancestor/deployed-history check — an operator typo can "roll back" to an
-      arbitrary commit — return condition: first rollback in anger, or before a
-      second operator gets deploy access (#137, review of PR #155)
+      arbitrary commit (#137, review of PR #155). The original return condition
+      «first rollback in anger» is a **first-incident trigger on the production
+      deploy path**: the incident IS the loss (the running production app, plus
+      recovery by another deploy under incident conditions), which is the same
+      argument this file's own rules use to ban that shape for money and computed
+      data. Replaced rather than waited on. **Promoted 2026-09-02 to #443**
+      (validate the sha before anything is shipped) — return condition,
+      superseding the above: #443 closed.
 
 <!-- debt-entry-end: 2026-08-05-00c2fc95bc -->
 
@@ -154,6 +160,23 @@ Entry format:
       (2026-09-02 window) (#136, review of PR #154). `tdd-order-lint.mjs`
       inherits the same `needlesFor` and so the same weakness, one direction
       milder: there the needle is matched against ADDED PATCH lines only.
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `test-presence`:
+      **promoted to
+      BLOCK**, with THIS defect weighed and recorded in the register's promotion
+      cell as an accepted limit: the substring match is a false **PASS** — it can
+      let a violation through, it cannot invent one, and a guard that only
+      under-reports cannot stop legitimate work. **The decision is taken; the
+      defect is not fixed,** and its cost changed direction — at BLOCK the gate
+      now certifies test presence it never actually verified. Return condition,
+      superseding the above: the first `test-presence` or `tdd-order` finding
+      disputed as false, the next edit to `needlesFor`, or the `tdd-order`
+      WARN→BLOCK promotion review (earliest 2026-09-24,
+      `docs/ci-guardrails.md` §5), which reads this same matcher — whichever
+      comes first.
 
 <!-- debt-entry-end: 2026-08-05-8fa8f75d9b -->
 
@@ -167,21 +190,25 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-05-05b8797876 -->
 
-- [ ] 2026-08-05 legacy Russian agent-tool prose remains in
-      `tools/gh/lib/gh.mjs`, `tools/dev/task-worktree.mjs`, and
-      `tools/hooks/dispatch-guard.mjs` / `deviations-gate.mjs` (owner ruling,
-      2026-08-05: all project artifacts are English) — return condition:
-      translate each file in its own no-behaviour-change commit before the next
-      material edit. Worked off 2026-08-06 (#142) for `tools/gh/pr-land.mjs` and
-      its spec. Worked off 2026-08-16 (#238) for the six remaining agent-facing
-      `tools/gh` CLI files (`create-issue`, `backlog-triage`,
-      `bootstrap-taxonomy`, `set-board-status`, `handoff-verify`,
-      `dispatch-brief`), their matching test prose, and
+- [ ] 2026-08-05 legacy Russian agent-tool prose (owner ruling, 2026-08-05: all
+      project artifacts are English) — return condition: translate each file in
+      its own no-behaviour-change commit before the next material edit. Worked
+      off 2026-08-06 (#142) for `tools/gh/pr-land.mjs` and its spec. Worked off
+      2026-08-16 (#238) and 2026-08-17 (#253) for the agent-facing `tools/gh` CLI
+      files, their matching test prose, and
       `.claude/skills/spec-issue-graph/SKILL.md`; legacy Russian parser fixtures
-      remain only as intentional compatibility data. `tools/gh/lib/gh.mjs` was
-      also materially edited by `39973aa` (#234) and missed the trigger, but was
-      outside #238's enumerated six-file scope; the hooks likewise keep their
-      existing trigger.
+      remain only as intentional compatibility data. **The trigger has now fired
+      on every remaining file and was missed twice** (#440 sweep, 2026-09-02):
+      `tools/gh/lib/gh.mjs` (~90 lines of prose plus user-facing error strings)
+      was materially edited by `39973aa` (#234); `tools/hooks/dispatch-guard.mjs`
+      by `2f4a2cd` (#393); `tools/hooks/deviations-gate.mjs` by `320d60d` (#417)
+      and `2f4a2cd` (#393). Two things the sweep checked and is recording so the
+      next one does not re-file them: the Cyrillic in
+      `tools/dev/task-worktree.mjs` is a **transliteration table** (data, not
+      prose) and stays, and the Russian tokens inside `deviations-gate.mjs`'s
+      `DEVIATIONS_MARKER_RE` and its «нет» recognizer are **functional** — they
+      match the stage-7 marker agents actually write. **Promoted 2026-09-02 to
+      #444** — return condition, superseding the above: #444 closed.
 
 <!-- debt-entry-end: 2026-08-05-61162d4aea -->
 
@@ -201,20 +228,20 @@ Entry format:
       a branch merged by `--squash`: it tests `git merge-base --is-ancestor`, which
       a squash merge never satisfies, so every landed task branch is kept and
       accumulates locally (`chore/dev-stand-contract`, `docs/108-…`, `feat/13-…`,
-      `fix/48-…` are all merged and all still present). `pr:land` now tells the
-      truth about this instead of promising teardown will do it (#142). Return
-      condition: teach teardown to recognise a squash merge (e.g. `git cherry` or
-      `--is-ancestor` against the PR's merge commit) so the remedy stops being
-      manual — a behaviour change to a destructive tool, hence its own task, not a
-      rider on #142 (review of PR #161)
+      `fix/48-…` were all merged and all still present when this was written).
+      `pr:land` now tells the truth about this instead of promising teardown will
+      do it (#142). Teaching teardown to recognise a squash merge (e.g.
+      `git cherry`, or `--is-ancestor` against the PR's merge commit) is a
+      behaviour change to a destructive tool, hence its own task, not a rider on
+      #142 (review of PR #161). **Return condition rewritten 2026-09-02 (#440
+      sweep): the previous text stated the REMEDY where the trigger goes, so this
+      line could never fire and no sweep could ever act on it.** Return condition:
+      the next edit to `cleanupBranch` or to `worktree-teardown.mjs`'s branch
+      handling, or a local checkout carrying ≥10 merged-but-undeleted task
+      branches (`git branch --merged` against the squash-merged set), whichever
+      comes first.
 
 <!-- debt-entry-end: 2026-08-06-fe94868264 -->
-
-- [ ] 2026-08-04 `set-board-status.mjs`: `process.exit(0)` сразу после записи
-      «ГОТОВО» — на Windows-TTY запись асинхронна, тот же класс, что #132
-      (обрезанный вывод при сделанной работе); лечится `return` вместо exit.
-      Замечание ревью PR #141 — return condition: первый случай обрезанного
-      «ГОТОВО» или ближайший рефактор runBoardStatus (#132)
 
 <!-- debt-entry-end: 2026-08-04-a2a203497d -->
 
@@ -326,6 +353,19 @@ Entry format:
       condition: the next workflow file added under `.github/workflows/`, or the
       `workflow-auth` WARN→BLOCK promotion review (2026-09-02 window), whichever comes
       first (#220, review of PR #223)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `workflow-auth`:
+      **promoted to
+      BLOCK**, with all three of its recorded defects — this one included —
+      weighed as false **PASSES**: the guard never claimed to check a top-level
+      `permissions:` floor, so the missing rule can only under-report. **The
+      decision is taken; the defect is not fixed** — a workflow of nothing but
+      tree-local jobs is still invisible to it, now under a BLOCK badge. Return
+      condition, superseding the above: the line's own FIRST trigger, still
+      unfired — the next workflow file added under `.github/workflows/`.
 
 <!-- debt-entry-end: 2026-08-14-f2de673c1f -->
 
@@ -346,6 +386,20 @@ Entry format:
       task that changes a visual surface WITHOUT touching a `*.tsx` or `*.css`, or
       the `stage-b` WARN→BLOCK promotion review (2026-09-02 window), whichever
       comes first (#230, iteration-end gate of PR #246)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `stage-b`:
+      **promoted to
+      BLOCK**, with all three of its recorded defects — this one included —
+      weighed as false **PASSES**: the path-only classifier can miss a UI diff,
+      it cannot invent one. **The decision is taken; the defect is not fixed,**
+      and the cost is now larger, not smaller: a BLOCK guard answering «no UI
+      diff» to an asset-only visual change reads as a cleared acceptance gate
+      rather than a WARN nobody weighed. Return condition, superseding the above:
+      the line's own FIRST trigger, still unfired — the next task that changes a
+      visual surface WITHOUT touching a `*.tsx` or `*.css`.
 
 <!-- debt-entry-end: 2026-08-15-586bd87345 -->
 
@@ -362,6 +416,18 @@ Entry format:
       return condition does — return condition: the first composite action added
       under `.github/`, or the `workflow-auth` WARN→BLOCK promotion review
       (2026-09-02 window), whichever comes first (#207, round-2 review of PR #245)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `workflow-auth`:
+      **promoted to
+      BLOCK**; this defect was weighed as a false **PASS** (a guard reached
+      through a composite `uses:` action is simply not seen) and recorded as an
+      accepted limit in the register's promotion cell. **The decision is taken;
+      the defect is not fixed.** Return condition, superseding the above: the
+      line's own FIRST trigger, still unfired — the first composite action added
+      under `.github/` (none exists in the repo today).
 
 <!-- debt-entry-end: 2026-08-15-25ed97380d -->
 
@@ -376,6 +442,20 @@ Entry format:
       return condition: the first `.github/workflows/**` job that invokes a guard
       through a matrix or any other expression, or the same 2026-09-02 promotion
       review (#207, round-2 review of PR #245)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `workflow-auth`:
+      **promoted to
+      BLOCK**; this defect was weighed as a false **PASS** (a matrix-interpolated
+      invocation resolves to a guard only at runtime, so the rule stays silent)
+      and recorded as an accepted limit in the register's promotion cell. **The
+      decision is taken; the defect is not fixed** — and it is still the shape
+      where the rule matters most, since a matrix is how guards would be batched.
+      Return condition, superseding the above: the line's own FIRST trigger,
+      still unfired — the first `.github/workflows/**` job that invokes a guard
+      through a matrix or any other expression.
 
 <!-- debt-entry-end: 2026-08-15-51ba26ac00 -->
 
@@ -385,8 +465,14 @@ Entry format:
 
 - [ ] 2026-08-17 the dev-stand sign-in helper of `tests/e2e/hours-core-parity.e2e.spec.ts`
       duplicates the one in `tests/e2e/hours-prod.e2e.spec.ts` (absolute prod origin
-      vs `baseURL` stand) — return condition: the next e2e spec that signs in, or
-      the first edit of either helper (#255, PR #259)
+      vs `baseURL` stand) — return condition «the next e2e spec that signs in, or
+      the first edit of either helper» (#255, PR #259) **FIRED**: seven signing-in
+      specs have been added since (`finance-f1b`, `finance-documents`,
+      `member-admin`, `member-admin-pagination`, `p-admin-cabinet`, `p-launcher`,
+      `platform-claim-gate`), every one of them on the shared helpers. **Promoted
+      2026-09-02 to #445** together with the `2026-08-25-6b0d4c1a83` line, which
+      had converged on the same remedy — return condition, superseding the above:
+      #445 closed.
 
 <!-- debt-entry-end: 2026-08-17-c3d2e255e3 -->
 
@@ -402,6 +488,24 @@ Entry format:
       weakening ahead of the BLOCK promotion — return condition: before the
       `stage-b` BLOCK promotion window opens, earliest 2026-09-02
       (`docs/ci-guardrails.md` §5) (#299, PR #303 review round 2, N2)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `stage-b`:
+      **promoted to
+      BLOCK**; the parent-GO weakness was weighed as a false **PASS** and
+      recorded as an accepted limit in the register's promotion cell. **The
+      decision is taken; the defect is not fixed,** and the promotion is exactly
+      the event this line said to act BEFORE — so what was accepted is that a
+      BLOCK gate can be satisfied for a slice by a verdict the owner gave on an
+      earlier one. This line had NO event-shaped trigger left (its only one was
+      «before the window opens»), so the restatement supplies one. Return
+      condition, superseding the above: the first slice PR observed clearing
+      `stage-b` on a parent `Stage-B: GO` recorded BEFORE that slice's work
+      began (noticed in review or by the iteration-end gate), or the next edit to
+      `extractLinkedIssues` / the parent-comment resolution in
+      `tools/lint/stage-b-lint.mjs`, whichever comes first.
 
 <!-- debt-entry-end: 2026-08-20-b7f41c9a02 -->
 
@@ -412,6 +516,21 @@ Entry format:
       promotion window opens, earliest 2026-09-02 (`docs/ci-guardrails.md` §5), or
       the first slice PR this fires on, whichever comes first (#299, PR #303
       review round 2, N3)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `spec-link`:
+      **promoted to
+      BLOCK** — and this is the one promoted guard whose recorded defect is a
+      live false **BLOCK** class, not a false PASS. It was promotable because
+      `docs/ci-guardrails.md` §3 clause (d) is satisfied: `spec-exempt: <reason>`
+      is reachable without leaving the PR, so a wrongly-typed slice costs one
+      escape line rather than a dead end. **The decision is taken; the defect is
+      not fixed,** and each firing now costs a red gate plus that escape line
+      instead of a WARN nobody had to answer. Return condition, superseding the
+      above: the line's own second trigger, still unfired — the first slice PR
+      this fires on.
 
 <!-- debt-entry-end: 2026-08-20-4e6a80d1c7 -->
 
@@ -460,12 +579,12 @@ Entry format:
       sibling was deliberately left untouched — migrating it means actually
       RUNNING the hours parity suite, which mutates the stand it signs into, so
       it is a run with its own port and its own dev-stand state, not a
-      mechanical import swap inside a claim-gate PR. Distinct from the
-      2026-08-17 duplication line (`2026-08-17-c3d2e255e3`): that one is two
-      specs duplicating each other, this one is one spec left behind by a
-      hardening the other copies now have — return condition: the next task that
-      touches hours e2e, or the first flake of hours sign-in in CI (#313,
-      PR #334)
+      mechanical import swap inside a claim-gate PR (#313, PR #334). Return
+      condition «the next task that touches hours e2e» **FIRED** with `d46e65a`
+      (#317 / PR #412), which edited this very spec. **Promoted 2026-09-02 to
+      #445**, which owns both this line and `2026-08-17-c3d2e255e3` — the two
+      describe the same pair of specs from opposite ends and have one remedy —
+      return condition, superseding the above: #445 closed.
 
 <!-- debt-entry-end: 2026-08-25-6b0d4c1a83 -->
 
@@ -505,12 +624,17 @@ Entry format:
       sign-in hooks of `admin.e2e.spec.ts` and `publish-panel.e2e.spec.ts`) has
       never been OBSERVED green: PR #364 landed it without a stand, so the claim
       "180 s covers Next dev's first compile of `/admin` on this box" is reasoned
-      from the 2026-08-15 measurement, not measured after the change. This
-      narrowed line replaces the fixed 2026-08-15 entry so the residual is
-      carried by the ledger rather than by one PR comment — return condition: the
-      first cold `pnpm test:e2e` run on this box (green → delete the line; still
-      red → the budget is the wrong remedy, not merely the wrong number)
-      (#362, PR #364 review non-blocking N2)
+      from the 2026-08-15 measurement, not measured after the change (#362, PR
+      #364 review non-blocking N2). `tests/helpers/login.ts` is unchanged since,
+      and no run has been recorded against this line. **Return condition sharpened
+      2026-09-02 (#440 sweep) with a date backstop, because "the first cold run"
+      alone has no owner and can idle indefinitely** — return condition: the first
+      cold `E2E_PORT=<n> pnpm test:e2e` run of `admin.e2e.spec.ts` /
+      `publish-panel.e2e.spec.ts` on this box, whose outcome is recorded HERE
+      (green → delete the line; still red → the budget is the wrong remedy, not
+      merely the wrong number); **and if no such run is recorded by 2026-10-01,
+      the next sweep files the measurement as its own task** rather than carrying
+      an unverified number for a second month.
 
 <!-- debt-entry-end: 2026-08-26-7c4de91b83 -->
 
@@ -522,6 +646,22 @@ Entry format:
       stage-b promotion to BLOCK per `docs/ci-guardrails.md` §4 (earliest
       2026-09-02), or the first observed placeholder clearing the guard
       (#359, PR #371 fix round)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `stage-b`:
+      **promoted to
+      BLOCK**; the ordering weakness was weighed as a false **PASS** and recorded
+      as an accepted limit in the register's promotion cell. **The decision is
+      taken; the defect is not fixed — and the reason this line gave for leaving
+      it is now void:** «the stage-b plane is WARN» was half the justification,
+      and that plane is BLOCK as of 2026-09-02. What still holds is the other
+      half (the template shape is HTML-commented and never printed back at the
+      violator). Return condition, superseding the above: the first observed
+      placeholder clearing the guard, or the next edit to the marker
+      classification (`GO_RE` / `PLACEHOLDER_RE` in
+      `tools/lint/stage-b-lint.mjs`), whichever comes first.
 
 <!-- debt-entry-end: 2026-08-26-3b59d1e0f4 -->
 
@@ -538,6 +678,22 @@ Entry format:
       non-existent or closed issue, or the stage-b promotion to BLOCK per
       `docs/ci-guardrails.md` §4 (earliest 2026-09-02), whichever is first
       (#359, PR #371 review round 2, finding N2)
+      **2026-09-02 (#440 sweep): the deferral target arrived and the review has
+      ALREADY RUN.** The `docs/ci-guardrails.md` §5 promotion review dated
+      2026-09-02 was performed in **#438 / PR #449**, not in the #446 this sweep
+      first filed for it — #446 is closed as a duplicate of #438, and pointing a
+      line at a duplicate is pointing it at nothing. Verdict for `stage-b`:
+      **promoted to
+      BLOCK**. This line spans two guards and both planes are now blocking:
+      `design-fidelity` has been BLOCK since 2026-08-26 and `stage-b` joined it
+      on 2026-09-02, so a `batched at #N` marker naming a never-filed gate issue
+      clears a BLOCK gate on both. That does not change the verdict — a
+      fabricated gate number is a deliberate forgery, the class a guard cannot
+      detect, and the `covers` globs still have to reach the touched file — but
+      it states the accepted limit at its real size. **The decision is taken; the
+      defect is not fixed.** Return condition, superseding the above: the line's
+      own first trigger, still unfired — the first `batched at #N` marker
+      observed naming a non-existent or closed issue.
 
 <!-- debt-entry-end: 2026-08-26-9f27ac4d15 -->
 
@@ -619,6 +775,23 @@ Entry format:
       first; extend this guard or add a sibling in that separate PR (#416)
 
 <!-- debt-entry-end: 2026-08-31-416-server-action-authz -->
+
+- [ ] 2026-09-02 nothing checks the open backlog before a new issue is filed:
+      `pnpm issue:create` (`tools/gh/create-issue.mjs`) validates the SHAPE of an
+      issue (type, channel, milestone, Source) and never asks whether one with the
+      same trigger is already open, and `task-canon` §3 governs links, not
+      duplicates. This sweep filed **#446** for the 2026-09-02 WARN→BLOCK promotion
+      review while the parallel session on #438 was performing that very review the
+      same day; #446 was closed as a duplicate hours later, after nine DEBT lines
+      had already been pointed at it. Cheap to hit and cheap to undo (one close, one
+      re-edit of the lines), so it is a line and not an issue — but it is a
+      PARALLEL-SESSION failure mode, and this repo runs parallel sessions by default
+      (`.claude/rules/parallel-sessions.md`) — return condition: the second
+      duplicate issue filed by a parallel session or a sweep, or the next material
+      edit to `tools/gh/create-issue.mjs`, whichever comes first (#440, PR #450
+      decision-debt pass)
+
+<!-- debt-entry-end: 2026-09-02-440-duplicate-filing -->
 
 - [ ] 2026-09-02 the five `pr-body-guards.yml` guards promoted to BLOCK by #438 —
       `epic-autoclose`, `assignee-milestone`, `spec-link`, `stage-b`,
@@ -722,7 +895,110 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-439-dispatch-not-write-evidence -->
 
+- [ ] 2026-09-02 Root `.gitattributes` sets `/DEBT.md merge=union`, but that driver
+      is a LOCAL git config: GitHub's SERVER-side mergeability computation ignores
+      it. So every append to `DEBT.md` that lands on `main` flips each still-open PR
+      that also touches `DEBT.md` to `CONFLICTING` — which suppresses that PR's CI
+      runs (GitHub will not build an unmergeable head), and makes
+      `gh pr update-branch` refuse with «merge conflict between base and head». The
+      union driver then only helps whoever merges `origin/main` LOCALLY, which is
+      the manual step the driver was adopted to remove. Today (#440 sweep wave) it
+      cost three local `git merge origin/main` rounds across PRs #448/#449/#450 and
+      one accidental push of conflict markers into a PR branch. Not fixed here
+      because both candidate fixes are structural, not a one-liner: split the ledger
+      into per-entry files under a `debt/` directory (no shared hunk, so no
+      server-side conflict at all), or serialize DEBT-touching PRs by convention —
+      the first is a format migration touching the sweep tooling and
+      `tests/unit/debt-merge-driver.spec.ts`, the second trades throughput for calm
+      — return condition: the next parallel wave that has ≥2 open PRs touching
+      `DEBT.md` at the same time, or a decision to split debt into per-entry files,
+      whichever comes first (#440, review of PR #450)
+
+<!-- debt-entry-end: 2026-09-02-440-union-driver-not-server-side -->
+
 <!-- debt-append-marker -->
+
+_(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
+real entries plus the `- [ ]` example inside the entry-format code fence, which
+is documentation and not an entry). **43 entries in, 40 out — counted at the sweep's base commit `fe1508d`,
+not at the merged head, which carries later 2026-09-02 arrivals from `main`
+that this sweep did not cover. Every return
+condition was checked against the repo, the tracker and the guard register —
+none was assumed.**
+
+**Discharged in this PR — three, bodies removed, anchors kept:** the
+pinned-commit shipping rule (`2026-08-07-de2021c1b9`), whose trigger «the next
+supervised `provision.sh` run» fired with `6b9b9c0`/#380 (finance flow roles) —
+the recipe now carries the `git show origin/main:… | ssh … bash -s --` form and
+the 2026-08-07 incident that motivates it, in `infra/dev-stand/idp/bootstrap.md`
+§5, one step above where the run actually happens; the missing Node-version
+guard on the standalone deploy subcommands (`2026-08-05-6f37d6258d`) — two
+`predeploy:*` lines in `package.json`, the `task-canon` §6 floor exactly (one
+line, no decision, so it is APPLIED, not filed); and `set-board-status`'s
+`process.exit(0)` after the DONE write (`2026-08-04-a2a203497d`) — the default
+`io.exit` seam now sets `process.exitCode` and returns, and `main()`'s two raw
+exits went the same way, so a Windows TTY can finish flushing before the process
+ends.
+
+**Promoted — four issues covering five lines,** each line kept in place with
+a superseding «#N closed» condition, because until the issue lands the deviation
+is still live and a deleted line is one nobody re-reads:
+`2026-08-07-01f12872fe` → **#442** (assignee/milestone set at PR create time; the
+firing event is PR #430, open with both fields empty and the guard red);
+`2026-08-05-00c2fc95bc` → **#443** (`deploy:prod --rollback` ancestry check —
+promoted specifically to retire a banned-shape first-incident trigger on the
+production deploy path); `2026-08-05-61162d4aea` → **#444** (the last Russian
+agent-facing prose, whose on-touch trigger fired on all three remaining files and
+was missed twice; the sweep also recorded the two Cyrillic cases that must NOT be
+translated — the transliteration table and the functional stage-7 marker
+regexes); and `2026-08-17-c3d2e255e3` + `2026-08-25-6b0d4c1a83` → **#445**, one
+issue for two lines that describe the same pair of hours e2e specs from opposite
+ends and have one remedy.
+
+**The 2026-09-02 promotion review was not ours to file — it had already been
+done.** Nine lines (`2026-08-05-8fa8f75d9b`, `2026-08-14-f2de673c1f`,
+`2026-08-15-586bd87345`, `2026-08-15-25ed97380d`, `2026-08-15-51ba26ac00`,
+`2026-08-20-b7f41c9a02`, `2026-08-20-4e6a80d1c7`, `2026-08-26-3b59d1e0f4`,
+`2026-08-26-9f27ac4d15`) deferred themselves, by their own text, to the
+WARN→BLOCK promotion review dated 2026-09-02 in `docs/ci-guardrails.md` §5. This
+sweep filed **#446** for that review; the parallel **#438 / PR #449** had already
+performed it on the same day — 12 guards examined, 10 promoted to BLOCK,
+`ears-naming` and `ears-test` held at WARN until 2026-09-30 (narrowing filed as
+#447; #288 open). #446 is therefore closed as a duplicate of #438, and all nine
+lines are **restated** against the verdict rather than left pointing at it: every
+one of their guards was promoted, every defect was weighed BY DIRECTION and
+recorded as an accepted limit in the register's promotion cell, and none was
+fixed. Eight of the nine got their own surviving, event-shaped first trigger
+back; `2026-08-20-b7f41c9a02` had none left and was given one. A deferred
+decision that has been TAKEN is not the same thing as a gap that has been
+CLOSED, so no body was removed.
+
+**Restated — twelve** (the nine above, plus three).
+`2026-08-06-fe94868264` stated its REMEDY where the trigger
+belongs, so it could never fire and no sweep could act on it; it now has one
+(`cleanupBranch` edited, or ≥10 merged-but-undeleted local task branches).
+`2026-08-10-caa8c9f751` was narrowed to the `/p/okr` DASHBOARD, because `e38de64`
+(#404) and `7724147` (#416) touched `/p/admin/okr` — a different surface with its
+own provenance row — and the loose phrase «the OKR surface» was about to be read
+as a firing. `2026-08-26-7c4de91b83` gained a 2026-10-01 backstop: «the first
+cold run» has no owner and can idle forever.
+
+**Written off — none. Kept unchanged — 23,** every trigger re-checked rather than
+assumed. The checks that could plausibly have fired and did not: `tools/lint/lib/`
+still holds exactly the two files #154 created, so the `guard-test-coverage`
+false-positive trigger is unfired; no workflow has been ADDED under
+`.github/workflows/` and no composite action or matrix-interpolated guard
+invocation exists anywhere under `.github/`, so all three `workflow-auth` lines
+are unfired on their first trigger (they moved on their second, the promotion
+review); `package.json`'s `prepare` and `.github/branch-protection.json` are both
+untouched since their lines were written; `mergeStateStatus` handling and
+`isBaseMergeCommit` in `pr-land.mjs` have had no edit since #226, so neither
+merge-gate line has fired (`1ca16c9`/#399 taught the gate the WARN plane, which
+is a different function); `src/auth.ts`'s `jwt` callback has had no commit since
+#334 created its line; `listMembers`, the admin members route,
+`endpoint-authz-lint.mjs` and any `'use server'` boundary are all untouched since
+2026-08-31; and `#361` and `#403` are both still open, which is exactly what the
+two «#N closed» lines say they are waiting for.)_
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
 gap the money rule above now bans from this file — was fixed in #85/#86, not
