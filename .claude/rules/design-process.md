@@ -27,17 +27,27 @@ Canon: task-cycle stages 1b (Stage A) and 5 (Stage B); introduced by #138 (task
   escalations.)
 - **On first touch, not retroactively.** Surfaces shipped before #138 are
   back-filled only when a task next touches them.
-- **A surface whose source is not in `design-source/` is not ready to build.**
-  That is a stop-state question to the owner, not a licence to build from prose.
+- **A surface with no row in `design-source/` is not ready to build — as a
+  LOOK.** That is a stop-state question to the owner, not a licence to build the
+  look from prose.
 - **Fidelity is its own axis, and it is the one that licenses a build.** Every
   provenance row carries `fidelity: wireframe | visual | canvas` next to the
   original/export/build lineage. A `wireframe` records a LAYOUT decision and no
-  visual language: byte-fidelity to it is **not** the mandate, and a surface
-  whose only source is one is **not ready to build**. The correct verdict — the
-  reviewer's and the gate's — is **STOP** (ask the owner for the visual
-  decision), never `REQUEST_CHANGES` toward the wireframe. 2026-08-26: the `/p`
-  launcher wireframe was built, pinned by a spec and defended in review as if it
-  were the design; the owner rejected the stand.
+  visual language: byte-fidelity to it is **not** the mandate, and the verdict —
+  the reviewer's and the gate's — is **STOP on the visual language** (ask the
+  owner for it), never `REQUEST_CHANGES` toward the wireframe. 2026-08-26: the
+  `/p` launcher wireframe was built, pinned by a spec and defended in review as
+  if it were the design; the owner rejected the stand.
+- **That STOP covers the look and NOTHING else.** Composition, control choice,
+  grouping, states, feedback and post-submit behaviour are the **AGENT's**
+  decision — taken by the agent and RECORDED in the PR, escalated only when the
+  choice is really a product fork; the visual language and the product forks are
+  the **OWNER's** (ruling, Антон, 2026-09-02). A missing or `wireframe`-only
+  source never licensed shipping eleven ungrouped fields while waiting for a
+  mockup, and is no answer to «how is this screen composed». The record is the
+  `UX-record:` block of
+  [`build-ui-from-design-system`](../skills/build-ui-from-design-system/SKILL.md)
+  step 4.
 
 **The check:** `pnpm lint:design-fidelity <PR>`
 (`tools/lint/design-fidelity-lint.mjs`) — a UI diff whose covering row is
@@ -100,3 +110,10 @@ check without a rebuild. Run LOCALLY the script still exits 0 on a violation unl
 `--severity block` — the CI job passes that flag, and always did. A guard **error** (the PR
 cannot be read at all) is not a violation and always exits non-zero: a check that never ran
 must not look clean.
+
+**The sibling check — the agent's half of the same diff.** `pnpm lint:ux-record <PR>`
+(`tools/lint/ux-record-lint.mjs`) reads the same UI diff for the `UX-record:` block
+required by §1's ownership split; its six facets and the procedure that produces them
+live in [`build-ui-from-design-system`](../skills/build-ui-from-design-system/SKILL.md)
+step 4 and are not restated here. Severity: WARN, same register row family
+([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5).

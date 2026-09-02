@@ -236,3 +236,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
+
+  # WARN — a UI diff whose PR body records no `UX-record:` block (guard from
+  # #433). Same wiring as `stage-b` and for the same reason: `--severity block`
+  # so the script gives a REAL signal (canon §4 clause 1 — a guard that prints
+  # and exits 0 is a stub and is not promotable), `continue-on-error` so the CI
+  # plane stays WARN. Promotion is then one line. It reads linked-issue comments
+  # as well as the body, hence `issues: read`.
+  ux-record:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-09-02 — canon §5
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:ux-record --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}

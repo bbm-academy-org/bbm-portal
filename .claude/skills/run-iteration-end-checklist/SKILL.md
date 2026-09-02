@@ -108,7 +108,10 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
     something the owner can see. Look for the recorded «принято» and the live URL
     on the issue, plus the representative-data precondition stage 5 defines. Read
     the stage before ruling — it says what counts as each. N/A for invisible
-    changes (internals, tooling, docs, backend with no UI).
+    changes (internals, tooling, docs, backend with no UI). The UX sanity pass that
+    runs BEFORE the owner is invited (dominance / tiers / not equal boxes /
+    legible states) lives in that same stage 5 — read it there; this checklist
+    does not restate it and does not re-run it.
 
 ## Output (mandatory format)
 
