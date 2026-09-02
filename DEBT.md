@@ -776,6 +776,23 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-31-416-server-action-authz -->
 
+- [ ] 2026-09-02 nothing checks the open backlog before a new issue is filed:
+      `pnpm issue:create` (`tools/gh/create-issue.mjs`) validates the SHAPE of an
+      issue (type, channel, milestone, Source) and never asks whether one with the
+      same trigger is already open, and `task-canon` §3 governs links, not
+      duplicates. This sweep filed **#446** for the 2026-09-02 WARN→BLOCK promotion
+      review while the parallel session on #438 was performing that very review the
+      same day; #446 was closed as a duplicate hours later, after nine DEBT lines
+      had already been pointed at it. Cheap to hit and cheap to undo (one close, one
+      re-edit of the lines), so it is a line and not an issue — but it is a
+      PARALLEL-SESSION failure mode, and this repo runs parallel sessions by default
+      (`.claude/rules/parallel-sessions.md`) — return condition: the second
+      duplicate issue filed by a parallel session or a sweep, or the next material
+      edit to `tools/gh/create-issue.mjs`, whichever comes first (#440, PR #450
+      decision-debt pass)
+
+<!-- debt-entry-end: 2026-09-02-440-duplicate-filing -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
