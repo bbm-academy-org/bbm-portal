@@ -193,6 +193,50 @@ describe('ux-record-lint: an incomplete record is a violation, and says which fa
     )
     expect(checkUxRecord(pr({ body: tbd, files: UI_PR_FILES })).missingFacets).toEqual(['feedback'])
   })
+
+  /**
+   * The placeholder set is `stage-b-lint.mjs`'s, byte-for-byte: an author who
+   * writes `Post-submit: n/a` on a read-only screen HAS recorded that facet —
+   * the deliberate «nothing happens» — and `n/a` is a placeholder only at the
+   * MARKER level, where the lead certification has to be claimed.
+   */
+  it('accepts `n/a` as a facet value — it is a decision, not an unfilled slot', () => {
+    const notApplicable = FULL_RECORD.replace(
+      '- Post-submit: redirect to the board with the new row highlighted',
+      '- Post-submit: n/a — the screen is read-only, nothing is submitted',
+    )
+    expect(checkUxRecord(pr({ body: notApplicable, files: UI_PR_FILES })).verdict).toBe('pass')
+
+    const bare = FULL_RECORD.replace(
+      '- Post-submit: redirect to the board with the new row highlighted',
+      '- Post-submit: n/a',
+    )
+    expect(checkUxRecord(pr({ body: bare, files: UI_PR_FILES })).verdict).toBe('pass')
+  })
+
+  it('accepts a fully parenthesised facet value', () => {
+    const parenthesised = FULL_RECORD.replace(
+      '- Composition: one dominant summary card over a muted account grid',
+      '- Composition: (the total card dominates, the account grid recedes)',
+    )
+    expect(checkUxRecord(pr({ body: parenthesised, files: UI_PR_FILES })).verdict).toBe('pass')
+  })
+})
+
+describe('ux-record-lint: the marker is matched the way the PR template spells it', () => {
+  it('accepts `UX record:` with a space, like `UX-record:`', () => {
+    const spaced = FULL_RECORD.replace('UX-record:', 'UX record:')
+    expect(extractRecords(spaced)).toHaveLength(1)
+    expect(checkUxRecord(pr({ body: spaced, files: UI_PR_FILES })).verdict).toBe('pass')
+  })
+
+  it('accepts the spaced spelling for the lead self-certification too', () => {
+    expect(
+      checkUxRecord(
+        pr({ body: 'UX record: N/A (no UX decisions) — lead-certified', files: UI_PR_FILES }),
+      ).verdict,
+    ).toBe('pass')
+  })
 })
 
 describe('ux-record-lint: the lead self-certification is the only marker-level escape', () => {
