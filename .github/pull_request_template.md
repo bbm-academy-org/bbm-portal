@@ -40,3 +40,23 @@ none
      Rule: .claude/rules/design-process.md · check: `pnpm lint:stage-b <PR>` -->
 
 Stage-B: <GO — owner, date | batched at #N | N/A (no visual surface) — lead-certified>
+
+## UX record
+
+<!-- The agent's UX decisions on this diff. Required on a UI diff (non-test
+     *.tsx / *.css under src/); the procedure that produces it is
+     .claude/skills/build-ui-from-design-system/SKILL.md step 4 and the ownership
+     split is .claude/rules/design-process.md §1.
+     A view-layer diff that decides NO UX (a rename, a prop rewire) records the
+     self-certification instead, on one line:
+       UX-record: N/A (no UX decisions) — lead-certified
+     Check: `pnpm lint:ux-record <PR>` -->
+
+UX-record:
+
+- Composition: <what dominates, what recedes>
+- Controls: <which kit controls, and why not a hand-rolled one>
+- Grouping: <how the fields and blocks are grouped>
+- States: <empty / loading / error / permission-denied / long content>
+- Feedback: <what the user sees after each action>
+- Post-submit: <where the user lands, and what changed there>
