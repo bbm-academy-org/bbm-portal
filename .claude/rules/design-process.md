@@ -27,27 +27,25 @@ Canon: task-cycle stages 1b (Stage A) and 5 (Stage B); introduced by #138 (task
   escalations.)
 - **On first touch, not retroactively.** Surfaces shipped before #138 are
   back-filled only when a task next touches them.
-- **A surface whose source is not in `design-source/` is not ready to build.**
-  That is a stop-state question to the owner, not a licence to build from prose.
+- **A surface with no row in `design-source/` is not ready to build — as a
+  LOOK.** That is a stop-state question to the owner, not a licence to build the
+  look from prose.
 - **Fidelity is its own axis, and it is the one that licenses a build.** Every
   provenance row carries `fidelity: wireframe | visual | canvas` next to the
   original/export/build lineage. A `wireframe` records a LAYOUT decision and no
-  visual language: byte-fidelity to it is **not** the mandate, and a surface
-  whose only source is one is **not ready to build**. The correct verdict — the
-  reviewer's and the gate's — is **STOP** (ask the owner for the visual
-  decision), never `REQUEST_CHANGES` toward the wireframe. 2026-08-26: the `/p`
-  launcher wireframe was built, pinned by a spec and defended in review as if it
-  were the design; the owner rejected the stand.
-
-- **Who decides what: the split.** **Composition, control choice, grouping,
-  states, feedback and post-submit behaviour are the AGENT's decision** — taken
-  by the agent and RECORDED in the PR, escalated only when the choice is really a
-  product fork. **The visual language and the product forks are the OWNER's.**
-  Owner ruling, Антон, 2026-09-02. It follows that a `wireframe`-only source is a
-  STOP for the **visual language only**: it never licensed anyone to ship eleven
-  ungrouped fields while waiting for a mockup, and «no design source» is not an
-  answer to «how is this screen composed». The record is the `UX-record:` block
-  below; the procedure that produces it is
+  visual language: byte-fidelity to it is **not** the mandate, and the verdict —
+  the reviewer's and the gate's — is **STOP on the visual language** (ask the
+  owner for it), never `REQUEST_CHANGES` toward the wireframe. 2026-08-26: the
+  `/p` launcher wireframe was built, pinned by a spec and defended in review as
+  if it were the design; the owner rejected the stand.
+- **That STOP covers the look and NOTHING else.** Composition, control choice,
+  grouping, states, feedback and post-submit behaviour are the **AGENT's**
+  decision — taken by the agent and RECORDED in the PR, escalated only when the
+  choice is really a product fork; the visual language and the product forks are
+  the **OWNER's** (ruling, Антон, 2026-09-02). A missing or `wireframe`-only
+  source never licensed shipping eleven ungrouped fields while waiting for a
+  mockup, and is no answer to «how is this screen composed». The record is the
+  `UX-record:` block of
   [`build-ui-from-design-system`](../skills/build-ui-from-design-system/SKILL.md)
   step 4.
 

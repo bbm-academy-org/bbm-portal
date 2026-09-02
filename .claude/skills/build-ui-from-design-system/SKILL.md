@@ -101,6 +101,10 @@ UX-record:
 - Post-submit: where the user lands, and what changed there
 ```
 
+The fence above marks this as an EXAMPLE: paste the real block into the PR body
+**unfenced**, because the guard strips fenced text and HTML comments
+(`tools/lint/lib/guard.mjs`) — a fenced copy records nothing.
+
 A view-layer diff that decides no UX at all (a rename, a prop rewire) records
 the self-certification instead, on one line:
 `UX-record: N/A (no UX decisions) — lead-certified`.
@@ -151,6 +155,7 @@ value — `GO — <owner, date>`, `batched at #<gate>`, or
   to run with an empty registry; skipping it is how bespoke becomes invisible.
 - **Silent bespoke** — no justification line, so nobody can see the debt
   accumulating.
-- **Waiting for the owner to compose the screen.** A missing or wireframe-only
-  design source stops the VISUAL LANGUAGE, never the composition: composing it
-  is your call, and the `UX-record:` block is where you say what you chose.
+- **Waiting for the owner to compose the screen** — what a missing or
+  `wireframe`-only source does and does not stop is
+  [`design-process.md`](../../rules/design-process.md) §1; step 4 above is where
+  your composition is recorded.

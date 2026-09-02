@@ -649,8 +649,8 @@ Entry format:
 <!-- debt-entry-end: 2026-09-02-433-ux-facets-four-copies -->
 
 - [ ] 2026-09-02 both always-on rules files touched by #433 grew by APPEND with
-      nothing relocated — `.claude/rules/design-process.md` +19 lines (121/200,
-      61 % of the per-file budget) and `.claude/rules/dev-env.md` +10 (74/200,
+      nothing relocated — `.claude/rules/design-process.md` +17 lines (119/200,
+      60 % of the per-file budget) and `.claude/rules/dev-env.md` +10 (74/200,
       37 %), the latter restating the «seeded by `provision.sh`, steps 2 and 8»
       fact the same file already carries one bullet up.
       `pnpm lint:instruction-budget` is PASS (corpus 77 %, 618/800), so nothing
