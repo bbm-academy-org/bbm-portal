@@ -411,7 +411,8 @@ export function evaluateSpecLink({ pr, issues, tree }) {
   return { verdict: findings.length > 0 ? 'findings' : 'ok', notes, findings }
 }
 
-/** WARN today; `LINT_SEVERITY=block` promotes it (canon §4, see the header). */
+/** The SCRIPT's own default dial is warn; `LINT_SEVERITY=block` flips it. The CI
+ * plane is BLOCK — the job passes `--severity block` (canon §5, see the header). */
 export function severityFromEnv(env = {}) {
   return String(env.LINT_SEVERITY ?? '').toLowerCase() === 'block' ? 'block' : 'warn'
 }

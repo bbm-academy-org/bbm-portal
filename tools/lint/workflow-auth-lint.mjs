@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // workflow-auth — a workflow job that reaches GitHub must carry the auth block.
 //
-// Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05; earliest
-// promotion 2026-09-02 under the §4 clauses.
+// Canon: docs/ci-guardrails.md §5, which is the severity of record. WARN from
+// 2026-08-05, promoted to BLOCK on 2026-09-02 (#438) under the §4 clauses. The job carries no
+// `continue-on-error` and is in the `ci` meta-job needs-list — which is what §2.1
+// says BLOCK IS on that plane.
 //
 // Why it exists: a job that reads PR metadata through the `gh` CLI needs an
 // explicit permission grant plus token wiring, because the default `GITHUB_TOKEN`

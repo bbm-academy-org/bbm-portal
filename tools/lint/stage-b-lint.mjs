@@ -35,9 +35,16 @@
 // it exits 1 under every severity, by design. A violation is a finding about the
 // PR, which WARN may absorb; an unreadable PR means the guard never ran, and a
 // guard that exits 0 when it never ran is indistinguishable from a clean check.
-// Masking THAT is a job-level `continue-on-error` decision, and #136 made it:
-// the job is `continue-on-error`, so an unreadable PR shows in the job log
-// rather than blocking — acceptable only while the guard is WARN.
+// Masking THAT is a job-level `continue-on-error` decision. #136 made it one way
+// while the guard was WARN — the job carried `continue-on-error`, so an unreadable
+// PR showed in the job log rather than blocking — and the 2026-09-02 promotion
+// (#438) reversed it: the job carries no `continue-on-error`, so the exit 1 from an
+// unreadable PR now turns `pnpm pr:land` RED. That is the INTENDED outcome under
+// BLOCK, not a regression to route around. A BLOCK guard that cannot read the PR
+// has not cleared it, and a gate that goes green when it never ran is the exact
+// failure the canon's §4 clause 1 exists to prevent. The fix is to make the PR
+// readable (gh auth, token scope) and re-run — the workflow's `edited` trigger
+// re-runs this check without a rebuild.
 //
 // CI: the `stage-b` job of `.github/workflows/pr-body-guards.yml` (wired by #136
 // after this guard landed — the two ran in parallel, so the wiring is not in this
@@ -330,7 +337,7 @@ function usage() {
     'Usage: pnpm lint:stage-b <PR number> [--severity warn|block]',
     '',
     'Checks that a UI PR records the owner Stage-B verdict before merge (#138).',
-    'Severity is WARN today (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02).',
+    'Severity of record: docs/ci-guardrails.md §5, row `stage-b` (BLOCK since 2026-09-02).',
   ].join('\n')
 }
 

@@ -31,7 +31,8 @@
 // SEVERITY: WARN — `docs/ci-guardrails.md` §5, job in `.github/workflows/ci.yml`
 // with `continue-on-error: true`. The script itself exits 1 on a finding (canon
 // §4 clause 1: a guard that prints and exits 0 is a stub and is not promotable).
-// Promotion per §4, earliest 2026-09-02.
+// Promotion per §4; the earliest date lives in §5's row and in the job's own
+// `continue-on-error` comment, deliberately not restated here.
 //
 // KNOWN FALSE-POSITIVE CLASS, to be weighed at that promotion review: `ATTEMPT_RE`
 // fires on any title that merely STARTS with the word — `describe('EARS adoption

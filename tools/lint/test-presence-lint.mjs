@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 // test-presence — production code changed, no test anywhere near it.
 //
-// Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05 (heuristic,
-// so it soaks per §3); earliest promotion 2026-09-02 under the §4 clauses. The
-// 2026-08-27 rename (#355) changed no rule and so did not restart that clock —
-// §4 clause 2 counts from the last change to WHAT a guard matches, and this
-// guard matches exactly what it matched the day it landed.
+// Canon: docs/ci-guardrails.md §5, which is the severity of record. WARN from
+// 2026-08-05, promoted to BLOCK on 2026-09-02 (#438) under the §4 clauses. It soaked as a
+// heuristic per §3; the 2026-08-27 rename (#355) changed no rule and so did not
+// restart that clock — §4 clause 2 counts from the last change to WHAT a guard
+// matches, and this guard matches exactly what it matched the day it landed. The
+// job carries no `continue-on-error` and is in the `ci` meta-job needs-list.
+//
+// KNOWN LIMIT carried INTO the BLOCK plane: the changed set comes from the
+// page-limited `gh pr view --json files` array (100 files), which canon §8 says a
+// BLOCK guard must page first. It does not yet — DEBT.md line
+// `2026-09-02-438-unpaged-files-array`. The failure mode is a false NEGATIVE on a
+// >100-file PR (under-read, green), not a false denial.
 //
 // ── Why this guard is no longer called `tdd-signal` (#355) ───────────────────
 // It was, until 2026-08-27, and the name was a lie of exactly the kind a guard
@@ -171,9 +178,10 @@ async function main() {
   }
   out.fail(
     `${untested.length} production file(s) changed with no test in the diff and no test in the tree. ` +
-      'task-cycle stage 3: no production module code without a failing test first. If this is ' +
-      'genuinely test-exempt (pure types, config, generated), the WARN can be left — the job is ' +
-      'continue-on-error. Canon: docs/ci-guardrails.md §5.',
+      'task-cycle stage 3: no production module code without a failing test first. This guard is ' +
+      'BLOCK (canon: docs/ci-guardrails.md §5), so a finding cannot be left standing: add the test, ' +
+      'or if the change is genuinely test-exempt (pure types, config, generated) widen the ' +
+      'exemption list in this file with the reason in the PR.',
   )
 }
 
