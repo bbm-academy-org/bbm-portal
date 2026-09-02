@@ -66,11 +66,33 @@ function makeGh({
     calls,
     gh(args: string[]) {
       calls.push(args)
+      // `gh api .../pulls/<n>/files?per_page=&page=` — the PAGED file list
+      // (canon §8). Sliced exactly like the endpoint, so a guard that never
+      // asks for page 2 sees a short diff here too.
+      if (args[0] === 'api') {
+        const m = /pulls\/(\d+)\/files\?per_page=(\d+)&page=(\d+)/.exec(String(args[1]))
+        const payload = m ? prs[Number(m[1])] : undefined
+        if (!m || !payload) return { status: 1, stdout: '', stderr: 'no such PR' }
+        const per = Number(m[2])
+        const page = Number(m[3])
+        return {
+          status: 0,
+          stdout: JSON.stringify(payload.files.slice((page - 1) * per, page * per)),
+          stderr: '',
+        }
+      }
       const n = Number(args[2])
       if (args[0] === 'pr') {
         const payload = prs[n]
+        // `gh pr view --json files` truncates at 100 entries WITHOUT saying so —
+        // the very limit §8 names. Modelled, so a guard reading that array
+        // instead of the paged endpoint fails this fake the way it fails GitHub.
         return payload
-          ? { status: 0, stdout: JSON.stringify(payload), stderr: '' }
+          ? {
+              status: 0,
+              stdout: JSON.stringify({ ...payload, files: payload.files.slice(0, 100) }),
+              stderr: '',
+            }
           : { status: 1, stdout: '', stderr: 'no such PR' }
       }
       const comments = issues[n]
@@ -80,6 +102,40 @@ function makeGh({
     },
   }
 }
+
+describe('stage-b-lint: the changed-file list is PAGED (canon §8)', () => {
+  // RED before the paging fix: `gh pr view --json files` stops at 100 entries,
+  // so the 101st file — the only rendered surface in the PR — was invisible and
+  // the guard reported «no UI diff». A BLOCK guard that reads part of the diff
+  // has not read the diff.
+  const files = [
+    ...Array.from({ length: 100 }, (_, i) => `docs/notes/note-${i}.md`),
+    'src/app/(platform)/p/hours/page.tsx',
+  ]
+
+  it('sees a render file that falls on the SECOND page of the file list', () => {
+    const gh = makeGh({ prs: { 300: pr({ number: 300, body: '## What\n\nNo marker.', files }) } })
+    const result = runStageBLint({ prNumber: 300, severity: 'block', gh: gh.gh })
+    expect(result.verdict).toBe('violation')
+    expect(result.exitCode).toBe(1)
+    expect(gh.calls.some((c) => c[0] === 'api' && String(c[1]).includes('page=2'))).toBe(true)
+  })
+
+  it('fails closed when a page cannot be read, instead of judging a partial set', () => {
+    const gh = {
+      calls: [] as string[][],
+      gh(args: string[]) {
+        gh.calls.push(args)
+        if (args[0] === 'pr')
+          return { status: 0, stdout: JSON.stringify({ number: 301, body: '' }), stderr: '' }
+        return { status: 1, stdout: '', stderr: 'API rate limit exceeded' }
+      },
+    }
+    const result = runStageBLint({ prNumber: 301, severity: 'block', gh: gh.gh })
+    expect(result.verdict).toBe('error')
+    expect(result.exitCode).toBe(1)
+  })
+})
 
 const UI_PR_FILES = ['src/app/(platform)/p/hours/page.tsx', 'src/app/(platform)/p/hours/hours.css']
 
