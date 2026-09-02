@@ -149,7 +149,13 @@ describe('Codex hook payload compatibility', () => {
     expect(writeEvidenceForPayload(null)).toBe(false)
   })
 
-  it('classifies apply_patch and spawn_agent as writes', () => {
+  // `spawn_agent` normalizes to `Agent`, and since #439 a dispatch is NOT write
+  // evidence in either harness: what the subagent did lives in its own
+  // transcript, so the dispatch answers nothing about what THIS session
+  // produced. Keeping the two harnesses aligned is the point — a Codex session
+  // must not be held to a completion report a Claude Code session is released
+  // from. Rationale in full: `isWriteToolUse()` in `completion-report-gate.mjs`.
+  it('classifies apply_patch as a write and spawn_agent as not one (#439)', () => {
     expect(
       writeEvidenceForPayload({
         tool_name: 'apply_patch',
@@ -161,7 +167,7 @@ describe('Codex hook payload compatibility', () => {
         tool_name: 'spawn_agent',
         tool_input: { task_name: 'review', message: 'Review this.' },
       }),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('preserves write evidence across compact, resume, and source-less SessionStart events', () => {

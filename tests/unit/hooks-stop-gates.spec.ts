@@ -910,12 +910,16 @@ describe('#158: write-действие в транскрипте', () => {
     }
   })
 
-  // Лид, раздавший работу субагентам, сам не писал ни строки, но отчитывается
-  // именно он — диспетчеризация обязана считаться write-действием, иначе
-  // оркестрирующая сессия выпадает из-под всех трёх гейтов.
-  it('диспетчеризация субагента считается: писали субагенты, отчитывается лид', () => {
-    expect(hasWriteAction(toolUse('Agent', { subagent_type: 'general-purpose' }))).toBe(true)
-    expect(hasWriteAction(toolUse('Task', { prompt: 'сделай' }))).toBe(true)
+  // ПЕРЕСМОТРЕНО в #439. До него диспатч считался write-действием по доводу
+  // #158 «писали субагенты, отчитывается лид». Цена этого довода — инцидент
+  // 2026-09-02: сессия груминга, раздавшая только read-only разведку, была
+  // зачислена в пишущие. Диспатч не отвечает на вопрос гейта — что сделал
+  // субагент, лежит в ЕГО транскрипте, а не в этом. Лид остаётся под гейтами
+  // через то, чем он реально приземляет работу (`pnpm pr:land`, `gh issue
+  // comment`), — это закреплено ниже отдельным кейсом.
+  it('диспетчеризация субагента write-действием НЕ считается (#439)', () => {
+    expect(hasWriteAction(toolUse('Agent', { subagent_type: 'general-purpose' }))).toBe(false)
+    expect(hasWriteAction(toolUse('Task', { prompt: 'сделай' }))).toBe(false)
   })
 
   it('read-only инструменты не считаются', () => {
@@ -1137,8 +1141,10 @@ describe('#158: три Stop-гейта на read-only сессии', () => {
     expect(gates(WROTE)).toEqual({ completion: true, deviations: true, debt: true })
   })
 
-  it('сессия, только раздавшая субагентов, остаётся под гейтами', () => {
-    expect(gates(DISPATCHED)).toEqual({ completion: true, deviations: true, debt: true })
+  // #439 развернул этот кейс: сессия, которая ТОЛЬКО раздала субагентов и сама
+  // ничего не приземлила, отчитываться о завершении не может — ей нечем.
+  it('сессия, только раздавшая субагентов, гейты не взводит (#439)', () => {
+    expect(gates(DISPATCHED)).toEqual({ completion: false, deviations: false, debt: false })
   })
 
   // Мутация через MCP — единственный write в сессии: без этого сессия, закрывшая
@@ -1467,5 +1473,119 @@ describe('#415: порог объёма транскрипта', () => {
         unreturnedDispatchSeen: false,
       }),
     ).toBe(true)
+  })
+})
+
+/**
+ * #439 — the FOURTH incident of the same family, grooming/retro session with
+ * Anton, 2026-09-02. The session did nothing but read: canon files, `gh issue
+ * view`, `grep` over `src`, plus recon subagents. Zero `Edit`/`Write`, no
+ * commit, no PR, no claimed issue. Its closing message was a retrospective —
+ * a diagnosis, not a delivery — and BOTH blocking Stop gates fired on it.
+ *
+ * The reason was structural and had nothing to do with wording: a subagent
+ * DISPATCH counted as a write action (#158), so a lead that only fanned out
+ * read-only recon was booked as a session that had written something. The
+ * condition the gates need is the one this issue names — «did this session edit
+ * repo files, open a PR, or touch an issue» — and a dispatch answers none of
+ * those questions: what the subagent did is not in this transcript.
+ */
+
+/** Транскрипт выше порога объёма (#415), иначе гейты неприменимы и репродукция
+ * ничего не доказывает: наполнитель добивает и байты, и число записей. */
+const abovePad = (id: string) =>
+  Array.from({ length: 30 }, (_, i) => assistantSays('п'.repeat(12 * 1024), `${id}${i}`))
+
+const RETRO_REPORT = [
+  'Ретроспектива сессии: разобрали, откуда берётся класс ложных срабатываний.',
+  '',
+  'Что видно по корпусу: issue #392 и #415 закрыты, PR #417 смержен — это уже',
+  'третий раунд одного и того же класса, и каждый раунд добавлял исключение.',
+  'Общий механизм: гейт судит по форме сообщения, а не по тому, писала ли сессия.',
+  'Сегодняшняя сессия не тронула ни одного файла и всё равно собрала два блока.',
+  'Вывод: чинить надо условие срабатывания, а не словарь формулировок.',
+].join('\n')
+
+/** Ровно сегодняшняя сессия: чтение + разведка субагентами, все вернулись. */
+const GROOMING_ZERO_EDITS = [
+  userSays('давай разберём бэклог и подведём итог'),
+  toolUse('Read', { file_path: '.claude/skills/task-cycle/SKILL.md' }),
+  toolUse('Grep', { pattern: 'surface-decision-debt' }),
+  bash('gh issue view 415 --repo o/r'),
+  bash('git -C "C:/repo" status --short'),
+  dispatchUse('g1'),
+  dispatchResult('g1'),
+  dispatchUse('g2', 'd2'),
+  dispatchResult('g2'),
+  ...abovePad('g'),
+  assistantSays(RETRO_REPORT, 'gz'),
+].join('\n')
+
+/** Та же сессия, но с одной правкой файла: гейты обязаны остаться на месте. */
+const GROOMING_WITH_ONE_EDIT = [
+  ...GROOMING_ZERO_EDITS.split('\n').slice(0, -1),
+  toolUse('Edit', { file_path: 'docs/ci-guardrails.md' }, 'e1'),
+  assistantSays(REPORT_NO_MARKERS, 'ge'),
+].join('\n')
+
+/** Лид, раздавший имплементацию и САМ смерживший результат, — под гейтами. */
+const LEAD_DISPATCHED_AND_MERGED = [
+  ...GROOMING_ZERO_EDITS.split('\n').slice(0, -1),
+  bash('pnpm pr:land 440'),
+  assistantSays(REPORT_NO_MARKERS, 'gl'),
+].join('\n')
+
+const allGates = (jsonl: string) => {
+  const args = {
+    stopHookActive: false,
+    lastAssistantText: extractLastAssistantText(jsonl),
+    writeActionSeen: hasWriteAction(jsonl),
+    unreturnedDispatchSeen: hasUnreturnedDispatch(jsonl),
+    belowVolumeFloor: isBelowVolumeFloor(jsonl),
+  }
+  return {
+    completion: decideCompletionBlock(args).block,
+    deviations: decideDeviationsBlock(args).block,
+    debt: decideWarn(args).warn,
+  }
+}
+
+describe('#439: сессия без правок — гейтам нечего требовать', () => {
+  it('репродукция: текст ретро читается как отчёт, а транскрипт выше порога объёма', () => {
+    expect(isTerminalReport(RETRO_REPORT)).toBe(true)
+    expect(isBelowVolumeFloor(GROOMING_ZERO_EDITS)).toBe(false)
+    expect(hasUnreturnedDispatch(GROOMING_ZERO_EDITS)).toBe(false)
+  })
+
+  it('диспатч субагента сам по себе уликой правки не является', () => {
+    expect(hasWriteAction(toolUse('Agent', { subagent_type: 'bbm-explorer' }))).toBe(false)
+    expect(hasWriteAction(toolUse('Task', { prompt: 'разведка' }))).toBe(false)
+    expect(hasWriteAction(GROOMING_ZERO_EDITS)).toBe(false)
+  })
+
+  it('ретро-отчёт сессии с нулём правок проходит все три гейта', () => {
+    expect(allGates(GROOMING_ZERO_EDITS)).toEqual({
+      completion: false,
+      deviations: false,
+      debt: false,
+    })
+  })
+
+  it('одна правка файла возвращает все три гейта на место', () => {
+    expect(hasWriteAction(GROOMING_WITH_ONE_EDIT)).toBe(true)
+    expect(allGates(GROOMING_WITH_ONE_EDIT)).toEqual({
+      completion: true,
+      deviations: true,
+      debt: true,
+    })
+  })
+
+  it('лид, раздавший работу и сам приземливший PR, остаётся под гейтами', () => {
+    expect(hasWriteAction(LEAD_DISPATCHED_AND_MERGED)).toBe(true)
+    expect(allGates(LEAD_DISPATCHED_AND_MERGED)).toEqual({
+      completion: true,
+      deviations: true,
+      debt: true,
+    })
   })
 })
