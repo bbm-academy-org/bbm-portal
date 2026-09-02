@@ -870,6 +870,27 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-439-dispatch-not-write-evidence -->
 
+- [ ] 2026-09-02 Root `.gitattributes` sets `/DEBT.md merge=union`, but that driver
+      is a LOCAL git config: GitHub's SERVER-side mergeability computation ignores
+      it. So every append to `DEBT.md` that lands on `main` flips each still-open PR
+      that also touches `DEBT.md` to `CONFLICTING` — which suppresses that PR's CI
+      runs (GitHub will not build an unmergeable head), and makes
+      `gh pr update-branch` refuse with «merge conflict between base and head». The
+      union driver then only helps whoever merges `origin/main` LOCALLY, which is
+      the manual step the driver was adopted to remove. Today (#440 sweep wave) it
+      cost three local `git merge origin/main` rounds across PRs #448/#449/#450 and
+      one accidental push of conflict markers into a PR branch. Not fixed here
+      because both candidate fixes are structural, not a one-liner: split the ledger
+      into per-entry files under a `debt/` directory (no shared hunk, so no
+      server-side conflict at all), or serialize DEBT-touching PRs by convention —
+      the first is a format migration touching the sweep tooling and
+      `tests/unit/debt-merge-driver.spec.ts`, the second trades throughput for calm
+      — return condition: the next parallel wave that has ≥2 open PRs touching
+      `DEBT.md` at the same time, or a decision to split debt into per-entry files,
+      whichever comes first (#440, review of PR #450)
+
+<!-- debt-entry-end: 2026-09-02-440-union-driver-not-server-side -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
