@@ -58,6 +58,7 @@
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { pagePrFiles, prFilesArgs, prFilesPageSize } from './lib/gh.mjs'
 import { extractPartOfIssues, stripNonEvidence } from './lib/guard.mjs'
 
 const TAG = '[stage-b]'
@@ -232,7 +233,16 @@ export function checkStageB(pr, issueComments = []) {
 // ── gh access (argv arrays, never a shell string — `tools/gh/lib/gh.mjs` canon) ─
 
 export function ghPrArgs(prNumber) {
-  return ['pr', 'view', String(prNumber), '--repo', REPO, '--json', 'number,body,files']
+  return ['pr', 'view', String(prNumber), '--repo', REPO, '--json', 'number,body']
+}
+/**
+ * ONE page of the PR's changed files. The `files` field of `gh pr view` stops at
+ * 100 entries and says nothing when it truncates, so the verdict is derived from
+ * the paged REST endpoint instead (canon docs/ci-guardrails.md §8). The loop and
+ * the page bound live in `lib/gh.mjs`; this guard owns only its runner.
+ */
+export function ghFilesArgs(prNumber, page, perPage = prFilesPageSize()) {
+  return prFilesArgs(prNumber, page, { repo: REPO, perPage })
 }
 
 export function ghIssueArgs(issueNumber) {
@@ -304,6 +314,18 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
     return { verdict: 'error', exitCode: 1, lines }
   }
 
+  // Fail-closed on a partial read: a guard that saw part of the diff has not
+  // cleared the diff (canon §8, the same principle as an unreadable PR above).
+  const perPage = prFilesPageSize()
+  const filesRes = pagePrFiles((page) => ghJson(gh, ghFilesArgs(prNumber, page, perPage)), {
+    perPage,
+  })
+  if (!filesRes.ok) {
+    lines.push(`${TAG} ERROR: cannot read the files of PR #${prNumber}: ${filesRes.error}`)
+    return { verdict: 'error', exitCode: 1, lines }
+  }
+  const prData = { ...prRes.data, files: filesRes.data }
+
   const comments = []
   for (const issue of extractLinkedIssues(prRes.data?.body ?? '')) {
     const issueRes = ghJson(gh, ghIssueArgs(issue))
@@ -318,7 +340,7 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
     comments.push(...(issueRes.data?.comments ?? []).map((c) => c?.body ?? ''))
   }
 
-  const result = checkStageB(prRes.data, comments)
+  const result = checkStageB(prData, comments)
   if (result.verdict === 'violation') {
     const level = severity === 'block' ? 'BLOCK' : 'WARN'
     lines.push(`${TAG} ${level}: ${result.message}`)

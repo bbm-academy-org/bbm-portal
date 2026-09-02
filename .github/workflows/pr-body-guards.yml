@@ -41,7 +41,11 @@ name: PR body guards
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    # `assigned`/`milestoned` and their inverses are here for `assignee-milestone`
+    # (review of PR #449, N2): setting the field is exactly the remediation its
+    # finding asks for, and without these types the FAILURE check-run stood until
+    # an unrelated push. The other jobs re-running on those events costs seconds.
+    types: [opened, edited, synchronize, reopened, assigned, unassigned, milestoned, demilestoned]
 
 concurrency:
   # NOT cancel-in-progress — and since #397 for a sharper reason than before.
@@ -94,13 +98,14 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
 
   # BLOCK — an open PR row with no assignee or no milestone cannot be triaged.
-  # It reads PR fields rather than the body, so it re-runs on a push
-  # (`synchronize`) rather than on the field edit itself.
+  # It reads PR fields rather than the body; since #449 the workflow also listens
+  # on `assigned`/`unassigned`/`milestoned`/`demilestoned`, so setting the missing
+  # field re-runs this check directly instead of waiting for the next push.
   # Promoted WARN -> BLOCK on 2026-09-02 (#438). Its one DEBT.md line (#80,
   # agent-opened PRs arriving without the fields) records a TRUE positive, which
   # §4 clause 3 counts FOR promotion, and it has not fired since the 2026-08-15
-  # sweep. Unblocked with one `gh pr edit --add-assignee … --milestone …`; the
-  # re-run comes with the next push, so run it before the last one.
+  # sweep. Unblocked with one `gh pr edit --add-assignee … --milestone …`, which
+  # now re-runs the job by itself (the `assigned`/`milestoned` types above).
   assignee-milestone:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -159,9 +164,11 @@ jobs:
   # Promoted WARN -> BLOCK on 2026-09-02 (#438). It is the one promoted guard
   # with a live false-BLOCK class — a chore slice of a Feature-typed epic can
   # inherit the parent's type through `Part of #N` (DEBT.md, #299/PR #303 N3) —
-  # and it is promotable anyway because that class is bounded by an escape
-  # reachable without leaving the PR: a `spec-exempt: <reason>` line in the body.
-  # §3 clause (d). Demotion per §4 on the first confirmed false block.
+  # and it is promotable anyway because §4 clause 3 is literally satisfied: that
+  # class has never fired, so it is IDENTIFIED, not CONFIRMED. A §3(d)-shaped
+  # escape reachable without leaving the PR — a `spec-exempt: <reason>` line in
+  # the body — bounds it if it ever does. (§3 is the day-0 BLOCK posture, not a
+  # §4 promotion clause.) Demotion per §4 on the first confirmed false block.
   spec-link:
     runs-on: ubuntu-latest
     timeout-minutes: 10

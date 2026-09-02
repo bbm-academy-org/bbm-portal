@@ -8,6 +8,7 @@ import {
   extractClosedIssues,
   extractLinkedIssues,
   extractMarkerValues,
+  ghFilesArgs,
   ghIssueArgs,
   ghPrArgs,
   isEvidence,
@@ -312,7 +313,10 @@ describe('stage-b-lint: the verdict may live on the linked issue', () => {
     })
     const result = runStageBLint({ prNumber: 202, severity: 'block', gh: gh.gh })
     expect(result.verdict).toBe('pass')
-    expect(gh.calls.map((c) => `${c[0]} ${c[2]}`)).toEqual(['pr 202', 'issue 201'])
+    expect(gh.calls.filter((c) => c[0] !== 'api').map((c) => `${c[0]} ${c[2]}`)).toEqual([
+      'pr 202',
+      'issue 201',
+    ])
   })
 
   it('the driver fetches the linked issue comments through gh', () => {
@@ -323,7 +327,10 @@ describe('stage-b-lint: the verdict may live on the linked issue', () => {
     const result = runStageBLint({ prNumber: 201, severity: 'block', gh: gh.gh })
     expect(result.verdict).toBe('pass')
     expect(result.exitCode).toBe(0)
-    expect(gh.calls.map((c) => `${c[0]} ${c[2]}`)).toEqual(['pr 201', 'issue 199'])
+    expect(gh.calls.filter((c) => c[0] !== 'api').map((c) => `${c[0]} ${c[2]}`)).toEqual([
+      'pr 201',
+      'issue 199',
+    ])
   })
 })
 
@@ -399,7 +406,12 @@ describe('stage-b-lint: runner contract', () => {
       '--repo',
       'bbm-academy-org/bbm-portal',
       '--json',
-      'number,body,files',
+      'number,body',
+    ])
+    // The file list is NOT read off that view — it is paged (canon §8).
+    expect(ghFilesArgs(92, 2, 100)).toEqual([
+      'api',
+      'repos/bbm-academy-org/bbm-portal/pulls/92/files?per_page=100&page=2',
     ])
     expect(ghIssueArgs(91)).toEqual([
       'issue',
