@@ -620,6 +620,27 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-31-416-server-action-authz -->
 
+- [ ] 2026-09-02 #439 removes a subagent DISPATCH from the write-evidence list of
+      `isWriteToolUse()` (`tools/hooks/completion-report-gate.mjs`), inverting the
+      #158 clause «the subagents wrote, the lead reports». The inversion is right
+      for the incident it closes — a grooming session that only read canon and
+      fanned out read-only recon owes no stage-6 report — but it leaves a named
+      residual: a lead that dispatches an IMPLEMENTER, lets the subagent commit and
+      push inside its own worktree/transcript, and then writes «done» while itself
+      landing nothing (no commit/push of its own, no `pnpm pr:land` / `gh pr merge`,
+      no `gh issue comment`) now trips none of the three Stop gates, where under
+      #158 it tripped all three. That session DOES owe a report. Closing it needs
+      evidence the lead's own transcript does not carry — the subagent's write, or a
+      dispatch-result-derived signal — which is a new cross-transcript input to the
+      recognizer, not a list edit, so it is routed rather than smuggled into the
+      fix — return condition: the next `/wrap` or retro that records a lead session
+      which dispatched implementation and reported it done while landing nothing
+      itself (gates silent on a session that owed a stage-6 report), or the next
+      material edit to `isWriteToolUse()`'s evidence list, whichever comes first
+      (#439, PR #441 decision-debt pass)
+
+<!-- debt-entry-end: 2026-09-02-439-dispatch-not-write-evidence -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-07-30 (#92): the /p/hours upsert-without-prefill line — the very
