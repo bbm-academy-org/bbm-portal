@@ -620,6 +620,62 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-31-416-server-action-authz -->
 
+- [ ] 2026-09-02 a subagent ran `pnpm install` in the SHARED main checkout
+      instead of in its own worktree, unasked. `.claude/rules/parallel-sessions.md`
+      says the session's work lives in `.claude/worktrees/<N>`, but nothing
+      mechanically stops an install — or any other node/pnpm command — from
+      landing in the main checkout under a live stand. Left as prose rather than
+      fixed in this canon PR: the fix is a hook, which is its own diff — return
+      condition: the next recurrence of an install/build command run outside the
+      session's worktree; then a hook that refuses install commands whose cwd is
+      not the session's worktree (sibling of #322's lead-dispatch hook) (#433)
+
+<!-- debt-entry-end: 2026-09-02-433-install-outside-worktree -->
+
+- [ ] 2026-09-02 the six UX facets (composition / controls / grouping / states /
+      feedback / post-submit) now live in FOUR places: the canon in
+      `.claude/skills/build-ui-from-design-system/SKILL.md` step 4, the fill-in
+      slots in `.github/pull_request_template.md`, the `FACETS` constant in
+      `tools/lint/ux-record-lint.mjs`, and an enumeration in prose in the
+      `docs/ci-guardrails.md` §5 register row. The template and the constant are
+      operational copies the mechanism needs (a form to fill, strings to match);
+      the §5 prose enumeration is a second retelling of the canon in the sense
+      CLAUDE.md's «path is the contract» bans, kept because the register row is
+      read standalone — return condition: the first change to the facet SET
+      (adding, renaming or dropping a facet); that PR replaces the §5
+      enumeration with a pointer at step 4 and updates the template and the
+      constant in the same diff (#433)
+
+<!-- debt-entry-end: 2026-09-02-433-ux-facets-four-copies -->
+
+- [ ] 2026-09-02 both always-on rules files touched by #433 grew by APPEND with
+      nothing relocated — `.claude/rules/design-process.md` +17 lines (119/200,
+      60 % of the per-file budget) and `.claude/rules/dev-env.md` +10 (74/200,
+      37 %), the latter restating the «seeded by `provision.sh`, steps 2 and 8»
+      fact the same file already carries one bullet up.
+      `pnpm lint:instruction-budget` is PASS (corpus 77 %, 618/800), so nothing
+      forced a compaction pass and none was run; `.claude/skills/wrap/SKILL.md`
+      phase 3 («adding signal means relocating detail out») binds a wrap session
+      and this was not one — return condition: the first NEAR or FAIL row for
+      either file or for the corpus in `pnpm lint:instruction-budget`, or the
+      next `/wrap` phase 3, whichever comes first; then the incident narratives
+      in both bullets move to the skills that own them (#433)
+
+<!-- debt-entry-end: 2026-09-02-433-rules-appended-not-compacted -->
+
+- [ ] 2026-09-02 the permanent append-marker comment occurs TWICE in this file —
+      once quoted in the rules bullet that defines it, once as the real marker at
+      the end of the active block — and #433's entry was first inserted at the wrong (first)
+      occurrence, inside the rules header, then redone. Nothing catches that
+      placement: the `debt-merge-driver` spec asserts anchor uniqueness and
+      preservation, not that an active entry sits between the «entries below
+      this line» marker and the permanent append marker at the end of the active
+      block — return condition: the second misplaced insertion, or the next `/wrap`
+      DEBT sweep, whichever comes first; then that spec gains the placement
+      assertion (#433)
+
+<!-- debt-entry-end: 2026-09-02-433-debt-marker-ambiguous -->
+
 - [ ] 2026-09-02 #439 removes a subagent DISPATCH from the write-evidence list of
       `isWriteToolUse()` (`tools/hooks/completion-report-gate.mjs`), inverting the
       #158 clause «the subagents wrote, the lead reports». The inversion is right

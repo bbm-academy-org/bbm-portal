@@ -82,12 +82,39 @@ adopted because <reason>`). If the same class goes bespoke on a second surface,
 that is decision-debt: file it (`surface-decision-debt`), it is the signal the
 class belongs in the registry or in #112.
 
-**4. Enumerate the states before writing markup.** default / hover /
-focus-visible / active / disabled / loading / empty / error — and state
-explicitly which of them the design source does **not** show. A mockup shows the
-happy path; the states you did not ask about are the ones that get reworked.
-(This is also task-cycle stage 3's standing instruction, together with loading
-the `frontend-design` skill before markup.)
+**4. Decide the UX, and sign the decision in the PR — the `UX-record:` block.**
+Composition, control choice, grouping, states, feedback and post-submit
+behaviour are YOURS to decide (owner ruling, Антон, 2026-09-02 —
+[`.claude/rules/design-process.md`](../../rules/design-process.md) §1); the
+visual language and product forks are the owner's. Decide them before writing
+markup and record them in the PR body, all six facets, one line each:
+
+```
+UX-record:
+
+- Composition: what dominates the screen, what recedes, and why that matches its purpose
+- Controls: which `@/ui` controls carry each input, and why not a hand-rolled one
+- Grouping: how the fields and blocks are grouped (a flat list of N inputs is a decision too)
+- States: default / hover / focus-visible / active / disabled / loading / empty / error /
+  permission-denied / long content — and which of them the design source does NOT show
+- Feedback: what the user sees after each action, and where it appears
+- Post-submit: where the user lands, and what changed there
+```
+
+The fence above marks this as an EXAMPLE: paste the real block into the PR body
+**unfenced**, because the guard strips fenced text and HTML comments
+(`tools/lint/lib/guard.mjs`) — a fenced copy records nothing.
+
+A view-layer diff that decides no UX at all (a rename, a prop rewire) records
+the self-certification instead, on one line:
+`UX-record: N/A (no UX decisions) — lead-certified`.
+
+This replaces an unsigned checklist: until #433 the state list here was a
+reminder nobody had to sign and nothing read, and the price is in that issue —
+eleven ungrouped fields on the finance request form because no one was licensed
+to group them, and a hand-rolled select beside `src/ui/select.tsx`. Check it with
+`pnpm lint:ux-record <PR>` (WARN — [`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md) §5).
+The `frontend-design` skill is still loaded before markup, per task-cycle stage 3.
 
 **5. Keep app glue out of the presentation.** Data fetching, auth gating, error
 copy and routing live in the route/module; the component is the presentation
@@ -111,6 +138,7 @@ value — `GO — <owner, date>`, `batched at #<gate>`, or
 - A UI diff whose every value traces to a file in `design-source/`.
 - An explicit reuse decision in the PR body: reused / adopted / **bespoke +
   justification**.
+- A filled `UX-record:` block (step 4) — or the one-line lead self-certification.
 - A filled `Stage-B:` line, and — when the class became reusable — a new row in
   `docs/design/ui-whitelist.md`.
 
@@ -127,3 +155,7 @@ value — `GO — <owner, date>`, `batched at #<gate>`, or
   to run with an empty registry; skipping it is how bespoke becomes invisible.
 - **Silent bespoke** — no justification line, so nobody can see the debt
   accumulating.
+- **Waiting for the owner to compose the screen** — what a missing or
+  `wireframe`-only source does and does not stop is
+  [`design-process.md`](../../rules/design-process.md) §1; step 4 above is where
+  your composition is recorded.
