@@ -69,8 +69,13 @@ export const REPO = 'bbm-academy-org/bbm-portal'
  */
 export const FACETS = ['composition', 'controls', 'grouping', 'states', 'feedback', 'post-submit']
 
-/** The `UX-record:` marker line, through list/quote/emphasis decoration. */
-const MARKER_RE = /^[ \t>*_-]*\*{0,2}ux-?record\*{0,2}\s*:\s*(.*)$/gim
+/**
+ * The `UX-record:` marker line, through list/quote/emphasis decoration. The
+ * separator is optional and may be a space: `UX record` is how the PR
+ * template's own heading spells it, so an author following the heading must
+ * not fall through the gate.
+ */
+const MARKER_RE = /^[ \t>*_-]*\*{0,2}ux[-\s]?record\*{0,2}\s*:\s*(.*)$/gim
 
 /** A markdown heading — the end of the block a marker opens. */
 const HEADING_RE = /^ {0,3}#{1,6}\s/
@@ -85,8 +90,14 @@ const FACET_RE = new RegExp(
   'i',
 )
 
-/** An unfilled value — the PR template's own angle-bracket line, or a stand-in. */
-const PLACEHOLDER_RE = /^(<.*>|\(.*\)|tbd|pending.*|todo.*|n\/a|-+|\?+)$/i
+/**
+ * An unfilled value — the PR template's own angle-bracket line, or a stand-in.
+ * Byte-identical to `stage-b-lint.mjs`'s set on purpose: `n/a` is NOT a
+ * placeholder at the facet level (`Post-submit: n/a` on a read-only screen is a
+ * recorded decision), and a fully parenthesised value is a real answer too.
+ * `n/a` is only refused at the MARKER level, by `isLeadCertified` below.
+ */
+const PLACEHOLDER_RE = /^(<.*>|tbd|pending.*|todo.*|\?+)$/i
 
 /**
  * `N/A (no UX decisions) — lead-certified` — the lead self-certification, the
