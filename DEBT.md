@@ -643,6 +643,8 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-438-pr-body-guard-ui-merge-bypass -->
 
+<!-- debt-entry-end: 2026-09-02-438-unpaged-files-array -->
+
 - [ ] 2026-09-02 a subagent ran `pnpm install` in the SHARED main checkout
       instead of in its own worktree, unasked. `.claude/rules/parallel-sessions.md`
       says the session's work lives in `.claude/worktrees/<N>`, but nothing

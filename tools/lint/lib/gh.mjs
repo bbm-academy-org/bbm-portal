@@ -41,12 +41,29 @@ function fixtureRead(file) {
   }
 }
 
+/**
+ * `shell: true` is how `gh.cmd` is found on Windows, and cmd.exe then re-parses
+ * the argv: an UNQUOTED `&` in a REST query string starts a SECOND command, so
+ * `gh api …/files?per_page=100&page=1` ran the api call and then tried to
+ * execute `page=1` («'page' is not recognized as an internal or external
+ * command»). Quoting the affected arguments keeps one process. Exported for its
+ * unit test; a no-op for ordinary argv and for an already-quoted argument.
+ */
+export function quoteForShell(args) {
+  return args.map((a) => {
+    const s = String(a)
+    if (s.startsWith('"') && s.endsWith('"')) return s
+    return /[&|<>^ ]/.test(s) ? `"${s}"` : s
+  })
+}
+
 function ghRun(args, cwd) {
+  const useShell = process.platform === 'win32'
   try {
-    const res = spawnSync('gh', args, {
+    const res = spawnSync('gh', useShell ? quoteForShell(args) : args, {
       cwd,
       encoding: 'utf8',
-      shell: process.platform === 'win32',
+      shell: useShell,
     })
     if (res.status !== 0) {
       return { ok: false, error: (res.stderr || `gh exited ${res.status}`).split('\n')[0] }
