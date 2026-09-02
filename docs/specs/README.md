@@ -115,15 +115,17 @@ changing one, use `do-adr-revision`.
 
 ## Machine checks
 
-Four guards read this document. All four are **WARN**, registered in
-[`docs/ci-guardrails.md`](../ci-guardrails.md) §5 with their §4 promotion
-conditions. They differ in how a finding reaches you: `lint:spec-deletion`,
+Four guards read this document, and since 2026-09-02 (#438) they are no longer
+all on one plane. Their live severities — and the §4 promotion conditions for
+the ones still WARN — are recorded in
+[`docs/ci-guardrails.md`](../ci-guardrails.md) §5, which owns them; that
+register is the only place they are stated. They also differ in how a finding
+reaches you when the script is run LOCALLY: `lint:spec-deletion`,
 `lint:ears-test` and `lint:ears-naming` exit non-zero on one, while
 `lint:spec-link` exits **0** with a WARN line unless it is given
 `--severity block` — which is how its CI job invokes it. That dial is the
 mechanism [`.claude/rules/design-process.md`](../../.claude/rules/design-process.md)
-describes for `stage-b`; the register (§5) is where each guard's severity is
-recorded.
+describes for `stage-b`, and it is independent of the plane the job sits on.
 
 | Command                   | Reads                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------ |

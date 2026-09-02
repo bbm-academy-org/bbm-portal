@@ -158,14 +158,17 @@ server knows nothing about. WARN guards stay invisible to the server either way,
 the required context is `ci` and they are absent from its needs-list. What promotion costs
 now depends on which workflow the guard lives in:
 
-| Guard's home                                | Promoting it to BLOCK                                                                                                                                                                                   |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                                    | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                  |
-| `pr-body-guards.yml` (all six guards today) | `needs` cannot cross workflows, so pick one: move the job into `ci.yml`, teach `pnpm pr:land` to demand its check-run by name, or — new since #216 — add its own context to the payload and re-apply it |
+| Guard's home                                                           | Promoting it to BLOCK                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                                                               | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                                                                                                   |
+| `pr-body-guards.yml` (`product-note`, the only guard still WARN there) | drop the job's `continue-on-error` **and** its `if:` fence, so it leaves `classifyChecks`'s WARN plane and its failure turns `pnpm pr:land` red — the route the five guards promoted on 2026-09-02 took (§2.1); the required context stays `ci`, so the protection is untouched here too |
 
-That third option did not exist while `main` was unprotected. It is the only one of the
-three that makes the server itself the enforcer, and the only one that requires a
-protection change; the "Cross-workflow guards" paragraph above lists the other two.
+Both rows leave branch protection alone by design. Adding a cross-workflow job's own
+context to the payload — possible only since #216, and the only route that would make the
+server itself the enforcer — was considered and NOT taken in #438: a job that legitimately
+skips would then wedge every merge. Moving the job into `ci.yml` was rejected there as
+well, because these guards must re-run on the `edited` activity type. Both rejections, with
+their reasoning, are the "Cross-workflow guards" paragraph in §2.1.
 
 **Break-glass.** `enforce_admins: true` plus a required `ci` context means that when
 GitHub Actions itself is degraded, nothing merges — no account can override it, which is
