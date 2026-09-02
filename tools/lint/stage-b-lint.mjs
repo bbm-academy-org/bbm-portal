@@ -323,7 +323,9 @@ export function runStageBLint({ prNumber, severity = 'warn', gh = defaultGh }) {
     const level = severity === 'block' ? 'BLOCK' : 'WARN'
     lines.push(`${TAG} ${level}: ${result.message}`)
     if (level === 'WARN')
-      lines.push(`${TAG} WARN severity (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02)`)
+      lines.push(
+        `${TAG} WARN severity here only because --severity warn was passed (docs/ci-guardrails.md §5 — BLOCK on the CI plane since 2026-09-02)`,
+      )
     return { verdict: 'violation', exitCode: severity === 'block' ? 1 : 0, lines }
   }
   lines.push(`${TAG} OK: ${result.message}`)

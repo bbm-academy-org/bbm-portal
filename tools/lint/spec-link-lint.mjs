@@ -505,7 +505,9 @@ function main() {
   }
   if (result.verdict === 'ok') report.info('PASS — the feature PR resolves to a spec.')
   if (result.verdict === 'findings' && severity === 'warn') {
-    report.finding('WARN severity (docs/ci-guardrails.md §5 — earliest promotion 2026-09-02)')
+    report.finding(
+      'WARN severity here only because --severity warn was passed (docs/ci-guardrails.md §5 — BLOCK on the CI plane since 2026-09-02)',
+    )
   }
   process.exit(exitCodeFor(result, severity))
 }

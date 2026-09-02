@@ -160,10 +160,10 @@ server knows nothing about. WARN guards stay invisible to the server either way,
 the required context is `ci` and they are absent from its needs-list. What promotion costs
 now depends on which workflow the guard lives in:
 
-| Guard's home                                        | Promoting it to BLOCK                                                                                                                                                                                                                                                                    |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                                            | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                                                                                                   |
-| `pr-body-guards.yml` (its guards still WARN per §5) | drop the job's `continue-on-error` **and** its `if:` fence, so it leaves `classifyChecks`'s WARN plane and its failure turns `pnpm pr:land` red — the route the five guards promoted on 2026-09-02 took (§2.1); the required context stays `ci`, so the protection is untouched here too |
+| Guard's home                                          | Promoting it to BLOCK                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                                              | the three-edit change described above; the required context stays `ci`, so the protection is untouched                                                                                                                                                                                   |
+| `pr-body-guards.yml` (for the jobs still WARN per §5) | drop the job's `continue-on-error` **and** its `if:` fence, so it leaves `classifyChecks`'s WARN plane and its failure turns `pnpm pr:land` red — the route the five guards promoted on 2026-09-02 took (§2.1); the required context stays `ci`, so the protection is untouched here too |
 
 Both rows leave branch protection alone by design. Adding a cross-workflow job's own
 context to the payload — possible only since #216, and the only route that would make the
@@ -590,8 +590,9 @@ repo does **not** follow the source:
 
 1. **`assignee-milestone` is wired here.** In ds-platform the script and its test exist
    with no workflow job and no package script — an orphan that documents itself as a hard
-   gate and never runs. Ported **with** wiring, and as WARN: this repo's canon (§3) has no
-   day-0 exception for "the fields are easy to set".
+   gate and never runs. Ported **with** wiring, and it LANDED as WARN: this repo's canon
+   (§3) has no day-0 exception for "the fields are easy to set". It soaked that posture and
+   was promoted to BLOCK on 2026-09-02 (#438) — §5's row is the severity of record.
 2. **"A guard without a test does not merge" is mechanical here.** In ds-platform it is a
    convention held up by review and a hand-maintained coverage list. Here it is the
    `guard-test-coverage` guard, and it is BLOCK from day 0 (§3 class 1).

@@ -388,15 +388,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:workflow-auth
 
-  # WARN on the CI plane — the always-on agent context (CLAUDE.md, AGENTS.md,
+  # BLOCK — the always-on agent context (CLAUDE.md, AGENTS.md,
   # .claude/rules/*.md) past its per-file budget, or the whole corpus past the
   # aggregate cap. Wired by #157; no epic-7 task wired it, and wiring is what
-  # starts the §4 clock for this plane (earliest promotion 2026-09-02).
+  # started the §4 clock for this plane, which ran out on 2026-09-02.
   #
-  # Two planes, deliberately different severities for the same script: as a CLI
-  # guard it is BLOCK by exit code (canon §6.1, day-0 §3 class-1 mandate — a
-  # deterministic tree check), while the new CI job soaks as WARN like every
-  # other freshly wired job. It needs no `--severity block` flag (the pattern
+  # Both planes now carry the same severity; they did not always. As a CLI
+  # guard it has been BLOCK by exit code (canon §6.1, day-0 §3 class-1 mandate —
+  # a deterministic tree check) since day 0, while the CI job soaked as WARN
+  # like every other freshly wired job. It needs no `--severity block` flag (the pattern
   # stage-b and spec-link follow): those two default to exit 0 on a finding and
   # the flag buys them a real signal; this one has exited 1 since day 0, so the
   # flag would be a no-op dial that could only ever weaken it.
