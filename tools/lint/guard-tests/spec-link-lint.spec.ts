@@ -710,6 +710,57 @@ describe('end-to-end guard run (the acceptance case, on the real script)', () =>
     expect(res.code).toBe(1)
   })
 
+  /**
+   * RED before the paging fix: the feature file sat on page 2 of the changed-file
+   * list, `gh pr view --json files` returned only page 1, and the guard reported
+   * «rule does not apply» — a BLOCK guard clearing a PR whose feature diff it
+   * never read (canon §8).
+   */
+  it('sees a src/ feature file that falls on the SECOND page of the file list', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spec-link-paged-'))
+    const ghDir = join(dir, 'gh')
+    const root = join(dir, 'root')
+    mkdirSync(ghDir, { recursive: true })
+    mkdirSync(join(root, 'docs', 'specs'), { recursive: true })
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({
+      filename: `docs/notes/note-${i}.md`,
+      additions: 1,
+      deletions: 0,
+      status: 'modified',
+    }))
+    writeFileSync(
+      join(ghDir, 'pr-view-999.json'),
+      JSON.stringify({
+        number: 999,
+        title: 'feat(hours): payout summary',
+        body: 'Closes #102',
+        files: firstPage.map((f) => ({ path: f.filename })),
+      }),
+    )
+    writeFileSync(join(ghDir, 'pr-files-999.json'), JSON.stringify(firstPage))
+    writeFileSync(
+      join(ghDir, 'pr-files-999-page2.json'),
+      JSON.stringify([
+        { filename: 'src/modules/hours/summary.tsx', additions: 40, deletions: 0, status: 'added' },
+      ]),
+    )
+    writeFileSync(
+      join(ghDir, 'issue-view-102.json'),
+      JSON.stringify({
+        number: 102,
+        title: 'Payout summary',
+        body: '',
+        issueType: { name: 'Feature' },
+      }),
+    )
+    const res = runGuard('spec-link-lint.mjs', root, {
+      extraArgs: ['--pr', '999'],
+      env: { LINT_GH_FIXTURE_DIR: ghDir, LINT_SEVERITY: 'block' },
+    })
+    expect(res.stderr).toMatch(/names no spec/)
+    expect(res.code).toBe(1)
+  })
+
   it('passes the same PR once the spec exists with a valid status', () => {
     const res = run('Closes #102', {
       '102-payout-summary.md': '---\nstatus: In dev\n---\n\n# Spec\n',

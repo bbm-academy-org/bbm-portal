@@ -8,6 +8,7 @@ import {
   checkUxRecord,
   extractRecords,
   ghIssueArgs,
+  ghFilesArgs,
   ghPrArgs,
   isLeadCertified,
   parseArgs,
@@ -59,11 +60,31 @@ function makeGh({
     calls,
     gh(args: string[]) {
       calls.push(args)
+      // `gh api .../pulls/<n>/files?per_page=&page=` — the PAGED file list
+      // (canon §8), sliced exactly like the endpoint.
+      if (args[0] === 'api') {
+        const m = /pulls[/](\d+)[/]files[?]per_page=(\d+)&page=(\d+)/.exec(String(args[1]))
+        const payload = m ? prs[Number(m[1])] : undefined
+        if (!m || !payload) return { status: 1, stdout: '', stderr: 'no such PR' }
+        const per = Number(m[2])
+        const page = Number(m[3])
+        return {
+          status: 0,
+          stdout: JSON.stringify(payload.files.slice((page - 1) * per, page * per)),
+          stderr: '',
+        }
+      }
       const n = Number(args[2])
       if (args[0] === 'pr') {
         const payload = prs[n]
+        // `gh pr view --json files` truncates at 100 entries WITHOUT saying so —
+        // the limit §8 names, modelled so a guard reading it fails here too.
         return payload
-          ? { status: 0, stdout: JSON.stringify(payload), stderr: '' }
+          ? {
+              status: 0,
+              stdout: JSON.stringify({ ...payload, files: payload.files.slice(0, 100) }),
+              stderr: '',
+            }
           : { status: 1, stdout: '', stderr: 'no such PR' }
       }
       const comments = issues[n]
@@ -336,7 +357,12 @@ describe('ux-record-lint: gh access and CLI plumbing', () => {
       '--repo',
       'bbm-academy-org/bbm-portal',
       '--json',
-      'number,body,files',
+      'number,body',
+    ])
+    // The file list is NOT read off that view — it is paged (canon §8).
+    expect(ghFilesArgs(92, 2, 100)).toEqual([
+      'api',
+      'repos/bbm-academy-org/bbm-portal/pulls/92/files?per_page=100&page=2',
     ])
     expect(ghIssueArgs(7)).toContain('number,comments')
   })

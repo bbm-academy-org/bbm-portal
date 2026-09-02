@@ -52,7 +52,8 @@
 // with `continue-on-error: true`; the script itself exits 1 on a finding (canon
 // §4 clause 1). No day-0 BLOCK mandate is claimed and none applies: the guard
 // matches REGEXES OVER SQL TEXT, so it has a real false-positive class to soak
-// (EARS-20). Promotion per §4, earliest four weeks after it lands.
+// (EARS-20). Promotion per §4; the earliest date lives in §5's row and in the
+// job's own `continue-on-error` comment, deliberately not restated here.
 //
 // Run: `pnpm lint:audit-coverage`. Findings: stderr + exit 1. Clean: stdout + 0.
 

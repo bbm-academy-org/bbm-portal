@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 // test-presence — production code changed, no test anywhere near it.
 //
-// Canon: docs/ci-guardrails.md §5. Severity: WARN since 2026-08-05 (heuristic,
-// so it soaks per §3); earliest promotion 2026-09-02 under the §4 clauses. The
-// 2026-08-27 rename (#355) changed no rule and so did not restart that clock —
-// §4 clause 2 counts from the last change to WHAT a guard matches, and this
-// guard matches exactly what it matched the day it landed.
+// Canon: docs/ci-guardrails.md §5, which is the severity of record. WARN from
+// 2026-08-05, promoted to BLOCK on 2026-09-02 (#438) under the §4 clauses. It soaked as a
+// heuristic per §3; the 2026-08-27 rename (#355) changed no rule and so did not
+// restart that clock — §4 clause 2 counts from the last change to WHAT a guard
+// matches, and this guard matches exactly what it matched the day it landed. The
+// job carries no `continue-on-error` and is in the `ci` meta-job needs-list.
+//
+// The changed set is the COMPLETE one: `ghPrFiles` pages
+// `repos/{owner}/{repo}/pulls/<n>/files` rather than reading the 100-entry
+// `gh pr view --json files` array, which canon §8 requires of a BLOCK guard
+// (#449). A page that cannot be read fails the guard rather than shrinking the
+// diff it judges.
 //
 // ── Why this guard is no longer called `tdd-signal` (#355) ───────────────────
 // It was, until 2026-08-27, and the name was a lie of exactly the kind a guard
@@ -39,7 +46,7 @@
 // changed file's import path inside a test source — both the relative form
 // (`../../src/lib/okr/rollup`) and the `@/` alias form (`@/lib/okr/rollup`).
 //
-// PR-event-gated: the changed set comes from `gh pr view <N> --json files`,
+// PR-event-gated: the changed set comes from the PR's paged file list,
 // because the Actions checkout is shallow and has no base ref to diff against.
 // On a push to `main` there is no PR and the guard exits 0 — the TDD signal only
 // means something at review time (canon §4: greenness on push runs is vacuous).
@@ -60,7 +67,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { ghViewJson } from './lib/gh.mjs'
+import { ghPrFiles } from './lib/gh.mjs'
 import {
   isEntryPoint,
   isFixturePath,
@@ -141,10 +148,12 @@ async function main() {
   if (!prNumber) out.ok('cannot resolve a PR number from the environment, nothing to check')
 
   const root = repoRoot()
-  const res = ghViewJson('pr', prNumber, 'number,files', root)
+  // The COMPLETE changed set: `ghPrFiles` pages the REST endpoint rather than
+  // reading the 100-entry `gh pr view --json files` array (canon §8).
+  const res = ghPrFiles(prNumber, root)
   if (!res.ok) out.fail(`could not fetch PR #${prNumber} metadata: ${res.error}`)
 
-  const files = (res.data.files ?? []).map((f) => toPosix(f.path))
+  const files = res.data.map((f) => toPosix(f.path))
   const { prod, tests } = classifyChanges(files)
 
   if (prod.length === 0) {
@@ -171,9 +180,10 @@ async function main() {
   }
   out.fail(
     `${untested.length} production file(s) changed with no test in the diff and no test in the tree. ` +
-      'task-cycle stage 3: no production module code without a failing test first. If this is ' +
-      'genuinely test-exempt (pure types, config, generated), the WARN can be left — the job is ' +
-      'continue-on-error. Canon: docs/ci-guardrails.md §5.',
+      'task-cycle stage 3: no production module code without a failing test first. This guard is ' +
+      'BLOCK (canon: docs/ci-guardrails.md §5), so a finding cannot be left standing: add the test, ' +
+      'or if the change is genuinely test-exempt (pure types, config, generated) widen the ' +
+      'exemption list in this file with the reason in the PR.',
   )
 }
 

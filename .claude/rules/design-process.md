@@ -61,9 +61,9 @@ linked-issue comment, in one of two shapes:
 
 A NEW route under `src/app` with no row at all fails outright, and a row whose
 `fidelity` is missing or unknown fails too. **Severity: BLOCK** from day one
-(register: [`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5) — unlike
-the WARN plane of §2 below, this job carries no `continue-on-error`. The fidelity
-values themselves are defined where they live:
+(register: [`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5) — this job
+has never carried `continue-on-error`, and since 2026-09-02 (#438) §2's check
+does not either. The fidelity values themselves are defined where they live:
 [`design-source/README.md`](../../design-source/README.md) → «The fidelity axis».
 
 The reuse ladder for any UI work — `design-source/` → the whitelist registry
@@ -102,14 +102,14 @@ the PR by touched path — a non-test `*.tsx` / `*.css` under `src/` is a UI dif
 the same definition task-cycle stage 3 uses — and reports whether a valid marker
 exists in the PR body or in a linked-issue comment.
 
-**Severity: WARN**, recorded in the guard register
-([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5). Mind the two different
-WARNs: run locally the guard reports the violation and exits 0, while in the canon WARN
-means `continue-on-error` on the CI job. The CI wiring (#136) uses both deliberately —
-the `stage-b` job passes `--severity block` so the script gives a real signal, and carries
-`continue-on-error: true` so the plane stays WARN. Promotion to BLOCK follows the canon's
-§4 clauses (earliest 2026-09-02) and is a one-line workflow change. A guard **error** (the PR cannot be read at all) is not a
-violation and always exits non-zero: a check that never ran must not look clean.
+**Severity: BLOCK since 2026-09-02** (#438), recorded in the guard register
+([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5) — the same plane §1's
+`design-fidelity` has carried from day one. A missing marker now turns `pnpm pr:land` red;
+the fix is a `Stage-B:` line in the PR body, and the workflow's `edited` trigger re-runs the
+check without a rebuild. Run LOCALLY the script still exits 0 on a violation unless given
+`--severity block` — the CI job passes that flag, and always did. A guard **error** (the PR
+cannot be read at all) is not a violation and always exits non-zero: a check that never ran
+must not look clean.
 
 **The sibling check — the agent's half of the same diff.** `pnpm lint:ux-record <PR>`
 (`tools/lint/ux-record-lint.mjs`) reads the same UI diff for the `UX-record:` block

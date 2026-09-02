@@ -32,9 +32,10 @@
 //    `Superseded` names an existing successor. This is the repo-wide sweep #157
 //    asks for, over `docs/specs/` AND `docs/superpowers/specs/`.
 //
-// The two classes carry the SAME severity (WARN) and therefore share one exit
-// code — canon §2's per-class rule is about a guard reporting classes at
-// DIFFERENT severities, which this one deliberately does not do.
+// The two classes carry the SAME severity (whatever §5's row says today) and
+// therefore share one exit code — canon §2's per-class rule is about a guard
+// reporting classes at DIFFERENT severities, which this one deliberately does not
+// do, so a promotion moves both classes together.
 //
 // ── Why the sweep skips ADRs ─────────────────────────────────────────────────
 // ADRs in this repo record status as `**Status:** Accepted` body prose
@@ -52,10 +53,13 @@
 //   LINT_GH_FIXTURE_DIR       serve `gh pr view` from canned JSON (lib/gh.mjs)
 //   PR_BODY / PR_NUMBER / GITHUB_EVENT_NAME   the usual PR-event wiring
 //
-// SEVERITY: WARN — docs/ci-guardrails.md §5, job in
-// `.github/workflows/pr-body-guards.yml` with `continue-on-error: true`; the
-// script exits 1 on a finding (canon §4 clause 1 — a guard that prints and exits
-// 0 is a stub and is not promotable). Promotion per §4, earliest 2026-09-02.
+// SEVERITY: BLOCK since 2026-09-02 (#438) — the severity of record is
+// docs/ci-guardrails.md §5's row plus the job in
+// `.github/workflows/pr-body-guards.yml`, which now carries neither
+// `continue-on-error` nor an `if:` fence; read the plane off those, not off this
+// comment. The script exits 1 on a finding and always did (canon §4 clause 1 — a
+// guard that prints and exits 0 is a stub and is not promotable), so the promotion
+// needed no change here.
 //
 // Ported from ds-platform `tools/lint/spec-deletion-lint.ts` merged with its
 // `spec-status-lint.ts`: one rule about one canon section, so one register row.

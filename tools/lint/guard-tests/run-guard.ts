@@ -47,6 +47,7 @@ const AMBIENT = [
   'LINT_GH_FIXTURE_DIR',
   'LINT_AUDIT_ALLOWLIST',
   'LINT_TDD_ORDER_PAGE_SIZE',
+  'LINT_PR_FILES_PAGE_SIZE',
 ]
 
 export function runGuard(

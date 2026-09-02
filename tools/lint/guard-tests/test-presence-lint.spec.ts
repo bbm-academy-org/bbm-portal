@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { classifyChanges, findUntested, isTestSource, needlesFor } from '../test-presence-lint.mjs'
@@ -149,5 +153,54 @@ describe('test-presence (spawned)', () => {
     })
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('could not fetch')
+  })
+})
+
+describe('test-presence: the changed-file list is PAGED (canon §8)', () => {
+  /**
+   * RED before the paging fix: `gh pr view --json files` stops at 100 entries,
+   * so a PR whose only production file is the 101st read as «changes no
+   * production source» and exited 0 — a BLOCK guard going green on a diff it
+   * never saw. The fixture models both surfaces: the truncated view AND the
+   * paged endpoint, so the guard is judged on which one it reads.
+   */
+  function pagedFixture() {
+    const dir = mkdtempSync(join(tmpdir(), 'test-presence-paged-'))
+    const gh = join(dir, 'gh')
+    const root = join(dir, 'root')
+    mkdirSync(gh, { recursive: true })
+    mkdirSync(join(root, 'src', 'lib', 'paged'), { recursive: true })
+    mkdirSync(join(root, 'tests', 'unit'), { recursive: true })
+    writeFileSync(join(root, 'src', 'lib', 'paged', 'thing.ts'), 'export const thing = 1')
+    writeFileSync(join(root, 'tests', 'unit', 'other.spec.ts'), "import '@/lib/hours/format'")
+
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({
+      filename: `docs/notes/note-${i}.md`,
+      additions: 1,
+      deletions: 0,
+      status: 'modified',
+    }))
+    // What `gh pr view --json files` would return: page 1 only, silently.
+    writeFileSync(
+      join(gh, 'pr-view-7.json'),
+      JSON.stringify({ number: 7, files: firstPage.map((f) => ({ path: f.filename })) }),
+    )
+    writeFileSync(join(gh, 'pr-files-7.json'), JSON.stringify(firstPage))
+    writeFileSync(
+      join(gh, 'pr-files-7-page2.json'),
+      JSON.stringify([
+        { filename: 'src/lib/paged/thing.ts', additions: 12, deletions: 0, status: 'modified' },
+      ]),
+    )
+    return { gh, root }
+  }
+
+  it('flags an untested production file that falls on the SECOND page', () => {
+    const { gh, root } = pagedFixture()
+    const res = runGuard('test-presence-lint.mjs', root, {
+      env: { GITHUB_EVENT_NAME: 'pull_request', PR_NUMBER: '7', LINT_GH_FIXTURE_DIR: gh },
+    })
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('src/lib/paged/thing.ts')
   })
 })

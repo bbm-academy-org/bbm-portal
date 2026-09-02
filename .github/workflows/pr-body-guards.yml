@@ -5,10 +5,29 @@
 # build matrix. Folding `edited` into ci.yml was rejected: the `ci` aggregate
 # treats a skipped need as red (see ci.yml), so a body-only edit would poison it.
 #
-# Severity: every job here is WARN (canon docs/ci-guardrails.md §2.1). `needs`
-# does not cross workflows, so a job in this file can never be in ci.yml's
-# needs-list — promoting one to BLOCK needs the decision recorded in canon §2.1
-# (move it into ci.yml, or teach `pnpm pr:land` to demand its check-run by name).
+# Severity: the five jobs promoted on 2026-09-02 (#438) are BLOCK; the rest of the
+# jobs here stay WARN. Which job is on which plane is NOT restated in this file —
+# the register (docs/ci-guardrails.md §5) owns it, one row per guard, so adding a
+# job here cannot stale a count in this comment. `needs` does not cross workflows, so
+# none of them can ever be in ci.yml's needs-list, and canon §2.1 required the
+# cross-workflow mechanism to be decided AT the promotion. It was, and the
+# decision is recorded in §2.1 — read it there. What it means for this file:
+#
+#   1. A promoted job carries no `continue-on-error`, so `pnpm pr:land` no longer
+#      demotes its FAILURE check-run to a printed warning (tools/gh/pr-land.mjs,
+#      `classifyChecks` — the WARN plane of #397 is resolved from these very
+#      files on the PR's base ref). A finding turns the merge gate RED.
+#   2. A promoted job carries no `if:` fence either. `classifyChecks` passes a
+#      SKIPPED conclusion, so a title-only edit after a red run would have
+#      replaced the FAILURE check-run with a SKIPPED one and greened the gate. A
+#      guard that can be skipped on demand is not a BLOCK, and these jobs are
+#      cheap — the fence bought nothing worth that hole. The jobs still on the
+#      WARN plane keep their fences precisely because they are WARN; which those
+#      are is the register's business (docs/ci-guardrails.md §5), not this comment's.
+#
+# The honest limit: `.github/branch-protection.json` still requires only the `ci`
+# context, so a merge performed by hand in the GitHub UI bypasses these five. The
+# canon merge route is `pnpm pr:land` (.claude/skills/merge-when-green).
 #
 # Body reliability: each step passes `PR_BODY` from the event payload rather than
 # letting the guard read it back through `gh pr view`. The payload is always
@@ -22,7 +41,11 @@ name: PR body guards
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    # `assigned`/`milestoned` and their inverses are here for `assignee-milestone`
+    # (review of PR #449, N2): setting the field is exactly the remediation its
+    # finding asks for, and without these types the FAILURE check-run stood until
+    # an unrelated push. The other jobs re-running on those events costs seconds.
+    types: [opened, edited, synchronize, reopened, assigned, unassigned, milestoned, demilestoned]
 
 concurrency:
   # NOT cancel-in-progress — and since #397 for a sharper reason than before.
@@ -48,12 +71,12 @@ permissions:
   contents: read
 
 jobs:
-  # WARN — `Closes #<epic>` on a PR whose target still has open sub-issues.
+  # BLOCK — `Closes #<epic>` on a PR whose target still has open sub-issues.
   # Needs `issues: read` on top of the usual pair for the sub-issues endpoint.
+  # Promoted WARN -> BLOCK on 2026-09-02 (#438): clean window, no recorded defect
+  # in either direction, and the rule reads the native sub-issue graph rather
+  # than prose. Unblocked in the PR body — repoint the `Closes` line at the leaf.
   epic-autoclose:
-    # A title-only edit changes no guard input — skip those runs entirely.
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -74,13 +97,16 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
-  # WARN — an open PR row with no assignee or no milestone cannot be triaged.
-  # It reads PR fields rather than the body, so it re-runs on a push
-  # (`synchronize`) rather than on the field edit itself; the fix is one line and
-  # the job is WARN, so a stale red is a nudge, not a barrier.
+  # BLOCK — an open PR row with no assignee or no milestone cannot be triaged.
+  # It reads PR fields rather than the body; since #449 the workflow also listens
+  # on `assigned`/`unassigned`/`milestoned`/`demilestoned`, so setting the missing
+  # field re-runs this check directly instead of waiting for the next push.
+  # Promoted WARN -> BLOCK on 2026-09-02 (#438). Its one DEBT.md line (#80,
+  # agent-opened PRs arriving without the fields) records a TRUE positive, which
+  # §4 clause 3 counts FOR promotion, and it has not fired since the 2026-08-15
+  # sweep. Unblocked with one `gh pr edit --add-assignee … --milestone …`, which
+  # now re-runs the job by itself (the `assigned`/`milestoned` types above).
   assignee-milestone:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -100,15 +126,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
-  # WARN — a UI diff with no recorded Stage-B verdict (guard from task 7.7/#138,
-  # wired here per the canon: the guard's lane deliberately did not touch this
-  # workflow). Invoked with `--severity block` ON PURPOSE: the canon's promotion
-  # clause 1 requires a REAL signal — a guard that prints and exits 0 is a stub
-  # and is not promotable — so the script exits non-zero on a violation while
-  # `continue-on-error` keeps the CI plane at WARN. Promotion is then one line.
+  # BLOCK — a UI diff with no recorded Stage-B verdict (guard from task 7.7/#138).
+  # `--severity block` was always passed ON PURPOSE, so the script has given a
+  # real signal (canon §4 clause 1) throughout the soak; the promotion of
+  # 2026-09-02 (#438) is the plane catching up with it.
+  # All three recorded defects are false PASSES — an asset-only visual change is
+  # invisible to the path-only classifier (#230), a parent-comment GO satisfies
+  # every later slice (#299), and the GO/PLACEHOLDER ordering could accept an
+  # unfilled template (#359) — so the guard can miss a UI diff but cannot invent
+  # one. Unblocked in the PR body with a `Stage-B:` line, in one of the three
+  # shapes .claude/rules/design-process.md §2 defines.
   stage-b:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -129,15 +157,19 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
-  # WARN — a feature PR with no spec behind it (guard from task 7.4/#135). Reads
+  # BLOCK — a feature PR with no spec behind it (guard from task 7.4/#135). Reads
   # the PR body AND each linked issue's `## Spec reference`, so it needs
-  # `issues: read` on top of the usual pair. Invoked with `--severity block` for
-  # the same reason as stage-b: the canon's promotion clause 1 requires a REAL
-  # signal, so the script exits non-zero on a finding while `continue-on-error`
-  # keeps the plane at WARN.
+  # `issues: read` on top of the usual pair. `--severity block` was always passed,
+  # for the same reason as stage-b (canon §4 clause 1).
+  # Promoted WARN -> BLOCK on 2026-09-02 (#438). It is the one promoted guard
+  # with a live false-BLOCK class — a chore slice of a Feature-typed epic can
+  # inherit the parent's type through `Part of #N` (DEBT.md, #299/PR #303 N3) —
+  # and it is promotable anyway because §4 clause 3 is literally satisfied: that
+  # class has never fired, so it is IDENTIFIED, not CONFIRMED. A §3(d)-shaped
+  # escape reachable without leaving the PR — a `spec-exempt: <reason>` line in
+  # the body — bounds it if it ever does. (§3 is the day-0 BLOCK posture, not a
+  # §4 promotion clause.) Demotion per §4 on the first confirmed false block.
   spec-link:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -158,7 +190,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
-  # WARN — a deleted spec/ADR, plus the repo-wide spec status sweep that rides
+  # BLOCK — a deleted spec/ADR, plus the repo-wide spec status sweep that rides
   # along in the same script (#157, tranche 2). It lives HERE rather than in
   # ci.yml because the sanctioned escape is a `spec-deletion:` line in the PR
   # body: a PR that adds the marker must be able to clear the check without
@@ -166,9 +198,9 @@ jobs:
   # is for. `fetch-depth: 0` is required — the deletion class diffs against
   # `origin/main`, and the default shallow checkout has no such ref, which the
   # guard would (correctly, canon §8) report as fail-closed rather than clean.
+  # Promoted WARN -> BLOCK on 2026-09-02 (#438): clean window, no recorded defect
+  # in either direction, and the sanctioned escape below is what bounds it.
   spec-deletion:
-    if: github.event.action != 'edited' || github.event.changes.body != null
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-02
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -216,10 +248,12 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
 
   # WARN — a UI diff whose PR body records no `UX-record:` block (guard from
-  # #433). Same wiring as `stage-b` and for the same reason: `--severity block`
-  # so the script gives a REAL signal (canon §4 clause 1 — a guard that prints
-  # and exits 0 is a stub and is not promotable), `continue-on-error` so the CI
-  # plane stays WARN. Promotion is then one line. It reads linked-issue comments
+  # #433). The wiring `stage-b` carried while it was WARN, for the same reason:
+  # `--severity block` so the script gives a REAL signal (canon §4 clause 1 — a
+  # guard that prints and exits 0 is a stub and is not promotable),
+  # `continue-on-error` so the CI plane stays WARN. `stage-b` kept the flag and
+  # dropped `continue-on-error` when it was promoted on 2026-09-02; promotion here
+  # is the same one line. It reads linked-issue comments
   # as well as the body, hence `issues: read`.
   ux-record:
     if: github.event.action != 'edited' || github.event.changes.body != null
