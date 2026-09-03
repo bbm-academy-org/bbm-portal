@@ -94,10 +94,20 @@ const DISABLED_TREATMENT_RE = /(?:^|[\s"'`([{:])(?:group-|peer-)?disabled:/
 /** The element can be disabled — a `disabled` attribute in the opening tag. */
 const DISABLED_ATTR_RE = /\bdisabled(?:\s*=|[\s/>])/
 
+/**
+ * A `<` that really opens a JSX tag: the name follows IMMEDIATELY, with no space.
+ * `{count < limit}` inside an attribute expression is therefore skipped rather
+ * than taken for the enclosing tag — mistaking it for one slices the tag text
+ * after the real `className` and invents a finding about a tag that does not
+ * exist (review of PR #459, N5).
+ */
+const TAG_OPEN_RE = /^<[A-Za-z]/
+
 /** The `<` index of the opening tag enclosing `offset`, or -1. */
 function enclosingTagStart(src, offset) {
   for (let i = offset; i >= 0; i--) {
     if (src[i] !== '<') continue
+    if (!TAG_OPEN_RE.test(src.slice(i, i + 2))) continue
     const end = findTagEnd(src, i)
     return end >= offset ? i : -1
   }
@@ -106,7 +116,7 @@ function enclosingTagStart(src, offset) {
 
 /** The tag name at `start` (the `<`), or null when it is not an opening tag. */
 function tagNameAt(src, start) {
-  const m = /^<\s*([A-Za-z][\w.$-]*)/.exec(src.slice(start, start + 64))
+  const m = /^<([A-Za-z][\w.$-]*)/.exec(src.slice(start, start + 64))
   return m ? m[1] : null
 }
 
