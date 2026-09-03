@@ -265,6 +265,7 @@ export {
   liabilityBalances,
   listRegister,
   postingsMissingOptionalProduct,
+  registerEntriesByIds,
 } from './queries'
 export type {
   AccountBalance,
