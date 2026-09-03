@@ -935,6 +935,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-03-437-journey-harness -->
 
+- [ ] 2026-09-03 `.claude/skills/task-cycle/SKILL.md` stage 5 part 3 says `.playwright-mcp/` is «the only target the screenshot-path-guard accepts», but `tools/hooks/screenshot-path-guard.mjs` exports `ALLOWED_OUTPUT_DIRS = [SERVER_OUTPUT_DIR, 'test-results', 'playwright-report']` (with `SERVER_OUTPUT_DIR = '.playwright-mcp'`, so all three of `.playwright-mcp`, `test-results` and `playwright-report` are accepted) and its denial message names all three. Following the text is still correct behaviour, so this is an accuracy fix, not a defect — return condition: the next PR that touches stage 5 of `task-cycle`, which rewords it to «the target the screenshot-path-guard steers capture to».
+
+<!-- debt-entry-end: 2026-09-03-437-guard-only-target -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
