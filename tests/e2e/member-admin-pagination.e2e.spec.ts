@@ -47,19 +47,21 @@ test('an admin can reach the last seeded member through the approved pager', asy
   await page.goto('/p/admin/member/members')
   await page.getByRole('searchbox', { name: 'Поиск участников' }).fill(SEEDED_DOMAIN)
 
-  // The row COUNT rather than a named member: the list's sort order is the
+  // The pager is the `data-table` block's (#434), so the counter and the page
+  // marker are its wording — «Всего записей: N» plus «Страница n из m» — and
+  // not the hand-rolled «1–50 из N» the screen used before the migration.
+  // The rows are counted rather than named: the list's sort order is the
   // screen's business, so asserting «Ольга Ушакова is on page 2» would be a
   // test of the ordering dressed up as a test of the pager.
   const rows = page.getByRole('row').filter({ hasText: SEEDED_DOMAIN })
 
-  await expect(page.getByText(`1–${PAGE_SIZE} из ${TOTAL}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Всего записей: ${TOTAL}`, { exact: true })).toBeVisible()
+  await expect(page.getByText('Страница 1 из 2', { exact: true })).toBeVisible()
   await expect(rows).toHaveCount(PAGE_SIZE)
 
   await page.getByRole('button', { name: 'Следующая страница' }).click()
 
-  await expect(
-    page.getByText(`${PAGE_SIZE + 1}–${TOTAL} из ${TOTAL}`, { exact: true }),
-  ).toBeVisible()
+  await expect(page.getByText('Страница 2 из 2', { exact: true })).toBeVisible()
   await expect(rows).toHaveCount(TOTAL - PAGE_SIZE)
   await expect(page.getByRole('button', { name: 'Следующая страница' })).toBeDisabled()
 })

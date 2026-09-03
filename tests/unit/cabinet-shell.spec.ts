@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { cleanup, render } from '@testing-library/react'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import {
@@ -323,6 +324,65 @@ describe('EARS-432: the navigation is a persistent left sidebar grouped by modul
   })
 })
 
+/**
+ * The shell's Toaster is a SIBLING of the cabinet grid, never a cell in it
+ * (#434 acceptance defect, fixed in `a8d5634`; review blocker 1).
+ *
+ * Sonner renders where it is placed instead of portalling, and its outer
+ * element is a plain `<section>`. Dropped between the sidebar and `<main>` it
+ * therefore takes the second cell of `md:grid-cols-[248px_minmax(0,1fr)]` and
+ * pushes the whole work area onto its own row at the sidebar's 248px — on
+ * EVERY cabinet screen at once. Nothing caught it: the unit suite and both e2e
+ * specs query by role and never look at width. This is the invariant that
+ * would have, and it is structural rather than a width measurement.
+ */
+describe('#434: the cabinet Toaster is a sibling of the grid, not a cell in it', () => {
+  afterEach(cleanup)
+
+  it('#434: nothing but the sidebar and <main> is a child of [data-cabinet]', async () => {
+    vi.resetModules()
+    // Refine's provider tree and its router binding are not the subject here —
+    // the frame's DOM is. `useMenu` is mocked at the shape the real one returns.
+    vi.doMock('@refinedev/core', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@refinedev/core')>()),
+      Refine: ({ children }: { children: React.ReactNode }) => children,
+      useMenu: () => ({ menuItems: [], selectedKey: '' }),
+    }))
+    vi.doMock('next/navigation', () => ({ usePathname: () => `${CABINET_ROOT}/hours/periods` }))
+    // The Server Function the shell hands its data provider pulls `@/auth`
+    // (and next-auth's server entry) into the module graph. It is never called
+    // here: no screen under test issues a request.
+    vi.doMock('@/app/(platform)/p/admin/actions', () => ({
+      validateCabinetResponse: async () => ({ ok: true as const, data: null }),
+    }))
+
+    const { CabinetShell } = await import('@/app/(platform)/p/admin/CabinetShell')
+    const { container } = render(
+      el(CabinetShell, {
+        resources: cabinetResources([HOURS]),
+        children: el('div', null, 'экран'),
+      }),
+    )
+
+    const grid = container.querySelector('[data-cabinet]')
+    expect(grid).not.toBeNull()
+    // The feedback channel is rendered at all — this test must fail if the
+    // Toaster is deleted, not only if it moves back inside the columns.
+    const toaster = container.querySelector('[aria-label^="Notifications"]')
+    expect(toaster).not.toBeNull()
+
+    expect(grid?.contains(toaster ?? null)).toBe(false)
+    // Two columns, two children. A third child is a third grid cell, whatever
+    // it is, and that is exactly how the defect arrived.
+    expect(grid?.children).toHaveLength(2)
+
+    vi.doUnmock('@refinedev/core')
+    vi.doUnmock('next/navigation')
+    vi.doUnmock('@/app/(platform)/p/admin/actions')
+    vi.resetModules()
+  })
+})
+
 describe('EARS-434: /p/admin opens on an index of sections', () => {
   it('EARS-434: it lists the sections and their items — not a dashboard, not a jump into the first resource', async () => {
     vi.resetModules()
@@ -360,7 +420,18 @@ describe('EARS-431: the cabinet is `@refinedev/core` plus a router binding, and 
     const refine = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter((d) =>
       d.startsWith('@refinedev/'),
     )
-    expect(refine.sort()).toEqual(['@refinedev/core', '@refinedev/nextjs-router'])
+    // `@refinedev/react-table` joined the list on #434 and does NOT widen the
+    // clause. EARS-431 excludes Refine's AUTH and DATA packages — the hand-written
+    // provider over `/api/p/<slug>/admin/*` is still the only data path — and its
+    // note excludes the UI packages, which is why `ThemedLayoutV2` was not used.
+    // `react-table` is neither: it ships no component, no style and no provider,
+    // only the `useTable` hook binding Refine's own `useList` to a headless
+    // tanstack table. It is what the adopted `data-table` block consumes.
+    expect(refine.sort()).toEqual([
+      '@refinedev/core',
+      '@refinedev/nextjs-router',
+      '@refinedev/react-table',
+    ])
   })
 
   it('EARS-431: the data provider is this repo’s own file, not a Refine package', () => {

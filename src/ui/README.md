@@ -24,21 +24,56 @@ imports — `radix-ui`, `lucide-react`, `class-variance-authority`, `clsx`,
 `tailwind-merge`, `tw-animate-css` — plus Tailwind and the `shadcn` CLI as dev
 dependencies. Those are pinned exactly.
 
-| File                                                                                       | What it is                                                                                               |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `theme.css`                                                                                | the theme entry — the ONE place a colour value is written. Imported by `src/app/(platform)/p/layout.tsx` |
-| `utils.ts`                                                                                 | `cn()` — the `clsx` + `tailwind-merge` helper every copied component imports                             |
-| `button.tsx` `card.tsx` `badge.tsx` `avatar.tsx` `separator.tsx` `dropdown-menu.tsx`       | the launcher and shell primitives                                                                        |
-| `input.tsx` `label.tsx` `textarea.tsx` `select.tsx` `table.tsx` `alert.tsx` `skeleton.tsx` | the member cabinet CRUD and explicit loading/error/form states (#316)                                    |
+| File                                                                                                                                                                                                                                                                          | What it is                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `theme.css`                                                                                                                                                                                                                                                                   | the theme entry — the ONE place a colour value is written. Imported by `src/app/(platform)/p/layout.tsx`                   |
+| `utils.ts`                                                                                                                                                                                                                                                                    | `cn()` — the `clsx` + `tailwind-merge` helper every copied component imports                                               |
+| `button.tsx` `card.tsx` `badge.tsx` `avatar.tsx` `separator.tsx` `dropdown-menu.tsx`                                                                                                                                                                                          | the launcher and shell primitives                                                                                          |
+| `input.tsx` `label.tsx` `textarea.tsx` `select.tsx` `table.tsx` `alert.tsx` `skeleton.tsx`                                                                                                                                                                                    | the member cabinet CRUD and explicit loading/error/form states (#316)                                                      |
+| `form.tsx` `dialog.tsx` `alert-dialog.tsx` `sheet.tsx` `sonner.tsx` `tabs.tsx` `tooltip.tsx` `checkbox.tsx` `switch.tsx` `breadcrumb.tsx` `pagination.tsx` `sidebar.tsx` `popover.tsx` `command.tsx` `calendar.tsx` `collapsible.tsx` `input-group.tsx` `hooks/use-mobile.ts` | the block set (#434) — the form, overlay and feedback primitives, plus the dependencies the CLI pulls with them            |
+| `refine-ui/**`                                                                                                                                                                                                                                                                | the Refine blocks (#434) — `views`, `data-table`, `notification`, `buttons`, `layout/breadcrumb`, `layout/loading-overlay` |
 
 **Why this set.** The first six are the set the frozen `/p` launcher (PR #354)
 actually renders: a tile per app (card), the external marker (badge), the admin
 flag (badge), the top bar's avatar and its rule (avatar, separator), and the app
 switcher's trigger and menu (button, dropdown-menu). The second row arrived with
 the first editable cabinet tenant (#316): its searchable table, profile and alias
-forms, plus explicit loading, validation and read/save failure states. The kit
-grows by the same rule — a component is copied in when a surface needs it, not in
-anticipation.
+forms, plus explicit loading, validation and read/save failure states. The third
+and fourth arrived with #434, and for a different reason than the first two: not
+one surface's need, but the fact that the reuse ladder's second rung
+([`docs/design/ui-whitelist.md`](../../docs/design/ui-whitelist.md)) had nothing
+on it, so «reuse before bespoke» was unenforceable and every screen hand-rolled
+its own form. Otherwise the kit still grows by the same rule — a component is
+copied in when a surface needs it, not in anticipation.
+
+## The Refine subtree — `refine-ui/**`
+
+Refine's registry items carry a hardcoded `target` (`src/components/refine-ui/…`)
+that overrides `components.json`'s aliases — the caveat this file has recorded
+since #360. #434 is when it bit. The items are therefore fetched from
+`https://ui.refine.dev/r/<item>.json` and written under `src/ui/refine-ui/**`
+with their imports rewritten (`@/registry/new-york/ui/*` → `@/ui/*`,
+`@/registry/new-york/refine-ui/*` → `@/ui/refine-ui/*`, `@/lib/utils` →
+`@/ui/utils`). The subtree mirrors upstream's own folder shape so the next
+refresh is a re-fetch and not a re-invention.
+
+**Five deliberate divergences from upstream, all of them named:**
+
+| Divergence                                                                              | Why                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notification/toaster.tsx` is not vendored                                              | it exists only to read a theme from Refine's next-themes `theme-provider`, which this repo does not run. The shadcn `sonner.tsx` is the same Toaster with the kit's icons                                                                                                                               |
+| `sonner.tsx` reads the `.dark` class instead of `next-themes`                           | upstream's `useTheme()` needs a `ThemeProvider` this repo does not run: unprovided it answers `system`, so the toast asked the OS and rendered light on a dark screen (#434 review). The workspace's dark theme IS the `.dark` class of `theme.css`, and `next-themes` is dropped from the dependencies |
+| `data-table/data-table-filter.tsx` is not vendored                                      | it does not typecheck against `@refinedev/core` 5.x — its operator map is missing `eqs`/`nes`. Re-vendor it when upstream catches up and a screen needs column filters                                                                                                                                  |
+| the `data-table` pager's English chrome is translated, and its empty state became props | one locale, ru-RU, hardcoded everywhere; there is no i18n layer for the block's `useTranslate` to reach. Kept as its own commit so the delta from upstream stays readable                                                                                                                               |
+| `layout-01` is not vendored at all                                                      | it is the cabinet SHELL, and `CabinetShell` already implements the owner-accepted #315 layout over `useMenu()`. Swapping it changes every admin screen's chrome — its own task, not #434's                                                                                                              |
+
+**And one repo-level concession:** `eslint.config.mjs` switches
+`react-hooks/set-state-in-effect` (tripped by `hooks/use-mobile.ts`) and
+`react-hooks/static-components` (tripped by `refine-ui/layout/breadcrumb.tsx`)
+off for `src/ui/**` alone. Fixing them here would be a silent fork that the next
+`shadcn add` reverts. The app's own components keep both rules. A third,
+`react-hooks/immutability`, was switched off with them and is back ON: its only
+tripping file was `data-table-filter.tsx`, which is not vendored.
 
 ## Adding to the kit
 

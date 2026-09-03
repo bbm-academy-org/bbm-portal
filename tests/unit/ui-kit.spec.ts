@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import { createElement as h } from 'react'
+import { toast } from 'sonner'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { Avatar, AvatarFallback } from '@/ui/avatar'
@@ -16,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/ui/dropdown-menu'
 import { Separator } from '@/ui/separator'
+import { Toaster } from '@/ui/sonner'
 import { cn } from '@/ui/utils'
 
 /**
@@ -93,6 +95,63 @@ describe('the copied primitives run in this repo', () => {
     expect(cn('bg-background', false && 'bg-card', 'text-foreground')).toBe(
       'bg-background text-foreground',
     )
+  })
+})
+
+/**
+ * The feedback channel follows the workspace theme (#434, review blocker 2).
+ *
+ * `src/ui/sonner.tsx` came from upstream reading `useTheme()` of `next-themes`,
+ * a provider this repo does not run and deliberately does not want (see
+ * `src/ui/README.md`): the hook then answered `'system'`, sonner asked the OS,
+ * and a light toast landed on a `.dark` screen — visible in
+ * `docs/evidence/434/06-save-toast-desktop-dark.png`. This repo's dark theme is
+ * the `.dark` class of `src/ui/theme.css`, so that is what the Toaster reads.
+ *
+ * The assertions are on sonner's own `data-sonner-theme`, the attribute that
+ * selects its dark palette (`richColors` included) — not on our wrapper's
+ * internals.
+ */
+describe('the kit Toaster follows the workspace theme (#434)', () => {
+  afterEach(() => {
+    cleanup()
+    document.documentElement.classList.remove('dark')
+  })
+
+  /** Sonner renders its `<ol>` only once a toast exists. */
+  async function toasterList(): Promise<HTMLElement> {
+    toast.success('готово')
+    return waitFor(() => {
+      const list = document.querySelector<HTMLElement>('[data-sonner-toaster]')
+      if (!list) throw new Error('the toaster list has not rendered yet')
+      return list
+    })
+  }
+
+  it('#434: under the theme’s own `.dark` root the toast is dark', async () => {
+    document.documentElement.classList.add('dark')
+    render(h(Toaster, { position: 'bottom-right', richColors: true }))
+    expect((await toasterList()).getAttribute('data-sonner-theme')).toBe('dark')
+  })
+
+  it('#434: with no `.dark` root the toast is light — and never `system`', async () => {
+    render(h(Toaster, { position: 'bottom-right', richColors: true }))
+    expect((await toasterList()).getAttribute('data-sonner-theme')).toBe('light')
+  })
+
+  it('#434: the class going on AFTER mount re-themes the toaster', async () => {
+    // The workspace ships no theme switch today, so this is the clause that
+    // keeps the read live rather than a mount-time snapshot — and it is what a
+    // future switch will rely on.
+    render(h(Toaster, { position: 'bottom-right', richColors: true }))
+    const list = await toasterList()
+    expect(list.getAttribute('data-sonner-theme')).toBe('light')
+    document.documentElement.classList.add('dark')
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'),
+      ).toBe('dark')
+    })
   })
 })
 

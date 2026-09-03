@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import React from 'react'
 
 import { createCabinetDataProvider } from '@/lib/platform/cabinet'
+import { useNotificationProvider } from '@/ui/refine-ui/notification/use-notification-provider'
+import { Toaster } from '@/ui/sonner'
 
 import { validateCabinetResponse } from './actions'
 import { CabinetSidebar } from './CabinetSidebar'
@@ -34,6 +36,16 @@ import { breadcrumbFromResources } from './resources'
  * `useMenu()`, Refine's native `meta.parent` model, and `CabinetSidebar`
  * renders it with the kit. The behaviour is what was accepted; the package is
  * not.
+ *
+ * FEEDBACK IS ONE CHANNEL (#434). Refine's `notificationProvider` is wired to
+ * the kit's sonner `Toaster`, so every mutation the cabinet runs — through any
+ * screen, from any module — reports success and failure in the same place, in
+ * the same shape. Before this, each screen invented its own: an inline
+ * `<Alert>` here, a `saved` boolean there, nothing at all on the third. A
+ * screen may still render an inline Alert for a state the reader must keep
+ * looking at (a record that would not load, a save that failed while the form
+ * is still on screen); the toast is the "it happened" signal, not a substitute
+ * for that.
  *
  * WHAT IS DELIBERATELY ABSENT: a top bar. The workspace's shared bar
  * (EARS-425) comes from `(platform)/p/layout.tsx`, which this shell is inside,
@@ -76,10 +88,12 @@ export function CabinetShell({
     () => createCabinetDataProvider({ validateResponse: validateCabinetResponse }),
     [],
   )
+  const notificationProvider = useNotificationProvider()
 
   return (
     <Refine
       dataProvider={dataProvider}
+      notificationProvider={notificationProvider}
       routerProvider={routerProvider}
       resources={resources}
       options={{
@@ -112,40 +126,52 @@ function CabinetFrame({
   const crumbs = breadcrumbFromResources(resources, pathname)
 
   return (
-    <div
-      data-bbm-ui
-      data-cabinet
-      // The wireframe's two-column shell: a persistent nav column and the work
-      // area. One column while narrow — the state the file does not draw.
-      className="mx-auto grid w-full max-w-[1440px] grid-cols-1 bg-background md:grid-cols-[248px_minmax(0,1fr)]"
-    >
-      <CabinetSidebar items={menuItems} selectedKey={selectedKey} />
-      <main className="min-w-0 px-4 py-6 sm:px-8">
-        {/* EARS-435: every cabinet screen says whose data it is showing, in one
-            place, so a screen author cannot forget to. */}
-        <nav data-cabinet-crumbs aria-label="Хлебные крошки" className="mb-4 text-sm">
-          <ol className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
-            {crumbs.map((crumb, index) => (
-              <li key={`${crumb.label}-${index}`} className="flex items-center gap-1.5">
-                {index > 0 ? <span aria-hidden="true">/</span> : null}
-                {crumb.href && index < crumbs.length - 1 ? (
-                  <a
-                    href={crumb.href}
-                    className="rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                  >
-                    {crumb.label}
-                  </a>
-                ) : (
-                  <span className={index === crumbs.length - 1 ? 'text-foreground' : undefined}>
-                    {crumb.label}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-        </nav>
-        {children}
-      </main>
-    </div>
+    <>
+      <div
+        data-bbm-ui
+        data-cabinet
+        // The wireframe's two-column shell: a persistent nav column and the work
+        // area. One column while narrow — the state the file does not draw.
+        className="mx-auto grid w-full max-w-[1440px] grid-cols-1 bg-background md:grid-cols-[248px_minmax(0,1fr)]"
+      >
+        <CabinetSidebar items={menuItems} selectedKey={selectedKey} />
+        <main className="min-w-0 px-4 py-6 sm:px-8">
+          {/* EARS-435: every cabinet screen says whose data it is showing, in one
+              place, so a screen author cannot forget to. */}
+          <nav data-cabinet-crumbs aria-label="Хлебные крошки" className="mb-4 text-sm">
+            <ol className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+              {crumbs.map((crumb, index) => (
+                <li key={`${crumb.label}-${index}`} className="flex items-center gap-1.5">
+                  {index > 0 ? <span aria-hidden="true">/</span> : null}
+                  {crumb.href && index < crumbs.length - 1 ? (
+                    <a
+                      href={crumb.href}
+                      className="rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      {crumb.label}
+                    </a>
+                  ) : (
+                    <span className={index === crumbs.length - 1 ? 'text-foreground' : undefined}>
+                      {crumb.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
+          {children}
+        </main>
+      </div>
+      {/* OUTSIDE the grid, not a third grid item. Sonner renders where it is
+          placed instead of portalling, and its outer element is a plain
+          `<section>` — so a `<Toaster/>` dropped between the sidebar and
+          `<main>` takes the second grid cell and pushes the work area onto its
+          own row at the sidebar's 248px. That is what the #434 acceptance stand
+          showed before this moved out. It carries its own `data-bbm-ui`
+          because it now sits outside the columns' subtree. */}
+      <div data-bbm-ui>
+        <Toaster position="bottom-right" richColors closeButton />
+      </div>
+    </>
   )
 }

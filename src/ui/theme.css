@@ -252,6 +252,18 @@
     appearance: button;
   }
 
+  /* NOT preflight — the rule Tailwind v4 DELETED. v3's preflight carried
+     `button, [role='button'] { cursor: pointer }`; v4 dropped it, so every
+     control the kit renders falls back to the UA arrow and the surface stops
+     reading as clickable. Restored here, once, instead of a `cursor-pointer`
+     className per button (#434): a pointer on an enabled control is a property
+     of the kit, not a decision each call site re-takes. Disabled controls keep
+     the arrow — `disabled:pointer-events-none` already suppresses the hover, and
+     `aria-disabled` covers the controls that stay focusable while inert. */
+  [data-bbm-ui] :is(button, [role='button'], summary):not(:disabled):not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
   /* The CLI's base block, verbatim apart from the scoping selector. */
   [data-bbm-ui],
   [data-bbm-ui] * {

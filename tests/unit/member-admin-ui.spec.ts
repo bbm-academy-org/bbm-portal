@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ColumnDef } from '@tanstack/react-table'
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -14,8 +15,21 @@ Element.prototype.releasePointerCapture ??= () => {}
 Element.prototype.scrollIntoView ??= () => {}
 
 const refine = vi.hoisted(() => ({
-  listArgs: [] as Array<Record<string, unknown>>,
-  list: {} as Record<string, unknown>,
+  // Список переехал на `useTable` + блок `DataTable` (#434): фикстура ниже —
+  // это то, что подставляется в РЕАЛЬНУЮ tanstack-таблицу, а не заглушка вывода.
+  table: {
+    rows: [] as unknown[],
+    total: 0,
+    isLoading: false,
+    error: null as unknown,
+    currentPage: 1,
+    pageSize: 50,
+    setCurrentPage: vi.fn(),
+    setPageSize: vi.fn(),
+    setFilters: vi.fn(),
+    /** Every `refineCoreProps` the screen handed `useTable`, newest last. */
+    props: [] as Array<Record<string, unknown>>,
+  },
   one: {} as Record<string, unknown>,
   create: {} as Record<string, unknown>,
   update: {} as Record<string, unknown>,
@@ -25,22 +39,64 @@ const refine = vi.hoisted(() => ({
     edit: vi.fn(),
     list: vi.fn(),
   },
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
 }))
 
 vi.mock('@refinedev/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@refinedev/core')>()
   return {
     ...actual,
-    useList: (args: Record<string, unknown>) => {
-      refine.listArgs.push(args)
-      return refine.list
-    },
     useOne: () => refine.one,
     useCreate: () => refine.create,
     useUpdate: () => refine.update,
     useNavigation: () => refine.navigation,
   }
 })
+
+vi.mock('@refinedev/react-table', async () => {
+  const { getCoreRowModel, useReactTable } = await import('@tanstack/react-table')
+  return {
+    useTable: <TData>({
+      columns,
+      refineCoreProps,
+    }: {
+      columns: ColumnDef<TData>[]
+      refineCoreProps?: Record<string, unknown>
+    }) => {
+      const state = refine.table
+      if (refineCoreProps) state.props.push(refineCoreProps)
+      const reactTable = useReactTable<TData>({
+        data: state.rows as TData[],
+        columns,
+        getCoreRowModel: getCoreRowModel(),
+        manualPagination: true,
+        manualSorting: true,
+        manualFiltering: true,
+      })
+      return {
+        reactTable,
+        refineCore: {
+          tableQuery: {
+            isLoading: state.isLoading,
+            error: state.error,
+            data: { data: state.rows, total: state.total },
+          },
+          currentPage: state.currentPage,
+          setCurrentPage: state.setCurrentPage,
+          pageCount: Math.max(1, Math.ceil(state.total / state.pageSize)),
+          pageSize: state.pageSize,
+          setPageSize: state.setPageSize,
+          setFilters: state.setFilters,
+        },
+      }
+    },
+  }
+})
+
+vi.mock('sonner', () => ({ toast: refine.toast }))
 
 vi.mock('@/app/(platform)/p/admin/member/members/alias-actions', () => ({
   validateAliasResponse: async (
@@ -74,15 +130,21 @@ const member = {
 }
 
 beforeEach(() => {
-  refine.listArgs = []
-  refine.list = {
-    query: { isLoading: false, error: null },
-    result: { data: [member], total: 1 },
-  }
+  refine.table.rows = [member]
+  refine.table.total = 1
+  refine.table.isLoading = false
+  refine.table.error = null
+  refine.table.currentPage = 1
+  refine.table.pageSize = 50
+  refine.table.setCurrentPage.mockReset()
+  refine.table.setPageSize.mockReset()
+  refine.table.setFilters.mockReset()
+  refine.table.props = []
   refine.one = { query: { isLoading: false, error: null }, result: member }
   refine.create = { mutate: vi.fn(), mutation: { isPending: false, error: null } }
   refine.update = { mutate: vi.fn(), mutation: { isPending: false, error: null } }
   Object.values(refine.navigation).forEach((mock) => mock.mockReset())
+  Object.values(refine.toast).forEach((mock) => mock.mockReset())
   vi.stubGlobal(
     'fetch',
     vi.fn(async () =>
@@ -115,66 +177,69 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.queryByRole('button', { name: /Удалить участника/ })).toBeNull()
   }, 15_000)
 
-  it('pages through every member beyond the first 50 records', async () => {
-    refine.list = {
-      query: { isLoading: false, error: null },
-      result: { data: [member], total: 101 },
-    }
+  // Раньше проверялся собственный счётчик «N–M из T» и две кнопки «Назад»/«Вперёд».
+  // Их больше нет: пагинацию рисует блок `DataTablePagination` (#434), поэтому тот же
+  // контракт — «за первой полусотней есть следующая страница» — читается по его контролам.
+  it('pages through every member beyond the first 50 records via the block pager', async () => {
+    refine.table.total = 101
     const { MemberListScreen } =
       await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
     render(React.createElement(MemberListScreen))
 
-    expect(screen.getByText(/1.+50 .+ 101/)).toBeTruthy()
-    expect(
-      screen.getByRole('button', {
-        name: /\u041f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0430\u044f/,
-      }),
-    ).toHaveProperty('disabled', true)
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: /\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f/,
-      }),
+    expect(screen.getByText('Всего записей: 101')).toBeTruthy()
+    expect(screen.getByText('Страница 1 из 3')).toBeTruthy()
+    expect(screen.getByText('Строк на странице')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Первая страница' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: 'Предыдущая страница' })).toHaveProperty(
+      'disabled',
+      true,
+    )
+    expect(screen.getByRole('button', { name: 'Последняя страница' })).toHaveProperty(
+      'disabled',
+      false,
     )
 
-    expect(refine.listArgs.at(-1)).toMatchObject({
-      pagination: { currentPage: 2, pageSize: 50 },
-    })
+    refine.table.setCurrentPage.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
+    expect(refine.table.setCurrentPage).toHaveBeenCalledWith(2)
   })
 
+  // Тот же контракт, что и раньше, но возврат на первую страницу теперь виден через
+  // `setCurrentPage` таблицы, а фильтр — через её `setFilters`, а не через аргументы `useList`.
   it('debounces member search and returns to the first page for a new query', async () => {
     vi.useFakeTimers()
-    refine.list = {
-      query: { isLoading: false, error: null },
-      result: { data: [member], total: 101 },
-    }
+    refine.table.total = 101
     const { MemberListScreen } =
       await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
     render(React.createElement(MemberListScreen))
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: /\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f/,
-      }),
-    )
-    const callsBeforeTyping = refine.listArgs.length
+    refine.table.setCurrentPage.mockClear()
+
+    const permanent = () =>
+      (refine.table.props.at(-1)?.filters as { permanent?: unknown } | undefined)?.permanent
 
     fireEvent.change(screen.getByRole('searchbox'), {
       target: { value: 'anna' },
     })
-    expect(refine.listArgs.slice(callsBeforeTyping)).not.toContainEqual(
-      expect.objectContaining({ filters: [expect.objectContaining({ value: 'anna' })] }),
-    )
+    // Not yet: the debounce has not elapsed, so the query is still the wide one.
+    expect(permanent()).toEqual([])
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
     })
-    expect(refine.listArgs.at(-1)).toMatchObject({
-      pagination: { currentPage: 1, pageSize: 50 },
-      filters: [{ field: 'q', operator: 'contains', value: 'anna' }],
-    })
+    // The search is a PERMANENT filter on `useTable`, not an imperative
+    // `setFilters` (#434): `@refinedev/react-table` mirrors tanstack's
+    // `columnFilters` into Refine's filters on every render, so a filter pushed
+    // from an effect is overwritten before the query runs — an unfiltered
+    // register under a full search box, which is how it was caught on the stand.
+    expect(permanent()).toEqual([{ field: 'q', operator: 'contains', value: 'anna' }])
+    expect(refine.table.setFilters).not.toHaveBeenCalled()
+    expect(refine.table.setCurrentPage).toHaveBeenCalledWith(1)
     vi.useRealTimers()
   })
 
-  it('toggles active and inactive members from the accepted list actions', async () => {
+  // Раньше проверялся только аргумент мутации. Теперь тот же клик обязан ещё и
+  // назвать читателю результат — успех и отказ уехали в тосты shell'а (#434).
+  it('toggles active and inactive members and names the outcome for the shell toast', async () => {
     const inactive = {
       ...member,
       id: 8,
@@ -182,10 +247,8 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
       email: 'boris@bbm.local',
       status: 'inactive' as const,
     }
-    refine.list = {
-      query: { isLoading: false, error: null },
-      result: { data: [member, inactive], total: 2 },
-    }
+    refine.table.rows = [member, inactive]
+    refine.table.total = 2
     const mutate = vi.fn()
     refine.update = { mutate, mutation: { isPending: false, error: null } }
     const { MemberListScreen } =
@@ -193,35 +256,44 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     render(React.createElement(MemberListScreen))
 
     fireEvent.click(screen.getByRole('button', { name: 'Деактивировать Анна' }))
-    expect(mutate).toHaveBeenCalledWith({
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
       resource: 'member.members',
       id: 7,
       values: { status: 'inactive' },
+      successNotification: { message: 'Участник деактивирован.' },
     })
+    expect(typeof mutate.mock.lastCall?.[0]?.errorNotification).toBe('function')
+
     fireEvent.click(screen.getByRole('button', { name: 'Активировать Борис' }))
-    expect(mutate).toHaveBeenLastCalledWith({
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
       resource: 'member.members',
       id: 8,
       values: { status: 'active' },
+      successNotification: { message: 'Участник активирован.' },
     })
   })
 
+  // Карточка «Загружаем участников…» ушла вместе с рукописным списком: блок рисует
+  // скелетные строки и спиннер, поэтому загрузка читается по ним.
   it('renders loading, empty and readable list-error states', async () => {
     const { MemberListScreen } =
       await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
-    refine.list = { query: { isLoading: true, error: null }, result: { data: [], total: 0 } }
-    const view = render(React.createElement(MemberListScreen))
-    expect(screen.getByText('Загружаем участников…')).toBeTruthy()
+    refine.table.rows = []
+    refine.table.total = 0
+    refine.table.isLoading = true
+    const { container, rerender } = render(React.createElement(MemberListScreen))
+    expect(container.querySelectorAll('tbody tr[aria-hidden="true"]')).toHaveLength(50)
+    expect(screen.queryByText('Участников пока нет')).toBeNull()
 
-    refine.list = { query: { isLoading: false, error: null }, result: { data: [], total: 0 } }
-    view.rerender(React.createElement(MemberListScreen))
+    refine.table.isLoading = false
+    rerender(React.createElement(MemberListScreen))
     expect(screen.getByText('Участников пока нет')).toBeTruthy()
+    expect(
+      screen.getByText('Создайте первый профиль — алиасы можно добавить после сохранения.'),
+    ).toBeTruthy()
 
-    refine.list = {
-      query: { isLoading: false, error: { message: 'Реестр временно недоступен' } },
-      result: { data: [], total: 0 },
-    }
-    view.rerender(React.createElement(MemberListScreen))
+    refine.table.error = { message: 'Реестр временно недоступен' }
+    rerender(React.createElement(MemberListScreen))
     expect(screen.getByText('Реестр временно недоступен')).toBeTruthy()
   })
 
@@ -234,7 +306,8 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.queryByLabelText('Статус')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Создать участника' }))
-    expect(screen.getByText('Укажите имя.')).toBeTruthy()
+    // Валидация react-hook-form асинхронна: без ожидания утверждения гонятся с резолвером.
+    expect(await screen.findByText('Укажите имя.')).toBeTruthy()
     expect(screen.getByText('Укажите корректный email.')).toBeTruthy()
   })
 
@@ -257,9 +330,8 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(timezone.getAttribute('role')).toBe('combobox')
     expect(timezone.textContent).toContain('Сохранённый пояс — America/New_York')
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить профиль' }))
-    expect(submit).toHaveBeenLastCalledWith(
-      expect.objectContaining({ timezone: 'America/New_York' }),
-    )
+    await waitFor(() => expect(submit).toHaveBeenCalled())
+    expect(submit.mock.lastCall?.[0]).toMatchObject({ timezone: 'America/New_York' })
 
     fireEvent.keyDown(timezone, { key: 'ArrowDown' })
     expect(screen.getByRole('option', { name: 'Москва — Europe/Moscow' })).toBeTruthy()
@@ -268,7 +340,9 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     expect(screen.getByRole('option', { name: 'Тбилиси — Asia/Tbilisi' })).toBeTruthy()
     fireEvent.click(screen.getByRole('option', { name: 'Бангкок — Asia/Bangkok' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить профиль' }))
-    expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ timezone: 'Asia/Bangkok' }))
+    await waitFor(() =>
+      expect(submit.mock.lastCall?.[0]).toMatchObject({ timezone: 'Asia/Bangkok' }),
+    )
   })
 
   it('renders profile left and aliases right, stacking narrowly; existing email is read-only', async () => {
@@ -283,20 +357,61 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     await waitFor(() => expect(screen.getByText('mattermost')).toBeTruthy())
   })
 
-  it('EARS-472: acknowledges a saved profile and clears the acknowledgement after a change', async () => {
-    const mutate = vi.fn((_variables: unknown, options?: { onSuccess?: () => void }) =>
-      options?.onSuccess?.(),
-    )
+  // Было: «acknowledges a saved profile and clears the acknowledgement after a change» —
+  // проверялась инлайновая плашка «Профиль сохранён.» и её сброс при правке. Плашки больше
+  // нет: подтверждение уехало в тост shell'а, поэтому экран отвечает за то, ЧТО он просит
+  // показать, а не за рендер сообщения.
+  it('EARS-472: hands the saved-profile acknowledgement to the shell notification channel', async () => {
+    const mutate = vi.fn()
     refine.update = { mutate, mutation: { isPending: false, error: null } }
     const { MemberRecordScreen } =
       await import('@/app/(platform)/p/admin/member/members/MemberRecordScreen')
     render(React.createElement(MemberRecordScreen, { id: 7, mode: 'edit' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить профиль' }))
-    expect(await screen.findByText('Профиль сохранён.')).toBeTruthy()
+    await waitFor(() => expect(mutate).toHaveBeenCalled())
 
-    fireEvent.change(screen.getByLabelText('Роль'), { target: { value: 'Новая роль' } })
+    const variables = mutate.mock.lastCall?.[0]
+    expect(variables).toMatchObject({
+      resource: 'member.members',
+      id: 7,
+      successNotification: { type: 'success', message: 'Профиль сохранён.' },
+    })
+    expect(typeof variables?.errorNotification).toBe('function')
     expect(screen.queryByText('Профиль сохранён.')).toBeNull()
+  })
+
+  it('EARS-472: keeps a FAILED save inline, next to the form being fixed', async () => {
+    refine.update = {
+      mutate: vi.fn(),
+      mutation: { isPending: false, error: { message: 'Реестр отказал в записи' } },
+    }
+    const { MemberRecordScreen } =
+      await import('@/app/(platform)/p/admin/member/members/MemberRecordScreen')
+    render(React.createElement(MemberRecordScreen, { id: 7, mode: 'edit' }))
+
+    expect(screen.getByText('Реестр отказал в записи')).toBeTruthy()
+  })
+
+  it('creates a member and hands the acknowledgement to the shell notification channel', async () => {
+    const mutate = vi.fn()
+    refine.create = { mutate, mutation: { isPending: false, error: null } }
+    const { MemberCreateScreen } =
+      await import('@/app/(platform)/p/admin/member/members/MemberCreateScreen')
+    render(React.createElement(MemberCreateScreen))
+
+    fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Борис' } })
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'boris@bbm.local' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Создать участника' }))
+    await waitFor(() => expect(mutate).toHaveBeenCalled())
+
+    const variables = mutate.mock.lastCall?.[0]
+    expect(variables).toMatchObject({
+      resource: 'member.members',
+      values: { name: 'Борис', email: 'boris@bbm.local' },
+      successNotification: { type: 'success', message: 'Участник создан.' },
+    })
+    expect(typeof variables?.errorNotification).toBe('function')
   })
 
   it('supports alias add/edit/delete controls and names a duplicate refusal', async () => {
@@ -315,8 +430,10 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     const { AliasPanel } = await import('@/app/(platform)/p/admin/member/members/AliasPanel')
     render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
     await waitFor(() => expect(screen.getByText('Алиасов пока нет')).toBeTruthy())
+    // Форма живёт в диалоге (#434): она появляется только после «Добавить алиас».
+    expect(screen.queryByLabelText('Значение алиаса')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Добавить алиас' }))
-    const aliasKind = screen.getByLabelText('Тип алиаса')
+    const aliasKind = await screen.findByLabelText('Тип алиаса')
     expect(aliasKind.getAttribute('role')).toBe('combobox')
     fireEvent.keyDown(aliasKind, { key: 'ArrowDown' })
     expect(screen.getByRole('option', { name: 'Телефон' })).toBeTruthy()
@@ -332,6 +449,19 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     await waitFor(() =>
       expect(screen.getByText('Алиас уже принадлежит участнику «Борис».')).toBeTruthy(),
     )
+  })
+
+  it('names each missing alias field under the field itself', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValueOnce(Response.json({ data: [], total: 0 }))
+    const { AliasPanel } = await import('@/app/(platform)/p/admin/member/members/AliasPanel')
+    render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
+    await waitFor(() => expect(screen.getByText('Алиасов пока нет')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить алиас' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Сохранить алиас' }))
+    expect(await screen.findByText('Выберите тип алиаса.')).toBeTruthy()
+    expect(screen.getByText('Укажите значение алиаса.')).toBeTruthy()
   })
 
   it('EARS-444: preserves an unlisted saved alias kind during an unrelated edit', async () => {
@@ -351,7 +481,7 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     await waitFor(() => expect(screen.getByText('anna', { exact: true })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna' }))
 
-    const aliasKind = screen.getByLabelText('Тип алиаса')
+    const aliasKind = await screen.findByLabelText('Тип алиаса')
     expect(aliasKind.getAttribute('role')).toBe('combobox')
     expect(aliasKind.textContent).toContain('Сохранённый тип — mattermost')
     fireEvent.change(screen.getByLabelText('Примечание'), {
@@ -379,10 +509,15 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     render(React.createElement(AliasPanel, { memberId: 7, editable: true }))
     await waitFor(() => expect(screen.getByText('anna_a', { exact: true })).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna_a' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna_b' }))
+    // Открытый диалог прячет список от a11y-дерева, поэтому вторая строка берётся
+    // по aria-label, а не по роли.
+    fireEvent.click(screen.getByLabelText('Изменить алиас anna_a'))
+    await screen.findByLabelText('Значение алиаса')
+    fireEvent.click(screen.getByLabelText('Изменить алиас anna_b'))
 
-    expect(screen.getByLabelText('Тип алиаса').textContent).toContain('Zoom — идентификатор')
+    await waitFor(() =>
+      expect(screen.getByLabelText('Тип алиаса').textContent).toContain('Zoom — идентификатор'),
+    )
     expect(screen.getByLabelText('Значение алиаса')).toHaveProperty('value', 'anna_b')
     fireEvent.change(screen.getByLabelText('Примечание'), { target: { value: 'Рабочий' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить алиас' }))
@@ -405,13 +540,19 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     await waitFor(() => expect(screen.getByText('anna', { exact: true })).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: 'Добавить алиас' }))
-    fireEvent.change(screen.getByLabelText('Значение алиаса'), { target: { value: 'draft' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Изменить алиас anna' }))
+    fireEvent.change(await screen.findByLabelText('Значение алиаса'), {
+      target: { value: 'draft' },
+    })
+    fireEvent.click(screen.getByLabelText('Изменить алиас anna'))
 
-    expect(screen.getByLabelText('Тип алиаса').textContent).toContain('Telegram')
+    await waitFor(() =>
+      expect(screen.getByLabelText('Тип алиаса').textContent).toContain('Telegram'),
+    )
     expect(screen.getByLabelText('Значение алиаса')).toHaveProperty('value', 'anna')
   })
 
+  // Кнопка строки «Удалить алиас <value>» теперь только ОТКРЫВАЕТ подтверждение (#434);
+  // сам вызов делает кнопка «Удалить алиас» в `AlertDialog`.
   it('EARS-436: keeps an alias and reports a readable failure for malformed delete success', async () => {
     const alias = { id: 11, memberId: 7, kind: 'telegram', value: 'anna', note: null }
     const fetchMock = vi.mocked(fetch)
@@ -423,6 +564,9 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     await waitFor(() => expect(screen.getByText('anna', { exact: true })).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: 'Удалить алиас anna' }))
+    expect(await screen.findByText('Удалить алиас?')).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить алиас' }))
 
     expect(
       await screen.findByText(/Ответ «member\.aliases» не соответствует схеме модуля/),

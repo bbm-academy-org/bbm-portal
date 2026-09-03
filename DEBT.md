@@ -921,6 +921,18 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-440-union-driver-not-server-side -->
 
+- [ ] 2026-09-03 `docs/evidence/<issue>/` invented as the home for committed acceptance screenshots (#434). The repo had no such convention: `.playwright-mcp/` is git-ignored, so it cannot carry evidence into a PR, and there is nowhere else a reviewer can look. One issue's folder is a precedent, not a rule — return condition: the SECOND task that needs to commit acceptance screenshots, at which point it is a convention and belongs in `.claude/skills/task-cycle/SKILL.md` stage 5 with a retention rule (2.4 MB per task does not scale silently).
+
+<!-- debt-entry-end: 2026-09-03-ev1dence434 -->
+
+- [ ] 2026-09-03 Two React-Compiler-era eslint rules — `react-hooks/set-state-in-effect`, `react-hooks/static-components` — switched off for `src/ui/**` alone in `eslint.config.mjs` (#434); `react-hooks/immutability` was off in the first cut and re-enabled by the review fix `bf7b6a7`, so it is NOT part of this concession. The current upstream shadcn/Refine sources trip both, and fixing them in place is a silent fork the next `shadcn add` reverts. Scoped by directory and by rule name so the app's own components keep every one of them — return condition: the next refresh of the kit from its registries, when each rule is re-enabled one at a time and the ones upstream has fixed stay on.
+
+<!-- debt-entry-end: 2026-09-03-uikitl1nt -->
+
+- [ ] 2026-09-03 `src/ui/refine-ui/data-table/data-table-filter.tsx` is the one file of the vendored `data-table` registry item deliberately NOT kept (#434): its operator map is missing `eqs`/`nes` and it does not typecheck against `@refinedev/core` 5.x. Nothing needs column filters yet, so the gap is invisible today — return condition: the first cabinet screen that needs a per-column filter, which is also the moment to decide between patching the map here and dropping the item.
+
+<!-- debt-entry-end: 2026-09-03-dtf1lter -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
