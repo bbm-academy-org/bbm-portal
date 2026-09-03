@@ -1,5 +1,7 @@
 import type { FinanceIntakeStatus } from '@/lib/finance'
 
+import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
+
 export const FINANCE_REQUEST_BOARD_STATUSES = [
   'submitted',
   'approved',
@@ -43,4 +45,109 @@ export function formatRequestMoney(amount: string, currency: string, precision: 
   const integer = precision === 0 ? digits : digits.slice(0, -precision)
   const fraction = precision === 0 ? '' : `,${digits.slice(-precision)}`
   return `${sign}${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${fraction} ${currency}`
+}
+
+/**
+ * The board's four columns — the picked layout D of
+ * `design-source/finance/RequestBoard.html`, which is `fidelity: wireframe`:
+ * it fixes THIS composition (four columns = the four states of the status
+ * machine a reader can act on) and no visual language. The look is the stock
+ * shadcn/Refine theme, `design-source/README.md`'s `system:` row.
+ *
+ * `draft` and `cancelled` are real statuses and are deliberately NOT columns:
+ * a draft belongs to its author alone and an approver has nothing to do with
+ * it, so both live in the «Мои заявки» view instead. Putting them on the board
+ * would give the approver two columns they can never act on.
+ */
+export type RequestBoardColumn = {
+  status: FinanceRequestBoardStatus
+  title: string
+  hint: string
+}
+
+export const REQUEST_BOARD_COLUMNS: readonly RequestBoardColumn[] = [
+  { status: 'submitted', title: 'Ждут', hint: 'Поданы и ждут решения одобряющего.' },
+  {
+    status: 'approved',
+    title: 'Одобрены — ждут документа',
+    hint: 'Трата разрешена; проводки нет, пока не приложен подтверждающий документ.',
+  },
+  { status: 'posted', title: 'Проведены', hint: 'Операция в леджере — статус терминальный.' },
+  { status: 'refused', title: 'Отклонены', hint: 'Проводки нет; причина и документы остаются.' },
+]
+
+export type RequestBoardGroups = Record<FinanceRequestBoardStatus, RequestBoardItem[]>
+
+/**
+ * Files each request under its column, newest money movement first (EARS-509).
+ * An item whose status is not a column — a draft, a cancelled request — is
+ * dropped here and picked up by `ownRequests`.
+ */
+export function groupRequestsByStatus(requests: readonly RequestBoardItem[]): RequestBoardGroups {
+  const groups = Object.fromEntries(
+    FINANCE_REQUEST_BOARD_STATUSES.map((status) => [status, [] as RequestBoardItem[]]),
+  ) as RequestBoardGroups
+  for (const request of requests) {
+    const column = groups[request.status as FinanceRequestBoardStatus]
+    if (column !== undefined) column.push(request)
+  }
+  for (const status of FINANCE_REQUEST_BOARD_STATUSES) {
+    groups[status].sort(
+      (left, right) => right.occurredOn.localeCompare(left.occurredOn) || right.id - left.id,
+    )
+  }
+  return groups
+}
+
+export function boardColumnCounts(groups: RequestBoardGroups): Record<string, number> {
+  return Object.fromEntries(
+    FINANCE_REQUEST_BOARD_STATUSES.map((status) => [status, groups[status].length]),
+  )
+}
+
+/**
+ * Who may start a drag. Only the approve role acts on the board (EARS-501/502),
+ * and a terminal card has no legal target at all (EARS-524) — so it is not
+ * draggable rather than draggable-and-then-refused: an affordance that always
+ * fails is a defect, not a guard.
+ */
+export function canDragRequest(request: RequestBoardItem, canApprove: boolean): boolean {
+  if (!canApprove) return false
+  return request.status === 'submitted' || request.status === 'approved'
+}
+
+export type RequestCardFlag = { id: string; label: string; tone: 'warning' | 'neutral' }
+
+/** What the reader has to know about a card BEFORE opening it. */
+export function requestCardFlags(request: RequestBoardItem): RequestCardFlag[] {
+  const flags: RequestCardFlag[] = []
+  if (request.alreadyPaid) {
+    flags.push({ id: 'already-paid', label: 'уже потрачено', tone: 'warning' })
+  }
+  if (request.personalFunds) {
+    flags.push({ id: 'personal-funds', label: 'свои деньги', tone: 'warning' })
+  }
+  if (request.status === 'approved' && request.documents.length === 0) {
+    flags.push({ id: 'no-document', label: 'нет документа', tone: 'warning' })
+  }
+  if (request.documents.length > 0) {
+    flags.push({ id: 'document', label: 'документ приложен', tone: 'neutral' })
+  }
+  if (request.proposal) {
+    flags.push({ id: 'proposal', label: 'назначение предложено', tone: 'warning' })
+  }
+  return flags
+}
+
+/** «Мои заявки»: everything the reader filed, drafts and cancellations included. */
+export function ownRequests(requests: readonly RequestBoardItem[]): RequestBoardItem[] {
+  return requests.filter((request) => request.own)
+}
+
+/** The precision the currency reference declares; two places for an unknown code. */
+export function currencyPrecision(
+  currencies: RequestBoardReferences['currencies'],
+  code: string,
+): number {
+  return currencies.find((currency) => currency.code === code)?.precision ?? 2
 }

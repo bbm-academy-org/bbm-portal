@@ -105,7 +105,9 @@ describe('/p/finance F1b overview (spec 338 EARS-325)', () => {
     expect(html).toContain('RUB')
     expect(html).toContain('По фактическим курсам операций')
     expect(html).toContain('selector:RUB:RUB,USD,THB')
-    for (const deferred of ['P&amp;L', 'Обязательства', 'Заявки', 'Сверка', 'Сценарии']) {
+    // «Заявки» left this list on #388: it is no longer a deferred F3 CARD on the
+    // overview but the link to the board that now exists — asserted below.
+    for (const deferred of ['P&amp;L', 'Обязательства', 'Сверка', 'Сценарии']) {
       expect(html).not.toContain(deferred)
     }
   })

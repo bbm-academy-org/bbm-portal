@@ -100,10 +100,9 @@ describe('request board composition (spec 339 EARS-509/512/524, Stage-A pick D)'
   })
 
   it('EARS-508/511: marks on the card what the reader must know before opening it', () => {
-    expect(requestCardFlags(item({ alreadyPaid: true, personalFunds: true })).map((f) => f.id)).toEqual([
-      'already-paid',
-      'personal-funds',
-    ])
+    expect(
+      requestCardFlags(item({ alreadyPaid: true, personalFunds: true })).map((f) => f.id),
+    ).toEqual(['already-paid', 'personal-funds'])
     expect(
       requestCardFlags(item({ status: 'approved', documents: [] })).map((flag) => flag.id),
     ).toContain('no-document')
@@ -112,7 +111,14 @@ describe('request board composition (spec 339 EARS-509/512/524, Stage-A pick D)'
         item({
           status: 'approved',
           documents: [
-            { id: 1, filename: 'inv.pdf', mime: 'application/pdf', size: 10, kind: 'ru_invoice', uploadedAt: '2026-08-22T00:00:00.000Z' },
+            {
+              id: 1,
+              filename: 'inv.pdf',
+              mime: 'application/pdf',
+              size: 10,
+              kind: 'ru_invoice',
+              uploadedAt: '2026-08-22T00:00:00.000Z',
+            },
           ],
         }),
       ).map((flag) => flag.id),

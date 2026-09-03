@@ -240,7 +240,9 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
 
     openCard(2)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Провести' })).toBeNull()
+    expect(
+      within(screen.getByRole('dialog')).queryByRole('button', { name: 'Провести' }),
+    ).toBeNull()
     expect(
       within(screen.getByRole('dialog')).getByText(/без подтверждающего документа/i),
     ).toBeTruthy()
@@ -297,7 +299,9 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     expect(refine.mutate).not.toHaveBeenCalled()
-    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Одобрить' })).toBeTruthy()
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Одобрить' }),
+    ).toBeTruthy()
   })
 
   it('EARS-501/502: gives a role-less reader a read-only board and its own requests', async () => {
@@ -307,7 +311,9 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     })
     renderBoard()
 
-    expect(screen.getByRole('button', { name: /Заявка №1/ }).getAttribute('draggable')).toBe('false')
+    expect(screen.getByRole('button', { name: /Заявка №1/ }).getAttribute('draggable')).toBe(
+      'false',
+    )
     openCard(1)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = screen.getByRole('dialog')
@@ -321,7 +327,10 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     })
     renderBoard()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Обязательства' }))
+    // Radix activates a tab on mousedown, not on a bare click.
+    const tab = screen.getByRole('tab', { name: 'Обязательства' })
+    fireEvent.mouseDown(tab)
+    fireEvent.click(tab)
     const liabilities = await screen.findByRole('region', { name: 'Обязательства' })
     expect(within(liabilities).getByText('К. Смирнов')).toBeTruthy()
     expect(within(liabilities).getByText('720,00 RUB')).toBeTruthy()
