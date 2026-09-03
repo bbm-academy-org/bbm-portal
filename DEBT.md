@@ -16,17 +16,8 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
   `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
   MUST preserve that anchor as the tombstone for Git's union merge.
 - **Permanent append marker:** add new active entries immediately before
-  `- [ ] 2026-09-03 The `tdd-order`guard's WARN on`src/app/(platform)/p/finance/requests/request-board-contract.ts` (#388, PR #470) is ACCEPTED rather than fixed. The file is a pure type module that arrived with the backend half ported verbatim from the superseded #430 branch (`c74b477`/`152690a`tests →`e40de0a`/`8d38e87`impl →`aeff020`); those ported tests cite the API route and the board MODEL, never the type file by path, so the first commit naming it is this session's UI test commit `5368c62`— later than`e40de0a`, hence the verdict. The guard's prescribed fix is an interactive rebase, which would rewrite four ported commits whose hashes the stop-state comment on #388 records as the branch's state, to reorder work this session did not do. The real gap is in the guard: it has no notion of a verbatim port, and a second port will trip it the same way — return condition: the next branch that ports commits verbatim from a superseded branch and trips `tdd-order`, or the guard's §4 promotion review to BLOCK (earliest 2026-09-24), whichever comes first (#388, PR #470).
-
-<!-- debt-entry-end: 2026-09-03-388-tdd-order-ported-contract -->
-
-- [ ] 2026-09-03 `/p/finance/requests` (#388, PR #470) does NOT go through the cabinet data provider `src/lib/platform/cabinet/dataProvider.ts` that #315 established as the workspace pattern this surface was blocked on. It ships its own `custom`-only provider (`request-board-provider.ts`) whose CRUD methods throw `501`, because ONE authenticated GET answers with the board, the reference tables, the reader's permissions and the liability view at once (`RequestsSnapshot`) — a kanban that fetched five collections would render five different moments of the same ledger, and the cabinet provider speaks the paged `/p/api/<module>/admin/<resource>` contract this endpoint is not. What IS shared is the part that must be identical everywhere: the Refine query plumbing and the single feedback channel (`useNotificationProvider` → the kit's sonner `Toaster`, #434). Deliberate and reversible, and the rationale is in the file header — but one screen-shaped snapshot provider is a sample of one, and the pattern is currently unnamed anywhere the next surface would look — return condition: the SECOND workspace surface that needs a whole-screen snapshot instead of a paged resource (#389, the intake workspace, is the likely one), at which point the snapshot provider belongs beside the cabinet provider under `src/lib/platform/` with a named contract (#388, PR #470).
-
-<!-- debt-entry-end: 2026-09-03-388-snapshot-provider-sample-of-one -->
-
-<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
-
-sweep notes live after that marker.
+  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
+  sweep notes live after that marker.
 
 - **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
   two branches that append different root-ledger entry blocks keep both blocks
@@ -956,6 +947,14 @@ Entry format:
 - [ ] 2026-09-03 `.claude/skills/task-cycle/SKILL.md` stage 5 part 3 says `.playwright-mcp/` is «the only target the screenshot-path-guard accepts», but `tools/hooks/screenshot-path-guard.mjs` exports `ALLOWED_OUTPUT_DIRS = [SERVER_OUTPUT_DIR, 'test-results', 'playwright-report']` (with `SERVER_OUTPUT_DIR = '.playwright-mcp'`, so all three of `.playwright-mcp`, `test-results` and `playwright-report` are accepted) and its denial message names all three. Following the text is still correct behaviour, so this is an accuracy fix, not a defect — return condition: the next PR that touches stage 5 of `task-cycle`, which rewords it to «the target the screenshot-path-guard steers capture to».
 
 <!-- debt-entry-end: 2026-09-03-437-guard-only-target -->
+
+- [ ] 2026-09-03 The `tdd-order` guard's WARN on `src/app/(platform)/p/finance/requests/request-board-contract.ts` (#388, PR #470) is ACCEPTED rather than fixed. The file is a pure type module that arrived with the backend half ported verbatim from the superseded #430 branch (`c74b477`/`152690a` tests →`e40de0a`/`8d38e87` impl →`aeff020`); those ported tests cite the API route and the board MODEL, never the type file by path, so the first commit naming it is this session's UI test commit `5368c62` — later than `e40de0a`, hence the verdict. The guard's prescribed fix is an interactive rebase, which would rewrite four ported commits whose hashes the stop-state comment on #388 records as the branch's state, to reorder work this session did not do. The real gap is in the guard: it has no notion of a verbatim port, and a second port will trip it the same way — return condition: the next branch that ports commits verbatim from a superseded branch and trips `tdd-order`, or the guard's §4 promotion review to BLOCK (earliest 2026-09-24), whichever comes first (#388, PR #470).
+
+<!-- debt-entry-end: 2026-09-03-388-tdd-order-ported-contract -->
+
+- [ ] 2026-09-03 `/p/finance/requests` (#388, PR #470) does NOT go through the cabinet data provider `src/lib/platform/cabinet/dataProvider.ts` that #315 established as the workspace pattern this surface was blocked on. It ships its own `custom`-only provider (`request-board-provider.ts`) whose CRUD methods throw `501`, because ONE authenticated GET answers with the board, the reference tables, the reader's permissions and the liability view at once (`RequestsSnapshot`) — a kanban that fetched five collections would render five different moments of the same ledger, and the cabinet provider speaks the paged `/p/api/<module>/admin/<resource>` contract this endpoint is not. What IS shared is the part that must be identical everywhere: the Refine query plumbing and the single feedback channel (`useNotificationProvider` → the kit's sonner `Toaster`, #434). Deliberate and reversible, and the rationale is in the file header — but one screen-shaped snapshot provider is a sample of one, and the pattern is currently unnamed anywhere the next surface would look — return condition: the SECOND workspace surface that needs a whole-screen snapshot instead of a paged resource (#389, the intake workspace, is the likely one), at which point the snapshot provider belongs beside the cabinet provider under `src/lib/platform/` with a named contract (#388, PR #470).
+
+<!-- debt-entry-end: 2026-09-03-388-snapshot-provider-sample-of-one -->
 
 <!-- debt-append-marker -->
 
