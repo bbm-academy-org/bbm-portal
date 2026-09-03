@@ -83,19 +83,35 @@ async function countRows(table: string, where = 'true'): Promise<number> {
   return Number((result.rows[0] as { n: number }).n)
 }
 
+/**
+ * The starting state of the acceptance criterion: «a fresh database created by
+ * `pnpm platform:migrate` from empty».
+ *
+ * A TRUNCATE gets closer to that than any other reset available inside the tier
+ * — but not all the way by itself: `core.finance_project` carries ONE row that
+ * migration 0008 creates rather than the application (the `is_fund` singleton,
+ * EARS-304), and a truncate takes it with everything else. Putting it back is
+ * what makes this state «freshly migrated» instead of merely «empty», and it is
+ * the same restore `finance-helpers.ts` performs for the finance suites.
+ */
+async function resetToFreshlyMigrated(): Promise<void> {
+  await truncateAsFixture(
+    `truncate ${SEEDED_TABLES.join(', ')} restart identity cascade;
+     insert into core.finance_project (name, is_fund) values ('Фонд BBM', true)`,
+  )
+}
+
 describe.skipIf(!HAS_DB)('pnpm dev:seed against a migrated platform database', () => {
   let first: Record<string, { rows: number; digest: string }>
 
   beforeAll(async () => {
-    // The «fresh database» starting state: every seeded table empty, the schema
-    // exactly as `pnpm platform:migrate` left it.
-    await truncateAsFixture(`truncate ${SEEDED_TABLES.join(', ')} restart identity cascade`)
+    await resetToFreshlyMigrated()
     await seedDevData()
     first = await seededDigest()
   }, 240_000)
 
   afterAll(async () => {
-    await truncateAsFixture(`truncate ${SEEDED_TABLES.join(', ')} restart identity cascade`)
+    await resetToFreshlyMigrated()
   }, 120_000)
 
   it('applies cleanly on a freshly migrated, empty database', () => {

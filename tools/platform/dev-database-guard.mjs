@@ -186,11 +186,15 @@ export function classifyDevDatabase(connectionString, env = {}) {
 /**
  * The same decision as a gate: the classified target, or a `DevDatabaseRefusal`
  * whose message names the offending part and never the connection string.
+ *
+ * @param {unknown} connectionString
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {{ host: string, database: string }}
  */
 export function assertDevPlatformDatabase(connectionString, env = {}) {
   const verdict = classifyDevDatabase(connectionString, env)
   if (!verdict.ok) {
     throw new DevDatabaseRefusal(`refusing to seed: ${verdict.reason}`)
   }
-  return { host: verdict.host, database: verdict.database }
+  return { host: String(verdict.host), database: String(verdict.database) }
 }
