@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -53,6 +56,10 @@ describe('ATTEMPT_RE / CANONICAL_RE', () => {
   })
 
   it('does not treat ordinary prose as an attempt', () => {
+    // `earshot` is the honest example of a WORD that merely begins with the
+    // letters: the title opens with `ears`, and only the character class after
+    // it (`h` is neither hyphen, space, colon nor digit) keeps it out.
+    expect(ATTEMPT_RE.test('earshot banner renders')).toBe(false)
     expect(ATTEMPT_RE.test('renders the earshot banner')).toBe(false)
     expect(ATTEMPT_RE.test('freezes the period')).toBe(false)
   })
@@ -71,6 +78,18 @@ describe('ATTEMPT_RE / CANONICAL_RE', () => {
     for (const bad of ['ears-3: x', 'EARS3: x', 'EARS-3 x', 'EARS 3: x']) {
       expect(ATTEMPT_RE.test(bad)).toBe(true)
     }
+  })
+
+  it('keeps a colon-form EARS prefix carrying no digit an attempt', () => {
+    // The invariant the negative lookahead was chosen FOR: the alternative
+    // remedy the guard header used to suggest — requiring a digit after `EARS` —
+    // would drop these out of the attempt set and silently widen the guard's
+    // blind spot past the class #447 closed. A regression pin: both shapes are
+    // attempts today and must stay attempts.
+    expect(ATTEMPT_RE.test('EARS: the format half')).toBe(true)
+    expect(ATTEMPT_RE.test('EARS-x: a botched id')).toBe(true)
+    expect(CANONICAL_RE.test('EARS: the format half')).toBe(false)
+    expect(CANONICAL_RE.test('EARS-x: a botched id')).toBe(false)
   })
 
   it('accepts every canonical id shape the corpus uses', () => {
@@ -121,6 +140,13 @@ describe('findMalformedTitles', () => {
     expect(findMalformedTitles(src)).toEqual([])
   })
 
+  it('still flags a digitless EARS: / EARS-x: title', () => {
+    // Same regression pin as in the ATTEMPT_RE block, one level down: the
+    // guard's finding path is `findMalformedTitles`, not the raw anchor.
+    const src = "describe('EARS: the format half', () => {})\n" + "it('EARS-x: y', () => {})"
+    expect(findMalformedTitles(src)).toEqual(['EARS: the format half', 'EARS-x: y'])
+  })
+
   it('still flags every one of the four misspellings', () => {
     const src =
       "it('ears-3: a', () => {})\n" +
@@ -153,5 +179,38 @@ describe('ears-naming (spawned)', () => {
   it('exits 0 on the real repo tree — the guard must be green at merge', () => {
     const res = runGuard('ears-naming-lint.mjs', null, { realTree: true })
     expect(res.code).toBe(0)
+  })
+})
+
+describe('ears-naming: the register is the single source for the promotion window', () => {
+  const root = process.cwd()
+  const ci = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
+  const canon = readFileSync(resolve(root, 'docs/ci-guardrails.md'), 'utf8')
+
+  /** The job block plus the header comment paragraph that introduces it. */
+  const jobBlock = (() => {
+    const end = ci.indexOf('\n\n', ci.indexOf('- run: pnpm lint:ears-naming'))
+    const head = ci.lastIndexOf('\n  # WARN', ci.indexOf('\n  ears-naming:'))
+    return ci.slice(head, end)
+  })()
+
+  const registerRow = canon.split('\n').find((l) => l.startsWith('| **ears-naming**')) ?? ''
+
+  it('leaves no second copy of the register prose in ci.yml', () => {
+    // CLAUDE.md, «Path is the contract»: a paraphrase of the §5 row in the
+    // workflow is a second source of truth, and the copy is the one that
+    // drifts — it did, the moment #447 closed the class it declared open.
+    expect(jobBlock).not.toMatch(/unresolved FALSE-BLOCK/i)
+    expect(jobBlock).not.toMatch(/is not done here/i)
+    expect(jobBlock).not.toMatch(/promotion \d{4}-\d{2}-\d{2}/)
+    expect(jobBlock).toContain('docs/ci-guardrails.md')
+  })
+
+  it('states one promotion window, the one §4 clause 2 yields', () => {
+    // Narrowing landed 2026-09-03 and is a substantive rule change, so the
+    // four-week clock restarts from that day: 2026-10-01, not the 2026-09-30
+    // #438 guessed forward before the narrowing had a landing date.
+    expect(registerRow).toContain('2026-10-01')
+    expect(registerRow).not.toContain('2026-09-30')
   })
 })
