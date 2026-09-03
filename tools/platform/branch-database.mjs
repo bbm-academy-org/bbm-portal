@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // bbm-portal — per-worktree platform database bootstrap (#200).
 
+import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -85,6 +86,48 @@ export function mergeEnvValue(contents, key, value) {
   return `${next.join('\n')}\n`
 }
 
+/**
+ * What `create` runs after the database exists (#436).
+ *
+ * The owner's no-reminders ruling (Антон, 2026-09-02) is that an agent bringing
+ * a stand up by the documented path — `pnpm task:worktree N` →
+ * `pnpm dev:db:branch` → `PORT=<n> pnpm dev` — gets a POPULATED stand by
+ * construction. Nothing in a skill, a hook or a handoff line should have to say
+ * «and now seed»: a reminder is satisfied by hand, inconsistently, or not at
+ * all, which is the whole reason #436 exists. So this command owns the bring-up
+ * end to end rather than owning only its first third.
+ *
+ * Both steps are `pnpm` scripts rather than in-process calls, deliberately:
+ * `platform:migrate` is drizzle-kit with its own config resolution and
+ * `dev:seed` runs under `tsx` with the repo's Node-22 guard in front of it, and
+ * re-implementing either here would create a second way to run them that could
+ * drift from the one the docs name.
+ *
+ * There is no «seed without migrate»: the seed would fail on a missing schema,
+ * and a half-brought-up stand that LOOKS deliberate is worse than not offering
+ * the combination.
+ *
+ * @param {{ migrate?: boolean, seed?: boolean }} flags
+ * @returns {string[]} pnpm script names, in the order they must run
+ */
+export function planPostCreateSteps(flags = {}) {
+  if (flags.migrate === false) return []
+  return flags.seed === false ? ['platform:migrate'] : ['platform:migrate', 'dev:seed']
+}
+
+/**
+ * The two opt-outs. Both exist for the same narrow case — re-pointing a
+ * worktree at a branch database whose content is already what the session
+ * wants — and neither is the normal path.
+ *
+ * @param {string[]} argv
+ * @returns {{ migrate: boolean, seed: boolean }}
+ */
+export function parseCreateFlags(argv) {
+  const args = argv ?? []
+  return { migrate: !args.includes('--no-migrate'), seed: !args.includes('--no-seed') }
+}
+
 function die(msg, code = 1) {
   process.stderr.write(`[dev:db:branch] ${msg}\n`)
   process.exit(code)
@@ -99,6 +142,7 @@ function parseArgs(argv) {
   const command = args[0] === 'drop' || args[0] === 'create' ? args.shift() : 'create'
   let envRoot = process.cwd()
   const positional = []
+  const flags = parseCreateFlags(args)
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]
@@ -107,6 +151,8 @@ function parseArgs(argv) {
       if (!value) die('missing value for --env-root', 2)
       envRoot = resolve(value)
       i += 1
+    } else if (arg === '--no-migrate' || arg === '--no-seed') {
+      // Consumed by `parseCreateFlags` above.
     } else if (arg.startsWith('--')) {
       die(`unknown flag '${arg}'`, 2)
     } else {
@@ -116,7 +162,7 @@ function parseArgs(argv) {
 
   if (positional.length > 1)
     die('usage: pnpm dev:db:branch [N] | node tools/platform/branch-database.mjs drop <N>', 2)
-  return { command, taskId: positional[0] ?? null, envRoot }
+  return { command, taskId: positional[0] ?? null, envRoot, flags }
 }
 
 /**
@@ -151,7 +197,29 @@ function patchWorktreeEnv(envRoot, values) {
   return path
 }
 
-async function create({ taskId, envRoot }) {
+/**
+ * Run one repo script in the worktree, with the branch database in its
+ * environment so the step cannot pick up the shared stand's `.env` by accident.
+ */
+function runStep(script, envRoot, env) {
+  out(`running pnpm ${script} …`)
+  const result = spawnSync('pnpm', [script], {
+    cwd: envRoot,
+    stdio: 'inherit',
+    env: { ...process.env, ...env },
+    // `pnpm` on Windows is a `.cmd` shim, which a bare spawn cannot execute.
+    shell: process.platform === 'win32',
+  })
+  if (result.error) die(`pnpm ${script} could not be started: ${result.error.message}`)
+  if (result.status !== 0) {
+    die(
+      `pnpm ${script} failed (exit ${result.status}). The database exists and the worktree ` +
+        '.env is written; fix the cause and re-run this command, or the step alone.',
+    )
+  }
+}
+
+async function create({ taskId, envRoot, flags }) {
   const task = taskId ?? taskIdFromWorktreePath(envRoot)
   const base = loadBaseUrls(envRoot)
   if (base.warning) out(`! ${base.warning}`)
@@ -168,7 +236,14 @@ async function create({ taskId, envRoot }) {
 
   out(formatEnsureOutcome(outcome).trim())
   for (const [key, value] of Object.entries(written)) out(`${key}=${value}`)
-  out(`wrote ${envPath}; pnpm platform:migrate in this worktree will use ${outcome.database}.`)
+  out(`wrote ${envPath}; every step below uses ${outcome.database}.`)
+
+  for (const script of planPostCreateSteps(flags)) runStep(script, envRoot, written)
+  out(
+    planPostCreateSteps(flags).includes('dev:seed')
+      ? `${outcome.database} is migrated and seeded — the stand comes up with representative data.`
+      : `${outcome.database} is ready; the skipped steps are yours to run.`,
+  )
 }
 
 async function drop({ taskId, envRoot }) {

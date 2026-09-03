@@ -57,9 +57,13 @@ ForEach-Object { Stop-Process -Id $_ -Force }`. Свой — тот, котор�
 - **Branch, don't share.** A numeric task worktree gets its own platform DB:
   `pnpm dev:db:branch` inside `.claude/worktrees/<N>` creates `platform_<N>`,
   writes the local worktree `.env` marker
-  `PLATFORM_DATABASE_URL=…/platform_<N>`, and prints the connection string.
-  After that, `pnpm platform:migrate` in that worktree does not touch shared
-  `platform` and cannot fall back to Payload `cms`.
+  `PLATFORM_DATABASE_URL=…/platform_<N>`, prints the connection string, and then
+  **migrates and seeds it** — one command from an empty worktree to a stand with
+  representative data (#436). Nothing has to remind anyone to seed. An
+  already-branched DB is refreshed by `pnpm dev:seed` alone; `--no-migrate` /
+  `--no-seed` decline a step deliberately. What the seed puts there, and what it
+  refuses to write to: [`src/lib/platform/db/README.md`](../../src/lib/platform/db/README.md)
+  → Commands.
 - **Two roles since #278.** `dev:db:branch` writes `PLATFORM_MIGRATE_DATABASE_URL`
   alongside `PLATFORM_DATABASE_URL` when the base stand is split, and creates the
   branch DB through the MIGRATING one — the application role is `NOCREATEDB` by

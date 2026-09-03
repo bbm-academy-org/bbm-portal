@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  parseCreateFlags,
+  planPostCreateSteps,
   branchDatabaseName,
   deriveBranchMaintenanceTarget,
   formatBranchDatabaseUrl,
@@ -70,5 +72,43 @@ describe('worktree .env patching', () => {
     ).toBe(
       'DATABASE_URL=postgres://payload:pw@postgres:5432/cms\nPLATFORM_DATABASE_URL=postgres://u:p@h:5432/platform_200\n',
     )
+  })
+})
+
+/**
+ * «A migrated AND seeded database in one command» (#436).
+ *
+ * The owner's no-reminders criterion is that an agent bringing a stand up by
+ * the documented path — `pnpm task:worktree N` → `pnpm dev:db:branch` →
+ * `PORT=<n> pnpm dev` — gets a populated stand by construction, with no skill
+ * text, hook or handoff line telling it to seed. So `dev:db:branch` owns the
+ * whole bring-up: create the database, migrate it, seed it. What is asserted
+ * here is the pure half — which follow-up steps the command has decided to run,
+ * and that each of them can be switched off deliberately by name.
+ */
+describe('what dev:db:branch runs after creating the database', () => {
+  it('migrates and then seeds, in that order', () => {
+    expect(planPostCreateSteps({})).toEqual(['platform:migrate', 'dev:seed'])
+  })
+
+  it('drops the seed on --no-seed, keeping the migrate', () => {
+    expect(planPostCreateSteps({ seed: false })).toEqual(['platform:migrate'])
+  })
+
+  it('runs nothing extra when both are declined', () => {
+    expect(planPostCreateSteps({ migrate: false, seed: false })).toEqual([])
+  })
+
+  it('never seeds an unmigrated database', () => {
+    // There is no «seed but do not migrate»: the seed would fail on a missing
+    // schema, and a half-brought-up stand that LOOKS deliberate is worse than a
+    // refusal to offer the combination at all.
+    expect(planPostCreateSteps({ migrate: false })).toEqual([])
+  })
+
+  it('reads the two opt-outs off the command line', () => {
+    expect(parseCreateFlags(['--no-seed'])).toEqual({ migrate: true, seed: false })
+    expect(parseCreateFlags(['--no-migrate'])).toEqual({ migrate: false, seed: true })
+    expect(parseCreateFlags([])).toEqual({ migrate: true, seed: true })
   })
 })
