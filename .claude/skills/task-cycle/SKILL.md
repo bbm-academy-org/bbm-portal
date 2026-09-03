@@ -210,7 +210,7 @@ user-facing switch), plus the surface's primary control in `:hover`,
 `:focus-visible` and `:active` FORCED through CDP (`CSS.forcePseudoState` on one
 session per state), never hoped for from a pointer that may or may not have
 landed. Capture lands in `.playwright-mcp/` — the only target the
-screenshot-path-guard accepts (`docs/ci-guardrails.md` §5, BLOCK) — and the
+screenshot-path-guard accepts (`docs/ci-guardrails.md` §6, BLOCK) — and the
 frames worth keeping are promoted into `docs/evidence/<issue>/` with a README
 naming what each step shows. Retention: one folder per issue, a re-taken frame
 REPLACES its predecessor rather than adding a `-v2`, and the folder is dropped
