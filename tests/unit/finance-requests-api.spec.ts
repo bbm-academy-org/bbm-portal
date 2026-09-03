@@ -629,7 +629,8 @@ describe('/p/finance/api/requests writes', () => {
     )
 
     expect([approve.status, confirm.status, refuse.status]).toEqual([200, 200, 200])
-    expect(state.approveExpenseRequest).toHaveBeenCalledWith(expect.any(Object), 41)
+    // Both decision acts take the EARS-533 money details; a bare approve names none.
+    expect(state.approveExpenseRequest).toHaveBeenCalledWith(expect.any(Object), 41, {})
     expect(state.confirmExpenseRequest).toHaveBeenCalledWith(expect.any(Object), 41, {
       occurredOn: '2026-09-01',
     })
@@ -725,5 +726,145 @@ describe('/p/finance/api/requests writes', () => {
       41,
       expect.objectContaining({ counterpartyId: 25 }),
     )
+  })
+})
+
+/**
+ * EARS-533 — the paying account and the money date are the POSTING act's input.
+ *
+ * Owner ruling (Антон, 2026-09-03, #388). The API is where that separation is
+ * enforceable for every client at once: a pre-spend body may not carry them,
+ * and the acts that post must be able to.
+ */
+describe('/p/finance/api/requests — a request is an intent (EARS-508/533)', () => {
+  it('EARS-508/533: files a pre-spend request that names no paying account and no money date', async () => {
+    state.createExpenseRequest.mockResolvedValue({
+      ...request,
+      id: 61,
+      status: 'draft',
+      accountId: null,
+      occurredOn: null,
+    })
+    state.submitExpenseRequest.mockResolvedValue({
+      ...request,
+      id: 61,
+      status: 'submitted',
+      accountId: null,
+      occurredOn: null,
+    })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: '4500000',
+          currency: 'RUB',
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(state.createExpenseRequest).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ accountId: null, occurredOn: null }),
+    )
+  })
+
+  it('EARS-533: refuses a pre-spend body that names a paying account or a money date anyway', async () => {
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+    const body = {
+      amount: '4500000',
+      currency: 'RUB',
+      purposeId: 11,
+      projectId: 12,
+      productId: 13,
+      counterpartyId: 14,
+      alreadyPaid: false,
+      personalFunds: false,
+    }
+
+    const withAccount = await route.POST(
+      new Request(BASE, { method: 'POST', body: JSON.stringify({ ...body, accountId: 7 }) }),
+    )
+    const withDate = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({ ...body, occurredOn: '2026-09-01' }),
+      }),
+    )
+
+    expect([withAccount.status, withDate.status]).toEqual([400, 400])
+    expect(await withAccount.text()).toMatch(/уже потрачен/i)
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+  })
+
+  it('EARS-508: an «уже потрачено» body still carries the date and how it was paid', async () => {
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: '4500000',
+          currency: 'RUB',
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          alreadyPaid: true,
+          personalFunds: false,
+          accountId: 7,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/дат/i)
+  })
+
+  it('EARS-533: the posting acts carry the paying account, the money date and the charged amount', async () => {
+    state.confirmExpenseRequest.mockResolvedValue({ ...request, status: 'posted' })
+    state.approveExpenseRequest.mockResolvedValue({ ...request, status: 'posted' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/actions/route')
+
+    const confirm = await route.POST(
+      new Request(`${BASE}/41/actions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          act: 'confirm',
+          accountId: 7,
+          occurredOn: '2026-09-01',
+          paidAmount: '350000',
+          paidCurrency: 'THB',
+        }),
+      }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+    const approve = await route.POST(
+      new Request(`${BASE}/41/actions`, {
+        method: 'POST',
+        body: JSON.stringify({ act: 'approve', accountId: 7, occurredOn: '2026-09-01' }),
+      }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+
+    expect([confirm.status, approve.status]).toEqual([200, 200])
+    expect(state.confirmExpenseRequest).toHaveBeenCalledWith(expect.any(Object), 41, {
+      accountId: 7,
+      occurredOn: '2026-09-01',
+      paidAmount: 350_000n,
+      paidCurrency: 'THB',
+    })
+    expect(state.approveExpenseRequest).toHaveBeenCalledWith(expect.any(Object), 41, {
+      accountId: 7,
+      occurredOn: '2026-09-01',
+    })
   })
 })
