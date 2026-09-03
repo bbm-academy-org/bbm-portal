@@ -21,6 +21,8 @@
     "dev:config": "node tools/dev/run.mjs config",
     "dev:ports": "node tools/dev/dev-ports.mjs",
     "dev:db:branch": "node tools/platform/branch-database.mjs create",
+    "predev:seed": "node scripts/require-node.mjs",
+    "dev:seed": "cross-env NODE_OPTIONS=--no-deprecation tsx tools/platform/dev-seed.ts",
     "task:worktree": "node tools/dev/task-worktree.mjs",
     "worktree:teardown": "node tools/dev/worktree-teardown.mjs",
     "predeploy:prod": "node scripts/require-node.mjs",

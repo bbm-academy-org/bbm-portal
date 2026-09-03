@@ -1,14 +1,15 @@
-import { createHash } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import path from 'node:path'
-
 import { sql } from 'drizzle-orm'
 
 import { expect, test } from '@playwright/test'
 
-import { FINANCE_DOCUMENTS_DEFAULT_DIR } from '@/lib/finance/documents/storage'
-import { closePlatformDb } from '@/lib/platform/db/client'
-import { platformTransaction } from '@/lib/platform/db/transaction'
+import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
+
+import {
+  DEV_SEED_DOCUMENT_BYTES,
+  DEV_SEED_MEMBERS,
+  DEV_SEED_REQUESTS,
+  devSeedNote,
+} from '../../tools/platform/dev-seed-plan'
 
 import { signInAsPlatformMember } from './support/platform-session'
 
@@ -25,13 +26,15 @@ import { signInAsPlatformMember } from './support/platform-session'
  * there is no public object-storage link behind the handler and no route that
  * serves the bytes without asking.
  *
- * The fixture writes the rows DIRECTLY (through `platformTransaction`, the one
- * place that may set the audit context — spec 201 EARS-24) rather than through
- * the finance module: this spec is about what the SERVER answers, and a fixture
- * that went through the module would be testing the module twice. The blob
- * itself is written directly to the local fallback, but only after a pending
- * metadata row exists; the fixture then marks that row ready. This owns the
- * test-fixture level while preserving the production lifecycle invariant.
+ * **The fixture is the stand's own seed (#436).** This spec used to insert its
+ * own member, currency, account, purpose, intake item, document and link, and
+ * to write the blob itself — then leave every one of those rows behind. It now
+ * READS the document `pnpm dev:seed` already attached to the first posted
+ * request. That is the acceptance criterion of #436 («the e2e suite passes
+ * against the seeded database with no suite-local seeding of its own») and it
+ * is also the stronger test: the row under assertion is one the owner will see
+ * on the same stand, created through the real posting path rather than by
+ * hand-written SQL that could drift from what the module actually writes.
  *
  * **The role-less member is MINTED, not signed in through the IdP.** The
  * witness this scenario needs holds `platform-user` and NEITHER flow role, and
@@ -50,8 +53,13 @@ import { signInAsPlatformMember } from './support/platform-session'
 
 const databaseUrl = process.env.PLATFORM_DATABASE_URL
 
+/** The seeded request whose confirming document this spec reads. */
+const SEEDED_REQUEST = DEV_SEED_REQUESTS.find((request) => request.status === 'posted')!
+
 /** The member the item belongs to. The witness below is deliberately NOT them. */
-const OWNER_EMAIL = 'e2e-document-owner@bbm.academy'
+const OWNER_EMAIL = DEV_SEED_MEMBERS.find(
+  (member) => member.slug === SEEDED_REQUEST.submitterSlug,
+)!.email
 
 /** A signed-in platform member holding neither flow role — the EARS-523 witness. */
 const OUTSIDER = { email: 'e2e-outsider@bbm.academy', roles: ['platform-user'] }
@@ -59,106 +67,37 @@ const OUTSIDER = { email: 'e2e-outsider@bbm.academy', roles: ['platform-user'] }
 /** The positive control: a refusal that is never lifted proves nothing. */
 const CLERK = { email: OWNER_EMAIL, roles: ['platform-user', 'finance-entry'] }
 
-/** The confirming file's bytes — written to the disk fallback by the fixture. */
-const PDF = Buffer.from('%PDF-1.7 e2e fixture invoice')
-
 let documentId: number
-let storageKey: string
 
 /**
- * Seed one intake item owned by `OWNER_EMAIL` with one document linked to it.
+ * Find the seeded document — a READ, not a write.
  *
- * Through `platformTransaction` and never through a hand-rolled
- * `set_config('app.…')`: the audit context is set in ONE place in this repo
- * (spec 201 EARS-24), and an eslint rule enforces it. The door is a `cli:` one
- * because a fixture is not a person (EARS-7).
+ * The intake note carries the plan's `[seed:<slug>]` marker, which is the same
+ * stable identity the seed itself matches on for idempotency, so this lookup
+ * cannot pick up a row some other suite happened to leave behind.
  */
-const FIXTURE_DOOR = { actorEmail: null, source: 'cli:e2e-fixture' } as const
-
-const one = (rows: unknown[]): number => Number((rows[0] as { id: number }).id)
-
-async function seedDocument(): Promise<number> {
-  const seeded = await platformTransaction(FIXTURE_DOOR, async (tx) => {
-    await tx.execute(sql`
-      insert into core.member (slug, email, name)
-      values ('e2e-document-owner', ${OWNER_EMAIL}, 'E2E Document Owner')
-      on conflict (email) do nothing
-    `)
-    const ownerId = one(
-      (await tx.execute(sql`select id from core.member where email = ${OWNER_EMAIL}`)).rows,
+async function seededDocumentId(): Promise<number> {
+  const note = devSeedNote(SEEDED_REQUEST.slug, SEEDED_REQUEST.note)
+  const result = await getPlatformDb().execute(sql`
+    select d.id
+      from core.finance_document d
+      join core.finance_document_link dl on dl.document_id = d.id
+      join core.finance_intake_item i on i.id = dl.intake_item_id
+     where i.note = ${note} and d.storage_state = 'ready'
+     limit 1
+  `)
+  const row = result.rows[0] as { id: number } | undefined
+  if (row === undefined) {
+    throw new Error(
+      `no seeded document behind «${SEEDED_REQUEST.slug}» — run pnpm dev:seed against this stand`,
     )
-    await tx.execute(sql`
-      insert into core.finance_currency (code, name, precision)
-      values ('RUB', 'Рубль', 2) on conflict (code) do nothing
-    `)
-    const accountId = one(
-      (
-        await tx.execute(sql`
-          insert into core.finance_account (name, kind, currency)
-          values (${`E2E счёт ${Date.now()}`}, 'bank', 'RUB') returning id
-        `)
-      ).rows,
-    )
-    const purposeId = one(
-      (
-        await tx.execute(sql`
-          insert into core.finance_purpose (name, product_binding)
-          values (${`E2E назначение ${Date.now()}`}, 'forbidden') returning id
-        `)
-      ).rows,
-    )
-    const projectId = one(
-      (await tx.execute(sql`select id from core.finance_project where is_fund limit 1`)).rows,
-    )
-    const itemId = one(
-      (
-        await tx.execute(sql`
-          insert into core.finance_intake_item
-            (source, kind, occurred_on, account_id, amount, currency, purpose_id, project_id,
-             created_by)
-          values ('request', 'expense', current_date, ${accountId}, 120000, 'RUB', ${purposeId},
-                  ${projectId}, ${ownerId})
-          returning id
-        `)
-      ).rows,
-    )
-    storageKey = `finance/documents/e2e/${Date.now()}.pdf`
-    const contentDigest = `sha256:${createHash('sha256').update(PDF).digest('hex')}`
-    const docId = one(
-      (
-        await tx.execute(sql`
-          insert into core.finance_document
-            (storage_key, content_digest, filename, mime, size, kind, uploaded_by)
-          values (${storageKey}, ${contentDigest}, 'e2e-invoice.pdf',
-                  ${'application/pdf'}, ${PDF.byteLength}, 'ru_invoice', ${ownerId})
-          returning id
-        `)
-      ).rows,
-    )
-    await tx.execute(sql`
-      insert into core.finance_document_link (document_id, intake_item_id, linked_by)
-      values (${docId}, ${itemId}, ${ownerId})
-    `)
-    return { docId, key: storageKey }
-  })
-
-  // The bytes go where the DISK FALLBACK expects them (EARS-514): this stand
-  // has no bucket configured, which is the acceptance criterion, so writing
-  // here is also the proof that the fallback is the path actually in use.
-  const blob = path.resolve(FINANCE_DOCUMENTS_DEFAULT_DIR, seeded.key)
-  mkdirSync(path.dirname(blob), { recursive: true })
-  writeFileSync(blob, PDF)
-  await platformTransaction(FIXTURE_DOOR, (tx) =>
-    tx.execute(sql`
-      update core.finance_document set storage_state = 'ready' where id = ${seeded.docId}
-    `),
-  )
-  return seeded.docId
+  }
+  return Number(row.id)
 }
 
 test.beforeAll(async () => {
-  test.skip(!databaseUrl, 'PLATFORM_DATABASE_URL is not set — no stand database to seed into')
-  documentId = await seedDocument()
+  test.skip(!databaseUrl, 'PLATFORM_DATABASE_URL is not set — no stand database to read')
+  documentId = await seededDocumentId()
 })
 
 test.afterAll(async () => {
@@ -176,7 +115,7 @@ test.describe('a finance document has no URL that gives it away (spec 339 scenar
     })
 
     expect(response.status()).toBe(403)
-    expect(response.headers()['content-type'] ?? '').not.toContain('application/pdf')
+    expect(response.headers()['content-type'] ?? '').not.toContain('image/png')
     // The claim gate answers BARE for an anonymous caller (spec 311 D-5) — and
     // nothing in that answer leaks a bucket URL to try directly (EARS-514).
     expect(await response.text()).not.toMatch(/s3|twcstorage|storage_key/i)
@@ -210,7 +149,7 @@ test.describe('a finance document has no URL that gives it away (spec 339 scenar
     })
 
     expect(response?.status()).toBe(403)
-    expect(response?.headers()['content-type'] ?? '').not.toContain('application/pdf')
+    expect(response?.headers()['content-type'] ?? '').not.toContain('image/png')
     // The refusal is the module's, not the gate's — the session DID hold
     // `platform-user`, the role that opens /p/finance for everyone (EARS-530),
     // and it bought nothing here (EARS-523).
@@ -234,11 +173,11 @@ test.describe('a finance document has no URL that gives it away (spec 339 scenar
     })
 
     expect(response.status()).toBe(200)
-    expect(response.headers()['content-type']).toContain('application/pdf')
+    expect(response.headers()['content-type']).toContain('image/png')
     // Never inline, never cached: an attachment with nosniff, private no-store.
     expect(response.headers()['content-disposition']).toContain('attachment')
     expect(response.headers()['x-content-type-options']).toBe('nosniff')
     expect(response.headers()['cache-control']).toContain('no-store')
-    expect(Buffer.from(await response.body()).equals(PDF)).toBe(true)
+    expect(Buffer.from(await response.body()).equals(DEV_SEED_DOCUMENT_BYTES)).toBe(true)
   })
 })
