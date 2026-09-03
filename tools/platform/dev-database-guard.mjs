@@ -93,7 +93,21 @@ export function isDevDatabaseHost(host) {
   if (normalized.includes(':')) return PRIVATE_IPV6.some((range) => range.test(normalized))
   // A NAME. Only the reserved, never-routable suffixes (RFC 2606 / RFC 6762);
   // a bare `postgres` — production's own spelling — falls through to a refusal.
-  return /\.(local|internal|localhost|test|invalid|example)$/.test(normalized)
+  //
+  // `.internal` is deliberately NOT here (review of PR #451): it is reserved
+  // nowhere, and it is how several hosting stacks spell PRIVATE PRODUCTION DNS.
+  // The database-name lock is no help there — production's database is also
+  // called `platform` (`deploy/.env.prod.example`) — so accepting it left the
+  // env marker as the only lock, on a class of names that means the opposite of
+  // «dev». `host.docker.internal` is unaffected: it is matched exactly, by
+  // LOOPBACK_HOSTS, above.
+  //
+  // `.local` stays. It is mDNS (RFC 6762), resolvable only on the link, and it
+  // is the spelling THIS estate's reference recipe uses for the dev stand's
+  // Postgres host — `truenas.local:${POSTGRES_PORT}` in
+  // `infra/dev-stand/compose.core.yml`. Refusing it would refuse a real dev
+  // stand; refusing `.internal` refuses nothing that exists here.
+  return /\.(local|localhost|test|invalid|example)$/.test(normalized)
 }
 
 /** `platform`, or a per-worktree branch database `platform_<N>` with N ≥ 1. */
@@ -169,8 +183,9 @@ export function classifyDevDatabase(connectionString, env = {}) {
       ok: false,
       reason:
         `«${host}» is not a dev host: only loopback, a private address literal and the ` +
-        'reserved never-routable name suffixes are accepted. Production reaches Postgres by ' +
-        'its compose service name, so a bare hostname is refused by design.',
+        'reserved never-routable name suffixes are accepted (`.internal` is not one of them — ' +
+        'it is how private production DNS is spelled). Production reaches Postgres by its ' +
+        'compose service name, so a bare hostname is refused by design.',
     }
   }
 

@@ -40,9 +40,13 @@ pnpm dev:seed                    # 64 members, hours periods + assessments,
 pnpm dev:db:branch --no-seed     # decline a step deliberately (also --no-migrate)
 ```
 
-The integration tier truncates the branch database it runs against, so a suite
-other than `dev-seed.int.spec.ts` (which re-seeds in its own teardown) can leave
-a stand empty; `pnpm dev:seed` puts it back in one command.
+The integration tier truncates the branch database it runs against, and vitest
+gives no cross-file ordering guarantee — so although `dev-seed.int.spec.ts`
+re-seeds in its own teardown, a later suite can still leave the stand empty.
+**`pnpm dev:seed` is therefore a step of every `pnpm test:int` run, not a
+memory:** run it after the tier finishes and before the stand is shown to
+anyone. An acceptance protocol that ends with `pnpm test:int` and no re-seed
+describes a stand it will not get.
 
 It is **idempotent** — every row carries a stable identity (a member's email, a
 period id, a `[seed:<slug>]` marker in an intake note, a `source_ref`), so a
@@ -53,7 +57,23 @@ classify as a dev database** before the first statement: the predicate is
 `platform_<N>` on loopback, a private address literal, or a reserved
 never-routable name suffix — production reaches Postgres by the compose service
 name `postgres`, so a bare hostname is refused by design, and so is any
-environment marked `production`. The fixtures themselves are pure data in
+environment marked `production`.
+
+**The predicate's boundary, stated plainly:** the host test asks «can this
+NOT be production», not «is this a known dev machine». An allowlist of dev
+hosts would have refused this very box, whose stand answers on
+`192.168.1.115:5444`, so the accepted class is loopback, a private address
+literal, and the reserved never-routable name suffixes — everything else,
+including every name the guard merely fails to understand, is a refusal. That
+direction has one consequence worth naming: a private literal or a `.local`
+name on some OTHER estate would pass the host test too, and what stops the seed
+there is the second lock (the database must be `platform` / `platform_<N>`) plus
+the environment marker. `.internal` was removed from the accepted suffixes for
+exactly that reason — it is reserved nowhere and is how several hosting stacks
+spell private production DNS, which is the one name class where «not routable
+from outside» and «not production» come apart. `.local` stays: it is mDNS,
+link-local by definition, and it is how the reference dev-stand recipe spells
+this estate's Postgres host (`infra/dev-stand/compose.core.yml`). The fixtures themselves are pure data in
 `tools/platform/dev-seed-plan.ts`; the applier writes them through the module
 APIs, so a `posted` request really walked the spec-339 status machine.
 
