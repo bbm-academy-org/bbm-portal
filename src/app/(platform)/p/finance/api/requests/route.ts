@@ -1,6 +1,7 @@
 import {
   createExpenseRequest,
   createPurposeProposal,
+  submitExpenseRequest,
   FINANCE_APPROVE_ROLE,
   FINANCE_ENTRY_ROLE,
   liabilityBalances,
@@ -316,14 +317,38 @@ export async function POST(request: Request): Promise<Response> {
         )
       }
     }
+    // FILING IS SUBMITTING (EARS-508/509, acceptance scenario 2). The module
+    // keeps `create` and `submit` apart on purpose — a `draft` is what
+    // EARS-526 needs — but the REQUEST FORM is one act for the member: what it
+    // files must stand in the approvers' queue, not in a status the board has
+    // no column for and a second, undiscoverable act away from being seen.
+    // The one request that stays a draft is the one that has no purpose yet,
+    // only a proposal: there is nothing for an approver to decide until an
+    // admin turns that proposal into a purpose (EARS-526).
+    let filed = expenseRequest
+    let message: string | null = null
+    if (proposal === null && expenseRequest.purposeId !== null) {
+      try {
+        filed = await submitExpenseRequest(gate.actor, expenseRequest.id)
+      } catch (cause) {
+        // The item EXISTS — losing it to report a failed transition would be
+        // worse than answering with what was really kept. The client reads the
+        // status back and says «черновик», not «подана».
+        message =
+          cause instanceof Error
+            ? `Заявка сохранена черновиком: ${cause.message}`
+            : 'Заявка сохранена черновиком: подать её не удалось.'
+      }
+    }
     return jsonResponse(
       {
         request: {
-          id: expenseRequest.id,
-          status: expenseRequest.status,
-          purposeId: expenseRequest.purposeId,
+          id: filed.id,
+          status: filed.status,
+          purposeId: filed.purposeId,
         },
         proposal,
+        ...(message === null ? {} : { message }),
       },
       201,
     )

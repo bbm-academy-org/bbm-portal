@@ -185,7 +185,7 @@ describe('what the member is told after filing (spec 339 EARS-508/509/526)', () 
   // (EARS-526) and is nowhere on the board.
   it('EARS-509: a submitted request is reported as standing in the «Ждут» column', () => {
     const notification = filedRequestNotification({ data: { request: { status: 'submitted' } } })
-    expect(notification.message).toContain('Подана')
+    expect(notification.message).toContain('подана')
     expect(notification.description).toContain('Ждут')
   })
 
