@@ -358,7 +358,10 @@ describe('#434: the cabinet Toaster is a sibling of the grid, not a cell in it',
 
     const { CabinetShell } = await import('@/app/(platform)/p/admin/CabinetShell')
     const { container } = render(
-      el(CabinetShell, { resources: cabinetResources([HOURS]) }, el('div', null, 'экран')),
+      el(CabinetShell, {
+        resources: cabinetResources([HOURS]),
+        children: el('div', null, 'экран'),
+      }),
     )
 
     const grid = container.querySelector('[data-cabinet]')
