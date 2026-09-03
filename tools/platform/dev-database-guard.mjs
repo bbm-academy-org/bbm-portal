@@ -39,13 +39,60 @@
 export const PRODUCTION_ENV_MARKERS = ['NODE_ENV', 'VERCEL_ENV', 'APP_ENV', 'DEPLOY_ENV']
 
 /**
- * Where a dev platform database can live.
+ * The names that always mean «this machine».
  *
  * `host.docker.internal` is here because the dev stand's Postgres is reached
  * under that name from inside a container on this box; it is a loopback alias,
  * not a route off the machine.
  */
-export const DEV_DATABASE_HOSTS = ['localhost', '127.0.0.1', '::1', 'host.docker.internal']
+export const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '::1', 'host.docker.internal']
+
+/**
+ * Private IPv4 space — RFC 1918, loopback, link-local and the CGNAT block a
+ * mesh VPN hands out. An address in here cannot be a routable production
+ * endpoint, which is the whole reason it is the accepted class.
+ */
+const PRIVATE_IPV4 = [
+  /^10\./,
+  /^127\./,
+  /^169\.254\./,
+  /^172\.(1[6-9]|2[0-9]|3[01])\./,
+  /^192\.168\./,
+  /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./,
+]
+
+/** ULA and link-local IPv6, plus loopback. */
+const PRIVATE_IPV6 = [/^::1$/i, /^f[cd][0-9a-f]{2}:/i, /^fe[89ab][0-9a-f]:/i]
+
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+
+/**
+ * Is this host one the seed may write to?
+ *
+ * The accepted class is «cannot be production», not «is on an allowlist», and
+ * the distinction is what makes the guard survive the estate it runs in: this
+ * box's own dev stand answers on `192.168.1.115:5444`, while PRODUCTION reaches
+ * Postgres by the compose SERVICE NAME `postgres`
+ * (`deploy/.env.prod.example`) — a bare name, resolvable only inside the
+ * production network. So a bare hostname is refused and an address literal in
+ * private space is accepted, which is exactly the right way round.
+ */
+export function isDevDatabaseHost(host) {
+  const normalized = String(host ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === '') return false
+  if (LOOPBACK_HOSTS.includes(normalized)) return true
+  if (IPV4.test(normalized)) {
+    const octets = normalized.split('.').map(Number)
+    if (octets.some((octet) => octet > 255)) return false
+    return PRIVATE_IPV4.some((range) => range.test(normalized))
+  }
+  if (normalized.includes(':')) return PRIVATE_IPV6.some((range) => range.test(normalized))
+  // A NAME. Only the reserved, never-routable suffixes (RFC 2606 / RFC 6762);
+  // a bare `postgres` — production's own spelling — falls through to a refusal.
+  return /\.(local|internal|localhost|test|invalid|example)$/.test(normalized)
+}
 
 /** `platform`, or a per-worktree branch database `platform_<N>` with N ≥ 1. */
 export const DEV_DATABASE_NAME_RE = /^platform(_[1-9][0-9]*)?$/
@@ -112,12 +159,13 @@ export function classifyDevDatabase(connectionString, env = {}) {
 
   // `URL` keeps the brackets of an IPv6 authority; the allowlist holds bare hosts.
   const host = url.hostname.replace(/^\[|\]$/g, '')
-  if (!DEV_DATABASE_HOSTS.includes(host)) {
+  if (!isDevDatabaseHost(host)) {
     return {
       ok: false,
       reason:
-        `«${host}» is not a known dev host (${DEV_DATABASE_HOSTS.join(', ')}). ` +
-        'A platform database reached over the network is a real stand, and this seed writes synthetic data.',
+        `«${host}» is not a dev host: only loopback, a private address literal and the ` +
+        'reserved never-routable name suffixes are accepted. Production reaches Postgres by ' +
+        'its compose service name, so a bare hostname is refused by design.',
     }
   }
 

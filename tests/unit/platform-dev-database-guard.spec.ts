@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  DEV_DATABASE_HOSTS,
+  LOOPBACK_HOSTS,
   DevDatabaseRefusal,
   assertDevPlatformDatabase,
   classifyDevDatabase,
@@ -35,10 +35,34 @@ describe('classifyDevDatabase', () => {
   })
 
   it('accepts every loopback spelling the dev stand is reached by', () => {
-    for (const host of DEV_DATABASE_HOSTS) {
+    for (const host of LOOPBACK_HOSTS) {
       const authority = host.includes(':') ? `[${host}]` : host
       const verdict = classifyDevDatabase(`postgres://u:p@${authority}:5444/platform`, {})
       expect(verdict.ok, host).toBe(true)
+    }
+  })
+
+  it('accepts the LAN address this box reaches its own dev stand at', () => {
+    // The dev stand here is not on loopback: `pnpm dev:db:branch` writes
+    // `…@192.168.1.115:5444/platform_<N>`. A private address literal cannot be
+    // a routable production endpoint, so the whole private space is dev.
+    for (const host of ['192.168.1.115', '10.0.3.7', '172.20.4.9', '169.254.7.7', '100.80.1.2']) {
+      const verdict = classifyDevDatabase(`postgres://u:p@${host}:5444/platform_436`, {})
+      expect(verdict.ok, host).toBe(true)
+    }
+  })
+
+  it('refuses the compose service name production reaches Postgres by', () => {
+    // `deploy/.env.prod.example`: postgres://bbm_platform_app:…@postgres:5432/platform
+    const verdict = classifyDevDatabase('postgres://u:p@postgres:5432/platform', {})
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) expect(verdict.reason).toContain('postgres')
+  })
+
+  it('refuses a public address literal, however the name is spelled', () => {
+    for (const host of ['203.0.113.10', '8.8.8.8']) {
+      const verdict = classifyDevDatabase(`postgres://u:p@${host}:5432/platform`, {})
+      expect(verdict.ok, host).toBe(false)
     }
   })
 
