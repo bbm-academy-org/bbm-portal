@@ -188,6 +188,14 @@ export function overrideMessage(contextTokens, reason = '') {
  * - ≥ SOFT, reasoned override marker → `{ action: 'override' }` (loud allow)
  * - ≥ HARD                           → `{ action: 'deny' }`
  * - ≥ SOFT                           → `{ action: 'soft' }`
+ *
+ * The JSDoc `@param` is load-bearing, not decoration: without it TS infers the
+ * parameter shape from the destructuring defaults alone, so only
+ * `overrideReasonless` survives and every caller passing `contextTokens` is a
+ * TS2353. Same trap, same fix as `applyBlockBudget` in `shared.mjs`.
+ *
+ * @param {{contextTokens?: number, override?: boolean, overrideReasonless?: boolean}} [args]
+ * @returns {{action: 'silent'|'soft'|'deny'|'override', reasonless: boolean}}
  */
 export function decide({ contextTokens, override, overrideReasonless = false } = {}) {
   const ctx = Number.isFinite(contextTokens) ? contextTokens : 0
