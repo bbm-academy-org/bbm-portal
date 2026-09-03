@@ -14,17 +14,33 @@
 // `src/app/(platform)`:
 //
 //   (1) RAW CONTROL. An added raw `<button>` / `<table>` / `<select>` /
-//       `<input>` / `<form>` opening tag, when the kit HAS the equivalent
+//       `<input>` opening tag, when the kit HAS the equivalent
 //       (`src/ui/<tag>.tsx` exists in the checked-out tree). The kit-existence
 //       test is not decoration: the rule the issue states is «a raw tag is a
 //       violation WHEN an `src/ui` equivalent exists», so a tag the kit does not
 //       cover is not this guard's business, and a kit file that is later removed
 //       stops the finding by itself instead of stranding it.
+//
+//       `<form>` is NOT in that set, and the omission is the rule, not an
+//       exemption (review of PR #459). `src/ui/form.tsx` is
+//       `const Form = FormProvider` — a CONTEXT provider that renders no element,
+//       and no file in `src/ui/` renders a `<form>`. The documented shadcn shape
+//       is `<Form {...form}><form onSubmit={form.handleSubmit(…)}>`: the raw tag
+//       is MANDATORY inside the kit block, so for the `<form>` ELEMENT no
+//       `src/ui` equivalent exists and the issue's antecedent is false. Flagging
+//       it reported the #434 reference migration — the model every future screen
+//       copies — as a canon violation, exactly the false-positive class §4 says
+//       stops a WARN guard from ever being promoted. The real defect the issue
+//       names is field state, and rule (2) owns it.
 //   (2) FORM STATE. An added `useState(` in a file whose added lines also open a
-//       `<form>` — hand-rolled field state where the kit's `form` block applies.
-//       Both halves must be in the SAME diff: a `useState` next to a `<Sheet>` is
-//       an open/closed flag, not field state, and flagging it would be the
-//       false-positive class that gets a guard routed around.
+//       `<form>` and do NOT compose the kit `Form` block — hand-rolled field
+//       state where `src/ui/form.tsx` applies. Both halves must be in the SAME
+//       diff: a `useState` next to a `<Sheet>` is an open/closed flag, not field
+//       state, and flagging it would be the false-positive class that gets a
+//       guard routed around. The kit-composition test is the other half of the
+//       same care: a diff that already drives its fields from `useForm` keeps
+//       `loading` / `pending` / `editing` in `useState` beside it (the #434
+//       `AliasPanel.tsx`), and those hooks are not field state either.
 //
 // SCOPE IS THE DIFF, NOT THE TREE — the one deliberate divergence from the
 // ds-platform original this is ported from (`tools/lint/primitives-first-lint.ts`,
@@ -76,21 +92,28 @@ const TAG = '[primitives-first]'
 export const REPO = 'bbm-academy-org/bbm-portal'
 
 /**
- * The raw tags #435 names, each mapped to the kit file that owns it. The set is
- * the issue's set, not a wider one: widening a guard's rule past the issue that
- * filed it is how a WARN guard collects the false positives that stop it from
- * ever being promoted (canon §4).
+ * The raw tags #435 names that the kit really owns AS AN ELEMENT, each mapped to
+ * the kit file that owns it. The set is the issue's set minus `form`, and no
+ * wider: widening a guard's rule past the issue that filed it is how a WARN guard
+ * collects the false positives that stop it from ever being promoted (canon §4).
+ * Why `form` is absent: the header, rule (1).
  */
 export const KIT_EQUIVALENTS = Object.freeze({
   button: 'src/ui/button.tsx',
   table: 'src/ui/table.tsx',
   select: 'src/ui/select.tsx',
   input: 'src/ui/input.tsx',
-  form: 'src/ui/form.tsx',
 })
 
-/** The kit file whose absence would make rule (2) meaningless. */
-const FORM_KIT_FILE = KIT_EQUIVALENTS.form
+/**
+ * The kit file whose absence would make rule (2) meaningless. It owns field
+ * state, validation and error wiring — not the `<form>` element — so it is a
+ * constant of rule (2) rather than a `KIT_EQUIVALENTS` row.
+ */
+export const FORM_KIT_FILE = 'src/ui/form.tsx'
+
+/** The added lines compose the kit `Form` block — `<Form …>` or an `@/ui/form` import. */
+const KIT_FORM_RE = /<Form(?=[\s/>])|['"`]@\/ui\/form['"`]/
 
 /**
  * The inline allow-list marker. The reason is required and must be real text: a
@@ -114,7 +137,9 @@ const USE_STATE_RE = /\buseState\s*[(<]/g
  *            message: string}}
  */
 export function checkPrimitivesFirst(files, opts = {}) {
-  const kit = new Set(opts.kitFiles ?? existingPaths(Object.values(KIT_EQUIVALENTS)))
+  const kit = new Set(
+    opts.kitFiles ?? existingPaths([...Object.values(KIT_EQUIVALENTS), FORM_KIT_FILE]),
+  )
   const inScope = (files ?? [])
     .map((f) => ({ path: String(f?.filename ?? f?.path ?? ''), patch: f?.patch ?? '' }))
     .filter((f) => isPlatformUiFile(f.path))
@@ -137,14 +162,12 @@ export function checkPrimitivesFirst(files, opts = {}) {
 
     // ── (1) raw controls the kit already owns ────────────────────────────────
     const covered = Object.keys(KIT_EQUIVALENTS).filter((t) => kit.has(KIT_EQUIVALENTS[t]))
-    let sawForm = false
     if (covered.length > 0) {
       const rawTag = new RegExp(`<(${covered.join('|')})(?=[\\s/>])`, 'g')
       for (const m of src.text.matchAll(rawTag)) {
         const start = m.index ?? 0
         if (findTagEnd(src.text, start) === -1) continue
         const tag = m[1]
-        if (tag === 'form') sawForm = true
         const line = src.lineAt(start)
         if (isSuppressed(markers, line)) continue
         findings.push({
@@ -161,16 +184,17 @@ export function checkPrimitivesFirst(files, opts = {}) {
         })
       }
     }
-    // `<form>` may itself be suppressed or uncovered; rule (2) only needs to know
-    // that the diff builds a form at all.
-    if (!sawForm) sawForm = /<form(?=[\s/>])/.test(src.text)
+    // Rule (2) only needs to know that the diff builds a form at all, and that it
+    // does NOT do so through the kit block.
+    const sawForm = /<form(?=[\s/>])/.test(src.text)
+    const composesKitForm = KIT_FORM_RE.test(src.text)
 
     // ── (2) useState-driven field state where the form block applies ─────────
     // ONE finding per file, not one per hook. A hand-rolled form adds a dozen
     // `useState` calls and they are ONE decision with ONE fix (adopt the `form`
     // block) — a dozen identical lines is noise that gets a WARN guard skimmed
     // past rather than read.
-    if (sawForm && kit.has(FORM_KIT_FILE)) {
+    if (sawForm && !composesKitForm && kit.has(FORM_KIT_FILE)) {
       const hooks = [...src.text.matchAll(USE_STATE_RE)]
         .map((m) => src.lineAt(m.index ?? 0))
         .filter((line) => !isSuppressed(markers, line))
@@ -182,9 +206,10 @@ export function checkPrimitivesFirst(files, opts = {}) {
           rule: 'form-state',
           count: hooks.length,
           message:
-            `${hooks.length} \`useState\` call(s) driving field state in a diff that also builds a ` +
-            `\`<form>\` — field state, validation and error wiring are owned by \`${FORM_KIT_FILE}\` ` +
-            `(react-hook-form, the #434 block set), not re-implemented per screen. For a deliberate ` +
+            `a \`<form>\` built with no kit \`Form\` composition, beside ${hooks.length} ` +
+            `\`useState\` call(s) — field state, validation and error wiring are owned by ` +
+            `\`${FORM_KIT_FILE}\` (react-hook-form, the #434 block set), not re-implemented per ` +
+            `screen. Whichever of those hooks hold fields belong in \`useForm\`. For a deliberate ` +
             `exception write \`primitives-first-ok: <reason>\` inline.`,
         })
       }
