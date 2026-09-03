@@ -34,6 +34,10 @@ import {
 describe('the seeded volume the owner ruling asks for', () => {
   it('seeds at least 30 members, so the members list has density and pagination', () => {
     expect(DEV_SEED_MEMBERS.length).toBeGreaterThanOrEqual(30)
+    // 30 is the acceptance floor; the PAGER is the thing the owner ruling names,
+    // and `/p/admin/member/members` pages at 50. A seed that stops at 34 shows a
+    // long list and no pagination at all — the exact defect this issue is about.
+    expect(DEV_SEED_MEMBERS.length).toBeGreaterThan(50)
   })
 
   it('covers every status of the spec-339 request machine at least once', () => {
