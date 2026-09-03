@@ -106,6 +106,25 @@ describe('interaction-states-lint: a treated clickable passes (AC2 of #435)', ()
     expect(result.verdict).toBe('pass')
   })
 
+  /**
+   * The enclosing-tag walk goes backwards to the nearest `<`. A `<` inside an
+   * attribute EXPRESSION (`{count < limit}`) is not a tag opening — JSX has no
+   * `< limit>` tag — but taking it for one slices the tag text after the real
+   * `className`, and the guard invents a finding about a tag that does not exist
+   * (review of PR #459, N5).
+   */
+  it('does not mistake a `<` inside an attribute expression for the tag opening', () => {
+    const result = checkInteractionStates([
+      file(BOARD, [
+        '<button className="hover:bg-accent focus-visible:ring-2" aria-hidden={count < limit} onClick={run}>',
+        '  ok',
+        '</button>',
+      ]),
+    ])
+    expect(result.findings).toEqual([])
+    expect(result.verdict).toBe('pass')
+  })
+
   it('accepts `group-hover:` / `peer-focus-visible:` variants as the treatment', () => {
     const result = checkInteractionStates([
       file(BOARD, [
