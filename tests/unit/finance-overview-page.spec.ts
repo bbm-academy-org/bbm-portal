@@ -174,4 +174,11 @@ describe('/p/finance F1b overview (spec 338 EARS-325)', () => {
     expect(html).toContain('selector:RUB:RUB,USD,THB')
     expect(html).not.toContain('selector:RUB:RUB,USD,THB,EUR')
   })
+  it('EARS-509: leads from the overview to the requests board it belongs with', async () => {
+    const page = await import('@/app/(platform)/p/finance/page')
+    const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }))
+
+    expect(html).toContain('href="/p/finance/requests"')
+    expect(html).toContain('Заявки')
+  })
 })
