@@ -277,3 +277,57 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
+
+  # WARN — a PR that hand-rolls UI the `src/ui` kit already owns (guard from
+  # #435, ported from ds-platform). Same wiring as `ux-record`: `--severity block`
+  # so the script gives a REAL signal (canon §4 clause 1), `continue-on-error` so
+  # the CI plane stays WARN. WARN is deliberate and #435 says why — the existing
+  # corpus under src/app/(platform) is full of these violations, and a BLOCK guard
+  # landing on a red corpus gets routed around rather than obeyed. It reads the
+  # PR's diff CONTENT, so it needs only `pull-requests: read` on top of the floor —
+  # no `issues: read`, since no linked-issue comment can answer it.
+  primitives-first:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-09-03 — canon §5
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:primitives-first --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
+  # WARN — a clickable a PR adds under src/app/(platform) with no hover, keyboard
+  # focus or disabled treatment (the states half of #435). Same plane and same
+  # wiring as `primitives-first` above; the two are deliberately separate jobs so
+  # one guard's finding cannot mask the other's.
+  interaction-states:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-09-03 — canon §5
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:interaction-states --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
