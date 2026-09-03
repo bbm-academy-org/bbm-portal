@@ -126,43 +126,52 @@ function CabinetFrame({
   const crumbs = breadcrumbFromResources(resources, pathname)
 
   return (
-    <div
-      data-bbm-ui
-      data-cabinet
-      // The wireframe's two-column shell: a persistent nav column and the work
-      // area. One column while narrow — the state the file does not draw.
-      className="mx-auto grid w-full max-w-[1440px] grid-cols-1 bg-background md:grid-cols-[248px_minmax(0,1fr)]"
-    >
-      <CabinetSidebar items={menuItems} selectedKey={selectedKey} />
-      {/* Inside the opted-in subtree so the toast is painted by the kit's own
-          base layer — sonner renders where it is placed, it does not portal. */}
-      <Toaster position="bottom-right" richColors closeButton />
-      <main className="min-w-0 px-4 py-6 sm:px-8">
-        {/* EARS-435: every cabinet screen says whose data it is showing, in one
-            place, so a screen author cannot forget to. */}
-        <nav data-cabinet-crumbs aria-label="Хлебные крошки" className="mb-4 text-sm">
-          <ol className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
-            {crumbs.map((crumb, index) => (
-              <li key={`${crumb.label}-${index}`} className="flex items-center gap-1.5">
-                {index > 0 ? <span aria-hidden="true">/</span> : null}
-                {crumb.href && index < crumbs.length - 1 ? (
-                  <a
-                    href={crumb.href}
-                    className="rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                  >
-                    {crumb.label}
-                  </a>
-                ) : (
-                  <span className={index === crumbs.length - 1 ? 'text-foreground' : undefined}>
-                    {crumb.label}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-        </nav>
-        {children}
-      </main>
-    </div>
+    <>
+      <div
+        data-bbm-ui
+        data-cabinet
+        // The wireframe's two-column shell: a persistent nav column and the work
+        // area. One column while narrow — the state the file does not draw.
+        className="mx-auto grid w-full max-w-[1440px] grid-cols-1 bg-background md:grid-cols-[248px_minmax(0,1fr)]"
+      >
+        <CabinetSidebar items={menuItems} selectedKey={selectedKey} />
+        <main className="min-w-0 px-4 py-6 sm:px-8">
+          {/* EARS-435: every cabinet screen says whose data it is showing, in one
+              place, so a screen author cannot forget to. */}
+          <nav data-cabinet-crumbs aria-label="Хлебные крошки" className="mb-4 text-sm">
+            <ol className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+              {crumbs.map((crumb, index) => (
+                <li key={`${crumb.label}-${index}`} className="flex items-center gap-1.5">
+                  {index > 0 ? <span aria-hidden="true">/</span> : null}
+                  {crumb.href && index < crumbs.length - 1 ? (
+                    <a
+                      href={crumb.href}
+                      className="rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      {crumb.label}
+                    </a>
+                  ) : (
+                    <span className={index === crumbs.length - 1 ? 'text-foreground' : undefined}>
+                      {crumb.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
+          {children}
+        </main>
+      </div>
+      {/* OUTSIDE the grid, not a third grid item. Sonner renders where it is
+          placed instead of portalling, and its outer element is a plain
+          `<section>` — so a `<Toaster/>` dropped between the sidebar and
+          `<main>` takes the second grid cell and pushes the work area onto its
+          own row at the sidebar's 248px. That is what the #434 acceptance stand
+          showed before this moved out. It carries its own `data-bbm-ui`
+          because it now sits outside the columns' subtree. */}
+      <div data-bbm-ui>
+        <Toaster position="bottom-right" richColors closeButton />
+      </div>
+    </>
   )
 }
