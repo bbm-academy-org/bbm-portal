@@ -57,6 +57,22 @@ describe('ATTEMPT_RE / CANONICAL_RE', () => {
     expect(ATTEMPT_RE.test('freezes the period')).toBe(false)
   })
 
+  it('does not treat a prose title merely STARTING with the word EARS as an attempt', () => {
+    // The false-positive class the guard's header used to declare open (#447):
+    // the word EARS followed by a space and a LETTER is English, not a botched
+    // id, and renaming an honest title to please a guard is the dead end
+    // docs/ci-guardrails.md §3 clause 3(d) forbids.
+    expect(ATTEMPT_RE.test('EARS adoption record')).toBe(false)
+    expect(ATTEMPT_RE.test('EARS is adopted here')).toBe(false)
+    expect(ATTEMPT_RE.test('ears naming, the format half')).toBe(false)
+  })
+
+  it('still treats each of the four misspellings as an attempt', () => {
+    for (const bad of ['ears-3: x', 'EARS3: x', 'EARS-3 x', 'EARS 3: x']) {
+      expect(ATTEMPT_RE.test(bad)).toBe(true)
+    }
+  })
+
   it('accepts every canonical id shape the corpus uses', () => {
     expect(CANONICAL_RE.test('EARS-3: freezes the period')).toBe(true)
     expect(CANONICAL_RE.test('EARS-3.1: freezes the period')).toBe(true)
@@ -98,6 +114,20 @@ describe('findMalformedTitles', () => {
 
   it('reads titles only, never arbitrary file text', () => {
     expect(findMalformedTitles("const note = 'ears-3: not a title'")).toEqual([])
+  })
+
+  it('leaves a prose title starting with the word EARS alone', () => {
+    const src = "describe('EARS adoption record', () => {})\nit('EARS is adopted here', () => {})"
+    expect(findMalformedTitles(src)).toEqual([])
+  })
+
+  it('still flags every one of the four misspellings', () => {
+    const src =
+      "it('ears-3: a', () => {})\n" +
+      "it('EARS3: b', () => {})\n" +
+      "it('EARS-3 c', () => {})\n" +
+      "it('EARS 3: d', () => {})"
+    expect(findMalformedTitles(src)).toEqual(['ears-3: a', 'EARS3: b', 'EARS-3 c', 'EARS 3: d'])
   })
 })
 
