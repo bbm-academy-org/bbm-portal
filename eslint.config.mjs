@@ -104,17 +104,24 @@ const eslintConfig = [
   // #434): the shadcn and Refine components are copied in by their CLI/registry
   // and re-copied verbatim on every upgrade, so a finding here is not something
   // a session may fix — a local fix is a silent fork that the next `shadcn add`
-  // reverts. The three rules below are the React-Compiler-era ones the current
-  // upstream sources trip (`use-mobile.ts`, `refine-ui/data-table/data-table-filter.tsx`,
-  // `refine-ui/layout/breadcrumb.tsx`), and they are switched off for THIS
-  // DIRECTORY ONLY, by name, so the app's own components keep every one of them.
-  // The kit's real guard is `pnpm lint:ui-tokens`, which checks the property
-  // vendoring cannot give us (no colour literal outside `theme.css`).
+  // reverts. The two rules below are the React-Compiler-era ones the current
+  // upstream sources actually trip, and each one names the file that trips it:
+  //
+  //   - `set-state-in-effect` — `hooks/use-mobile.ts` (the matchMedia listener);
+  //   - `static-components`   — `refine-ui/layout/breadcrumb.tsx` (`useLink()`
+  //     returns a component, which it then renders per crumb).
+  //
+  // `react-hooks/immutability` was the third: it was tripped ONLY by
+  // `refine-ui/data-table/data-table-filter.tsx`, which is not vendored (see
+  // `src/ui/README.md`), so it is back ON here — a concession is kept only
+  // while something needs it. The exemptions are scoped to THIS DIRECTORY, by
+  // name, so the app's own components keep every one of these rules. The kit's
+  // real guard is `pnpm lint:ui-tokens`, which checks the property vendoring
+  // cannot give us (no colour literal outside `theme.css`).
   {
     files: ['src/ui/**/*.{ts,tsx}'],
     rules: {
       'react-hooks/set-state-in-effect': 'off',
-      'react-hooks/immutability': 'off',
       'react-hooks/static-components': 'off',
     },
   },

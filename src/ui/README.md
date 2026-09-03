@@ -57,20 +57,23 @@ with their imports rewritten (`@/registry/new-york/ui/*` → `@/ui/*`,
 `@/ui/utils`). The subtree mirrors upstream's own folder shape so the next
 refresh is a re-fetch and not a re-invention.
 
-**Four deliberate divergences from upstream, all of them named:**
+**Five deliberate divergences from upstream, all of them named:**
 
-| Divergence                                                                              | Why                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `notification/toaster.tsx` is not vendored                                              | it exists only to read a theme from Refine's next-themes `theme-provider`, which this repo does not run. The shadcn `sonner.tsx` is the same Toaster with the kit's icons                  |
-| `data-table/data-table-filter.tsx` is not vendored                                      | it does not typecheck against `@refinedev/core` 5.x — its operator map is missing `eqs`/`nes`. Re-vendor it when upstream catches up and a screen needs column filters                     |
-| the `data-table` pager's English chrome is translated, and its empty state became props | one locale, ru-RU, hardcoded everywhere; there is no i18n layer for the block's `useTranslate` to reach. Kept as its own commit so the delta from upstream stays readable                  |
-| `layout-01` is not vendored at all                                                      | it is the cabinet SHELL, and `CabinetShell` already implements the owner-accepted #315 layout over `useMenu()`. Swapping it changes every admin screen's chrome — its own task, not #434's |
+| Divergence                                                                              | Why                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notification/toaster.tsx` is not vendored                                              | it exists only to read a theme from Refine's next-themes `theme-provider`, which this repo does not run. The shadcn `sonner.tsx` is the same Toaster with the kit's icons                                                                                                                               |
+| `sonner.tsx` reads the `.dark` class instead of `next-themes`                           | upstream's `useTheme()` needs a `ThemeProvider` this repo does not run: unprovided it answers `system`, so the toast asked the OS and rendered light on a dark screen (#434 review). The workspace's dark theme IS the `.dark` class of `theme.css`, and `next-themes` is dropped from the dependencies |
+| `data-table/data-table-filter.tsx` is not vendored                                      | it does not typecheck against `@refinedev/core` 5.x — its operator map is missing `eqs`/`nes`. Re-vendor it when upstream catches up and a screen needs column filters                                                                                                                                  |
+| the `data-table` pager's English chrome is translated, and its empty state became props | one locale, ru-RU, hardcoded everywhere; there is no i18n layer for the block's `useTranslate` to reach. Kept as its own commit so the delta from upstream stays readable                                                                                                                               |
+| `layout-01` is not vendored at all                                                      | it is the cabinet SHELL, and `CabinetShell` already implements the owner-accepted #315 layout over `useMenu()`. Swapping it changes every admin screen's chrome — its own task, not #434's                                                                                                              |
 
 **And one repo-level concession:** `eslint.config.mjs` switches
-`react-hooks/set-state-in-effect`, `react-hooks/immutability` and
-`react-hooks/static-components` off for `src/ui/**` alone. The current upstream
-sources trip all three; fixing them here would be a silent fork that the next
-`shadcn add` reverts. The app's own components keep every one of those rules.
+`react-hooks/set-state-in-effect` (tripped by `hooks/use-mobile.ts`) and
+`react-hooks/static-components` (tripped by `refine-ui/layout/breadcrumb.tsx`)
+off for `src/ui/**` alone. Fixing them here would be a silent fork that the next
+`shadcn add` reverts. The app's own components keep both rules. A third,
+`react-hooks/immutability`, was switched off with them and is back ON: its only
+tripping file was `data-table-filter.tsx`, which is not vendored.
 
 ## Adding to the kit
 
