@@ -16,18 +16,8 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
   `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
   MUST preserve that anchor as the tombstone for Git's union merge.
 - **Permanent append marker:** add new active entries immediately before
-  `- [ ] 2026-09-03 The `interaction-states`port (#435) DROPS two of the ds-platform original's three scopes rather than adapting them: scope (a), the layer-1`@layer base`reset in`packages/design-system/src/styles/globals.css` (`cursor: pointer`on the interactive element list,`cursor: not-allowed`for`:disabled`, the `prefers-reduced-motion`guard), and scope (b), the`interactiveBase`focus-ring fragment every primitive composes. This repo has neither object: the kit is stock shadcn/ui vendored through Refine (#360/#434), whose primitives carry their states inline and whose theme entry is`src/ui/theme.css`. Porting them would have asserted a contract nobody agreed to. The consequence is real and worth naming: #435 measured `cursor-pointer`at ZERO occurrences in`src`, and nothing now checks that a global clickable reset exists at all — return condition: the first task that adds a base-layer interaction reset to `src/ui/theme.css`, at which point scope (a) becomes portable as a one-file integrity check.
-
-<!-- debt-entry-end: 2026-09-03-435-no-layer1-check -->
-
-- [ ] 2026-09-03 `interaction-states` (#435) skips every CAPITALISED JSX tag carrying `onClick`, on the reasoning that a component owns its own states and a component whose import lies outside the diff cannot be classified from the diff alone. That is the conservative direction (the guard misses rather than invents, canon §8), but it leaves one real hole: a clickable wrapper DEFINED in the same file — the shape PR #430's own `NativeSelect` has — is invisible to the guard even though its raw inner tag is fully visible to `primitives-first`. Not fixed now because resolving local component definitions from added lines alone is a different class of parser than the rest of this family — return condition: the first review that catches an untreated clickable this guard should have caught, or the guard's §4 promotion review on 2026-10-01, whichever comes first.
-
-<!-- debt-entry-end: 2026-09-03-435-uppercase-hole -->
-
-<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
-
-sweep notes live after that marker.
-
+  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
+  sweep notes live after that marker.
 - **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
   two branches that append different root-ledger entry blocks keep both blocks
   instead of conflicting. Union does not guarantee relative order between two
@@ -942,6 +932,14 @@ Entry format:
 - [ ] 2026-09-03 `src/ui/refine-ui/data-table/data-table-filter.tsx` is the one file of the vendored `data-table` registry item deliberately NOT kept (#434): its operator map is missing `eqs`/`nes` and it does not typecheck against `@refinedev/core` 5.x. Nothing needs column filters yet, so the gap is invisible today — return condition: the first cabinet screen that needs a per-column filter, which is also the moment to decide between patching the map here and dropping the item.
 
 <!-- debt-entry-end: 2026-09-03-dtf1lter -->
+
+- [ ] 2026-09-03 The `interaction-states` port (#435) DROPS two of the ds-platform original's three scopes rather than adapting them: scope (a), the layer-1 `@layer base` reset in `packages/design-system/src/styles/globals.css` (`cursor: pointer` on the interactive element list, `cursor: not-allowed` for `:disabled`, the `prefers-reduced-motion` guard), and scope (b), the `interactiveBase` focus-ring fragment every primitive composes. This repo has neither object: the kit is stock shadcn/ui vendored through Refine (#360/#434), whose primitives carry their states inline and whose theme entry is `src/ui/theme.css`. Porting them would have asserted a contract nobody agreed to. The consequence is real and worth naming: #435 measured `cursor-pointer` at ZERO occurrences in `src`, and nothing now checks that a global clickable reset exists at all — return condition: the first task that adds a base-layer interaction reset to `src/ui/theme.css`, at which point scope (a) becomes portable as a one-file integrity check.
+
+<!-- debt-entry-end: 2026-09-03-435-no-layer1-check -->
+
+- [ ] 2026-09-03 `interaction-states` (#435) skips every CAPITALISED JSX tag carrying `onClick`, on the reasoning that a component owns its own states and a component whose import lies outside the diff cannot be classified from the diff alone. That is the conservative direction (the guard misses rather than invents, canon §8), but it leaves one real hole: a clickable wrapper DEFINED in the same file — the shape PR #430's own `NativeSelect` has — is invisible to the guard even though its raw inner tag is fully visible to `primitives-first`. Not fixed now because resolving local component definitions from added lines alone is a different class of parser than the rest of this family — return condition: the first review that catches an untreated clickable this guard should have caught, or the guard's §4 promotion review on 2026-10-01, whichever comes first.
+
+<!-- debt-entry-end: 2026-09-03-435-uppercase-hole -->
 
 <!-- debt-append-marker -->
 
