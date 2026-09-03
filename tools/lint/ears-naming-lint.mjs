@@ -34,14 +34,21 @@
 // Promotion per §4; the earliest date lives in §5's row and in the job's own
 // `continue-on-error` comment, deliberately not restated here.
 //
-// KNOWN FALSE-POSITIVE CLASS, to be weighed at that promotion review: `ATTEMPT_RE`
-// fires on any title that merely STARTS with the word — `describe('EARS adoption
-// record', …)` reads as a botched id. Unlike `instruction-budget` this guard is
-// therefore NOT a §3 class-1 candidate (its false-positive class is non-empty by
-// construction, being a regex over human text), so the §4 clean window is doing
-// real work here rather than proving what is already provable. The corpus is
-// clean today; the fix if it ever bites is the `ears-naming-ok:` opt-out, or
-// tightening the attempt anchor to require a digit.
+// WHAT THE ATTEMPT ANCHOR DOES AND DOES NOT MATCH (#447). It MATCHES a title
+// opening with `ears` followed by a hyphen, colon, digit, or a space that is NOT
+// the start of an English word — so all four misspellings the rule exists for
+// (`ears-3:`, `EARS3:`, `EARS-3` with no colon, `EARS 3:`) are attempts. It does
+// NOT match the word EARS used as prose: `describe('EARS adoption record', …)`,
+// `it('EARS is adopted here', …)`, nor a word merely beginning with the letters
+// (`renders the earshot banner`). That prose class used to be a finding and was
+// the declared FALSE-BLOCK that held this guard back from the 2026-09-02
+// promotion sweep (#438); narrowing it closed the class, and the only fix it
+// would have offered an author — renaming an honest English title to please a
+// guard — is the dead end docs/ci-guardrails.md §3 clause 3(d) forbids.
+// Being a regex over human text the guard still carries a non-empty
+// false-positive class by construction, so it is NOT a §3 class-1 candidate: the
+// §4 clean window does real work here rather than proving what is provable. A
+// residual false positive is answered by the `ears-naming-ok:` opt-out.
 //
 // Ported from ds-platform `tools/lint/ears-naming-lint.ts` — same rule, adapted
 // to this repo's `.mjs` guard plumbing, test layout and canon references.
@@ -78,9 +85,12 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
 /**
  * A title that ATTEMPTS the EARS prefix: opens with `ears` followed by a hyphen,
  * space, colon or digit — so prose like "renders the earshot banner" is not read
- * as a botched id.
+ * as a botched id. The negative lookahead excludes the other prose shape (#447):
+ * `EARS` followed by whitespace and a LETTER is the English word used in a
+ * sentence — `describe('EARS adoption record', …)` — not a botched id. `EARS 3:`
+ * survives it, because a DIGIT after the space is an id, not a word.
  */
-export const ATTEMPT_RE = /^\s*ears[-\s:0-9]/i
+export const ATTEMPT_RE = /^\s*ears(?!\s+[A-Za-z])[-\s:0-9]/i
 
 /** The canonical prefix: uppercase, hyphen, flat/nested/compound id, optional `(#N)`, colon. */
 export const CANONICAL_RE = /^\s*EARS-\d+(?:[./]\d+)*(?:\s*\(#\d+\))?:/
