@@ -13,9 +13,17 @@ import { cn } from '@/ui/utils'
 
 type DataTableProps<TData extends BaseRecord> = {
   table: UseTableReturnType<TData, HttpError>
+  /** The empty state's headline. Defaults to the kit's ru-RU wording. */
+  emptyTitle?: string
+  /** The empty state's second line — say what to do next, not only that it is empty. */
+  emptyDescription?: string
 }
 
-export function DataTable<TData extends BaseRecord>({ table }: DataTableProps<TData>) {
+export function DataTable<TData extends BaseRecord>({
+  table,
+  emptyTitle = 'Записей пока нет',
+  emptyDescription = 'Здесь появятся строки, как только они будут созданы.',
+}: DataTableProps<TData>) {
   const {
     reactTable: { getHeaderGroups, getRowModel, getAllColumns },
     refineCore: { tableQuery, currentPage, setCurrentPage, pageCount, pageSize, setPageSize },
@@ -163,7 +171,12 @@ export function DataTable<TData extends BaseRecord>({ table }: DataTableProps<TD
                 )
               })
             ) : (
-              <DataTableNoData isOverflowing={isOverflowing} columnsLength={columns.length} />
+              <DataTableNoData
+                isOverflowing={isOverflowing}
+                columnsLength={columns.length}
+                emptyTitle={emptyTitle}
+                emptyDescription={emptyDescription}
+              />
             )}
           </TableBody>
         </Table>
@@ -185,9 +198,13 @@ export function DataTable<TData extends BaseRecord>({ table }: DataTableProps<TD
 function DataTableNoData({
   isOverflowing,
   columnsLength,
+  emptyTitle,
+  emptyDescription,
 }: {
   isOverflowing: { horizontal: boolean; vertical: boolean }
   columnsLength: number
+  emptyTitle: string
+  emptyDescription: string
 }) {
   return (
     <TableRow className="hover:bg-transparent">
@@ -216,12 +233,8 @@ function DataTableNoData({
             minWidth: '300px',
           }}
         >
-          <div className={cn('text-lg', 'font-semibold', 'text-foreground')}>
-            No data to display
-          </div>
-          <div className={cn('text-sm', 'text-muted-foreground')}>
-            This table is empty for the time being.
-          </div>
+          <div className={cn('text-lg', 'font-semibold', 'text-foreground')}>{emptyTitle}</div>
+          <div className={cn('text-sm', 'text-muted-foreground')}>{emptyDescription}</div>
         </div>
       </TableCell>
     </TableRow>
