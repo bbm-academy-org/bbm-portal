@@ -200,25 +200,33 @@ describe.skipIf(!HAS_DB)('pnpm dev:seed against a migrated platform database', (
   /**
    * The other half of the same key: a row whose status can no longer REACH the
    * fixture's target must fail loudly and name the slug, rather than be counted
-   * `reused` or be silently left wrong. `cancelled` is terminal, so a `posted`
-   * fixture sitting there is a stand a human has to look at.
+   * `reused` or be silently left wrong. No forward act leads back to `draft`, so
+   * a submitted row carrying a `draft` fixture's marker is a stand a human has
+   * to look at.
+   *
+   * The rewind stops at `submitted` deliberately: `cancelled`, `refused` and
+   * `posted` are immutable terminal records (EARS-516) and the harness cannot
+   * put such a row back afterwards — the seed's refusal is the same one either
+   * way, and this suite must not leave the stand wrecked for the next file.
    */
   it('fails loudly, naming the slug, when the row can no longer reach its target', async () => {
     const fixture = DEV_SEED_REQUESTS.find((request) => request.status === 'draft')!
     const marker = `%[seed:${fixture.slug}]%`
-    await asMigrator((client) =>
-      client.query(`update core.finance_intake_item set status = 'cancelled' where note like $1`, [
-        marker,
-      ]),
-    )
-    await expect(seedDevData()).rejects.toThrow(fixture.slug)
+    const setStatus = (status: string) =>
+      asMigrator((client) =>
+        client.query(`update core.finance_intake_item set status = $2 where note like $1`, [
+          marker,
+          status,
+        ]),
+      )
 
-    // Put the stand back: the suite that follows must not inherit the wreckage.
-    await asMigrator((client) =>
-      client.query(`update core.finance_intake_item set status = 'draft' where note like $1`, [
-        marker,
-      ]),
-    )
+    await setStatus('submitted')
+    try {
+      await expect(seedDevData()).rejects.toThrow(fixture.slug)
+    } finally {
+      // Put the stand back: the suite that follows must not inherit the wreckage.
+      await setStatus('draft')
+    }
   }, 240_000)
 })
 

@@ -17,7 +17,10 @@
  *
  * **Idempotent by stable slug, not by luck.** Every row this writes carries a
  * fixed identity — a member's email, a period id, a `[seed:<slug>]` marker in an
- * intake note, a `source_ref` — and a rerun matches on it and does nothing.
+ * intake note, a `source_ref` — and a rerun matches on it and does nothing. For
+ * a request the key is the slug AND the target status: a row a crashed walk left
+ * half-applied is finished by the next run rather than counted as reused (see
+ * `walkRequestTo`).
  * `tests/int/platform/dev-seed.int.spec.ts` asserts that as a content digest
  * over every seeded table, not as row counts: a second run that rewrote rows in
  * place is exactly the failure the slug is for.
@@ -39,10 +42,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   approveExpenseRequest,
   cancelExpenseRequest,
+  confirmExpenseRequest,
   createCounterparty,
   createExpenseRequest,
   createIntakeItem,
   listCounterparties,
+  listFinanceDocuments,
   listIntakeItems,
   listAccounts,
   listProducts,
@@ -55,6 +60,7 @@ import {
   FINANCE_ENTRY_ROLE,
   type FinanceActor,
   type FinanceIntakeItemView,
+  type FinanceIntakeStatus,
 } from '@/lib/finance'
 import {
   createPeriod,
@@ -110,7 +116,7 @@ export type DevSeedSummary = {
     operationsReused: number
   }
   counterparties: { created: number; reused: number }
-  requests: { created: number; reused: number }
+  requests: { created: number; reused: number; repaired: number }
   intakeItems: { created: number; reused: number }
   documents: { uploaded: number }
 }
@@ -325,11 +331,102 @@ async function seededIntakeIndex(actor: FinanceActor): Promise<Map<string, Finan
   return index
 }
 
+/**
+ * Bring ONE request from where it actually is to where the fixture says it
+ * should be.
+ *
+ * **Why a walk and not a transaction.** Every act here — `createIntakeItem`,
+ * `transitionIntakeItem`, `postIntakeItem`, `uploadFinanceDocument` — opens its
+ * OWN `platformTransaction` inside the finance module and takes no external
+ * handle; that is the module's public surface (`src/lib/finance/index.ts`), and
+ * widening it so a dev-data script could wrap four acts in one transaction
+ * would be a change to the ledger's API driven by a fixture. So the walk cannot
+ * be made atomic from here, and the property is bought the other way instead:
+ * it is RESUMABLE. Whatever transient status a process death leaves behind, the
+ * next run continues from it and converges on the fixture's target — which is
+ * the guarantee atomicity would have provided, one run later.
+ *
+ * **And where it cannot converge, it stops.** A row in a status no forward act
+ * leads out of (a `cancelled` row whose fixture says `posted`) is a stand a
+ * human has to look at: the refusal names the slug rather than counting the row
+ * `reused` and leaving the «every spec-339 status» property quietly false.
+ */
+async function walkRequestTo(
+  approver: FinanceActor,
+  request: DevSeedRequest,
+  item: Pick<FinanceIntakeItemView, 'id' | 'status'>,
+): Promise<{ documentsUploaded: number }> {
+  const submitter = submitterActor(request.submitterSlug)
+  let status: FinanceIntakeStatus = item.status
+  let documentsUploaded = 0
+
+  /** The `posted` fixtures' file — uploaded once, however often the walk resumes. */
+  const ensureDocument = async (): Promise<void> => {
+    const documents = await listFinanceDocuments(approver, { intakeItemId: item.id })
+    if (documents.length > 0) return
+    await uploadFinanceDocument(approver, {
+      filename: request.document!.filename,
+      mime: DEV_SEED_DOCUMENT_MIME,
+      bytes: DEV_SEED_DOCUMENT_BYTES,
+      kind: request.document!.kind,
+      intakeItemIds: [item.id],
+    })
+    documentsUploaded += 1
+  }
+
+  if (status === request.status) return { documentsUploaded }
+
+  if (status === 'draft') {
+    await submitExpenseRequest(submitter, item.id)
+    status = 'submitted'
+    if (request.status === 'submitted') return { documentsUploaded }
+  }
+
+  if (status === 'submitted') {
+    switch (request.status) {
+      case 'cancelled':
+        // The one gate the entry role does not widen: a withdrawal is the
+        // submitter's statement about their own intent (status machine).
+        await cancelExpenseRequest(submitter, item.id)
+        return { documentsUploaded }
+      case 'refused':
+        await refuseExpenseRequest(approver, item.id, request.refusalReason!)
+        return { documentsUploaded }
+      case 'approved':
+        // Deliberately WITHOUT a document: with a ready document `approve` is
+        // the one-act confirmation and posts in the same transaction
+        // (EARS-510/511), so an `approved` fixture is precisely a request still
+        // waiting for its file.
+        await approveExpenseRequest(approver, item.id)
+        return { documentsUploaded }
+      case 'posted':
+        await ensureDocument()
+        await approveExpenseRequest(approver, item.id)
+        return { documentsUploaded }
+      default:
+        break
+    }
+  }
+
+  if (status === 'approved' && request.status === 'posted') {
+    // Authorized before its file arrived — the second act is the confirmation.
+    await ensureDocument()
+    await confirmExpenseRequest(approver, item.id)
+    return { documentsUploaded }
+  }
+
+  throw new Error(
+    `${TAG}: request «${request.slug}» sits in status «${status}» and the fixture targets ` +
+      `«${request.status}» — no forward act leads there, so the seed refuses to report it as ` +
+      'reused. Delete that row (or fix the fixture) and run the seed again.',
+  )
+}
+
 async function seedRequest(
   approver: FinanceActor,
   refs: FinanceRefs,
   request: DevSeedRequest,
-): Promise<void> {
+): Promise<{ documentsUploaded: number }> {
   const submitter = submitterActor(request.submitterSlug)
   const created = await createExpenseRequest(submitter, {
     occurredOn: request.occurredOn,
@@ -344,54 +441,33 @@ async function seedRequest(
     alreadyPaid: request.alreadyPaid,
     personalFunds: request.personalFunds,
   })
-  if (request.status === 'draft') return
-
-  await submitExpenseRequest(submitter, created.id)
-  switch (request.status) {
-    case 'submitted':
-      return
-    case 'cancelled':
-      // The one gate the entry role does not widen: a withdrawal is the
-      // submitter's statement about their own intent (status machine).
-      await cancelExpenseRequest(submitter, created.id)
-      return
-    case 'refused':
-      await refuseExpenseRequest(approver, created.id, request.refusalReason!)
-      return
-    case 'approved':
-      // Deliberately WITHOUT a document: with a ready document `approve` is the
-      // one-act confirmation and posts in the same transaction (EARS-510/511),
-      // so an `approved` fixture is precisely a request still waiting for its file.
-      await approveExpenseRequest(approver, created.id)
-      return
-    case 'posted':
-      await uploadFinanceDocument(approver, {
-        filename: request.document!.filename,
-        mime: DEV_SEED_DOCUMENT_MIME,
-        bytes: DEV_SEED_DOCUMENT_BYTES,
-        kind: request.document!.kind,
-        intakeItemIds: [created.id],
-      })
-      await approveExpenseRequest(approver, created.id)
-      return
-  }
+  return walkRequestTo(approver, request, created)
 }
 
 async function seedRequests(
   approver: FinanceActor,
   refs: FinanceRefs,
 ): Promise<{ requests: DevSeedSummary['requests']; documents: DevSeedSummary['documents'] }> {
-  const requests = { created: 0, reused: 0 }
+  const requests = { created: 0, reused: 0, repaired: 0 }
   const documents = { uploaded: 0 }
   const index = await seededIntakeIndex(approver)
   for (const request of DEV_SEED_REQUESTS) {
-    if (index.has(request.slug)) {
-      requests.reused += 1
+    const existing = index.get(request.slug)
+    if (existing !== undefined) {
+      // The slug alone is NOT the key: a row a crashed walk left in a transient
+      // status carries the same marker and must be finished, not counted.
+      if (existing.status === request.status) {
+        requests.reused += 1
+        continue
+      }
+      const { documentsUploaded } = await walkRequestTo(approver, request, existing)
+      documents.uploaded += documentsUploaded
+      requests.repaired += 1
       continue
     }
-    await seedRequest(approver, refs, request)
+    const { documentsUploaded } = await seedRequest(approver, refs, request)
+    documents.uploaded += documentsUploaded
     requests.created += 1
-    if (request.document !== undefined) documents.uploaded += 1
   }
   return { requests, documents }
 }
@@ -478,7 +554,7 @@ export function summaryLines(summary: DevSeedSummary): string[] {
     `  finance refs      created ${summary.finance.referencesCreated} · reused ${summary.finance.referencesReused}`,
     `  ledger ops        created ${summary.finance.operationsCreated} · reused ${summary.finance.operationsReused}`,
     `  counterparties    created ${summary.counterparties.created} · reused ${summary.counterparties.reused}`,
-    `  requests          created ${summary.requests.created} · reused ${summary.requests.reused}`,
+    `  requests          created ${summary.requests.created} · reused ${summary.requests.reused} · repaired ${summary.requests.repaired}`,
     `  intake lines      created ${summary.intakeItems.created} · reused ${summary.intakeItems.reused}`,
     `  documents         uploaded ${summary.documents.uploaded}`,
   ]
