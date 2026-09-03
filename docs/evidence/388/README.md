@@ -7,18 +7,22 @@ stage 5, points 2–3, run against PR #470 after the load crash was fixed
 journey never reached the board at all; every state below is now reachable.
 
 **The stand.** `http://localhost:3000`, the lead's listener from
-`.claude/worktrees/388` on `feat/388-requests-board-blocks` @ `c6830a9`; data
-from that worktree's own branch DB `platform_388` (`pnpm dev:seed` — 64 members,
-32 requests across every lifecycle status, 6 posted with documents, the
-approved-without-document rows that are the EARS-506/511 gate fixture). Driven
+`.claude/worktrees/388` on `feat/388-requests-board-blocks` @ `52ba515`; data
+from that worktree's own branch DB `platform_388`. The fixture is `pnpm dev:seed`
+(64 people in `core.member`, 42 intake rows — 9 submitted, 5 approved, 6 posted
+with documents, 4 refused, 3 cancelled, 15 drafts — the approved-without-document
+rows being the EARS-506/511 gate fixture) plus `pnpm platform:member:seed` for the
+two dev IdP logins, plus the three acts below driven through the UI. After those
+acts the board reads 7 «Ждут» / 5 «Одобрены — ждут документа» / 7 «Проведены» /
+5 «Отклонены» — every column populated. Driven
 with `@playwright/test` from the worktree, signed in through the real dev
 Zitadel as `bbm-test` (the approver, `finance-approve` + `finance-entry`) and as
 `bbm-member` (a plain `platform-user`); the password was read from a scratchpad
 file by the script through `fs` and never entered a tool call.
 
-**The matrix.** 13 driven states × 2 breakpoints (desktop 1440×900, mobile
+**The matrix.** 15 driven states × 2 breakpoints (desktop 1440×900, mobile
 390×844) × 2 themes (light, and dark through the theme's own `.dark` class — the
-workspace ships no user-facing switch) = 52 frames, plus the primary control
+workspace ships no user-facing switch) = 60 frames, plus the primary control
 under three CDP-forced pseudo-states, plus the outcome of each act the seed
 allows.
 
@@ -43,6 +47,8 @@ allows.
 | 18   | after «Приложить документ» — the sheet STAYS open, the PDF reads inline, «Провести» is now one click away |
 | 19   | after «Провести» — both toasts, and the card in «Проведены»                                               |
 | 20   | a posted request — the ledger operation and its postings instead of controls                              |
+| 21   | «Новая заявка» with a real purpose — the card lands in «Ждут» and the toast says exactly that             |
+| 22   | the proposal branch («Нет подходящего — предложу новое») — saved as a DRAFT, toast points at «Мои заявки» |
 
 Steps 14 are set through one `CSS.forcePseudoState` CDP session per state on the
 located element, never hoped for from a pointer.
@@ -69,13 +75,26 @@ before being written down:
   those acts LEAVE BEHIND (18, 20) are captured at all four combinations.
 
 **Rows this run changed in `platform_388`** (recorded so the next reader is not
-surprised): request #6 approved, #7 refused with a reason, #14 posted (+1
-document, +1 ledger operation), #15 and #16 each given a document while staying
-approved, and `core.member` gained the two dev IdP logins. That last one was
-NOT cosmetic: `pnpm dev:seed` seeds a registry of 64 people that does not include
-`bbm-test@bbm.local`, and without a `core.member` row every write act on this
-board is refused — the acts above only became reachable after
-`pnpm platform:member:seed`.
+surprised): request #6 approved, #7 refused with a reason, #14 given a PDF and
+then posted (+1 document, +1 ledger operation #12), and `core.member` gained the
+two dev IdP logins. That last one is NOT cosmetic: `pnpm dev:seed` seeds a
+registry of 64 people that does not include `bbm-test@bbm.local`, and without a
+`core.member` row every write act on this board is refused — the acts above only
+became reachable after `pnpm platform:member:seed` with a two-line dataset naming
+`bbm-test@bbm.local` and `bbm-member@bbm.local`.
+
+The requests steps 21/22 filed themselves (four «Приёмочный прогон #388» cards and
+four proposal drafts) were DELETED from `platform_388` after the capture, so the
+live stand carries the seed fixture plus the three acts above and nothing else;
+the frames are the record of that moment, not of the current row count.
+
+**The «1 Issue» badge in the earlier frames was the harness, not the app.** Next's
+dev overlay counted one console error: a React hydration mismatch on
+`<html lang="ru">` (`src/app/(platform)/layout.tsx:42`) whose only differing
+attribute is `style={{color-scheme:…}}` — the value the capture script itself
+writes onto `document.documentElement` to force the theme. A plain load of the
+board, and a load with the «Новая заявка» sheet open, raise no issue at all. The
+kept frames hide the dev-only overlay so it cannot be misread as a product error.
 
 **The journey scripts are not committed** — they were bound to this seed dataset
 and deleted with the run, the same call #434 and #437 made; `DEBT.md` already
