@@ -16,8 +16,42 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
   `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
   MUST preserve that anchor as the tombstone for Git's union merge.
 - **Permanent append marker:** add new active entries immediately before
-  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
-  sweep notes live after that marker.
+  `- [ ] 2026-09-03 `docs/evidence/<issue>/`invented as the home for committed
+  acceptance screenshots (#434). The repo had no such convention:
+ `.playwright-mcp/`is git-ignored, so it cannot carry evidence into a PR,
+  and there is nowhere else a reviewer can look. One issue's folder is a
+  precedent, not a rule — return condition: the SECOND task that needs to
+  commit acceptance screenshots (then it is a convention and belongs in
+ `.claude/skills/task-cycle/SKILL.md` stage 5, with a retention rule — 2.4 MB
+  per task does not scale silently).
+
+<!-- debt-entry-end: 2026-09-03-ev1dence434 -->
+
+- [ ] 2026-09-03 Three React-Compiler-era eslint rules
+      (`react-hooks/set-state-in-effect`, `react-hooks/immutability`,
+      `react-hooks/static-components`) switched off for `src/ui/**` in
+      `eslint.config.mjs` (#434). The current upstream shadcn/Refine sources trip
+      all three, and fixing them in place is a silent fork the next `shadcn add`
+      reverts. Deliberate and scoped by directory and by rule name — return
+      condition: the next `shadcn`/`ui.refine.dev` refresh of the kit, when each
+      rule is re-enabled one at a time and the ones upstream has fixed stay on.
+
+<!-- debt-entry-end: 2026-09-03-uikitl1nt -->
+
+- [ ] 2026-09-03 `src/ui/refine-ui/data-table/data-table-filter.tsx` is the one
+      file of the `data-table` registry item NOT vendored (#434): its operator map
+      is missing `eqs`/`nes` and it does not typecheck against `@refinedev/core`
+      5.x. Nothing needs column filters yet, so the gap is invisible today —
+      return condition: the first cabinet screen that needs a per-column filter
+      (re-fetch it then; if upstream still has not fixed the map, that is the
+      moment to decide between patching it here and dropping the item).
+
+<!-- debt-entry-end: 2026-09-03-dtf1lter -->
+
+<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
+
+sweep notes live after that marker.
+
 - **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
   two branches that append different root-ledger entry blocks keep both blocks
   instead of conflicting. Union does not guarantee relative order between two
