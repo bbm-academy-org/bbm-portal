@@ -80,7 +80,7 @@ const ACT_FAILED: Record<RequestAct, string> = {
  * the screen shows the same instant of the ledger; each act re-reads it whole.
  */
 export function RequestsBoardScreen() {
-  const { query, result } = useCustom<SnapshotRecord, HttpError>({
+  const { query } = useCustom<SnapshotRecord, HttpError>({
     url: REQUESTS_ENDPOINT,
     method: 'get',
   })
@@ -97,7 +97,16 @@ export function RequestsBoardScreen() {
   const [uploading, setUploading] = React.useState(false)
   const [uploadFailure, setUploadFailure] = React.useState<string | undefined>(undefined)
 
-  const snapshot = (result?.data ?? null) as RequestsSnapshot | null
+  /**
+   * READ THE QUERY, NOT `result`. `useCustom`'s `result.data` is
+   * `queryResponse.data?.data || EMPTY_OBJECT` (@refinedev/core@5.0.12) — a
+   * frozen, TRUTHY `{}` while the snapshot is loading and after it fails, so a
+   * `?? null` on it can never be null and would make the skeleton and both
+   * Alerts below dead code. `query.data` is the provider's own
+   * `{ data: snapshot }` and stays `undefined` until the read actually
+   * succeeds.
+   */
+  const snapshot = (query.data?.data ?? null) as RequestsSnapshot | null
   const refetch = query.refetch
 
   const closeSheets = React.useCallback(() => {
