@@ -204,7 +204,7 @@ describe('ears-naming: the register is the single source for the promotion windo
     // workflow is a second source of truth, and the copy is the one that
     // drifts — it did, the moment #447 closed the class it declared open.
     expect(jobBlock).not.toMatch(/unresolved FALSE-BLOCK/i)
-    expect(jobBlock).not.toMatch(/is not done here/i)
+    expect(jobBlock).not.toMatch(/is not done[\s#]+here/i)
     expect(jobBlock).not.toMatch(/promotion \d{4}-\d{2}-\d{2}/)
     expect(jobBlock).toContain('docs/ci-guardrails.md')
   })
