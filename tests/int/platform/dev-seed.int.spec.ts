@@ -58,11 +58,14 @@ const SEEDED_TABLES = [
  *
  * Row COUNTS alone would pass a second run that rewrote every row in place, and
  * that is precisely the failure «upsert by stable slug» exists to prevent — so
- * the whole content of every seeded table is hashed, ordered by primary key.
- * The volatile columns are excluded by name rather than by guesswork: a
- * `created_at` default and an audit `id` legitimately differ between runs of
- * DIFFERENT rows, but they must not differ for the SAME row, which is what a
- * per-row hash of the remaining columns states.
+ * the WHOLE row is hashed (`md5(t::text)`, ids and `created_at` included) and
+ * nothing is excluded by name. Excluding the volatile columns would have been
+ * the weaker assertion: a rerun that re-inserted a row with a fresh id and a
+ * fresh `created_at` would still have matched. The per-table digest aggregates
+ * those row hashes `order by row_hash` — an ordering that is a property of the
+ * CONTENT rather than of the physical row order, so a rerun that returned the
+ * same rows in a different order still compares equal, while one that changed a
+ * single byte of a single row does not.
  */
 async function seededDigest(): Promise<Record<string, { rows: number; digest: string }>> {
   const db = getPlatformDb()

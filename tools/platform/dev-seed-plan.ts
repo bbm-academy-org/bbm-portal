@@ -88,7 +88,15 @@ export type DevSeedMember = {
  * are in the list on purpose: sorting and column width are read wrong when
  * every row is the same shape.
  */
-const MEMBER_NAMES: readonly (readonly [string, string, 'active' | 'inactive'])[] = [
+/**
+ * Name, role, status. The role is NULLABLE in `core.member` and two people here
+ * carry no role on purpose — a registry where every row is filled hides the
+ * empty-cell rendering — so the tuple says `string | null` rather than casting a
+ * null through a narrower type.
+ */
+type MemberFixture = readonly [string, string | null, 'active' | 'inactive']
+
+const MEMBER_NAMES: readonly MemberFixture[] = [
   ['Анна Ковалёва', 'Продюсер', 'active'],
   ['Борис Литвинов', 'Методист', 'active'],
   ['Вера Мельник', 'Куратор', 'active'],
@@ -122,7 +130,7 @@ const MEMBER_NAMES: readonly (readonly [string, string, 'active' | 'inactive'])[
   ['Ксения Панова', 'Дизайнер', 'inactive'],
   ['Леонид Романов', 'Разработчик', 'inactive'],
   ['Мария Савельева', 'Куратор', 'inactive'],
-  ['Никита Тарасов', null as unknown as string, 'inactive'],
+  ['Никита Тарасов', null, 'inactive'],
   ['Оксана Ульянова', 'Маркетолог', 'active'],
   ['Пётр Филатов', 'Редактор', 'active'],
   ['Раиса Хомякова', 'Продюсер', 'active'],
@@ -152,7 +160,7 @@ const MEMBER_NAMES: readonly (readonly [string, string, 'active' | 'inactive'])[
   ['Лаврентий Рогачёв', 'Продюсер', 'inactive'],
   ['Милана Селиванова', 'Методист', 'inactive'],
   ['Наум Трофимов', 'Аналитик', 'inactive'],
-  ['Ольга Ушакова', null as unknown as string, 'inactive'],
+  ['Ольга Ушакова', null, 'inactive'],
 ]
 
 export const DEV_SEED_MEMBERS: readonly DevSeedMember[] = MEMBER_NAMES.map(
