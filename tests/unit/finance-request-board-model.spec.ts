@@ -8,6 +8,7 @@ import {
   documentUploadRefusal,
   DOCUMENT_UPLOAD_MAX_BYTES,
   currencyPrecision,
+  filedRequestNotification,
   FINANCE_REQUEST_BOARD_STATUSES,
   groupRequestsByStatus,
   ownRequests,
@@ -173,5 +174,31 @@ describe('attaching the confirming document (spec 339 EARS-502/511/514)', () => 
       /PDF или изображение/i,
     )
     expect(documentUploadRefusal({ ...pdf, size: DOCUMENT_UPLOAD_MAX_BYTES + 1 })).toMatch(/25 МБ/)
+  })
+})
+
+describe('what the member is told after filing (spec 339 EARS-508/509/526)', () => {
+  // The create endpoint answers with the status the item REALLY has, and the
+  // notification is derived from that answer rather than asserted ahead of it:
+  // a request filed with a purpose is submitted in the same act and is in
+  // «Ждут», a request that only PROPOSES its purpose stays a draft
+  // (EARS-526) and is nowhere on the board.
+  it('EARS-509: a submitted request is reported as standing in the «Ждут» column', () => {
+    const notification = filedRequestNotification({ data: { request: { status: 'submitted' } } })
+    expect(notification.message).toContain('Подана')
+    expect(notification.description).toContain('Ждут')
+  })
+
+  it('EARS-526: a draft is reported as a draft and names where it can be found', () => {
+    const notification = filedRequestNotification({ data: { request: { status: 'draft' } } })
+    expect(notification.description).not.toContain('Ждут')
+    expect(notification.message).toContain('черновик')
+    expect(notification.description).toContain('Мои заявки')
+  })
+
+  it('EARS-509: an unreadable answer claims no column at all', () => {
+    for (const payload of [undefined, null, {}, { data: {} }]) {
+      expect(filedRequestNotification(payload).description).not.toContain('Ждут')
+    }
   })
 })

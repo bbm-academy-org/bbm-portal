@@ -86,6 +86,7 @@ beforeEach(() => {
   for (const value of Object.values(state)) {
     if (typeof value === 'function') (value as ReturnType<typeof vi.fn>).mockReset()
   }
+  state.submitExpenseRequest.mockResolvedValue({ ...request, status: 'submitted' })
   state.listExpenseRequests.mockResolvedValue([request])
   state.listFinanceDocuments.mockResolvedValue([])
   state.listAccounts.mockResolvedValue([
@@ -407,6 +408,63 @@ describe('/p/finance/api/requests writes', () => {
     )
   })
 
+  it('EARS-508/509: files and submits in one act, so the request reaches the approvers’ queue', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 55, status: 'draft' })
+    state.submitExpenseRequest.mockResolvedValue({ ...request, id: 55, status: 'submitted' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          occurredOn: '2026-09-01',
+          accountId: 7,
+          amount: '120000',
+          currency: 'RUB',
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(state.submitExpenseRequest).toHaveBeenCalledWith(expect.any(Object), 55)
+    expect(await response.json()).toMatchObject({ request: { id: 55, status: 'submitted' } })
+  })
+
+  it('EARS-509: answers with the draft it really kept when the submit transition refuses', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 56, status: 'draft' })
+    state.submitExpenseRequest.mockRejectedValue(
+      Object.assign(new Error('Нет платёжного счёта.'), { name: 'FinanceRefusal' }),
+    )
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          occurredOn: '2026-09-01',
+          accountId: 7,
+          amount: '120000',
+          currency: 'RUB',
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({ request: { id: 56, status: 'draft' } })
+  })
+
   it('EARS-526: keeps a missing-purpose request as a draft and binds its proposal', async () => {
     state.createExpenseRequest.mockResolvedValue({
       ...request,
@@ -444,7 +502,11 @@ describe('/p/finance/api/requests writes', () => {
       intakeItemId: 52,
       text: 'Новая статья для площадки',
     })
-    expect(await response.json()).toMatchObject({ request: { id: 52 }, proposal: { id: 9 } })
+    expect(state.submitExpenseRequest).not.toHaveBeenCalled()
+    expect(await response.json()).toMatchObject({
+      request: { id: 52, status: 'draft' },
+      proposal: { id: 9 },
+    })
   })
 
   it('EARS-508/526: rejects a request that supplies both a purpose and a proposal', async () => {

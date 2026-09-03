@@ -65,4 +65,17 @@ describe('request board data provider (spec 339 §C)', () => {
       }),
     ).rejects.toMatchObject({ statusCode: 413, message: 'Файл больше предела (EARS-514).' })
   })
+
+  // The invariant the file header calls load-bearing: an accidental `useList`
+  // on this surface must fail loudly at the call, not answer with an empty
+  // list that reads as «there are no requests».
+  it('refuses every CRUD method with 501 instead of answering an empty collection', () => {
+    const provider = createRequestBoardDataProvider(okFetch() as unknown as typeof fetch)
+
+    for (const method of ['getList', 'getOne', 'create', 'update', 'deleteOne'] as const) {
+      expect(() => (provider[method] as () => unknown)()).toThrowError(
+        expect.objectContaining({ statusCode: 501 }),
+      )
+    }
+  })
 })
