@@ -174,24 +174,52 @@ Decision context goes onto the PR as comments, proactively (memory:
 
 ## Stage 5 — acceptance of visible changes (blocks merge)
 
-An owner-visible change does NOT merge without the owner's "принято" on a
-LIVE stand. The showing is always a real URL the owner opens themselves:
-normally the preview stand; until it exists — the dev stand or a tunnel. A
-screenshot or localhost render is the agent's working evidence, never the
-showing. **Precondition for inviting the owner to any UI/auth flow: a green
-browser E2E pass (Playwright) of the acceptance scenarios first — curl + unit
-tests do not satisfy this.** (2026-07-24: the P2b invite nearly went out on
-curl evidence alone; the Playwright pre-pass caught a login-blocking IdP defect
-— «Ты проверял через Playwright CLI?».) **Second precondition: the stand carries
-representative scenario data that makes the accepted behavior meaningful; an
-empty state is sufficient only when that empty state is what is being accepted.**
-**The invitation always carries the access line: URL + login + where to get the
-password.** The stand stays up until the verdict; an unanswered design/visual
-question = merge stays blocked.
-**Third precondition — the UX sanity pass, before the invitation goes out
-(#423).** The lead dispatches a SHORT, fresh-context agent over the stand's
-SCREENSHOTS (not over the diff), which reports one verdict — either «clear» or
-the specific defect to fix before the owner sees it:
+An owner-visible change does NOT merge without the owner's "принято" on a LIVE
+stand. The showing is always a real URL the owner opens themselves: normally the
+preview stand; until it exists — the dev stand or a tunnel. A screenshot or a
+localhost render is the agent's working evidence, never the showing. **This
+section is the single home of the acceptance protocol** — the UI skill
+(`.claude/skills/build-ui-from-design-system/SKILL.md` step 6) points here and
+does not restate it.
+
+**1. The stand — seeded, and booted by the LEAD's own session.** Never by a
+subagent: a subagent's listeners are reaped when it returns, and the owner then
+opens a dead URL. Take the port with `pnpm dev:ports`, start it as
+`PORT=<n> pnpm dev` (range 3000–3009; never kill a listener you did not start —
+`.claude/rules/parallel-sessions.md`). The data comes from the worktree's own
+branch DB: `pnpm dev:db:branch` migrates AND seeds it, `pnpm dev:seed` refreshes
+it. That **the stand carries representative scenario data** which makes the
+accepted behavior meaningful is a precondition, not a nicety — the owner must not
+spend an acceptance slot on «x»-rows; an empty state is sufficient only when
+that empty state is what is being accepted. The stand stays UP until the verdict.
+
+**2. The journey — driven through Playwright by the agent, every state.** Not
+the happy path only: list, filtered, empty result, record, form error, mutation
+failure — whatever states the surface actually has. Driven while logged in as
+the seeded test user (`.claude/rules/dev-env.md` names where the `bbm-test` /
+`bbm-member` password lives; read it into env, never into a tool call — two
+rotations, #296 and #313, were paid for typing it into one). Green `curl` plus
+unit tests do not satisfy this: 2026-07-24 the P2b invite nearly went out on
+curl evidence and the Playwright pre-pass caught a login-blocking IdP defect
+(«Ты проверял через Playwright CLI?»).
+
+**3. The eyes-on matrix.** Every driven state is captured as a FULL-PAGE
+screenshot at 2 breakpoints (desktop 1440×900, mobile 390×844) × 2 themes
+(light, and dark through the theme's own `.dark` class — the workspace ships no
+user-facing switch), plus the surface's primary control in `:hover`,
+`:focus-visible` and `:active` FORCED through CDP (`CSS.forcePseudoState` on one
+session per state), never hoped for from a pointer that may or may not have
+landed. Capture lands in `.playwright-mcp/` — the only target the
+screenshot-path-guard accepts (`docs/ci-guardrails.md` §6, BLOCK) — and the
+frames worth keeping are promoted into `docs/evidence/<issue>/` with a README
+naming what each step shows. Retention: one folder per issue, a re-taken frame
+REPLACES its predecessor rather than adding a `-v2`, and the folder is dropped
+when its epic closes.
+
+**4. The UX sanity pass, before the invitation goes out (#423).** The lead
+dispatches a SHORT, fresh-context agent over those SCREENSHOTS (not over the
+diff), which returns one verdict — «clear», or the specific defect to fix before
+the owner sees it:
 
 - (a) the screen has a **dominant element** matching its purpose;
 - (b) **primary / secondary / archived tiers are visually distinct**;
@@ -201,20 +229,27 @@ the specific defect to fix before the owner sees it:
 Green scenarios are not readiness to show. 2026-08-31, #357 / PR #422: a stand
 with 8/8 green Playwright acceptance scenarios was rejected on sight — the
 `/p/finance` overview's total card was indistinguishable from an account tile,
-«всё стерильно-одинаковое». Every functional criterion passed and the screen was
-still not acceptable, because a Playwright run has no opinion about where the eye
-lands first. The four checks are about hierarchy and legibility, not taste: they
-are answerable from a screenshot by an agent with no context on the feature,
-which is what makes the pass cheap enough to be mandatory. A defect it names is
-fixed BEFORE the owner is invited; the verdict goes in the task's report. A diff
-with no visual surface skips this pass — no screenshot ceremony on backend work.
+«всё стерильно-одинаковое». A Playwright run has no opinion about where the eye
+lands first. The four checks are about hierarchy and legibility, not taste,
+which is what makes them cheap enough to be mandatory. The verdict goes in the
+task's report.
+
+**5. DoD — a red, error-stuck or skeleton-stuck screen is not handed to the
+owner; that is a stop state, not an acceptance.** The agent LOOKED at the frames
+it captured. Anything odd in them is re-observed live before the invitation — an
+inference («скорее всего, момент загрузки») is not an observation.
+
+**6. The invitation.** Its FIRST line is the live URL (memory
+`proverit-glazami-is-live-ui-only`); login and where to get the password follow
+on the next line; the screenshots are attached as eyes-on evidence and never
+lead or substitute. An unanswered design/visual question = merge stays blocked.
 
 Invisible changes (internals, refactoring, docs, backend without UI) skip this
-stage — but the PR still records **which** case it is: every PR carries a
-`Stage-B:` line (`GO` / `batched at #N` / `N/A — lead-certified`), checked by
-`pnpm lint:stage-b <PR>`, and a UI diff also carries the agent's `UX-record:`
-block, checked by `pnpm lint:ux-record <PR>` (both:
-`.claude/rules/design-process.md`).
+stage — no screenshot ceremony on backend work — but the PR still records
+**which** case it is: every PR carries a `Stage-B:` line (`GO` / `batched at #N`
+/ `N/A — lead-certified`), checked by `pnpm lint:stage-b <PR>`, and a UI diff
+also carries the agent's `UX-record:` block, checked by
+`pnpm lint:ux-record <PR>` (both: `.claude/rules/design-process.md`).
 
 ## Stage 6 — merge (autonomous)
 

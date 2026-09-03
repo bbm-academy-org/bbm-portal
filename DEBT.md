@@ -921,8 +921,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-440-union-driver-not-server-side -->
 
-- [ ] 2026-09-03 `docs/evidence/<issue>/` invented as the home for committed acceptance screenshots (#434). The repo had no such convention: `.playwright-mcp/` is git-ignored, so it cannot carry evidence into a PR, and there is nowhere else a reviewer can look. One issue's folder is a precedent, not a rule — return condition: the SECOND task that needs to commit acceptance screenshots, at which point it is a convention and belongs in `.claude/skills/task-cycle/SKILL.md` stage 5 with a retention rule (2.4 MB per task does not scale silently).
-
 <!-- debt-entry-end: 2026-09-03-ev1dence434 -->
 
 - [ ] 2026-09-03 Two React-Compiler-era eslint rules — `react-hooks/set-state-in-effect`, `react-hooks/static-components` — switched off for `src/ui/**` alone in `eslint.config.mjs` (#434); `react-hooks/immutability` was off in the first cut and re-enabled by the review fix `bf7b6a7`, so it is NOT part of this concession. The current upstream shadcn/Refine sources trip both, and fixing them in place is a silent fork the next `shadcn add` reverts. Scoped by directory and by rule name so the app's own components keep every one of them — return condition: the next refresh of the kit from its registries, when each rule is re-enabled one at a time and the ones upstream has fixed stay on.
@@ -940,6 +938,14 @@ Entry format:
 - [ ] 2026-09-03 `interaction-states` (#435) skips every CAPITALISED JSX tag carrying `onClick`, on the reasoning that a component owns its own states and a component whose import lies outside the diff cannot be classified from the diff alone. That is the conservative direction (the guard misses rather than invents, canon §8), but it leaves one real hole: a clickable wrapper DEFINED in the same file — the shape PR #430's own `NativeSelect` has — is invisible to the guard even though its raw inner tag is fully visible to `primitives-first`. Not fixed now because resolving local component definitions from added lines alone is a different class of parser than the rest of this family — return condition: the first review that catches an untreated clickable this guard should have caught, or the guard's §4 promotion review on 2026-10-01, whichever comes first.
 
 <!-- debt-entry-end: 2026-09-03-435-uppercase-hole -->
+
+- [ ] 2026-09-03 The stage-5 eyes-on matrix (#437) is captured by a ONE-OFF script per task: `tools/dev/journey-437.ts` drove the members register through 9 states × 2 breakpoints × 2 themes with CDP-forced pseudo-states and was deleted with the run, exactly as #434's journey was. The protocol text in `.claude/skills/task-cycle/SKILL.md` stage 5 therefore describes a procedure every task re-implements — the breakpoints, the `.dark` toggle and the `CSS.forcePseudoState` plumbing are re-typed each time and can silently drift from the written matrix. Two runs are not yet a harness — return condition: the THIRD surface that needs the matrix, at which point the shared pieces belong in a committed helper under `tools/dev/` (or `tests/e2e/support/`) that the skill can name instead of describing.
+
+<!-- debt-entry-end: 2026-09-03-437-journey-harness -->
+
+- [ ] 2026-09-03 `.claude/skills/task-cycle/SKILL.md` stage 5 part 3 says `.playwright-mcp/` is «the only target the screenshot-path-guard accepts», but `tools/hooks/screenshot-path-guard.mjs` exports `ALLOWED_OUTPUT_DIRS = [SERVER_OUTPUT_DIR, 'test-results', 'playwright-report']` (with `SERVER_OUTPUT_DIR = '.playwright-mcp'`, so all three of `.playwright-mcp`, `test-results` and `playwright-report` are accepted) and its denial message names all three. Following the text is still correct behaviour, so this is an accuracy fix, not a defect — return condition: the next PR that touches stage 5 of `task-cycle`, which rewords it to «the target the screenshot-path-guard steers capture to».
+
+<!-- debt-entry-end: 2026-09-03-437-guard-only-target -->
 
 <!-- debt-append-marker -->
 
@@ -1114,3 +1120,11 @@ happened to its return condition:
 
 Promotion rather than a fix in place for all five: each is a bounded task with
 its own diff, and none of them belongs inside the retro's canon-file PR.)_
+
+_(Swept 2026-09-03 (#437): `2026-09-03-ev1dence434` — «`docs/evidence/<issue>/`
+invented as the home for committed acceptance screenshots» — is CLOSED. Its
+return condition («the SECOND task that needs to commit acceptance screenshots»)
+fired on this task, and `.claude/skills/task-cycle/SKILL.md` stage 5 now names
+both the path and the retention rule: one folder per issue, a re-taken frame
+REPLACES its predecessor rather than adding a `-v2`, and the folder is dropped
+when its epic closes. The body is removed; the anchor stays as the tombstone.)_

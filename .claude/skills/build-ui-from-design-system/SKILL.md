@@ -128,13 +128,14 @@ The `frontend-design` skill is still loaded before markup, per task-cycle stage 
 copy and routing live in the route/module; the component is the presentation
 scaffold. Module boundaries are machine-checked (`pnpm boundaries`, ADR-002).
 
-**6. Live-verify yourself, then hand the owner a URL.** Take a port with
-`pnpm dev:ports`, run `PORT=<n> pnpm dev` (`.claude/rules/parallel-sessions.md`),
-drive the real journey in a browser — every branch, not just the green path —
-and only then invite the owner. Per task-cycle stage 5 a browser E2E pass
-(Playwright) of the acceptance scenarios is the **precondition** for the
-invitation; curl plus unit tests is not. The invitation carries URL + login +
-where to get the password, and the stand stays up until the verdict.
+**6. Live-verify yourself, then hand the owner a URL.** The acceptance protocol
+— a seeded stand booted by the LEAD's session on a `pnpm dev:ports` port, every
+state driven through Playwright, the full-page 2 breakpoints × 2 themes ×
+forced `:hover` / `:focus-visible` / `:active` matrix, the UX sanity pass, the
+artifacts under `docs/evidence/<issue>/`, and the live URL as the invitation's
+first line — lives in ONE place and is not restated here:
+[`task-cycle`](../task-cycle/SKILL.md) stage 5. Run it as written; a red,
+error-stuck or skeleton-stuck screen is a stop state, not something to hand over.
 
 **7. Record Stage-B in the PR.** The PR body's `Stage-B:` line gets the real
 value — `GO — <owner, date>`, `batched at #<gate>`, or
