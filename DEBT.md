@@ -920,7 +920,7 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-03-ev1dence434 -->
 
-- [ ] 2026-09-03 Three React-Compiler-era eslint rules — `react-hooks/set-state-in-effect`, `react-hooks/immutability`, `react-hooks/static-components` — switched off for `src/ui/**` alone in `eslint.config.mjs` (#434). The current upstream shadcn/Refine sources trip all three, and fixing them in place is a silent fork the next `shadcn add` reverts. Scoped by directory and by rule name so the app's own components keep every one of them — return condition: the next refresh of the kit from its registries, when each rule is re-enabled one at a time and the ones upstream has fixed stay on.
+- [ ] 2026-09-03 Two React-Compiler-era eslint rules — `react-hooks/set-state-in-effect`, `react-hooks/static-components` — switched off for `src/ui/**` alone in `eslint.config.mjs` (#434); `react-hooks/immutability` was off in the first cut and re-enabled by the review fix `bf7b6a7`, so it is NOT part of this concession. The current upstream shadcn/Refine sources trip both, and fixing them in place is a silent fork the next `shadcn add` reverts. Scoped by directory and by rule name so the app's own components keep every one of them — return condition: the next refresh of the kit from its registries, when each rule is re-enabled one at a time and the ones upstream has fixed stay on.
 
 <!-- debt-entry-end: 2026-09-03-uikitl1nt -->
 
