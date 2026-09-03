@@ -921,8 +921,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-440-union-driver-not-server-side -->
 
-- [ ] 2026-09-03 `docs/evidence/<issue>/` invented as the home for committed acceptance screenshots (#434). The repo had no such convention: `.playwright-mcp/` is git-ignored, so it cannot carry evidence into a PR, and there is nowhere else a reviewer can look. One issue's folder is a precedent, not a rule — return condition: the SECOND task that needs to commit acceptance screenshots, at which point it is a convention and belongs in `.claude/skills/task-cycle/SKILL.md` stage 5 with a retention rule (2.4 MB per task does not scale silently).
-
 <!-- debt-entry-end: 2026-09-03-ev1dence434 -->
 
 - [ ] 2026-09-03 Two React-Compiler-era eslint rules — `react-hooks/set-state-in-effect`, `react-hooks/static-components` — switched off for `src/ui/**` alone in `eslint.config.mjs` (#434); `react-hooks/immutability` was off in the first cut and re-enabled by the review fix `bf7b6a7`, so it is NOT part of this concession. The current upstream shadcn/Refine sources trip both, and fixing them in place is a silent fork the next `shadcn add` reverts. Scoped by directory and by rule name so the app's own components keep every one of them — return condition: the next refresh of the kit from its registries, when each rule is re-enabled one at a time and the ones upstream has fixed stay on.
@@ -932,6 +930,10 @@ Entry format:
 - [ ] 2026-09-03 `src/ui/refine-ui/data-table/data-table-filter.tsx` is the one file of the vendored `data-table` registry item deliberately NOT kept (#434): its operator map is missing `eqs`/`nes` and it does not typecheck against `@refinedev/core` 5.x. Nothing needs column filters yet, so the gap is invisible today — return condition: the first cabinet screen that needs a per-column filter, which is also the moment to decide between patching the map here and dropping the item.
 
 <!-- debt-entry-end: 2026-09-03-dtf1lter -->
+
+- [ ] 2026-09-03 The stage-5 eyes-on matrix (#437) is captured by a ONE-OFF script per task: `tools/dev/journey-437.ts` drove the members register through 9 states × 2 breakpoints × 2 themes with CDP-forced pseudo-states and was deleted with the run, exactly as #434's journey was. The protocol text in `.claude/skills/task-cycle/SKILL.md` stage 5 therefore describes a procedure every task re-implements — the breakpoints, the `.dark` toggle and the `CSS.forcePseudoState` plumbing are re-typed each time and can silently drift from the written matrix. Two runs are not yet a harness — return condition: the THIRD surface that needs the matrix, at which point the shared pieces belong in a committed helper under `tools/dev/` (or `tests/e2e/support/`) that the skill can name instead of describing.
+
+<!-- debt-entry-end: 2026-09-03-437-journey-harness -->
 
 <!-- debt-append-marker -->
 
@@ -1106,3 +1108,11 @@ happened to its return condition:
 
 Promotion rather than a fix in place for all five: each is a bounded task with
 its own diff, and none of them belongs inside the retro's canon-file PR.)_
+
+_(Swept 2026-09-03 (#437): `2026-09-03-ev1dence434` — «`docs/evidence/<issue>/`
+invented as the home for committed acceptance screenshots» — is CLOSED. Its
+return condition («the SECOND task that needs to commit acceptance screenshots»)
+fired on this task, and `.claude/skills/task-cycle/SKILL.md` stage 5 now names
+both the path and the retention rule: one folder per issue, a re-taken frame
+REPLACES its predecessor rather than adding a `-v2`, and the folder is dropped
+when its epic closes. The body is removed; the anchor stays as the tombstone.)_
