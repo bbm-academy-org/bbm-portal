@@ -348,4 +348,137 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     )
     expect(refine.mutate).not.toHaveBeenCalled()
   })
+
+  // Attaching the confirming document — the act EARS-511 names, without which the
+  // pre-spend path (spec 339 acceptance scenario 3) cannot reach `posted` from
+  // this screen at all.
+
+  function pdf(name = 'чек.pdf'): File {
+    return new File(['%PDF-1.4 receipt'], name, { type: 'application/pdf' })
+  }
+
+  async function openAttachable(id = 2) {
+    refine.custom.data = snapshot({
+      requests: [item({ id, status: 'approved', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(id)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    return screen.getByRole('dialog')
+  }
+
+  it('EARS-506/511: attaches a confirming document from the sheet and re-reads the board', async () => {
+    const sheet = await openAttachable(2)
+
+    fireEvent.change(within(sheet).getByLabelText('Подтверждающий документ'), {
+      target: { files: [pdf()] },
+    })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
+
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    const call = refine.mutate.mock.calls[0][0]
+    expect(call.url).toBe('/p/finance/api/documents')
+    expect(call.method).toBe('post')
+    const body = call.values as FormData
+    expect(body).toBeInstanceOf(FormData)
+    expect((body.get('file') as File).name).toBe('чек.pdf')
+    expect(body.get('kind')).toBe('fiscal_receipt')
+    expect(body.get('intakeItemId')).toBe('2')
+    // The one feedback channel — the notification provider, not a bespoke toast.
+    expect(call.successNotification).toBeTruthy()
+    expect(call.errorNotification).toBeTruthy()
+
+    // Uploading: the control says so and cannot be fired twice.
+    expect(
+      (within(sheet).getByRole('button', { name: 'Загружаем…' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    await act(async () => {
+      refine.mutate.mock.calls[0][1].onSuccess()
+    })
+    expect(refine.custom.refetch).toHaveBeenCalled()
+  })
+
+  it('EARS-511: the one-act confirmation appears on the still-open sheet once the document lands', async () => {
+    await openAttachable(2)
+    expect(screen.queryByRole('button', { name: 'Провести' })).toBeNull()
+
+    // What the re-read brings back: the same request, now carrying its document.
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 2,
+          status: 'approved',
+          own: true,
+          documents: [
+            {
+              id: 9,
+              filename: 'чек.pdf',
+              mime: 'application/pdf',
+              size: 17,
+              kind: 'fiscal_receipt',
+              uploadedAt: '2026-09-03T10:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+    })
+    cleanup()
+    renderBoard()
+    openCard(2)
+
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Провести' }),
+    ).toBeTruthy()
+  })
+
+  it('EARS-514: refuses an oversize or wrong-typed file inline and sends nothing', async () => {
+    const sheet = await openAttachable(2)
+    const input = within(sheet).getByLabelText('Подтверждающий документ')
+
+    const script = new File(['alert(1)'], 'вирус.js', { type: 'text/javascript' })
+    fireEvent.change(input, { target: { files: [script] } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
+    await waitFor(() => expect(within(sheet).getByText(/PDF или изображение/i)).toBeTruthy())
+    expect(refine.mutate).not.toHaveBeenCalled()
+
+    const huge = pdf('огромный.pdf')
+    Object.defineProperty(huge, 'size', { value: 26 * 1024 * 1024 })
+    fireEvent.change(input, { target: { files: [huge] } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
+    await waitFor(() => expect(within(sheet).getByText(/25 МБ/)).toBeTruthy())
+    expect(refine.mutate).not.toHaveBeenCalled()
+  })
+
+  it('EARS-514: reports a refused upload under the field it belongs to', async () => {
+    const sheet = await openAttachable(2)
+    fireEvent.change(within(sheet).getByLabelText('Подтверждающий документ'), {
+      target: { files: [pdf()] },
+    })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      refine.mutate.mock.calls[0][1].onError({ message: 'Файл больше предела в 26214400 байт.' })
+    })
+    expect(within(sheet).getByRole('alert').textContent).toContain('Файл больше предела')
+    // The failed attempt is repeatable, not a dead control.
+    expect(within(sheet).getByRole('button', { name: 'Приложить документ' })).toBeTruthy()
+  })
+
+  it('EARS-502/511: offers no attach control to a reader who neither filed the request nor enters money', async () => {
+    refine.custom.data = snapshot({
+      permissions: { canApprove: false, canEnter: false },
+      requests: [item({ id: 2, status: 'approved', own: false, documents: [] })],
+    })
+    renderBoard()
+    openCard(2)
+
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+    expect(within(sheet).queryByRole('button', { name: 'Приложить документ' })).toBeNull()
+    expect(within(sheet).getByText('Документ не приложен.')).toBeTruthy()
+  })
 })
