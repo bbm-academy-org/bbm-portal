@@ -18,7 +18,20 @@ Element.prototype.setPointerCapture ??= () => {}
 Element.prototype.releasePointerCapture ??= () => {}
 Element.prototype.scrollIntoView ??= () => {}
 
+// The mock reproduces the REAL contract of `useCustom` in
+// `@refinedev/core@5.0.12` (`dist/index.cjs`), not a convenient shape:
+//
+//   return { query: queryResponse, result: { data: queryResponse.data?.data || EMPTY_OBJECT } }
+//
+// `query` is react-query's own QueryObserverResult over `CustomResponse<T>` —
+// `{ data: payload }`, and `undefined` in every state before the query
+// resolves — while `result.data` falls back to a FROZEN, TRUTHY `{}`. A screen
+// that reads `result.data` therefore never sees `null`, and its loading and
+// error branches are dead code. `refine.custom.data` below is the PAYLOAD the
+// data provider resolved with (`null` = not resolved), and the mock derives
+// both shapes from it exactly as the hook does.
 const refine = vi.hoisted(() => ({
+  EMPTY_OBJECT: Object.freeze({}),
   custom: {
     data: null as unknown,
     isLoading: false,
@@ -33,14 +46,20 @@ vi.mock('@refinedev/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@refinedev/core')>()
   return {
     ...actual,
-    useCustom: () => ({
-      query: {
-        isLoading: refine.custom.isLoading,
-        error: refine.custom.error,
-        refetch: refine.custom.refetch,
-      },
-      result: { data: refine.custom.data },
-    }),
+    useCustom: () => {
+      const response = refine.custom.data === null ? undefined : { data: refine.custom.data }
+      return {
+        query: {
+          data: response,
+          isLoading: refine.custom.isLoading,
+          isSuccess: response !== undefined && refine.custom.error === null,
+          isError: refine.custom.error !== null,
+          error: refine.custom.error,
+          refetch: refine.custom.refetch,
+        },
+        result: { data: response?.data ?? refine.EMPTY_OBJECT },
+      }
+    },
     useCustomMutation: () => ({
       mutate: refine.mutate,
       mutation: { isPending: refine.isPending },
@@ -139,30 +158,44 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     ).toBeTruthy()
   })
 
-  it('EARS-509: renders the loading, empty and unreadable-board states', async () => {
+  it('EARS-509: shows the skeleton while the snapshot has not resolved', async () => {
+    // The unresolved state of the REAL hook: the query is loading and
+    // `result.data` is the frozen `{}`, NOT `null`.
     refine.custom.isLoading = true
     refine.custom.data = null
-    const loading = renderBoard()
+    renderBoard()
     expect(screen.getByLabelText('Загружаем заявки')).toBeTruthy()
-    loading.unmount()
+    expect(screen.queryByRole('region', { name: /Ждут/ })).toBeNull()
+  })
 
-    refine.custom.isLoading = false
+  it('EARS-509: says the board is empty once an empty snapshot has resolved', async () => {
     refine.custom.data = snapshot({ requests: [] })
-    const empty = renderBoard()
+    renderBoard()
     expect(screen.getByText(/Заявок пока нет/)).toBeTruthy()
-    empty.unmount()
+    expect(screen.queryByLabelText('Загружаем заявки')).toBeNull()
+  })
 
+  it('EARS-509: offers a retry when the board cannot be read at all', async () => {
+    refine.custom.isLoading = false
     refine.custom.data = null
     refine.custom.error = { statusCode: 500, message: 'Доска недоступна.' }
     renderBoard()
-    expect(screen.getByRole('alert').textContent).toContain('Доска недоступна.')
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain('Доска недоступна.')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Попробовать снова' }))
+    expect(refine.custom.refetch).toHaveBeenCalled()
+    expect(screen.queryByRole('region', { name: /Ждут/ })).toBeNull()
   })
 
   it('EARS-502: refuses the board to a session the module does not admit', async () => {
+    refine.custom.isLoading = false
     refine.custom.data = null
     refine.custom.error = { statusCode: 403, message: 'Нужна роль platform-user.' }
     renderBoard()
-    expect(screen.getByRole('alert').textContent).toContain('Нужна роль platform-user.')
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain('Нужна роль platform-user.')
+    // A refusal is not a transient failure: there is nothing to retry.
+    expect(within(alert).queryByRole('button', { name: 'Попробовать снова' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Новая заявка' })).toBeNull()
   })
 
