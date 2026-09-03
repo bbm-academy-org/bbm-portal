@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createRequestBoardDataProvider } from '@/app/(platform)/p/finance/requests/request-board-provider'
 
 function okFetch(body = '{}') {
-  return vi.fn(async () => new Response(body, { status: 200 }))
+  return vi.fn(async (_url: string, _init?: RequestInit) => new Response(body, { status: 200 }))
 }
 
 describe('request board data provider (spec 339 §C)', () => {
@@ -52,7 +52,8 @@ describe('request board data provider (spec 339 §C)', () => {
 
   it('EARS-514: carries the server refusal text through as the provider error', async () => {
     const fetchImpl = vi.fn(
-      async () => new Response('Файл больше предела (EARS-514).', { status: 413 }),
+      async (_url: string, _init?: RequestInit) =>
+        new Response('Файл больше предела (EARS-514).', { status: 413 }),
     )
     const provider = createRequestBoardDataProvider(fetchImpl as unknown as typeof fetch)
 

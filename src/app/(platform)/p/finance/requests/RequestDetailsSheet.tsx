@@ -2,7 +2,9 @@
 
 import { XIcon } from 'lucide-react'
 import React from 'react'
+import { useForm } from 'react-hook-form'
 
+import type { FinanceDocumentKind } from '@/lib/finance'
 import { Alert, AlertDescription } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
@@ -14,7 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/ui/dialog'
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/ui/form'
+import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 import { Separator } from '@/ui/separator'
 import {
   Sheet,
@@ -35,7 +40,13 @@ import {
   REQUEST_STATUS_LABELS,
 } from './constants'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
-import { currencyPrecision, formatRequestMoney } from './request-board-model'
+import {
+  canAttachDocument,
+  currencyPrecision,
+  DOCUMENT_UPLOAD_ACCEPT,
+  documentUploadRefusal,
+  formatRequestMoney,
+} from './request-board-model'
 import type { FinanceRequestBoardAct } from './request-board-model'
 
 export type RequestAct = FinanceRequestBoardAct | 'submit' | 'cancel'
@@ -46,6 +57,116 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className="truncate text-sm text-foreground">{value ?? '—'}</p>
     </div>
+  )
+}
+
+type AttachValue = { file: FileList | null; kind: FinanceDocumentKind }
+
+/**
+ * «Приложить документ» — the act that turns an authorised spend into a posted
+ * one (EARS-511), and the reason spec 339's acceptance scenario 3 can be walked
+ * from this screen at all.
+ *
+ * COMPOSITION. It sits INSIDE the document section, under the reading pane, and
+ * not in the footer: attaching is not a decision about the request, it is what
+ * the document block is for — an empty block with a picker under it reads as
+ * «put it here», a footer button reads as one more act competing with «Одобрить».
+ * Two fields side by side because the kind is DATA (EARS-515), not a gate: the
+ * reader who picked the file already knows what it is, so it is a defaulted
+ * select rather than a question that blocks.
+ *
+ * THE SERVER IS THE GATE. `documentUploadRefusal` only spares the reader an
+ * upload that `POST /p/finance/api/documents` would refuse anyway (EARS-514);
+ * a refusal the client did not foresee comes back from the server and lands
+ * under the same field, with the toast on the one notification channel.
+ */
+function AttachDocumentForm({
+  pending,
+  failure,
+  onAttach,
+}: {
+  pending: boolean
+  failure?: string
+  onAttach: (file: File, kind: FinanceDocumentKind) => void
+}) {
+  const form = useForm<AttachValue>({
+    defaultValues: { file: null, kind: 'fiscal_receipt' },
+  })
+
+  const submit = form.handleSubmit((value) => {
+    const file = value.file?.[0] ?? null
+    if (file === null) {
+      form.setError('file', { message: 'Выберите файл документа.' })
+      return
+    }
+    const refusal = documentUploadRefusal(file)
+    if (refusal !== null) {
+      form.setError('file', { message: refusal })
+      return
+    }
+    onAttach(file, value.kind)
+  })
+
+  return (
+    <Form {...form}>
+      <form className="space-y-3 rounded-lg border border-dashed p-3" onSubmit={submit} noValidate>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="file"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Подтверждающий документ</FormLabel>
+                <FormControl>
+                  <Input
+                    type="file"
+                    accept={DOCUMENT_UPLOAD_ACCEPT}
+                    disabled={pending}
+                    className="h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:bg-secondary file:px-2 file:transition-colors hover:file:bg-secondary/70"
+                    onChange={(event) => {
+                      form.clearErrors('file')
+                      field.onChange(event.target.files)
+                    }}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="kind"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Вид документа</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {Object.entries(DOCUMENT_KIND_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+        </div>
+        {failure ? (
+          <p className="text-sm text-destructive" role="alert">
+            {failure}
+          </p>
+        ) : null}
+        <Button type="submit" variant="outline" disabled={pending}>
+          {pending ? 'Загружаем…' : 'Приложить документ'}
+        </Button>
+      </form>
+    </Form>
   )
 }
 
@@ -65,24 +186,35 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
  * refusal is a modal with a mandatory reason (EARS-512), because a reason typed
  * into the same pane as the approve button is a reason typed by accident; a
  * `posted` request shows its ledger operation instead of controls, since the
- * ledger is immutable.
+ * ledger is immutable; and the missing document is not merely REPORTED but
+ * fixable here — «Приложить документ» (EARS-511) sits in the document block for
+ * everyone allowed to add one, which is what lets the pre-spend path reach
+ * `posted` without leaving the screen.
  */
 export function RequestDetailsSheet({
   request,
   references,
   canApprove,
+  canEnter,
   pending,
   pendingAct,
+  uploading,
+  uploadFailure,
   onAct,
+  onAttach,
   onEdit,
   onClose,
 }: {
   request: RequestBoardItem | null
   references: RequestBoardReferences
   canApprove: boolean
+  canEnter: boolean
   pending: boolean
   pendingAct: RequestAct | null
+  uploading: boolean
+  uploadFailure?: string
   onAct: (act: RequestAct, reason?: string) => void
+  onAttach: (file: File, kind: FinanceDocumentKind) => void
   onEdit: () => void
   onClose: () => void
 }) {
@@ -209,6 +341,9 @@ export function RequestDetailsSheet({
             ) : (
               <p className="text-sm text-muted-foreground">Документ не приложен.</p>
             )}
+            {canAttachDocument(request, canEnter) ? (
+              <AttachDocumentForm pending={uploading} failure={uploadFailure} onAttach={onAttach} />
+            ) : null}
           </div>
 
           {request.status === 'refused' && request.refusalReason ? (

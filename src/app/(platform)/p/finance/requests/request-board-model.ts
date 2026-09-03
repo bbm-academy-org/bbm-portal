@@ -151,3 +151,58 @@ export function currencyPrecision(
 ): number {
   return currencies.find((currency) => currency.code === code)?.precision ?? 2
 }
+
+/**
+ * ATTACHING THE CONFIRMING DOCUMENT — the client half of EARS-506/511.
+ *
+ * The gate is the SERVER's and stays there: `POST /p/finance/api/documents`
+ * bounds the stream, sniffs the bytes against the declared type and refuses a
+ * kind outside the spec's set (EARS-514/515). What lives here is only the
+ * AFFORDANCE — who is offered the control, and the two refusals worth spending
+ * no upload at all on. The numbers mirror the server's
+ * `FINANCE_DOCUMENT_MAX_BYTES` / `FINANCE_DOCUMENT_MIME_TYPES`; they are
+ * restated rather than imported because those live behind `@/lib/finance`,
+ * whose index reaches the database, and this module ships to the browser.
+ */
+export const DOCUMENT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+
+/** «PDF and images» (EARS-514) as the file input's `accept`. */
+export const DOCUMENT_UPLOAD_MIME_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/tiff',
+  'image/heic',
+] as const
+
+export const DOCUMENT_UPLOAD_ACCEPT = DOCUMENT_UPLOAD_MIME_TYPES.join(',')
+
+/**
+ * Who may attach, and to what. EARS-511 names the two: «the submitter or an
+ * entry-role holder» (EARS-502). An item the ledger has already swallowed or a
+ * decision has already closed takes nothing more (EARS-505/512), so it is
+ * offered no control at all rather than one the server would refuse.
+ */
+export function canAttachDocument(request: RequestBoardItem, canEnter: boolean): boolean {
+  if (!request.own && !canEnter) return false
+  return (
+    request.status === 'draft' || request.status === 'submitted' || request.status === 'approved'
+  )
+}
+
+/** The two refusals worth making before the bytes leave. Null means «send it». */
+export function documentUploadRefusal(file: {
+  name: string
+  size: number
+  type: string
+}): string | null {
+  if (!(DOCUMENT_UPLOAD_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return `«${file.name}» не принимается: подтверждающий документ это PDF или изображение (EARS-514).`
+  }
+  if (file.size > DOCUMENT_UPLOAD_MAX_BYTES) {
+    return `«${file.name}» больше предела в 25 МБ (EARS-514).`
+  }
+  return null
+}

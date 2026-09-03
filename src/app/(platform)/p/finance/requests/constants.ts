@@ -3,6 +3,9 @@ import type { FinanceIntakeStatus } from '@/lib/finance'
 /** The one address the board reads and writes through. */
 export const REQUESTS_ENDPOINT = '/p/finance/api/requests'
 
+/** Where a confirming document is created (EARS-514): multipart, one POST. */
+export const DOCUMENTS_ENDPOINT = '/p/finance/api/documents'
+
 /** A document has exactly one address (EARS-523); the board asks for it inline. */
 export function documentHref(id: number, inline: boolean): string {
   return `/p/finance/api/documents/${id}${inline ? '?disposition=inline' : ''}`

@@ -13,7 +13,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/tabs'
 import { cn } from '@/ui/utils'
 
-import { errorMessage, formatDate, REQUESTS_ENDPOINT, REQUEST_STATUS_LABELS } from './constants'
+import {
+  DOCUMENTS_ENDPOINT,
+  errorMessage,
+  formatDate,
+  REQUESTS_ENDPOINT,
+  REQUEST_STATUS_LABELS,
+} from './constants'
 import { LiabilityPanel } from './LiabilityPanel'
 import { RequestCard } from './RequestCard'
 import { RequestDetailsSheet, type RequestAct } from './RequestDetailsSheet'
@@ -88,6 +94,8 @@ export function RequestsBoardScreen() {
   const [pendingAct, setPendingAct] = React.useState<RequestAct | null>(null)
   const [formFor, setFormFor] = React.useState<'new' | number | null>(null)
   const [formFailure, setFormFailure] = React.useState<string | undefined>(undefined)
+  const [uploading, setUploading] = React.useState(false)
+  const [uploadFailure, setUploadFailure] = React.useState<string | undefined>(undefined)
 
   const snapshot = (result?.data ?? null) as RequestsSnapshot | null
   const refetch = query.refetch
@@ -96,7 +104,58 @@ export function RequestsBoardScreen() {
     setSelectedId(null)
     setPendingAct(null)
     setFormFor(null)
+    setUploadFailure(undefined)
   }, [])
+
+  /**
+   * Attaching the confirming document (EARS-506/511) — a multipart POST to the
+   * document endpoint, through the SAME provider and therefore the same
+   * notification channel as every act.
+   *
+   * POST-SUBMIT IS THE DECISION HERE: unlike an act, a successful upload does
+   * NOT close the sheet. The whole point of attaching is what it unlocks — the
+   * board re-reads itself, the document appears in the pane above the picker,
+   * and «Провести» becomes available one click away in the same footer. Closing
+   * would send the approver back to the board to find the card again.
+   */
+  const attachDocument = React.useCallback(
+    (request: RequestBoardItem, file: File, kind: string) => {
+      setUploadFailure(undefined)
+      setUploading(true)
+      const body = new FormData()
+      body.append('file', file)
+      body.append('kind', kind)
+      body.append('intakeItemId', String(request.id))
+      mutate(
+        {
+          url: DOCUMENTS_ENDPOINT,
+          method: 'post',
+          values: body as unknown as Record<string, unknown>,
+          successNotification: {
+            type: 'success',
+            message: 'Документ приложен.',
+            description: `Заявка №${request.id}`,
+          },
+          errorNotification: (error: unknown) => ({
+            type: 'error' as const,
+            message: 'Не удалось приложить документ.',
+            description: errorMessage(error, `Заявка №${request.id}`),
+          }),
+        },
+        {
+          onSuccess: () => {
+            setUploading(false)
+            void refetch()
+          },
+          onError: (error: unknown) => {
+            setUploading(false)
+            setUploadFailure(errorMessage(error, 'Не удалось приложить документ.'))
+          },
+        },
+      )
+    },
+    [mutate, refetch],
+  )
 
   const runAct = React.useCallback(
     (request: RequestBoardItem, act: RequestAct, reason?: string) => {
@@ -390,13 +449,20 @@ export function RequestsBoardScreen() {
 
       {formFor === null && selected !== null ? (
         <RequestDetailsSheet
-          key={`${selected.id}-${pendingAct ?? 'none'}`}
+          // The document count is part of the identity: when an upload lands,
+          // the re-read brings a request that carries it, and re-keying resets
+          // the attach picker instead of leaving the just-sent file in it.
+          key={`${selected.id}-${pendingAct ?? 'none'}-${selected.documents.length}`}
           request={selected}
           references={references}
           canApprove={permissions.canApprove}
+          canEnter={permissions.canEnter}
           pending={mutation.isPending}
           pendingAct={pendingAct}
+          uploading={uploading}
+          uploadFailure={uploadFailure}
           onAct={(act, reason) => runAct(selected, act, reason)}
+          onAttach={(file, kind) => attachDocument(selected, file, kind)}
           onEdit={() => setFormFor(selected.id)}
           onClose={closeSheets}
         />

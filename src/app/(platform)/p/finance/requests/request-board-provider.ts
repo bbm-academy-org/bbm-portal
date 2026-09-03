@@ -45,13 +45,22 @@ export function createRequestBoardDataProvider(fetchImpl: typeof fetch = fetch):
     getApiUrl: () => '/p/finance/api',
 
     async custom({ url, method, payload, headers }) {
+      // Two body shapes, one channel. The act endpoints take JSON; the document
+      // endpoint takes `multipart/form-data` (EARS-514) and must be handed the
+      // FormData untouched — writing a `content-type` ourselves would replace
+      // the boundary the runtime generates, and the server would then read an
+      // empty form. Routing the upload through this provider rather than a bare
+      // `fetch` is what keeps it on the ONE notification channel (#434).
+      const multipart = payload instanceof FormData
       const response = await fetchImpl(url, {
         method: method.toUpperCase(),
         headers: {
-          ...(method === 'get' ? {} : { 'content-type': 'application/json' }),
+          ...(method === 'get' || multipart ? {} : { 'content-type': 'application/json' }),
           ...headers,
         },
-        ...(method === 'get' || payload === undefined ? {} : { body: JSON.stringify(payload) }),
+        ...(method === 'get' || payload === undefined
+          ? {}
+          : { body: multipart ? payload : JSON.stringify(payload) }),
         cache: 'no-store',
       })
       if (!response.ok) throw await refusal(response)
