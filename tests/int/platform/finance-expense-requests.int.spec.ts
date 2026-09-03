@@ -14,6 +14,7 @@ import {
   createProduct,
   createProject,
   createPurpose,
+  createPurposeProposal,
   detachFinanceDocument,
   editExpenseRequest,
   editIntakeItem,
@@ -176,6 +177,19 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
       /editExpenseRequest|EARS-508/i,
     )
     expect(await getExpenseRequest(MEMBER, request.id)).toMatchObject({ amount: 120_000n })
+  })
+
+  it('EARS-526: the expense facade keeps a missing-purpose proposal in draft until resolution', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs, { purposeId: null }))
+    const proposal = await createPurposeProposal(MEMBER, {
+      intakeItemId: request.id,
+      text: 'Новая аренда оборудования',
+    })
+
+    expect(request).toMatchObject({ status: 'draft', purposeId: null })
+    expect(proposal).toMatchObject({ intakeItemId: request.id, status: 'pending' })
+    await expect(submitExpenseRequest(MEMBER, request.id)).rejects.toThrow(/EARS-508|EARS-526/)
   })
 
   it('EARS-510/531: the public generic transition API cannot approve a request', async () => {
