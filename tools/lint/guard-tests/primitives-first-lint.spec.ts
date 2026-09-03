@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  FORM_KIT_FILE,
   KIT_EQUIVALENTS,
   checkPrimitivesFirst,
   parseArgs,
@@ -61,7 +62,7 @@ function makeGh(prs: Record<number, ReturnType<typeof file>[]>) {
 
 const BOARD = 'src/app/(platform)/p/finance/requests/RequestsBoard.tsx'
 /** The whole kit is present in the worktree these fixtures describe. */
-const KIT = Object.values(KIT_EQUIVALENTS)
+const KIT = [...Object.values(KIT_EQUIVALENTS), FORM_KIT_FILE]
 
 describe('primitives-first-lint: a hand-rolled raw control is a finding (AC2 of #435)', () => {
   const result = checkPrimitivesFirst(
@@ -102,11 +103,27 @@ describe('primitives-first-lint: a hand-rolled raw control is a finding (AC2 of 
     expect(r.findings.map((f) => f.tag)).toEqual(['button'])
   })
 
-  it('flags each of the five raw tags the issue names', () => {
-    for (const tag of ['button', 'table', 'select', 'input', 'form']) {
+  it('flags each raw tag the kit really OWNS as an element', () => {
+    for (const tag of ['button', 'table', 'select', 'input']) {
       const r = checkPrimitivesFirst([file(BOARD, [`<${tag} className="x" />`])], { kitFiles: KIT })
       expect(r.findings.map((f) => f.tag)).toEqual([tag])
     }
+  })
+
+  /**
+   * `src/ui/form.tsx` is `const Form = FormProvider` — a CONTEXT provider that
+   * renders no element at all, and no file in `src/ui/` renders a `<form>`. The
+   * documented shadcn shape is therefore `<Form {...form}><form onSubmit={…}>`:
+   * the raw `<form>` tag is MANDATORY inside the kit block. #435's rule is «a raw
+   * tag is a violation WHEN an `src/ui` equivalent exists» — for the `<form>`
+   * ELEMENT no equivalent exists, so the antecedent is false and the guard has no
+   * business here. Rule (2) still owns the real defect the issue names: field
+   * state hand-rolled from `useState`.
+   */
+  it('does NOT flag a raw <form> — the kit renders no <form> element to compose', () => {
+    const r = checkPrimitivesFirst([file(BOARD, ['<form className="x" />'])], { kitFiles: KIT })
+    expect(r.findings.map((f) => f.rule)).toEqual([])
+    expect(r.verdict).toBe('pass')
   })
 })
 
@@ -173,14 +190,25 @@ describe('primitives-first-lint: useState-driven form field state (AC2 of #435)'
     expect(result.verdict).toBe('pass')
   })
 
-  it('passes a form driven by the kit `useForm` rather than useState', () => {
+  /**
+   * The fixture is the shape the kit ACTUALLY produces — copied from the #434
+   * reference migration `src/app/(platform)/p/members/MemberForm.tsx`: the `<Form>`
+   * provider wrapping a raw `<form onSubmit={form.handleSubmit(…)}>`. Stock shadcn
+   * cannot be used any other way, so asserting on a `<Form>`-without-`<form>` shape
+   * would prove the guard clean on code that does not exist.
+   */
+  it('passes the kit form shape the reference migration ships', () => {
     const result = checkPrimitivesFirst(
       [
         file(BOARD, [
+          "import { Form, FormField } from '@/ui/form'",
+          '',
           '  const form = useForm({ resolver: zodResolver(schema) })',
           '  return (',
           '    <Form {...form}>',
-          '      <FormField name="amount" render={({ field }) => <Input {...field} />} />',
+          '      <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)} noValidate>',
+          '        <FormField name="amount" render={({ field }) => <Input {...field} />} />',
+          '      </form>',
           '    </Form>',
           '  )',
         ]),
@@ -188,6 +216,52 @@ describe('primitives-first-lint: useState-driven form field state (AC2 of #435)'
       { kitFiles: KIT },
     )
     expect(result.verdict).toBe('pass')
+    expect(result.findings).toEqual([])
+  })
+
+  /**
+   * The header claims rule (2) avoids the «a `useState` next to a `<Sheet>` is an
+   * open/closed flag» class. Per-FILE counting does not avoid it: the #434
+   * reference migration `AliasPanel.tsx` drives its fields from the kit `useForm`
+   * and keeps `loading` / `pending` / `editing` request state in `useState` beside
+   * it. A diff that composes the kit form has not hand-rolled its field state.
+   */
+  it('leaves request/dialog `useState` alone when the diff composes the kit form', () => {
+    const result = checkPrimitivesFirst(
+      [
+        file(BOARD, [
+          "import { Form, FormField } from '@/ui/form'",
+          '',
+          '  const [pending, setPending] = useState(false)',
+          '  const [failure, setFailure] = useState<string | null>(null)',
+          '  const form = useForm({ resolver: zodResolver(schema) })',
+          '  return (',
+          '    <Form {...form}>',
+          '      <form onSubmit={form.handleSubmit(onSubmit)} noValidate>',
+          '        <FormField name="amount" render={({ field }) => <Input {...field} />} />',
+          '      </form>',
+          '    </Form>',
+          '  )',
+        ]),
+      ],
+      { kitFiles: KIT },
+    )
+    expect(result.verdict).toBe('pass')
+  })
+
+  it('does not assert the hooks ARE field state — it says the diff hand-rolls a form', () => {
+    const result = checkPrimitivesFirst(
+      [
+        file(BOARD, [
+          "  const [amount, setAmount] = useState('')",
+          '  return <form onSubmit={submit}><Input value={amount} /></form>',
+        ]),
+      ],
+      { kitFiles: KIT },
+    )
+    const finding = result.findings.find((f) => f.rule === 'form-state')
+    expect(finding?.message).not.toContain('driving field state')
+    expect(finding?.message).toContain('no kit `Form`')
   })
 })
 
