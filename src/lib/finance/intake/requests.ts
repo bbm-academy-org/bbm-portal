@@ -49,7 +49,8 @@ export type CreateExpenseRequestInput = {
   /** Account-side facts when the charged currency differs. */
   paidAmount?: bigint | null
   paidCurrency?: string | null
-  purposeId: number
+  /** Null only while a draft waits for an EARS-526 purpose proposal. */
+  purposeId: number | null
   projectId: number
   productId?: number | null
   counterpartyId: number
@@ -67,7 +68,7 @@ type ExpenseRequestState = {
   currency: string
   paidAmount: bigint | null
   paidCurrency: string | null
-  purposeId: number
+  purposeId: number | null
   projectId: number
   productId: number | null
   counterpartyId: number
@@ -97,8 +98,8 @@ async function requireCounterparty(tx: PlatformTx, id: number): Promise<void> {
 async function assertExpenseRequestState(
   tx: PlatformTx,
   state: ExpenseRequestState,
+  options: { allowMissingPurpose?: boolean } = {},
 ): Promise<void> {
-  positiveId(state.purposeId, 'Назначение')
   positiveId(state.projectId, 'Проект')
   positiveId(state.counterpartyId, 'Контрагент')
 
@@ -114,11 +115,21 @@ async function assertExpenseRequestState(
     throw new FinanceRefusal(`Проект «${project.name}» выведен из обращения (EARS-508).`)
   }
 
-  const purpose = await requirePurpose(tx, state.purposeId, { forShare: true })
-  if (purpose.retiredAt !== null) {
-    throw new FinanceRefusal(`Назначение «${purpose.name}» выведено из обращения (EARS-508).`)
+  if (state.purposeId === null) {
+    if (!options.allowMissingPurpose) {
+      throw new FinanceRefusal(
+        'Назначение обязательно перед отправкой; выберите строку справочника или дождитесь ' +
+          'решения по предложению (EARS-508/526).',
+      )
+    }
+  } else {
+    positiveId(state.purposeId, 'Назначение')
+    const purpose = await requirePurpose(tx, state.purposeId, { forShare: true })
+    if (purpose.retiredAt !== null) {
+      throw new FinanceRefusal(`Назначение «${purpose.name}» выведено из обращения (EARS-508).`)
+    }
+    assertProductBinding(purpose.productBinding, state.productId, purpose.name)
   }
-  assertProductBinding(purpose.productBinding, state.productId, purpose.name)
 
   if (state.productId !== null) {
     const product = await requireProduct(tx, state.productId, { forShare: true })
@@ -197,10 +208,9 @@ function createState(input: CreateExpenseRequestInput): ExpenseRequestState {
 }
 
 function itemState(item: FinanceIntakeItemView): ExpenseRequestState {
-  if (item.purposeId === null || item.counterpartyId === null) {
+  if (item.counterpartyId === null) {
     throw new FinanceRefusal(
-      `Заявка #${item.id} не заполнена: назначение и контрагент обязательны перед отправкой ` +
-        '(EARS-508).',
+      `Заявка #${item.id} не заполнена: контрагент обязателен перед отправкой (EARS-508).`,
     )
   }
   return {
@@ -260,7 +270,7 @@ export async function createExpenseRequest(
       ...state,
       memberId: member?.id ?? null,
     },
-    { validate: (tx) => assertExpenseRequestState(tx, state) },
+    { validate: (tx) => assertExpenseRequestState(tx, state, { allowMissingPurpose: true }) },
   )
 }
 
@@ -280,7 +290,9 @@ export async function editExpenseRequest(
   return editIntakeItem(actor, id, spinePatch, {
     async validate(tx, next) {
       assertExpenseRequest(next)
-      await assertExpenseRequestState(tx, itemState(next))
+      await assertExpenseRequestState(tx, itemState(next), {
+        allowMissingPurpose: next.status === 'draft',
+      })
     },
   })
 }
