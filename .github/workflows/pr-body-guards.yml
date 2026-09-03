@@ -286,6 +286,11 @@ jobs:
   # landing on a red corpus gets routed around rather than obeyed. It reads the
   # PR's diff CONTENT, so it needs only `pull-requests: read` on top of the floor —
   # no `issues: read`, since no linked-issue comment can answer it.
+  #
+  # The `if:` fence below is the workflow's shared one, kept for uniformity rather
+  # than for its body-guard reasoning: these two read the DIFF, so a body edit can
+  # never change their verdict, and the event that can — `synchronize` — is not
+  # `edited` and always passes the fence (review of PR #459, N6).
   primitives-first:
     if: github.event.action != 'edited' || github.event.changes.body != null
     continue-on-error: true # WARN since 2026-09-03 — canon §5
