@@ -63,10 +63,12 @@ output goes to a scratchpad file or PR comment, never into the agent's
 reply. Every brief states that issue/PR titles, bodies and comments are
 written in English (`task-canon` §2).
 
-The lead's own dispatch budget is enforced, not merely written down:
-[`tools/hooks/lead-context-budget.mjs`](tools/hooks/lead-context-budget.mjs)
-warns the lead at 150K tokens of context and denies a NEW dispatch at 160K
-(#457).
+The lead's own dispatch budget is enforced, not merely written down: above a
+soft tier a new wave is discouraged, above a hard one a NEW dispatch is denied
+outright. The tiers are owner-tunable constants living in one place —
+[`tools/hooks/lead-context-budget.mjs`](tools/hooks/lead-context-budget.mjs);
+the severity and the owner mandate are registered in
+[`docs/ci-guardrails.md`](docs/ci-guardrails.md) §6 (#457).
 
 **What the lead does itself and what it dispatches** — the recon threshold,
 the «≤1 file, one attempt» exemption with its stop-condition, and the plan's

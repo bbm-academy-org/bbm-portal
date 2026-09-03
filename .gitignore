@@ -14,9 +14,11 @@
 /.claude/hook-session-registry/
 /.claude/stop-gate-budget-state/
 
-# Owner-only escape hatch for the lead context budget (#457): its presence lifts
-# the 150K/160K dispatch tiers for the CURRENT session — a live marker, never a
-# committed setting (created on an explicit owner instruction, removed by /wrap)
+# Owner-only escape hatch for the lead context budget (#457): a marker whose
+# FIRST LINE is the owner's reason lifts the dispatch tiers for the CURRENT
+# session (an empty marker is not an override). A live marker, never a committed
+# setting — created on an explicit owner instruction, removed by /wrap.
+# Severity and the class-3 reading of the hatch: docs/ci-guardrails.md §6
 /.claude/lead-budget-override
 
 # Generated local bridge: Codex follows this junction/symlink to the canonical

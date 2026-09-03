@@ -219,6 +219,12 @@ event it is wired to:
 - **WARN** = the hook exits 0 and emits `systemMessage` / stderr text. The agent sees the
   nudge and decides.
 
+A `PreToolUse` hook has a second way to reach BLOCK: exit 0 while emitting
+`hookSpecificOutput.permissionDecision: "deny"`. The call is refused and the reason is shown
+to the agent, so this **is** the BLOCK severity in the session plane and is registered as
+BLOCK in §6 — the exit code is simply not where that verdict lives (`lead-context-budget` is
+the guard that uses it).
+
 Every hook guard is **fail-open on malformed input** regardless of severity: a broken
 stdin payload, a missing file, or an unexpected shape exits 0. A guard that cannot read
 its input has found nothing, and a tool stack that dies because a guard tripped over its
@@ -270,9 +276,13 @@ in §5 with a reason, and the guard is in one of these classes:
    and writes that reason into the session log. Clause (d) is not decoration: without it
    the guard is a dead end rather than a gate, which is precisely what §6's
    `surface-decision-debt-gate` row names as the prerequisite for any gate that can stop a
-   session. Two class-3 guards exist today: `zero-dispatch` (§6, a session hook) and
-   `design-fidelity` (§5, a CI job). **Clause (d) reads per plane.** On a session hook the
-   hatch is consumed once and lands in the session log; on the CI plane the equivalent is a
+   session. Three class-3 guards exist today: `zero-dispatch` and
+   `lead-context-budget` (§6, both session hooks) and `design-fidelity` (§5, a CI job).
+   **Clause (d) reads per plane.** On a session hook the hatch is consumed once and lands in
+   the session log — with one registered reading: a guard that fences a monotone quantity
+   rather than a rate (`lead-context-budget`) keeps a persistent, reasoned, loud marker
+   instead, because a one-shot hatch there would be re-armed before every call for the rest
+   of the session; the §6 entry carries that argument; on the CI plane the equivalent is a
    marker the blocked PR itself carries — reachable without leaving the PR, spent on that one
    PR, naming the person and the day, and recorded where reviewers actually read it. What (d)
    forbids is the same on both planes: a gate with no way out except abandoning the work.
@@ -556,6 +566,49 @@ Demotion to WARN per §4 on one confirmed false block that the escape hatch did 
 adequately answer — §3's class-3 paragraph names the same condition, and this row is where
 it is applied. The threshold (6) is the substantive rule for §4's clock: changing it
 restarts the clock, changing the message text does not.
+
+**`lead-context-budget` — the second §3 class-3 guard: a day-0 BLOCK by owner mandate
+(#457).** [`tools/hooks/lead-context-budget.mjs`](../tools/hooks/lead-context-budget.mjs) is a
+`PreToolUse` guard on `Agent|Task`. It measures the LEAD's own transcript and, above the hard
+tier, refuses a **NEW dispatch** — and only that: the agents already running are untouched,
+their results can be accepted, and every non-dispatch tool call is unaffected. It is **BLOCK
+from day 0**, and per §2.2 it blocks through the permission plane (exit 0 +
+`permissionDecision: "deny"`), not through an exit code. The tier numbers themselves are
+owner-tunable constants in the hook (`SOFT_THRESHOLD` / `HARD_THRESHOLD`) and are not
+restated here; today they are 150K soft / 160K hard.
+
+**The mandate, on record:** owner Антон, 2026-09-03, in session, filed the same day as
+[#457](https://github.com/bbm-academy-org/bbm-portal/issues/457): «at 150–160K the lead stops
+dispatching agents, brings the task to a logical point and ends the session». The class-3
+clauses are met in order: (a) the mandate is the owner's, named and dated above and linked
+from this entry; (b) the rule is already prose — `CLAUDE.md` § «Subagents and models» and
+[`.claude/rules/lead-delegation.md`](../.claude/rules/lead-delegation.md) — and the
+recurrence is dated: ds-platform's 2026-08-31 retro over 12 session logs (their #1693) found
+leads opening fresh waves at 208K and dispatching at 300–316K after two explicit owner
+handoff requests, and this repo's own sessions show the same shape; (c) the WARN form was
+live throughout and changed nothing — `context-budget.mjs` has been advisory since #134, and
+it cannot even fire in the sessions at issue, because it is wired to `UserPromptSubmit` while
+an orchestration session runs on `<task-notification>` turns that submit no prompt. The soak
+this canon would prescribe is therefore the experiment that already ran, twice.
+
+**Clause (d), read for a budget fence — the deliberate difference from `zero-dispatch`.** The
+hatch is the marker file `.claude/lead-budget-override` in the main checkout, reachable from
+inside a blocked session (writing a file is not a dispatch, so the block does not stand in
+its way). It **demands a reason** — the first line of the file; an empty marker is not an
+override, the tiers keep applying, and the denial message says the marker is reasonless — and
+that reason is echoed to stderr, so it lands in the session log and is named in the stage-7
+«Отклонения от конвенций:» line, exactly as `DISPATCH_BYPASS` is. It is **persistent rather
+than consumed once**, and that is the one clause read differently on this plane: a one-shot
+hatch fences a rate (the 6th mutation), whereas this fences a monotone quantity that only
+grows — a spent hatch would have to be re-armed before every single dispatch for the rest of
+the session, which converts a gate into noise and teaches the lead to re-arm reflexively. The
+bound that replaces one-shot consumption is loudness: while the marker is active every
+dispatch carries an `additionalContext` line naming the override and its reason, and the
+marker is removed by `/wrap`. Owner-only by convention, gitignored by construction.
+
+Demotion to WARN per §4 on one confirmed false block that the marker did not adequately
+answer — §3's class-3 paragraph names the same condition. The thresholds are the substantive
+rule for §4's clock: changing them restarts it, changing the message text does not.
 
 ### 6.1 CLI guards (§2.3) — severity per finding class
 
