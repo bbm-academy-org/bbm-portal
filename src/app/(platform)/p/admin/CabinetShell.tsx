@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import React from 'react'
 
 import { createCabinetDataProvider } from '@/lib/platform/cabinet'
+import { useNotificationProvider } from '@/ui/refine-ui/notification/use-notification-provider'
+import { Toaster } from '@/ui/sonner'
 
 import { validateCabinetResponse } from './actions'
 import { CabinetSidebar } from './CabinetSidebar'
@@ -34,6 +36,16 @@ import { breadcrumbFromResources } from './resources'
  * `useMenu()`, Refine's native `meta.parent` model, and `CabinetSidebar`
  * renders it with the kit. The behaviour is what was accepted; the package is
  * not.
+ *
+ * FEEDBACK IS ONE CHANNEL (#434). Refine's `notificationProvider` is wired to
+ * the kit's sonner `Toaster`, so every mutation the cabinet runs — through any
+ * screen, from any module — reports success and failure in the same place, in
+ * the same shape. Before this, each screen invented its own: an inline
+ * `<Alert>` here, a `saved` boolean there, nothing at all on the third. A
+ * screen may still render an inline Alert for a state the reader must keep
+ * looking at (a record that would not load, a save that failed while the form
+ * is still on screen); the toast is the "it happened" signal, not a substitute
+ * for that.
  *
  * WHAT IS DELIBERATELY ABSENT: a top bar. The workspace's shared bar
  * (EARS-425) comes from `(platform)/p/layout.tsx`, which this shell is inside,
@@ -76,10 +88,12 @@ export function CabinetShell({
     () => createCabinetDataProvider({ validateResponse: validateCabinetResponse }),
     [],
   )
+  const notificationProvider = useNotificationProvider()
 
   return (
     <Refine
       dataProvider={dataProvider}
+      notificationProvider={notificationProvider}
       routerProvider={routerProvider}
       resources={resources}
       options={{
@@ -120,6 +134,9 @@ function CabinetFrame({
       className="mx-auto grid w-full max-w-[1440px] grid-cols-1 bg-background md:grid-cols-[248px_minmax(0,1fr)]"
     >
       <CabinetSidebar items={menuItems} selectedKey={selectedKey} />
+      {/* Inside the opted-in subtree so the toast is painted by the kit's own
+          base layer — sonner renders where it is placed, it does not portal. */}
+      <Toaster position="bottom-right" richColors closeButton />
       <main className="min-w-0 px-4 py-6 sm:px-8">
         {/* EARS-435: every cabinet screen says whose data it is showing, in one
             place, so a screen author cannot forget to. */}

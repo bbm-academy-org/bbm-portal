@@ -1,23 +1,33 @@
 'use client'
 
+import { zodResolver } from '@hookform/resolvers/zod'
 import React from 'react'
+import { useForm } from 'react-hook-form'
 
 import type { MemberRecord, MemberUpdateInput } from '@/lib/member'
 import { Alert, AlertDescription } from '@/ui/alert'
 import { Button } from '@/ui/button'
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/ui/form'
 import { Input } from '@/ui/input'
-import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
+import { Separator } from '@/ui/separator'
 
-import { MEMBER_TIMEZONE_OPTIONS, withSavedReference } from './constants'
+import {
+  MEMBER_TIMEZONE_OPTIONS,
+  memberFormSchema,
+  withSavedReference,
+  type MemberFormValue,
+} from './constants'
 
-export interface MemberFormValue {
-  name: string
-  email: string
-  role: string
-  timezone: string
-  status: MemberRecord['status']
-}
+export type { MemberFormValue }
 
 export function memberFormValue(member?: MemberRecord): MemberFormValue {
   return {
@@ -38,6 +48,30 @@ export function memberUpdateValue(value: MemberFormValue): MemberUpdateInput {
   }
 }
 
+/**
+ * The member profile form (#316), rebuilt on the kit's `form` block (#434).
+ *
+ * WHAT CHANGED AND WHY. The previous version held its five fields in one
+ * `useState<MemberFormValue>`, validated them in an `if` ladder on submit, and
+ * reported every problem as a bullet list in a destructive `<Alert>` above the
+ * form — so a reader with a bad email had to map a sentence at the top of the
+ * card back to the field at the bottom. `react-hook-form` + `zodResolver` over
+ * `memberFormSchema` puts each message under the field it belongs to
+ * (`<FormMessage>`), gives the invalid control `aria-invalid`, and makes the
+ * schema the one place the rules are written.
+ *
+ * GROUPING (the agent's call, owner ruling 2026-09-02). Five fields is not
+ * eleven, so this is not a case for sections with headings — but the fields are
+ * not one list either: three of them say WHO the person is (name, email, role)
+ * and two say how the workspace TREATS them (timezone, status). A `Separator`
+ * between the two runs is the smallest device that carries that, and it costs
+ * no vertical rhythm.
+ *
+ * FEEDBACK. Success is a toast — the shell's one notification channel
+ * (`CabinetShell`). The destructive Alert that remains is only for a save that
+ * FAILED while the form is still on screen: the toast says it happened, the
+ * Alert is what the reader keeps looking at while fixing it.
+ */
 export function MemberForm({
   initial,
   emailReadOnly,
@@ -59,128 +93,147 @@ export function MemberForm({
   onChange?: () => void
   onSubmit: (value: MemberFormValue) => void
 }) {
-  const [value, setValue] = React.useState(initial)
-  const [validation, setValidation] = React.useState<string[]>([])
-  const timezoneOptions = withSavedReference(
-    MEMBER_TIMEZONE_OPTIONS,
-    value.timezone,
-    'Сохранённый пояс',
-  )
+  const form = useForm<MemberFormValue>({
+    resolver: zodResolver(memberFormSchema),
+    defaultValues: initial,
+    mode: 'onSubmit',
+  })
+  const timezone = form.watch('timezone')
+  const timezoneOptions = withSavedReference(MEMBER_TIMEZONE_OPTIONS, timezone, 'Сохранённый пояс')
 
-  function change(next: MemberFormValue) {
-    setValue(next)
-    onChange?.()
-  }
-
-  function submit(event: React.FormEvent) {
-    event.preventDefault()
-    const issues: string[] = []
-    if (!value.name.trim()) issues.push('Укажите имя.')
-    if (!/^\S+@\S+\.\S+$/.test(value.email.trim())) issues.push('Укажите корректный email.')
-    if (!value.timezone.trim()) issues.push('Укажите часовой пояс.')
-    setValidation(issues)
-    if (issues.length === 0) onSubmit(value)
-  }
+  // One place to tell the parent «the record on screen is no longer the record
+  // that was saved», rather than an `onChange` on every control.
+  const { isDirty } = form.formState
+  React.useEffect(() => {
+    if (isDirty) onChange?.()
+  }, [isDirty, onChange])
 
   return (
-    <form className="space-y-5" onSubmit={submit} noValidate>
-      {failure ? (
-        <Alert variant="destructive" role="alert">
-          <AlertDescription>{failure}</AlertDescription>
-        </Alert>
-      ) : null}
-      {validation.length ? (
-        <Alert variant="destructive" role="alert">
-          <AlertDescription>
-            {validation.map((issue) => (
-              <p key={issue}>{issue}</p>
-            ))}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <div className="grid gap-2">
-        <Label htmlFor="member-name">Имя</Label>
-        <Input
-          id="member-name"
-          value={value.name}
-          readOnly={readOnly}
-          disabled={pending}
-          onChange={(event) => change({ ...value, name: event.target.value })}
-        />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="member-email">Email</Label>
-        <Input
-          id="member-email"
-          type="email"
-          value={value.email}
-          readOnly={readOnly || emailReadOnly}
-          disabled={pending}
-          aria-describedby={emailReadOnly ? 'member-email-hint' : undefined}
-          onChange={(event) => change({ ...value, email: event.target.value })}
-        />
-        {emailReadOnly ? (
-          <p id="member-email-hint" className="text-xs text-muted-foreground">
-            Email связывает участника с Zitadel и историей часов, поэтому здесь не меняется.
-          </p>
+    <Form {...form}>
+      <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        {failure ? (
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>{failure}</AlertDescription>
+          </Alert>
         ) : null}
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="member-role">Роль</Label>
-        <Input
-          id="member-role"
-          value={value.role}
-          readOnly={readOnly}
-          disabled={pending}
-          onChange={(event) => change({ ...value, role: event.target.value })}
-        />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="member-timezone">Часовой пояс</Label>
-        <Select
-          value={value.timezone}
-          disabled={pending || readOnly}
-          onValueChange={(timezone) => change({ ...value, timezone })}
-        >
-          <SelectTrigger id="member-timezone" className="w-full">
-            <SelectValue placeholder="Выберите часовой пояс" />
-          </SelectTrigger>
-          <SelectContent data-bbm-ui>
-            {timezoneOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {canEditStatus ? (
-        <div className="grid gap-2">
-          <Label htmlFor="member-status">Статус</Label>
-          <Select
-            value={value.status}
-            disabled={pending || readOnly}
-            onValueChange={(status) =>
-              change({ ...value, status: status as MemberRecord['status'] })
-            }
-          >
-            <SelectTrigger id="member-status" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent data-bbm-ui>
-              <SelectItem value="active">Активен</SelectItem>
-              <SelectItem value="inactive">Неактивен</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      ) : null}
 
-      {!readOnly ? (
-        <Button type="submit" disabled={pending}>
-          {pending ? 'Сохраняем…' : submitLabel}
-        </Button>
-      ) : null}
-    </form>
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Имя</FormLabel>
+              <FormControl>
+                <Input {...field} readOnly={readOnly} disabled={pending} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Email</FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  type="email"
+                  readOnly={readOnly || emailReadOnly}
+                  disabled={pending}
+                />
+              </FormControl>
+              {emailReadOnly ? (
+                <FormDescription>
+                  Email связывает участника с Zitadel и историей часов, поэтому здесь не меняется.
+                </FormDescription>
+              ) : null}
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="role"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Роль</FormLabel>
+              <FormControl>
+                <Input {...field} readOnly={readOnly} disabled={pending} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Separator />
+
+        <FormField
+          control={form.control}
+          name="timezone"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Часовой пояс</FormLabel>
+              <Select
+                value={field.value}
+                disabled={pending || readOnly}
+                onValueChange={field.onChange}
+              >
+                <FormControl>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Выберите часовой пояс" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent data-bbm-ui>
+                  {timezoneOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {canEditStatus ? (
+          <FormField
+            control={form.control}
+            name="status"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Статус</FormLabel>
+                <Select
+                  value={field.value}
+                  disabled={pending || readOnly}
+                  onValueChange={field.onChange}
+                >
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent data-bbm-ui>
+                    <SelectItem value="active">Активен</SelectItem>
+                    <SelectItem value="inactive">Неактивен</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
+
+        {!readOnly ? (
+          <Button type="submit" disabled={pending}>
+            {pending ? 'Сохраняем…' : submitLabel}
+          </Button>
+        ) : null}
+      </form>
+    </Form>
   )
 }

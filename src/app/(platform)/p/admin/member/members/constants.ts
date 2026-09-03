@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 import type { DocumentedAliasKind } from '@/lib/member'
 
 export const MEMBER_RESOURCE = 'member.members'
@@ -52,3 +54,41 @@ export function errorMessage(error: unknown, fallback: string): string {
   }
   return fallback
 }
+
+/**
+ * The member profile form's shape and its rules, in ONE place.
+ *
+ * Before #434 the same rules lived twice: as `MemberFormValue` (a hand-written
+ * interface) and as an `if` ladder inside `MemberForm.submit` that pushed
+ * Russian sentences into a `useState<string[]>`. The schema is now the single
+ * source — `zodResolver` gives react-hook-form the validation, `z.infer` gives
+ * TypeScript the type, and the messages below are what `<FormMessage>` renders
+ * under the field that is actually wrong instead of in a summary Alert above
+ * the form.
+ *
+ * It deliberately does NOT reuse the zod schemas of `@/lib/member`: these
+ * screens are client components, and `member-admin-client-boundary.spec.ts`
+ * holds them to `import type` only from that module (a value import would drag
+ * the server contract into the browser bundle).
+ */
+export const memberFormSchema = z.object({
+  name: z.string().trim().min(1, 'Укажите имя.'),
+  email: z
+    .string()
+    .trim()
+    .regex(/^\S+@\S+\.\S+$/, 'Укажите корректный email.'),
+  role: z.string(),
+  timezone: z.string().trim().min(1, 'Укажите часовой пояс.'),
+  status: z.enum(['active', 'inactive']),
+})
+
+export type MemberFormValue = z.infer<typeof memberFormSchema>
+
+/** The alias sub-form of the member record screen — same reasoning as above. */
+export const aliasFormSchema = z.object({
+  kind: z.string().min(1, 'Выберите тип алиаса.'),
+  value: z.string().trim().min(1, 'Укажите значение алиаса.'),
+  note: z.string(),
+})
+
+export type AliasFormValue = z.infer<typeof aliasFormSchema>

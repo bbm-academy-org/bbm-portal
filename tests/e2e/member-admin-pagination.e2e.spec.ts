@@ -52,12 +52,17 @@ test('an admin can reach member 51 through the approved pager', async ({
   await page.goto('/p/admin/member/members')
   await page.getByRole('searchbox', { name: 'Поиск участников' }).fill(namePrefix)
 
-  await expect(page.getByText('1–50 из 51', { exact: true })).toBeVisible()
+  // #434: the pager is the `data-table` block's, so the counter and the page
+  // marker are its wording — «Всего записей: N» plus «Страница n из m» —
+  // instead of the hand-rolled «1–50 из 51». The act under test is unchanged:
+  // member 51 is out of reach on page one and reachable on page two.
+  await expect(page.getByText('Всего записей: 51', { exact: true })).toBeVisible()
+  await expect(page.getByText('Страница 1 из 2', { exact: true })).toBeVisible()
   await expect(page.getByText(`${namePrefix} 51`, { exact: true })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Следующая страница' }).click()
 
-  await expect(page.getByText('51–51 из 51', { exact: true })).toBeVisible()
+  await expect(page.getByText('Страница 2 из 2', { exact: true })).toBeVisible()
   await expect(page.getByText(`${namePrefix} 51`, { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Следующая страница' })).toBeDisabled()
 })
