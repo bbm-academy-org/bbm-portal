@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import type { RequestBoardItem } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import {
   boardColumnCounts,
+  canAttachDocument,
   canDragRequest,
+  documentUploadRefusal,
+  DOCUMENT_UPLOAD_MAX_BYTES,
   currencyPrecision,
   FINANCE_REQUEST_BOARD_STATUSES,
   groupRequestsByStatus,
@@ -143,5 +146,32 @@ describe('request board composition (spec 339 EARS-509/512/524, Stage-A pick D)'
     expect(currencyPrecision(currencies, 'RUB')).toBe(2)
     expect(currencyPrecision(currencies, 'JPY')).toBe(0)
     expect(currencyPrecision(currencies, 'XXX')).toBe(2)
+  })
+})
+
+describe('attaching the confirming document (spec 339 EARS-502/511/514)', () => {
+  it('EARS-502/511: lets the submitter or an entry-role holder attach, and nobody else', () => {
+    const approved = item({ status: 'approved', own: false })
+    expect(canAttachDocument(approved, false)).toBe(false)
+    expect(canAttachDocument(approved, true)).toBe(true)
+    expect(canAttachDocument(item({ status: 'approved', own: true }), false)).toBe(true)
+    expect(canAttachDocument(item({ status: 'submitted', own: true }), false)).toBe(true)
+    expect(canAttachDocument(item({ status: 'draft', own: true }), false)).toBe(true)
+  })
+
+  it('EARS-505/512: closes the attach control on a request nothing can be added to', () => {
+    for (const status of ['posted', 'refused', 'cancelled'] as const) {
+      expect(canAttachDocument(item({ status, own: true }), true)).toBe(false)
+    }
+  })
+
+  it('EARS-514: refuses an oversize or wrong-typed file before it costs a request', () => {
+    const pdf = { name: 'чек.pdf', size: 1024, type: 'application/pdf' }
+    expect(documentUploadRefusal(pdf)).toBeNull()
+    expect(documentUploadRefusal({ ...pdf, type: 'image/jpeg', name: 'чек.jpg' })).toBeNull()
+    expect(documentUploadRefusal({ ...pdf, type: 'text/javascript', name: 'x.js' })).toMatch(
+      /PDF или изображение/i,
+    )
+    expect(documentUploadRefusal({ ...pdf, size: DOCUMENT_UPLOAD_MAX_BYTES + 1 })).toMatch(/25 МБ/)
   })
 })
