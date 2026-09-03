@@ -20,6 +20,13 @@ exists today).
 | 09   | the create screen                                                                    |
 | 10   | **AC2** — a Refine MUTATION FAILURE rendering a toast through `notificationProvider` |
 
+The four DARK frames that carry a toast — `06-*-dark` and `10-*-dark` — were
+re-taken on 2026-09-03, after review blocker 2: until then the Toaster read a
+`next-themes` provider this repo does not run, so the toast rendered light on a
+dark screen. Same stand, same record (`seed02@bbm.academy`), same two
+breakpoints; step 10's failure is injected at the transport (the `PATCH` is
+fulfilled with `500`), so no record is harmed by photographing it.
+
 The pointer cursor (AC3) is asserted in the journey rather than photographed:
 every run reports `cursor: {"enabled":"pointer","disabled":"default"}` on a plain
 `<button>`, with no `cursor-pointer` class anywhere in `src`.
