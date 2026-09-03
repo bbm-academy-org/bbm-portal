@@ -59,6 +59,36 @@ describe('classifyDevDatabase', () => {
     if (!verdict.ok) expect(verdict.reason).toContain('postgres')
   })
 
+  /**
+   * Review of PR #451, finding 2. `.internal` is how several hosting stacks
+   * spell PRIVATE PRODUCTION DNS, so accepting it as «never routable» was the
+   * one fail-open direction left in the predicate: the database-name lock does
+   * not help there (production's database is also called `platform`,
+   * `deploy/.env.prod.example`), leaving the env marker alone.
+   *
+   * `.local` stays accepted, and that is not an oversight: it is mDNS
+   * (RFC 6762), resolvable only on the link, and it is the spelling THIS
+   * estate's reference recipe uses for the dev stand's Postgres host —
+   * `truenas.local:${POSTGRES_PORT}` in `infra/dev-stand/compose.core.yml`.
+   * Refusing it would refuse a real dev stand; refusing `.internal` refuses
+   * nothing that exists here.
+   */
+  it('refuses the `.internal` suffix that private production DNS is spelled with', () => {
+    for (const host of ['postgres.internal', 'db.prod.internal', 'platform-db.internal']) {
+      const verdict = classifyDevDatabase(`postgres://u:p@${host}:5432/platform`, {})
+      expect(verdict.ok, host).toBe(false)
+    }
+  })
+
+  it('keeps accepting the mDNS name this estate reaches its dev stand by', () => {
+    // `host.docker.internal` is an EXACT loopback alias, not a suffix match, so
+    // tightening the suffix list must not touch it.
+    for (const host of ['truenas.local', 'host.docker.internal']) {
+      const verdict = classifyDevDatabase(`postgres://u:p@${host}:5444/platform`, {})
+      expect(verdict.ok, host).toBe(true)
+    }
+  })
+
   it('refuses a public address literal, however the name is spelled', () => {
     for (const host of ['203.0.113.10', '8.8.8.8']) {
       const verdict = classifyDevDatabase(`postgres://u:p@${host}:5432/platform`, {})

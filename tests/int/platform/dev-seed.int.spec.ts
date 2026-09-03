@@ -8,7 +8,7 @@ import { DevDatabaseRefusal } from '../../../tools/platform/dev-database-guard.m
 import { DEV_SEED_MEMBERS, DEV_SEED_REQUESTS } from '../../../tools/platform/dev-seed-plan'
 import { seedDevData } from '../../../tools/platform/dev-seed'
 
-import { truncateAsFixture } from './privilege-helpers'
+import { asMigrator, truncateAsFixture } from './privilege-helpers'
 
 /**
  * `pnpm dev:seed` against a real, freshly migrated platform database (#436).
@@ -152,6 +152,73 @@ describe.skipIf(!HAS_DB)('pnpm dev:seed against a migrated platform database', (
     await seedDevData()
     const second = await seededDigest()
     expect(second).toEqual(first)
+  }, 240_000)
+
+  /**
+   * The half-applied request (review of PR #451, finding 1).
+   *
+   * A request's walk is several module acts — `create → submit → (upload) →
+   * approve` — and each of them opens its OWN transaction, because that is the
+   * only door the finance module offers. So a process death between two acts is
+   * representable and leaves the row in a TRANSIENT status. Matching the fixture
+   * on its slug alone would then call that row `reused` for ever, and the «every
+   * spec-339 status is populated» property would degrade silently — which is the
+   * one property #437's acceptance protocol leans on.
+   *
+   * The rewind below is exactly that state: an `approved` fixture put back to
+   * `submitted` with its decision cleared, the way `approve` dying mid-flight
+   * would leave it. The rerun must REPAIR it, not count it.
+   */
+  it('repairs a request a crashed walk left in a transient status', async () => {
+    const fixture = DEV_SEED_REQUESTS.find((request) => request.status === 'approved')!
+    const marker = `%[seed:${fixture.slug}]%`
+    await asMigrator((client) =>
+      client.query(
+        `update core.finance_intake_item
+            set status = 'submitted', decided_by = null, decided_at = null
+          where note like $1`,
+        [marker],
+      ),
+    )
+    expect(
+      await countRows('core.finance_intake_item', `status = 'approved' and note like '${marker}'`),
+    ).toBe(0)
+
+    const summary = await seedDevData()
+
+    expect(summary.requests.created).toBe(0)
+    expect(summary.requests.repaired).toBe(1)
+    expect(
+      await countRows('core.finance_intake_item', `status = 'approved' and note like '${marker}'`),
+    ).toBe(1)
+    for (const status of FINANCE_INTAKE_STATUSES) {
+      const n = await countRows('core.finance_intake_item', `status = '${status}'`)
+      expect(n, `no intake item in status «${status}» after the repair`).toBeGreaterThan(0)
+    }
+  }, 240_000)
+
+  /**
+   * The other half of the same key: a row whose status can no longer REACH the
+   * fixture's target must fail loudly and name the slug, rather than be counted
+   * `reused` or be silently left wrong. `cancelled` is terminal, so a `posted`
+   * fixture sitting there is a stand a human has to look at.
+   */
+  it('fails loudly, naming the slug, when the row can no longer reach its target', async () => {
+    const fixture = DEV_SEED_REQUESTS.find((request) => request.status === 'draft')!
+    const marker = `%[seed:${fixture.slug}]%`
+    await asMigrator((client) =>
+      client.query(`update core.finance_intake_item set status = 'cancelled' where note like $1`, [
+        marker,
+      ]),
+    )
+    await expect(seedDevData()).rejects.toThrow(fixture.slug)
+
+    // Put the stand back: the suite that follows must not inherit the wreckage.
+    await asMigrator((client) =>
+      client.query(`update core.finance_intake_item set status = 'draft' where note like $1`, [
+        marker,
+      ]),
+    )
   }, 240_000)
 })
 
