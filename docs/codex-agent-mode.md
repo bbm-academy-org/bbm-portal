@@ -70,7 +70,10 @@ payloads. Two advisory paths do not have a safe exact mapping:
   those commands;
 - Codex UserPromptSubmit exposes no stable token-count field, so
   `context-budget.mjs` remains fail-open when the Claude transcript usage shape
-  is absent.
+  is absent. Its dispatch-fencing sibling `tools/hooks/lead-context-budget.mjs`
+  (#457) reads the same usage shape and is wired in `.claude/settings.json`
+  only: under Codex it would measure nothing, so it is deliberately absent from
+  `.codex/hooks.json` rather than wired as a hook that always no-ops.
 
 Do not infer safety from either missing advisory. Worktree isolation and manual
 context monitoring remain required by the repository instructions.
