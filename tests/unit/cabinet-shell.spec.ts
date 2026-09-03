@@ -360,7 +360,18 @@ describe('EARS-431: the cabinet is `@refinedev/core` plus a router binding, and 
     const refine = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter((d) =>
       d.startsWith('@refinedev/'),
     )
-    expect(refine.sort()).toEqual(['@refinedev/core', '@refinedev/nextjs-router'])
+    // `@refinedev/react-table` joined the list on #434 and does NOT widen the
+    // clause. EARS-431 excludes Refine's AUTH and DATA packages — the hand-written
+    // provider over `/api/p/<slug>/admin/*` is still the only data path — and its
+    // note excludes the UI packages, which is why `ThemedLayoutV2` was not used.
+    // `react-table` is neither: it ships no component, no style and no provider,
+    // only the `useTable` hook binding Refine's own `useList` to a headless
+    // tanstack table. It is what the adopted `data-table` block consumes.
+    expect(refine.sort()).toEqual([
+      '@refinedev/core',
+      '@refinedev/nextjs-router',
+      '@refinedev/react-table',
+    ])
   })
 
   it('EARS-431: the data provider is this repo’s own file, not a Refine package', () => {

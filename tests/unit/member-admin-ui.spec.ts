@@ -27,6 +27,8 @@ const refine = vi.hoisted(() => ({
     setCurrentPage: vi.fn(),
     setPageSize: vi.fn(),
     setFilters: vi.fn(),
+    /** Every `refineCoreProps` the screen handed `useTable`, newest last. */
+    props: [] as Array<Record<string, unknown>>,
   },
   one: {} as Record<string, unknown>,
   create: {} as Record<string, unknown>,
@@ -57,8 +59,15 @@ vi.mock('@refinedev/core', async (importOriginal) => {
 vi.mock('@refinedev/react-table', async () => {
   const { getCoreRowModel, useReactTable } = await import('@tanstack/react-table')
   return {
-    useTable: <TData>({ columns }: { columns: ColumnDef<TData>[] }) => {
+    useTable: <TData>({
+      columns,
+      refineCoreProps,
+    }: {
+      columns: ColumnDef<TData>[]
+      refineCoreProps?: Record<string, unknown>
+    }) => {
       const state = refine.table
+      if (refineCoreProps) state.props.push(refineCoreProps)
       const reactTable = useReactTable<TData>({
         data: state.rows as TData[],
         columns,
@@ -130,6 +139,7 @@ beforeEach(() => {
   refine.table.setCurrentPage.mockReset()
   refine.table.setPageSize.mockReset()
   refine.table.setFilters.mockReset()
+  refine.table.props = []
   refine.one = { query: { isLoading: false, error: null }, result: member }
   refine.create = { mutate: vi.fn(), mutation: { isPending: false, error: null } }
   refine.update = { mutate: vi.fn(), mutation: { isPending: false, error: null } }
@@ -202,22 +212,28 @@ describe('members cabinet UI (owner Option A, spec 311 EARS-441..445)', () => {
     const { MemberListScreen } =
       await import('@/app/(platform)/p/admin/member/members/MemberListScreen')
     render(React.createElement(MemberListScreen))
-    refine.table.setFilters.mockClear()
     refine.table.setCurrentPage.mockClear()
+
+    const permanent = () =>
+      (refine.table.props.at(-1)?.filters as { permanent?: unknown } | undefined)?.permanent
 
     fireEvent.change(screen.getByRole('searchbox'), {
       target: { value: 'anna' },
     })
-    expect(refine.table.setFilters).not.toHaveBeenCalled()
+    // Not yet: the debounce has not elapsed, so the query is still the wide one.
+    expect(permanent()).toEqual([])
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
     })
+    // The search is a PERMANENT filter on `useTable`, not an imperative
+    // `setFilters` (#434): `@refinedev/react-table` mirrors tanstack's
+    // `columnFilters` into Refine's filters on every render, so a filter pushed
+    // from an effect is overwritten before the query runs — an unfiltered
+    // register under a full search box, which is how it was caught on the stand.
+    expect(permanent()).toEqual([{ field: 'q', operator: 'contains', value: 'anna' }])
+    expect(refine.table.setFilters).not.toHaveBeenCalled()
     expect(refine.table.setCurrentPage).toHaveBeenCalledWith(1)
-    expect(refine.table.setFilters).toHaveBeenLastCalledWith(
-      [{ field: 'q', operator: 'contains', value: 'anna' }],
-      'replace',
-    )
     vi.useRealTimers()
   })
 
