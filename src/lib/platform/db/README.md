@@ -40,6 +40,10 @@ pnpm dev:seed                    # 64 members, hours periods + assessments,
 pnpm dev:db:branch --no-seed     # decline a step deliberately (also --no-migrate)
 ```
 
+The integration tier truncates the branch database it runs against, so a suite
+other than `dev-seed.int.spec.ts` (which re-seeds in its own teardown) can leave
+a stand empty; `pnpm dev:seed` puts it back in one command.
+
 It is **idempotent** — every row carries a stable identity (a member's email, a
 period id, a `[seed:<slug>]` marker in an intake note, a `source_ref`), so a
 rerun changes nothing; `tests/int/platform/dev-seed.int.spec.ts` asserts that as

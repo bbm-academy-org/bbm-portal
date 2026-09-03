@@ -113,8 +113,13 @@ describe.skipIf(!HAS_DB)('pnpm dev:seed against a migrated platform database', (
   }, 240_000)
 
   afterAll(async () => {
+    // Leave the branch database SEEDED, not empty. This suite runs against the
+    // same `platform_<N>` the session's acceptance stand is pointed at, and a
+    // tier that silently empties the stand it borrowed turns «the stand comes up
+    // populated» into a lie the next `pnpm dev` discovers.
     await resetToFreshlyMigrated()
-  }, 120_000)
+    await seedDevData()
+  }, 240_000)
 
   it('applies cleanly on a freshly migrated, empty database', () => {
     for (const table of SEEDED_TABLES) {
