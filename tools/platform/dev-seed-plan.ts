@@ -23,6 +23,24 @@
  * this file has no `number` foreign keys in it at all.
  */
 
+/**
+ * The bytes every seeded confirming document carries — a real 1x1 PNG.
+ *
+ * `assertFinanceDocumentBytes` (EARS-514) sniffs the magic bytes and refuses
+ * anything whose content does not match its declared type, so a placeholder
+ * text file would never reach the archive — and a `posted` request cannot exist
+ * without a ready document (EARS-506). The smallest honest PNG is therefore
+ * part of the fixture rather than decoration, and it lives HERE, next to the
+ * plan, because `tests/e2e/finance-documents.e2e.spec.ts` asserts the bytes the
+ * server hands back are exactly these.
+ */
+export const DEV_SEED_DOCUMENT_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+export const DEV_SEED_DOCUMENT_MIME = 'image/png'
+
 /** The slug marker a rerun recognises its own rows by, inside a free-text note. */
 export const DEV_SEED_NOTE_PREFIX = 'seed:'
 
@@ -61,9 +79,14 @@ export type DevSeedMember = {
  * The synthetic registry: obviously fake people on a `.invalid` domain, which is
  * reserved by RFC 2606 and can never route mail anywhere.
  *
- * 34 rows rather than the 30 the acceptance criterion names, and both numbers
- * matter: 30 is the floor the ruling sets, and going past it is what makes the
- * members list PAGINATE on a 25-row page instead of merely being long.
+ * 64 rows rather than the 30 the acceptance criterion names, and both numbers
+ * matter: 30 is the floor the ruling sets, and `/p/admin/member/members` pages
+ * at 50 — so a roster that stopped near the floor would render a long list with
+ * NO pager, and pagination is one of the four things the ruling names. 64 puts
+ * a full first page and a partial second one on the stand, which is what a
+ * pager has to be looked at on. A handful of non-Cyrillic and diacritic names
+ * are in the list on purpose: sorting and column width are read wrong when
+ * every row is the same shape.
  */
 const MEMBER_NAMES: readonly (readonly [string, string, 'active' | 'inactive'])[] = [
   ['Анна Ковалёва', 'Продюсер', 'active'],
@@ -100,6 +123,36 @@ const MEMBER_NAMES: readonly (readonly [string, string, 'active' | 'inactive'])[
   ['Леонид Романов', 'Разработчик', 'inactive'],
   ['Мария Савельева', 'Куратор', 'inactive'],
   ['Никита Тарасов', null as unknown as string, 'inactive'],
+  ['Оксана Ульянова', 'Маркетолог', 'active'],
+  ['Пётр Филатов', 'Редактор', 'active'],
+  ['Раиса Хомякова', 'Продюсер', 'active'],
+  ['Семён Цыганов', 'Методист', 'active'],
+  ['Таисия Чижова', 'Аналитик', 'active'],
+  ['Устин Шапошников', 'Дизайнер', 'active'],
+  ['Фаина Щеглова', 'Разработчик', 'active'],
+  ['Харитон Юрьев', 'Куратор', 'active'],
+  ['Цветана Ясенева', 'Маркетолог', 'active'],
+  ['Чеслав Агафонов', 'Редактор', 'active'],
+  ['Шамиль Бухаров', 'Продюсер', 'active'],
+  ['Эдуард Вершинин', 'Методист', 'active'],
+  ['Юрий Горелов', 'Аналитик', 'active'],
+  ['Ярослава Дементьева', 'Дизайнер', 'active'],
+  ['Аркадий Емельянов', 'Разработчик', 'active'],
+  ['Božena Železná', 'Куратор', 'active'],
+  ['Émile Rousseau', 'Маркетолог', 'active'],
+  ['Анастасия Жигулина', 'Редактор', 'active'],
+  ['Валентин Зотов', 'Продюсер', 'active'],
+  ['Галина Игнатова', 'Методист', 'active'],
+  ['Демьян Кулагин', 'Аналитик', 'active'],
+  ['Елизавета Лобанова', 'Дизайнер', 'active'],
+  ['Жорж Матвеев', 'Разработчик', 'active'],
+  ['Зинаида Наумова', 'Куратор', 'active'],
+  ['Игнат Опалев', 'Маркетолог', 'active'],
+  ['Клавдия Пименова', 'Редактор', 'inactive'],
+  ['Лаврентий Рогачёв', 'Продюсер', 'inactive'],
+  ['Милана Селиванова', 'Методист', 'inactive'],
+  ['Наум Трофимов', 'Аналитик', 'inactive'],
+  ['Ольга Ушакова', null as unknown as string, 'inactive'],
 ]
 
 export const DEV_SEED_MEMBERS: readonly DevSeedMember[] = MEMBER_NAMES.map(
@@ -157,22 +210,25 @@ export type DevSeedHoursPeriod = {
   assessments: readonly DevSeedHoursAssessment[]
 }
 
-const PARTICIPANT_FORKS: readonly (readonly [number | null, number | null, 'I' | 'II' | 'III' | null])[] =
-  [
-    [180_000, 260_000, 'II'],
-    [220_000, 320_000, 'III'],
-    [150_000, 210_000, 'I'],
-    [240_000, 360_000, 'III'],
-    [160_000, 230_000, 'II'],
-    [200_000, 280_000, 'II'],
-    [140_000, 200_000, 'I'],
-    [260_000, 380_000, 'III'],
-    [170_000, 240_000, 'II'],
-    [190_000, 270_000, 'I'],
-    // The «hours only» mode of the module: no fork, no grade, hence no rate.
-    [null, null, null],
-    [null, null, null],
-  ]
+const PARTICIPANT_FORKS: readonly (readonly [
+  number | null,
+  number | null,
+  'I' | 'II' | 'III' | null,
+])[] = [
+  [180_000, 260_000, 'II'],
+  [220_000, 320_000, 'III'],
+  [150_000, 210_000, 'I'],
+  [240_000, 360_000, 'III'],
+  [160_000, 230_000, 'II'],
+  [200_000, 280_000, 'II'],
+  [140_000, 200_000, 'I'],
+  [260_000, 380_000, 'III'],
+  [170_000, 240_000, 'II'],
+  [190_000, 270_000, 'I'],
+  // The «hours only» mode of the module: no fork, no grade, hence no rate.
+  [null, null, null],
+  [null, null, null],
+]
 
 export const DEV_SEED_HOURS_PARTICIPANTS: readonly DevSeedHoursParticipant[] =
   PARTICIPANT_FORKS.map(([forkMin, forkMax, grade], index) => {
@@ -251,12 +307,7 @@ export const DEV_SEED_COUNTERPARTIES: readonly string[] = [
 // ── finance: expense requests, one per lifecycle state plus volume ──────────
 
 export type DevSeedRequestStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'refused'
-  | 'cancelled'
-  | 'posted'
+  'draft' | 'submitted' | 'approved' | 'refused' | 'cancelled' | 'posted'
 
 export type DevSeedRequest = {
   slug: string

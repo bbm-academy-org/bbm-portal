@@ -79,7 +79,9 @@ async function seededDigest(): Promise<Record<string, { rows: number; digest: st
 }
 
 async function countRows(table: string, where = 'true'): Promise<number> {
-  const result = await getPlatformDb().execute(`select count(*)::int as n from ${table} where ${where}`)
+  const result = await getPlatformDb().execute(
+    `select count(*)::int as n from ${table} where ${where}`,
+  )
   return Number((result.rows[0] as { n: number }).n)
 }
 
@@ -141,15 +143,11 @@ describe.skipIf(!HAS_DB)('pnpm dev:seed against a migrated platform database', (
     expect(await countRows('core.finance_posting')).toBeGreaterThan(posted)
   })
 
-  it(
-    'run twice leaves the database in the same state',
-    async () => {
-      await seedDevData()
-      const second = await seededDigest()
-      expect(second).toEqual(first)
-    },
-    240_000,
-  )
+  it('run twice leaves the database in the same state', async () => {
+    await seedDevData()
+    const second = await seededDigest()
+    expect(second).toEqual(first)
+  }, 240_000)
 })
 
 describe('the seed refuses a database it cannot classify as dev', () => {

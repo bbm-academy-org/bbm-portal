@@ -74,6 +74,8 @@ import { assertDevPlatformDatabase } from './dev-database-guard.mjs'
 import {
   DEV_SEED_APPROVER_SLUG,
   DEV_SEED_COUNTERPARTIES,
+  DEV_SEED_DOCUMENT_BYTES,
+  DEV_SEED_DOCUMENT_MIME,
   DEV_SEED_HOURS_PARTICIPANTS,
   DEV_SEED_HOURS_PERIODS,
   DEV_SEED_INTAKE_ITEMS,
@@ -90,20 +92,6 @@ import { seedFinanceAcceptance } from './finance-acceptance-seed'
 import { loadPlatformToolEnv } from './load-env.mjs'
 
 const TAG = 'dev:seed'
-
-/**
- * A real 1×1 PNG.
- *
- * `assertFinanceDocumentBytes` (EARS-514) sniffs the magic bytes and refuses
- * anything whose content does not match its declared type, so a placeholder
- * text file would not get past the upload — and a `posted` request cannot exist
- * without a ready document (EARS-506). The smallest honest PNG is therefore
- * part of the fixture, not decoration.
- */
-const ONE_PIXEL_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  'base64',
-)
 
 export type DevSeedOptions = {
   /** Defaults to `PLATFORM_DATABASE_URL`; named explicitly by the refusal tests. */
@@ -272,7 +260,7 @@ type FinanceRefs = {
   counterparties: number[]
 }
 
-async function resolveFinanceRefs(actor: FinanceActor): Promise<FinanceRefs> {
+async function resolveFinanceRefs(): Promise<FinanceRefs> {
   const [accounts, purposes, projects, products] = await Promise.all([
     listAccounts(),
     listPurposes(),
@@ -327,9 +315,7 @@ async function seedCounterparties(actor: FinanceActor): Promise<DevSeedSummary['
 // ── the intake spine: requests through the real status machine ──────────────
 
 /** Slug → the item a previous run left, so a rerun is a no-op per request. */
-async function seededIntakeIndex(
-  actor: FinanceActor,
-): Promise<Map<string, FinanceIntakeItemView>> {
+async function seededIntakeIndex(actor: FinanceActor): Promise<Map<string, FinanceIntakeItemView>> {
   const items = await listIntakeItems(actor)
   const index = new Map<string, FinanceIntakeItemView>()
   for (const item of items) {
@@ -381,8 +367,8 @@ async function seedRequest(
     case 'posted':
       await uploadFinanceDocument(approver, {
         filename: request.document!.filename,
-        mime: 'image/png',
-        bytes: ONE_PIXEL_PNG,
+        mime: DEV_SEED_DOCUMENT_MIME,
+        bytes: DEV_SEED_DOCUMENT_BYTES,
         kind: request.document!.kind,
         intakeItemIds: [created.id],
       })
@@ -468,7 +454,7 @@ export async function seedDevData(options: DevSeedOptions = {}): Promise<DevSeed
   const approver = approverActor()
   const finance = await seedFinanceAcceptance(approver)
   const counterparties = await seedCounterparties(approver)
-  const refs = await resolveFinanceRefs(approver)
+  const refs = await resolveFinanceRefs()
   const { requests, documents } = await seedRequests(approver, refs)
   const intakeItems = await seedIntakeItems(approver, refs)
 

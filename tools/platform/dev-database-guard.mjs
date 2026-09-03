@@ -20,14 +20,16 @@
  *     family** — `platform` itself, or a per-worktree branch `platform_<N>`
  *     (`tools/platform/branch-database.mjs`).
  *
- * **How prod differs, concretely.** The production platform database is reached
- * over the network at a real hostname (`deploy/README.md`; the compose stack
- * names its service, never `localhost`), and CI reaches its service container
- * the same way. No production string in this repo resolves to a loopback host,
- * and no dev string points anywhere else — which is why the host allowlist,
- * rather than the database name alone, is the load-bearing half. The name check
- * is the second lock: `cms` (Payload's own database, on the SAME dev host) must
- * never receive this seed either.
+ * **How prod differs, concretely.** Production reaches Postgres by the compose
+ * SERVICE NAME — `postgres://bbm_platform_app:…@postgres:5432/platform`
+ * (`deploy/.env.prod.example`) — a bare hostname resolvable only inside the
+ * production network. This box's dev stand, by contrast, answers on
+ * `192.168.1.115:5444` and CI's on loopback. So the host test is not an
+ * allowlist of known dev machines (which would have refused this very box) but
+ * the class «cannot be a routable production endpoint»: loopback, a private
+ * address literal, or one of the reserved never-routable name suffixes. The
+ * database name is the second lock, and it is not redundant: `cms` — Payload's
+ * own database — lives on the SAME dev host and must never receive this seed.
  *
  * **Fail closed, and say why.** Every refusal names the offending part — the
  * marker, the host, or the database — and NEVER echoes the connection string:
@@ -109,7 +111,10 @@ export class DevDatabaseRefusal extends Error {
 
 function productionMarker(env) {
   return PRODUCTION_ENV_MARKERS.find(
-    (marker) => String(env?.[marker] ?? '').trim().toLowerCase() === 'production',
+    (marker) =>
+      String(env?.[marker] ?? '')
+        .trim()
+        .toLowerCase() === 'production',
   )
 }
 
