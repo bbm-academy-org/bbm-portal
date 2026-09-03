@@ -28,6 +28,7 @@ import type { RequestBoardItem, RequestsSnapshot } from './request-board-contrac
 import {
   canDragRequest,
   currencyPrecision,
+  filedRequestNotification,
   formatRequestMoney,
   groupRequestsByStatus,
   ownRequests,
@@ -208,14 +209,15 @@ export function RequestsBoardScreen() {
           url: editingId === null ? REQUESTS_ENDPOINT : `${REQUESTS_ENDPOINT}/${editingId}`,
           method: editingId === null ? 'post' : 'patch',
           values: toRequestBody(value, snapshot.references) as unknown as Record<string, unknown>,
-          successNotification: {
-            type: 'success',
-            message: editingId === null ? 'Заявка подана.' : 'Заявка сохранена.',
-            description:
-              editingId === null
-                ? 'Она встала в колонку «Ждут».'
-                : 'Изменения ушли в машину статусов.',
-          },
+          successNotification:
+            editingId === null
+              ? // The status the endpoint really kept, read back (EARS-509/526).
+                (data: unknown) => ({ type: 'success' as const, ...filedRequestNotification(data) })
+              : {
+                  type: 'success',
+                  message: 'Заявка сохранена.',
+                  description: 'Изменения ушли в машину статусов.',
+                },
           errorNotification: (error: unknown) => ({
             type: 'error' as const,
             message:

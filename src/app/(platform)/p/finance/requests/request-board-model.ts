@@ -144,6 +144,38 @@ export function ownRequests(requests: readonly RequestBoardItem[]): RequestBoard
   return requests.filter((request) => request.own)
 }
 
+/**
+ * WHAT THE MEMBER IS TOLD AFTER FILING (EARS-508/509/526).
+ *
+ * Derived from the answer the create endpoint gives, never asserted ahead of
+ * it: the endpoint files and submits in one act (EARS-509), except for the
+ * request whose purpose is only PROPOSED — that one stays a `draft` until an
+ * admin resolves the proposal (EARS-526), and the board has no column for it.
+ * Claiming «встала в колонку «Ждут»» for a draft is a lie the member can check
+ * in one glance, so the text follows the status that actually came back.
+ */
+export function filedRequestNotification(response: unknown): {
+  message: string
+  description: string
+} {
+  const status = (response as { data?: { request?: { status?: unknown } } } | null | undefined)
+    ?.data?.request?.status
+  if (status === 'submitted') {
+    return { message: 'Заявка подана.', description: 'Она встала в колонку «Ждут».' }
+  }
+  if (status === 'draft') {
+    return {
+      message: 'Заявка сохранена черновиком.',
+      description:
+        'Одобряющие её ещё не видят: черновик ждёт назначения и лежит во вкладке «Мои заявки».',
+    }
+  }
+  return {
+    message: 'Заявка сохранена.',
+    description: 'Её текущий статус виден во вкладке «Мои заявки».',
+  }
+}
+
 /** The precision the currency reference declares; two places for an unknown code. */
 export function currencyPrecision(
   currencies: RequestBoardReferences['currencies'],
@@ -202,7 +234,8 @@ export function documentUploadRefusal(file: {
     return `«${file.name}» не принимается: подтверждающий документ это PDF или изображение (EARS-514).`
   }
   if (file.size > DOCUMENT_UPLOAD_MAX_BYTES) {
-    return `«${file.name}» больше предела в 25 МБ (EARS-514).`
+    const limit = DOCUMENT_UPLOAD_MAX_BYTES / (1024 * 1024)
+    return `«${file.name}» больше предела в ${limit} МБ (EARS-514).`
   }
   return null
 }
