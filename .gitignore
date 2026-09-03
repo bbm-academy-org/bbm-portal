@@ -14,6 +14,11 @@
 /.claude/hook-session-registry/
 /.claude/stop-gate-budget-state/
 
+# Owner-only escape hatch for the lead context budget (#457): its presence lifts
+# the 150K/160K dispatch tiers for the CURRENT session — a live marker, never a
+# committed setting (created on an explicit owner instruction, removed by /wrap)
+/.claude/lead-budget-override
+
 # Generated local bridge: Codex follows this junction/symlink to the canonical
 # project skill bodies under `.claude/skills/`.
 /.agents/skills
