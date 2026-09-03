@@ -75,6 +75,14 @@ is missing and the look is genuinely open,
 dispatch [`research-ui-element`](../research-ui-element/SKILL.md) rather than
 inventing a look at the keyboard.
 
+Two guards read this rung on a PR's diff under `src/app/(platform)`:
+`pnpm lint:primitives-first <PR>` (a raw control the kit already owns, and
+`useState` field state where the `form` block applies) and
+`pnpm lint:interaction-states <PR>` (a clickable with no hover / focus-visible /
+disabled treatment). Both WARN — [`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md)
+§5 — and both take rung 3's justification INLINE at the call site, as a
+`primitives-first-ok: <reason>` / `interaction-states-ok: <reason>` comment.
+
 **3. Bespoke — allowed, never silent.** With rungs 1–2 empty, bespoke is the
 correct outcome. The PR body then carries the justification line the whitelist
 doc specifies (`bespoke — whitelist empty for <class>; searched <sources>; not

@@ -931,6 +931,14 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-03-dtf1lter -->
 
+- [ ] 2026-09-03 The `interaction-states` port (#435) DROPS two of the ds-platform original's three scopes rather than adapting them: scope (a), the layer-1 `@layer base` reset in `packages/design-system/src/styles/globals.css` (`cursor: pointer` on the interactive element list, `cursor: not-allowed` for `:disabled`, the `prefers-reduced-motion` guard), and scope (b), the `interactiveBase` focus-ring fragment every primitive composes. This repo has neither object: the kit is stock shadcn/ui vendored through Refine (#360/#434), whose primitives carry their states inline and whose theme entry is `src/ui/theme.css`. Porting them would have asserted a contract nobody agreed to. The consequence is real and worth naming: #435 measured `cursor-pointer` at ZERO occurrences in `src`, and nothing now checks that a global clickable reset exists at all — return condition: the first task that adds a base-layer interaction reset to `src/ui/theme.css`, at which point scope (a) becomes portable as a one-file integrity check.
+
+<!-- debt-entry-end: 2026-09-03-435-no-layer1-check -->
+
+- [ ] 2026-09-03 `interaction-states` (#435) skips every CAPITALISED JSX tag carrying `onClick`, on the reasoning that a component owns its own states and a component whose import lies outside the diff cannot be classified from the diff alone. That is the conservative direction (the guard misses rather than invents, canon §8), but it leaves one real hole: a clickable wrapper DEFINED in the same file — the shape PR #430's own `NativeSelect` has — is invisible to the guard even though its raw inner tag is fully visible to `primitives-first`. Not fixed now because resolving local component definitions from added lines alone is a different class of parser than the rest of this family — return condition: the first review that catches an untreated clickable this guard should have caught, or the guard's §4 promotion review on 2026-10-01, whichever comes first.
+
+<!-- debt-entry-end: 2026-09-03-435-uppercase-hole -->
+
 - [ ] 2026-09-03 The stage-5 eyes-on matrix (#437) is captured by a ONE-OFF script per task: `tools/dev/journey-437.ts` drove the members register through 9 states × 2 breakpoints × 2 themes with CDP-forced pseudo-states and was deleted with the run, exactly as #434's journey was. The protocol text in `.claude/skills/task-cycle/SKILL.md` stage 5 therefore describes a procedure every task re-implements — the breakpoints, the `.dark` toggle and the `CSS.forcePseudoState` plumbing are re-typed each time and can silently drift from the written matrix. Two runs are not yet a harness — return condition: the THIRD surface that needs the matrix, at which point the shared pieces belong in a committed helper under `tools/dev/` (or `tests/e2e/support/`) that the skill can name instead of describing.
 
 <!-- debt-entry-end: 2026-09-03-437-journey-harness -->
