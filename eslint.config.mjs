@@ -100,6 +100,24 @@ const eslintConfig = [
       ],
     },
   },
+  // `src/ui` is VENDORED upstream source, not code this repo authors (#360,
+  // #434): the shadcn and Refine components are copied in by their CLI/registry
+  // and re-copied verbatim on every upgrade, so a finding here is not something
+  // a session may fix — a local fix is a silent fork that the next `shadcn add`
+  // reverts. The three rules below are the React-Compiler-era ones the current
+  // upstream sources trip (`use-mobile.ts`, `refine-ui/data-table/data-table-filter.tsx`,
+  // `refine-ui/layout/breadcrumb.tsx`), and they are switched off for THIS
+  // DIRECTORY ONLY, by name, so the app's own components keep every one of them.
+  // The kit's real guard is `pnpm lint:ui-tokens`, which checks the property
+  // vendoring cannot give us (no colour literal outside `theme.css`).
+  {
+    files: ['src/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/static-components': 'off',
+    },
+  },
   {
     ignores: [
       '.next/',
