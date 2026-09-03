@@ -424,15 +424,14 @@ jobs:
   # WARN — a test title that ATTEMPTS the EARS prefix and misspells it, so the
   # `EARS-N` grep the spec canon promises silently misses it (#157, tranche 2).
   #
-  # HELD at WARN on 2026-09-02 (#438). The §4 window is clean, but the guard's own
-  # header declares an unresolved FALSE-BLOCK class and defers it to exactly this
-  # review: ATTEMPT_RE fires on any title that merely STARTS with the word EARS,
-  # so `describe('EARS adoption record')` reads as a botched id. Narrowing it is a
-  # substantive rule change and restarts the §4 clause-2 clock, so it is not done
-  # here. New condition: narrow ATTEMPT_RE (#447), then a 4-week clean window —
-  # promotion 2026-09-30.
+  # HELD at WARN on 2026-09-02 (#438) over a declared FALSE-BLOCK class, which
+  # #447 then closed by narrowing ATTEMPT_RE — a substantive rule change, so the
+  # §4 clause-2 clock restarted. The remaining condition and the date it yields
+  # are the register's to state, and are NOT restated here: this comment carried
+  # a paraphrase of them until #447, and the paraphrase is what went stale.
+  # Canon: docs/ci-guardrails.md §5, row `ears-naming`.
   ears-naming:
-    continue-on-error: true # WARN since 2026-08-05 — canon §5, earliest promotion 2026-09-30
+    continue-on-error: true # WARN since 2026-08-05 — severity and window: docs/ci-guardrails.md §5
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

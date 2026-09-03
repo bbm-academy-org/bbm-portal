@@ -184,8 +184,11 @@ describe('ears-naming (spawned)', () => {
 
 describe('ears-naming: the register is the single source for the promotion window', () => {
   const root = process.cwd()
-  const ci = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
-  const canon = readFileSync(resolve(root, 'docs/ci-guardrails.md'), 'utf8')
+  // Normalised: this repo checks out CRLF on Windows, and every anchor below is
+  // a line boundary.
+  const read = (rel: string) => readFileSync(resolve(root, rel), 'utf8').replace(/\r\n/g, '\n')
+  const ci = read('.github/workflows/ci.yml')
+  const canon = read('docs/ci-guardrails.md')
 
   /** The job block plus the header comment paragraph that introduces it. */
   const jobBlock = (() => {

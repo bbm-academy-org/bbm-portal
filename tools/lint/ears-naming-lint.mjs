@@ -39,8 +39,9 @@
 // the start of an English word — so all four misspellings the rule exists for
 // (`ears-3:`, `EARS3:`, `EARS-3` with no colon, `EARS 3:`) are attempts. It does
 // NOT match the word EARS used as prose: `describe('EARS adoption record', …)`,
-// `it('EARS is adopted here', …)`, nor a word merely beginning with the letters
-// (`renders the earshot banner`). That prose class used to be a finding and was
+// `it('EARS is adopted here', …)`. Nor a word merely BEGINNING with the letters
+// (`earshot banner renders`) — that one is carried by the character class, not
+// by the #447 lookahead. The prose class used to be a finding and was
 // the declared FALSE-BLOCK that held this guard back from the 2026-09-02
 // promotion sweep (#438); narrowing it closed the class, and the only fix it
 // would have offered an author — renaming an honest English title to please a
@@ -84,11 +85,14 @@ const TITLE_RE = /\b(?:it|test|describe)\s*\(\s*(['"`])([\s\S]*?)\1/g
 
 /**
  * A title that ATTEMPTS the EARS prefix: opens with `ears` followed by a hyphen,
- * space, colon or digit — so prose like "renders the earshot banner" is not read
- * as a botched id. The negative lookahead excludes the other prose shape (#447):
- * `EARS` followed by whitespace and a LETTER is the English word used in a
- * sentence — `describe('EARS adoption record', …)` — not a botched id. `EARS 3:`
- * survives it, because a DIGIT after the space is an id, not a word.
+ * space, colon or digit — so a word that merely BEGINS with the letters, like
+ * "earshot banner renders", is not read as a botched id. The negative lookahead
+ * excludes the other prose shape (#447): `EARS` followed by whitespace and a
+ * LETTER is the English word used in a sentence — `describe('EARS adoption
+ * record', …)` — not a botched id. `EARS 3:` survives it, because a DIGIT after
+ * the space is an id, not a word; so do `EARS:` and `EARS-x:`, where no
+ * whitespace follows `EARS` at all — the pin that keeps them findings rather
+ * than silently exempt (see the spec's regression pins).
  */
 export const ATTEMPT_RE = /^\s*ears(?!\s+[A-Za-z])[-\s:0-9]/i
 
