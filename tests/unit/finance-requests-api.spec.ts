@@ -578,7 +578,7 @@ describe('/p/finance/api/requests writes', () => {
     )
   })
 
-  it('EARS-502/524 scenario 3: PATCH edits through the request facade and returns the approved bounce', async () => {
+  it('EARS-502/524: scenario 3 — PATCH edits through the request facade and returns the approved bounce', async () => {
     state.editExpenseRequest.mockResolvedValue({
       ...request,
       status: 'submitted',
