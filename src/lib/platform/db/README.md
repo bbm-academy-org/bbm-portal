@@ -24,6 +24,35 @@ pnpm platform:db:ensure          # the ensure step alone (idempotent)
 pnpm platform:roles:ensure       # split the cluster into two roles — see below
 ```
 
+**A worktree stand comes up populated, and nothing has to remember to seed it**
+(#436, owner ruling 2026-09-02). `pnpm dev:db:branch` inside
+`.claude/worktrees/<N>` creates `platform_<N>`, writes the worktree `.env`, then
+runs `platform:migrate` and `dev:seed` — so the documented bring-up path
+(`pnpm task:worktree N` → `pnpm dev:db:branch` → `PORT=<n> pnpm dev`) yields a
+stand with dozens of rows and every lifecycle status by construction. An
+already-branched database is refreshed by the seed alone:
+
+```bash
+pnpm dev:seed                    # 64 members, hours periods + assessments,
+                                 # finance references, ledger postings,
+                                 # 30 expense requests across all six spec-339
+                                 # statuses, non-request intake lines, documents
+pnpm dev:db:branch --no-seed     # decline a step deliberately (also --no-migrate)
+```
+
+It is **idempotent** — every row carries a stable identity (a member's email, a
+period id, a `[seed:<slug>]` marker in an intake note, a `source_ref`), so a
+rerun changes nothing; `tests/int/platform/dev-seed.int.spec.ts` asserts that as
+a content digest over every seeded table. It **refuses anything it cannot
+classify as a dev database** before the first statement: the predicate is
+`tools/platform/dev-database-guard.mjs`, which accepts only `platform` /
+`platform_<N>` on loopback, a private address literal, or a reserved
+never-routable name suffix — production reaches Postgres by the compose service
+name `postgres`, so a bare hostname is refused by design, and so is any
+environment marked `production`. The fixtures themselves are pure data in
+`tools/platform/dev-seed-plan.ts`; the applier writes them through the module
+APIs, so a `posted` request really walked the spec-339 status machine.
+
 **Two roles, two connection strings** since #278 (spec 201 EARS-30, ADR-004 A1).
 `PLATFORM_DATABASE_URL` is the APPLICATION's least-privilege role, which can only
 `SELECT` the audit ledger `core.audit_event`; `PLATFORM_MIGRATE_DATABASE_URL` is
