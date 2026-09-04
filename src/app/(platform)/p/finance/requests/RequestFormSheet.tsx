@@ -32,6 +32,8 @@ import { Textarea } from '@/ui/textarea'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
 import {
   createRequestFormSchema,
+  productEmptyMessage,
+  productFieldMode,
   productOptions,
   requestFormDefaults,
   type RequestFormValue,
@@ -107,6 +109,10 @@ export function RequestFormSheet({
   const account = references.accounts.find((row) => String(row.id) === accountId) ?? null
   const crossCurrency = account !== null && account.currency !== currency
   const products = productOptions(references, purposeId, projectId)
+  // A purpose that DEMANDS a product on a project that has none: the field
+  // stays on the form as the place its refusal is read, instead of vanishing
+  // and taking the message with it (#388 journey, state 09).
+  const productMode = productFieldMode(references, purposeId, projectId)
 
   return (
     <Sheet open onOpenChange={(open) => (open ? undefined : onClose())}>
@@ -214,7 +220,33 @@ export function RequestFormSheet({
                 )}
               />
 
-              {products.length > 0 ? (
+              {productMode === 'empty' ? (
+                <FormField
+                  control={form.control}
+                  name="productId"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel>Продукт</FormLabel>
+                      <Select disabled value={NONE}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="У проекта нет продуктов" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent data-bbm-ui>
+                          <SelectItem value={NONE}>У проекта нет продуктов</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {productEmptyMessage(references, projectId)}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
+
+              {productMode === 'options' ? (
                 <FormField
                   control={form.control}
                   name="productId"

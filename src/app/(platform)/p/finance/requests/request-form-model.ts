@@ -97,6 +97,10 @@ function purposeOf(references: RequestBoardReferences, purposeId: string) {
   return references.purposes.find((purpose) => String(purpose.id) === purposeId) ?? null
 }
 
+function projectOf(references: RequestBoardReferences, projectId: string) {
+  return references.projects.find((project) => String(project.id) === projectId) ?? null
+}
+
 /** The products the chosen purpose's binding and the chosen project allow. */
 export function productOptions(
   references: RequestBoardReferences,
@@ -106,6 +110,35 @@ export function productOptions(
   const purpose = purposeOf(references, purposeId)
   if (purpose === null || purpose.productBinding === 'forbidden') return []
   return references.products.filter((product) => String(product.projectId) === projectId)
+}
+
+/**
+ * WHAT THE «Продукт» FIELD IS on the pair of choices already made — the view's
+ * question, answered by the model rather than by `products.length > 0`.
+ *
+ * `empty` is the case that made the form refuse in silence (#388 journey,
+ * state 09): a purpose whose binding is `required` chosen for a project that
+ * carries no products at all. There is nothing to offer, but the field is not
+ * absent — it is the field the member cannot satisfy, and hiding it hid the
+ * refusal with it. The schema still raises on `productId`; this tells the view
+ * to keep the place where that message is read.
+ */
+export function productFieldMode(
+  references: RequestBoardReferences,
+  purposeId: string,
+  projectId: string,
+): 'hidden' | 'options' | 'empty' {
+  const purpose = purposeOf(references, purposeId)
+  if (purpose === null || purpose.productBinding === 'forbidden') return 'hidden'
+  if (productOptions(references, purposeId, projectId).length > 0) return 'options'
+  return purpose.productBinding === 'required' ? 'empty' : 'hidden'
+}
+
+/** The message the empty-and-required product field carries, in one place. */
+export function productEmptyMessage(references: RequestBoardReferences, projectId: string): string {
+  const project = projectOf(references, projectId)
+  const named = project === null ? 'выбранного проекта' : `проекта «${project.name}»`
+  return `Это назначение требует продукт, а у ${named} нет продуктов — выберите другой проект или другое назначение.`
 }
 
 export function createRequestFormSchema(references: RequestBoardReferences) {
@@ -182,10 +215,13 @@ export function createRequestFormSchema(references: RequestBoardReferences) {
 
     const purpose = purposeOf(references, value.purposeId)
     if (purpose?.productBinding === 'required' && value.productId === '') {
+      const empty = productFieldMode(references, value.purposeId, value.projectId) === 'empty'
       context.addIssue({
         code: 'custom',
         path: ['productId'],
-        message: 'Это назначение требует продукт.',
+        message: empty
+          ? productEmptyMessage(references, value.projectId)
+          : 'Это назначение требует продукт.',
       })
     }
     if (purpose?.productBinding === 'forbidden' && value.productId !== '') {
