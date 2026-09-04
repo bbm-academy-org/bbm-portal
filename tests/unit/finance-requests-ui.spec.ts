@@ -403,6 +403,10 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
 
     fireEvent.click(within(form).getByLabelText('Назначение'))
     fireEvent.click(await screen.findByRole('option', { name: 'Продажи курса' }))
+    // No project chosen yet: nothing is known about products, so the form says
+    // nothing about them — least of all «у выбранного проекта нет продуктов».
+    expect(within(form).queryByText(/нет продуктов/i)).toBeNull()
+
     fireEvent.click(within(form).getByLabelText('Проект'))
     fireEvent.click(await screen.findByRole('option', { name: 'Фонд BBM' }))
 
@@ -412,9 +416,10 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(within(form).getAllByText(/нет продуктов/i).length).toBeGreaterThan(0)
 
     fireEvent.click(within(form).getByRole('button', { name: 'Подать заявку' }))
-    await waitFor(() =>
-      expect(within(form).getAllByText(/нет продуктов/i).length).toBeGreaterThan(0),
-    )
+    // Said ONCE, not twice: the description carries the state and the error
+    // carries what to do about it — the same 20-word sentence in both slots is
+    // four lines said twice at 390 px.
+    await waitFor(() => expect(within(form).getAllByText(/выберите другой проект/i).length).toBe(1))
     expect(refine.mutate).not.toHaveBeenCalled()
   })
 

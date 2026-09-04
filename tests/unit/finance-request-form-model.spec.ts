@@ -234,6 +234,11 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
     expect(productFieldMode(references, '21', '3')).toBe('options')
     expect(productFieldMode(references, '22', '3')).toBe('hidden')
     expect(productFieldMode(references, '', '3')).toBe('hidden')
+    // No project chosen yet — the field order is «Назначение» → «Проект» →
+    // «Продукт», so this is the state the form is in for as long as the member
+    // has picked a purpose and not yet a project. There is no project to have
+    // no products, so the field is not yet a question and says nothing.
+    expect(productFieldMode(references, '21', '')).toBe('hidden')
 
     const parsed = schema.safeParse(value({ purposeId: '21', projectId: '5', productId: '' }))
     expect(parsed.success).toBe(false)
@@ -241,5 +246,15 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
       ? null
       : (parsed.error.issues.find((row) => row.path[0] === 'productId') ?? null)
     expect(issue?.message).toMatch(/нет продуктов/i)
+  })
+
+  it('EARS-508: says nothing about products while no project is chosen', () => {
+    const parsed = schema.safeParse(value({ purposeId: '21', projectId: '', productId: '' }))
+    expect(parsed.success).toBe(false)
+    const issues = parsed.success ? [] : parsed.error.issues
+    // The one thing missing is the project, and that is the sentence the member
+    // gets. A product refusal here would be advice about a choice not yet made.
+    expect(issues.filter((row) => row.path[0] === 'productId')).toEqual([])
+    expect(issues.find((row) => row.path[0] === 'projectId')?.message).toMatch(/Выберите проект/i)
   })
 })
