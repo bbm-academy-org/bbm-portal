@@ -13,6 +13,7 @@ import {
   groupRequestsByStatus,
   ownRequests,
   planRequestDrop,
+  postingActNeedsMoneyFacts,
   requestCardFlags,
   REQUEST_BOARD_COLUMNS,
 } from '@/app/(platform)/p/finance/requests/request-board-model'
@@ -200,5 +201,74 @@ describe('what the member is told after filing (spec 339 EARS-508/509/526)', () 
     for (const payload of [undefined, null, {}, { data: {} }]) {
       expect(filedRequestNotification(payload).description).not.toContain('Ждут')
     }
+  })
+})
+
+/**
+ * EARS-533 — which act has to ask for the money facts before it posts.
+ *
+ * Derived from spec 339's acceptance scenario 3: the pre-spend request is filed
+ * with no account and no date, approval posts nothing, and the confirmation is
+ * the act that asks «откуда и когда» before the operation exists.
+ */
+describe('the money facts the posting act asks for (spec 339 EARS-533)', () => {
+  const document = {
+    id: 1,
+    filename: 'receipt.pdf',
+    mime: 'application/pdf',
+    size: 10,
+    kind: 'fiscal_receipt' as const,
+    uploadedAt: '2026-09-03T10:00:00.000Z',
+  }
+  const preSpend = item({ status: 'approved', occurredOn: null, account: null })
+
+  it('EARS-533: the confirmation of a pre-spend request asks for them', () => {
+    expect(postingActNeedsMoneyFacts({ ...preSpend, documents: [document] }, 'confirm')).toBe(true)
+  })
+
+  it('EARS-506/511/533: an approval that only AUTHORISES asks for nothing — it posts nothing', () => {
+    expect(postingActNeedsMoneyFacts({ ...preSpend, status: 'submitted' }, 'approve')).toBe(false)
+    expect(postingActNeedsMoneyFacts(preSpend, 'refuse')).toBe(false)
+  })
+
+  it('EARS-510/533: an approval that posts in one act does ask for them', () => {
+    expect(
+      postingActNeedsMoneyFacts(
+        { ...preSpend, status: 'submitted', documents: [document] },
+        'approve',
+      ),
+    ).toBe(true)
+  })
+
+  it('EARS-511/533: an «уже потрачено» request is posted from what it already said', () => {
+    const spent = item({
+      status: 'approved',
+      alreadyPaid: true,
+      occurredOn: '2026-08-22',
+      account: { id: 1, name: 'Банк RUB', currency: 'RUB' },
+      documents: [document],
+    })
+    expect(postingActNeedsMoneyFacts(spent, 'confirm')).toBe(false)
+  })
+
+  it('EARS-513/533: own funds name no company account, and that is not a missing one', () => {
+    const own = item({
+      status: 'approved',
+      alreadyPaid: true,
+      personalFunds: true,
+      occurredOn: '2026-08-22',
+      account: null,
+      documents: [document],
+    })
+    expect(postingActNeedsMoneyFacts(own, 'confirm')).toBe(false)
+  })
+
+  it('EARS-533: an undated intent sorts above the dated cards of its column, not below them', () => {
+    const groups = groupRequestsByStatus([
+      item({ id: 1, occurredOn: '2026-08-22' }),
+      item({ id: 2, occurredOn: null }),
+      item({ id: 3, occurredOn: '2026-09-01' }),
+    ])
+    expect(groups.submitted.map((request) => request.id)).toEqual([2, 3, 1])
   })
 })

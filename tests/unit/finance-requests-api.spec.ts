@@ -306,8 +306,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(BASE, {
         method: 'POST',
         body: JSON.stringify({
-          occurredOn: '2026-09-01',
-          accountId: 7,
           amount: '4500000',
           currency: 'RUB',
           purposeId: 11,
@@ -344,8 +342,6 @@ describe('/p/finance/api/requests writes', () => {
       .mockResolvedValueOnce({ ...request, id: 51, status: 'draft' })
     const route = await import('@/app/(platform)/p/finance/api/requests/route')
     const body = JSON.stringify({
-      occurredOn: '2026-09-01',
-      accountId: 7,
       amount: '4500000',
       currency: 'RUB',
       purposeId: 11,
@@ -385,8 +381,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(BASE, {
         method: 'POST',
         body: JSON.stringify({
-          occurredOn: '2026-09-01',
-          accountId: 7,
           amount: '4500000',
           currency: 'RUB',
           purposeId: 11,
@@ -417,8 +411,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(BASE, {
         method: 'POST',
         body: JSON.stringify({
-          occurredOn: '2026-09-01',
-          accountId: 7,
           amount: '120000',
           currency: 'RUB',
           purposeId: 11,
@@ -447,8 +439,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(BASE, {
         method: 'POST',
         body: JSON.stringify({
-          occurredOn: '2026-09-01',
-          accountId: 7,
           amount: '120000',
           currency: 'RUB',
           purposeId: 11,
@@ -479,8 +469,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(BASE, {
         method: 'POST',
         body: JSON.stringify({
-          occurredOn: '2026-09-01',
-          accountId: 7,
           amount: '120000',
           currency: 'RUB',
           purposeProposal: 'Новая статья для площадки',
@@ -517,8 +505,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(BASE, {
         method: 'POST',
         body: JSON.stringify({
-          occurredOn: '2026-09-01',
-          accountId: 7,
           amount: '120000',
           currency: 'RUB',
           purposeId: 11,
@@ -551,8 +537,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(BASE, {
         method: 'POST',
         body: JSON.stringify({
-          occurredOn: '2026-09-01',
-          accountId: 7,
           amount: '120000',
           currency: 'RUB',
           purposeProposal: 'Новая статья для площадки',
@@ -655,8 +639,6 @@ describe('/p/finance/api/requests writes', () => {
       new Request(`${BASE}/41`, {
         method: 'PATCH',
         body: JSON.stringify({
-          occurredOn: '2026-09-02',
-          accountId: 7,
           amount: '4600000',
           currency: 'RUB',
           paidAmount: null,
@@ -696,8 +678,6 @@ describe('/p/finance/api/requests writes', () => {
       .mockResolvedValueOnce({ ...request, status: 'submitted', counterpartyId: 25 })
     const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
     const body = JSON.stringify({
-      occurredOn: '2026-09-02',
-      accountId: 7,
       amount: '4600000',
       currency: 'RUB',
       paidAmount: null,
