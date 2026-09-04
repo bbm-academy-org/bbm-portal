@@ -665,3 +665,113 @@ describe('/p/finance/requests — the money facts belong to the posting act (EAR
     expect(refine.mutate.mock.calls[0][0].values).toEqual({ act: 'approve' })
   })
 })
+
+// The stage-5 UX sanity pass (task-cycle stage 5 item 4) over the frames in
+// `docs/evidence/388/` returned three defects in the states this revision
+// introduced. One of them is real and is fixed by the assertions below; the
+// other two were misreadings of the frames, and the assertions that PROVE them
+// misreadings live here too, so the next reader does not re-open them from the
+// pictures alone.
+describe('/p/finance/requests — the stage-5 UX sanity pass on the posting states', () => {
+  const receipt = {
+    id: 9,
+    filename: 'чек.pdf',
+    mime: 'application/pdf',
+    size: 10,
+    kind: 'fiscal_receipt' as const,
+    uploadedAt: '2026-09-03T10:00:00.000Z',
+  }
+
+  function fieldGrid() {
+    const label = screen.getByText('Контрагент')
+    const grid = label.parentElement?.parentElement
+    if (!grid) throw new Error('the field block has no grid container')
+    return grid
+  }
+
+  // DEFECT 3 (real, steps 26 and 30 at 390 px). Two columns inside a 390 px
+  // sheet leave ~180 px per cell, and `truncate` then eats the very words that
+  // ARE the state: «вводится при пр…», «Операционные …». A state the surface
+  // exists to say may not be clipped, so the grid collapses to one column
+  // below `sm` and the value wraps instead of ending in an ellipsis. The
+  // desktop half of the same clipping is #473 item 3, and dropping `truncate`
+  // settles it in the same line of CSS.
+  it('the sheet field grid is ONE column below `sm`, so a 390 px reader sees the whole state', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 8, status: 'submitted', occurredOn: null, account: null })],
+    })
+    renderBoard()
+    openCard(8)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    const grid = fieldGrid()
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.className).toContain('sm:grid-cols-2')
+    expect(grid.className).not.toMatch(/(^|\s)grid-cols-2(\s|$)/)
+  })
+
+  it('a field VALUE wraps rather than being clipped — «вводится при проведении» is never «вводится при пр…»', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 9, status: 'submitted', occurredOn: null, account: null })],
+    })
+    renderBoard()
+    openCard(9)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    for (const value of screen.getAllByText('вводится при проведении')) {
+      const paragraph = value.closest('p')
+      expect(paragraph).not.toBeNull()
+      expect(paragraph?.className).not.toContain('truncate')
+    }
+  })
+
+  // DEFECT 1 (NOT a defect — a misreading of `27..29-*-desktop-dark.png`, where
+  // the two footer buttons are 24 px tall in a 1440 px frame). The dialog's
+  // dominant CTA is the kit's `default` variant and «Отмена» its `outline` one,
+  // the same pair the sheet footer uses. Pinned as data attributes so the
+  // question is answered by a test and not by squinting at a screenshot again.
+  it('the posting dialog carries the primary CTA and a secondary «Отмена», like the sheet footer', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 10, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
+      ],
+    })
+    renderBoard()
+    openCard(10)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
+
+    const posting = await screen.findByRole('dialog', { name: /Провести заявку №10/ })
+    const cta = within(posting).getByRole('button', { name: 'Провести' })
+    expect(cta.getAttribute('data-variant')).toBe('default')
+    expect(cta.getAttribute('type')).toBe('submit')
+    expect(
+      within(posting).getByRole('button', { name: 'Отмена' }).getAttribute('data-variant'),
+    ).toBe('outline')
+    // The kit's own interaction treatment, not a hand-rolled one: the frames of
+    // step 31 show no change under the forced pseudo-states because the capture
+    // forced them on the SHEET's «Приложить документ» behind the dialog (the
+    // diff between 29 and each 31 frame sits at x≈1080–1256, y≈730–773), not
+    // because the CTA lacks the states.
+    expect(cta.className).toContain('hover:bg-primary/80')
+    expect(cta.className).toContain('focus-visible:ring-ring/50')
+    expect(cta.className).toContain('active:not-aria-[haspopup]:translate-y-px')
+  })
+
+  // DEFECT 2 (NOT a defect either): the dialog DOES take focus off the sheet
+  // when it opens, so `:focus-visible` on its CTA is reachable by keyboard.
+  it('opening the posting dialog moves focus INTO it, off the sheet behind', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 11, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
+      ],
+    })
+    renderBoard()
+    openCard(11)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
+
+    const posting = await screen.findByRole('dialog', { name: /Провести заявку №11/ })
+    await waitFor(() => expect(posting.contains(document.activeElement)).toBe(true))
+  })
+})
