@@ -13,7 +13,10 @@ import {
   toRequestBody,
   type RequestFormValue,
 } from '@/app/(platform)/p/finance/requests/request-form-model'
-import type { RequestBoardReferences } from '@/app/(platform)/p/finance/requests/request-board-contract'
+import type {
+  RequestBoardItem,
+  RequestBoardReferences,
+} from '@/app/(platform)/p/finance/requests/request-board-contract'
 
 const references: RequestBoardReferences = {
   accounts: [
@@ -40,19 +43,31 @@ const references: RequestBoardReferences = {
   ],
 }
 
+/**
+ * A PRE-SPEND request — the default shape since the owner's 2026-09-03 ruling
+ * (#388): an intent names no paying account and no money date (EARS-508/533).
+ */
 function value(overrides: Partial<RequestFormValue> = {}): RequestFormValue {
   return {
     ...requestFormDefaults(references),
-    occurredOn: '2026-08-22',
     amount: '45 000,00',
     currency: 'RUB',
-    accountId: '1',
     purposeId: '21',
     projectId: '3',
     productId: '11',
     counterpartyId: '7',
     ...overrides,
   }
+}
+
+/** «Уже потрачено» — the one variant that still carries both in the form. */
+function spent(overrides: Partial<RequestFormValue> = {}): RequestFormValue {
+  return value({
+    alreadyPaid: true,
+    occurredOn: '2026-08-22',
+    accountId: '1',
+    ...overrides,
+  })
 }
 
 describe('request form money conversion (spec 339 EARS-508)', () => {
@@ -78,15 +93,17 @@ describe('request form money conversion (spec 339 EARS-508)', () => {
   })
 })
 
-describe('request form contract (spec 339 EARS-508/513/526/532)', () => {
+describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
   const schema = createRequestFormSchema(references)
 
-  it('EARS-508: accepts the filled contract and hands the API minor units', () => {
+  it('EARS-508/533: files a pre-spend request without a paying account or a money date', () => {
     const parsed = schema.safeParse(value())
     expect(parsed.success).toBe(true)
     expect(toRequestBody(value(), references)).toMatchObject({
-      occurredOn: '2026-08-22',
-      accountId: 1,
+      occurredOn: null,
+      accountId: null,
+      paidAmount: null,
+      paidCurrency: null,
       amount: '4500000',
       currency: 'RUB',
       purposeId: 21,
@@ -98,29 +115,78 @@ describe('request form contract (spec 339 EARS-508/513/526/532)', () => {
     })
   })
 
+  it('EARS-533: a blank form offers no money date at all — «today» would be a guess', () => {
+    expect(requestFormDefaults(references).occurredOn).toBe('')
+  })
+
+  it('EARS-533: sends neither fact even when the fields still hold what a ticked-then-unticked box left', () => {
+    const stale = value({ accountId: '1', occurredOn: '2026-08-22', paidAmount: '2 100,00' })
+    expect(schema.safeParse(stale).success).toBe(true)
+    expect(toRequestBody(stale, references)).toMatchObject({
+      occurredOn: null,
+      accountId: null,
+      paidAmount: null,
+      paidCurrency: null,
+    })
+  })
+
+  it('EARS-508: an «уже потрачено» request still names the date and how it was paid', () => {
+    expect(schema.safeParse(spent()).success).toBe(true)
+    expect(toRequestBody(spent(), references)).toMatchObject({
+      occurredOn: '2026-08-22',
+      accountId: 1,
+      alreadyPaid: true,
+    })
+    expect(schema.safeParse(spent({ occurredOn: '' })).success).toBe(false)
+    expect(schema.safeParse(spent({ accountId: '' })).success).toBe(false)
+  })
+
   it('EARS-508: requires the account-side amount only where the paying account is in another currency', () => {
-    expect(schema.safeParse(value({ accountId: '2' })).success).toBe(false)
-    const cross = value({ accountId: '2', paidAmount: '2 100,00' })
+    expect(schema.safeParse(spent({ accountId: '2' })).success).toBe(false)
+    const cross = spent({ accountId: '2', paidAmount: '2 100,00' })
     expect(schema.safeParse(cross).success).toBe(true)
     expect(toRequestBody(cross, references)).toMatchObject({
       paidAmount: '210000',
       paidCurrency: 'THB',
     })
-    expect(toRequestBody(value(), references).paidAmount).toBeNull()
+    expect(toRequestBody(spent(), references).paidAmount).toBeNull()
   })
 
   it('EARS-513: takes personal funds only for money already spent and with no company account', () => {
     expect(schema.safeParse(value({ personalFunds: true, alreadyPaid: false })).success).toBe(false)
-    expect(
-      schema.safeParse(value({ personalFunds: true, alreadyPaid: true, accountId: '1' })).success,
-    ).toBe(false)
-    const own = value({ personalFunds: true, alreadyPaid: true, accountId: '' })
+    expect(schema.safeParse(spent({ personalFunds: true, accountId: '1' })).success).toBe(false)
+    const own = spent({ personalFunds: true, accountId: '' })
     expect(schema.safeParse(own).success).toBe(true)
     expect(toRequestBody(own, references).accountId).toBeNull()
   })
 
-  it('EARS-508: insists on a paying account for money that did not leave a member card', () => {
-    expect(schema.safeParse(value({ accountId: '' })).success).toBe(false)
+  it('EARS-533: reopens a filed pre-spend request with both money fields still empty', () => {
+    const filed: RequestBoardItem = {
+      id: 5,
+      own: true,
+      status: 'submitted',
+      occurredOn: null,
+      amount: '4500000',
+      currency: 'RUB',
+      paidAmount: null,
+      paidCurrency: null,
+      note: null,
+      alreadyPaid: false,
+      personalFunds: false,
+      refusalReason: null,
+      operationId: null,
+      purpose: null,
+      project: { id: 3, name: 'Doctor.School' },
+      product: null,
+      account: null,
+      counterparty: null,
+      documents: [],
+    }
+    expect(requestFormDefaults(references, filed)).toMatchObject({
+      occurredOn: '',
+      accountId: '',
+      alreadyPaid: false,
+    })
   })
 
   it('EARS-526: takes a purpose from the reference or a proposal, never both and never neither', () => {

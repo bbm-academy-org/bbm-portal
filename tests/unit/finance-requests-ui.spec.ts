@@ -515,3 +515,117 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(within(sheet).getByText('Документ не приложен.')).toBeTruthy()
   })
 })
+
+/**
+ * EARS-508/533 — a request is an INTENT (owner ruling, Антон, 2026-09-03, #388).
+ *
+ * Derived from spec 339's acceptance scenario 3: the form asks a pre-spend
+ * request for no account and no date, the card shows neither, and the
+ * confirmation is the act that asks for them — refusing readably while either
+ * is missing.
+ */
+describe('/p/finance/requests — the money facts belong to the posting act (EARS-508/533)', () => {
+  const receipt = {
+    id: 9,
+    filename: 'чек.pdf',
+    mime: 'application/pdf',
+    size: 10,
+    kind: 'fiscal_receipt' as const,
+    uploadedAt: '2026-09-03T10:00:00.000Z',
+  }
+
+  it('EARS-508/533: the form asks for no paying account and no money date until «уже потрачено»', async () => {
+    renderBoard()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const form = screen.getByRole('dialog')
+
+    expect(within(form).queryByText('Счёт списания')).toBeNull()
+    expect(within(form).queryByText('Дата движения денег')).toBeNull()
+    expect(within(form).getByText(/впишет финансовая роль в момент проведения/i)).toBeTruthy()
+
+    fireEvent.click(within(form).getByRole('checkbox', { name: /Уже потрачено/i }))
+    await waitFor(() => expect(within(form).getByText('Счёт списания')).toBeTruthy())
+    expect(within(form).getByText('Дата движения денег')).toBeTruthy()
+  })
+
+  it('EARS-533: the card and the sheet name the emptiness instead of printing it as a value', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 4, status: 'submitted', occurredOn: null, account: null })],
+    })
+    renderBoard()
+    expect(screen.getAllByText(/деньги ещё не двигались/i).length).toBeGreaterThan(0)
+
+    openCard(4)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).getAllByText('вводится при проведении').length).toBe(2)
+    expect(within(sheet).queryByText('22.08.2026')).toBeNull()
+  })
+
+  it('EARS-533: the confirmation asks for the account and the date, and refuses while either is missing', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 5, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
+      ],
+    })
+    renderBoard()
+    openCard(5)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
+
+    const posting = await screen.findByRole('dialog', { name: /Провести заявку №5/ })
+    fireEvent.click(within(posting).getByRole('button', { name: 'Провести' }))
+    await waitFor(() =>
+      expect(within(posting).getByText('Выберите счёт, с которого ушли деньги.')).toBeTruthy(),
+    )
+    expect(within(posting).getByText('Укажите дату, когда деньги действительно ушли.')).toBeTruthy()
+    expect(refine.mutate).not.toHaveBeenCalled()
+  })
+
+  it('EARS-533: the act carries the account and the date the finance role entered', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 6, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
+      ],
+    })
+    renderBoard()
+    openCard(6)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
+    const posting = await screen.findByRole('dialog', { name: /Провести заявку №6/ })
+
+    fireEvent.click(within(posting).getByRole('combobox'))
+    fireEvent.click(await screen.findByRole('option', { name: /Банк RUB/ }))
+    fireEvent.change(within(posting).getByLabelText('Дата движения денег'), {
+      target: { value: '2026-09-01' },
+    })
+    fireEvent.click(within(posting).getByRole('button', { name: 'Провести' }))
+
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0]).toMatchObject({
+      url: '/p/finance/api/requests/6/actions',
+      values: {
+        act: 'confirm',
+        accountId: 1,
+        occurredOn: '2026-09-01',
+        paidAmount: null,
+        paidCurrency: null,
+      },
+    })
+  })
+
+  it('EARS-506/511/533: an approval that only authorises asks for nothing and sends nothing', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 7, status: 'submitted', occurredOn: null, account: null })],
+    })
+    renderBoard()
+    openCard(7)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Одобрить' }))
+
+    expect(screen.queryByRole('dialog', { name: /Провести заявку/ })).toBeNull()
+    expect(refine.mutate).toHaveBeenCalledTimes(1)
+    expect(refine.mutate.mock.calls[0][0].values).toEqual({ act: 'approve' })
+  })
+})
