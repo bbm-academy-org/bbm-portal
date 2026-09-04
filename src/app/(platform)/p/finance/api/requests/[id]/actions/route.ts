@@ -31,13 +31,36 @@ const moneyDetailsShape = {
   paidCurrency: z.string().trim().min(1).max(12).nullable().optional(),
 }
 
-const actionSchema = z.discriminatedUnion('act', [
-  z.object({ act: z.literal('submit') }),
-  z.object({ act: z.literal('cancel') }),
-  z.object({ act: z.literal('approve'), ...moneyDetailsShape }),
-  z.object({ act: z.literal('confirm'), ...moneyDetailsShape }),
-  z.object({ act: z.literal('refuse'), reason: z.string().trim().min(1).max(2_000) }),
-])
+/**
+ * The charged amount and the currency it was charged in are ONE fact in two
+ * columns, and the ledger says so itself: `finance_intake_item_paid_pair`
+ * CHECKs that the two are null together and set together. Named apart in a
+ * body they would reach that CHECK and come back as a 500 the caller cannot
+ * read — so the pair is refused here, in the same 400 shape every other
+ * malformed body gets.
+ */
+const actionSchema = z
+  .discriminatedUnion('act', [
+    z.object({ act: z.literal('submit') }),
+    z.object({ act: z.literal('cancel') }),
+    z.object({ act: z.literal('approve'), ...moneyDetailsShape }),
+    z.object({ act: z.literal('confirm'), ...moneyDetailsShape }),
+    z.object({ act: z.literal('refuse'), reason: z.string().trim().min(1).max(2_000) }),
+  ])
+  .superRefine((value, context) => {
+    if (value.act !== 'approve' && value.act !== 'confirm') return
+    // Three states, not two: absent (the fact is not being touched), null (it is
+    // being cleared) and set. The CHECK compares nullness, so both facts must be
+    // in the SAME state — clearing one while setting the other breaks it too.
+    const named = (fact: string | null | undefined) =>
+      fact === undefined ? 'absent' : fact === null ? 'null' : 'set'
+    if (named(value.paidAmount) === named(value.paidCurrency)) return
+    context.addIssue({
+      code: 'custom',
+      path: ['paidAmount'],
+      message: 'Сумма списания и её валюта называются только вместе.',
+    })
+  })
 
 /** Only the keys the caller really named — an absent fact is not `undefined` data. */
 function moneyDetails(input: {
