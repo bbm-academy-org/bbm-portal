@@ -259,6 +259,27 @@ export type IntakeMoneyFactsState = {
  * validate a merged edit, refuse a posting), and a rule copied into three
  * `if` ladders is a rule that drifts. Null means «nothing missing».
  */
+/**
+ * The charged pair is ONE fact (spec 339, Cross-currency payments): a sum in the
+ * account's currency and that currency are entered together or not at all.
+ *
+ * Pure and exported because the rule has two moments, not one — filing, where
+ * `assertItemShape` raises it, and the posting act, where the money facts arrive
+ * from the poster and the row invariant `finance_intake_item_paid_pair` would
+ * otherwise abort the transaction with a constraint name instead of a sentence
+ * (#388 review round 2).
+ */
+export function intakePaidPairRefusal(state: {
+  paidAmount: bigint | null
+  paidCurrency: string | null
+}): string | null {
+  if ((state.paidAmount === null) === (state.paidCurrency === null)) return null
+  return (
+    'Вторая сумма записывается парой «сумма + валюта»: обе стороны кросс-валютного платежа — ' +
+    'факты, и ни одна не вычисляется по курсу (спека 339, Cross-currency payments).'
+  )
+}
+
 export function intakeMoneyFactsRefusal(
   state: IntakeMoneyFactsState,
   options: { posting?: boolean } = {},
@@ -332,12 +353,8 @@ function assertItemShape(state: {
   if (typeof state.currency !== 'string' || state.currency.trim() === '') {
     throw new FinanceRefusal('Валюта документа обязательна.')
   }
-  if ((state.paidAmount === null) !== (state.paidCurrency === null)) {
-    throw new FinanceRefusal(
-      'Вторая сумма записывается парой «сумма + валюта»: обе стороны кросс-валютного платежа — ' +
-        'факты, и ни одна не вычисляется по курсу (спека 339, Cross-currency payments).',
-    )
-  }
+  const paidPair = intakePaidPairRefusal(state)
+  if (paidPair !== null) throw new FinanceRefusal(paidPair)
   if ((state.feeAmount === null) !== (state.feeCurrency === null)) {
     throw new FinanceRefusal('Комиссия записывается парой «сумма + валюта».')
   }

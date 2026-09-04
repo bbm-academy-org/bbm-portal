@@ -39,6 +39,7 @@ import {
   applyIntakePostingDetails,
   assertIntakePostingSnapshot,
   createIntakePostingSnapshot,
+  namesIntakePostingMoneyFacts,
   postIntakeItem,
   type IntakePostingMoneyDetails,
 } from './posting'
@@ -441,11 +442,7 @@ export async function approveExpenseRequest(
   if (documents.length === 0) {
     // Authorization only: nothing posts, so the EARS-533 money facts have
     // nowhere to be written and are refused rather than quietly dropped.
-    if (
-      options.occurredOn !== undefined ||
-      options.accountId !== undefined ||
-      options.paidAmount !== undefined
-    ) {
+    if (namesIntakePostingMoneyFacts(options)) {
       throw new FinanceRefusal(
         `Заявка #${id} ещё без подтверждающего документа: одобрение только авторизует трату, ` +
           'а счёт и дату вводят в момент проведения (EARS-506/511/533).',

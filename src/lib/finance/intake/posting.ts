@@ -56,6 +56,7 @@ import {
 import {
   intakeItemToView,
   intakeMoneyFactsRefusal,
+  intakePaidPairRefusal,
   lockIntakeItem,
   type FinanceIntakeItemView,
 } from './items'
@@ -160,6 +161,23 @@ export function applyIntakePostingDetails<T extends FinanceIntakeItemView>(
   }
 }
 
+/**
+ * Does the act name ANY of the four money facts EARS-533 defers to posting?
+ *
+ * The four are one list, and every caller that asks the question must ask it of
+ * the whole list: `approveExpenseRequest`'s no-document guard kept its own copy
+ * without `paidCurrency` and would have dropped a body that named only the
+ * currency instead of refusing it (#388 review round 2).
+ */
+export function namesIntakePostingMoneyFacts(details: IntakePostingMoneyDetails): boolean {
+  return (
+    details.occurredOn !== undefined ||
+    details.accountId !== undefined ||
+    details.paidAmount !== undefined ||
+    details.paidCurrency !== undefined
+  )
+}
+
 type PostIntakeItemOptions = IntakePostingMoneyDetails & {
   /** EARS-510: approve a submitted expense request and post it in this transaction. */
   approveSubmittedRequest?: boolean
@@ -200,12 +218,10 @@ export async function postIntakeItem(
           '(EARS-510). Остальные позиции сначала проходят обычный approved.',
       )
     }
-    const namesMoneyFacts =
-      options.occurredOn !== undefined ||
-      options.accountId !== undefined ||
-      options.paidAmount !== undefined ||
-      options.paidCurrency !== undefined
-    if (namesMoneyFacts && (item.source !== 'request' || item.kind !== 'expense')) {
+    if (
+      namesIntakePostingMoneyFacts(options) &&
+      (item.source !== 'request' || item.kind !== 'expense')
+    ) {
       throw new FinanceRefusal(
         'Счёт списания и фактическая дата вводятся в момент проведения только у заявки на ' +
           'расход (EARS-508/511/533).',
@@ -221,6 +237,11 @@ export async function postIntakeItem(
     // EARS-533: the gate. Everything below reads one date and one payer.
     const moneyFacts = intakeMoneyFactsRefusal(withDetails, { posting: true })
     if (moneyFacts !== null) throw new FinanceRefusal(moneyFacts)
+    // The charged pair belongs to the same gate: a caller of the module's own
+    // API may half-name it, and without this the row invariant aborts the
+    // transaction with a constraint name (#388 review round 2).
+    const paidPair = intakePaidPairRefusal(withDetails)
+    if (paidPair !== null) throw new FinanceRefusal(paidPair)
     if (options.expectedSnapshot !== undefined) {
       await assertIntakePostingSnapshot(tx, withDetails, options.expectedSnapshot)
     }

@@ -130,8 +130,26 @@ export function productFieldMode(
 ): 'hidden' | 'options' | 'empty' {
   const purpose = purposeOf(references, purposeId)
   if (purpose === null || purpose.productBinding === 'forbidden') return 'hidden'
+  // No project yet — and `empty` is a statement ABOUT a project («that one has
+  // no products»). Said before the member picked one it is advice to change a
+  // choice that does not exist; the field order is «Назначение» → «Проект» →
+  // «Продукт», so this is the normal state, not a corner (#388 review round 2).
+  if (projectId === '') return 'hidden'
   if (productOptions(references, purposeId, projectId).length > 0) return 'options'
   return purpose.productBinding === 'required' ? 'empty' : 'hidden'
+}
+
+/**
+ * The FACT the description carries — «у проекта «X» нет продуктов» — as against
+ * the instruction the refusal carries. Two slots under one field said the same
+ * 20-word sentence twice, which at 390 px is four lines said twice (#388 review
+ * round 2, #473 item 7); each slot now carries its own half.
+ */
+export function productEmptyFact(references: RequestBoardReferences, projectId: string): string {
+  const project = projectOf(references, projectId)
+  return project === null
+    ? 'У выбранного проекта нет продуктов.'
+    : `У проекта «${project.name}» нет продуктов.`
 }
 
 /** The message the empty-and-required product field carries, in one place. */
@@ -214,7 +232,13 @@ export function createRequestFormSchema(references: RequestBoardReferences) {
     }
 
     const purpose = purposeOf(references, value.purposeId)
-    if (purpose?.productBinding === 'required' && value.productId === '') {
+    // Nothing is asked about the product while the project it depends on is
+    // unanswered: the form's one refusal there is «Выберите проект.».
+    if (
+      purpose?.productBinding === 'required' &&
+      value.productId === '' &&
+      value.projectId !== ''
+    ) {
       const empty = productFieldMode(references, value.purposeId, value.projectId) === 'empty'
       context.addIssue({
         code: 'custom',
