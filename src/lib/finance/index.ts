@@ -238,6 +238,7 @@ export {
   detachFinanceDocument,
   FinanceDocumentUploadPending,
   listFinanceDocuments,
+  listFinanceDocumentsByItems,
   readFinanceDocument,
   resumeFinanceDocumentUpload,
   setFinanceDocumentKind,

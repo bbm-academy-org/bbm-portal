@@ -10,12 +10,13 @@ import {
   listCounterparties,
   listCurrencies,
   listExpenseRequests,
-  listFinanceDocuments,
+  listFinanceDocumentsByItems,
   listProducts,
   listProjects,
   listPurposeProposals,
   listPurposes,
   registerEntriesByIds,
+  type FinanceDocumentView,
   type FinanceIntakeItemView,
 } from '@/lib/finance'
 import { findMemberByEmail, getMembersByIds } from '@/lib/member'
@@ -56,7 +57,7 @@ function serializeItem(
       }
     >
     actorMemberId: number | null
-    documents: Awaited<ReturnType<typeof listFinanceDocuments>>
+    documents: FinanceDocumentView[]
   },
 ) {
   const purpose = item.purposeId === null ? null : (context.purposes.get(item.purposeId) ?? null)
@@ -192,10 +193,14 @@ export async function GET(): Promise<Response> {
         requests.flatMap((request) => (request.operationId === null ? [] : [request.operationId])),
       ),
     ]
-    const [members, documents, register] = await Promise.all([
+    // ONE read for the whole board, not one transaction per row (#470): a
+    // transaction holds a pooled client, so a per-row fan-out exhausted the pool
+    // and deadlocked the request on a board of ten or more.
+    const [members, documentsByItem, register] = await Promise.all([
       getMembersByIds(memberIds),
-      Promise.all(
-        requests.map((request) => listFinanceDocuments(actor, { intakeItemId: request.id })),
+      listFinanceDocumentsByItems(
+        actor,
+        requests.map((request) => request.id),
       ),
       registerEntriesByIds(operationIds),
     ])
@@ -248,7 +253,7 @@ export async function GET(): Promise<Response> {
             productBinding,
           })),
       },
-      requests: requests.map((request, index) =>
+      requests: requests.map((request) =>
         serializeItem(request, {
           accounts: accountMap,
           counterparties: counterpartyMap,
@@ -260,7 +265,7 @@ export async function GET(): Promise<Response> {
           members: memberMap,
           operations: operationMap,
           actorMemberId: actorMember?.id ?? null,
-          documents: documents[index],
+          documents: documentsByItem.get(request.id) ?? [],
         }),
       ),
       liabilities: debts.map((debt) => ({
