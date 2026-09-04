@@ -12,6 +12,15 @@ posting act. Every step whose picture that ruling changed was RE-TAKEN under its
 own filename (05, 06, 09, 18, 19, 20, 21, 22) and eight new states were added
 (23–31).
 
+**A THIRD, narrow pass at head `3a08136`** re-drove four states in place, after
+the review round that produced `fa09f96` (the impossible product is said, not
+swallowed) and `3a08136` (the sheet says the state whole at 390 px): **26** and
+**30** because the field grid now collapses to one column below `sm` and wraps
+instead of truncating; **31** because the previous take forced the pseudo-states
+on the WRONG node — the sheet's «Приложить документ», sitting behind the dialog —
+and the CTA that was being accepted was never lit; and **32**, new, for the
+refusal the silent dead-end became.
+
 **The stand.** `http://localhost:3000`, the lead's listener from
 `.claude/worktrees/388` on `feat/388-requests-board-blocks`; data from that
 worktree's own branch DB `platform_388` (migration `0015_finance_intake_money_facts`
@@ -60,6 +69,7 @@ state), never hoped for from a pointer.
 | 29   | the dialog filled — «Банк RUB» and 2026-09-03, the act ready to run                                       |
 | 30   | the SAME request after the act — «Счёт списания: Банк RUB», «Дата движения денег: 03.09.2026», operation  |
 | 31   | the posting dialog's «Провести» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both) |
+| 32   | «Продажи курса» on «Фонд BBM» — the product field DISABLED with its reason, and the refusal on submit     |
 
 Steps 14 and 31 are set through one `CSS.forcePseudoState` CDP session per state
 on the located element, never hoped for from a pointer.
@@ -99,12 +109,40 @@ before being written down:
 - **Step 19 exists at desktop-light only.** Posting is a one-way transition on the
   fixture — a request posts once — so the act cannot be replayed per breakpoint.
   The state it LEAVES BEHIND (30) is captured at all four combinations.
-- **At 390 px the two-column field grid truncates its values** («вводится при
-  п…», «ООО «Мосарен…»). It is the `truncate` rule doing its job in a 2-column
-  grid on a narrow sheet, and it is visible in 18/26/30-mobile — recorded here so
-  the frames are not read as a rendering failure.
+- **The 390 px clipping of the field grid is GONE as of `3a08136`.** The block is
+  one column below `sm` and the value WRAPS; 26- and 30-mobile now read «вводится
+  при проведении» and «Банк RUB» / «03.09.2026» whole, and the desktop half of the
+  same clipping (#473 item 3 — «Операционные …») is gone with it, because
+  `truncate` was the single cause of both. The earlier note in this file said the
+  truncation was the rule doing its job; it was the bug, and these frames are the
+  ones that replace it.
+- **Step 31 was forced on the WRONG NODE the first time.** `DOM.querySelector`
+  from the document root matched the SHEET's «Приложить документ» — still in the
+  DOM behind the dialog — so three frames were promoted in which nothing inside
+  the dialog changed. The retake resolves the node in two hops
+  (`[data-slot="dialog-content"]` → `[data-slot="dialog-footer"] button[type="submit"]`,
+  one CDP session per state) and then PROVES it by diffing each frame against the
+  unforced base: every changed pixel falls inside the CTA's own box
+  (x 810.7–896.0, y 576.5–608.5 at 1440×900) — hover 2304/2361 px, focus-visible
+  928 px in a ring 4 px outside the box, active 664/658 px, light/dark. Nothing
+  changed anywhere else on the screen, which is the assertion the first take could
+  not make.
+- **Steps 27–29 were re-observed live at desktop-dark and NOT re-taken.** The
+  dialog's «Провести» is the filled primary (`data-variant="default"`) and
+  «Отмена» the outline, in both themes — the frames on file already show that.
 
-**Rows this run changed in `platform_388`** (recorded so the next reader is not
+**Rows the THIRD pass changed in `platform_388`.** Two, both through the UI:
+**#16** (seeded, approved, already carrying its own money facts) was POSTED — the
+first attempt at step 31 used it, and an approved request that already knows its
+account and date posts straight from «Провести» with no dialog at all, which is
+`postingActNeedsMoneyFacts` working exactly as written. **#69** (a pre-spend
+intent of the second pass) was approved and given `receipt-388.pdf` twice — the
+attach block stays available after a document is attached, so the second theme's
+run added a second copy; it is visible in the sheet BEHIND the dialog in
+`31-*-dark`. Neither touches the states being accepted. Step 32 filed nothing:
+the form is refused, which is the point.
+
+**Rows the second pass changed in `platform_388`** (recorded so the next reader is not
 surprised). The second pass filed 10 requests through the form — five pre-spend
 intents (one per capture combo plus a first take) and five proposal drafts — and
 drove one of them, **#65**, end to end: approved, given `receipt-388.pdf`, and
@@ -117,16 +155,26 @@ dev IdP logins from `pnpm platform:member:seed` — without a `core.member` row
 every write act on this board is refused, and `pnpm dev:seed`'s registry of 64
 people does not include `bbm-test@bbm.local`.
 
-**A defect this pass found and did NOT promote a frame for.** «Новая заявка» can
-dead-end silently: pick a purpose whose `product_binding` is `required`
-(«Продажи курса», «Партнёрская программа», «Продажи встреч BBM») together with a
-project that has no products («Фонд BBM»), and the «Продукт» select is not
-rendered at all (`productOptions` is empty) while the schema still demands
-`productId`. «Подать заявку» then does nothing, forever, with no message anywhere
-on the form — the failing field has no `<FormMessage>` on screen to land in. It
-reproduces on every combination of those three purposes with «Фонд BBM», and it
-is not new to the money-facts revision. The capture used «Операционные расходы»
-(`forbidden`) so the journey could proceed.
+**The defect the second pass found is FIXED, and step 32 is its frame.** «Новая
+заявка» used to dead-end silently: a purpose whose `product_binding` is `required`
+(«Продажи курса», «Партнёрская программа», «Продажи встреч BBM») on a project with
+no products («Фонд BBM») removed the «Продукт» select entirely (`productOptions`
+was empty) while the schema still demanded `productId`, so «Подать заявку» did
+nothing and said nothing. Since `fa09f96` the model answers the question itself
+(`productFieldMode`) and the field STAYS on the form in its empty state — a
+disabled select reading «У проекта нет продуктов» plus the reason — which is where
+the refusal now lands. Step 32 drives exactly that pair, submits, and shows the
+form still open with the message under the field, at both breakpoints and both
+themes.
+
+**One observation on step 32, not a defect.** The sentence «Это назначение требует
+продукт, а у проекта «Фонд BBM» нет продуктов — выберите другой проект или другое
+назначение.» is on screen TWICE after the submit: once as the field's
+`FormDescription` (there before the submit, in muted text) and once as its
+`FormMessage` (in destructive red). That is the deliberate consequence of
+`productEmptyMessage` being one string used in both places, and it reads as
+emphasis rather than as an error; it is recorded here so the frame is not read as
+a double-render bug.
 
 **The journey scripts are not committed** — they were bound to this seed dataset
 and deleted with the run, the same call #434 and #437 made; `DEBT.md` already
