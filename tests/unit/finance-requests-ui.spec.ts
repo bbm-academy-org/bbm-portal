@@ -407,7 +407,9 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'Фонд BBM' }))
 
     await waitFor(() => expect(within(form).getByText('Продукт')).toBeTruthy())
-    expect(within(form).getByText(/нет продуктов/i)).toBeTruthy()
+    // The empty control and the description both name it; the point is that the
+    // field is on the form at all.
+    expect(within(form).getAllByText(/нет продуктов/i).length).toBeGreaterThan(0)
 
     fireEvent.click(within(form).getByRole('button', { name: 'Подать заявку' }))
     await waitFor(() =>
