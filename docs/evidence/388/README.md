@@ -42,7 +42,7 @@ state), never hoped for from a pointer.
 | 01   | `/p/finance` with the «Заявки» link at the title's right edge (`href=/p/finance/requests`)                         |
 | 02   | the board — four columns, live cards in «Ждут», muted archives in «Проведены» / «Отклонены»                        |
 | 03   | the «Обязательства» tab — what BBM owes for spends from members' own money                                         |
-| 04   | the «Мои заявки» tab, EMPTY RESULT: the reader has filed nothing                                                   |
+| 04   | the «Мои заявки» tab — the reader's own filings, including the drafts and the withdrawn                            |
 | 05   | the details sheet of a submitted request — «Одобрить» / «Отклонить…» / the attach block                            |
 | 06   | an APPROVED request with no document: no «Провести» at all, the gate Alert, and the attach form                    |
 | 07   | the refusal dialog — a reason is mandatory (EARS-512), so it is a modal and not a field beside «Одобрить»          |
@@ -188,6 +188,25 @@ there too, because «Выберите проект.» is the whole answer. The f
 курса» picked with «Выберите проект» still on its placeholder and NO «Продукт» field
 anywhere on the form. Picking «Фонд BBM» turns it into step 32 immediately: both
 states were driven in that order, in one run, at all four combinations.
+
+**A FIFTH pass at head `84dbd30`** re-drove the surfaces the BOARD READ paints,
+after the pool deadlock that wedged `GET /p/finance/api/requests` at `6291a7a`
+was fixed (`8d31a30` — one batched documents query on the transaction's own
+executor, plus an explicit pool ceiling). The read was measured live before the
+shutter: **200 in 62–163 ms** on three consecutive reloads and **35–93 ms** on two
+tabs loading at once; no skeleton stuck, no request outstanding. Re-taken in place
+at all four combinations: **02**, **03**, **04**, **05**, **06**, **12**, **13**,
+**20**, **25**, **26**, **30** — every state whose picture the board read draws.
+Nothing else was driven: the acts, the forms and the dialogs (07–11, 14–19, 21–24,
+27–29, 31–33) were left as their own passes took them, and no row in `platform_388`
+was changed by this pass.
+
+**Step 04 lost the word «empty», and the files were renamed with it.** The tab is
+`04-tab-mine-*` now, not `04-tab-mine-empty-*`: `bbm-test` has filed through this
+form since the first pass, so «Мои заявки» legitimately lists its own requests and
+the empty result is no longer reachable on this fixture without a fresh user. The
+frame shows what the tab actually renders — the table of the reader's filings with
+their statuses — which is the state that exists.
 
 **The journey scripts are not committed** — they were bound to this seed dataset
 and deleted with the run, the same call #434 and #437 made; `DEBT.md` already
