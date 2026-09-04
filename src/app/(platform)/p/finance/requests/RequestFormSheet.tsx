@@ -32,7 +32,7 @@ import { Textarea } from '@/ui/textarea'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
 import {
   createRequestFormSchema,
-  productEmptyMessage,
+  productEmptyFact,
   productFieldMode,
   productOptions,
   requestFormDefaults,
@@ -237,9 +237,7 @@ export function RequestFormSheet({
                           <SelectItem value={NONE}>У проекта нет продуктов</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>
-                        {productEmptyMessage(references, projectId)}
-                      </FormDescription>
+                      <FormDescription>{productEmptyFact(references, projectId)}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
