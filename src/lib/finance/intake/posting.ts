@@ -53,11 +53,26 @@ import {
   requireCurrency,
   type FinanceAccountView,
 } from '../references'
-import { intakeItemToView, lockIntakeItem, type FinanceIntakeItemView } from './items'
+import {
+  intakeItemToView,
+  intakeMoneyFactsRefusal,
+  intakePaidPairRefusal,
+  lockIntakeItem,
+  type FinanceIntakeItemView,
+} from './items'
 
-type PostingItem = Omit<FinanceIntakeItemRow, 'kind' | 'source'> & {
+/**
+ * The row as the ledger writers may read it.
+ *
+ * `occurredOn` is narrowed to a non-null string on purpose: the COLUMN is
+ * nullable since EARS-533 (an unposted pre-spend request has no money date),
+ * but nothing downstream of `postIntakeItem`'s gate may branch on that — the
+ * gate refuses first, and every writer below keeps reading one date.
+ */
+type PostingItem = Omit<FinanceIntakeItemRow, 'kind' | 'source' | 'occurredOn'> & {
   kind: FinanceIntakeKind
   source: FinanceIntakeSource
+  occurredOn: string
 }
 
 type PostingSnapshotDocument = {
@@ -110,13 +125,60 @@ function canonicalizeJson(value: unknown): unknown {
   )
 }
 
-type PostIntakeItemOptions = {
+/**
+ * The money facts a request cannot know, supplied by the posting act (EARS-533).
+ *
+ * They are OPTIONS of the posting rather than a prior edit for the reason the
+ * status machine gives: written here they land inside the posting transaction,
+ * so the item never passes through a state whose approval covers data it has
+ * not seen, and nothing bounces.
+ */
+export type IntakePostingMoneyDetails = {
+  /** The account the money really left; `personal_funds` names none. */
+  accountId?: number | null
+  /** The account-side amount where the account is in another currency. */
+  paidAmount?: bigint | null
+  paidCurrency?: string | null
   /**
    * The actual money date supplied by EARS-511's confirmation act. It is
    * written with the posting in this transaction, so the sanctioned approved
    * edit never exists as an intermediate state and never bounces approval.
    */
   occurredOn?: string
+}
+
+/** The item as it will post — the row with the act's money facts applied. */
+export function applyIntakePostingDetails<T extends FinanceIntakeItemView>(
+  item: T,
+  details: IntakePostingMoneyDetails,
+): T {
+  return {
+    ...item,
+    ...(details.occurredOn === undefined ? {} : { occurredOn: details.occurredOn }),
+    ...(details.accountId === undefined ? {} : { accountId: details.accountId }),
+    ...(details.paidAmount === undefined ? {} : { paidAmount: details.paidAmount }),
+    ...(details.paidCurrency === undefined ? {} : { paidCurrency: details.paidCurrency }),
+  }
+}
+
+/**
+ * Does the act name ANY of the four money facts EARS-533 defers to posting?
+ *
+ * The four are one list, and every caller that asks the question must ask it of
+ * the whole list: `approveExpenseRequest`'s no-document guard kept its own copy
+ * without `paidCurrency` and would have dropped a body that named only the
+ * currency instead of refusing it (#388 review round 2).
+ */
+export function namesIntakePostingMoneyFacts(details: IntakePostingMoneyDetails): boolean {
+  return (
+    details.occurredOn !== undefined ||
+    details.accountId !== undefined ||
+    details.paidAmount !== undefined ||
+    details.paidCurrency !== undefined
+  )
+}
+
+type PostIntakeItemOptions = IntakePostingMoneyDetails & {
   /** EARS-510: approve a submitted expense request and post it in this transaction. */
   approveSubmittedRequest?: boolean
   /** The exact request/document identity approved by the verifier (EARS-510/531). */
@@ -156,27 +218,43 @@ export async function postIntakeItem(
           '(EARS-510). Остальные позиции сначала проходят обычный approved.',
       )
     }
-    if (options.occurredOn !== undefined) {
-      if (item.source !== 'request' || item.kind !== 'expense') {
-        throw new FinanceRefusal(
-          'Фактическая дата в момент подтверждения меняется только у заявки на расход ' +
-            '(EARS-508/511).',
-        )
-      }
-      if (!ISO_DATE.test(options.occurredOn)) {
-        throw new FinanceRefusal(
-          `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
-            '(EARS-508/511).',
-        )
-      }
+    if (
+      namesIntakePostingMoneyFacts(options) &&
+      (item.source !== 'request' || item.kind !== 'expense')
+    ) {
+      throw new FinanceRefusal(
+        'Счёт списания и фактическая дата вводятся в момент проведения только у заявки на ' +
+          'расход (EARS-508/511/533).',
+      )
     }
+    if (options.occurredOn !== undefined && !ISO_DATE.test(options.occurredOn)) {
+      throw new FinanceRefusal(
+        `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
+          '(EARS-508/511/533).',
+      )
+    }
+    const withDetails = applyIntakePostingDetails(intakeItemToView(item), options)
+    // EARS-533: the gate. Everything below reads one date and one payer.
+    const moneyFacts = intakeMoneyFactsRefusal(withDetails, { posting: true })
+    if (moneyFacts !== null) throw new FinanceRefusal(moneyFacts)
+    // The charged pair belongs to the same gate: a caller of the module's own
+    // API may half-name it, and without this the row invariant aborts the
+    // transaction with a constraint name (#388 review round 2).
+    const paidPair = intakePaidPairRefusal(withDetails)
+    if (paidPair !== null) throw new FinanceRefusal(paidPair)
+    if (options.expectedSnapshot !== undefined) {
+      await assertIntakePostingSnapshot(tx, withDetails, options.expectedSnapshot)
+    }
+    // Built from the ROW plus the act's money facts, not from the view: the
+    // ledger writers below read row fields the view does not carry, and a cast
+    // of the view would hand them `undefined` without a type error.
     const postingItem = {
       ...item,
-      occurredOn: options.occurredOn ?? item.occurredOn,
+      occurredOn: withDetails.occurredOn,
+      accountId: withDetails.accountId,
+      paidAmount: withDetails.paidAmount,
+      paidCurrency: withDetails.paidCurrency,
     } as PostingItem
-    if (options.expectedSnapshot !== undefined) {
-      await assertIntakePostingSnapshot(tx, intakeItemToView(postingItem), options.expectedSnapshot)
-    }
     await assertRequestPurposeReady(tx, item.id)
     await requireReadyDocument(tx, item.id)
     const postedBy = await requireActorMemberId(tx, actor)
@@ -187,6 +265,9 @@ export async function postIntakeItem(
       .set({
         status: 'posted',
         occurredOn: postingItem.occurredOn,
+        accountId: postingItem.accountId,
+        paidAmount: postingItem.paidAmount,
+        paidCurrency: postingItem.paidCurrency,
         ...(approveAndPost ? { decidedBy: postedBy, decidedAt: postedAt } : {}),
         operationId: operation.id,
         postedBy,

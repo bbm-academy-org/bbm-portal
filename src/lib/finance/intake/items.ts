@@ -63,7 +63,8 @@ export type FinanceIntakeItemView = {
   sourceRef: string | null
   kind: FinanceIntakeKind
   status: FinanceIntakeStatus
-  occurredOn: string
+  /** Null while an unposted pre-spend request has no money date yet (EARS-533). */
+  occurredOn: string | null
   accountId: number | null
   counterAccountId: number | null
   amount: bigint
@@ -112,7 +113,8 @@ export class FinanceIntakeDuplicate extends FinanceRefusal {
 export type CreateIntakeItemInput = {
   source: FinanceIntakeSource
   kind: FinanceIntakeKind
-  occurredOn: string
+  /** Omitted (or null) only by a pre-spend request — EARS-533. */
+  occurredOn?: string | null
   amount: bigint
   currency: string
   projectId: number
@@ -234,6 +236,75 @@ export function intakeItemToView(
   }
 }
 
+/** What EARS-533 reads: who paid, when, and whether either may still be unknown. */
+export type IntakeMoneyFactsState = {
+  source: string
+  alreadyPaid: boolean
+  personalFunds: boolean
+  accountId: number | null
+  occurredOn: string | null
+}
+
+/**
+ * EARS-533 as ONE predicate, used at filing, at editing and at posting.
+ *
+ * Owner ruling (Антон, 2026-09-03, #388): «заявка — это намерение, а не
+ * платёж». A pre-spend request therefore knows neither the paying account nor
+ * the date money moved, and both are entered by the finance role at the posting
+ * act. Everything else — a manual line, a backfill row, an «уже потрачено»
+ * request, and ANY item about to post — names both.
+ *
+ * Written as a returned message rather than a thrown refusal because the same
+ * sentence has three callers with three different verbs (validate a create,
+ * validate a merged edit, refuse a posting), and a rule copied into three
+ * `if` ladders is a rule that drifts. Null means «nothing missing».
+ */
+/**
+ * The charged pair is ONE fact (spec 339, Cross-currency payments): a sum in the
+ * account's currency and that currency are entered together or not at all.
+ *
+ * Pure and exported because the rule has two moments, not one — filing, where
+ * `assertItemShape` raises it, and the posting act, where the money facts arrive
+ * from the poster and the row invariant `finance_intake_item_paid_pair` would
+ * otherwise abort the transaction with a constraint name instead of a sentence
+ * (#388 review round 2).
+ */
+export function intakePaidPairRefusal(state: {
+  paidAmount: bigint | null
+  paidCurrency: string | null
+}): string | null {
+  if ((state.paidAmount === null) === (state.paidCurrency === null)) return null
+  return (
+    'Вторая сумма записывается парой «сумма + валюта»: обе стороны кросс-валютного платежа — ' +
+    'факты, и ни одна не вычисляется по курсу (спека 339, Cross-currency payments).'
+  )
+}
+
+export function intakeMoneyFactsRefusal(
+  state: IntakeMoneyFactsState,
+  options: { posting?: boolean } = {},
+): string | null {
+  if (state.personalFunds && state.accountId !== null) {
+    return (
+      'Позиция с «оплачено своими средствами» не называет счёт компании: деньги ушли не с ' +
+      'него, а встречной ногой станет системный счёт обязательства (EARS-513).'
+    )
+  }
+  const preSpendRequest = state.source === 'request' && !state.alreadyPaid
+  if (preSpendRequest && options.posting !== true) return null
+
+  const missing: string[] = []
+  if (!state.personalFunds && state.accountId === null) missing.push('счёт списания')
+  if (state.occurredOn === null) missing.push('дата движения денег')
+  if (missing.length === 0) return null
+
+  return options.posting === true
+    ? `Провести нечего, пока не названы: ${missing.join(', ')}. Эти факты вводит финансовая ` +
+        'роль в момент проведения — заявка их не знает (EARS-533).'
+    : `Позиция обязана назвать: ${missing.join(', ')}. Пустыми они бывают только у заявки на ` +
+        'будущую трату — той, где «уже потрачено» не отмечено (EARS-508/533).'
+}
+
 /**
  * The money/dimension shape every intake item must satisfy, whatever the source.
  *
@@ -242,8 +313,9 @@ export function intakeItemToView(
  * person reads.
  */
 function assertItemShape(state: {
+  source: string
   kind: string
-  occurredOn: string
+  occurredOn: string | null
   amount: bigint
   currency: string
   accountId: number | null
@@ -260,7 +332,7 @@ function assertItemShape(state: {
       `Вид позиции «${state.kind}» не из набора приёмки: ${FINANCE_INTAKE_KINDS.join(', ')}.`,
     )
   }
-  if (typeof state.occurredOn !== 'string' || !ISO_DATE.test(state.occurredOn)) {
+  if (state.occurredOn !== null && !ISO_DATE.test(String(state.occurredOn))) {
     throw new FinanceRefusal(
       `Дата «${String(state.occurredOn)}» записана не в формате ГГГГ-ММ-ДД. В приёмке это ` +
         'ВСЕГДА дата движения денег, а не дата документа (EARS-508).',
@@ -281,12 +353,8 @@ function assertItemShape(state: {
   if (typeof state.currency !== 'string' || state.currency.trim() === '') {
     throw new FinanceRefusal('Валюта документа обязательна.')
   }
-  if ((state.paidAmount === null) !== (state.paidCurrency === null)) {
-    throw new FinanceRefusal(
-      'Вторая сумма записывается парой «сумма + валюта»: обе стороны кросс-валютного платежа — ' +
-        'факты, и ни одна не вычисляется по курсу (спека 339, Cross-currency payments).',
-    )
-  }
+  const paidPair = intakePaidPairRefusal(state)
+  if (paidPair !== null) throw new FinanceRefusal(paidPair)
   if ((state.feeAmount === null) !== (state.feeCurrency === null)) {
     throw new FinanceRefusal('Комиссия записывается парой «сумма + валюта».')
   }
@@ -303,15 +371,8 @@ function assertItemShape(state: {
         'компании записан никому, и обязательство перед человеком (EARS-513) не прочитать.',
     )
   }
-  if (state.personalFunds !== (state.accountId === null)) {
-    throw new FinanceRefusal(
-      state.personalFunds
-        ? 'Позиция с «оплачено своими средствами» не называет счёт компании: деньги ушли не с ' +
-            'него, а встречной ногой станет системный счёт обязательства (EARS-513).'
-        : 'Позиция обязана назвать счёт, с которого ушли деньги — пустым он бывает ровно у ' +
-            '«оплачено своими средствами» (EARS-513).',
-    )
-  }
+  const moneyFacts = intakeMoneyFactsRefusal(state)
+  if (moneyFacts !== null) throw new FinanceRefusal(moneyFacts)
 }
 
 /** Who this actor is in `core.member` — every intake row names its author. */
@@ -362,7 +423,7 @@ export async function createIntakeItem(
   const values = {
     source: input.source,
     kind: input.kind,
-    occurredOn: input.occurredOn,
+    occurredOn: input.occurredOn ?? null,
     accountId: input.accountId ?? null,
     counterAccountId: input.counterAccountId ?? null,
     amount: input.amount,
@@ -586,6 +647,7 @@ export async function editIntakeItem(
 
     const next = { ...row, ...patch }
     assertItemShape({
+      source: next.source,
       kind: next.kind,
       occurredOn: next.occurredOn,
       amount: next.amount,

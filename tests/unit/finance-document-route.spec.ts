@@ -71,9 +71,9 @@ async function resume(id: string, bytes = Buffer.from('%PDF-1.7\nfixture')): Pro
   })
 }
 
-async function read(id: string): Promise<Response> {
+async function read(id: string, query = ''): Promise<Response> {
   const route = await import('@/app/(platform)/p/finance/api/documents/[id]/route')
-  return route.GET(new Request(`${URL}/${id}`), { params: Promise.resolve({ id }) })
+  return route.GET(new Request(`${URL}/${id}${query}`), { params: Promise.resolve({ id }) })
 }
 
 function validForm(bytes: Uint8Array = Buffer.from('%PDF-1.7\nfixture')): FormData {
@@ -257,6 +257,49 @@ describe('finance document read response (spec 339 EARS-523)', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-length')).toBe(
       String(Buffer.from('%PDF-1.7\nfixture').byteLength),
+    )
+  })
+
+  it('keeps direct reads as safe downloads and permits authenticated inline PDF reading explicitly', async () => {
+    routeState.read.mockResolvedValue({
+      id: 17,
+      filename: "owner's Q3 (final).pdf",
+      mime: 'application/pdf',
+      size: 999,
+      kind: 'ru_invoice',
+      uploadedBy: 1,
+      uploadedAt: new Date('2026-08-28T00:00:00Z'),
+      bytes: Buffer.from('%PDF-1.7\nfixture'),
+    })
+
+    const download = await read('17')
+    const inline = await read('17', '?disposition=inline')
+
+    expect(download.headers.get('content-disposition')).toBe(
+      "attachment; filename*=UTF-8''owner%27s%20Q3%20%28final%29.pdf",
+    )
+    expect(inline.headers.get('content-disposition')).toBe(
+      "inline; filename*=UTF-8''owner%27s%20Q3%20%28final%29.pdf",
+    )
+    expect(routeState.read).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not turn non-PDF documents inline even when the flag is supplied', async () => {
+    routeState.read.mockResolvedValue({
+      id: 18,
+      filename: 'receipt.png',
+      mime: 'image/png',
+      size: 4,
+      kind: 'bank_screenshot',
+      uploadedBy: 1,
+      uploadedAt: new Date('2026-08-28T00:00:00Z'),
+      bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    })
+
+    const response = await read('18', '?disposition=inline')
+
+    expect(response.headers.get('content-disposition')).toBe(
+      "attachment; filename*=UTF-8''receipt.png",
     )
   })
 })
