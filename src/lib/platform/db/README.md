@@ -205,6 +205,11 @@ schema/<module>/     per-module table files (see schema/README.md)
 migrations/          generated SQL + drizzle's journal — COMMITTED
 ```
 
+**The pool's `max` is explicit in `client.ts` (10, pg's own default)** — it is the
+ceiling on CONCURRENT TRANSACTIONS, so code that opens a transaction per row or
+asks the pool for a second client from inside a transaction deadlocks rather
+than slows down once it is reached (#470).
+
 `drizzle.config.ts` deliberately does not sit at the repo root: a root-level
 `drizzle.config.ts` reads as "the project's drizzle config", and this project
 contains a second, unrelated drizzle inside `@payloadcms/db-postgres` that it
