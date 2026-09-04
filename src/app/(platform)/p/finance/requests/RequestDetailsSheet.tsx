@@ -1,5 +1,6 @@
 'use client'
 
+import { zodResolver } from '@hookform/resolvers/zod'
 import { XIcon } from 'lucide-react'
 import React from 'react'
 import { useForm } from 'react-hook-form'
@@ -16,7 +17,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/ui/dialog'
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/ui/form'
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/ui/form'
 import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
@@ -46,10 +55,34 @@ import {
   DOCUMENT_UPLOAD_ACCEPT,
   documentUploadRefusal,
   formatRequestMoney,
+  postingActNeedsMoneyFacts,
 } from './request-board-model'
 import type { FinanceRequestBoardAct } from './request-board-model'
+import {
+  createPostingFormSchema,
+  postingFormDefaults,
+  toPostingBody,
+  type PostingFormValue,
+} from './request-form-model'
 
 export type RequestAct = FinanceRequestBoardAct | 'submit' | 'cancel'
+
+/**
+ * What an act carries besides its name.
+ *
+ * `reason` is EARS-512's mandatory refusal reason; the four money fields are
+ * EARS-533's — the facts a request cannot know, entered by the finance role in
+ * the same act that posts. They travel WITH the act rather than as a prior
+ * edit, which is what keeps the write inside the posting transaction (the
+ * status machine's one sanctioned in-`approved` write).
+ */
+export type RequestActPayload = {
+  reason?: string
+  accountId?: number | null
+  occurredOn?: string
+  paidAmount?: string | null
+  paidCurrency?: string | null
+}
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -171,6 +204,161 @@ function AttachDocumentForm({
 }
 
 /**
+ * «Провести» — the POSTING act's own three questions (EARS-533).
+ *
+ * WHY A DIALOG AND NOT THREE MORE FIELDS IN THE PANE. Owner ruling (Антон,
+ * 2026-09-03, #388): a request is an intent, so the paying account and the date
+ * money moved are not properties of the request at all — they are what the
+ * finance role asserts in the act of posting. Asking them inline would put
+ * editable money fields on a card that is already approved, i.e. exactly the
+ * edit the status machine bounces; asking them in the act's own modal makes the
+ * write part of the act, the way the refusal reason is part of the refusal.
+ *
+ * WHAT IT ASKS AND WHAT IT DOES NOT. The account, unless the spend was made
+ * from the member's own card (EARS-513 — then there is no company account to
+ * name, and the field is absent rather than disabled); the date; and the
+ * account-side amount only where the chosen account is in another currency than
+ * the document — which is why the schema is rebuilt as the account changes.
+ * Everything the request already said is NOT re-asked (EARS-511).
+ */
+function PostingDialog({
+  request,
+  references,
+  act,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  request: RequestBoardItem
+  references: RequestBoardReferences
+  act: FinanceRequestBoardAct
+  pending: boolean
+  onConfirm: (payload: RequestActPayload) => void
+  onCancel: () => void
+}) {
+  const schema = React.useMemo(
+    () => createPostingFormSchema(references, request),
+    [references, request],
+  )
+  const form = useForm<PostingFormValue>({
+    resolver: zodResolver(schema),
+    defaultValues: postingFormDefaults(references, request),
+    mode: 'onSubmit',
+  })
+  const accountId = form.watch('accountId')
+  const account = references.accounts.find((row) => String(row.id) === accountId) ?? null
+  const crossCurrency = account !== null && account.currency !== request.currency
+
+  return (
+    <Dialog open onOpenChange={(open) => (open ? undefined : onCancel())}>
+      <DialogContent data-bbm-ui>
+        <DialogHeader>
+          <DialogTitle>Провести заявку №{request.id}</DialogTitle>
+          <DialogDescription>
+            {act === 'approve'
+              ? 'Одобрение и проводка одним актом: назовите, откуда и когда ушли деньги.'
+              : 'Заявка была намерением. Назовите, откуда и когда деньги ушли на самом деле.'}
+          </DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form
+            className="space-y-4"
+            noValidate
+            onSubmit={form.handleSubmit((value) =>
+              onConfirm(toPostingBody(value, references, request)),
+            )}
+          >
+            {request.personalFunds ? (
+              <Alert role="status">
+                <AlertDescription>
+                  Оплачено своими средствами: счёта компании у этой траты нет — встречной ногой
+                  станет обязательство перед участником.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <FormField
+                control={form.control}
+                name="accountId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Счёт списания</FormLabel>
+                    <Select
+                      value={field.value === '' ? undefined : field.value}
+                      disabled={pending}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Выберите счёт" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent data-bbm-ui>
+                        {references.accounts.map((row) => (
+                          <SelectItem key={row.id} value={String(row.id)}>
+                            {row.name} · {row.currency}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            <FormField
+              control={form.control}
+              name="occurredOn"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Дата движения денег</FormLabel>
+                  <FormControl>
+                    <Input {...field} type="date" disabled={pending} />
+                  </FormControl>
+                  <FormDescription>
+                    День, когда деньги действительно ушли, — не дата документа.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {crossCurrency ? (
+              <FormField
+                control={form.control}
+                name="paidAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Списано со счёта, {account.currency}</FormLabel>
+                    <FormControl>
+                      <Input {...field} inputMode="decimal" disabled={pending} placeholder="0,00" />
+                    </FormControl>
+                    <FormDescription>
+                      Счёт в {account.currency}, документ в {request.currency} — нужна фактически
+                      списанная сумма.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
+                Отмена
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? 'Проводим…' : 'Провести'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
  * The details sheet — the RIGHT HALF of the picked layout D, and the place
  * where every act happens.
  *
@@ -186,7 +374,10 @@ function AttachDocumentForm({
  * refusal is a modal with a mandatory reason (EARS-512), because a reason typed
  * into the same pane as the approve button is a reason typed by accident; a
  * `posted` request shows its ledger operation instead of controls, since the
- * ledger is immutable; and the missing document is not merely REPORTED but
+ * ledger is immutable; a pre-spend request shows «вводится при проведении» in
+ * place of the account and the date it genuinely does not have (EARS-533 —
+ * «no surface shall render either emptiness as a value»), and the act that
+ * posts asks for them in its own dialog; and the missing document is not merely REPORTED but
  * fixable here — «Приложить документ» (EARS-511) sits in the document block for
  * everyone allowed to add one, which is what lets the pre-spend path reach
  * `posted` without leaving the screen.
@@ -213,7 +404,7 @@ export function RequestDetailsSheet({
   pendingAct: RequestAct | null
   uploading: boolean
   uploadFailure?: string
-  onAct: (act: RequestAct, reason?: string) => void
+  onAct: (act: RequestAct, payload?: RequestActPayload) => void
   onAttach: (file: File, kind: FinanceDocumentKind) => void
   onEdit: () => void
   onClose: () => void
@@ -226,8 +417,31 @@ export function RequestDetailsSheet({
   const [refusing, setRefusing] = React.useState(pendingAct === 'refuse')
   const [reason, setReason] = React.useState('')
   const [reasonError, setReasonError] = React.useState<string | null>(null)
+  // Same «initialised, not synchronised» rule as the refusal dialog above: a
+  // drag onto «Проведены» mounts this component with the posting act already
+  // chosen, so its dialog opens with the sheet rather than after it.
+  const [posting, setPosting] = React.useState<FinanceRequestBoardAct | null>(
+    request !== null &&
+      (pendingAct === 'confirm' || pendingAct === 'approve') &&
+      postingActNeedsMoneyFacts(request, pendingAct)
+      ? pendingAct
+      : null,
+  )
 
   if (request === null) return null
+
+  /**
+   * An act that POSTS and finds the money facts missing asks for them first
+   * (EARS-533); every other act runs straight away. The board never sends the
+   * facts with an act that only authorises — the server refuses them there.
+   */
+  const startAct = (act: FinanceRequestBoardAct) => {
+    if (postingActNeedsMoneyFacts(request, act)) setPosting(act)
+    else onAct(act)
+  }
+
+  const preSpendPending = request.occurredOn === null
+  const undecidedMoney = <span className="text-muted-foreground">вводится при проведении</span>
 
   const precision = currencyPrecision(references.currencies, request.currency)
   const hasDocument = request.documents.length > 0
@@ -254,7 +468,9 @@ export function RequestDetailsSheet({
           <SheetDescription>
             {[
               request.createdByName,
-              `подана ${formatDate(request.occurredOn)}`,
+              request.occurredOn === null
+                ? 'деньги ещё не двигались'
+                : `деньги ушли ${formatDate(request.occurredOn)}`,
               REQUEST_STATUS_LABELS[request.status],
             ]
               .filter(Boolean)
@@ -274,10 +490,19 @@ export function RequestDetailsSheet({
             <Field
               label="Счёт списания"
               value={
-                request.personalFunds ? 'Свои средства участника' : (request.account?.name ?? '—')
+                request.personalFunds
+                  ? 'Свои средства участника'
+                  : request.account !== null
+                    ? request.account.name
+                    : preSpendPending
+                      ? undecidedMoney
+                      : '—'
               }
             />
-            <Field label="Дата движения денег" value={formatDate(request.occurredOn)} />
+            <Field
+              label="Дата движения денег"
+              value={request.occurredOn === null ? undecidedMoney : formatDate(request.occurredOn)}
+            />
             <Field
               label="Назначение"
               value={request.purpose?.name ?? request.proposal?.text ?? '—'}
@@ -385,12 +610,12 @@ export function RequestDetailsSheet({
 
         <SheetFooter className="flex-row flex-wrap items-center gap-2">
           {canApproveNow ? (
-            <Button disabled={pending} onClick={() => onAct('approve')}>
+            <Button disabled={pending} onClick={() => startAct('approve')}>
               Одобрить
             </Button>
           ) : null}
           {canConfirm ? (
-            <Button disabled={pending} onClick={() => onAct('confirm')}>
+            <Button disabled={pending} onClick={() => startAct('confirm')}>
               Провести
             </Button>
           ) : null}
@@ -415,6 +640,17 @@ export function RequestDetailsSheet({
             </Button>
           ) : null}
         </SheetFooter>
+
+        {posting === null ? null : (
+          <PostingDialog
+            request={request}
+            references={references}
+            act={posting}
+            pending={pending}
+            onConfirm={(payload) => onAct(posting, payload)}
+            onCancel={() => setPosting(null)}
+          />
+        )}
 
         <Dialog open={refusing} onOpenChange={setRefusing}>
           <DialogContent data-bbm-ui>
@@ -453,7 +689,7 @@ export function RequestDetailsSheet({
                     setReasonError('Укажите причину отказа.')
                     return
                   }
-                  onAct('refuse', reason.trim())
+                  onAct('refuse', { reason: reason.trim() })
                 }}
               >
                 Отклонить заявку

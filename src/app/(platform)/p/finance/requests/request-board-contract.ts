@@ -15,7 +15,11 @@ export type RequestBoardItem = {
   id: number
   own: boolean
   status: FinanceIntakeStatus
-  occurredOn: string
+  /**
+   * The date money moved — NULL while an unposted pre-spend request has none
+   * (EARS-533). No surface renders that emptiness as a value.
+   */
+  occurredOn: string | null
   amount: string
   currency: string
   paidAmount: string | null
@@ -69,7 +73,9 @@ export type RequestsSnapshot = {
 }
 
 export type CreateRequestBody = {
-  occurredOn: string
+  /** Null for a pre-spend request: the posting act supplies it (EARS-533). */
+  occurredOn: string | null
+  /** Null for own funds, and for a pre-spend request that names none yet. */
   accountId: number | null
   amount: string
   currency: string

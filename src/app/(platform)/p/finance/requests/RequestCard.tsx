@@ -77,10 +77,14 @@ export function RequestCard({
           .filter(Boolean)
           .join(' · ')}
       </span>
+      {/* A pre-spend request has no money date (EARS-533) and the card says so
+          in words — printing «—» where a date belongs would read as a value. */}
       <span className="text-xs text-muted-foreground">
         {request.status === 'posted' && request.operation
           ? `операция в реестре · ${formatDate(request.operation.occurredOn)}`
-          : formatDate(request.occurredOn)}
+          : request.occurredOn === null
+            ? 'деньги ещё не двигались'
+            : formatDate(request.occurredOn)}
       </span>
       {request.refusalReason ? (
         <span className="text-xs text-muted-foreground">

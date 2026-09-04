@@ -11,8 +11,8 @@ import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
 export const expenseRequestBodySchema = z
   .object({
-    occurredOn: z.iso.date(),
-    accountId: z.number().int().positive().nullable(),
+    occurredOn: z.iso.date().nullable().optional(),
+    accountId: z.number().int().positive().nullable().optional(),
     amount: z.string().regex(/^\d+$/),
     currency: z.string().trim().min(1).max(12),
     paidAmount: z.string().regex(/^\d+$/).nullable().optional(),
@@ -45,6 +45,31 @@ export const expenseRequestBodySchema = z
       context.addIssue({
         code: 'custom',
         message: 'Оплата своими средствами возможна только для уже потраченных денег.',
+      })
+    }
+    // EARS-533: a request is an INTENT. The paying account and the date money
+    // moved belong to the posting act, and the only request that knows them at
+    // filing is the one marked «уже потрачено».
+    if (!value.alreadyPaid && ((value.accountId ?? null) !== null || value.occurredOn)) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Счёт списания и дата движения денег заполняются, только когда отмечено «уже ' +
+          'потрачено»: заявка на будущую трату их не знает (EARS-508/533).',
+      })
+    }
+    if (value.alreadyPaid && !value.occurredOn) {
+      context.addIssue({
+        code: 'custom',
+        path: ['occurredOn'],
+        message: 'Укажите дату, когда деньги действительно ушли (EARS-508).',
+      })
+    }
+    if (value.alreadyPaid && !value.personalFunds && (value.accountId ?? null) === null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['accountId'],
+        message: 'Укажите счёт списания или отметьте «оплачено своими средствами» (EARS-508).',
       })
     }
   })
@@ -90,8 +115,8 @@ export function expenseRequestInput(
   counterpartyId: number,
 ): CreateExpenseRequestInput {
   return {
-    occurredOn: body.occurredOn,
-    accountId: body.accountId,
+    occurredOn: body.occurredOn ?? null,
+    accountId: body.accountId ?? null,
     amount: BigInt(body.amount),
     currency: body.currency,
     paidAmount: body.paidAmount ? BigInt(body.paidAmount) : null,

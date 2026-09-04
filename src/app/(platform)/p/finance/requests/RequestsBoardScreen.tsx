@@ -22,7 +22,7 @@ import {
 } from './constants'
 import { LiabilityPanel } from './LiabilityPanel'
 import { RequestCard } from './RequestCard'
-import { RequestDetailsSheet, type RequestAct } from './RequestDetailsSheet'
+import { RequestDetailsSheet, type RequestAct, type RequestActPayload } from './RequestDetailsSheet'
 import { RequestFormSheet } from './RequestFormSheet'
 import type { RequestBoardItem, RequestsSnapshot } from './request-board-contract'
 import {
@@ -168,12 +168,15 @@ export function RequestsBoardScreen() {
   )
 
   const runAct = React.useCallback(
-    (request: RequestBoardItem, act: RequestAct, reason?: string) => {
+    (request: RequestBoardItem, act: RequestAct, payload?: RequestActPayload) => {
       mutate(
         {
           url: `${REQUESTS_ENDPOINT}/${request.id}/actions`,
           method: 'post',
-          values: reason === undefined ? { act } : { act, reason },
+          // The act's own fields travel with it: EARS-512's reason, and the
+          // EARS-533 money facts the posting act enters. An act that names none
+          // sends none — an absent fact is not a null the server has to read.
+          values: { act, ...(payload ?? {}) },
           successNotification: {
             type: 'success',
             message: ACT_DONE[act],
@@ -411,7 +414,11 @@ export function RequestsBoardScreen() {
                     {mine.map((request) => (
                       <TableRow key={request.id}>
                         <TableCell className="tabular-nums">
-                          {formatDate(request.occurredOn)}
+                          {request.occurredOn === null ? (
+                            <span className="text-muted-foreground">не двигались</span>
+                          ) : (
+                            formatDate(request.occurredOn)
+                          )}
                         </TableCell>
                         <TableCell>{request.note ?? request.purpose?.name ?? '—'}</TableCell>
                         <TableCell className="text-right tabular-nums">
@@ -472,7 +479,7 @@ export function RequestsBoardScreen() {
           pendingAct={pendingAct}
           uploading={uploading}
           uploadFailure={uploadFailure}
-          onAct={(act, reason) => runAct(selected, act, reason)}
+          onAct={(act, payload) => runAct(selected, act, payload)}
           onAttach={(file, kind) => attachDocument(selected, file, kind)}
           onEdit={() => setFormFor(selected.id)}
           onClose={closeSheets}

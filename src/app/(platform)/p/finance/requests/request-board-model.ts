@@ -38,6 +38,27 @@ export function planRequestDrop(
   }
 }
 
+/**
+ * Does this act have to ask the finance role for the money facts first?
+ *
+ * EARS-533: the paying account and the date money moved are the POSTING act's
+ * input, and two acts post — `confirm` always, and `approve` in EARS-510's one
+ * act where the confirming document is already attached. An act that only
+ * AUTHORISES (approve with no document) posts nothing, so it has nowhere to
+ * write them and must not ask: the server refuses them there on purpose.
+ *
+ * An «уже потрачено» request already carries both, so it is posted straight
+ * from what it says — no re-entry of what the request already told us.
+ */
+export function postingActNeedsMoneyFacts(
+  request: RequestBoardItem,
+  act: FinanceRequestBoardAct,
+): boolean {
+  const posts = act === 'confirm' || (act === 'approve' && request.documents.length > 0)
+  if (!posts) return false
+  return request.occurredOn === null || (request.account === null && !request.personalFunds)
+}
+
 export function formatRequestMoney(amount: string, currency: string, precision: number): string {
   const value = BigInt(amount)
   const sign = value < 0n ? '−' : ''
@@ -92,9 +113,11 @@ export function groupRequestsByStatus(requests: readonly RequestBoardItem[]): Re
     if (column !== undefined) column.push(request)
   }
   for (const status of FINANCE_REQUEST_BOARD_STATUSES) {
-    groups[status].sort(
-      (left, right) => right.occurredOn.localeCompare(left.occurredOn) || right.id - left.id,
-    )
+    // A pre-spend request has NO money date (EARS-533). It is not «oldest»: it
+    // is an intent about money that has not moved, so it sorts above every
+    // dated card rather than falling to the bottom of the column.
+    const key = (request: RequestBoardItem) => request.occurredOn ?? '9999-12-31'
+    groups[status].sort((left, right) => key(right).localeCompare(key(left)) || right.id - left.id)
   }
   return groups
 }
