@@ -53,14 +53,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
  * board reads records in.
  *
  * GROUPING IS THE DECISION HERE (owner ruling 2026-09-02; the defect #433 filed
- * against the previous version was «eleven ungrouped fields»). The contract has
- * fourteen inputs and they are not one list: the reader answers three different
- * questions in order — WHAT was bought and for what (purpose, project, product,
- * note), HOW MUCH and from where (amount, currency, account, the account-side
- * amount when the currencies differ), and TO WHOM and WHEN (counterparty,
- * date), with the two payment marks («уже потрачено» / «свои деньги») last
- * because they change what the rest MEANS rather than adding to it. Three
- * headed sections, one separator before the marks.
+ * against the previous version was «eleven ungrouped fields»). The reader
+ * answers two questions and then makes one declaration: WHAT was bought and
+ * for what (purpose, project, product, note), HOW MUCH and to whom (amount,
+ * currency, counterparty) — and then «как оплачено», which is a declaration
+ * rather than another field, because it changes what the rest MEANS.
+ *
+ * A REQUEST IS AN INTENT (owner ruling, Антон, 2026-09-03, #388 — EARS-508/533),
+ * and that is why the money facts now live INSIDE «Как оплачено» instead of in
+ * the sections above: the paying account, the date money moved and the
+ * account-side amount only exist once «Уже потрачено» is ticked. Unticked, the
+ * member is not asked to guess them and the form says who fills them in
+ * instead. Revealing them under the checkbox rather than disabling them is the
+ * choice: a disabled field still reads as something you owe an answer to.
  *
  * CONTROLS ARE THE KIT'S. Every field is `@/ui/form` + the kit control that
  * matches its type — the hand-rolled `NativeSelect` beside `src/ui/select.tsx`
@@ -91,11 +96,12 @@ export function RequestFormSheet({
     mode: 'onSubmit',
   })
 
-  const [currency, accountId, purposeId, projectId, personalFunds] = form.watch([
+  const [currency, accountId, purposeId, projectId, alreadyPaid, personalFunds] = form.watch([
     'currency',
     'accountId',
     'purposeId',
     'projectId',
+    'alreadyPaid',
     'personalFunds',
   ])
   const account = references.accounts.find((row) => String(row.id) === accountId) ?? null
@@ -255,7 +261,7 @@ export function RequestFormSheet({
               />
             </Section>
 
-            <Section title="Сколько и откуда">
+            <Section title="Сколько и кому">
               <div className="grid grid-cols-[minmax(0,1fr)_9rem] gap-3">
                 <FormField
                   control={form.control}
@@ -303,63 +309,6 @@ export function RequestFormSheet({
 
               <FormField
                 control={form.control}
-                name="accountId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Счёт списания</FormLabel>
-                    <Select
-                      value={field.value === '' ? NONE : field.value}
-                      disabled={pending || personalFunds}
-                      onValueChange={(value) => field.onChange(value === NONE ? '' : value)}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Выберите счёт" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent data-bbm-ui>
-                        <SelectItem value={NONE}>Не со счёта BBM</SelectItem>
-                        {references.accounts.map((row) => (
-                          <SelectItem key={row.id} value={String(row.id)}>
-                            {row.name} · {row.currency}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {crossCurrency ? (
-                <FormField
-                  control={form.control}
-                  name="paidAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Списано со счёта, {account.currency}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          inputMode="decimal"
-                          disabled={pending}
-                          placeholder="0,00"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Счёт в {account.currency}, документ в {currency} — нужна фактически
-                        списанная сумма.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : null}
-            </Section>
-
-            <Section title="Кому и когда">
-              <FormField
-                control={form.control}
                 name="counterpartyId"
                 render={({ field }) => (
                   <FormItem>
@@ -404,23 +353,6 @@ export function RequestFormSheet({
                   </FormItem>
                 )}
               />
-
-              <FormField
-                control={form.control}
-                name="occurredOn"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Дата движения денег</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="date" disabled={pending} />
-                    </FormControl>
-                    <FormDescription>
-                      Всегда дата, когда деньги двигаются: для будущей траты — ожидаемая.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </Section>
 
             <Separator />
@@ -435,43 +367,137 @@ export function RequestFormSheet({
                       <Checkbox
                         checked={field.value}
                         disabled={pending}
-                        onCheckedChange={(checked) => field.onChange(checked === true)}
-                      />
-                    </FormControl>
-                    <div className="space-y-1">
-                      <FormLabel>Уже потрачено</FormLabel>
-                      <FormDescription>Деньги уже ушли; это подтверждение траты.</FormDescription>
-                      <FormMessage />
-                    </div>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="personalFunds"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start gap-3">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        disabled={pending}
                         onCheckedChange={(checked) => {
-                          field.onChange(checked === true)
-                          if (checked === true) form.setValue('accountId', '')
+                          const on = checked === true
+                          field.onChange(on)
+                          // Unticking must not leave a paying account and a date
+                          // behind in hidden fields — a pre-spend request carries
+                          // neither (EARS-533), and the body it files says so.
+                          if (!on) {
+                            form.setValue('occurredOn', '')
+                            form.setValue('accountId', '')
+                            form.setValue('paidAmount', '')
+                            form.setValue('personalFunds', false)
+                          }
                         }}
                       />
                     </FormControl>
                     <div className="space-y-1">
-                      <FormLabel>Оплачено своими средствами</FormLabel>
+                      <FormLabel>Уже потрачено</FormLabel>
                       <FormDescription>
-                        BBM останется должен эту сумму — долг попадёт в «Обязательства».
+                        {alreadyPaid
+                          ? 'Деньги уже ушли; это подтверждение траты — назовите счёт и дату.'
+                          : 'Деньги ещё не двигались. Счёт списания и дату впишет финансовая роль в момент проведения.'}
                       </FormDescription>
                       <FormMessage />
                     </div>
                   </FormItem>
                 )}
               />
+
+              {alreadyPaid ? (
+                <div className="space-y-4 border-l-2 pl-4">
+                  <FormField
+                    control={form.control}
+                    name="personalFunds"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start gap-3">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            disabled={pending}
+                            onCheckedChange={(checked) => {
+                              field.onChange(checked === true)
+                              if (checked === true) form.setValue('accountId', '')
+                            }}
+                          />
+                        </FormControl>
+                        <div className="space-y-1">
+                          <FormLabel>Оплачено своими средствами</FormLabel>
+                          <FormDescription>
+                            BBM останется должен эту сумму — долг попадёт в «Обязательства».
+                          </FormDescription>
+                          <FormMessage />
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+
+                  {personalFunds ? null : (
+                    <FormField
+                      control={form.control}
+                      name="accountId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Счёт списания</FormLabel>
+                          <Select
+                            value={field.value === '' ? NONE : field.value}
+                            disabled={pending}
+                            onValueChange={(value) => field.onChange(value === NONE ? '' : value)}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Выберите счёт" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent data-bbm-ui>
+                              <SelectItem value={NONE}>Не выбран</SelectItem>
+                              {references.accounts.map((row) => (
+                                <SelectItem key={row.id} value={String(row.id)}>
+                                  {row.name} · {row.currency}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {crossCurrency ? (
+                    <FormField
+                      control={form.control}
+                      name="paidAmount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Списано со счёта, {account.currency}</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              inputMode="decimal"
+                              disabled={pending}
+                              placeholder="0,00"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Счёт в {account.currency}, документ в {currency} — нужна фактически
+                            списанная сумма.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : null}
+
+                  <FormField
+                    control={form.control}
+                    name="occurredOn"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Дата движения денег</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="date" disabled={pending} />
+                        </FormControl>
+                        <FormDescription>
+                          День, когда деньги действительно ушли, — не дата документа.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              ) : null}
             </Section>
 
             <SheetFooter className="flex-row gap-2 px-0">

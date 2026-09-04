@@ -35,13 +35,22 @@ import {
   type FinanceIntakeItemView,
   type ListIntakeItemsFilter,
 } from './items'
-import { assertIntakePostingSnapshot, createIntakePostingSnapshot, postIntakeItem } from './posting'
+import {
+  applyIntakePostingDetails,
+  assertIntakePostingSnapshot,
+  createIntakePostingSnapshot,
+  postIntakeItem,
+  type IntakePostingMoneyDetails,
+} from './posting'
 
 /** The fields the member-facing request form owns (EARS-508). */
 export type CreateExpenseRequestInput = {
-  /** Expected money date for pre-spend; replaced by the actual date at confirmation. */
-  occurredOn: string
-  /** Empty exactly for `personalFunds`. */
+  /**
+   * The date money moved — only an «уже потрачено» request knows it. A
+   * pre-spend request files null and the posting act supplies it (EARS-533).
+   */
+  occurredOn: string | null
+  /** Empty for `personalFunds`, and for a pre-spend request that names none yet. */
   accountId: number | null
   /** Document-side amount and currency. */
   amount: bigint
@@ -62,7 +71,7 @@ export type CreateExpenseRequestInput = {
 export type EditExpenseRequestPatch = Partial<CreateExpenseRequestInput>
 
 type ExpenseRequestState = {
-  occurredOn: string
+  occurredOn: string | null
   accountId: number | null
   amount: bigint
   currency: string
@@ -360,9 +369,7 @@ export const humanFinanceDocumentVerifier: FinanceDocumentVerifier = Object.free
   },
 })
 
-export type ConfirmExpenseRequestOptions = {
-  /** Actual money date, replacing the expected pre-spend date without a bounce. */
-  occurredOn?: string
+export type ConfirmExpenseRequestOptions = IntakePostingMoneyDetails & {
   /** Internal integration seam; v1 callers omit it and use the human verifier. */
   verifier?: FinanceDocumentVerifier
 }
@@ -396,8 +403,10 @@ async function verifyAndPostExpenseRequest(
   options: ConfirmExpenseRequestOptions & { approveSubmittedRequest?: boolean },
 ): Promise<FinanceIntakeItemView> {
   const verifier = options.verifier ?? humanFinanceDocumentVerifier
-  const effectiveRequest =
-    options.occurredOn === undefined ? request : { ...request, occurredOn: options.occurredOn }
+  // The verifier and the poster must see the SAME item — the one carrying the
+  // act's money facts (EARS-533), or the snapshot the verifier signed would not
+  // be the snapshot `postIntakeItem` recomputes.
+  const effectiveRequest = applyIntakePostingDetails(request, options)
   const expectedSnapshot = createIntakePostingSnapshot(effectiveRequest, documents)
   if (verifier.id.trim() === '') {
     throw new FinanceRefusal('Document verifier обязан иметь непустой id (EARS-531).')
@@ -412,6 +421,9 @@ async function verifyAndPostExpenseRequest(
 
   return postIntakeItem(actor, request.id, {
     occurredOn: options.occurredOn,
+    accountId: options.accountId,
+    paidAmount: options.paidAmount,
+    paidCurrency: options.paidCurrency,
     approveSubmittedRequest: options.approveSubmittedRequest,
     expectedSnapshot,
   })
@@ -421,12 +433,24 @@ async function verifyAndPostExpenseRequest(
 export async function approveExpenseRequest(
   actor: FinanceActor,
   id: number,
-  options: Pick<ConfirmExpenseRequestOptions, 'verifier'> = {},
+  options: ConfirmExpenseRequestOptions = {},
 ): Promise<FinanceIntakeItemView> {
   assertFinanceLedgerAccess(actor)
   const request = await requireExpenseRequest(actor, id)
   const documents = await listFinanceDocuments(actor, { intakeItemId: id })
   if (documents.length === 0) {
+    // Authorization only: nothing posts, so the EARS-533 money facts have
+    // nowhere to be written and are refused rather than quietly dropped.
+    if (
+      options.occurredOn !== undefined ||
+      options.accountId !== undefined ||
+      options.paidAmount !== undefined
+    ) {
+      throw new FinanceRefusal(
+        `Заявка #${id} ещё без подтверждающего документа: одобрение только авторизует трату, ` +
+          'а счёт и дату вводят в момент проведения (EARS-506/511/533).',
+      )
+    }
     const expectedSnapshot = createIntakePostingSnapshot(request, documents)
     return (await transitionIntakeItem(actor, id, 'approve', {
       async validate(tx, current) {

@@ -20,6 +20,14 @@ import { currencyPrecision } from './request-board-model'
  * wrong — the shape #434 established for the member form and #433 filed against
  * the previous version of THIS form.
  *
+ * WHAT A REQUEST DOES NOT KNOW (owner ruling, Антон, 2026-09-03, #388 —
+ * EARS-533). A request is an INTENT: the paying account and the date money
+ * moved do not exist yet, and the finance role enters them at the posting act.
+ * So both are conditioned on `alreadyPaid` here rather than merely optional —
+ * the schema demands them exactly where the money has already left, and
+ * `toRequestBody` sends null for a pre-spend request whatever the (hidden)
+ * fields still hold.
+ *
  * The form is typed in MAJOR units — a member types «45 000,00», not 4500000 —
  * and the ledger stores minor units, so the conversion is part of the contract
  * rather than a detail of the submit handler.
@@ -63,7 +71,9 @@ export type RequestFormValue = {
 }
 
 const baseSchema = z.object({
-  occurredOn: z.string().min(1, 'Укажите дату движения денег.'),
+  // Unconditionally optional in the base shape: whether a money date is owed
+  // at all depends on `alreadyPaid` (EARS-533), and that lives in the refinement.
+  occurredOn: z.string(),
   amount: z.string(),
   currency: z.string().min(1, 'Выберите валюту документа.'),
   accountId: z.string(),
@@ -123,19 +133,34 @@ export function createRequestFormSchema(references: RequestBoardReferences) {
         message: 'Трата своими средствами не списывается со счёта BBM.',
       })
     }
-    if (!value.personalFunds && value.accountId === '') {
-      context.addIssue({ code: 'custom', path: ['accountId'], message: 'Выберите счёт списания.' })
-    }
-
-    const account = accountOf(references, value.accountId)
-    if (account !== null && account.currency !== value.currency) {
-      const paidPrecision = currencyPrecision(references.currencies, account.currency)
-      if (toMinorUnits(value.paidAmount, paidPrecision) === null) {
+    // EARS-533: only the request that says the money ALREADY left is asked
+    // who paid and when. A pre-spend request names neither, and the posting
+    // act supplies both.
+    if (value.alreadyPaid) {
+      if (!value.personalFunds && value.accountId === '') {
         context.addIssue({
           code: 'custom',
-          path: ['paidAmount'],
-          message: `Укажите сумму, списанную со счёта в ${account.currency}.`,
+          path: ['accountId'],
+          message: 'Выберите счёт списания.',
         })
+      }
+      if (value.occurredOn.trim() === '') {
+        context.addIssue({
+          code: 'custom',
+          path: ['occurredOn'],
+          message: 'Укажите дату, когда деньги действительно ушли.',
+        })
+      }
+      const account = accountOf(references, value.accountId)
+      if (account !== null && account.currency !== value.currency) {
+        const paidPrecision = currencyPrecision(references.currencies, account.currency)
+        if (toMinorUnits(value.paidAmount, paidPrecision) === null) {
+          context.addIssue({
+            code: 'custom',
+            path: ['paidAmount'],
+            message: `Укажите сумму, списанную со счёта в ${account.currency}.`,
+          })
+        }
       }
     }
 
@@ -188,7 +213,9 @@ export function requestFormDefaults(
 ): RequestFormValue {
   if (request === undefined) {
     return {
-      occurredOn: new Date().toISOString().slice(0, 10),
+      // Blank, not «today»: a pre-spend request has no money date at all, and
+      // a pre-filled one would be a guess the form invented (EARS-533).
+      occurredOn: '',
       amount: '',
       currency: references.currencies[0]?.code ?? 'RUB',
       accountId: '',
@@ -209,7 +236,7 @@ export function requestFormDefaults(
     request.paidCurrency ?? request.currency,
   )
   return {
-    occurredOn: request.occurredOn,
+    occurredOn: request.occurredOn ?? '',
     amount: fromMinorUnits(
       request.amount,
       currencyPrecision(references.currencies, request.currency),
@@ -235,7 +262,10 @@ export function toRequestBody(
   references: RequestBoardReferences,
 ): CreateRequestBody {
   const precision = currencyPrecision(references.currencies, value.currency)
-  const account = accountOf(references, value.accountId)
+  // EARS-533 again, on the way OUT: whatever the hidden fields still hold from
+  // a checkbox the member ticked and unticked, a pre-spend request files no
+  // paying account and no money date.
+  const account = value.alreadyPaid ? accountOf(references, value.accountId) : null
   const crossCurrency = account !== null && account.currency !== value.currency
   const paidPrecision = crossCurrency
     ? currencyPrecision(references.currencies, account.currency)
@@ -244,7 +274,7 @@ export function toRequestBody(
   const counterpartyName = value.counterpartyName.trim()
 
   return {
-    occurredOn: value.occurredOn,
+    occurredOn: value.alreadyPaid && value.occurredOn !== '' ? value.occurredOn : null,
     accountId: account?.id ?? null,
     amount: toMinorUnits(value.amount, precision) ?? '0',
     currency: value.currency,
@@ -259,5 +289,102 @@ export function toRequestBody(
     note: value.note.trim() === '' ? null : value.note.trim(),
     alreadyPaid: value.alreadyPaid,
     personalFunds: value.personalFunds,
+  }
+}
+
+/**
+ * THE POSTING ACT'S OWN FORM (EARS-533) — the finance role's half of the same
+ * separation the request form's `alreadyPaid` branch is the member's half of.
+ *
+ * It is a SEPARATE model, not three more optional fields on the request form,
+ * because it is a different question asked of a different person at a different
+ * moment: the request form asks what the requester intends, this one asks the
+ * poster what actually happened. Sharing a schema would mean one of the two
+ * always carrying rules that do not apply to it.
+ */
+export type PostingFormValue = {
+  accountId: string
+  occurredOn: string
+  paidAmount: string
+}
+
+/** Everything the act already knows, pre-filled; the rest is asked. */
+export function postingFormDefaults(
+  references: RequestBoardReferences,
+  request: RequestBoardItem,
+): PostingFormValue {
+  const account = request.account
+  const paidPrecision = currencyPrecision(
+    references.currencies,
+    request.paidCurrency ?? account?.currency ?? request.currency,
+  )
+  return {
+    accountId: account === null ? '' : String(account.id),
+    occurredOn: request.occurredOn ?? '',
+    paidAmount: fromMinorUnits(request.paidAmount, paidPrecision),
+  }
+}
+
+export function createPostingFormSchema(
+  references: RequestBoardReferences,
+  request: RequestBoardItem,
+) {
+  return z
+    .object({
+      accountId: z.string(),
+      occurredOn: z.string(),
+      paidAmount: z.string(),
+    })
+    .superRefine((value, context) => {
+      // Own funds name no company account (EARS-513) — and that is not a
+      // missing account, so the field is neither shown nor demanded.
+      if (!request.personalFunds && value.accountId === '') {
+        context.addIssue({
+          code: 'custom',
+          path: ['accountId'],
+          message: 'Выберите счёт, с которого ушли деньги.',
+        })
+      }
+      if (value.occurredOn.trim() === '') {
+        context.addIssue({
+          code: 'custom',
+          path: ['occurredOn'],
+          message: 'Укажите дату, когда деньги действительно ушли.',
+        })
+      }
+      const account = accountOf(references, value.accountId)
+      if (account !== null && account.currency !== request.currency) {
+        const paidPrecision = currencyPrecision(references.currencies, account.currency)
+        if (toMinorUnits(value.paidAmount, paidPrecision) === null) {
+          context.addIssue({
+            code: 'custom',
+            path: ['paidAmount'],
+            message: `Укажите сумму, списанную со счёта в ${account.currency}.`,
+          })
+        }
+      }
+    })
+}
+
+/** The validated posting form as the act endpoint's own body (EARS-533). */
+export function toPostingBody(
+  value: PostingFormValue,
+  references: RequestBoardReferences,
+  request: RequestBoardItem,
+): {
+  accountId: number | null
+  occurredOn: string
+  paidAmount: string | null
+  paidCurrency: string | null
+} {
+  const account = accountOf(references, value.accountId)
+  const crossCurrency = account !== null && account.currency !== request.currency
+  return {
+    accountId: account?.id ?? null,
+    occurredOn: value.occurredOn,
+    paidAmount: crossCurrency
+      ? toMinorUnits(value.paidAmount, currencyPrecision(references.currencies, account.currency))
+      : null,
+    paidCurrency: crossCurrency ? account.currency : null,
   }
 }
