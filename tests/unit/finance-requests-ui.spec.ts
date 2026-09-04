@@ -382,6 +382,40 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(refine.mutate).not.toHaveBeenCalled()
   })
 
+  it('EARS-508: names the product a purpose demands and the project cannot give', async () => {
+    // #388 journey, state 09: «Продажи курса» binds a product, «Фонд BBM» has
+    // none — the field used to disappear while the schema still refused on it,
+    // so «Подать заявку» did nothing and said nothing.
+    refine.custom.data = snapshot({
+      references: {
+        accounts: [{ id: 1, name: 'Банк RUB', currency: 'RUB' }],
+        counterparties: [{ id: 7, name: 'ООО «Студия-7»' }],
+        currencies: [{ code: 'RUB', name: 'Российский рубль', precision: 2 }],
+        products: [],
+        projects: [{ id: 3, name: 'Фонд BBM' }],
+        purposes: [{ id: 21, name: 'Продажи курса', categoryId: 5, productBinding: 'required' }],
+      },
+    })
+    renderBoard()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const form = screen.getByRole('dialog')
+
+    fireEvent.click(within(form).getByLabelText('Назначение'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Продажи курса' }))
+    fireEvent.click(within(form).getByLabelText('Проект'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Фонд BBM' }))
+
+    await waitFor(() => expect(within(form).getByText('Продукт')).toBeTruthy())
+    expect(within(form).getByText(/нет продуктов/i)).toBeTruthy()
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Подать заявку' }))
+    await waitFor(() =>
+      expect(within(form).getAllByText(/нет продуктов/i).length).toBeGreaterThan(0),
+    )
+    expect(refine.mutate).not.toHaveBeenCalled()
+  })
+
   // Attaching the confirming document — the act EARS-511 names, without which the
   // pre-spend path (spec 339 acceptance scenario 3) cannot reach `posted` from
   // this screen at all.

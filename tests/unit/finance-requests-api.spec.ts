@@ -847,4 +847,31 @@ describe('/p/finance/api/requests — a request is an intent (EARS-508/533)', ()
       occurredOn: '2026-09-01',
     })
   })
+
+  it('EARS-533: refuses a posting act that names the charged amount without its currency', async () => {
+    state.confirmExpenseRequest.mockResolvedValue({ ...request, status: 'posted' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/actions/route')
+
+    async function act(body: Record<string, unknown>) {
+      return route.POST(
+        new Request(`${BASE}/41/actions`, {
+          method: 'POST',
+          body: JSON.stringify({ act: 'confirm', accountId: 7, occurredOn: '2026-09-01', ...body }),
+        }),
+        { params: Promise.resolve({ id: '41' }) },
+      )
+    }
+
+    // The ledger's own CHECK (`finance_intake_item_paid_pair`) says the two are
+    // null together or set together; a half-named pair must come back as a
+    // readable 400 from the route, never as a 500 from the database.
+    const amountOnly = await act({ paidAmount: '350000' })
+    const currencyOnly = await act({ paidCurrency: 'THB' })
+    const halfCleared = await act({ paidAmount: null, paidCurrency: 'THB' })
+
+    expect([amountOnly.status, currencyOnly.status, halfCleared.status]).toEqual([400, 400, 400])
+    expect(await amountOnly.text()).toMatch(/вместе/i)
+    expect(await currencyOnly.text()).toMatch(/вместе/i)
+    expect(state.confirmExpenseRequest).not.toHaveBeenCalled()
+  })
 })

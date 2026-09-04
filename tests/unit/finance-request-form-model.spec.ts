@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createRequestFormSchema,
   fromMinorUnits,
+  productFieldMode,
   productOptions,
   requestFormDefaults,
   toMinorUnits,
@@ -36,6 +37,9 @@ const references: RequestBoardReferences = {
   projects: [
     { id: 3, name: 'Doctor.School' },
     { id: 4, name: 'Фонд BBM' },
+    // A project that carries NO products at all — the shape that made the
+    // request form refuse silently (#388 journey, state 09).
+    { id: 5, name: 'Общие расходы' },
   ],
   purposes: [
     { id: 21, name: 'Продакшн', categoryId: 5, productBinding: 'required' },
@@ -219,5 +223,23 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
     expect(productOptions(references, '22', '3')).toEqual([])
     expect(schema.safeParse(value({ purposeId: '21', productId: '' })).success).toBe(false)
     expect(schema.safeParse(value({ purposeId: '22', productId: '' })).success).toBe(true)
+  })
+
+  it('EARS-508: says WHICH way the product is missing when the project carries none', () => {
+    // The purpose demands a product, the chosen project has none: the member
+    // can satisfy neither, so the field is still part of the form (`empty`,
+    // not `hidden`) and the refusal names the real reason instead of the
+    // generic «это назначение требует продукт».
+    expect(productFieldMode(references, '21', '5')).toBe('empty')
+    expect(productFieldMode(references, '21', '3')).toBe('options')
+    expect(productFieldMode(references, '22', '3')).toBe('hidden')
+    expect(productFieldMode(references, '', '3')).toBe('hidden')
+
+    const parsed = schema.safeParse(value({ purposeId: '21', projectId: '5', productId: '' }))
+    expect(parsed.success).toBe(false)
+    const issue = parsed.success
+      ? null
+      : (parsed.error.issues.find((row) => row.path[0] === 'productId') ?? null)
+    expect(issue?.message).toMatch(/нет продуктов/i)
   })
 })
