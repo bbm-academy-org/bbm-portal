@@ -780,3 +780,51 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the posting stat
     await waitFor(() => expect(posting.contains(document.activeElement)).toBe(true))
   })
 })
+
+describe('/p/finance/requests — the stage-5 UX sanity pass on «Мои заявки»', () => {
+  // DEFECT (real, step 04 at 390 px). The kit's `TableCell` carries
+  // `whitespace-nowrap`, which is right for a date or a sum and wrong for the
+  // one FREE-TEXT column: a note of ordinary length made «Что» 543 px wide and
+  // the table 968 px inside a 343 px scroll container, so Сумма, Статус and the
+  // row's «Открыть» sat ~600 px off-screen with nothing saying they were there.
+  // The table stays a table — the fix is that the free-text column WRAPS, the
+  // table keeps a floor so the four short columns are not crushed, and a hint
+  // below `sm` says the rest is a swipe to the right.
+  const LONG_NOTE = 'Приёмочный прогон #388 — намерение, деньги ещё не двигались (mobile-light)'
+
+  function mineTab() {
+    const tab = screen.getByRole('tab', { name: 'Мои заявки' })
+    fireEvent.mouseDown(tab)
+    fireEvent.click(tab)
+    return screen.findByRole('region', { name: 'Мои заявки' })
+  }
+
+  it('a long note WRAPS instead of pushing the sum, the status and «Открыть» off a 390 px screen', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 5, own: true, note: LONG_NOTE })],
+    })
+    renderBoard()
+    const mine = await mineTab()
+
+    const cell = within(mine).getByText(LONG_NOTE).closest('td')
+    expect(cell).not.toBeNull()
+    expect(cell?.className).toContain('whitespace-normal')
+    // and it is capped, so on a WIDE screen the note does not eat the row either
+    expect(cell?.className).toMatch(/max-w-/)
+  })
+
+  it('the table keeps a width floor inside the kit’s scroll container, and says so below `sm`', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 6, own: true, note: LONG_NOTE })],
+    })
+    renderBoard()
+    const mine = await mineTab()
+
+    const table = within(mine).getByRole('table')
+    expect(table.className).toMatch(/min-w-/)
+    expect(table.parentElement?.className).toContain('overflow-x-auto')
+
+    const hint = within(mine).getByText(/прокру[тч]/i)
+    expect(hint.className).toContain('sm:hidden')
+  })
+})
