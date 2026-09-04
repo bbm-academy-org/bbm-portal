@@ -84,11 +84,22 @@ export type RequestActPayload = {
   paidCurrency?: string | null
 }
 
+/**
+ * One read-only fact of the request.
+ *
+ * THE VALUE WRAPS, IT NEVER TRUNCATES. A field here carries the STATE, not a
+ * label the reader can guess from context — «вводится при проведении» clipped
+ * to «вводится при пр…» takes away exactly the sentence the field exists to
+ * say, and «Операционные расходы» clipped to «Операционные …» stops naming
+ * which расходы. An extra line is cheap; a half-said state is not (stage-5 UX
+ * sanity pass on #388, steps 26 and 30; the desktop half of the same clipping
+ * is #473 item 3, and it is the same line of CSS).
+ */
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0 space-y-0.5">
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className="truncate text-sm text-foreground">{value ?? '—'}</p>
+      <p className="text-sm break-words text-foreground">{value ?? '—'}</p>
     </div>
   )
 }
@@ -485,7 +496,11 @@ export function RequestDetailsSheet({
         </SheetHeader>
 
         <div className="space-y-5 px-4 pb-4">
-          <div className="grid grid-cols-2 gap-3">
+          {/* One column below `sm`: the sheet is `w-full` there, so two columns
+              leave ~180 px a cell on a 390 px screen and the longest values are
+              precisely the ones that carry the state. Two columns from `sm` up,
+              where the sheet is `sm:max-w-lg` and the pairing reads. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Контрагент" value={request.counterparty?.name ?? '—'} />
             <Field
               label="Счёт списания"
