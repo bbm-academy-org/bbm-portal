@@ -753,14 +753,14 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the posting stat
     expect(
       within(posting).getByRole('button', { name: 'Отмена' }).getAttribute('data-variant'),
     ).toBe('outline')
-    // The kit's own interaction treatment, not a hand-rolled one: the frames of
-    // step 31 show no change under the forced pseudo-states because the capture
-    // forced them on the SHEET's «Приложить документ» behind the dialog (the
-    // diff between 29 and each 31 frame sits at x≈1080–1256, y≈730–773), not
-    // because the CTA lacks the states.
-    expect(cta.className).toContain('hover:bg-primary/80')
-    expect(cta.className).toContain('focus-visible:ring-ring/50')
-    expect(cta.className).toContain('active:not-aria-[haspopup]:translate-y-px')
+    // The kit's own interaction treatment comes WITH `data-variant="default"`
+    // above: the frames of step 31 show no change under the forced pseudo-states
+    // because the capture forced them on the SHEET's «Приложить документ» behind
+    // the dialog (the diff between 29 and each 31 frame sits at x≈1080–1256,
+    // y≈730–773), not because the CTA lacks the states. The utilities that carry
+    // them belong to `@/ui/button` and are asserted where that kit is tested —
+    // pinning their strings here would break this finance test on a kit bump
+    // that changed nothing about this surface (#388 review round 2).
   })
 
   // DEFECT 2 (NOT a defect either): the dialog DOES take focus off the sheet
