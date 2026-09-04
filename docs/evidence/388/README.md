@@ -208,6 +208,16 @@ the empty result is no longer reachable on this fixture without a fresh user. Th
 frame shows what the tab actually renders — the table of the reader's filings with
 their statuses — which is the state that exists.
 
+**A SIXTH pass re-took step 04 alone**, at the head that fixes the defect the
+stage-5 UX sanity pass found in it. At 390 px the kit's `TableCell` default
+(`whitespace-nowrap`) met the one free-text column: «Что» measured 543 px of a
+968 px table inside a 343 px scroll container, so Сумма, Статус and the row's
+«Открыть» were ~600 px to the right of the frame. The note now wraps and is
+capped, the table keeps a `34rem` floor, and below `sm` a line says the rest is
+to the right — 968 px → 544 px. Only **04** was re-driven; **03** measures
+343 px in the same 343 px container and never overflowed, so its frames are
+untouched.
+
 **The journey scripts are not committed** — they were bound to this seed dataset
 and deleted with the run, the same call #434 and #437 made; `DEBT.md` already
 tracks that every task re-implements this harness
