@@ -37,39 +37,40 @@ workspace ships no user-facing switch), plus the primary control of each form
 under three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per
 state), never hoped for from a pointer.
 
-| Step | What it shows                                                                                             |
-| ---- | --------------------------------------------------------------------------------------------------------- |
-| 01   | `/p/finance` with the «Заявки» link at the title's right edge (`href=/p/finance/requests`)                |
-| 02   | the board — four columns, live cards in «Ждут», muted archives in «Проведены» / «Отклонены»               |
-| 03   | the «Обязательства» tab — what BBM owes for spends from members' own money                                |
-| 04   | the «Мои заявки» tab, EMPTY RESULT: the reader has filed nothing                                          |
-| 05   | the details sheet of a submitted request — «Одобрить» / «Отклонить…» / the attach block                   |
-| 06   | an APPROVED request with no document: no «Провести» at all, the gate Alert, and the attach form           |
-| 07   | the refusal dialog — a reason is mandatory (EARS-512), so it is a modal and not a field beside «Одобрить» |
-| 08   | the same dialog submitted empty — «Укажите причину отказа.» under the field                               |
-| 09   | «Новая заявка» submitted empty — FOUR messages, each under its own field; no money-date message any more  |
-| 10   | an ILLEGAL drag (a submitted card dropped on «Проведены») — nothing moves, the toast says why             |
-| 11   | a MUTATION FAILURE (the act route forced to 500) — the error toast, and the sheet deliberately stays open |
-| 12   | the loading skeleton, caught with the snapshot request held open — four column blocks, no layout jump     |
-| 13   | the same URL as a reader with no finance role: the board is legitimately empty, no act control anywhere   |
-| 14   | «Новая заявка» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both themes)           |
-| 15   | after «Одобрить» — the success toast and the card now in «Одобрены — ждут документа»                      |
-| 17   | after a refusal with a reason — the card in «Отклонены», carrying the reason and the decider              |
-| 18   | after «Приложить документ» — the sheet STAYS open, the PDF reads inline, «Провести» is now one click away |
-| 19   | after «Провести» — the toast «Операция проведена» and the card in «Проведены» with its ledger date        |
-| 20   | a SEEDED posted request — the ledger operation and its postings instead of controls                       |
-| 21   | «Новая заявка» with a real purpose — the card lands in «Ждут» and the toast says exactly that             |
-| 22   | the proposal branch («Нет подходящего — предложу новое») — saved as a DRAFT, toast points at «Мои заявки» |
-| 23   | the form with «Уже потрачено» UNCHECKED — no account, no date, and the form says who fills them in        |
-| 24   | the same form with «Уже потрачено» TICKED — own-funds, «Счёт списания» and «Дата движения денег» revealed |
-| 25   | the board carrying pre-spend cards: no date, no «уже потрачено» flag, the words «деньги ещё не двигались» |
-| 26   | the pre-spend request's sheet — «вводится при проведении» in BOTH money fields, never «—»                 |
-| 27   | «Провести» → the posting act's own dialog, empty: the account and the date it is about to assert          |
-| 28   | the same dialog submitted empty — both refusals under their own field                                     |
-| 29   | the dialog filled — «Банк RUB» and 2026-09-03, the act ready to run                                       |
-| 30   | the SAME request after the act — «Счёт списания: Банк RUB», «Дата движения денег: 03.09.2026», operation  |
-| 31   | the posting dialog's «Провести» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both) |
-| 32   | «Продажи курса» on «Фонд BBM» — the product field DISABLED with its reason, and the refusal on submit     |
+| Step | What it shows                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------ |
+| 01   | `/p/finance` with the «Заявки» link at the title's right edge (`href=/p/finance/requests`)                         |
+| 02   | the board — four columns, live cards in «Ждут», muted archives in «Проведены» / «Отклонены»                        |
+| 03   | the «Обязательства» tab — what BBM owes for spends from members' own money                                         |
+| 04   | the «Мои заявки» tab, EMPTY RESULT: the reader has filed nothing                                                   |
+| 05   | the details sheet of a submitted request — «Одобрить» / «Отклонить…» / the attach block                            |
+| 06   | an APPROVED request with no document: no «Провести» at all, the gate Alert, and the attach form                    |
+| 07   | the refusal dialog — a reason is mandatory (EARS-512), so it is a modal and not a field beside «Одобрить»          |
+| 08   | the same dialog submitted empty — «Укажите причину отказа.» under the field                                        |
+| 09   | «Новая заявка» submitted empty — FOUR messages, each under its own field; no money-date message any more           |
+| 10   | an ILLEGAL drag (a submitted card dropped on «Проведены») — nothing moves, the toast says why                      |
+| 11   | a MUTATION FAILURE (the act route forced to 500) — the error toast, and the sheet deliberately stays open          |
+| 12   | the loading skeleton, caught with the snapshot request held open — four column blocks, no layout jump              |
+| 13   | the same URL as a reader with no finance role: the board is legitimately empty, no act control anywhere            |
+| 14   | «Новая заявка» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both themes)                    |
+| 15   | after «Одобрить» — the success toast and the card now in «Одобрены — ждут документа»                               |
+| 17   | after a refusal with a reason — the card in «Отклонены», carrying the reason and the decider                       |
+| 18   | after «Приложить документ» — the sheet STAYS open, the PDF reads inline, «Провести» is now one click away          |
+| 19   | after «Провести» — the toast «Операция проведена» and the card in «Проведены» with its ledger date                 |
+| 20   | a SEEDED posted request — the ledger operation and its postings instead of controls                                |
+| 21   | «Новая заявка» with a real purpose — the card lands in «Ждут» and the toast says exactly that                      |
+| 22   | the proposal branch («Нет подходящего — предложу новое») — saved as a DRAFT, toast points at «Мои заявки»          |
+| 23   | the form with «Уже потрачено» UNCHECKED — no account, no date, and the form says who fills them in                 |
+| 24   | the same form with «Уже потрачено» TICKED — own-funds, «Счёт списания» and «Дата движения денег» revealed          |
+| 25   | the board carrying pre-spend cards: no date, no «уже потрачено» flag, the words «деньги ещё не двигались»          |
+| 26   | the pre-spend request's sheet — «вводится при проведении» in BOTH money fields, never «—»                          |
+| 27   | «Провести» → the posting act's own dialog, empty: the account and the date it is about to assert                   |
+| 28   | the same dialog submitted empty — both refusals under their own field                                              |
+| 29   | the dialog filled — «Банк RUB» and 2026-09-03, the act ready to run                                                |
+| 30   | the SAME request after the act — «Счёт списания: Банк RUB», «Дата движения денег: 03.09.2026», operation           |
+| 31   | the posting dialog's «Провести» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both)          |
+| 32   | «Продажи курса» on «Фонд BBM» — the disabled product field: the FACT in its description, the instruction on submit |
+| 33   | «Продажи курса» with NO project yet — the «Продукт» field is not on the form at all, and no project is blamed      |
 
 Steps 14 and 31 are set through one `CSS.forcePseudoState` CDP session per state
 on the located element, never hoped for from a pointer.
@@ -167,14 +168,26 @@ the refusal now lands. Step 32 drives exactly that pair, submits, and shows the
 form still open with the message under the field, at both breakpoints and both
 themes.
 
-**One observation on step 32, not a defect.** The sentence «Это назначение требует
-продукт, а у проекта «Фонд BBM» нет продуктов — выберите другой проект или другое
-назначение.» is on screen TWICE after the submit: once as the field's
-`FormDescription` (there before the submit, in muted text) and once as its
-`FormMessage` (in destructive red). That is the deliberate consequence of
-`productEmptyMessage` being one string used in both places, and it reads as
-emphasis rather than as an error; it is recorded here so the frame is not read as
-a double-render bug.
+**A FOURTH pass at head `1ff67ad`** re-took step 32 in place and added step 33,
+after the review round that produced `95c6b1a` (the product field states only what
+the member's choices make true). The earlier note in this file said the empty-product
+sentence being on screen TWICE after the submit was deliberate emphasis; it was the
+bug (#473 item 7), and these frames replace it. Each slot now carries its own half:
+the `FormDescription` says the FACT — «У проекта «Фонд BBM» нет продуктов.» in muted
+text, present before the submit — and the `FormMessage` says what to do about it —
+«Это назначение требует продукт, а у проекта «Фонд BBM» нет продуктов — выберите
+другой проект или другое назначение.» in destructive red, only after «Подать заявку».
+Re-observed in the DOM at all four combinations: the two slots hold different
+strings, neither of them repeated. Step 32's frames also fill the amount and the
+counterparty, so the product refusal is the ONLY red left on the form.
+
+**Step 33 is the state the same round created.** `productFieldMode` returns `hidden`
+while no project is chosen — «у проекта X нет продуктов» is a statement ABOUT a
+project, and there is none yet — and the schema stops raising a product refusal
+there too, because «Выберите проект.» is the whole answer. The frames show «Продажи
+курса» picked with «Выберите проект» still on its placeholder and NO «Продукт» field
+anywhere on the form. Picking «Фонд BBM» turns it into step 32 immediately: both
+states were driven in that order, in one run, at all four combinations.
 
 **The journey scripts are not committed** — they were bound to this seed dataset
 and deleted with the run, the same call #434 and #437 made; `DEBT.md` already
