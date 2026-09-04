@@ -398,56 +398,68 @@ export function RequestsBoardScreen() {
                   Вы ещё не подавали заявок.
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Дата</TableHead>
-                      <TableHead>Что</TableHead>
-                      <TableHead className="text-right">Сумма</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead>
-                        <span className="sr-only">Действия</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mine.map((request) => (
-                      <TableRow key={request.id}>
-                        <TableCell className="tabular-nums">
-                          {request.occurredOn === null ? (
-                            <span className="text-muted-foreground">не двигались</span>
-                          ) : (
-                            formatDate(request.occurredOn)
-                          )}
-                        </TableCell>
-                        <TableCell>{request.note ?? request.purpose?.name ?? '—'}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatRequestMoney(
-                            request.amount,
-                            request.currency,
-                            currencyPrecision(references.currencies, request.currency),
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{REQUEST_STATUS_LABELS[request.status]}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            aria-label={`Открыть заявку №${request.id}`}
-                            onClick={() => {
-                              setPendingAct(null)
-                              setSelectedId(request.id)
-                            }}
-                          >
-                            Открыть
-                          </Button>
-                        </TableCell>
+                <>
+                  {/* The remaining columns are a swipe away on a phone: the kit's
+                      container scrolls, but an overlay scrollbar says nothing while
+                      it is idle, so the surface says it in words below `sm`. */}
+                  <p className="text-sm text-muted-foreground sm:hidden">
+                    Таблица прокручивается вбок: сумма, статус и «Открыть» — правее.
+                  </p>
+                  <Table className="min-w-[34rem]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Дата</TableHead>
+                        <TableHead>Что</TableHead>
+                        <TableHead className="text-right">Сумма</TableHead>
+                        <TableHead>Статус</TableHead>
+                        <TableHead>
+                          <span className="sr-only">Действия</span>
+                        </TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {mine.map((request) => (
+                        <TableRow key={request.id}>
+                          <TableCell className="tabular-nums">
+                            {request.occurredOn === null ? (
+                              <span className="text-muted-foreground">не двигались</span>
+                            ) : (
+                              formatDate(request.occurredOn)
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-[24ch] whitespace-normal">
+                            {request.note ?? request.purpose?.name ?? '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatRequestMoney(
+                              request.amount,
+                              request.currency,
+                              currencyPrecision(references.currencies, request.currency),
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">
+                              {REQUEST_STATUS_LABELS[request.status]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Открыть заявку №${request.id}`}
+                              onClick={() => {
+                                setPendingAct(null)
+                                setSelectedId(request.id)
+                              }}
+                            >
+                              Открыть
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </>
               )}
             </section>
           </TabsContent>
