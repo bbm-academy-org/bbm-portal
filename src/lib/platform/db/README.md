@@ -35,7 +35,7 @@ already-branched database is refreshed by the seed alone:
 ```bash
 pnpm dev:seed                    # 64 members, hours periods + assessments,
                                  # finance references, ledger postings,
-                                 # 30 expense requests across all six spec-339
+                                 # 32 expense requests across all six spec-339
                                  # statuses, non-request intake lines, documents
 pnpm dev:db:branch --no-seed     # decline a step deliberately (also --no-migrate)
 ```
