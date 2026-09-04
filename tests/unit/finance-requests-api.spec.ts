@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   session: null as unknown,
   listExpenseRequests: vi.fn(),
   listFinanceDocuments: vi.fn(),
+  listFinanceDocumentsByItems: vi.fn(),
   listAccounts: vi.fn(),
   listCounterparties: vi.fn(),
   listCurrencies: vi.fn(),
@@ -89,6 +90,7 @@ beforeEach(() => {
   state.submitExpenseRequest.mockResolvedValue({ ...request, status: 'submitted' })
   state.listExpenseRequests.mockResolvedValue([request])
   state.listFinanceDocuments.mockResolvedValue([])
+  state.listFinanceDocumentsByItems.mockResolvedValue(new Map())
   state.listAccounts.mockResolvedValue([
     {
       id: 7,
@@ -182,6 +184,25 @@ describe('/p/finance/api/requests read model', () => {
       ],
       liabilities: [{ memberName: 'Мария Иванова', currency: 'RUB', balance: '-72000' }],
     })
+  })
+
+  it('#470: reads the documents of the whole board in ONE call, not one transaction per row', async () => {
+    // The pool deadlock of the acceptance stand: `Promise.all` over the rows
+    // opened one transaction each, and with ten of them the pg default pool was
+    // exhausted by transactions all waiting for an eleventh client.
+    const rows = Array.from({ length: 30 }, (_, index) => ({ ...request, id: 100 + index }))
+    state.listExpenseRequests.mockResolvedValue(rows)
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.GET()
+
+    expect(response.status).toBe(200)
+    expect(state.listFinanceDocuments).not.toHaveBeenCalled()
+    expect(state.listFinanceDocumentsByItems).toHaveBeenCalledTimes(1)
+    expect(state.listFinanceDocumentsByItems).toHaveBeenCalledWith(
+      { email: 'owner@bbm.academy', roles: [PLATFORM_USER_ROLE, 'finance-approve'] },
+      rows.map((row) => row.id),
+    )
   })
 
   it('EARS-502: refuses a handler request before touching finance when the platform claim is absent', async () => {
