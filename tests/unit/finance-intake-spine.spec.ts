@@ -16,7 +16,8 @@ import {
 // The registry MUTATOR is module-internal on purpose (see src/lib/finance/index.ts):
 // this suite is the one caller that registers a producer, and it reaches for it
 // where it lives rather than asking for a public hole to do it through.
-import { intakeMoneyFactsRefusal } from '@/lib/finance/intake/items'
+import { intakeMoneyFactsRefusal, intakePaidPairRefusal } from '@/lib/finance/intake/items'
+import { namesIntakePostingMoneyFacts } from '@/lib/finance/intake/posting'
 import { registerIntakeProducer } from '@/lib/finance/intake/sources'
 import {
   financeIntakeItem,
@@ -304,5 +305,24 @@ describe('The money facts the posting act enters (EARS-533)', () => {
 
   it('EARS-533: the column itself is nullable — an unposted request holds no money date', () => {
     expect(financeIntakeItem.occurredOn.notNull).toBe(false)
+  })
+
+  it('EARS-533: naming ANY of the four act facts counts — the currency included', () => {
+    expect(namesIntakePostingMoneyFacts({})).toBe(false)
+    for (const options of [
+      { occurredOn: '2026-09-03' },
+      { accountId: 7 },
+      { paidAmount: 3n },
+      { paidCurrency: 'THB' },
+    ]) {
+      expect(namesIntakePostingMoneyFacts(options)).toBe(true)
+    }
+  })
+
+  it('spec 339 Cross-currency payments: half a charged pair is refused where the rule lives', () => {
+    expect(intakePaidPairRefusal({ paidAmount: null, paidCurrency: null })).toBeNull()
+    expect(intakePaidPairRefusal({ paidAmount: 3n, paidCurrency: 'THB' })).toBeNull()
+    expect(intakePaidPairRefusal({ paidAmount: 3n, paidCurrency: null })).toMatch(/парой/i)
+    expect(intakePaidPairRefusal({ paidAmount: null, paidCurrency: 'THB' })).toMatch(/парой/i)
   })
 })
