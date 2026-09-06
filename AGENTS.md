@@ -2,6 +2,14 @@
 
 > **Language rule:** All chat dialogue with the user MUST be in Russian. Code, code comments, commit messages, PR titles/descriptions, and this file are in English for universal agent compatibility. Product/content values are Russian.
 
+## Instruction entrypoint
+
+Read [`CLAUDE.md`](CLAUDE.md) before acting; it routes tracker ownership,
+cross-repo boundaries, subagent roles, and task-specific rules and skills.
+`.claude/rules/` is not auto-loaded by every harness, so read the routed source.
+Under Codex, also read [`docs/codex-agent-mode.md`](docs/codex-agent-mode.md)
+before the first dispatch for its model, profile, tool, and browser mappings.
+
 ## Project overview
 
 This repository hosts **`bbm-portal`** — the **Payload CMS** (v3, native inside Next.js) that serves as the **headless content backend** for the BBM Academy public website (`bbm-public-website`, a separate Astro repo). It is also the **seed of the future BBM portal**: auth / personal cabinet (ЛК) and a blog/articles surface grow inside this same Next.js app later.
@@ -64,7 +72,7 @@ Framework/infra choices are fixed by the BBM Platform architecture spec — do n
 
 If a task seems to require a framework/content-source/infra change, stop and consult the authority first.
 
-**Severity-gate before escalating a "security finding" to the owner.** The owner is a non-developer and cannot adjudicate an engineering tradeoff — a fake either/or just creates confusion. Before you write a finding up as a "gate" or fire an `AskUserQuestion`, classify the data at risk: **non-PII editorial/CMS content** (page drafts, copy, preview URLs) is **low** — state the industry-standard baseline (e.g. a public preview origin behind `noindex` + CSP `frame-ancestors` is normal) and **pick the architecturally-correct default yourself**. Escalate to the owner **only** when the data is PII/secret/embargoed, or there is a genuine either/or with no correct default.
+**Severity-gate before escalating a "security finding" to the owner.** The owner is a non-developer and cannot adjudicate an engineering tradeoff — a fake either/or just creates confusion. Before you write a finding up as a "gate" or invoke a user-question tool, classify the data at risk: **non-PII editorial/CMS content** (page drafts, copy, preview URLs) is **low** — state the industry-standard baseline (e.g. a public preview origin behind `noindex` + CSP `frame-ancestors` is normal) and **pick the architecturally-correct default yourself**. Escalate to the owner **only** when the data is PII/secret/embargoed, or there is a genuine either/or with no correct default.
 
 ## OKR module (`/okr`) — first dynamic platform module
 

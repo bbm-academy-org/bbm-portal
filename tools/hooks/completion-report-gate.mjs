@@ -54,6 +54,8 @@
 
 import { readFileSync } from 'node:fs'
 
+import { powershellFileWritePaths } from './shared.mjs'
+
 import {
   applyBlockBudget,
   blockBudgetStatePath,
@@ -490,6 +492,7 @@ export function isWriteToolUse(name, input) {
   const tool = String(name || '')
   if (WRITE_TOOLS.has(tool)) return true
   if (SHELL_TOOLS.has(tool)) {
+    if (powershellFileWritePaths(input && input.command).length > 0) return true
     return MUTATING_COMMAND_RE.test(stripNonCommandText(input && input.command))
   }
   if (tool.startsWith('mcp__')) {

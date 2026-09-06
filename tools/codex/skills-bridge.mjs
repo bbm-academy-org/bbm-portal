@@ -5,6 +5,8 @@ import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
+import { formatReadiness, inspectCodexReadiness } from './readiness.mjs'
+
 export function samePath(left, right, platform = process.platform) {
   const normalize = (path) => String(path).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
   if (platform === 'win32') return normalize(left) === normalize(right)
@@ -115,6 +117,11 @@ function main() {
     process.stdout.write(
       `Codex skills bridge OK: ${result.skills.length} canonical skill(s) from ${result.canonical}\n`,
     )
+    if (process.argv.includes('--check')) {
+      const readiness = inspectCodexReadiness(root)
+      process.stdout.write(`${formatReadiness(readiness)}\n`)
+      if (readiness.findings.length > 0) process.exitCode = 1
+    }
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1

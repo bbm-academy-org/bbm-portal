@@ -13,10 +13,10 @@ must point at another points: path plus what lives there, never a paraphrase.
 Where two files do disagree, the one that owns the subject wins and the other is
 the bug.
 
-Codex discovers those same canonical skill bodies through the generated,
-git-ignored `.agents/skills` bridge. Run `pnpm codex:setup`; do not add copied
-skill bodies under `.agents/`. Setup and hook trust are documented in
-[`docs/codex-agent-mode.md`](docs/codex-agent-mode.md).
+Codex discovers the canonical skills through the generated, git-ignored
+`.agents/skills` bridge; run `pnpm codex:setup`, never copy skill bodies there.
+Read the [Codex adapter](docs/codex-agent-mode.md) before the first Codex
+dispatch; it maps Claude-specific agent and tool names without changing roles.
 
 **Parallel sessions are the norm here — read the rules before touching a branch
 or a port.** The session's work branch lives in its OWN worktree
@@ -34,9 +34,9 @@ cross-linked into epics and may reference sibling sub-tasks in the
 `bbm-academy-org/bbm-public-website` repo (the public Astro site). When asked to
 "look at the backlog" or pick up work, start here, **not** in Plane.
 
-**Tasks are created only via `pnpm issue:create`** (raw `gh issue create` is
-forbidden) — load the `task-canon` skill before any backlog work: filing,
-reformatting, linking, claiming, triaging or closing an issue.
+Load the `task-canon` skill before any backlog work: filing, reformatting,
+linking, claiming, triaging or closing an issue. It owns the current creation
+command and issue-shape contract.
 
 **Cross-repo boundary — file, don't build.** When work surfaces that belongs to
 `bbm-public-website` (or any sibling repo), the deliverable in a **bbm-portal**
