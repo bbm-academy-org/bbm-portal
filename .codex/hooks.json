@@ -85,14 +85,14 @@
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/tools/hooks/codex-subagent-turn-recorder.mjs\"",
             "commandWindows": "$repoRoot = git rev-parse --show-toplevel; & node (Join-Path $repoRoot 'tools/hooks/codex-subagent-turn-recorder.mjs'); exit $LASTEXITCODE",
-            "timeout": 10
+            "timeout": 3
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write|MultiEdit|Bash|PowerShell",
         "hooks": [
           {
             "type": "command",

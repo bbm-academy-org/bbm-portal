@@ -1,0 +1,137 @@
+[
+  {
+    "claudeEvent": "SessionStart",
+    "claudePath": "tools/hooks/session-flag-writer.mjs",
+    "status": "mapped",
+    "codexEvent": "SessionStart",
+    "codexPath": "tools/hooks/session-flag-writer.mjs"
+  },
+  {
+    "claudeEvent": "SessionStart",
+    "claudePath": "tools/gh/session-bootstrap.mjs",
+    "status": "mapped",
+    "codexEvent": "SessionStart",
+    "codexPath": "tools/gh/session-bootstrap.mjs"
+  },
+  {
+    "claudeEvent": "UserPromptSubmit",
+    "claudePath": "tools/hooks/session-flag-writer.mjs",
+    "status": "mapped",
+    "codexEvent": "UserPromptSubmit",
+    "codexPath": "tools/hooks/session-flag-writer.mjs"
+  },
+  {
+    "claudeEvent": "UserPromptSubmit",
+    "claudePath": "tools/hooks/handoff-verify-reminder.mjs",
+    "status": "mapped",
+    "codexEvent": "UserPromptSubmit",
+    "codexPath": "tools/hooks/handoff-verify-reminder.mjs"
+  },
+  {
+    "claudeEvent": "UserPromptSubmit",
+    "claudePath": "tools/hooks/context-budget.mjs",
+    "status": "mapped",
+    "codexEvent": "UserPromptSubmit",
+    "codexPath": "tools/hooks/context-budget.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/worktree-path-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/worktree-path-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/main-tree-read-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/main-tree-read-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/dispatch-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/dispatch-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/zero-dispatch-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/zero-dispatch-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/agent-model-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/agent-model-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/lead-context-budget.mjs",
+    "status": "intentional-difference",
+    "rationale": "Codex exposes no stable token-usage payload for this blocking threshold; readiness reports runtime capability as unverified."
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/askuserquestion-context-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/askuserquestion-context-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/askuserquestion-calibration-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/askuserquestion-calibration-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/screenshot-path-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/screenshot-path-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/secret-echo-guard.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/secret-echo-guard.mjs"
+  },
+  {
+    "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/merge-gate.mjs",
+    "status": "mapped",
+    "codexEvent": "PreToolUse",
+    "codexPath": "tools/hooks/merge-gate.mjs"
+  },
+  {
+    "claudeEvent": "Stop",
+    "claudePath": "tools/hooks/completion-report-gate.mjs",
+    "status": "mapped",
+    "codexEvent": "Stop",
+    "codexPath": "tools/hooks/codex-stop-adapter.mjs",
+    "codexArgs": "completion"
+  },
+  {
+    "claudeEvent": "Stop",
+    "claudePath": "tools/hooks/deviations-gate.mjs",
+    "status": "mapped",
+    "codexEvent": "Stop",
+    "codexPath": "tools/hooks/codex-stop-adapter.mjs",
+    "codexArgs": "deviations"
+  },
+  {
+    "claudeEvent": "Stop",
+    "claudePath": "tools/hooks/surface-decision-debt-gate.mjs",
+    "status": "mapped",
+    "codexEvent": "Stop",
+    "codexPath": "tools/hooks/codex-stop-adapter.mjs",
+    "codexArgs": "debt"
+  }
+]

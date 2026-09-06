@@ -140,7 +140,13 @@ export function hasOwnerAnswer(lines, record) {
  * position stamp of the ask being recorded, so "the answer came after the ask"
  * needs no clock.
  */
-export function decideAskUserQuestion({ toolName, toolInput, state, transcript = '' }) {
+export function decideAskUserQuestion({
+  toolName,
+  toolInput,
+  state,
+  transcript = '',
+  repeatAnswerEvidenceAvailable = true,
+}) {
   if (!/^AskUserQuestion$/.test(toolName || '')) return { block: false, state: state || {} }
   const questions = toolInput && typeof toolInput === 'object' ? toolInput.questions : null
   if (!Array.isArray(questions)) return { block: false, state: state || {} }
@@ -161,7 +167,7 @@ export function decideAskUserQuestion({ toolName, toolInput, state, transcript =
     // переписка потребует 4×, потом 8× (храповик, ревью PR #148).
     let keepBaseline = false
     const previous = header ? seen[header] : null
-    if (previous && previous.baseline > 0) {
+    if (repeatAnswerEvidenceAvailable && previous && previous.baseline > 0) {
       if (hasOwnerAnswer(lines, { ...previous, header })) {
         // Отвеченный вопрос закрыт: header освобождается, текущий становится
         // первым под ним — иначе новый вопрос платил бы за старый диалог.
@@ -208,6 +214,7 @@ function main() {
       toolInput: payload.tool_input,
       state: readState(statePath),
       transcript,
+      repeatAnswerEvidenceAvailable: payload.harness_tool_name !== 'request_user_input_async',
     })
     if (decision.block) {
       process.stderr.write(decision.message)
