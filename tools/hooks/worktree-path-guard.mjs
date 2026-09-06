@@ -139,7 +139,7 @@ function main() {
     if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const tool = payload.tool_name || ''
-    if (!/^(Edit|Write|MultiEdit)$/.test(tool)) process.exit(0)
+    if (!/^(Edit|Write|MultiEdit|Bash|PowerShell)$/.test(tool)) process.exit(0)
     const cwd = payload.cwd || ''
 
     const escape = decideEscapeBlock({ toolName: tool, toolInput: payload.tool_input, cwd })

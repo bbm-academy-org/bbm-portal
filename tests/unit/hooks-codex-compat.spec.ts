@@ -238,15 +238,15 @@ describe('Codex hook payload compatibility', () => {
     const cwd = resolve(tmpdir(), 'bbm-main', '.claude', 'worktrees', '475', 'nested')
     const escaped = normalizeHookPayload({
       tool_name: 'exec_command',
-      tool_input: { command: "Set-Content -LiteralPath '..\\..\\..\\..\\escaped.txt' -Value x" },
+      tool_input: { command: "Set-Content -LiteralPath '../../../../escaped.txt' -Value x" },
     })
     const safe = normalizeHookPayload({
       tool_name: 'exec_command',
-      tool_input: { command: "Set-Content -LiteralPath '.\\safe file.txt' -Value x" },
+      tool_input: { command: "Set-Content -LiteralPath './safe file.txt' -Value x" },
     })
     const read = normalizeHookPayload({
       tool_name: 'exec_command',
-      tool_input: { command: "Get-Content -LiteralPath '..\\..\\..\\..\\escaped.txt'" },
+      tool_input: { command: "Get-Content -LiteralPath '../../../../escaped.txt'" },
     })
 
     expect(writeEvidenceForPayload(escaped)).toBe(true)
@@ -265,6 +265,30 @@ describe('Codex hook payload compatibility', () => {
     ).toEqual({
       block: false,
     })
+  })
+
+  it('blocks literal shell writes through the real worktree guard CLI', () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), 'bbm-worktree-guard-'))
+    const cwd = resolve(tempRoot, '.claude', 'worktrees', '475', 'nested')
+    const run = (tool_name: string, command: string) =>
+      spawnSync(process.execPath, [resolve(repoRoot, 'tools/hooks/worktree-path-guard.mjs')], {
+        cwd,
+        input: JSON.stringify({ cwd, tool_name, tool_input: { command } }),
+        encoding: 'utf8',
+      })
+
+    mkdirSync(cwd, { recursive: true })
+    try {
+      for (const toolName of ['Bash', 'PowerShell', 'exec_command']) {
+        expect(
+          run(toolName, "Set-Content -LiteralPath '../../../../escaped.txt' -Value x").status,
+          toolName,
+        ).toBe(2)
+        expect(run(toolName, 'git status').status, `${toolName} read`).toBe(0)
+      }
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true })
+    }
   })
 
   // `spawn_agent` normalizes to `Agent`, and since #439 a dispatch is NOT write
