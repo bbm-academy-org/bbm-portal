@@ -119,6 +119,34 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
     })
   })
 
+  // WHY: a field react-hook-form no longer RENDERS still holds what was typed
+  // into it — `shouldUnregister` is false — so «one or the other» has to hold
+  // on the way OUT too, not only in what the form shows. Both exclusive pairs
+  // are the same shape: the reference pick wins, and the free text it
+  // replaced is not sent alongside it (EARS-508/526/532; the API refuses a
+  // body carrying both).
+  it('EARS-508/532: sends the picked counterparty alone, never the name typed before it', () => {
+    const both = value({ counterpartyId: '7', counterpartyName: 'ООО «Тень»' })
+    expect(toRequestBody(both, references)).toMatchObject({
+      counterpartyId: 7,
+      counterpartyName: null,
+    })
+
+    const inline = value({ counterpartyId: '', counterpartyName: ' ООО «Тень» ' })
+    expect(toRequestBody(inline, references)).toMatchObject({
+      counterpartyId: null,
+      counterpartyName: 'ООО «Тень»',
+    })
+  })
+
+  it('EARS-508/526: sends the picked purpose alone, never the proposal typed before it', () => {
+    const both = value({ purposeId: '21', purposeProposal: 'Новая статья' })
+    expect(toRequestBody(both, references)).toMatchObject({
+      purposeId: 21,
+      purposeProposal: null,
+    })
+  })
+
   it('EARS-533: a blank form offers no money date at all — «today» would be a guess', () => {
     expect(requestFormDefaults(references).occurredOn).toBe('')
   })
