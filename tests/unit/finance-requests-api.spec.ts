@@ -544,6 +544,37 @@ describe('/p/finance/api/requests writes', () => {
     expect(state.createPurposeProposal).not.toHaveBeenCalled()
   })
 
+  // WHY: the two exclusive pairs were not treated alike. A body naming both a
+  // purpose and a proposal is refused (above); a body naming both a
+  // counterparty and a new counterparty's name was ACCEPTED, and
+  // `resolveRequestCounterpartyId` then silently preferred the NAME — filing
+  // the request against a counterparty the member never picked (EARS-508/532:
+  // picked from the reference OR created inline).
+  it('EARS-508/532: rejects a request that supplies both a counterparty and a new name', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 55 })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: '120000',
+          currency: 'RUB',
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          counterpartyName: 'ООО «Тень»',
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+  })
+
   it('EARS-526: exposes the durable draft and a proposal-only recovery when proposal creation fails', async () => {
     state.createExpenseRequest.mockResolvedValue({
       ...request,

@@ -425,6 +425,31 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(refine.mutate).not.toHaveBeenCalled()
   })
 
+  // WHY: EARS-508/532 — the counterparty is «picked from the counterparty
+  // reference OR created inline», one or the other. «Новый контрагент» stood
+  // on the form unconditionally, so a member who picked «ООО «Студия-7»» was
+  // still asked to name a new counterparty underneath it and had no way to
+  // read which of the two would be filed. The purpose pair beside it has
+  // always been rendered as the exclusive choice it is; this one was not.
+  it('EARS-508/532: asks for a new counterparty only while none is picked from the reference', async () => {
+    renderBoard()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const form = screen.getByRole('dialog')
+
+    // A blank form stands on «Нет в списке — впишу нового», so the free-text
+    // field is where the answer goes.
+    expect(within(form).getByLabelText('Новый контрагент')).toBeTruthy()
+
+    fireEvent.click(within(form).getByLabelText('Контрагент'))
+    fireEvent.click(await screen.findByRole('option', { name: 'ООО «Студия-7»' }))
+    await waitFor(() => expect(within(form).queryByLabelText('Новый контрагент')).toBeNull())
+
+    fireEvent.click(within(form).getByLabelText('Контрагент'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Нет в списке — впишу нового' }))
+    await waitFor(() => expect(within(form).getByLabelText('Новый контрагент')).toBeTruthy())
+  })
+
   it('EARS-508: names the product a purpose demands and the project cannot give', async () => {
     // #388 journey, state 09: «Продажи курса» binds a product, «Фонд BBM» has
     // none — the field used to disappear while the schema still refused on it,
