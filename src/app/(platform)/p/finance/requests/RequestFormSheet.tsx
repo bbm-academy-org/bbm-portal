@@ -75,6 +75,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
  * react-hook-form's, and the rules are one zod schema (`request-form-model.ts`)
  * whose messages land under the field that is wrong instead of in a summary
  * Alert above the form.
+ *
+ * EVERY SELECT CARRIES `min-w-0` (PR #470 review, measured at 390×844). A
+ * `FormItem` is `grid gap-2`, so its implicit column is `auto` and the column's
+ * automatic minimum is the largest min-content among its items; the kit's
+ * `SelectTrigger` is `whitespace-nowrap`, so that min-content is the whole
+ * label of the selected option — «Нет подходящего — предложу новое» is 282 px
+ * against a 245 px column — and `w-full` cannot clamp below `min-width: auto`.
+ * Without the class the column grew to 283 px, the sheet body scrolled
+ * sideways (clientWidth 277 vs scrollWidth 299) and the chevron sat 8 px off a
+ * 390 px screen. With it, `SelectValue`'s `line-clamp-1` truncates the option
+ * and the sheet does not grow.
  */
 export function RequestFormSheet({
   references,
@@ -153,7 +164,7 @@ export function RequestFormSheet({
                       onValueChange={(value) => field.onChange(value === NONE ? '' : value)}
                     >
                       <FormControl>
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger className="w-full min-w-0">
                           <SelectValue placeholder="Выберите назначение" />
                         </SelectTrigger>
                       </FormControl>
@@ -203,7 +214,7 @@ export function RequestFormSheet({
                     <FormLabel>Проект</FormLabel>
                     <Select value={field.value} disabled={pending} onValueChange={field.onChange}>
                       <FormControl>
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger className="w-full min-w-0">
                           <SelectValue placeholder="Выберите проект" />
                         </SelectTrigger>
                       </FormControl>
@@ -229,7 +240,7 @@ export function RequestFormSheet({
                       <FormLabel>Продукт</FormLabel>
                       <Select disabled value={NONE}>
                         <FormControl>
-                          <SelectTrigger className="w-full">
+                          <SelectTrigger className="w-full min-w-0">
                             <SelectValue placeholder="У проекта нет продуктов" />
                           </SelectTrigger>
                         </FormControl>
@@ -257,7 +268,7 @@ export function RequestFormSheet({
                         onValueChange={(value) => field.onChange(value === NONE ? '' : value)}
                       >
                         <FormControl>
-                          <SelectTrigger className="w-full">
+                          <SelectTrigger className="w-full min-w-0">
                             <SelectValue placeholder="Выберите продукт" />
                           </SelectTrigger>
                         </FormControl>
@@ -319,7 +330,7 @@ export function RequestFormSheet({
                       <FormLabel>Валюта</FormLabel>
                       <Select value={field.value} disabled={pending} onValueChange={field.onChange}>
                         <FormControl>
-                          <SelectTrigger className="w-full">
+                          <SelectTrigger className="w-full min-w-0">
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
@@ -349,7 +360,7 @@ export function RequestFormSheet({
                       onValueChange={(value) => field.onChange(value === NONE ? '' : value)}
                     >
                       <FormControl>
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger className="w-full min-w-0">
                           <SelectValue placeholder="Выберите контрагента" />
                         </SelectTrigger>
                       </FormControl>
@@ -466,7 +477,7 @@ export function RequestFormSheet({
                             onValueChange={(value) => field.onChange(value === NONE ? '' : value)}
                           >
                             <FormControl>
-                              <SelectTrigger className="w-full">
+                              <SelectTrigger className="w-full min-w-0">
                                 <SelectValue placeholder="Выберите счёт" />
                               </SelectTrigger>
                             </FormControl>

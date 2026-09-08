@@ -185,7 +185,7 @@ function AttachDocumentForm({
                 <FormLabel>Вид документа</FormLabel>
                 <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
                   <FormControl>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full min-w-0">
                       <SelectValue />
                     </SelectTrigger>
                   </FormControl>
@@ -299,7 +299,7 @@ function PostingDialog({
                       onValueChange={field.onChange}
                     >
                       <FormControl>
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger className="w-full min-w-0">
                           <SelectValue placeholder="Выберите счёт" />
                         </SelectTrigger>
                       </FormControl>
