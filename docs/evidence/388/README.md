@@ -37,40 +37,40 @@ workspace ships no user-facing switch), plus the primary control of each form
 under three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per
 state), never hoped for from a pointer.
 
-| Step | What it shows                                                                                                      |
-| ---- | ------------------------------------------------------------------------------------------------------------------ |
-| 01   | `/p/finance` with the «Заявки» link at the title's right edge (`href=/p/finance/requests`)                         |
-| 02   | the board — four columns, live cards in «Ждут», muted archives in «Проведены» / «Отклонены»                        |
-| 03   | the «Обязательства» tab — what BBM owes for spends from members' own money                                         |
-| 04   | the «Мои заявки» tab — the reader's own filings, including the drafts and the withdrawn                            |
-| 05   | the details sheet of a submitted request — «Одобрить» / «Отклонить…» / the attach block                            |
-| 06   | an APPROVED request with no document: no «Провести» at all, the gate Alert, and the attach form                    |
-| 07   | the refusal dialog — a reason is mandatory (EARS-512), so it is a modal and not a field beside «Одобрить»          |
-| 08   | the same dialog submitted empty — «Укажите причину отказа.» under the field                                        |
-| 09   | «Новая заявка» submitted empty — FOUR messages, each under its own field; no money-date message any more           |
-| 10   | an ILLEGAL drag (a submitted card dropped on «Проведены») — nothing moves, the toast says why                      |
-| 11   | a MUTATION FAILURE (the act route forced to 500) — the error toast, and the sheet deliberately stays open          |
-| 12   | the loading skeleton, caught with the snapshot request held open — four column blocks, no layout jump              |
-| 13   | the same URL as a reader with no finance role: the board is legitimately empty, no act control anywhere            |
-| 14   | «Новая заявка» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both themes)                    |
-| 15   | after «Одобрить» — the success toast and the card now in «Одобрены — ждут документа»                               |
-| 17   | after a refusal with a reason — the card in «Отклонены», carrying the reason and the decider                       |
-| 18   | after «Приложить документ» — the sheet STAYS open, the PDF reads inline, «Провести» is now one click away          |
-| 19   | after «Провести» — the toast «Операция проведена» and the card in «Проведены» with its ledger date                 |
-| 20   | a SEEDED posted request — the ledger operation and its postings instead of controls                                |
-| 21   | «Новая заявка» with a real purpose — the card lands in «Ждут» and the toast says exactly that                      |
-| 22   | the proposal branch («Нет подходящего — предложу новое») — saved as a DRAFT, toast points at «Мои заявки»          |
-| 23   | the form with «Уже потрачено» UNCHECKED — no account, no date, and the form says who fills them in                 |
-| 24   | the same form with «Уже потрачено» TICKED — own-funds, «Счёт списания» and «Дата движения денег» revealed          |
-| 25   | the board carrying pre-spend cards: no date, no «уже потрачено» flag, the words «деньги ещё не двигались»          |
-| 26   | the pre-spend request's sheet — «вводится при проведении» in BOTH money fields, never «—»                          |
-| 27   | «Провести» → the posting act's own dialog, empty: the account and the date it is about to assert                   |
-| 28   | the same dialog submitted empty — both refusals under their own field                                              |
-| 29   | the dialog filled — «Банк RUB» and 2026-09-03, the act ready to run                                                |
-| 30   | the SAME request after the act — «Счёт списания: Банк RUB», «Дата движения денег: 03.09.2026», operation           |
-| 31   | the posting dialog's «Провести» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both)          |
-| 32   | «Продажи курса» on «Фонд BBM» — the disabled product field: the FACT in its description, the instruction on submit |
-| 33   | «Продажи курса» with NO project yet — the «Продукт» field is not on the form at all, and no project is blamed      |
+| Step | What it shows                                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------------------------------- |
+| 01   | `/p/finance` with the «Заявки» link at the title's right edge (`href=/p/finance/requests`)                          |
+| 02   | the board — four columns, live cards in «Ждут», muted archives in «Проведены» / «Отклонены»                         |
+| 03   | the «Обязательства» tab — what BBM owes for spends from members' own money                                          |
+| 04   | the «Мои заявки» tab — the reader's own filings, including the drafts and the withdrawn                             |
+| 05   | the details sheet of a submitted request — «Одобрить» / «Отклонить…» / the attach block                             |
+| 06   | an APPROVED request with no document: no «Провести» at all, the gate Alert, and the attach form                     |
+| 07   | the refusal dialog — a reason is mandatory (EARS-512), so it is a modal and not a field beside «Одобрить»           |
+| 08   | the same dialog submitted empty — «Укажите причину отказа.» under the field                                         |
+| 09   | «Новая заявка» submitted empty — FOUR messages, each under its own field; no money-date message any more            |
+| 10   | an ILLEGAL drag (a submitted card dropped on «Проведены») — nothing moves, the toast says why                       |
+| 11   | a MUTATION FAILURE (the act route forced to 500) — the error toast, and the sheet deliberately stays open           |
+| 12   | the loading skeleton, caught with the snapshot request held open — four column blocks, no layout jump               |
+| 13   | the same URL as a reader with no finance role: only their OWN card, and no approve / post / refuse control anywhere |
+| 14   | «Новая заявка» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both themes)                     |
+| 15   | after «Одобрить» — the success toast and the card now in «Одобрены — ждут документа»                                |
+| 17   | after a refusal with a reason — the card in «Отклонены», carrying the reason and the decider                        |
+| 18   | after «Приложить документ» — the sheet STAYS open, the PDF reads inline, «Провести» is now one click away           |
+| 19   | after «Провести» — the toast «Операция проведена» and the card in «Проведены» with its ledger date                  |
+| 20   | a SEEDED posted request — the ledger operation and its postings instead of controls                                 |
+| 21   | «Новая заявка» with a real purpose — the card lands in «Ждут» and the toast says exactly that                       |
+| 22   | the proposal branch («Нет подходящего — предложу новое») — saved as a DRAFT, toast points at «Мои заявки»           |
+| 23   | the form with «Уже потрачено» UNCHECKED — no account, no date, and the form says who fills them in                  |
+| 24   | the same form with «Уже потрачено» TICKED — own-funds, «Счёт списания» and «Дата движения денег» revealed           |
+| 25   | the board carrying pre-spend cards: no date, no «уже потрачено» flag, the words «деньги ещё не двигались»           |
+| 26   | the pre-spend request's sheet — «вводится при проведении» in BOTH money fields, never «—»                           |
+| 27   | «Провести» → the posting act's own dialog, empty: the account and the date it is about to assert                    |
+| 28   | the same dialog submitted empty — both refusals under their own field                                               |
+| 29   | the dialog filled — «Банк RUB» and 2026-09-03, the act ready to run                                                 |
+| 30   | the SAME request after the act — «Счёт списания: Банк RUB», «Дата движения денег: 03.09.2026», operation            |
+| 31   | the posting dialog's «Провести» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both)           |
+| 32   | «Продажи курса» on «Фонд BBM» — the disabled product field: the FACT in its description, the instruction on submit  |
+| 33   | «Продажи курса» with NO project yet — the «Продукт» field is not on the form at all, and no project is blamed       |
 
 Steps 14 and 31 are set through one `CSS.forcePseudoState` CDP session per state
 on the located element, never hoped for from a pointer.
@@ -217,6 +217,81 @@ capped, the table keeps a `34rem` floor, and below `sm` a line says the rest is
 to the right — 968 px → 544 px. Only **04** was re-driven; **03** measures
 343 px in the same 343 px container and never overflowed, so its frames are
 untouched.
+
+**A SEVENTH pass at head `f7ff3c1`** — `d2ca78b` merged with `main` (`0a1c402`) —
+drove the WHOLE matrix, states 01–33, end to end at all four combinations,
+because the previous two passes had re-driven only what the BOARD READ paints
+(02–06, 12, 13, 20, 25, 26, 30) while the WRITE flows still stood on `6291a7a`
+or earlier. Every frame in this folder is from this pass. What «end to end»
+means here, per combination: file a pre-spend intent through the form (23 → 24
+→ 09 → 21), read it back with no money facts (26), approve it (15), attach
+`receipt-388.pdf` (18), be refused by the posting dialog for the facts the
+request does not have (27, 28), fill them (29, 31), post (19), and read the
+posted request back with the account and the date the ACT supplied (30) — plus
+the proposal draft (22), the two product-field states (32, 33), the refusal
+dialog and its empty submit (07, 08), the illegal drop (10), the forced
+mutation failure (11), the held-open skeleton (12) and the CTA pseudo-states
+(14). Four requests were driven the full length, one per combination: **#82**
+(desktop-light), **#84** (desktop-dark), **#86** (mobile-light), **#88**
+(mobile-dark) — each approved, given the receipt, and posted with «Банк RUB» /
+2026-09-08, producing ledger operations **#16–#19**.
+
+**Every act was observed live, not inferred from a screenshot.** The board moved
+each time: the filed card landed in «Ждут» (1), the approved one in «Одобрены —
+ждут документа» (1), the posted one in «Проведены» (1); the illegal drop left
+«Ждут» at 8 cards before and after and opened no sheet; the forced 500 left the
+sheet open. The refusal act ran once, on `[seed:req-submitted-09]` (#32), with
+the reason «Нет подтверждающего документа и бюджета на квартал.» — steps 07 and
+08 are non-mutating and were driven at all four combinations.
+
+**API timings, measured on this head across the four runs.** `GET
+/p/finance/api/requests` — n=137, 28–163 ms in the steady state; the single
+2.8 s reading in each run is step 12's deliberately held request. `POST
+/p/finance/api/requests` 201 in 54–99 ms, `POST …/actions` 200 in 71–105 ms,
+`POST /p/finance/api/documents` 201 in 50–123 ms, `GET
+/p/finance/api/documents/<id>` 200 in 1–51 ms. Nothing took over 10 s, nothing
+stayed pending, and the only non-2xx in the whole matrix is the 500 the harness
+itself forces for step 11.
+
+**Step 31's forcing was proved by diff again, and the assertion is narrowed by
+four pixels.** Each forced frame was diffed against an unforced base of the same
+screen: in DARK every changed pixel falls inside the CTA's own box (x 812–894,
+y 577–608) — hover 2458 px, focus-visible 1078 px, active 2585 px. In LIGHT the
+same three frames change **four** pixels outside it, and only four: the corner
+antialiasing of the «Счёт списания» field's rounded border at (551,464),
+(888,464), (551,494) and (888,494), identical in all three frames and therefore
+a property of the base, not of the forcing. Everything else — 2470 / 1094 /
+2589 px — is inside the CTA. The earlier «every changed pixel» wording is
+replaced by this count.
+
+**The defect this pass found, and did NOT fix: «Новая заявка» scrolls sideways at
+390 px.** Measured live in the DOM, both before and after a submit: the sheet's
+`clientWidth` is 277 px while its `scrollWidth` is 299 px, because the
+«Назначение» `SelectTrigger` and its label have an intrinsic width of 281–283 px
+and end at x=398 — 8 px past the 390 px viewport. The form therefore carries a
+horizontal scrollbar and the select's chevron sits off-screen. It is visible in
+`09`, `23`, `24`, `32` and `33` at both mobile themes, and it is NOT a
+regression of this head: the frames the fourth and fifth passes left on file
+show the identical strip. Filed as an observation on PR #470 rather than fixed
+here, because a stage-5 journey does not change code.
+
+**Step 13 changed meaning, deliberately.** `bbm-member` reads `canApprove:false,
+canEnter:false` but the reference tables come back full, and filing is NOT gated
+by the finance roles — the member filed a request through the form and the
+endpoint answered `201`. So «Новая заявка» being on that screen is the contract,
+not a leak, and the state worth accepting is not «empty» but «the reader sees
+only their OWN card and none of the approver's acts». The frames were re-taken
+after that probe and show exactly that: one card in «Ждут», and no «Одобрить» /
+«Провести» / «Отклонить…» anywhere.
+
+**Rows this pass changed in `platform_388`.** Eight requests filed through the
+form — four pre-spend intents (**#82, #84, #86, #88**, all approved, documented
+and posted) and four proposal drafts (**#81, #83, #85, #87**) — plus **#79** and **#80**,
+filed by an aborted first attempt of the desktop-light run (#80 was carried to
+«Проведены» by it), **#32** refused,
+and one request filed by `bbm-member` while probing the paragraph above. Ledger
+operations **#16–#19** are this pass's. Nothing was hand-edited in the database
+and nothing was deleted.
 
 **The journey scripts are not committed** — they were bound to this seed dataset
 and deleted with the run, the same call #434 and #437 made; `DEBT.md` already
