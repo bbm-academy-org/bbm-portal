@@ -97,6 +97,14 @@ export function RequestsBoardScreen() {
   const [formFailure, setFormFailure] = React.useState<string | undefined>(undefined)
   const [uploading, setUploading] = React.useState(false)
   const [uploadFailure, setUploadFailure] = React.useState<string | undefined>(undefined)
+  /**
+   * WHICH COLUMN THE POINTER IS OVER, and nothing more. A native HTML5 drag
+   * paints a ghost of the card and gives the TARGET no treatment at all, so a
+   * drag that works is indistinguishable from one that does not — the owner
+   * read exactly that as «drag does not work» (#388). This is feedback, never
+   * a decision: the drop still only opens the act `planRequestDrop` names.
+   */
+  const [dragOver, setDragOver] = React.useState<FinanceRequestBoardStatus | null>(null)
 
   /**
    * READ THE QUERY, NOT `result`. `useCustom`'s `result.data` is
@@ -335,7 +343,10 @@ export function RequestsBoardScreen() {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-3 lg:grid-cols-4">
+              // `dragend` fires on the card and BUBBLES, so one handler here
+              // clears the treatment however the drag ended — dropped on a
+              // column, dropped outside one, or abandoned with Escape.
+              <div className="grid gap-3 lg:grid-cols-4" onDragEnd={() => setDragOver(null)}>
                 {REQUEST_BOARD_COLUMNS.map((column) => {
                   const cards = groups[column.status]
                   const archived = column.status === 'posted' || column.status === 'refused'
@@ -343,11 +354,30 @@ export function RequestsBoardScreen() {
                     <section
                       key={column.status}
                       aria-label={column.title}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={onDrop(column.status)}
+                      // `preventDefault` on EVERY dragover is what makes the
+                      // column a drop target at all — without it the browser
+                      // never fires `drop`.
+                      onDragOver={(event) => {
+                        event.preventDefault()
+                        if (dragOver !== column.status) setDragOver(column.status)
+                      }}
+                      onDragLeave={(event) => {
+                        // `dragleave` also fires when the pointer crosses onto a
+                        // CHILD of the column; only a leave that really lands
+                        // outside it clears the treatment.
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                          setDragOver((current) => (current === column.status ? null : current))
+                        }
+                      }}
+                      onDrop={(event) => {
+                        setDragOver(null)
+                        onDrop(column.status)(event)
+                      }}
+                      data-drag-over={dragOver === column.status ? 'true' : undefined}
                       className={cn(
-                        'flex min-h-40 flex-col gap-2 rounded-xl border p-3',
+                        'flex min-h-40 flex-col gap-2 rounded-xl border p-3 transition-colors',
                         archived ? 'bg-muted/30' : 'bg-card',
+                        dragOver === column.status ? 'border-ring bg-accent/40' : undefined,
                       )}
                     >
                       <div className="flex items-baseline justify-between gap-2">
