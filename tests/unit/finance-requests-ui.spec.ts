@@ -828,3 +828,90 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on «Мои зая�
     expect(hint.className).toContain('sm:hidden')
   })
 })
+
+// The stage-5 UX sanity pass on the 390 px frames of the SHEET that files a
+// request (PR #470 review, states 09/23/24/32/33).
+//
+// DEFECT (real, measured on the live stand at 390×844 before the fix): the
+// «Новая заявка» sheet scrolled SIDEWAYS — `[data-slot="sheet-content"]`
+// clientWidth 277, scrollWidth 299 — and the «Назначение» trigger ended at
+// x=398, eight pixels past the viewport, with its chevron off-screen.
+//
+// The mechanism is intrinsic minimum size, not a stray width. `FormItem` is
+// `grid gap-2`, so its implicit column is `auto` and the column's automatic
+// minimum is the largest MIN-CONTENT contribution among its items. The kit's
+// `SelectTrigger` is `whitespace-nowrap`, so its min-content is the whole
+// label of the selected option — «Нет подходящего — предложу новое» measured
+// 282 px against a 245 px column — and `w-full` cannot help: `width: 100%` is
+// clamped UP by `min-width: auto`. The column resolved to 283.34 px and pushed
+// the form out of the sheet.
+//
+// The fix is one class per trigger: `min-w-0` turns the automatic minimum off,
+// the column takes the 245 px it has, and `SelectValue`'s existing
+// `line-clamp-1` truncates the long option instead of the sheet growing.
+// Re-measured on the same stand after the fix: scrollWidth 277 == clientWidth
+// 277, trigger right edge 359.
+describe('/p/finance/requests — a 390 px reader never scrolls the sheet sideways', () => {
+  function comboboxes(scope: HTMLElement) {
+    const found = within(scope).getAllByRole('combobox')
+    expect(found.length).toBeGreaterThan(0)
+    return found
+  }
+
+  it('every select in «Новая заявка» may shrink below the width of its longest option', async () => {
+    renderBoard()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+
+    for (const trigger of comboboxes(sheet)) {
+      expect(trigger.className).toContain('w-full')
+      expect(trigger.className).toContain('min-w-0')
+    }
+  })
+
+  it('the selects revealed by «Уже потрачено» may shrink too', async () => {
+    renderBoard()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+    fireEvent.click(within(sheet).getByRole('checkbox', { name: /Уже потрачено/i }))
+    await waitFor(() => expect(within(sheet).getByText('Счёт списания')).toBeTruthy())
+
+    for (const trigger of comboboxes(sheet)) {
+      expect(trigger.className).toContain('min-w-0')
+    }
+  })
+
+  it('the account select of the posting dialog may shrink below its longest account name', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 12,
+          status: 'approved',
+          occurredOn: null,
+          account: null,
+          documents: [
+            {
+              id: 9,
+              filename: 'чек.pdf',
+              mime: 'application/pdf',
+              size: 10,
+              kind: 'fiscal_receipt' as const,
+              uploadedAt: '2026-09-03T10:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+    })
+    renderBoard()
+    openCard(12)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
+
+    const posting = await screen.findByRole('dialog', { name: /Провести заявку №12/ })
+    for (const trigger of comboboxes(posting)) {
+      expect(trigger.className).toContain('min-w-0')
+    }
+  })
+})
