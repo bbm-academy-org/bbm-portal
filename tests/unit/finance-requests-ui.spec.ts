@@ -970,6 +970,19 @@ describe('/p/finance/requests — a 390 px reader never scrolls the sheet sidewa
     expect(grid?.className).toContain('sm:grid-cols-[minmax(0,1fr)_9rem]')
   })
 
+  // The third fixed site, cited by a test of its own: nothing opened the attach
+  // form, so «Вид документа» carried the class on the strength of its two
+  // siblings alone (review round 4, minor).
+  it('the «Вид документа» select of the attach form may shrink too', async () => {
+    renderBoard()
+    openCard(1)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+
+    const kind = within(sheet).getByLabelText('Вид документа')
+    expect(kind.className).toContain('min-w-0')
+  })
+
   it('the account select of the posting dialog may shrink below its longest account name', async () => {
     refine.custom.data = snapshot({
       requests: [
