@@ -37,6 +37,31 @@ function answerLine(text: string) {
 const NOISE = JSON.stringify({ type: 'assistant', message: { id: 'a1', content: 'думаю дальше' } })
 
 describe('askuserquestion-context-guard', () => {
+  it('does not infer an unanswered repeat when the harness exposes no stable answer evidence', () => {
+    const first = decideAskUserQuestion({
+      toolName: 'AskUserQuestion',
+      toolInput: ask(Q1),
+      state: {},
+      repeatAnswerEvidenceAvailable: false,
+    })
+    const repeated = decideAskUserQuestion({
+      toolName: 'AskUserQuestion',
+      toolInput: ask(Q1),
+      state: first.state,
+      repeatAnswerEvidenceAvailable: false,
+    })
+
+    expect(repeated.block).toBe(false)
+    expect(
+      decideAskUserQuestion({
+        toolName: 'AskUserQuestion',
+        toolInput: ask('Берём #107?'),
+        state: {},
+        repeatAnswerEvidenceAvailable: false,
+      }).reason,
+    ).toBe('bare-ref')
+  })
+
   it('первый вопрос проходит, запоминая baseline и позицию в транскрипте', () => {
     const d = decideAskUserQuestion({
       toolName: 'AskUserQuestion',

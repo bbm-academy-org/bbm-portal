@@ -9,6 +9,7 @@ import { decideAgentModel } from '../../tools/hooks/agent-model-guard.mjs'
 import {
   applyPatchPaths,
   normalizeHookPayload,
+  powershellFileWritePaths,
   recordWriteEvidence,
   readStopContext,
   writeEvidenceForPayload,
@@ -147,6 +148,147 @@ describe('Codex hook payload compatibility', () => {
     ).toBe(true)
     expect(writeEvidenceForPayload({ tool_name: 'unknown', tool_input: null })).toBe(false)
     expect(writeEvidenceForPayload(null)).toBe(false)
+  })
+
+  it('normalizes async user-input titles and string options without transcript repeat inference', () => {
+    expect(
+      normalizeHookPayload({
+        tool_name: 'request_user_input_async',
+        tool_input: {
+          questions: [
+            {
+              id: 'scope',
+              title: 'Which scope should be used?',
+              options: ['Focused', 'Complete'],
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      harness_tool_name: 'request_user_input_async',
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [
+          {
+            id: 'scope',
+            header: 'scope',
+            question: 'Which scope should be used?',
+            options: [
+              { label: 'Focused', description: '' },
+              { label: 'Complete', description: '' },
+            ],
+          },
+        ],
+      },
+    })
+  })
+
+  it('extracts safely parseable literal PowerShell file-write targets', () => {
+    expect(
+      powershellFileWritePaths("Set-Content -LiteralPath '..\\shared\\one.txt' -Value x"),
+    ).toEqual(['..\\shared\\one.txt'])
+    expect(powershellFileWritePaths('"x" | Add-Content -Path "folder two\\two.txt"')).toEqual([
+      'folder two\\two.txt',
+    ])
+    expect(powershellFileWritePaths("'x' | Out-File -FilePath 'three.txt'")).toEqual(['three.txt'])
+    expect(powershellFileWritePaths("Get-Content -LiteralPath '..\\shared\\one.txt'")).toEqual([])
+    expect(powershellFileWritePaths("Write-Output 'Set-Content -Path escaped.txt'")).toEqual([])
+    expect(
+      powershellFileWritePaths('Write-Output "quoted line\nSet-Content -Path escaped.txt"'),
+    ).toEqual([])
+    expect(
+      powershellFileWritePaths(
+        "Set-Content -Value 'text -Path C:\\repo\\src\\wrong.txt' -LiteralPath 'C:\\repo\\.claude\\worktrees\\475\\right.txt'",
+      ),
+    ).toEqual(['C:\\repo\\.claude\\worktrees\\475\\right.txt'])
+    expect(powershellFileWritePaths('# audit only; Set-Content -Path escaped.txt')).toEqual([])
+    expect(powershellFileWritePaths('Set-Content -Path $target -Value x')).toEqual([])
+    expect(powershellFileWritePaths('Set-Content -Path "$(Join-Path $root x)" -Value x')).toEqual(
+      [],
+    )
+    expect(powershellFileWritePaths('Set-Content -Path "src\\*.txt" -Value x')).toEqual([])
+  })
+
+  it('does not treat quoted PowerShell values as path switches', () => {
+    expect(
+      powershellFileWritePaths("Set-Content -Value '-Path' -LiteralPath 'C:\\repo\\src\\file.ts'"),
+    ).toEqual(['C:\\repo\\src\\file.ts'])
+  })
+
+  it('ignores PowerShell block comments', () => {
+    expect(
+      powershellFileWritePaths(
+        "<#\nSet-Content -LiteralPath 'C:\\repo\\src\\file.ts' -Value x\n#>",
+      ),
+    ).toEqual([])
+  })
+
+  it('normalizes canonical Codex shell aliases with literal write targets', () => {
+    for (const tool_name of ['Bash', 'PowerShell']) {
+      expect(
+        normalizeHookPayload({
+          tool_name,
+          tool_input: { command: "Set-Content -LiteralPath 'src\\result.txt' -Value x" },
+        }),
+      ).toMatchObject({ tool_input: { file_paths: ['src\\result.txt'] } })
+    }
+  })
+
+  it('records literal PowerShell file writes and path-checks them from nested cwd', () => {
+    const cwd = resolve(tmpdir(), 'bbm-main', '.claude', 'worktrees', '475', 'nested')
+    const escaped = normalizeHookPayload({
+      tool_name: 'exec_command',
+      tool_input: { command: "Set-Content -LiteralPath '../../../../escaped.txt' -Value x" },
+    })
+    const safe = normalizeHookPayload({
+      tool_name: 'exec_command',
+      tool_input: { command: "Set-Content -LiteralPath './safe file.txt' -Value x" },
+    })
+    const read = normalizeHookPayload({
+      tool_name: 'exec_command',
+      tool_input: { command: "Get-Content -LiteralPath '../../../../escaped.txt'" },
+    })
+
+    expect(writeEvidenceForPayload(escaped)).toBe(true)
+    expect(
+      decideEscapeBlock({ toolName: escaped.tool_name, toolInput: escaped.tool_input, cwd }).block,
+    ).toBe(true)
+    expect(
+      decideEscapeBlock({ toolName: safe.tool_name, toolInput: safe.tool_input, cwd }),
+    ).toEqual({
+      block: false,
+      inWorktreeSession: true,
+    })
+    expect(writeEvidenceForPayload(read)).toBe(false)
+    expect(
+      decideEscapeBlock({ toolName: read.tool_name, toolInput: read.tool_input, cwd }),
+    ).toEqual({
+      block: false,
+    })
+  })
+
+  it('blocks literal shell writes through the real worktree guard CLI', () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), 'bbm-worktree-guard-'))
+    const cwd = resolve(tempRoot, '.claude', 'worktrees', '475', 'nested')
+    const run = (tool_name: string, command: string) =>
+      spawnSync(process.execPath, [resolve(repoRoot, 'tools/hooks/worktree-path-guard.mjs')], {
+        cwd,
+        input: JSON.stringify({ cwd, tool_name, tool_input: { command } }),
+        encoding: 'utf8',
+      })
+
+    mkdirSync(cwd, { recursive: true })
+    try {
+      for (const toolName of ['Bash', 'PowerShell', 'exec_command']) {
+        expect(
+          run(toolName, "Set-Content -LiteralPath '../../../../escaped.txt' -Value x").status,
+          toolName,
+        ).toBe(2)
+        expect(run(toolName, 'git status').status, `${toolName} read`).toBe(0)
+      }
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true })
+    }
   })
 
   // `spawn_agent` normalizes to `Agent`, and since #439 a dispatch is NOT write
@@ -447,6 +589,7 @@ describe('repository-local Codex hooks', () => {
     expect(hooks.hooks.Stop[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.PostToolUse[0].matcher).toBe('.*')
     expect(hooks.hooks.SessionEnd[0]).not.toHaveProperty('matcher')
+    expect(hooks.hooks.SessionEnd[0].hooks[0].timeout).toBeLessThanOrEqual(3)
     expect(hooks.hooks.SubagentStart[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.SubagentStop[0]).not.toHaveProperty('matcher')
     expect(JSON.stringify(hooks)).not.toContain('"matcher":"*"')

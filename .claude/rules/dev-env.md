@@ -1,19 +1,22 @@
 # Dev env — this Windows box
 
 - **Node 22 is mandatory** (`engines: ^22.22.1`, engine-strict). The system Node
-  here is newer, so the first thing in every bash session is:
-  `export PATH="$LOCALAPPDATA/node22:$PATH"` — the portable build lives in
-  `%LOCALAPPDATA%\node22`. On Node 23/24 the Payload tsx loader breaks
+  here is newer. Prepend the portable build from `%LOCALAPPDATA%\node22`:
+  PowerShell `$env:PATH = "$env:LOCALAPPDATA\node22;$env:PATH"`; Bash
+  `export PATH="$LOCALAPPDATA/node22:$PATH"`; then run `node --version`. On
+  Node 23/24 the Payload tsx loader breaks
   (`node:crypto?tsx-namespace` ENOENT), and `pnpm patch-commit` refuses to work
   at all.
-- **Git — only as `git -C <absolute root>`.** Do not use `cd` in the Bash tool:
-  the cwd drifts between calls, and the command ends up in someone else's
-  worktree. Every git command names its own tree explicitly.
+- **Git — only as `git -C <absolute root>`.** Do not depend on a shell tool's
+  previous `Set-Location`: cwd can drift between calls, and the command can end
+  up in someone else's worktree. Every git command names its own tree explicitly.
 - **Dev-stand ports: 3000–3009.** The redirect URIs in the dev Zitadel are
   registered for exactly this range (× `localhost`/`127.0.0.1` × both callback
   paths); a stand on another port will come up, but the login fails with
   `400 invalid_request`. The port is taken via `pnpm dev:ports`, the stand is
-  started as `PORT=<n> pnpm dev` (not `pnpm dev -- -p <n>`).
+  started in PowerShell as `$env:PORT = '<n>'; pnpm dev` (not
+  `pnpm dev -- -p <n>`). Clear the session override afterwards with
+  `Remove-Item Env:PORT`. Bash equivalent: `PORT=<n> pnpm dev`.
 - **The range in the provisioning default:** `infra/dev-stand/idp/provision.sh`
   generates both sets from the same bounds — the redirect URIs (port × host ×
   callback path) and the post-logout URIs (port × host, bare origins) — so a

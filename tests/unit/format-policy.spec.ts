@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
 
@@ -64,25 +64,36 @@ describe('canonical Prettier policy on cross-platform checkouts', () => {
 })
 
 describe('format-check and pre-commit policy', () => {
-  it('makes format:check reject an unformatted file under .claude', () => {
-    const fixtureDir = mkdtempSync(resolve(repoRoot, '.claude', '.format-policy-test-'))
-    const fixture = resolve(fixtureDir, 'fixture.md')
-    writeFileSync(fixture, '# malformed\n\n-   item\n', 'utf8')
+  it.each(['.claude', '.codex'])(
+    'makes format:check reject an unformatted file under %s',
+    (directory) => {
+      const fixtureRoot = mkdtempSync(join(tmpdir(), 'bbm-format-policy-check-'))
+      const fixtureDir = resolve(fixtureRoot, directory)
+      const fixture = resolve(fixtureDir, 'fixture.md')
+      const prettierBin = resolve(repoRoot, 'node_modules', 'prettier', 'bin', 'prettier.cjs')
+      const formatArgs = [
+        '--check',
+        '--no-error-on-unmatched-pattern',
+        ...formatCheckGlobs(packageConfig.scripts['format:check']),
+      ]
+      mkdirSync(fixtureDir, { recursive: true })
+      copyFileSync(resolve(repoRoot, '.prettierrc.json'), resolve(fixtureRoot, '.prettierrc.json'))
+      writeFileSync(fixture, '# malformed\n\n-   item\n', 'utf8')
 
-    try {
-      const result = spawnSync('pnpm', ['format:check'], {
-        cwd: repoRoot,
-        encoding: 'utf8',
-        shell: process.platform === 'win32',
-      })
+      try {
+        const result = spawnSync(process.execPath, [prettierBin, ...formatArgs], {
+          cwd: fixtureRoot,
+          encoding: 'utf8',
+        })
 
-      expect(result.error).toBeUndefined()
-      expect(result.status).not.toBe(0)
-      expect(`${result.stdout}\n${result.stderr}`).toContain(basename(fixture))
-    } finally {
-      rmSync(fixtureDir, { recursive: true, force: true })
-    }
-  }, 20_000)
+        expect(result.error).toBeUndefined()
+        expect(result.status).not.toBe(0)
+        expect(`${result.stdout}\n${result.stderr}`).toContain(basename(fixture))
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('keeps format:check and lint-staged Prettier globs identical', () => {
     expect(

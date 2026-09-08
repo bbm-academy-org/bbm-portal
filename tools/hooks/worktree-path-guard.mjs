@@ -80,10 +80,12 @@ export function writeWarnMessage(liveCount) {
  * чьё-то изолированное дерево, общему чекауту он не угрожает и проходит.
  */
 export function decideEscapeBlock({ toolName, toolInput, cwd }) {
-  if (!/^(Edit|Write|MultiEdit)$/.test(toolName || '')) return { block: false }
+  const shellWrite = /^(Bash|PowerShell)$/.test(toolName || '')
+  if (!shellWrite && !/^(Edit|Write|MultiEdit)$/.test(toolName || '')) return { block: false }
   const filePaths = Array.isArray(toolInput && toolInput.file_paths)
     ? toolInput.file_paths
     : [(toolInput && toolInput.file_path) || '']
+  if (shellWrite && !filePaths.some(Boolean)) return { block: false }
   if (!cwd || filePaths.length === 0) return { block: false }
   const m = String(cwd).match(/^(.*)[\\/]\.claude[\\/]worktrees[\\/]([^\\/]+)/)
   if (!m) return { block: false, inWorktreeSession: false }
@@ -137,7 +139,7 @@ function main() {
     if (hooksDisabled()) process.exit(0)
     const payload = readHookPayload()
     const tool = payload.tool_name || ''
-    if (!/^(Edit|Write|MultiEdit)$/.test(tool)) process.exit(0)
+    if (!/^(Edit|Write|MultiEdit|Bash|PowerShell)$/.test(tool)) process.exit(0)
     const cwd = payload.cwd || ''
 
     const escape = decideEscapeBlock({ toolName: tool, toolInput: payload.tool_input, cwd })

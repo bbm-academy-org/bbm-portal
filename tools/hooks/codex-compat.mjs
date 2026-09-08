@@ -10,7 +10,6 @@ import {
 import { HALT_RE, detectHaltSignal } from './deviations-gate.mjs'
 import {
   CODEX_WRITE_STATE_DIR_REL,
-  applyPatchPaths,
   mainRepoRoot,
   normalizeHookPayload,
   readState,
@@ -18,7 +17,7 @@ import {
   writeState,
 } from './shared.mjs'
 
-export { applyPatchPaths, normalizeHookPayload }
+export { applyPatchPaths, normalizeHookPayload, powershellFileWritePaths } from './shared.mjs'
 
 /** One stable PostToolUse payload is enough evidence that this session wrote. */
 export function writeEvidenceForPayload(payload) {

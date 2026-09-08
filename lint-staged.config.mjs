@@ -3,7 +3,16 @@ import { extname, isAbsolute, relative } from 'node:path'
 // An object config runs overlapping glob tasks concurrently. One function keeps
 // eslint/stylelint ahead of Prettier while the exported globs remain comparable
 // to format:check, so an installed hook needs no command-line concurrency flag.
-const formatDirectories = ['src', 'tools', 'docs', 'deploy', 'tests', 'scripts', '.claude']
+const formatDirectories = [
+  'src',
+  'tools',
+  'docs',
+  'deploy',
+  'tests',
+  'scripts',
+  '.claude',
+  '.codex',
+]
 // `mjs`/`js` are here since #286: without them the whole `tools/**` layer (every
 // guard, hook and gh script) was unformatted-by-omission, in CI and on pre-commit
 // alike. Generated JavaScript is excluded by `.prettierignore`, not by the glob.

@@ -315,6 +315,70 @@ export function applyPatchPaths(command) {
   return paths
 }
 
+/** Literal targets of common PowerShell content-writing cmdlets. */
+export function powershellFileWritePaths(command) {
+  const paths = []
+  const segments = []
+  let tokens = []
+  let token = ''
+  let tokenQuoted = false
+  let quote = ''
+  const source = String(command || '')
+  const pushToken = () => {
+    if (token) tokens.push({ quoted: tokenQuoted, value: token })
+    token = ''
+    tokenQuoted = false
+  }
+  const pushSegment = () => {
+    pushToken()
+    if (tokens.length > 0) segments.push(tokens)
+    tokens = []
+  }
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]
+    if (quote) {
+      if (char === '`' && index + 1 < source.length) token += source[++index]
+      else if (char === quote) {
+        if (quote === "'" && source[index + 1] === "'") token += source[++index]
+        else quote = ''
+      } else token += char
+    } else if (char === "'" || char === '"') {
+      quote = char
+      tokenQuoted = true
+    } else if (char === '<' && source[index + 1] === '#') {
+      const end = source.indexOf('#>', index + 2)
+      if (end < 0) break
+      index = end + 1
+    } else if (char === '#') {
+      pushSegment()
+      while (index + 1 < source.length && source[index + 1] !== '\n') index += 1
+    } else if (char === ';' || char === '|' || char === '\n') {
+      pushSegment()
+    } else if (/\s/.test(char)) {
+      pushToken()
+    } else {
+      token += char
+    }
+  }
+  pushSegment()
+
+  for (const segmentTokens of segments) {
+    const offset = segmentTokens[0]?.value === '&' ? 1 : 0
+    if (!/^(?:Set-Content|Add-Content|Out-File)$/i.test(segmentTokens[offset]?.value || ''))
+      continue
+    const pathFlagIndex = segmentTokens.findIndex(
+      (tokenPart, index) =>
+        index > offset &&
+        !tokenPart.quoted &&
+        /^-(?:LiteralPath|Path|FilePath)$/i.test(String(tokenPart.value || '')),
+    )
+    const path = pathFlagIndex >= 0 ? segmentTokens[pathFlagIndex + 1]?.value : ''
+    if (!path || /[$*?\[\]`]/.test(path)) continue
+    if (path && !paths.includes(path)) paths.push(path)
+  }
+  return paths
+}
+
 /**
  * Adapt the small set of Codex canonical tool payloads to the Claude-shaped
  * contracts consumed by the existing hook stack. Unknown payloads pass
@@ -347,10 +411,36 @@ export function normalizeHookPayload(payload) {
         ? 'fork'
         : sourceInput.subagent_type || sourceInput.task_name || '',
     }
-  } else if (['shell_command', 'exec_command', 'shell'].includes(toolName)) {
-    normalizedName = 'Bash'
-  } else if (toolName === 'request_user_input') {
+  } else if (['shell_command', 'exec_command', 'shell', 'Bash', 'PowerShell'].includes(toolName)) {
+    if (['shell_command', 'exec_command', 'shell'].includes(toolName)) normalizedName = 'Bash'
+    const filePaths = powershellFileWritePaths(sourceInput.command)
+    if (filePaths.length > 0) toolInput = { ...sourceInput, file_paths: filePaths }
+  } else if (['request_user_input', 'request_user_input_async'].includes(toolName)) {
     normalizedName = 'AskUserQuestion'
+    const questions = Array.isArray(sourceInput.questions)
+      ? sourceInput.questions.map((item) => {
+          if (!item || typeof item !== 'object') return item
+          const question =
+            typeof item.question === 'string'
+              ? item.question
+              : typeof item.title === 'string'
+                ? item.title
+                : ''
+          const header =
+            typeof item.header === 'string'
+              ? item.header
+              : typeof item.id === 'string'
+                ? item.id
+                : ''
+          const options = Array.isArray(item.options)
+            ? item.options.map((option) =>
+                typeof option === 'string' ? { label: option, description: '' } : option,
+              )
+            : item.options
+          return { ...item, header, question, options }
+        })
+      : sourceInput.questions
+    toolInput = { ...sourceInput, questions }
   }
 
   if (normalizedName === toolName && toolInput === sourceInput) return payload

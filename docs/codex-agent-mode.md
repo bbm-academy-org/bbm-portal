@@ -62,21 +62,15 @@ harness parity:
   not turn on completion-report enforcement.
 
 Critical worktree-write, zero-dispatch, dispatch/model, secret-output, merge,
-handoff-prompt, and Stop gates are covered for their representative Codex
-payloads. Two advisory paths do not have a safe exact mapping:
-
-- arbitrary Codex shell reads cannot be classified as Claude `Read`, `Grep`, or
-  `Glob` calls, so the main-tree read advisory remains fail-open/manual for
-  those commands;
-- Codex UserPromptSubmit exposes no stable token-count field, so
-  `context-budget.mjs` remains fail-open when the Claude transcript usage shape
-  is absent. Its dispatch-fencing sibling `tools/hooks/lead-context-budget.mjs`
-  (#457) reads the same usage shape and is wired in `.claude/settings.json`
-  only: under Codex it would measure nothing, so it is deliberately absent from
-  `.codex/hooks.json` rather than wired as a hook that always no-ops.
-
-Do not infer safety from either missing advisory. Worktree isolation and manual
-context monitoring remain required by the repository instructions.
+handoff-prompt, and Stop gates are covered for representative Codex payloads.
+Two telemetry-dependent paths remain deliberately manual under Codex: arbitrary
+shell reads cannot be classified as Claude `Read`/`Grep`/`Glob` for the
+main-tree read advisory, and Codex exposes no stable token count for either the
+operator `context-budget` advisory or the lead's hard dispatch fence. The
+operator hook is wired to UserPromptSubmit and fails open when Claude usage is
+absent; `lead-context-budget` is deliberately omitted instead of being wired as
+a permanent no-op. Worktree isolation and manual context monitoring remain
+required; missing telemetry is not a pass.
 
 ## Subagent model mapping
 
@@ -96,6 +90,44 @@ carry a model override; the adapter maps it to the existing inherited-model
 to `"none"` or a positive turn count and pass the mapped model. The mapping is
 a harness adapter, not a change to the task lifecycle; update it when the
 available Codex model catalog changes.
+
+Before dispatch, read the complete canonical profile under `.claude/agents/`
+when the role names one; the skills bridge exposes skills, not executable Claude
+agent profiles. Preserve the profile's return contract and read/write limits in
+the Codex brief. Translate harness vocabulary as follows:
+
+| Canonical wording           | Codex operation                                                         |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `Agent` / `general-purpose` | `spawn_agent` with the model mapping above                              |
+| `AskUserQuestion`           | the supported asynchronous user-input tool; plain chat when unavailable |
+| `WebFetch`                  | Codex web open/search over the cited primary source                     |
+
+## Browser acceptance
+
+The acceptance contract remains task-cycle stage 5: drive every named journey,
+capture its desktop/mobile and light/dark matrix, exercise the required
+interaction states, inspect the evidence, and keep the live stand reachable for
+the owner. Under Codex, use the repository's installed Playwright CLI when it
+can reproduce the journey. Otherwise use the available browser or CUA tool and
+record the limitation honestly. A tool that cannot force a pseudo-state through
+CDP does not prove that state; use Playwright/CDP for that row or report it as
+unverified. Store repository-bound captures only in the sinks allowed by the
+screenshot-path guard, including `.playwright-mcp/`.
+
+## Readiness and enforcement gaps
+
+Codex exposes no stable token-count telemetry for the repository's context
+budget hooks. The lead therefore monitors context pressure manually and stops
+dispatching before it can no longer synthesize the results. This is a known
+manual gap, not evidence that the budget passed.
+
+Trust is checkout-specific and hash-sensitive. Re-open `/hooks`, inspect, and
+trust the exact project hooks after setup and after every `.codex/hooks.json`
+change. `pnpm codex:verify` is the repository readiness doctor: it checks the
+skills bridge, hook definitions and local command paths, Claude-registration
+coverage, and the installed pre-commit hook. It reports runtime trust and live
+hook delivery as `UNVERIFIED` because neither is observable from repository
+files. Treat those lines as manual checks, not as failures or inferred passes.
 
 Generated state under `.claude/codex-write-state/` and
 `.claude/hook-session-registry/`, plus executor markers under

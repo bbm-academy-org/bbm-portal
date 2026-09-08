@@ -472,6 +472,14 @@ decision to this canon. The decision is recorded here; the markers are gone.
 | **screenshot-path-guard**       | `tools/hooks/screenshot-path-guard.mjs`             | **BLOCK** (exit 2) | **Promoted 2026-09-02** (#438), the one promotion this table's WARN set has had. The rule (a screenshot is not acceptance — task-cycle stage 5) is categorical, the detection is a path match, and the clean window closed with no false denial on record. Blast radius per §4 clause 4: one tool call, unblocked from inside the same session by retargeting `filename` into `.playwright-mcp/`, which the denial message prints. The exit code is the severity of record for a hook, so `tests/unit/hooks-screenshot-path-guard.spec.ts` asserts the 2. Demotion per §4 on the first confirmed false denial. |
 | **surface-decision-debt-gate**  | `tools/hooks/surface-decision-debt-gate.mjs`        | WARN               | A `Stop` gate. Promotion means an agent cannot end its turn — a wrong verdict strands the session with no way out, so this needs the clean window from §4 **and** a documented escape hatch before it can block.                                                                                                                                                                                                                                                                                                                                                                                               |
 
+**`worktree-path` — existing BLOCK scope expanded on 2026-09-06 (#475).** The
+guard already blocked an editor write from a task worktree into the shared
+checkout. The same class-1 path invariant now covers ordinary Codex PowerShell
+writes when their target is statically recognized from `Set-Content`,
+`Add-Content`, or `Out-File`. An unrecognized shell target stays fail-open; a
+recognized safe target keeps the existing carve-outs. The owner approved this
+scope expansion in #475. Demotion follows §4 on the first confirmed false block.
+
 **`secret-echo` — the one BLOCK hook this register names, widened by #262.** It is a §3
 class-2 guard (documented security mandate: a printed secret is a leaked secret and is
 rotated, so a WARN soak would itself be the risk), and it therefore never appears in the
