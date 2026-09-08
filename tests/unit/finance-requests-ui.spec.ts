@@ -337,6 +337,49 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     ).toBeTruthy()
   })
 
+  // WHY: the owner's report on the live stand — a press-and-drag on a card
+  // «only selects text». Chromium suppresses text selection INSIDE a
+  // `[draggable="true"]` subtree and NOWHERE else, so the affordance was
+  // self-inflicted: every card the reader cannot drag — a terminal one, and
+  // for a reader without the approve role every card on the board — turned a
+  // drag attempt into a selection of the card's own body, which is what a
+  // broken drag looks like. A card is a CONTROL; its text is never the thing
+  // being selected, draggable or not.
+  it('#388: a card refuses to become a text selection, draggable or not', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 1, status: 'submitted' }), item({ id: 3, status: 'posted' })],
+    })
+    renderBoard()
+
+    const live = screen.getByRole('button', { name: /Заявка №1/ })
+    const terminal = screen.getByRole('button', { name: /Заявка №3/ })
+    expect(live.getAttribute('draggable')).toBe('true')
+    expect(terminal.getAttribute('draggable')).toBe('false')
+    expect(live.className).toContain('select-none')
+    expect(terminal.className).toContain('select-none')
+  })
+
+  // WHY: a native HTML5 drag paints a ghost and nothing else. With no target
+  // feedback a drag that WORKS is indistinguishable from one that does not —
+  // the second half of the same report. The column under the pointer says it
+  // will take the card, and stops saying it the moment the drag leaves, drops
+  // or is abandoned.
+  it('#388: the column under a drag says it will take the card', async () => {
+    renderBoard()
+    const column = screen.getByRole('region', { name: /Одобрены/ })
+    expect(column.getAttribute('data-drag-over')).toBeNull()
+
+    fireEvent.dragOver(column)
+    expect(column.getAttribute('data-drag-over')).toBe('true')
+
+    fireEvent.dragLeave(column)
+    expect(column.getAttribute('data-drag-over')).toBeNull()
+
+    fireEvent.dragOver(column)
+    fireEvent.drop(column, { dataTransfer: { getData: () => '1', dropEffect: 'move' } })
+    await waitFor(() => expect(column.getAttribute('data-drag-over')).toBeNull())
+  })
+
   it('EARS-501/502: gives a role-less reader a read-only board and its own requests', async () => {
     refine.custom.data = snapshot({
       permissions: { canApprove: false, canEnter: false },
