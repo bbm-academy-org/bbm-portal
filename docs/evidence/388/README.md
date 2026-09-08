@@ -71,9 +71,15 @@ state), never hoped for from a pointer.
 | 31   | the posting dialog's «Провести» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both)           |
 | 32   | «Продажи курса» on «Фонд BBM» — the disabled product field: the FACT in its description, the instruction on submit  |
 | 33   | «Продажи курса» with NO project yet — the «Продукт» field is not on the form at all, and no project is blamed       |
+| 34   | a LEGAL drag in flight — «Одобрены» carries the drop treatment and no text is selected (desktop)                    |
+| 35   | the act that drop opened — «Одобрить» in the sheet; «Ждут» still holds 9 cards, so nothing moved by itself          |
 
 Steps 14 and 31 are set through one `CSS.forcePseudoState` CDP session per state
-on the located element, never hoped for from a pointer.
+on the located element, never hoped for from a pointer. Steps **34 and 35 are
+desktop-only**, and that is the nature of the state rather than a gap in the
+matrix: a native HTML5 drag needs a pointer that presses and travels, which a
+touch screen does not give. The board never depended on it — every act the drag
+opens also lives in the sheet, reachable by tap and by keyboard.
 
 **The journey the second pass drove**, in order, as one member-then-finance
 story: file a pre-spend request (23 → 24 → 09 → 21), see it on the board and in
@@ -264,16 +270,57 @@ a property of the base, not of the forcing. Everything else — 2470 / 1094 /
 2589 px — is inside the CTA. The earlier «every changed pixel» wording is
 replaced by this count.
 
-**The defect this pass found, and did NOT fix: «Новая заявка» scrolls sideways at
-390 px.** Measured live in the DOM, both before and after a submit: the sheet's
-`clientWidth` is 277 px while its `scrollWidth` is 299 px, because the
-«Назначение» `SelectTrigger` and its label have an intrinsic width of 281–283 px
-and end at x=398 — 8 px past the 390 px viewport. The form therefore carries a
-horizontal scrollbar and the select's chevron sits off-screen. It is visible in
-`09`, `23`, `24`, `32` and `33` at both mobile themes, and it is NOT a
-regression of this head: the frames the fourth and fifth passes left on file
-show the identical strip. Filed as an observation on PR #470 rather than fixed
-here, because a stage-5 journey does not change code.
+**The defect this pass found, and FIXED: «Новая заявка» scrolled sideways at
+390 px.** The journey measured it live in the DOM, before and after a submit:
+the sheet's `clientWidth` was 277 px while its `scrollWidth` was 299 px, because
+the «Назначение» `SelectTrigger` and its label had an intrinsic width of
+281–283 px and ended at x=398 — 8 px past the 390 px viewport, so the form
+carried a horizontal scrollbar and the select's chevron sat off-screen. It was
+NOT a regression of this head: the frames the fourth and fifth passes left on
+file show the identical strip.
+
+It was then fixed in this PR, test-first, in two RED → GREEN pairs — `266082f`
+→ `1010fb4` (`min-w-0` on every `SelectTrigger` of the surface, so the grid
+column stops taking the longest option's min-content as its floor) and
+`232c397` → `c87c89a` (the currency cell takes `6rem` below `sm`, so «Сумма
+документа» keeps a usable width once the sheet no longer grows). **After the
+fix, measured on the same live stand at 390×844:** the sheet's `scrollWidth` is
+**277 px == its `clientWidth`, 277 px**, the «Назначение» trigger's right edge
+is at x=359 instead of x=398, and the «Сумма документа» input measures 137 px
+instead of 88.5 px. Frames `09`, `23`, `24`, `32` and `33` were re-driven on the
+fixed head and replaced in place at both breakpoints and both themes; every one
+of those captures asserts `scrollWidth <= clientWidth` before it shoots, and the
+run log for each of the four combinations prints the measurement it asserted.
+
+**Two defects the owner's own pass on the live stand found, and both FIXED
+here.**
+
+- **Dragging a card «only selected text».** The drag machinery was correct — a
+  raw-pointer drag «Ждут» → «Одобрены» fires `dragstart`, the column's
+  `dragover` calls `preventDefault`, the drop lands and the approve act opens.
+  What the owner met was the rest of the board: Chromium suppresses text
+  selection only INSIDE a `[draggable="true"]` subtree, so every card the
+  reader cannot drag — the two archive columns, and every card at all for a
+  reader without `finance-approve` — answered a press-and-drag by selecting its
+  own body. Measured before the fix: a «Проведены» card read `user-select: auto`
+  and a drag attempt on it selected «… · Фонд BBM / операция в реестре ·
+  08.09.2026 …», while the «Ждут» card beside it read `none` and dragged.
+  `select-none` now sits on the card unconditionally. The same report's other
+  half — a native drag paints a ghost and gives the TARGET nothing, so a drag
+  that works looks like one that does not — is answered by states **34** and
+  **35** below. RED → GREEN: `46b197b` → `8af6db5`.
+- **«Новый контрагент» was asked even when one was picked from the reference.**
+  EARS-508/532 asks for ONE counterparty, «picked from the reference or created
+  inline»; the free-text field stood under the select unconditionally, and
+  nothing on the screen said which of the two would be filed. It is now
+  rendered only while the select stands on «Нет в списке — впишу нового»,
+  `toRequestBody` drops the free text whenever a reference id is set (for BOTH
+  exclusive pairs — an unrendered field keeps its value), and the API gained
+  the refusal its purpose pair already had: a body naming both was accepted and
+  `resolveRequestCounterpartyId` preferred the NAME, filing against a
+  counterparty the member never picked. RED → GREEN: `1061aec` → `4a6a254`.
+  Visible in the re-taken `32` frames: «Контрагент: Yandex Cloud» with no
+  free-text field beneath it.
 
 **Step 13 changed meaning, deliberately.** `bbm-member` reads `canApprove:false,
 canEnter:false` but the reference tables come back full, and filing is NOT gated
@@ -283,6 +330,13 @@ not a leak, and the state worth accepting is not «empty» but «the reader sees
 only their OWN card and none of the approver's acts». The frames were re-taken
 after that probe and show exactly that: one card in «Ждут», and no «Одобрить» /
 «Провести» / «Отклонить…» anywhere.
+
+**A SIXTH pass** — the one that answers the owner's two live-stand reports and
+the review's evidence blocker — re-drove `09`, `23`, `24`, `32`, `33` at BOTH
+breakpoints and both themes on head `348d1aa`, and drove the two new drag
+states `34` / `35`. It filed nothing: the form states end in a refusal and the
+drag ends in an act that was closed, not run, so the row list below is
+unchanged by it.
 
 **Rows this pass changed in `platform_388`.** Eight requests filed through the
 form — four pre-spend intents (**#82, #84, #86, #88**, all approved, documented
