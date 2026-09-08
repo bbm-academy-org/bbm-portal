@@ -60,7 +60,13 @@ export function RequestCard({
         event.dataTransfer.effectAllowed = 'move'
       }}
       className={cn(
-        'flex flex-col gap-1.5 rounded-lg border bg-card p-3 text-left shadow-xs transition-colors',
+        // `select-none` UNCONDITIONALLY: Chromium suppresses text selection
+        // inside a `[draggable="true"]` subtree and nowhere else, so without
+        // this a card the reader cannot drag answers a press-and-drag with a
+        // selection of its own body — which is what the owner saw and read as
+        // «drag does not work» (#388). A card is a control; its text is never
+        // the thing being selected.
+        'flex flex-col gap-1.5 rounded-lg border bg-card p-3 text-left shadow-xs transition-colors select-none',
         'hover:border-ring hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         request.status === 'posted' || request.status === 'refused'
