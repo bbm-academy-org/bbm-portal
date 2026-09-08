@@ -883,6 +883,25 @@ describe('/p/finance/requests — a 390 px reader never scrolls the sheet sidewa
     }
   })
 
+  // The same measurement, one field further down. Once the sheet stopped
+  // growing, the «Сумма документа» / «Валюта» pair had 245 px to share and the
+  // fixed 9rem currency track left the amount 88.5 px — its label wrapped onto
+  // two lines and its refusal into four. The currency cell holds three letters
+  // («RUB»), so it takes 6rem below `sm` and the declared 9rem from `sm` up:
+  // the amount input measures 137 px on the same 390 px stand.
+  it('«Сумма документа» keeps a usable width below `sm` — the currency cell is the one that gives', async () => {
+    renderBoard()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+
+    const amount = within(sheet).getByLabelText('Сумма документа')
+    const grid = amount.closest('[data-slot="form-item"]')?.parentElement
+    expect(grid).not.toBeNull()
+    expect(grid?.className).toContain('grid-cols-[minmax(0,1fr)_6rem]')
+    expect(grid?.className).toContain('sm:grid-cols-[minmax(0,1fr)_9rem]')
+  })
+
   it('the account select of the posting dialog may shrink below its longest account name', async () => {
     refine.custom.data = snapshot({
       requests: [
