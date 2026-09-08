@@ -303,7 +303,10 @@ export function RequestFormSheet({
             </Section>
 
             <Section title="Сколько и кому">
-              <div className="grid grid-cols-[minmax(0,1fr)_9rem] gap-3">
+              {/* The currency cell holds three letters, so below `sm` it is the one
+                  that gives: at 390 px a fixed 9rem track left «Сумма документа»
+                  88.5 px, wrapping its label and its refusal (PR #470 review). */}
+              <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
                 <FormField
                   control={form.control}
                   name="amount"
