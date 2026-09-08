@@ -32,8 +32,14 @@
  *  - `finance_intake_item_source_ref_unique` — the partial unique index that
  *    MAKES EARS-504 true. The module refuses the duplicate with the existing
  *    item in hand; this index is why a race cannot slip a second one past it.
- *  - `personal_funds_account` — EARS-513's «`account` is empty exactly when
- *    `personal_funds`», the model's one nullable-account case.
+ *  - `personal_funds_account` — EARS-513's «own funds name no company account».
+ *    It used to be an EQUIVALENCE («empty exactly when `personal_funds`»); since
+ *    2026-09-03 it is only the one implication, because a pre-spend request may
+ *    also hold none (EARS-533) — the other direction moved to `money_facts`.
+ *  - `money_facts` — EARS-533: the paying account and `occurred_on` may be empty
+ *    only while an unposted pre-spend request has not been through the posting
+ *    act. Without it, «nullable» would silently mean «optional everywhere», and
+ *    a posted operation could carry no date at all.
  *  - `personal_funds_already_paid` — `personal_funds` is accepted only together
  *    with `already_paid` (EARS-508).
  *  - `refusal_reason` / `decision` / `posting` shapes — the status machine's
@@ -108,9 +114,19 @@ export const financeIntakeItem = core.table(
     sourceRef: text('source_ref'),
     kind: text('kind').notNull(),
     status: text('status').notNull().default('draft'),
-    /** ALWAYS the date money moved — never the document's issue date (EARS-508). */
-    occurredOn: date('occurred_on', { mode: 'string' }).notNull(),
-    /** The money account; empty exactly when `personal_funds` (EARS-513). */
+    /**
+     * ALWAYS the date money moved — never the document's issue date (EARS-508).
+     *
+     * NULLABLE since 2026-09-03 (owner ruling, #388): a pre-spend request is an
+     * INTENT, and the date money moved does not exist yet. It is written by the
+     * posting act (EARS-533), and the `money_facts` CHECK below is what keeps a
+     * `posted` row from ever holding a null.
+     */
+    occurredOn: date('occurred_on', { mode: 'string' }),
+    /**
+     * The money account; empty when `personal_funds` (EARS-513) — and also while
+     * an unposted pre-spend request has named none (EARS-533).
+     */
     accountId: integer('account_id').references(() => financeAccount.id),
     /** Transfer/conversion target; a system `liability` account only per EARS-528. */
     counterAccountId: integer('counter_account_id').references(() => financeAccount.id),
@@ -181,7 +197,20 @@ export const financeIntakeItem = core.table(
     ),
     check(
       'finance_intake_item_personal_funds_account',
-      sql`${table.personalFunds} = (${table.accountId} is null)`,
+      sql`(not ${table.personalFunds}) or (${table.accountId} is null)`,
+    ),
+    // EARS-533's database half, and the reason the two nullable columns above
+    // cannot rot into «sometimes empty». The money side may be unknown in
+    // EXACTLY one place — an unposted pre-spend request (`source = 'request'`
+    // with `already_paid` false) — and nowhere else: a manual line, a backfill
+    // row, an «уже потрачено» request and every `posted` item name both the
+    // date money moved and, unless the payer was the member's own card, the
+    // account it left.
+    check(
+      'finance_intake_item_money_facts',
+      sql`(${table.source} = 'request' and not ${table.alreadyPaid} and ${table.status} <> 'posted')
+        or (${table.occurredOn} is not null
+          and (${table.personalFunds} or ${table.accountId} is not null))`,
     ),
     check(
       'finance_intake_item_personal_funds_already_paid',

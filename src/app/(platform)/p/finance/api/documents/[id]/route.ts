@@ -31,14 +31,23 @@ import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
  * also make an authorized reader's typo indistinguishable from a refusal — and
  * the ids are not a secret: the CONTENT is.
  *
- * `content-disposition: attachment` and `X-Content-Type-Options: nosniff`
- * together are why a stored HTML file could not run in the portal's origin even
- * if the mime allowlist ever let one in.
+ * Downloads remain `attachment`. The request board may opt an allowlisted PDF
+ * into `inline` for its authenticated iframe; every other mime stays an
+ * attachment. Together with `X-Content-Type-Options: nosniff`, a stored HTML
+ * file could not run in the portal's origin even if the mime allowlist ever let
+ * one in.
  */
 
 export const dynamic = 'force-dynamic'
 
 class UploadBodyTooLarge extends Error {}
+
+function contentDispositionFilename(filename: string): string {
+  return encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
 
 async function boundedBytes(request: Request): Promise<Buffer> {
   const declared = Number(request.headers.get('content-length'))
@@ -64,7 +73,7 @@ async function boundedBytes(request: Request): Promise<Buffer> {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const session = await auth()
@@ -85,12 +94,17 @@ export async function GET(
 
   try {
     const document = await readFinanceDocument(actor, documentId)
+    const disposition =
+      document.mime === 'application/pdf' &&
+      new URL(request.url).searchParams.get('disposition') === 'inline'
+        ? 'inline'
+        : 'attachment'
     return new Response(new Uint8Array(document.bytes), {
       status: 200,
       headers: {
         'content-type': document.mime,
         'content-length': String(document.bytes.byteLength),
-        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(document.filename)}`,
+        'content-disposition': `${disposition}; filename*=UTF-8''${contentDispositionFilename(document.filename)}`,
         'x-content-type-options': 'nosniff',
         // Never a shared cache, never a disk cache: the access decision is
         // per-person and a cached copy outlives it.

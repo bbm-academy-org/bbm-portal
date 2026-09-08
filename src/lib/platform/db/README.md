@@ -35,7 +35,7 @@ already-branched database is refreshed by the seed alone:
 ```bash
 pnpm dev:seed                    # 64 members, hours periods + assessments,
                                  # finance references, ledger postings,
-                                 # 30 expense requests across all six spec-339
+                                 # 32 expense requests across all six spec-339
                                  # statuses, non-request intake lines, documents
 pnpm dev:db:branch --no-seed     # decline a step deliberately (also --no-migrate)
 ```
@@ -204,6 +204,11 @@ schema/core.ts       pgSchema('core') — the shared handle
 schema/<module>/     per-module table files (see schema/README.md)
 migrations/          generated SQL + drizzle's journal — COMMITTED
 ```
+
+**The pool's `max` is explicit in `client.ts` (10, pg's own default)** — it is the
+ceiling on CONCURRENT TRANSACTIONS, so code that opens a transaction per row or
+asks the pool for a second client from inside a transaction deadlocks rather
+than slows down once it is reached (#470).
 
 `drizzle.config.ts` deliberately does not sit at the repo root: a root-level
 `drizzle.config.ts` reads as "the project's drizzle config", and this project

@@ -1,6 +1,9 @@
+import Link from 'next/link'
+
 import { currentMoneyOverview, listCurrencies } from '@/lib/finance'
 import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
+import { Button } from '@/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
 
 import { ReportingCurrencySelect } from './reporting-currency-select'
@@ -36,13 +39,21 @@ export default async function FinancePage({
 
   return (
     <section aria-labelledby="finance-heading" className="space-y-6">
-      <div>
-        <h1 id="finance-heading" className="font-heading text-2xl font-semibold tracking-tight">
-          Финансы
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Фактические остатки по денежным счетам BBM.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 id="finance-heading" className="font-heading text-2xl font-semibold tracking-tight">
+            Финансы
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Фактические остатки по денежным счетам BBM.
+          </p>
+        </div>
+        {/* The overview answers «сколько денег»; the board answers «что с ними
+            собираются сделать». One is never read without reaching for the
+            other, so the link lives at the title's right edge (#388). */}
+        <Button asChild variant="outline">
+          <Link href="/p/finance/requests">Заявки</Link>
+        </Button>
       </div>
 
       <Card role="group" aria-label="Итого" className="bg-primary text-primary-foreground">
