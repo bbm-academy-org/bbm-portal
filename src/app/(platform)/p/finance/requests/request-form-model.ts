@@ -330,8 +330,14 @@ export function toRequestBody(
   const paidPrecision = crossCurrency
     ? currencyPrecision(references.currencies, account.currency)
     : precision
-  const proposal = value.purposeProposal.trim()
-  const counterpartyName = value.counterpartyName.trim()
+  // BOTH EXCLUSIVE PAIRS, on the way OUT. A field the form no longer renders
+  // still holds what was typed into it — react-hook-form keeps it,
+  // `shouldUnregister` being false — so a member who typed a new counterparty
+  // and then found the right one in the reference would have sent both. The
+  // pick wins and the free text it replaced is dropped; the API refuses a body
+  // carrying both (EARS-508/526/532).
+  const proposal = value.purposeId === '' ? value.purposeProposal.trim() : ''
+  const counterpartyName = value.counterpartyId === '' ? value.counterpartyName.trim() : ''
 
   return {
     occurredOn: value.alreadyPaid && value.occurredOn !== '' ? value.occurredOn : null,

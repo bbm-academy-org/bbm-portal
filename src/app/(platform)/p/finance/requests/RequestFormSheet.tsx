@@ -109,14 +109,16 @@ export function RequestFormSheet({
     mode: 'onSubmit',
   })
 
-  const [currency, accountId, purposeId, projectId, alreadyPaid, personalFunds] = form.watch([
-    'currency',
-    'accountId',
-    'purposeId',
-    'projectId',
-    'alreadyPaid',
-    'personalFunds',
-  ])
+  const [currency, accountId, purposeId, projectId, counterpartyId, alreadyPaid, personalFunds] =
+    form.watch([
+      'currency',
+      'accountId',
+      'purposeId',
+      'projectId',
+      'counterpartyId',
+      'alreadyPaid',
+      'personalFunds',
+    ])
   const account = references.accounts.find((row) => String(row.id) === accountId) ?? null
   const crossCurrency = account !== null && account.currency !== currency
   const products = productOptions(references, purposeId, projectId)
@@ -381,22 +383,30 @@ export function RequestFormSheet({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="counterpartyName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Новый контрагент</FormLabel>
-                    <FormControl>
-                      <Input {...field} disabled={pending} placeholder="Название" />
-                    </FormControl>
-                    <FormDescription>
-                      Заполняется, только когда подходящего контрагента нет в справочнике.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* EARS-508/532 asks for ONE counterparty — picked from the
+                  reference or created inline. The select above answers that
+                  question; the free text only exists for the answer it cannot
+                  give, exactly as the purpose / proposal pair above. Standing
+                  under a picked counterparty it asked the same question twice
+                  and never said which of the two would be filed (#388). */}
+              {counterpartyId === '' ? (
+                <FormField
+                  control={form.control}
+                  name="counterpartyName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Новый контрагент</FormLabel>
+                      <FormControl>
+                        <Input {...field} disabled={pending} placeholder="Название" />
+                      </FormControl>
+                      <FormDescription>
+                        Появится в справочнике: заявка будет числиться за ним.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
             </Section>
 
             <Separator />
