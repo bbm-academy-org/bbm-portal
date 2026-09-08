@@ -41,6 +41,18 @@ export const expenseRequestBodySchema = z
     if ((value.counterpartyId ?? null) === null && !value.counterpartyName) {
       context.addIssue({ code: 'custom', message: 'Выберите или создайте контрагента.' })
     }
+    // The counterparty is ONE, «picked from the reference or created inline»
+    // (EARS-532) — the same exclusive shape as the purpose pair above, and it
+    // was missing its refusal: a body naming both was accepted and
+    // `resolveRequestCounterpartyId` then preferred the NAME, filing the
+    // request against a counterparty the member never picked (#388).
+    if ((value.counterpartyId ?? null) !== null && value.counterpartyName) {
+      context.addIssue({
+        code: 'custom',
+        path: ['counterpartyName'],
+        message: 'Выберите контрагента или впишите нового, но не оба варианта сразу.',
+      })
+    }
     if (value.personalFunds && !value.alreadyPaid) {
       context.addIssue({
         code: 'custom',
