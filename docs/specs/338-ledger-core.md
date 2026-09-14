@@ -461,6 +461,12 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   and `tests/int/platform/finance-core.int.spec.ts` assert the amended clause,
   including that an admin without `finance-approve` is refused posting and
   reversal.)_
+  _(Amended 2026-09-14 by owner decision 34 (#115) — reference administration
+  is no longer `platform-admin` alone: it is open to `finance-entry` as well, so
+  a session holding either role may edit the reference tables. The current
+  wording lives in spec 339 EARS-529
+  (`docs/specs/339-ledger-intake.md`); the code gate
+  (`assertFinanceReferenceAccess`) follows in its own task.)_
 - **EARS-331.** The `product_binding` shall be master data, never a
   per-operation judgement: WHEN an operation is recorded, the system shall take
   the binding from the named purpose and shall accept from the operator only
