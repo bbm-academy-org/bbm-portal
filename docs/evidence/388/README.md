@@ -359,3 +359,92 @@ attribute is `style={{color-scheme:…}}` — the value the capture script itsel
 writes onto `document.documentElement` to force the theme. A plain load of the
 board raises no issue at all. Every frame hides the dev-only overlay so it cannot
 be misread as a product error.
+
+## 2026-09-14 — decisions 35/36, the two-role journey
+
+A **SEVENTH pass**, and the first one driven as **two roles in one browser**:
+owner decisions **35** (the requests TABLE is the default view for every
+signed-in member; the kanban becomes a board toggle for `finance-approve`, which
+also gets approve / refuse as row actions) and **36** (the «paid from a company
+account» branch is offered — and accepted — only for a submitter holding
+`finance-entry` or `finance-approve`), both taken by Антон on 2026-09-14 on
+[#115](https://github.com/bbm-academy-org/bbm-portal/issues/115).
+
+**The stand.** `http://localhost:3000`, the listener this session started from
+`.claude/worktrees/388` on `feat/388-requests-board-blocks`; data from that
+worktree's own branch DB `platform_388`, carrying everything the earlier passes
+left in it. Driven with the **Playwright MCP tools** (`browser_run_code_unsafe`
+with the scripts under the worktree's git-ignored `.playwright-mcp/`), signed in
+through the real dev Zitadel. The password was read by the script from a
+scratchpad file through a `file://` page read — the MCP code sandbox has no `fs`
+— and never appeared in a tool call or in this repo.
+
+**Two roles, logged out in between.** `bbm-member` (`platform-user` only) first,
+then `Выйти` + a cookie and `localStorage` clear, then `bbm-test`
+(`platform-user`, `platform-admin`, `finance-entry`, `finance-approve`). The
+`localStorage` clear is part of the journey, not tidiness: the stored view is
+per browser, and the second role must start from the DEFAULT the decision names.
+
+**The matrix** is the folder's usual one: every state × 2 breakpoints
+(desktop 1440×900, mobile 390×844) × 2 themes (light, and dark through the
+theme's own `.dark` class — the workspace still ships no user-facing switch).
+Next's dev overlay is hidden in every frame so it cannot be misread as a product
+error.
+
+| Step | What it shows                                                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------------ |
+| 36   | `bbm-member` opens the route: the TABLE, «Мои» preselected, **no** board toggle and **no** row action anywhere           |
+| 37   | the same reader on «Все» — 57 rows from 34 different submitters, i.e. the whole queue, not just their own                |
+| 38   | a row opened into the details sheet: «Отозвать» and nothing else — no «Одобрить», no «Отклонить…», no «Провести»         |
+| 39   | «Новая заявка» + «Уже потрачено» as a role-less submitter: the date, and **no** account picker and **no** own-funds box  |
+| 40   | the crafted POST from that logged-in page: `403` with the decision-36 refusal, and `400` for the older EARS-508 clause   |
+| 41   | `bbm-test` opens the SAME default: the table, «Мои» preselected — the toggle is beside it, the board is not rendered     |
+| 42   | the approver on «Все»: 9 «Одобрить» and 14 «Отклонить…» row actions over the 57 rows, exactly on the actionable statuses |
+| 43   | the board toggle pressed — the four columns are back, and a reload keeps them (`bbm.finance.requests.view` = `board`)    |
+| 44   | «Одобрить» straight from a row: the toast, and the row's status really reads «Одобрена» on the re-read                   |
+| 45   | «Отклонить…» from a row: the reason dialog, mandatory as ever (EARS-512) — the row act opens it, it never refuses alone  |
+| 46   | after the refusal: the row in «Отклонена» carrying the reason in the column that appeared with it                        |
+| 47   | «Новая заявка» + «Уже потрачено» as a finance role: «Оплачено своими средствами» AND «Счёт списания» both present        |
+
+Files: `<step>-<name>-{desktop,mobile}-{light,dark}.png`, 48 frames.
+
+**What the numbers in 42 mean.** 9 + 14 is not 2 × 57: the acts follow the
+status. `submitted` carries both «Одобрить» and «Отклонить…», `approved` carries
+only «Отклонить…», and `posted` / `refused` / `draft` / `cancelled` carry none —
+a terminal row is offered nothing rather than something the server would refuse.
+`confirm` is deliberately not a row act at all: posting needs the confirming
+document read and, for a pre-spend item, the money facts entered
+(EARS-511/533), and neither is readable from a table row.
+
+**Step 44 and step 45 act on the SAME request (#89)** — the member's own filing
+from step 40's neighbourhood. The approve ran first and left it «Одобрена»; the
+refuse then ran on it from the `approved` row and left it «Отклонена» with the
+reason. That is a legal pair (EARS-524 allows `approved → refused`), and it is
+why no separate «approved» row survives in the final frames.
+
+**A defect this pass found and fixed, not a state it merely recorded.** Under
+«Все», `bbm-member` first saw exactly ONE row — their own. The cause was in the
+module, not the screen: `listIntakeItems` restricted a reader with no flow role
+to their own items, so decision 35's «everyone sees every request in every
+status» was a promise the endpoint did not keep and the «Все» tab was a lie.
+`listExpenseRequests` now reads with the `every-member` audience; the widening is
+that ONE list's, and it carries no documents with it — `listFinanceDocumentsByItems`
+keeps its own restriction (EARS-523), so a role-less member still reads only the
+documents of their own requests. Step 37 is the re-taken frame.
+
+**Rows this pass changed in `platform_388`.** Request **#89** (filed by
+`bbm-member` in an earlier pass) was approved and then refused with the reason
+«#388 прогон решения 35 — отказ из строки таблицы». Nothing else was written:
+the two form states end before a submit, and the crafted POSTs of step 40 were
+both refused, so they created nothing. No ledger operation is this pass's.
+
+**The top bar says «BBM Test» in the member frames too.** That is the dev IdP's
+seed, not the app: `infra/dev-stand/idp/provision.sh` gives the seeded profile
+`givenName: "BBM", familyName: "Test"`. The session really is `bbm-member` —
+steps 36, 38 and 40 are exactly what proves it (no toggle, no act, `403` from
+the endpoint), and the «Кто подал» column says «BBM Member» on their own row.
+
+**The journey scripts are not committed** — they live in the worktree's
+git-ignored `.playwright-mcp/` and were bound to this seed dataset, the same call
+#434, #437 and the sixth pass made; `DEBT.md` already tracks that every task
+re-implements this harness (`2026-09-03-437-journey-harness`).
