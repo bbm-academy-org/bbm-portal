@@ -17,6 +17,15 @@ import {
   requestCardFlags,
   REQUEST_BOARD_COLUMNS,
 } from '@/app/(platform)/p/finance/requests/request-board-model'
+import {
+  canToggleRequestsView,
+  DEFAULT_REQUEST_TABLE_SCOPE,
+  requestRowActs,
+  requestTableRows,
+  REQUEST_TABLE_SCOPES,
+  resolveRequestsView,
+  tableShowsRefusalReason,
+} from '@/app/(platform)/p/finance/requests/request-table-model'
 
 describe('request-board status machine (spec 339 EARS-510/511/512/524)', () => {
   it('EARS-510/511/512: maps every legal drag to the act that must still be confirmed', () => {
@@ -270,5 +279,85 @@ describe('the money facts the posting act asks for (spec 339 EARS-533)', () => {
       item({ id: 3, occurredOn: '2026-09-01' }),
     ])
     expect(groups.submitted.map((request) => request.id)).toEqual([2, 3, 1])
+  })
+})
+
+/**
+ * DECISION 35 (owner Антон, 2026-09-14, #115): the default view of
+ * `/p/finance/requests` is a TABLE of every request for every signed-in member,
+ * with a «mine / all» filter preselected on «mine»; the picked kanban survives
+ * as a board TOGGLE available to `finance-approve`, which also gets the
+ * approve / refuse acts as row actions.
+ */
+describe('requests table model (decision 35, PRD 339 US-2/US-3)', () => {
+  it('decision 35: «mine» shows only the reader’s own filings, «all» the whole ledger of requests', () => {
+    const requests = [
+      item({ id: 1, own: true, status: 'submitted' }),
+      item({ id: 2, own: false, status: 'approved' }),
+      item({ id: 3, own: true, status: 'draft' }),
+    ]
+    expect(requestTableRows(requests, 'mine').map((row) => row.id)).toEqual([3, 1])
+    expect(
+      requestTableRows(requests, 'all')
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([1, 2, 3])
+  })
+
+  it('decision 35: the default sort is newest first, and an undated intent leads it', () => {
+    const requests = [
+      item({ id: 1, occurredOn: '2026-08-22' }),
+      item({ id: 2, occurredOn: null }),
+      item({ id: 3, occurredOn: '2026-09-01' }),
+      item({ id: 4, occurredOn: '2026-09-01' }),
+    ]
+    // The same key the board's columns sort by: an intent whose money has not
+    // moved is not «oldest», it is the newest thing on the screen; equal dates
+    // break by the newer id.
+    expect(requestTableRows(requests, 'all').map((row) => row.id)).toEqual([2, 4, 3, 1])
+  })
+
+  it('decision 35: «mine» is the preselected scope, and both scopes are offered', () => {
+    expect(DEFAULT_REQUEST_TABLE_SCOPE).toBe('mine')
+    expect(REQUEST_TABLE_SCOPES.map((scope) => scope.value)).toEqual(['mine', 'all'])
+  })
+
+  it('decision 35: row acts belong to the approve role and to the two acting statuses only', () => {
+    expect(requestRowActs(item({ status: 'submitted' }), true)).toEqual(['approve', 'refuse'])
+    expect(requestRowActs(item({ status: 'approved' }), true)).toEqual(['refuse'])
+    for (const status of ['posted', 'refused', 'draft', 'cancelled'] as const) {
+      expect(requestRowActs(item({ status }), true)).toEqual([])
+    }
+  })
+
+  it('decision 35: a reader without `finance-approve` is offered no row act at all', () => {
+    for (const status of FINANCE_REQUEST_BOARD_STATUSES) {
+      expect(requestRowActs(item({ status, own: true }), false)).toEqual([])
+    }
+  })
+
+  it('decision 35: the board toggle exists for the approve role and for nobody else', () => {
+    expect(canToggleRequestsView(true)).toBe(true)
+    expect(canToggleRequestsView(false)).toBe(false)
+  })
+
+  it('decision 35: the table is the default view, and a stored board is honoured only for an approver', () => {
+    expect(resolveRequestsView(null, true)).toBe('table')
+    expect(resolveRequestsView(null, false)).toBe('table')
+    expect(resolveRequestsView('board', true)).toBe('board')
+    // The toggle is the approve role's; a stored «board» from a session that
+    // once held the role is not a way back into it.
+    expect(resolveRequestsView('board', false)).toBe('table')
+    expect(resolveRequestsView('nonsense', true)).toBe('table')
+  })
+
+  it('decision 35: the refusal-reason column appears only where there is a refusal to read', () => {
+    expect(tableShowsRefusalReason([item({ status: 'submitted' })])).toBe(false)
+    expect(
+      tableShowsRefusalReason([
+        item({ id: 1, status: 'submitted' }),
+        item({ id: 2, status: 'refused', refusalReason: 'есть на складе' }),
+      ]),
+    ).toBe(true)
   })
 })

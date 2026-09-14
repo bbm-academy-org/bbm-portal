@@ -286,3 +286,64 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
     expect(issues.find((row) => row.path[0] === 'projectId')?.message).toMatch(/Выберите проект/i)
   })
 })
+
+/**
+ * DECISION 36 (owner Антон, 2026-09-14, #115): «конечно, не любой сотрудник
+ * имеет доступ к корп. счетам». A submitter holding neither `finance-entry` nor
+ * `finance-approve` files an already-paid request as their OWN money — the form
+ * offers no company-account branch at all, and the API refuses the claim
+ * however it is reached (spec 339 EARS-508, revision 2026-09-14).
+ */
+describe('request form company-account gate (decision 36, spec 339 EARS-508)', () => {
+  const gated = createRequestFormSchema(references, { canNameCompanyAccount: false })
+  const roled = createRequestFormSchema(references, { canNameCompanyAccount: true })
+
+  it('decision 36: an already-paid request from a role-less submitter is own money or nothing', () => {
+    const parsed = gated.safeParse(spent({ accountId: '', personalFunds: false }))
+    expect(parsed.success).toBe(false)
+    const issue = parsed.success
+      ? null
+      : (parsed.error.issues.find((row) => row.path[0] === 'personalFunds') ?? null)
+    expect(issue?.message).toMatch(/корпоративн/i)
+  })
+
+  it('decision 36: a role-less submitter naming a company account is refused on the account', () => {
+    const parsed = gated.safeParse(spent({ accountId: '1', personalFunds: true }))
+    expect(parsed.success).toBe(false)
+    const paths = parsed.success ? [] : parsed.error.issues.map((row) => row.path[0])
+    expect(paths).toContain('accountId')
+  })
+
+  it('decision 36: own money from a role-less submitter passes exactly as before', () => {
+    const parsed = gated.safeParse(spent({ accountId: '', personalFunds: true }))
+    expect(parsed.success).toBe(true)
+  })
+
+  it('decision 36: a pre-spend request is untouched by the gate — it names no account either way', () => {
+    expect(gated.safeParse(value()).success).toBe(true)
+  })
+
+  it('decision 36: a finance role keeps the company-account branch, and the default is the role', () => {
+    expect(roled.safeParse(spent({ accountId: '1', personalFunds: false })).success).toBe(true)
+    expect(
+      createRequestFormSchema(references).safeParse(spent({ accountId: '1', personalFunds: false }))
+        .success,
+    ).toBe(true)
+  })
+
+  it('decision 36: the body a role-less submitter files says own money, whatever the hidden fields hold', () => {
+    // The control is not on the form, so the value cannot have been typed —
+    // but react-hook-form keeps what an earlier state left behind, and the body
+    // is where that is settled rather than hoped about.
+    const body = toRequestBody(spent({ accountId: '1', personalFunds: false }), references, {
+      canNameCompanyAccount: false,
+    })
+    expect(body).toMatchObject({
+      alreadyPaid: true,
+      personalFunds: true,
+      accountId: null,
+      paidAmount: null,
+      paidCurrency: null,
+    })
+  })
+})
