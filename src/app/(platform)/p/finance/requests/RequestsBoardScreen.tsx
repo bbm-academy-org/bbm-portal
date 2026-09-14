@@ -402,8 +402,12 @@ export function RequestsBoardScreen() {
               Заявки
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Расходы BBM от подачи до проводки. Перенос карточки открывает акт — сам по себе статус
-              он не меняет.
+              {/* The subtitle says what THIS reader is looking at. «Перенос
+                  карточки» is the board's sentence, and a member who has no
+                  board was being told how to use one (live pass, 2026-09-14). */}
+              {view === 'board'
+                ? 'Расходы BBM от подачи до проводки. Перенос карточки открывает акт — сам по себе статус он не меняет.'
+                : 'Расходы BBM от подачи до проводки — кто подал, на что и чем это кончилось.'}
             </p>
           </div>
           <Button
