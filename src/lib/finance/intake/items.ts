@@ -846,20 +846,32 @@ export type ListIntakeItemsFilter = {
 }
 
 /**
+ * Who a list is read FOR.
+ *
+ * `flow-role-or-own` is the original rule of this module: a flow-role holder
+ * reads every item, a role-less member reads their OWN and nothing else.
+ * `every-member` widens it to every signed-in platform member and exists for
+ * ONE list — expense requests, which owner decision 35 (Антон, 2026-09-14,
+ * #115) makes a shared table: «everyone sees every request in every status».
+ * Nothing else in intake takes it, and the widening carries no documents with
+ * it: `listFinanceDocumentsByItems` applies its own, unchanged restriction
+ * (EARS-523) — a member still reads only the documents of their own requests.
+ */
+export type IntakeListAudience = 'flow-role-or-own' | 'every-member'
+
+/**
  * The intake list (spec 339's CRUD table).
  *
- * Two audiences, one query: a flow-role holder reads every item (the queue and
- * the intake list are theirs), and a role-less member reads their OWN requests
- * and nothing else — EARS-502's «see their own requests with statuses». The open
- * member-wide read of EARS-530 is about `/p/finance` figures, not about other
- * people's requests.
+ * Two audiences, one query — see `IntakeListAudience`. The default stays the
+ * narrow rule; `every-member` is passed in by the one list decision 35 opened.
  */
 export async function listIntakeItems(
   actor: FinanceActor,
   filter: ListIntakeItemsFilter = {},
+  audience: IntakeListAudience = 'flow-role-or-own',
 ): Promise<FinanceIntakeItemView[]> {
   const conditions = []
-  if (!holdsFinanceFlowRole(actor)) {
+  if (audience === 'flow-role-or-own' && !holdsFinanceFlowRole(actor)) {
     conditions.push(eq(financeIntakeItem.createdBy, await requireMemberId(actor)))
   }
   if (filter.status !== undefined && filter.status.length > 0) {

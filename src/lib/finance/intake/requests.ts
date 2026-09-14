@@ -342,7 +342,14 @@ export async function listExpenseRequests(
   actor: FinanceActor,
   filter: Pick<ListIntakeItemsFilter, 'status'> = {},
 ): Promise<FinanceIntakeItemView[]> {
-  const items = await listIntakeItems(actor, { ...filter, source: ['request'] })
+  // EVERY SIGNED-IN MEMBER READS EVERY REQUEST (owner decision 35, Антон,
+  // 2026-09-14, #115; PRD 339 US-2, acceptance «and of every other member's
+  // requests»): the shared table is the point of the decision, and a «все»
+  // filter that returned only the reader's own rows would be a lie on the
+  // screen. It widens THIS list only — the documents attached to those requests
+  // keep their own restriction (EARS-523), and the single-item read keeps its
+  // own (the edit path).
+  const items = await listIntakeItems(actor, { ...filter, source: ['request'] }, 'every-member')
   return items.filter((item) => item.kind === 'expense')
 }
 
