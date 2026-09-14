@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 339
-updated: 2026-09-03
+updated: 2026-09-14
 ---
 
 # Finance F2 — filling the ledger: requests, documents, backfill, intake layer — spec (issue #339)
@@ -168,6 +168,14 @@ alongside as its layout evidence. All three are **layout** only (fidelity axis,
 incident 2026-08-26/#359): the visual layer is the `src/ui` kit per #359/#360,
 unchanged by this pick. The build is #388.
 
+**Amended by owner decision 35 (Антон, 2026-09-14, issue #115):** the route
+stays one page, and the picked kanban becomes a **board toggle for
+`finance-approve`** over a default **table** of all requests (date, submitter,
+amount, purpose, status, refusal reason; «mine / all» filter with «mine»
+preselected), which every signed-in member sees — approve/refuse are available
+as row actions there too. The product record is `docs/product/finance/339-product.md`
+→ «Design pick (Stage A)».
+
 **`/p/finance/intake` — still pending.** The manual-entry / liability workspace
 has no Stage-A pick yet; it runs at #389
 pickup, before any markup.
@@ -248,10 +256,12 @@ ambiguity is the bug being fixed).
 **Roles → claims.** Two Zitadel project roles, `finance-entry` and
 `finance-approve` (decision 27), seeded and granted per the bootstrap canon
 (`infra/dev-stand/idp/bootstrap.md` §5a; prod is a supervised owner-go step).
-`platform-admin` continues to gate the reference catalogues and **no longer
+The reference catalogues are edited by `platform-admin` and by `finance-entry`
+(decision 34, 2026-09-14), and `platform-admin` **no longer
 implies ledger writes** (EARS-529, Prior-decisions change 1); reading
-`/p/finance` stays open to every platform member (EARS-530) — **documents
-excluded** (EARS-523).
+`/p/finance` stays open to every platform member, with no finance role and no
+viewer role involved (EARS-530, decision 32) — **documents excluded**
+(EARS-523).
 
 **Audit coverage:** all five tables register with the audit-coverage guard
 (`tools/lint/audit-coverage-lint.mjs`, spec 201) in the same PR that creates
@@ -285,10 +295,18 @@ a declared clause.
   (spec 338 EARS-330 narrows to references — Prior-decisions change 1), and
   `platform-admin` by itself shall no longer permit ledger writes: an admin
   who does not hold `finance-approve` can no longer post or reverse (on the
-  go list — this narrows a shipped spec).
+  go list — this narrows a shipped spec). Reference administration is open to
+  `finance-entry` as well: a holder of either `platform-admin` or
+  `finance-entry` may edit the reference tables (accounts, expense categories,
+  request purposes, projects, products, currencies, rates) _(owner decision 34,
+  2026-09-14 — this widens the clause; the audit trail per spec 201 is
+  unchanged)_.
 - **EARS-530.** Reading `/p/finance` shall remain open to every platform
   member (spec 338 EARS-324/325), with document content excluded
-  (EARS-523).
+  (EARS-523). This covers **every** reading surface of the module — register,
+  P&L, cash flow, unit cost, break-even, fact-vs-finmodel, scenarios — and no
+  «finance viewer» role exists: reading needs no finance role at all _(owner
+  decision 32, 2026-09-14 — BBM's finance is an open book)_.
 - **EARS-502.** The system shall let a signed-in platform member holding
   neither flow role, on `/p/finance/requests`, submit an expense request, edit
   their own request while it is `draft` or `submitted` (the money and dimension
@@ -359,6 +377,12 @@ a declared clause.
   company account at all (EARS-513) — and, WHERE the paying account's currency
   differs from the document's, the actual amount charged in the account's
   currency (the cross-currency rule above).
+  WHERE the submitter holds neither `finance-entry` nor `finance-approve`, the
+  form shall offer **no** company-account option and no account pick at all —
+  an already-paid request from such a submitter is `personal_funds` — and the
+  module's own handler shall **refuse** an `already_paid` item that arrives with
+  `personal_funds` unset or that names an `account`, however the API is reached
+  (EARS-501's pattern); hiding the control in the form is not the gate.
 
   _Revised 2026-09-03 — owner ruling, Антон, issue #388: «заявка — это
   намерение, а не платёж». The previous version demanded the paying account
@@ -367,6 +391,13 @@ a declared clause.
   moved to the finance role's posting act. The account is nullable while a
   pre-spend item is unposted (data model row), and `occurred_on` is nullable
   until it posts._
+
+  _Revised 2026-09-14 — owner decision 36, Антон, issue #115: «конечно, не
+  любой сотрудник имеет доступ к корп. счетам». The company-account branch of
+  the already-paid path is gated to `finance-entry` / `finance-approve`; a
+  member with neither role files an already-paid request as personal funds
+  only, and the API refuses the company-funds claim rather than relying on the
+  form._
 
 - **EARS-509.** WHEN a member submits a request, it shall appear in the
   approvers' queue with its documents readable in place (US-3) and in the

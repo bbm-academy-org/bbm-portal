@@ -7,7 +7,7 @@ features:
   - F3 (#340) — Reports: register, P&L, cash flow, unit cost, break-even (user-facing)
   - F4 (#341) — Fact-vs-finmodel reconciliation (user-facing)
   - F5 (#342) — Scenario calculator on top of the fact (user-facing)
-updated: 2026-08-30
+updated: 2026-09-14
 ---
 
 # Finance — epic brief (#115)
@@ -107,12 +107,18 @@ portal.bbm.academy  (Zitadel OIDC gate over /p/*, ADR-003 §3; ADR-005 §2: a to
     ├── /p/finance                 overview: current-money card ← F1b; current period P&L ← F3
     ├── /p/finance/register        the operations register — every posting, filterable       ← F3
     ├── /p/finance/reports         P&L · cash flow · unit cost · break-even                  ← F3
-    ├── /p/finance/requests        expense requests: submit (everyone) / approve (owners)    ← F2
+    ├── /p/finance/requests        expense requests, one page: table of all for everyone,
+    │                              board + approve/refuse for `finance-approve`        ← F2
     ├── /p/finance/reconciliation  fact vs finmodel — reserve %, pool sectors, royalty       ← F4
     ├── /p/finance/scenarios       what-if on top of the fact                                ← F5
     └── /p/admin → finance         reference tables: accounts, expense categories, request
                                    purposes, projects, products, currencies, rates      ← F1 + #112
 ```
+
+**Every reading surface above is open to every signed-in portal member** —
+register, reports, reconciliation, scenarios: finance is an open book, there is
+no «finance viewer» role, and reading needs no finance role at all
+_(decision 32, owner 2026-09-14)_.
 
 Seven structural facts:
 
@@ -150,7 +156,9 @@ Seven structural facts:
    reconstruction is posted _(decision 11 as superseded by decision 31)_. That
    one-time preparation and owner-approval step belongs to **F2**; F1 owns only the empty reference table it
    lands in. The admin surface for all of them is the `/p/admin` shell of epic
-   #112, not a second cabinet.
+   #112, not a second cabinet. Editing them is not admin-only: a holder of
+   `platform-admin` **or** of `finance-entry` may edit the reference tables
+   _(decision 34, owner 2026-09-14)_.
 6. **The module owns its own tables.** ADR-004 §1 puts them in the `platform`
    database, §6 in `src/lib/platform/db/schema/finance/`, importable only by the
    finance module; `core` deliberately does not predetermine the finance schema
