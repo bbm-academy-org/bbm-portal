@@ -22,6 +22,7 @@ import {
 import { findMemberByEmail, getMembersByIds } from '@/lib/member'
 
 import {
+  companyAccountRefusal,
   expenseRequestBodySchema,
   expenseRequestInput,
   financeRequestActor,
@@ -287,6 +288,8 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = expenseRequestBodySchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return textResponse(400, parsed.error.issues[0]?.message)
   const body = parsed.data
+  const refusal = companyAccountRefusal(gate.actor, body)
+  if (refusal !== null) return textResponse(403, refusal)
 
   try {
     const counterpartyId = await resolveRequestCounterpartyId(gate.actor, body)

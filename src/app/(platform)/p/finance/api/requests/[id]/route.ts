@@ -1,6 +1,7 @@
 import { createPurposeProposal, editExpenseRequest, getExpenseRequest } from '@/lib/finance'
 
 import {
+  companyAccountRefusal,
   expenseRequestBodySchema,
   expenseRequestInput,
   financeRequestActor,
@@ -37,6 +38,10 @@ export async function PATCH(
 
   const parsed = expenseRequestBodySchema.safeParse(rawBody)
   if (!parsed.success) return textResponse(400, parsed.error.issues[0]?.message)
+  // The same gate as the create (decision 36): a refusal a PATCH walks around
+  // is no refusal at all — an edit files exactly the same money facts.
+  const companyRefusal = companyAccountRefusal(gate.actor, parsed.data)
+  if (companyRefusal !== null) return textResponse(403, companyRefusal)
 
   try {
     const before = await getExpenseRequest(gate.actor, id)

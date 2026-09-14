@@ -927,3 +927,139 @@ describe('/p/finance/api/requests — a request is an intent (EARS-508/533)', ()
     expect(state.confirmExpenseRequest).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * DECISION 36 (owner Антон, 2026-09-14, #115), spec 339 EARS-508 revision
+ * 2026-09-14: the company-account branch of the already-paid path is
+ * `finance-entry` / `finance-approve`'s. HIDING THE CONTROL IS NOT THE GATE —
+ * the handler refuses the claim however the API is reached.
+ */
+describe('/p/finance/api/requests — who may say the company paid (decision 36, EARS-508)', () => {
+  const spent = {
+    amount: '4500000',
+    currency: 'RUB',
+    purposeId: 11,
+    projectId: 12,
+    productId: 13,
+    counterpartyId: 14,
+    occurredOn: '2026-09-01',
+    alreadyPaid: true,
+  }
+
+  function roleless() {
+    state.session = { user: { email: 'member@bbm.academy', roles: [PLATFORM_USER_ROLE] } }
+  }
+
+  it('decision 36: refuses an already-paid create from a role-less submitter that claims company money', async () => {
+    roleless()
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({ ...spent, accountId: 7, personalFunds: false }),
+      }),
+    )
+
+    expect(response.status).toBe(403)
+    expect(await response.text()).toMatch(/корпоративн/i)
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+  })
+
+  it('decision 36: `personal_funds` merely unset is refused too, by the older clause that already owned it', async () => {
+    roleless()
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({ ...spent, personalFunds: false }),
+      }),
+    )
+
+    // 400, not 403, and deliberately so: an already-paid body that names
+    // neither an account nor own funds never reaches the role gate — EARS-508's
+    // own clause refuses the SHAPE first, and it names the same way out
+    // («отметьте «оплачено своими средствами»»). Two refusals for one body
+    // would be two messages to keep true; this asserts which one owns it.
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/своими средствами/i)
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+  })
+
+  it('decision 36: a role-less submitter still files an already-paid request on their own money', async () => {
+    roleless()
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 91, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({ ...spent, personalFunds: true }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(state.createExpenseRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ alreadyPaid: true, personalFunds: true, accountId: null }),
+    )
+  })
+
+  it('decision 36: `finance-entry` keeps the company-account path, and so does `finance-approve`', async () => {
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+    for (const role of ['finance-entry', 'finance-approve']) {
+      state.createExpenseRequest.mockResolvedValue({ ...request, id: 92, status: 'draft' })
+      state.session = { user: { email: 'entry@bbm.academy', roles: [PLATFORM_USER_ROLE, role] } }
+
+      const response = await route.POST(
+        new Request(BASE, {
+          method: 'POST',
+          body: JSON.stringify({ ...spent, accountId: 7, personalFunds: false }),
+        }),
+      )
+
+      expect(response.status).toBe(201)
+    }
+  })
+
+  it('decision 36: a pre-spend request from a role-less submitter is untouched by the gate', async () => {
+    roleless()
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 93, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: '4500000',
+          currency: 'RUB',
+          purposeId: 11,
+          projectId: 12,
+          productId: 13,
+          counterpartyId: 14,
+          alreadyPaid: false,
+          personalFunds: false,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+  })
+
+  it('decision 36: the EDIT path carries the same refusal — a create gate a PATCH walks around is none', async () => {
+    roleless()
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+
+    const response = await route.PATCH(
+      new Request(`${BASE}/41`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...spent, accountId: 7, personalFunds: false }),
+      }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(state.editExpenseRequest).not.toHaveBeenCalled()
+  })
+})

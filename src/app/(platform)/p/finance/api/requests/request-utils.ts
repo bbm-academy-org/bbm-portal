@@ -4,6 +4,8 @@ import { z } from 'zod'
 import {
   createCounterparty,
   listCounterparties,
+  FINANCE_APPROVE_ROLE,
+  FINANCE_ENTRY_ROLE,
   type CreateExpenseRequestInput,
   type FinanceActor,
 } from '@/lib/finance'
@@ -120,6 +122,37 @@ export async function resolveRequestCounterpartyId(
     if (racedId !== null) return racedId
     throw cause
   }
+}
+
+/**
+ * WHO MAY SAY «THE COMPANY PAID» — owner decision 36 (Антон, 2026-09-14, #115),
+ * spec 339 EARS-508 revision 2026-09-14: «конечно, не любой сотрудник имеет
+ * доступ к корп. счетам».
+ *
+ * THE FORM'S HIDDEN CONTROL IS NOT THE GATE, and the spec says so in as many
+ * words: the handler refuses the claim «however the API is reached». A
+ * submitter holding neither `finance-entry` nor `finance-approve` may file an
+ * already-paid request only as their own money — `personal_funds` set and no
+ * `account` named. Either half missing is the same refusal.
+ *
+ * It is deliberately NOT part of `expenseRequestBodySchema`: that schema is the
+ * body's own shape and knows no actor, and a zod refinement that needed one
+ * would have to be re-created per request. Null means «nothing to refuse».
+ */
+export function companyAccountRefusal(
+  actor: FinanceActor,
+  body: Pick<ExpenseRequestBody, 'alreadyPaid' | 'personalFunds' | 'accountId'>,
+): string | null {
+  if (!body.alreadyPaid) return null
+  const financeRole =
+    actor.roles.includes(FINANCE_ENTRY_ROLE) || actor.roles.includes(FINANCE_APPROVE_ROLE)
+  if (financeRole) return null
+  if (body.personalFunds && (body.accountId ?? null) === null) return null
+  return (
+    'Оплату с корпоративного счёта оформляет финансовая роль (finance-entry / ' +
+    'finance-approve): уже потраченную сумму подайте как оплаченную своими ' +
+    'средствами (EARS-508, решение 36).'
+  )
 }
 
 export function expenseRequestInput(
