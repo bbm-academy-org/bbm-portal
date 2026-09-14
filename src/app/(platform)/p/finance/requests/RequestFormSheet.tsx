@@ -90,6 +90,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function RequestFormSheet({
   references,
   request,
+  canNameCompanyAccount,
   pending,
   failure,
   onSubmit,
@@ -97,12 +98,23 @@ export function RequestFormSheet({
 }: {
   references: RequestBoardReferences
   request?: RequestBoardItem
+  /**
+   * Whether this submitter may say «the company paid» — `finance-entry` or
+   * `finance-approve` (owner decision 36, Антон, 2026-09-14, spec 339 EARS-508
+   * revision 2026-09-14). False hides the whole company-account branch and
+   * files the already-paid request as own money; the REFUSAL that matters is
+   * the module's own, in `request-utils.ts`.
+   */
+  canNameCompanyAccount: boolean
   pending: boolean
   failure?: string
   onSubmit: (value: RequestFormValue) => void
   onClose: () => void
 }) {
-  const schema = React.useMemo(() => createRequestFormSchema(references), [references])
+  const schema = React.useMemo(
+    () => createRequestFormSchema(references, { canNameCompanyAccount }),
+    [canNameCompanyAccount, references],
+  )
   const form = useForm<RequestFormValue>({
     resolver: zodResolver(schema),
     defaultValues: requestFormDefaults(references, request),
@@ -424,6 +436,14 @@ export function RequestFormSheet({
                         onCheckedChange={(checked) => {
                           const on = checked === true
                           field.onChange(on)
+                          // Decision 36: a submitter who is not offered the
+                          // company-account branch declares own funds by
+                          // ticking this one box — the fact is SET here rather
+                          // than left to a control that is not on the form.
+                          if (on && !canNameCompanyAccount) {
+                            form.setValue('personalFunds', true)
+                            form.setValue('accountId', '')
+                          }
                           // Unticking must not leave a paying account and a date
                           // behind in hidden fields — a pre-spend request carries
                           // neither (EARS-533), and the body it files says so.
@@ -451,33 +471,47 @@ export function RequestFormSheet({
 
               {alreadyPaid ? (
                 <div className="space-y-4 border-l-2 pl-4">
-                  <FormField
-                    control={form.control}
-                    name="personalFunds"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-start gap-3">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            disabled={pending}
-                            onCheckedChange={(checked) => {
-                              field.onChange(checked === true)
-                              if (checked === true) form.setValue('accountId', '')
-                            }}
-                          />
-                        </FormControl>
-                        <div className="space-y-1">
-                          <FormLabel>Оплачено своими средствами</FormLabel>
-                          <FormDescription>
-                            BBM останется должен эту сумму — долг попадёт в «Обязательства».
-                          </FormDescription>
-                          <FormMessage />
-                        </div>
-                      </FormItem>
-                    )}
-                  />
+                  {/* DECISION 36 — the company-account branch is a role's. A
+                      submitter holding neither finance role is not shown a
+                      choice they cannot make; they are TOLD what was filed,
+                      because a silently-set fact that creates a debt to them is
+                      exactly the kind of thing a form must say out loud. */}
+                  {canNameCompanyAccount ? null : (
+                    <p className="text-sm text-muted-foreground">
+                      Оформлено как оплаченное своими средствами: BBM останется должен эту сумму —
+                      долг попадёт в «Обязательства». Списание с корпоративного счёта оформляет
+                      финансовая роль.
+                    </p>
+                  )}
+                  {canNameCompanyAccount ? (
+                    <FormField
+                      control={form.control}
+                      name="personalFunds"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start gap-3">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              disabled={pending}
+                              onCheckedChange={(checked) => {
+                                field.onChange(checked === true)
+                                if (checked === true) form.setValue('accountId', '')
+                              }}
+                            />
+                          </FormControl>
+                          <div className="space-y-1">
+                            <FormLabel>Оплачено своими средствами</FormLabel>
+                            <FormDescription>
+                              BBM останется должен эту сумму — долг попадёт в «Обязательства».
+                            </FormDescription>
+                            <FormMessage />
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                  ) : null}
 
-                  {personalFunds ? null : (
+                  {personalFunds || !canNameCompanyAccount ? null : (
                     <FormField
                       control={form.control}
                       name="accountId"

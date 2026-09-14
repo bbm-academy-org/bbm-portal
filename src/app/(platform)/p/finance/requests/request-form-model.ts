@@ -159,8 +159,44 @@ export function productEmptyMessage(references: RequestBoardReferences, projectI
   return `Это назначение требует продукт, а у ${named} нет продуктов — выберите другой проект или другое назначение.`
 }
 
-export function createRequestFormSchema(references: RequestBoardReferences) {
+/**
+ * WHO MAY SAY «THE COMPANY PAID» — owner decision 36 (Антон, 2026-09-14, #115),
+ * spec 339 EARS-508 revision 2026-09-14: «конечно, не любой сотрудник имеет
+ * доступ к корп. счетам».
+ *
+ * The company-account branch of the already-paid path belongs to
+ * `finance-entry` / `finance-approve`. A submitter with neither role files an
+ * already-paid request as their OWN money — so the form neither offers the
+ * choice nor the account picker, and the schema says so rather than leaving the
+ * refusal to a server round-trip the member cannot read. The gate that MATTERS
+ * is the module's own (`request-utils.ts`); this one is the affordance.
+ */
+export type RequestFormOptions = { canNameCompanyAccount?: boolean }
+
+export function createRequestFormSchema(
+  references: RequestBoardReferences,
+  options: RequestFormOptions = {},
+) {
+  const canNameCompanyAccount = options.canNameCompanyAccount ?? true
   return baseSchema.superRefine((value, context) => {
+    if (!canNameCompanyAccount && value.alreadyPaid) {
+      if (!value.personalFunds) {
+        context.addIssue({
+          code: 'custom',
+          path: ['personalFunds'],
+          message:
+            'Оплату с корпоративного счёта оформляет финансовая роль: свою трату подайте как ' +
+            'оплаченную своими средствами.',
+        })
+      }
+      if (value.accountId !== '') {
+        context.addIssue({
+          code: 'custom',
+          path: ['accountId'],
+          message: 'Списание с корпоративного счёта оформляет финансовая роль.',
+        })
+      }
+    }
     const precision = currencyPrecision(references.currencies, value.currency)
     if (toMinorUnits(value.amount, precision) === null) {
       context.addIssue({
@@ -320,12 +356,18 @@ export function requestFormDefaults(
 export function toRequestBody(
   value: RequestFormValue,
   references: RequestBoardReferences,
+  options: RequestFormOptions = {},
 ): CreateRequestBody {
+  const canNameCompanyAccount = options.canNameCompanyAccount ?? true
   const precision = currencyPrecision(references.currencies, value.currency)
   // EARS-533 again, on the way OUT: whatever the hidden fields still hold from
   // a checkbox the member ticked and unticked, a pre-spend request files no
-  // paying account and no money date.
-  const account = value.alreadyPaid ? accountOf(references, value.accountId) : null
+  // paying account and no money date. Decision 36 adds the second exclusion on
+  // the same line: a submitter who was never offered the company-account branch
+  // files no account, and the `personal_funds` fact is DERIVED rather than read
+  // out of a control that is not on the form.
+  const ownMoneyOnly = !canNameCompanyAccount
+  const account = value.alreadyPaid && !ownMoneyOnly ? accountOf(references, value.accountId) : null
   const crossCurrency = account !== null && account.currency !== value.currency
   const paidPrecision = crossCurrency
     ? currencyPrecision(references.currencies, account.currency)
@@ -354,7 +396,7 @@ export function toRequestBody(
     counterpartyName: counterpartyName === '' ? null : counterpartyName,
     note: value.note.trim() === '' ? null : value.note.trim(),
     alreadyPaid: value.alreadyPaid,
-    personalFunds: value.personalFunds,
+    personalFunds: ownMoneyOnly ? value.alreadyPaid : value.personalFunds,
   }
 }
 

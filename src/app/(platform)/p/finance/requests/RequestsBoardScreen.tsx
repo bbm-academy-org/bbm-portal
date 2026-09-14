@@ -9,17 +9,10 @@ import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { ListView } from '@/ui/refine-ui/views/list-view'
 import { Skeleton } from '@/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/tabs'
 import { cn } from '@/ui/utils'
 
-import {
-  DOCUMENTS_ENDPOINT,
-  errorMessage,
-  formatDate,
-  REQUESTS_ENDPOINT,
-  REQUEST_STATUS_LABELS,
-} from './constants'
+import { DOCUMENTS_ENDPOINT, errorMessage, REQUESTS_ENDPOINT } from './constants'
 import { LiabilityPanel } from './LiabilityPanel'
 import { RequestCard } from './RequestCard'
 import { RequestDetailsSheet, type RequestAct, type RequestActPayload } from './RequestDetailsSheet'
@@ -29,16 +22,71 @@ import {
   canDragRequest,
   currencyPrecision,
   filedRequestNotification,
-  formatRequestMoney,
   groupRequestsByStatus,
-  ownRequests,
   planRequestDrop,
+  postingActNeedsMoneyFacts,
   REQUEST_BOARD_COLUMNS,
+  type FinanceRequestBoardAct,
   type FinanceRequestBoardStatus,
 } from './request-board-model'
 import { toRequestBody, type RequestFormValue } from './request-form-model'
+import { RequestsTable } from './RequestsTable'
+import {
+  canToggleRequestsView,
+  DEFAULT_REQUEST_TABLE_SCOPE,
+  requestTableRows,
+  REQUESTS_VIEW_STORAGE_KEY,
+  REQUEST_TABLE_SCOPES,
+  resolveRequestsView,
+  type RequestTableScope,
+} from './request-table-model'
 
 type SnapshotRecord = RequestsSnapshot & { id?: never }
+
+/**
+ * THE CHOSEN VIEW AS AN EXTERNAL STORE (decision 35).
+ *
+ * `localStorage` is exactly that — state that lives outside React, is absent on
+ * the server, and can be changed by another tab. `useSyncExternalStore` is the
+ * shape React has for it: no copy in component state, no effect to keep the
+ * copy in step, and a declared server snapshot instead of a hydration guess.
+ * The write notifies this tab (a `storage` event fires only in the OTHERS).
+ */
+const storedViewListeners = new Set<() => void>()
+
+function readStoredView(): string | null {
+  try {
+    return window.localStorage.getItem(REQUESTS_VIEW_STORAGE_KEY)
+  } catch {
+    // A browser that refuses storage (private mode, blocked site data) gets the
+    // default view, not a broken screen.
+    return null
+  }
+}
+
+/** The server has no browser storage, and says so rather than guessing. */
+function serverStoredView(): string | null {
+  return null
+}
+
+function writeStoredView(next: string): void {
+  try {
+    window.localStorage.setItem(REQUESTS_VIEW_STORAGE_KEY, next)
+  } catch {
+    // The choice still holds for this visit; only its memory is refused — and
+    // the listeners below still fire, so the screen switches either way.
+  }
+  for (const listener of storedViewListeners) listener()
+}
+
+function subscribeStoredView(listener: () => void): () => void {
+  storedViewListeners.add(listener)
+  window.addEventListener('storage', listener)
+  return () => {
+    storedViewListeners.delete(listener)
+    window.removeEventListener('storage', listener)
+  }
+}
 
 const ACT_DONE: Record<RequestAct, string> = {
   approve: 'Заявка одобрена.',
@@ -105,6 +153,21 @@ export function RequestsBoardScreen() {
    * a decision: the drop still only opens the act `planRequestDrop` names.
    */
   const [dragOver, setDragOver] = React.useState<FinanceRequestBoardStatus | null>(null)
+  const [scope, setScope] = React.useState<RequestTableScope>(DEFAULT_REQUEST_TABLE_SCOPE)
+  /**
+   * WHICH VIEW THIS BROWSER LAST CHOSE (decision 35) — the raw stored string,
+   * subscribed to rather than copied into state. The server has no
+   * `localStorage`, so the server snapshot is `null` and the first painted
+   * frame is the default table, which is what every reader without a stored
+   * choice gets anyway; React then re-renders with the stored value after
+   * hydration. Copying it in with `useState` + `useEffect` says the same thing
+   * with a render nobody needs and a second source of truth to keep in step.
+   */
+  const storedView = React.useSyncExternalStore(
+    subscribeStoredView,
+    readStoredView,
+    serverStoredView,
+  )
 
   /**
    * READ THE QUERY, NOT `result`. `useCustom`'s `result.data` is
@@ -219,7 +282,9 @@ export function RequestsBoardScreen() {
         {
           url: editingId === null ? REQUESTS_ENDPOINT : `${REQUESTS_ENDPOINT}/${editingId}`,
           method: editingId === null ? 'post' : 'patch',
-          values: toRequestBody(value, snapshot.references) as unknown as Record<string, unknown>,
+          values: toRequestBody(value, snapshot.references, {
+            canNameCompanyAccount: snapshot.permissions.canEnter || snapshot.permissions.canApprove,
+          }) as unknown as Record<string, unknown>,
           successNotification:
             editingId === null
               ? // The status the endpoint really kept, read back (EARS-509/526).
@@ -281,9 +346,33 @@ export function RequestsBoardScreen() {
 
   const { permissions, references, requests, liabilities } = snapshot
   const groups = groupRequestsByStatus(requests)
-  const mine = ownRequests(requests)
+  const view = resolveRequestsView(storedView, permissions.canApprove)
+  const rows = requestTableRows(requests, scope)
   const selected = requests.find((request) => request.id === selectedId) ?? null
   const editing = typeof formFor === 'number' ? requests.find((r) => r.id === formFor) : undefined
+
+  /** The chosen view, remembered for THIS browser and nowhere else. */
+  function chooseView(next: string) {
+    writeStoredView(next)
+  }
+
+  /**
+   * A ROW ACT INITIATES THE SAME ACT THE BOARD'S DRAG DOES (decision 35). An
+   * approval that only AUTHORISES is complete in itself and runs from the row;
+   * a refusal needs its mandatory reason (EARS-512) and an approval that would
+   * POST needs the money facts (EARS-533), and both of those are asked in the
+   * details sheet — so the row opens the sheet ARMED with the act instead of
+   * growing a second copy of those dialogs.
+   */
+  function runRowAct(request: RequestBoardItem, act: FinanceRequestBoardAct) {
+    if (act === 'refuse' || postingActNeedsMoneyFacts(request, act)) {
+      setFormFor(null)
+      setSelectedId(request.id)
+      setPendingAct(act)
+      return
+    }
+    runAct(request, act)
+  }
 
   function onDrop(status: FinanceRequestBoardStatus) {
     return (event: React.DragEvent<HTMLElement>) => {
@@ -327,171 +416,149 @@ export function RequestsBoardScreen() {
           </Button>
         </div>
 
-        <Tabs defaultValue="board" className="gap-6">
+        <Tabs defaultValue="requests" className="gap-6">
           <TabsList>
-            <TabsTrigger value="board">Доска</TabsTrigger>
+            <TabsTrigger value="requests">Заявки</TabsTrigger>
             <TabsTrigger value="liabilities">Обязательства</TabsTrigger>
-            <TabsTrigger value="mine">Мои заявки</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="board">
-            {requests.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-10 text-center">
-                <p className="font-heading text-base font-medium">Заявок пока нет</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Первая заявка появится здесь, как только кто-нибудь её подаст.
-                </p>
+          <TabsContent value="requests">
+            <section aria-label="Список заявок" className="space-y-4">
+              {/* THE TOOLBAR IS THE TWO QUESTIONS, and only the ones this
+                  reader may answer: whose requests (everyone), and in which
+                  view (the approve role only — decision 35). The scope filter
+                  belongs to the table: the board is a queue of decisions, and
+                  «мои» over a decision queue is a filter on somebody else's
+                  work. */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {view === 'table' ? (
+                  <Tabs value={scope} onValueChange={(next) => setScope(next as RequestTableScope)}>
+                    <TabsList aria-label="Чьи заявки">
+                      {REQUEST_TABLE_SCOPES.map((option) => (
+                        <TabsTrigger key={option.value} value={option.value}>
+                          {option.label}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Доска: четыре состояния машины статусов. Перенос карточки открывает акт.
+                  </p>
+                )}
+                {canToggleRequestsView(permissions.canApprove) ? (
+                  <Tabs value={view} onValueChange={chooseView}>
+                    <TabsList aria-label="Вид">
+                      <TabsTrigger value="table">Таблица</TabsTrigger>
+                      <TabsTrigger value="board">Доска</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                ) : null}
               </div>
-            ) : (
-              // `dragend` fires on the card and BUBBLES, so one handler here
-              // clears the treatment however the drag ended — dropped on a
-              // column, dropped outside one, or abandoned with Escape.
-              <div className="grid gap-3 lg:grid-cols-4" onDragEnd={() => setDragOver(null)}>
-                {REQUEST_BOARD_COLUMNS.map((column) => {
-                  const cards = groups[column.status]
-                  const archived = column.status === 'posted' || column.status === 'refused'
-                  return (
-                    <section
-                      key={column.status}
-                      aria-label={column.title}
-                      // `preventDefault` on EVERY dragover is what makes the
-                      // column a drop target at all — without it the browser
-                      // never fires `drop`.
-                      onDragOver={(event) => {
-                        event.preventDefault()
-                        if (dragOver !== column.status) setDragOver(column.status)
-                      }}
-                      onDragLeave={(event) => {
-                        // `dragleave` also fires when the pointer crosses onto a
-                        // CHILD of the column; only a leave that really lands
-                        // outside it clears the treatment.
-                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                          setDragOver((current) => (current === column.status ? null : current))
-                        }
-                      }}
-                      onDrop={(event) => {
-                        setDragOver(null)
-                        onDrop(column.status)(event)
-                      }}
-                      data-drag-over={dragOver === column.status ? 'true' : undefined}
-                      className={cn(
-                        'flex min-h-40 flex-col gap-2 rounded-xl border p-3 transition-colors',
-                        archived ? 'bg-muted/30' : 'bg-card',
-                        dragOver === column.status ? 'border-ring bg-accent/40' : undefined,
-                      )}
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h2
+
+              {view === 'board' ? (
+                requests.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-10 text-center">
+                    <p className="font-heading text-base font-medium">Заявок пока нет</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Первая заявка появится здесь, как только кто-нибудь её подаст.
+                    </p>
+                  </div>
+                ) : (
+                  // `dragend` fires on the card and BUBBLES, so one handler here
+                  // clears the treatment however the drag ended — dropped on a
+                  // column, dropped outside one, or abandoned with Escape.
+                  <div className="grid gap-3 lg:grid-cols-4" onDragEnd={() => setDragOver(null)}>
+                    {REQUEST_BOARD_COLUMNS.map((column) => {
+                      const cards = groups[column.status]
+                      const archived = column.status === 'posted' || column.status === 'refused'
+                      return (
+                        <section
+                          key={column.status}
+                          aria-label={column.title}
+                          // `preventDefault` on EVERY dragover is what makes the
+                          // column a drop target at all — without it the browser
+                          // never fires `drop`.
+                          onDragOver={(event) => {
+                            event.preventDefault()
+                            if (dragOver !== column.status) setDragOver(column.status)
+                          }}
+                          onDragLeave={(event) => {
+                            // `dragleave` also fires when the pointer crosses onto a
+                            // CHILD of the column; only a leave that really lands
+                            // outside it clears the treatment.
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                              setDragOver((current) => (current === column.status ? null : current))
+                            }
+                          }}
+                          onDrop={(event) => {
+                            setDragOver(null)
+                            onDrop(column.status)(event)
+                          }}
+                          data-drag-over={dragOver === column.status ? 'true' : undefined}
                           className={cn(
-                            'font-heading text-sm font-semibold',
-                            archived ? 'text-muted-foreground' : 'text-foreground',
+                            'flex min-h-40 flex-col gap-2 rounded-xl border p-3 transition-colors',
+                            archived ? 'bg-muted/30' : 'bg-card',
+                            dragOver === column.status ? 'border-ring bg-accent/40' : undefined,
                           )}
                         >
-                          {column.title}
-                        </h2>
-                        <Badge variant="outline">{cards.length}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{column.hint}</p>
-                      {cards.map((request) => (
-                        <RequestCard
-                          key={request.id}
-                          request={request}
-                          canApprove={permissions.canApprove}
-                          precision={currencyPrecision(references.currencies, request.currency)}
-                          onOpen={() => {
-                            setPendingAct(null)
-                            setSelectedId(request.id)
-                          }}
-                        />
-                      ))}
-                    </section>
-                  )
-                })}
-              </div>
-            )}
+                          <div className="flex items-baseline justify-between gap-2">
+                            <h2
+                              className={cn(
+                                'font-heading text-sm font-semibold',
+                                archived ? 'text-muted-foreground' : 'text-foreground',
+                              )}
+                            >
+                              {column.title}
+                            </h2>
+                            <Badge variant="outline">{cards.length}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{column.hint}</p>
+                          {cards.map((request) => (
+                            <RequestCard
+                              key={request.id}
+                              request={request}
+                              canApprove={permissions.canApprove}
+                              precision={currencyPrecision(references.currencies, request.currency)}
+                              onOpen={() => {
+                                setPendingAct(null)
+                                setSelectedId(request.id)
+                              }}
+                            />
+                          ))}
+                        </section>
+                      )
+                    })}
+                  </div>
+                )
+              ) : rows.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-10 text-center">
+                  <p className="font-heading text-base font-medium">
+                    {scope === 'mine' ? 'Вы ещё не подавали заявок' : 'Заявок пока нет'}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {scope === 'mine'
+                      ? 'Всё, что вы подадите, появится здесь — включая черновики и отозванное.'
+                      : 'Первая заявка появится здесь, как только кто-нибудь её подаст.'}
+                  </p>
+                </div>
+              ) : (
+                <RequestsTable
+                  rows={rows}
+                  references={references}
+                  canApprove={permissions.canApprove}
+                  onOpen={(request) => {
+                    setPendingAct(null)
+                    setSelectedId(request.id)
+                  }}
+                  onAct={runRowAct}
+                />
+              )}
+            </section>
           </TabsContent>
 
           <TabsContent value="liabilities">
             <LiabilityPanel liabilities={liabilities} references={references} />
-          </TabsContent>
-
-          <TabsContent value="mine">
-            <section aria-label="Мои заявки" className="space-y-3">
-              <div>
-                <h2 className="font-heading text-lg font-semibold tracking-tight">Мои заявки</h2>
-                <p className="text-sm text-muted-foreground">
-                  Всё, что вы подали, — включая черновики и отозванное.
-                </p>
-              </div>
-              {mine.length === 0 ? (
-                <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                  Вы ещё не подавали заявок.
-                </p>
-              ) : (
-                <>
-                  {/* The remaining columns are a swipe away on a phone: the kit's
-                      container scrolls, but an overlay scrollbar says nothing while
-                      it is idle, so the surface says it in words below `sm`. */}
-                  <p className="text-sm text-muted-foreground sm:hidden">
-                    Таблица прокручивается вбок: сумма, статус и «Открыть» — правее.
-                  </p>
-                  <Table className="min-w-[34rem]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Дата</TableHead>
-                        <TableHead>Что</TableHead>
-                        <TableHead className="text-right">Сумма</TableHead>
-                        <TableHead>Статус</TableHead>
-                        <TableHead>
-                          <span className="sr-only">Действия</span>
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {mine.map((request) => (
-                        <TableRow key={request.id}>
-                          <TableCell className="tabular-nums">
-                            {request.occurredOn === null ? (
-                              <span className="text-muted-foreground">не двигались</span>
-                            ) : (
-                              formatDate(request.occurredOn)
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-[24ch] whitespace-normal">
-                            {request.note ?? request.purpose?.name ?? '—'}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatRequestMoney(
-                              request.amount,
-                              request.currency,
-                              currencyPrecision(references.currencies, request.currency),
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">
-                              {REQUEST_STATUS_LABELS[request.status]}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Открыть заявку №${request.id}`}
-                              onClick={() => {
-                                setPendingAct(null)
-                                setSelectedId(request.id)
-                              }}
-                            >
-                              Открыть
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </>
-              )}
-            </section>
           </TabsContent>
         </Tabs>
       </section>
@@ -500,6 +567,7 @@ export function RequestsBoardScreen() {
         <RequestFormSheet
           references={references}
           request={editing}
+          canNameCompanyAccount={permissions.canEnter || permissions.canApprove}
           pending={mutation.isPending}
           failure={formFailure}
           onSubmit={fileRequest}
