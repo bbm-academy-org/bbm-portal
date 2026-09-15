@@ -635,6 +635,56 @@ describe('stage-b-lint: a GO on a UI diff needs the lead UX-sanity record (#485)
     expect(result.exitCode).toBe(1)
   })
 
+  /**
+   * Review of PR #493, MAJOR 1. The sub-check hung off `evidence` — the FIRST
+   * sanctioned marker value found — so a body that mentioned `batched at #N`
+   * before its real `GO` cleared the GO's own requirement. A bypass path in a
+   * BLOCK guard is the defect class #485 exists to remove, so the sub-check now
+   * fires on a GO ANYWHERE among the marker values.
+   */
+  it('a batched line ordered BEFORE the GO does not silence the sub-check', () => {
+    const body = ['Stage-B: batched at #388', '', 'Stage-B: GO — Антон, 2026-09-15'].join('\n')
+    const result = checkStageB(pr({ number: 470, body, files: UI_PR_FILES }))
+    expect(result.verdict).toBe('violation')
+    expect(result.message).toContain('UX-sanity')
+  })
+
+  it('the same ordering passes once the record is there', () => {
+    const body = ['Stage-B: batched at #388', '', 'Stage-B: GO — Антон, 2026-09-15'].join('\n')
+    expect(
+      checkStageB(pr({ number: 470, body, files: UI_PR_FILES, comments: [SANITY_BLOCK] })).verdict,
+    ).toBe('pass')
+  })
+
+  it('a GO on the linked ISSUE and a batched line in the body still needs the record', () => {
+    const result = checkStageB(
+      pr({ number: 470, body: 'Stage-B: batched at #388\n\nCloses #388', files: UI_PR_FILES }),
+      ['Stage-B: GO — Антон, 2026-09-15'],
+    )
+    expect(result.verdict).toBe('violation')
+    expect(result.message).toContain('UX-sanity')
+  })
+
+  it('a body with ONLY batched lines is still unaffected, in any number', () => {
+    const body = ['Stage-B: batched at #388', 'Stage-B: batched at #117'].join('\n')
+    expect(checkStageB(pr({ body, files: UI_PR_FILES })).verdict).toBe('pass')
+  })
+
+  // A parenthesised value is a real answer, not an unfilled slot — the rule
+  // `ux-record` already documents for its facets, now shared from lib/guard.mjs
+  // so the two guards cannot disagree about it (review of PR #493, MAJOR 2).
+  it('accepts a fully parenthesised facet value', () => {
+    const parenthesised = SANITY_BLOCK.replace(
+      '- Tiers: primary / secondary / archived differ by weight and ground, not only by label',
+      '- Tiers: (distinct by weight and ground)',
+    )
+    expect(parenthesised).not.toEqual(SANITY_BLOCK)
+    expect(
+      checkStageB(pr({ number: 470, body: GO, files: UI_PR_FILES, comments: [parenthesised] }))
+        .verdict,
+    ).toBe('pass')
+  })
+
   it('the repo PR template carries the UX-sanity marker, unfilled', () => {
     const template = readFileSync(
       resolve(process.cwd(), '.github/pull_request_template.md'),
