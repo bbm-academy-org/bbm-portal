@@ -6,18 +6,24 @@ import { createElement as h } from 'react'
 import { toast } from 'sonner'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { AlertDialog, AlertDialogContent, AlertDialogTitle } from '@/ui/alert-dialog'
 import { Avatar, AvatarFallback } from '@/ui/avatar'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/card'
+import { Dialog, DialogContent, DialogTitle } from '@/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 import { Separator } from '@/ui/separator'
+import { Sheet, SheetContent, SheetTitle } from '@/ui/sheet'
 import { Toaster } from '@/ui/sonner'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/ui/tooltip'
 import { cn } from '@/ui/utils'
 
 /**
@@ -152,6 +158,124 @@ describe('the kit Toaster follows the workspace theme (#434)', () => {
         document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'),
       ).toBe('dark')
     })
+  })
+})
+
+/**
+ * EVERY SURFACE THE KIT PORTALS CARRIES THE THEME SCOPE ITSELF (#487).
+ *
+ * `src/ui/theme.css` is scoped: nothing outside a `[data-bbm-ui]` subtree is
+ * touched by any rule in it, and `<body>` carries no font of its own — so a
+ * node that falls out of the scope renders in the UA serif. Radix moves a
+ * portaled surface to `document.body`, i.e. OUT of the screen's subtree, which
+ * makes the scope a property each portal has to re-declare.
+ *
+ * Until #487 that re-declaration was an obligation on the CALL SITE — one
+ * `data-bbm-ui` per `SelectContent` / `DialogContent` / … across the app, with
+ * `src/ui/README.md` as the only thing holding it up. One omission
+ * (`RequestDetailsSheet.tsx`'s document-type select, PR #470) put a Times New
+ * Roman dropdown on the owner's 2026-09-15 stand. The scope now lives in the
+ * kit component, so a call site cannot forget it, and this suite is what says
+ * so for every portaled surface the kit ships.
+ *
+ * The assertion is `closest('[data-bbm-ui]')` rather than an attribute read:
+ * what matters is that the surface SITS INSIDE a scope once Radix has moved it,
+ * whichever element in the portal declares it.
+ */
+describe('#487: a portaled kit surface carries the theme scope out of the screen subtree', () => {
+  afterEach(cleanup)
+
+  const scoped = (selector: string) => {
+    const node = document.querySelector(selector)
+    expect(node, `${selector} did not render`).not.toBeNull()
+    // Guard the guard: a scope on <body> or <html> would make every assertion
+    // below pass for the wrong reason.
+    expect(document.body.closest('[data-bbm-ui]')).toBeNull()
+    return node!.closest('[data-bbm-ui]')
+  }
+
+  const expectScoped = (selector: string) =>
+    expect(
+      scoped(selector),
+      `${selector} renders outside every [data-bbm-ui] subtree`,
+    ).not.toBeNull()
+
+  it('Dialog — content and overlay', () => {
+    render(h(Dialog, { defaultOpen: true }, h(DialogContent, null, h(DialogTitle, null, 'Заявка'))))
+    expectScoped('[data-slot="dialog-content"]')
+    expectScoped('[data-slot="dialog-overlay"]')
+  })
+
+  it('AlertDialog — content and overlay', () => {
+    render(
+      h(
+        AlertDialog,
+        { defaultOpen: true },
+        h(AlertDialogContent, null, h(AlertDialogTitle, null, 'Удалить?')),
+      ),
+    )
+    expectScoped('[data-slot="alert-dialog-content"]')
+    expectScoped('[data-slot="alert-dialog-overlay"]')
+  })
+
+  it('Sheet — content and overlay', () => {
+    render(h(Sheet, { defaultOpen: true }, h(SheetContent, null, h(SheetTitle, null, 'Детали'))))
+    expectScoped('[data-slot="sheet-content"]')
+    expectScoped('[data-slot="sheet-overlay"]')
+  })
+
+  it('Popover — content', () => {
+    render(
+      h(
+        Popover,
+        { defaultOpen: true },
+        h(PopoverTrigger, null, 'открыть'),
+        h(PopoverContent, null, 'содержимое'),
+      ),
+    )
+    expectScoped('[data-slot="popover-content"]')
+  })
+
+  it('Tooltip — content', () => {
+    render(
+      h(
+        TooltipProvider,
+        null,
+        h(
+          Tooltip,
+          { defaultOpen: true },
+          h(TooltipTrigger, null, 'наведи'),
+          h(TooltipContent, null, 'подсказка'),
+        ),
+      ),
+    )
+    expectScoped('[data-slot="tooltip-content"]')
+  })
+
+  it('DropdownMenu — content', () => {
+    render(
+      h(
+        DropdownMenu,
+        { defaultOpen: true },
+        h(DropdownMenuTrigger, null, 'Приложения'),
+        h(DropdownMenuContent, null, h(DropdownMenuItem, null, 'OKR')),
+      ),
+    )
+    expectScoped('[data-slot="dropdown-menu-content"]')
+  })
+
+  it('Select — content, with NO `data-bbm-ui` at the call site', () => {
+    // The exact shape of the defect: `RequestDetailsSheet.tsx:193` rendered
+    // `<SelectContent>` bare, and the list came out in Times New Roman.
+    render(
+      h(
+        Select,
+        { defaultOpen: true },
+        h(SelectTrigger, null, h(SelectValue, { placeholder: 'Тип документа' })),
+        h(SelectContent, null, h(SelectItem, { value: 'receipt' }, 'Чек')),
+      ),
+    )
+    expectScoped('[data-slot="select-content"]')
   })
 })
 

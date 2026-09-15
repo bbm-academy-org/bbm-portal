@@ -19,3 +19,18 @@ if (typeof window !== 'undefined') {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia
 }
+
+// jsdom implements neither `ResizeObserver` (Radix's `useSize`, which every
+// Popper-positioned surface mounts) nor `Element.scrollIntoView` (Radix Select
+// calls it on the checked item when the list opens). Both are layout APIs with
+// nothing to observe in jsdom, so the stubs are no-ops: they let a portaled
+// surface MOUNT so a test can read the DOM it produced (#487), and they measure
+// nothing, so no assertion can accidentally rest on a fake measurement.
+if (typeof window !== 'undefined') {
+  window.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  Element.prototype.scrollIntoView ??= function scrollIntoView() {}
+}

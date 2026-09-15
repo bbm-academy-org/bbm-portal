@@ -119,8 +119,19 @@ property directly: every selector in the `@layer base` block must begin with
 Two consequences worth knowing before adding a component:
 
 - **Anything Radix portals to `document.body` needs its own `data-bbm-ui`** —
-  the portal lands outside the opted-in subtree. `AppSwitcher.tsx` puts it on
-  `DropdownMenuContent` for exactly this reason.
+  the portal lands outside the opted-in subtree, where no rule in `theme.css`
+  reaches it and `<body>`'s own font (the UA serif, since nothing sets one) wins.
+  **Since #487 the kit declares it, not the call site.** `DialogContent`,
+  `AlertDialogContent`, `SheetContent`, `PopoverContent`, `TooltipContent`,
+  `DropdownMenuContent` and `SelectContent` — and the three overlays — carry the
+  attribute on the element they render INSIDE the portal, so `<SelectContent>`
+  written bare is scoped. This replaced a per-call-site obligation that held for
+  ~12 sites and then did not: one bare `<SelectContent>` in the requests sheet
+  put a Times New Roman dropdown on the owner's 2026-09-15 stand of PR #470.
+  Call sites that still pass `data-bbm-ui` are inert duplicates, not a contract.
+  `tests/unit/ui-kit.spec.ts` renders every portaled surface open and asserts it
+  lands inside a `[data-bbm-ui]` subtree; a NEW portaled component is covered
+  only once it is added to that list.
 - **When `/p/okr` and `/p/hours` are re-skinned**, the honest move is to drop the
   prefix and go back to stock preflight rather than to keep growing the subset.
 
