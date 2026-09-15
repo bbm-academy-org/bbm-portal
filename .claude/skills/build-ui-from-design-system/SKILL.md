@@ -75,6 +75,22 @@ is missing and the look is genuinely open,
 dispatch [`research-ui-element`](../research-ui-element/SKILL.md) rather than
 inventing a look at the keyboard.
 
+**A gap claim needs TWO source lines.** «The kit has no X», «neither shadcn nor
+Refine gives an X» is a claim about the SOURCE, and it is admissible only with
+both of these, quoted where the claim is made:
+
+1. the output line(s) of **`pnpm ui:inventory`** (`tools/ui/inventory.mjs` —
+   every export of `src/ui/**` as one table, no args, no network) showing that
+   the export is absent;
+2. the **URL of the component page** that was checked on `ui.shadcn.com` or
+   `ui.refine.dev`.
+
+Without both, the claim is **not verified**: it does not enter a plan, a brief,
+or a rung-3 bespoke justification, and it unlocks nothing. Checking a derived
+artifact — one vendored BLOCK — and concluding something about the design system
+is the 2026-07-27 error in a new costume, and it is what this rule exists to stop
+(#494).
+
 Three guards read this rung on a PR's diff. Two read the platform app's
 markup and are WARN — `pnpm lint:primitives-first <PR>` (a raw control the kit
 already owns, and `useState` field state where the `form` block applies) and
@@ -189,6 +205,11 @@ value — `GO — <owner, date>`, `batched at #<gate>`, or
   is how bespoke becomes invisible.
 - **Silent bespoke** — no justification line, so nobody can see the debt
   accumulating.
+- **An unverified gap claim** — «the kit has no X» from a grep of one block.
+  2026-09-15: the lead grepped only the Refine `data-table` block, declared «no
+  totals row», and `TableFooter` was already vendored in `src/ui/table.tsx`; the
+  owner refuted it with the ui.shadcn.com Table page. Two source lines (rung 2
+  above) or the claim is not verified (#494).
 - **Waiting for the owner to compose the screen** — what a missing or
   `wireframe`-only source does and does not stop is
   [`design-process.md`](../../rules/design-process.md) §1; step 4 above is where
