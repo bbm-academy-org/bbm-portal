@@ -87,6 +87,98 @@ export function stripNonEvidence(text) {
 }
 
 /**
+ * An unfilled marker value — the PR template's own angle-bracket line, or a
+ * stand-in for an answer nobody has written yet.
+ *
+ * ONE definition, for the same reason `stripNonEvidence` above is one: the
+ * copies drift. `ux-record` and `stage-b` each carried their own, and
+ * `ux-record`'s comment asserted they were byte-identical while they were not —
+ * `stage-b`'s also matched a fully parenthesised value, so the same
+ * `(distinct by weight and ground)` was a recorded decision in one guard and an
+ * unfilled slot in the other (review of PR #493, MAJOR 2).
+ *
+ * `n/a` is deliberately NOT here: at the FACET level it is a decision (a
+ * read-only screen's `Post-submit: n/a`). Where a bare `n/a` must be refused —
+ * a marker-level self-certification — that is each guard's own
+ * `LEAD_CERTIFIED_RE`, which demands the certification be claimed.
+ */
+const PLACEHOLDER_RE = /^(<.*>|tbd|pending.*|todo.*|\?+)$/i
+
+/** True when a marker or facet value is an unfilled slot rather than an answer. */
+export function isPlaceholderValue(value) {
+  return PLACEHOLDER_RE.test(String(value ?? '').trim())
+}
+
+/** A markdown heading — the end of the block a marker line opens. */
+const MARKDOWN_HEADING_RE = /^ {0,3}#{1,6}\s/
+
+/** A regex without its `g` flag, so `exec` is stateless per line. */
+function unsticky(re) {
+  return re.global || re.sticky ? new RegExp(re.source, re.flags.replace(/[gy]/g, '')) : re
+}
+
+/**
+ * Every MARKER BLOCK in a text blob: a marker line carrying a value, followed by
+ * the facet lines that answer it. A block runs from its marker line to the next
+ * markdown heading, the next marker, or the end of the text — so a later section
+ * cannot lend facets to a record that does not have them.
+ *
+ * Shared by `ux-record` (the `UX-record:` block and its six facets) and
+ * `stage-b` (the `UX-sanity:` block and its five), which were a near-clone of
+ * each other and had already diverged on what counts as an unfilled value
+ * (review of PR #493, MAJOR 2). The two guards keep their OWN marker and facet
+ * anchors — they disagree about decoration on purpose, per `stripNonEvidence`'s
+ * note above — and share only the walk.
+ *
+ * Non-evidence text (HTML comments, fenced blocks) is stripped first, so a
+ * template's own instructions and a quoted example are never a record.
+ *
+ * @param {string|null|undefined} text
+ * @param {{marker: RegExp, facet: RegExp, facetId?: (label: string) => string}} anchors
+ * @returns {{value: string, facets: Record<string, string>}[]}
+ */
+export function extractMarkerBlocks(text, { marker, facet, facetId = (l) => l.toLowerCase() }) {
+  const markerRe = unsticky(marker)
+  const facetRe = unsticky(facet)
+  const lines = stripNonEvidence(text).split(/\r?\n/)
+
+  const starts = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = markerRe.exec(lines[i])
+    if (m) starts.push({ index: i, value: (m[1] ?? '').replace(/^[\s*_]+/, '').trim() })
+  }
+
+  return starts.map((start, n) => {
+    const end = starts[n + 1]?.index ?? lines.length
+    const facets = {}
+    for (let i = start.index + 1; i < end; i++) {
+      if (MARKDOWN_HEADING_RE.test(lines[i])) break
+      const m = facetRe.exec(lines[i])
+      if (!m) continue
+      const id = facetId(m[1])
+      if (facets[id] === undefined) facets[id] = (m[2] ?? '').trim()
+    }
+    return { value: start.value, facets }
+  })
+}
+
+/**
+ * The facets a block leaves unrecorded, in the caller's canon order. Unset,
+ * empty and placeholder values all count as unrecorded — a PR template ships
+ * exactly those, so accepting one would make the template a passing record.
+ *
+ * @param {{facets?: Record<string, string>}|null|undefined} record
+ * @param {string[]} facets
+ * @returns {string[]}
+ */
+export function missingFacetsOf(record, facets) {
+  return facets.filter((f) => {
+    const value = record?.facets?.[f]
+    return value === undefined || value === '' || isPlaceholderValue(value)
+  })
+}
+
+/**
  * The PARTIAL linkage of a PR body — `Part of #<parent>` (#299). Anchored to a
  * real line start (a list bullet and bold emphasis are the decorations the PR
  * template and a checklist actually produce), so mid-sentence prose — «this is

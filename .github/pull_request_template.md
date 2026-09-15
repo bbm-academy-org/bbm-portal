@@ -41,6 +41,24 @@ none
 
 Stage-B: <GO — owner, date | batched at #N | N/A (no visual surface) — lead-certified>
 
+## UX sanity
+
+<!-- The LEAD's own pass over the CAPTURED SCREENSHOTS, run before the owner is
+     invited to the stand (owner rule, Антон, 2026-08-31). Required whenever
+     Stage B above is a GO; `batched at #N` and the lead self-certification do
+     not need it. The facets are task-cycle stage 5 item 4
+     (.claude/skills/task-cycle/SKILL.md) — answer each, do not restate it.
+     Fill every angle-bracket below: a bare `UX-sanity: OK` is not a record.
+     Rule: .claude/rules/design-process.md §2 · check: `pnpm lint:stage-b <PR>` -->
+
+UX-sanity: <the verdict>
+
+- Screenshots: <the paths or URLs judged>
+- Dominance: <verdict for this facet>
+- Tiers: <verdict for this facet>
+- Equal boxes: <verdict for this facet>
+- Legible states: <verdict for this facet>
+
 ## UX record
 
 <!-- The agent's UX decisions on this diff. Required on a UI diff (non-test

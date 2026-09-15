@@ -125,6 +125,31 @@ check without a rebuild. Run LOCALLY the script still exits 0 on a violation unl
 cannot be read at all) is not a violation and always exits non-zero: a check that never ran
 must not look clean.
 
+**A `GO` also carries the lead's own pass — `UX-sanity:`.** Before the owner is
+invited to a stand, the lead runs the elementary UX-sanity pass over the CAPTURED
+SCREENSHOTS (owner rule, Антон, 2026-08-31: green acceptance scenarios are not
+readiness to show). Since #485 that pass is an ARTIFACT: a `UX-sanity:` block —
+in the PR body, in one of the PR's own comments, or in a linked-issue comment —
+naming the verdict, the screenshots it judged, and a verdict per facet. The
+facets are not restated here; they live in
+[`task-cycle`](../skills/task-cycle/SKILL.md) stage 5 item 4.
+
+| Value                                    | Means                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `UX-sanity: <verdict>` + the facet lines | the lead looked at the frames and says what it found, facet by facet |
+
+**The tail is part of the record here too.** A bare `UX-sanity: OK`, a `TBD`, an
+unanswered facet or the template's own `<!-- … -->` instruction is not a record;
+the check strips the same non-evidence text §2's marker does. Only a `GO` needs
+it: `batched at #<gate>` defers the acceptance and `N/A … lead-certified` says
+there is no surface, so neither stands in front of an invitation to a stand.
+Why it exists rather than the prose rule alone: 2026-09-15, the owner's rejection
+of PR #470's live stand — the owner was the first reader of the screen, and
+nothing distinguished a lead that had run the pass from one that had not.
+
+**The check:** the same `pnpm lint:stage-b <PR>`, same BLOCK severity, same
+register row ([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5).
+
 **The sibling check — the agent's half of the same diff.** `pnpm lint:ux-record <PR>`
 (`tools/lint/ux-record-lint.mjs`) reads the same UI diff for the `UX-record:` block
 required by §1's ownership split; its six facets and the procedure that produces them

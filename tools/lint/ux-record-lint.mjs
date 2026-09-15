@@ -58,7 +58,7 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 import { pagePrFiles, prFilesArgs, prFilesPageSize } from './lib/gh.mjs'
-import { stripNonEvidence } from './lib/guard.mjs'
+import { extractMarkerBlocks, missingFacetsOf as missingFrom } from './lib/guard.mjs'
 import { extractLinkedIssues, renderFiles } from './stage-b-lint.mjs'
 
 const TAG = '[ux-record]'
@@ -80,9 +80,6 @@ export const FACETS = ['composition', 'controls', 'grouping', 'states', 'feedbac
  */
 const MARKER_RE = /^[ \t>*_-]*\*{0,2}ux[-\s]?record\*{0,2}\s*:\s*(.*)$/gim
 
-/** A markdown heading — the end of the block a marker opens. */
-const HEADING_RE = /^ {0,3}#{1,6}\s/
-
 /**
  * One facet line: `- Composition: …`, `**Controls:** …`, `> States: …`. The
  * trailing `behaviour` variant is accepted for `Post-submit`, which is how the
@@ -94,13 +91,14 @@ const FACET_RE = new RegExp(
 )
 
 /**
- * An unfilled value — the PR template's own angle-bracket line, or a stand-in.
- * Byte-identical to `stage-b-lint.mjs`'s set on purpose: `n/a` is NOT a
- * placeholder at the facet level (`Post-submit: n/a` on a read-only screen is a
- * recorded decision), and a fully parenthesised value is a real answer too.
- * `n/a` is only refused at the MARKER level, by `isLeadCertified` below.
+ * An unfilled value. The definition is `lib/guard.mjs`'s `isPlaceholderValue`,
+ * shared with `stage-b` since the review of PR #493 (MAJOR 2) — the two local
+ * copies had drifted apart while this one's comment still asserted they were
+ * identical. `n/a` is NOT a placeholder at the facet level (`Post-submit: n/a`
+ * on a read-only screen is a recorded decision) and a fully parenthesised value
+ * is a real answer too; `n/a` is refused only at the MARKER level, by
+ * `isLeadCertified` below.
  */
-const PLACEHOLDER_RE = /^(<.*>|tbd|pending.*|todo.*|\?+)$/i
 
 /**
  * `N/A (no UX decisions) — lead-certified` — the lead self-certification, the
@@ -130,36 +128,12 @@ export function isLeadCertified(value) {
  * @returns {{value: string, facets: Record<string, string>}[]}
  */
 export function extractRecords(text) {
-  const semantic = stripNonEvidence(text)
-  const lines = semantic.split(/\r?\n/)
-  const starts = []
-  for (let i = 0; i < lines.length; i++) {
-    MARKER_RE.lastIndex = 0
-    const m = MARKER_RE.exec(lines[i])
-    if (m) starts.push({ index: i, value: (m[1] ?? '').replace(/^[\s*_]+/, '').trim() })
-  }
-
-  return starts.map((start, n) => {
-    const end = starts[n + 1]?.index ?? lines.length
-    const facets = {}
-    for (let i = start.index + 1; i < end; i++) {
-      if (HEADING_RE.test(lines[i])) break
-      const m = FACET_RE.exec(lines[i])
-      if (!m) continue
-      const key = m[1].toLowerCase()
-      const value = (m[2] ?? '').trim()
-      if (facets[key] === undefined) facets[key] = value
-    }
-    return { value: start.value, facets }
-  })
+  return extractMarkerBlocks(text, { marker: MARKER_RE, facet: FACET_RE })
 }
 
 /** The facets a record leaves unrecorded, in canon order. */
 export function missingFacetsOf(record) {
-  return FACETS.filter((facet) => {
-    const value = record?.facets?.[facet]
-    return value === undefined || value === '' || PLACEHOLDER_RE.test(value)
-  })
+  return missingFrom(record, FACETS)
 }
 
 const SHAPE = [

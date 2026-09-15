@@ -234,6 +234,10 @@ lands first. The four checks are about hierarchy and legibility, not taste,
 which is what makes them cheap enough to be mandatory. The verdict goes in the
 task's report.
 
+The verdict is also an ARTIFACT: a `UX-sanity:` record on the PR, without which a
+UI diff cannot reach `Stage-B: GO` — marker and check in
+`.claude/rules/design-process.md` §2 (`pnpm lint:stage-b <PR>`, BLOCK).
+
 **5. DoD — a red, error-stuck or skeleton-stuck screen is not handed to the
 owner; that is a stop state, not an acceptance.** The agent LOOKED at the frames
 it captured. Anything odd in them is re-observed live before the invitation — an
