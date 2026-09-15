@@ -173,6 +173,53 @@ export function productEmptyMessage(references: RequestBoardReferences, projectI
  */
 export type RequestFormOptions = { canNameCompanyAccount?: boolean }
 
+/**
+ * WHY THE SUBMIT BUTTON IS STILL DISABLED — named, not implied (#388 wave 3,
+ * owner acceptance 2026-09-15: «submit is disabled-with-reason»).
+ *
+ * IT ONLY COUNTS EMPTY ANSWERS, NEVER MALFORMED ONES. A disabled button whose
+ * reason were «укажите сумму числом больше нуля» would be a button that hides
+ * the message the reader has to act on: format refusals are the SCHEMA's, they
+ * land in that field's own `FormMessage` on submit, and they must stay
+ * reachable. What this answers is the other question — «is the form finished» —
+ * and it answers it by naming the fields that still hold nothing.
+ *
+ * The order is the form's own reading order, so the reason reads as a route
+ * through the sheet rather than as a list of complaints.
+ */
+export function requestSubmitBlockers(
+  value: RequestFormValue,
+  options: RequestFormOptions = {},
+): string[] {
+  const canNameCompanyAccount = options.canNameCompanyAccount ?? true
+  const missing: string[] = []
+
+  if (value.amount.trim() === '') missing.push('сумма документа')
+  if (value.purposeId === '' && value.purposeProposal.trim() === '') missing.push('назначение')
+  if (value.projectId === '') missing.push('проект')
+  if (value.counterpartyId === '' && value.counterpartyName.trim() === '')
+    missing.push('контрагент')
+
+  // EARS-533: a pre-spend intent is asked for neither, and decision 36 keeps
+  // the company account off a submitter who may not name one.
+  if (value.alreadyPaid) {
+    if (canNameCompanyAccount && !value.personalFunds && value.accountId === '')
+      missing.push('счёт списания')
+    if (value.occurredOn.trim() === '') missing.push('дата движения денег')
+  }
+
+  return missing
+}
+
+/** The same answer as one sentence — what the reader sees beside the button. */
+export function requestSubmitBlockReason(
+  value: RequestFormValue,
+  options: RequestFormOptions = {},
+): string | null {
+  const missing = requestSubmitBlockers(value, options)
+  return missing.length === 0 ? null : `Заполните: ${missing.join(', ')}`
+}
+
 export function createRequestFormSchema(
   references: RequestBoardReferences,
   options: RequestFormOptions = {},

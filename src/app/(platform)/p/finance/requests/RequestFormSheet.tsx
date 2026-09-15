@@ -36,6 +36,7 @@ import {
   productFieldMode,
   productOptions,
   requestFormDefaults,
+  requestSubmitBlockReason,
   type RequestFormValue,
 } from './request-form-model'
 
@@ -131,6 +132,17 @@ export function RequestFormSheet({
       'alreadyPaid',
       'personalFunds',
     ])
+  /**
+   * WHY «Подать заявку» IS STILL GREY — said out loud, next to the button and
+   * on its tooltip (owner acceptance, Антон, 2026-09-15). A disabled control
+   * with no reason is the reader guessing which of eleven fields it means.
+   *
+   * Only the EMPTY answers disable it. A malformed one — a sum that is not a
+   * number — leaves the button live on purpose, so pressing it delivers that
+   * field's own `FormMessage` instead of the message being swallowed by a
+   * button that refuses to be pressed.
+   */
+  const blockReason = requestSubmitBlockReason(form.watch(), { canNameCompanyAccount })
   const account = references.accounts.find((row) => String(row.id) === accountId) ?? null
   const crossCurrency = account !== null && account.currency !== currency
   const products = productOptions(references, purposeId, projectId)
@@ -588,13 +600,28 @@ export function RequestFormSheet({
               ) : null}
             </Section>
 
-            <SheetFooter className="flex-row gap-2 px-0">
-              <Button type="submit" disabled={pending}>
-                {pending ? 'Сохраняем…' : 'Подать заявку'}
-              </Button>
-              <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
-                Отмена
-              </Button>
+            <SheetFooter className="gap-2 px-0">
+              <div className="flex flex-row flex-wrap items-center gap-2">
+                <Button
+                  type="submit"
+                  disabled={pending || blockReason !== null}
+                  aria-describedby={blockReason === null ? undefined : 'submit-block-reason'}
+                >
+                  {pending ? 'Сохраняем…' : 'Подать заявку'}
+                </Button>
+                <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
+                  Отмена
+                </Button>
+              </div>
+              {/* HELPER TEXT, NOT A TOOLTIP. A tooltip on a disabled button is
+                  unreachable by pointer (a `disabled` control fires no pointer
+                  events) exactly while it is needed, and a reason worth showing
+                  is worth showing without being asked. */}
+              {blockReason === null ? null : (
+                <p id="submit-block-reason" className="text-sm text-muted-foreground">
+                  {blockReason}
+                </p>
+              )}
             </SheetFooter>
           </form>
         </Form>

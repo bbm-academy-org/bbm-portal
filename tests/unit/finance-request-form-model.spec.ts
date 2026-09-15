@@ -10,6 +10,7 @@ import {
   productFieldMode,
   productOptions,
   requestFormDefaults,
+  requestSubmitBlockReason,
   toMinorUnits,
   toRequestBody,
   type RequestFormValue,
@@ -345,5 +346,58 @@ describe('request form company-account gate (decision 36, spec 339 EARS-508)', (
       paidAmount: null,
       paidCurrency: null,
     })
+  })
+})
+
+// #388 wave 3, owner acceptance 2026-09-15: «submit is disabled-with-reason».
+// The reason names the fields still EMPTY — never a format complaint, because a
+// disabled button that hides «укажите сумму числом больше нуля» would take away
+// the very message the reader needs.
+describe('requestSubmitBlockReason — why the form cannot be sent yet (#388)', () => {
+  it('names nothing once every required field carries an answer', () => {
+    expect(requestSubmitBlockReason(value(), { canNameCompanyAccount: true })).toBeNull()
+  })
+
+  it('names the empty required fields, in the order the form asks them', () => {
+    expect(
+      requestSubmitBlockReason(
+        value({ amount: '', purposeId: '', purposeProposal: '', counterpartyId: '' }),
+        { canNameCompanyAccount: true },
+      ),
+    ).toBe('Заполните: сумма документа, назначение, контрагент')
+  })
+
+  it('accepts a proposed purpose in place of a picked one', () => {
+    expect(
+      requestSubmitBlockReason(value({ purposeId: '', purposeProposal: 'аренда студии' }), {
+        canNameCompanyAccount: true,
+      }),
+    ).toBeNull()
+  })
+
+  it('asks for the account and the date only once «уже потрачено» is ticked', () => {
+    expect(
+      requestSubmitBlockReason(value({ alreadyPaid: false, accountId: '', occurredOn: '' }), {
+        canNameCompanyAccount: true,
+      }),
+    ).toBeNull()
+    expect(
+      requestSubmitBlockReason(value({ alreadyPaid: true, accountId: '', occurredOn: '' }), {
+        canNameCompanyAccount: true,
+      }),
+    ).toBe('Заполните: счёт списания, дата движения денег')
+  })
+
+  it('never asks a submitter without the finance role for a company account', () => {
+    expect(
+      requestSubmitBlockReason(
+        value({ alreadyPaid: true, personalFunds: true, accountId: '', occurredOn: '2026-09-01' }),
+        { canNameCompanyAccount: false },
+      ),
+    ).toBeNull()
+  })
+
+  it('says nothing about the amount being MALFORMED — that is the field’s own message', () => {
+    expect(requestSubmitBlockReason(value({ amount: 'не число' }), {})).toBeNull()
   })
 })
