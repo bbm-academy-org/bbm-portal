@@ -49,26 +49,63 @@
 // ── THE ROW TABLE ────────────────────────────────────────────────────────────
 // One table, derived from `docs/design/ui-whitelist.md`'s `## Entries`, so the
 // guard and the registry cannot drift silently — and check (2) proves they have
-// not. Each row's DEPARTURE signal is deliberately an added IMPORT (or, for
-// `Form` / `Feedback`, an added call/tag that has no import of its own), never a
-// bare JSX usage: an import is what says «this diff introduces this build here»,
-// while `<TableRow>` alone appears in one-line edits to screens that already
-// compose the block, which would be a false positive on a BLOCK gate.
+// not.
 //
-//   | Class    | Settled implementation (registry)                   | Departure signal          |
-//   | -------- | --------------------------------------------------- | ------------------------- |
-//   | Form     | `@/ui/form` over react-hook-form + zod              | a raw `<form>` opening tag |
-//   | List     | `@/ui/refine-ui/data-table/*` over `useTable`        | an `@/ui/table` import / raw `<table>` |
-//   | Feedback | Refine notification provider → `@/ui/sonner` toasts  | `alert()` / `confirm()`   |
+// EVERY row's DEPARTURE signal is an added IMPORT, with no exception — and the
+// exception this file used to make for `Form` is exactly what round-1 review of
+// PR #489 rejected. An import is what says «this diff introduces this build
+// here»; a bare JSX tag says only «this line was edited», and on a BLOCK dial §4
+// demotes the guard on the FIRST confirmed false block. Where a row needs more
+// than an import to be sure of the CLASS, it adds a `requires` predicate over the
+// same added lines — a second CONDITION, never a second signal.
 //
-// THE HONEST LIMIT, named rather than discovered. The Feedback row is the weak
-// one: a bespoke in-component banner is not detectable from imports (an inline
-// `Alert` is LEGITIMATE per the registry's own note — a state the reader must
-// keep looking at), so the departure signal is narrowed to the browser dialog
-// used as the outcome channel. The guard can therefore miss a Feedback
-// departure; it cannot invent one. `#482`'s regression target is the List row,
-// and that one is exact. Same conservative direction as the whole family
-// (docs/ci-guardrails.md §8).
+//   | Class    | Settled implementation (registry)                   | Departure import                  | + requires                    |
+//   | -------- | --------------------------------------------------- | --------------------------------- | ----------------------------- |
+//   | Form     | `@/ui/form` over react-hook-form + zod              | a kit FIELD primitive             | a `<form>` / `onSubmit` in the same diff |
+//   | List     | `@/ui/refine-ui/data-table/*` over `useTable`       | `@/ui/table` (or a raw `<table>`) | —                             |
+//   | Feedback | Refine notification provider → `@/ui/sonner` toasts | —                                 | `alert()`                     |
+//
+// WHY `Form` IS SHAPED THAT WAY. A raw `<form>` tag is NOT the class. Three
+// shapes live on `main` today that collect no fields at all — the sign-out
+// server-action form (`src/app/(platform)/p/layout.tsx`), the GET period filter
+// (`src/modules/hours/view/PeriodSelect.tsx`) and the hours `Calculator` — and a
+// one-line diff re-adding any of them would have been a BLOCK whose only exit is
+// an owner interrupt for a sign-out button. `primitives-first` settled the same
+// question one register row above this one (review of PR #459): `src/ui/form.tsx`
+// is a CONTEXT provider that renders no element, and the documented shadcn shape
+// keeps the raw `<form>` INSIDE `<Form {...form}>`, so for the `<form>` ELEMENT
+// the kit has no equivalent to compose. This guard now agrees with that decision
+// instead of reinstating the signal at BLOCK. What it reads instead is the
+// FIELDS: an added import of `@/ui/input` / `textarea` / `select` / `checkbox` /
+// `switch` / `radio-group` / `label`, in a diff that also opens a form. A screen
+// that adds a search `<Input>` and no form is not in the class, and neither is a
+// one-hunk edit inside a screen whose `<Form>` composition lives outside the
+// hunk — nothing was imported there, so nothing fires.
+//
+// THE HONEST LIMITS, named rather than discovered. Three of them, and none is a
+// «cannot invent» claim:
+//
+//   * FEEDBACK is the weak row. A bespoke in-component banner is not detectable
+//     from imports (an inline `Alert` is LEGITIMATE per the registry's own note —
+//     a state the reader must KEEP looking at), so the signal is one shape only:
+//     `alert()`, an outcome announced outside the settled channel. `confirm()`
+//     was in that set and deliberately is not any more (review of PR #489): a
+//     destructive-action confirm is an input PROMPT, which belongs to the
+//     `dialog` / `AlertDialog` conversation the registry has not settled at all,
+//     and blocking it handed the session a `Bespoke-UI: GO` shape that does not
+//     describe the situation.
+//   * LIST reads the class by PRIMITIVE, not by paging, while the registry row
+//     says «any register of records WITH PAGING». A static summary table built on
+//     `@/ui/table` is therefore always a finding even though it pages nothing.
+//     That is the intended conservative posture of #481 and it has an owner
+//     escape, but it is a real widening of the registry's words, so it is named
+//     here rather than discovered on a red PR.
+//   * FORM cannot see a form whose field primitives were imported in an earlier
+//     commit — the same conservative direction: a MISS, never an invention.
+//
+// All three fail toward missing a departure rather than inventing one, which is
+// the direction the whole family is written in (docs/ci-guardrails.md §8) and the
+// only direction a BLOCK guard may fail in.
 //
 // `*.css` is deliberately OUT of scope even though the stage-3 «UI diff»
 // definition includes it: a stylesheet imports no block, so no rule here can
@@ -113,7 +150,12 @@ export const WHITELIST_ROWS = Object.freeze([
   Object.freeze({
     class: 'Form',
     settledImplementation: '`@/ui/form` (shadcn `form` block over react-hook-form + zod)',
-    departure: /<form(?=[\s/>])/m,
+    // An added import of a kit FIELD primitive — the fields are the class, the
+    // `<form>` element is not (header, «WHY `Form` IS SHAPED THAT WAY»).
+    departure: /['"`]@\/ui\/(?:input|textarea|select|checkbox|switch|radio-group|label)['"`]/m,
+    // …in a diff that actually builds a form. Without this second condition a
+    // search box is a «form» and the row reports screens that collect nothing.
+    requires: /<form(?=[\s/>])|onSubmit\s*=/m,
     settled:
       /['"`]@\/ui\/form['"`]|<Form(?=[\s/>])|['"`]react-hook-form['"`]|['"`]@hookform\/resolvers/,
     hint: 'compose the kit `Form` block — `@/ui/form` (`Form`, `FormField`, `FormItem`, `FormControl`, `FormMessage`) with one zod schema per form',
@@ -131,7 +173,9 @@ export const WHITELIST_ROWS = Object.freeze([
     class: 'Feedback',
     settledImplementation:
       "Refine's notification provider rendering into the shadcn `sonner` `Toaster` (`@/ui/sonner`)",
-    departure: /(?:^|[^.\w])(?:window\.)?(?:alert|confirm)\s*\(/m,
+    // `alert(` ONLY. `confirm(` was in this set and is not any more: a prompt is
+    // not an outcome, and this row settles outcomes (review of PR #489).
+    departure: /(?:^|[^.\w])(?:window\.)?alert\s*\(/m,
     settled:
       /['"`]@\/ui\/sonner['"`]|['"`]sonner['"`]|useNotificationProvider|['"`]@\/ui\/refine-ui\/notification/,
     hint: 'report the outcome through the ONE settled channel — Refine’s `successNotification` / `errorNotification`, or `toast.*` from `sonner` for a component that does not go through Refine',
@@ -311,6 +355,9 @@ export function checkWhitelistBlocks({ pr, issueComments = [], registry = null }
     if (lines.length === 0) continue
     const src = addedSource(lines)
     for (const row of WHITELIST_ROWS) {
+      // A row may demand a second condition before its import counts as this
+      // element class at all — see `WHITELIST_ROWS`, the `requires` field.
+      if (row.requires && !row.requires.test(src.text)) continue
       const m = row.departure.exec(src.text)
       if (!m) continue
       // A raw tag that never closes its opening bracket in the added lines is a
