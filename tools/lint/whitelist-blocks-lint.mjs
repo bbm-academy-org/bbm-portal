@@ -114,7 +114,8 @@ export const WHITELIST_ROWS = Object.freeze([
     class: 'Form',
     settledImplementation: '`@/ui/form` (shadcn `form` block over react-hook-form + zod)',
     departure: /<form(?=[\s/>])/m,
-    settled: /['"`]@\/ui\/form['"`]|<Form(?=[\s/>])|['"`]react-hook-form['"`]|['"`]@hookform\/resolvers/,
+    settled:
+      /['"`]@\/ui\/form['"`]|<Form(?=[\s/>])|['"`]react-hook-form['"`]|['"`]@hookform\/resolvers/,
     hint: 'compose the kit `Form` block — `@/ui/form` (`Form`, `FormField`, `FormItem`, `FormControl`, `FormMessage`) with one zod schema per form',
   }),
   Object.freeze({
@@ -122,7 +123,8 @@ export const WHITELIST_ROWS = Object.freeze([
     settledImplementation:
       '`@/ui/refine-ui/data-table/data-table` + `data-table-pagination`, driven by `useTable`',
     departure: /['"`]@\/ui\/table['"`]|<table(?=[\s/>])/m,
-    settled: /['"`]@\/ui\/refine-ui\/data-table|['"`]@refinedev\/react-table['"`]|<DataTable(?=[\s/>])/,
+    settled:
+      /['"`]@\/ui\/refine-ui\/data-table|['"`]@refinedev\/react-table['"`]|<DataTable(?=[\s/>])/,
     hint: 'compose the Refine `data-table` block — `@/ui/refine-ui/data-table/data-table` + `data-table-pagination` over `useTable`; the screen owns only its `ColumnDef[]`',
   }),
   Object.freeze({
@@ -130,7 +132,8 @@ export const WHITELIST_ROWS = Object.freeze([
     settledImplementation:
       "Refine's notification provider rendering into the shadcn `sonner` `Toaster` (`@/ui/sonner`)",
     departure: /(?:^|[^.\w])(?:window\.)?(?:alert|confirm)\s*\(/m,
-    settled: /['"`]@\/ui\/sonner['"`]|['"`]sonner['"`]|useNotificationProvider|['"`]@\/ui\/refine-ui\/notification/,
+    settled:
+      /['"`]@\/ui\/sonner['"`]|['"`]sonner['"`]|useNotificationProvider|['"`]@\/ui\/refine-ui\/notification/,
     hint: 'report the outcome through the ONE settled channel — Refine’s `successNotification` / `errorNotification`, or `toast.*` from `sonner` for a component that does not go through Refine',
   }),
 ])
@@ -206,10 +209,11 @@ const ANGLE_SLOT_RE = /<[^<>]*>/g
 
 /** Does anything survive removing the printed shape's unfilled slots? */
 function filledRemainder(text) {
-  return String(text ?? '')
-    .replace(ANGLE_SLOT_RE, '')
-    .replace(/[\s—–\-:,.()]+/g, '')
-    .length > 0
+  return (
+    String(text ?? '')
+      .replace(ANGLE_SLOT_RE, '')
+      .replace(/[\s—–\-:,.()]+/g, '').length > 0
+  )
 }
 
 /** Neither a filled slot nor a decision: the two shapes that are not a record. */
@@ -355,8 +359,7 @@ export function checkWhitelistBlocks({ pr, issueComments = [], registry = null }
 
   const unresolved = marker === 'go' ? [] : departures
   const findings = [...unresolved, ...driftFindings].sort(
-    (a, b) =>
-      String(a.file).localeCompare(String(b.file)) || (a.line ?? 0) - (b.line ?? 0),
+    (a, b) => String(a.file).localeCompare(String(b.file)) || (a.line ?? 0) - (b.line ?? 0),
   )
 
   if (findings.length === 0) {

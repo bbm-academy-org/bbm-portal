@@ -278,6 +278,41 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
+  # BLOCK — a UI diff that builds an element class `docs/design/ui-whitelist.md`
+  # has already SETTLED out of `src/ui` primitives instead of importing that row's
+  # block (guard from #482, child of the round-2 block #481). Day-0 BLOCK under
+  # canon §3 class 3 — the `design-fidelity` precedent — so, per §2.1 and §8: NO
+  # `continue-on-error` and NO `if:` fence (a BLOCK job that can be skipped on
+  # demand is a hole in the merge gate). `--severity block` is what the script's
+  # dial needs; run locally without it the same finding exits 0.
+  #
+  # Reads linked-issue comments as well as the body — the owner may record the
+  # `Bespoke-UI: GO` on the issue rather than on the PR — hence `issues: read`.
+  # The reason it is not WARN like its two round-1 neighbours: their rule is
+  # violated all over the existing corpus, this one's is not (the registry has
+  # three rows and the diff is the unit of judgement), and the recurrence it
+  # answers is an owner rejection of a live stand, not a style preference.
+  whitelist-blocks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:whitelist-blocks --severity block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
   # WARN — a PR that hand-rolls UI the `src/ui` kit already owns (guard from
   # #435, ported from ds-platform). Same wiring as `ux-record`: `--severity block`
   # so the script gives a REAL signal (canon §4 clause 1), `continue-on-error` so

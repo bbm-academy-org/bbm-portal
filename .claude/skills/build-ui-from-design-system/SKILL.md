@@ -75,20 +75,42 @@ is missing and the look is genuinely open,
 dispatch [`research-ui-element`](../research-ui-element/SKILL.md) rather than
 inventing a look at the keyboard.
 
-Two guards read this rung on a PR's diff under `src/app/(platform)`:
-`pnpm lint:primitives-first <PR>` (a raw control the kit already owns, and
-`useState` field state where the `form` block applies) and
+Three guards read this rung on a PR's diff. Two read the platform app's
+markup and are WARN — `pnpm lint:primitives-first <PR>` (a raw control the kit
+already owns, and `useState` field state where the `form` block applies) and
 `pnpm lint:interaction-states <PR>` (a clickable with no hover / focus-visible /
-disabled treatment). Both WARN — [`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md)
-§5 — and both take rung 3's justification INLINE at the call site, as a
-`primitives-first-ok: <reason>` / `interaction-states-ok: <reason>` comment.
+disabled treatment); both take rung 3's justification INLINE at the call site,
+as a `primitives-first-ok: <reason>` / `interaction-states-ok: <reason>`
+comment. The third is **`pnpm lint:whitelist-blocks <PR>`
+(`tools/lint/whitelist-blocks-lint.mjs`), and it is BLOCK**: it reads THIS
+registry's settled rows and fails a diff that builds one of those element
+classes out of primitives instead of importing the row's implementation. Its
+only escape is step 3's owner record. Severities of record:
+[`docs/ci-guardrails.md`](../../../docs/ci-guardrails.md) §5.
 
-**3. Bespoke — allowed, never silent.** With rungs 1–2 empty, bespoke is the
-correct outcome. The PR body then carries the justification line the whitelist
-doc specifies (`bespoke — whitelist empty for <class>; searched <sources>; not
-adopted because <reason>`). If the same class goes bespoke on a second surface,
-that is decision-debt: file it (`surface-decision-debt`), it is the signal the
-class belongs in the registry or in #112.
+**3. Bespoke — allowed, never silent, and WHOSE call depends on the registry.**
+Two different situations wear the same word, and #482 separates them:
+
+- **The registry has NO row for the class.** Bespoke is the correct outcome and
+  the justification is YOURS. The PR body carries the line the whitelist doc
+  specifies (`bespoke — whitelist empty for <class>; searched <sources>; not
+adopted because <reason>`).
+- **The registry HAS a settled row and you are departing from it.** That is not
+  yours to certify. The record is the OWNER's, in the PR body or a comment on
+  the linked issue, tail included:
+
+  ```
+  Bespoke-UI: GO — <owner, date> — <what was approved>
+  ```
+
+  A justification written into the component's own doc-comment is exactly what
+  this replaces: PR #470's `RequestsTable.tsx` did that and the owner rejected
+  the stand on 2026-09-15 (#481). `pnpm lint:whitelist-blocks <PR>` is the
+  check, it is BLOCK, and nothing else clears it.
+
+If the same class goes bespoke on a second surface, that is decision-debt: file
+it (`surface-decision-debt`), it is the signal the class belongs in the registry
+or in #112.
 
 **4. Decide the UX, and sign the decision in the PR — the `UX-record:` block.**
 Composition, control choice, grouping, states, feedback and post-submit

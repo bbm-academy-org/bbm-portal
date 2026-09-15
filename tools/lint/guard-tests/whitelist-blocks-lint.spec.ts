@@ -122,7 +122,11 @@ function makeGh(
       if (!pr) return { status: 1, stdout: '', stderr: 'no such PR' }
       const per = Number(m[2])
       const page = Number(m[3])
-      return { status: 0, stdout: JSON.stringify(pr.files.slice((page - 1) * per, page * per)), stderr: '' }
+      return {
+        status: 0,
+        stdout: JSON.stringify(pr.files.slice((page - 1) * per, page * per)),
+        stderr: '',
+      }
     }
     return { status: 1, stdout: '', stderr: 'unexpected call' }
   }
@@ -130,7 +134,11 @@ function makeGh(
 
 describe('whitelist-blocks-lint: the #470 regression (AC2 of #482)', () => {
   const result = checkWhitelistBlocks({
-    pr: { number: 470, body: 'Stage-B: GO — Антон, 2026-09-14', files: [file(TABLE_PATH, REQUESTS_TABLE)] },
+    pr: {
+      number: 470,
+      body: 'Stage-B: GO — Антон, 2026-09-14',
+      files: [file(TABLE_PATH, REQUESTS_TABLE)],
+    },
   })
 
   it('reports the hand-built table as a departure from the settled List row', () => {
@@ -198,15 +206,17 @@ describe('whitelist-blocks-lint: the owner record is the only escape (AC3 of #48
   })
 
   it('reads a bold list-item marker the PR template renders', () => {
-    expect(
-      withBody('- **Bespoke-UI:** GO — Антон, 2026-09-15 — snapshot endpoint').verdict,
-    ).toBe('pass')
+    expect(withBody('- **Bespoke-UI:** GO — Антон, 2026-09-15 — snapshot endpoint').verdict).toBe(
+      'pass',
+    )
   })
 })
 
 describe('whitelist-blocks-lint: importing the settled block needs no record (AC4 of #482)', () => {
   it('passes a diff that composes the List block', () => {
-    const r = checkWhitelistBlocks({ pr: { number: 1, body: '', files: [file(TABLE_PATH, BLOCK_TABLE)] } })
+    const r = checkWhitelistBlocks({
+      pr: { number: 1, body: '', files: [file(TABLE_PATH, BLOCK_TABLE)] },
+    })
     expect(r.verdict).toBe('pass')
     expect(r.findings).toEqual([])
   })
@@ -220,7 +230,11 @@ describe('whitelist-blocks-lint: importing the settled block needs no record (AC
 
   it('skips a PR with no view code in scope at all', () => {
     const r = checkWhitelistBlocks({
-      pr: { number: 1, body: '', files: [file('tools/lint/whitelist-blocks-lint.mjs', ['const x = 1'])] },
+      pr: {
+        number: 1,
+        body: '',
+        files: [file('tools/lint/whitelist-blocks-lint.mjs', ['const x = 1'])],
+      },
     })
     expect(r.verdict).toBe('skip')
     expect(r.findings).toEqual([])
@@ -285,7 +299,10 @@ describe('whitelist-blocks-lint: the Form and Feedback rows', () => {
         number: 1,
         body: '',
         files: [
-          file(FORM_PATH, ["import { toast } from 'sonner'", '  toast.success("Заявка отправлена")']),
+          file(FORM_PATH, [
+            "import { toast } from 'sonner'",
+            '  toast.success("Заявка отправлена")',
+          ]),
         ],
       },
     })
@@ -295,7 +312,9 @@ describe('whitelist-blocks-lint: the Form and Feedback rows', () => {
 
 describe('whitelist-blocks-lint: scope', () => {
   it('judges non-test *.tsx under src/, and never the kit itself', () => {
-    expect(isWhitelistScopeFile('src/app/(platform)/p/finance/requests/RequestsTable.tsx')).toBe(true)
+    expect(isWhitelistScopeFile('src/app/(platform)/p/finance/requests/RequestsTable.tsx')).toBe(
+      true,
+    )
     expect(isWhitelistScopeFile('src/components/Foo.tsx')).toBe(true)
     // The kit is WHERE the blocks and the primitives live.
     expect(isWhitelistScopeFile('src/ui/table.tsx')).toBe(false)
@@ -335,7 +354,11 @@ describe('whitelist-blocks-lint: the guard table cannot drift from the registry'
       '| **Navigation** — the shell menu | something | #500 | x |\n\n## Adding a row',
     )
     const touching = checkWhitelistBlocks({
-      pr: { number: 1, body: '', files: [file('docs/design/ui-whitelist.md', ['| **Navigation** |'])] },
+      pr: {
+        number: 1,
+        body: '',
+        files: [file('docs/design/ui-whitelist.md', ['| **Navigation** |'])],
+      },
       registry: grown,
     })
     expect(touching.verdict).toBe('violation')
