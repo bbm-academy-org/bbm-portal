@@ -482,7 +482,7 @@ writes when their target is statically recognized from `Set-Content`,
 recognized safe target keeps the existing carve-outs. The owner approved this
 scope expansion in #475. Demotion follows §4 on the first confirmed false block.
 
-**`secret-echo` — the one BLOCK hook this register names, widened by #262.** It is a §3
+**`secret-echo` — a BLOCK hook this register names, widened by #262.** It is a §3
 class-2 guard (documented security mandate: a printed secret is a leaked secret and is
 rotated, so a WARN soak would itself be the risk), and it therefore never appears in the
 promotion table above. Its coverage after #262 is three finding classes, each caught
