@@ -385,6 +385,55 @@ describe('DEBT.md merge protocol', () => {
     }
   })
 
+  /**
+   * The shape a real incident produced (PR #488, 2026-09-15): an append that
+   * matched the FIRST occurrence of the marker string — the one QUOTED inside
+   * the «Permanent append marker» rules bullet — spliced a whole entry block
+   * into the rules, destroyed that bullet's text, left a second literal marker
+   * behind and placed the entry ABOVE the active region, breaking the union-merge
+   * invariant «the permanent marker remains after all active blocks».
+   *
+   * The existing shipped-file test could not see it: it reads only the region
+   * between the active-start marker and the marker LINE, and a marker glued to
+   * other text on its line is not a marker line. These assertions read the file
+   * as a whole.
+   */
+  it('keeps every active block inside the active region and the rules bullet intact', () => {
+    const debt = readFileSync(resolve(process.cwd(), 'DEBT.md'), 'utf8').split('\r\n').join('\n')
+    const lines = debt.split('\n')
+
+    // The rules bullet, verbatim as `origin/main` carries it: one sentence, the
+    // marker quoted inside it, nothing spliced in.
+    expect(debt).toContain(
+      '- **Permanent append marker:** add new active entries immediately before\n' +
+        '  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical\n' +
+        '  sweep notes live after that marker.',
+    )
+
+    // Exactly one LITERAL marker LINE, and the marker never glued to other text
+    // (the second «marker» the corrupt append left behind was
+    // `<!-- debt-append-marker -->`, each with a new unique end anchor…`).
+    assertSingleLine(debt, appendMarker)
+    for (const line of lines) {
+      if (!line.includes(appendMarker)) continue
+      expect(line.trim() === appendMarker || line.includes(`\`${appendMarker}\``), line).toBe(true)
+    }
+
+    const activeStart = lines.findIndex((line) => line.trim() === activeStartMarker)
+    const markerAt = lines.findIndex((line) => line.trim() === appendMarker)
+    expect(activeStart).toBeGreaterThan(-1)
+    expect(markerAt).toBeGreaterThan(activeStart)
+
+    // Every entry bullet and every end anchor lives between the two — nothing
+    // above the active region, nothing after the permanent marker.
+    for (const [index, line] of lines.entries()) {
+      if (!/^- \[[ x]\] 20\d\d-\d\d-\d\d /.test(line) && !line.startsWith('<!-- debt-entry-end: '))
+        continue
+      expect(index, line.slice(0, 80)).toBeGreaterThan(activeStart)
+      expect(index, line.slice(0, 80)).toBeLessThan(markerAt)
+    }
+  })
+
   it('parses each active body with its closing anchor and rejects text after an anchor', () => {
     expect(parseActiveRegion(renderDebt([activeBlock(baseBody, 'base-entry')]))).toEqual([
       activeBlock(baseBody, 'base-entry'),
