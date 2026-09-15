@@ -36,6 +36,29 @@
 //     is where the states live (`<DropdownMenuTrigger asChild><Button…`);
 //   * the name is not one of `STATE_OWNING_KIT_CONTROLS` below.
 //
+// WHERE THIS RULE CAN INVENT, NAMED RATHER THAN DISCOVERED. Shadow detection
+// reads the diff's ADDED lines only, so a file whose import lines are NOT in the
+// diff and which renders an APP-LOCAL component sharing a name the kit also
+// exports (`Card`, `Table`, `Badge`, `Alert` are all plausible local names) is
+// judged as if it were the kit's. That is a finding about a component the guard
+// cannot classify — the one place this family's «can miss, cannot invent»
+// promise (canon §8) does not hold, and it is stated here rather than left to be
+// discovered. It is bounded: the names must collide, the dial is WARN, and
+// `interaction-states-ok: <reason>` closes it at the call site. The tree lookup
+// is NOT weakened to remove it — that lookup is what catches the #470 row when
+// the import line is not in the diff. Recorded in DEBT.md
+// (`2026-09-15-483-samename-collision`), which also carries the opposite-direction
+// hole (`2026-09-03-435-uppercase-hole`: a wrapper DECLARED in the file is a
+// shadowed name and is skipped).
+//
+// `src/ui/refine-ui/**` IS OUT OF SCOPE, BY DECISION — not by accident of
+// `readdirSync` being non-recursive. The #434 block set vendored there
+// (`buttons`, `data-table`, `layout`, `notification`, `views`) is composed of
+// Refine's own state-owning controls, so reading it would mostly add exempt names
+// to maintain; a clickable block from there is therefore a MISS, which is the
+// safe direction. The day a block from that tree is found rendering an untreated
+// clickable, the fix is a recursive read plus the exemptions that come with it.
+//
 // The judgement is of the CALL SITE, and it stays that way on purpose. The kit's
 // `TableRow` does carry `hover:bg-muted/50` (`src/ui/table.tsx:48`), and that is
 // exactly what it is — the row tint EVERY row of EVERY table gets, clickable or
@@ -69,8 +92,15 @@
 // THE ALLOW-LIST: `interaction-states-ok: <reason>` in a comment on the flagged
 // tag's line or within 5 lines above it. The reason is REQUIRED.
 //
-// SEVERITY: WARN. Same dial and same reasoning as `primitives-first` — see its
-// header, and the row of record in docs/ci-guardrails.md §5. `--severity block`
+// SEVERITY: WARN, and the promotion clock RESTARTED with #483. Same dial and
+// same reasoning as `primitives-first` — see its header, and the row of record
+// in docs/ci-guardrails.md §5. §4 clause 2 counts the four weeks from the guard
+// landing «or since the last substantive change to its rule — a wording change to
+// a message is not substantive; a change to what it matches is». Widening the
+// rule to kit components is a change to WHAT IT MATCHES, so the clock restarts on
+// 2026-09-15 and the earliest promotion moves from 2026-10-01 to
+// `EARLIEST_PROMOTION` below. Precedent, one row down the same §5 table:
+// `ears-naming` was narrowed by #447/#465 and restarted at the day it landed. `--severity block`
 // (or `INTERACTION_STATES_SEVERITY=block`) makes a violation exit 1; the CI job
 // passes that flag and carries `continue-on-error: true`, so the script gives a
 // REAL signal (canon §4 clause 1) while the CI plane stays WARN.
@@ -98,6 +128,17 @@ import {
 } from './lib/ui-diff.mjs'
 
 const TAG = '[interaction-states]'
+
+/**
+ * The earliest date §4's four-week window can yield for a WARN→BLOCK promotion.
+ * #483 changed WHAT THE GUARD MATCHES (§4 clause 2: «a change to what it matches
+ * is» substantive), so the clock restarted the day the widening landed,
+ * 2026-09-15, and 28 days later is 2026-10-13 — the same arithmetic the
+ * `ears-naming` row of docs/ci-guardrails.md §5 records for its own restart
+ * (landed 2026-09-03, earliest 2026-10-01). Exported so the printed WARN line,
+ * `usage()` and the guard's test cannot drift apart.
+ */
+export const EARLIEST_PROMOTION = '2026-10-13'
 
 export const REPO = 'bbm-academy-org/bbm-portal'
 
@@ -477,7 +518,10 @@ export function runInteractionStatesLint({ prNumber, severity = 'warn', gh = def
     const level = severity === 'block' ? 'BLOCK' : 'WARN'
     lines.push(`${TAG} ${level}: PR #${prNumber}: ${result.message}`)
     if (level === 'WARN')
-      lines.push(`${TAG} WARN severity (docs/ci-guardrails.md §5 — earliest promotion 2026-10-01)`)
+      lines.push(
+        `${TAG} WARN severity (docs/ci-guardrails.md §5 — earliest promotion ${EARLIEST_PROMOTION}, ` +
+          `§4 clause 2 restarted the clock when #483 widened what this guard matches)`,
+      )
     return { verdict: 'violation', exitCode: severity === 'block' ? 1 : 0, lines }
   }
   lines.push(`${TAG} OK: PR #${prNumber}: ${result.message}`)
@@ -490,9 +534,10 @@ function usage() {
   return [
     'Usage: pnpm lint:interaction-states <PR number> [--severity warn|block]',
     '',
-    'Checks that every clickable a PR adds under src/app/(platform) shows hover,',
-    'keyboard focus and (when it can be disabled) a disabled treatment (#435).',
-    'Severity is WARN today (docs/ci-guardrails.md §5 — earliest promotion 2026-10-01).',
+    'Checks that every clickable a PR adds under src/app/(platform) — a raw tag or a',
+    'kit component (#483) — shows hover, keyboard focus and (when it can be disabled)',
+    'a disabled treatment (#435).',
+    `Severity is WARN today (docs/ci-guardrails.md §5 — earliest promotion ${EARLIEST_PROMOTION}).`,
   ].join('\n')
 }
 
