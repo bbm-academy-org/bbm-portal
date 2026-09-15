@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-09-01
+updated: 2026-09-14
 ---
 
 # F2 — Filling the ledger: manual entry, expense requests and one-time history reconstruction (#339)
@@ -26,6 +26,17 @@ unused implementation.
 login, invoice attached. Owners approve, and approval is what posts to the
 ledger; that is a claim-gated role. The gate mechanics are the workspace's
 (epic #112, feature #313), not re-decided here.
+
+**Roles, settled in the brainstorm of 2026-09-14.** Every finance **reading**
+surface is open to every signed-in portal member — register, P&L, cash flow,
+unit cost, break-even, fact-vs-finmodel, scenarios: there is no «finance viewer»
+role and reading needs no finance role at all, because BBM's finance is an open
+book _(decision 32, owner 2026-09-14)_. The flow roles stay **two** —
+`finance-entry` and `finance-approve`; whether one person or two hold them is
+settled by role grants, not by code _(decision 33, owner 2026-09-14)_. The
+reference tables — accounts, expense categories, request purposes, projects,
+products, currencies, rates — are editable by `platform-admin` as well as by
+`finance-entry` _(decision 34, owner 2026-09-14)_.
 
 **Both expense paths are in scope — owner ruling, decision 12 (owner
 2026-08-25).** The pre-spend request is the normal path: ask, get approved,
@@ -61,8 +72,23 @@ dimension on every entry.
 
 ## Design pick (Stage A)
 
-_Not yet run._ The expense-request form, request queue and manual-entry surface
-need a Stage-A pick vendored into
+**`/p/finance/requests` — picked.** Layout **D — a kanban over the status
+machine plus a details slide-over sheet** — pick by Антон, 2026-08-27, recorded
+on [#339](https://github.com/bbm-academy-org/bbm-portal/issues/339#issuecomment-5433999578)
+and vendored as `design-source/finance/RequestBoard.html` (with
+`RequestForm.dc.html` and `RequestQueue.dc.html` as layout evidence); the build
+is #388.
+
+**Settled by decision 35.** The route stays one page with no new navigation.
+The default view for every signed-in member is a **table** of all requests —
+date, submitter, amount, purpose, status, refusal reason — with a «mine / all»
+filter, «mine» preselected; everyone sees every request in every status. The
+picked kanban stays as a **board toggle available to `finance-approve`**, and
+the same approve/refuse acts are available as row actions in the table. Members
+without `finance-approve` get the table read-only plus «new request».
+_(decision 35, owner 2026-09-14)_
+
+The manual-entry surface still needs a Stage-A pick vendored into
 `design-source/` before any markup (`.claude/rules/design-process.md`).
 
 ## User stories
@@ -75,15 +101,22 @@ need a Stage-A pick vendored into
 - **US-18** — As a team member who has already spent the money, I file it on the
   same form after the fact, and it goes through the same owner approval before it
   is posted — nothing is recorded around the approval just because the money has
-  already left. _(decision 12)_
+  already left. I may declare it as paid **from a company account only if I hold
+  `finance-entry` or `finance-approve`**; with no finance role I can file it only
+  as paid with my own funds. _(decision 12; decision 36, owner 2026-09-14)_
 - **US-19** — As an owner, I approve the derived list of expense categories once
   real spend is in the ledger, and from then on it is mine to edit — no category
   was invented before there was spend to read it off. _(decision 11)_
 - **US-2** — As a team member, I can see what happened to my request — waiting,
-  approved, refused — without asking. _(`agent-proposed — UNCONFIRMED`; decision
-  6 fixes the request, not the status view)_
+  approved, refused — without asking; the same table shows me every other
+  member's requests in every status, with «mine» preselected.
+  _(owner-confirmed by decision 35, 2026-09-14; decision 6 fixes the request,
+  decision 35 the status view)_
 - **US-3** — As an owner, I see the queue of requests waiting for me, each with
-  its invoice, and approve or refuse it. _(decisions 6, 8)_
+  its invoice, and approve or refuse it. The experience is per role: a holder of
+  `finance-approve` gets the board toggle over the shared table and the
+  approve/refuse row actions, everyone else the same table read-only plus «new
+  request». _(decisions 6, 8; decision 35, owner 2026-09-14)_
 - **US-4** — As an owner, approving a request is what puts the expense in the
   ledger — there is no second act of entering it by hand. _(decision 8)_
 - **US-5** — As an owner, a request I refuse leaves no trace in the ledger, and
@@ -145,7 +178,10 @@ The owner refuses with a reason → nothing is posted → the member sees the
 refusal. _(`agent-proposed — UNCONFIRMED`: whether a refusal carries a reason)_
 
 **Expense request — retroactive (money already spent).**
-A member who has already spent the money — their own or the company's — submits
+A member who has already spent the money — their own, or the company's where
+they hold `finance-entry` or `finance-approve`; a member with neither role is
+offered personal funds only, and the API refuses a company-account claim from
+them _(decision 36, owner 2026-09-14)_ — submits
 the same form after the fact, marked as already paid, with the receipt attached →
 it lands in the same owners' queue → an owner approves → only then is the
 operation posted. The pre-spend and the retroactive path differ in nothing but
@@ -184,7 +220,12 @@ same path as every other source. No existing source changes.
 
 - Any member with a platform login can submit an expense request with an invoice
   attached.
-- A member can see the current state of every request they submitted.
+- A member can see the current state of every request they submitted, and of
+  every other member's requests, in one table with «mine» preselected.
+  _(decision 35)_
+- A member holding neither finance role cannot declare an already-paid request
+  as paid from a company account — the option is not offered and the API refuses
+  it. _(decision 36)_
 - An owner sees all requests awaiting a decision in one place, with their
   invoices readable without leaving the screen.
 - Approving a request results in a ledger operation, with no further manual entry

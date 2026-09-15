@@ -105,6 +105,11 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       '0013_finance_reference_proposals.sql',
       // #416 closes the missing INSERT arm on the terminal-item link guard.
       '0014_finance_document_link_insert_guard.sql',
+      // A request is an INTENT (owner ruling, Антон, 2026-09-03, #388): the
+      // paying account and `occurred_on` may be empty while a pre-spend request
+      // is unposted, and the `money_facts` CHECK is what keeps that «may» from
+      // meaning «anywhere» (EARS-533).
+      '0015_finance_intake_money_facts.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

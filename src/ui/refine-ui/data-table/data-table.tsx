@@ -7,7 +7,15 @@ import { flexRender } from '@tanstack/react-table'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/ui/table'
 import { DataTablePagination } from '@/ui/refine-ui/data-table/data-table-pagination'
 import { cn } from '@/ui/utils'
 
@@ -25,13 +33,29 @@ export function DataTable<TData extends BaseRecord>({
   emptyDescription = 'Здесь появятся строки, как только они будут созданы.',
 }: DataTableProps<TData>) {
   const {
-    reactTable: { getHeaderGroups, getRowModel, getAllColumns },
+    reactTable: { getHeaderGroups, getFooterGroups, getRowModel, getAllColumns },
     refineCore: { tableQuery, currentPage, setCurrentPage, pageCount, pageSize, setPageSize },
   } = table
 
   const columns = getAllColumns()
   const leafColumns = table.reactTable.getAllLeafColumns()
   const isLoading = tableQuery.isLoading
+  /**
+   * THE TOTALS ROW IS THE BLOCK'S, NOT THE SCREEN'S — a divergence from
+   * upstream `ui.refine.dev`, added on #388 (owner go, Антон, 2026-09-15).
+   *
+   * A register that adds its rows up used to have to hand-build a `<TableFooter>`
+   * beside the block, which is the whitelist violation `pnpm lint:whitelist-blocks`
+   * exists to catch (`docs/design/ui-whitelist.md` → «List»). TanStack already
+   * models the footer — `columnDef.footer` and `getFooterGroups()` — so the block
+   * renders it through the kit's own `TableFooter`, and a screen declares its
+   * total as one more field of its `ColumnDef`. A table whose columns declare no
+   * footer gets no `<tfoot>` at all.
+   *
+   * It survives an EMPTY register on purpose: «итого 0» is an answer, and a
+   * footer that disappeared with the last row would read as a missing total.
+   */
+  const hasFooter = leafColumns.some((column) => column.columnDef.footer !== undefined)
 
   const tableContainerRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLTableElement>(null)
@@ -179,6 +203,29 @@ export function DataTable<TData extends BaseRecord>({
               />
             )}
           </TableBody>
+          {hasFooter && !isLoading ? (
+            <TableFooter>
+              {getFooterGroups().map((footerGroup) => (
+                <TableRow key={footerGroup.id}>
+                  {footerGroup.headers.map((footer) => (
+                    <TableCell
+                      key={footer.id}
+                      style={{
+                        ...getCommonStyles({
+                          column: footer.column,
+                          isOverflowing: isOverflowing,
+                        }),
+                      }}
+                    >
+                      {footer.isPlaceholder
+                        ? null
+                        : flexRender(footer.column.columnDef.footer, footer.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableFooter>
+          ) : null}
         </Table>
       </div>
       {!isLoading && getRowModel().rows?.length > 0 && (

@@ -16,6 +16,11 @@ import {
   buildFinanceDocumentStorageKey,
   resolveFinanceDocumentStorage,
 } from '@/lib/finance/documents/storage'
+import {
+  documentUploadRefusal,
+  DOCUMENT_UPLOAD_MAX_BYTES,
+  DOCUMENT_UPLOAD_MIME_TYPES,
+} from '@/app/(platform)/p/finance/requests/request-board-model'
 
 const s3Mock = vi.hoisted(() => ({
   objects: new Map<string, Buffer>(),
@@ -319,5 +324,25 @@ describe('what may be uploaded (spec 339 EARS-514/515)', () => {
     // …and a kind outside the taxonomy is still a refusal: «data, not a gate»
     // narrows what the kind DECIDES, not what the column may hold.
     expect(() => assertFinanceDocumentUpload({ ...ok, kind: 'napkin' })).toThrow(FinanceRefusal)
+  })
+})
+
+describe('the browser half of the upload gate mirrors the server (spec 339 EARS-514)', () => {
+  // `request-board-model.ts` restates the two limits because it ships to the
+  // browser and `@/lib/finance` reaches the database. A restatement that is
+  // never compared drifts silently, and the drift is user-visible exactly
+  // once: as a file the picker accepts and the server then refuses.
+  it('EARS-514: the client limit and mime set are the server’s own', () => {
+    expect(DOCUMENT_UPLOAD_MAX_BYTES).toBe(FINANCE_DOCUMENT_MAX_BYTES)
+    expect([...DOCUMENT_UPLOAD_MIME_TYPES]).toEqual([...FINANCE_DOCUMENT_MIME_TYPES])
+  })
+
+  it('EARS-514: the size refusal names the limit the constant actually carries', () => {
+    const refusal = documentUploadRefusal({
+      name: 'скан.pdf',
+      size: FINANCE_DOCUMENT_MAX_BYTES + 1,
+      type: 'application/pdf',
+    })
+    expect(refusal).toContain(String(FINANCE_DOCUMENT_MAX_BYTES / (1024 * 1024)))
   })
 })

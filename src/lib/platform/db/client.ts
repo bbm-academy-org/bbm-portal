@@ -64,6 +64,23 @@ const CACHE_KEY = Symbol.for('bbm-portal.platform-db')
  */
 export type PlatformDb = Omit<NodePgDatabase, 'transaction'>
 
+/**
+ * How many clients this pool may hold — pg's own default, stated rather than
+ * inherited (#470).
+ *
+ * The number is a CEILING ON CONCURRENT TRANSACTIONS, and that is why it is
+ * written down. A transaction holds one client for its whole life, so code that
+ * opens a transaction per row of a list, or that asks the pool for a second
+ * client from inside a transaction, does not get slower as the pool fills — it
+ * deadlocks: every client is held by a request waiting for a client that no one
+ * can release. That is exactly how `/p/finance/api/requests` wedged the
+ * acceptance stand of #388 (ten backends `idle in transaction`, nothing moving,
+ * a hard reload no help). Raising this number would have bought a bigger board
+ * before the same wedge; the fix is that no transaction asks the pool for a
+ * second client (`src/lib/finance/documents/documents.ts`).
+ */
+const PLATFORM_POOL_MAX = 10
+
 type Cache = { pool: Pool; db: NodePgDatabase }
 type CacheHost = typeof globalThis & { [CACHE_KEY]?: Cache }
 
@@ -96,6 +113,7 @@ export function openPlatformDb(): NodePgDatabase {
   const pool = new Pool({
     connectionString: requirePlatformDatabaseUrl(process.env),
     options: PLATFORM_CONNECTION_MARK,
+    max: PLATFORM_POOL_MAX,
   })
   const db = drizzle(pool)
   host[CACHE_KEY] = { pool, db }

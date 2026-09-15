@@ -11,10 +11,13 @@ describe('0014_finance_document_link_insert_guard.sql (#416)', () => {
       readFileSync(resolve(migrationsDir, 'meta/_journal.json'), 'utf8'),
     ) as { entries: Array<{ idx: number; tag: string }> }
 
-    expect(journal.entries.at(-1)).toMatchObject({
+    // Its POSITION, not «it is last»: the journal grows, and this migration's
+    // identity is that it follows 0013, not that nothing follows it.
+    expect(journal.entries[14]).toMatchObject({
       idx: 14,
       tag: '0014_finance_document_link_insert_guard',
     })
+    expect(journal.entries[13]?.tag).toBe('0013_finance_reference_proposals')
   })
 
   it('guards link INSERT as well as UPDATE and DELETE against terminal intake items', () => {

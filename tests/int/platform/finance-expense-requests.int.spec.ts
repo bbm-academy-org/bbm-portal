@@ -14,6 +14,7 @@ import {
   createProduct,
   createProject,
   createPurpose,
+  createPurposeProposal,
   detachFinanceDocument,
   editExpenseRequest,
   editIntakeItem,
@@ -22,6 +23,7 @@ import {
   getExpenseRequest,
   listExpenseRequests,
   listFinanceDocuments,
+  listFinanceDocumentsByItems,
   postIntakeItem,
   readFinanceDocument,
   refuseExpenseRequest,
@@ -178,6 +180,19 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
     expect(await getExpenseRequest(MEMBER, request.id)).toMatchObject({ amount: 120_000n })
   })
 
+  it('EARS-526: the expense facade keeps a missing-purpose proposal in draft until resolution', async () => {
+    const refs = await seedIntakeReferences()
+    const request = await createExpenseRequest(MEMBER, requestInput(refs, { purposeId: null }))
+    const proposal = await createPurposeProposal(MEMBER, {
+      intakeItemId: request.id,
+      text: 'Новая аренда оборудования',
+    })
+
+    expect(request).toMatchObject({ status: 'draft', purposeId: null })
+    expect(proposal).toMatchObject({ intakeItemId: request.id, status: 'pending' })
+    await expect(submitExpenseRequest(MEMBER, request.id)).rejects.toThrow(/EARS-508|EARS-526/)
+  })
+
   it('EARS-510/531: the public generic transition API cannot approve a request', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs))
@@ -211,7 +226,7 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
     expect(approved).toMatchObject({ status: 'approved', decidedBy: refs.approverMemberId })
   })
 
-  it('EARS-502: a role-less member creates, edits, submits, lists and cancels only their own request, including its documents', async () => {
+  it('EARS-502/534/523: a role-less member creates, edits, submits and cancels only their OWN request, but the list is every member’s — without their documents', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs))
     const editedDraft = await editExpenseRequest(MEMBER, request.id, {
@@ -230,10 +245,25 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
       (await listFinanceDocuments(MEMBER, { intakeItemId: request.id })).map((item) => item.id),
     ).toEqual([document.id])
 
+    // Decision 35 (#115, 2026-09-14), EARS-534: the LIST is an open book — a
+    // member holding neither flow role reads every member's request. Before the
+    // decision this same actor read an empty list; the three boundaries below
+    // are what the widening deliberately did NOT move (EARS-502/523/524).
     const stranger = { email: 'request-stranger@bbm.academy', roles: ['platform-user'] }
     await seedMember(stranger.email, 'Request Stranger')
-    expect(await listExpenseRequests(stranger)).toEqual([])
+    expect((await listExpenseRequests(stranger)).map((item) => item.id)).toContain(request.id)
+    // EARS-523: the row travels, the document does not.
+    expect(await listFinanceDocumentsByItems(stranger, [request.id])).toEqual(new Map())
+    await expect(getExpenseRequest(stranger, request.id)).rejects.toBeInstanceOf(
+      FinanceAccessRefusal,
+    )
     await expect(editExpenseRequest(stranger, request.id, { amount: 1n })).rejects.toBeInstanceOf(
+      FinanceAccessRefusal,
+    )
+    await expect(submitExpenseRequest(stranger, request.id)).rejects.toBeInstanceOf(
+      FinanceAccessRefusal,
+    )
+    await expect(cancelExpenseRequest(stranger, request.id)).rejects.toBeInstanceOf(
       FinanceAccessRefusal,
     )
 
@@ -495,13 +525,79 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
     expect(posted.operationId).not.toBeNull()
   })
 
+  it('EARS-508/533: a pre-spend request files with no account and no date, and the posting act enters both', async () => {
+    const refs = await seedIntakeReferences()
+    const intent = await createExpenseRequest(
+      MEMBER,
+      requestInput(refs, { occurredOn: null, accountId: null }),
+    )
+    expect(intent).toMatchObject({ occurredOn: null, accountId: null, alreadyPaid: false })
+
+    await submitExpenseRequest(MEMBER, intent.id)
+    expect(await approveExpenseRequest(APPROVER, intent.id)).toMatchObject({
+      status: 'approved',
+      occurredOn: null,
+      accountId: null,
+      operationId: null,
+    })
+
+    await uploadReceipt(ENTRY, intent.id)
+    // Either fact missing is a readable refusal that says WHICH (EARS-533).
+    await expect(confirmExpenseRequest(APPROVER, intent.id, {})).rejects.toThrow(
+      /счёт списания.*дата движения денег/is,
+    )
+    await expect(
+      confirmExpenseRequest(APPROVER, intent.id, { accountId: refs.accountId }),
+    ).rejects.toThrow(/дата движения денег/i)
+    await expect(
+      confirmExpenseRequest(APPROVER, intent.id, { occurredOn: '2026-08-23' }),
+    ).rejects.toThrow(/счёт списания/i)
+    expect(await getExpenseRequest(APPROVER, intent.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+    })
+
+    const posted = await confirmExpenseRequest(APPROVER, intent.id, {
+      accountId: refs.accountId,
+      occurredOn: '2026-08-23',
+    })
+    expect(posted).toMatchObject({
+      status: 'posted',
+      occurredOn: '2026-08-23',
+      accountId: refs.accountId,
+      postedBy: refs.approverMemberId,
+    })
+    expect(posted.operationId).not.toBeNull()
+  })
+
+  it('EARS-506/511/533: approving a pre-spend request with no document refuses the money facts rather than dropping them', async () => {
+    const refs = await seedIntakeReferences()
+    const intent = await createExpenseRequest(
+      MEMBER,
+      requestInput(refs, { occurredOn: null, accountId: null }),
+    )
+    await submitExpenseRequest(MEMBER, intent.id)
+
+    await expect(
+      approveExpenseRequest(APPROVER, intent.id, {
+        accountId: refs.accountId,
+        occurredOn: '2026-08-23',
+      }),
+    ).rejects.toBeInstanceOf(FinanceRefusal)
+    expect(await getExpenseRequest(APPROVER, intent.id)).toMatchObject({
+      status: 'submitted',
+      occurredOn: null,
+      accountId: null,
+    })
+  })
+
   it('EARS-511/531: the verifier approves the actual confirmation date that is posted', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs))
     await submitExpenseRequest(MEMBER, request.id)
     await approveExpenseRequest(APPROVER, request.id)
     await uploadReceipt(ENTRY, request.id)
-    const verifiedDates: string[] = []
+    const verifiedDates: (string | null)[] = []
     const verifier: FinanceDocumentVerifier = {
       id: 'actual-date-verifier',
       async verify(context) {
