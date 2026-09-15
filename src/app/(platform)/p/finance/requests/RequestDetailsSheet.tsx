@@ -10,14 +10,6 @@ import { Alert, AlertDescription } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/ui/dialog'
-import {
   Form,
   FormControl,
   FormDescription,
@@ -103,6 +95,62 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       <p className="text-sm break-words text-foreground">{value ?? '—'}</p>
     </div>
   )
+}
+
+/**
+ * AN ACT OPENED FROM THIS SCREEN — as a SECTION of the details sheet, never as
+ * a second overlay (owner go, Антон, 2026-09-15, #388; the rule is
+ * `docs/design/ui-whitelist.md` → «One overlay shape per screen»).
+ *
+ * WHY IT CAN LOOK LIKE A MODAL WITHOUT BEING ONE. What a modal gave this screen
+ * was three things: the act is named, the act's own fields are separated from
+ * the record, and the reader's attention moves to it. A bordered, titled
+ * section inside the same sheet gives all three — and does not give the fourth
+ * thing the owner objected to, a second footer grammar. Attention is moved
+ * explicitly: the section takes focus and scrolls itself into view on mount,
+ * which is what the previous `Dialog` did for free.
+ */
+function ActSection({
+  label,
+  title,
+  description,
+  children,
+}: {
+  label: string
+  title: string
+  description: string
+  children: React.ReactNode
+}) {
+  const ref = React.useRef<HTMLElement>(null)
+
+  React.useEffect(() => {
+    ref.current?.scrollIntoView({ block: 'nearest' })
+    ref.current?.focus()
+  }, [])
+
+  return (
+    <section
+      ref={ref}
+      aria-label={label}
+      tabIndex={-1}
+      className="space-y-3 rounded-lg border bg-muted/30 p-4 outline-none"
+    >
+      <div className="space-y-1">
+        <h3 className="font-heading text-base font-semibold tracking-tight">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/**
+ * The act's own action row — the SAME grammar as `SheetFooter`'s: the primary
+ * act first, its way out beside it, both on one line. That sameness is the
+ * whole point of the rule this section exists to satisfy.
+ */
+function ActFooter({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-row flex-wrap items-center gap-2 pt-1">{children}</div>
 }
 
 type AttachValue = { file: FileList | null; kind: FinanceDocumentKind }
@@ -218,13 +266,19 @@ function AttachDocumentForm({
 /**
  * «Провести» — the POSTING act's own three questions (EARS-533).
  *
- * WHY A DIALOG AND NOT THREE MORE FIELDS IN THE PANE. Owner ruling (Антон,
- * 2026-09-03, #388): a request is an intent, so the paying account and the date
- * money moved are not properties of the request at all — they are what the
- * finance role asserts in the act of posting. Asking them inline would put
- * editable money fields on a card that is already approved, i.e. exactly the
- * edit the status machine bounces; asking them in the act's own modal makes the
- * write part of the act, the way the refusal reason is part of the refusal.
+ * ONE OVERLAY SHAPE, AND IT IS THE SHEET (owner go, Антон, 2026-09-15, #388;
+ * the rule itself is `docs/design/ui-whitelist.md` → «One overlay shape per
+ * screen»). This used to be a `Dialog` opened from inside a `Sheet`, and the
+ * owner read the result as two different footers for the same kind of act —
+ * `DialogFooter` and `SheetFooter` stack and align differently in the stock
+ * kit. It is now a SECTION of the details sheet: same surface, same footer
+ * grammar, one Escape.
+ *
+ * STILL AN ACT, NOT AN EDIT. A request is an intent (owner ruling, Антон,
+ * 2026-09-03), so the paying account and the date money moved are not
+ * properties of the request — they are what the finance role asserts in the act
+ * of posting. They therefore appear only once the act is STARTED, in the act's
+ * own section, never as editable fields standing on an approved card.
  *
  * WHAT IT ASKS AND WHAT IT DOES NOT. The account, unless the spend was made
  * from the member's own card (EARS-513 — then there is no company account to
@@ -233,7 +287,7 @@ function AttachDocumentForm({
  * the document — which is why the schema is rebuilt as the account changes.
  * Everything the request already said is NOT re-asked (EARS-511).
  */
-function PostingDialog({
+function PostingSection({
   request,
   references,
   act,
@@ -262,111 +316,109 @@ function PostingDialog({
   const crossCurrency = account !== null && account.currency !== request.currency
 
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onCancel())}>
-      <DialogContent data-bbm-ui>
-        <DialogHeader>
-          <DialogTitle>Провести заявку №{request.id}</DialogTitle>
-          <DialogDescription>
-            {act === 'approve'
-              ? 'Одобрение и проводка одним актом: назовите, откуда и когда ушли деньги.'
-              : 'Заявка была намерением. Назовите, откуда и когда деньги ушли на самом деле.'}
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form
-            className="space-y-4"
-            noValidate
-            onSubmit={form.handleSubmit((value) =>
-              onConfirm(toPostingBody(value, references, request)),
-            )}
-          >
-            {request.personalFunds ? (
-              <Alert role="status">
-                <AlertDescription>
-                  Оплачено своими средствами: счёта компании у этой траты нет — встречной ногой
-                  станет обязательство перед участником.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <FormField
-                control={form.control}
-                name="accountId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Счёт списания</FormLabel>
-                    <Select
-                      value={field.value === '' ? undefined : field.value}
-                      disabled={pending}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-full min-w-0">
-                          <SelectValue placeholder="Выберите счёт" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent data-bbm-ui>
-                        {references.accounts.map((row) => (
-                          <SelectItem key={row.id} value={String(row.id)}>
-                            {row.name} · {row.currency}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
+    <ActSection
+      label={`Провести заявку №${request.id}`}
+      title={`Провести заявку №${request.id}`}
+      description={
+        act === 'approve'
+          ? 'Одобрение и проводка одним актом: назовите, откуда и когда ушли деньги.'
+          : 'Заявка была намерением. Назовите, откуда и когда деньги ушли на самом деле.'
+      }
+    >
+      <Form {...form}>
+        <form
+          className="space-y-4"
+          noValidate
+          onSubmit={form.handleSubmit((value) =>
+            onConfirm(toPostingBody(value, references, request)),
+          )}
+        >
+          {request.personalFunds ? (
+            <Alert role="status">
+              <AlertDescription>
+                Оплачено своими средствами: счёта компании у этой траты нет — встречной ногой станет
+                обязательство перед участником.
+              </AlertDescription>
+            </Alert>
+          ) : (
             <FormField
               control={form.control}
-              name="occurredOn"
+              name="accountId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Дата движения денег</FormLabel>
+                  <FormLabel>Счёт списания</FormLabel>
+                  <Select
+                    value={field.value === '' ? undefined : field.value}
+                    disabled={pending}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full min-w-0">
+                        <SelectValue placeholder="Выберите счёт" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent data-bbm-ui>
+                      {references.accounts.map((row) => (
+                        <SelectItem key={row.id} value={String(row.id)}>
+                          {row.name} · {row.currency}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          <FormField
+            control={form.control}
+            name="occurredOn"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Дата движения денег</FormLabel>
+                <FormControl>
+                  <Input {...field} type="date" disabled={pending} />
+                </FormControl>
+                <FormDescription>
+                  День, когда деньги действительно ушли, — не дата документа.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {crossCurrency ? (
+            <FormField
+              control={form.control}
+              name="paidAmount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Списано со счёта, {account.currency}</FormLabel>
                   <FormControl>
-                    <Input {...field} type="date" disabled={pending} />
+                    <Input {...field} inputMode="decimal" disabled={pending} placeholder="0,00" />
                   </FormControl>
                   <FormDescription>
-                    День, когда деньги действительно ушли, — не дата документа.
+                    Счёт в {account.currency}, документ в {request.currency} — нужна фактически
+                    списанная сумма.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
+          ) : null}
 
-            {crossCurrency ? (
-              <FormField
-                control={form.control}
-                name="paidAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Списано со счёта, {account.currency}</FormLabel>
-                    <FormControl>
-                      <Input {...field} inputMode="decimal" disabled={pending} placeholder="0,00" />
-                    </FormControl>
-                    <FormDescription>
-                      Счёт в {account.currency}, документ в {request.currency} — нужна фактически
-                      списанная сумма.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : null}
-
-            <DialogFooter>
-              <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
-                Отмена
-              </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? 'Проводим…' : 'Провести'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+          <ActFooter>
+            <Button type="submit" disabled={pending}>
+              {pending ? 'Проводим…' : 'Провести'}
+            </Button>
+            <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
+              Отмена
+            </Button>
+          </ActFooter>
+        </form>
+      </Form>
+    </ActSection>
   )
 }
 
@@ -626,6 +678,62 @@ export function RequestDetailsSheet({
           ) : null}
         </div>
 
+        {posting === null ? null : (
+          <PostingSection
+            request={request}
+            references={references}
+            act={posting}
+            pending={pending}
+            onConfirm={(payload) => onAct(posting, payload)}
+            onCancel={() => setPosting(null)}
+          />
+        )}
+
+        {refusing ? (
+          <ActSection
+            label="Отклонить заявку"
+            title="Отклонить заявку"
+            description="Причина обязательна: она остаётся у заявки и её видит подавший."
+          >
+            <div className="space-y-2">
+              <Label htmlFor="refusal-reason">Причина отказа</Label>
+              <Textarea
+                id="refusal-reason"
+                autoFocus
+                value={reason}
+                aria-invalid={reasonError !== null}
+                onChange={(event) => {
+                  setReason(event.target.value)
+                  if (reasonError !== null) setReasonError(null)
+                }}
+              />
+              {reasonError !== null ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {reasonError}
+                </p>
+              ) : null}
+            </div>
+            <ActFooter>
+              <Button
+                variant="destructive"
+                disabled={pending}
+                onClick={() => {
+                  if (reason.trim() === '') {
+                    setReasonError('Укажите причину отказа.')
+                    return
+                  }
+                  onAct('refuse', { reason: reason.trim() })
+                }}
+              >
+                Отклонить заявку
+              </Button>
+              <Button variant="outline" onClick={() => setRefusing(false)}>
+                Отмена
+              </Button>
+            </ActFooter>
+          </ActSection>
+        ) : null}
+
         <SheetFooter className="flex-row flex-wrap items-center gap-2">
           {canApproveNow ? (
             <Button disabled={pending} onClick={() => startAct('approve')}>
@@ -658,63 +766,6 @@ export function RequestDetailsSheet({
             </Button>
           ) : null}
         </SheetFooter>
-
-        {posting === null ? null : (
-          <PostingDialog
-            request={request}
-            references={references}
-            act={posting}
-            pending={pending}
-            onConfirm={(payload) => onAct(posting, payload)}
-            onCancel={() => setPosting(null)}
-          />
-        )}
-
-        <Dialog open={refusing} onOpenChange={setRefusing}>
-          <DialogContent data-bbm-ui>
-            <DialogHeader>
-              <DialogTitle>Отклонить заявку</DialogTitle>
-              <DialogDescription>
-                Причина обязательна: она остаётся у заявки и её видит подавший.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="refusal-reason">Причина отказа</Label>
-              <Textarea
-                id="refusal-reason"
-                value={reason}
-                aria-invalid={reasonError !== null}
-                onChange={(event) => {
-                  setReason(event.target.value)
-                  if (reasonError !== null) setReasonError(null)
-                }}
-              />
-              {reasonError !== null ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {reasonError}
-                </p>
-              ) : null}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setRefusing(false)}>
-                Отмена
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={pending}
-                onClick={() => {
-                  if (reason.trim() === '') {
-                    setReasonError('Укажите причину отказа.')
-                    return
-                  }
-                  onAct('refuse', { reason: reason.trim() })
-                }}
-              >
-                Отклонить заявку
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </SheetContent>
     </Sheet>
   )
