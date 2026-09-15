@@ -5,13 +5,16 @@ import { describe, expect, it } from 'vitest'
 
 import {
   checkStageB,
+  SANITY_FACETS,
   extractClosedIssues,
   extractLinkedIssues,
   extractMarkerValues,
+  extractSanityRecords,
   ghFilesArgs,
   ghIssueArgs,
   ghPrArgs,
   isEvidence,
+  missingSanityFacetsOf,
   parseArgs,
   renderFiles,
   runStageBLint,
@@ -41,17 +44,28 @@ import {
  * invokes it — docs/ci-guardrails.md §5).
  */
 
-/** A synthetic `gh pr view --json number,body,files` payload. */
+/**
+ * A synthetic `gh pr view --json number,body,comments,files` payload. `comments`
+ * is the PR's OWN conversation — the surface the `UX-sanity:` record lives on
+ * (#485), since the lead posts it BEFORE inviting the owner to the stand.
+ */
 function pr({
   number = 1,
   body = '',
   files = [] as string[],
+  comments = [] as string[],
 }: {
   number?: number
   body?: string
   files?: string[]
+  comments?: string[]
 }) {
-  return { number, body, files: files.map((path) => ({ path })) }
+  return {
+    number,
+    body,
+    comments: comments.map((c) => ({ body: c })),
+    files: files.map((path) => ({ path })),
+  }
 }
 
 /**
@@ -140,6 +154,20 @@ describe('stage-b-lint: the changed-file list is PAGED (canon §8)', () => {
 
 const UI_PR_FILES = ['src/app/(platform)/p/hours/page.tsx', 'src/app/(platform)/p/hours/hours.css']
 
+/**
+ * A FILLED `UX-sanity:` record (#485) — the lead's own pass over the captured
+ * screenshots, posted before the owner is invited to the stand. Its four facets
+ * are task-cycle stage 5 item 4; `Screenshots` names what was actually judged.
+ */
+const SANITY_BLOCK = [
+  'UX-sanity: PASS',
+  '- Screenshots: docs/evidence/388/overview-desktop-light.png, docs/evidence/388/overview-mobile-dark.png',
+  '- Dominance: the period total card leads; the account tiles recede',
+  '- Tiers: primary / secondary / archived differ by weight and ground, not only by label',
+  '- Equal boxes: no — the total is a full-width band, the tiles a 3-up grid',
+  '- Legible states: empty and degraded keep the heading and the explanatory line',
+].join('\n')
+
 describe('stage-b-lint: a UI PR without the marker does not pass (AC3 of #138)', () => {
   // The regression this guard exists for: an owner-visible surface reaching
   // merge with no recorded live verdict — the 2026-07-27 «сборку приняли за
@@ -179,8 +207,10 @@ describe('stage-b-lint: a UI PR without the marker does not pass (AC3 of #138)',
 })
 
 describe('stage-b-lint: the three sanctioned marker shapes are evidence', () => {
-  it('`Stage-B: GO — owner, date` in the PR body passes', () => {
-    const result = checkStageB(pr({ body: 'Stage-B: GO — Антон, 2026-08-05', files: UI_PR_FILES }))
+  it('`Stage-B: GO — owner, date` passes when the UX-sanity record is there too', () => {
+    const result = checkStageB(
+      pr({ body: `Stage-B: GO — Антон, 2026-08-05\n\n${SANITY_BLOCK}`, files: UI_PR_FILES }),
+    )
     expect(result.verdict).toBe('pass')
     expect(result.evidence).toContain('GO')
   })
@@ -229,7 +259,9 @@ describe('stage-b-lint: the three sanctioned marker shapes are evidence', () => 
   // not — and the GO is the record that most needs attribution, since it stands
   // in for a live-stand «принято» by a named person on a named day.
   it('a bare `Stage-B: GO` is NOT evidence — the verdict names its owner', () => {
-    expect(checkStageB(pr({ body: 'Stage-B: GO', files: UI_PR_FILES })).verdict).toBe('violation')
+    expect(
+      checkStageB(pr({ body: `Stage-B: GO\n\n${SANITY_BLOCK}`, files: UI_PR_FILES })).verdict,
+    ).toBe('violation')
     expect(isEvidence('GO')).toBe(false)
     expect(isEvidence('GO — Антон')).toBe(true)
     expect(isEvidence('GO (Антон, 2026-08-05)')).toBe(true)
@@ -254,7 +286,12 @@ describe('stage-b-lint: instructions are not evidence (review PR #151, blocker 1
   it('the same template with the placeholder line actually filled in passes', () => {
     const filled = TEMPLATE.replace(/^Stage-B: <.*>$/m, 'Stage-B: GO — Антон, 2026-08-05')
     expect(filled).not.toEqual(TEMPLATE)
-    expect(checkStageB(pr({ body: filled, files: UI_PR_FILES })).verdict).toBe('pass')
+    // The GO alone is no longer enough (#485): the template ships the UX-sanity
+    // block unfilled, so the sibling record of the SAME pass is still missing.
+    expect(checkStageB(pr({ body: filled, files: UI_PR_FILES })).verdict).toBe('violation')
+    expect(
+      checkStageB(pr({ body: filled, files: UI_PR_FILES, comments: [SANITY_BLOCK] })).verdict,
+    ).toBe('pass')
   })
 
   it('strips HTML comments and fenced code blocks before reading markers', () => {
@@ -285,7 +322,7 @@ describe('stage-b-lint: the verdict may live on the linked issue', () => {
   it('a `Closes #N` issue comment carrying the GO is evidence', () => {
     const result = checkStageB(pr({ body: 'Closes #199', files: UI_PR_FILES }), [
       'Стенд поднят на 3002.',
-      'Stage-B: GO — Антон, 2026-08-05',
+      `Stage-B: GO — Антон, 2026-08-05\n\n${SANITY_BLOCK}`,
     ])
     expect(result.verdict).toBe('pass')
   })
@@ -308,7 +345,14 @@ describe('stage-b-lint: the verdict may live on the linked issue', () => {
 
   it('the driver reads the Stage-B GO off a `Part of #N` parent', () => {
     const gh = makeGh({
-      prs: { 202: pr({ number: 202, body: 'Part of #201', files: UI_PR_FILES }) },
+      prs: {
+        202: pr({
+          number: 202,
+          body: 'Part of #201',
+          files: UI_PR_FILES,
+          comments: [SANITY_BLOCK],
+        }),
+      },
       issues: { 201: [{ body: 'Stage-B: GO — Антон' }] },
     })
     const result = runStageBLint({ prNumber: 202, severity: 'block', gh: gh.gh })
@@ -321,7 +365,9 @@ describe('stage-b-lint: the verdict may live on the linked issue', () => {
 
   it('the driver fetches the linked issue comments through gh', () => {
     const gh = makeGh({
-      prs: { 201: pr({ number: 201, body: 'Closes #199', files: UI_PR_FILES }) },
+      prs: {
+        201: pr({ number: 201, body: 'Closes #199', files: UI_PR_FILES, comments: [SANITY_BLOCK] }),
+      },
       issues: { 199: [{ body: 'Stage-B: GO — Антон' }] },
     })
     const result = runStageBLint({ prNumber: 201, severity: 'block', gh: gh.gh })
@@ -406,7 +452,7 @@ describe('stage-b-lint: runner contract', () => {
       '--repo',
       'bbm-academy-org/bbm-portal',
       '--json',
-      'number,body',
+      'number,body,comments',
     ])
     // The file list is NOT read off that view — it is paged (canon §8).
     expect(ghFilesArgs(92, 2, 100)).toEqual([
@@ -445,5 +491,155 @@ describe('stage-b-lint: runner contract', () => {
     const result = runStageBLint({ prNumber: 202, severity: 'block', gh: gh.gh })
     expect(result.verdict).toBe('violation')
     expect(result.lines.join('\n')).toContain('#4242')
+  })
+})
+
+describe('stage-b-lint: a GO on a UI diff needs the lead UX-sanity record (#485)', () => {
+  // Owner rejection of PR #470’s live stand, Антон, 2026-09-15: the owner became the
+  // FIRST reader of the screen. The 2026-08-31 rule already said «run an elementary
+  // UX-sanity pass before showing a UI»; it left no artifact, so nothing told a lead
+  // that did it from one that skipped it.
+
+  const GO = 'Stage-B: GO — Антон, 2026-09-15'
+
+  it('a UI diff with a GO and NO UX-sanity record anywhere is a violation', () => {
+    const result = checkStageB(pr({ number: 470, body: GO, files: UI_PR_FILES }))
+    expect(result.verdict).toBe('violation')
+    expect(result.message).toContain('UX-sanity')
+    expect(result.message).toContain('task-cycle stage 5')
+  })
+
+  it('the same PR passes once the filled record is posted as a PR comment', () => {
+    const result = checkStageB(
+      pr({ number: 470, body: GO, files: UI_PR_FILES, comments: [SANITY_BLOCK] }),
+    )
+    expect(result.verdict).toBe('pass')
+  })
+
+  it('a bare `UX-sanity: OK` is NOT a record — the tail is part of it', () => {
+    const result = checkStageB(
+      pr({ number: 470, body: GO, files: UI_PR_FILES, comments: ['UX-sanity: OK'] }),
+    )
+    expect(result.verdict).toBe('violation')
+    expect(result.message).toContain('screenshots')
+  })
+
+  it('a record missing ONE facet names exactly that facet', () => {
+    const partial = SANITY_BLOCK.split('\n')
+      .filter((l) => !l.startsWith('- Tiers:'))
+      .join('\n')
+    const result = checkStageB(
+      pr({ number: 470, body: GO, files: UI_PR_FILES, comments: [partial] }),
+    )
+    expect(result.verdict).toBe('violation')
+    expect(result.message).toContain('tiers')
+  })
+
+  it('a placeholder facet counts as unrecorded, so the PR template is not a record', () => {
+    const templated = [
+      'UX-sanity: <PASS | the defect found>',
+      '- Screenshots: <paths or URLs judged>',
+      '- Dominance: <verdict>',
+      '- Tiers: <verdict>',
+      '- Equal boxes: <verdict>',
+      '- Legible states: <verdict>',
+    ].join('\n')
+    expect(
+      checkStageB(pr({ number: 470, body: `${GO}\n\n${templated}`, files: UI_PR_FILES })).verdict,
+    ).toBe('violation')
+  })
+
+  it('a fenced or HTML-commented example is never the record', () => {
+    for (const quoted of [`<!--\n${SANITY_BLOCK}\n-->`, `\`\`\`\n${SANITY_BLOCK}\n\`\`\``]) {
+      expect(
+        checkStageB(pr({ number: 470, body: GO, files: UI_PR_FILES, comments: [quoted] })).verdict,
+      ).toBe('violation')
+    }
+  })
+
+  it('`batched at #N` and the lead self-certification are unaffected', () => {
+    expect(checkStageB(pr({ body: 'Stage-B: batched at #117', files: UI_PR_FILES })).verdict).toBe(
+      'pass',
+    )
+    expect(
+      checkStageB(
+        pr({ body: 'Stage-B: N/A (no visual surface) — lead-certified', files: UI_PR_FILES }),
+      ).verdict,
+    ).toBe('pass')
+  })
+
+  it('a non-UI diff with a GO and no record is still skipped', () => {
+    expect(checkStageB(pr({ body: GO, files: ['src/endpoints/leads.ts'] })).verdict).toBe('skip')
+  })
+
+  it('the record may also live on the linked issue, like the GO itself', () => {
+    const result = checkStageB(pr({ body: `${GO}\n\nCloses #388`, files: UI_PR_FILES }), [
+      SANITY_BLOCK,
+    ])
+    expect(result.verdict).toBe('pass')
+  })
+
+  it('exposes the four canon facets plus the screenshots the pass judged', () => {
+    expect(SANITY_FACETS).toEqual([
+      'screenshots',
+      'dominance',
+      'tiers',
+      'equal boxes',
+      'legible states',
+    ])
+  })
+
+  it('reads the block through list / bold decoration and either spelling', () => {
+    const decorated = [
+      '- **UX-sanity:** PASS',
+      '  - **Screenshots:** .playwright-mcp/overview.png',
+      '  - **Dominance:** the total card leads',
+      '  - **Tiers:** distinct',
+      '  - **Equal-boxes:** no',
+      '  - **Legible-states:** yes',
+    ].join('\n')
+    const [record] = extractSanityRecords(decorated)
+    expect(record.value).toBe('PASS')
+    expect(missingSanityFacetsOf(record)).toEqual([])
+  })
+
+  it('an empty verdict on the marker line is not a record either', () => {
+    const [record] = extractSanityRecords(SANITY_BLOCK.replace('UX-sanity: PASS', 'UX-sanity:'))
+    expect(record.value).toBe('')
+    expect(
+      checkStageB(
+        pr({
+          body: GO,
+          files: UI_PR_FILES,
+          comments: [SANITY_BLOCK.replace('UX-sanity: PASS', 'UX-sanity:')],
+        }),
+      ).verdict,
+    ).toBe('violation')
+  })
+
+  it('the driver reads the record off the PR\u2019s own comments', () => {
+    const gh = makeGh({
+      prs: {
+        470: pr({ number: 470, body: GO, files: UI_PR_FILES, comments: [SANITY_BLOCK] }),
+      },
+    })
+    const result = runStageBLint({ prNumber: 470, severity: 'block', gh: gh.gh })
+    expect(result.verdict).toBe('pass')
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('the same PR without the comment exits 1 under BLOCK', () => {
+    const gh = makeGh({ prs: { 470: pr({ number: 470, body: GO, files: UI_PR_FILES }) } })
+    const result = runStageBLint({ prNumber: 470, severity: 'block', gh: gh.gh })
+    expect(result.verdict).toBe('violation')
+    expect(result.exitCode).toBe(1)
+  })
+
+  it('the repo PR template carries the UX-sanity marker, unfilled', () => {
+    const template = readFileSync(
+      resolve(process.cwd(), '.github/pull_request_template.md'),
+      'utf8',
+    )
+    expect(template).toMatch(/^UX-sanity: </m)
   })
 })
