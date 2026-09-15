@@ -310,6 +310,121 @@ describe('whitelist-blocks-lint: the Form and Feedback rows', () => {
   })
 })
 
+/**
+ * Round-1 review of PR #489, both blockers: two departure signals had a live
+ * false-BLOCK class, and on a BLOCK dial §4 demotes the guard on the FIRST
+ * confirmed false block. The shapes below are taken from this repo's current
+ * tree, so they are not hypotheses.
+ */
+describe('whitelist-blocks-lint: no false BLOCK on shapes that live on main (review #489)', () => {
+  const LAYOUT = 'src/app/(platform)/p/layout.tsx'
+  const PERIOD = 'src/modules/hours/view/PeriodSelect.tsx'
+  const FORM_PATH = 'src/app/(platform)/p/finance/requests/RequestFormSheet.tsx'
+
+  function findings(path: string, lines: string[]) {
+    const r = checkWhitelistBlocks({ pr: { number: 1, body: '', files: [file(path, lines)] } })
+    return r.findings.map((f) => f.class)
+  }
+
+  it('does not flag a fieldless server-action form (the sign-out button, p/layout.tsx:87)', () => {
+    expect(
+      findings(LAYOUT, [
+        "import { Button } from '@/ui/button'",
+        '<form',
+        '  action={async () => {',
+        "    'use server'",
+        "    await signOut({ redirectTo: '/p' })",
+        '  }}',
+        '>',
+        '  <Button type="submit">Выйти</Button>',
+        '</form>',
+      ]),
+    ).toEqual([])
+  })
+
+  it('does not flag a GET navigation form (the period filter, PeriodSelect.tsx:25)', () => {
+    expect(
+      findings(PERIOD, [
+        '<form method="get" action={basePath} className="hours-actions">',
+        '  <label className="hours-field">',
+        '    <select name="period" defaultValue={selectedId}>',
+        '      <option value={period.id}>{period.label}</option>',
+        '    </select>',
+        '  </label>',
+        '  <button type="submit">Показать</button>',
+        '</form>',
+      ]),
+    ).toEqual([])
+  })
+
+  it('does not flag the documented shadcn shape when the block lives OUTSIDE the edited hunk', () => {
+    // A one-line edit inside a screen that already composes `<Form {...form}>`
+    // adds no import at all, so the import-based signal cannot fire.
+    expect(
+      findings(FORM_PATH, [
+        '<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">',
+        '  <Input placeholder="Сумма" {...field} />',
+      ]),
+    ).toEqual([])
+  })
+
+  it('STILL flags a form the diff builds out of kit field primitives with no Form block', () => {
+    // The row has to stay alive: an added field-primitive import PLUS a form the
+    // same diff opens, and no `@/ui/form` anywhere in the added lines.
+    expect(
+      findings(FORM_PATH, [
+        "import { Input } from '@/ui/input'",
+        "import { Label } from '@/ui/label'",
+        'export function NewRequestForm() {',
+        '  const [amount, setAmount] = React.useState("")',
+        '  return (',
+        '    <form onSubmit={submit}>',
+        '      <Label htmlFor="amount">Сумма</Label>',
+        '      <Input id="amount" value={amount} onChange={(e) => setAmount(e.target.value)} />',
+        '    </form>',
+        '  )',
+        '}',
+      ]),
+    ).toEqual(['Form'])
+  })
+
+  it('clears that same diff once it imports the settled Form block', () => {
+    expect(
+      findings(FORM_PATH, [
+        "import { Input } from '@/ui/input'",
+        "import { Form, FormField, FormItem } from '@/ui/form'",
+        '<form onSubmit={form.handleSubmit(submit)}>',
+        '  <Input {...field} />',
+        '</form>',
+      ]),
+    ).toEqual([])
+  })
+
+  it('does not flag a kit field primitive that builds no form at all (a search box)', () => {
+    expect(
+      findings(FORM_PATH, [
+        "import { Input } from '@/ui/input'",
+        '<Input placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} />',
+      ]),
+    ).toEqual([])
+  })
+
+  it('does not flag a destructive-action `confirm()` — a prompt is not the outcome channel', () => {
+    // The registry's Feedback row settles where the OUTCOME of an act is
+    // reported. A confirmation prompt is the `dialog` / `AlertDialog`
+    // conversation, which the registry has not settled at all.
+    expect(
+      findings(FORM_PATH, ['  const ok = confirm("Точно удалить?")', '  if (!ok) return']),
+    ).toEqual([])
+    expect(findings(FORM_PATH, ['  if (!window.confirm("Точно удалить?")) return'])).toEqual([])
+  })
+
+  it('still flags `alert()` — that one IS an outcome announced outside the toast channel', () => {
+    expect(findings(FORM_PATH, ['  alert("Заявка отправлена")'])).toEqual(['Feedback'])
+    expect(findings(FORM_PATH, ['  window.alert("Заявка отправлена")'])).toEqual(['Feedback'])
+  })
+})
+
 describe('whitelist-blocks-lint: scope', () => {
   it('judges non-test *.tsx under src/, and never the kit itself', () => {
     expect(isWhitelistScopeFile('src/app/(platform)/p/finance/requests/RequestsTable.tsx')).toBe(
