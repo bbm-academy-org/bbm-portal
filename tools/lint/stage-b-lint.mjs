@@ -18,6 +18,26 @@
 // A missing marker, or a placeholder value (`TBD`, the unfilled PR-template
 // angle-bracket line), is a violation. A PR with no UI diff is skipped.
 //
+// THE GO CARRIES A SIBLING RECORD (#485). A `GO` — and only a `GO` — also
+// requires the LEAD's own UX-sanity pass to exist as an artifact: a
+// `UX-sanity:` block in the PR body, in one of the PR's own comments, or in a
+// linked-issue comment, carrying a verdict, the screenshots it judged and a
+// verdict per facet. The facets are task-cycle stage 5 item 4 (dominance /
+// tiers / equal boxes / legible states) and are NOT restated here; this guard
+// only checks that each one is answered.
+//
+// Why the GO and not the whole UI diff: `batched at #<gate>` defers the
+// acceptance itself, and `N/A … lead-certified` says there is no surface to
+// look at — neither has an invitation to a stand in front of it. The pass this
+// record stands for is the one that happens BEFORE that invitation.
+//
+// The owner rule is 2026-08-31 («green acceptance scenarios are not readiness
+// to show — run the elementary UX-sanity check first»); the reason it became a
+// mechanical gate is 2026-09-15, when PR #470's live stand was rejected and the
+// owner turned out to be the first reader of the screen. Nothing distinguished a
+// lead that ran the pass from one that skipped it, because the pass left no
+// artifact.
+//
 // SEVERITY: BLOCK since 2026-09-02 (#438). The severity of record is the §5 row
 // in docs/ci-guardrails.md plus the job in .github/workflows/pr-body-guards.yml
 // — read the plane off those, not off this comment. This SCRIPT still defaults to
@@ -115,6 +135,128 @@ const LEAD_CERTIFIED_RE = /^\**n\/a\b[\s\S]*[-–—]\s*lead-certified\b/i
 /** An unfilled PR-template line — reported distinctly from a missing marker. */
 const PLACEHOLDER_RE = /^(<.*>|\(.*\)|tbd|pending.*|todo.*|\?+)$/i
 
+// ── the UX-sanity record (#485) ──────────────────────────────────────────────
+
+/**
+ * The facets of the lead's UX-sanity pass, in the order task-cycle stage 5
+ * item 4 lists them, with `screenshots` first: the pass is run over CAPTURED
+ * FRAMES, not over the diff, so a record that does not name what it looked at
+ * records nothing. The canon of what each facet MEANS is that skill step — this
+ * list is only the set of questions that must be answered.
+ */
+export const SANITY_FACETS = ['screenshots', 'dominance', 'tiers', 'equal boxes', 'legible states']
+
+/** The `UX-sanity:` marker line, through list / quote / emphasis decoration. */
+const SANITY_MARKER_RE = /^[ \t>*_+-]*\*{0,2}ux[-\s]?sanity\*{0,2}\s*:\s*(.*)$/i
+
+/** A markdown heading — the end of the block a marker opens. */
+const HEADING_RE = /^ {0,3}#{1,6}\s/
+
+/**
+ * One facet line: `- Dominance: …`, `**Equal boxes:** …`, `> Legible-states: …`.
+ * The two-word facets accept a space, a hyphen or nothing between the words,
+ * because that is how they get typed.
+ */
+const SANITY_FACET_RE =
+  /^[ \t>*_+-]*\*{0,2}(screenshots?|dominance|tiers?|equal[-\s]?boxes|legible[-\s]?states)\*{0,2}\s*:\s*(.*)$/i
+
+/** A matched facet label, normalised onto its `SANITY_FACETS` id. */
+function sanityFacetId(label) {
+  const key = String(label)
+    .toLowerCase()
+    .replace(/[-\s]+/g, ' ')
+  if (key.startsWith('screenshot')) return 'screenshots'
+  if (key.startsWith('tier')) return 'tiers'
+  if (key.startsWith('equal')) return 'equal boxes'
+  if (key.startsWith('legible')) return 'legible states'
+  return key
+}
+
+/**
+ * Every `UX-sanity:` block in a text blob, each as its marker value (the
+ * verdict) plus the facets it answers. Text that TALKS ABOUT the block without
+ * recording one — HTML comments, fenced code blocks — is stripped first by the
+ * shared `stripNonEvidence`, exactly as the `Stage-B:` marker above is: the PR
+ * template ships this block unfilled with an instruction comment next to it, so
+ * without the strip the template itself would read as a completed pass.
+ *
+ * A block runs from its marker line to the next markdown heading, the next
+ * `UX-sanity:` marker, or the end of the text — so a later section cannot lend
+ * facets to a record that does not have them.
+ *
+ * @param {string|null|undefined} text
+ * @returns {{value: string, facets: Record<string, string>}[]}
+ */
+export function extractSanityRecords(text) {
+  const lines = stripNonEvidence(text).split(/\r?\n/)
+  const starts = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = SANITY_MARKER_RE.exec(lines[i])
+    if (m) starts.push({ index: i, value: (m[1] ?? '').replace(/^[\s*_]+/, '').trim() })
+  }
+
+  return starts.map((start, n) => {
+    const end = starts[n + 1]?.index ?? lines.length
+    const facets = {}
+    for (let i = start.index + 1; i < end; i++) {
+      if (HEADING_RE.test(lines[i])) break
+      const m = SANITY_FACET_RE.exec(lines[i])
+      if (!m) continue
+      const id = sanityFacetId(m[1])
+      if (facets[id] === undefined) facets[id] = (m[2] ?? '').trim()
+    }
+    return { value: start.value, facets }
+  })
+}
+
+/**
+ * The facets a record leaves unrecorded, in canon order. A `<…>` / `TBD` value
+ * counts as unrecorded: the PR template ships exactly those.
+ */
+export function missingSanityFacetsOf(record) {
+  return SANITY_FACETS.filter((facet) => {
+    const value = record?.facets?.[facet]
+    return value === undefined || value === '' || PLACEHOLDER_RE.test(value)
+  })
+}
+
+/** Is the marker line's own value a verdict, rather than blank or a stand-in? */
+function hasSanityVerdict(record) {
+  const value = String(record?.value ?? '').trim()
+  return value !== '' && !PLACEHOLDER_RE.test(value)
+}
+
+const SANITY_SHAPE = [
+  '    UX-sanity: <verdict>',
+  '    - Screenshots: <the paths or URLs judged>',
+  ...SANITY_FACETS.slice(1).map(
+    (f) => `    - ${f[0].toUpperCase()}${f.slice(1)}: <the verdict for this facet>`,
+  ),
+]
+
+/**
+ * The sibling half of a `GO`: has the lead's UX-sanity pass left an artifact?
+ * Returns the best (most complete) record found and what it still leaves open.
+ *
+ * @param {string[]} texts every surface that may carry the record
+ */
+export function findSanityRecord(texts) {
+  const records = texts.flatMap((t) => extractSanityRecords(t))
+  if (records.length === 0) return { record: null, missing: [...SANITY_FACETS], verdict: false }
+  const scored = records.map((record) => ({
+    record,
+    missing: missingSanityFacetsOf(record),
+    verdict: hasSanityVerdict(record),
+  }))
+  const complete = scored.find((s) => s.missing.length === 0 && s.verdict)
+  if (complete) return complete
+  return scored
+    .slice()
+    .sort(
+      (a, b) => a.missing.length + (a.verdict ? 0 : 1) - (b.missing.length + (b.verdict ? 0 : 1)),
+    )[0]
+}
+
 /** GitHub auto-close keywords — the same set GitHub itself acts on. */
 const CLOSE_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi
 
@@ -197,6 +339,38 @@ export function checkStageB(pr, issueComments = []) {
   const evidence = markerValues.find(isEvidence) ?? null
 
   if (evidence) {
+    // Only a GO carries the sibling record: it is the one shape with an
+    // invitation to a live stand in front of it (#485).
+    if (GO_RE.test(evidence)) {
+      const sanityTexts = [
+        pr?.body ?? '',
+        ...(pr?.comments ?? []).map((c) => (typeof c === 'string' ? c : (c?.body ?? ''))),
+        ...issueComments,
+      ]
+      const sanity = findSanityRecord(sanityTexts)
+      if (sanity.missing.length > 0 || !sanity.verdict) {
+        const head =
+          sanity.record === null
+            ? `PR #${number} records a Stage-B GO on a UI diff but NO UX-sanity record.`
+            : !sanity.verdict && sanity.missing.length === 0
+              ? `PR #${number}'s UX-sanity record states no verdict on its marker line.`
+              : `PR #${number}'s UX-sanity record leaves ${sanity.missing.length} of ${SANITY_FACETS.length} item(s) unrecorded: ${sanity.missing.join(', ')}.`
+        return {
+          userFacing: true,
+          verdict: 'violation',
+          renderFiles: rendered,
+          markerValues,
+          evidence: null,
+          message: [
+            head,
+            'task-cycle stage 5 item 4: the lead runs an elementary UX-sanity pass over the',
+            'CAPTURED SCREENSHOTS before the owner is invited to the stand (owner rule, 2026-08-31).',
+            'That pass is an artifact since #485 — post it as a PR comment, as:',
+            ...SANITY_SHAPE,
+          ].join('\n'),
+        }
+      }
+    }
     return {
       userFacing: true,
       verdict: 'pass',
@@ -232,8 +406,13 @@ export function checkStageB(pr, issueComments = []) {
 
 // ── gh access (argv arrays, never a shell string — `tools/gh/lib/gh.mjs` canon) ─
 
+/**
+ * The PR view. `comments` is the PR's OWN conversation, read since #485: the
+ * lead posts the `UX-sanity:` record there, before the owner is invited to the
+ * stand, so the PR body is not the only surface that can carry it.
+ */
 export function ghPrArgs(prNumber) {
-  return ['pr', 'view', String(prNumber), '--repo', REPO, '--json', 'number,body']
+  return ['pr', 'view', String(prNumber), '--repo', REPO, '--json', 'number,body,comments']
 }
 /**
  * ONE page of the PR's changed files. The `files` field of `gh pr view` stops at

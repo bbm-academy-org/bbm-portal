@@ -136,6 +136,11 @@ jobs:
   # unfilled template (#359) — so the guard can miss a UI diff but cannot invent
   # one. Unblocked in the PR body with a `Stage-B:` line, in one of the three
   # shapes .claude/rules/design-process.md §2 defines.
+  # Scope extended 2026-09-15 (#485), at the same BLOCK severity: a recorded
+  # `Stage-B: GO` on a UI diff now also needs the lead's `UX-sanity:` record —
+  # in the PR body, one of the PR's OWN comments (hence the `comments` field on
+  # the `gh pr view` call), or a linked-issue comment. Unblocked by posting that
+  # comment; this workflow's `edited` trigger re-runs the job without a rebuild.
   stage-b:
     runs-on: ubuntu-latest
     timeout-minutes: 10
