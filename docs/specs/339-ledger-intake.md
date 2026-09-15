@@ -303,8 +303,9 @@ a declared clause.
   unchanged)_.
 - **EARS-530.** Reading `/p/finance` shall remain open to every platform
   member (spec 338 EARS-324/325), with document content excluded
-  (EARS-523). This covers **every** reading surface of the module — register,
-  P&L, cash flow, unit cost, break-even, fact-vs-finmodel, scenarios — and no
+  (EARS-523). This covers **every** reading surface of the module — the
+  request list (EARS-534), register, P&L, cash flow, unit cost, break-even,
+  fact-vs-finmodel, scenarios — and no
   «finance viewer» role exists: reading needs no finance role at all _(owner
   decision 32, 2026-09-14 — BBM's finance is an open book)_.
 - **EARS-502.** The system shall let a signed-in platform member holding
@@ -312,8 +313,22 @@ a declared clause.
   their own request while it is `draft` or `submitted` (the money and dimension
   fields the status machine leaves editable there — EARS-524), cancel their own
   `submitted` request, attach documents to their own items
-  and see their own requests with statuses (decision 8, US-1, US-2) — the
-  submitter exemption, the one deliberate carve-out from EARS-501.
+  and see the requests of **every** member with statuses in the list
+  (decision 8, US-1, US-2) — the submitter exemption, the one deliberate
+  carve-out from EARS-501. _(Amended by owner decision 35, #115, 2026-09-14:
+  the list read was «their own requests» and is now every member's — the
+  reading clause is EARS-534. Everything else in this clause stays OWN-only:
+  editing, cancelling and submitting another member's request are still
+  refused, and a document's content stays narrowed by EARS-523.)_
+- **EARS-534.** The request list on `/p/finance/requests` shall show every
+  signed-in platform member the requests of **every** member — date,
+  submitter, amount, purpose, status, refusal reason — with no finance role
+  and no viewer role involved: EARS-530's open reading plane applied to intake
+  _(owner decision 35, #115, 2026-09-14 — BBM's finance is an open book, and
+  this widens EARS-502's own-only list read)_. It widens **reading the list**
+  and nothing else: a document's content stays readable only per EARS-523, so
+  another member's row carries no document; and getting, editing, cancelling or
+  submitting another member's request is still refused (EARS-502, EARS-524).
 
 ### B. The intake spine (pluggable source layer)
 
@@ -565,14 +580,14 @@ The retired requirement numbers 517–521 are not reused.
 
 ## CRUD check (task-cycle stage 1a)
 
-| Resource                                | Create                                                                                                                                  | Read                                                        | Update                                                                                      | Delete                                                                                                |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| requests (`/p/finance/requests`)        | any platform member (EARS-502)                                                                                                          | own — the submitter; all — entry/approve roles              | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512)           |
-| intake items (`/p/finance/intake`)      | `finance-entry` (manual); request producers                                                                                             | entry/approve roles                                         | entry role per the status machine; **never after `posted`** (EARS-505)                      | creator or entry role deletes `draft` only (status machine); later — refuse/cancel, not delete        |
-| documents                               | submitter on own items; entry role anywhere                                                                                             | submitter — own items' docs; entry/approve — all (EARS-523) | `kind` only, while no linked item is posted                                                 | while unlinked or linked only to mutable items; `refused`/`cancelled`/`posted` retain them (EARS-516) |
-| counterparties                          | any member inline from the forms; entry role (EARS-532)                                                                                 | every finance reader                                        | rename — admin (reference administration, EARS-529)                                         | none (referenced by postings); merge out of scope in v1                                               |
-| purpose proposals                       | any platform member from the request form (EARS-526)                                                                                    | admin (reference cabinet), proposer sees own                | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                            |
-| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501); the posting act also enters the paying account, `occurred_on` and the account-side amount (EARS-533) | queue — approve role                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                                   |
+| Resource                                | Create                                                                                                                                  | Read                                                                                                                    | Update                                                                                      | Delete                                                                                                |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| requests (`/p/finance/requests`)        | any platform member (EARS-502)                                                                                                          | the list — every platform member (EARS-534); one request — own (submitter) or entry/approve roles; documents — EARS-523 | submitter/entry in `draft`/`submitted`; edit in `approved` → back to `submitted` (EARS-524) | no hard delete past `draft`; submitter cancels own `submitted`; approver refuses (EARS-512)           |
+| intake items (`/p/finance/intake`)      | `finance-entry` (manual); request producers                                                                                             | entry/approve roles                                                                                                     | entry role per the status machine; **never after `posted`** (EARS-505)                      | creator or entry role deletes `draft` only (status machine); later — refuse/cancel, not delete        |
+| documents                               | submitter on own items; entry role anywhere                                                                                             | submitter — own items' docs; entry/approve — all (EARS-523)                                                             | `kind` only, while no linked item is posted                                                 | while unlinked or linked only to mutable items; `refused`/`cancelled`/`posted` retain them (EARS-516) |
+| counterparties                          | any member inline from the forms; entry role (EARS-532)                                                                                 | every finance reader                                                                                                    | rename — admin (reference administration, EARS-529)                                         | none (referenced by postings); merge out of scope in v1                                               |
+| purpose proposals                       | any platform member from the request form (EARS-526)                                                                                    | admin (reference cabinet), proposer sees own                                                                            | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                            |
+| approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501); the posting act also enters the paying account, `occurred_on` and the account-side amount (EARS-533) | queue — approve role                                                                                                    | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                                   |
 
 Deliberately unsupported: editing or deleting anything already posted (the
 ledger's own EARS-313 stands); posting without a document (EARS-506);
@@ -592,7 +607,9 @@ register, that dependency is named in the step:
 
 1. **Two roles exist and bite.** Sign in as a member with neither role:
    `/p/finance/requests` lets you file a request with an invoice attached and
-   shows your list; `/p/finance/intake` refuses (EARS-501/502). Grant
+   shows the list of EVERY member's requests, with «мои» preselected and no
+   document on someone else's row (EARS-534/EARS-523);
+   `/p/finance/intake` refuses (EARS-501/502). Grant
    `finance-entry` to a test user (an IdP console act —
    `infra/dev-stand/idp/bootstrap.md` §5a) — the intake list opens, the
    approve actions are still refused (EARS-501).
