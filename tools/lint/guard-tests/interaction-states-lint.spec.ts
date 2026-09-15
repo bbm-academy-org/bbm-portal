@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   checkInteractionStates,
+  EARLIEST_PROMOTION,
+  kitComponentNames,
   parseArgs,
   runInteractionStatesLint,
   severityFromArgv,
@@ -355,31 +357,56 @@ describe('interaction-states-lint: what the widened rule deliberately does NOT j
     expect(result.verdict).toBe('pass')
   })
 
+  /**
+   * Each name is routed through the module it really lives in, so the case
+   * proves the exemption survives REAL kit resolution rather than passing only
+   * because the exempt test runs before the kit lookup (review of PR #488).
+   */
   it.each([
-    'Button',
-    'InputGroupButton',
-    'PaginationLink',
-    'AlertDialogAction',
-    'AlertDialogCancel',
-    'CalendarDayButton',
-    'DropdownMenuItem',
-    'DropdownMenuCheckboxItem',
-    'DropdownMenuRadioItem',
-    'DropdownMenuSubTrigger',
-    'SelectItem',
-    'SelectTrigger',
-    'CommandItem',
-    'TabsTrigger',
-    'Checkbox',
-    'Switch',
-    'SidebarMenuButton',
-    'SidebarMenuSubButton',
-    'SidebarMenuAction',
-  ])('leaves the state-owning kit control `%s` alone', (name) => {
+    ['Button', '@/ui/button'],
+    ['InputGroupButton', '@/ui/input-group'],
+    ['PaginationLink', '@/ui/pagination'],
+    ['AlertDialogAction', '@/ui/alert-dialog'],
+    ['AlertDialogCancel', '@/ui/alert-dialog'],
+    ['CalendarDayButton', '@/ui/calendar'],
+    ['DropdownMenuItem', '@/ui/dropdown-menu'],
+    ['DropdownMenuCheckboxItem', '@/ui/dropdown-menu'],
+    ['DropdownMenuRadioItem', '@/ui/dropdown-menu'],
+    ['DropdownMenuSubTrigger', '@/ui/dropdown-menu'],
+    ['SelectItem', '@/ui/select'],
+    ['SelectTrigger', '@/ui/select'],
+    ['CommandItem', '@/ui/command'],
+    ['TabsTrigger', '@/ui/tabs'],
+    ['Checkbox', '@/ui/checkbox'],
+    ['Switch', '@/ui/switch'],
+    ['SidebarMenuButton', '@/ui/sidebar'],
+    ['SidebarMenuSubButton', '@/ui/sidebar'],
+    ['SidebarMenuAction', '@/ui/sidebar'],
+  ])('leaves the state-owning kit control `%s` alone', (name, module) => {
     const result = checkInteractionStates([
-      file(TABLE, [`import { ${name} } from '@/ui/kit'`, `<${name} onClick={run} />`]),
+      file(TABLE, [`import { ${name} } from '${module}'`, `<${name} onClick={run} />`]),
     ])
     expect(result.verdict).toBe('pass')
+    // The name really is one the kit exports, so the case is not vacuous.
+    expect(kitComponentNames().has(name)).toBe(true)
+  })
+
+  /**
+   * The branch the open `DEBT.md` entry `2026-09-03-435-uppercase-hole` leans
+   * on: a wrapper DECLARED in the file shadows the kit name, so the kit lookup
+   * must not claim it. The sibling case above uses a name the kit does not
+   * export at all, which exits through a different branch.
+   */
+  it('leaves a kit NAME re-declared in the file alone — the tag is the local one', () => {
+    const result = checkInteractionStates([
+      file(TABLE, [
+        'function TableRow({ children }: { children: React.ReactNode }) {',
+        '  return <tr className="hover:bg-accent focus-visible:ring-2">{children}</tr>',
+        '}',
+        '<TableRow onClick={open} className="cursor-pointer" />',
+      ]),
+    ])
+    expect(result.findings.map((f) => f.tag)).toEqual([])
   })
 
   it('does not report a kit clickable twice when the tag is also a `Button` host', () => {
@@ -401,5 +428,34 @@ describe('interaction-states-lint: what the widened rule deliberately does NOT j
     const files = [file(TABLE, ['<Widget onClick={open} />'])]
     expect(checkInteractionStates(files, { kitComponents: [] }).verdict).toBe('pass')
     expect(checkInteractionStates(files, { kitComponents: ['Widget'] }).verdict).toBe('violation')
+  })
+})
+
+/**
+ * §4 clause 2: the WARN→BLOCK clock runs from the guard landing «or since the
+ * last substantive change to its rule — a wording change to a message is not
+ * substantive; a change to what it matches is». #483 changes WHAT IT MATCHES
+ * (capitalised kit tags are now in scope), so the clock restarts on the day the
+ * widening lands, 2026-09-15, and the four weeks that clause yields end on
+ * 2026-10-13. The precedent is one row below this guard's in
+ * `docs/ci-guardrails.md` §5: `ears-naming` was narrowed by #447/#465, «§4
+ * clause 2 restarted the clock at the day it landed, 2026-09-03», earliest
+ * promotion 2026-10-01 — the same 28 days.
+ *
+ * The date is asserted on the line the guard PRINTS, not on a comment: that is
+ * the copy a reader acts on, and asserting it is what keeps the §5 row and
+ * `usage()` in step with it.
+ */
+describe('interaction-states-lint: the promotion clock restarted with the widening (#483)', () => {
+  it('names 2026-10-13 — four weeks from the day the widened rule landed', () => {
+    expect(EARLIEST_PROMOTION).toBe('2026-10-13')
+  })
+
+  it('prints that date on the WARN line of every finding', () => {
+    const gh = makeGh({ 501: [file(BOARD, ['<div onClick={go} />'])] })
+    const run = runInteractionStatesLint({ prNumber: 501, severity: 'warn', gh: gh.gh })
+    expect(run.verdict).toBe('violation')
+    expect(run.lines.join('\n')).toContain(`earliest promotion ${EARLIEST_PROMOTION}`)
+    expect(run.lines.join('\n')).not.toContain('2026-10-01')
   })
 })
