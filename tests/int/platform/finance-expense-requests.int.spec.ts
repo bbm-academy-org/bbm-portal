@@ -23,6 +23,7 @@ import {
   getExpenseRequest,
   listExpenseRequests,
   listFinanceDocuments,
+  listFinanceDocumentsByItems,
   postIntakeItem,
   readFinanceDocument,
   refuseExpenseRequest,
@@ -225,7 +226,7 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
     expect(approved).toMatchObject({ status: 'approved', decidedBy: refs.approverMemberId })
   })
 
-  it('EARS-502: a role-less member creates, edits, submits, lists and cancels only their own request, including its documents', async () => {
+  it('EARS-502/534/523: a role-less member creates, edits, submits and cancels only their OWN request, but the list is every member’s — without their documents', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs))
     const editedDraft = await editExpenseRequest(MEMBER, request.id, {
@@ -244,10 +245,25 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
       (await listFinanceDocuments(MEMBER, { intakeItemId: request.id })).map((item) => item.id),
     ).toEqual([document.id])
 
+    // Decision 35 (#115, 2026-09-14), EARS-534: the LIST is an open book — a
+    // member holding neither flow role reads every member's request. Before the
+    // decision this same actor read an empty list; the three boundaries below
+    // are what the widening deliberately did NOT move (EARS-502/523/524).
     const stranger = { email: 'request-stranger@bbm.academy', roles: ['platform-user'] }
     await seedMember(stranger.email, 'Request Stranger')
-    expect(await listExpenseRequests(stranger)).toEqual([])
+    expect((await listExpenseRequests(stranger)).map((item) => item.id)).toContain(request.id)
+    // EARS-523: the row travels, the document does not.
+    expect(await listFinanceDocumentsByItems(stranger, [request.id])).toEqual(new Map())
+    await expect(getExpenseRequest(stranger, request.id)).rejects.toBeInstanceOf(
+      FinanceAccessRefusal,
+    )
     await expect(editExpenseRequest(stranger, request.id, { amount: 1n })).rejects.toBeInstanceOf(
+      FinanceAccessRefusal,
+    )
+    await expect(submitExpenseRequest(stranger, request.id)).rejects.toBeInstanceOf(
+      FinanceAccessRefusal,
+    )
+    await expect(cancelExpenseRequest(stranger, request.id)).rejects.toBeInstanceOf(
       FinanceAccessRefusal,
     )
 
