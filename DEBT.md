@@ -16,14 +16,8 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
   `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
   MUST preserve that anchor as the tombstone for Git's union merge.
 - **Permanent append marker:** add new active entries immediately before
-  `- [ ] 2026-09-15 `interaction-states`(#483, PR #488) can now INVENT a finding in one bounded case, which is a break with this family's «the guard can miss, it cannot invent» direction (canon §8) and is written down rather than left to be found.`resolveComponentNames` reads the diff's ADDED lines only, so a file whose import lines are not part of the diff, rendering an APP-LOCAL component whose name the kit also exports (`Card`, `Table`, `Badge`, `Alert`are all plausible local names), falls through`shadowed`and is judged as kit because`kit.has(name)`is true from the tree. The tree lookup is deliberately NOT weakened to close this: it is what catches PR #470's row when the import line is outside the diff. Bounded by the name collision, the WARN dial and the call-site`interaction-states-ok: <reason>` escape — return condition: the FIRST confirmed false positive of this shape (which under §4 also blocks promotion), or the guard's §4 promotion review on 2026-10-13, whichever comes first; the fix is resolving names against the file at HEAD rather than against added lines.
-
-<!-- debt-entry-end: 2026-09-15-483-samename-collision -->
-
-<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
-
-sweep notes live after that marker.
-
+  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
+  sweep notes live after that marker.
 - **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
   two branches that append different root-ledger entry blocks keep both blocks
   instead of conflicting. Union does not guarantee relative order between two
@@ -952,6 +946,25 @@ Entry format:
 - [ ] 2026-09-03 `.claude/skills/task-cycle/SKILL.md` stage 5 part 3 says `.playwright-mcp/` is «the only target the screenshot-path-guard accepts», but `tools/hooks/screenshot-path-guard.mjs` exports `ALLOWED_OUTPUT_DIRS = [SERVER_OUTPUT_DIR, 'test-results', 'playwright-report']` (with `SERVER_OUTPUT_DIR = '.playwright-mcp'`, so all three of `.playwright-mcp`, `test-results` and `playwright-report` are accepted) and its denial message names all three. Following the text is still correct behaviour, so this is an accuracy fix, not a defect — return condition: the next PR that touches stage 5 of `task-cycle`, which rewords it to «the target the screenshot-path-guard steers capture to».
 
 <!-- debt-entry-end: 2026-09-03-437-guard-only-target -->
+
+- [ ] 2026-09-15 #487's fix moved the `[data-bbm-ui]` scope into the seven kit
+      components that portal, and `tests/unit/ui-kit.spec.ts` asserts it by
+      RENDERING each of them open — so the list of covered surfaces is
+      enumerated by hand. An EIGHTH portaled component added to the kit (a
+      `HoverCard`, a `ContextMenu`, a `Menubar`) is scoped only if whoever adds
+      it also adds a case there; nothing fails otherwise. A mechanical guard —
+      a lint that reads the kit's sources and refuses a Radix `Portal` whose
+      child carries no `data-bbm-ui` — was deliberately NOT built here: #487's
+      own scope says to route that question rather than widen the task, and the
+      kit is seven files with one reviewer-visible convention — return
+      condition: the first `shadcn add` of a component that portals, or the
+      third time that test's list is edited (#487)
+
+<!-- debt-entry-end: 2026-09-15-487portalscope -->
+
+- [ ] 2026-09-15 `interaction-states` (#483, PR #488) can now INVENT a finding in one bounded case, which is a break with this family's «the guard can miss, it cannot invent» direction (canon §8) and is written down rather than left to be found. `resolveComponentNames` reads the diff's ADDED lines only, so a file whose import lines are not part of the diff, rendering an APP-LOCAL component whose name the kit also exports (`Card`, `Table`, `Badge`, `Alert` are all plausible local names), falls through `shadowed` and is judged as kit because `kit.has(name)` is true from the tree. The tree lookup is deliberately NOT weakened to close this: it is what catches PR #470's row when the import line is outside the diff. Bounded by the name collision, the WARN dial and the call-site `interaction-states-ok: <reason>` escape — return condition: the FIRST confirmed false positive of this shape (which under §4 clause 3 also blocks promotion), or the guard's §4 promotion review on 2026-10-13, whichever comes first; the fix is resolving names against the file at HEAD rather than against added lines.
+
+<!-- debt-entry-end: 2026-09-15-483-samename-collision -->
 
 <!-- debt-append-marker -->
 

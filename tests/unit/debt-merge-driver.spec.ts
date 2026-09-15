@@ -425,8 +425,15 @@ describe('DEBT.md merge protocol', () => {
     expect(markerAt).toBeGreaterThan(activeStart)
 
     // Every entry bullet and every end anchor lives between the two — nothing
-    // above the active region, nothing after the permanent marker.
+    // above the active region, nothing after the permanent marker. Fenced text
+    // is skipped: the «Entry format» block quotes both shapes as a template.
+    let fenced = false
     for (const [index, line] of lines.entries()) {
+      if (line.startsWith('```')) {
+        fenced = !fenced
+        continue
+      }
+      if (fenced) continue
       if (!/^- \[[ x]\] 20\d\d-\d\d-\d\d /.test(line) && !line.startsWith('<!-- debt-entry-end: '))
         continue
       expect(index, line.slice(0, 80)).toBeGreaterThan(activeStart)
