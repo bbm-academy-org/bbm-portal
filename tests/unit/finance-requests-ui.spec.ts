@@ -656,6 +656,44 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     const sheet = screen.getByRole('dialog')
     expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
     expect(within(sheet).queryByRole('button', { name: 'Приложить документ' })).toBeNull()
+  })
+
+  /**
+   * EARS-523/534 — an EMPTY document block is not the same fact for every reader.
+   *
+   * Since decision 35 (#115, 2026-09-14) the «Все» scope hands this sheet
+   * another member's request, and EARS-523 strips its documents on the way. For
+   * that reader «Документ не приложен.» would be a statement about the
+   * REQUEST that the screen has no standing to make — it cannot tell a request
+   * with no receipt from one whose receipt is none of this reader's business.
+   */
+  it('EARS-523/534: an empty document block on someone else’s request names the narrowing, not an absence', async () => {
+    refine.custom.data = snapshot({
+      permissions: { canApprove: false, canEnter: false },
+      requests: [item({ id: 2, status: 'approved', own: false, documents: [] })],
+    })
+    renderBoard()
+    pick('tab', 'Все')
+    openCard(2)
+
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+    expect(
+      within(sheet).getByText('Документ виден подавшему заявку и финансовой роли.'),
+    ).toBeTruthy()
+    expect(within(sheet).queryByText('Документ не приложен.')).toBeNull()
+  })
+
+  it('EARS-506: an empty document block on OWN request still reports the absence', async () => {
+    refine.custom.data = snapshot({
+      permissions: { canApprove: false, canEnter: false },
+      requests: [item({ id: 2, status: 'submitted', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(2)
+
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
     expect(within(sheet).getByText('Документ не приложен.')).toBeTruthy()
   })
 })
