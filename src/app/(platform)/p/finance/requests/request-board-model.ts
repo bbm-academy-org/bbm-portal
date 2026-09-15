@@ -247,6 +247,27 @@ export function canAttachDocument(request: RequestBoardItem, canEnter: boolean):
   )
 }
 
+/**
+ * What an EMPTY document block is allowed to SAY — and it is not one sentence.
+ *
+ * «Документ не приложен.» is an observation only for a reader who would
+ * have been shown the document had there been one. Since owner decision 35
+ * (#115, 2026-09-14; spec 339 EARS-534) the list is every member's, while
+ * EARS-523 keeps document CONTENT to the submitter and the two finance flow
+ * roles — so a stranger's sheet receives an empty array for a request that may
+ * well carry a receipt. Telling that reader nothing is attached would be a
+ * false statement about the request; telling them who can see it is true and
+ * also useful, because it names the way to the document.
+ */
+export function emptyDocumentNote(
+  request: RequestBoardItem,
+  canEnter: boolean,
+  canApprove: boolean,
+): string {
+  if (request.own || canEnter || canApprove) return 'Документ не приложен.'
+  return 'Документ виден подавшему заявку и финансовой роли.'
+}
+
 /** The two refusals worth making before the bytes leave. Null means «send it». */
 export function documentUploadRefusal(file: {
   name: string

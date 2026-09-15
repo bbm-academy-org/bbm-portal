@@ -54,6 +54,7 @@ import {
   currencyPrecision,
   DOCUMENT_UPLOAD_ACCEPT,
   documentUploadRefusal,
+  emptyDocumentNote,
   formatRequestMoney,
   postingActNeedsMoneyFacts,
 } from './request-board-model'
@@ -579,7 +580,9 @@ export function RequestDetailsSheet({
                 </div>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">Документ не приложен.</p>
+              <p className="text-sm text-muted-foreground">
+                {emptyDocumentNote(request, canEnter, canApprove)}
+              </p>
             )}
             {canAttachDocument(request, canEnter) ? (
               <AttachDocumentForm pending={uploading} failure={uploadFailure} onAttach={onAttach} />
