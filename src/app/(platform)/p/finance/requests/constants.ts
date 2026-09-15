@@ -3,6 +3,19 @@ import type { FinanceIntakeStatus } from '@/lib/finance'
 /** The one address the board reads and writes through. */
 export const REQUESTS_ENDPOINT = '/p/finance/api/requests'
 
+/**
+ * The Refine RESOURCE the requests register is read as (#388 wave 3).
+ *
+ * Adopting the whitelist's List block means the rows arrive through the data
+ * provider's `getList`, not through a bare snapshot read: `useTable` owns the
+ * page, the order and the scope filter, and the block owns the head, the rows,
+ * the skeleton, the empty state, the pager and — since #388 — the totals row.
+ */
+export const REQUESTS_RESOURCE = 'finance-requests'
+
+/** «Кому BBM должен» (EARS-527) read as its own register through the block. */
+export const LIABILITIES_RESOURCE = 'finance-liabilities'
+
 /** Where a confirming document is created (EARS-514): multipart, one POST. */
 export const DOCUMENTS_ENDPOINT = '/p/finance/api/documents'
 

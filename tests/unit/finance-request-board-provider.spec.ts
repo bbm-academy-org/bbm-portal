@@ -1,4 +1,4 @@
-// Specifies the requests board's `custom`-only data provider
+// Specifies the requests board's data provider
 // (src/app/(platform)/p/finance/requests/request-board-provider.ts). The board
 // writes JSON to the act endpoints and MULTIPART to the document endpoint
 // (spec 339 EARS-514) through the same provider, so that both report through
@@ -66,16 +66,137 @@ describe('request board data provider (spec 339 §C)', () => {
     ).rejects.toMatchObject({ statusCode: 413, message: 'Файл больше предела (EARS-514).' })
   })
 
-  // The invariant the file header calls load-bearing: an accidental `useList`
-  // on this surface must fail loudly at the call, not answer with an empty
-  // list that reads as «there are no requests».
-  it('refuses every CRUD method with 501 instead of answering an empty collection', () => {
+  // A request is written through its ACTS, never through a CRUD verb — and an
+  // accidental `useOne` / `useCreate` must fail loudly at the call rather than
+  // answer with an empty record. `getList` is no longer among them: since the
+  // owner's 2026-09-15 acceptance the register is read through the whitelist's
+  // List block, which asks the provider for one page.
+  it('refuses every WRITE verb with 501 instead of answering an empty record', () => {
     const provider = createRequestBoardDataProvider(okFetch() as unknown as typeof fetch)
 
-    for (const method of ['getList', 'getOne', 'create', 'update', 'deleteOne'] as const) {
+    for (const method of ['getOne', 'create', 'update', 'deleteOne'] as const) {
       expect(() => (provider[method] as () => unknown)()).toThrowError(
         expect.objectContaining({ statusCode: 501 }),
       )
     }
+  })
+})
+
+const SNAPSHOT = {
+  permissions: { canApprove: true, canEnter: true },
+  references: {
+    accounts: [],
+    counterparties: [],
+    currencies: [{ code: 'RUB', name: 'Российский рубль', precision: 2 }],
+    products: [],
+    projects: [],
+    purposes: [],
+  },
+  requests: [
+    {
+      id: 1,
+      own: true,
+      status: 'submitted',
+      occurredOn: '2026-08-01',
+      amount: '100',
+      currency: 'RUB',
+    },
+    {
+      id: 2,
+      own: false,
+      status: 'refused',
+      occurredOn: '2026-08-20',
+      amount: '200',
+      currency: 'RUB',
+    },
+    {
+      id: 3,
+      own: true,
+      status: 'posted',
+      occurredOn: '2026-08-10',
+      amount: '300',
+      currency: 'RUB',
+    },
+  ],
+  liabilities: [{ memberId: 4, memberName: 'М. Иванова', currency: 'RUB', balance: '500' }],
+}
+
+function snapshotFetch() {
+  return vi.fn(
+    async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(SNAPSHOT), { status: 200 }),
+  )
+}
+
+// The register half of the same provider (#388 wave 3). The block asks for ONE
+// page; the provider reads the board snapshot and answers with the page, the
+// size of the whole filtered register and its per-currency totals.
+describe('request board data provider — the register the List block reads (#388)', () => {
+  it('answers getList with the page, the filtered total and the totals row', async () => {
+    const provider = createRequestBoardDataProvider(snapshotFetch() as unknown as typeof fetch)
+
+    const answer = (await provider.getList({
+      resource: 'finance-requests',
+      pagination: { currentPage: 1, pageSize: 2, mode: 'server' },
+    })) as unknown as { data: { id: number }[]; total: number; totals: unknown }
+
+    expect(answer.data.map((row) => row.id)).toEqual([2, 3])
+    expect(answer.total).toBe(3)
+    expect(answer.totals).toEqual([{ currency: 'RUB', amount: '600' }])
+  })
+
+  it('narrows the register to the reader’s own filings when «мои» is the scope', async () => {
+    const provider = createRequestBoardDataProvider(snapshotFetch() as unknown as typeof fetch)
+
+    const answer = (await provider.getList({
+      resource: 'finance-requests',
+      filters: [{ field: 'own', operator: 'eq', value: true }],
+    })) as unknown as { data: { id: number }[]; total: number }
+
+    expect(answer.data.map((row) => row.id)).toEqual([3, 1])
+    expect(answer.total).toBe(2)
+  })
+
+  it('carries the whole snapshot alongside the page, so the screen reads one moment', async () => {
+    const provider = createRequestBoardDataProvider(snapshotFetch() as unknown as typeof fetch)
+
+    const answer = (await provider.getList({ resource: 'finance-requests' })) as unknown as {
+      snapshot: { permissions: { canApprove: boolean } }
+    }
+
+    expect(answer.snapshot.permissions.canApprove).toBe(true)
+  })
+
+  it('answers the liabilities register with a row per member and currency', async () => {
+    const provider = createRequestBoardDataProvider(snapshotFetch() as unknown as typeof fetch)
+
+    const answer = (await provider.getList({ resource: 'finance-liabilities' })) as unknown as {
+      data: { id: string; memberName: string }[]
+      total: number
+    }
+
+    expect(answer.total).toBe(1)
+    expect(answer.data[0]).toMatchObject({ id: '4-RUB', memberName: 'М. Иванова' })
+  })
+
+  it('refuses a resource this board does not serve rather than answering an empty list', async () => {
+    const provider = createRequestBoardDataProvider(snapshotFetch() as unknown as typeof fetch)
+
+    await expect(provider.getList({ resource: 'invoices' })).rejects.toMatchObject({
+      statusCode: 404,
+    })
+  })
+
+  it('carries the server refusal of the snapshot read through as the provider error', async () => {
+    const fetchImpl = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response('Заявки недоступны.', { status: 403 }),
+    )
+    const provider = createRequestBoardDataProvider(fetchImpl as unknown as typeof fetch)
+
+    await expect(provider.getList({ resource: 'finance-requests' })).rejects.toMatchObject({
+      statusCode: 403,
+      message: 'Заявки недоступны.',
+    })
   })
 })
