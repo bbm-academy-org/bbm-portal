@@ -79,7 +79,13 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 import { pagePrFiles, prFilesArgs, prFilesPageSize } from './lib/gh.mjs'
-import { extractPartOfIssues, stripNonEvidence } from './lib/guard.mjs'
+import {
+  extractMarkerBlocks,
+  extractPartOfIssues,
+  isPlaceholderValue,
+  missingFacetsOf,
+  stripNonEvidence,
+} from './lib/guard.mjs'
 
 const TAG = '[stage-b]'
 
@@ -132,8 +138,9 @@ const BATCHED_RE = /^\**batched\s+at\s+#\d+/i
  */
 const LEAD_CERTIFIED_RE = /^\**n\/a\b[\s\S]*[-–—]\s*lead-certified\b/i
 
-/** An unfilled PR-template line — reported distinctly from a missing marker. */
-const PLACEHOLDER_RE = /^(<.*>|\(.*\)|tbd|pending.*|todo.*|\?+)$/i
+// An unfilled PR-template line — reported distinctly from a missing marker —
+// is `isPlaceholderValue` from `lib/guard.mjs`, shared with `ux-record` since
+// the review of PR #493 (MAJOR 2): the two local copies had already drifted.
 
 // ── the UX-sanity record (#485) ──────────────────────────────────────────────
 
@@ -148,9 +155,6 @@ export const SANITY_FACETS = ['screenshots', 'dominance', 'tiers', 'equal boxes'
 
 /** The `UX-sanity:` marker line, through list / quote / emphasis decoration. */
 const SANITY_MARKER_RE = /^[ \t>*_+-]*\*{0,2}ux[-\s]?sanity\*{0,2}\s*:\s*(.*)$/i
-
-/** A markdown heading — the end of the block a marker opens. */
-const HEADING_RE = /^ {0,3}#{1,6}\s/
 
 /**
  * One facet line: `- Dominance: …`, `**Equal boxes:** …`, `> Legible-states: …`.
@@ -188,24 +192,10 @@ function sanityFacetId(label) {
  * @returns {{value: string, facets: Record<string, string>}[]}
  */
 export function extractSanityRecords(text) {
-  const lines = stripNonEvidence(text).split(/\r?\n/)
-  const starts = []
-  for (let i = 0; i < lines.length; i++) {
-    const m = SANITY_MARKER_RE.exec(lines[i])
-    if (m) starts.push({ index: i, value: (m[1] ?? '').replace(/^[\s*_]+/, '').trim() })
-  }
-
-  return starts.map((start, n) => {
-    const end = starts[n + 1]?.index ?? lines.length
-    const facets = {}
-    for (let i = start.index + 1; i < end; i++) {
-      if (HEADING_RE.test(lines[i])) break
-      const m = SANITY_FACET_RE.exec(lines[i])
-      if (!m) continue
-      const id = sanityFacetId(m[1])
-      if (facets[id] === undefined) facets[id] = (m[2] ?? '').trim()
-    }
-    return { value: start.value, facets }
+  return extractMarkerBlocks(text, {
+    marker: SANITY_MARKER_RE,
+    facet: SANITY_FACET_RE,
+    facetId: sanityFacetId,
   })
 }
 
@@ -214,16 +204,13 @@ export function extractSanityRecords(text) {
  * counts as unrecorded: the PR template ships exactly those.
  */
 export function missingSanityFacetsOf(record) {
-  return SANITY_FACETS.filter((facet) => {
-    const value = record?.facets?.[facet]
-    return value === undefined || value === '' || PLACEHOLDER_RE.test(value)
-  })
+  return missingFacetsOf(record, SANITY_FACETS)
 }
 
 /** Is the marker line's own value a verdict, rather than blank or a stand-in? */
 function hasSanityVerdict(record) {
   const value = String(record?.value ?? '').trim()
-  return value !== '' && !PLACEHOLDER_RE.test(value)
+  return value !== '' && !isPlaceholderValue(value)
 }
 
 const SANITY_SHAPE = [
@@ -340,8 +327,12 @@ export function checkStageB(pr, issueComments = []) {
 
   if (evidence) {
     // Only a GO carries the sibling record: it is the one shape with an
-    // invitation to a live stand in front of it (#485).
-    if (GO_RE.test(evidence)) {
+    // invitation to a live stand in front of it (#485). It is looked for among
+    // ALL the marker values, not just the first sanctioned one: a body whose
+    // `batched at #N` line happened to come before its real GO used to clear the
+    // GO's own requirement, and a bypass path in a BLOCK guard is the defect
+    // class this sub-check exists to remove (review of PR #493, MAJOR 1).
+    if (markerValues.some((v) => GO_RE.test(v))) {
       const sanityTexts = [
         pr?.body ?? '',
         ...(pr?.comments ?? []).map((c) => (typeof c === 'string' ? c : (c?.body ?? ''))),
@@ -381,7 +372,7 @@ export function checkStageB(pr, issueComments = []) {
     }
   }
 
-  const placeholder = markerValues.find((v) => PLACEHOLDER_RE.test(v))
+  const placeholder = markerValues.find((v) => isPlaceholderValue(v))
   const head =
     markerValues.length === 0
       ? `PR #${number} is a UI diff (${rendered.length} view file(s), e.g. ${rendered.slice(0, 3).join(', ')}) but records NO Stage-B verdict.`
