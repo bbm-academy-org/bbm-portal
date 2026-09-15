@@ -966,6 +966,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-15-483-samename-collision -->
 
+- [ ] 2026-09-15 `pnpm ui:inventory` (#494, PR #495) reads exports with a regex scan over comment-stripped source, not a TypeScript parse — a deliberate call: dependency-free and runnable in a fresh worktree before `pnpm install` finishes. The forms it understands are the ones its spec pins (`export function|const|class|type|interface`, `export { a, b as c }`, `export default`); an export written any other way (`export * from`, a re-export chain, a declaration inside a namespace) is silently absent from the table, and an absent line is exactly what the two-source rule reads as «the kit lacks X» — return condition: the first vendored `src/ui` file whose exports the inventory misses (caught by comparing `pnpm ui:inventory` against `tsc --declaration` output, or by a gap claim that turns out false again), at which point the scanner is replaced by a TS-AST walk.
+
+<!-- debt-entry-end: 2026-09-15-494-regex-inventory -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43

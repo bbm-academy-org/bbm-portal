@@ -46,6 +46,13 @@ on it, so «reuse before bespoke» was unenforceable and every screen hand-rolle
 its own form. Otherwise the kit still grows by the same rule — a component is
 copied in when a surface needs it, not in anticipation.
 
+**What the kit actually exports, today:** `pnpm ui:inventory`
+(`tools/ui/inventory.mjs`) prints every export of `src/ui/**` as one table — run
+it before claiming the kit lacks something, because such a claim is admissible
+only with that output plus the checked registry page URL (#494; the rule is the
+ladder's rung 2 in
+[`build-ui-from-design-system`](../../.claude/skills/build-ui-from-design-system/SKILL.md)).
+
 ## The Refine subtree — `refine-ui/**`
 
 Refine's registry items carry a hardcoded `target` (`src/components/refine-ui/…`)

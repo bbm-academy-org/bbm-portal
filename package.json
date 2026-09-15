@@ -121,6 +121,7 @@
     "lint:primitives-first": "node tools/lint/primitives-first-lint.mjs",
     "lint:interaction-states": "node tools/lint/interaction-states-lint.mjs",
     "lint:whitelist-blocks": "node tools/lint/whitelist-blocks-lint.mjs",
+    "ui:inventory": "node tools/ui/inventory.mjs",
     "ci:verify-base": "node tools/gh/verify-base-ci-green.mjs"
   },
   "dependencies": {
