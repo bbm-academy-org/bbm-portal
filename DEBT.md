@@ -16,14 +16,8 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
   `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
   MUST preserve that anchor as the tombstone for Git's union merge.
 - **Permanent append marker:** add new active entries immediately before
-  `- [ ] 2026-09-15 `pnpm ui:inventory`(#494, PR #495) reads exports with a regex scan over comment-stripped source, not a TypeScript parse — a deliberate call: dependency-free and runnable in a fresh worktree before`pnpm install` finishes. The forms it understands are the ones its spec pins (`export function|const|class|type|interface`, `export { a, b as c }`, `export default`); an export written any other way (`export * from`, a re-export chain, a declaration inside a namespace) is silently absent from the table, and an absent line is exactly what the two-source rule reads as «the kit lacks X» — return condition: the first vendored `src/ui`file whose exports the inventory misses (caught by comparing`pnpm ui:inventory`against`tsc --declaration` output, or by a gap claim that turns out false again), at which point the scanner is replaced by a TS-AST walk.
-
-<!-- debt-entry-end: 2026-09-15-494-regex-inventory -->
-
-<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
-
-sweep notes live after that marker.
-
+  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
+  sweep notes live after that marker.
 - **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
   two branches that append different root-ledger entry blocks keep both blocks
   instead of conflicting. Union does not guarantee relative order between two
@@ -971,6 +965,10 @@ Entry format:
 - [ ] 2026-09-15 `interaction-states` (#483, PR #488) can now INVENT a finding in one bounded case, which is a break with this family's «the guard can miss, it cannot invent» direction (canon §8) and is written down rather than left to be found. `resolveComponentNames` reads the diff's ADDED lines only, so a file whose import lines are not part of the diff, rendering an APP-LOCAL component whose name the kit also exports (`Card`, `Table`, `Badge`, `Alert` are all plausible local names), falls through `shadowed` and is judged as kit because `kit.has(name)` is true from the tree. The tree lookup is deliberately NOT weakened to close this: it is what catches PR #470's row when the import line is outside the diff. Bounded by the name collision, the WARN dial and the call-site `interaction-states-ok: <reason>` escape — return condition: the FIRST confirmed false positive of this shape (which under §4 clause 3 also blocks promotion), or the guard's §4 promotion review on 2026-10-13, whichever comes first; the fix is resolving names against the file at HEAD rather than against added lines.
 
 <!-- debt-entry-end: 2026-09-15-483-samename-collision -->
+
+- [ ] 2026-09-15 `pnpm ui:inventory` (#494, PR #495) reads exports with a regex scan over comment-stripped source, not a TypeScript parse — a deliberate call: dependency-free and runnable in a fresh worktree before `pnpm install` finishes. The forms it understands are the ones its spec pins (`export function|const|class|type|interface`, `export { a, b as c }`, `export default`); an export written any other way (`export * from`, a re-export chain, a declaration inside a namespace) is silently absent from the table, and an absent line is exactly what the two-source rule reads as «the kit lacks X» — return condition: the first vendored `src/ui` file whose exports the inventory misses (caught by comparing `pnpm ui:inventory` against `tsc --declaration` output, or by a gap claim that turns out false again), at which point the scanner is replaced by a TS-AST walk.
+
+<!-- debt-entry-end: 2026-09-15-494-regex-inventory -->
 
 <!-- debt-append-marker -->
 
