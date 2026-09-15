@@ -57,7 +57,9 @@ export function DataTablePagination({
             <SelectTrigger className={cn('h-8', 'w-[70px]')}>
               <SelectValue placeholder={pageSize} />
             </SelectTrigger>
-            <SelectContent side="top" data-bbm-ui>
+            {/* No `data-bbm-ui` here: since #487 `SelectContent` carries the theme
+                scope into its own portal (`src/ui/README.md`). */}
+            <SelectContent side="top">
               {pageSizeOptions.map((size) => (
                 <SelectItem key={size} value={`${size}`}>
                   {size}

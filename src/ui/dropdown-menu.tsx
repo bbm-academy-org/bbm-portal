@@ -32,6 +32,7 @@ function DropdownMenuContent({
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
+        data-bbm-ui
         sideOffset={sideOffset}
         align={align}
         className={cn(
