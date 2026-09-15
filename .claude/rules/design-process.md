@@ -67,13 +67,27 @@ does not either. The fidelity values themselves are defined where they live:
 [`design-source/README.md`](../../design-source/README.md) → «The fidelity axis».
 
 The reuse ladder for any UI work — `design-source/` → the whitelist registry
-([`docs/design/ui-whitelist.md`](../../docs/design/ui-whitelist.md), empty today)
-→ bespoke with a written justification → Stage A/B — is run by the skill
+([`docs/design/ui-whitelist.md`](../../docs/design/ui-whitelist.md), whose own
+text says which element classes it has settled) → bespoke with a written
+justification → Stage A/B — is run by the skill
 [`build-ui-from-design-system`](../skills/build-ui-from-design-system/SKILL.md).
+
 Surface **layout** (how a whole screen is composed) is
 [`author-design-mockup`](../skills/author-design-mockup/SKILL.md); researching an
 uncovered element class is
 [`research-ui-element`](../skills/research-ui-element/SKILL.md).
+
+**The registry's rung has its own check, and its own owner record.**
+`pnpm lint:whitelist-blocks <PR>` (`tools/lint/whitelist-blocks-lint.mjs`) fails
+a UI diff that builds an element class the registry has SETTLED out of `src/ui`
+primitives instead of importing that row's implementation. The only escape is an
+owner record in the PR body or a linked-issue comment —
+`Bespoke-UI: GO — <owner, date> — <what was approved>` — the same marker
+discipline as the two tables on this page, tail and all. Severity: **BLOCK**
+from day one (register: [`docs/ci-guardrails.md`](../../docs/ci-guardrails.md)
+§5, row `whitelist-blocks`). Why it exists rather than the agent's own written
+justification: #481/#482, the owner's rejection of PR #470's stand on
+2026-09-15.
 
 ## 2. Every PR carries a `Stage-B:` line
 
