@@ -260,7 +260,7 @@ describe('whitelist-blocks-lint: the Form and Feedback rows', () => {
       },
     })
     expect(r.verdict).toBe('violation')
-    expect(r.findings.map((f: { class: string }) => f.class)).toEqual(['Form'])
+    expect(r.findings.map((f) => f.class)).toEqual(['Form'])
     expect(r.findings[0].message).toContain('@/ui/form')
   })
 
@@ -289,7 +289,7 @@ describe('whitelist-blocks-lint: the Form and Feedback rows', () => {
         files: [file(FORM_PATH, ['  window.alert("Заявка отправлена")'])],
       },
     })
-    expect(r.findings.map((f: { class: string }) => f.class)).toEqual(['Feedback'])
+    expect(r.findings.map((f) => f.class)).toEqual(['Feedback'])
     expect(r.findings[0].message).toContain('sonner')
   })
 
@@ -343,9 +343,7 @@ describe('whitelist-blocks-lint: the guard table cannot drift from the registry'
   })
 
   it('knows exactly the classes the shipped registry settles', () => {
-    expect(WHITELIST_ROWS.map((r: { class: string }) => r.class).sort()).toEqual(
-      ['Feedback', 'Form', 'List'].sort(),
-    )
+    expect(WHITELIST_ROWS.map((r) => r.class).sort()).toEqual(['Feedback', 'Form', 'List'].sort())
   })
 
   it('reports a registry row the guard does not cover — but only on a PR touching the registry', () => {
