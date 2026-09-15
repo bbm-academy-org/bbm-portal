@@ -249,3 +249,157 @@ describe('interaction-states-lint: severity dial and the unreadable-PR contract 
     expect(severityFromArgv([], { INTERACTION_STATES_SEVERITY: 'block' })).toBe('block')
   })
 })
+
+/**
+ * #483 — the guard used to skip EVERY capitalised tag, so PR #470's clickable
+ * `<TableRow onClick={…} className="cursor-pointer">` (the finance requests
+ * table, issue #388) walked through it while the owner rejected exactly that
+ * class of defect on the live stand, 2026-09-15. A clickable is a clickable
+ * whether its tag is `<div>` or `<TableRow>`.
+ *
+ * The widened rule and why it is drawn where it is: the guard's own header,
+ * «KIT COMPONENTS».
+ */
+const TABLE = 'src/app/(platform)/p/finance/requests/RequestsTable.tsx'
+const KIT_IMPORT = "import { Table, TableBody, TableCell, TableRow } from '@/ui/table'"
+
+describe('interaction-states-lint: a clickable KIT component is judged too (#483)', () => {
+  /** PR #470's row, verbatim in shape: the kit import, the in-tag comment, `cursor-pointer` only. */
+  const requestsTableRow = [
+    KIT_IMPORT,
+    "import { Button } from '@/ui/button'",
+    '<TableRow',
+    '  key={request.id}',
+    '  // The whole row is the pointer target — a table whose rows open',
+    '  // something and look inert is the row-action defect of #433.',
+    '  onClick={() => onOpen(request)}',
+    '  className="cursor-pointer"',
+    '>',
+  ]
+
+  it('reports PR #470\u2019s `<TableRow onClick>` with `cursor-pointer` and nothing else', () => {
+    const result = checkInteractionStates([file(TABLE, requestsTableRow)])
+    expect(result.verdict).toBe('violation')
+    expect(result.findings).toHaveLength(1)
+    expect(result.findings[0].tag).toBe('TableRow')
+    expect(result.findings[0].missing).toEqual(['hover', 'focus-visible'])
+  })
+
+  it('reports it at the line the tag opens on, in that file', () => {
+    const result = checkInteractionStates([file(TABLE, requestsTableRow)])
+    expect(result.findings[0].file).toBe(TABLE)
+    expect(result.findings[0].line).toBe(3)
+  })
+
+  /**
+   * The import does not have to be in the diff: an edited file adds the
+   * clickable row without re-adding its import line. The kit is read from the
+   * checked-out tree — `src/ui/table.tsx` exports `TableRow`.
+   */
+  it('judges a kit component whose import line is not part of the diff', () => {
+    const result = checkInteractionStates([
+      file(TABLE, ['<TableRow onClick={() => onOpen(row)} className="cursor-pointer" />']),
+    ])
+    expect(result.findings.map((f) => f.tag)).toEqual(['TableRow'])
+  })
+
+  it('passes once the call site declares hover and focus-visible', () => {
+    const result = checkInteractionStates([
+      file(TABLE, [
+        KIT_IMPORT,
+        '<TableRow',
+        '  onClick={() => onOpen(row)}',
+        '  className="cursor-pointer hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"',
+        '/>',
+      ]),
+    ])
+    expect(result.verdict).toBe('pass')
+  })
+
+  it('accepts a reasoned `interaction-states-ok:` marker at the call site', () => {
+    const result = checkInteractionStates([
+      file(TABLE, [
+        KIT_IMPORT,
+        '{/* interaction-states-ok: the row mirrors the named control in the cell */}',
+        '<TableRow onClick={() => onOpen(row)} className="cursor-pointer" />',
+      ]),
+    ])
+    expect(result.verdict).toBe('pass')
+  })
+})
+
+describe('interaction-states-lint: what the widened rule deliberately does NOT judge (#483)', () => {
+  it('leaves an app-local component alone — the diff cannot classify its states', () => {
+    const result = checkInteractionStates([
+      file(TABLE, ['function RequestRow() {}', '<RequestRow onClick={open} />']),
+    ])
+    expect(result.verdict).toBe('pass')
+  })
+
+  it('leaves a name the diff imports from OUTSIDE the kit alone, kit namesake or not', () => {
+    const result = checkInteractionStates([
+      file(TABLE, ["import { Card } from './RequestCard'", '<Card onClick={open} />']),
+    ])
+    expect(result.verdict).toBe('pass')
+  })
+
+  it('leaves an `asChild` pass-through alone — the CHILD carries the states', () => {
+    const result = checkInteractionStates([
+      file(TABLE, [
+        "import { DropdownMenuTrigger } from '@/ui/dropdown-menu'",
+        '<DropdownMenuTrigger asChild onClick={open}>',
+        '  <Button>…</Button>',
+        '</DropdownMenuTrigger>',
+      ]),
+    ])
+    expect(result.verdict).toBe('pass')
+  })
+
+  it.each([
+    'Button',
+    'InputGroupButton',
+    'PaginationLink',
+    'AlertDialogAction',
+    'AlertDialogCancel',
+    'CalendarDayButton',
+    'DropdownMenuItem',
+    'DropdownMenuCheckboxItem',
+    'DropdownMenuRadioItem',
+    'DropdownMenuSubTrigger',
+    'SelectItem',
+    'SelectTrigger',
+    'CommandItem',
+    'TabsTrigger',
+    'Checkbox',
+    'Switch',
+    'SidebarMenuButton',
+    'SidebarMenuSubButton',
+    'SidebarMenuAction',
+  ])('leaves the state-owning kit control `%s` alone', (name) => {
+    const result = checkInteractionStates([
+      file(TABLE, [`import { ${name} } from '@/ui/kit'`, `<${name} onClick={run} />`]),
+    ])
+    expect(result.verdict).toBe('pass')
+  })
+
+  it('does not report a kit clickable twice when the tag is also a `Button` host', () => {
+    const result = checkInteractionStates([
+      file(TABLE, [
+        KIT_IMPORT,
+        "import { Button } from '@/ui/button'",
+        '<TableRow onClick={open} className="cursor-pointer">',
+        '  <TableCell>',
+        '    <Button variant="link" onClick={open}>ok</Button>',
+        '  </TableCell>',
+        '</TableRow>',
+      ]),
+    ])
+    expect(result.findings.map((f) => f.tag)).toEqual(['TableRow'])
+  })
+
+  it('reads the kit from an injected component set rather than the tree when given one', () => {
+    const files = [file(TABLE, ['<Widget onClick={open} />'])]
+    expect(checkInteractionStates(files, { kitComponents: [] }).verdict).toBe('pass')
+    expect(checkInteractionStates(files, { kitComponents: ['Widget'] }).verdict).toBe('violation')
+  })
+})
