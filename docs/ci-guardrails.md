@@ -482,7 +482,7 @@ writes when their target is statically recognized from `Set-Content`,
 recognized safe target keeps the existing carve-outs. The owner approved this
 scope expansion in #475. Demotion follows §4 on the first confirmed false block.
 
-**`secret-echo` — the one BLOCK hook this register names, widened by #262.** It is a §3
+**`secret-echo` — a BLOCK hook this register names, widened by #262.** It is a §3
 class-2 guard (documented security mandate: a printed secret is a leaked secret and is
 rotated, so a WARN soak would itself be the risk), and it therefore never appears in the
 promotion table above. Its coverage after #262 is three finding classes, each caught
@@ -498,7 +498,9 @@ restated here — exact predicates and carve-outs live in the guard,
 [`tools/hooks/secret-echo-guard.mjs`](../tools/hooks/secret-echo-guard.mjs); the stack it is
 wired into is [`tools/hooks/README.md`](../tools/hooks/README.md).
 
-**`zero-dispatch` — the one §3 class-3 guard: a day-0 BLOCK by owner mandate (#322).**
+**`zero-dispatch` — a §3 class-3 session hook (§3's class-3 paragraph names the full
+class-3 set, on both planes; this entry does not count it): a day-0 BLOCK by owner mandate
+(#322).**
 [`tools/hooks/zero-dispatch-guard.mjs`](../tools/hooks/zero-dispatch-guard.mjs) denies the
 6th mutating lead call of a session when the session has dispatched **zero** `Agent` calls.
 It is **BLOCK from day 0**. It fits neither of §3's original two classes — its input is the
@@ -579,8 +581,8 @@ adequately answer — §3's class-3 paragraph names the same condition, and this
 it is applied. The threshold (6) is the substantive rule for §4's clock: changing it
 restarts the clock, changing the message text does not.
 
-**`lead-context-budget` — the second §3 class-3 guard: a day-0 BLOCK by owner mandate
-(#457).** [`tools/hooks/lead-context-budget.mjs`](../tools/hooks/lead-context-budget.mjs) is a
+**`lead-context-budget` — the §3 class-3 session hook on the lead's own dispatch budget:
+a day-0 BLOCK by owner mandate (#457).** [`tools/hooks/lead-context-budget.mjs`](../tools/hooks/lead-context-budget.mjs) is a
 `PreToolUse` guard on `Agent|Task`. It measures the LEAD's own transcript and, above the hard
 tier, refuses a **NEW dispatch** — and only that: the agents already running are untouched,
 their results can be accepted, and every non-dispatch tool call is unaffected. It is **BLOCK

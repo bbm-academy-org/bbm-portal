@@ -92,9 +92,11 @@ only escape is step 3's owner record. Severities of record:
 Two different situations wear the same word, and #482 separates them:
 
 - **The registry has NO row for the class.** Bespoke is the correct outcome and
-  the justification is YOURS. The PR body carries the line the whitelist doc
-  specifies (`bespoke — whitelist empty for <class>; searched <sources>; not
-adopted because <reason>`).
+  the justification is YOURS. Its one-line shape is owned by
+  [`docs/design/ui-whitelist.md`](../../../docs/design/ui-whitelist.md) →
+  «Bespoke — the last resort, and what "justification" means»; copy the template
+  from there into the PR body rather than from here, because a second copy of it
+  is the one that goes stale (#486).
 - **The registry HAS a settled row and you are departing from it.** That is not
   yours to certify. The record is the OWNER's, in the PR body or a comment on
   the linked issue, tail included:
@@ -182,8 +184,9 @@ value — `GO — <owner, date>`, `batched at #<gate>`, or
   was the #76 and #84 rework cycles.
 - **A screenshot instead of a live URL** at Stage B, or tearing the stand down
   before the verdict.
-- **"There is no kit, so the procedure does not apply."** The ladder is designed
-  to run with an empty registry; skipping it is how bespoke becomes invisible.
+- **"Nothing above bespoke covers this, so the procedure does not apply."** The
+  ladder is designed to run even when no rung above bespoke answers; skipping it
+  is how bespoke becomes invisible.
 - **Silent bespoke** — no justification line, so nobody can see the debt
   accumulating.
 - **Waiting for the owner to compose the screen** — what a missing or

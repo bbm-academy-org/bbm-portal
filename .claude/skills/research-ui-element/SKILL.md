@@ -25,9 +25,12 @@ re-researched.
 - **Not research, but a revision** — a settled class that genuinely must change
   is an edit to its registry row with the driver recorded in the PR.
 
-Today the registry is empty, so most classes qualify on the first test — apply
-the second one honestly: if the owner's vendored design already shows the
-element, you have your answer and need no subagent.
+Which classes the registry has settled is stated by the registry itself and
+nowhere else — open [`docs/design/ui-whitelist.md`](../../../docs/design/ui-whitelist.md)
+and read the table before concluding a class is uncovered; a count repeated here
+would be stale by the next row. Apply the second test just as honestly: if the
+owner's vendored design already shows the element, you have your answer and need
+no subagent.
 
 Dispatch per CLAUDE.md → "Subagents and models": explicit `model: opus`, return
 contract ≤30 lines, heavy output to a scratchpad file.

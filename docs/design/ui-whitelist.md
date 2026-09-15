@@ -38,6 +38,25 @@ than of what was agreed.
 | **List** — any register of records with paging      | Refine **`data-table`** block — `@/ui/refine-ui/data-table/data-table` + `data-table-pagination`, driven by `useTable` from `@refinedev/react-table` `6.0.1` over `@tanstack/react-table` `8.21.3`. Registry `ui.refine.dev` (item `data-table`)                                                                                                                                                                                                              | #434 — first shipped on the members register               | The block owns head, rows, loading skeleton, empty state and pager; the screen owns only its `ColumnDef[]`. Empty copy is per-resource through `emptyTitle` / `emptyDescription`. The upstream pager's English chrome is localised in the kit — see `src/ui/README.md`. `data-table-filter.tsx` of the same registry item is NOT vendored: it does not typecheck against `@refinedev/core` 5.x                                                                                                                                                                                                                              |
 | **Feedback** — the outcome of any act               | **Toasts through Refine's notification provider** — `useNotificationProvider` (`@/ui/refine-ui/notification/use-notification-provider`, registry `ui.refine.dev`) wired into `<Refine>` in `CabinetShell`, rendering into the shadcn **`sonner`** `Toaster` (`@/ui/sonner`, `sonner` `2.0.8`)                                                                                                                                                                 | #434 — first shipped across the whole `/p/admin` cabinet   | ONE channel: every mutation reports success and failure in the same place, in the same shape. A screen names its own Russian `successNotification` / `errorNotification` (Refine's defaults are English). A component that does not go through Refine raises `toast.*` from `sonner` directly. An inline Alert is still correct for a state the reader must KEEP looking at — a record that would not load, a save that failed while the form is still on screen — and never as a duplicate of a transient one                                                                                                              |
 
+## Cross-row rules
+
+A rule here binds a whole screen rather than one element class, so it has no
+single "settled implementation" to put in the table above. It is written as a
+rule, not as a row, precisely because «Adding a row» is not satisfied: there is
+no one implementation to import and no owner Stage-A/Stage-B approval for the
+class.
+
+**One overlay shape per screen — `Sheet` xor `Dialog` for a screen's acts.**
+Pick one overlay shape per screen and run every act of that screen through it: a
+details panel in a `Sheet` whose refusal and posting flows open `Dialog`s mixes
+two shapes in one place. The consequence is visible, not theoretical —
+`SheetFooter` and `DialogFooter` are not visually identical in the stock shadcn
+kit (their action rows stack and align differently), so the screen shows its
+reader two different footers for the same kind of act. That is what the owner saw
+as inconsistent footers when he rejected the live stand of PR #470
+(`RequestDetailsSheet.tsx`, 2026-09-15). Applying this rule to the requests
+screen is that screen's own rebuild (#388), not this page's.
+
 ## Adding a row
 
 A row is added when an element class becomes genuinely reusable — i.e. all three:
@@ -72,13 +91,16 @@ what was found, and the license — and adds a row above once the class is settl
 
 ## Bespoke — the last resort, and what "justification" means
 
-Bespoke is legitimate today (empty registry) but never silent — check the kit
-first. The PR
+Bespoke is legitimate for an element class the **Entries** table above has not
+settled — and never silent: read that table and the kit first. A class that DOES
+have a row is not a bespoke candidate at all, it is an import; rebuilding it out
+of `src/ui` primitives is what `pnpm lint:whitelist-blocks` fails
+(`.claude/rules/design-process.md` §1). The PR
 body of a bespoke UI diff states, in one line:
 
-> `bespoke — whitelist empty for <element class>; searched <sources>; not
-adopted because <reason>` (e.g. "no kit in repo; a Radix dependency is not
-> justified for one non-interactive table").
+> `bespoke — no whitelist row for <element class>; searched <sources>; not
+adopted because <reason>` (e.g. "no registry row and no kit equivalent; a Radix
+> dependency is not justified for one non-interactive table").
 
 A repeated bespoke build of the same element class across ≥2 surfaces is
 decision-debt: file it (`surface-decision-debt` skill) — that is the signal the
