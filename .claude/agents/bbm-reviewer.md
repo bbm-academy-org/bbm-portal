@@ -21,6 +21,14 @@ Review for: correctness, adherence to project conventions and cited specs/ADRs, 
 
 Rule: `.claude/rules/design-process.md` §1 · check it yourself with `pnpm lint:design-fidelity <PR>` (BLOCK) alongside `pnpm lint:stage-b <PR>`.
 
+**Then, on the same UI diff: a whitelist block per element class — bespoke only with an owner record.** Fidelity answers «was this look decided»; this answers «was the decided implementation reused». Enumerate the element classes the diff actually renders (a form, a list/register, feedback, …) and look each one up in `docs/design/ui-whitelist.md`:
+
+- The registry has **SETTLED** that class and the diff imports that row's implementation — nothing to say.
+- The registry has SETTLED it and the diff builds the class itself out of `src/ui` primitives instead — that is a `[BLOCKER]` naming the missing **owner decision**, not the missing pixels: the PR body or a linked-issue comment must carry `Bespoke-UI: GO — <owner, date> — <what/why>`, and without it the departure was self-certified. A written justification in the code or the PR is not that record. This is how PR #470 passed review with a hand-built table where the **List** row was settled, and the owner rejected the stand on 2026-09-15.
+- The registry has no row for that class — it is uncovered, so bespoke is legitimate; say so rather than inventing a requirement.
+
+Rule: `.claude/rules/design-process.md` §1 · check it yourself with `pnpm lint:whitelist-blocks <PR>` (BLOCK), which owns the exact matching rules — read its output, do not re-derive them here.
+
 Write your review body with `Write` to a file in the session scratchpad (never to a repo file), then post it yourself: `gh pr comment <N> --body-file <scratchpad-path>` (or `gh pr review <N> --comment --body-file <scratchpad-path>`). The comment must end with a line `VERDICT: APPROVE | REQUEST_CHANGES`.
 
 Hard limits:
