@@ -40,6 +40,7 @@ const refine = vi.hoisted(() => ({
   },
   mutate: vi.fn(),
   isPending: false,
+  invalidate: vi.fn(),
 }))
 
 vi.mock('@refinedev/core', async (importOriginal) => {
@@ -64,6 +65,100 @@ vi.mock('@refinedev/core', async (importOriginal) => {
       mutate: refine.mutate,
       mutation: { isPending: refine.isPending },
     }),
+    useInvalidate: () => refine.invalidate,
+  }
+})
+
+// The REGISTER half of the same snapshot (#388 wave 3). `@refinedev/react-table`
+// is mocked where `member-admin-ui.spec.ts` mocks it — at the hook — so the
+// whitelist's List block, its pager, its sorter and its totals row all render
+// for REAL on top of a real TanStack table, driven by the very selection
+// function the data provider answers `getList` with.
+vi.mock('@refinedev/react-table', async () => {
+  const React_ = (await import('react')).default
+  const { getCoreRowModel, useReactTable } = await import('@tanstack/react-table')
+  const { selectRequestPage } =
+    await import('@/app/(platform)/p/finance/requests/request-table-model')
+
+  return {
+    useTable: <TData>({
+      columns,
+      refineCoreProps,
+    }: {
+      columns: never[]
+      refineCoreProps?: Record<string, never>
+    }) => {
+      const props = (refineCoreProps ?? {}) as Record<string, never>
+      const resource = props.resource as unknown as string | undefined
+      const pageSizeProp =
+        (props.pagination as unknown as { pageSize?: number } | undefined)?.pageSize ?? 25
+      const permanent = ((props.filters as unknown as { permanent?: unknown[] } | undefined)
+        ?.permanent ?? []) as { field?: string; value?: unknown }[]
+
+      const [currentPage, setCurrentPage] = React_.useState(1)
+      const [pageSize, setPageSize] = React_.useState(pageSizeProp)
+      const [sorting, setSorting] = React_.useState<{ id: string; desc: boolean }[]>([])
+
+      const snapshot = refine.custom.data as RequestsSnapshot | null
+      const own = permanent.some((filter) => filter.field === 'own' && filter.value === true)
+      const sorters = sorting.map((entry) => ({
+        field: entry.id,
+        order: entry.desc ? ('desc' as const) : ('asc' as const),
+      }))
+
+      let rows: unknown[] = []
+      let total = 0
+      if (snapshot !== null) {
+        if (resource === 'finance-liabilities') {
+          rows = snapshot.liabilities.map((liability) => ({
+            ...liability,
+            id: `${liability.memberId}-${liability.currency}`,
+          }))
+          total = rows.length
+        } else {
+          const page = selectRequestPage(snapshot.requests, {
+            own,
+            sorters,
+            currentPage,
+            pageSize,
+          })
+          rows = page.rows
+          total = page.total
+        }
+      }
+
+      const reactTable = useReactTable<TData>({
+        data: rows as TData[],
+        columns,
+        getCoreRowModel: getCoreRowModel(),
+        manualPagination: true,
+        manualSorting: true,
+        manualFiltering: true,
+        state: { sorting },
+        onSortingChange: setSorting as never,
+      })
+
+      return {
+        reactTable,
+        refineCore: {
+          tableQuery: {
+            isLoading: refine.custom.isLoading,
+            error: refine.custom.error,
+            data: snapshot === null ? undefined : { data: rows, total },
+            refetch: refine.custom.refetch,
+          },
+          currentPage,
+          setCurrentPage,
+          pageCount: Math.max(1, Math.ceil(total / (pageSize || 1))),
+          pageSize,
+          setPageSize,
+          sorters,
+          setSorters: () => {},
+          filters: permanent,
+          setFilters: () => {},
+        },
+      }
+    },
   }
 })
 
@@ -162,6 +257,7 @@ beforeEach(() => {
   refine.custom.refetch = vi.fn()
   refine.mutate = vi.fn()
   refine.isPending = false
+  refine.invalidate = vi.fn()
 })
 
 afterEach(() => cleanup())
@@ -441,18 +537,55 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     fireEvent.click(tab)
     const liabilities = await screen.findByRole('region', { name: 'Обязательства' })
     expect(within(liabilities).getByText('К. Смирнов')).toBeTruthy()
-    expect(within(liabilities).getByText('720,00 RUB')).toBeTruthy()
+    // Twice since #388: once on the row, once in the block's totals footer —
+    // a debt register exists to answer «сколько всего мы должны».
+    expect(within(liabilities).getAllByText('720,00 RUB')).toHaveLength(2)
   })
 
-  it('EARS-508: names every missing field under itself instead of filing an empty request', async () => {
+  // Since #388 wave 3 (owner acceptance 2026-09-15) an EMPTY form does not file
+  // and does not have to be pressed to find that out: the submit is disabled
+  // and NAMES what is still missing. A malformed answer is the other half —
+  // the button stays live, and the refusal lands under the field it belongs to.
+  it('EARS-508: an empty form cannot be sent, and says which fields are still empty', async () => {
     renderBoard()
     fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const form = screen.getByRole('dialog')
 
-    fireEvent.click(within(form).getByRole('button', { name: 'Подать заявку' }))
+    const submit = within(form).getByRole('button', { name: 'Подать заявку' })
+    expect(submit.hasAttribute('disabled')).toBe(true)
+    expect(within(form).getByText(/^Заполните: /).textContent).toContain('сумма документа')
+    expect(submit.getAttribute('aria-describedby')).toBe('submit-block-reason')
+
+    fireEvent.click(submit)
+    expect(refine.mutate).not.toHaveBeenCalled()
+  })
+
+  it('EARS-508: a MALFORMED answer is refused under its own field, not by a dead button', async () => {
+    renderBoard()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const form = screen.getByRole('dialog')
+
+    // Everything answered — but the sum is not a number.
+    fireEvent.change(within(form).getByLabelText('Сумма документа'), {
+      target: { value: 'дорого' },
+    })
+    fireEvent.change(within(form).getByLabelText('Предложение назначения'), {
+      target: { value: 'аренда студии' },
+    })
+    fireEvent.change(within(form).getByLabelText('Новый контрагент'), {
+      target: { value: 'ООО «Свет»' },
+    })
+    fireEvent.click(within(form).getByLabelText('Проект'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Doctor.School' }))
+
+    const submit = within(form).getByRole('button', { name: 'Подать заявку' })
+    await waitFor(() => expect(submit.hasAttribute('disabled')).toBe(false))
+    fireEvent.click(submit)
+
     await waitFor(() =>
-      expect(within(form).getAllByText(/Укажите|Выберите/).length).toBeGreaterThan(0),
+      expect(within(form).getByText('Укажите сумму документа числом больше нуля.')).toBeTruthy(),
     )
     expect(refine.mutate).not.toHaveBeenCalled()
   })
@@ -514,6 +647,16 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     // The empty control and the description both name it; the point is that the
     // field is on the form at all.
     expect(within(form).getAllByText(/нет продуктов/i).length).toBeGreaterThan(0)
+
+    // The other required answers, so the submit is live and the PRODUCT refusal
+    // is what the press delivers (#388: submit is disabled only while a
+    // required field is EMPTY).
+    fireEvent.change(within(form).getByLabelText('Сумма документа'), {
+      target: { value: '1 000,00' },
+    })
+    fireEvent.change(within(form).getByLabelText('Новый контрагент'), {
+      target: { value: 'ООО «Свет»' },
+    })
 
     fireEvent.click(within(form).getByRole('button', { name: 'Подать заявку' }))
     // Said ONCE, not twice: the description carries the state and the error
@@ -756,7 +899,7 @@ describe('/p/finance/requests — the money facts belong to the posting act (EAR
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
 
-    const posting = await screen.findByRole('dialog', { name: /Провести заявку №5/ })
+    const posting = await screen.findByRole('region', { name: /Провести заявку №5/ })
     fireEvent.click(within(posting).getByRole('button', { name: 'Провести' }))
     await waitFor(() =>
       expect(within(posting).getByText('Выберите счёт, с которого ушли деньги.')).toBeTruthy(),
@@ -775,7 +918,7 @@ describe('/p/finance/requests — the money facts belong to the posting act (EAR
     openCard(6)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
-    const posting = await screen.findByRole('dialog', { name: /Провести заявку №6/ })
+    const posting = await screen.findByRole('region', { name: /Провести заявку №6/ })
 
     fireEvent.click(within(posting).getByRole('combobox'))
     fireEvent.click(await screen.findByRole('option', { name: /Банк RUB/ }))
@@ -806,7 +949,7 @@ describe('/p/finance/requests — the money facts belong to the posting act (EAR
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Одобрить' }))
 
-    expect(screen.queryByRole('dialog', { name: /Провести заявку/ })).toBeNull()
+    expect(screen.queryByRole('region', { name: /Провести заявку/ })).toBeNull()
     expect(refine.mutate).toHaveBeenCalledTimes(1)
     expect(refine.mutate.mock.calls[0][0].values).toEqual({ act: 'approve' })
   })
@@ -876,7 +1019,10 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the posting stat
   // dominant CTA is the kit's `default` variant and «Отмена» its `outline` one,
   // the same pair the sheet footer uses. Pinned as data attributes so the
   // question is answered by a test and not by squinting at a screenshot again.
-  it('the posting dialog carries the primary CTA and a secondary «Отмена», like the sheet footer', async () => {
+  // ONE OVERLAY SHAPE since #388 (owner go, Антон, 2026-09-15): the posting act
+  // is a SECTION of the details sheet, not a second overlay on top of it — so
+  // it is a `region`, and its action row is the sheet footer's grammar.
+  it('the posting section carries the primary CTA and a secondary «Отмена», like the sheet footer', async () => {
     refine.custom.data = snapshot({
       requests: [
         item({ id: 10, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
@@ -887,7 +1033,7 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the posting stat
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
 
-    const posting = await screen.findByRole('dialog', { name: /Провести заявку №10/ })
+    const posting = await screen.findByRole('region', { name: /Провести заявку №10/ })
     const cta = within(posting).getByRole('button', { name: 'Провести' })
     expect(cta.getAttribute('data-variant')).toBe('default')
     expect(cta.getAttribute('type')).toBe('submit')
@@ -906,7 +1052,7 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the posting stat
 
   // DEFECT 2 (NOT a defect either): the dialog DOES take focus off the sheet
   // when it opens, so `:focus-visible` on its CTA is reachable by keyboard.
-  it('opening the posting dialog moves focus INTO it, off the sheet behind', async () => {
+  it('opening the posting section moves focus INTO it, off the record behind', async () => {
     refine.custom.data = snapshot({
       requests: [
         item({ id: 11, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
@@ -917,7 +1063,7 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the posting stat
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
 
-    const posting = await screen.findByRole('dialog', { name: /Провести заявку №11/ })
+    const posting = await screen.findByRole('region', { name: /Провести заявку №11/ })
     await waitFor(() => expect(posting.contains(document.activeElement)).toBe(true))
   })
 })
@@ -940,21 +1086,25 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the requests tab
     return requestsTable()
   }
 
-  it('a long note WRAPS instead of pushing the sum, the status and «Открыть» off a 390 px screen', async () => {
+  it('a long note TRUNCATES inside its own column instead of pushing the row off a 390 px screen', async () => {
     refine.custom.data = snapshot({
       requests: [item({ id: 5, own: true, note: LONG_NOTE })],
     })
     renderScreen()
     const mine = await mineTab()
 
-    const cell = within(mine).getByText(LONG_NOTE).closest('td')
+    // The block's `TableCell` is `whitespace-nowrap` and its table is
+    // `table-layout: fixed`, so the fix is no longer «the cell wraps» but «the
+    // column has a declared width and the free text clips inside it». The four
+    // short columns keep theirs either way, which is what the defect was about.
+    const note = within(mine).getByText(LONG_NOTE)
+    expect(note.className).toContain('truncate')
+    const cell = note.closest('td')
     expect(cell).not.toBeNull()
-    expect(cell?.className).toContain('whitespace-normal')
-    // and it is capped, so on a WIDE screen the note does not eat the row either
-    expect(cell?.className).toMatch(/max-w-/)
+    expect(cell?.style.width).not.toBe('')
   })
 
-  it('the table keeps a width floor inside the kit’s scroll container, and says so below `sm`', async () => {
+  it('the table keeps the kit’s scroll container, and says below `sm` that there is more to the right', async () => {
     refine.custom.data = snapshot({
       requests: [item({ id: 6, own: true, note: LONG_NOTE })],
     })
@@ -962,7 +1112,7 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the requests tab
     const mine = await mineTab()
 
     const table = within(mine).getByRole('table')
-    expect(table.className).toMatch(/min-w-/)
+    expect(table.style.tableLayout).toBe('fixed')
     expect(table.parentElement?.className).toContain('overflow-x-auto')
 
     const hint = within(mine).getByText(/прокру[тч]/i)
@@ -1056,7 +1206,7 @@ describe('/p/finance/requests — a 390 px reader never scrolls the sheet sidewa
     expect(kind.className).toContain('min-w-0')
   })
 
-  it('the account select of the posting dialog may shrink below its longest account name', async () => {
+  it('the account select of the posting section may shrink below its longest account name', async () => {
     refine.custom.data = snapshot({
       requests: [
         item({
@@ -1082,7 +1232,7 @@ describe('/p/finance/requests — a 390 px reader never scrolls the sheet sidewa
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
 
-    const posting = await screen.findByRole('dialog', { name: /Провести заявку №12/ })
+    const posting = await screen.findByRole('region', { name: /Провести заявку №12/ })
     for (const trigger of comboboxes(posting)) {
       expect(trigger.className).toContain('min-w-0')
     }
@@ -1113,11 +1263,17 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
     renderScreen()
     const table = requestsTable()
 
-    for (const head of ['Дата', 'Кто подал', 'Сумма', 'Назначение', 'Статус']) {
-      expect(within(table).getByRole('columnheader', { name: head })).toBeTruthy()
+    // «Дата» became «Деньги ушли» (owner acceptance 2026-09-15): the header
+    // names what the value IS, so «ещё не двигались» answers the question that
+    // was asked. Each header also carries the block's sorter, whose aria text
+    // joins the accessible name — hence the prefix match.
+    for (const head of ['Деньги ушли', 'Кто подал', 'Сумма', 'Назначение', 'Статус']) {
+      expect(within(table).getByRole('columnheader', { name: new RegExp(`^${head}`) })).toBeTruthy()
     }
     expect(within(table).getByText('М. Иванова')).toBeTruthy()
-    expect(within(table).getByText('45 000,00 RUB')).toBeTruthy()
+    // On the row, and again in the block's totals footer — one request is its
+    // own total.
+    expect(within(table).getAllByText('45 000,00 RUB')).toHaveLength(2)
     expect(within(table).getByText('Продакшн')).toBeTruthy()
     expect(within(table).getByText('Ждёт решения')).toBeTruthy()
   })
@@ -1208,7 +1364,9 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
     renderScreen()
     pick('tab', 'Все')
 
-    fireEvent.click(within(requestsTable()).getByRole('button', { name: 'Одобрить' }))
+    // The row act names its row: a register of ten «Одобрить» buttons tells a
+    // screen reader nothing about which request it would approve.
+    fireEvent.click(within(requestsTable()).getByRole('button', { name: 'Одобрить заявку №1' }))
     expect(refine.mutate.mock.calls[0][0]).toMatchObject({
       url: '/p/finance/api/requests/1/actions',
       method: 'post',
@@ -1221,7 +1379,7 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
     renderScreen()
     pick('tab', 'Все')
 
-    fireEvent.click(within(requestsTable()).getByRole('button', { name: 'Отклонить…' }))
+    fireEvent.click(within(requestsTable()).getByRole('button', { name: 'Отклонить… заявку №1' }))
     const reason = await screen.findByLabelText('Причина отказа')
     expect(refine.mutate).not.toHaveBeenCalled()
 
@@ -1304,4 +1462,150 @@ describe('/p/finance/requests — the company-account choice is a role’s (deci
   // `finance-request-form-model.spec.ts`, «the body a role-less submitter
   // files says own money». Driving eleven Radix selects to re-assert it here
   // would test react-hook-form, not the decision.
+})
+
+// The owner's rebuild list of 2026-09-15, read back off the rendered screen.
+// Every item here was a DEFECT on the rejected stand of PR #470.
+describe('/p/finance/requests — the board rebuilt on the whitelist List block (#388 wave 3)', () => {
+  it('renders the register through the kit block, not a hand-built table', async () => {
+    renderScreen()
+    const table = within(requestsTable()).getByRole('table')
+
+    // The block's own markers: a fixed layout inside its rounded, bordered
+    // scroll container. `RequestsTable` itself writes no <table>.
+    expect(table.style.tableLayout).toBe('fixed')
+    expect(table.parentElement?.className).toContain('overflow-x-auto')
+  })
+
+  it('carries the block’s pager, which a hand-built table never had', async () => {
+    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true })] })
+    renderScreen()
+    const table = requestsTable()
+
+    expect(within(table).getByRole('button', { name: 'Следующая страница' })).toBeTruthy()
+    expect(within(table).getByText('Строк на странице')).toBeTruthy()
+  })
+
+  it('offers sorting from the column headers', async () => {
+    renderScreen()
+    const table = requestsTable()
+
+    for (const label of [
+      'Сортировать по дате движения денег',
+      'Сортировать по сумме',
+      'Сортировать по статусу',
+    ]) {
+      expect(within(table).getByRole('button', { name: label })).toBeTruthy()
+    }
+  })
+
+  it('re-orders the register when a header sorter is pressed', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 1, own: true, amount: '100', note: 'Дешёвая' }),
+        item({ id: 2, own: true, amount: '900', note: 'Дорогая' }),
+      ],
+    })
+    renderScreen()
+    const table = requestsTable()
+
+    const notesNow = () =>
+      within(table)
+        .getAllByText(/Дешёвая|Дорогая/)
+        .map((node) => node.textContent)
+
+    expect(notesNow()).toEqual(['Дорогая', 'Дешёвая'])
+    fireEvent.click(within(table).getByRole('button', { name: 'Сортировать по сумме' }))
+    await waitFor(() => expect(notesNow()).toEqual(['Дешёвая', 'Дорогая']))
+  })
+
+  it('adds the register up in the block’s totals row, per currency', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 1, own: true, amount: '100000', currency: 'RUB' }),
+        item({ id: 2, own: true, amount: '250000', currency: 'RUB' }),
+      ],
+    })
+    renderScreen()
+
+    const footer = within(requestsTable()).getByRole('table').querySelector('tfoot')
+    expect(footer).not.toBeNull()
+    expect(footer?.textContent).toContain('Итого')
+    expect(footer?.textContent).toContain('3 500,00 RUB')
+  })
+
+  it('gives each status its own stock badge variant, so status reads without being read', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 1, own: true, status: 'submitted' }),
+        item({ id: 2, own: true, status: 'approved' }),
+        item({ id: 3, own: true, status: 'refused', refusalReason: 'есть на складе' }),
+        item({ id: 4, own: true, status: 'posted' }),
+      ],
+    })
+    renderScreen()
+
+    const variants = Array.from(
+      within(requestsTable()).getByRole('table').querySelectorAll('tbody [data-slot="badge"]'),
+    ).map((node) => node.getAttribute('data-variant'))
+
+    expect(new Set(variants).size).toBe(4)
+    for (const variant of variants) {
+      expect(['default', 'secondary', 'destructive', 'outline']).toContain(variant)
+    }
+  })
+
+  it('names the date column for what the value IS, and says so on an intent', async () => {
+    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true, occurredOn: null })] })
+    renderScreen()
+    const table = requestsTable()
+
+    expect(within(table).getByRole('columnheader', { name: /^Деньги ушли/ })).toBeTruthy()
+    expect(within(table).queryByRole('columnheader', { name: /^Дата$/ })).toBeNull()
+    expect(within(table).getByText('ещё не двигались')).toBeTruthy()
+  })
+
+  it('offers no hover underline on a row: opening one is a named control, not a link', async () => {
+    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true })] })
+    renderScreen()
+    const open = within(requestsTable()).getByRole('button', { name: 'Заявка №1' })
+
+    expect(open.getAttribute('data-variant')).not.toBe('link')
+    expect(open.className).not.toMatch(/underline/)
+    for (const row of within(requestsTable()).getByRole('table').querySelectorAll('tbody tr')) {
+      expect(row.className).not.toMatch(/underline/)
+      expect(row.getAttribute('onclick')).toBeNull()
+    }
+  })
+
+  it('keeps the whole toolbar on ONE row', async () => {
+    renderScreen()
+    const scope = screen.getByRole('tablist', { name: 'Чьи заявки' })
+    const view = screen.getByRole('tablist', { name: 'Вид' })
+
+    // The nearest ancestor that holds BOTH toggles is the toolbar; it is a
+    // flex ROW that never wraps, which is the whole of the owner's complaint.
+    let toolbar: HTMLElement | null = scope
+    while (toolbar !== null && !toolbar.contains(view)) toolbar = toolbar.parentElement
+    expect(toolbar).not.toBeNull()
+    expect(toolbar?.className).toContain('flex')
+    expect(toolbar?.className).not.toContain('flex-wrap')
+    expect(toolbar?.className).not.toContain('flex-col')
+  })
+
+  it('runs every act of this screen through ONE overlay shape — the Sheet', async () => {
+    refine.custom.data = snapshot({ requests: [item({ id: 1, own: false, status: 'submitted' })] })
+    renderScreen()
+    pick('tab', 'Все')
+    openCard(1)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Отклонить…' }))
+    await screen.findByRole('region', { name: 'Отклонить заявку' })
+
+    // ONE dialog on the screen — the sheet. The refusal is a section inside it,
+    // not a second overlay with a second footer grammar.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull()
+  })
 })

@@ -1,19 +1,36 @@
 'use client'
 
+import type { HttpError } from '@refinedev/core'
+import { useTable } from '@refinedev/react-table'
+import type { Column, ColumnDef } from '@tanstack/react-table'
 import React from 'react'
 
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
+import { DataTable } from '@/ui/refine-ui/data-table/data-table'
+import { DataTableSorter } from '@/ui/refine-ui/data-table/data-table-sorter'
 
-import { formatDate, REQUEST_STATUS_LABELS } from './constants'
+import {
+  formatDate,
+  REQUESTS_RESOURCE,
+  REQUEST_STATUS_BADGE_VARIANT,
+  REQUEST_STATUS_LABELS,
+} from './constants'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
 import {
   currencyPrecision,
   formatRequestMoney,
   type FinanceRequestBoardAct,
 } from './request-board-model'
-import { requestRowActs, tableShowsRefusalReason } from './request-table-model'
+import {
+  requestAmountTotals,
+  requestRowActs,
+  requestTableRows,
+  tableShowsRefusalReason,
+  type RequestTableScope,
+} from './request-table-model'
+
+const PAGE_SIZE = 25
 
 const ACT_LABELS: Record<FinanceRequestBoardAct, string> = {
   approve: 'Одобрить',
@@ -21,17 +38,26 @@ const ACT_LABELS: Record<FinanceRequestBoardAct, string> = {
   confirm: 'Провести',
 }
 
+/** The kit's sorter, with the aria text this kit has no i18n layer to give it. */
+function Sorter({ column, label }: { column: Column<RequestBoardItem>; label: string }) {
+  return <DataTableSorter column={column} title={label} aria-label={label} />
+}
+
 /**
  * THE DEFAULT VIEW OF `/p/finance/requests` — owner decision 35 (Антон,
- * 2026-09-14, #115), PRD 339 US-2/US-3.
+ * 2026-09-14, #115), PRD 339 US-2/US-3, rebuilt on the whitelist's List block
+ * on 2026-09-15 (owner acceptance of the same day, #388 wave 3).
  *
- * COMPOSITION (the agent's call; the visual source is the adopted standard
- * system, `design-source/README.md`'s `system:` row at `fidelity: visual`).
- * ONE object dominates: the list of requests, full width, nothing beside it.
- * Where the kanban answers «what is waiting for MY decision», the table answers
- * «what happened to this request» — a question every member has and only a
- * chronological list answers, which is why it is the view the route opens on
- * and the board is now the approver's alternative.
+ * REUSE — the ladder, honestly climbed this time. `docs/design/ui-whitelist.md`
+ * SETTLES «a register of records with paging» as the Refine `data-table` block
+ * driven by `useTable`, and a settled row is an IMPORT, not a bespoke
+ * candidate. The justification this file used to carry — «the block wants a
+ * paged resource and this surface reads one snapshot through `useCustom`» — is
+ * withdrawn: TanStack accepts any array, and the provider now answers `getList`
+ * from that same snapshot (`request-board-provider.ts`). What is left for this
+ * screen is exactly what the whitelist row says is left: its `ColumnDef[]`. The
+ * head, the rows, the loading skeleton, the empty state, the pager and (since
+ * #388) the totals row are the block's.
  *
  * THE COLUMNS ARE THE OWNER'S SIX, in reading order: when, who, how much, what
  * for, where it stands, and — when there is one to read — why it was refused.
@@ -39,137 +65,248 @@ const ACT_LABELS: Record<FinanceRequestBoardAct, string> = {
  * what a member recognises their own request by; the purpose alone reads as a
  * category, not as «my microphone».
  *
- * REUSE. The kit's `@/ui/table` primitives, not the Refine `data-table` block
- * of `docs/design/ui-whitelist.md` — that block is driven by `useTable` over a
- * paged RESOURCE, and this surface reads ONE snapshot through `useCustom`
- * because a board that fetched five collections would render five different
- * moments of the same ledger (`request-board-provider.ts` refuses `getList` on
- * purpose). Adopting the block would mean bending the endpoint into a resource
- * it is not, for a pager over rows that already all arrived.
+ * AN HONEST DATE HEADER (owner acceptance 2026-09-15). The column used to
+ * promise «Дата» and answer «не двигались» for a pre-spend intent. The header
+ * now names what the value IS — «Деньги ушли» — so an empty answer answers the
+ * question that was asked. The column is deliberately NOT split: the contract
+ * carries no filing date to put in a second column (EARS-533 gives a request
+ * one date, and only once the money moves), so splitting would invent a value.
+ *
+ * ROWS ARE THE BLOCK'S, AND SO IS OPENING ONE. The block renders its own
+ * `TableRow`; hanging an `onClick` on that primitive is outside the block's API
+ * and is the interaction-state defect `pnpm lint:interaction-states` is written
+ * for. Each row therefore carries a NAMED «Открыть» control — one target,
+ * reachable by pointer and by keyboard — and no hover underline anywhere.
  *
  * NOTHING HERE IS A BOUNDARY. Reading is open to every platform member
  * (EARS-530), and every act is re-refused by the module itself (EARS-501).
  */
 export function RequestsTable({
-  rows,
+  requests,
   references,
   canApprove,
+  scope,
   onOpen,
   onAct,
 }: {
-  rows: readonly RequestBoardItem[]
+  /** The whole register this reader may see — the footer adds up ALL of it. */
+  requests: readonly RequestBoardItem[]
   references: RequestBoardReferences
   canApprove: boolean
+  scope: RequestTableScope
   onOpen: (request: RequestBoardItem) => void
   onAct: (request: RequestBoardItem, act: FinanceRequestBoardAct) => void
 }) {
-  const withReason = tableShowsRefusalReason(rows)
+  // The register as the scope narrows it — what the totals row adds up, and
+  // what decides whether the refusal column is on the table at all. Both are
+  // questions about the WHOLE register, so neither may be answered from the
+  // page the block happens to be showing.
+  const scoped = React.useMemo(() => requestTableRows(requests, scope), [requests, scope])
+  const totals = React.useMemo(() => requestAmountTotals(scoped), [scoped])
+  const withReason = tableShowsRefusalReason(scoped)
+
+  const columns = React.useMemo<ColumnDef<RequestBoardItem>[]>(() => {
+    const defs: ColumnDef<RequestBoardItem>[] = [
+      {
+        id: 'occurredOn',
+        accessorKey: 'occurredOn',
+        size: 150,
+        header: ({ column }) => (
+          <>
+            Деньги ушли
+            <Sorter column={column} label="Сортировать по дате движения денег" />
+          </>
+        ),
+        // «Итого» labels the footer row; the sum itself stands under «Сумма».
+        footer: () => <span className="font-medium">Итого</span>,
+        cell: ({ row }) =>
+          row.original.occurredOn === null ? (
+            <span className="text-muted-foreground">ещё не двигались</span>
+          ) : (
+            <span className="tabular-nums">{formatDate(row.original.occurredOn)}</span>
+          ),
+      },
+      {
+        id: 'createdByName',
+        accessorKey: 'createdByName',
+        size: 170,
+        header: ({ column }) => (
+          <>
+            Кто подал
+            <Sorter column={column} label="Сортировать по подавшему" />
+          </>
+        ),
+        cell: ({ row }) => row.original.createdByName ?? '—',
+      },
+      {
+        id: 'amount',
+        accessorKey: 'amount',
+        size: 160,
+        header: ({ column }) => (
+          <>
+            Сумма
+            <Sorter column={column} label="Сортировать по сумме" />
+          </>
+        ),
+        footer: () => (
+          <div className="space-y-0.5 text-right font-medium tabular-nums">
+            {totals.length === 0
+              ? '—'
+              : totals.map((total) => (
+                  <div key={total.currency}>
+                    {formatRequestMoney(
+                      total.amount,
+                      total.currency,
+                      currencyPrecision(references.currencies, total.currency),
+                    )}
+                  </div>
+                ))}
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums">
+            {formatRequestMoney(
+              row.original.amount,
+              row.original.currency,
+              currencyPrecision(references.currencies, row.original.currency),
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'purpose',
+        size: 260,
+        header: ({ column }) => (
+          <>
+            Назначение
+            <Sorter column={column} label="Сортировать по назначению" />
+          </>
+        ),
+        cell: ({ row }) => (
+          <div className="min-w-0">
+            <span className="block truncate font-medium">
+              {row.original.purpose?.name ?? 'Назначение предложено'}
+            </span>
+            {row.original.note === null ? null : (
+              <span className="block truncate text-xs text-muted-foreground">
+                {row.original.note}
+              </span>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'status',
+        accessorKey: 'status',
+        size: 160,
+        header: ({ column }) => (
+          <>
+            Статус
+            <Sorter column={column} label="Сортировать по статусу" />
+          </>
+        ),
+        cell: ({ row }) => (
+          <Badge variant={REQUEST_STATUS_BADGE_VARIANT[row.original.status]}>
+            {REQUEST_STATUS_LABELS[row.original.status]}
+          </Badge>
+        ),
+      },
+    ]
+
+    // A column that is empty for every row of this register is width spent
+    // saying nothing — and at 390 px the width is the whole budget.
+    if (withReason) {
+      defs.push({
+        id: 'refusalReason',
+        accessorKey: 'refusalReason',
+        size: 220,
+        enableSorting: false,
+        header: () => <>Причина отказа</>,
+        cell: ({ row }) =>
+          row.original.refusalReason ?? <span className="text-muted-foreground">—</span>,
+      })
+    }
+
+    defs.push({
+      id: 'actions',
+      size: canApprove ? 300 : 140,
+      enableSorting: false,
+      header: () => <span className="sr-only">Действия</span>,
+      cell: ({ row }) => {
+        const request = row.original
+        return (
+          <div className="flex justify-end gap-2">
+            {requestRowActs(request, canApprove).map((act) => (
+              <Button
+                key={act}
+                variant={act === 'approve' ? 'default' : 'outline'}
+                size="sm"
+                aria-label={`${ACT_LABELS[act]} заявку №${request.id}`}
+                onClick={() => onAct(request, act)}
+              >
+                {ACT_LABELS[act]}
+              </Button>
+            ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Заявка №${request.id}`}
+              onClick={() => onOpen(request)}
+            >
+              Открыть
+            </Button>
+          </div>
+        )
+      },
+    })
+
+    return defs
+  }, [canApprove, onAct, onOpen, references.currencies, totals, withReason])
+
+  const table = useTable<RequestBoardItem, HttpError>({
+    columns,
+    refineCoreProps: {
+      resource: REQUESTS_RESOURCE,
+      pagination: { pageSize: PAGE_SIZE },
+      // PERMANENT, not `setFilters`: `@refinedev/react-table` mirrors tanstack's
+      // `columnFilters` into Refine's filters on every render, so a filter
+      // pushed imperatively is overwritten by the empty column state before the
+      // query runs. The scope is a query-level narrowing the reader cannot
+      // clear per column, which is exactly what `permanent` is for.
+      filters: {
+        permanent: scope === 'mine' ? [{ field: 'own', operator: 'eq', value: true }] : [],
+      },
+    },
+  })
+
+  const { setCurrentPage } = table.refineCore
+
+  // A new scope is a new register: page 2 of the previous one means nothing.
+  React.useEffect(() => {
+    setCurrentPage(1)
+    // `setCurrentPage` is re-created on every render by the hook; depending on
+    // it would reset the page on every render instead of on every new scope.
+  }, [scope])
 
   return (
     <div className="space-y-3">
-      {/* The remaining columns are a swipe away on a phone: the kit's container
-          scrolls, but an overlay scrollbar says nothing while it is idle, so
-          the surface says it in words below `sm`. */}
+      {/* The block owns the scroll container; what it cannot own is that an
+          overlay scrollbar says nothing while it is idle. The remaining columns
+          are a swipe away on a phone, so the surface says it in words below
+          `sm` — the same fix the previous round shipped, kept because the
+          reader's problem did not change with the markup. */}
       <p className="text-sm text-muted-foreground sm:hidden">
         Таблица прокручивается вбок: сумма, статус и решение — правее.
       </p>
-      <Table className="min-w-[46rem]">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Дата</TableHead>
-            <TableHead>Кто подал</TableHead>
-            <TableHead className="text-right">Сумма</TableHead>
-            <TableHead>Назначение</TableHead>
-            <TableHead>Статус</TableHead>
-            {withReason ? <TableHead>Причина отказа</TableHead> : null}
-            {canApprove ? (
-              <TableHead>
-                <span className="sr-only">Решение</span>
-              </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((request) => {
-            const acts = requestRowActs(request, canApprove)
-            return (
-              <TableRow
-                key={request.id}
-                // The whole row is the pointer target — a table whose rows open
-                // something and look inert is the row-action defect of #433 in
-                // another shape. The keyboard reaches the same act through the
-                // named control in «Назначение», which is why that one is a
-                // real button and not a styled span.
-                onClick={() => onOpen(request)}
-                className="cursor-pointer"
-              >
-                <TableCell className="tabular-nums">
-                  {request.occurredOn === null ? (
-                    <span className="text-muted-foreground">не двигались</span>
-                  ) : (
-                    formatDate(request.occurredOn)
-                  )}
-                </TableCell>
-                <TableCell className="max-w-[18ch] whitespace-normal">
-                  {request.createdByName ?? '—'}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatRequestMoney(
-                    request.amount,
-                    request.currency,
-                    currencyPrecision(references.currencies, request.currency),
-                  )}
-                </TableCell>
-                <TableCell className="max-w-[28ch] whitespace-normal">
-                  <Button
-                    variant="link"
-                    aria-label={`Заявка №${request.id}`}
-                    className="h-auto justify-start p-0 text-left font-normal whitespace-normal"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onOpen(request)
-                    }}
-                  >
-                    {request.purpose?.name ?? 'Назначение предложено'}
-                  </Button>
-                  {request.note === null ? null : (
-                    <span className="block text-xs text-muted-foreground">{request.note}</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{REQUEST_STATUS_LABELS[request.status]}</Badge>
-                </TableCell>
-                {withReason ? (
-                  <TableCell className="max-w-[24ch] whitespace-normal">
-                    {request.refusalReason ?? <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                ) : null}
-                {canApprove ? (
-                  <TableCell className="text-right">
-                    {acts.length === 0 ? null : (
-                      <div className="flex justify-end gap-2">
-                        {acts.map((act) => (
-                          <Button
-                            key={act}
-                            variant={act === 'approve' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onAct(request, act)
-                            }}
-                          >
-                            {ACT_LABELS[act]}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-                  </TableCell>
-                ) : null}
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+      <DataTable
+        table={table}
+        emptyTitle={scope === 'mine' ? 'Вы ещё не подавали заявок' : 'Заявок пока нет'}
+        emptyDescription={
+          scope === 'mine'
+            ? 'Всё, что вы подадите, появится здесь — включая черновики и отозванное.'
+            : 'Первая заявка появится здесь, как только кто-нибудь её подаст.'
+        }
+      />
     </div>
   )
 }

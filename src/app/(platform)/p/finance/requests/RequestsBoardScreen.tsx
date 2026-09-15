@@ -1,6 +1,6 @@
 'use client'
 
-import { useCustom, useCustomMutation, type HttpError } from '@refinedev/core'
+import { useCustom, useCustomMutation, useInvalidate, type HttpError } from '@refinedev/core'
 import React from 'react'
 import { toast } from 'sonner'
 
@@ -12,7 +12,7 @@ import { Skeleton } from '@/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/tabs'
 import { cn } from '@/ui/utils'
 
-import { DOCUMENTS_ENDPOINT, errorMessage, REQUESTS_ENDPOINT } from './constants'
+import { DOCUMENTS_ENDPOINT, errorMessage, REQUESTS_ENDPOINT, REQUESTS_RESOURCE } from './constants'
 import { LiabilityPanel } from './LiabilityPanel'
 import { RequestCard } from './RequestCard'
 import { RequestDetailsSheet, type RequestAct, type RequestActPayload } from './RequestDetailsSheet'
@@ -34,7 +34,6 @@ import { RequestsTable } from './RequestsTable'
 import {
   canToggleRequestsView,
   DEFAULT_REQUEST_TABLE_SCOPE,
-  requestTableRows,
   REQUESTS_VIEW_STORAGE_KEY,
   REQUEST_TABLE_SCOPES,
   resolveRequestsView,
@@ -138,6 +137,17 @@ export function RequestsBoardScreen() {
     HttpError,
     Record<string, unknown>
   >()
+  /**
+   * The register is a RESOURCE since #388: the table's rows arrive through
+   * `useTable`, which caches per page, per order and per scope. Re-reading the
+   * chrome's snapshot therefore no longer refreshes the rows — the act has to
+   * say that the list is stale, and Refine's own invalidation is how.
+   */
+  const invalidate = useInvalidate()
+  const refreshRegister = React.useCallback(
+    () => invalidate({ resource: REQUESTS_RESOURCE, invalidates: ['list'] }),
+    [invalidate],
+  )
 
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
   const [pendingAct, setPendingAct] = React.useState<RequestAct | null>(null)
@@ -227,6 +237,7 @@ export function RequestsBoardScreen() {
           onSuccess: () => {
             setUploading(false)
             void refetch()
+            void refreshRegister()
           },
           onError: (error: unknown) => {
             setUploading(false)
@@ -235,7 +246,7 @@ export function RequestsBoardScreen() {
         },
       )
     },
-    [mutate, refetch],
+    [mutate, refetch, refreshRegister],
   )
 
   const runAct = React.useCallback(
@@ -263,11 +274,12 @@ export function RequestsBoardScreen() {
           onSuccess: () => {
             closeSheets()
             void refetch()
+            void refreshRegister()
           },
         },
       )
     },
-    [closeSheets, mutate, refetch],
+    [closeSheets, mutate, refetch, refreshRegister],
   )
 
   const fileRequest = React.useCallback(
@@ -305,13 +317,14 @@ export function RequestsBoardScreen() {
           onSuccess: () => {
             closeSheets()
             void refetch()
+            void refreshRegister()
           },
           onError: (error: unknown) =>
             setFormFailure(errorMessage(error, 'Не удалось подать заявку.')),
         },
       )
     },
-    [closeSheets, formFor, mutate, refetch, snapshot],
+    [closeSheets, formFor, mutate, refetch, refreshRegister, snapshot],
   )
 
   if (query.isLoading && snapshot === null) {
@@ -347,7 +360,6 @@ export function RequestsBoardScreen() {
   const { permissions, references, requests, liabilities } = snapshot
   const groups = groupRequestsByStatus(requests)
   const view = resolveRequestsView(storedView, permissions.canApprove)
-  const rows = requestTableRows(requests, scope)
   const selected = requests.find((request) => request.id === selectedId) ?? null
   const editing = typeof formFor === 'number' ? requests.find((r) => r.id === formFor) : undefined
 
@@ -434,7 +446,14 @@ export function RequestsBoardScreen() {
                   belongs to the table: the board is a queue of decisions, and
                   «мои» over a decision queue is a filter on somebody else's
                   work. */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* ONE ROW (owner acceptance, Антон, 2026-09-15: «the filter
+                  toolbar in one row, not toggles stacked vertically»). Both
+                  controls are `TabsList`s of the kit, and the row never wraps:
+                  the two groups are short, they sit at opposite edges, and the
+                  board's sentence is what gives way below `sm` — a hint that
+                  disappears costs the reader nothing, a control that jumps to
+                  its own line costs them the row. */}
+              <div className="flex min-w-0 items-center justify-between gap-3">
                 {view === 'table' ? (
                   <Tabs value={scope} onValueChange={(next) => setScope(next as RequestTableScope)}>
                     <TabsList aria-label="Чьи заявки">
@@ -446,7 +465,7 @@ export function RequestsBoardScreen() {
                     </TabsList>
                   </Tabs>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="hidden min-w-0 truncate text-sm text-muted-foreground sm:block">
                     Доска: четыре состояния машины статусов. Перенос карточки открывает акт.
                   </p>
                 )}
@@ -535,22 +554,14 @@ export function RequestsBoardScreen() {
                     })}
                   </div>
                 )
-              ) : rows.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-10 text-center">
-                  <p className="font-heading text-base font-medium">
-                    {scope === 'mine' ? 'Вы ещё не подавали заявок' : 'Заявок пока нет'}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {scope === 'mine'
-                      ? 'Всё, что вы подадите, появится здесь — включая черновики и отозванное.'
-                      : 'Первая заявка появится здесь, как только кто-нибудь её подаст.'}
-                  </p>
-                </div>
               ) : (
+                /* The empty state is the BLOCK's since #388 — one place, one
+                   shape, per-scope copy through its `emptyTitle` props. */
                 <RequestsTable
-                  rows={rows}
+                  requests={requests}
                   references={references}
                   canApprove={permissions.canApprove}
+                  scope={scope}
                   onOpen={(request) => {
                     setPendingAct(null)
                     setSelectedId(request.id)
