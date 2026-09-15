@@ -947,6 +947,21 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-03-437-guard-only-target -->
 
+- [ ] 2026-09-15 #487's fix moved the `[data-bbm-ui]` scope into the seven kit
+      components that portal, and `tests/unit/ui-kit.spec.ts` asserts it by
+      RENDERING each of them open — so the list of covered surfaces is
+      enumerated by hand. An EIGHTH portaled component added to the kit (a
+      `HoverCard`, a `ContextMenu`, a `Menubar`) is scoped only if whoever adds
+      it also adds a case there; nothing fails otherwise. A mechanical guard —
+      a lint that reads the kit's sources and refuses a Radix `Portal` whose
+      child carries no `data-bbm-ui` — was deliberately NOT built here: #487's
+      own scope says to route that question rather than widen the task, and the
+      kit is seven files with one reviewer-visible convention — return
+      condition: the first `shadcn add` of a component that portals, or the
+      third time that test's list is edited (#487)
+
+<!-- debt-entry-end: 2026-09-15-487portalscope -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
