@@ -100,3 +100,92 @@ export function resolveRequestsView(stored: string | null, canApprove: boolean):
 export function tableShowsRefusalReason(rows: readonly RequestBoardItem[]): boolean {
   return rows.some((row) => row.status === 'refused' || row.refusalReason !== null)
 }
+
+export type RequestAmountTotal = { currency: string; amount: string }
+
+/**
+ * THE TOTALS ROW (#388, owner acceptance 2026-09-15).
+ *
+ * A register of money in more than one currency has no single total, so the
+ * footer carries one sum per currency rather than an arithmetically false one.
+ * Minor units all the way — `amount` is the same integer string the contract
+ * carries, and it is the screen that formats it.
+ */
+export function requestAmountTotals(rows: readonly RequestBoardItem[]): RequestAmountTotal[] {
+  const sums = new Map<string, bigint>()
+  for (const row of rows) {
+    sums.set(row.currency, (sums.get(row.currency) ?? 0n) + BigInt(row.amount))
+  }
+  return [...sums].map(([currency, amount]) => ({ currency, amount: amount.toString() }))
+}
+
+export type RequestSorter = { field: string; order: 'asc' | 'desc' }
+
+export type RequestPageQuery = {
+  /** «Мои» — the reader's own filings only. Absent means the whole queue. */
+  own?: boolean
+  sorters?: readonly RequestSorter[]
+  currentPage?: number
+  pageSize?: number
+}
+
+export type RequestPage = {
+  rows: RequestBoardItem[]
+  /** The size of the FILTERED register — what the pager counts pages of. */
+  total: number
+  /** The money of the filtered register, not of the visible page. */
+  totals: RequestAmountTotal[]
+}
+
+/**
+ * The comparable value of a sortable column, by the column's own id.
+ *
+ * A column the reader cannot sort by has no entry here, and a sorter naming
+ * one leaves the register in its default order rather than shuffling it.
+ */
+const SORT_KEYS: Record<string, (request: RequestBoardItem) => string> = {
+  // An intent has no date at all (EARS-533); it sorts as the far future so the
+  // two views of this queue agree about what «newest first» means.
+  occurredOn: (request) => request.occurredOn ?? '9999-12-31',
+  createdByName: (request) => request.createdByName ?? '',
+  // Minor units, zero-padded: a string compare over money is only honest once
+  // every value is the same width.
+  amount: (request) => request.amount.padStart(24, '0'),
+  purpose: (request) => request.purpose?.name ?? request.proposal?.text ?? '',
+  status: (request) => request.status,
+  refusalReason: (request) => request.refusalReason ?? '',
+}
+
+/**
+ * WHAT `getList` ANSWERS WITH — the filter, the order and the page, as pure
+ * data (#388 wave 3).
+ *
+ * The requests surface is driven by the whitelist's List block
+ * (`docs/design/ui-whitelist.md` → «List»), which means Refine's `useTable`
+ * owns paging, sorting and filtering and asks the data provider for ONE page.
+ * The provider reads the board snapshot and answers through this function, so
+ * the three rules a register lives by are testable without a DOM and without a
+ * network.
+ */
+export function selectRequestPage(
+  requests: readonly RequestBoardItem[],
+  query: RequestPageQuery,
+): RequestPage {
+  const filtered = requestTableRows(requests, query.own === true ? 'mine' : 'all')
+
+  const sorter = query.sorters?.find((candidate) => candidate.field in SORT_KEYS)
+  if (sorter !== undefined) {
+    const key = SORT_KEYS[sorter.field]!
+    const direction = sorter.order === 'desc' ? -1 : 1
+    filtered.sort(
+      (left, right) => direction * (key(left).localeCompare(key(right)) || left.id - right.id),
+    )
+  }
+
+  const pageSize = query.pageSize ?? filtered.length
+  const currentPage = query.currentPage ?? 1
+  const from = pageSize > 0 ? (currentPage - 1) * pageSize : 0
+  const rows = pageSize > 0 ? filtered.slice(from, from + pageSize) : filtered.slice()
+
+  return { rows, total: filtered.length, totals: requestAmountTotals(filtered) }
+}

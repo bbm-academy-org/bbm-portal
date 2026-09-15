@@ -25,6 +25,40 @@ export const REQUEST_STATUS_LABELS: Record<FinanceIntakeStatus, string> = {
   posted: 'Проведена',
 }
 
+/**
+ * THE STATUS COLOUR MAP (#388, owner acceptance 2026-09-15: «each status gets
+ * its own badge variant, so status is readable without reading»).
+ *
+ * FOUR STOCK VARIANTS, NO FIFTH (owner go, Антон, 2026-09-15): the kit's
+ * `badge` publishes `default` / `secondary` / `destructive` / `outline`, and a
+ * new variant would be a bespoke element class the whitelist has not settled.
+ * Six statuses therefore map onto four CLASSES OF MEANING, not onto six
+ * colours — and the classes are the questions a reader of this register asks:
+ *
+ * | variant       | what it says                                      |
+ * | ------------- | ------------------------------------------------- |
+ * | `default`     | a decision is owed HERE and now — `submitted`     |
+ * | `secondary`   | authorised, waiting on a document — `approved`    |
+ * | `destructive` | refused, and the reason is on the row — `refused` |
+ * | `outline`     | nothing is owed: `posted`, `draft`, `cancelled`   |
+ *
+ * `posted` shares `outline` with the two inert states on purpose: a posted
+ * request is settled, and the loudest treatment on a register belongs to the
+ * rows that still want something from the reader.
+ */
+export const REQUEST_STATUS_BADGE_VARIANT: Record<FinanceIntakeStatus, RequestStatusBadgeVariant> =
+  {
+    draft: 'outline',
+    submitted: 'default',
+    approved: 'secondary',
+    refused: 'destructive',
+    cancelled: 'outline',
+    posted: 'outline',
+  }
+
+/** The stock `badge` variants this surface is allowed to reach for. */
+export type RequestStatusBadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
+
 export const DOCUMENT_KIND_LABELS: Record<string, string> = {
   ru_invoice: 'Счёт',
   fiscal_receipt: 'Чек',
