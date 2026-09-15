@@ -111,7 +111,9 @@ export type RequestAmountTotal = { currency: string; amount: string }
  * Minor units all the way — `amount` is the same integer string the contract
  * carries, and it is the screen that formats it.
  */
-export function requestAmountTotals(rows: readonly RequestBoardItem[]): RequestAmountTotal[] {
+export function requestAmountTotals(
+  rows: readonly { amount: string; currency: string }[],
+): RequestAmountTotal[] {
   const sums = new Map<string, bigint>()
   for (const row of rows) {
     sums.set(row.currency, (sums.get(row.currency) ?? 0n) + BigInt(row.amount))
