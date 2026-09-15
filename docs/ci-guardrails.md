@@ -276,8 +276,9 @@ in §5 with a reason, and the guard is in one of these classes:
    and writes that reason into the session log. Clause (d) is not decoration: without it
    the guard is a dead end rather than a gate, which is precisely what §6's
    `surface-decision-debt-gate` row names as the prerequisite for any gate that can stop a
-   session. Three class-3 guards exist today: `zero-dispatch` and
-   `lead-context-budget` (§6, both session hooks) and `design-fidelity` (§5, a CI job).
+   session. Four class-3 guards exist today: `zero-dispatch` and
+   `lead-context-budget` (§6, both session hooks) and `design-fidelity` and
+   `whitelist-blocks` (§5, both CI jobs).
    **Clause (d) reads per plane.** On a session hook the hatch is consumed once and lands in
    the session log — with one registered reading: a guard that fences a monotone quantity
    rather than a rate (`lead-context-budget`) keeps a persistent, reasoned, loud marker
