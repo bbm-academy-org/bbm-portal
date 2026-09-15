@@ -373,10 +373,14 @@ describe('whitelist-blocks-lint: marker plumbing', () => {
     expect(extractMarkerValues('nothing here')).toEqual([])
   })
 
-  it('classifies the three shapes the canon names', () => {
+  it('classifies a filled record, an unfilled shape and junk', () => {
     expect(classifyMarker('GO — Антон, 2026-09-15 — approved').kind).toBe('go')
-    expect(classifyMarker('GO').kind).toBe('placeholder')
+    // A bare `GO` carries no separator and therefore no tail at all: it is not
+    // the printed shape either, so it reads as junk rather than as a template
+    // left unfilled. What matters is that neither is a record.
+    expect(classifyMarker('GO').kind).not.toBe('go')
     expect(classifyMarker('GO — <owner, date>').kind).toBe('placeholder')
+    expect(classifyMarker('TBD').kind).toBe('placeholder')
     expect(classifyMarker('someone said it is fine').kind).toBe('unrecognized')
   })
 })
