@@ -401,9 +401,9 @@ error.
 | 41   | `bbm-test` opens the SAME default: the table, «Мои» preselected — the toggle is beside it, the board is not rendered     |
 | 42   | the approver on «Все»: 9 «Одобрить» and 14 «Отклонить…» row actions over the 57 rows, exactly on the actionable statuses |
 | 43   | the board toggle pressed — the four columns are back, and a reload keeps them (`bbm.finance.requests.view` = `board`)    |
-| 44   | «Одобрить» straight from a row: the toast, and the row's status really reads «Одобрена» on the re-read                   |
-| 45   | «Отклонить…» from a row: the reason dialog, mandatory as ever (EARS-512) — the row act opens it, it never refuses alone  |
-| 46   | after the refusal: the row in «Отклонена» carrying the reason in the column that appeared with it                        |
+| 44   | _frames removed_ — «Одобрить» from a row on the PRE-wave-3 table; this head's frame of that act is **67**                |
+| 45   | _frames removed by the eighth pass_ — the refusal `Dialog` is a sheet section now (**54**/**55**)                        |
+| 46   | _frames removed_ — the refusal reason had its OWN column then; since `9bc2a51` it lives in the «Статус» cell (**69**)    |
 | 47   | «Новая заявка» + «Уже потрачено» as a finance role: «Оплачено своими средствами» AND «Счёт списания» both present        |
 
 Files: `<step>-<name>-{desktop,mobile}-{light,dark}.png`, 48 frames.
@@ -483,31 +483,31 @@ theme's own `.dark` class) — plus the primary control of each form and one
 column sorter under three CDP-forced pseudo-states. Next's dev overlay is hidden
 in every frame.
 
-| Step | What it shows                                                                                                          |
-| ---- | ---------------------------------------------------------------------------------------------------------------------- |
-| 03   | the «Обязательства» register, now the same List block, with its `TableFooter` total and the block's pager              |
-| 11   | a forced `500` on the act route — the error toast, and the sheet deliberately stays open                               |
-| 12   | the loading state, caught with the read held open — still the KANBAN's four-block skeleton (defect C below)            |
-| 36   | `bbm-member` opens the route: the table, «Мои» preselected, no board toggle, and the EMPTY state of that scope         |
-| 37   | the same reader on «Все» — «Заявок пока нет» over a footer that sums 1 106 390,00 RUB (defect A below)                 |
-| 39   | «Новая заявка» + «Уже потрачено» as a role-less submitter: the date, and no account picker and no own-funds box        |
-| 41   | `bbm-test` opens the same default: the table, «Мои», two rows, the totals row in TWO currencies, row acts by status    |
-| 42   | the same reader on «Все»: two rows still, a footer that sums the whole register, a refusal column no row fills         |
-| 43   | the board toggle pressed — the four columns are back, 26 cards, the board's own one-row toolbar                        |
-| 48   | «Сумма» sorted ASCENDING — the block's own arrow, and the rows really reordered (240,00 USD above 12 400,00 RUB)       |
-| 49   | the same column DESCENDING                                                                                             |
-| 51   | «Новая заявка» idle: «Подать заявку» disabled, its reason beside it («Заполните: …»), `aria-describedby` wired         |
-| 52   | a MALFORMED «Сумма документа» («сто рублей»): the button stays LIVE, and pressing it delivers that field's FormMessage |
-| 53   | the details sheet opened by the row's named «Открыть» — the pre-spend pair says «вводится при проведении»              |
-| 54   | «Отклонить…» → the refusal SECTION inside the sheet (it was a `Dialog` before wave 3), titled and described            |
-| 55   | that section submitted empty — «Укажите причину отказа.» under the field                                               |
-| 56   | «Провести» → the posting SECTION (also a `Dialog` before wave 3), idle, with the receipt readable above it             |
-| 57   | the same section submitted empty — both refusals under their own field                                                 |
-| 58   | the section filled — «Банк RUB · RUB» and 11.09.2026, the act ready to run                                             |
-| 62   | «Подать заявку» under CDP-FORCED `:hover`, `:focus-visible`, `:active` (desktop, both themes)                          |
-| 63   | the refusal section's «Отклонить заявку» under the same three                                                          |
-| 64   | the posting section's «Провести» under the same three                                                                  |
-| 65   | the «Сумма» column sorter under the same three                                                                         |
+| Step | What it shows                                                                                                           |
+| ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| 03   | the «Обязательства» register, now the same List block, with its `TableFooter` total and the block's pager               |
+| 11   | a forced `500` on the act route — the error toast, and the sheet deliberately stays open                                |
+| 12   | the loading state, caught with the read held open — was the KANBAN's four-block skeleton (defect C); **re-taken below** |
+| 36   | `bbm-member` opens the route: the table, «Мои» preselected, no board toggle, and the EMPTY state of that scope          |
+| 37   | the same reader on «Все» — was «Заявок пока нет» over a 1 106 390,00 RUB footer (defect A); **re-taken below**          |
+| 39   | «Новая заявка» + «Уже потрачено» as a role-less submitter: the date, and no account picker and no own-funds box         |
+| 41   | `bbm-test` opens the same default: the table, «Мои», two rows, the totals row in TWO currencies; **re-taken below**     |
+| 42   | the same reader on «Все»: was two rows and a refusal column no row filled (defect A/B); **re-taken below**              |
+| 43   | the board toggle pressed — the four columns are back, 26 cards, the board's own one-row toolbar                         |
+| 48   | «Сумма» sorted ASCENDING — the block's own arrow, and the rows really reordered (240,00 USD above 12 400,00 RUB)        |
+| 49   | the same column DESCENDING                                                                                              |
+| 51   | «Новая заявка» idle: «Подать заявку» disabled, its reason beside it («Заполните: …»), `aria-describedby` wired          |
+| 52   | a MALFORMED «Сумма документа» («сто рублей»): the button stays LIVE, and pressing it delivers that field's FormMessage  |
+| 53   | the details sheet opened by the row's named «Открыть» — the pre-spend pair says «вводится при проведении»               |
+| 54   | «Отклонить…» → the refusal SECTION inside the sheet (it was a `Dialog` before wave 3), titled and described             |
+| 55   | that section submitted empty — «Укажите причину отказа.» under the field                                                |
+| 56   | «Провести» → the posting SECTION (also a `Dialog` before wave 3), idle, with the receipt readable above it              |
+| 57   | the same section submitted empty — both refusals under their own field                                                  |
+| 58   | the section filled — «Банк RUB · RUB» and 11.09.2026, the act ready to run                                              |
+| 62   | «Подать заявку» under CDP-FORCED `:hover`, `:focus-visible`, `:active` (desktop, both themes)                           |
+| 63   | the refusal section's «Отклонить заявку» under the same three                                                           |
+| 64   | the posting section's «Провести» under the same three                                                                   |
+| 65   | the «Сумма» column sorter under the same three                                                                          |
 
 **The forcing of 62–65 is proved by diff, not asserted.** Each control was
 resolved by a JS expression evaluated INSIDE the overlay on screen (the third
@@ -606,3 +606,125 @@ git-ignored `.playwright-mcp/` (`w3-lib.cjs`, `w3-capture.cjs`, `w3-prove.cjs`
 and friends) and are bound to this seed dataset, the same call every earlier
 pass made; `DEBT.md` already tracks that every task re-implements this harness
 (`2026-09-03-437-journey-harness`).
+
+**A NINTH pass at head `9bc2a51`** — the fix round of 2026-09-16, which answered
+all four defects the eighth pass found: **A** `useTable` is remounted per scope,
+so «Все» reaches the provider (`1cd49d0`); **B** the columns follow an explicit
+1110 px plan — «Кто подал» is dropped under «Мои» and the refusal reason moved
+INTO the «Статус» cell instead of taking a seventh column (`84f7b74`); **C**
+`RequestsSkeleton.tsx` draws the table chrome the default view is loading
+(`93ede37`); **D** the block's no-data cell wraps and holds no 490 px void
+(`9bc2a51`). Everything defect A had blocked was driven for the first time on
+this surface: the whole «Все» register for both readers, its second page, every
+reachable status badge, the approver's row acts run to completion, and another
+member's sheet.
+
+**The stand.** `http://localhost:3000`, the lead's listener from
+`.claude/worktrees/388` on `feat/388-requests-board-blocks` at head `9bc2a51`
+(the fixes reached it through Fast Refresh); data from that worktree's own branch
+DB `platform_388`, carrying what the eighth pass left in it — `pnpm dev:seed`'s
+42 intake rows plus that pass's **#43** (12 400,00 RUB pre-spend, approved, with
+`receipt-388.pdf`) and **#44** (240,00 USD), which is why the register counts
+**34 records** and the footer has two currency lines. Driven with
+`@playwright/test` from the worktree, HEADED, signed in through the real dev
+Zitadel as `bbm-test` (`finance-approve` + `finance-entry`) and as `bbm-member`
+(`platform-user` only); the password was read from a scratchpad file by the
+script through `fs` and never entered a tool call. Harness:
+`.playwright-mcp/w3c-capture.cjs` and `w3-prove.cjs`, both git-ignored.
+
+| Step | What it shows                                                                                                         |
+| ---- | --------------------------------------------------------------------------------------------------------------------- |
+| 12   | the loading state of the DEFAULT view, the read held open — the table chrome, NO kanban columns, at 1440 AND at 390   |
+| 36   | `bbm-member` on «Мои» — the empty register: both lines readable, and «Итого —», not a total over «нет заявок»         |
+| 37   | the same reader on «Все» — 25 of 34 records from every submitter, «Кто подал» present, and «Открыть» the only act     |
+| 38   | ANOTHER member's request opened from that register: the sheet is read-only — «Закрыть» and nothing else               |
+| 41   | `bbm-test` on «Мои» — five columns (no «Кто подал»), the row whole, and the footer that equals those two rows         |
+| 42   | the approver on «Все» — six columns, 25 rows, 9 «Одобрить» / 15 «Отклонить…» / 25 «Открыть», the reason in «Статус»   |
+| 48   | «Сумма» sorted ASCENDING over the whole register                                                                      |
+| 49   | the same column DESCENDING — 210 000,00 RUB on top                                                                    |
+| 65   | the «Сумма» sorter under CDP-forced `:hover`, `:focus-visible`, `:active` (desktop, both themes), re-taken            |
+| 66   | PAGE 2 of the «Все» register — the remaining 9 rows, and the badge «Проведена» that only lives there                  |
+| 67   | «Одобрить» straight from a row (№32): the toast «Заявка одобрена», and the row really reads «Одобрена» on the re-read |
+| 68   | «Отклонить…» straight from a row: the sheet opens ARMED with the refusal SECTION and its reason field                 |
+| 69   | that refusal COMPLETED (№43): «Отклонена» plus its reason INSIDE the status cell, and no «Причина отказа» column      |
+
+**Defect B, re-measured live at 1440×900 under BOTH scopes.** «Мои»: the table is
+1110 px in a container whose `scrollWidth` is **1110 px** against a `clientWidth`
+of **1110 px** — no horizontal scroll, and every row's «Открыть» is painted
+inside the container (`allOpensPainted=true`). «Все», the wider six-column plan:
+the same **1110 / 1110**, still `overflow=false`, still every «Открыть» painted.
+The eighth pass measured 1214 px in 1110 px here. At 390 px the register still
+scrolls sideways — 1094 / 341 under «Все», 952 / 341 under «Мои» — which is the
+deliberate behaviour the surface announces in words above the table.
+
+**Defect C, re-measured.** With the snapshot request held open, the
+«Загружаем заявки» region carries `kanbanGrid=false`, `registerBox=true`, 10
+`Skeleton` blocks and a height of 456 px, identically at 1440 and at 390: the
+route now paints the chrome of the view that is coming, and swaps no layout.
+
+**Defect D, re-measured at 390 px.** The empty register's cell is **224 px**
+tall, not the hard-coded 490 px, and both lines read whole inside the 341 px
+container — «Вы ещё не подавали заявок» and «Всё, что вы подадите, появится
+здесь — включая черновики и отозванное.» (step 36, both themes). The «Все» scope
+of the same reader is not empty on this fixture — it is the whole 34-record
+register (step 37) — so the empty state exists in one scope only, which is the
+truth of the data and not a gap in the matrix.
+
+**The totals were checked by arithmetic, not by eye.** Under «Мои» the footer
+reads «Итого 12 400,00 RUB / 240,00 USD» and the sum of the visible scoped rows
+is exactly `{RUB 12 400,00, USD 240,00}` — the script adds the amount cells it
+can see and compares. Under «Все» the footer reads «Итого 1 106 390,00 RUB /
+240,00 USD» over 34 records across two pages. The eighth pass's worst symptom —
+`bbm-member` reading «Заявок пока нет» above a 1 106 390,00 RUB total — is GONE:
+that reader's empty «Мои» now carries «Итого —».
+
+**Step 65 was re-taken; 62, 63 and 64 were not.** The column plan moved the
+sorter, so its frames were of a layout that no longer exists; the three form CTAs
+live in `RequestDetailsSheet.tsx` and the request form, untouched by the fix
+round, so their frames stand. The re-take was proved the same way: hover /
+focus-visible / active change **236 / 324 / 44 px** in light and **248 / 324 /
+44 px** in dark, every changed pixel inside the sorter's own box (±8 px ring).
+
+**Frames.** 48 promoted — 38 replacing a same-name predecessor (12, 36, 37, 38,
+41, 42, 48, 49 at all four combinations, and the six 65 frames) and 10 new
+(`66-table-page-two-*`, `68-row-refuse-armed-*`, `67-row-approve-done-desktop-light`,
+`69-row-refused-reason-in-status-desktop-light`). 67 and 69 are desktop-light
+only because each is a one-way act on this fixture. **Removed:**
+`44-approver-row-approve-*` and `46-approver-row-refused-*` — both are the
+PRE-wave-3 table, and 46 shows the «Причина отказа» column that this head no
+longer has; their states are 67 and 69.
+
+**What this pass found.** No blocking defect. One small one, re-observed live in
+the DOM:
+
+- **The «Деньги ушли» placeholder is truncated under «Все», with no tooltip.**
+  At 1440 in the six-column plan the cell holding «ещё не двигались» (a pre-spend
+  request, the normal state of a request before posting) needs 114 px and has
+  102 px, so it renders «ещё не двига…»; the `div.truncate` carries no `title`,
+  so the full words are nowhere on the screen. Under «Мои» (five columns) and for
+  `bbm-member` under «Все» the same cell renders whole, so it is the acts column's
+  share of the 1110 px budget. Steps 42, 48, 49, 66.
+
+**Two observations that are NOT defects of this diff.** The sorter's `:active`
+is barely perceptible — 44 changed pixels against 236 for `:hover` — which is the
+kit's ghost-button treatment, identical before the fix round. And the details
+sheet heads its document block «ДОКУМЕНТ — ЧИТАЕТСЯ ПРЯМО ТУТ» even for a reader
+who may not read it, whose body then says «Документ виден подавшему заявку и
+финансовой роли» (step 38); that copy predates wave 3. The three observations the
+eighth pass recorded (the `destructive` tint, the browser's English file picker,
+the «Контрагент» sentinel) are unchanged and were seen again in 68.
+
+**The top bar says «BBM Test» in the member frames too**, as it has since the
+seventh pass: `infra/dev-stand/idp/provision.sh` seeds both dev logins with the
+same profile name. The session really is `bbm-member` — verified this pass
+against `/api/auth/session`, which answers `platform-user` alone for it and the
+four roles including `finance-approve` for `bbm-test` — and the frames prove it
+on screen: no row act anywhere in 37, and a read-only sheet in 38.
+
+**Rows this pass changed in `platform_388`.** Two acts, both from a table row:
+**#32** approved (step 67) and **#43** refused with the reason «Нет
+подтверждающего документа» (step 69). Nothing else was written — 68 opens the
+refusal section and closes it, and the read-only steps write nothing. No ledger
+operation is this pass's. Frames taken BEFORE 69 (12, 41, 42, 48, 49, 66, 67, 68)
+show #43 still «Одобрена»; that is the chronology of the run, not a
+disagreement.
