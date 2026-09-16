@@ -5,6 +5,7 @@ import {
   PLATFORM_USER_ROLE,
   ZITADEL_ROLES_CLAIM,
   claimGateResponse,
+  hasAnyClaim,
   hasClaim,
   normalizeRolesClaim,
   resolveClaimGate,
@@ -208,5 +209,59 @@ describe('a session minted BEFORE the roles claim existed (deploy migration)', (
 
   it('leaves a handler on the bare 403 — a route handler never redirects', () => {
     expect(claimGateResponse(legacy)?.status).toBe(403)
+  })
+})
+
+/**
+ * A surface admitted by ANY OF several claims (EARS-466, spec 339 EARS-529 as
+ * widened by owner decision 34, 2026-09-14).
+ *
+ * `requiredClaim` was born as one string because every gated surface had one
+ * claim. The finance reference catalogues are the first admitted by two —
+ * `platform-admin` OR `finance-entry` — so the gate takes a SET and the
+ * semantics are any-of. An EMPTY set admits nobody: a surface whose claim list
+ * came back empty has failed to resolve, and fail-open is not a degradation.
+ */
+describe('a set of admitting claims (EARS-466, EARS-529)', () => {
+  const entry = { user: { email: 'e@bbm.local', roles: [PLATFORM_USER_ROLE, 'finance-entry'] } }
+
+  it('hasAnyClaim: any one of the listed claims admits', () => {
+    expect(hasAnyClaim(entry, [PLATFORM_ADMIN_ROLE, 'finance-entry'])).toBe(true)
+    expect(hasAnyClaim(admin, [PLATFORM_ADMIN_ROLE, 'finance-entry'])).toBe(true)
+    expect(hasAnyClaim(member, [PLATFORM_ADMIN_ROLE, 'finance-entry'])).toBe(false)
+  })
+
+  it('hasAnyClaim: an empty set admits nobody — fail closed', () => {
+    expect(hasAnyClaim(admin, [])).toBe(false)
+  })
+
+  it('resolveClaimGate takes the set and renders for a holder of either', () => {
+    expect(
+      resolveClaimGate(entry, '/p/admin/finance/purposes', [PLATFORM_ADMIN_ROLE, 'finance-entry']),
+    ).toEqual({
+      type: 'render',
+    })
+    expect(
+      resolveClaimGate(admin, '/p/admin/finance/purposes', [PLATFORM_ADMIN_ROLE, 'finance-entry']),
+    ).toEqual({
+      type: 'render',
+    })
+    expect(
+      resolveClaimGate(member, '/p/admin/finance/purposes', [PLATFORM_ADMIN_ROLE, 'finance-entry']),
+    ).toEqual({
+      type: 'forbidden',
+    })
+  })
+
+  it('resolveClaimGate: the narrower neighbouring section still refuses the same session', () => {
+    expect(resolveClaimGate(entry, '/p/admin/hours/periods', [PLATFORM_ADMIN_ROLE])).toEqual({
+      type: 'forbidden',
+    })
+  })
+
+  it('claimGateResponse answers the same question with a bare 403', () => {
+    expect(claimGateResponse(entry, [PLATFORM_ADMIN_ROLE, 'finance-entry'])).toBeNull()
+    expect(claimGateResponse(member, [PLATFORM_ADMIN_ROLE, 'finance-entry'])?.status).toBe(403)
+    expect(claimGateResponse(admin, [])?.status).toBe(403)
   })
 })

@@ -43,7 +43,8 @@ export const FIXTURE_AUDIT_CTX: AuditContext = { actorEmail: null, source: 'cli:
  * Since #380 this actor administers the REFERENCES and nothing else: it holds
  * no flow role, so every ledger write it attempts is refused (EARS-529). That is
  * not an oversight in the fixture, it is the clause — the ledger-writing actor
- * is `APPROVER` below.
+ * is `APPROVER` below. Since #479 it is no longer the ONLY reference
+ * administrator: `ENTRY` administers them too (decision 34).
  */
 export const ADMIN: FinanceActor = {
   email: 'anton@bbm.academy',
@@ -56,7 +57,11 @@ export const APPROVER: FinanceActor = {
   roles: ['platform-user', 'finance-approve'],
 }
 
-/** The intake actor — `finance-entry` fills the intake and attaches documents (EARS-501). */
+/**
+ * The intake actor — `finance-entry` fills the intake and attaches documents
+ * (EARS-501), and since owner decision 34 (2026-09-14) also administers the
+ * reference catalogues (EARS-529).
+ */
 export const ENTRY: FinanceActor = {
   email: 'entry@bbm.academy',
   roles: ['platform-user', 'finance-entry'],

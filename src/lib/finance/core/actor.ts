@@ -7,7 +7,12 @@
  * was amended to match:
  *
  *  - **reference administration** — the catalogues under `/p/admin/finance/*` —
- *    stays `platform-admin` (EARS-330 as amended, EARS-529);
+ *    is `platform-admin` OR `finance-entry` (EARS-330 as amended, EARS-529 as
+ *    widened by owner decision 34, Антон, 2026-09-14: the person who fills the
+ *    intake is the person who needs a new purpose, an account or a product, and
+ *    making them wait for an administrator was the friction the decision
+ *    removed). The audit trail is unchanged — every reference write is still
+ *    attributed through `financeAuditContext`;
  *  - **the ledger** — posting an operation and reversing one — is
  *    `finance-approve` (EARS-501). `platform-admin` BY ITSELF no longer posts
  *    or reverses: an admin who wants to post holds the flow role too. That is a
@@ -99,25 +104,47 @@ function holds(actor: FinanceActor, role: string): boolean {
 }
 
 /**
- * Reference administration — the catalogues (EARS-330 as amended, EARS-529).
+ * The roles that administer the reference catalogues (EARS-529, decision 34).
  *
- * This is the ONE thing `platform-admin` still gates in the finance module. The
- * ledger moved out from under it and says so in its own refusal below.
+ * TWO roles, and the order is the reading order of the refusal. `finance-entry`
+ * is here as its own grant, not by implication: nothing implies a flow role
+ * (EARS-417/466), so this array IS the rule and there is no second place that
+ * could hold a different answer. The cabinet's own surfaces do not re-derive
+ * it either — they read `financeAdminSection.additionalClaims`, which is
+ * built from `FINANCE_ENTRY_ROLE` in `../contract.ts`.
+ *
+ * `finance-approve` is deliberately absent. Decision 34 named ONE role beside
+ * the administrator, and an approver who also maintains the catalogues holds
+ * `finance-entry` as its own grant — the same shape the IdP already seeds for
+ * `bbm-test`.
+ */
+export const FINANCE_REFERENCE_ROLES = [PLATFORM_ADMIN_ROLE, FINANCE_ENTRY_ROLE] as const
+
+/**
+ * Reference administration — the catalogues (EARS-330 as amended, EARS-529 as
+ * widened by owner decision 34, Антон, 2026-09-14).
+ *
+ * `platform-admin` OR `finance-entry`. Until 2026-09-16 this was the ONE thing
+ * `platform-admin` gated alone; the ledger had already moved out from under it
+ * (see the refusal below) and the catalogues have now widened rather than
+ * moved — the administrator did not lose anything.
  */
 export function assertFinanceReferenceAccess(actor: FinanceActor): void {
   assertAttributable(actor)
-  if (!holds(actor, PLATFORM_ADMIN_ROLE)) {
+  if (!holdsFinanceReferenceRole(actor)) {
     throw new FinanceAccessRefusal(
-      `Справочники финансового модуля редактирует только роль «${PLATFORM_ADMIN_ROLE}» ` +
-        `(EARS-330). У ${actor.email} её нет. Чтение /p/finance открыто каждому участнику ` +
-        'платформы (EARS-530) — сужено именно администрирование справочников.',
+      `Справочники финансового модуля редактируют роли «${PLATFORM_ADMIN_ROLE}» и ` +
+        `«${FINANCE_ENTRY_ROLE}» (EARS-529, решение 34 от 2026-09-14). У ${actor.email} ` +
+        'нет ни одной из них. Чтение /p/finance открыто каждому участнику платформы ' +
+        '(EARS-530) — сужено именно администрирование справочников. Выдать роль — ' +
+        'infra/dev-stand/idp/bootstrap.md §5a.',
     )
   }
 }
 
 /** The same reference-role fact for read paths that split admin/all from proposer/own. */
 export function holdsFinanceReferenceRole(actor: FinanceActor): boolean {
-  return holds(actor, PLATFORM_ADMIN_ROLE)
+  return FINANCE_REFERENCE_ROLES.some((role) => holds(actor, role))
 }
 
 /**
@@ -133,7 +160,8 @@ export function assertFinanceLedgerAccess(actor: FinanceActor): void {
     throw new FinanceAccessRefusal(
       `Проводка и сторнирование в книге — роль «${FINANCE_APPROVE_ROLE}» (EARS-501). ` +
         `У ${actor.email} её нет. Роль «${PLATFORM_ADMIN_ROLE}» сама по себе больше не даёт ` +
-        'записи в книгу: она отвечает за справочники (EARS-529). Выдать роль — ' +
+        'записи в книгу: она отвечает за справочники, которые с решением 34 ведёт и ' +
+        `«${FINANCE_ENTRY_ROLE}» (EARS-529). Выдать роль — ` +
         'infra/dev-stand/idp/bootstrap.md §5a.',
     )
   }

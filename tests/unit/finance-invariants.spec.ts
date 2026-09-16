@@ -190,7 +190,7 @@ function actor(...roles: string[]) {
   return { email: 'a@bbm.academy', roles }
 }
 
-describe('reference administration stays `platform-admin` (EARS-330 as amended, EARS-529)', () => {
+describe('reference administration — `platform-admin` OR `finance-entry` (EARS-529, decision 34)', () => {
   it('EARS-330: refuses a reference edit for an actor carrying no roles at all', () => {
     expect(() => assertFinanceReferenceAccess(actor())).toThrow(FinanceAccessRefusal)
   })
@@ -203,19 +203,36 @@ describe('reference administration stays `platform-admin` (EARS-330 as amended, 
     expect(() => assertFinanceReferenceAccess(actor('platform-admin'))).not.toThrow()
   })
 
-  it('EARS-330: refuses an actor with no email — an attributable write has a person behind it (spec 201)', () => {
-    expect(() => assertFinanceReferenceAccess({ email: '', roles: ['platform-admin'] })).toThrow(
+  it('EARS-529 (decision 34, 2026-09-14): accepts `finance-entry` WITHOUT `platform-admin`', () => {
+    expect(() => assertFinanceReferenceAccess(actor(FINANCE_ENTRY_ROLE))).not.toThrow()
+    expect(() =>
+      assertFinanceReferenceAccess(actor('platform-user', FINANCE_ENTRY_ROLE)),
+    ).not.toThrow()
+  })
+
+  it('EARS-529: `finance-approve` is NOT reference administration — the widening names one role', () => {
+    expect(() => assertFinanceReferenceAccess(actor(FINANCE_APPROVE_ROLE))).toThrow(
       FinanceAccessRefusal,
     )
   })
 
-  it('EARS-529: a flow role is NOT reference administration — neither one opens the catalogues', () => {
-    expect(() => assertFinanceReferenceAccess(actor(FINANCE_ENTRY_ROLE))).toThrow(
+  it('EARS-330: refuses an actor with no email — an attributable write has a person behind it (spec 201)', () => {
+    expect(() => assertFinanceReferenceAccess({ email: '', roles: ['platform-admin'] })).toThrow(
       FinanceAccessRefusal,
     )
-    expect(() => assertFinanceReferenceAccess(actor(FINANCE_APPROVE_ROLE))).toThrow(
-      FinanceAccessRefusal,
-    )
+    expect(() =>
+      assertFinanceReferenceAccess({ email: '  ', roles: [FINANCE_ENTRY_ROLE] }),
+    ).toThrow(FinanceAccessRefusal)
+  })
+
+  it('EARS-529: the refusal names BOTH admitting roles, so a holder of neither knows what to ask for', () => {
+    try {
+      assertFinanceReferenceAccess(actor('platform-user'))
+      expect.unreachable('a role-less member must be refused')
+    } catch (error) {
+      expect(String((error as Error).message)).toContain('platform-admin')
+      expect(String((error as Error).message)).toContain(FINANCE_ENTRY_ROLE)
+    }
   })
 })
 

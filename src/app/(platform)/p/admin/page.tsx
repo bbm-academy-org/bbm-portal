@@ -1,9 +1,11 @@
 import React from 'react'
 
+import { auth } from '@/auth'
+import { hasAnyClaim } from '@/lib/platform/authGate'
 import { WORKSPACE_REGISTRY } from '@/lib/workspace'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
 
-import { CABINET_ROOT } from './resources'
+import { CABINET_ROOT, cabinetSectionClaims, cabinetSections } from './resources'
 
 /**
  * `/p/admin` — the cabinet's INDEX OF SECTIONS (spec 311 EARS-434).
@@ -17,6 +19,12 @@ import { CABINET_ROOT } from './resources'
  * It holds NO list of apps (EARS-402, D-2). Every section and every item on
  * this screen comes from `WORKSPACE_REGISTRY`; grep this file for the name of a
  * module and you find nothing.
+ *
+ * «Разделы, доступные вам» is now literally true (#479, owner decision 34): a
+ * section is listed only where the viewer holds one of the claims that section
+ * declares (`cabinetSectionClaims`), the same predicate the sidebar is trimmed
+ * by. A `finance-entry` holder reaches the cabinet for the finance catalogues
+ * and sees those; a `platform-admin` sees every section, as before.
  *
  * LAYOUT from `design-source/p-admin-shell.html` (`fidelity: wireframe`, owner
  * pick 2026-08-25) — the file draws the index as «тот же макет с пустой рабочей
@@ -35,11 +43,10 @@ export const metadata = {
   title: 'Админка · BBM',
 }
 
-export default function AdminIndexPage() {
-  const sections = WORKSPACE_REGISTRY.flatMap((entry) =>
-    (entry.kind === 'internal' || entry.kind === 'cabinet') && entry.admin
-      ? [{ slug: entry.slug, label: entry.admin.label, resources: entry.admin.resources }]
-      : [],
+export default async function AdminIndexPage() {
+  const session = await auth()
+  const sections = cabinetSections(WORKSPACE_REGISTRY, (slug) =>
+    hasAnyClaim(session, cabinetSectionClaims(WORKSPACE_REGISTRY, slug)),
   )
 
   return (
@@ -53,7 +60,7 @@ export default function AdminIndexPage() {
 
       {sections.length === 0 ? (
         <p className="mt-8 text-sm text-muted-foreground">
-          Ни один модуль пока не объявил админ-раздел.
+          Ни один раздел админки вам сейчас не доступен.
         </p>
       ) : (
         <div

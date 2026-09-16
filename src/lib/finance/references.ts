@@ -1,12 +1,13 @@
 /**
  * The reference tables (справочники) — spec 338 EARS-301…309.
  *
- * Every write here runs through `platformTransaction` with the signed-in admin
- * as actor, so the who/when/what of a reference edit lands in `core.audit_event`
+ * Every write here runs through `platformTransaction` with the signed-in
+ * administrator or entry-role holder as actor, so the who/when/what of a reference edit lands in `core.audit_event`
  * (spec 201, and Accounting policy ruling 2: F1 adds NO journal of its own on
  * top of it — a second log of the same fact drifts). Every write also passes the
- * `platform-admin` gate first (EARS-330), inside the module, so the refusal does
- * not depend on which surface the call arrived through.
+ * reference gate first — `platform-admin` OR `finance-entry` (EARS-330 as
+ * amended, EARS-529 as widened by owner decision 34) — inside the module, so
+ * the refusal does not depend on which surface the call arrived through.
  *
  * The two structural rules that shape this file:
  *

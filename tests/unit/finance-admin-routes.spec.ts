@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { FINANCE_ENTRY_ROLE } from '@/lib/finance'
 import { PLATFORM_ADMIN_ROLE, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 import { scanHandlerFile } from '../../tools/lint/endpoint-authz-lint.mjs'
 
@@ -30,6 +31,10 @@ vi.mock('@/lib/finance', async (importOriginal) => {
 
 const admin = { user: { email: ' ADMIN@bbm.local ', roles: [PLATFORM_ADMIN_ROLE] } }
 const member = { user: { email: 'member@bbm.local', roles: [PLATFORM_USER_ROLE] } }
+/** Owner decision 34: reference administration admits the entry role too (EARS-529). */
+const entry = {
+  user: { email: 'entry@bbm.local', roles: [PLATFORM_USER_ROLE, FINANCE_ENTRY_ROLE] },
+}
 
 function request(path: string, method = 'GET', body?: unknown) {
   return new Request(`https://portal.bbm.academy${path}`, {
@@ -106,6 +111,53 @@ describe('finance reference HTTP surface (spec 338 EARS-326/330)', () => {
     )
     expect(response.status).toBe(200)
     expect(state.actor).toEqual({ email: 'admin@bbm.local', roles: [PLATFORM_ADMIN_ROLE] })
+  })
+
+  it('EARS-529 (decision 34): admits `finance-entry` without `platform-admin` to the reference API', async () => {
+    const { GET } = await import('@/app/(platform)/api/p/finance/admin/[resource]/route')
+    state.session = entry
+    const list = await GET(
+      request('/api/p/finance/admin/categories'),
+      segment({ resource: 'categories' }),
+    )
+    expect(list.status).toBe(200)
+
+    const { POST } = await import('@/app/(platform)/api/p/finance/admin/[resource]/route')
+    const created = await POST(
+      request('/api/p/finance/admin/currencies', 'POST', {
+        code: 'THB',
+        name: 'Тайский бат',
+        precision: 2,
+      }),
+      segment({ resource: 'currencies' }),
+    )
+    expect(created.status).toBe(200)
+    expect(state.actor).toEqual({
+      email: 'entry@bbm.local',
+      roles: [PLATFORM_USER_ROLE, FINANCE_ENTRY_ROLE],
+    })
+  })
+
+  it('EARS-529: the widening is the reference API only — a plain member is still refused on every method', async () => {
+    state.session = member
+    const { PATCH, DELETE } =
+      await import('@/app/(platform)/api/p/finance/admin/[resource]/[id]/route')
+    expect(
+      (
+        await PATCH(
+          request('/api/p/finance/admin/categories/1', 'PATCH', { name: 'x' }),
+          segment({ resource: 'categories', id: '1' }),
+        )
+      ).status,
+    ).toBe(403)
+    expect(
+      (
+        await DELETE(
+          request('/api/p/finance/admin/categories/1', 'DELETE'),
+          segment({ resource: 'categories', id: '1' }),
+        )
+      ).status,
+    ).toBe(403)
   })
 
   /**
