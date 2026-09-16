@@ -33,3 +33,30 @@ export class FinanceAccessRefusal extends Error {
     this.name = 'FinanceAccessRefusal'
   }
 }
+
+/**
+ * THE ONE SENTENCE FOR A CALLER WITH NO MEMBER RECORD (#473 item 4).
+ *
+ * Four modules — counterparties, documents, intake items, purpose proposals —
+ * each carried their own copy of it, and every copy ended in «Заведите
+ * участника — src/lib/member»: a path inside a private repository, printed on
+ * a live screen in the board's 403 Alert. The reader cannot open a repository
+ * path, and the module the sentence named is not where they would go anyway;
+ * the workspace's own «Участники» section is. One function now, so the copy is
+ * written once and the leak cannot come back in the fifth module.
+ *
+ * `obligation` is the clause that differs between the callers — «документ
+ * обязан называть загрузившего», «позиция приёмки обязана называть автора» —
+ * because WHICH write is being refused is the one useful thing the four
+ * messages ever said differently.
+ */
+export function financeMemberRecordRefusal(
+  email: string,
+  obligation: string,
+): FinanceAccessRefusal {
+  return new FinanceAccessRefusal(
+    `У ${email} нет записи в реестре участников, а ${obligation}. ` +
+      'Попросите администратора завести участника в разделе «Участники» — ' +
+      'после этого повторите действие.',
+  )
+}

@@ -55,7 +55,7 @@ import {
   holdsFinanceFlowRole,
   type FinanceActor,
 } from '../core/actor'
-import { FinanceAccessRefusal, FinanceRefusal } from '../core/errors'
+import { FinanceAccessRefusal, financeMemberRecordRefusal, FinanceRefusal } from '../core/errors'
 import {
   buildFinanceDocumentStorageKey,
   resolveFinanceDocumentStorage,
@@ -223,10 +223,7 @@ export function assertFinanceDocumentUpload(input: {
 async function requireMemberId(actor: FinanceActor): Promise<number> {
   const member = await findMemberByEmail(actor.email)
   if (member === null) {
-    throw new FinanceAccessRefusal(
-      `У ${actor.email} нет записи в общем реестре людей (core.member), а документ обязан ` +
-        'называть загрузившего. Заведите участника — src/lib/member.',
-    )
+    throw financeMemberRecordRefusal(actor.email, 'документ обязан называть загрузившего')
   }
   return member.id
 }

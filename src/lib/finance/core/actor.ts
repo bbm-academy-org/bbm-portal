@@ -16,6 +16,11 @@
  *    is `finance-entry` (EARS-501), with ONE carve-out: a platform member
  *    holding neither flow role acts on their own request (EARS-502).
  *
+ * The refusal TEXTS below name no repository path (#473 item 4): they are read
+ * on a live screen by a person who cannot open this repo, so they name the
+ * role and who grants it. The operator recipe for granting one stays in
+ * `infra/dev-stand/idp/bootstrap.md` §5a — in the docs, not in the sentence.
+ *
  * The gate lives in the MODULE, not on the route: «however the URL or API is
  * reached» (EARS-501, spec 311 EARS-405). A surface that forgets
  * `resolveClaimGate` is a bug, but it is not a hole — the module refuses anyway,
@@ -133,8 +138,8 @@ export function assertFinanceLedgerAccess(actor: FinanceActor): void {
     throw new FinanceAccessRefusal(
       `Проводка и сторнирование в книге — роль «${FINANCE_APPROVE_ROLE}» (EARS-501). ` +
         `У ${actor.email} её нет. Роль «${PLATFORM_ADMIN_ROLE}» сама по себе больше не даёт ` +
-        'записи в книгу: она отвечает за справочники (EARS-529). Выдать роль — ' +
-        'infra/dev-stand/idp/bootstrap.md §5a.',
+        'записи в книгу: она отвечает за справочники (EARS-529). Роль выдаёт ' +
+        'администратор рабочего пространства.',
     )
   }
 }
@@ -179,8 +184,8 @@ export function assertFinanceIntakeAccess(actor: FinanceActor, act: FinanceIntak
   throw new FinanceAccessRefusal(
     `Ведение заявок и документов вне собственной заявки — роль «${FINANCE_ENTRY_ROLE}» ` +
       `(EARS-501). У ${actor.email} её нет. Своя заявка на /p/finance/requests доступна ` +
-      'каждому участнику платформы без ролей (EARS-502). Выдать роль — ' +
-      'infra/dev-stand/idp/bootstrap.md §5a.',
+      'каждому участнику платформы без ролей (EARS-502). Роль выдаёт ' +
+      'администратор рабочего пространства.',
   )
 }
 

@@ -15,7 +15,7 @@ import {
   holdsFinanceReferenceRole,
   type FinanceActor,
 } from './core/actor'
-import { FinanceAccessRefusal, FinanceRefusal } from './core/errors'
+import { financeMemberRecordRefusal, FinanceRefusal } from './core/errors'
 
 export type FinancePurposeProposalStatus = 'pending' | 'resolved' | 'dismissed'
 
@@ -46,10 +46,7 @@ function requireText(value: unknown): string {
 async function requireMemberId(actor: FinanceActor): Promise<number> {
   const member = await findMemberByEmail(actor.email)
   if (member === null) {
-    throw new FinanceAccessRefusal(
-      `У ${actor.email} нет записи в общем реестре людей (core.member), а предложение ` +
-        'назначения обязано называть автора. Заведите участника — src/lib/member.',
-    )
+    throw financeMemberRecordRefusal(actor.email, 'предложение назначения обязано называть автора')
   }
   return member.id
 }

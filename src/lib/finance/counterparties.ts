@@ -12,7 +12,7 @@ import {
   financeAuditContext,
   type FinanceActor,
 } from './core/actor'
-import { FinanceAccessRefusal, FinanceRefusal } from './core/errors'
+import { financeMemberRecordRefusal, FinanceRefusal } from './core/errors'
 
 export type FinanceCounterpartyView = {
   id: number
@@ -41,10 +41,7 @@ function pgErrorCode(error: unknown): string | undefined {
 async function requireMemberId(actor: FinanceActor): Promise<number> {
   const member = await findMemberByEmail(actor.email)
   if (member === null) {
-    throw new FinanceAccessRefusal(
-      `У ${actor.email} нет записи в общем реестре людей (core.member), а создание ` +
-        'контрагента обязано называть автора. Заведите участника — src/lib/member.',
-    )
+    throw financeMemberRecordRefusal(actor.email, 'создание контрагента обязано называть автора')
   }
   return member.id
 }
