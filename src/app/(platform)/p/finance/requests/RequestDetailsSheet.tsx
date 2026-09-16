@@ -32,6 +32,7 @@ import {
   SheetTitle,
 } from '@/ui/sheet'
 import { Textarea } from '@/ui/textarea'
+import { cn } from '@/ui/utils'
 
 import {
   documentHref,
@@ -189,11 +190,24 @@ function AttachDocumentForm({
   pending,
   failure,
   attached,
+  emphasis,
+  gateNote,
   onAttach,
 }: {
   pending: boolean
   failure?: string
   attached: number
+  /**
+   * `primary` where attaching is what the STATE is waiting for — an approved
+   * request with no document (#473 item 5). The block then carries the reason
+   * it is waiting and the picker wears the primary fill, because the only
+   * other control of that state is the destructive «Отклонить…» and a screen
+   * whose strongest control is the one nobody should press by default is
+   * composed backwards.
+   */
+  emphasis: 'primary' | 'default'
+  /** The sentence that explains the wait — shown HERE, and then nowhere else. */
+  gateNote?: string
   onAttach: (file: File, kind: FinanceDocumentKind) => void
 }) {
   const form = useForm<AttachValue>({
@@ -202,6 +216,21 @@ function AttachDocumentForm({
   // The file whose bytes are in flight — what the block says out loud while it
   // waits. It is read only under `pending`, so it needs no clearing.
   const [uploadingName, setUploadingName] = React.useState<string | null>(null)
+  /**
+   * IS THE PICKER OUT? (#473 item 6.)
+   *
+   * Choosing is attaching, and the picker used to stay live after the upload
+   * landed — so a second click on a sheet that already showed the receipt
+   * attached the same file again, silently. Request #69 on the #388 stand
+   * carries two `receipt-388.pdf` for exactly that reason. A second document
+   * is legitimate (a receipt AND an invoice), so the block does not forbid
+   * one: it puts the picker away, says what is already there, and asks.
+   *
+   * Initialised, not synchronised — the caller re-keys this component on the
+   * document count, so a landed upload MOUNTS the collapsed state instead of
+   * correcting itself in an effect.
+   */
+  const [adding, setAdding] = React.useState(attached === 0)
 
   const choose = (files: FileList | null) => {
     form.clearErrors('file')
@@ -218,69 +247,95 @@ function AttachDocumentForm({
   }
 
   return (
-    <Form {...form}>
-      <div className="space-y-3 rounded-lg border border-dashed p-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="kind"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Вид документа</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
-                  <FormControl>
-                    <SelectTrigger className="w-full min-w-0">
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {Object.entries(DOCUMENT_KIND_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="file"
-            render={() => (
-              <FormItem>
-                <FormLabel>Подтверждающий документ</FormLabel>
-                <FormControl>
-                  <Input
-                    // A LANDED document leaves a clean picker behind: the count
-                    // above has just grown, so the remount costs no state and
-                    // needs no effect to notice the upload finished.
-                    key={attached}
-                    type="file"
-                    accept={DOCUMENT_UPLOAD_ACCEPT}
-                    disabled={pending}
-                    className="h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:bg-secondary file:px-2 file:transition-colors hover:file:bg-secondary/70"
-                    onChange={(event) => choose(event.target.files)}
-                  />
-                </FormControl>
-                <FormDescription>Файл прикладывается сразу после выбора.</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+    <section
+      aria-label="Приложить документ"
+      data-emphasis={emphasis}
+      className={cn(
+        'space-y-3 rounded-lg border p-3',
+        emphasis === 'primary' ? 'border-primary/40 bg-primary/5' : 'border-dashed',
+      )}
+    >
+      {gateNote === undefined ? null : <p className="text-sm text-foreground">{gateNote}</p>}
+      {adding ? null : (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Документ уже приложен — он читается выше. Второй файл ДОБАВИТСЯ к нему, а не заменит
+            его.
+          </p>
+          <Button type="button" variant="outline" onClick={() => setAdding(true)}>
+            Приложить ещё документ
+          </Button>
         </div>
-        {pending && uploadingName !== null ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Загружаем «{uploadingName}»…
-          </p>
-        ) : null}
-        {failure ? (
-          <p className="text-sm text-destructive" role="alert">
-            {failure}
-          </p>
-        ) : null}
-      </div>
-    </Form>
+      )}
+      {adding ? (
+        <Form {...form}>
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="kind"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Вид документа</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
+                      <FormControl>
+                        <SelectTrigger className="w-full min-w-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Object.entries(DOCUMENT_KIND_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="file"
+                render={() => (
+                  <FormItem>
+                    <FormLabel>Подтверждающий документ</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="file"
+                        accept={DOCUMENT_UPLOAD_ACCEPT}
+                        disabled={pending}
+                        // The picker IS the act here, so where the state is
+                        // waiting for it, it wears the primary fill (#473 item 5).
+                        className={cn(
+                          'h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:px-2 file:transition-colors',
+                          emphasis === 'primary'
+                            ? 'file:bg-primary file:text-primary-foreground hover:file:bg-primary/80'
+                            : 'file:bg-secondary hover:file:bg-secondary/70',
+                        )}
+                        onChange={(event) => choose(event.target.files)}
+                      />
+                    </FormControl>
+                    <FormDescription>Файл прикладывается сразу после выбора.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            {pending && uploadingName !== null ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Загружаем «{uploadingName}»…
+              </p>
+            ) : null}
+            {failure ? (
+              <p className="text-sm text-destructive" role="alert">
+                {failure}
+              </p>
+            ) : null}
+          </div>
+        </Form>
+      ) : null}
+    </section>
   )
 }
 
@@ -530,6 +585,18 @@ export function RequestDetailsSheet({
 
   const precision = currencyPrecision(references.currencies, request.currency)
   const hasDocument = request.documents.length > 0
+  /**
+   * THE STATE THAT IS WAITING FOR A DOCUMENT (#473 item 5) — approved, nothing
+   * attached. Its next step is attaching, and that is what the document block
+   * is given the weight for; the sentence explaining the wait lives in that
+   * block, and the standalone Alert below is only for the reader who may NOT
+   * attach and can therefore only read the explanation.
+   */
+  const awaitingDocument = request.status === 'approved' && !hasDocument
+  const mayAttach = canAttachDocument(request, canEnter)
+  const documentGateNote =
+    'Без подтверждающего документа карточка отсюда не уезжает: одобрение уже авторизовало ' +
+    'трату, проводка появится одним актом на приложенном документе.'
   const canConfirm = canApprove && request.status === 'approved' && hasDocument
   const canApproveNow = canApprove && request.status === 'submitted'
   const canRefuse = canApprove && (request.status === 'submitted' || request.status === 'approved')
@@ -664,11 +731,17 @@ export function RequestDetailsSheet({
                 {emptyDocumentNote(request, canEnter, canApprove)}
               </p>
             )}
-            {canAttachDocument(request, canEnter) ? (
+            {mayAttach ? (
               <AttachDocumentForm
+                // A LANDED document remounts the block: the count has just
+                // grown, so the picker puts itself away with no effect to
+                // notice the upload finished (#473 item 6).
+                key={request.documents.length}
                 pending={uploading}
                 failure={uploadFailure}
                 attached={request.documents.length}
+                emphasis={awaitingDocument ? 'primary' : 'default'}
+                gateNote={awaitingDocument ? documentGateNote : undefined}
                 onAttach={onAttach}
               />
             ) : null}
@@ -701,12 +774,13 @@ export function RequestDetailsSheet({
             </div>
           ) : null}
 
-          {canApprove && request.status === 'approved' && !hasDocument ? (
+          {/* The same sentence, for the reader who can only READ it: an
+              approver without the entry role is offered no attach block, so
+              the explanation has nowhere else to live. Never both — one
+              string in two slots is the defect #473 item 7 closed. */}
+          {canApprove && awaitingDocument && !mayAttach ? (
             <Alert role="status">
-              <AlertDescription>
-                Без подтверждающего документа карточка отсюда не уезжает: одобрение уже авторизовало
-                трату, проводка появится одним актом на приложенном документе.
-              </AlertDescription>
+              <AlertDescription>{documentGateNote}</AlertDescription>
             </Alert>
           ) : null}
         </div>

@@ -1743,6 +1743,106 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
     expect(BOARD_READ_ERROR_BUDGET_MS).toBe(2000)
   })
 
+  // ITEM 5. The approved-without-document state (step 06). Its real next step
+  // — attaching the receipt — was a picker in a dashed block mid-sheet, while
+  // the only footer control, and therefore the strongest thing on the screen,
+  // was the destructive «Отклонить…». A state whose dominant control is the
+  // one nobody should press by default is composed backwards.
+  function attachSection(sheet: HTMLElement): HTMLElement {
+    return within(sheet).getByRole('region', { name: 'Приложить документ' })
+  }
+
+  it('item 5: the approved request with no document makes ATTACHING the dominant control', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 50, status: 'approved', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(50)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+
+    expect(attachSection(sheet).getAttribute('data-emphasis')).toBe('primary')
+    // …and nothing in the footer outranks it: the only footer act of this
+    // state is the refusal, and it stays a tinted destructive, never the
+    // screen's primary weight.
+    const refuse = within(sheet).getByRole('button', { name: 'Отклонить…' })
+    expect(refuse.getAttribute('data-variant')).toBe('destructive')
+    expect(
+      within(sheet)
+        .getAllByRole('button')
+        .filter((button) => button.getAttribute('data-variant') === 'default'),
+    ).toEqual([])
+  })
+
+  it('item 5: the same block is ordinary weight where attaching is not the next step', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 51, status: 'submitted', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(51)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    expect(attachSection(screen.getByRole('dialog')).getAttribute('data-emphasis')).toBe('default')
+  })
+
+  it('item 5: the state says why the document is needed ONCE, not in two slots', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 52, status: 'approved', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(52)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    const sheet = screen.getByRole('dialog')
+    const said = (sheet.textContent ?? '').match(/проводка появится/g) ?? []
+    expect(said.length).toBe(1)
+  })
+
+  // ITEM 6. Attaching left the picker live and said nothing about what is
+  // already there, so a second click attached a second copy of the same file —
+  // request #69 on the #388 stand carries two `receipt-388.pdf`. A second
+  // document is legitimate; a SILENT second copy is not.
+  const attached = {
+    id: 9,
+    filename: 'чек.pdf',
+    mime: 'application/pdf',
+    size: 17,
+    kind: 'fiscal_receipt' as const,
+    uploadedAt: '2026-09-03T10:00:00.000Z',
+  }
+
+  async function openWithDocument(id = 60) {
+    refine.custom.data = snapshot({
+      requests: [item({ id, status: 'approved', own: true, documents: [attached] })],
+    })
+    renderBoard()
+    openCard(id)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    return screen.getByRole('dialog')
+  }
+
+  it('item 6: once a document is attached the picker is put away, and the sheet says so', async () => {
+    const sheet = await openWithDocument(60)
+
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+    expect(within(sheet).getByText(/уже приложен/i)).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: /Приложить ещё документ/ })).toBeTruthy()
+  })
+
+  it('item 6: adding a SECOND document is a deliberate answer, and then it attaches', async () => {
+    const sheet = await openWithDocument(61)
+    fireEvent.click(within(sheet).getByRole('button', { name: /Приложить ещё документ/ }))
+
+    const picker = await within(sheet).findByLabelText('Подтверждающий документ')
+    fireEvent.change(picker, {
+      target: { files: [new File(['%PDF-1.4 second'], 'второй.pdf', { type: 'application/pdf' })] },
+    })
+
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    const body = refine.mutate.mock.calls[0][0].values as FormData
+    expect((body.get('file') as File).name).toBe('второй.pdf')
+  })
+
   // ITEM 3. The register clips its free-text columns on purpose — «the full
   // text is always one «Открыть» away, in the details sheet» (`RequestsTable`).
   // That promise is what item 3 found broken: a long counterparty, a long
