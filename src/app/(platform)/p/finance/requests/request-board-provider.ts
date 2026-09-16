@@ -2,7 +2,11 @@ import type { CrudFilter, CrudSort, DataProvider, HttpError } from '@refinedev/c
 
 import { LIABILITIES_RESOURCE, REQUESTS_ENDPOINT, REQUESTS_RESOURCE } from './constants'
 import type { RequestsSnapshot } from './request-board-contract'
-import { selectRequestPage, type RequestAmountTotal } from './request-table-model'
+import {
+  selectLiabilityPage,
+  selectRequestPage,
+  type RequestAmountTotal,
+} from './request-table-model'
 
 /**
  * The board's data provider — `custom` for the acts, `getList` for the two
@@ -113,14 +117,16 @@ export function createRequestBoardDataProvider(fetchImpl: typeof fetch = fetch):
       const snapshot = (await response.json()) as RequestsSnapshot
 
       if (resource === LIABILITIES_RESOURCE) {
-        // A liability is a BALANCE, not a record with an id of its own — the
-        // member and the currency are what identify it, so the register gives
-        // it the composite the block needs to key a row.
-        const rows = snapshot.liabilities.map((liability) => ({
-          ...liability,
-          id: `${liability.memberId}-${liability.currency}`,
-        }))
-        return { data: rows as never, total: rows.length, snapshot } as never
+        // The debt register is read through the SAME List block, so it is asked
+        // the same three questions and must answer all three — a sorter it
+        // ignores is a control that lies, and a `total` that counts rows it has
+        // already sent as `data` is a pager offering pages that do not exist.
+        const page = selectLiabilityPage(snapshot.liabilities, {
+          sorters: sorterList(sorters),
+          currentPage: pagination?.currentPage,
+          pageSize: pagination?.pageSize,
+        })
+        return { data: page.rows as never, total: page.total, snapshot } as never
       }
 
       if (resource !== REQUESTS_RESOURCE) {

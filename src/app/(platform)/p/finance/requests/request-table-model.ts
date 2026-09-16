@@ -1,4 +1,4 @@
-import type { RequestBoardItem } from './request-board-contract'
+import type { RequestBoardItem, RequestsSnapshot } from './request-board-contract'
 import type { FinanceRequestBoardAct } from './request-board-model'
 
 /**
@@ -271,6 +271,20 @@ const SORT_KEYS: Record<string, (request: RequestBoardItem) => string> = {
 }
 
 /**
+ * The visible slice, for either register.
+ *
+ * A page size of nothing means «the whole register on one page» — the shape a
+ * caller that does not page asks for — and so does a zero, which is how the
+ * block spells «no paging» rather than an empty page.
+ */
+function pageOf<Row>(rows: Row[], query: { currentPage?: number; pageSize?: number }): Row[] {
+  const pageSize = query.pageSize ?? rows.length
+  const currentPage = query.currentPage ?? 1
+  const from = pageSize > 0 ? (currentPage - 1) * pageSize : 0
+  return pageSize > 0 ? rows.slice(from, from + pageSize) : rows.slice()
+}
+
+/**
  * WHAT `getList` ANSWERS WITH — the filter, the order and the page, as pure
  * data (#388 wave 3).
  *
@@ -296,10 +310,57 @@ export function selectRequestPage(
     )
   }
 
-  const pageSize = query.pageSize ?? filtered.length
-  const currentPage = query.currentPage ?? 1
-  const from = pageSize > 0 ? (currentPage - 1) * pageSize : 0
-  const rows = pageSize > 0 ? filtered.slice(from, from + pageSize) : filtered.slice()
+  return {
+    rows: pageOf(filtered, query),
+    total: filtered.length,
+    totals: requestAmountTotals(filtered),
+  }
+}
 
-  return { rows, total: filtered.length, totals: requestAmountTotals(filtered) }
+/**
+ * THE LIABILITIES REGISTER — the same three rules, over a different register
+ * (#388 round-7 blocker).
+ *
+ * «Кому BBM должен» is read through the SAME List block as the requests
+ * register, which means `@refinedev/react-table` drives its sorter and its
+ * pager server-side (`manualSorting` / `manualPagination`) and the provider is
+ * the only place either can be honoured. A register whose sorter reorders
+ * nothing is the defect class the stand was rejected for on 2026-09-15: a
+ * control whose STATE changes while its DATA does not.
+ *
+ * A liability is a BALANCE, not a record with an id of its own — the member and
+ * the currency are what identify it, so the row carries the composite the block
+ * needs to key it, and that composite is also the tie-break.
+ */
+export type LiabilityRegisterRow = RequestsSnapshot['liabilities'][number] & { id: string }
+
+/** The columns «Обязательства» offers, by the ids `LiabilityPanel` declares. */
+const LIABILITY_SORT_KEYS: Record<string, (row: LiabilityRegisterRow) => string> = {
+  memberName: (row) => row.memberName,
+  // Minor units, zero-padded — the same reason `amount` is padded above.
+  balance: (row) => row.balance.padStart(24, '0'),
+}
+
+export function selectLiabilityPage(
+  liabilities: readonly RequestsSnapshot['liabilities'][number][],
+  query: { sorters?: readonly RequestSorter[]; currentPage?: number; pageSize?: number },
+): { rows: LiabilityRegisterRow[]; total: number } {
+  const rows: LiabilityRegisterRow[] = liabilities.map((liability) => ({
+    ...liability,
+    id: `${liability.memberId}-${liability.currency}`,
+  }))
+
+  const sorter = query.sorters?.find((candidate) => candidate.field in LIABILITY_SORT_KEYS)
+  if (sorter !== undefined) {
+    const key = LIABILITY_SORT_KEYS[sorter.field]!
+    const direction = sorter.order === 'desc' ? -1 : 1
+    rows.sort(
+      (left, right) =>
+        direction * (key(left).localeCompare(key(right)) || left.id.localeCompare(right.id)),
+    )
+  }
+
+  // `total` is the size of the WHOLE register, never of the visible page: it is
+  // what the block counts its pages off.
+  return { rows: pageOf(rows, query), total: rows.length }
 }
