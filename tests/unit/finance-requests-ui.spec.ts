@@ -41,13 +41,19 @@ const refine = vi.hoisted(() => ({
   mutate: vi.fn(),
   isPending: false,
   invalidate: vi.fn(),
+  // What the screen ASKED the hook for — the read's own retry policy is part
+  // of the contract since #473 item 2, and it is invisible in the rendered
+  // output.
+  customProps: null as Record<string, unknown> | null,
+  tableProps: null as Record<string, unknown> | null,
 }))
 
 vi.mock('@refinedev/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@refinedev/core')>()
   return {
     ...actual,
-    useCustom: () => {
+    useCustom: (props: Record<string, unknown>) => {
+      refine.customProps = props
       const response = refine.custom.data === null ? undefined : { data: refine.custom.data }
       return {
         query: {
@@ -89,6 +95,7 @@ vi.mock('@refinedev/react-table', async () => {
       refineCoreProps?: Record<string, never>
     }) => {
       const props = (refineCoreProps ?? {}) as Record<string, never>
+      refine.tableProps = props
       const resource = props.resource as unknown as string | undefined
       const pageSizeProp =
         (props.pagination as unknown as { pageSize?: number } | undefined)?.pageSize ?? 25
@@ -258,6 +265,8 @@ beforeEach(() => {
   refine.mutate = vi.fn()
   refine.isPending = false
   refine.invalidate = vi.fn()
+  refine.customProps = null
+  refine.tableProps = null
 })
 
 afterEach(() => cleanup())
@@ -1694,5 +1703,56 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     // not a second overlay with a second footer grammar.
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull()
+  })
+})
+
+/**
+ * THE SIX NON-BLOCKING DEFECTS OF THE #388 ACCEPTANCE RUNS (#473).
+ *
+ * Each one is a sentence the surface says wrong, not a behaviour it lacks, so
+ * each test below asserts what the ISSUE says the reader must get — never what
+ * the code happens to do today.
+ */
+describe('/p/finance/requests — the #473 acceptance defects', () => {
+  // ITEM 2. A failing read painted the textless grey frame for ~9 s: the read
+  // is retried three times with react-query's exponential backoff (1 s + 2 s +
+  // 4 s) before the query leaves `pending`, and nothing on the frame says what
+  // is being waited for. A reader cannot tell a slow read from a dead one.
+  it('item 2: the grey frame SAYS what is loading, in words on the screen', () => {
+    refine.custom.isLoading = true
+    refine.custom.data = null
+    renderBoard()
+
+    const frame = screen.getByLabelText('Загружаем заявки')
+    expect(frame.textContent).toMatch(/Загружаем заявки/)
+  })
+
+  it('item 2: the board read gives up inside the 2 s budget instead of backing off for ~9 s', async () => {
+    const { BOARD_READ_ERROR_BUDGET_MS, boardReadWorstCaseErrorMs } =
+      await import('@/app/(platform)/p/finance/requests/request-board-model')
+    refine.custom.isLoading = true
+    refine.custom.data = null
+    renderBoard()
+
+    const options = refine.customProps?.queryOptions as
+      { retry?: number; retryDelay?: number } | undefined
+    expect(options).toBeTruthy()
+    expect(
+      boardReadWorstCaseErrorMs(options?.retry ?? 3, options?.retryDelay ?? 1000),
+    ).toBeLessThanOrEqual(BOARD_READ_ERROR_BUDGET_MS)
+    expect(BOARD_READ_ERROR_BUDGET_MS).toBe(2000)
+  })
+
+  it('item 2: the register behind the same snapshot is bounded by the same budget', async () => {
+    const { BOARD_READ_ERROR_BUDGET_MS, boardReadWorstCaseErrorMs } =
+      await import('@/app/(platform)/p/finance/requests/request-board-model')
+    renderScreen()
+
+    const options = refine.tableProps?.queryOptions as
+      { retry?: number; retryDelay?: number } | undefined
+    expect(options).toBeTruthy()
+    expect(
+      boardReadWorstCaseErrorMs(options?.retry ?? 3, options?.retryDelay ?? 1000),
+    ).toBeLessThanOrEqual(BOARD_READ_ERROR_BUDGET_MS)
   })
 })

@@ -28,8 +28,16 @@ import type { RequestsView } from './request-table-model'
  */
 export function RequestsSkeleton({ view }: { view: RequestsView }) {
   return (
-    <div aria-label="Загружаем заявки" className="space-y-6">
-      <Skeleton className="h-8 w-40" />
+    <div aria-label="Загружаем заявки" role="status" aria-busy="true" className="space-y-6">
+      {/* THE FRAME SAYS WHAT IT IS WAITING FOR (#473 item 2). The title of
+          this screen is known without reading anything, so a grey bar in its
+          place bought nothing and cost the reader the one sentence that tells
+          a slow read from a dead one. The words sit where the loaded screen's
+          own title and subtitle sit, so nothing moves when the data lands. */}
+      <div className="space-y-1">
+        <p className="font-heading text-2xl font-semibold tracking-tight">Заявки</p>
+        <p className="text-sm text-muted-foreground">Загружаем заявки…</p>
+      </div>
       {/* The toolbar row: the scope toggle at the left edge, the view toggle at
           the right — the composition the loaded screen keeps. */}
       <div className="flex items-center justify-between gap-3">
