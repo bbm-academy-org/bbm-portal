@@ -850,7 +850,7 @@ describe('the write gates against the real tables (EARS-330, EARS-501, EARS-529,
     }
   })
 
-  it('EARS-529 (decision 34): `finance-entry` administers the references against the real tables', async () => {
+  it('EARS-529 (#479): `finance-entry` administers the references against the real tables — decision 34', async () => {
     const mark = await auditWatermark(db)
     const currency = await createCurrency(ENTRY, { code: 'THB', name: 'Бат', precision: 2 })
     expect(currency.code).toBe('THB')

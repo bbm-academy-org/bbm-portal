@@ -113,7 +113,7 @@ describe('finance reference HTTP surface (spec 338 EARS-326/330)', () => {
     expect(state.actor).toEqual({ email: 'admin@bbm.local', roles: [PLATFORM_ADMIN_ROLE] })
   })
 
-  it('EARS-529 (decision 34): admits `finance-entry` without `platform-admin` to the reference API', async () => {
+  it('EARS-529 (#479): admits `finance-entry` without `platform-admin` to the reference API — decision 34', async () => {
     const { GET } = await import('@/app/(platform)/api/p/finance/admin/[resource]/route')
     state.session = entry
     const list = await GET(

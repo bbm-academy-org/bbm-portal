@@ -203,7 +203,7 @@ describe('reference administration — `platform-admin` OR `finance-entry` (EARS
     expect(() => assertFinanceReferenceAccess(actor('platform-admin'))).not.toThrow()
   })
 
-  it('EARS-529 (decision 34, 2026-09-14): accepts `finance-entry` WITHOUT `platform-admin`', () => {
+  it('EARS-529 (#479): accepts `finance-entry` WITHOUT `platform-admin` — decision 34, 2026-09-14', () => {
     expect(() => assertFinanceReferenceAccess(actor(FINANCE_ENTRY_ROLE))).not.toThrow()
     expect(() =>
       assertFinanceReferenceAccess(actor('platform-user', FINANCE_ENTRY_ROLE)),

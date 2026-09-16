@@ -505,10 +505,16 @@ a declared clause.
   rename covers it.
 - **EARS-526.** WHERE no purpose in the reference fits, the form shall let
   the member file a free-text **purpose proposal** alongside a draft request;
-  the proposal is not a purpose, appears in the admin's reference cabinet,
-  and only an admin turning it into a real purpose (audited, spec 338
-  EARS-306) unblocks the request — free text never reaches a posting
+  the proposal is not a purpose, appears in the reference cabinet,
+  and only reference administration turning it into a real purpose (audited,
+  spec 338 EARS-306) unblocks the request — free text never reaches a posting
   (decision 21, US-21). _(agent-proposed answer to US-21 — confirm at the go)_
+  _(Amended 2026-09-14 by owner decision 34 (#115), shipped in #479: «an
+  admin» here is reference administration, which is `platform-admin` OR
+  `finance-entry` (EARS-529) — the proposal queue, its resolution and its
+  dismissal follow that same gate, because `purpose-proposals.ts` asks
+  `assertFinanceReferenceAccess` / `holdsFinanceReferenceRole` and holds no
+  role rule of its own.)_
 
 ### D. Documents
 
@@ -586,7 +592,7 @@ The retired requirement numbers 517–521 are not reused.
 | intake items (`/p/finance/intake`)      | `finance-entry` (manual); request producers                                                                                             | entry/approve roles                                                                                                     | entry role per the status machine; **never after `posted`** (EARS-505)                      | creator or entry role deletes `draft` only (status machine); later — refuse/cancel, not delete        |
 | documents                               | submitter on own items; entry role anywhere                                                                                             | submitter — own items' docs; entry/approve — all (EARS-523)                                                             | `kind` only, while no linked item is posted                                                 | while unlinked or linked only to mutable items; `refused`/`cancelled`/`posted` retain them (EARS-516) |
 | counterparties                          | any member inline from the forms; entry role (EARS-532)                                                                                 | every finance reader                                                                                                    | rename — reference administration: admin or entry (EARS-529)                                | none (referenced by postings); merge out of scope in v1                                               |
-| purpose proposals                       | any platform member from the request form (EARS-526)                                                                                    | admin (reference cabinet), proposer sees own                                                                            | admin resolves into a real purpose                                                          | admin dismisses; the proposal record stays                                                            |
+| purpose proposals                       | any platform member from the request form (EARS-526)                                                                                    | reference administration — admin or entry (EARS-529) sees the cabinet queue, proposer sees own                          | reference administration resolves into a real purpose (EARS-529)                            | reference administration dismisses (EARS-529); the proposal record stays                              |
 | approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501); the posting act also enters the paying account, `occurred_on` and the account-side amount (EARS-533) | queue — approve role                                                                                                    | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                                   |
 
 Deliberately unsupported: editing or deleting anything already posted (the
