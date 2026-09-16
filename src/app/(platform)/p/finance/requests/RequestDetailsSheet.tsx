@@ -42,6 +42,7 @@ import {
   REQUEST_STATUS_LABELS,
 } from './constants'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
+import { useSheetOverlayMark } from './sheet-overlay'
 import {
   canAttachDocument,
   currencyPrecision,
@@ -554,6 +555,9 @@ export function RequestDetailsSheet({
   // dialog by MOUNTING with it open. An effect that pushed `pendingAct` into
   // state would render the sheet once without it and then correct itself — a
   // flash, and `react-hooks/set-state-in-effect`.
+  // An overlay owns the bottom of the screen while this sheet is up, so the
+  // notification channel steps over its footer (#473 item 1).
+  useSheetOverlayMark()
   const [refusing, setRefusing] = React.useState(pendingAct === 'refuse')
   const [reason, setReason] = React.useState('')
   const [reasonError, setReasonError] = React.useState<string | null>(null)

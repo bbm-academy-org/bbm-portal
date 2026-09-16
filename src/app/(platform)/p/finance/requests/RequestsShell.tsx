@@ -5,10 +5,10 @@ import routerProvider from '@refinedev/nextjs-router'
 import React from 'react'
 
 import { useNotificationProvider } from '@/ui/refine-ui/notification/use-notification-provider'
-import { Toaster } from '@/ui/sonner'
 
 import { createRequestBoardDataProvider } from './request-board-provider'
 import { RequestsBoardScreen } from './RequestsBoardScreen'
+import { RequestsToaster } from './RequestsToaster'
 
 /**
  * The Refine context the requests board runs in.
@@ -21,9 +21,10 @@ import { RequestsBoardScreen } from './RequestsBoardScreen'
  * everywhere: the query plumbing, and ONE feedback channel (#434). Both arrive
  * here through the same kit pieces the cabinet uses.
  *
- * `Toaster` sits outside the screen's own subtree and carries `data-bbm-ui` of
- * its own — sonner renders in place instead of portalling, and inside a grid it
- * takes a cell (the defect the #434 acceptance stand showed).
+ * `RequestsToaster` sits outside the screen's own subtree — sonner renders in
+ * place instead of portalling, and inside a grid it takes a cell (the defect
+ * the #434 acceptance stand showed). Where it sits vertically is its own
+ * file's business: it steps over an open sheet's footer (#473 item 1).
  */
 export function RequestsShell() {
   const dataProvider = React.useMemo(() => createRequestBoardDataProvider(), [])
@@ -39,9 +40,7 @@ export function RequestsShell() {
       >
         <RequestsBoardScreen />
       </Refine>
-      <div data-bbm-ui>
-        <Toaster position="bottom-right" richColors closeButton />
-      </div>
+      <RequestsToaster />
     </>
   )
 }
