@@ -146,12 +146,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-05-69629acc81 -->
 
-- [ ] 2026-08-05 `tools/lint/guard-test-coverage-lint.mjs`: a future helper in
-      `tools/lint/lib/` importing `guard.mjs` would be flagged `nested` with a
-      wrong remedy (false-positive class; no such helper exists today) — return
-      condition: first new file added under `tools/lint/lib/` (#136, review of
-      PR #154)
-
 <!-- debt-entry-end: 2026-08-05-e5366ddfb7 -->
 
 - [ ] 2026-08-05 `tools/lint/test-presence-lint.mjs` (called
@@ -670,6 +664,14 @@ Entry format:
       placeholder clearing the guard, or the next edit to the marker
       classification (`GO_RE` / `PLACEHOLDER_RE` in
       `tools/lint/stage-b-lint.mjs`), whichever comes first.
+      **Promoted 2026-09-16 to #498** (DEBT sweep of the 2026-09-15 retro,
+      #496): the superseding return condition FIRED — #485 / PR #493 rewrote the
+      marker classification (`PLACEHOLDER_RE` replaced by the shared
+      `isPlaceholderValue`, `GO_RE` call sites moved) and did NOT touch the
+      ordering, so `isEvidence('GO — <owner, date>')` still returns `true` — the
+      unfilled PR-template placeholder clearing a BLOCK acceptance gate, verified
+      at `3ba626c`. The line stays until #498 lands, because until then the
+      deviation is live — return condition, superseding the above: #498 closed.
 
 <!-- debt-entry-end: 2026-08-26-3b59d1e0f4 -->
 
@@ -866,19 +868,17 @@ Entry format:
       either file or for the corpus in `pnpm lint:instruction-budget`, or the
       next `/wrap` phase 3, whichever comes first; then the incident narratives
       in both bullets move to the skills that own them (#433)
+      **Promoted 2026-09-16 to #499** (DEBT sweep of the 2026-09-15 retro,
+      #496): the return condition FIRED — `pnpm lint:instruction-budget` at
+      `3ba626c` reports the CORPUS row NEAR (85 %, 680/800 lines,
+      65411/102400 bytes) while every per-file row is still PASS. Promoted rather
+      than fixed in the retro PR because the remedy is no longer the shape this
+      line described: three more guard sections have landed in
+      `.claude/rules/design-process.md` since #433, so the pass is a judged
+      compaction of the whole corpus, not a relocation of two bullets — return
+      condition, superseding the above: #499 closed.
 
 <!-- debt-entry-end: 2026-09-02-433-rules-appended-not-compacted -->
-
-- [ ] 2026-09-02 the permanent append-marker comment occurs TWICE in this file —
-      once quoted in the rules bullet that defines it, once as the real marker at
-      the end of the active block — and #433's entry was first inserted at the wrong (first)
-      occurrence, inside the rules header, then redone. Nothing catches that
-      placement: the `debt-merge-driver` spec asserts anchor uniqueness and
-      preservation, not that an active entry sits between the «entries below
-      this line» marker and the permanent append marker at the end of the active
-      block — return condition: the second misplaced insertion, or the next `/wrap`
-      DEBT sweep, whichever comes first; then that spec gains the placement
-      assertion (#433)
 
 <!-- debt-entry-end: 2026-09-02-433-debt-marker-ambiguous -->
 
@@ -945,8 +945,6 @@ Entry format:
 - [ ] 2026-09-03 The stage-5 eyes-on matrix (#437) is captured by a ONE-OFF script per task: `tools/dev/journey-437.ts` drove the members register through 9 states × 2 breakpoints × 2 themes with CDP-forced pseudo-states and was deleted with the run, exactly as #434's journey was. The protocol text in `.claude/skills/task-cycle/SKILL.md` stage 5 therefore describes a procedure every task re-implements — the breakpoints, the `.dark` toggle and the `CSS.forcePseudoState` plumbing are re-typed each time and can silently drift from the written matrix. Two runs are not yet a harness — return condition: the THIRD surface that needs the matrix, at which point the shared pieces belong in a committed helper under `tools/dev/` (or `tests/e2e/support/`) that the skill can name instead of describing.
 
 <!-- debt-entry-end: 2026-09-03-437-journey-harness -->
-
-- [ ] 2026-09-03 `.claude/skills/task-cycle/SKILL.md` stage 5 part 3 says `.playwright-mcp/` is «the only target the screenshot-path-guard accepts», but `tools/hooks/screenshot-path-guard.mjs` exports `ALLOWED_OUTPUT_DIRS = [SERVER_OUTPUT_DIR, 'test-results', 'playwright-report']` (with `SERVER_OUTPUT_DIR = '.playwright-mcp'`, so all three of `.playwright-mcp`, `test-results` and `playwright-report` are accepted) and its denial message names all three. Following the text is still correct behaviour, so this is an accuracy fix, not a defect — return condition: the next PR that touches stage 5 of `task-cycle`, which rewords it to «the target the screenshot-path-guard steers capture to».
 
 <!-- debt-entry-end: 2026-09-03-437-guard-only-target -->
 
@@ -1154,3 +1152,55 @@ fired on this task, and `.claude/skills/task-cycle/SKILL.md` stage 5 now names
 both the path and the retention rule: one folder per issue, a re-taken frame
 REPLACES its predecessor rather than adding a `-v2`, and the folder is dropped
 when its epic closes. The body is removed; the anchor stays as the tombstone.)_
+
+_(Swept 2026-09-16 (#496, the DEBT sweep of the 2026-09-15 session retro —
+mandatory `/wrap` phase 4). **57 active entry bodies in, 54 out**, walked one by
+one against the repo, the tracker and the guard register at `3ba626c`; the
+remaining 20 anchors in the active region are tombstones from earlier sweeps. Full
+verdict table: the PR body of this sweep's PR.
+
+**Discharged — three, bodies removed, anchors kept.** `2026-09-02-433-debt-marker-ambiguous`
+(the permanent append marker occurring TWICE in this file) fired on BOTH of its
+triggers — the second misplaced insertion happened twice in one day (PR #488,
+PR #495, each a `String.replace` that hit the QUOTED copy), and this is the next
+`/wrap` DEBT sweep. Fixed at the root in this same PR: the «Permanent append
+marker» rules bullet now NAMES the marker instead of quoting it, so the literal
+string occurs exactly once, and `tests/unit/debt-merge-driver.spec.ts` asserts that
+count. `2026-09-03-437-guard-only-target` — `task-cycle` stage 5 calling
+`.playwright-mcp/` «the only target the screenshot-path-guard accepts» when the
+guard also accepts `test-results` and `playwright-report` — is the `task-canon` §6
+floor exactly (one line, no decision), so it was APPLIED here rather than
+carried: the stage now says «the target the screenshot-path-guard steers capture
+to». `2026-08-05-e5366ddfb7` (a helper in `tools/lint/lib/` importing `guard.mjs`
+would be flagged `nested` with a wrong remedy) is **written off**: its trigger
+«the first new file added under `tools/lint/lib/`» fired on 2026-09-03 with
+`ui-diff.mjs` (#435 / PR #459), that file imports no `guard.mjs`, and
+`pnpm lint:guard-test-coverage` is green over all 145 scanned sources — the
+trigger ran and produced no finding.
+
+**Promoted — two issues, both lines kept in place** with a superseding «#N
+closed» condition. `2026-08-26-3b59d1e0f4` → **#498**: `stage-b-lint.mjs` still
+classifies `GO` before it asks whether the value is the PR template's unfilled
+placeholder, so `isEvidence('GO — <owner, date>')` returns `true` — and since
+2026-09-02 that clears a **BLOCK** gate, standing in for an owner's live-stand
+«принято» that was never given (`task-canon` §6 clause 2: the asset lost is the
+acceptance record of a user-visible surface). Its return condition fired with
+#485 / PR #493, which rewrote the marker classification without touching the
+ordering. `2026-09-02-433-rules-appended-not-compacted` → **#499**: the corpus row
+of `pnpm lint:instruction-budget` is NEAR (85 %) while every per-file row is
+PASS, which is this line's own trigger; promoted rather than fixed here because
+`instruction-budget` is BLOCK, so the first canon addition that crosses the cap
+reddens every later canon PR (§6 clause 1, the critical path), and the remedy has
+outgrown «move the two #433 bullets».
+
+**Kept — 52**, each with a return condition checked and found UNFIRED. The seven
+lines pointing at an open promotion issue (#361, #403, #442, #443, #444, #445,
+#453) were verified open on 2026-09-16 and stay by construction. Two were checked
+and kept with the reason recorded rather than assumed: `2026-09-03-437-journey-harness`
+(«the THIRD surface that needs the eyes-on matrix») and
+`2026-09-02-440-union-driver-not-server-side` («≥2 open PRs touching `DEBT.md`»)
+both turn on the state of PR #470 / #388, which this session was explicitly
+scoped out of reading; neither was written off on an unverified assumption.
+`2026-08-14-0dea1e1a7d` was met live — this session's own `pnpm install` in a fresh
+worktree printed the false «Was not able to set git hooks» ERROR while the hooks
+in fact ran on every commit — and stays pointed at the open #453.)_
