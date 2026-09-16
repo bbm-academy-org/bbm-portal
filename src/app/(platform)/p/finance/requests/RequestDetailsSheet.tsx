@@ -156,76 +156,71 @@ function ActFooter({ children }: { children: React.ReactNode }) {
 type AttachValue = { file: FileList | null; kind: FinanceDocumentKind }
 
 /**
- * «Приложить документ» — the act that turns an authorised spend into a posted
- * one (EARS-511), and the reason spec 339's acceptance scenario 3 can be walked
- * from this screen at all.
+ * Attaching the confirming document — the act that turns an authorised spend
+ * into a postable one (EARS-511), and the reason spec 339's acceptance
+ * scenario 3 can be walked from this screen at all.
+ *
+ * CHOOSING IS ATTACHING — there is no second control (#388 defect G, owner on
+ * the live stand 2026-09-16). This block used to end in an `outline` button
+ * «Приложить документ»: picking a file changed nothing a reader could read as
+ * «attached» — the empty-state line still said «Документ не приложен.», the
+ * gate Alert stayed, and the only committing control sat INSIDE the dashed
+ * block, secondary next to the footer's acts. The owner picked a PNG, read the
+ * sheet as done, found no «Провести», and reported the screen as unable to
+ * post. The transport had been fine the whole time; the composition lied. A
+ * louder button would only have decorated that lie, so the button is gone: the
+ * file input's `change` runs the same path (`documentUploadRefusal` → upload)
+ * immediately, and no half-chosen state exists to misread. Every line the block
+ * shows is then TRUE at the moment it is shown.
  *
  * COMPOSITION. It sits INSIDE the document section, under the reading pane, and
  * not in the footer: attaching is not a decision about the request, it is what
- * the document block is for — an empty block with a picker under it reads as
- * «put it here», a footer button reads as one more act competing with «Одобрить».
- * Two fields side by side because the kind is DATA (EARS-515), not a gate: the
- * reader who picked the file already knows what it is, so it is a defaulted
- * select rather than a question that blocks.
+ * the document block is for. The kind comes FIRST — it is DATA the upload
+ * carries (EARS-515), not a gate, but the file's `change` is now the commit, so
+ * a select standing after the picker would be a question asked too late.
  *
  * THE SERVER IS THE GATE. `documentUploadRefusal` only spares the reader an
  * upload that `POST /p/finance/api/documents` would refuse anyway (EARS-514);
  * a refusal the client did not foresee comes back from the server and lands
- * under the same field, with the toast on the one notification channel.
+ * under the same field, with the toast on the one notification channel. Either
+ * way the picker comes back live — a refused pick is repeated, not mourned.
  */
 function AttachDocumentForm({
   pending,
   failure,
+  attached,
   onAttach,
 }: {
   pending: boolean
   failure?: string
+  attached: number
   onAttach: (file: File, kind: FinanceDocumentKind) => void
 }) {
   const form = useForm<AttachValue>({
     defaultValues: { file: null, kind: 'fiscal_receipt' },
   })
+  // The file whose bytes are in flight — what the block says out loud while it
+  // waits. It is read only under `pending`, so it needs no clearing.
+  const [uploadingName, setUploadingName] = React.useState<string | null>(null)
 
-  const submit = form.handleSubmit((value) => {
-    const file = value.file?.[0] ?? null
-    if (file === null) {
-      form.setError('file', { message: 'Выберите файл документа.' })
-      return
-    }
+  const choose = (files: FileList | null) => {
+    form.clearErrors('file')
+    form.setValue('file', files)
+    const file = files?.[0] ?? null
+    if (file === null) return
     const refusal = documentUploadRefusal(file)
     if (refusal !== null) {
       form.setError('file', { message: refusal })
       return
     }
-    onAttach(file, value.kind)
-  })
+    setUploadingName(file.name)
+    onAttach(file, form.getValues('kind'))
+  }
 
   return (
     <Form {...form}>
-      <form className="space-y-3 rounded-lg border border-dashed p-3" onSubmit={submit} noValidate>
+      <div className="space-y-3 rounded-lg border border-dashed p-3">
         <div className="grid gap-3 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="file"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Подтверждающий документ</FormLabel>
-                <FormControl>
-                  <Input
-                    type="file"
-                    accept={DOCUMENT_UPLOAD_ACCEPT}
-                    disabled={pending}
-                    className="h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:bg-secondary file:px-2 file:transition-colors hover:file:bg-secondary/70"
-                    onChange={(event) => {
-                      form.clearErrors('file')
-                      field.onChange(event.target.files)
-                    }}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
           <FormField
             control={form.control}
             name="kind"
@@ -249,16 +244,42 @@ function AttachDocumentForm({
               </FormItem>
             )}
           />
+          <FormField
+            control={form.control}
+            name="file"
+            render={() => (
+              <FormItem>
+                <FormLabel>Подтверждающий документ</FormLabel>
+                <FormControl>
+                  <Input
+                    // A LANDED document leaves a clean picker behind: the count
+                    // above has just grown, so the remount costs no state and
+                    // needs no effect to notice the upload finished.
+                    key={attached}
+                    type="file"
+                    accept={DOCUMENT_UPLOAD_ACCEPT}
+                    disabled={pending}
+                    className="h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:bg-secondary file:px-2 file:transition-colors hover:file:bg-secondary/70"
+                    onChange={(event) => choose(event.target.files)}
+                  />
+                </FormControl>
+                <FormDescription>Файл прикладывается сразу после выбора.</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
+        {pending && uploadingName !== null ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Загружаем «{uploadingName}»…
+          </p>
+        ) : null}
         {failure ? (
           <p className="text-sm text-destructive" role="alert">
             {failure}
           </p>
         ) : null}
-        <Button type="submit" variant="outline" disabled={pending}>
-          {pending ? 'Загружаем…' : 'Приложить документ'}
-        </Button>
-      </form>
+      </div>
     </Form>
   )
 }
@@ -637,7 +658,12 @@ export function RequestDetailsSheet({
               </p>
             )}
             {canAttachDocument(request, canEnter) ? (
-              <AttachDocumentForm pending={uploading} failure={uploadFailure} onAttach={onAttach} />
+              <AttachDocumentForm
+                pending={uploading}
+                failure={uploadFailure}
+                attached={request.documents.length}
+                onAttach={onAttach}
+              />
             ) : null}
           </div>
 
