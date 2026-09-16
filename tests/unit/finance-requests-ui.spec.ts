@@ -684,13 +684,58 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     return screen.getByRole('dialog')
   }
 
+  /**
+   * DEFECT G (#388, owner on the live stand 2026-09-16). Choosing a file used
+   * to change nothing the reader could read as «attached»: the block still said
+   * «Документ не приложен.», the gate Alert stayed, and the only committing
+   * control was an `outline` button INSIDE the dashed block — which reads as
+   * secondary next to the footer's acts. The owner picked a PNG, read the sheet
+   * as done, saw no «Провести», and reported the screen as unable to post.
+   *
+   * The fix is not a louder button: CHOOSING IS ATTACHING. There is no second
+   * control at all, so there is no half-chosen state left to misread.
+   */
+  it('#388 defect G: choosing the file attaches it — there is no second control to press', async () => {
+    const sheet = await openAttachable(2)
+    expect(within(sheet).queryByRole('button', { name: 'Приложить документ' })).toBeNull()
+
+    fireEvent.change(within(sheet).getByLabelText('Подтверждающий документ'), {
+      target: { files: [pdf()] },
+    })
+
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    const sent = refine.mutate.mock.calls[0][0].values as FormData
+    expect((sent.get('file') as File).name).toBe('чек.pdf')
+    expect(sent.get('kind')).toBe('fiscal_receipt')
+
+    // While the bytes are in flight the block names the file it is carrying,
+    // and the picker cannot be fired a second time.
+    expect(within(sheet).getByText(/Загружаем «чек\.pdf»/)).toBeTruthy()
+    expect(
+      (within(sheet).getByLabelText('Подтверждающий документ') as HTMLInputElement).disabled,
+    ).toBe(true)
+  })
+
+  /**
+   * The kind is answered BEFORE the file, because the file's own `change` is
+   * the commit: a select standing after the trigger would be a question asked
+   * too late. The field says so in words too.
+   */
+  it('#388 defect G: the kind is asked first and the file field says the choice is the act', async () => {
+    const sheet = await openAttachable(2)
+    const labels = within(sheet)
+      .getAllByText(/^(Вид документа|Подтверждающий документ)$/)
+      .map((node) => node.textContent)
+    expect(labels).toEqual(['Вид документа', 'Подтверждающий документ'])
+    expect(within(sheet).getByText('Файл прикладывается сразу после выбора.')).toBeTruthy()
+  })
+
   it('EARS-506/511: attaches a confirming document from the sheet and re-reads the board', async () => {
     const sheet = await openAttachable(2)
 
     fireEvent.change(within(sheet).getByLabelText('Подтверждающий документ'), {
       target: { files: [pdf()] },
     })
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
 
     await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
     const call = refine.mutate.mock.calls[0][0]
@@ -705,9 +750,9 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(call.successNotification).toBeTruthy()
     expect(call.errorNotification).toBeTruthy()
 
-    // Uploading: the control says so and cannot be fired twice.
+    // Uploading: the block says so and the picker cannot be fired twice.
     expect(
-      (within(sheet).getByRole('button', { name: 'Загружаем…' }) as HTMLButtonElement).disabled,
+      (within(sheet).getByLabelText('Подтверждающий документ') as HTMLInputElement).disabled,
     ).toBe(true)
 
     await act(async () => {
@@ -750,20 +795,20 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     ).toBeTruthy()
   })
 
-  it('EARS-514: refuses an oversize or wrong-typed file inline and sends nothing', async () => {
+  it('EARS-514: refuses an oversize or wrong-typed file on selection and sends nothing', async () => {
     const sheet = await openAttachable(2)
     const input = within(sheet).getByLabelText('Подтверждающий документ')
 
     const script = new File(['alert(1)'], 'вирус.js', { type: 'text/javascript' })
     fireEvent.change(input, { target: { files: [script] } })
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
     await waitFor(() => expect(within(sheet).getByText(/PDF или изображение/i)).toBeTruthy())
     expect(refine.mutate).not.toHaveBeenCalled()
+    // The refusal leaves the picker live — the reader picks again, nothing else.
+    expect((input as HTMLInputElement).disabled).toBe(false)
 
     const huge = pdf('огромный.pdf')
     Object.defineProperty(huge, 'size', { value: 26 * 1024 * 1024 })
     fireEvent.change(input, { target: { files: [huge] } })
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
     await waitFor(() => expect(within(sheet).getByText(/25 МБ/)).toBeTruthy())
     expect(refine.mutate).not.toHaveBeenCalled()
   })
@@ -773,15 +818,21 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     fireEvent.change(within(sheet).getByLabelText('Подтверждающий документ'), {
       target: { files: [pdf()] },
     })
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Приложить документ' }))
     await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
 
     await act(async () => {
       refine.mutate.mock.calls[0][1].onError({ message: 'Файл больше предела в 26214400 байт.' })
     })
-    expect(within(sheet).getByRole('alert').textContent).toContain('Файл больше предела')
-    // The failed attempt is repeatable, not a dead control.
-    expect(within(sheet).getByRole('button', { name: 'Приложить документ' })).toBeTruthy()
+    expect(
+      within(sheet)
+        .getAllByRole('alert')
+        .map((node) => node.textContent)
+        .join(' '),
+    ).toContain('Файл больше предела')
+    // The failed attempt is repeatable: the picker comes back live.
+    expect(
+      (within(sheet).getByLabelText('Подтверждающий документ') as HTMLInputElement).disabled,
+    ).toBe(false)
   })
 
   it('EARS-502/511: offers no attach control to a reader who neither filed the request nor enters money', async () => {
