@@ -17,6 +17,11 @@ context). The evidence and method below work in both Claude Code and Codex.
 - **Memory is outside the default wrap.** Update any harness memory only when
   the owner explicitly requests a memory update, and follow that harness's
   current memory-write procedure. A wrap request by itself is not permission.
+  A durable lesson's home is the REPOSITORY file that owns its subject (the
+  skill, rule or doc), and harness memory is at most a pointer to it — Codex
+  sessions never see harness memory (owner, 2026-09-15: «записать только в твою
+  память недостаточно. С проектом работает и Codex — знание должно быть
+  универсальным»).
 - **No fabricated findings.** No symptom quote → no edit. A quiet session goes
   straight to the handoff.
 - **Every edit is justified by a real symptom quote.** Guard against
