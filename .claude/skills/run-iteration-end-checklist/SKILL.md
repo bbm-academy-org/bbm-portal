@@ -1,6 +1,6 @@
 ---
 name: run-iteration-end-checklist
-description: The pre-merge iteration-end gate — a fresh-context subagent verifies the 12 items nothing else checks and returns a VERDICT the lead cannot bypass. Use after the implementation is done and before requesting review or running `pnpm pr:land`. Project-local; this repo only.
+description: The pre-merge iteration-end gate — a fresh-context subagent verifies the 13 items nothing else checks and returns a VERDICT the lead cannot bypass. Use after the implementation is done and before requesting review or running `pnpm pr:land`. Project-local; this repo only.
 ---
 
 # run-iteration-end-checklist — the gate before the merge tail
@@ -56,7 +56,7 @@ reports; it does not fix, stage, push, or merge.
   reason stage-4 review is dispatched, and the same reason `/wrap`'s retro is
   (`.claude/skills/wrap/SKILL.md` phase 1).
 
-## The 12 items
+## The 13 items
 
 For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
 
@@ -112,6 +112,16 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
     runs BEFORE the owner is invited (dominance / tiers / not equal boxes /
     legible states) lives in that same stage 5 — read it there; this checklist
     does not restate it and does not re-run it.
+13. **Rendered frame per changed route** — for a UI diff (the definition is
+    owned by `.claude/rules/design-process.md` §2), at least one rendered frame —
+    a screenshot taken on a running stand — of EVERY changed route/surface exists
+    at THIS head and is linked. Otherwise the item is **FAIL**, its Note column
+    carries the literal `SURFACE NEVER RENDERED`, and that literal is repeated
+    verbatim in the issue's stop-state comment. Green tests and green guards are
+    not a frame. _(2026-09-15: 2523 unit tests and four craft guards green on
+    PR #470, the stand never booted, and the closing comment said «Blockers: none
+    technical»; the next day's eyes-on matrix found four defects, one of them
+    blocking.)_
 
 ## Output (mandatory format)
 
@@ -122,9 +132,9 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
 |---|------|---------|------|
 | 1 | tests | PASS | test:unit 870 passed; int N/A — no collection change |
 | … |
-| 12 | acceptance recorded | N/A | invisible change |
+| 13 | rendered frame per changed route | N/A | no UI diff |
 
-VERDICT: <n>/12 — PASS | BLOCKED on <item numbers>
+VERDICT: <n>/13 — PASS | BLOCKED on <item numbers>
 ```
 
 `VERDICT: PASS` is allowed only when every item is PASS or N/A. One FAIL →

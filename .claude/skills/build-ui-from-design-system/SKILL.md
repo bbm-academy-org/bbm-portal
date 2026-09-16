@@ -208,7 +208,9 @@ value — `GO — <owner, date>`, `batched at #<gate>`, or
 - **An unverified gap claim** — «the kit has no X» from a grep of one block.
   2026-09-15: the lead grepped only the Refine `data-table` block, declared «no
   totals row», and `TableFooter` was already vendored in `src/ui/table.tsx`; the
-  owner refuted it with the ui.shadcn.com Table page. Two source lines (rung 2
+  owner refuted it with the ui.shadcn.com Table page. The block itself really did
+  not render footers (no TanStack `getFooterGroups()` wiring) — the FALSE
+  conclusion was about the SYSTEM, not about the block. Two source lines (rung 2
   above) or the claim is not verified (#494).
 - **Waiting for the owner to compose the screen** — what a missing or
   `wireframe`-only source does and does not stop is
