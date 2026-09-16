@@ -55,7 +55,7 @@ state), never hoped for from a pointer.
 | 14   | «Новая заявка» under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both themes)                     |
 | 15   | after «Одобрить» — the success toast and the card now in «Одобрены — ждут документа»                                |
 | 17   | after a refusal with a reason — the card in «Отклонены», carrying the reason and the decider                        |
-| 18   | after «Приложить документ» — the sheet STAYS open, the PDF reads inline, «Провести» is now one click away           |
+| 18   | after the file is CHOSEN — the sheet STAYS open, the document reads inline, «Провести» is now one click away        |
 | 19   | after «Провести» — the toast «Операция проведена» and the card in «Проведены» with its ledger date                  |
 | 20   | a SEEDED posted request — the ledger operation and its postings instead of controls                                 |
 | 21   | «Новая заявка» with a real purpose — the card lands in «Ждут» and the toast says exactly that                       |
@@ -840,3 +840,52 @@ cell now reads «ещё не двигались» whole — the ninth-pass clip 
 last frame that carried it. Row changed in `platform_388` by that pass: **#44**
 refused. It is the PROCESS that failed, not the diff: the restarted stand ran the
 same mutation on the first attempt.
+
+**A THIRTEENTH pass at head `bd8e41f` — defect G: choosing the file IS attaching
+it.** The owner, on this stand on 2026-09-16, picked a PNG in an approved
+request's sheet and read the screen as «документ приложен» — then found no
+«Провести» and reported the board as unable to post. Nothing was broken in the
+transport: the block simply committed nothing until a SECOND control was pressed,
+an `outline` button «Приложить документ» sitting INSIDE the dashed block, where
+it reads as secondary next to the footer's acts. Everything else the sheet showed
+was still the TRUTH of an empty document block — «Документ не приложен.», the
+gate Alert, a footer offering only «Отклонить…» — so the reader's own act and the
+screen's account of it had come apart, and only the reader could tell they had.
+The fix (`bd8e41f`) removes the button: the file input's own `change` runs the same
+path (`documentUploadRefusal` → `POST /p/finance/api/documents`) immediately,
+the kind select moves FIRST because that pick now happens before the commit, and
+the field says so in words — «Файл прикладывается сразу после выбора.» There is
+no half-chosen state left to misread. `b8d6687` is the RED spec that pins the
+behaviour (a `change` with a valid file calls the upload with no click; no button
+named «Приложить документ» exists; a refused type shows the message and sends
+nothing).
+
+**Re-taken: 06 and 18**, each × {1440×900, 390×844} × {light, dark} — 8 frames
+replacing their same-name predecessors, viewport-clipped with the sheet scrolled
+to its foot, as before. 06 now shows the dashed block as «Вид документа» + a file
+picker with that helper line under it and no button at all; 18 shows the same
+sheet after nothing but the pick — the document line and its download link in the
+pane above, the gate Alert gone, and «Провести» standing in the footer as the
+filled primary beside «Отклонить…». Harness: `.playwright-mcp/w3f-capture.cjs`
+over `w3-lib.cjs` (git-ignored), same stand (`http://localhost:3000` from
+`.claude/worktrees/388`, the fix reached it through Fast Refresh) and the same
+branch DB `platform_388`.
+
+**No step forced a pseudo-state on the removed button.** Step 31 targets the
+dialog's own submit and has done since the third pass (the note above records the
+first take that did not); nothing else in the matrix named «Приложить документ».
+
+**Live verification, separately from the frames** (`.playwright-mcp/g-verify.cjs`):
+request **№12**, approved and carrying no document — setting a PNG on the input
+with NO click produced exactly one `POST /p/finance/api/documents` → **201**, the
+document rendered inline, «Провести» appeared, and the picker came back empty. On
+request **№13** an unsupported type (`вирус.js`) put «не принимается: …
+подтверждающий документ это PDF или изображение (EARS-514)» under the field, sent
+nothing, and left the input live. The one console error on the run is the
+pre-existing dev-only `color-scheme` hydration notice on `<html>`, unrelated to
+this block.
+
+**Rows changed in `platform_388` this pass.** Documents attached to **#12**
+(verification), **#15**, **#16**, **#17**, **#18** (one per combo — a request takes
+a document once, so 18 cannot be replayed on the same row). **#13** received a
+REFUSED pick and therefore no document, and no request's status was changed.
