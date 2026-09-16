@@ -8,11 +8,16 @@ import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { ListView } from '@/ui/refine-ui/views/list-view'
-import { Skeleton } from '@/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/tabs'
 import { cn } from '@/ui/utils'
 
-import { DOCUMENTS_ENDPOINT, errorMessage, REQUESTS_ENDPOINT, REQUESTS_RESOURCE } from './constants'
+import {
+  DOCUMENTS_ENDPOINT,
+  errorMessage,
+  LIABILITIES_RESOURCE,
+  REQUESTS_ENDPOINT,
+  REQUESTS_RESOURCE,
+} from './constants'
 import { LiabilityPanel } from './LiabilityPanel'
 import { RequestCard } from './RequestCard'
 import { RequestDetailsSheet, type RequestAct, type RequestActPayload } from './RequestDetailsSheet'
@@ -147,7 +152,17 @@ export function RequestsBoardScreen() {
    */
   const invalidate = useInvalidate()
   const refreshRegister = React.useCallback(
-    () => invalidate({ resource: REQUESTS_RESOURCE, invalidates: ['list'] }),
+    () =>
+      // BOTH registers, because an act moves both: the request leaves the queue
+      // and the debt it created is settled. «Обязательства» has its own list
+      // cache, and its rows are refreshed today only because Radix `Tabs`
+      // unmounts inactive content — an accident of the container, not a refresh
+      // this screen ever stated (#388 round 7).
+      Promise.all(
+        [REQUESTS_RESOURCE, LIABILITIES_RESOURCE].map((resource) =>
+          invalidate({ resource, invalidates: ['list'] }),
+        ),
+      ),
     [invalidate],
   )
 
