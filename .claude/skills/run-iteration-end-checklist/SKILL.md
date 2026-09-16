@@ -112,15 +112,16 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
     runs BEFORE the owner is invited (dominance / tiers / not equal boxes /
     legible states) lives in that same stage 5 — read it there; this checklist
     does not restate it and does not re-run it.
-13. **Rendered frame per changed route** — for a UI diff (a non-test `*.tsx` /
-    `*.css` under `src/`), at least one rendered frame — a screenshot taken on a
-    running stand — of EVERY changed route/surface exists at THIS head and is
-    linked. Otherwise the verdict is the literal `SURFACE NEVER RENDERED`, and
-    that verdict is repeated verbatim in the issue's stop-state comment. Green
-    tests and green guards are not a frame. _(2026-09-15: 2523 unit tests and
-    four craft guards green on PR #470, the stand never booted, and the closing
-    comment said «Blockers: none technical»; the next day's eyes-on matrix found
-    four defects, one of them blocking.)_
+13. **Rendered frame per changed route** — for a UI diff (the definition is
+    owned by `.claude/rules/design-process.md` §2), at least one rendered frame —
+    a screenshot taken on a running stand — of EVERY changed route/surface exists
+    at THIS head and is linked. Otherwise the item is **FAIL**, its Note column
+    carries the literal `SURFACE NEVER RENDERED`, and that literal is repeated
+    verbatim in the issue's stop-state comment. Green tests and green guards are
+    not a frame. _(2026-09-15: 2523 unit tests and four craft guards green on
+    PR #470, the stand never booted, and the closing comment said «Blockers: none
+    technical»; the next day's eyes-on matrix found four defects, one of them
+    blocking.)_
 
 ## Output (mandatory format)
 
