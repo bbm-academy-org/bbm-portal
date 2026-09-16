@@ -23,6 +23,7 @@ import {
   type FinanceRequestBoardAct,
 } from './request-board-model'
 import {
+  REQUEST_TABLE_NO_MOVEMENT_LABEL,
   requestAmountTotals,
   requestRowActs,
   requestTableColumnPlan,
@@ -159,7 +160,7 @@ function RequestsRegister({
         footer: () => <span className="font-medium">Итого</span>,
         cell: ({ row }) =>
           row.original.occurredOn === null ? (
-            <span className="text-muted-foreground">ещё не двигались</span>
+            <span className="text-muted-foreground">{REQUEST_TABLE_NO_MOVEMENT_LABEL}</span>
           ) : (
             <span className="tabular-nums">{formatDate(row.original.occurredOn)}</span>
           ),

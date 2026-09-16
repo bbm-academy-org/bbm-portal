@@ -132,12 +132,36 @@ export type RequestTableColumnId =
 
 export type RequestTableColumn = { id: RequestTableColumnId; size: number }
 
+/**
+ * WHAT THE «Деньги ушли» COLUMN MUST AFFORD (#388 defect E, re-driven matrix of
+ * 2026-09-16).
+ *
+ * A pre-spend intent has no date (EARS-533), and this surface NAMES that
+ * emptiness rather than printing «—» — so the placeholder is not decoration,
+ * it is the state, and a state may not be clipped. It measured 114 px at
+ * 1440×900 against a cell offering 102, and read «ещё не двига…»; the block's
+ * own `div.truncate` carries no `title`, so the words were nowhere on screen.
+ *
+ * It is the one column whose longest content is a FIXED string, which is why it
+ * can be sized to it at all — the free-text column below never can, and is
+ * therefore the one that gives the width up.
+ */
+export const REQUEST_TABLE_NO_MOVEMENT_LABEL = 'ещё не двигались'
+/** Measured live in the running stand at 1440×900, not computed. */
+export const REQUEST_TABLE_NO_MOVEMENT_LABEL_WIDTH = 114
+/** The block's cell padding — `p-2` on both sides of every `TableCell`. */
+export const REQUEST_TABLE_CELL_PADDING = 16
+
 /** What each column is worth in the budget, in the reading order it is spent. */
 const REQUEST_TABLE_COLUMN_WIDTHS: Record<RequestTableColumnId, number> = {
-  occurredOn: 116,
+  // 114 px of placeholder plus the cell's own 16 px, and 6 px of margin for a
+  // font that is not the one the measurement was taken in.
+  occurredOn: 136,
   createdByName: 140,
   amount: 124,
-  purpose: 210,
+  // The column that gives: it carries free text, so no width ever fits its
+  // content and every px here is a px the fixed-width columns cannot spend.
+  purpose: 190,
   status: 190,
   actions: 300,
 }
