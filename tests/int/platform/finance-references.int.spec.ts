@@ -15,6 +15,7 @@ import {
   FinanceRefusal,
   getIntakeItem,
   listCounterparties,
+  listPendingPurposeProposalsForRequests,
   listPurposeProposals,
   renameCounterparty,
   resolvePurposeProposal,
@@ -344,6 +345,29 @@ describe('a missing-purpose proposal bound to its draft request (spec 339 EARS-5
         event.diff.purpose_id !== undefined,
     )
     expect(requestUpdate?.txid).toBe(resolution.txid)
+  })
+
+  it('EARS-534/526: the board read returns a pending proposal to a member who filed none', async () => {
+    const request = await seedDraftRequest()
+    const proposal = await createPurposeProposal(MEMBER, {
+      intakeItemId: request.id,
+      text: 'Подписка на AI-инструменты',
+    })
+
+    // THE CABINET QUEUE STAYS OWN-ONLY (EARS-526): a stranger who filed
+    // nothing has no queue of their own to work through.
+    expect(await listPurposeProposals(STRANGER)).toEqual([])
+
+    // THE BOARD READ IS THE OPEN BOOK (EARS-534, owner decision, Антон,
+    // 2026-09-16): the proposal text belongs to a request every signed-in
+    // member may already see, so it comes back for the stranger too.
+    expect(await listPendingPurposeProposalsForRequests([request.id])).toEqual([proposal])
+
+    // Resolved and dismissed proposals are not pending state and never reach
+    // the board: the request carries a real purpose by then.
+    const purpose = await createPurpose(ADMIN, { name: proposal.text, productBinding: 'forbidden' })
+    await resolvePurposeProposal(ADMIN, proposal.id, { purposeId: purpose.id })
+    expect(await listPendingPurposeProposalsForRequests([request.id])).toEqual([])
   })
 
   it('EARS-526: only the request owner or entry role proposes; dismissal retains the row and does not unblock', async () => {

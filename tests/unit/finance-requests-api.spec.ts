@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   listPurposes: vi.fn(),
   listCategories: vi.fn(),
   listPurposeProposals: vi.fn(),
+  listPendingPurposeProposalsForRequests: vi.fn(),
   liabilityBalances: vi.fn(),
   findMemberByEmail: vi.fn(),
   getMembersByIds: vi.fn(),
@@ -131,6 +132,7 @@ beforeEach(() => {
   ])
   state.listCategories.mockResolvedValue([{ id: 3, name: 'Операционные расходы', retiredAt: null }])
   state.listPurposeProposals.mockResolvedValue([])
+  state.listPendingPurposeProposalsForRequests.mockResolvedValue([])
   state.getExpenseRequest.mockResolvedValue(request)
   state.findMemberByEmail.mockResolvedValue({ id: 15 })
   state.getMembersByIds.mockResolvedValue([
@@ -203,6 +205,45 @@ describe('/p/finance/api/requests read model', () => {
       { email: 'owner@bbm.academy', roles: [PLATFORM_USER_ROLE, 'finance-approve'] },
       rows.map((row) => row.id),
     )
+  })
+
+  it('EARS-534/526: carries ANOTHER member’s pending proposal text on the open-book board', async () => {
+    // #480: the board used to combine the open-book request list with the
+    // OWN-ONLY cabinet read `listPurposeProposals`, so a request filed by
+    // someone else arrived with `proposal: null` and the row printed a bare
+    // «Назначение предложено». The board asks a read scoped to the
+    // requests this reader can already see (owner decision, Антон, 2026-09-16).
+    state.listExpenseRequests.mockResolvedValue([
+      { ...request, id: 55, status: 'draft', createdBy: 16, purposeId: null },
+    ])
+    state.listPendingPurposeProposalsForRequests.mockResolvedValue([
+      {
+        id: 9,
+        intakeItemId: 55,
+        text: 'Подписка на AI-инструменты',
+        proposedBy: 16,
+        createdAt: new Date('2026-09-10T10:00:00Z'),
+        resolvedPurposeId: null,
+        resolvedAt: null,
+        status: 'pending',
+      },
+    ])
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.GET()
+
+    expect(state.listPurposeProposals).not.toHaveBeenCalled()
+    expect(state.listPendingPurposeProposalsForRequests).toHaveBeenCalledWith([55])
+    expect(await response.json()).toMatchObject({
+      requests: [
+        {
+          id: 55,
+          own: false,
+          purpose: null,
+          proposal: { id: 9, text: 'Подписка на AI-инструменты', status: 'pending' },
+        },
+      ],
+    })
   })
 
   it('EARS-502: refuses a handler request before touching finance when the platform claim is absent', async () => {

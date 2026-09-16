@@ -1407,6 +1407,44 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
     expect(within(screen.getByRole('dialog')).getByText(/ООО «Студия-7»/)).toBeTruthy()
   })
 
+  it('#480: another member’s PROPOSED purpose is read WITH its text, on the row and in the sheet', async () => {
+    // The board combined the open-book request list with the OWN-ONLY cabinet
+    // read, so a request filed by someone else arrived with no proposal and
+    // the cell printed the label alone — a row that says a purpose was
+    // proposed and refuses to say which. Owner decision (Антон,
+    // 2026-09-16): the pending proposal text is part of the open book.
+    refine.custom.data = snapshot({
+      permissions: { canApprove: false, canEnter: false },
+      requests: [
+        item({
+          id: 8,
+          own: false,
+          status: 'draft',
+          purpose: null,
+          proposal: { id: 9, text: 'Подписка на AI-инструменты', status: 'pending' },
+        }),
+      ],
+    })
+    renderScreen()
+    pick('tab', 'Все')
+
+    await waitFor(() =>
+      expect(
+        within(requestsTable()).getByText('Назначение предложено: Подписка на AI-инструменты'),
+      ).toBeTruthy(),
+    )
+    // Never the bare label: the defect this test exists for.
+    expect(within(requestsTable()).queryByText('Назначение предложено')).toBeNull()
+
+    openCard(8)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        'Назначение предложено: Подписка на AI-инструменты',
+      ),
+    ).toBeTruthy()
+  })
+
   it('decision 35: a reader without the approve role gets no board toggle and no row act', async () => {
     refine.custom.data = snapshot({
       permissions: { canApprove: false, canEnter: false },

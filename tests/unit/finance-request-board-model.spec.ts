@@ -15,6 +15,7 @@ import {
   planRequestDrop,
   postingActNeedsMoneyFacts,
   requestCardFlags,
+  requestPurposeLabel,
   REQUEST_BOARD_COLUMNS,
 } from '@/app/(platform)/p/finance/requests/request-board-model'
 import {
@@ -110,6 +111,29 @@ describe('request board composition (spec 339 EARS-509/512/524, Stage-A pick D)'
     expect(canDragRequest(item({ status: 'posted' }), true)).toBe(false)
     expect(canDragRequest(item({ status: 'refused' }), true)).toBe(false)
     expect(canDragRequest(item({ status: 'submitted' }), false)).toBe(false)
+  })
+
+  it('#480: names a PROPOSED purpose together with its text, never the label alone', () => {
+    // One label for every surface that renders a purpose — the row, the
+    // card and the sheet — so the three cannot drift apart again.
+    expect(requestPurposeLabel(item({ purpose: null, proposal: null }))).toBe('—')
+    expect(
+      requestPurposeLabel(
+        item({
+          purpose: null,
+          proposal: { id: 9, text: 'Подписка на AI-инструменты', status: 'pending' },
+        }),
+      ),
+    ).toBe('Назначение предложено: Подписка на AI-инструменты')
+    // A real purpose wins: the proposal that produced it is history.
+    expect(
+      requestPurposeLabel(
+        item({
+          purpose: { id: 21, name: 'Продакшн', categoryId: null, categoryName: null },
+          proposal: { id: 9, text: 'Продакшн', status: 'resolved' },
+        }),
+      ),
+    ).toBe('Продакшн')
   })
 
   it('EARS-508/511: marks on the card what the reader must know before opening it', () => {
