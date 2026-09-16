@@ -448,3 +448,161 @@ the endpoint), and the «Кто подал» column says «BBM Member» on their
 git-ignored `.playwright-mcp/` and were bound to this seed dataset, the same call
 #434, #437 and the sixth pass made; `DEBT.md` already tracks that every task
 re-implements this harness (`2026-09-03-437-journey-harness`).
+
+## 2026-09-16 — wave 3, the register on the whitelist List block
+
+**AN EIGHTH pass at head `6bb6d6c`** — wave 3, the rebuild the owner's «go» of
+2026-09-15 ordered: `RequestsTable.tsx` and `LiabilityPanel.tsx` render through
+`@/ui/refine-ui/data-table/data-table`, the block grew a `TableFooter`, the two
+overlays that were `Dialog`s became SECTIONS of the details sheet, and «Подать
+заявку» says why it is still grey. Every state whose picture that changed was
+re-driven; the states whose shape no longer exists were REMOVED rather than kept
+as a record of a screen that is gone (named below). The pass **did not finish
+clean**: it found one blocking defect and three smaller ones, all listed under
+«What this pass found».
+
+**The stand.** `http://localhost:3000`, the lead's listener from
+`.claude/worktrees/388` on `feat/388-requests-board-blocks` at head `6bb6d6c`;
+data from that worktree's own branch DB `platform_388`, which has been RE-SEEDED
+since the seventh pass — it now carries `pnpm dev:seed`'s 65 people in
+`core.member` and 42 intake rows, of which **32 are expense requests** (5 draft,
+9 submitted, 5 approved, 6 posted, 4 refused, 3 cancelled), one liability
+(Ксения Панова, −7 800,00 RUB) and no leftovers of the earlier passes' acts.
+Because the re-seed dropped them, `bbm-test` and `bbm-member` had **no
+`core.member` row** and every write act answered `403` («у bbm-test@bbm.local
+нет записи в общем реестре людей»); `pnpm platform:member:seed` put the two dev
+IdP logins back, which is the documented step for this stand and not a product
+finding. Driven with `@playwright/test` from the worktree, HEADED, signed in
+through the real dev Zitadel as `bbm-test` (`finance-approve` + `finance-entry`)
+and as `bbm-member` (`platform-user` only); the password was read from a
+scratchpad file by the script through `fs` and never entered a tool call.
+
+**The matrix** is the folder's usual one — every state × 2 breakpoints
+(desktop 1440×900, mobile 390×844) × 2 themes (light, and dark through the
+theme's own `.dark` class) — plus the primary control of each form and one
+column sorter under three CDP-forced pseudo-states. Next's dev overlay is hidden
+in every frame.
+
+| Step | What it shows                                                                                                          |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- |
+| 03   | the «Обязательства» register, now the same List block, with its `TableFooter` total and the block's pager              |
+| 11   | a forced `500` on the act route — the error toast, and the sheet deliberately stays open                               |
+| 12   | the loading state, caught with the read held open — still the KANBAN's four-block skeleton (defect C below)            |
+| 36   | `bbm-member` opens the route: the table, «Мои» preselected, no board toggle, and the EMPTY state of that scope         |
+| 37   | the same reader on «Все» — «Заявок пока нет» over a footer that sums 1 106 390,00 RUB (defect A below)                 |
+| 39   | «Новая заявка» + «Уже потрачено» as a role-less submitter: the date, and no account picker and no own-funds box        |
+| 41   | `bbm-test` opens the same default: the table, «Мои», two rows, the totals row in TWO currencies, row acts by status    |
+| 42   | the same reader on «Все»: two rows still, a footer that sums the whole register, a refusal column no row fills         |
+| 43   | the board toggle pressed — the four columns are back, 26 cards, the board's own one-row toolbar                        |
+| 48   | «Сумма» sorted ASCENDING — the block's own arrow, and the rows really reordered (240,00 USD above 12 400,00 RUB)       |
+| 49   | the same column DESCENDING                                                                                             |
+| 51   | «Новая заявка» idle: «Подать заявку» disabled, its reason beside it («Заполните: …»), `aria-describedby` wired         |
+| 52   | a MALFORMED «Сумма документа» («сто рублей»): the button stays LIVE, and pressing it delivers that field's FormMessage |
+| 53   | the details sheet opened by the row's named «Открыть» — the pre-spend pair says «вводится при проведении»              |
+| 54   | «Отклонить…» → the refusal SECTION inside the sheet (it was a `Dialog` before wave 3), titled and described            |
+| 55   | that section submitted empty — «Укажите причину отказа.» under the field                                               |
+| 56   | «Провести» → the posting SECTION (also a `Dialog` before wave 3), idle, with the receipt readable above it             |
+| 57   | the same section submitted empty — both refusals under their own field                                                 |
+| 58   | the section filled — «Банк RUB · RUB» and 11.09.2026, the act ready to run                                             |
+| 62   | «Подать заявку» under CDP-FORCED `:hover`, `:focus-visible`, `:active` (desktop, both themes)                          |
+| 63   | the refusal section's «Отклонить заявку» under the same three                                                          |
+| 64   | the posting section's «Провести» under the same three                                                                  |
+| 65   | the «Сумма» column sorter under the same three                                                                         |
+
+**The forcing of 62–65 is proved by diff, not asserted.** Each control was
+resolved by a JS expression evaluated INSIDE the overlay on screen (the third
+pass of this folder was caught forcing a button behind a dialog), an unforced
+base was taken in the same context with the pointer parked at (4, 4), and each
+forced frame was diffed against it. All 24 frames change pixels only inside the
+control's own box (±8 px for the focus ring): 62 — 3158/1196/779 px light,
+3226/1196/768 dark; 63 — 3853/1387/903 and 3763/1387/909; 64 — 2352/940/552 and
+2392/940/543; 65 — 236/324/44 and 248/324/44. The parked pointer is part of the
+method: the first run left the mouse where the reach step had clicked, the base
+frame was ALREADY hovered, and 64's `:hover` diff came back 0 px — a frame that
+would have been promoted as evidence of a state it never showed.
+
+**Frames REMOVED, and why.** `04-tab-mine-*` — the «Мои заявки» TAB does not
+exist; it is the «Мои» scope of the same table. `07-refuse-dialog-*`,
+`08-refuse-dialog-error-*`, `45-approver-row-refuse-dialog-*`,
+`27/28/29-posting-dialog-*`, `31-post-cta-*` — both `Dialog`s are gone, and the
+frames of a modal that no longer renders are not evidence of this head; their
+states are 54/55 and 56/57/58, and 31's CTA is 64's.
+`42-approver-table-row-acts-*` — the state it asserted (9 «Одобрить» and 14
+«Отклонить…» over the whole 57-row queue) is currently UNREACHABLE, see defect A.
+`02-board-*` and `25-board-pre-spend-cards-*` — board frames on the pre-wave-3
+toolbar; 43 is this head's board frame.
+
+**What this pass found.** Four defects, each re-observed live in the DOM, not
+read off a screenshot.
+
+- **A — BLOCKING: «Все» never reaches the data provider.** The scope toggle
+  changes nothing: `getList` is called only ever with
+  `[{"field":"own","operator":"eq","value":true}]`, on mount and on every later
+  re-fetch, so the register keeps showing the reader's OWN rows under both
+  scopes. Instrumented live at head `6bb6d6c` by patching the served chunk's
+  `getList` to record its arguments: mount → `own:true`, «Все» pressed → no new
+  call, a sorter pressed → `own:true` again, «Мои» pressed → `own:true`. Two
+  readers, same result. What the reader sees is worse than «nothing happened»,
+  because the FOOTER does change: it is computed by the screen from its own
+  `useCustom` snapshot, so under «Все» it sums the whole register
+  («Итого 1 106 390,00 RUB / 240,00 USD») beneath two rows — and for
+  `bbm-member`, beneath «Заявок пока нет» (step 37). The «Причина отказа»
+  column appears for the same reason while no visible row carries a refusal.
+  The board, reading the same snapshot, shows all 26 cards (step 43) — the data
+  is there. Mechanism: `useTable` receives the scope as
+  `refineCoreProps.filters.permanent`, and Refine's own `useTable` folds
+  `permanent` into its filters STATE once, at mount (`setInitialFilters` inside
+  `useState`); a later change of `permanent` never removes the entry already in
+  state, and `unionFilters(permanent, filters)` keeps the mounted `own eq true`.
+- **B — the register overflows its container at the design breakpoint.**
+  Measured live at 1440×900: the table is **1214 px inside a 1110 px container**,
+  so the trailing acts column is clipped — «Отклонить…» is cut mid-word and the
+  row's named «Открыть», the only control wave 3 leaves for opening a request,
+  is laid out at x 1291–1369 and never painted. The reader must scroll the table
+  sideways on a full desktop. In the «Все» scope the refusal column adds 220 px
+  more. Visible in every 41/42/48/49/65 desktop frame.
+- **C — the loading state of the default view draws a BOARD.** Held the read
+  open and measured: the screen renders its «Загружаем заявки» branch — five
+  `Skeleton` blocks in `lg:grid-cols-4`, the kanban's — and no table, at both
+  breakpoints (`RequestsBoardScreen.tsx`, the `query.isLoading` branch, and the
+  route's own `loading.tsx`). The default view is the table, so the route paints
+  four grey columns and then swaps the whole layout; on a phone that is four
+  stacked 256-px blocks, over 1000 px of it. Step 12.
+- **D — the empty register's second line is cut off at 390 px.** The block's
+  `DataTableNoData` switches to `width: fit-content` + `translateX(-50%)` once
+  the table overflows horizontally, and the description does not wrap, so it
+  runs off BOTH edges of the 341-px scroll container: «ы подадите, появится
+  здесь — включая черновики и от». Steps 36 and 37, mobile. The same cell is a
+  hard-coded 490 px tall, which is a large void on this surface in every combo.
+
+**Three observations that are NOT wave-3 regressions**, recorded so the next
+pass does not re-discover them. The kit's `destructive` variant renders as a
+pale tint with red text in light and a dark red with red text in dark, never the
+stock solid fill — identical in the pre-wave-3 `07-refuse-dialog-*` frames this
+pass deleted, so it is the theme, not this diff. The document picker still shows
+the browser's own English «Choose File / No file chosen», truncated to «N…n».
+And the «Контрагент» select opens on the sentinel «Нет в списке — впишу
+нового», so a fresh form always renders «Новый контрагент» while the
+disabled-submit reason simultaneously lists «контрагент» as unanswered.
+
+**What could not be driven, and why.** Pagination past page 1, the status badge
+in all six variants, the row acts over the whole queue, and the details sheet of
+another member's request (the old step 38) all need the «Все» register to
+actually render its 32 rows — defect A. They are the first thing to re-drive
+once it is fixed. Steps 05, 06, 09, 10, 13–24, 26, 30, 32–35, 38, 40, 44, 46 and
+47 were left as their own passes took them.
+
+**Rows this pass changed in `platform_388`.** Two requests filed through the
+form by `bbm-test` — **#43** (12 400,00 RUB, a pre-spend intent, then approved
+and given `receipt-388.pdf` so the posting section is reachable) and **#44**
+(240,00 USD, already paid from «Карта USD»); the second currency is deliberate,
+so the totals row has more than one line to add up. Nothing else was written:
+the refusal and posting sections were opened and cancelled, never submitted, and
+the forced `500` of step 11 wrote nothing. No ledger operation is this pass's.
+`core.member` gained the two dev IdP logins (`pnpm platform:member:seed`).
+
+**The journey scripts are not committed** — they live in the worktree's
+git-ignored `.playwright-mcp/` (`w3-lib.cjs`, `w3-capture.cjs`, `w3-prove.cjs`
+and friends) and are bound to this seed dataset, the same call every earlier
+pass made; `DEBT.md` already tracks that every task re-implements this harness
+(`2026-09-03-437-journey-harness`).
