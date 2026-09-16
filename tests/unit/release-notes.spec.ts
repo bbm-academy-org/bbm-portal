@@ -14,6 +14,7 @@ import {
   buildDigest,
   buildTechnicalReleaseLine,
   extractPrNumbers,
+  pluralizeTechnicalChanges,
 } from '../../tools/deploy/release-notes.mjs'
 import {
   buildReleaseNotesArgs,
@@ -181,6 +182,73 @@ describe('buildDigest / buildTechnicalReleaseLine', () => {
     const { text } = buildTechnicalReleaseLine({ newSha, footer: 'ФУТЕР' })
     expect(text).toMatch(/[Тт]ехнический релиз/)
     expect(text.trim().endsWith('ФУТЕР')).toBe(true)
+  })
+
+  // #501 — the owner read a three-paragraph digest of a 23-PR release as «only
+  // three things shipped». Listing the technical PRs was ruled out of scope;
+  // their COUNT is what the digest now states.
+  it('states the count of technical changes, in the line before the footer', () => {
+    const { text } = buildDigest({
+      notes: [{ note: 'Часы считают.', title: 'feat: hours', url: 'https://gh/pr/1' }],
+      newSha,
+      footer: 'ФУТЕР',
+      technicalCount: 20,
+    })
+    expect(text).toContain(
+      'Плюс 20 технических изменений (инфраструктура, проверки, документация) — ' +
+        'на экране их не видно.',
+    )
+    const lines = text.trim().split('\n')
+    expect(lines[lines.length - 1]).toBe('ФУТЕР')
+    expect(lines[lines.length - 3]).toMatch(/^Плюс 20 технических изменений/)
+  })
+
+  it('declines the noun with the count in the digest line too', () => {
+    const digest = (technicalCount: number) =>
+      buildDigest({
+        notes: [{ note: 'Часы считают.', title: 't', url: 'u' }],
+        newSha,
+        footer: 'ФУТЕР',
+        technicalCount,
+      }).text
+    expect(digest(1)).toContain('Плюс 1 техническое изменение (')
+    expect(digest(3)).toContain('Плюс 3 технических изменения (')
+  })
+
+  it('has no such line at zero — and none when the caller passes no count', () => {
+    const notes = [{ note: 'Часы считают.', title: 't', url: 'u' }]
+    expect(buildDigest({ notes, newSha, footer: 'ФУТЕР', technicalCount: 0 }).text).not.toMatch(
+      /Плюс/,
+    )
+    expect(buildDigest({ notes, newSha, footer: 'ФУТЕР' }).text).not.toMatch(/Плюс/)
+  })
+
+  it('the technical-release line names the count as well', () => {
+    const { text } = buildTechnicalReleaseLine({ newSha, footer: 'ФУТЕР', technicalCount: 7 })
+    expect(text).toContain(
+      '— 7 технических изменений, пользовательских изменений в этой поставке нет.',
+    )
+    expect(text.trim().endsWith('ФУТЕР')).toBe(true)
+  })
+
+  it('the technical-release line keeps its old text at zero / without a count', () => {
+    const bare = '— пользовательских изменений в этой поставке нет.'
+    expect(
+      buildTechnicalReleaseLine({ newSha, footer: 'ФУТЕР', technicalCount: 0 }).text,
+    ).toContain(bare)
+    expect(buildTechnicalReleaseLine({ newSha, footer: 'ФУТЕР' }).text).toContain(bare)
+  })
+})
+
+describe('pluralizeTechnicalChanges', () => {
+  it('declines «изменение» the way Russian does, teens included', () => {
+    expect(pluralizeTechnicalChanges(1)).toBe('1 техническое изменение')
+    expect(pluralizeTechnicalChanges(2)).toBe('2 технических изменения')
+    expect(pluralizeTechnicalChanges(5)).toBe('5 технических изменений')
+    expect(pluralizeTechnicalChanges(11)).toBe('11 технических изменений')
+    expect(pluralizeTechnicalChanges(21)).toBe('21 техническое изменение')
+    expect(pluralizeTechnicalChanges(22)).toBe('22 технических изменения')
+    expect(pluralizeTechnicalChanges(25)).toBe('25 технических изменений')
   })
 })
 
