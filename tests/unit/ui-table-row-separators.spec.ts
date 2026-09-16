@@ -51,7 +51,9 @@ describe('#388 defect F: the kit table renders in the COLLAPSED borders model', 
   })
 
   it('the scoped preflight subset carries `border-collapse: collapse` for a table', () => {
-    const rule = baseLayerRules(themeCode).find(({ selector }) => /(^|\W)table(\W|$)/.test(selector))
+    const rule = baseLayerRules(themeCode).find(({ selector }) =>
+      /(^|\W)table(\W|$)/.test(selector),
+    )
     expect(
       rule,
       'no rule in theme.css `@layer base` targets `table` — the hand-transcribed ' +
@@ -64,7 +66,9 @@ describe('#388 defect F: the kit table renders in the COLLAPSED borders model', 
   it('and that rule stays inside an opted-in subtree, like every other base rule', () => {
     // EARS-429: /p/okr and /p/hours must stay unreskinned. `hours.css` sets its
     // own `border-collapse: collapse`; an unscoped rule here would reach it.
-    const rule = baseLayerRules(themeCode).find(({ selector }) => /(^|\W)table(\W|$)/.test(selector))
+    const rule = baseLayerRules(themeCode).find(({ selector }) =>
+      /(^|\W)table(\W|$)/.test(selector),
+    )
     expect(rule, 'no `table` rule in the base layer at all').toBeDefined()
     for (const one of rule!.selector.split(',')) {
       expect(one.trim(), `"${one.trim()}" can match outside an opted-in subtree`).toMatch(
