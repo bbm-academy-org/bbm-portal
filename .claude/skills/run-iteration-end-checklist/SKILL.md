@@ -116,10 +116,10 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
     `*.css` under `src/`), at least one rendered frame — a screenshot taken on a
     running stand — of EVERY changed route/surface exists at THIS head and is
     linked. Otherwise the verdict is the literal `SURFACE NEVER RENDERED`, and
-    that verdict is repeated verbatim in the issue'''s stop-state comment. Green
+    that verdict is repeated verbatim in the issue's stop-state comment. Green
     tests and green guards are not a frame. _(2026-09-15: 2523 unit tests and
     four craft guards green on PR #470, the stand never booted, and the closing
-    comment said «Blockers: none technical»; the next day'''s eyes-on matrix found
+    comment said «Blockers: none technical»; the next day's eyes-on matrix found
     four defects, one of them blocking.)_
 
 ## Output (mandatory format)
