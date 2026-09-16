@@ -344,6 +344,8 @@ type RequestSpec = readonly [
   number,
   string,
   ('bank' | 'cash' | 'card' | null)?,
+  /** EARS-513 — the member paid from their own pocket; implies `already_paid`. */
+  boolean?,
 ]
 
 /**
@@ -351,8 +353,9 @@ type RequestSpec = readonly [
  *
  * A stand with one card per column answers «does the board render», not «does
  * the board read»: the widest column has to overflow, the narrow ones have to
- * stay narrow, and the whole thing has to sort. Hence 30 requests spread
- * 5/8/5/4/3/5 across the six states rather than six.
+ * stay narrow, and the whole thing has to sort. Hence 32 requests spread
+ * 5/9/5/4/3/6 across the six states rather than six — the two extra ones being
+ * the EARS-513 personal-funds pair the liability view reads.
  */
 const REQUEST_SPECS: readonly RequestSpec[] = [
   ['draft', '2026-08-03', 3, 12_500_00n, 0, 'Аренда переговорной на воркшоп'],
@@ -390,6 +393,13 @@ const REQUEST_SPECS: readonly RequestSpec[] = [
   ['posted', '2026-07-30', 28, 118_000_00n, 3, 'Тираж методичек, июль'],
   ['posted', '2026-07-31', 29, 16_900_00n, 4, 'Лицензии на дизайн-инструменты'],
   ['posted', '2026-08-01', 0, 45_600_00n, 2, 'Облачная инфраструктура, июль'],
+
+  // EARS-513: paid from a member's own card, so the item names NO company money
+  // account and the posting credits the system liability account instead. Without
+  // at least one of these the board's EARS-527 liability view has nothing to show
+  // — «кому BBM должен» renders empty on a fully seeded stand.
+  ['posted', '2026-07-27', 30, 7_800_00n, 4, 'Подписка на сток-фото со своей карты', null, true],
+  ['submitted', '2026-08-26', 31, 3_250_00n, 5, 'Такси курьеру, оплатил сам', null, true],
 ]
 
 const REFUSAL_REASONS: readonly string[] = [
@@ -412,9 +422,10 @@ export const DEV_SEED_REQUESTS: readonly DevSeedRequest[] = (() => {
   let refused = 0
   let posted = 0
   return REQUEST_SPECS.map(
-    ([status, occurredOn, submitterIndex, amount, counterparty, note, account]) => {
+    ([status, occurredOn, submitterIndex, amount, counterparty, note, account, personalFunds]) => {
       const ordinal = (counters[status] = (counters[status] ?? 0) + 1)
       const slug = `req-${status}-${String(ordinal).padStart(2, '0')}`
+      const ownPocket = personalFunds === true
       const request: DevSeedRequest = {
         slug,
         status,
@@ -422,11 +433,13 @@ export const DEV_SEED_REQUESTS: readonly DevSeedRequest[] = (() => {
         occurredOn,
         amount,
         currency: 'RUB',
-        account: account ?? 'bank',
+        // EARS-513: `personal_funds` is the model's ONE nullable-account case, and
+        // EARS-508 accepts it only together with `already_paid`.
+        account: ownPocket ? null : (account ?? 'bank'),
         counterparty,
         note,
-        alreadyPaid: status === 'posted',
-        personalFunds: false,
+        alreadyPaid: ownPocket || status === 'posted',
+        personalFunds: ownPocket,
       }
       if (status === 'refused') {
         return { ...request, refusalReason: REFUSAL_REASONS[refused++ % REFUSAL_REASONS.length] }

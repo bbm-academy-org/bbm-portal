@@ -238,6 +238,7 @@ export {
   detachFinanceDocument,
   FinanceDocumentUploadPending,
   listFinanceDocuments,
+  listFinanceDocumentsByItems,
   readFinanceDocument,
   resumeFinanceDocumentUpload,
   setFinanceDocumentKind,
@@ -265,6 +266,7 @@ export {
   liabilityBalances,
   listRegister,
   postingsMissingOptionalProduct,
+  registerEntriesByIds,
 } from './queries'
 export type {
   AccountBalance,

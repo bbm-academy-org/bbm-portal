@@ -234,7 +234,23 @@
     height: auto;
   }
 
-  /* preflight §5 — form controls inherit the type they sit in. This is the rule
+  /* preflight §5 — tables render in the COLLAPSED borders model. This is the
+     rule that makes the kit's table look like a table at all: `TableRow` asks
+     for `border-b` and `TableHeader` for `[&_tr]:border-b`, and in the UA's
+     default SEPARATE model a border on a row, a row group or a column is
+     ignored outright (CSS 2.2 §17.6.1) — the declaration resolves, computes a
+     1 px `--border` edge, and paints nothing. Omitted when this subset was
+     first transcribed, which is why `/p/finance/requests` shipped 25 rows on an
+     unbroken white field while its own loading skeleton drew a rule per row
+     (#388 defect F). `border-color: inherit` is upstream's companion fix for a
+     Chrome/Safari inheritance bug and belongs to the same rule. */
+  [data-bbm-ui] table {
+    text-indent: 0;
+    border-color: inherit;
+    border-collapse: collapse;
+  }
+
+  /* preflight §6 — form controls inherit the type they sit in. This is the rule
      that keeps a `<button>` from falling back to the UA's own font family, which
      no utility overrides. */
   [data-bbm-ui] :is(button, input, select, optgroup, textarea) {

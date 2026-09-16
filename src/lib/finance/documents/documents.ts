@@ -37,7 +37,7 @@ import path from 'node:path'
 
 import { and, eq, inArray } from 'drizzle-orm'
 
-import { findMemberByEmail } from '@/lib/member'
+import { findMemberByEmail, type MemberDb } from '@/lib/member'
 import {
   financeDocument,
   FINANCE_DOCUMENT_KINDS,
@@ -231,10 +231,20 @@ async function requireMemberId(actor: FinanceActor): Promise<number> {
   return member.id
 }
 
-/** The member id, or `null` — for the READ path, where «not a member» is a refusal, not an error. */
-async function memberIdOrNull(actor: FinanceActor): Promise<number | null> {
+/**
+ * The member id, or `null` — for the READ path, where «not a member» is a refusal, not an error.
+ *
+ * **The executor is a required argument, not a convenience** (#470). Every
+ * caller below asks this question INSIDE a transaction, and a transaction holds
+ * one pooled client; a lookup that went to the pool would ask for a second one
+ * while holding the first. Ten such transactions in flight exhaust the pool
+ * (`max` in `src/lib/platform/db/client.ts`) and every one of them then waits
+ * for a client no one can release — the board's stop-state on the acceptance
+ * stand, and a deadlock rather than a slow page.
+ */
+async function memberIdOrNull(actor: FinanceActor, db: MemberDb): Promise<number | null> {
   if (typeof actor.email !== 'string' || actor.email.trim() === '') return null
-  const member = await findMemberByEmail(actor.email)
+  const member = await findMemberByEmail(actor.email, { db })
   return member?.id ?? null
 }
 
@@ -516,7 +526,7 @@ async function assertReadAccess(
 ): Promise<void> {
   if (holdsFinanceFlowRole(actor)) return
 
-  const memberId = await memberIdOrNull(actor)
+  const memberId = await memberIdOrNull(actor, tx)
   if (memberId !== null) {
     // EARS-523 follows current owned links; upload provenance grants no read.
     const items = await linkedItems(tx, document.id)
@@ -574,7 +584,7 @@ export async function listFinanceDocuments(
       throw new FinanceRefusal(`Позиции приёмки #${filter.intakeItemId} не существует.`)
     }
     if (!holdsFinanceFlowRole(actor)) {
-      const memberId = await memberIdOrNull(actor)
+      const memberId = await memberIdOrNull(actor, tx)
       if (memberId === null || item.source !== 'request' || item.createdBy !== memberId) {
         throw new FinanceAccessRefusal(
           `Документы позиции #${item.id} видят роли «finance-entry» / «finance-approve» ` +
@@ -593,6 +603,70 @@ export async function listFinanceDocuments(
         ),
       )
     return rows.map((row) => toView(row.document))
+  })
+}
+
+/**
+ * The documents of MANY intake items at once — the board's read (#470).
+ *
+ * The gate is the same EARS-523 one the single-item function applies, but the
+ * ANSWER for an item the actor may not see differs, and deliberately: a LIST is
+ * a question about a set, so an item that is missing or not this actor's is
+ * absent from the map, not a refusal that takes the whole board down with it.
+ * `listFinanceDocuments` above keeps the refusal semantics for the single-item
+ * question, where «you may not read this one» is the real answer.
+ *
+ * One transaction, three statements — not one transaction per row. The per-row
+ * shape held a pooled client for every row of the board and asked for another
+ * inside each of them; see `memberIdOrNull` above.
+ */
+export async function listFinanceDocumentsByItems(
+  actor: FinanceActor,
+  intakeItemIds: readonly number[],
+): Promise<Map<number, FinanceDocumentView[]>> {
+  const ids = [...new Set(intakeItemIds)]
+  const byItem = new Map<number, FinanceDocumentView[]>()
+  if (ids.length === 0) return byItem
+
+  return platformTransaction(financeAuditContext(actor), async (tx) => {
+    const items = await tx
+      .select({
+        id: financeIntakeItem.id,
+        source: financeIntakeItem.source,
+        createdBy: financeIntakeItem.createdBy,
+      })
+      .from(financeIntakeItem)
+      .where(inArray(financeIntakeItem.id, ids))
+
+    let visible = items
+    if (!holdsFinanceFlowRole(actor)) {
+      const memberId = await memberIdOrNull(actor, tx)
+      visible =
+        memberId === null
+          ? []
+          : items.filter((item) => item.source === 'request' && item.createdBy === memberId)
+    }
+    if (visible.length === 0) return byItem
+
+    const rows = await tx
+      .select({ intakeItemId: financeDocumentLink.intakeItemId, document: financeDocument })
+      .from(financeDocumentLink)
+      .innerJoin(financeDocument, eq(financeDocumentLink.documentId, financeDocument.id))
+      .where(
+        and(
+          inArray(
+            financeDocumentLink.intakeItemId,
+            visible.map((item) => item.id),
+          ),
+          eq(financeDocument.storageState, 'ready'),
+        ),
+      )
+    for (const row of rows) {
+      const list = byItem.get(row.intakeItemId)
+      if (list === undefined) byItem.set(row.intakeItemId, [toView(row.document)])
+      else list.push(toView(row.document))
+    }
+    return byItem
   })
 }
 

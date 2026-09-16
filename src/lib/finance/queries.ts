@@ -12,7 +12,7 @@
  * open to every platform member by the owner's transparency policy (EARS-325),
  * and the surface — #357 — decides who may look.
  */
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 
 import { getPlatformDb } from '@/lib/platform/db/client'
 
@@ -219,9 +219,8 @@ export async function liabilityBalances(
  * the other: the correction is visible as a second fact, never as the first one
  * having quietly changed.
  */
-export async function listRegister(options: { limit?: number } = {}): Promise<RegisterEntry[]> {
+async function registerEntriesWhere(operationScope: SQL): Promise<RegisterEntry[]> {
   const db = getPlatformDb()
-  const limit = options.limit ?? 200
   const result = await db.execute(sql`
     select o.id, o.occurred_on, o.source, o.source_ref, o.purpose_id, o.backdated, o.reverses,
            pu.name as purpose_name,
@@ -232,7 +231,7 @@ export async function listRegister(options: { limit?: number } = {}): Promise<Re
       left join core.finance_purpose pu on pu.id = o.purpose_id
       join core.finance_posting p on p.operation_id = o.id
       join core.finance_account a on a.id = p.account_id
-     where o.id in (select id from core.finance_operation order by id desc limit ${limit})
+     where ${operationScope}
      order by o.id desc, p.id asc
   `)
   const entries = new Map<number, RegisterEntry>()
@@ -267,6 +266,29 @@ export async function listRegister(options: { limit?: number } = {}): Promise<Re
     })
   }
   return [...entries.values()]
+}
+
+export async function listRegister(options: { limit?: number } = {}): Promise<RegisterEntry[]> {
+  const limit = options.limit ?? 200
+  return registerEntriesWhere(
+    sql`o.id in (select id from core.finance_operation order by id desc limit ${limit})`,
+  )
+}
+
+/** The complete register projection for an explicit bounded set of operation ids. */
+export async function registerEntriesByIds(
+  operationIds: readonly number[],
+): Promise<RegisterEntry[]> {
+  const ids = [...new Set(operationIds)]
+  if (ids.length === 0) return []
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new RangeError('Finance operation ids must be positive integers.')
+  }
+  const parameters = sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  )
+  return registerEntriesWhere(sql`o.id in (${parameters})`)
 }
 
 /**

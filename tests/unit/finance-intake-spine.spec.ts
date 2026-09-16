@@ -16,8 +16,11 @@ import {
 // The registry MUTATOR is module-internal on purpose (see src/lib/finance/index.ts):
 // this suite is the one caller that registers a producer, and it reaches for it
 // where it lives rather than asking for a public hole to do it through.
+import { intakeMoneyFactsRefusal, intakePaidPairRefusal } from '@/lib/finance/intake/items'
+import { namesIntakePostingMoneyFacts } from '@/lib/finance/intake/posting'
 import { registerIntakeProducer } from '@/lib/finance/intake/sources'
 import {
+  financeIntakeItem,
   FINANCE_INTAKE_SOURCES,
   FINANCE_INTAKE_STATUSES,
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
@@ -217,5 +220,109 @@ describe('Producer isolation (EARS-525)', () => {
   it('EARS-525: an unknown source is refused by name — a producer is registered, never guessed', () => {
     expect(() => resolveIntakeProducer('telepathy')).toThrow(FinanceRefusal)
     expect(() => resolveIntakeProducer('telepathy')).toThrow(/telepathy/)
+  })
+})
+
+/**
+ * EARS-533 — the money facts a request cannot know.
+ *
+ * Owner ruling (Антон, 2026-09-03, #388): «заявка — это намерение, а не
+ * платёж». Which is why this rule is one PURE predicate rather than an `if`
+ * inside the insert: the SAME sentence has to be true at filing (a pre-spend
+ * request may hold both empty), at editing, and at posting (neither may be
+ * empty any more), and a rule written three times is a rule that drifts.
+ */
+describe('The money facts the posting act enters (EARS-533)', () => {
+  const preSpend = {
+    source: 'request',
+    alreadyPaid: false,
+    personalFunds: false,
+    accountId: null,
+    occurredOn: null,
+  }
+
+  it('EARS-533: a pre-spend request is complete with no paying account and no money date', () => {
+    expect(intakeMoneyFactsRefusal(preSpend)).toBeNull()
+  })
+
+  it('EARS-508/533: an «уже потрачено» request still names the date and how it was paid', () => {
+    expect(intakeMoneyFactsRefusal({ ...preSpend, alreadyPaid: true })).toMatch(/счёт/i)
+    expect(intakeMoneyFactsRefusal({ ...preSpend, alreadyPaid: true, accountId: 7 })).toMatch(
+      /дат/i,
+    )
+    expect(
+      intakeMoneyFactsRefusal({
+        ...preSpend,
+        alreadyPaid: true,
+        accountId: 7,
+        occurredOn: '2026-09-03',
+      }),
+    ).toBeNull()
+    // Own funds name no company account, and that is not a missing account.
+    expect(
+      intakeMoneyFactsRefusal({
+        ...preSpend,
+        alreadyPaid: true,
+        personalFunds: true,
+        occurredOn: '2026-09-03',
+      }),
+    ).toBeNull()
+  })
+
+  it('EARS-533: only a REQUEST may leave them empty — a manual or backfill line never does', () => {
+    for (const source of ['manual', 'backfill', 'bank_import']) {
+      expect(intakeMoneyFactsRefusal({ ...preSpend, source })).toMatch(/счёт|дат/i)
+    }
+  })
+
+  it('EARS-533: posting refuses the same pre-spend item and says WHICH fact is missing', () => {
+    expect(intakeMoneyFactsRefusal(preSpend, { posting: true })).toMatch(/счёт/i)
+    expect(intakeMoneyFactsRefusal(preSpend, { posting: true })).toMatch(/дат/i)
+    expect(intakeMoneyFactsRefusal({ ...preSpend, accountId: 7 }, { posting: true })).toMatch(
+      /дат/i,
+    )
+    expect(
+      intakeMoneyFactsRefusal({ ...preSpend, occurredOn: '2026-09-03' }, { posting: true }),
+    ).toMatch(/счёт/i)
+    expect(
+      intakeMoneyFactsRefusal(
+        { ...preSpend, accountId: 7, occurredOn: '2026-09-03' },
+        { posting: true },
+      ),
+    ).toBeNull()
+  })
+
+  it('EARS-513/533: own funds never name a company account, at filing or at posting', () => {
+    const refusal = intakeMoneyFactsRefusal({
+      ...preSpend,
+      alreadyPaid: true,
+      personalFunds: true,
+      accountId: 7,
+      occurredOn: '2026-09-03',
+    })
+    expect(refusal).toMatch(/своими средствами/i)
+  })
+
+  it('EARS-533: the column itself is nullable — an unposted request holds no money date', () => {
+    expect(financeIntakeItem.occurredOn.notNull).toBe(false)
+  })
+
+  it('EARS-533: naming ANY of the four act facts counts — the currency included', () => {
+    expect(namesIntakePostingMoneyFacts({})).toBe(false)
+    for (const options of [
+      { occurredOn: '2026-09-03' },
+      { accountId: 7 },
+      { paidAmount: 3n },
+      { paidCurrency: 'THB' },
+    ]) {
+      expect(namesIntakePostingMoneyFacts(options)).toBe(true)
+    }
+  })
+
+  it('spec 339 Cross-currency payments: half a charged pair is refused where the rule lives', () => {
+    expect(intakePaidPairRefusal({ paidAmount: null, paidCurrency: null })).toBeNull()
+    expect(intakePaidPairRefusal({ paidAmount: 3n, paidCurrency: 'THB' })).toBeNull()
+    expect(intakePaidPairRefusal({ paidAmount: 3n, paidCurrency: null })).toMatch(/парой/i)
+    expect(intakePaidPairRefusal({ paidAmount: null, paidCurrency: 'THB' })).toMatch(/парой/i)
   })
 })

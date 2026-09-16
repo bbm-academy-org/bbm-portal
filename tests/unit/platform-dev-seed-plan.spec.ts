@@ -53,6 +53,26 @@ describe('the seeded volume the owner ruling asks for', () => {
     expect(submitted.length).toBeGreaterThanOrEqual(5)
   })
 
+  it('EARS-513/527: seeds personal-funds requests, so the liability view is not empty on the stand', () => {
+    const personal = DEV_SEED_REQUESTS.filter((request) => request.personalFunds)
+    expect(
+      personal.length,
+      'no personal-funds request — the liability view has nothing to show',
+    ).toBeGreaterThanOrEqual(2)
+    expect(
+      personal.some((request) => request.status === 'posted'),
+      'no POSTED personal-funds request — a liability balance is only created by a posting',
+    ).toBe(true)
+    for (const request of personal) {
+      // EARS-513: the one nullable-account case; EARS-508: only together with `already_paid`.
+      expect(request.account, request.slug).toBeNull()
+      expect(request.alreadyPaid, request.slug).toBe(true)
+    }
+    for (const request of DEV_SEED_REQUESTS.filter((row) => !row.personalFunds)) {
+      expect(request.account, request.slug).not.toBeNull()
+    }
+  })
+
   it('seeds hours periods in both statuses, with participants and assessments', () => {
     expect(DEV_SEED_HOURS_PERIODS.length).toBeGreaterThanOrEqual(3)
     expect(DEV_SEED_HOURS_PERIODS.filter((period) => period.status === 'open')).toHaveLength(1)

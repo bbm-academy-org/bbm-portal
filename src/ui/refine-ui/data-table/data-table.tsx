@@ -7,7 +7,15 @@ import { flexRender } from '@tanstack/react-table'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/ui/table'
 import { DataTablePagination } from '@/ui/refine-ui/data-table/data-table-pagination'
 import { cn } from '@/ui/utils'
 
@@ -25,13 +33,29 @@ export function DataTable<TData extends BaseRecord>({
   emptyDescription = 'Здесь появятся строки, как только они будут созданы.',
 }: DataTableProps<TData>) {
   const {
-    reactTable: { getHeaderGroups, getRowModel, getAllColumns },
+    reactTable: { getHeaderGroups, getFooterGroups, getRowModel, getAllColumns },
     refineCore: { tableQuery, currentPage, setCurrentPage, pageCount, pageSize, setPageSize },
   } = table
 
   const columns = getAllColumns()
   const leafColumns = table.reactTable.getAllLeafColumns()
   const isLoading = tableQuery.isLoading
+  /**
+   * THE TOTALS ROW IS THE BLOCK'S, NOT THE SCREEN'S — a divergence from
+   * upstream `ui.refine.dev`, added on #388 (owner go, Антон, 2026-09-15).
+   *
+   * A register that adds its rows up used to have to hand-build a `<TableFooter>`
+   * beside the block, which is the whitelist violation `pnpm lint:whitelist-blocks`
+   * exists to catch (`docs/design/ui-whitelist.md` → «List»). TanStack already
+   * models the footer — `columnDef.footer` and `getFooterGroups()` — so the block
+   * renders it through the kit's own `TableFooter`, and a screen declares its
+   * total as one more field of its `ColumnDef`. A table whose columns declare no
+   * footer gets no `<tfoot>` at all.
+   *
+   * It survives an EMPTY register on purpose: «итого 0» is an answer, and a
+   * footer that disappeared with the last row would read as a missing total.
+   */
+  const hasFooter = leafColumns.some((column) => column.columnDef.footer !== undefined)
 
   const tableContainerRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLTableElement>(null)
@@ -39,6 +63,14 @@ export function DataTable<TData extends BaseRecord>({
     horizontal: false,
     vertical: false,
   })
+  /**
+   * How wide the SCROLL CONTAINER is, which is not how wide the table is once
+   * the table overflows. The empty state needs the container's width to sit
+   * inside the reader's viewport rather than the table's — see
+   * `DataTableNoData`. 0 means «not measured yet», and the empty state falls
+   * back to the full width until it is.
+   */
+  const [containerWidth, setContainerWidth] = useState(0)
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -53,6 +85,7 @@ export function DataTable<TData extends BaseRecord>({
           horizontal: horizontalOverflow,
           vertical: verticalOverflow,
         })
+        setContainerWidth(container.clientWidth)
       }
     }
 
@@ -173,12 +206,36 @@ export function DataTable<TData extends BaseRecord>({
             ) : (
               <DataTableNoData
                 isOverflowing={isOverflowing}
+                containerWidth={containerWidth}
                 columnsLength={columns.length}
                 emptyTitle={emptyTitle}
                 emptyDescription={emptyDescription}
               />
             )}
           </TableBody>
+          {hasFooter && !isLoading ? (
+            <TableFooter>
+              {getFooterGroups().map((footerGroup) => (
+                <TableRow key={footerGroup.id}>
+                  {footerGroup.headers.map((footer) => (
+                    <TableCell
+                      key={footer.id}
+                      style={{
+                        ...getCommonStyles({
+                          column: footer.column,
+                          isOverflowing: isOverflowing,
+                        }),
+                      }}
+                    >
+                      {footer.isPlaceholder
+                        ? null
+                        : flexRender(footer.column.columnDef.footer, footer.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableFooter>
+          ) : null}
         </Table>
       </div>
       {!isLoading && getRowModel().rows?.length > 0 && (
@@ -195,46 +252,69 @@ export function DataTable<TData extends BaseRecord>({
   )
 }
 
+/**
+ * THE EMPTY STATE — a divergence from upstream `ui.refine.dev`, fixed here on
+ * #388 (defect D of the 2026-09-16 eyes-on matrix) because a shortcoming of a
+ * block belongs in the block.
+ *
+ * Upstream shrinks the message to `width: fit-content` and shifts it by
+ * `translateX(-50%)` as soon as the table overflows its container. On a 390 px
+ * reader that is a line as wide as its own text, half of it hanging off each
+ * edge of a 341-px container, and it does not wrap — the register read «ы
+ * подадите, появится здесь — включая черновики и от». Two things were wrong:
+ * the width (it must be the CONTAINER's, not the content's) and the wrapping
+ * (the kit's `TableCell` is `whitespace-nowrap`, and the children inherit it).
+ *
+ * So: `position: sticky; left: 0` with the measured CONTAINER width pins the
+ * message to the scroller's own viewport — the same effect the translate was
+ * reaching for — while both lines are given `whitespace-normal` and can wrap
+ * inside it. Before the first measurement the width is simply 100%.
+ *
+ * And the cell's height is a class, not a hard-coded `490px`: nearly half a
+ * phone screen of void under two lines of text, in every combination.
+ */
 function DataTableNoData({
   isOverflowing,
+  containerWidth,
   columnsLength,
   emptyTitle,
   emptyDescription,
 }: {
   isOverflowing: { horizontal: boolean; vertical: boolean }
+  containerWidth: number
   columnsLength: number
   emptyTitle: string
   emptyDescription: string
 }) {
+  const pinned = isOverflowing.horizontal && containerWidth > 0
   return (
     <TableRow className="hover:bg-transparent">
-      <TableCell
-        colSpan={columnsLength}
-        className={cn('relative', 'text-center')}
-        style={{ height: '490px' }}
-      >
+      <TableCell colSpan={columnsLength} className={cn('relative', 'text-center', 'h-56')}>
         <div
           className={cn(
             'absolute',
-            'inset-0',
+            'inset-y-0',
+            'left-0',
             'flex',
             'flex-col',
             'items-center',
             'justify-center',
             'gap-2',
+            'px-6',
             'bg-background',
           )}
           style={{
             position: isOverflowing.horizontal ? 'sticky' : 'absolute',
-            left: isOverflowing.horizontal ? '50%' : '50%',
-            transform: 'translateX(-50%)',
             zIndex: isOverflowing.horizontal ? 2 : 1,
-            width: isOverflowing.horizontal ? 'fit-content' : '100%',
-            minWidth: '300px',
+            width: pinned ? `${containerWidth}px` : '100%',
           }}
         >
-          <div className={cn('text-lg', 'font-semibold', 'text-foreground')}>{emptyTitle}</div>
-          <div className={cn('text-sm', 'text-muted-foreground')}>{emptyDescription}</div>
+          <div className={cn('text-lg', 'font-semibold', 'text-foreground', 'whitespace-normal')}>
+            {emptyTitle}
+          </div>
+          <div className={cn('text-sm', 'text-muted-foreground', 'whitespace-normal')}>
+            {emptyDescription}
+          </div>
         </div>
       </TableCell>
     </TableRow>
