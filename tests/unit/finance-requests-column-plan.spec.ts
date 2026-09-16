@@ -66,7 +66,7 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     refusalReason: 'Нет бюджета на этот квартал',
     operationId: null,
     purpose: { id: 21, name: 'Продакшн', categoryId: 5, categoryName: 'Производство' },
-    project: null,
+    project: { id: 3, name: 'Doctor.School' },
     product: null,
     account: null,
     counterparty: null,

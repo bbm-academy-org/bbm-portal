@@ -53,7 +53,7 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     refusalReason: null,
     operationId: null,
     purpose: { id: 21, name: 'Продакшн', categoryId: 5, categoryName: 'Производство' },
-    project: null,
+    project: { id: 3, name: 'Doctor.School' },
     product: null,
     account: null,
     counterparty: null,
@@ -87,7 +87,7 @@ function harness() {
   function Screen({ scope }: { scope: RequestTableScope }) {
     return React.createElement(
       Refine,
-      { dataProvider, options: { disableTelemetry: true, reactQuery: { devtoolConfig: false } } },
+      { dataProvider, options: { disableTelemetry: true } },
       React.createElement(RequestsTable, {
         requests: REQUESTS,
         references,
