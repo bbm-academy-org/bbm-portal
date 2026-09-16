@@ -728,3 +728,47 @@ refusal section and closes it, and the read-only steps write nothing. No ledger
 operation is this pass's. Frames taken BEFORE 69 (12, 41, 42, 48, 49, 66, 67, 68)
 show #43 still «Одобрена»; that is the chronology of the run, not a
 disagreement.
+
+## A TENTH pass at head `d0d2aae` — defect E, and only defect E
+
+The ninth pass's one small defect — the «Деньги ушли» placeholder
+«ещё не двигались» clipped to «ещё не двига…» under «Все» at 1440, with no
+`title` to recover the words — was fixed in `d0d2aae` by re-balancing the column
+plan inside the unchanged 1110 px budget: `occurredOn` 116 → 136 px,
+`purpose` 210 → 190 px, the free-text column giving the width because no width
+ever fits its content. The four states that show it were re-taken on the same
+stand (`http://localhost:3000` from `.claude/worktrees/388`, the fix reached it
+through Fast Refresh) over the same branch DB `platform_388` the ninth pass left
+— 34 records, two currency lines, nothing written this pass. Harness:
+`.playwright-mcp/w3d-capture.cjs` and `w3d-measure.cjs`, both git-ignored.
+
+**Re-taken: 42, 48, 49, 66** — each × {1440×900, 390×844} × {light, dark}, full
+page, 16 frames replacing their same-name predecessors. What each shows is
+unchanged from the table above; every other frame of the ninth pass stands,
+because the diff moved two column widths and nothing else.
+
+**Measured live at 1440×900 under «Все», not computed.** The register's
+container reads **1110 / 1110** (`scrollWidth` / `clientWidth`) with
+`overflow=false` in all four states — the budget did not grow. The date column's
+cell is 138 px wide, 122 px inside its `p-2`, and the placeholder needs 122: it
+renders **whole**, and the count of truncated «ещё не двигались» cells is **0**
+in 42, 48, 49 and 66 (66's page carries none — every row there is posted and has
+a date). No cell in that column clips at all (`col0Clipped=0`). The header plan
+lands at 138/142/126/193/193/304 px, the table spreading the budget's slack over
+the six columns of the plan's 136/140/124/190/190/300.
+
+**How much the fixture proves.** Exactly ONE row in the 34 is pre-spend (#43,
+12 400,00 RUB, «Отклонена» since the ninth pass), and it sits on page one. The
+width is a property of the column, so one row does prove the column — but the
+evidence is one cell in three frames' worth of states, not a population.
+
+**Eyes-on over the 16 frames: no new defect.** Two things were re-seen and
+neither is this diff's: the mobile 48/49 frames open horizontally scrolled
+because the «Сортировать по сумме» control sits off-screen right at 390 px, so
+driving it scrolls the container and the frame starts at «Кто подал» (the first
+column is cut by the FRAME edge, not by a cell — the same table at rest, 42
+mobile, shows it whole); and the 66 full-page frames repaint the sticky top bar
+mid-page, the artefact the ninth pass already named for frames taken after a
+scroll. The «Назначение» comment and the refusal reason still end in an
+ellipsis: that column is the one the plan makes give width, the reason carries a
+`title`, and both were the ninth pass's non-defects.
