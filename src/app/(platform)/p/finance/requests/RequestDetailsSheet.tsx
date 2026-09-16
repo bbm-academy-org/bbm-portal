@@ -260,7 +260,7 @@ function AttachDocumentForm({
       {adding ? null : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            Документ уже приложен — он читается выше. Второй файл ДОБАВИТСЯ к нему, а не заменит
+            Документ уже приложен — он читается выше. Второй файл добавится к нему, а не заменит
             его.
           </p>
           <Button type="button" variant="outline" onClick={() => setAdding(true)}>
@@ -271,7 +271,13 @@ function AttachDocumentForm({
       {adding ? (
         <Form {...form}>
           <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* ONE COLUMN, at every width. The sheet is `sm:max-w-lg`, so two
+                columns give this block ~230 px a cell — and the right-hand
+                cell holds a native file input, whose chosen-file name is then
+                clipped to «N…n» (eyes-on, 1440×900, #473). The kind above the
+                picker is also the reading order the act needs: the kind is
+                answered first because the file's own `change` commits. */}
+            <div className="grid gap-3">
               <FormField
                 control={form.control}
                 name="kind"

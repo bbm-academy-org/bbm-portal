@@ -889,3 +889,40 @@ this block.
 (verification), **#15**, **#16**, **#17**, **#18** (one per combo — a request takes
 a document once, so 18 cannot be replayed on the same row). **#13** received a
 REFUSED pick and therefore no document, and no request's status was changed.
+
+---
+
+## Pass of 2026-09-16 — the six #473 defects, re-taken
+
+**The stand.** `http://localhost:3000`, the listener this session started from
+`.claude/worktrees/473` on `fix/473-requests-board-seven-non-blocking-ux`; data
+from that worktree's own branch DB `platform_473` (`pnpm dev:db:branch` —
+migrated and seeded: 32 expense requests, 6 documents), plus
+`pnpm platform:member:seed` for the two dev IdP logins — without a `core.member`
+row every write act on this board is refused, and `pnpm dev:seed`'s 64 people do
+not include `bbm-test@bbm.local`. Driven with the **Playwright MCP tools**
+(`browser_run_code_unsafe` over the scripts under the worktree's git-ignored
+`.playwright-mcp/`), signed in through the real dev Zitadel as `bbm-test`
+(`platform-admin` + both flow roles). The password was read by the script from a
+scratchpad file through a `file://` page read and never entered a tool call.
+
+**The matrix** is the folder's usual one — every state × 2 breakpoints
+(1440×900, 390×844) × 2 themes (light, and dark through the theme's own `.dark`
+class). No pseudo-state frame changed: no control gained or lost its treatment,
+the kit's variants carry them, and step 14 still pins them.
+
+| Step | What it shows now (#473 item)                                                                                                                                                                                                                                                                                                       |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 06   | approved, no document (**items 5, 6**): the attach block now carries the gate sentence itself and the primary-filled picker; the footer's only act is the tinted «Отклонить…», which no longer outranks the state's real next step. The standalone gate Alert is gone — the sentence stands in ONE slot                             |
+| 11   | a mutation failure with the sheet open (**item 1**): the error toast sits ABOVE the footer, and «Одобрить» / «Отклонить…» stay fully visible and clickable underneath it. The 500 is a route the capture fulfils, which is why its body reads as raw JSON — the shape of a stand's stub, not of the app's own error                 |
+| 12   | the loading frame of the DEFAULT table view (**item 2**): the screen's own title plus «Загружаем заявки…» where the loaded subtitle sits, instead of a textless grey bar. A failing read now reaches its error state inside the 2 s budget (`BOARD_READ_QUERY_OPTIONS`) rather than after react-query's ~9 s backoff                |
+| 18   | after the file is chosen (**items 1, 6**): the picker is PUT AWAY, the block says the document is already attached and that a second file would be added rather than substituted, «Приложить ещё документ» is the deliberate way to a second one — and the success toast again clears the footer where «Провести» has just appeared |
+| 22   | NEW — the non-member refusal as the reader sees it (**item 4**): «…нет записи в реестре участников… Попросите администратора завести участника в разделе «Участники»». No repository path. Caught live before `platform:member:seed` ran, desktop × light/dark                                                                      |
+| 23   | NEW — long values in the sheet (**item 3**): a request filed through the form with a 120-character note and a 72-character counterparty. The title wraps over five lines, the counterparty wraps inside its field, nothing is clipped at either breakpoint                                                                          |
+
+**Rows changed in `platform_473` this pass.** Documents attached to **#15**,
+**#16** and **#17** (one attach per capture — a request takes a document once, so
+step 18 cannot be replayed on the same row); one new request filed through the
+form for step 23 (the «Мейерхольда» counterparty, which also entered the
+counterparty reference); `#6` received an act that the capture's own route
+answered with a forced 500, so its status did not change.
