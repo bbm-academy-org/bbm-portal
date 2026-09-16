@@ -391,7 +391,9 @@ describe('DEBT.md merge protocol', () => {
    * the «Permanent append marker» rules bullet — spliced a whole entry block
    * into the rules, destroyed that bullet's text, left a second literal marker
    * behind and placed the entry ABOVE the active region, breaking the union-merge
-   * invariant «the permanent marker remains after all active blocks».
+   * invariant «the permanent marker remains after all active blocks». It happened
+   * twice in one day (PR #488, PR #495), so since #496 the rules bullet NAMES the
+   * marker instead of quoting it, and the literal string occurs exactly once.
    *
    * The existing shipped-file test could not see it: it reads only the region
    * between the active-start marker and the marker LINE, and a marker glued to
@@ -402,21 +404,24 @@ describe('DEBT.md merge protocol', () => {
     const debt = readFileSync(resolve(process.cwd(), 'DEBT.md'), 'utf8').split('\r\n').join('\n')
     const lines = debt.split('\n')
 
-    // The rules bullet, verbatim as `origin/main` carries it: one sentence, the
-    // marker quoted inside it, nothing spliced in.
+    // The rules bullet, verbatim as `origin/main` carries it: it NAMES the marker
+    // without quoting the literal string, so the file carries that string once.
     expect(debt).toContain(
-      '- **Permanent append marker:** add new active entries immediately before\n' +
-        '  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical\n' +
-        '  sweep notes live after that marker.',
+      '- **Permanent append marker:** add new active entries immediately before the\n' +
+        '  `debt-append-marker` HTML-comment line — named here without its `<!--` /\n' +
+        '  `-->` delimiters on purpose, so the literal marker string occurs exactly ONCE\n' +
+        '  in this file and a naive `String.replace` cannot hit a quotation of it instead\n' +
+        '  (PR #488 and PR #495 each did). Each new entry carries a new unique end\n' +
+        '  anchor. Historical sweep notes live after that marker.',
     )
 
-    // Exactly one LITERAL marker LINE, and the marker never glued to other text
-    // (the second «marker» the corrupt append left behind was
-    // `<!-- debt-append-marker -->`, each with a new unique end anchor…`).
+    // The literal marker string occurs EXACTLY ONCE in the whole file, on its own
+    // line. A quoted second copy is what PR #488 and PR #495 replaced by mistake.
+    expect(debt.split(appendMarker).length).toBe(2)
     assertSingleLine(debt, appendMarker)
     for (const line of lines) {
       if (!line.includes(appendMarker)) continue
-      expect(line.trim() === appendMarker || line.includes(`\`${appendMarker}\``), line).toBe(true)
+      expect(line.trim(), line).toBe(appendMarker)
     }
 
     const activeStart = lines.findIndex((line) => line.trim() === activeStartMarker)
