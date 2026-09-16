@@ -772,3 +772,69 @@ mid-page, the artefact the ninth pass already named for frames taken after a
 scroll. The «Назначение» comment and the refusal reason still end in an
 ellipsis: that column is the one the plan makes give width, the reason carries a
 `title`, and both were the ninth pass's non-defects.
+
+## AN ELEVENTH pass at head `abc51ea` — defect F, the missing row separators
+
+The tenth pass's frames were re-read pixel by pixel and the register turned out
+to draw **no row separators and no rule under the header** — 25 six-column rows
+on an unbroken white field, with only the container's own `rounded-md border`
+and the footer band painting, while the loading skeleton (plain divs with
+`border-b`) ruled every row as promised. That is the ground of the owner's
+2026-09-15 rejection («no row separators; cells misaligned»), and it was never a
+missing class: measured live at head `a4322d9`, the `<tr>` already computed
+`border-bottom: 1px solid` in the `--border` colour.
+
+**The cause was the borders MODEL.** `src/ui/theme.css` transcribes Tailwind
+preflight BY HAND — an `@import` cannot be scoped to `[data-bbm-ui]`, and
+EARS-429 keeps `/p/okr` and `/p/hours` unreskinned — and the transcription
+stopped one rule short of upstream's
+`table { text-indent: 0; border-color: inherit; border-collapse: collapse }`.
+Without it the UA default stood (`border-collapse: separate`,
+`border-spacing: 2px`), and in the separate model a border set on a row, a row
+group or a column is **ignored outright** (CSS 2.2 §17.6.1). So every row rule
+the kit asks for resolved and painted nothing, and the footer band's vertical
+seams were the same cause seen from the other side — the 2 px spacing gaps
+between its cells. `abc51ea` adds that one rule, scoped like every other rule in
+the base layer; `b14ffc3` is the RED spec that pins the model rather than a
+class name.
+
+**Re-taken: 41, 42, 48, 49, 66** — each × {1440×900, 390×844} × {light, dark},
+full page, 20 frames replacing their same-name predecessors — plus **67**
+(desktop-light, the mutating one). What each shows is otherwise unchanged from
+the table above: the fix adds separators and nothing else. Harness:
+`.playwright-mcp/w3e-capture.cjs` over `w3-lib.cjs`, both git-ignored, on the
+same stand (`http://localhost:3000` from `.claude/worktrees/388`, the fix
+reached it through Fast Refresh) and the same branch DB `platform_388`.
+
+**Frame 12 was NOT re-taken, and that is the finding, not an omission.** The
+skeleton renders divs, never a `<table>` (`tables=0` in this pass's probe), so
+the model never reached it — it was the one surface already drawing the rules.
+Its desktop-light frame re-shot byte-identical, which is the proof.
+
+**Measured live, not computed**, in all four combos and every state: the table
+reads `border-collapse: collapse`; the header row paints its rule
+(`headRuled=true`); and **24 of 24** body rows paint theirs — 24 rather than 25
+because the kit's last row is deliberately `border-0`
+(`[&_tr:last-child]:border-0`), the container's own border closing the table
+instead. The budget did not move: 1110 / 1110 (`scrollWidth` / `clientWidth`)
+with `overflow=false` at 1440 in 41, 42, 48, 49 and 66, the same header plan
+140/144/127/195/195/308, and the same `clipped` counts as the tenth pass. The
+only geometric change is the row box: 52 → 53 px, exactly the 1 px the
+separator now occupies.
+
+**Row changed in `platform_388` this pass.** One act, from a table row: **#13**
+approved (step 67, toast «Заявка одобрена. Заявка №13»). Nothing else was
+written.
+
+**Frame 69 could NOT be re-taken at this head, and remains the ninth pass's.**
+Its step refuses a request from a row, and the mutation answered `500` on two
+consecutive attempts with `Jest worker encountered 2 child process exceptions,
+exceeding retry limit` — the long-lived `next dev` process on this stand has
+stopped being able to fork, the failure mode `.claude/rules/dev-env.md` names
+and whose only remedy is restarting THAT process (the lead's stand, the lead's
+call — not this task's to kill). It is the PROCESS, not this diff: every
+read-only state on the same stand, in the same run, rendered and measured
+cleanly, and the approve act of step 67 went through before the fork budget ran
+out. So 69 still carries the ninth pass's clipped «ещё не двига…» cell **and**
+the pre-fix unruled table; it is the one frame of this folder that does not show
+the head it sits next to.
