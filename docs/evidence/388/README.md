@@ -826,15 +826,17 @@ separator now occupies.
 approved (step 67, toast «Заявка одобрена. Заявка №13»). Nothing else was
 written.
 
-**Frame 69 could NOT be re-taken at this head, and remains the ninth pass's.**
-Its step refuses a request from a row, and the mutation answered `500` on two
-consecutive attempts with `Jest worker encountered 2 child process exceptions,
-exceeding retry limit` — the long-lived `next dev` process on this stand has
-stopped being able to fork, the failure mode `.claude/rules/dev-env.md` names
-and whose only remedy is restarting THAT process (the lead's stand, the lead's
-call — not this task's to kill). It is the PROCESS, not this diff: every
-read-only state on the same stand, in the same run, rendered and measured
-cleanly, and the approve act of step 67 went through before the fork budget ran
-out. So 69 still carries the ninth pass's clipped «ещё не двига…» cell **and**
-the pre-fix unruled table; it is the one frame of this folder that does not show
-the head it sits next to.
+**Frame 69 was re-taken in a TWELFTH, one-frame pass at the same fix (`abc51ea`),
+after the stand was restarted.** The eleventh pass could not take it: its refusal
+mutation answered `500` twice with `Jest worker encountered 2 child process
+exceptions, exceeding retry limit` — the long-lived `next dev` had stopped being
+able to fork, the failure `.claude/rules/dev-env.md` names, whose remedy is
+restarting THAT process. The lead killed its own listener (PID 21528) and started
+a fresh one on the same port from this worktree; the same driver then refused
+request №44 from its row with a reason and shot 69 desktop-light: «Отклонена» plus
+the reason inside the status cell, `border-collapse: collapse`, the header ruled,
+24/24 body rows ruled, container 1110/1110 with `overflow=false`, and the first
+cell now reads «ещё не двигались» whole — the ninth-pass clip is gone from the
+last frame that carried it. Row changed in `platform_388` by that pass: **#44**
+refused. It is the PROCESS that failed, not the diff: the restarted stand ran the
+same mutation on the first attempt.
