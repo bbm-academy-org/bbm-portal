@@ -128,6 +128,14 @@ function snapshotFetch() {
   )
 }
 
+/** A snapshot whose liabilities are the register under test. */
+function liabilitiesFetch(liabilities: (typeof SNAPSHOT)['liabilities']) {
+  return vi.fn(
+    async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify({ ...SNAPSHOT, liabilities }), { status: 200 }),
+  )
+}
+
 // The register half of the same provider (#388 wave 3). The block asks for ONE
 // page; the provider reads the board snapshot and answers with the page, the
 // size of the whole filtered register and its per-currency totals.
@@ -198,5 +206,53 @@ describe('request board data provider — the register the List block reads (#38
       statusCode: 403,
       message: 'Заявки недоступны.',
     })
+  })
+  // The liabilities register is a register too (#388 round-7 blocker): the panel
+  // renders a `DataTableSorter` on «Участник» and asks for `pageSize: 25`, and
+  // `@refinedev/react-table` drives both SERVER-side (`manualSorting` /
+  // `manualPagination`). A provider that ignores `sorters` gives the reader a
+  // sort arrow that reorders nothing, and one that answers the whole register as
+  // `data` while counting pages off the same number offers pages that do not
+  // exist.
+  it('orders the liabilities register by the column the panel offers a sorter on', async () => {
+    const provider = createRequestBoardDataProvider(
+      liabilitiesFetch([
+        { memberId: 4, memberName: 'М. Иванова', currency: 'RUB', balance: '500' },
+        { memberId: 5, memberName: 'А. Абрамов', currency: 'RUB', balance: '700' },
+        { memberId: 6, memberName: 'Я. Яковлев', currency: 'RUB', balance: '100' },
+      ]) as unknown as typeof fetch,
+    )
+
+    const answer = (await provider.getList({
+      resource: 'finance-liabilities',
+      sorters: [{ field: 'memberName', order: 'asc' }],
+    })) as unknown as { data: { memberName: string }[]; total: number }
+
+    expect(answer.data.map((row) => row.memberName)).toEqual([
+      'А. Абрамов',
+      'М. Иванова',
+      'Я. Яковлев',
+    ])
+    expect(answer.total).toBe(3)
+  })
+
+  it('answers the liabilities page asked for, counted off the whole register', async () => {
+    const provider = createRequestBoardDataProvider(
+      liabilitiesFetch([
+        { memberId: 4, memberName: 'М. Иванова', currency: 'RUB', balance: '500' },
+        { memberId: 5, memberName: 'А. Абрамов', currency: 'RUB', balance: '700' },
+        { memberId: 6, memberName: 'Я. Яковлев', currency: 'RUB', balance: '100' },
+      ]) as unknown as typeof fetch,
+    )
+
+    const answer = (await provider.getList({
+      resource: 'finance-liabilities',
+      pagination: { currentPage: 2, pageSize: 2, mode: 'server' },
+    })) as unknown as { data: { id: string }[]; total: number }
+
+    // Page 2 of a three-row register is one row — and `total` stays the size of
+    // the whole register, which is what the pager counts pages of.
+    expect(answer.data.map((row) => row.id)).toEqual(['6-RUB'])
+    expect(answer.total).toBe(3)
   })
 })
