@@ -1,18 +1,12 @@
-import { Skeleton } from '@/ui/skeleton'
+import { RequestsSkeleton } from './RequestsSkeleton'
 
+/**
+ * The route-level grey frame. It can only promise the DEFAULT view — a server
+ * has no `localStorage` to ask which one this browser last chose — and since
+ * decision 35 (Антон, 2026-09-14) the default is the TABLE. Promising the
+ * kanban here made the route paint four grey columns and then swap the whole
+ * layout (#388 defect C).
+ */
 export default function RequestsLoading() {
-  return (
-    <section aria-label="Загружаем заявки" className="space-y-6">
-      <div className="space-y-2">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-4 w-96 max-w-full" />
-      </div>
-      <Skeleton className="h-9 w-72 max-w-full" />
-      <div className="grid gap-3 lg:grid-cols-4">
-        {['submitted', 'approved', 'posted', 'refused'].map((column) => (
-          <Skeleton key={column} className="h-64 w-full" />
-        ))}
-      </div>
-    </section>
-  )
+  return <RequestsSkeleton view="table" />
 }

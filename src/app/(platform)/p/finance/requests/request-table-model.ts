@@ -91,6 +91,23 @@ export function resolveRequestsView(stored: string | null, canApprove: boolean):
 }
 
 /**
+ * The view a SKELETON may promise, which is a different question (#388 defect
+ * C, eyes-on matrix of 2026-09-16).
+ *
+ * `resolveRequestsView` needs the role, and the role arrives with the snapshot
+ * that is still in flight — so while loading there is nothing to check a stored
+ * «board» against. The skeleton takes the stored choice at its word: a browser
+ * that last chose the board had the role when it did, and the worst case is one
+ * grey frame of the wrong shape for a reader who has since lost it. Anything
+ * unstored, unreadable or unknown gets the DEFAULT, the table, which is also
+ * all the route's own `loading.tsx` can ever promise — a server has no browser
+ * to ask.
+ */
+export function requestsLoadingView(stored: string | null): RequestsView {
+  return stored === 'board' ? 'board' : 'table'
+}
+
+/**
  * THE DESKTOP WIDTH BUDGET OF THE REGISTER (#388 defect B, eyes-on matrix of
  * 2026-09-16).
  *

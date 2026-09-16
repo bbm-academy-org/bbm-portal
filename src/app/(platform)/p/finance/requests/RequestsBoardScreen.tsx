@@ -30,12 +30,14 @@ import {
   type FinanceRequestBoardStatus,
 } from './request-board-model'
 import { toRequestBody, type RequestFormValue } from './request-form-model'
+import { RequestsSkeleton } from './RequestsSkeleton'
 import { RequestsTable } from './RequestsTable'
 import {
   canToggleRequestsView,
   DEFAULT_REQUEST_TABLE_SCOPE,
   REQUESTS_VIEW_STORAGE_KEY,
   REQUEST_TABLE_SCOPES,
+  requestsLoadingView,
   resolveRequestsView,
   type RequestTableScope,
 } from './request-table-model'
@@ -328,16 +330,10 @@ export function RequestsBoardScreen() {
   )
 
   if (query.isLoading && snapshot === null) {
-    return (
-      <div aria-label="Загружаем заявки" className="space-y-6">
-        <Skeleton className="h-8 w-40" />
-        <div className="grid gap-3 lg:grid-cols-4">
-          {REQUEST_BOARD_COLUMNS.map((column) => (
-            <Skeleton key={column.status} className="h-64 w-full" />
-          ))}
-        </div>
-      </div>
-    )
+    // THE SKELETON PROMISES THE VIEW THAT IS COMING (#388 defect C). The role
+    // has not arrived yet, so the stored choice is taken at its word here;
+    // `requestsLoadingView` says why that is the honest reading while loading.
+    return <RequestsSkeleton view={requestsLoadingView(storedView)} />
   }
 
   if (snapshot === null) {
