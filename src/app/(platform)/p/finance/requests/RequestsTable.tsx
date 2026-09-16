@@ -81,14 +81,7 @@ function Sorter({ column, label }: { column: Column<RequestBoardItem>; label: st
  * NOTHING HERE IS A BOUNDARY. Reading is open to every platform member
  * (EARS-530), and every act is re-refused by the module itself (EARS-501).
  */
-export function RequestsTable({
-  requests,
-  references,
-  canApprove,
-  scope,
-  onOpen,
-  onAct,
-}: {
+type RequestsTableProps = {
   /** The whole register this reader may see — the footer adds up ALL of it. */
   requests: readonly RequestBoardItem[]
   references: RequestBoardReferences
@@ -96,7 +89,45 @@ export function RequestsTable({
   scope: RequestTableScope
   onOpen: (request: RequestBoardItem) => void
   onAct: (request: RequestBoardItem, act: FinanceRequestBoardAct) => void
-}) {
+}
+
+/**
+ * A NEW SCOPE IS A NEW REGISTER, AND A NEW REGISTER IS A REMOUNT (#388 defect
+ * A, eyes-on matrix of 2026-09-16).
+ *
+ * `useTable` seeds Refine's filter STATE once, at mount —
+ * `useState(setInitialFilters(preferredPermanentFilters, defaultFilter ?? []))`
+ * in `@refinedev/core@5.0.12` — and every later query is
+ * `unionFilters(preferredPermanentFilters, filters)`. A change of `permanent`
+ * therefore ADDS to that state and never removes what is already in it: the
+ * `own eq true` seeded for «Мои» survived «Все» forever, so the provider was
+ * asked for the reader's own rows under both scopes while the footer summed the
+ * whole register. Keying the hook's component on the scope re-seeds that state
+ * from scratch, which is the only thing that clears it.
+ *
+ * The alternative — driving the scope with `setFilters([...], 'replace')` — was
+ * rejected for the reason the withdrawn comment below already names:
+ * `@refinedev/react-table` mirrors TanStack's `columnFilters` into Refine's
+ * filters on every render, so an imperatively pushed filter is overwritten by
+ * the empty column state before the query runs. The scope is not a column
+ * filter; it stays `permanent`, and the remount is what makes `permanent` mean
+ * what it says.
+ *
+ * The remount also answers the paging question for free: page 2 of the previous
+ * scope means nothing, and a fresh mount starts at page 1 without an effect.
+ */
+export function RequestsTable(props: RequestsTableProps) {
+  return <RequestsRegister key={props.scope} {...props} />
+}
+
+function RequestsRegister({
+  requests,
+  references,
+  canApprove,
+  scope,
+  onOpen,
+  onAct,
+}: RequestsTableProps) {
   // The register as the scope narrows it — what the totals row adds up, and
   // what decides whether the refusal column is on the table at all. Both are
   // questions about the WHOLE register, so neither may be answered from the
@@ -268,25 +299,13 @@ export function RequestsTable({
     refineCoreProps: {
       resource: REQUESTS_RESOURCE,
       pagination: { pageSize: PAGE_SIZE },
-      // PERMANENT, not `setFilters`: `@refinedev/react-table` mirrors tanstack's
-      // `columnFilters` into Refine's filters on every render, so a filter
-      // pushed imperatively is overwritten by the empty column state before the
-      // query runs. The scope is a query-level narrowing the reader cannot
-      // clear per column, which is exactly what `permanent` is for.
+      // PERMANENT, not `setFilters` — and re-seeded by the remount above, which
+      // is what makes a change of scope reach the provider at all.
       filters: {
         permanent: scope === 'mine' ? [{ field: 'own', operator: 'eq', value: true }] : [],
       },
     },
   })
-
-  const { setCurrentPage } = table.refineCore
-
-  // A new scope is a new register: page 2 of the previous one means nothing.
-  React.useEffect(() => {
-    setCurrentPage(1)
-    // `setCurrentPage` is re-created on every render by the hook; depending on
-    // it would reset the page on every render instead of on every new scope.
-  }, [scope])
 
   return (
     <div className="space-y-3">
