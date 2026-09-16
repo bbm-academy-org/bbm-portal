@@ -136,6 +136,7 @@ export {
   assertRequestPurposeReady,
   createPurposeProposal,
   dismissPurposeProposal,
+  listPendingPurposeProposalsForRequests,
   listPurposeProposals,
   resolvePurposeProposal,
 } from './purpose-proposals'
