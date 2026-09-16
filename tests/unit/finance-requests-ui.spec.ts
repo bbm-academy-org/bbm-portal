@@ -1743,6 +1743,97 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
     expect(BOARD_READ_ERROR_BUDGET_MS).toBe(2000)
   })
 
+  // ITEM 3. The register clips its free-text columns on purpose — «the full
+  // text is always one «Открыть» away, in the details sheet» (`RequestsTable`).
+  // That promise is what item 3 found broken: a long counterparty, a long
+  // purpose and a long note reached the sheet and were cut there too, so the
+  // words were nowhere on the surface at all. Every VALUE in the sheet wraps;
+  // nothing between it and the dialog clips it.
+  const LONG_COUNTERPARTY =
+    'ООО «Производственно-театральное объединение имени Всеволода Эмильевича Мейерхольда»'
+  const LONG_PURPOSE = 'Операционные расходы на производство и постпродакшн учебных материалов'
+  const LONG_NOTE =
+    'Аренда студии с оборудованием, светом, звукорежиссёром и монтажом на четыре съёмочных дня'
+
+  function longRequest() {
+    return item({
+      id: 42,
+      status: 'submitted',
+      note: LONG_NOTE,
+      counterparty: { id: 7, name: LONG_COUNTERPARTY },
+      purpose: { id: 21, name: LONG_PURPOSE, categoryId: 5, categoryName: 'Производство' },
+    })
+  }
+
+  /** Does anything between `node` and the sheet cut the text off? */
+  function clippedInsideSheet(node: HTMLElement): boolean {
+    let current: HTMLElement | null = node
+    while (current !== null && current.getAttribute('role') !== 'dialog') {
+      if (/(^|\s)(truncate|line-clamp-\d+|text-ellipsis)(\s|$)/.test(current.className)) return true
+      current = current.parentElement
+    }
+    return false
+  }
+
+  it('item 3: a long counterparty and a long purpose are readable in full in the sheet', async () => {
+    refine.custom.data = snapshot({ requests: [longRequest()] })
+    renderBoard()
+    openCard(42)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    for (const value of [LONG_COUNTERPARTY, LONG_PURPOSE]) {
+      const node = screen.getByText(value)
+      expect(clippedInsideSheet(node)).toBe(false)
+      expect(node.className).toMatch(/break-words|break-all|wrap-anywhere/)
+    }
+  })
+
+  it('item 3: the sheet title carries the whole note instead of running off the edge', async () => {
+    refine.custom.data = snapshot({ requests: [longRequest()] })
+    renderBoard()
+    openCard(42)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    const title = within(screen.getByRole('dialog')).getByText(new RegExp(LONG_NOTE.slice(0, 30)))
+    expect(title.textContent).toContain(LONG_NOTE)
+    expect(clippedInsideSheet(title)).toBe(false)
+    expect(title.className).toMatch(/break-words|break-all|wrap-anywhere/)
+  })
+
+  it('item 3: a long document filename wraps in the reading pane', async () => {
+    const filename = 'счёт-фактура-от-ООО-Производственно-театральное-объединение-2026-09-16.pdf'
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 43,
+          status: 'approved',
+          documents: [
+            {
+              id: 9,
+              filename,
+              mime: 'application/pdf',
+              size: 10,
+              kind: 'fiscal_receipt' as const,
+              uploadedAt: '2026-09-03T10:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+    })
+    renderBoard()
+    openCard(43)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    // The name is printed twice — the document's own line, and the download
+    // link the reading pane falls back to; both are values, both must wrap.
+    const lines = within(screen.getByRole('dialog')).getAllByText(new RegExp(filename.slice(0, 20)))
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(clippedInsideSheet(line)).toBe(false)
+      expect(line.className).toMatch(/break-words|break-all|wrap-anywhere/)
+    }
+  })
+
   it('item 2: the register behind the same snapshot is bounded by the same budget', async () => {
     const { BOARD_READ_ERROR_BUDGET_MS, boardReadWorstCaseErrorMs } =
       await import('@/app/(platform)/p/finance/requests/request-board-model')

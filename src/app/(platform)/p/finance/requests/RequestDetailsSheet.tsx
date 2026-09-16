@@ -546,7 +546,11 @@ export function RequestDetailsSheet({
         className="w-full gap-0 overflow-y-auto sm:max-w-lg"
       >
         <SheetHeader className="gap-2 pr-12">
-          <SheetTitle className="font-heading text-xl font-semibold tracking-tight tabular-nums">
+          {/* THE TITLE IS A VALUE TOO (#473 item 3). It carries the request's
+              note, which is free text of any length, and the register above
+              clips its own free-text column precisely because «the full text
+              is one «Открыть» away» — a promise this line has to keep. */}
+          <SheetTitle className="font-heading text-xl font-semibold tracking-tight break-words tabular-nums">
             {formatRequestMoney(request.amount, request.currency, precision)}
             {request.note ? ` — ${request.note}` : ''}
           </SheetTitle>
@@ -625,7 +629,10 @@ export function RequestDetailsSheet({
             {hasDocument ? (
               request.documents.map((document) => (
                 <div key={document.id} className="space-y-1.5">
-                  <p className="text-sm text-foreground">
+                  {/* A filename is the one value with no spaces to wrap at,
+                      so it breaks inside the word rather than pushing the
+                      reading pane sideways (#473 item 3). */}
+                  <p className="text-sm break-all text-foreground">
                     {DOCUMENT_KIND_LABELS[document.kind] ?? 'Документ'} · {document.filename}
                   </p>
                   {isInlineReadable(document.mime) ? (
@@ -637,7 +644,7 @@ export function RequestDetailsSheet({
                     >
                       <a
                         href={documentHref(document.id, false)}
-                        className="text-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        className="text-sm break-all underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                       >
                         Скачать {document.filename}
                       </a>
@@ -645,7 +652,7 @@ export function RequestDetailsSheet({
                   ) : (
                     <a
                       href={documentHref(document.id, false)}
-                      className="inline-block text-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      className="inline-block text-sm break-all underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     >
                       Скачать {document.filename}
                     </a>
