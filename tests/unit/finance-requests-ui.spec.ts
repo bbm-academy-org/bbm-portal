@@ -376,6 +376,27 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(refine.custom.refetch).toHaveBeenCalled()
   })
 
+  // Both registers read the same ledger, and a posting act moves BOTH: the
+  // request leaves the queue and the debt it created is settled. «Обязательства»
+  // is its own Refine resource with its own list cache since #388, so an act
+  // that invalidates only the requests resource leaves the debt rows stale —
+  // today they happen to refetch because Radix `Tabs` unmounts inactive
+  // content, which is an accident of the container, not a stated refresh.
+  it('asks BOTH registers to re-read themselves after an act (#388 round 7)', async () => {
+    renderBoard()
+    openCard(1)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Одобрить' }))
+
+    await act(async () => {
+      refine.mutate.mock.calls[0][1].onSuccess()
+    })
+
+    const invalidated = refine.invalidate.mock.calls.map((call) => call[0].resource)
+    expect(invalidated).toContain('finance-requests')
+    expect(invalidated).toContain('finance-liabilities')
+  })
+
   it('EARS-511: offers the one-act confirmation only on an approved request that carries a document', async () => {
     refine.custom.data = snapshot({
       requests: [
