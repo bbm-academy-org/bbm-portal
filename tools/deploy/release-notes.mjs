@@ -25,8 +25,10 @@
 //   prev-sha missing/`none`/not hex     → log + skip (no range to compute)
 //   prev-sha == new-sha                 → log + skip (redeploy)
 //   `git log <range>` non-zero          → warn + skip (a bad/expired anchor)
-//   zero product PRs in the range       → post the "технический релиз" line, naming
-//                                         how many technical changes it carried
+//   zero product PRs in the range       → post the "технический релиз" line — naming
+//                                         how many technical changes it carried, or,
+//                                         when there are none of those either, in its
+//                                         original bare wording
 //   otherwise                           → post the aggregated digest, closed by a
 //                                         line counting the changes that carry no
 //                                         product note (#501)
@@ -65,10 +67,12 @@ export function extractPrNumbers(subjects) {
 /**
  * «N технических изменений», declined for the count. Russian picks the form by the
  * LAST digit — except in the teens (11–14), which always take the genitive
- * plural. Pure, so the rendering below stays testable without gh.
+ * plural. Pure, so the rendering below stays testable without gh. The export
+ * normalizes its OWN input (see `normalizeCount`) rather than trusting every
+ * future call site to do it — a count is a whole number of PRs or it is zero.
  */
 export function pluralizeTechnicalChanges(n) {
-  const count = Number(n)
+  const count = normalizeCount(n)
   const mod10 = count % 10
   const mod100 = count % 100
   if (mod10 === 1 && mod100 !== 11) return `${count} техническое изменение`
@@ -78,9 +82,13 @@ export function pluralizeTechnicalChanges(n) {
   return `${count} технических изменений`
 }
 
-/** A positive integer count, or 0 for anything else (absent, NaN, negative). */
+/**
+ * A whole, positive count — 0 for anything else (absent, NaN, negative, a
+ * fraction rounds DOWN). Both renderers and the exported helper go through it,
+ * so no caller can produce «-1 технических изменений».
+ */
 function normalizeCount(technicalCount) {
-  const n = Number(technicalCount ?? 0)
+  const n = Math.floor(Number(technicalCount ?? 0))
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 

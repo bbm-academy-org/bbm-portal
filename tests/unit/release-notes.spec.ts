@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildPayload,
@@ -13,6 +13,7 @@ import {
 import {
   buildDigest,
   buildTechnicalReleaseLine,
+  composeDigest,
   extractPrNumbers,
   pluralizeTechnicalChanges,
 } from '../../tools/deploy/release-notes.mjs'
@@ -44,6 +45,30 @@ import {
  * drifts. Here the NOTE is the gate: write a note and it is delivered, write
  * `none` and nothing is.
  */
+
+/**
+ * `composeDigest` shells out twice — `git log` for the range's subjects and
+ * `gh pr view` per PR number. Both go through ONE `spawnSync`, so stubbing that
+ * import is enough to drive every arm of the count seam with no network, no gh
+ * and no repo state.
+ *
+ * The factory does NOT delegate to the real module: this suite runs in the
+ * jsdom environment, where `importOriginal('node:child_process')` resolves to
+ * Vite's browser-external shim and throws. Nothing else in this file spawns a
+ * process — every other seam under test is pure — so a stub that refuses an
+ * unarmed call is both sufficient and louder than a fall-through would be.
+ */
+const { spawnSyncMock } = vi.hoisted(() => ({ spawnSyncMock: vi.fn() }))
+
+vi.mock('node:child_process', () => {
+  const spawnSync = (...args: unknown[]) => spawnSyncMock(...args)
+  const spawn = () => {
+    throw new Error('spawn() is not stubbed in this suite')
+  }
+  // The default export is part of the shape: a sibling module under test
+  // imports the namespace, and vitest refuses a mock that drops it.
+  return { spawnSync, spawn, default: { spawnSync, spawn } }
+})
 
 // ── extraction ───────────────────────────────────────────────────────────────
 
@@ -249,6 +274,129 @@ describe('pluralizeTechnicalChanges', () => {
     expect(pluralizeTechnicalChanges(21)).toBe('21 техническое изменение')
     expect(pluralizeTechnicalChanges(22)).toBe('22 технических изменения')
     expect(pluralizeTechnicalChanges(25)).toBe('25 технических изменений')
+  })
+
+  it('normalizes its own input — the export cannot say «-1» or «2.5»', () => {
+    expect(pluralizeTechnicalChanges(-1)).toBe('0 технических изменений')
+    expect(pluralizeTechnicalChanges(2.5)).toBe('2 технических изменения')
+    expect(pluralizeTechnicalChanges(Number.NaN)).toBe('0 технических изменений')
+  })
+})
+
+// ── the count seam ─────────────────────────────────────────────────────
+
+describe('composeDigest — what counts as a technical change (#501)', () => {
+  const newSha = 'c'.repeat(40)
+  const prevSha = 'p'.repeat(40)
+  const PRODUCT = '## Product note (RU)\nРедактор видит черновик до публикации.'
+  const NONE = '## Product note (RU)\nnone'
+  const NO_SECTION = '## What\nchore\n\n## Why\nCloses #1'
+
+  /**
+   * `prs` maps a PR number to what `gh pr view` does for it: a body string is a
+   * real PR, `'gh-fails'` is a non-zero exit (an issue reference or a 404), and
+   * `'garbage'` is a zero exit whose stdout does not parse.
+   */
+  function arm(prs: Record<number, string>) {
+    const subjects = Object.keys(prs)
+      .map((n) => `subject (#${n})`)
+      .join('\n')
+    spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') return { status: 0, stdout: `${subjects}\n`, stderr: '' }
+      const n = Number(args[2])
+      const spec = prs[n]
+      if (spec === 'gh-fails') return { status: 1, stdout: '', stderr: 'not a pull request' }
+      if (spec === 'garbage') return { status: 0, stdout: 'not json', stderr: '' }
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          number: n,
+          title: `PR ${n}`,
+          url: `https://gh/pr/${n}`,
+          body: spec,
+        }),
+        stderr: '',
+      }
+    })
+  }
+
+  const compose = () => composeDigest({ prevSha, newSha, footer: 'ФУТЕР' })
+
+  beforeEach(() => {
+    spawnSyncMock.mockReset()
+    spawnSyncMock.mockImplementation((cmd: string) => {
+      throw new Error(`unarmed spawnSync call: ${cmd}`)
+    })
+  })
+
+  it('a real PR with a real note is a PRODUCT change, and nothing technical', async () => {
+    arm({ 1: PRODUCT })
+    const digest = await compose()
+    expect(digest).not.toBeNull()
+    expect(digest?.productCount).toBe(1)
+    expect(digest?.technicalCount).toBe(0)
+    expect(digest?.text).not.toMatch(/Плюс/)
+  })
+
+  it('a real PR whose note is `none` is counted as a TECHNICAL change', async () => {
+    arm({ 1: PRODUCT, 2: NONE })
+    const digest = await compose()
+    expect(digest?.productCount).toBe(1)
+    expect(digest?.technicalCount).toBe(1)
+    expect(digest?.text).toContain('Плюс 1 техническое изменение (')
+  })
+
+  it('a real PR with NO note section at all is counted as a technical change too', async () => {
+    arm({ 1: PRODUCT, 2: NO_SECTION })
+    const digest = await compose()
+    expect(digest?.productCount).toBe(1)
+    expect(digest?.technicalCount).toBe(1)
+    expect(digest?.text).toContain('Плюс 1 техническое изменение (')
+  })
+
+  it('a number that is NO PR at all shipped nothing — counted in neither', async () => {
+    // The guard this pins: move the increment above the `gh` exit check and the
+    // digest starts announcing 404s and issue references as shipped changes,
+    // while every renderer test stays green.
+    arm({ 1: PRODUCT, 2: 'gh-fails', 3: 'garbage' })
+    const digest = await compose()
+    expect(digest?.productCount).toBe(1)
+    expect(digest?.technicalCount).toBe(0)
+    expect(digest?.text).not.toMatch(/Плюс/)
+  })
+
+  it('counts every technical arm together, and renders the plural for the total', async () => {
+    arm({ 1: PRODUCT, 2: NONE, 3: NO_SECTION, 4: 'gh-fails' })
+    const digest = await compose()
+    expect(digest?.productCount).toBe(1)
+    expect(digest?.technicalCount).toBe(2)
+    expect(digest?.text).toContain(
+      'Плюс 2 технических изменения (инфраструктура, проверки, документация) — ' +
+        'на экране их не видно.',
+    )
+  })
+
+  it('a range of ONLY technical PRs renders the technical-release line WITH the count', async () => {
+    arm({ 1: NONE, 2: NO_SECTION, 3: NONE })
+    const digest = await compose()
+    expect(digest?.productCount).toBe(0)
+    expect(digest?.technicalCount).toBe(3)
+    expect(digest?.text).toContain(
+      '— 3 технических изменения, пользовательских изменений в этой поставке нет.',
+    )
+  })
+
+  it('keeps the bare technical-release line when the range shipped nothing countable', async () => {
+    arm({ 1: 'gh-fails' })
+    const digest = await compose()
+    expect(digest?.productCount).toBe(0)
+    expect(digest?.technicalCount).toBe(0)
+    expect(digest?.text).toContain('— пользовательских изменений в этой поставке нет.')
+  })
+
+  it('green-skips when `git log` itself fails — a bad anchor is not a red deploy', async () => {
+    spawnSyncMock.mockImplementation(() => ({ status: 128, stdout: '', stderr: 'bad revision' }))
+    expect(await compose()).toBeNull()
   })
 })
 
