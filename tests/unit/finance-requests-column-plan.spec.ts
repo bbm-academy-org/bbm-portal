@@ -21,6 +21,8 @@ import type {
 } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import { RequestsTable } from '@/app/(platform)/p/finance/requests/RequestsTable'
 import {
+  REQUEST_TABLE_CELL_PADDING,
+  REQUEST_TABLE_NO_MOVEMENT_LABEL_WIDTH,
   REQUEST_TABLE_WIDTH_BUDGET,
   requestTableColumnPlan,
   type RequestTableScope,
@@ -138,6 +140,31 @@ describe('the register’s desktop width budget (#388 defect B)', () => {
     const acts = (plan: { id: string; size: number }[]) =>
       plan.find((column) => column.id === 'actions')!.size
     expect(acts(approver)).toBeGreaterThan(acts(reader))
+  })
+
+  it('affords «ещё не двигались» whole, in every scope — a state may not be clipped', () => {
+    // Defect E of the re-driven matrix (2026-09-16). Under «Все» at 1440 the
+    // placeholder needed 114 px and the cell offered 102, so it read «ещё не
+    // двига…» — and the block's `div.truncate` carries no `title`, so the words
+    // were nowhere on screen. It is the same rule this PR already paid for in
+    // `3a08136`: the placeholder IS the state (EARS-533 names emptiness rather
+    // than printing «—»), and a state may not be clipped.
+    //
+    // ASSERTED ON THE PLAN NUMBERS, not on the absence of `truncate`: the
+    // truncation lives in the BLOCK's own cell wrapper, which every column of
+    // every register shares, and exempting one column of one screen from it
+    // would be a block edit made for a single placeholder. The width is the
+    // honest lever, and the date column's longest content is a FIXED string —
+    // unlike the free-text column, which can never be sized to its content.
+    for (const combination of COMBINATIONS) {
+      const date = requestTableColumnPlan(combination).find((c) => c.id === 'occurredOn')!
+      expect(
+        date.size - REQUEST_TABLE_CELL_PADDING,
+        `${combination.scope} / canApprove=${combination.canApprove} offers ${
+          date.size - REQUEST_TABLE_CELL_PADDING
+        }px to a ${REQUEST_TABLE_NO_MOVEMENT_LABEL_WIDTH}px label`,
+      ).toBeGreaterThanOrEqual(REQUEST_TABLE_NO_MOVEMENT_LABEL_WIDTH)
+    }
   })
 
   it('has no refusal column at all — the reason belongs to the status it explains', () => {
