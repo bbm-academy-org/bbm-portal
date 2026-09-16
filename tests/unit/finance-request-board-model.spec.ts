@@ -24,7 +24,6 @@ import {
   requestTableRows,
   REQUEST_TABLE_SCOPES,
   resolveRequestsView,
-  tableShowsRefusalReason,
 } from '@/app/(platform)/p/finance/requests/request-table-model'
 
 describe('request-board status machine (spec 339 EARS-510/511/512/524)', () => {
@@ -349,15 +348,5 @@ describe('requests table model (decision 35, PRD 339 US-2/US-3)', () => {
     // once held the role is not a way back into it.
     expect(resolveRequestsView('board', false)).toBe('table')
     expect(resolveRequestsView('nonsense', true)).toBe('table')
-  })
-
-  it('decision 35: the refusal-reason column appears only where there is a refusal to read', () => {
-    expect(tableShowsRefusalReason([item({ status: 'submitted' })])).toBe(false)
-    expect(
-      tableShowsRefusalReason([
-        item({ id: 1, status: 'submitted' }),
-        item({ id: 2, status: 'refused', refusalReason: 'есть на складе' }),
-      ]),
-    ).toBe(true)
   })
 })

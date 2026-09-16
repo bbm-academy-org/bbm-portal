@@ -91,14 +91,85 @@ export function resolveRequestsView(stored: string | null, canApprove: boolean):
 }
 
 /**
- * Whether the refusal-reason column is on the table at all.
+ * THE DESKTOP WIDTH BUDGET OF THE REGISTER (#388 defect B, eyes-on matrix of
+ * 2026-09-16).
  *
- * A column that is empty for every visible row is six columns' worth of width
- * spent saying nothing — and at 390 px the width is the whole budget. The
- * reason appears when there is a refusal to read, and the column with it.
+ * The block lays the table out `table-layout: fixed` and writes each column's
+ * declared `size` into the cell's inline `width`, so the SUM of the sizes is
+ * the table's width — there is no reflow to save a plan that overspends. At
+ * 1440×900 the `/p` shell gives this surface a 1110 px container; the previous
+ * plan declared 1200 px (1420 with the refusal column), the table measured
+ * 1214 px, «Отклонить…» was cut mid-word and the row's «Открыть» — the only
+ * control wave 3 leaves for opening a request — was laid out at x 1291–1369 and
+ * never painted.
+ *
+ * 1110 is therefore a CEILING the plan is checked against, not a target: the
+ * plan below spends at most 1080 of it in its widest combination. Below `sm`
+ * the table still scrolls sideways, and the swipe hint above it still says so —
+ * that is the accepted phone behaviour, not this budget's business.
  */
-export function tableShowsRefusalReason(rows: readonly RequestBoardItem[]): boolean {
-  return rows.some((row) => row.status === 'refused' || row.refusalReason !== null)
+export const REQUEST_TABLE_WIDTH_BUDGET = 1110
+
+export type RequestTableColumnId =
+  'occurredOn' | 'createdByName' | 'amount' | 'purpose' | 'status' | 'actions'
+
+export type RequestTableColumn = { id: RequestTableColumnId; size: number }
+
+/** What each column is worth in the budget, in the reading order it is spent. */
+const REQUEST_TABLE_COLUMN_WIDTHS: Record<RequestTableColumnId, number> = {
+  occurredOn: 116,
+  createdByName: 140,
+  amount: 124,
+  purpose: 210,
+  status: 190,
+  actions: 300,
+}
+
+/** A reader who cannot act has ONE control in the trailing column: «Открыть». */
+const REQUEST_TABLE_READ_ONLY_ACTIONS_WIDTH = 130
+
+/**
+ * The columns this reader's register carries, in reading order, with the width
+ * each is given.
+ *
+ * TWO THINGS COME OUT OF THE PLAN, and both are the agent's composition call
+ * (`.claude/rules/design-process.md` §1 — composition, control choice and
+ * grouping are the agent's; the visual language is the owner's):
+ *
+ *  - «Кто подал» is NOT on the table under «Мои». Every row of that scope names
+ *    the same person — the reader — so the column is 140 px spent repeating the
+ *    heading. It returns the moment the scope widens to «Все», which is the only
+ *    scope where the answer varies.
+ *  - THE REFUSAL REASON IS NO LONGER A COLUMN. It is the second line of the
+ *    «Статус» cell, under the badge that says «Отклонена» — the reason explains
+ *    exactly that status and nothing else, and a column of its own cost 220 px
+ *    that the seventh column pushed «Открыть» off the screen with. Nothing is
+ *    lost: the cell carries the reason, and the details sheet carries it in
+ *    full.
+ */
+export function requestTableColumnPlan({
+  scope,
+  canApprove,
+}: {
+  scope: RequestTableScope
+  canApprove: boolean
+}): RequestTableColumn[] {
+  const ids: RequestTableColumnId[] = [
+    'occurredOn',
+    ...(scope === 'all' ? (['createdByName'] as const) : []),
+    'amount',
+    'purpose',
+    'status',
+  ]
+  return [
+    ...ids.map((id) => ({ id, size: REQUEST_TABLE_COLUMN_WIDTHS[id] })),
+    {
+      id: 'actions' as const,
+      size: canApprove
+        ? REQUEST_TABLE_COLUMN_WIDTHS.actions
+        : REQUEST_TABLE_READ_ONLY_ACTIONS_WIDTH,
+    },
+  ]
 }
 
 export type RequestAmountTotal = { currency: string; amount: string }

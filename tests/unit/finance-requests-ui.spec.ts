@@ -1267,10 +1267,21 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
     // names what the value IS, so «ещё не двигались» answers the question that
     // was asked. Each header also carries the block's sorter, whose aria text
     // joins the accessible name — hence the prefix match.
-    for (const head of ['Деньги ушли', 'Кто подал', 'Сумма', 'Назначение', 'Статус']) {
+    for (const head of ['Деньги ушли', 'Сумма', 'Назначение', 'Статус']) {
       expect(within(table).getByRole('columnheader', { name: new RegExp(`^${head}`) })).toBeTruthy()
     }
-    expect(within(table).getByText('М. Иванова')).toBeTruthy()
+    // «Кто подал» is NOT one of them under «Мои» (#388 defect B): every row of
+    // that scope names the reader, so the column repeats its own heading and
+    // spends width the acts column needs. It returns under «Все».
+    expect(within(table).queryByRole('columnheader', { name: /^Кто подал/ })).toBeNull()
+    pick('tab', 'Все')
+    await waitFor(() =>
+      expect(
+        within(requestsTable()).getByRole('columnheader', { name: /^Кто подал/ }),
+      ).toBeTruthy(),
+    )
+    expect(within(requestsTable()).getByText('М. Иванова')).toBeTruthy()
+    pick('tab', 'Мои')
     // On the row, and again in the block's totals footer — one request is its
     // own total.
     expect(within(table).getAllByText('45 000,00 RUB')).toHaveLength(2)
@@ -1293,7 +1304,7 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
     expect(within(requestsTable()).getByText('Моя заявка')).toBeTruthy()
   })
 
-  it('decision 35: the refusal reason is a column only where there is a refusal to read', async () => {
+  it('the refusal reason is read under the status it explains, never in a column of its own (#388 defect B)', async () => {
     refine.custom.data = snapshot({ requests: [item({ id: 1, own: true })] })
     renderScreen()
     expect(
@@ -1305,10 +1316,14 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
       requests: [item({ id: 2, own: true, status: 'refused', refusalReason: 'есть на складе' })],
     })
     renderScreen()
+    // Still no seventh column — the one that pushed «Открыть» off a 1440 px
+    // screen — and the reason is still on the row, beside «Отклонена».
     expect(
-      within(requestsTable()).getByRole('columnheader', { name: 'Причина отказа' }),
-    ).toBeTruthy()
-    expect(within(requestsTable()).getByText('есть на складе')).toBeTruthy()
+      within(requestsTable()).queryByRole('columnheader', { name: 'Причина отказа' }),
+    ).toBeNull()
+    const reason = within(requestsTable()).getByText('есть на складе')
+    expect(reason).toBeTruthy()
+    expect(reason.closest('td')?.textContent).toContain('Отклонена')
   })
 
   it('decision 35: a row opens the same details sheet the board’s card opens', async () => {

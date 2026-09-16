@@ -25,8 +25,9 @@ import {
 import {
   requestAmountTotals,
   requestRowActs,
+  requestTableColumnPlan,
   requestTableRows,
-  tableShowsRefusalReason,
+  type RequestTableColumnId,
   type RequestTableScope,
 } from './request-table-model'
 
@@ -59,11 +60,15 @@ function Sorter({ column, label }: { column: Column<RequestBoardItem>; label: st
  * head, the rows, the loading skeleton, the empty state, the pager and (since
  * #388) the totals row are the block's.
  *
- * THE COLUMNS ARE THE OWNER'S SIX, in reading order: when, who, how much, what
- * for, where it stands, and — when there is one to read — why it was refused.
- * «Назначение» carries the free-text note under the purpose because that is
- * what a member recognises their own request by; the purpose alone reads as a
- * category, not as «my microphone».
+ * THE COLUMNS, in reading order: when, who, how much, what for, where it
+ * stands. «Назначение» carries the free-text note under the purpose because
+ * that is what a member recognises their own request by; the purpose alone
+ * reads as a category, not as «my microphone». WHICH of them this reader gets,
+ * and what each may cost in width, is `requestTableColumnPlan`'s answer — «Кто
+ * подал» is off the table under «Мои», and the refusal reason is the second
+ * line of the status cell rather than a seventh column (#388 defect B, eyes-on
+ * matrix of 2026-09-16: at 1440 px the seven-column table overflowed its
+ * container and the row's «Открыть» was never painted).
  *
  * AN HONEST DATE HEADER (owner acceptance 2026-09-15). The column used to
  * promise «Дата» and answer «не двигались» for a pre-spend intent. The header
@@ -134,14 +139,16 @@ function RequestsRegister({
   // page the block happens to be showing.
   const scoped = React.useMemo(() => requestTableRows(requests, scope), [requests, scope])
   const totals = React.useMemo(() => requestAmountTotals(scoped), [scoped])
-  const withReason = tableShowsRefusalReason(scoped)
 
   const columns = React.useMemo<ColumnDef<RequestBoardItem>[]>(() => {
-    const defs: ColumnDef<RequestBoardItem>[] = [
-      {
+    // The DEFINITIONS, by id. Which of them are on this reader's table, in
+    // which order, and what each is allowed to cost is the PLAN's answer
+    // (`requestTableColumnPlan`) — one place where the desktop width budget of
+    // #388 defect B can be read and checked.
+    const byId: Record<RequestTableColumnId, ColumnDef<RequestBoardItem>> = {
+      occurredOn: {
         id: 'occurredOn',
         accessorKey: 'occurredOn',
-        size: 150,
         header: ({ column }) => (
           <>
             Деньги ушли
@@ -157,10 +164,9 @@ function RequestsRegister({
             <span className="tabular-nums">{formatDate(row.original.occurredOn)}</span>
           ),
       },
-      {
+      createdByName: {
         id: 'createdByName',
         accessorKey: 'createdByName',
-        size: 170,
         header: ({ column }) => (
           <>
             Кто подал
@@ -169,10 +175,9 @@ function RequestsRegister({
         ),
         cell: ({ row }) => row.original.createdByName ?? '—',
       },
-      {
+      amount: {
         id: 'amount',
         accessorKey: 'amount',
-        size: 160,
         header: ({ column }) => (
           <>
             Сумма
@@ -204,9 +209,8 @@ function RequestsRegister({
           </div>
         ),
       },
-      {
+      purpose: {
         id: 'purpose',
-        size: 260,
         header: ({ column }) => (
           <>
             Назначение
@@ -226,73 +230,73 @@ function RequestsRegister({
           </div>
         ),
       },
-      {
+      status: {
         id: 'status',
         accessorKey: 'status',
-        size: 160,
         header: ({ column }) => (
           <>
             Статус
             <Sorter column={column} label="Сортировать по статусу" />
           </>
         ),
+        // THE REFUSAL REASON LIVES HERE, not in a column of its own (#388
+        // defect B): it explains this badge and nothing else, and a seventh
+        // column pushed the row's «Открыть» off a 1440 px screen. The full
+        // text is always one «Открыть» away, in the details sheet.
         cell: ({ row }) => (
-          <Badge variant={REQUEST_STATUS_BADGE_VARIANT[row.original.status]}>
-            {REQUEST_STATUS_LABELS[row.original.status]}
-          </Badge>
+          <div className="min-w-0 space-y-1">
+            <Badge variant={REQUEST_STATUS_BADGE_VARIANT[row.original.status]}>
+              {REQUEST_STATUS_LABELS[row.original.status]}
+            </Badge>
+            {row.original.refusalReason === null ? null : (
+              <span
+                className="block truncate text-xs text-muted-foreground"
+                title={row.original.refusalReason}
+              >
+                {row.original.refusalReason}
+              </span>
+            )}
+          </div>
         ),
       },
-    ]
-
-    // A column that is empty for every row of this register is width spent
-    // saying nothing — and at 390 px the width is the whole budget.
-    if (withReason) {
-      defs.push({
-        id: 'refusalReason',
-        accessorKey: 'refusalReason',
-        size: 220,
+      actions: {
+        id: 'actions',
         enableSorting: false,
-        header: () => <>Причина отказа</>,
-        cell: ({ row }) =>
-          row.original.refusalReason ?? <span className="text-muted-foreground">—</span>,
-      })
+        header: () => <span className="sr-only">Действия</span>,
+        cell: ({ row }) => {
+          const request = row.original
+          return (
+            <div className="flex justify-end gap-2">
+              {requestRowActs(request, canApprove).map((act) => (
+                <Button
+                  key={act}
+                  variant={act === 'approve' ? 'default' : 'outline'}
+                  size="sm"
+                  aria-label={`${ACT_LABELS[act]} заявку №${request.id}`}
+                  onClick={() => onAct(request, act)}
+                >
+                  {ACT_LABELS[act]}
+                </Button>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Заявка №${request.id}`}
+                onClick={() => onOpen(request)}
+              >
+                Открыть
+              </Button>
+            </div>
+          )
+        },
+      },
     }
 
-    defs.push({
-      id: 'actions',
-      size: canApprove ? 300 : 140,
-      enableSorting: false,
-      header: () => <span className="sr-only">Действия</span>,
-      cell: ({ row }) => {
-        const request = row.original
-        return (
-          <div className="flex justify-end gap-2">
-            {requestRowActs(request, canApprove).map((act) => (
-              <Button
-                key={act}
-                variant={act === 'approve' ? 'default' : 'outline'}
-                size="sm"
-                aria-label={`${ACT_LABELS[act]} заявку №${request.id}`}
-                onClick={() => onAct(request, act)}
-              >
-                {ACT_LABELS[act]}
-              </Button>
-            ))}
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={`Заявка №${request.id}`}
-              onClick={() => onOpen(request)}
-            >
-              Открыть
-            </Button>
-          </div>
-        )
-      },
-    })
-
-    return defs
-  }, [canApprove, onAct, onOpen, references.currencies, totals, withReason])
+    return requestTableColumnPlan({ scope, canApprove }).map((column) => ({
+      ...byId[column.id],
+      size: column.size,
+    }))
+  }, [canApprove, onAct, onOpen, references.currencies, scope, totals])
 
   const table = useTable<RequestBoardItem, HttpError>({
     columns,
