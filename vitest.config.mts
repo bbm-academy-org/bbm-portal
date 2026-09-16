@@ -4,8 +4,23 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig({
   plugins: [tsconfigPaths(), react()],
+  resolve: {
+    alias: {
+      // `@refinedev/react-table`'s ESM build imports the extensionless CJS
+      // subpath `lodash/isEqual`, which Node's ESM resolver refuses. Without
+      // this alias the REAL `useTable` cannot be loaded in a unit test at all,
+      // and the only thing a spec can assert is a mock of it — which is where
+      // #388 defect A hid (the stale `filters.permanent` seed lives inside the
+      // real hook). Resolving the subpath to its file makes the real block
+      // testable; nothing else changes.
+      'lodash/isEqual': 'lodash/isEqual.js',
+    },
+  },
   test: {
     environment: 'jsdom',
+    // …and the alias only reaches that import once the package is transformed
+    // by vite rather than handed to Node's own ESM resolver.
+    server: { deps: { inline: ['@refinedev/react-table'] } },
     setupFiles: ['./vitest.setup.ts'],
     include: [
       'tests/int/**/*.int.spec.ts',
