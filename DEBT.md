@@ -15,9 +15,12 @@ Rules (issue #65, owner decision 2026-07-24; #92, 2026-07-30):
 - **Entry end anchors are immutable:** every active debt block is followed by
   `<!-- debt-entry-end: <stable-id> -->`. A sweep that removes/promotes the body
   MUST preserve that anchor as the tombstone for Git's union merge.
-- **Permanent append marker:** add new active entries immediately before
-  `<!-- debt-append-marker -->`, each with a new unique end anchor. Historical
-  sweep notes live after that marker.
+- **Permanent append marker:** add new active entries immediately before the
+  `debt-append-marker` HTML-comment line — named here without its `<!--` /
+  `-->` delimiters on purpose, so the literal marker string occurs exactly ONCE
+  in this file and a naive `String.replace` cannot hit a quotation of it instead
+  (PR #488 and PR #495 each did). Each new entry carries a new unique end
+  anchor. Historical sweep notes live after that marker.
 - **Merge semantics:** root `.gitattributes` sets `/DEBT.md merge=union`, so
   two branches that append different root-ledger entry blocks keep both blocks
   instead of conflicting. Union does not guarantee relative order between two
