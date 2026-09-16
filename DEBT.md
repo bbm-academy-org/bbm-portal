@@ -979,6 +979,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-15-494-regex-inventory -->
 
+- [ ] 2026-09-16 The requests and liabilities registers (#388, PR #470) sort money columns as zero-padded MINOR-UNIT STRINGS (`request-table-model.ts`: `amount` and `balance` → `padStart(24, '0')`), not as money: a negative balance orders by magnitude inverted (`-100` before `-500`) and two currencies compare by raw minor units. Unreachable today — neither «Сумма» nor «Долг» renders a `DataTableSorter`, the only sortable ids are the text columns — and recorded rather than fixed because the fix is a money comparator (sign, then currency, then magnitude) that no sortable column yet needs (review of PR #470, round 8). Return condition: the first money column that gains a sorter on either register, or a mixed-currency register in prod, whichever comes first; at that point the comparator lands with a RED test on negative and mixed-currency rows.
+
+<!-- debt-entry-end: 2026-09-16-388-money-sort-as-string -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
