@@ -161,8 +161,12 @@ export function FinanceReferenceRecordScreen({
         {mode === 'show' && !systemAccount && !retired ? (
           <Button onClick={() => navigation.edit(resourceName, id)}>Редактировать</Button>
         ) : mode === 'edit' ? (
-          <Button variant="outline" onClick={() => navigation.show(resourceName, id)}>
-            Открыть карточку
+          // The way out of the card is the register it was opened from. It used
+          // to be «Открыть карточку» — a second route to this record's own
+          // read-only twin, the same «two buttons, one place» the owner named on
+          // the register itself (Антон, 2026-09-17).
+          <Button variant="outline" onClick={() => navigation.list(resourceName)}>
+            К списку
           </Button>
         ) : null}
       </div>
