@@ -926,3 +926,56 @@ step 18 cannot be replayed on the same row); one new request filed through the
 form for step 23 (the «Мейерхольда» counterparty, which also entered the
 counterparty reference); `#6` received an act that the capture's own route
 answered with a forced 500, so its status did not change.
+
+---
+
+## Re-observation of 2026-09-17 — the same six, at the INTEGRATED head
+
+**Why this section carries no new frames.** Retention rule of task-cycle stage 5
+point 3: a re-taken frame REPLACES its predecessor, so a frame is re-taken only
+when its PICTURE changed. The six fixes were driven again — every one of them —
+on the integration of this PR with PR #503 (#480) and PR #504 (#479), and not one
+of the six pictures changed: the two sibling diffs touch the purpose CELL and the
+`/p/admin` claim gate, neither of which appears in steps 06, 11, 12, 18, 22 or 23
+(their requests all carry a resolved purpose, and none of them is an admin
+surface). Replacing six states' worth of frames with equivalent pictures of
+different seeded rows would be churn, so the pass is recorded as a measurement
+instead.
+
+**The stand.** `http://localhost:3000`, the lead's listener, at
+`wave/115-tails` head **`0f0371b6`**; branch DB `platform_473`, re-seeded for this
+pass with `pnpm dev:seed` (64 people, 32 requests, 6 documents, 5 ledger
+operations) plus `pnpm platform:member:seed` for the two dev IdP logins. Driven
+with `@playwright/test` from `.claude/worktrees/wave-115`, signed in as
+`bbm-test` and `bbm-member`; the password was read from a scratchpad file through
+`fs` and never entered a tool call.
+
+| #   | Defect                            | Re-observed as                                                                                                                                                                    | Holds |
+| --- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 1   | toast covered the sheet footer    | attach on #14/#15/#16/#17 (one per combo): toast box vs `[data-slot="sheet-footer"]` box measured on the live page — **no intersection** at either breakpoint, footer reads «Провести Отклонить…» | yes   |
+| 2   | ~9 s textless skeleton            | the load frame reads «Заявки / Загружаем заявки…»; with the read forced to 500 the error state is on screen after **1.06–1.07 s**, inside the 2 s budget                          | yes   |
+| 3   | truncated sheet values            | the sheet of a request with a 62-character purpose line and a long note: full text present, **zero `.truncate` nodes** in the sheet subtree at both breakpoints                     | yes   |
+| 4   | refusal leaked `src/lib/member`   | the non-member refusal on FILING (a different act from step 22's attach): «…нет записи в реестре участников… в разделе «Участники»», asserted against `/src\|infra\|\.md\|\.ts/`    | yes   |
+| 5   | no dominant control when approved | approved-without-document sheet: the bordered document region carries the gate sentence and the only primary-filled control; the footer's «Отклонить…» resolves `data-variant="destructive"` at 10 % tint | yes   |
+| 6   | silent duplicate attach           | after the attach the picker is **gone** (`input[type=file]` count 0), the block says the document is attached and offers «Приложить ещё документ»                                   | yes   |
+
+**What the pass found that is NOT one of the six**, reported rather than
+silently kept — none of them blocks this PR, each is a separate copy defect on a
+surface this PR touches or neighbours:
+
+- **A failed board READ prints the raw response body to the reader.** The error
+  state renders `{"error":{"code":"boom","message":"boom"}}` and, under it,
+  `Error (status code: 500)` — an English string on a Russian screen, and the
+  same body twice. Item 4's rule («a refusal names nothing internal») is about
+  the same class of leak; this is the read-failure state's version of it.
+- The `/p/admin` index says «6 раздела» where Russian wants «6 разделов».
+- The finance reference card's success toast is Refine's untranslated default,
+  «Successfully updated finance.purpose / Successful», beside the card's own
+  «Изменения сохранены.».
+
+**Rows changed in `platform_473` this pass.** Documents attached to **#14**,
+**#15**, **#16** and **#17** (one per combo of the item-1/item-6 measurement);
+two proposal-branch requests filed through the form (**#43** by `bbm-test`,
+**#44** by `bbm-member`) for the #480 journey, both left as drafts; the purpose
+«Продажи курса» was edited and restored for the #479 journey. No request changed
+status.
