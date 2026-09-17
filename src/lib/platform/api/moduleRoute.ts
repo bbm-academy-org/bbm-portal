@@ -8,6 +8,7 @@ import {
   PLATFORM_ADMIN_ROLE,
   PLATFORM_USER_ROLE,
   sessionActorEmail,
+  type ClaimRequirement,
   type SessionLike,
 } from '../authGate'
 import {
@@ -141,7 +142,7 @@ async function readBody<TBody>(
 }
 
 function moduleRoute<TBody, TOut>(
-  requiredClaim: string,
+  requiredClaim: ClaimRequirement,
   extraClaim: string | undefined,
   spec: ModuleRouteSpec<TBody, TOut>,
 ): ModuleRouteHandler {
@@ -242,9 +243,17 @@ export function memberRoute<TBody = undefined, TOut = unknown>(
  * link. The `admin` segment is reserved inside a module's API namespace (D-12)
  * so the required claim is readable from the URL and greppable in review;
  * `pnpm lint:endpoint-authz` refuses the segment anywhere else.
+ *
+ * `additionalClaims` WIDENS that gate to the roles a section declares beside
+ * the administrator (`WorkspaceAdminSection.additionalClaims`, EARS-466) — the
+ * finance reference catalogues admit `finance-entry` too (spec 339 EARS-529,
+ * owner decision 34). It can only widen: `platform-admin` is prepended here and
+ * a handler cannot drop it. A route passes its SECTION's declaration rather
+ * than a literal, so the API and the cabinet screens cannot disagree about who
+ * administers the section.
  */
 export function adminRoute<TBody = undefined, TOut = unknown>(
-  spec: ModuleRouteSpec<TBody, TOut>,
+  spec: ModuleRouteSpec<TBody, TOut> & { additionalClaims?: readonly string[] },
 ): ModuleRouteHandler {
-  return moduleRoute(PLATFORM_ADMIN_ROLE, undefined, spec)
+  return moduleRoute([PLATFORM_ADMIN_ROLE, ...(spec.additionalClaims ?? [])], undefined, spec)
 }

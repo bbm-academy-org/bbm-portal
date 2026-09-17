@@ -465,8 +465,13 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
   is no longer `platform-admin` alone: it is open to `finance-entry` as well, so
   a session holding either role may edit the reference tables. The current
   wording lives in spec 339 EARS-529
-  (`docs/specs/339-ledger-intake.md`); the code gate
-  (`assertFinanceReferenceAccess`) follows in its own task.)_
+  (`docs/specs/339-ledger-intake.md`). **The code caught up with this amendment
+  in #479 (2026-09-16):** `assertFinanceReferenceAccess` admits
+  `FINANCE_REFERENCE_ROLES` — `platform-admin` OR `finance-entry` — and the
+  cabinet gate is asked per SECTION, from the claim set the finance entry
+  declares in `financeAdminSection.additionalClaims`, so `/p/admin/finance/*`
+  and `/api/p/finance/admin/*` admit the same two roles however the URL is
+  reached. The audit trail per spec 201 is unchanged.)_
 - **EARS-331.** The `product_binding` shall be master data, never a
   per-operation judgement: WHEN an operation is recorded, the system shall take
   the binding from the named purpose and shall accept from the operator only
@@ -668,8 +673,9 @@ Owner walkthrough, on a live stand, after the go and the build:
    EUR pool is still unknown and the total stays withheld. Spend the remaining
    60.00 EUR: the EUR pool returns to zero and resets, and the exact
    2,010,000.00 RUB total returns. No step fetches a rate (EARS-319/325/329).
-5. **Money is visible to the team, references editable by the admin.** Sign in
-   as a member holding `platform-user` but not `platform-admin`: `/p/finance`
+5. **Money is visible to the team, references editable by reference
+   administration.** Sign in as a member holding `platform-user` and neither
+   `platform-admin` nor `finance-entry`: `/p/finance`
    opens and shows the same balances card (EARS-324/325), while
    `/p/admin/finance/purposes` is refused (EARS-330, spec 311 EARS-405). Sign
    out entirely and open `/p/finance` — refused, F1 has no public surface
@@ -679,6 +685,9 @@ Owner walkthrough, on a live stand, after the go and the build:
    — posting and reversal — are gated by `finance-entry` / `finance-approve`,
    so `platform-admin` alone is no longer the write role to walk here; that
    part of the walkthrough lives in spec 339's scenario 1.)_
+   _(Amended 2026-09-14 by owner decision 34 (#115), shipped in #479: a session
+   holding `finance-entry` and NOT `platform-admin` walks this step the other
+   way — `/p/admin/finance/purposes` opens and an edit succeeds (EARS-529).)_
 6. **The past is protected.** In `/p/admin`, try deleting the currency `THB`
    that the account uses — a readable refusal offers retirement instead
    (EARS-308/326). Rename the account — the rename is visible, nothing else
@@ -790,7 +799,8 @@ pinned rather than assumed.
   import surface is not part of F2. F2 also settles the full role model
   (decision 8). F1 already opens **reading**
   `/p/finance` to every platform member (EARS-324/325, the owner's transparency
-  policy) and keeps every reference catalogue at `platform-admin` (EARS-330).
+  policy) and keeps every reference catalogue at `platform-admin` (EARS-330 —
+  widened to `finance-entry` as well by decision 34, see the note on EARS-330).
   _(Amended 2026-08-26 by spec 339 (`docs/specs/339-ledger-intake.md`,
   EARS-501/529): the finer split deferred here is settled. Reference
   administration stays `platform-admin`; ledger writes — posting and reversal —

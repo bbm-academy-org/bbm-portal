@@ -88,6 +88,24 @@ export interface WorkspaceAdminResource {
 export interface WorkspaceAdminSection {
   /** What the cabinet's navigation group is called. */
   label: string
+  /**
+   * Claims that admit to THIS section BESIDES `platform-admin` (EARS-466).
+   *
+   * The cabinet's own claim is `platform-admin` and it always admits — this
+   * array widens a section, it never narrows one. It exists because a section
+   * can legitimately be administered by a role that is not the workspace
+   * administrator: the finance reference catalogues are edited by
+   * `finance-entry` as well (spec 339 EARS-529, owner decision 34,
+   * 2026-09-14).
+   *
+   * It is DECLARED here, in the module's own entry, rather than listed in the
+   * cabinet: every enforcement point of «who administers this section» — the
+   * shell's gate, the sidebar, the index of sections, the validation Server
+   * Function and the module's own HTTP handlers — derives its claim set from
+   * this one field, so widening a section is an edit to its entry and to
+   * nothing in the frame (D-2, EARS-402).
+   */
+  additionalClaims?: readonly string[]
   resources: WorkspaceAdminResource[]
 }
 

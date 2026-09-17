@@ -2,6 +2,8 @@ import { z } from 'zod'
 
 import type { WorkspaceAdminSection } from '@/lib/workspace/contract'
 
+import { FINANCE_ENTRY_ROLE } from './core/actor'
+
 const requiredText = z.string().trim().min(1)
 const positiveId = z.coerce.number().int().positive()
 const retiredAt = z.iso.datetime().nullable()
@@ -205,6 +207,13 @@ export function isFinanceReferenceResource(value: string): value is FinanceRefer
 
 export const financeAdminSection: WorkspaceAdminSection = {
   label: 'Финансы',
+  // Owner decision 34 (Антон, 2026-09-14, spec 339 EARS-529): the reference
+  // catalogues are edited by `finance-entry` as well as `platform-admin`. The
+  // declaration lives HERE, once — the cabinet gate, the sidebar, the index,
+  // the validation action and `/api/p/finance/admin/*` all read it, and the
+  // module's own gate (`assertFinanceReferenceAccess`) refuses the same set
+  // however the URL was reached.
+  additionalClaims: [FINANCE_ENTRY_ROLE],
   resources: Object.entries(financeReferenceContracts).map(([name, contract]) => ({
     name,
     label: contract.label,

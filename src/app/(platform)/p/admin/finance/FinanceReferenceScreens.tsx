@@ -8,7 +8,6 @@ import {
   useUpdate,
   type HttpError,
 } from '@refinedev/core'
-import React from 'react'
 
 import type { FinanceReferenceResource } from '@/lib/finance'
 import { Alert, AlertDescription } from '@/ui/alert'
@@ -20,6 +19,8 @@ import { FinanceReferenceForm, type ReferenceOptions } from './FinanceReferenceF
 import {
   financeReferenceUi,
   financeResourceName,
+  referenceErrorNotification,
+  referenceSuccessNotification,
   type FinanceReferenceRow,
 } from './reference-config'
 
@@ -55,11 +56,18 @@ export function FinanceReferenceCreateScreen({ resource }: { resource: FinanceRe
   const resourceName = financeResourceName(resource)
   const create = useCreate<FinanceReferenceRow, HttpError, Record<string, unknown>>()
   const { options, error } = useReferenceOptions()
-  const [saved, setSaved] = React.useState(false)
 
   function submit(values: Record<string, unknown>) {
-    setSaved(false)
-    create.mutate({ resource: resourceName, values }, { onSuccess: () => setSaved(true) })
+    // The outcome travels in ONE channel — the cabinet's Refine notification
+    // provider (`docs/design/ui-whitelist.md` → Feedback). The copy is the
+    // table's own Russian, because Refine's default toast is English (#479).
+    const createdName = String(values.name ?? '').trim()
+    create.mutate({
+      resource: resourceName,
+      values,
+      successNotification: referenceSuccessNotification(resource, 'create', createdName),
+      errorNotification: referenceErrorNotification(resource, 'create', createdName),
+    })
   }
 
   return (
@@ -76,11 +84,6 @@ export function FinanceReferenceCreateScreen({ resource }: { resource: FinanceRe
           <CardDescription>Поля проверяются до записи в финансовый контур.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {saved ? (
-            <Alert role="status">
-              <AlertDescription>Запись сохранена и добавлена в справочник.</AlertDescription>
-            </Alert>
-          ) : null}
           <FinanceReferenceForm
             resource={resource}
             options={options}
@@ -94,7 +97,6 @@ export function FinanceReferenceCreateScreen({ resource }: { resource: FinanceRe
                   ? message(create.mutation.error, 'Не удалось сохранить запись.')
                   : undefined
             }
-            onChange={() => setSaved(false)}
             onSubmit={submit}
           />
         </CardContent>
@@ -118,7 +120,6 @@ export function FinanceReferenceRecordScreen({
   const update = useUpdate<FinanceReferenceRow, HttpError, Record<string, unknown>>()
   const { query, result } = useOne<FinanceReferenceRow, HttpError>({ resource: resourceName, id })
   const { options, error: optionsError } = useReferenceOptions()
-  const [saved, setSaved] = React.useState(false)
 
   if (query.isLoading) return <Skeleton className="h-96 w-full" />
   if (query.error || !result) {
@@ -135,8 +136,19 @@ export function FinanceReferenceRecordScreen({
   const editable = mode === 'edit' && !systemAccount && !retired
 
   function save(values: Record<string, unknown>) {
-    setSaved(false)
-    update.mutate({ resource: resourceName, id, values }, { onSuccess: () => setSaved(true) })
+    // The toast names the record as the SAVE left it, not as the card found it:
+    // a rename whose notification still quotes the old name reads as «the save
+    // did not take» (#479, second UX-sanity round). The submitted name is the
+    // one the user is looking at; `row.name` only covers a payload that carries
+    // no name at all.
+    const savedName = String(values.name ?? '').trim() || row.name
+    update.mutate({
+      resource: resourceName,
+      id,
+      values,
+      successNotification: referenceSuccessNotification(resource, 'update', savedName),
+      errorNotification: referenceErrorNotification(resource, 'update', savedName),
+    })
   }
 
   return (
@@ -149,8 +161,12 @@ export function FinanceReferenceRecordScreen({
         {mode === 'show' && !systemAccount && !retired ? (
           <Button onClick={() => navigation.edit(resourceName, id)}>Редактировать</Button>
         ) : mode === 'edit' ? (
-          <Button variant="outline" onClick={() => navigation.show(resourceName, id)}>
-            Открыть карточку
+          // The way out of the card is the register it was opened from. It used
+          // to be «Открыть карточку» — a second route to this record's own
+          // read-only twin, the same «two buttons, one place» the owner named on
+          // the register itself (Антон, 2026-09-17).
+          <Button variant="outline" onClick={() => navigation.list(resourceName)}>
+            К списку
           </Button>
         ) : null}
       </div>
@@ -166,11 +182,6 @@ export function FinanceReferenceRecordScreen({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {saved ? (
-            <Alert role="status">
-              <AlertDescription>Изменения сохранены.</AlertDescription>
-            </Alert>
-          ) : null}
           <FinanceReferenceForm
             key={`${resource}-${id}-${mode}`}
             resource={resource}
@@ -186,7 +197,6 @@ export function FinanceReferenceRecordScreen({
                   ? message(update.mutation.error, 'Не удалось сохранить изменения.')
                   : undefined
             }
-            onChange={() => setSaved(false)}
             onSubmit={save}
           />
         </CardContent>

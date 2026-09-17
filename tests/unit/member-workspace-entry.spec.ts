@@ -1,5 +1,4 @@
-import { describe, expect, it } from 'vitest'
-import { createElement } from 'react'
+import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { memberWorkspaceEntry } from '@/lib/member'
@@ -50,9 +49,18 @@ describe('cabinet-only workspace entries (spec 311 buildability correction, EARS
   })
 
   it('EARS-409/434: the cabinet index consumes the cabinet-only section too', async () => {
+    // The index reads the session since #479 — it lists the sections THIS
+    // viewer may administer — so the screen is awaited with an admin in front
+    // of it, for whom every declared section is still listed.
+    vi.resetModules()
+    vi.doMock('@/auth', () => ({
+      auth: async () => ({ user: { email: 'a@bbm.local', roles: ['platform-admin'] } }),
+    }))
     const { default: AdminIndexPage } = await import('@/app/(platform)/p/admin/page')
-    const html = renderToStaticMarkup(createElement(AdminIndexPage))
+    const html = renderToStaticMarkup(await AdminIndexPage())
     expect(html).toContain('data-section="member"')
     expect(html).toContain('data-section-item="member.members"')
+    vi.doUnmock('@/auth')
+    vi.resetModules()
   })
 })

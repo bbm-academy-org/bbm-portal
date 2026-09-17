@@ -102,7 +102,11 @@ export async function createCounterparty(
   }
 }
 
-/** Rename is reference administration and therefore remains platform-admin only. */
+/**
+ * Rename is reference administration (spec 339, CRUD table) — so it follows
+ * that gate rather than holding one of its own, and it widened with it on
+ * 2026-09-16: `platform-admin` OR `finance-entry` (EARS-529, decision 34).
+ */
 export async function renameCounterparty(
   actor: FinanceActor,
   id: number,

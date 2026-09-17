@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 311
-updated: 2026-08-29
+updated: 2026-09-17
 ---
 
 # Portal workspace — `/p` launcher, `/p/admin` shell, module plug-in contract — spec (issue #311)
@@ -101,6 +101,29 @@ updated: 2026-08-29
   classes from `@/ui`. The cabinet screens are also subjects of the clause and
   do not exist yet (#315); the suite scans the surface files that DO exist and
   grows with them, which is why nothing is owed back to the deferral list.
+
+- **The cabinet admits section administrators, not `platform-admin` alone
+  (#479, PR #504 — a task of epic #115).** Owner decision 34 (Антон,
+  2026-09-14) opened the finance reference catalogues to `finance-entry` beside
+  `platform-admin` (spec 339 EARS-529). Shipping it changed the FRAME, not only
+  the finance module: a cabinet section now DECLARES who administers it
+  (`WorkspaceAdminSection.additionalClaims` in `src/lib/workspace/contract.ts`),
+  and every enforcement point — the shell's gate, the sidebar, the index of
+  sections, the validation Server Function and the module's `adminRoute`
+  handlers — derives its claim SET from that one declaration instead of naming
+  `platform-admin` literally. A declaration can only widen a section: the
+  workspace administrator is prepended and cannot be dropped. **Three clauses
+  were amended by that landing**, each in place and with its id kept:
+  **EARS-462** (the handler / server-action re-check is the section's claim set,
+  not a flat `platform-admin`), **EARS-466** (the frame needs no
+  MODULE-SPECIFIC edit — its earlier «no edit to … the cabinet shell» was
+  written before a cabinet section could carry a claim of its own) and
+  **EARS-437** (a section the viewer may not administer is omitted, not offered
+  and refused on click). The `/p/admin` row of the entry-kinds table carries the
+  same correction. No clause was retired and no id was added — the shipped
+  tests cite these ids (`tests/unit/cabinet-section-claims.spec.ts`,
+  `platform-claim-gate.spec.ts`, `cabinet-validation-action.spec.ts`,
+  `cabinet-shell.spec.ts`).
 
 - **Donor & benchmark pass:** run 2026-08-25 against three donors — Refine's
   own resource/menu model (`@refinedev/core` `resources[]` with `meta.parent`
@@ -492,9 +515,18 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   fail-closed, independently of any UI (consolidation §5, D-12). A handler that
   relies on the launcher having omitted the tile is a defect.
 - **EARS-462.** Every handler under `/api/p/<slug>/admin/*` and every server
-  action behind the cabinet shall re-check `platform-admin` fail-closed,
-  independently of the shell (D-12). A handler that relies on the shell having
-  checked is a defect.
+  action behind the cabinet shall re-check, fail-closed and independently of the
+  shell (D-12), the claim set that ADMINISTERS the section it serves:
+  `platform-admin` always, plus whatever that section declared beside it
+  (EARS-466, `WorkspaceAdminSection.additionalClaims`). An EMPTY set admits
+  nobody. A handler that relies on the shell having checked is a defect, and so
+  is one that writes a role literal instead of asking its section's declaration
+  — two enforcement points of one rule then drift apart.
+  _(Amended 2026-09-16 by #479 (PR #504): the clause read «re-check
+  `platform-admin`» flat, which was true while `platform-admin` was the only
+  administering claim. `adminRoute` now prepends it to the section's declared
+  set and cannot drop it, and the cabinet's validation Server Function asks the
+  set of the section the named resource belongs to.)_
 - **EARS-463.** The host allowlist shall admit `/api/p/*` on the platform surface:
   `isPlatformSurfacePath` in `src/lib/platform/hostAllowlist.ts` shall pass
   `/api/p` and anything under `/api/p/` alongside `/p`, `/p/*` and `/api/auth/*`
@@ -510,10 +542,22 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   every host of the matrix: pass on `portal.bbm.academy`, 404 on
   `cms.bbm.academy` and on the internal `app` host, pass on the dev origin in
   development mode and 404 there in production mode.
-- **EARS-466.** A further claim introduced later shall require no change to the
-  frame's own screens: it is declared as an entry's `requiredClaim` and enforced
-  in that module's handlers (EARS-461), with no edit to the launcher, the top bar
-  or the cabinet shell (`313-product.md`).
+- **EARS-466.** A further claim introduced later shall require no
+  MODULE-SPECIFIC edit to the frame's own screens: it is DECLARED on the
+  module's registry entry — as `requiredClaim` for a member-facing surface,
+  enforced in that module's handlers (EARS-461), or as the admin section's
+  `additionalClaims` for a cabinet section, enforced by EARS-462 — and the
+  launcher, the top bar and the cabinet shell derive their gate from that
+  declaration, naming no role and no module (`313-product.md`).
+  _(Amended 2026-09-16 by #479 (PR #504): the clause said such a claim is
+  enforced «with no edit to the launcher, the top bar or the cabinet shell».
+  That held for a member-facing `requiredClaim` and could never hold for an
+  ADMINISTERING one: the cabinet frame had `platform-admin` written into its
+  gate, its sidebar and its index, so admitting `finance-entry` to the finance
+  catalogues (owner decision 34, spec 339 EARS-529) required teaching the shell
+  to ask the registry per section. It was taught once, in #479; the NEXT such
+  claim is again an edit to a module's entry and to nothing in the frame, which
+  is what this clause promises.)_
 
 ### C. The `/p` launcher and the shared top bar
 
@@ -632,6 +676,11 @@ test (`pnpm lint:ears-test`), and a retirement note is not a requirement.
   handler input (consolidation §5).
 - **EARS-437.** The cabinet shall omit an operation a resource does not support
   from the screen entirely — no control that fails on click.
+  _(Extended 2026-09-16 by #479 (PR #504): the same rule governs a SECTION the
+  viewer may not administer — it is absent from the sidebar and from the index
+  of sections (EARS-434) rather than offered and refused on click. The filtering
+  happens server-side while the resource tree is built, which is D-7's rule
+  applied inside the cabinet.)_
 - **EARS-439.** Every cabinet write shall run through `platformTransaction` with
   the signed-in admin as `actorEmail` and a cabinet `source`, so the edit is
   attributable in `core.audit_event` (ADR-004 A1; spec 201).
@@ -794,20 +843,20 @@ test, which compiles or does not. The hedges below («likely», «optional») ar
 honest about apps whose own product cycle has not run — none of them needs a
 frame concept the contract does not already carry.
 
-| Portfolio app                | Entry kind             | `status` provider         | `requiredClaim`  | `admin` section                   |
-| ---------------------------- | ---------------------- | ------------------------- | ---------------- | --------------------------------- |
-| Hours (`/p/hours`)           | internal               | yes — open period         | —                | yes — 3 items (EARS-446)          |
-| OKR (`/p/okr`)               | internal               | yes — cycle progress      | —                | yes — 1 read-only item (EARS-453) |
-| Finance (`/p/finance`, #115) | internal               | likely — unclosed month   | likely, later    | yes, its own spec                 |
-| Decks (`/p/decks`, #118)     | internal, section root | optional                  | —                | likely — deck registry            |
-| CRM                          | internal               | optional                  | likely, later    | yes                               |
-| Task management              | internal or external   | optional                  | —                | depends on its discovery          |
-| Team search & recruiting     | internal               | optional — open vacancies | likely, later    | yes                               |
-| Project launch               | internal               | optional                  | —                | yes                               |
-| Calculators & work tools     | internal               | no                        | —                | probably none                     |
-| Mattermost integration       | external (today)       | n/a by type (EARS-401)    | —                | n/a by type                       |
-| **Frame's own:** `/p/admin`  | internal (D-4)         | no                        | `platform-admin` | n/a (it _is_ the cabinet)         |
-| **Frame's own:** Plane, KB   | external               | n/a by type               | —                | n/a by type                       |
+| Portfolio app                | Entry kind             | `status` provider         | `requiredClaim`                                                                                                                                                      | `admin` section                   |
+| ---------------------------- | ---------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Hours (`/p/hours`)           | internal               | yes — open period         | —                                                                                                                                                                    | yes — 3 items (EARS-446)          |
+| OKR (`/p/okr`)               | internal               | yes — cycle progress      | —                                                                                                                                                                    | yes — 1 read-only item (EARS-453) |
+| Finance (`/p/finance`, #115) | internal               | likely — unclosed month   | likely, later                                                                                                                                                        | yes, its own spec                 |
+| Decks (`/p/decks`, #118)     | internal, section root | optional                  | —                                                                                                                                                                    | likely — deck registry            |
+| CRM                          | internal               | optional                  | likely, later                                                                                                                                                        | yes                               |
+| Task management              | internal or external   | optional                  | —                                                                                                                                                                    | depends on its discovery          |
+| Team search & recruiting     | internal               | optional — open vacancies | likely, later                                                                                                                                                        | yes                               |
+| Project launch               | internal               | optional                  | —                                                                                                                                                                    | yes                               |
+| Calculators & work tools     | internal               | no                        | —                                                                                                                                                                    | probably none                     |
+| Mattermost integration       | external (today)       | n/a by type (EARS-401)    | —                                                                                                                                                                    | n/a by type                       |
+| **Frame's own:** `/p/admin`  | internal (D-4)         | no                        | `platform-admin` on the ENTRY — the launcher tile; the cabinet itself admits the union of its sections' administering claims, per section (EARS-462, EARS-466; #479) | n/a (it _is_ the cabinet)         |
+| **Frame's own:** Plane, KB   | external               | n/a by type               | —                                                                                                                                                                    | n/a by type                       |
 
 The kinds in the table are what each app declares **once it exists**. Until it
 does, six of them — Финансы, Колоды, CRM, Поиск команды, Запуск проекта,

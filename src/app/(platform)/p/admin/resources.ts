@@ -1,7 +1,8 @@
 import type { ResourceProps } from '@refinedev/core'
 import type { ZodType } from 'zod'
 
-import type { WorkspaceEntry } from '@/lib/workspace/contract'
+import { PLATFORM_ADMIN_ROLE } from '@/lib/platform/authGate'
+import type { WorkspaceAdminSection, WorkspaceEntry } from '@/lib/workspace/contract'
 
 /**
  * The cabinet's navigation tree, DERIVED from the registry (spec 311 EARS-402,
@@ -31,6 +32,100 @@ export function resourceName(slug: string, resource: string): string {
   return `${slug}.${resource}`
 }
 
+/** The section a Refine resource name belongs to — `finance.purposes` → `finance`. */
+export function cabinetSectionSlugOf(name: string): string {
+  const dot = name.indexOf('.')
+  return dot === -1 ? name : name.slice(0, dot)
+}
+
+/** One entry's cabinet section, or `null` for an entry that declares none (EARS-410). */
+function sectionOf(entries: readonly WorkspaceEntry[], slug: string): WorkspaceAdminSection | null {
+  for (const entry of entries) {
+    if ((entry.kind !== 'internal' && entry.kind !== 'cabinet') || !entry.admin) continue
+    if (entry.slug === slug) return entry.admin
+  }
+  return null
+}
+
+/**
+ * WHO administers one cabinet section (EARS-462, EARS-466).
+ *
+ * `platform-admin` ALWAYS, plus whatever the section declared beside it
+ * (`WorkspaceAdminSection.additionalClaims`) — so a declaration can only widen
+ * a section and never lock the workspace administrator out of one. A slug that
+ * names no section answers `platform-admin` alone: an unresolvable path must
+ * not be an unguarded one.
+ *
+ * Every enforcement point of the cabinet reads THIS function: the shell's gate
+ * (`layout.tsx`), the sidebar and the index of sections (below), and the
+ * validation Server Function (`actions.ts`). The module's own HTTP handlers ask
+ * the same question of the same declaration through `adminRoute`.
+ */
+export function cabinetSectionClaims(
+  entries: readonly WorkspaceEntry[],
+  slug: string,
+): readonly string[] {
+  return [PLATFORM_ADMIN_ROLE, ...(sectionOf(entries, slug)?.additionalClaims ?? [])]
+}
+
+/**
+ * The claims that admit to a cabinet PATH.
+ *
+ * Inside a section (`/p/admin/<slug>/…`) it is that section's set. At the
+ * cabinet root — and on any path that names no section — it is the UNION over
+ * every declared section: `/p/admin` is an index of sections (EARS-434), and
+ * refusing it to someone who administers one of them would leave them with a
+ * breadcrumb that 403s and no way in but a typed URL.
+ */
+export function cabinetClaimsForPath(
+  entries: readonly WorkspaceEntry[],
+  pathname: string,
+): readonly string[] {
+  const inside = pathname.startsWith(`${CABINET_ROOT}/`)
+    ? pathname.slice(CABINET_ROOT.length + 1).split('/')[0]
+    : ''
+  if (inside && sectionOf(entries, inside)) return cabinetSectionClaims(entries, inside)
+
+  const claims = new Set<string>([PLATFORM_ADMIN_ROLE])
+  for (const entry of entries) {
+    if ((entry.kind !== 'internal' && entry.kind !== 'cabinet') || !entry.admin) continue
+    for (const claim of entry.admin.additionalClaims ?? []) claims.add(claim)
+  }
+  return [...claims]
+}
+
+/** «May this viewer administer this section» — the predicate the two derivations take. */
+export type CabinetAdmits = (slug: string) => boolean
+
+/** One section of the cabinet's index (EARS-434), as the index screen needs it. */
+export interface CabinetSection {
+  slug: string
+  label: string
+  resources: WorkspaceAdminSection['resources']
+}
+
+/**
+ * The sections of the cabinet the viewer may enter.
+ *
+ * The index screen and the sidebar are two renderings of ONE answer: an entry
+ * the viewer cannot open is omitted rather than shown and refused on click
+ * (EARS-437's rule, applied to the section itself). Omitting `admits` means «no
+ * filtering» — the shape the breadcrumb needs, which derives labels and never
+ * decides access.
+ */
+export function cabinetSections(
+  entries: readonly WorkspaceEntry[],
+  admits?: CabinetAdmits,
+): CabinetSection[] {
+  const sections: CabinetSection[] = []
+  for (const entry of entries) {
+    if ((entry.kind !== 'internal' && entry.kind !== 'cabinet') || !entry.admin) continue
+    if (admits && !admits(entry.slug)) continue
+    sections.push({ slug: entry.slug, label: entry.admin.label, resources: entry.admin.resources })
+  }
+  return sections
+}
+
 /**
  * The registry → Refine `resources[]` mapping.
  *
@@ -48,29 +143,30 @@ export function resourceName(slug: string, resource: string): string {
  * where the resource declares the operation, so the shell has nothing to link
  * to and no control that could fail on click.
  */
-export function cabinetResources(entries: readonly WorkspaceEntry[]): ResourceProps[] {
+export function cabinetResources(
+  entries: readonly WorkspaceEntry[],
+  admits?: CabinetAdmits,
+): ResourceProps[] {
   const resources: ResourceProps[] = []
 
-  for (const entry of entries) {
-    if ((entry.kind !== 'internal' && entry.kind !== 'cabinet') || !entry.admin) continue
-
+  for (const section of cabinetSections(entries, admits)) {
     resources.push({
-      name: groupName(entry.slug),
-      meta: { label: entry.admin.label },
+      name: groupName(section.slug),
+      meta: { label: section.label },
     })
 
-    for (const resource of entry.admin.resources) {
-      const base = `${CABINET_ROOT}/${entry.slug}/${resource.name}`
+    for (const resource of section.resources) {
+      const base = `${CABINET_ROOT}/${section.slug}/${resource.name}`
       const ops = resource.operations
       resources.push({
-        name: resourceName(entry.slug, resource.name),
+        name: resourceName(section.slug, resource.name),
         ...(ops.includes('list') || ops.includes('singleton') ? { list: base } : {}),
         ...(ops.includes('show') ? { show: `${base}/show/:id` } : {}),
         ...(ops.includes('create') ? { create: `${base}/create` } : {}),
         ...(ops.includes('edit') ? { edit: `${base}/edit/:id` } : {}),
         meta: {
           label: resource.label,
-          parent: groupName(entry.slug),
+          parent: groupName(section.slug),
           // Carried onto the meta so a screen can ask «may I offer this?»
           // without re-deriving it from the routes (EARS-437).
           operations: ops,

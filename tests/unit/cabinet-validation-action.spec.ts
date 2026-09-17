@@ -16,6 +16,26 @@ describe('EARS-436/462: registry-derived validation stays behind the cabinet gat
     await expect(validateCabinetResponse('okr.parameters', 'one', {})).rejects.toThrow(/forbidden/i)
   })
 
+  it('EARS-529 (#479): a section-claim holder reaches the validator for ITS OWN section — decision 34', async () => {
+    const { FINANCE_ENTRY_ROLE } = await import('@/lib/finance')
+    authMock.mockResolvedValue({
+      user: { roles: ['platform-user', FINANCE_ENTRY_ROLE] },
+    } as never)
+
+    await expect(validateCabinetResponse('finance.purposes', 'one', {})).resolves.toMatchObject({
+      success: false,
+    })
+  })
+
+  it('EARS-462: and is refused for a section it does not administer — the gate is per section', async () => {
+    const { FINANCE_ENTRY_ROLE } = await import('@/lib/finance')
+    authMock.mockResolvedValue({
+      user: { roles: ['platform-user', FINANCE_ENTRY_ROLE] },
+    } as never)
+
+    await expect(validateCabinetResponse('hours.periods', 'one', {})).rejects.toThrow(/forbidden/i)
+  })
+
   it('EARS-436: an admin reaches the registry validator, never a caller-provided module path', async () => {
     authMock.mockResolvedValue({ user: { roles: ['platform-admin'] } } as never)
 
