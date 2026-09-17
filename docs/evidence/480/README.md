@@ -25,14 +25,14 @@ workspace ships no user-facing switch), plus the surface's primary control under
 three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per state),
 never hoped for from a pointer.
 
-| Step | What it shows                                                                                                                                  |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Step | What it shows                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | 01   | the register on «Все» as **`bbm-member`** — another member's row reads «Назначение предложено: Подписка на AI-инструменты…», not a bare label |
-| 02   | the details sheet of that same foreign request as `bbm-member` — the whole proposal text, wrapped, under «НАЗНАЧЕНИЕ»                          |
-| 03   | the kanban as `bbm-test` — it carries NO card for either proposal request, and that is the surface's own rule (see below)                       |
+| 02   | the details sheet of that same foreign request as `bbm-member` — the whole proposal text, wrapped, under «НАЗНАЧЕНИЕ»                         |
+| 03   | the kanban as `bbm-test` — it carries NO card for either proposal request, and that is the surface's own rule (see below)                     |
 | 04   | the register on «Все» as **`bbm-test`** — the mirror direction: `bbm-member`'s proposal text on `bbm-test`'s screen                           |
 | 05   | the details sheet of `bbm-member`'s request as `bbm-test` — «Назначение предложено: Оплата участия в отраслевой конференции…»                 |
-| 06   | «Новая заявка», the surface's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both themes) plus its base   |
+| 06   | «Новая заявка», the surface's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` (desktop, both themes) plus its base |
 
 **Why step 03 shows an absence, and why that is the honest frame.** A request
 whose purpose is only PROPOSED cannot be submitted: the module refuses it with
