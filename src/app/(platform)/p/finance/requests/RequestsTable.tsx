@@ -18,6 +18,7 @@ import {
 } from './constants'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
 import {
+  BOARD_READ_QUERY_OPTIONS,
   currencyPrecision,
   formatRequestMoney,
   requestPurposeLabel,
@@ -305,6 +306,9 @@ function RequestsRegister({
     refineCoreProps: {
       resource: REQUESTS_RESOURCE,
       pagination: { pageSize: PAGE_SIZE },
+      // The register reads the same snapshot through `getList`, so it owes the
+      // reader the same promise about a failing read (#473 item 2).
+      queryOptions: BOARD_READ_QUERY_OPTIONS,
       // PERMANENT, not `setFilters` — and re-seeded by the remount above, which
       // is what makes a change of scope reach the provider at all.
       filters: {

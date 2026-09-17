@@ -32,6 +32,7 @@ import {
   SheetTitle,
 } from '@/ui/sheet'
 import { Textarea } from '@/ui/textarea'
+import { cn } from '@/ui/utils'
 
 import {
   documentHref,
@@ -41,6 +42,7 @@ import {
   REQUEST_STATUS_LABELS,
 } from './constants'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
+import { useSheetOverlayMark } from './sheet-overlay'
 import {
   canAttachDocument,
   currencyPrecision,
@@ -190,11 +192,24 @@ function AttachDocumentForm({
   pending,
   failure,
   attached,
+  emphasis,
+  gateNote,
   onAttach,
 }: {
   pending: boolean
   failure?: string
   attached: number
+  /**
+   * `primary` where attaching is what the STATE is waiting for — an approved
+   * request with no document (#473 item 5). The block then carries the reason
+   * it is waiting and the picker wears the primary fill, because the only
+   * other control of that state is the destructive «Отклонить…» and a screen
+   * whose strongest control is the one nobody should press by default is
+   * composed backwards.
+   */
+  emphasis: 'primary' | 'default'
+  /** The sentence that explains the wait — shown HERE, and then nowhere else. */
+  gateNote?: string
   onAttach: (file: File, kind: FinanceDocumentKind) => void
 }) {
   const form = useForm<AttachValue>({
@@ -203,6 +218,21 @@ function AttachDocumentForm({
   // The file whose bytes are in flight — what the block says out loud while it
   // waits. It is read only under `pending`, so it needs no clearing.
   const [uploadingName, setUploadingName] = React.useState<string | null>(null)
+  /**
+   * IS THE PICKER OUT? (#473 item 6.)
+   *
+   * Choosing is attaching, and the picker used to stay live after the upload
+   * landed — so a second click on a sheet that already showed the receipt
+   * attached the same file again, silently. Request #69 on the #388 stand
+   * carries two `receipt-388.pdf` for exactly that reason. A second document
+   * is legitimate (a receipt AND an invoice), so the block does not forbid
+   * one: it puts the picker away, says what is already there, and asks.
+   *
+   * Initialised, not synchronised — the caller re-keys this component on the
+   * document count, so a landed upload MOUNTS the collapsed state instead of
+   * correcting itself in an effect.
+   */
+  const [adding, setAdding] = React.useState(attached === 0)
 
   const choose = (files: FileList | null) => {
     form.clearErrors('file')
@@ -219,69 +249,101 @@ function AttachDocumentForm({
   }
 
   return (
-    <Form {...form}>
-      <div className="space-y-3 rounded-lg border border-dashed p-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="kind"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Вид документа</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
-                  <FormControl>
-                    <SelectTrigger className="w-full min-w-0">
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {Object.entries(DOCUMENT_KIND_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="file"
-            render={() => (
-              <FormItem>
-                <FormLabel>Подтверждающий документ</FormLabel>
-                <FormControl>
-                  <Input
-                    // A LANDED document leaves a clean picker behind: the count
-                    // above has just grown, so the remount costs no state and
-                    // needs no effect to notice the upload finished.
-                    key={attached}
-                    type="file"
-                    accept={DOCUMENT_UPLOAD_ACCEPT}
-                    disabled={pending}
-                    className="h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:bg-secondary file:px-2 file:transition-colors hover:file:bg-secondary/70"
-                    onChange={(event) => choose(event.target.files)}
-                  />
-                </FormControl>
-                <FormDescription>Файл прикладывается сразу после выбора.</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+    <section
+      aria-label="Приложить документ"
+      data-emphasis={emphasis}
+      className={cn(
+        'space-y-3 rounded-lg border p-3',
+        emphasis === 'primary' ? 'border-primary/40 bg-primary/5' : 'border-dashed',
+      )}
+    >
+      {gateNote === undefined ? null : <p className="text-sm text-foreground">{gateNote}</p>}
+      {adding ? null : (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Документ уже приложен — он читается выше. Второй файл добавится к нему, а не заменит
+            его.
+          </p>
+          <Button type="button" variant="outline" onClick={() => setAdding(true)}>
+            Приложить ещё документ
+          </Button>
         </div>
-        {pending && uploadingName !== null ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Загружаем «{uploadingName}»…
-          </p>
-        ) : null}
-        {failure ? (
-          <p className="text-sm text-destructive" role="alert">
-            {failure}
-          </p>
-        ) : null}
-      </div>
-    </Form>
+      )}
+      {adding ? (
+        <Form {...form}>
+          <div className="space-y-3">
+            {/* ONE COLUMN, at every width. The sheet is `sm:max-w-lg`, so two
+                columns give this block ~230 px a cell — and the right-hand
+                cell holds a native file input, whose chosen-file name is then
+                clipped to «N…n» (eyes-on, 1440×900, #473). The kind above the
+                picker is also the reading order the act needs: the kind is
+                answered first because the file's own `change` commits. */}
+            <div className="grid gap-3">
+              <FormField
+                control={form.control}
+                name="kind"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Вид документа</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
+                      <FormControl>
+                        <SelectTrigger className="w-full min-w-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Object.entries(DOCUMENT_KIND_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="file"
+                render={() => (
+                  <FormItem>
+                    <FormLabel>Подтверждающий документ</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="file"
+                        accept={DOCUMENT_UPLOAD_ACCEPT}
+                        disabled={pending}
+                        // The picker IS the act here, so where the state is
+                        // waiting for it, it wears the primary fill (#473 item 5).
+                        className={cn(
+                          'h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:px-2 file:transition-colors',
+                          emphasis === 'primary'
+                            ? 'file:bg-primary file:text-primary-foreground hover:file:bg-primary/80'
+                            : 'file:bg-secondary hover:file:bg-secondary/70',
+                        )}
+                        onChange={(event) => choose(event.target.files)}
+                      />
+                    </FormControl>
+                    <FormDescription>Файл прикладывается сразу после выбора.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            {pending && uploadingName !== null ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Загружаем «{uploadingName}»…
+              </p>
+            ) : null}
+            {failure ? (
+              <p className="text-sm text-destructive" role="alert">
+                {failure}
+              </p>
+            ) : null}
+          </div>
+        </Form>
+      ) : null}
+    </section>
   )
 }
 
@@ -500,6 +562,9 @@ export function RequestDetailsSheet({
   // dialog by MOUNTING with it open. An effect that pushed `pendingAct` into
   // state would render the sheet once without it and then correct itself — a
   // flash, and `react-hooks/set-state-in-effect`.
+  // An overlay owns the bottom of the screen while this sheet is up, so the
+  // notification channel steps over its footer (#473 item 1).
+  useSheetOverlayMark()
   const [refusing, setRefusing] = React.useState(pendingAct === 'refuse')
   const [reason, setReason] = React.useState('')
   const [reasonError, setReasonError] = React.useState<string | null>(null)
@@ -531,6 +596,18 @@ export function RequestDetailsSheet({
 
   const precision = currencyPrecision(references.currencies, request.currency)
   const hasDocument = request.documents.length > 0
+  /**
+   * THE STATE THAT IS WAITING FOR A DOCUMENT (#473 item 5) — approved, nothing
+   * attached. Its next step is attaching, and that is what the document block
+   * is given the weight for; the sentence explaining the wait lives in that
+   * block, and the standalone Alert below is only for the reader who may NOT
+   * attach and can therefore only read the explanation.
+   */
+  const awaitingDocument = request.status === 'approved' && !hasDocument
+  const mayAttach = canAttachDocument(request, canEnter)
+  const documentGateNote =
+    'Без подтверждающего документа карточка отсюда не уезжает: одобрение уже авторизовало ' +
+    'трату, проводка появится одним актом на приложенном документе.'
   const canConfirm = canApprove && request.status === 'approved' && hasDocument
   const canApproveNow = canApprove && request.status === 'submitted'
   const canRefuse = canApprove && (request.status === 'submitted' || request.status === 'approved')
@@ -547,7 +624,11 @@ export function RequestDetailsSheet({
         className="w-full gap-0 overflow-y-auto sm:max-w-lg"
       >
         <SheetHeader className="gap-2 pr-12">
-          <SheetTitle className="font-heading text-xl font-semibold tracking-tight tabular-nums">
+          {/* THE TITLE IS A VALUE TOO (#473 item 3). It carries the request's
+              note, which is free text of any length, and the register above
+              clips its own free-text column precisely because «the full text
+              is one «Открыть» away» — a promise this line has to keep. */}
+          <SheetTitle className="font-heading text-xl font-semibold tracking-tight break-words tabular-nums">
             {formatRequestMoney(request.amount, request.currency, precision)}
             {request.note ? ` — ${request.note}` : ''}
           </SheetTitle>
@@ -623,7 +704,10 @@ export function RequestDetailsSheet({
             {hasDocument ? (
               request.documents.map((document) => (
                 <div key={document.id} className="space-y-1.5">
-                  <p className="text-sm text-foreground">
+                  {/* A filename is the one value with no spaces to wrap at,
+                      so it breaks inside the word rather than pushing the
+                      reading pane sideways (#473 item 3). */}
+                  <p className="text-sm break-all text-foreground">
                     {DOCUMENT_KIND_LABELS[document.kind] ?? 'Документ'} · {document.filename}
                   </p>
                   {isInlineReadable(document.mime) ? (
@@ -635,7 +719,7 @@ export function RequestDetailsSheet({
                     >
                       <a
                         href={documentHref(document.id, false)}
-                        className="text-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        className="text-sm break-all underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                       >
                         Скачать {document.filename}
                       </a>
@@ -643,7 +727,7 @@ export function RequestDetailsSheet({
                   ) : (
                     <a
                       href={documentHref(document.id, false)}
-                      className="inline-block text-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      className="inline-block text-sm break-all underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     >
                       Скачать {document.filename}
                     </a>
@@ -655,11 +739,17 @@ export function RequestDetailsSheet({
                 {emptyDocumentNote(request, canEnter, canApprove)}
               </p>
             )}
-            {canAttachDocument(request, canEnter) ? (
+            {mayAttach ? (
               <AttachDocumentForm
+                // A LANDED document remounts the block: the count has just
+                // grown, so the picker puts itself away with no effect to
+                // notice the upload finished (#473 item 6).
+                key={request.documents.length}
                 pending={uploading}
                 failure={uploadFailure}
                 attached={request.documents.length}
+                emphasis={awaitingDocument ? 'primary' : 'default'}
+                gateNote={awaitingDocument ? documentGateNote : undefined}
                 onAttach={onAttach}
               />
             ) : null}
@@ -692,12 +782,13 @@ export function RequestDetailsSheet({
             </div>
           ) : null}
 
-          {canApprove && request.status === 'approved' && !hasDocument ? (
+          {/* The same sentence, for the reader who can only READ it: an
+              approver without the entry role is offered no attach block, so
+              the explanation has nowhere else to live. Never both — one
+              string in two slots is the defect #473 item 7 closed. */}
+          {canApprove && awaitingDocument && !mayAttach ? (
             <Alert role="status">
-              <AlertDescription>
-                Без подтверждающего документа карточка отсюда не уезжает: одобрение уже авторизовало
-                трату, проводка появится одним актом на приложенном документе.
-              </AlertDescription>
+              <AlertDescription>{documentGateNote}</AlertDescription>
             </Alert>
           ) : null}
         </div>

@@ -24,6 +24,7 @@ import { RequestDetailsSheet, type RequestAct, type RequestActPayload } from './
 import { RequestFormSheet } from './RequestFormSheet'
 import type { RequestBoardItem, RequestsSnapshot } from './request-board-contract'
 import {
+  BOARD_READ_QUERY_OPTIONS,
   canDragRequest,
   currencyPrecision,
   filedRequestNotification,
@@ -138,6 +139,10 @@ export function RequestsBoardScreen() {
   const { query } = useCustom<SnapshotRecord, HttpError>({
     url: REQUESTS_ENDPOINT,
     method: 'get',
+    // A READ THAT FAILS IS REPORTED, NOT RETRIED IN SILENCE (#473 item 2).
+    // Why these numbers and not react-query's default backoff:
+    // `BOARD_READ_QUERY_OPTIONS` in `request-board-model.ts`.
+    queryOptions: BOARD_READ_QUERY_OPTIONS,
   })
   const { mutate, mutation } = useCustomMutation<
     Record<string, never>,

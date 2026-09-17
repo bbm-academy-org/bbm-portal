@@ -41,13 +41,19 @@ const refine = vi.hoisted(() => ({
   mutate: vi.fn(),
   isPending: false,
   invalidate: vi.fn(),
+  // What the screen ASKED the hook for — the read's own retry policy is part
+  // of the contract since #473 item 2, and it is invisible in the rendered
+  // output.
+  customProps: null as Record<string, unknown> | null,
+  tableProps: null as Record<string, unknown> | null,
 }))
 
 vi.mock('@refinedev/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@refinedev/core')>()
   return {
     ...actual,
-    useCustom: () => {
+    useCustom: (props: Record<string, unknown>) => {
+      refine.customProps = props
       const response = refine.custom.data === null ? undefined : { data: refine.custom.data }
       return {
         query: {
@@ -89,6 +95,7 @@ vi.mock('@refinedev/react-table', async () => {
       refineCoreProps?: Record<string, never>
     }) => {
       const props = (refineCoreProps ?? {}) as Record<string, never>
+      refine.tableProps = props
       const resource = props.resource as unknown as string | undefined
       const pageSizeProp =
         (props.pagination as unknown as { pageSize?: number } | undefined)?.pageSize ?? 25
@@ -258,6 +265,8 @@ beforeEach(() => {
   refine.mutate = vi.fn()
   refine.isPending = false
   refine.invalidate = vi.fn()
+  refine.customProps = null
+  refine.tableProps = null
 })
 
 afterEach(() => cleanup())
@@ -1732,5 +1741,247 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     // not a second overlay with a second footer grammar.
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull()
+  })
+})
+
+/**
+ * THE SIX NON-BLOCKING DEFECTS OF THE #388 ACCEPTANCE RUNS (#473).
+ *
+ * Each one is a sentence the surface says wrong, not a behaviour it lacks, so
+ * each test below asserts what the ISSUE says the reader must get — never what
+ * the code happens to do today.
+ */
+describe('/p/finance/requests — the #473 acceptance defects', () => {
+  // ITEM 2. A failing read painted the textless grey frame for ~9 s: the read
+  // is retried three times with react-query's exponential backoff (1 s + 2 s +
+  // 4 s) before the query leaves `pending`, and nothing on the frame says what
+  // is being waited for. A reader cannot tell a slow read from a dead one.
+  it('item 2: the grey frame SAYS what is loading, in words on the screen', () => {
+    refine.custom.isLoading = true
+    refine.custom.data = null
+    renderBoard()
+
+    const frame = screen.getByLabelText('Загружаем заявки')
+    expect(frame.textContent).toMatch(/Загружаем заявки/)
+  })
+
+  it('item 2: the board read gives up inside the 2 s budget instead of backing off for ~9 s', async () => {
+    const { BOARD_READ_ERROR_BUDGET_MS, boardReadWorstCaseErrorMs } =
+      await import('@/app/(platform)/p/finance/requests/request-board-model')
+    refine.custom.isLoading = true
+    refine.custom.data = null
+    renderBoard()
+
+    const options = refine.customProps?.queryOptions as
+      { retry?: number; retryDelay?: number } | undefined
+    expect(options).toBeTruthy()
+    expect(
+      boardReadWorstCaseErrorMs(options?.retry ?? 3, options?.retryDelay ?? 1000),
+    ).toBeLessThanOrEqual(BOARD_READ_ERROR_BUDGET_MS)
+    expect(BOARD_READ_ERROR_BUDGET_MS).toBe(2000)
+  })
+
+  // ITEM 5. The approved-without-document state (step 06). Its real next step
+  // — attaching the receipt — was a picker in a dashed block mid-sheet, while
+  // the only footer control, and therefore the strongest thing on the screen,
+  // was the destructive «Отклонить…». A state whose dominant control is the
+  // one nobody should press by default is composed backwards.
+  function attachSection(sheet: HTMLElement): HTMLElement {
+    return within(sheet).getByRole('region', { name: 'Приложить документ' })
+  }
+
+  it('item 5: the approved request with no document makes ATTACHING the dominant control', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 50, status: 'approved', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(50)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+
+    expect(attachSection(sheet).getAttribute('data-emphasis')).toBe('primary')
+    // …and nothing in the footer outranks it: the only footer act of this
+    // state is the refusal, and it stays a tinted destructive, never the
+    // screen's primary weight.
+    const refuse = within(sheet).getByRole('button', { name: 'Отклонить…' })
+    expect(refuse.getAttribute('data-variant')).toBe('destructive')
+    expect(
+      within(sheet)
+        .getAllByRole('button')
+        .filter((button) => button.getAttribute('data-variant') === 'default'),
+    ).toEqual([])
+  })
+
+  it('item 5: the same block is ordinary weight where attaching is not the next step', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 51, status: 'submitted', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(51)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    expect(attachSection(screen.getByRole('dialog')).getAttribute('data-emphasis')).toBe('default')
+  })
+
+  it('item 5: the state says why the document is needed ONCE, not in two slots', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 52, status: 'approved', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(52)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    const sheet = screen.getByRole('dialog')
+    const said = (sheet.textContent ?? '').match(/проводка появится/g) ?? []
+    expect(said.length).toBe(1)
+  })
+
+  // ITEM 6. Attaching left the picker live and said nothing about what is
+  // already there, so a second click attached a second copy of the same file —
+  // request #69 on the #388 stand carries two `receipt-388.pdf`. A second
+  // document is legitimate; a SILENT second copy is not.
+  const attached = {
+    id: 9,
+    filename: 'чек.pdf',
+    mime: 'application/pdf',
+    size: 17,
+    kind: 'fiscal_receipt' as const,
+    uploadedAt: '2026-09-03T10:00:00.000Z',
+  }
+
+  async function openWithDocument(id = 60) {
+    refine.custom.data = snapshot({
+      requests: [item({ id, status: 'approved', own: true, documents: [attached] })],
+    })
+    renderBoard()
+    openCard(id)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    return screen.getByRole('dialog')
+  }
+
+  it('item 6: once a document is attached the picker is put away, and the sheet says so', async () => {
+    const sheet = await openWithDocument(60)
+
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+    expect(within(sheet).getByText(/уже приложен/i)).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: /Приложить ещё документ/ })).toBeTruthy()
+  })
+
+  it('item 6: adding a SECOND document is a deliberate answer, and then it attaches', async () => {
+    const sheet = await openWithDocument(61)
+    fireEvent.click(within(sheet).getByRole('button', { name: /Приложить ещё документ/ }))
+
+    const picker = await within(sheet).findByLabelText('Подтверждающий документ')
+    fireEvent.change(picker, {
+      target: { files: [new File(['%PDF-1.4 second'], 'второй.pdf', { type: 'application/pdf' })] },
+    })
+
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    const body = refine.mutate.mock.calls[0][0].values as FormData
+    expect((body.get('file') as File).name).toBe('второй.pdf')
+  })
+
+  // ITEM 3. The register clips its free-text columns on purpose — «the full
+  // text is always one «Открыть» away, in the details sheet» (`RequestsTable`).
+  // That promise is what item 3 found broken: a long counterparty, a long
+  // purpose and a long note reached the sheet and were cut there too, so the
+  // words were nowhere on the surface at all. Every VALUE in the sheet wraps;
+  // nothing between it and the dialog clips it.
+  const LONG_COUNTERPARTY =
+    'ООО «Производственно-театральное объединение имени Всеволода Эмильевича Мейерхольда»'
+  const LONG_PURPOSE = 'Операционные расходы на производство и постпродакшн учебных материалов'
+  const LONG_NOTE =
+    'Аренда студии с оборудованием, светом, звукорежиссёром и монтажом на четыре съёмочных дня'
+
+  function longRequest() {
+    return item({
+      id: 42,
+      status: 'submitted',
+      note: LONG_NOTE,
+      counterparty: { id: 7, name: LONG_COUNTERPARTY },
+      purpose: { id: 21, name: LONG_PURPOSE, categoryId: 5, categoryName: 'Производство' },
+    })
+  }
+
+  /** Does anything between `node` and the sheet cut the text off? */
+  function clippedInsideSheet(node: HTMLElement): boolean {
+    let current: HTMLElement | null = node
+    while (current !== null && current.getAttribute('role') !== 'dialog') {
+      if (/(^|\s)(truncate|line-clamp-\d+|text-ellipsis)(\s|$)/.test(current.className)) return true
+      current = current.parentElement
+    }
+    return false
+  }
+
+  it('item 3: a long counterparty and a long purpose are readable in full in the sheet', async () => {
+    refine.custom.data = snapshot({ requests: [longRequest()] })
+    renderBoard()
+    openCard(42)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    for (const value of [LONG_COUNTERPARTY, LONG_PURPOSE]) {
+      const node = screen.getByText(value)
+      expect(clippedInsideSheet(node)).toBe(false)
+      expect(node.className).toMatch(/break-words|break-all|wrap-anywhere/)
+    }
+  })
+
+  it('item 3: the sheet title carries the whole note instead of running off the edge', async () => {
+    refine.custom.data = snapshot({ requests: [longRequest()] })
+    renderBoard()
+    openCard(42)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    const title = within(screen.getByRole('dialog')).getByText(new RegExp(LONG_NOTE.slice(0, 30)))
+    expect(title.textContent).toContain(LONG_NOTE)
+    expect(clippedInsideSheet(title)).toBe(false)
+    expect(title.className).toMatch(/break-words|break-all|wrap-anywhere/)
+  })
+
+  it('item 3: a long document filename wraps in the reading pane', async () => {
+    const filename = 'счёт-фактура-от-ООО-Производственно-театральное-объединение-2026-09-16.pdf'
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 43,
+          status: 'approved',
+          documents: [
+            {
+              id: 9,
+              filename,
+              mime: 'application/pdf',
+              size: 10,
+              kind: 'fiscal_receipt' as const,
+              uploadedAt: '2026-09-03T10:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+    })
+    renderBoard()
+    openCard(43)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+
+    // The name is printed twice — the document's own line, and the download
+    // link the reading pane falls back to; both are values, both must wrap.
+    const lines = within(screen.getByRole('dialog')).getAllByText(new RegExp(filename.slice(0, 20)))
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(clippedInsideSheet(line)).toBe(false)
+      expect(line.className).toMatch(/break-words|break-all|wrap-anywhere/)
+    }
+  })
+
+  it('item 2: the register behind the same snapshot is bounded by the same budget', async () => {
+    const { BOARD_READ_ERROR_BUDGET_MS, boardReadWorstCaseErrorMs } =
+      await import('@/app/(platform)/p/finance/requests/request-board-model')
+    renderScreen()
+
+    const options = refine.tableProps?.queryOptions as
+      { retry?: number; retryDelay?: number } | undefined
+    expect(options).toBeTruthy()
+    expect(
+      boardReadWorstCaseErrorMs(options?.retry ?? 3, options?.retryDelay ?? 1000),
+    ).toBeLessThanOrEqual(BOARD_READ_ERROR_BUDGET_MS)
   })
 })

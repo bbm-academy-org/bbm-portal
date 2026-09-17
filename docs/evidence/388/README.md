@@ -889,3 +889,93 @@ this block.
 (verification), **#15**, **#16**, **#17**, **#18** (one per combo — a request takes
 a document once, so 18 cannot be replayed on the same row). **#13** received a
 REFUSED pick and therefore no document, and no request's status was changed.
+
+---
+
+## Pass of 2026-09-16 — the six #473 defects, re-taken
+
+**The stand.** `http://localhost:3000`, the listener this session started from
+`.claude/worktrees/473` on `fix/473-requests-board-seven-non-blocking-ux`; data
+from that worktree's own branch DB `platform_473` (`pnpm dev:db:branch` —
+migrated and seeded: 32 expense requests, 6 documents), plus
+`pnpm platform:member:seed` for the two dev IdP logins — without a `core.member`
+row every write act on this board is refused, and `pnpm dev:seed`'s 64 people do
+not include `bbm-test@bbm.local`. Driven with the **Playwright MCP tools**
+(`browser_run_code_unsafe` over the scripts under the worktree's git-ignored
+`.playwright-mcp/`), signed in through the real dev Zitadel as `bbm-test`
+(`platform-admin` + both flow roles). The password was read by the script from a
+scratchpad file through a `file://` page read and never entered a tool call.
+
+**The matrix** is the folder's usual one — every state × 2 breakpoints
+(1440×900, 390×844) × 2 themes (light, and dark through the theme's own `.dark`
+class). No pseudo-state frame changed: no control gained or lost its treatment,
+the kit's variants carry them, and step 14 still pins them.
+
+| Step | What it shows now (#473 item)                                                                                                                                                                                                                                                                                                       |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 06   | approved, no document (**items 5, 6**): the attach block now carries the gate sentence itself and the primary-filled picker; the footer's only act is the tinted «Отклонить…», which no longer outranks the state's real next step. The standalone gate Alert is gone — the sentence stands in ONE slot                             |
+| 11   | a mutation failure with the sheet open (**item 1**): the error toast sits ABOVE the footer, and «Одобрить» / «Отклонить…» stay fully visible and clickable underneath it. The 500 is a route the capture fulfils, which is why its body reads as raw JSON — the shape of a stand's stub, not of the app's own error                 |
+| 12   | the loading frame of the DEFAULT table view (**item 2**): the screen's own title plus «Загружаем заявки…» where the loaded subtitle sits, instead of a textless grey bar. A failing read now reaches its error state inside the 2 s budget (`BOARD_READ_QUERY_OPTIONS`) rather than after react-query's ~9 s backoff                |
+| 18   | after the file is chosen (**items 1, 6**): the picker is PUT AWAY, the block says the document is already attached and that a second file would be added rather than substituted, «Приложить ещё документ» is the deliberate way to a second one — and the success toast again clears the footer where «Провести» has just appeared |
+| 22   | NEW — the non-member refusal as the reader sees it (**item 4**): «…нет записи в реестре участников… Попросите администратора завести участника в разделе «Участники»». No repository path. Caught live before `platform:member:seed` ran, desktop × light/dark                                                                      |
+| 23   | NEW — long values in the sheet (**item 3**): a request filed through the form with a 120-character note and a 72-character counterparty. The title wraps over five lines, the counterparty wraps inside its field, nothing is clipped at either breakpoint                                                                          |
+
+**Rows changed in `platform_473` this pass.** Documents attached to **#15**,
+**#16** and **#17** (one attach per capture — a request takes a document once, so
+step 18 cannot be replayed on the same row); one new request filed through the
+form for step 23 (the «Мейерхольда» counterparty, which also entered the
+counterparty reference); `#6` received an act that the capture's own route
+answered with a forced 500, so its status did not change.
+
+---
+
+## Re-observation of 2026-09-17 — the same six, at the INTEGRATED head
+
+**Why this section carries no new frames.** Retention rule of task-cycle stage 5
+point 3: a re-taken frame REPLACES its predecessor, so a frame is re-taken only
+when its PICTURE changed. The six fixes were driven again — every one of them —
+on the integration of this PR with PR #503 (#480) and PR #504 (#479), and not one
+of the six pictures changed: the two sibling diffs touch the purpose CELL and the
+`/p/admin` claim gate, neither of which appears in steps 06, 11, 12, 18, 22 or 23
+(their requests all carry a resolved purpose, and none of them is an admin
+surface). Replacing six states' worth of frames with equivalent pictures of
+different seeded rows would be churn, so the pass is recorded as a measurement
+instead.
+
+**The stand.** `http://localhost:3000`, the lead's listener, at
+`wave/115-tails` head **`0f0371b6`**; branch DB `platform_473`, re-seeded for this
+pass with `pnpm dev:seed` (64 people, 32 requests, 6 documents, 5 ledger
+operations) plus `pnpm platform:member:seed` for the two dev IdP logins. Driven
+with `@playwright/test` from `.claude/worktrees/wave-115`, signed in as
+`bbm-test` and `bbm-member`; the password was read from a scratchpad file through
+`fs` and never entered a tool call.
+
+| #   | Defect                            | Re-observed as                                                                                                                                                                                            | Holds |
+| --- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 1   | toast covered the sheet footer    | attach on #14/#15/#16/#17 (one per combo): toast box vs `[data-slot="sheet-footer"]` box measured on the live page — **no intersection** at either breakpoint, footer reads «Провести Отклонить…»         | yes   |
+| 2   | ~9 s textless skeleton            | the load frame reads «Заявки / Загружаем заявки…»; with the read forced to 500 the error state is on screen after **1.06–1.07 s**, inside the 2 s budget                                                  | yes   |
+| 3   | truncated sheet values            | the sheet of a request with a 62-character purpose line and a long note: full text present, **zero `.truncate` nodes** in the sheet subtree at both breakpoints                                           | yes   |
+| 4   | refusal leaked `src/lib/member`   | the non-member refusal on FILING (a different act from step 22's attach): «…нет записи в реестре участников… в разделе «Участники»», asserted against `/src\|infra\|\.md\|\.ts/`                          | yes   |
+| 5   | no dominant control when approved | approved-without-document sheet: the bordered document region carries the gate sentence and the only primary-filled control; the footer's «Отклонить…» resolves `data-variant="destructive"` at 10 % tint | yes   |
+| 6   | silent duplicate attach           | after the attach the picker is **gone** (`input[type=file]` count 0), the block says the document is attached and offers «Приложить ещё документ»                                                         | yes   |
+
+**What the pass found that is NOT one of the six**, reported rather than
+silently kept — none of them blocks this PR, each is a separate copy defect on a
+surface this PR touches or neighbours:
+
+- **A failed board READ prints the raw response body to the reader.** The error
+  state renders `{"error":{"code":"boom","message":"boom"}}` and, under it,
+  `Error (status code: 500)` — an English string on a Russian screen, and the
+  same body twice. Item 4's rule («a refusal names nothing internal») is about
+  the same class of leak; this is the read-failure state's version of it.
+- The `/p/admin` index says «6 раздела» where Russian wants «6 разделов».
+- The finance reference card's success toast is Refine's untranslated default,
+  «Successfully updated finance.purpose / Successful», beside the card's own
+  «Изменения сохранены.».
+
+**Rows changed in `platform_473` this pass.** Documents attached to **#14**,
+**#15**, **#16** and **#17** (one per combo of the item-1/item-6 measurement);
+two proposal-branch requests filed through the form (**#43** by `bbm-test`,
+**#44** by `bbm-member`) for the #480 journey, both left as drafts; the purpose
+«Продажи курса» was edited and restored for the #479 journey. No request changed
+status.

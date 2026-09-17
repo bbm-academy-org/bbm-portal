@@ -21,6 +21,11 @@
  *    is `finance-entry` (EARS-501), with ONE carve-out: a platform member
  *    holding neither flow role acts on their own request (EARS-502).
  *
+ * The refusal TEXTS below name no repository path (#473 item 4): they are read
+ * on a live screen by a person who cannot open this repo, so they name the
+ * role and who grants it. The operator recipe for granting one stays in
+ * `infra/dev-stand/idp/bootstrap.md` §5a — in the docs, not in the sentence.
+ *
  * The gate lives in the MODULE, not on the route: «however the URL or API is
  * reached» (EARS-501, spec 311 EARS-405). A surface that forgets
  * `resolveClaimGate` is a bug, but it is not a hole — the module refuses anyway,
@@ -136,8 +141,8 @@ export function assertFinanceReferenceAccess(actor: FinanceActor): void {
       `Справочники финансового модуля редактируют роли «${PLATFORM_ADMIN_ROLE}» и ` +
         `«${FINANCE_ENTRY_ROLE}» (EARS-529, решение 34 от 2026-09-14). У ${actor.email} ` +
         'нет ни одной из них. Чтение /p/finance открыто каждому участнику платформы ' +
-        '(EARS-530) — сужено именно администрирование справочников. Выдать роль — ' +
-        'infra/dev-stand/idp/bootstrap.md §5a.',
+        '(EARS-530) — сужено именно администрирование справочников. Роль выдаёт ' +
+        'администратор рабочего пространства.',
     )
   }
 }
@@ -161,8 +166,8 @@ export function assertFinanceLedgerAccess(actor: FinanceActor): void {
       `Проводка и сторнирование в книге — роль «${FINANCE_APPROVE_ROLE}» (EARS-501). ` +
         `У ${actor.email} её нет. Роль «${PLATFORM_ADMIN_ROLE}» сама по себе больше не даёт ` +
         'записи в книгу: она отвечает за справочники, которые с решением 34 ведёт и ' +
-        `«${FINANCE_ENTRY_ROLE}» (EARS-529). Выдать роль — ` +
-        'infra/dev-stand/idp/bootstrap.md §5a.',
+        `«${FINANCE_ENTRY_ROLE}» (EARS-529). Роль выдаёт ` +
+        'администратор рабочего пространства.',
     )
   }
 }
@@ -207,8 +212,8 @@ export function assertFinanceIntakeAccess(actor: FinanceActor, act: FinanceIntak
   throw new FinanceAccessRefusal(
     `Ведение заявок и документов вне собственной заявки — роль «${FINANCE_ENTRY_ROLE}» ` +
       `(EARS-501). У ${actor.email} её нет. Своя заявка на /p/finance/requests доступна ` +
-      'каждому участнику платформы без ролей (EARS-502). Выдать роль — ' +
-      'infra/dev-stand/idp/bootstrap.md §5a.',
+      'каждому участнику платформы без ролей (EARS-502). Роль выдаёт ' +
+      'администратор рабочего пространства.',
   )
 }
 

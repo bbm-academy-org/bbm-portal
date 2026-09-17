@@ -59,6 +59,45 @@ export function postingActNeedsMoneyFacts(
   return request.occurredOn === null || (request.account === null && !request.personalFunds)
 }
 
+/**
+ * HOW LONG A FAILING BOARD READ MAY STAY GREY (#473 item 2).
+ *
+ * react-query retries a failed query three times with exponential backoff
+ * (1 s + 2 s + 4 s) and stays `pending` the whole time, so the screen's
+ * `isLoading` branch held the skeleton for ~9 s before the error Alert
+ * appeared — the ~9 s the #388 acceptance run measured. A reader watching a
+ * grey frame for nine seconds cannot tell a slow read from a dead one, and the
+ * retry is invisible: nothing on the screen says a second attempt is running.
+ *
+ * So the read gives up loudly instead. ONE retry, because a transient blip is
+ * real and worth one more request; a fixed short delay instead of the backoff,
+ * because the second failure is the answer and the reader is owed it. The
+ * budget is the assertion the test holds this to — the numbers may change, the
+ * promise «a failing read is reported within two seconds» may not.
+ */
+export const BOARD_READ_ERROR_BUDGET_MS = 2000
+
+/** One more request, then the truth. */
+export const BOARD_READ_RETRY_ATTEMPTS = 1
+
+/** Fixed, not exponential: the delay is a blip's worth of patience, not a backoff. */
+export const BOARD_READ_RETRY_DELAY_MS = 400
+
+/**
+ * The longest a reader can wait for the error state, counting only what this
+ * policy adds — the requests' own round trips are the network's, not the
+ * policy's, and a read that never answers is `next`'s timeout, not this.
+ */
+export function boardReadWorstCaseErrorMs(attempts: number, delayMs: number): number {
+  return attempts * delayMs
+}
+
+/** The read policy both halves of the screen pass to their Refine hook. */
+export const BOARD_READ_QUERY_OPTIONS = {
+  retry: BOARD_READ_RETRY_ATTEMPTS,
+  retryDelay: BOARD_READ_RETRY_DELAY_MS,
+} as const
+
 export function formatRequestMoney(amount: string, currency: string, precision: number): string {
   const value = BigInt(amount)
   const sign = value < 0n ? '−' : ''

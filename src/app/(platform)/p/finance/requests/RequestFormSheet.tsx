@@ -30,6 +30,7 @@ import {
 import { Textarea } from '@/ui/textarea'
 
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
+import { useSheetOverlayMark } from './sheet-overlay'
 import {
   createRequestFormSchema,
   productEmptyFact,
@@ -116,6 +117,9 @@ export function RequestFormSheet({
     () => createRequestFormSchema(references, { canNameCompanyAccount }),
     [canNameCompanyAccount, references],
   )
+  // The form is the other overlay of this surface: while it is up, the
+  // notification channel steps over its footer too (#473 item 1).
+  useSheetOverlayMark()
   const form = useForm<RequestFormValue>({
     resolver: zodResolver(schema),
     defaultValues: requestFormDefaults(references, request),
