@@ -1,5 +1,5 @@
 /** Missing-purpose proposals bound to draft requests (spec 339 EARS-526). */
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 
 import { findMemberByEmail } from '@/lib/member'
 import { getPlatformDb } from '@/lib/platform/db/client'
@@ -198,6 +198,44 @@ export async function listPurposeProposals(
         .where(eq(financePurposeProposal.proposedBy, await requireMemberId(actor)))
         .orderBy(asc(financePurposeProposal.id))
   return rows.map(toView)
+}
+
+/**
+ * PENDING proposals of the requests the reader can ALREADY see (EARS-534).
+ *
+ * The board's own read, and deliberately NOT `listPurposeProposals`. That one
+ * answers the reference cabinet's QUEUE — «what is on my desk» — and is
+ * own-only for everyone but the admin; the board asked it for a list of
+ * requests that is open to every signed-in member (EARS-530/534), so another
+ * member's row arrived with no proposal and the cell printed the label
+ * «Назначение предложено» with nothing after it (#480).
+ *
+ * Owner decision (Антон, 2026-09-16): a purpose proposal's free text is part
+ * of the open book. The scope is narrowed by the CALLER's own id list — the
+ * requests it already resolved through `listExpenseRequests` — and by the
+ * intake item being a request at all, so this read can never widen past the
+ * open-book plane even if handed a foreign id. Only PENDING rows come back: a
+ * resolved proposal has become the request's real purpose, and a dismissed one
+ * is not a state the board shows.
+ */
+export async function listPendingPurposeProposalsForRequests(
+  intakeItemIds: readonly number[],
+): Promise<FinancePurposeProposalView[]> {
+  const ids = [...new Set(intakeItemIds)]
+  if (ids.length === 0) return []
+  const rows = await getPlatformDb()
+    .select({ proposal: financePurposeProposal })
+    .from(financePurposeProposal)
+    .innerJoin(financeIntakeItem, eq(financeIntakeItem.id, financePurposeProposal.intakeItemId))
+    .where(
+      and(
+        inArray(financePurposeProposal.intakeItemId, ids),
+        isNull(financePurposeProposal.resolvedAt),
+        eq(financeIntakeItem.source, 'request'),
+      ),
+    )
+    .orderBy(asc(financePurposeProposal.id))
+  return rows.map((row) => toView(row.proposal))
 }
 
 /** Link a pending proposal to a real purpose and unblock its exact draft atomically. */

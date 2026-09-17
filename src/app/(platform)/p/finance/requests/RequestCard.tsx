@@ -7,7 +7,12 @@ import { cn } from '@/ui/utils'
 
 import { formatDate } from './constants'
 import type { RequestBoardItem } from './request-board-contract'
-import { canDragRequest, formatRequestMoney, requestCardFlags } from './request-board-model'
+import {
+  canDragRequest,
+  formatRequestMoney,
+  requestCardFlags,
+  requestPurposeLabel,
+} from './request-board-model'
 
 /**
  * One intake item on the board.
@@ -78,6 +83,13 @@ export function RequestCard({
         {money}
       </span>
       {request.note ? <span className="text-sm text-foreground">{request.note}</span> : null}
+      {/* A purpose that is only PROPOSED is named WITH its text (#480), the
+          same line the row and the sheet read from `requestPurposeLabel`. The
+          card used to carry a bare «назначение предложено» flag instead — a
+          badge that said a proposal existed and never what it said. */}
+      {request.purpose === null && request.proposal ? (
+        <span className="text-sm text-foreground">{requestPurposeLabel(request)}</span>
+      ) : null}
       <span className="text-xs text-muted-foreground">
         {[request.createdByName, request.project.name, request.product?.name]
           .filter(Boolean)

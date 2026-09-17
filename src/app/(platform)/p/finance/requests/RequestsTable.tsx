@@ -21,6 +21,7 @@ import {
   BOARD_READ_QUERY_OPTIONS,
   currencyPrecision,
   formatRequestMoney,
+  requestPurposeLabel,
   type FinanceRequestBoardAct,
 } from './request-board-model'
 import {
@@ -221,8 +222,8 @@ function RequestsRegister({
         ),
         cell: ({ row }) => (
           <div className="min-w-0">
-            <span className="block truncate font-medium">
-              {row.original.purpose?.name ?? 'Назначение предложено'}
+            <span className="block truncate font-medium" title={requestPurposeLabel(row.original)}>
+              {requestPurposeLabel(row.original)}
             </span>
             {row.original.note === null ? null : (
               <span className="block truncate text-xs text-muted-foreground">

@@ -178,6 +178,22 @@ export function canDragRequest(request: RequestBoardItem, canApprove: boolean): 
   return request.status === 'submitted' || request.status === 'approved'
 }
 
+/**
+ * WHAT A REQUEST IS FOR, in one line — the row, the card and the sheet all
+ * read it from here so the three cannot disagree again (#480).
+ *
+ * A request whose purpose is only PROPOSED says so AND says what was proposed:
+ * the label alone is the defect this function exists for — it told the reader
+ * that a purpose had been proposed and refused to say which. The proposal the
+ * board carries is the PENDING one (`listPendingPurposeProposalsForRequests`);
+ * a resolved proposal has already become `purpose`, which wins here.
+ */
+export function requestPurposeLabel(request: RequestBoardItem): string {
+  if (request.purpose !== null) return request.purpose.name
+  if (request.proposal) return `Назначение предложено: ${request.proposal.text}`
+  return '—'
+}
+
 export type RequestCardFlag = { id: string; label: string; tone: 'warning' | 'neutral' }
 
 /** What the reader has to know about a card BEFORE opening it. */
@@ -194,9 +210,6 @@ export function requestCardFlags(request: RequestBoardItem): RequestCardFlag[] {
   }
   if (request.documents.length > 0) {
     flags.push({ id: 'document', label: 'документ приложен', tone: 'neutral' })
-  }
-  if (request.proposal) {
-    flags.push({ id: 'proposal', label: 'назначение предложено', tone: 'warning' })
   }
   return flags
 }
