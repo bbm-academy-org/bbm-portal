@@ -61,15 +61,12 @@ export function FinanceReferenceCreateScreen({ resource }: { resource: FinanceRe
     // The outcome travels in ONE channel — the cabinet's Refine notification
     // provider (`docs/design/ui-whitelist.md` → Feedback). The copy is the
     // table's own Russian, because Refine's default toast is English (#479).
+    const createdName = String(values.name ?? '').trim()
     create.mutate({
       resource: resourceName,
       values,
-      successNotification: referenceSuccessNotification(
-        resource,
-        'create',
-        String(values.name ?? ''),
-      ),
-      errorNotification: referenceErrorNotification(resource, 'create'),
+      successNotification: referenceSuccessNotification(resource, 'create', createdName),
+      errorNotification: referenceErrorNotification(resource, 'create', createdName),
     })
   }
 
@@ -139,12 +136,18 @@ export function FinanceReferenceRecordScreen({
   const editable = mode === 'edit' && !systemAccount && !retired
 
   function save(values: Record<string, unknown>) {
+    // The toast names the record as the SAVE left it, not as the card found it:
+    // a rename whose notification still quotes the old name reads as «the save
+    // did not take» (#479, second UX-sanity round). The submitted name is the
+    // one the user is looking at; `row.name` only covers a payload that carries
+    // no name at all.
+    const savedName = String(values.name ?? '').trim() || row.name
     update.mutate({
       resource: resourceName,
       id,
       values,
-      successNotification: referenceSuccessNotification(resource, 'update', row.name),
-      errorNotification: referenceErrorNotification(resource, 'update', row.name),
+      successNotification: referenceSuccessNotification(resource, 'update', savedName),
+      errorNotification: referenceErrorNotification(resource, 'update', savedName),
     })
   }
 
