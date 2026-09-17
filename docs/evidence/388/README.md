@@ -950,14 +950,14 @@ with `@playwright/test` from `.claude/worktrees/wave-115`, signed in as
 `bbm-test` and `bbm-member`; the password was read from a scratchpad file through
 `fs` and never entered a tool call.
 
-| #   | Defect                            | Re-observed as                                                                                                                                                                    | Holds |
-| --- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| 1   | toast covered the sheet footer    | attach on #14/#15/#16/#17 (one per combo): toast box vs `[data-slot="sheet-footer"]` box measured on the live page — **no intersection** at either breakpoint, footer reads «Провести Отклонить…» | yes   |
-| 2   | ~9 s textless skeleton            | the load frame reads «Заявки / Загружаем заявки…»; with the read forced to 500 the error state is on screen after **1.06–1.07 s**, inside the 2 s budget                          | yes   |
-| 3   | truncated sheet values            | the sheet of a request with a 62-character purpose line and a long note: full text present, **zero `.truncate` nodes** in the sheet subtree at both breakpoints                     | yes   |
-| 4   | refusal leaked `src/lib/member`   | the non-member refusal on FILING (a different act from step 22's attach): «…нет записи в реестре участников… в разделе «Участники»», asserted against `/src\|infra\|\.md\|\.ts/`    | yes   |
+| #   | Defect                            | Re-observed as                                                                                                                                                                                            | Holds |
+| --- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 1   | toast covered the sheet footer    | attach on #14/#15/#16/#17 (one per combo): toast box vs `[data-slot="sheet-footer"]` box measured on the live page — **no intersection** at either breakpoint, footer reads «Провести Отклонить…»         | yes   |
+| 2   | ~9 s textless skeleton            | the load frame reads «Заявки / Загружаем заявки…»; with the read forced to 500 the error state is on screen after **1.06–1.07 s**, inside the 2 s budget                                                  | yes   |
+| 3   | truncated sheet values            | the sheet of a request with a 62-character purpose line and a long note: full text present, **zero `.truncate` nodes** in the sheet subtree at both breakpoints                                           | yes   |
+| 4   | refusal leaked `src/lib/member`   | the non-member refusal on FILING (a different act from step 22's attach): «…нет записи в реестре участников… в разделе «Участники»», asserted against `/src\|infra\|\.md\|\.ts/`                          | yes   |
 | 5   | no dominant control when approved | approved-without-document sheet: the bordered document region carries the gate sentence and the only primary-filled control; the footer's «Отклонить…» resolves `data-variant="destructive"` at 10 % tint | yes   |
-| 6   | silent duplicate attach           | after the attach the picker is **gone** (`input[type=file]` count 0), the block says the document is attached and offers «Приложить ещё документ»                                   | yes   |
+| 6   | silent duplicate attach           | after the attach the picker is **gone** (`input[type=file]` count 0), the block says the document is attached and offers «Приложить ещё документ»                                                         | yes   |
 
 **What the pass found that is NOT one of the six**, reported rather than
 silently kept — none of them blocks this PR, each is a separate copy defect on a
