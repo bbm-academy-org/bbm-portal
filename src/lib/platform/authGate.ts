@@ -147,6 +147,42 @@ export function hasClaim(session: SessionLike | null | undefined, required: stri
 }
 
 /**
+ * What a surface may demand: ONE claim, or a SET admitting any one of several.
+ *
+ * The single string is the original and remains the common case. The set exists
+ * because a surface can legitimately be administered by two different roles —
+ * the finance reference catalogues are `platform-admin` OR `finance-entry`
+ * (spec 339 EARS-529 as widened by owner decision 34, 2026-09-14) — and the
+ * alternative, a second `if` next to every call, is how two enforcement points
+ * of one rule start to disagree.
+ */
+export type ClaimRequirement = string | readonly string[]
+
+/**
+ * Does this session carry ANY of `required`?
+ *
+ * An EMPTY set admits nobody. A caller whose claim list came back empty has
+ * failed to resolve which claims govern the surface, and «nobody declared a
+ * claim» must not read as «everybody is admitted»: the set is fail-closed for
+ * the same reason `normalizeRolesClaim` treats an unreadable claim as an absent
+ * grant rather than a granted one.
+ */
+export function hasAnyClaim(
+  session: SessionLike | null | undefined,
+  required: readonly string[],
+): boolean {
+  return required.some((claim) => hasClaim(session, claim))
+}
+
+/** One requirement, single or set, answered by the same rule. */
+function satisfiesRequirement(
+  session: SessionLike | null | undefined,
+  required: ClaimRequirement,
+): boolean {
+  return typeof required === 'string' ? hasClaim(session, required) : hasAnyClaim(session, required)
+}
+
+/**
  * The gate for any surface under `/p`, for server components and layouts.
  *
  * `platform-user` is required by EVERY path (EARS-416); `requiredClaim` is the
@@ -166,14 +202,16 @@ export function hasClaim(session: SessionLike | null | undefined, required: stri
 export function resolveClaimGate(
   session: SessionLike | null | undefined,
   currentPath: string,
-  requiredClaim?: string | null,
+  requiredClaim?: ClaimRequirement | null,
 ): GateDecision {
   if (requiresSignIn(session)) return { type: 'redirect', to: signInRedirect(currentPath) }
   if (sessionPredatesRolesClaim(session)) {
     return { type: 'redirect', to: signInRedirect(currentPath) }
   }
   if (!hasClaim(session, PLATFORM_USER_ROLE)) return { type: 'forbidden' }
-  if (requiredClaim && !hasClaim(session, requiredClaim)) return { type: 'forbidden' }
+  if (requiredClaim && !satisfiesRequirement(session, requiredClaim)) {
+    return { type: 'forbidden' }
+  }
   return { type: 'render' }
 }
 
@@ -193,10 +231,12 @@ export function resolveClaimGate(
  */
 export function claimGateResponse(
   session: SessionLike | null | undefined,
-  requiredClaim?: string | null,
+  requiredClaim?: ClaimRequirement | null,
 ): Response | null {
   if (requiresSignIn(session)) return new Response(null, { status: 403 })
   if (!hasClaim(session, PLATFORM_USER_ROLE)) return new Response(null, { status: 403 })
-  if (requiredClaim && !hasClaim(session, requiredClaim)) return new Response(null, { status: 403 })
+  if (requiredClaim && !satisfiesRequirement(session, requiredClaim)) {
+    return new Response(null, { status: 403 })
+  }
   return null
 }

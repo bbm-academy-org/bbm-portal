@@ -154,7 +154,6 @@ export function FinanceReferenceForm({
   pending,
   failure,
   submitLabel,
-  onChange,
   onSubmit,
 }: {
   resource: FinanceReferenceResource
@@ -164,7 +163,6 @@ export function FinanceReferenceForm({
   pending: boolean
   failure?: string
   submitLabel: string
-  onChange?: () => void
   onSubmit: (value: Record<string, unknown>) => void
 }) {
   const [value, setValue] = React.useState(() => initialValue(row))
@@ -173,7 +171,6 @@ export function FinanceReferenceForm({
 
   function change<K extends keyof FormValue>(key: K, next: FormValue[K]) {
     setValue((current) => ({ ...current, [key]: next }))
-    onChange?.()
   }
 
   function submit(event: React.FormEvent) {

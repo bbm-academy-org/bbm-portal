@@ -1,7 +1,6 @@
 'use client'
 
 import { useDelete, useList, useNavigation, useUpdate, type HttpError } from '@refinedev/core'
-import React from 'react'
 
 import type { FinanceReferenceResource } from '@/lib/finance'
 import { Alert, AlertDescription } from '@/ui/alert'
@@ -15,6 +14,8 @@ import {
   displayValue,
   financeReferenceUi,
   financeResourceName,
+  referenceErrorNotification,
+  referenceSuccessNotification,
   type FinanceReferenceRow,
 } from './reference-config'
 
@@ -22,30 +23,57 @@ function failure(error: HttpError | null | undefined, fallback: string) {
   return error?.message || fallback
 }
 
+/**
+ * ONE ENTRY POINT PER ROW (owner remark on the live stand, Антон, 2026-09-17:
+ * «Зачем в справочниках две разные кнопки "Открыть" и "Изменить", которые по
+ * сути ведут в одно и то же место? Это плохой UX»).
+ *
+ * The row used to carry both: «Открыть» → the record card in `show` mode and
+ * «Изменить» → the SAME card in `edit` mode, for all six registers — two names
+ * for one destination, and the reader had to learn which of them did what. The
+ * record's NAME is now that single entry point; the action column keeps only
+ * the acts whose OUTCOME differs from opening it — «В архив» and «Удалить».
+ * There is no read-only «view» screen distinct from the card, so nothing is
+ * lost: a record the module owns (a system account) or one already archived is
+ * not editable, and its name leads to the same card in its read-only mode.
+ *
+ * The control is the kit's own `Button variant="link"` (`@/ui/button`), not a
+ * whole-row `onClick`: hanging navigation on the `TableRow` primitive is the
+ * interaction-state defect `RequestsTable.tsx` names, and a named control is
+ * reachable by pointer and by keyboard alike.
+ */
+
 export function FinanceReferenceListScreen({ resource }: { resource: FinanceReferenceResource }) {
   const config = financeReferenceUi[resource]
   const resourceName = financeResourceName(resource)
   const navigation = useNavigation()
   const update = useUpdate<FinanceReferenceRow, HttpError, { retire: true }>()
   const remove = useDelete<FinanceReferenceRow, HttpError>()
-  const [notice, setNotice] = React.useState('')
   const { query, result } = useList<FinanceReferenceRow, HttpError>({
     resource: resourceName,
     pagination: { currentPage: 1, pageSize: 100 },
   })
 
+  // One feedback channel for the whole cabinet — the Refine notification
+  // provider, in the table's own Russian (#479; `docs/design/ui-whitelist.md`
+  // → Feedback). No inline notice duplicates the toast.
   function retire(row: FinanceReferenceRow) {
-    update.mutate(
-      { resource: resourceName, id: row.id, values: { retire: true } },
-      { onSuccess: () => setNotice(`«${row.name}» отправлено в архив.`) },
-    )
+    update.mutate({
+      resource: resourceName,
+      id: row.id,
+      values: { retire: true },
+      successNotification: referenceSuccessNotification(resource, 'retire', row.name),
+      errorNotification: referenceErrorNotification(resource, 'retire', row.name),
+    })
   }
 
   function deleteRow(row: FinanceReferenceRow) {
-    remove.mutate(
-      { resource: resourceName, id: row.id },
-      { onSuccess: () => setNotice(`«${row.name}» удалено.`) },
-    )
+    remove.mutate({
+      resource: resourceName,
+      id: row.id,
+      successNotification: referenceSuccessNotification(resource, 'delete', row.name),
+      errorNotification: referenceErrorNotification(resource, 'delete', row.name),
+    })
   }
 
   return (
@@ -63,11 +91,6 @@ export function FinanceReferenceListScreen({ resource }: { resource: FinanceRefe
         <Button onClick={() => navigation.create(resourceName)}>Добавить {config.singular}</Button>
       </div>
 
-      {notice ? (
-        <Alert role="status">
-          <AlertDescription>{notice}</AlertDescription>
-        </Alert>
-      ) : null}
       {query.error || update.mutation.error || remove.mutation.error ? (
         <Alert variant="destructive" role="alert">
           <AlertDescription>
@@ -117,16 +140,32 @@ export function FinanceReferenceListScreen({ resource }: { resource: FinanceRefe
                   resource === 'accounts' && (row.isSystem === true || row.kind === 'system')
                 const fund = resource === 'projects' && row.isFund === true
                 const active = row.retiredAt === null
+                // The name leads where the row can actually be worked: the edit
+                // card when the record is editable, the read-only card when the
+                // module owns it or it is archived.
+                const editable = active && !systemAccount
                 return (
                   <TableRow key={String(row.id)}>
-                    {config.columns.map((column) => (
-                      <TableCell
-                        key={column.key}
-                        className={column.key === 'name' ? 'font-medium' : undefined}
-                      >
-                        {displayValue(row[column.key])}
-                      </TableCell>
-                    ))}
+                    {config.columns.map((column) =>
+                      column.key === 'name' ? (
+                        <TableCell key={column.key} className="font-medium">
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 font-medium"
+                            onClick={() =>
+                              editable
+                                ? navigation.edit(resourceName, row.id)
+                                : navigation.show(resourceName, row.id)
+                            }
+                          >
+                            {displayValue(row[column.key])}
+                          </Button>
+                        </TableCell>
+                      ) : (
+                        <TableCell key={column.key}>{displayValue(row[column.key])}</TableCell>
+                      ),
+                    )}
                     <TableCell>
                       <Badge variant={active ? 'secondary' : 'outline'}>
                         {active ? 'Активна' : 'В архиве'}
@@ -134,24 +173,6 @@ export function FinanceReferenceListScreen({ resource }: { resource: FinanceRefe
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          aria-label={`Открыть ${row.name}`}
-                          onClick={() => navigation.show(resourceName, row.id)}
-                        >
-                          Открыть
-                        </Button>
-                        {active && !systemAccount ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Изменить ${row.name}`}
-                            onClick={() => navigation.edit(resourceName, row.id)}
-                          >
-                            Изменить
-                          </Button>
-                        ) : null}
                         {active && !systemAccount && !fund ? (
                           <>
                             <Button
