@@ -25,7 +25,7 @@ three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per state).
 | 01   | `/p/admin` as `bbm-test` — the index and the sidebar list only the sections this viewer may enter (Часы, OKR, Финансы, Участники)               |
 | 02   | `/p/admin/finance/purposes` as `bbm-test` — the reference register with its per-row «Открыть / Изменить / В архив / Удалить»                    |
 | 03   | the edit card of «Продажи курса», open — name, expense category, product binding, «Изменения фиксируются с автором и временем»                  |
-| 04   | the SAME card after a real save — the name carries the edit and the Russian save notification names the row (re-taken at `4a7e6acc`, see below) |
+| 04   | the SAME card after a real save — the name carries the edit and the Russian save notification names the row (re-taken at `baf2c5cf`, see below) |
 | 05   | `/p/admin` as `bbm-member` — refused                                                                                                            |
 | 06   | `/p/admin/finance/purposes` as `bbm-member` — refused the same way, however the URL is reached                                                  |
 | 07   | «Добавить назначение», the register's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` plus its base                  |
@@ -67,53 +67,45 @@ artefacts, both re-observed live rather than inferred:
   the pass; the frames keep the edited value because that IS the state being
   accepted.
 
-## Re-take of 2026-09-17 — the saved state, at head `4a7e6acc`
+## Re-take of 2026-09-17 — the register and the card, at head `baf2c5cf`
 
-The UX-sanity fix round of this PR (`5139e949` RED, `f865e40f` GREEN) replaced
-the reference cabinet's feedback: Refine's untranslated default toast
-(«Successfully updated finance.purpose / Successful») is gone, one Russian
-notification channel serves all six finance reference tables, and the inline
-grey, input-shaped «Изменения сохранены.» box is removed from the card.
+The single-entry-point round of this PR (`271608ed` RED, `dd29e1df` GREEN) gave
+each reference row ONE way into its record — the record name as a link button —
+so the per-row «Открыть» and «Изменить» buttons are gone from «Действия», which
+now carries «В архив» and «Удалить» only, and the card's twin «Открыть карточку»
+became «К списку».
 
-**Re-taken IN PLACE** (same filenames, no `-v2`) — only the four frames whose
-picture the round changed:
+**Re-taken IN PLACE** (same filenames, no `-v2`), every frame whose picture the
+round changed:
 
-- `04-admin-purposes-edit-saved-desktop-light.png`
-- `04-admin-purposes-edit-saved-desktop-dark.png`
-- `04-admin-purposes-edit-saved-mobile-light.png`
-- `04-admin-purposes-edit-saved-mobile-dark.png`
+- `02-admin-purposes-table-*` (4) — the register itself;
+- `03-admin-purposes-edit-form-*` (4) and `04-admin-purposes-edit-saved-*` (4) —
+  the card, for «К списку»;
+- `07-cta-add-purpose-*` (8) — viewport frames of the register, so they carried
+  the old action column too.
 
-Nothing else was re-taken, and the folder was checked for the stale box before
-deciding: steps 01, 02 and 07 are list/index screens that no save has touched,
-step 03 is the card BEFORE the save (it never carried the box), steps 05 and 06
-are the bare 403. The card's own primary control «Сохранить изменения» keeps its
-kit treatment — no control gained or lost a variant — so no pseudo-state frame
-changed either.
+Unchanged and therefore not re-taken: `01` (the cabinet index), `05` and `06`
+(the bare 403).
 
-**Confirmed on sight in all four frames:** the notification reads Russian product
-copy and names the row it saved — «Назначение расхода сохранено.» over «Продажи
-курса» — no grey input-shaped notice remains between «Изменения фиксируются с
-автором и временем.» and «Название», and the rest of the card (name, expense
-category, product binding, the CTA) is unchanged.
+**New: `08-row-name-link-*` (8).** The register's PRIMARY control is still
+«Добавить назначение» (step 07), but the row name is now the only entry point
+into a record, so its three forced states join the matrix — one
+`CSS.forcePseudoState` CDP session per state, resolved in two hops
+(`table tbody tr` → the row's link button), desktop × light/dark.
 
-**The other five tables were driven the same way** in the same session, to check
-the round really is one channel and not one screen — each edited and restored:
+**Confirmed on sight.** No «Открыть» and no «Изменить» anywhere in the register;
+«Действия» holds «В архив» and «Удалить»; the card's top-right control reads «К
+списку»; the save notification and the absence of the grey notice from the
+previous rounds are unaffected. Nothing else regressed.
 
-| Table           | Notification                                      |
-| --------------- | ------------------------------------------------- |
-| Счета           | «Счёт сохранён. / Основной банк»                  |
-| Проекты         | «Проект сохранён. / Фонд BBM»                     |
-| Продукты        | «Продукт сохранён. / Курс «Основы нутрициологии»» |
-| Валюты          | «Валюта сохранена. / Российский рубль»            |
-| Статьи расходов | «Статья расходов сохранена. / Маркетинг»          |
-
-**The rename anomaly of the previous take is FIXED and the frames prove it.**
-At head `a3ca818e` the notification quoted the row as it was LOADED, so a rename
-made its second line disagree with the field above it. `5c43be64` makes it quote
-the SAVED record: every one of the four frames now reads the same string in the
-«Название» field and in the notification — «Продажи курса (правка
-desktop/light)» in the desktop-light frame, «…(правка mobile/dark)» in the
-mobile-dark one, which was the frame that exposed the defect.
+**One honest qualification about «visibly a link».** AT REST the row name is not
+a link by colour or underline — it is the kit's `variant="link"` button rendered
+in the text colour, distinguished from a plain cell only by weight (500 vs 400)
+and by `cursor: pointer`; `text-decoration` computes to `none`. The link
+affordance appears on `:hover` and `:focus-visible`, where it underlines — which
+is exactly what the new step-08 frames show. That is the kit's own link variant
+behaving as the kit defines it, not a defect introduced here, but a reader
+scanning the register statically has only the weight to go on.
 
 **Rows restored.** Every name edited for this re-take was written back: «Продажи
 курса», «Основной банк», «Фонд BBM», «Курс «Основы нутрициологии»», «Российский
