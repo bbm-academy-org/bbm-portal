@@ -175,3 +175,31 @@ describe('finance reference cabinet — save feedback (#479)', () => {
     expect(screen.queryByText(/изменения сохранены/i)).toBeNull()
   })
 })
+
+/**
+ * The same owner remark as the register's (Антон, 2026-09-17) applied one level
+ * down: the edit card offered «Открыть карточку», a second route to its own
+ * read-only twin. The card's secondary control now leads OUT — back to the
+ * register the record was opened from.
+ */
+describe('finance reference card — the way out is the register, not its own twin (#479)', () => {
+  it('offers a way back to the register from the edit card and no route to the read-only twin', async () => {
+    refine.navigation.list.mockReset()
+    refine.navigation.show.mockReset()
+    const { FinanceReferenceRecordScreen } =
+      await import('@/app/(platform)/p/admin/finance/FinanceReferenceScreens')
+
+    render(
+      React.createElement(FinanceReferenceRecordScreen, {
+        resource: 'purposes',
+        id: '7',
+        mode: 'edit',
+      }),
+    )
+
+    expect(screen.queryByRole('button', { name: /открыть карточку/i })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /к списку/i }))
+    expect(refine.navigation.list).toHaveBeenCalledWith('finance.purposes')
+    expect(refine.navigation.show).not.toHaveBeenCalled()
+  })
+})
