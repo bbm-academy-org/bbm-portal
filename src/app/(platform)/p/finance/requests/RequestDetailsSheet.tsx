@@ -49,6 +49,7 @@ import {
   emptyDocumentNote,
   formatRequestMoney,
   postingActNeedsMoneyFacts,
+  requestPurposeLabel,
 } from './request-board-model'
 import type { FinanceRequestBoardAct } from './request-board-model'
 import {
@@ -592,10 +593,7 @@ export function RequestDetailsSheet({
               label="Дата движения денег"
               value={request.occurredOn === null ? undecidedMoney : formatDate(request.occurredOn)}
             />
-            <Field
-              label="Назначение"
-              value={request.purpose?.name ?? request.proposal?.text ?? '—'}
-            />
+            <Field label="Назначение" value={requestPurposeLabel(request)} />
             <Field label="Проект" value={request.project.name} />
             <Field label="Продукт" value={request.product?.name ?? '—'} />
             {request.paidAmount !== null && request.paidCurrency !== null ? (

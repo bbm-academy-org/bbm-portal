@@ -11,9 +11,9 @@ import {
   listCurrencies,
   listExpenseRequests,
   listFinanceDocumentsByItems,
+  listPendingPurposeProposalsForRequests,
   listProducts,
   listProjects,
-  listPurposeProposals,
   listPurposes,
   registerEntriesByIds,
   type FinanceDocumentView,
@@ -164,7 +164,6 @@ export async function GET(): Promise<Response> {
       projects,
       purposes,
       categories,
-      proposals,
       debts,
       actorMember,
     ] = await Promise.all([
@@ -176,7 +175,6 @@ export async function GET(): Promise<Response> {
       listProjects(),
       listPurposes(),
       listCategories(),
-      listPurposeProposals(actor),
       liabilityBalances(),
       findMemberByEmail(actor.email),
     ])
@@ -197,13 +195,20 @@ export async function GET(): Promise<Response> {
     // ONE read for the whole board, not one transaction per row (#470): a
     // transaction holds a pooled client, so a per-row fan-out exhausted the pool
     // and deadlocked the request on a board of ten or more.
-    const [members, documentsByItem, register] = await Promise.all([
+    // THE PROPOSAL TEXT IS READ AT THE OPEN-BOOK SCOPE (#480, owner decision,
+    // Антон, 2026-09-16), so it waits for the request ids the reader may see.
+    // The cabinet's own-only `listPurposeProposals` used to answer here, and a
+    // request filed by ANOTHER member arrived with no proposal at all: the
+    // purpose cell then printed «Назначение предложено» and refused to say
+    // what was proposed.
+    const [members, documentsByItem, register, proposals] = await Promise.all([
       getMembersByIds(memberIds),
       listFinanceDocumentsByItems(
         actor,
         requests.map((request) => request.id),
       ),
       registerEntriesByIds(operationIds),
+      listPendingPurposeProposalsForRequests(requests.map((request) => request.id)),
     ])
     const accountMap = byId(accounts)
     const counterpartyMap = byId(counterparties)
