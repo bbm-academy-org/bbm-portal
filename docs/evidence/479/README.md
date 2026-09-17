@@ -25,7 +25,7 @@ three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per state).
 | 01   | `/p/admin` as `bbm-test` — the index and the sidebar list only the sections this viewer may enter (Часы, OKR, Финансы, Участники) |
 | 02   | `/p/admin/finance/purposes` as `bbm-test` — the reference register with its per-row «Открыть / Изменить / В архив / Удалить»      |
 | 03   | the edit card of «Продажи курса», open — name, expense category, product binding, «Изменения фиксируются с автором и временем»    |
-| 04   | the SAME card after a real save — the name carries the edit, «Изменения сохранены.» stands in the card, and the toast confirms    |
+| 04   | the SAME card after a real save — the name carries the edit and the Russian save notification names the row (re-taken at `a3ca818e`, see below) |
 | 05   | `/p/admin` as `bbm-member` — refused                                                                                              |
 | 06   | `/p/admin/finance/purposes` as `bbm-member` — refused the same way, however the URL is reached                                    |
 | 07   | «Добавить назначение», the register's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` plus its base    |
@@ -66,3 +66,56 @@ artefacts, both re-observed live rather than inferred:
 - **The name edited in step 04 was restored** to «Продажи курса» at the end of
   the pass; the frames keep the edited value because that IS the state being
   accepted.
+
+## Re-take of 2026-09-17 — the saved state, at head `a3ca818e`
+
+The UX-sanity fix round of this PR (`5139e949` RED, `f865e40f` GREEN) replaced
+the reference cabinet's feedback: Refine's untranslated default toast
+(«Successfully updated finance.purpose / Successful») is gone, one Russian
+notification channel serves all six finance reference tables, and the inline
+grey, input-shaped «Изменения сохранены.» box is removed from the card.
+
+**Re-taken IN PLACE** (same filenames, no `-v2`) — only the four frames whose
+picture the round changed:
+
+- `04-admin-purposes-edit-saved-desktop-light.png`
+- `04-admin-purposes-edit-saved-desktop-dark.png`
+- `04-admin-purposes-edit-saved-mobile-light.png`
+- `04-admin-purposes-edit-saved-mobile-dark.png`
+
+Nothing else was re-taken, and the folder was checked for the stale box before
+deciding: steps 01, 02 and 07 are list/index screens that no save has touched,
+step 03 is the card BEFORE the save (it never carried the box), steps 05 and 06
+are the bare 403. The card's own primary control «Сохранить изменения» keeps its
+kit treatment — no control gained or lost a variant — so no pseudo-state frame
+changed either.
+
+**Confirmed on sight in all four frames:** the notification reads Russian product
+copy and names the row it saved — «Назначение расхода сохранено.» over «Продажи
+курса» — no grey input-shaped notice remains between «Изменения фиксируются с
+автором и временем.» and «Название», and the rest of the card (name, expense
+category, product binding, the CTA) is unchanged.
+
+**The other five tables were driven the same way** in the same session, to check
+the round really is one channel and not one screen — each edited and restored:
+
+| Table                | Notification                                          |
+| -------------------- | ----------------------------------------------------- |
+| Счета                | «Счёт сохранён. / Основной банк»                      |
+| Проекты              | «Проект сохранён. / Фонд BBM»                         |
+| Продукты             | «Продукт сохранён. / Курс «Основы нутрициологии»»     |
+| Валюты               | «Валюта сохранена. / Российский рубль»                |
+| Статьи расходов      | «Статья расходов сохранена. / Маркетинг»              |
+
+**One anomaly, reported rather than kept quiet.** The notification's second line
+names the row as it was BEFORE the save, not as it was saved: the
+`mobile-dark` frame's field reads «Продажи курса (правка mobile/dark)» while the
+toast under it says «Продажи курса (правка mobile/light)», the value the previous
+combo left. It is only visible when the edit RENAMES the row, which is what this
+journey does to prove the write; a real edit of a category or a binding shows the
+right name. Not a regression of this round — the round is what gave the toast a
+name to print at all.
+
+**Rows restored.** Every name edited for this re-take was written back: «Продажи
+курса», «Основной банк», «Фонд BBM», «Курс «Основы нутрициологии»», «Российский
+рубль», «Маркетинг».
