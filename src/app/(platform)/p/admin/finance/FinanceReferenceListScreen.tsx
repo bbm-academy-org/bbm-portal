@@ -1,7 +1,6 @@
 'use client'
 
 import { useDelete, useList, useNavigation, useUpdate, type HttpError } from '@refinedev/core'
-import React from 'react'
 
 import type { FinanceReferenceResource } from '@/lib/finance'
 import { Alert, AlertDescription } from '@/ui/alert'
@@ -15,6 +14,8 @@ import {
   displayValue,
   financeReferenceUi,
   financeResourceName,
+  referenceErrorNotification,
+  referenceSuccessNotification,
   type FinanceReferenceRow,
 } from './reference-config'
 
@@ -28,24 +29,31 @@ export function FinanceReferenceListScreen({ resource }: { resource: FinanceRefe
   const navigation = useNavigation()
   const update = useUpdate<FinanceReferenceRow, HttpError, { retire: true }>()
   const remove = useDelete<FinanceReferenceRow, HttpError>()
-  const [notice, setNotice] = React.useState('')
   const { query, result } = useList<FinanceReferenceRow, HttpError>({
     resource: resourceName,
     pagination: { currentPage: 1, pageSize: 100 },
   })
 
+  // One feedback channel for the whole cabinet — the Refine notification
+  // provider, in the table's own Russian (#479; `docs/design/ui-whitelist.md`
+  // → Feedback). No inline notice duplicates the toast.
   function retire(row: FinanceReferenceRow) {
-    update.mutate(
-      { resource: resourceName, id: row.id, values: { retire: true } },
-      { onSuccess: () => setNotice(`«${row.name}» отправлено в архив.`) },
-    )
+    update.mutate({
+      resource: resourceName,
+      id: row.id,
+      values: { retire: true },
+      successNotification: referenceSuccessNotification(resource, 'retire', row.name),
+      errorNotification: referenceErrorNotification(resource, 'retire', row.name),
+    })
   }
 
   function deleteRow(row: FinanceReferenceRow) {
-    remove.mutate(
-      { resource: resourceName, id: row.id },
-      { onSuccess: () => setNotice(`«${row.name}» удалено.`) },
-    )
+    remove.mutate({
+      resource: resourceName,
+      id: row.id,
+      successNotification: referenceSuccessNotification(resource, 'delete', row.name),
+      errorNotification: referenceErrorNotification(resource, 'delete', row.name),
+    })
   }
 
   return (
@@ -63,11 +71,6 @@ export function FinanceReferenceListScreen({ resource }: { resource: FinanceRefe
         <Button onClick={() => navigation.create(resourceName)}>Добавить {config.singular}</Button>
       </div>
 
-      {notice ? (
-        <Alert role="status">
-          <AlertDescription>{notice}</AlertDescription>
-        </Alert>
-      ) : null}
       {query.error || update.mutation.error || remove.mutation.error ? (
         <Alert variant="destructive" role="alert">
           <AlertDescription>

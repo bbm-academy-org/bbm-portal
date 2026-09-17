@@ -20,15 +20,15 @@ scratchpad file by the script through `fs` and never entered a tool call.
 workspace ships no user-facing switch), plus the surface's primary control under
 three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per state).
 
-| Step | What it shows                                                                                                            |
-| ---- | ------------------------------------------------------------------------------------------------------------------------ |
+| Step | What it shows                                                                                                                     |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------- |
 | 01   | `/p/admin` as `bbm-test` — the index and the sidebar list only the sections this viewer may enter (Часы, OKR, Финансы, Участники) |
-| 02   | `/p/admin/finance/purposes` as `bbm-test` — the reference register with its per-row «Открыть / Изменить / В архив / Удалить» |
-| 03   | the edit card of «Продажи курса», open — name, expense category, product binding, «Изменения фиксируются с автором и временем» |
-| 04   | the SAME card after a real save — the name carries the edit, «Изменения сохранены.» stands in the card, and the toast confirms |
-| 05   | `/p/admin` as `bbm-member` — refused                                                                                     |
-| 06   | `/p/admin/finance/purposes` as `bbm-member` — refused the same way, however the URL is reached                            |
-| 07   | «Добавить назначение», the register's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` plus its base |
+| 02   | `/p/admin/finance/purposes` as `bbm-test` — the reference register with its per-row «Открыть / Изменить / В архив / Удалить»      |
+| 03   | the edit card of «Продажи курса», open — name, expense category, product binding, «Изменения фиксируются с автором и временем»    |
+| 04   | the SAME card after a real save — the name carries the edit, «Изменения сохранены.» stands in the card, and the toast confirms    |
+| 05   | `/p/admin` as `bbm-member` — refused                                                                                              |
+| 06   | `/p/admin/finance/purposes` as `bbm-member` — refused the same way, however the URL is reached                                    |
+| 07   | «Добавить назначение», the register's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` plus its base    |
 
 **Steps 05 and 06 are BLANK on purpose, and the frame is the point.** Both
 answer **HTTP 403** and render nothing at all: `src/app/forbidden.tsx` returns

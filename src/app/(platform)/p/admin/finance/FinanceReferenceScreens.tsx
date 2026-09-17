@@ -8,7 +8,6 @@ import {
   useUpdate,
   type HttpError,
 } from '@refinedev/core'
-import React from 'react'
 
 import type { FinanceReferenceResource } from '@/lib/finance'
 import { Alert, AlertDescription } from '@/ui/alert'
@@ -20,6 +19,8 @@ import { FinanceReferenceForm, type ReferenceOptions } from './FinanceReferenceF
 import {
   financeReferenceUi,
   financeResourceName,
+  referenceErrorNotification,
+  referenceSuccessNotification,
   type FinanceReferenceRow,
 } from './reference-config'
 
@@ -55,11 +56,21 @@ export function FinanceReferenceCreateScreen({ resource }: { resource: FinanceRe
   const resourceName = financeResourceName(resource)
   const create = useCreate<FinanceReferenceRow, HttpError, Record<string, unknown>>()
   const { options, error } = useReferenceOptions()
-  const [saved, setSaved] = React.useState(false)
 
   function submit(values: Record<string, unknown>) {
-    setSaved(false)
-    create.mutate({ resource: resourceName, values }, { onSuccess: () => setSaved(true) })
+    // The outcome travels in ONE channel — the cabinet's Refine notification
+    // provider (`docs/design/ui-whitelist.md` → Feedback). The copy is the
+    // table's own Russian, because Refine's default toast is English (#479).
+    create.mutate({
+      resource: resourceName,
+      values,
+      successNotification: referenceSuccessNotification(
+        resource,
+        'create',
+        String(values.name ?? ''),
+      ),
+      errorNotification: referenceErrorNotification(resource, 'create'),
+    })
   }
 
   return (
@@ -76,11 +87,6 @@ export function FinanceReferenceCreateScreen({ resource }: { resource: FinanceRe
           <CardDescription>Поля проверяются до записи в финансовый контур.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {saved ? (
-            <Alert role="status">
-              <AlertDescription>Запись сохранена и добавлена в справочник.</AlertDescription>
-            </Alert>
-          ) : null}
           <FinanceReferenceForm
             resource={resource}
             options={options}
@@ -94,7 +100,6 @@ export function FinanceReferenceCreateScreen({ resource }: { resource: FinanceRe
                   ? message(create.mutation.error, 'Не удалось сохранить запись.')
                   : undefined
             }
-            onChange={() => setSaved(false)}
             onSubmit={submit}
           />
         </CardContent>
@@ -118,7 +123,6 @@ export function FinanceReferenceRecordScreen({
   const update = useUpdate<FinanceReferenceRow, HttpError, Record<string, unknown>>()
   const { query, result } = useOne<FinanceReferenceRow, HttpError>({ resource: resourceName, id })
   const { options, error: optionsError } = useReferenceOptions()
-  const [saved, setSaved] = React.useState(false)
 
   if (query.isLoading) return <Skeleton className="h-96 w-full" />
   if (query.error || !result) {
@@ -135,8 +139,13 @@ export function FinanceReferenceRecordScreen({
   const editable = mode === 'edit' && !systemAccount && !retired
 
   function save(values: Record<string, unknown>) {
-    setSaved(false)
-    update.mutate({ resource: resourceName, id, values }, { onSuccess: () => setSaved(true) })
+    update.mutate({
+      resource: resourceName,
+      id,
+      values,
+      successNotification: referenceSuccessNotification(resource, 'update', row.name),
+      errorNotification: referenceErrorNotification(resource, 'update', row.name),
+    })
   }
 
   return (
@@ -166,11 +175,6 @@ export function FinanceReferenceRecordScreen({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {saved ? (
-            <Alert role="status">
-              <AlertDescription>Изменения сохранены.</AlertDescription>
-            </Alert>
-          ) : null}
           <FinanceReferenceForm
             key={`${resource}-${id}-${mode}`}
             resource={resource}
@@ -186,7 +190,6 @@ export function FinanceReferenceRecordScreen({
                   ? message(update.mutation.error, 'Не удалось сохранить изменения.')
                   : undefined
             }
-            onChange={() => setSaved(false)}
             onSubmit={save}
           />
         </CardContent>
