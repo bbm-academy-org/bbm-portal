@@ -129,6 +129,33 @@ describe('finance reference cabinet — save feedback (#479)', () => {
     expectRussian(resolve(args.errorNotification, new Error('boom')))
   })
 
+  it('names the record as the save left it, not as the card found it', async () => {
+    // A rename whose toast quotes the OLD name reads as «the save did not take»
+    // (#479, second UX-sanity round): the notification must carry the SUBMITTED
+    // values, never the pre-mutation record.
+    const { FinanceReferenceRecordScreen } =
+      await import('@/app/(platform)/p/admin/finance/FinanceReferenceScreens')
+
+    render(
+      React.createElement(FinanceReferenceRecordScreen, {
+        resource: 'purposes',
+        id: '7',
+        mode: 'edit',
+      }),
+    )
+    fireEvent.change(screen.getByLabelText(/^название$/i), {
+      target: { value: 'Продажи курса (правка mobile/dark)' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /сохранить изменения/i }))
+
+    const args = refine.updateMutate.mock.calls[0][0] as MutateArgs
+    const success = resolve(args.successNotification)
+    expect(success?.description).toBe('Продажи курса (правка mobile/dark)')
+    expect(success?.description).not.toMatch(/mobile\/light/)
+    const failure = resolve(args.errorNotification, {})
+    expect(failure?.description).toBe('Продажи курса (правка mobile/dark)')
+  })
+
   it('keeps the outcome in the toast alone — no inline status box duplicates it', async () => {
     const { FinanceReferenceRecordScreen } =
       await import('@/app/(platform)/p/admin/finance/FinanceReferenceScreens')
