@@ -20,15 +20,15 @@ scratchpad file by the script through `fs` and never entered a tool call.
 workspace ships no user-facing switch), plus the surface's primary control under
 three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per state).
 
-| Step | What it shows                                                                                                                     |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 01   | `/p/admin` as `bbm-test` — the index and the sidebar list only the sections this viewer may enter (Часы, OKR, Финансы, Участники) |
-| 02   | `/p/admin/finance/purposes` as `bbm-test` — the reference register with its per-row «Открыть / Изменить / В архив / Удалить»      |
-| 03   | the edit card of «Продажи курса», open — name, expense category, product binding, «Изменения фиксируются с автором и временем»    |
+| Step | What it shows                                                                                                                                   |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 01   | `/p/admin` as `bbm-test` — the index and the sidebar list only the sections this viewer may enter (Часы, OKR, Финансы, Участники)               |
+| 02   | `/p/admin/finance/purposes` as `bbm-test` — the reference register with its per-row «Открыть / Изменить / В архив / Удалить»                    |
+| 03   | the edit card of «Продажи курса», open — name, expense category, product binding, «Изменения фиксируются с автором и временем»                  |
 | 04   | the SAME card after a real save — the name carries the edit and the Russian save notification names the row (re-taken at `a3ca818e`, see below) |
-| 05   | `/p/admin` as `bbm-member` — refused                                                                                              |
-| 06   | `/p/admin/finance/purposes` as `bbm-member` — refused the same way, however the URL is reached                                    |
-| 07   | «Добавить назначение», the register's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` plus its base    |
+| 05   | `/p/admin` as `bbm-member` — refused                                                                                                            |
+| 06   | `/p/admin/finance/purposes` as `bbm-member` — refused the same way, however the URL is reached                                                  |
+| 07   | «Добавить назначение», the register's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` plus its base                  |
 
 **Steps 05 and 06 are BLANK on purpose, and the frame is the point.** Both
 answer **HTTP 403** and render nothing at all: `src/app/forbidden.tsx` returns
@@ -99,13 +99,13 @@ category, product binding, the CTA) is unchanged.
 **The other five tables were driven the same way** in the same session, to check
 the round really is one channel and not one screen — each edited and restored:
 
-| Table                | Notification                                          |
-| -------------------- | ----------------------------------------------------- |
-| Счета                | «Счёт сохранён. / Основной банк»                      |
-| Проекты              | «Проект сохранён. / Фонд BBM»                         |
-| Продукты             | «Продукт сохранён. / Курс «Основы нутрициологии»»     |
-| Валюты               | «Валюта сохранена. / Российский рубль»                |
-| Статьи расходов      | «Статья расходов сохранена. / Маркетинг»              |
+| Table           | Notification                                      |
+| --------------- | ------------------------------------------------- |
+| Счета           | «Счёт сохранён. / Основной банк»                  |
+| Проекты         | «Проект сохранён. / Фонд BBM»                     |
+| Продукты        | «Продукт сохранён. / Курс «Основы нутрициологии»» |
+| Валюты          | «Валюта сохранена. / Российский рубль»            |
+| Статьи расходов | «Статья расходов сохранена. / Маркетинг»          |
 
 **One anomaly, reported rather than kept quiet.** The notification's second line
 names the row as it was BEFORE the save, not as it was saved: the
