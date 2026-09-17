@@ -25,7 +25,7 @@ three CDP-forced pseudo-states (`CSS.forcePseudoState`, one session per state).
 | 01   | `/p/admin` as `bbm-test` — the index and the sidebar list only the sections this viewer may enter (Часы, OKR, Финансы, Участники)               |
 | 02   | `/p/admin/finance/purposes` as `bbm-test` — the reference register with its per-row «Открыть / Изменить / В архив / Удалить»                    |
 | 03   | the edit card of «Продажи курса», open — name, expense category, product binding, «Изменения фиксируются с автором и временем»                  |
-| 04   | the SAME card after a real save — the name carries the edit and the Russian save notification names the row (re-taken at `a3ca818e`, see below) |
+| 04   | the SAME card after a real save — the name carries the edit and the Russian save notification names the row (re-taken at `4a7e6acc`, see below) |
 | 05   | `/p/admin` as `bbm-member` — refused                                                                                                            |
 | 06   | `/p/admin/finance/purposes` as `bbm-member` — refused the same way, however the URL is reached                                                  |
 | 07   | «Добавить назначение», the register's primary control, under CDP-FORCED `:hover`, `:focus-visible` and `:active` plus its base                  |
@@ -67,7 +67,7 @@ artefacts, both re-observed live rather than inferred:
   the pass; the frames keep the edited value because that IS the state being
   accepted.
 
-## Re-take of 2026-09-17 — the saved state, at head `a3ca818e`
+## Re-take of 2026-09-17 — the saved state, at head `4a7e6acc`
 
 The UX-sanity fix round of this PR (`5139e949` RED, `f865e40f` GREEN) replaced
 the reference cabinet's feedback: Refine's untranslated default toast
@@ -107,14 +107,13 @@ the round really is one channel and not one screen — each edited and restored:
 | Валюты          | «Валюта сохранена. / Российский рубль»            |
 | Статьи расходов | «Статья расходов сохранена. / Маркетинг»          |
 
-**One anomaly, reported rather than kept quiet.** The notification's second line
-names the row as it was BEFORE the save, not as it was saved: the
-`mobile-dark` frame's field reads «Продажи курса (правка mobile/dark)» while the
-toast under it says «Продажи курса (правка mobile/light)», the value the previous
-combo left. It is only visible when the edit RENAMES the row, which is what this
-journey does to prove the write; a real edit of a category or a binding shows the
-right name. Not a regression of this round — the round is what gave the toast a
-name to print at all.
+**The rename anomaly of the previous take is FIXED and the frames prove it.**
+At head `a3ca818e` the notification quoted the row as it was LOADED, so a rename
+made its second line disagree with the field above it. `5c43be64` makes it quote
+the SAVED record: every one of the four frames now reads the same string in the
+«Название» field and in the notification — «Продажи курса (правка
+desktop/light)» in the desktop-light frame, «…(правка mobile/dark)» in the
+mobile-dark one, which was the frame that exposed the defect.
 
 **Rows restored.** Every name edited for this re-take was written back: «Продажи
 курса», «Основной банк», «Фонд BBM», «Курс «Основы нутрициологии»», «Российский
