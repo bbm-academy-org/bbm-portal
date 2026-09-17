@@ -33,6 +33,7 @@ import { auditEventsFor, auditWatermark } from './audit-helpers'
 import {
   ADMIN,
   APPROVER,
+  ENTRY,
   fundProjectId,
   MEMBER,
   seedMember,
@@ -839,13 +840,35 @@ describe('the write gates against the real tables (EARS-330, EARS-501, EARS-529,
       retireReferenceRow(MEMBER, 'account', bank.id),
       deleteReferenceRow(MEMBER, 'account', bank.id),
       updatePurpose(MEMBER, 1, { name: 'Иначе' }),
-      // The flow roles are not reference administration either (EARS-529).
+      // `finance-approve` is not reference administration: decision 34 widened
+      // the catalogues to `finance-entry` and named no second role (EARS-529).
       createProject(APPROVER, { name: 'Проект' }),
       systemAccount(APPROVER, 'expense', 'RUB'),
     ]
     for (const refusal of refusals) {
       await expect(refusal).rejects.toBeInstanceOf(FinanceAccessRefusal)
     }
+  })
+
+  it('EARS-529 (#479): `finance-entry` administers the references against the real tables — decision 34', async () => {
+    const mark = await auditWatermark(db)
+    const currency = await createCurrency(ENTRY, { code: 'THB', name: 'Бат', precision: 2 })
+    expect(currency.code).toBe('THB')
+
+    const project = await createProject(ENTRY, { name: 'Проект клерка' })
+    const purpose = await createPurpose(ENTRY, {
+      name: 'Назначение клерка',
+      productBinding: 'optional',
+    })
+    const renamed = await updatePurpose(ENTRY, purpose.id, { name: 'Назначение клерка 2' })
+    expect(renamed.name).toBe('Назначение клерка 2')
+
+    // Spec 201 is untouched by the widening: the write is attributed to the
+    // person who made it, and the entry clerk is a person like any other.
+    const events = await auditEventsFor(db, mark, 'finance_project')
+    expect(events.length).toBeGreaterThan(0)
+    expect(events.every((event) => event.actor_email === ENTRY.email)).toBe(true)
+    expect(events.some((event) => Object.values(event.pk).includes(project.id))).toBe(true)
   })
 
   it('EARS-501: refuses recording and reversing for a session carrying neither flow role', async () => {

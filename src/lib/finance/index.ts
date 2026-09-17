@@ -16,8 +16,9 @@
  *    conversions with frozen rates (EARS-318/319/328/329), and the balance /
  *    register / exception queries;
  *  - EVERY write is refused here, however the URL was reached, by the gate that
- *    matches its KIND: reference administration demands `platform-admin`
- *    (EARS-330 as amended, EARS-529), the ledger — posting and reversing —
+ *    matches its KIND: reference administration demands `platform-admin` OR
+ *    `finance-entry` (EARS-330 as amended, EARS-529 as widened by owner
+ *    decision 34, 2026-09-14), the ledger — posting and reversing —
  *    demands `finance-approve`, and the intake demands `finance-entry` with the
  *    submitter carve-out (EARS-501/502, #380). Reading is deliberately wider:
  *    `/p/finance` stays open to every platform member (EARS-530/EARS-325) and is

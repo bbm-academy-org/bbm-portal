@@ -384,11 +384,25 @@ describe('#434: the cabinet Toaster is a sibling of the grid, not a cell in it',
 })
 
 describe('EARS-434: /p/admin opens on an index of sections', () => {
-  it('EARS-434: it lists the sections and their items — not a dashboard, not a jump into the first resource', async () => {
+  /**
+   * The screen is an async server component reading the session (#479): it
+   * lists «разделы, доступные вам», so it has to know who is looking. The
+   * element is awaited and only then handed to the static renderer.
+   */
+  async function renderIndex(registry: WorkspaceEntry[], roles: string[]) {
     vi.resetModules()
-    vi.doMock('@/lib/workspace', () => ({ WORKSPACE_REGISTRY: [HOURS, OKR_NO_SECTION, PLANNED] }))
+    vi.doMock('@/lib/workspace', () => ({ WORKSPACE_REGISTRY: registry }))
+    vi.doMock('@/auth', () => ({ auth: async () => ({ user: { email: 'a@bbm.local', roles } }) }))
     const { default: AdminIndexPage } = await import('@/app/(platform)/p/admin/page')
-    const html = renderToStaticMarkup(el(AdminIndexPage))
+    const html = renderToStaticMarkup(await AdminIndexPage())
+    vi.doUnmock('@/lib/workspace')
+    vi.doUnmock('@/auth')
+    vi.resetModules()
+    return html
+  }
+
+  it('EARS-434: it lists the sections and their items — not a dashboard, not a jump into the first resource', async () => {
+    const html = await renderIndex([HOURS, OKR_NO_SECTION, PLANNED], ['platform-admin'])
 
     expect(html).toContain('data-section="hours"')
     expect(html).toContain('data-section-item="hours.periods"')
@@ -397,17 +411,37 @@ describe('EARS-434: /p/admin opens on an index of sections', () => {
     // A dashboard would put numbers here and a redirect would put nothing —
     // both were rejected by the clause. What is here is the list of sections.
     expect(html).toContain('Админка')
-    vi.doUnmock('@/lib/workspace')
-    vi.resetModules()
   })
 
   it('EARS-434: a cabinet with no declared section says so rather than showing a blank page', async () => {
-    vi.resetModules()
-    vi.doMock('@/lib/workspace', () => ({ WORKSPACE_REGISTRY: [OKR_NO_SECTION] }))
-    const { default: AdminIndexPage } = await import('@/app/(platform)/p/admin/page')
-    expect(renderToStaticMarkup(el(AdminIndexPage))).toContain('Ни один модуль пока не объявил')
-    vi.doUnmock('@/lib/workspace')
-    vi.resetModules()
+    const html = await renderIndex([OKR_NO_SECTION], ['platform-admin'])
+    expect(html).toContain('Ни один раздел админки вам сейчас не доступен')
+  })
+
+  /**
+   * #479 / owner decision 34: a section may declare a second administering
+   * claim, and the index is «разделы, доступные ВАМ». A viewer holding only
+   * that claim sees that section and no other — the same trim the sidebar gets,
+   * so neither offers a card that 403s on click.
+   */
+  it('EARS-434/466: a section-claim holder sees their own section and nothing else', async () => {
+    const WIDENED: WorkspaceEntry = {
+      ...(HOURS as Extract<WorkspaceEntry, { kind: 'internal' }>),
+      slug: 'money',
+      admin: {
+        label: 'Деньги',
+        additionalClaims: ['money-entry'],
+        resources: [{ name: 'purposes', label: 'Назначения', operations: ['list'], schema }],
+      },
+    }
+
+    const entry = await renderIndex([HOURS, WIDENED], ['platform-user', 'money-entry'])
+    expect(entry).toContain('data-section="money"')
+    expect(entry).not.toContain('data-section="hours"')
+
+    const admin = await renderIndex([HOURS, WIDENED], ['platform-admin'])
+    expect(admin).toContain('data-section="money"')
+    expect(admin).toContain('data-section="hours"')
   })
 })
 
