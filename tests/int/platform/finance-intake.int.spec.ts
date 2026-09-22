@@ -121,16 +121,29 @@ describe('Every intake path carries its source and its ref semantics (EARS-503)'
     expect(item.status).toBe('draft')
   })
 
-  it('EARS-503: a request carries no ref, and the database refuses one that slipped past', async () => {
+  it('EARS-503 (#517): a request files without a ref, and the database still refuses a ref-less backfill', async () => {
     const refs = await seedIntakeReferences()
     const item = await createIntakeItem(MEMBER, requestLine(refs))
     expect(item.source).toBe('request')
+    // Nothing is DERIVED for a human source — that is the half of EARS-503 the
+    // 2026-09-22 revision kept (#517): two separate typings of one expense are
+    // two requests, not a duplicate.
     expect(item.sourceRef).toBeNull()
 
-    // The CHECK is the accident guard behind the module refusal: a writer that
-    // bypassed the module entirely still cannot store a human-source ref.
+    // And a ref that a writer bypassing the module DOES store is now legal,
+    // because a request has a place it was typed and the reader wants it.
+    await fixtureWrite((tx) =>
+      tx.execute(
+        sql`update core.finance_intake_item set source_ref = 'https://chat.test/pl/1' where id = ${item.id}`,
+      ),
+    )
+
+    // The mandatory arm is untouched: a backfill row without a ref is still
+    // refused by the CHECK, which is what keeps a re-run from double-posting.
     const rejection = await db
-      .execute(sql`update core.finance_intake_item set source_ref = 'MM-1' where id = ${item.id}`)
+      .execute(
+        sql`update core.finance_intake_item set source = 'backfill', source_ref = null where id = ${item.id}`,
+      )
       .then(
         () => null,
         (error: unknown) => error as { cause?: { constraint?: string } },
