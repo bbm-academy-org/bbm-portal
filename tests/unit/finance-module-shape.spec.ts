@@ -116,6 +116,9 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // still creates nothing at runtime. The rule does not move because the
       // migration was not written by the finance task.
       '0016_audit_columns.sql',
+      // `provenance jsonb` + the revised EARS-503 ref policy, and the one-off
+      // repair that lifts the Mattermost `key=value` block out of `note` (#517).
+      '0017_finance_intake_provenance.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

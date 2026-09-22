@@ -82,6 +82,18 @@ export type FinanceIntakeItemView = {
   alreadyPaid: boolean
   personalFunds: boolean
   createdBy: number
+  /**
+   * WHEN THE REQUEST WAS FILED — the audit column `0016` added, and the one
+   * thing the board calls «Подана» (#517). It is stamped by
+   * `core.audit_columns_stamp()` and immutable afterwards; for the 47
+   * reconstructed rows migration `0017` set it from the Mattermost post's own
+   * instant, so it is the FILING moment rather than the import's clock.
+   */
+  createdAt: Date
+  updatedAt: Date
+  updatedBy: number | null
+  /** What the SOURCE said, structured (#517). Immutable after submit (EARS-536). */
+  provenance: Record<string, string> | null
   decidedBy: number | null
   decidedAt: Date | null
   refusalReason: string | null

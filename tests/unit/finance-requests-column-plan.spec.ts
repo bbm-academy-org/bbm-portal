@@ -57,6 +57,10 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     own: true,
     status: 'refused',
     occurredOn: '2026-08-22',
+    createdAt: '2026-08-20T09:30:00.000Z',
+    sourceRef: null,
+    sourceUrl: null,
+    sourceLabel: null,
     amount: '4500000',
     currency: 'RUB',
     paidAmount: null,
@@ -143,6 +147,11 @@ describe('the register’s desktop width budget (#388 defect B)', () => {
   })
 
   it('affords «ещё не двигались» whole, in every scope — a state may not be clipped', () => {
+    // Since #517 the column is «Подана» and the placeholder is its SECOND line,
+    // rendered at `text-xs` — narrower than the 114 px measured at `text-sm`.
+    // The assertion keeps the larger number rather than a re-measured smaller
+    // one: it is the conservative bound, and a column that affords the wider
+    // label affords the narrower one by construction.
     // Defect E of the re-driven matrix (2026-09-16). Under «Все» at 1440 the
     // placeholder needed 114 px and the cell offered 102, so it read «ещё не
     // двига…» — and the block's `div.truncate` carries no `title`, so the words
@@ -157,7 +166,7 @@ describe('the register’s desktop width budget (#388 defect B)', () => {
     // honest lever, and the date column's longest content is a FIXED string —
     // unlike the free-text column, which can never be sized to its content.
     for (const combination of COMBINATIONS) {
-      const date = requestTableColumnPlan(combination).find((c) => c.id === 'occurredOn')!
+      const date = requestTableColumnPlan(combination).find((c) => c.id === 'filed')!
       expect(
         date.size - REQUEST_TABLE_CELL_PADDING,
         `${combination.scope} / canApprove=${combination.canApprove} offers ${

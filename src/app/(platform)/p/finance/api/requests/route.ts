@@ -16,6 +16,8 @@ import {
   listProjects,
   listPurposes,
   registerEntriesByIds,
+  sourceRefLabel,
+  sourceRefToUrl,
   type FinanceDocumentView,
   type FinanceIntakeItemView,
 } from '@/lib/finance'
@@ -74,6 +76,22 @@ function serializeItem(
     paidAmount: item.paidAmount?.toString() ?? null,
     paidCurrency: item.paidCurrency,
     note: item.note,
+    // WHEN IT WAS FILED, and WHERE IT WAS FILED (#517).
+    //
+    // The URL is resolved HERE, on the server, and the screen receives a
+    // string: `sourceRefToUrl` reads the Mattermost origin out of the
+    // environment, and shipping that rule to the browser would give one
+    // permalink shape two implementations to disagree about.
+    //
+    // `provenance` itself is deliberately NOT serialized. Nothing on this
+    // surface renders it yet — the keys it holds (amounts, fees, the period)
+    // are what the money-facts children of this wave lift into real fields —
+    // and a payload carrying eighty unlabelled keys per row would be a screen's
+    // worth of data nobody asked for.
+    createdAt: item.createdAt.toISOString(),
+    sourceRef: item.sourceRef,
+    sourceUrl: sourceRefToUrl(item),
+    sourceLabel: sourceRefLabel(item),
     alreadyPaid: item.alreadyPaid,
     personalFunds: item.personalFunds,
     createdBy: item.createdBy,

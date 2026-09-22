@@ -25,10 +25,12 @@
  * clause rather than a habit:
  *
  *  - `source_ref_policy` — EARS-503's per-source semantics as a database fact:
- *    `bank_import` and `backfill` ALWAYS carry a ref, `manual` and `request`
- *    never do (a human act has no external identity to deduplicate on). Without
- *    it a backfill row could land ref-less and re-running the same history would
- *    double-post, which is exactly the failure EARS-504 exists to prevent.
+ *    `bank_import` and `backfill` ALWAYS carry a ref; `manual` and `request`
+ *    MAY (revised 2026-09-22, #517 — a human act has no external identity to
+ *    deduplicate on, but the record of it usually has a place it was typed, and
+ *    that link is what the reader wants). Without the mandatory arm a backfill
+ *    row could land ref-less and re-running the same history would double-post,
+ *    which is exactly the failure EARS-504 exists to prevent.
  *  - `finance_intake_item_source_ref_unique` — the partial unique index that
  *    MAKES EARS-504 true. The module refuses the duplicate with the existing
  *    item in hand; this index is why a race cannot slip a second one past it.
@@ -66,6 +68,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   serial,
   text,
   timestamp,
@@ -160,6 +163,29 @@ export const financeIntakeItem = core.table(
     /** The person the payment is attributable to (spec 338 EARS-322); FK by hand. */
     memberId: integer('member_id'),
     note: text('note'),
+    /**
+     * WHAT THE PRODUCER KNEW, VERBATIM — the structured half of an item's
+     * origin (#517, spec 339 EARS-535/536).
+     *
+     * `note` is HUMAN TEXT. It stopped being that during the Mattermost
+     * reconstruction, which had nowhere else to put `source_system=…`,
+     * `source_post_id=…`, `source_created_at=…` and some eighty other keys, so
+     * it wrote them as `key=value` lines into the note the details sheet
+     * renders — and the owner read provenance as «заметка в комментарии»
+     * (#517, Антон, 2026-09-22). Migration `0017` lifts that block out into
+     * this column and leaves `note` the human remainder.
+     *
+     * A flat `{string: string}` object, NOT a per-source typed shape: the keys
+     * are whatever the producer recorded, and the ones a later task promotes
+     * into real columns (the money facts, the fees, the period) leave this
+     * column when that task consumes them. Typing today's 80-odd accidental
+     * keys would freeze a corpus that is meant to shrink.
+     *
+     * IMMUTABLE AFTER SUBMIT (EARS-536): nothing in the write layer offers an
+     * edit path, and the request form does not collect it. What a human means
+     * to say about the request is `note`; what the SOURCE said is this.
+     */
+    provenance: jsonb('provenance').$type<Record<string, string>>(),
     alreadyPaid: boolean('already_paid').notNull().default(false),
     personalFunds: boolean('personal_funds').notNull().default(false),
     decidedBy: integer('decided_by'),
@@ -197,11 +223,25 @@ export const financeIntakeItem = core.table(
       'finance_intake_item_status_allowed',
       sql`${table.status} in ('draft', 'submitted', 'approved', 'refused', 'cancelled', 'posted')`,
     ),
-    // EARS-503: the ref is mandatory for the machine-fed sources and forbidden
-    // for the human ones. Stated as one equivalence so neither half can drift.
+    // EARS-503, revised 2026-09-22 (#517, owner go, Антон): the ref is
+    // MANDATORY for the machine-fed sources and OPTIONAL — no longer
+    // forbidden — for the human ones.
+    //
+    // The old form was an EQUIVALENCE, and it said «a human act has no external
+    // identity». That was true of the act and false of the RECORD: a request is
+    // typed somewhere before it reaches this table — a Mattermost post, a
+    // ticket, a message — and the link to that place is exactly what the
+    // submitter and every later reader want. Forbidding it is why 47
+    // reconstructed requests carried their post id as free text inside `note`.
+    //
+    // What the optional arm does NOT weaken: `finance_intake_item_source_ref_unique`
+    // still refuses a second `(source, source_ref)` pair, so a link is still an
+    // identity when it is present — two requests cannot name one post. And a
+    // `backfill` row that lands ref-less is still refused, which is the whole of
+    // EARS-504's protection against a re-run double-posting.
     check(
       'finance_intake_item_source_ref_policy',
-      sql`(${table.source} in ('bank_import', 'backfill')) = (${table.sourceRef} is not null)`,
+      sql`(${table.source} not in ('bank_import', 'backfill')) or (${table.sourceRef} is not null)`,
     ),
     check(
       'finance_intake_item_personal_funds_account',

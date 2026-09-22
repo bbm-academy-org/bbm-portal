@@ -20,14 +20,38 @@
  * **EARS-503's semantics, per source.** `bank_import` — the statement line's
  * stable identity, always. `backfill` — always, and composed in a fixed order:
  * the document's number, else the Mattermost post id, else a deterministic
- * natural key. `manual` and `request` — none: a human act has no external
- * identity to deduplicate on, and inventing one would make two genuinely
- * separate typings of the same expense collide.
+ * natural key. `manual` and `request` — OPTIONAL since 2026-09-22 (#517, owner
+ * go, Антон).
+ *
+ * That last arm used to read «none», and the reason it gave was sound about the
+ * ACT and wrong about the RECORD: a human act has no external identity to
+ * deduplicate on, so nothing may be INVENTED for it — but a request is typed
+ * somewhere before it reaches the intake (a Mattermost post, a ticket, a
+ * message), and the link to that place is exactly what the submitter and every
+ * later reader want to follow. Forbidding the column is why 47 reconstructed
+ * requests carried their post id as free text inside `note`, which the owner
+ * read as «просто заметка в комментарии».
+ *
+ * Nothing about deduplication weakens: an optional ref is never DERIVED, only
+ * accepted verbatim from the producer, so two separate typings of the same
+ * expense still land as two items. And when a ref IS present the partial unique
+ * index still holds — two requests cannot name one post.
  */
 import { FinanceRefusal } from '../core/errors'
 
-/** Whether this source's items carry an external identity at all (EARS-503). */
-export type FinanceIntakeSourceRefPolicy = 'none' | 'required'
+/**
+ * Whether this source's items carry an external identity (EARS-503).
+ *
+ * `none` — the source has no identity space at all and a handed ref is refused.
+ * `optional` — a ref is accepted verbatim when the producer has one and never
+ * derived when it has not. `required` — a ref is mandatory and the create is
+ * refused without one.
+ *
+ * No source ships with `none` today; the value stays because it is the honest
+ * answer for a producer that genuinely has no external identity, and removing
+ * it would force such a producer to pretend otherwise.
+ */
+export type FinanceIntakeSourceRefPolicy = 'none' | 'optional' | 'required'
 
 /**
  * The natural key a backfill row falls back to (EARS-503, scenario 6).
@@ -148,6 +172,16 @@ export function resolveIntakeSourceRef(
     return null
   }
 
+  // OPTIONAL never DERIVES (#517). The producer's `deriveSourceRef` composes an
+  // identity out of the row's own facts, and doing that for a human source is
+  // the very thing EARS-503 rules out: two separate typings of one expense
+  // would collide on a key neither person asked for. So an optional source
+  // stores the link it was handed and nothing else.
+  if (producer.sourceRefPolicy === 'optional') {
+    if (handed === '') return null
+    return assertRefLength(source, handed)
+  }
+
   const derived = handed !== '' ? handed : (producer.deriveSourceRef?.(input) ?? null)
   if (derived === null || derived.trim() === '') {
     throw new FinanceRefusal(
@@ -157,7 +191,28 @@ export function resolveIntakeSourceRef(
         '(дата + счёт + сумма + контрагент).',
     )
   }
-  return derived.trim()
+  return assertRefLength(source, derived.trim())
+}
+
+/**
+ * The one shape rule a ref of ANY source obeys: it is an identity, not a
+ * document.
+ *
+ * `source_ref` is `text`, so Postgres would take a pasted essay and put it in
+ * the unique index. The limit is the same 2048 the request form's schema
+ * states — the longest URL every browser and proxy in the chain handles — and
+ * it lives here as well because the form is one producer of many.
+ */
+export const FINANCE_INTAKE_SOURCE_REF_MAX = 2048
+
+function assertRefLength(source: string, ref: string): string {
+  if (ref.length > FINANCE_INTAKE_SOURCE_REF_MAX) {
+    throw new FinanceRefusal(
+      `Ссылка на источник для «${source}» длиннее ${FINANCE_INTAKE_SOURCE_REF_MAX} символов ` +
+        '(EARS-503): source_ref — это идентификатор записи, а не её содержимое.',
+    )
+  }
+  return ref
 }
 
 // ── the four producers spec 339 fixes (EARS-503) ─────────────────────────────
@@ -166,8 +221,11 @@ export function resolveIntakeSourceRef(
 // A fifth one is added the same way — by `registerIntakeProducer`, from wherever
 // that source lives — and nothing above changes.
 
-registerIntakeProducer({ source: 'request', sourceRefPolicy: 'none' })
-registerIntakeProducer({ source: 'manual', sourceRefPolicy: 'none' })
+// `request` and `manual` take the link they are given and never invent one
+// (#517). See «EARS-503's semantics, per source» above for why the arm moved
+// from `none` to `optional` on 2026-09-22.
+registerIntakeProducer({ source: 'request', sourceRefPolicy: 'optional' })
+registerIntakeProducer({ source: 'manual', sourceRefPolicy: 'optional' })
 registerIntakeProducer({
   source: 'backfill',
   sourceRefPolicy: 'required',
