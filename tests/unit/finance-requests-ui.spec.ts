@@ -181,6 +181,10 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     own: false,
     status: 'submitted',
     occurredOn: '2026-08-22',
+    createdAt: '2026-08-20T09:30:00.000Z',
+    sourceRef: null,
+    sourceUrl: null,
+    sourceLabel: null,
     amount: '4500000',
     currency: 'RUB',
     paidAmount: null,
@@ -1344,11 +1348,12 @@ describe('/p/finance/requests — the table is the default view (decision 35)', 
     renderScreen()
     const table = requestsTable()
 
-    // «Дата» became «Деньги ушли» (owner acceptance 2026-09-15): the header
-    // names what the value IS, so «ещё не двигались» answers the question that
-    // was asked. Each header also carries the block's sorter, whose aria text
-    // joins the accessible name — hence the prefix match.
-    for (const head of ['Деньги ушли', 'Сумма', 'Назначение', 'Статус']) {
+    // «Дата» became «Деньги ушли» (owner acceptance 2026-09-15) and «Подана»
+    // since #517: the first column now leads with the FILING moment — the one
+    // date every row of a register of requests has — and carries the money
+    // date under it. Each header also carries the block's sorter, whose aria
+    // text joins the accessible name — hence the prefix match.
+    for (const head of ['Подана', 'Сумма', 'Назначение', 'Статус']) {
       expect(within(table).getByRole('columnheader', { name: new RegExp(`^${head}`) })).toBeTruthy()
     }
     // «Кто подал» is NOT one of them under «Мои» (#388 defect B): every row of
@@ -1625,7 +1630,7 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     const table = requestsTable()
 
     for (const label of [
-      'Сортировать по дате движения денег',
+      'Сортировать по дате подачи',
       'Сортировать по сумме',
       'Сортировать по статусу',
     ]) {
@@ -1689,14 +1694,60 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     }
   })
 
-  it('names the date column for what the value IS, and says so on an intent', async () => {
+  it('leads with «Подана» and still names what the money did, under it', async () => {
     refine.custom.data = snapshot({ requests: [item({ id: 1, own: true, occurredOn: null })] })
     renderScreen()
     const table = requestsTable()
 
-    expect(within(table).getByRole('columnheader', { name: /^Деньги ушли/ })).toBeTruthy()
+    // The header names the FILING moment (#517); the money date keeps its own
+    // honest wording as the cell's second line, so «ещё не двигались» still
+    // answers the question that was asked rather than printing «—».
+    expect(within(table).getByRole('columnheader', { name: /^Подана/ })).toBeTruthy()
     expect(within(table).queryByRole('columnheader', { name: /^Дата$/ })).toBeNull()
+    expect(within(table).queryByRole('columnheader', { name: /^Деньги ушли/ })).toBeNull()
     expect(within(table).getByText('ещё не двигались')).toBeTruthy()
+    // Date AND time, in the zone the instants are stored in — the acceptance
+    // line of #517 for the Higgsfield post written at 14:21:39Z.
+    expect(within(table).getByText('20.08.2026 09:30')).toBeTruthy()
+  })
+
+  it('#517: puts the source link on the row and in the sheet, and nothing where there is none', async () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 1,
+          own: true,
+          createdAt: '2026-04-20T14:21:39.000Z',
+          sourceRef: 'q41r3h4nxjnozgft493okar9tw',
+          sourceUrl: 'https://chat.bbm.academy/bbm/pl/q41r3h4nxjnozgft493okar9tw',
+          sourceLabel: 'Mattermost',
+        }),
+        item({ id: 2, own: true }),
+      ],
+    })
+    renderScreen()
+    const table = requestsTable()
+
+    const link = within(table).getByRole('link', { name: /Открыть источник заявки №1/ })
+    expect(link.getAttribute('href')).toBe(
+      'https://chat.bbm.academy/bbm/pl/q41r3h4nxjnozgft493okar9tw',
+    )
+    // A new tab, and `noopener noreferrer` is what makes that safe.
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // The row with no source carries NO link at all — not a dash, not a
+    // disabled icon.
+    expect(within(table).queryByRole('link', { name: /Открыть источник заявки №2/ })).toBeNull()
+    expect(within(table).getAllByRole('link')).toHaveLength(1)
+
+    // And the sheet says both halves in words.
+    pick('button', 'Заявка №1')
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = within(screen.getByRole('dialog'))
+    expect(sheet.getByText('Подана')).toBeTruthy()
+    expect(sheet.getByText('20.04.2026 14:21')).toBeTruthy()
+    expect(sheet.getByText('Источник')).toBeTruthy()
+    expect(sheet.getByText('Mattermost')).toBeTruthy()
   })
 
   it('offers no hover underline on a row: opening one is a named control, not a link', async () => {

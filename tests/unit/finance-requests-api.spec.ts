@@ -70,6 +70,13 @@ const request = {
   alreadyPaid: false,
   personalFunds: false,
   createdBy: 15,
+  // «Подана» + where (#517). The instant is the audit column `0016` added; the
+  // provenance object is what `0017` lifted out of `note` for the 47
+  // reconstructed rows, and it is what the URL resolver dispatches on.
+  createdAt: new Date('2026-04-20T14:21:39Z'),
+  updatedAt: new Date('2026-07-01T12:00:00Z'),
+  updatedBy: 16,
+  provenance: null,
   decidedBy: 16,
   decidedAt: new Date('2026-07-01T12:00:00Z'),
   refusalReason: null,
@@ -359,6 +366,65 @@ describe('/p/finance/api/requests read model', () => {
 })
 
 describe('/p/finance/api/requests writes', () => {
+  /** The body every #517 case below varies one field of. */
+  function body(extra: Record<string, unknown> = {}) {
+    return JSON.stringify({
+      amount: '4500000',
+      currency: 'RUB',
+      purposeId: 11,
+      projectId: 12,
+      productId: 13,
+      counterpartyId: 14,
+      alreadyPaid: false,
+      personalFunds: false,
+      ...extra,
+    })
+  }
+
+  it('#517: stores the source link the form collected', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 52, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: body({ sourceRef: '  https://chat.bbm.academy/bbm/pl/abc  ' }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(state.createExpenseRequest).toHaveBeenCalledWith(
+      expect.any(Object),
+      // Trimmed by the schema, stored verbatim by the spine.
+      expect.objectContaining({ sourceRef: 'https://chat.bbm.academy/bbm/pl/abc' }),
+    )
+  })
+
+  it('#517: files a request with no source link at all — the field is optional', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 53, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(new Request(BASE, { method: 'POST', body: body() }))
+
+    expect(response.status).toBe(201)
+    expect(state.createExpenseRequest).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ sourceRef: null }),
+    )
+  })
+
+  it('#517: refuses a source that is not an http(s) address, before anything is filed', async () => {
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, { method: 'POST', body: body({ sourceRef: 'см. в чате' }) }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/адрес/i)
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+  })
+
   it('EARS-508/532: creates an inline counterparty before the draft request', async () => {
     state.createCounterparty.mockResolvedValue({ id: 24, name: 'Новый поставщик' })
     state.createExpenseRequest.mockResolvedValue({ ...request, id: 51, status: 'draft' })
