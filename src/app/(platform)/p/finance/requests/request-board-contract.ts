@@ -20,6 +20,18 @@ export type RequestBoardItem = {
    * (EARS-533). No surface renders that emptiness as a value.
    */
   occurredOn: string | null
+  /**
+   * WHEN THE REQUEST WAS FILED — «Подана» (#517). An ISO instant; the audit
+   * column `created_at`, which every row carries since #516 and which migration
+   * `0017` set from the Mattermost post for the 47 reconstructed rows.
+   */
+  createdAt: string
+  /** WHERE it was filed: a link, or a source system's identifier. Null when none. */
+  sourceRef: string | null
+  /** The same thing as an openable URL, resolved SERVER-SIDE. Null when unresolvable. */
+  sourceUrl: string | null
+  /** What to call that link on screen — «Mattermost», a host, or the ref itself. */
+  sourceLabel: string | null
   amount: string
   currency: string
   paidAmount: string | null
@@ -88,6 +100,8 @@ export type CreateRequestBody = {
   counterpartyId?: number | null
   counterpartyName?: string | null
   note?: string | null
+  /** Optional and FILING-ONLY: provenance is immutable after submit (EARS-536). */
+  sourceRef?: string | null
   alreadyPaid: boolean
   personalFunds: boolean
 }

@@ -330,6 +330,42 @@ export function RequestFormSheet({
                   </FormItem>
                 )}
               />
+
+              {/* «ГДЕ ЭТО ОБСУЖДАЛИ» (#517, EARS-535), last in «Что покупаем»
+                  and optional.
+                  It sits here rather than in «Сколько и кому» because it
+                  describes the REQUEST, not the money, and it sits LAST because
+                  most requests are typed straight into this form and have no
+                  source elsewhere — an optional field asked before the required
+                  ones reads as one more thing owed.
+                  Only offered on a NEW request: provenance is immutable after
+                  submit (EARS-536), so a reopened request has nothing to fill
+                  in here and is not shown an input that would do nothing. */}
+              {request === undefined ? (
+                <FormField
+                  control={form.control}
+                  name="sourceRef"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Ссылка на источник</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="url"
+                          inputMode="url"
+                          disabled={pending}
+                          placeholder="https://chat.bbm.academy/bbm/pl/…"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Необязательно. Пост в Mattermost или другое место, где трату обсуждали, — в
+                        заявке появится ссылка «Источник».
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
             </Section>
 
             <Section title="Сколько и кому">

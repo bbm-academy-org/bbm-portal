@@ -128,7 +128,7 @@ export function requestsLoadingView(stored: string | null): RequestsView {
 export const REQUEST_TABLE_WIDTH_BUDGET = 1110
 
 export type RequestTableColumnId =
-  'occurredOn' | 'createdByName' | 'amount' | 'purpose' | 'status' | 'actions'
+  'filed' | 'createdByName' | 'amount' | 'purpose' | 'status' | 'actions'
 
 export type RequestTableColumn = { id: RequestTableColumnId; size: number }
 
@@ -147,6 +147,32 @@ export type RequestTableColumn = { id: RequestTableColumnId; size: number }
  * therefore the one that gives the width up.
  */
 export const REQUEST_TABLE_NO_MOVEMENT_LABEL = 'ещё не двигались'
+
+/**
+ * THE REGISTER'S FIRST COLUMN CARRIES BOTH DATES, AND «Подана» LEADS (#517).
+ *
+ * The owner's complaint that opened this task was that the filing moment «сейчас
+ * вообще не отображается нигде» (Антон, 2026-09-22). It is the one date EVERY
+ * row of a register of REQUESTS has: EARS-533 leaves `occurred_on` empty on
+ * every pre-spend intent, which on the reconstructed corpus is most of them, so
+ * a register led by the money date opens on a column of placeholders.
+ *
+ * Two date columns do not fit. The desktop budget above is 1110 px and the
+ * widest combination already declared 1080 — a second 136 px column overspends
+ * it, and the block lays the table out `table-layout: fixed`, so there is no
+ * reflow to absorb the overflow. What exists instead is a CELL with two lines,
+ * the pattern this register already uses twice: «Назначение» carries the note
+ * under the purpose, «Статус» carries the refusal reason under the badge.
+ *
+ *   Подана
+ *   20.04.2026 14:21  ↗        ← the filing moment, and the link to its source
+ *   ушли 22.08.2026            ← muted; «ещё не двигались» when they have not
+ *
+ * Nothing is lost by the merge and nothing is invented: both values were on the
+ * screen before, both are on it now, and the details sheet still carries each
+ * one as a labelled field of its own.
+ */
+export const REQUEST_TABLE_MONEY_MOVED_PREFIX = 'ушли'
 /** Measured live in the running stand at 1440×900, not computed. */
 export const REQUEST_TABLE_NO_MOVEMENT_LABEL_WIDTH = 114
 /** The block's cell padding — `p-2` on both sides of every `TableCell`. */
@@ -154,14 +180,15 @@ export const REQUEST_TABLE_CELL_PADDING = 16
 
 /** What each column is worth in the budget, in the reading order it is spent. */
 const REQUEST_TABLE_COLUMN_WIDTHS: Record<RequestTableColumnId, number> = {
-  // 114 px of placeholder plus the cell's own 16 px, and 6 px of margin for a
-  // font that is not the one the measurement was taken in.
-  occurredOn: 136,
+  // «дд.мм.гггг чч:мм» plus the source link's icon on the first line, and the
+  // money-movement line under it — see `filed` above for why the two dates
+  // share one column. 144 px of content, 16 px of the block's cell padding.
+  filed: 160,
   createdByName: 140,
   amount: 124,
   // The column that gives: it carries free text, so no width ever fits its
   // content and every px here is a px the fixed-width columns cannot spend.
-  purpose: 190,
+  purpose: 185,
   status: 190,
   actions: 300,
 }
@@ -196,7 +223,7 @@ export function requestTableColumnPlan({
   canApprove: boolean
 }): RequestTableColumn[] {
   const ids: RequestTableColumnId[] = [
-    'occurredOn',
+    'filed',
     ...(scope === 'all' ? (['createdByName'] as const) : []),
     'amount',
     'purpose',
@@ -261,6 +288,10 @@ const SORT_KEYS: Record<string, (request: RequestBoardItem) => string> = {
   // An intent has no date at all (EARS-533); it sorts as the far future so the
   // two views of this queue agree about what «newest first» means.
   occurredOn: (request) => request.occurredOn ?? '9999-12-31',
+  // «Подана» (#517). An ISO instant compares correctly as a string, and unlike
+  // the money date every row has one — which is what makes it the column the
+  // merged first cell offers its sorter on.
+  createdAt: (request) => request.createdAt,
   createdByName: (request) => request.createdByName ?? '',
   // Minor units, zero-padded: a string compare over money is only honest once
   // every value is the same width.

@@ -95,3 +95,30 @@ export function formatDate(iso: string): string {
   const [year, month, day] = iso.slice(0, 10).split('-')
   return year && month && day ? `${day}.${month}.${year}` : iso
 }
+
+/**
+ * An INSTANT as «дд.мм.гггг чч:мм» — «Подана» (#517).
+ *
+ * READ OFF THE STRING, exactly as `formatDate` above reads a date off its own.
+ * That is a decision, not an oversight: the server serializes `created_at` as
+ * an ISO-Z instant, and `new Date(...).toLocaleString()` would render it in
+ * whatever zone the reader's laptop is set to — so the same request would read
+ * «14:21» in Moscow, «11:21» in Lisbon and «17:21» in Tbilisi, and two people
+ * comparing a register over a call would disagree about when it was filed.
+ *
+ * A finance register is a shared record: every row of it must say the same
+ * thing to everyone looking at it. UTC is the zone the instants are STORED in
+ * and the one the Mattermost corpus recorded (`source_created_at=…Z`), so it is
+ * the zone the screen names them in — which is also what makes the issue's own
+ * acceptance line true: the Higgsfield post written at 14:21:39Z reads «Подана
+ * 20.04.2026 14:21» for every reader, on every machine.
+ *
+ * Seconds are dropped rather than rounded: the minute is the resolution a human
+ * asks this question at, and a truncation cannot make a request look filed
+ * later than it was.
+ */
+export function formatDateTime(iso: string): string {
+  const date = formatDate(iso)
+  const time = iso.slice(11, 16)
+  return /^\d{2}:\d{2}$/.test(time) ? `${date} ${time}` : date
+}

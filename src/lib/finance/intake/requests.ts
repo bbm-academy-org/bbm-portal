@@ -67,9 +67,25 @@ export type CreateExpenseRequestInput = {
   note?: string | null
   alreadyPaid?: boolean
   personalFunds?: boolean
+  /**
+   * WHERE THE REQUEST WAS MADE — optional since 2026-09-22 (#517, revised
+   * EARS-503): the link to the Mattermost post, the ticket or the message the
+   * spend was asked for in.
+   *
+   * FILING ONLY, and deliberately absent from the edit patch below: provenance
+   * is immutable after submit (EARS-536). Where a request came from is a fact
+   * of the moment it was filed, and a surface that let it be rewritten would
+   * make every «Источник» link a claim rather than a record.
+   */
+  sourceRef?: string | null
 }
 
-export type EditExpenseRequestPatch = Partial<CreateExpenseRequestInput>
+/**
+ * `sourceRef` is NOT here, and its absence is the clause, not an omission
+ * (EARS-536, #517). `Omit` rather than a hand-written twin, so a field added to
+ * the create input keeps arriving here without anyone remembering to copy it.
+ */
+export type EditExpenseRequestPatch = Partial<Omit<CreateExpenseRequestInput, 'sourceRef'>>
 
 type ExpenseRequestState = {
   occurredOn: string | null
@@ -279,6 +295,10 @@ export async function createExpenseRequest(
       kind: 'expense',
       ...state,
       memberId: member?.id ?? null,
+      // Verbatim, never derived: `resolveIntakeSourceRef` refuses to compose an
+      // identity for a human source, so an empty field files a ref-less request
+      // exactly as it always did (EARS-503, revised #517).
+      sourceRef: input.sourceRef ?? null,
     },
     { validate: (tx) => assertExpenseRequestState(tx, state, { allowMissingPurpose: true }) },
   )

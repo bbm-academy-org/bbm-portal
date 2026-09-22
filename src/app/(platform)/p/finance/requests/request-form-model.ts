@@ -66,8 +66,20 @@ export type RequestFormValue = {
   counterpartyId: string
   counterpartyName: string
   note: string
+  /** «Ссылка на источник» — where the spend was asked for (#517, EARS-535). */
+  sourceRef: string
   alreadyPaid: boolean
   personalFunds: boolean
+}
+
+/** An http(s) address and nothing else — the one shape a «Источник» can open. */
+function isHttpLink(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 const baseSchema = z.object({
@@ -85,6 +97,19 @@ const baseSchema = z.object({
   counterpartyId: z.string(),
   counterpartyName: z.string(),
   note: z.string(),
+  // OPTIONAL, and refused as a SHAPE rather than as a presence: empty is a
+  // legitimate answer (a request typed straight into this form has no source
+  // elsewhere), but a non-empty value that is not an http(s) address cannot
+  // become a link, and a field that silently stored «см. в чате» would put a
+  // dead «Источник» on the record (#517). The server refuses the same shape
+  // (`request-utils.ts` → `isHttpLink`); this message is what the member reads
+  // before the request leaves the browser.
+  sourceRef: z
+    .string()
+    .refine(
+      (value) => value.trim() === '' || isHttpLink(value.trim()),
+      'Вставьте адрес целиком — например, ссылку на пост в Mattermost, где обсуждали трату.',
+    ),
   alreadyPaid: z.boolean(),
   personalFunds: z.boolean(),
 })
@@ -370,6 +395,7 @@ export function requestFormDefaults(
       counterpartyId: '',
       counterpartyName: '',
       note: '',
+      sourceRef: '',
       alreadyPaid: false,
       personalFunds: false,
     }
@@ -394,6 +420,10 @@ export function requestFormDefaults(
     counterpartyId: request.counterparty === null ? '' : String(request.counterparty.id),
     counterpartyName: '',
     note: request.note ?? '',
+    // Reopened for EDITING, and provenance is immutable after submit
+    // (EARS-536): the field comes back empty and the body below never sends it,
+    // so a re-save cannot rewrite where the request came from.
+    sourceRef: '',
     alreadyPaid: request.alreadyPaid,
     personalFunds: request.personalFunds,
   }
@@ -442,6 +472,7 @@ export function toRequestBody(
     counterpartyId: value.counterpartyId === '' ? null : Number(value.counterpartyId),
     counterpartyName: counterpartyName === '' ? null : counterpartyName,
     note: value.note.trim() === '' ? null : value.note.trim(),
+    sourceRef: value.sourceRef.trim() === '' ? null : value.sourceRef.trim(),
     alreadyPaid: value.alreadyPaid,
     personalFunds: ownMoneyOnly ? value.alreadyPaid : value.personalFunds,
   }
