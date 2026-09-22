@@ -16,6 +16,7 @@ import { sql } from 'drizzle-orm'
 import { bigint, check, integer, serial, text, timestamp } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeCurrency } from './finance-currency'
 import { financeProject } from './finance-project'
 
@@ -31,6 +32,7 @@ export const financeProduct = core.table(
     salePrice: bigint('sale_price', { mode: 'bigint' }),
     salePriceCurrency: text('sale_price_currency').references(() => financeCurrency.code),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    ...auditColumns(),
   },
   (table) => [
     check(

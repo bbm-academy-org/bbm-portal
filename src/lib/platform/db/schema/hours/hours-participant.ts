@@ -26,6 +26,7 @@ import { sql } from 'drizzle-orm'
 import { check, integer, text } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 export const hoursParticipant = core.table(
   'hours_participant',
@@ -38,6 +39,7 @@ export const hoursParticipant = core.table(
     /** Точка внутри вилки; the rate is COMPUTED from fork + grade, never stored. */
     grade: text('grade'),
     sortKey: integer('sort_key').notNull(),
+    ...auditColumns(),
   },
   (table) => [check('hours_participant_grade_allowed', sql`${table.grade} in ('I', 'II', 'III')`)],
 )

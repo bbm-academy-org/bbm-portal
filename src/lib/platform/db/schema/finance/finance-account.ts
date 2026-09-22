@@ -22,6 +22,7 @@ import { sql } from 'drizzle-orm'
 import { boolean, check, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeCurrency } from './finance-currency'
 
 /** The money kinds an owner may create (the cabinet's create form). */
@@ -57,6 +58,7 @@ export const financeAccount = core.table(
     /** Module-managed (EARS-305) — the cabinet renders these read-only. */
     isSystem: boolean('is_system').notNull().default(false),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    ...auditColumns(),
   },
   (table) => [
     check(

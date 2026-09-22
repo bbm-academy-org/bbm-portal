@@ -40,6 +40,7 @@ import { sql } from 'drizzle-orm'
 import { check, integer, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeCurrency } from './finance-currency'
 import { financeOperation } from './finance-operation'
 
@@ -60,6 +61,7 @@ export const financeConversionStep = core.table(
       .references(() => financeCurrency.code),
     /** As recorded, never restated (EARS-319). */
     rate: text('rate').notNull(),
+    ...auditColumns(),
   },
   (table) => [
     check('finance_conversion_step_no_positive', sql`${table.stepNo} >= 1`),

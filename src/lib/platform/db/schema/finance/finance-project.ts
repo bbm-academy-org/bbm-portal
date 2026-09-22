@@ -15,6 +15,7 @@ import { sql } from 'drizzle-orm'
 import { boolean, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 export const financeProject = core.table(
   'finance_project',
@@ -24,6 +25,7 @@ export const financeProject = core.table(
     /** The single fund row (EARS-304); seeded by the migration. */
     isFund: boolean('is_fund').notNull().default(false),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    ...auditColumns(),
   },
   (table) => [
     uniqueIndex('finance_project_single_fund')

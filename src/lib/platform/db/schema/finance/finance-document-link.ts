@@ -35,6 +35,7 @@
 import { index, integer, serial, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeDocument } from './finance-document'
 import { financeIntakeItem } from './finance-intake-item'
 
@@ -51,6 +52,7 @@ export const financeDocumentLink = core.table(
     /** FK → `core.member(id)`, added as SQL in the migration. */
     linkedBy: integer('linked_by').notNull(),
     linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+    ...auditColumns(),
   },
   (table) => [
     uniqueIndex('finance_document_link_pair_unique').on(table.documentId, table.intakeItemId),

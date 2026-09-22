@@ -58,6 +58,7 @@ import { sql } from 'drizzle-orm'
 import { bigint, check, index, integer, serial, text, timestamp } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 /**
  * The classes of confirming document (EARS-515): the corpus's five, the bank
@@ -122,6 +123,7 @@ export const financeDocument = core.table(
     /** FK → `core.member(id)`, added as SQL in the migration. */
     uploadedBy: integer('uploaded_by').notNull(),
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+    ...auditColumns(),
   },
   (table) => [
     check(

@@ -43,6 +43,7 @@ import { sql } from 'drizzle-orm'
 import { check, integer, primaryKey, text } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { hoursPublication } from './hours-publication'
 
 export const hoursPublicationMessage = core.table(
@@ -58,6 +59,7 @@ export const hoursPublicationMessage = core.table(
     text: text('text').notNull(),
     delivery: text('delivery').notNull(),
     sentAt: text('sent_at'),
+    ...auditColumns(),
   },
   (table) => [
     primaryKey({

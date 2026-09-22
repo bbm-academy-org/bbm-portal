@@ -28,6 +28,7 @@ import { sql } from 'drizzle-orm'
 import { check, integer, serial, text, timestamp } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeCategory } from './finance-category'
 
 export const FINANCE_PRODUCT_BINDINGS = ['required', 'forbidden', 'optional'] as const
@@ -42,6 +43,7 @@ export const financePurpose = core.table(
     categoryId: integer('category_id').references(() => financeCategory.id),
     productBinding: text('product_binding').notNull(),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    ...auditColumns(),
   },
   (table) => [
     check(

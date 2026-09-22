@@ -19,6 +19,7 @@ import { sql } from 'drizzle-orm'
 import { check, index, integer, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeIntakeItem } from './finance-intake-item'
 import { financePurpose } from './finance-purpose'
 
@@ -32,9 +33,9 @@ export const financePurposeProposal = core.table(
     text: text('text').notNull(),
     /** FK → `core.member(id)`, added as SQL in the migration. */
     proposedBy: integer('proposed_by').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     resolvedPurposeId: integer('resolved_purpose_id').references(() => financePurpose.id),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    ...auditColumns(),
   },
   (table) => [
     check(

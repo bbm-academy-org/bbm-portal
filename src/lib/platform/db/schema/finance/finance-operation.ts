@@ -33,6 +33,7 @@ import {
 } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financePurpose } from './finance-purpose'
 
 export const FINANCE_OPERATION_SOURCES = [
@@ -59,6 +60,7 @@ export const financeOperation = core.table(
     backdated: boolean('backdated').notNull().default(false),
     /** The operation this one сторнирует (EARS-314); unique → EARS-315. */
     reverses: integer('reverses').references((): AnyPgColumn => financeOperation.id),
+    ...auditColumns(),
   },
   (table) => [
     check(
