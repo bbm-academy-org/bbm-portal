@@ -12,11 +12,13 @@ import { DataTableSorter } from '@/ui/refine-ui/data-table/data-table-sorter'
 
 import {
   formatDate,
+  formatDateTime,
   REQUESTS_RESOURCE,
   REQUEST_STATUS_BADGE_VARIANT,
   REQUEST_STATUS_LABELS,
 } from './constants'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
+import { RequestSourceLink } from './RequestSourceLink'
 import {
   BOARD_READ_QUERY_OPTIONS,
   currencyPrecision,
@@ -25,6 +27,7 @@ import {
   type FinanceRequestBoardAct,
 } from './request-board-model'
 import {
+  REQUEST_TABLE_MONEY_MOVED_PREFIX,
   REQUEST_TABLE_NO_MOVEMENT_LABEL,
   requestAmountTotals,
   requestRowActs,
@@ -149,23 +152,34 @@ function RequestsRegister({
     // (`requestTableColumnPlan`) — one place where the desktop width budget of
     // #388 defect B can be read and checked.
     const byId: Record<RequestTableColumnId, ColumnDef<RequestBoardItem>> = {
-      occurredOn: {
-        id: 'occurredOn',
-        accessorKey: 'occurredOn',
+      // BOTH DATES, ONE COLUMN, «Подана» LEADING (#517). Why the two share a
+      // cell rather than taking a column each — the 1110 px budget and the
+      // two-line cells this register already uses — is
+      // `request-table-model.ts` → `REQUEST_TABLE_MONEY_MOVED_PREFIX`.
+      filed: {
+        id: 'filed',
+        accessorKey: 'createdAt',
         header: ({ column }) => (
           <>
-            Деньги ушли
-            <Sorter column={column} label="Сортировать по дате движения денег" />
+            Подана
+            <Sorter column={column} label="Сортировать по дате подачи" />
           </>
         ),
         // «Итого» labels the footer row; the sum itself stands under «Сумма».
         footer: () => <span className="font-medium">Итого</span>,
-        cell: ({ row }) =>
-          row.original.occurredOn === null ? (
-            <span className="text-muted-foreground">{REQUEST_TABLE_NO_MOVEMENT_LABEL}</span>
-          ) : (
-            <span className="tabular-nums">{formatDate(row.original.occurredOn)}</span>
-          ),
+        cell: ({ row }) => (
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="tabular-nums">{formatDateTime(row.original.createdAt)}</span>
+              <RequestSourceLink request={row.original} compact />
+            </div>
+            <span className="block truncate text-xs text-muted-foreground">
+              {row.original.occurredOn === null
+                ? REQUEST_TABLE_NO_MOVEMENT_LABEL
+                : `${REQUEST_TABLE_MONEY_MOVED_PREFIX} ${formatDate(row.original.occurredOn)}`}
+            </span>
+          </div>
+        ),
       },
       createdByName: {
         id: 'createdByName',

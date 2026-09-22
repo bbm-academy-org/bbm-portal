@@ -38,10 +38,12 @@ import {
   documentHref,
   DOCUMENT_KIND_LABELS,
   formatDate,
+  formatDateTime,
   isInlineReadable,
   REQUEST_STATUS_LABELS,
 } from './constants'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
+import { RequestSourceLink } from './RequestSourceLink'
 import { useSheetOverlayMark } from './sheet-overlay'
 import {
   canAttachDocument,
@@ -657,6 +659,27 @@ export function RequestDetailsSheet({
               precisely the ones that carry the state. Two columns from `sm` up,
               where the sheet is `sm:max-w-lg` and the pairing reads. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* WHEN AND WHERE IT WAS FILED, side by side and FIRST (#517).
+                The owner's own words opening this task: the submission moment
+                «сейчас вообще не отображается нигде», and the source was «просто
+                заметка в комментарии». They are the two halves of one question —
+                когда подали и где это обсуждали — so they are one pair at the
+                top of the record, above the money facts that follow. */}
+            <Field label="Подана" value={formatDateTime(request.createdAt)} />
+            <Field
+              label="Источник"
+              value={
+                request.sourceRef === null ? (
+                  // Nothing rather than «—» would leave a hole in the grid's
+                  // pairing; `Field` already renders an em dash for an empty
+                  // value, which is the honest answer for a request typed
+                  // straight into this form.
+                  '—'
+                ) : (
+                  <RequestSourceLink request={request} />
+                )
+              }
+            />
             <Field label="Контрагент" value={request.counterparty?.name ?? '—'} />
             <Field
               label="Счёт списания"

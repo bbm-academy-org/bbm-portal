@@ -202,6 +202,7 @@ export {
   listIntakeProducers,
   resolveIntakeProducer,
   resolveIntakeSourceRef,
+  FINANCE_INTAKE_SOURCE_REF_MAX,
 } from './intake/sources'
 export type {
   FinanceIntakeNaturalKey,
@@ -209,6 +210,11 @@ export type {
   FinanceIntakeRefInput,
   FinanceIntakeSourceRefPolicy,
 } from './intake/sources'
+// Where a ref POINTS (#517). Server-side only by construction: it reads the
+// Mattermost origin out of the environment, and a screen is handed the resolved
+// string rather than the rule (see `./intake/source-url`).
+export { sourceRefLabel, sourceRefToUrl } from './intake/source-url'
+export type { FinanceIntakeSourceUrlEnv, FinanceIntakeSourceUrlInput } from './intake/source-url'
 export {
   assertIntakeTransition,
   findIntakeTransition,
