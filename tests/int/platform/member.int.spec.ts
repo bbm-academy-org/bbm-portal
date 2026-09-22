@@ -134,8 +134,15 @@ describe('core.member', () => {
           where table_schema = 'core' and table_name = 'member'`,
     )
     const columns = rows.map((r) => r.column_name)
+    // `created_by` / `updated_by` joined `created_at` / `updated_at` with #516:
+    // the four audit columns are mandatory on every `core` table, `member`
+    // included, and on this table they are a SELF-reference to `core.member(id)`.
+    // They are attribution, not a money attribute — the clause EARS-2 states is
+    // about fork, grade and the rate snapshots, which still live in the hours
+    // module's own tables.
     expect(columns.sort()).toEqual([
       'created_at',
+      'created_by',
       'email',
       'id',
       'name',
@@ -144,6 +151,7 @@ describe('core.member', () => {
       'status',
       'timezone',
       'updated_at',
+      'updated_by',
     ])
   })
 

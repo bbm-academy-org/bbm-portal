@@ -84,6 +84,14 @@ describe('core.audit_row_change — the diff', () => {
     const [inserted] = await auditEventsFor(db, mark, 'hours_period')
     expect(inserted.event_type).toBe('data.hours_period.insert')
     expect(inserted.diff).toEqual({
+      // Since #516 «the whole new row» includes the two IMMUTABLE audit columns:
+      // `created_at` / `created_by` are recorded by value, so an INSERT event
+      // carries the row's full provenance. The two write-side ones stay absent
+      // by the same EARS-2 rule that has always dropped `updated_at` — they are
+      // bookkeeping, and `updated_by` would only restate this event's own
+      // `actor_email`. The fixture door has no human behind it, hence the null.
+      created_at: { new: expect.any(String) },
+      created_by: { new: null },
       id: { new: 'p-july' },
       label: { new: 'Июль' },
       date_from: { new: '2026-07-01' },
@@ -118,6 +126,9 @@ describe('core.audit_row_change — the diff', () => {
     // a per-table list — which is what makes a composite PK cost no code.
     expect(event.pk).toEqual({ id: 'p-august' })
     expect(event.diff).toEqual({
+      // …and «the whole old row» likewise carries them (#516).
+      created_at: { old: expect.any(String) },
+      created_by: { old: null },
       id: { old: 'p-august' },
       label: { old: 'Август' },
       date_from: { old: '2026-08-01' },
@@ -176,6 +187,10 @@ describe('core.audit_row_change — the value whitelist', () => {
     // The service half of the row is in the clear — `kind` says WHICH channel
     // changed. The contact itself, and the free text around it, are not.
     expect(alias.diff).toEqual({
+      // The audit columns of #516 are recorded by value like any other
+      // non-excluded column — neither of them is contact data.
+      created_at: { new: expect.any(String) },
+      created_by: { new: null },
       id: { new: expect.any(Number) },
       member_id: { new: memberId },
       kind: { new: 'phone' },

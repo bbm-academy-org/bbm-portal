@@ -646,8 +646,8 @@ CREATE OR REPLACE TRIGGER "member_alias_audit"
 -- knows better. `core.audit_event` has held one row per write since `0003`, so
 -- for a row it covers the answer is already recorded:
 --
---   * `created_at` / `created_by` <- the EARLIEST `data.<table>.insert` event
---     for that primary key;
+--   * `created_at` / `created_by` <- the row's OWN `data.<table>.insert` event
+--     for that primary key (the most recent one — see the DESC note below);
 --   * `updated_at` / `updated_by` <- the LATEST event of ANY type for it.
 --
 -- `actor_email` is mapped to `core.member.id`; an email no member carries (a
@@ -708,7 +708,14 @@ BEGIN
 		first_ev := format(
 			'select ev.created_at as at, (select m.id from core.member m where m.email = ev.actor_email) as actor'
 			|| ' from core.audit_event ev where ev.table_name = %L and ev.event_type = %L and %s'
-			|| ' order by ev.id asc limit 1',
+			-- DESC, i.e. the row's OWN insert rather than the oldest one ever
+			-- recorded under that key. A primary key is reused after
+			-- `TRUNCATE … RESTART IDENTITY`, which the integration tier and the
+			-- dev seed both do, so the oldest insert event under key 7 can belong
+			-- to a row that no longer exists. For a key that was inserted once —
+			-- production, and every row this backfill actually cares about — the
+			-- two orderings name the same event.
+			|| ' order by ev.id desc limit 1',
 			rec.table_name, 'data.' || rec.table_name || '.insert', join_cond);
 
 		last_ev := format(

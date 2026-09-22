@@ -192,7 +192,11 @@ describe('the trigger stamps the row', () => {
       sql`select created_at, actor_email from core.audit_event
           where table_name = 'member' and event_type = 'data.member.insert'
             and pk->>'id' = ${String(subject.id)}
-          order by id asc limit 1`,
+          -- DESC: core.member is truncated with RESTART IDENTITY by other
+          -- suites, so an id is reused across runs while the append-only
+          -- journal keeps every previous run's events. The LATEST insert event
+          -- under this key is this row's.
+          order by id desc limit 1`,
     )
     expect(rows).toHaveLength(1)
     expect(rows[0].actor_email).toBe(actorEmail)
