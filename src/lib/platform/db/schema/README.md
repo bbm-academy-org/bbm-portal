@@ -13,6 +13,17 @@ schema/
   <module>/tables.ts   the tables OWNED by src/lib/<module> (and src/modules/<module>)
 ```
 
+**`audit-columns.ts` is the second flat file**, and it is flat for the same
+reason `core.ts` is: every module spreads it. `...auditColumns()` puts the four
+mandatory audit columns on a table — `created_at`, `created_by`, `updated_at`,
+`updated_by` — and a table without them fails `pnpm lint:audit-columns` (BLOCK).
+The rule, the stamping trigger and the actor resolution are one section of
+[`../README.md`](../README.md) → «Every row carries audit columns»; the decision
+is [ADR-004 A2](../../../../../docs/adr/004-platform-persistence-foundation.md).
+Like the hours and finance foreign keys below, the FK from each actor column to
+`core.member(id)` is written BY HAND in the migration, for the ADR-004 §6 reason
+those two already state.
+
 - **The directory name IS the module name.** `schema/hours/` belongs to
   `src/lib/hours` / `src/modules/hours`; the rule
   `module-must-not-import-foreign-tables` allows a module to import
