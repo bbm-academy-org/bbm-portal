@@ -8,6 +8,7 @@ import {
   AUDIT_COLUMN_EXCLUSIONS,
   AUDIT_TABLE_ALLOWLIST,
   AUDIT_VALUE_WHITELIST,
+  columnExclusionRationale,
   rationaleIsBlank,
 } from '../../../tools/lint/audit-coverage-allowlist.mjs'
 
@@ -127,7 +128,10 @@ describe('audit coverage against the migrated database', () => {
       )
       for (const { column_name: column } of rows) {
         if (args.includes(column)) continue
-        if (!rationaleIsBlank(AUDIT_COLUMN_EXCLUSIONS[`${table}.${column}`])) continue
+        // The wildcard `*.<column>` form is read through the shared lookup, so
+        // the guard and this tier cannot disagree about who is excused (#516).
+        if (!rationaleIsBlank(columnExclusionRationale(AUDIT_COLUMN_EXCLUSIONS, table, column)))
+          continue
         findings.push(`${table}.${column}`)
       }
     }
