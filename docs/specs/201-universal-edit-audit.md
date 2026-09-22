@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 201
-updated: 2026-08-19
+updated: 2026-09-22
 ---
 
 # Universal edit audit for `core` tables — spec (issue #201)
@@ -10,7 +10,11 @@ updated: 2026-08-19
   (deferred), #278 (deferred). Epics: #111 («ядро core»), #117 (epic 7 — the
   guard canon this wires into). Adjacent: `docs/specs/124-hours-on-core.md` (declares
   this work out of its own scope), #125 (the migration pipeline it lands on),
-  #113 (the domain `event_log` — a different thing, see «Out of scope»).
+  #113 (the domain `event_log` — a different thing, see «Out of scope»);
+  #516 (the per-row audit columns `created_at` / `created_by` / `updated_at` /
+  `updated_by`, which complement this journal rather than replace it — the rule
+  is `src/lib/platform/db/README.md` → «Every row carries audit columns —
+  `auditColumns()`», the decision is ADR-004 A2).
 - **Donor.** ds-platform spec 010 «Universal edit audit».
   **Artifact passport:** `C:\Users\sidor\repos\ds-platform\apps\docs\content\specs\features\010-universal-edit-audit\`
   (`010-requirements.md`, `010-design.md`, `010-scenarios.feature`) plus its
@@ -130,10 +134,19 @@ on every caller remembering a wrapper.
   whitelist (EARS-16) shall appear in the diff of **all three** operations as
   `{"field": {"changed": true}}` — never with an `old` or a `new` key — so its
   value cannot enter the ledger through an update, an insert or a delete. The
-  bookkeeping column `updated_at` shall be dropped from the diff entirely,
-  wherever it exists — today that is `core.member` alone; the other five audited
-  tables carry no such column, so the rule is a standing convention for tables
-  that will, not a description of the six that exist.
+  bookkeeping columns `updated_at` and `updated_by` shall be dropped from the
+  diff entirely, wherever they exist — **amended 2026-09-22 (#516)**: since the
+  audit columns of `auditColumns()` every `core` table carries both, written by
+  `core.audit_columns_stamp()` rather than by any caller, so what was a standing
+  convention for one column on one table is now a rule in force on all of them.
+  `updated_by` joins the clause for two reasons: naming either column in a value
+  whitelist would grant a value that can never be written, and recording
+  `updated_by` would restate the ledger row's own `actor_email` while breaking
+  EARS-3 — a touch by a different person changes that column and nothing else,
+  so the trail would gain a row for a change that never happened. The sibling
+  pair `created_at` / `created_by` is NOT bookkeeping: both are written once and
+  never change, so they are whitelisted by value on every audited table and an
+  INSERT event carries the row's whole provenance.
 - **EARS-3.** IF an UPDATE's diff records no change after those rules, THEN the
   platform shall write **no** ledger row — the trail records changes, not
   touches.
@@ -449,6 +462,17 @@ delivery text NOT NULL, sent_at text)` with `UNIQUE (period_id, position)`
   without a deploy. This is also the donor canon's own shape (`excluded_cols` as
   a trigger argument in the PostgreSQL wiki's Audit trigger 91plus), inverted
   from a blacklist to a whitelist for the reason EARS-27 states.
+- **Amended 2026-09-22 (#516).** Every audited table's whitelist additionally
+  carries `created_at` and `created_by`, appended by
+  `migrations/0016_audit_columns.sql` to every attach line. They are the two
+  IMMUTABLE audit columns of `auditColumns()` — written once, never changed, and
+  neither of them contact data — so recording them by value is what makes an
+  INSERT event carry the row's whole provenance. The mirror
+  `AUDIT_VALUE_WHITELIST` in `tools/lint/audit-coverage-allowlist.mjs` derives
+  the pair rather than repeating it per table, and the integration tier compares
+  that mirror to `pg_trigger.tgargs` exactly. The per-table enumerations below
+  are therefore the DOMAIN half of each whitelist, as written when the trigger
+  was first attached.
 - **EARS-17.** The initial whitelist shall be **the corporate identity, the
   service data and the work data — everything except a person's contacts**
   (owner's Q2 matrix). Stated as the three audited groups, each column named
@@ -460,9 +484,11 @@ delivery text NOT NULL, sent_at text)` with `UNIQUE (period_id, position)`
     **service data, not personal contacts**: «кто и на что это поменял» is asked
     about them more often than about anything else, and recording them by value
     is not excessive relative to the purpose of the trail (ст. 5 ч. 5 152-ФЗ).
-    `updated_at` is the one column absent and not by policy: EARS-2 drops it from
-    the diff entirely, so naming it would grant a value that can never be
-    written. `member.email` is already the ledger's own actor column.
+    `updated_at` and `updated_by` are the columns absent, and not by policy:
+    EARS-2 drops both from the diff entirely, so naming either would grant a
+    value that can never be written (amended 2026-09-22, #516 — `updated_by`
+    did not exist when this clause was written). `member.email` is already the
+    ledger's own actor column.
   - **`core.member_alias` — every column EXCEPT `value` and `note`.** Those two
     are the person's phone, personal email, Telegram/Instagram handles and the
     free-text context around them (spec 124 EARS-17) — the one class this clause
