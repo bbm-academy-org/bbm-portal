@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs'
+
 import { sql } from 'drizzle-orm'
 import { afterAll, describe, expect, it } from 'vitest'
 
@@ -10,6 +12,39 @@ import {
   AUDIT_COLUMNS_EXEMPT_TABLES,
 } from '../../../tools/lint/audit-coverage-allowlist.mjs'
 import { FIXTURE_AUDIT_CTX, fixtureWrite } from './hours-core-helpers'
+import { asMigrator } from './privilege-helpers'
+
+/**
+ * The migration's own section 6 backfill block, lifted VERBATIM from the
+ * committed SQL and re-run against this stand.
+ *
+ * A migration runs once, before any test of it exists; re-reading the file is
+ * the only way to assert what it will do on a database it has not met yet — and
+ * reading the REAL text rather than a paraphrase is what keeps the assertion
+ * about the migration rather than about a copy of it that can drift. The block
+ * only ever fills from the journal, so running it a second time is a legitimate
+ * act rather than a trick.
+ *
+ * It runs through the MIGRATING connection, like the migration itself: the
+ * block issues `ALTER TABLE ... DISABLE TRIGGER USER`, which asks for
+ * OWNERSHIP — a privilege the application role deliberately does not have
+ * (#278).
+ */
+const BACKFILL_MARKER = 'DO $audit_columns_backfill$'
+
+function backfillBlock(): string {
+  const migration = readFileSync('src/lib/platform/db/migrations/0016_audit_columns.sql', 'utf8')
+  const start = migration.indexOf(BACKFILL_MARKER)
+  const end = migration.indexOf('$audit_columns_backfill$;', start)
+  if (start === -1 || end === -1) {
+    throw new Error(
+      'audit-columns: the section 6 backfill block was not found in 0016_audit_columns.sql — ' +
+        'this assertion reads the real migration, so a renamed block must be followed here ' +
+        'rather than silently skipped',
+    )
+  }
+  return migration.slice(start, end + BACKFILL_MARKER.length - 'DO '.length)
+}
 
 /**
  * The audit columns against REALITY (#516; owner rule, Антон, 2026-09-22).
@@ -242,5 +277,112 @@ describe('the backfill left no row claiming to be changed before it was created'
       if (rows[0].n > 0) offenders.push(`${table} (${rows[0].n} row(s))`)
     }
     expect(offenders).toEqual([])
+  })
+})
+
+describe('the backfill fills a gap and never overwrites a stored value', () => {
+  const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+  const operatorEmail = `backfill-operator-${suffix}@example.com`
+  const submitterEmail = `backfill-submitter-${suffix}@example.com`
+  const counterpartyName = `Backfill counterparty ${suffix}`
+  const aliasValue = `backfill-alias-${suffix}`
+
+  afterAll(async () => {
+    await fixtureWrite(async (tx) => {
+      await tx.execute(sql`delete from core.member_alias where value = ${aliasValue}`)
+      await tx.execute(sql`delete from core.finance_counterparty where name = ${counterpartyName}`)
+      await tx.execute(
+        sql`delete from core.member where email in (${operatorEmail}, ${submitterEmail})`,
+      )
+    })
+  })
+
+  it('leaves a stored `created_by` alone when the journal names a DIFFERENT actor', async () => {
+    // The population this clause exists for: a request filed ON BEHALF OF
+    // someone. `finance_counterparty.created_by` and
+    // `finance_intake_item.created_by` mean «the submitter», not «who executed
+    // the INSERT» — and for the 47 reconstructed requests (#517) those are two
+    // different people. The journal records the OPERATOR, the column records the
+    // SUBMITTER, and a backfill that prefers the journal rewrites one with the
+    // other.
+    await fixtureWrite(async (tx) => {
+      await tx.execute(sql`insert into core.member (slug, email, name)
+                           values (${`bf-op-${suffix}`}, ${operatorEmail}, 'Backfill operator')`)
+      await tx.execute(sql`insert into core.member (slug, email, name)
+                           values (${`bf-sub-${suffix}`}, ${submitterEmail}, 'Backfill submitter')`)
+    })
+    const ids = await db.execute<{ id: number; email: string }>(
+      sql`select id, email from core.member where email in (${operatorEmail}, ${submitterEmail})`,
+    )
+    const operatorId = ids.rows.find((r) => r.email === operatorEmail)?.id
+    const submitterId = ids.rows.find((r) => r.email === submitterEmail)?.id
+    expect(operatorId).toBeDefined()
+    expect(submitterId).toBeDefined()
+
+    // The OPERATOR executes the insert; the row names the SUBMITTER.
+    await platformTransaction({ actorEmail: operatorEmail, source: 'portal' }, (tx) =>
+      tx.execute(sql`insert into core.finance_counterparty (name, created_by)
+                     values (${counterpartyName}, ${submitterId})`),
+    )
+
+    const stored = await db.execute<{ id: number; created_by: number }>(
+      sql`select id, created_by from core.finance_counterparty where name = ${counterpartyName}`,
+    )
+    expect(stored.rows[0].created_by).toBe(submitterId)
+
+    // …and the journal really does name the other person, so what follows is
+    // decided by the precedence rule rather than by a coincidence.
+    const journal = await db.execute<{ actor_email: string | null }>(
+      sql`select actor_email from core.audit_event
+          where table_name = 'finance_counterparty'
+            and event_type = 'data.finance_counterparty.insert'
+            and pk->>'id' = ${String(stored.rows[0].id)}
+          order by id desc limit 1`,
+    )
+    expect(journal.rows[0].actor_email).toBe(operatorEmail)
+
+    await asMigrator((client) => client.query(backfillBlock()))
+
+    const after = await db.execute<{ created_by: number }>(
+      sql`select created_by from core.finance_counterparty where name = ${counterpartyName}`,
+    )
+    expect(after.rows[0].created_by).toBe(submitterId)
+  })
+
+  it('still FILLS a null `created_by` from the journal — the rule narrows the backfill, it does not disable it', async () => {
+    // The other half of the same precedence rule, asserted so that «a stored
+    // value wins» cannot be satisfied by a backfill that quietly stopped
+    // working.
+    const operator = await db.execute<{ id: number }>(
+      sql`select id from core.member where email = ${operatorEmail}`,
+    )
+    const operatorId = operator.rows[0].id
+
+    await platformTransaction({ actorEmail: operatorEmail, source: 'portal' }, (tx) =>
+      tx.execute(sql`insert into core.member_alias (member_id, kind, value)
+                     values (${operatorId}, 'telegram', ${aliasValue})`),
+    )
+
+    // Blank the column the way a pre-#516 row arrives: no value at all. The
+    // stamping trigger makes `created_by` immutable, so this needs the owner's
+    // connection with the user triggers lifted — the same door the migration
+    // itself uses.
+    await asMigrator(async (client) => {
+      await client.query('alter table core.member_alias disable trigger user')
+      try {
+        await client.query('update core.member_alias set created_by = null where value = $1', [
+          aliasValue,
+        ])
+      } finally {
+        await client.query('alter table core.member_alias enable trigger user')
+      }
+    })
+
+    await asMigrator((client) => client.query(backfillBlock()))
+
+    const after = await db.execute<{ created_by: number | null }>(
+      sql`select created_by from core.member_alias where value = ${aliasValue}`,
+    )
+    expect(after.rows[0].created_by).toBe(operatorId)
   })
 })
