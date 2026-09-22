@@ -1741,7 +1741,7 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     expect(within(table).getAllByRole('link')).toHaveLength(1)
 
     // And the sheet says both halves in words.
-    pick('button', 'Заявка №1')
+    fireEvent.click(within(table).getByRole('button', { name: 'Заявка №1' }))
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = within(screen.getByRole('dialog'))
     expect(sheet.getByText('Подана')).toBeTruthy()
