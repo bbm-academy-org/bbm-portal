@@ -5,6 +5,7 @@ import {
   assertIntakeTransition,
   backfillSourceRef,
   FINANCE_INTAKE_MONEY_FIELDS,
+  FINANCE_INTAKE_SOURCE_REF_MAX,
   FINANCE_INTAKE_TRANSITIONS,
   findIntakeTransition,
   isTerminalIntakeStatus,
@@ -149,11 +150,14 @@ describe('The intake status machine (EARS-524)', () => {
 })
 
 describe('Per-source source_ref semantics (EARS-503)', () => {
-  it('EARS-503: bank_import and backfill always carry a ref; manual and request never do', () => {
+  it('EARS-503: bank_import and backfill always carry a ref; manual and request may', () => {
     expect(resolveIntakeProducer('bank_import').sourceRefPolicy).toBe('required')
     expect(resolveIntakeProducer('backfill').sourceRefPolicy).toBe('required')
-    expect(resolveIntakeProducer('manual').sourceRefPolicy).toBe('none')
-    expect(resolveIntakeProducer('request').sourceRefPolicy).toBe('none')
+    // `optional` since 2026-09-22 (#517, owner go): a human ACT has no external
+    // identity to deduplicate on, but the RECORD of it usually has a place it
+    // was typed, and the link to that place is what the reader wants.
+    expect(resolveIntakeProducer('manual').sourceRefPolicy).toBe('optional')
+    expect(resolveIntakeProducer('request').sourceRefPolicy).toBe('optional')
     // Every source of the enum has a producer — the spine has no gap.
     expect(
       listIntakeProducers()
@@ -162,11 +166,32 @@ describe('Per-source source_ref semantics (EARS-503)', () => {
     ).toEqual([...FINANCE_INTAKE_SOURCES].sort())
   })
 
-  it('EARS-503: a human source that supplies a ref is refused rather than quietly stored', () => {
+  it('EARS-503 (#517): a human source stores the ref it is handed and never derives one', () => {
     for (const source of ['manual', 'request'] as const) {
-      expect(() => resolveIntakeSourceRef(source, { sourceRef: 'MM-1' })).toThrow(FinanceRefusal)
+      // Handed — stored verbatim, trimmed. This is the arm #517 opened: the
+      // request form's «Ссылка на источник» lands here.
+      expect(resolveIntakeSourceRef(source, { sourceRef: ' https://chat.test/pl/9 ' })).toBe(
+        'https://chat.test/pl/9',
+      )
+      // Not handed — null. Nothing is composed from the row's own facts, which
+      // is what would make two separate typings of one expense collide.
       expect(resolveIntakeSourceRef(source, {})).toBeNull()
+      expect(
+        resolveIntakeSourceRef(source, {
+          natural: { occurredOn: '2026-04-17', amount: 1n },
+          mattermostPostId: 'p9',
+          documentNumber: 'INV-42',
+        }),
+      ).toBeNull()
     }
+  })
+
+  it('EARS-503 (#517): a ref longer than the column’s limit is refused, not indexed', () => {
+    expect(() =>
+      resolveIntakeSourceRef('request', {
+        sourceRef: `https://chat.test/${'x'.repeat(FINANCE_INTAKE_SOURCE_REF_MAX)}`,
+      }),
+    ).toThrow(FinanceRefusal)
   })
 
   it('EARS-503: bank_import demands the statement line identity and cannot invent one', () => {

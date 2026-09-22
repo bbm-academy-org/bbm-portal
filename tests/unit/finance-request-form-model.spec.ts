@@ -106,6 +106,9 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
     expect(parsed.success).toBe(true)
     expect(toRequestBody(value(), references)).toMatchObject({
       occurredOn: null,
+      // Optional and empty here; the field's own coverage is the two cases
+      // below (#517).
+      sourceRef: null,
       accountId: null,
       paidAmount: null,
       paidCurrency: null,
@@ -199,6 +202,10 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
       own: true,
       status: 'submitted',
       occurredOn: null,
+      createdAt: '2026-08-20T09:30:00.000Z',
+      sourceRef: null,
+      sourceUrl: null,
+      sourceLabel: null,
       amount: '4500000',
       currency: 'RUB',
       paidAmount: null,
@@ -233,6 +240,21 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
       purposeId: null,
       purposeProposal: 'Аренда студии',
     })
+  })
+
+  it('#517: takes an http(s) source link, refuses any other shape, and sends null for empty', () => {
+    const linked = value({ sourceRef: ' https://chat.bbm.academy/bbm/pl/abc ' })
+    expect(schema.safeParse(linked).success).toBe(true)
+    expect(toRequestBody(linked, references).sourceRef).toBe('https://chat.bbm.academy/bbm/pl/abc')
+
+    // Not a link — refused HERE, before the request leaves the browser, with
+    // the message the member reads under the field.
+    const typed = value({ sourceRef: 'см. в чате' })
+    expect(schema.safeParse(typed).success).toBe(false)
+
+    // Empty is a legitimate answer: most requests are typed straight into this
+    // form and have no source elsewhere.
+    expect(toRequestBody(value({ sourceRef: '' }), references).sourceRef).toBeNull()
   })
 
   it('EARS-532: takes a counterparty from the reference or creates one inline by name', () => {
