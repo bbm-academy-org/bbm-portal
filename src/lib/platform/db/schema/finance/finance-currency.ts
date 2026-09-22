@@ -23,6 +23,7 @@ import { sql } from 'drizzle-orm'
 import { check, integer, text, timestamp } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 export const financeCurrency = core.table(
   'finance_currency',
@@ -33,6 +34,7 @@ export const financeCurrency = core.table(
     /** Decimal places of the minimal unit; frozen once used (EARS-303). */
     precision: integer('precision').notNull(),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    ...auditColumns(),
   },
   (table) => [
     check('finance_currency_code_shape', sql`${table.code} = upper(btrim(${table.code}))`),

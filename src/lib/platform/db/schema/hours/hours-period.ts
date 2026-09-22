@@ -29,6 +29,7 @@ import { sql } from 'drizzle-orm'
 import { check, integer, text, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 export const hoursPeriod = core.table(
   'hours_period',
@@ -39,6 +40,7 @@ export const hoursPeriod = core.table(
     dateTo: text('date_to').notNull(),
     status: text('status').notNull(),
     sortKey: integer('sort_key').notNull(),
+    ...auditColumns(),
   },
   (table) => [
     check('hours_period_status_allowed', sql`${table.status} in ('open', 'closed')`),

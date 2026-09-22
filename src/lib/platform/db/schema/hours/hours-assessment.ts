@@ -35,6 +35,7 @@ import { sql } from 'drizzle-orm'
 import { check, doublePrecision, integer, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { hoursPeriod } from './hours-period'
 
 export const hoursAssessment = core.table(
@@ -58,6 +59,7 @@ export const hoursAssessment = core.table(
     investAmount: integer('invest_amount').notNull(),
     weekdayCount: integer('weekday_count').notNull(),
     savedAt: text('saved_at').notNull(),
+    ...auditColumns(),
   },
   (table) => [
     check('hours_assessment_method_allowed', sql`${table.method} in ('period', 'week', 'day')`),

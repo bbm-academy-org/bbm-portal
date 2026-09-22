@@ -36,6 +36,7 @@ import { sql } from 'drizzle-orm'
 import { check, text } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { hoursPeriod } from './hours-period'
 
 export const hoursPublication = core.table(
@@ -51,6 +52,7 @@ export const hoursPublication = core.table(
     startedAt: text('started_at').notNull(),
     publishedAt: text('published_at'),
     previewFingerprint: text('preview_fingerprint').notNull(),
+    ...auditColumns(),
   },
   (table) => [
     check(

@@ -579,18 +579,56 @@ describe('the person dimension (EARS-322)', () => {
     // (#382) added two more on the same rule: an upload and an attachment are
     // each an act with a name on it. A purpose proposal (#383) adds its proposer
     // for the same reason.
+    //
+    // The audit columns of #516 add `created_by` / `updated_by` on every table,
+    // and their delete rule is deliberately the OTHER one — `SET NULL`. The
+    // distinction is the whole of EARS-322 and is worth reading off this list:
+    // a RESTRICT link is an ACT recorded to a person's name and the registry may
+    // not delete them out from under it; a SET NULL link is BOOKKEEPING, and a
+    // departed member degrades it to «nobody we still have» rather than freezing
+    // the registry. The journal keeps that write's actor email either way.
+    // Two columns named `created_by` therefore appear with different rules —
+    // `finance_counterparty` and `finance_intake_item` carry the SUBMITTER in
+    // that column (NOT NULL, RESTRICT, predating #516), everyone else carries
+    // the audit column.
     expect(
       constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`).sort(),
     ).toEqual([
+      'finance_account.created_by → SET NULL',
+      'finance_account.updated_by → SET NULL',
+      'finance_category.created_by → SET NULL',
+      'finance_category.updated_by → SET NULL',
+      'finance_conversion_step.created_by → SET NULL',
+      'finance_conversion_step.updated_by → SET NULL',
       'finance_counterparty.created_by → RESTRICT',
+      'finance_counterparty.updated_by → SET NULL',
+      'finance_currency.created_by → SET NULL',
+      'finance_currency.updated_by → SET NULL',
+      'finance_document.created_by → SET NULL',
+      'finance_document.updated_by → SET NULL',
       'finance_document.uploaded_by → RESTRICT',
+      'finance_document_link.created_by → SET NULL',
       'finance_document_link.linked_by → RESTRICT',
+      'finance_document_link.updated_by → SET NULL',
       'finance_intake_item.created_by → RESTRICT',
       'finance_intake_item.decided_by → RESTRICT',
       'finance_intake_item.member_id → RESTRICT',
       'finance_intake_item.posted_by → RESTRICT',
+      'finance_intake_item.updated_by → SET NULL',
+      'finance_operation.created_by → SET NULL',
+      'finance_operation.updated_by → SET NULL',
+      'finance_posting.created_by → SET NULL',
       'finance_posting.member_id → RESTRICT',
+      'finance_posting.updated_by → SET NULL',
+      'finance_product.created_by → SET NULL',
+      'finance_product.updated_by → SET NULL',
+      'finance_project.created_by → SET NULL',
+      'finance_project.updated_by → SET NULL',
+      'finance_purpose.created_by → SET NULL',
+      'finance_purpose.updated_by → SET NULL',
+      'finance_purpose_proposal.created_by → SET NULL',
       'finance_purpose_proposal.proposed_by → RESTRICT',
+      'finance_purpose_proposal.updated_by → SET NULL',
     ])
   })
 

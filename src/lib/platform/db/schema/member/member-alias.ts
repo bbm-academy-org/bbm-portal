@@ -20,6 +20,7 @@ import { sql } from 'drizzle-orm'
 import { integer, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { member } from './member'
 
 export const memberAlias = core.table(
@@ -32,6 +33,7 @@ export const memberAlias = core.table(
     kind: text('kind').notNull(),
     value: text('value').notNull(),
     note: text('note'),
+    ...auditColumns(),
   },
   (table) => [
     uniqueIndex('member_alias_kind_value_unique').on(table.kind, sql`lower(btrim(${table.value}))`),

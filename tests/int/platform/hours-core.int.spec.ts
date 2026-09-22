@@ -164,9 +164,30 @@ describe('the hours tables on core (EARS-1)', () => {
     // Declared as SQL in the migration rather than in drizzle, so that the hours
     // table directory never imports the member one (ADR-004 §6). Which is exactly
     // why it is ASSERTED here instead of trusted to a comment.
+    //
+    // The two delete rules are the reading, not noise. `member_id` is the PERSON
+    // THE ROW IS ABOUT — a participant and an assessment are meaningless without
+    // them — so the registry may not delete that person out from under the row.
+    // `created_by` / `updated_by` are the audit columns of #516: bookkeeping, and
+    // a departed member degrades them to «nobody we still have» rather than
+    // freezing the registry. The journal keeps that write's actor email either
+    // way.
     expect(
-      constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`),
-    ).toEqual(['hours_assessment.member_id → RESTRICT', 'hours_participant.member_id → RESTRICT'])
+      constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`).sort(),
+    ).toEqual([
+      'hours_assessment.created_by → SET NULL',
+      'hours_assessment.member_id → RESTRICT',
+      'hours_assessment.updated_by → SET NULL',
+      'hours_participant.created_by → SET NULL',
+      'hours_participant.member_id → RESTRICT',
+      'hours_participant.updated_by → SET NULL',
+      'hours_period.created_by → SET NULL',
+      'hours_period.updated_by → SET NULL',
+      'hours_publication.created_by → SET NULL',
+      'hours_publication.updated_by → SET NULL',
+      'hours_publication_message.created_by → SET NULL',
+      'hours_publication_message.updated_by → SET NULL',
+    ])
   })
 })
 

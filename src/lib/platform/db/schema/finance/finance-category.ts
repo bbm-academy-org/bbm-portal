@@ -14,6 +14,7 @@
 import { boolean, serial, text, timestamp } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 export const financeCategory = core.table('finance_category', {
   id: serial('id').primaryKey(),
@@ -21,6 +22,7 @@ export const financeCategory = core.table('finance_category', {
   /** Unit cost vs period cost (ruling 1). Read by F3, never posted from. */
   allocable: boolean('allocable').notNull(),
   retiredAt: timestamp('retired_at', { withTimezone: true }),
+  ...auditColumns(),
 })
 
 export type FinanceCategoryRow = typeof financeCategory.$inferSelect

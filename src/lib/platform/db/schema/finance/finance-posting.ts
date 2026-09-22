@@ -33,6 +33,7 @@
 import { bigint, integer, serial, text } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeAccount } from './finance-account'
 import { financeCategory } from './finance-category'
 import { financeConversionStep } from './finance-conversion-step'
@@ -57,6 +58,7 @@ export const financePosting = core.table('finance_posting', {
   /** FK → `core.member(id)`, added as SQL in the migration (EARS-322). */
   memberId: integer('member_id'),
   conversionStepId: integer('conversion_step_id').references(() => financeConversionStep.id),
+  ...auditColumns(),
 })
 
 export type FinancePostingRow = typeof financePosting.$inferSelect

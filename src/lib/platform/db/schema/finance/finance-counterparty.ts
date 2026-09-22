@@ -24,15 +24,22 @@ import { sql } from 'drizzle-orm'
 import { integer, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 export const financeCounterparty = core.table(
   'finance_counterparty',
   {
     id: serial('id').primaryKey(),
     name: text('name').notNull(),
-    /** FK → `core.member(id)`, added as SQL in the migration. */
+    ...auditColumns(),
+    /**
+     * `created_by` stays NOT NULL here: the submitter is a REQUIRED fact of this
+     * row, not bookkeeping (spec 339). The helper's column is nullable by
+     * default, so the table re-declares this one key AFTER the spread — a later
+     * key wins in an object literal, the SQL name is unchanged, and the helper
+     * keeps one return type instead of a conditional one (#516 decision 3).
+     */
     createdBy: integer('created_by').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     // Case-insensitively unique (EARS-532): «Anthropic» and «anthropic» are one

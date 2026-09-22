@@ -73,6 +73,7 @@ import {
 } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 import { financeAccount } from './finance-account'
 import { financeCounterparty } from './finance-counterparty'
 import { financeOperation } from './finance-operation'
@@ -161,8 +162,6 @@ export const financeIntakeItem = core.table(
     note: text('note'),
     alreadyPaid: boolean('already_paid').notNull().default(false),
     personalFunds: boolean('personal_funds').notNull().default(false),
-    /** FK → `core.member(id)`, added as SQL in the migration. */
-    createdBy: integer('created_by').notNull(),
     decidedBy: integer('decided_by'),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     refusalReason: text('refusal_reason'),
@@ -170,6 +169,15 @@ export const financeIntakeItem = core.table(
     postedAt: timestamp('posted_at', { withTimezone: true }),
     /** Filled at posting (EARS-505); unique — an operation has at most one item. */
     operationId: integer('operation_id').references(() => financeOperation.id),
+    ...auditColumns(),
+    /**
+     * `created_by` stays NOT NULL here: the submitter is a REQUIRED fact of this
+     * row, not bookkeeping (spec 339). The helper's column is nullable by
+     * default, so the table re-declares this one key AFTER the spread — a later
+     * key wins in an object literal, the SQL name is unchanged, and the helper
+     * keeps one return type instead of a conditional one (#516 decision 3).
+     */
+    createdBy: integer('created_by').notNull(),
   },
   (table) => [
     // The three enums are written out here rather than interpolated from the

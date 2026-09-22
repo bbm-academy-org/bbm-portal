@@ -110,6 +110,12 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // is unposted, and the `money_facts` CHECK is what keeps that «may» from
       // meaning «anywhere» (EARS-533).
       '0015_finance_intake_money_facts.sql',
+      // The audit columns of #516 — a PLATFORM-WIDE migration that happens to
+      // touch every finance table too. It belongs on this list for the same
+      // reason the others do: the DDL is a committed migration, and the module
+      // still creates nothing at runtime. The rule does not move because the
+      // migration was not written by the finance task.
+      '0016_audit_columns.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

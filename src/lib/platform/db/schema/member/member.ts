@@ -26,6 +26,7 @@ import { sql } from 'drizzle-orm'
 import { check, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { core } from '../core'
+import { auditColumns } from '../audit-columns'
 
 export const member = core.table(
   'member',
@@ -39,8 +40,10 @@ export const member = core.table(
     status: text('status').notNull().default('active'),
     /** IANA zone name; the team's default, not a per-request preference. */
     timezone: text('timezone').notNull().default('Europe/Moscow'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // `created_at` / `updated_at` were declared here before #516 and moved onto
+    // the shared helper unchanged — same type, same default, same NOT NULL — so
+    // no data moves and the two new columns join them.
+    ...auditColumns(),
   },
   (table) => [
     uniqueIndex('member_slug_unique').on(table.slug),

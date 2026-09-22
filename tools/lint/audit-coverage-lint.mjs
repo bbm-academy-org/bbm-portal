@@ -61,8 +61,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import {
+  AUDIT_COLUMNS,
   AUDIT_COLUMN_EXCLUSIONS,
   AUDIT_TABLE_ALLOWLIST,
+  columnExclusionRationale,
   rationaleIsBlank,
 } from './audit-coverage-allowlist.mjs'
 import {
@@ -96,6 +98,17 @@ const COLUMN_RE =
  * reported rather than skipped: an invisible column is an uncheckable one.
  */
 const NAMELESS_COLUMN_RE = /(?:^|[\s{,])([A-Za-z_$][\w$]*)\s*:\s*[A-Za-z_$][\w$]*\s*\(\s*(?:\)|\{)/g
+/**
+ * `...auditColumns()` — the shared spread of the four audit columns (#516,
+ * `src/lib/platform/db/schema/audit-columns.ts`).
+ *
+ * Static parsing cannot follow a function call, so without this the four
+ * columns of EVERY table would be invisible to both guards: `audit-coverage`
+ * would silently stop checking them, and `audit-columns` would report every
+ * compliant table as missing all four. The expansion is the one place the
+ * spread's meaning is written down for a reader that is not TypeScript.
+ */
+const AUDIT_COLUMNS_SPREAD_RE = /\.\.\.\s*auditColumns\s*\(\s*\)/
 
 /**
  * An attach line, once statements have been isolated (see `sqlStatements`).
@@ -227,6 +240,7 @@ export function parseSchemaTables(text) {
     const open = head.index + head[0].length - 1
     const block = balancedBlock(src, open)
     const columns = [...block.matchAll(COLUMN_RE)].map((m) => m[2])
+    if (AUDIT_COLUMNS_SPREAD_RE.test(block)) columns.push(...AUDIT_COLUMNS)
     const nameless = [...block.matchAll(NAMELESS_COLUMN_RE)].map((m) => m[1])
     out.push({
       table: head[2],
@@ -386,7 +400,12 @@ export function evaluateCoverage({ tables, attached, tableAllowlist, columnExclu
 
     for (const column of columns) {
       const key = `${table}.${column}`
-      const excluded = key in columnExclusions
+      // `*.<column>` covers a column excluded on EVERY audited table — the shape
+      // the four audit columns of #516 need, so one rule is one row rather than
+      // 21 identical ones. The lookup lives in the allowlist module so this
+      // guard and the integration tier read the wildcard the same way.
+      const rationale = columnExclusionRationale(columnExclusions, table, column)
+      const excluded = rationale !== undefined
       if (args.includes(column)) {
         if (excluded) {
           add(
@@ -407,7 +426,7 @@ export function evaluateCoverage({ tables, attached, tableAllowlist, columnExclu
             'a rationale. Default-deny means it records `{"changed": true}` until one of the two ' +
             'happens (EARS-27, EARS-29)',
         )
-      } else if (rationaleIsBlank(columnExclusions[key])) {
+      } else if (rationaleIsBlank(rationale)) {
         add(
           'blank-column-rationale',
           key,

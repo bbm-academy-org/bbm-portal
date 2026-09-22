@@ -308,15 +308,20 @@ export async function updateMemberProfile(
   patch: { name?: string; role?: string | null; status?: string; timezone?: string },
   options?: MemberDbOptions,
 ): Promise<Member | null> {
+  // `updatedAt` is deliberately ABSENT from this object. Since #516 the four
+  // audit columns are written by `core.audit_columns_stamp()` in the database,
+  // on every INSERT and UPDATE, and the trigger overrides whatever a statement
+  // says about them — so a write-layer `updatedAt: new Date()` is a dead value
+  // that reads as though this layer owned the column. It does not: the write
+  // layer never sets `created_at`, `created_by`, `updated_at` or `updated_by`.
+  // Rule and rationale: `src/lib/platform/db/README.md` → «Every row carries
+  // audit columns — `auditColumns()`».
   const changes: {
     name?: string
     role?: string | null
     status?: string
     timezone?: string
-    updatedAt: Date
-  } = {
-    updatedAt: new Date(),
-  }
+  } = {}
   if (patch.name !== undefined) changes.name = patch.name
   if (patch.role !== undefined) changes.role = patch.role
   // `status` and `timezone` are edited by the registry seed only (EARS-14): the
@@ -324,6 +329,16 @@ export async function updateMemberProfile(
   // the column alone rather than resetting it to the column default.
   if (patch.status !== undefined) changes.status = patch.status
   if (patch.timezone !== undefined) changes.timezone = patch.timezone
+
+  // An empty patch used to be carried by the `updatedAt` key alone; without it
+  // drizzle would refuse the statement outright. Reading the row back is the
+  // truthful answer to «change nothing»: the caller gets the member as it
+  // stands, and no UPDATE fires — so the audit trigger does not stamp a touch
+  // that nobody asked for either.
+  if (Object.keys(changes).length === 0) {
+    const current = await executor(options).select().from(member).where(eq(member.id, id)).limit(1)
+    return current[0] ?? null
+  }
 
   const rows = await executor(options)
     .update(member)

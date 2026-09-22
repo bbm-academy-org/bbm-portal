@@ -53,18 +53,93 @@ export const AUDIT_TABLE_ALLOWLIST = {
 export const AUDIT_COLUMN_EXCLUSIONS = {
   'member_alias.value': 'ПДн — ст. 5 ч. 5 152-ФЗ',
   'member_alias.note': 'ПДн — ст. 5 ч. 5 152-ФЗ',
-  'member.updated_at': 'row bookkeeping — dropped from the diff entirely (EARS-2)',
+  // The two WRITE-side audit columns of `auditColumns()` (#516), excluded on
+  // EVERY audited table through the `*.` form rather than 21 identical rows.
+  // Both are row bookkeeping the capture function drops from the diff entirely
+  // (EARS-2, extended from `updated_at` to `updated_by` by migration
+  // `0016_audit_columns.sql`): naming either here would grant a value that can
+  // never be written, and `updated_by` is the SAME actor the ledger row already
+  // records in `audit_event.actor_email` — recording it twice would also make a
+  // pure touch by a different person write a ledger row, which EARS-3 forbids.
+  //
+  // The two READ-side columns are deliberately NOT here: `created_at` and
+  // `created_by` are immutable facts written once, and they are whitelisted BY
+  // VALUE on every audited table — see `AUDIT_VALUE_WHITELIST` below.
+  '*.updated_at': 'row bookkeeping — dropped from the diff entirely (EARS-2, #516)',
+  '*.updated_by':
+    "row bookkeeping — dropped from the diff entirely; the actor is already the ledger row's own `actor_email` (EARS-2, #516)",
 }
 
 /**
- * The value whitelist as the migration attaches it, table → columns, so a
- * reader can compare intent against `pg_trigger.tgargs` without parsing SQL.
- * The MIGRATION is the source of record; this mirror is asserted equal to it by
+ * The rationale excusing `<table>.<column>` from the value whitelist, or
+ * `undefined`.
+ *
+ * ONE lookup for both readers, because the `*.<column>` form above is data the
+ * guard and the integration tier must read the same way — a wildcard understood
+ * by one and not the other is exactly the drift this file exists to prevent.
+ *
+ * @param {Record<string, string>} exclusions
+ * @param {string} table
+ * @param {string} column
+ * @returns {string | undefined}
+ */
+export function columnExclusionRationale(exclusions, table, column) {
+  return exclusions[`${table}.${column}`] ?? exclusions[`*.${column}`]
+}
+
+/**
+ * The four columns `auditColumns()` puts on every `core` table (#516, owner
+ * rule, Антон, 2026-09-22) — the SQL names, in declaration order.
+ *
+ * Data rather than a constant inside a guard, because three readers need the
+ * same list: `tools/lint/audit-columns-lint.mjs` (the BLOCK guard),
+ * `tools/lint/audit-coverage-lint.mjs` (whose static parser expands the
+ * `...auditColumns()` spread into these names, otherwise every table would look
+ * like it had lost four columns) and
+ * `tests/int/platform/audit-columns.int.spec.ts`.
+ *
+ * @type {string[]}
+ */
+export const AUDIT_COLUMNS = ['created_at', 'created_by', 'updated_at', 'updated_by']
+
+/**
+ * The two columns of `AUDIT_COLUMNS` that are IMMUTABLE once written, and are
+ * therefore recorded BY VALUE in the journal on every audited table.
+ *
+ * @type {string[]}
+ */
+export const AUDIT_COLUMNS_BY_VALUE = ['created_at', 'created_by']
+
+/**
+ * `core` tables that carry NO audit columns, each with the reason.
+ *
+ * Structural only, and the same two absences the trigger allowlist above names:
+ * the ledger's rows are events rather than entities (an `audit_event` row has
+ * exactly one moment and one actor, which ARE its columns), and drizzle's
+ * migration bookkeeping is not domain truth. Neither has a drizzle table file,
+ * so the static guard never sees them at all — this list is what the
+ * database-level check reads.
+ *
+ * @type {Record<string, string>}
+ */
+export const AUDIT_COLUMNS_EXEMPT_TABLES = {
+  audit_event: 'the journal itself — its rows ARE the moment and the actor (#516)',
+  __drizzle_migrations: "drizzle's own migration bookkeeping, not domain truth (#516)",
+}
+
+/**
+ * The DOMAIN half of the value whitelist, table → columns, so a reader can
+ * compare intent against `pg_trigger.tgargs` without parsing SQL. The MIGRATION
+ * is the source of record; the exported mirror below is asserted equal to it by
  * the integration check, which is what keeps the mirror from becoming a lie.
+ *
+ * The two immutable audit columns are NOT repeated here — they are appended to
+ * every table by `AUDIT_VALUE_WHITELIST` below, exactly as the migration
+ * appends them to every attach line.
  *
  * @type {Record<string, string[]>}
  */
-export const AUDIT_VALUE_WHITELIST = {
+const DOMAIN_VALUE_WHITELIST = {
   member: ['id', 'slug', 'email', 'name', 'role', 'status', 'timezone', 'created_at'],
   member_alias: ['id', 'member_id', 'kind'],
   hours_period: ['id', 'label', 'date_from', 'date_to', 'status', 'sort_key'],
@@ -198,6 +273,25 @@ export const AUDIT_VALUE_WHITELIST = {
   ],
   finance_document_link: ['id', 'document_id', 'intake_item_id', 'linked_by', 'linked_at'],
 }
+
+/**
+ * The value whitelist as the migration really attaches it: the per-table domain
+ * columns above PLUS the two immutable audit columns, which migration
+ * `0016_audit_columns.sql` appends to every attach line.
+ *
+ * DERIVED rather than written out 21 times — the alternative was the same two
+ * strings copied into every row, where a table added later silently gets them
+ * wrong. The integration tier compares this mirror to `pg_trigger.tgargs`
+ * exactly, so a migration that forgot the pair on one table is still caught.
+ *
+ * @type {Record<string, string[]>}
+ */
+export const AUDIT_VALUE_WHITELIST = Object.fromEntries(
+  Object.entries(DOMAIN_VALUE_WHITELIST).map(([table, columns]) => [
+    table,
+    [...new Set([...columns, ...AUDIT_COLUMNS_BY_VALUE])],
+  ]),
+)
 
 /** A rationale that is present but says nothing is itself a finding (EARS-19). */
 export function rationaleIsBlank(rationale) {

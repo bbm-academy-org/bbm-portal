@@ -89,7 +89,15 @@ describe('the expand — core.hours_publication_message (EARS-31 step 1)', () =>
             and tc.table_name = 'hours_publication_message'
             and tc.constraint_type = 'FOREIGN KEY'`,
     )
-    expect(rows).toEqual([{ delete_rule: 'CASCADE', column_name: 'period_id' }])
+    // `period_id` CASCADEs because a message has no life without its batch.
+    // The two audit-column links of #516 are the other rule — `SET NULL`, so a
+    // departed member degrades the attribution instead of taking the message
+    // with them. Sorted, because the view gives no order of its own.
+    expect([...rows].sort((a, b) => a.column_name.localeCompare(b.column_name))).toEqual([
+      { delete_rule: 'SET NULL', column_name: 'created_by' },
+      { delete_rule: 'CASCADE', column_name: 'period_id' },
+      { delete_rule: 'SET NULL', column_name: 'updated_by' },
+    ])
   })
 
   it('is unique on (period_id, position) — the composite primary key', async () => {
