@@ -253,6 +253,72 @@ rationale for every absence — is one file,
 read by `tests/int/platform/audit-coverage.int.spec.ts` today and by the
 `audit-coverage` guard (#276) when it lands.
 
+## Every row carries audit columns — `auditColumns()`
+
+Since #516 (owner rule, Антон, 2026-09-22; ADR-004 amendment **A2**) every table
+in `core` carries four columns, and the rule is **by default, not by request**:
+
+| column       | type                                 | written by                              |
+| ------------ | ------------------------------------ | --------------------------------------- |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | the trigger, on INSERT — then immutable |
+| `created_by` | `integer` → `core.member(id)`        | the trigger, on INSERT — then immutable |
+| `updated_at` | `timestamptz NOT NULL DEFAULT now()` | the trigger, on every INSERT and UPDATE |
+| `updated_by` | `integer` → `core.member(id)`        | the trigger, on every INSERT and UPDATE |
+
+They do **not** replace the journal above. `core.audit_event` is the diff
+HISTORY — what changed, from what, to what; these four are the row's own current
+facts, which every screen and every query needs without joining the journal.
+
+**What you write when you add a table.** One line:
+
+```ts
+export const widget = core.table('widget', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  ...auditColumns(), // src/lib/platform/db/schema/audit-columns.ts
+})
+```
+
+and, in the migration, the FK to `core.member(id)` for both actor columns plus
+the `BEFORE INSERT OR UPDATE` stamping trigger —
+`0016_audit_columns.sql` is the worked example for all 21 existing tables. The FK
+is hand-written for the reason ADR-004 §6 states: a drizzle `.references()` here
+would import `schema/member/` into another module's schema directory.
+
+**A table needing `created_by NOT NULL`** re-declares that ONE key after the
+spread (`finance_counterparty`, `finance_intake_item` — the submitter is a
+required fact of those rows). A later key wins in an object literal, so the
+helper keeps one return type instead of a conditional one.
+
+**Nothing maintains these columns in application code, and that is the point.**
+`core.audit_columns_stamp()` does it, in the database:
+
+- the ACTOR is resolved from the SAME session variable the journal reads —
+  `app.actor_email`, set by `platformTransaction()` — through
+  `core.member.email`. The row and the ledger therefore cannot disagree about
+  who wrote it.
+- an **unmarked connection** (`psql`, the drizzle-kit migration runner, a
+  restore) or an email no member carries stamps a **NULL actor** and lets the
+  write through. Refusing a context-less write is already
+  `core.audit_row_change()`'s job (EARS-26) and a second refusal for one cause
+  would only make the message worse.
+- `created_at` / `created_by` are **immutable**: the trigger restores them from
+  OLD on every UPDATE, so `set created_by = …` silently changes nothing rather
+  than rewriting provenance.
+- on INSERT both are `coalesce(<what the statement wrote>, <the actor>)`, so a
+  producer that legitimately knows the author — a backfill filing a request on
+  someone's behalf — keeps it.
+
+**Two checks, at two levels.** `pnpm lint:audit-columns`
+(`tools/lint/audit-columns-lint.mjs`, **BLOCK** — `docs/ci-guardrails.md` §5)
+reads the DECLARATION and fails a `core.table(…)` short of any of the four;
+`tests/int/platform/audit-columns.int.spec.ts` reads `information_schema`,
+`pg_trigger` and the stamped rows against the really-migrated database. The
+exempt set is two structural tables with their written rationale, in the same
+file the journal's allowlist lives in
+([`tools/lint/audit-coverage-allowlist.mjs`](../../../../tools/lint/audit-coverage-allowlist.mjs),
+`AUDIT_COLUMNS_EXEMPT_TABLES`).
+
 ## Boundaries
 
 `pnpm boundaries` enforces the table-ownership rules of

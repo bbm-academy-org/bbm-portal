@@ -501,6 +501,33 @@ jobs:
         if: always() && steps.audit-coverage.outcome == 'failure'
         run: echo "::warning title=audit-coverage::a core table or column has no audit coverage decision — see the step log (docs/ci-guardrails.md §5)"
 
+  # BLOCK — a `core` table declared without the four audit columns
+  # (`created_at`, `created_by`, `updated_at`, `updated_by`). Owner rule, Антон,
+  # 2026-09-22; issue #516; ADR-004 amendment A2.
+  #
+  # BLOCK from day 0, and the sibling `audit-coverage` job above stays WARN —
+  # the difference is what each one reads. That one matches REGEXES OVER SQL
+  # TEXT and has a real false-positive class to soak; this one reads a
+  # DECLARATION (a column object either spreads `auditColumns()` or it does
+  # not), so §3 class 1 applies with nothing to soak. The two are separate jobs
+  # for exactly that reason: one exit code cannot carry two severities.
+  #
+  # Its truth-level counterpart blocks too — `tests/int/platform/audit-columns.int.spec.ts`
+  # in the `platform-int` job, which reads `information_schema`, `pg_trigger`
+  # and the stamped rows themselves.
+  audit-columns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:audit-columns
+
   # BLOCK — the committed SSOT snapshot has drifted from its master. The master
   # of the finmodel variables is `ssot/finmodel.yaml` in the PRIVATE repo
   # bbm-academy-org/bbm-kb; this repo holds a snapshot under
@@ -555,6 +582,7 @@ jobs:
         guard-test-coverage,
         platform-int,
         ssot-freshness,
+        audit-columns,
         design-fidelity,
         endpoint-authz,
         test-presence,
