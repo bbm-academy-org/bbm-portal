@@ -355,7 +355,15 @@ BEGIN
 		NEW.created_at := coalesce(NEW.created_at, now());
 		NEW.created_by := coalesce(NEW.created_by, actor_id);
 		NEW.updated_at := now();
-		NEW.updated_by := NEW.created_by;
+		-- The session actor, never a copy of `created_by`. The two answer
+		-- different questions: `created_by` is WHO THE ROW IS FOR where a caller
+		-- supplied it (the submitter of a request filed on someone's behalf),
+		-- while `updated_by` is WHO LAST WROTE IT. Copying the first into the
+		-- second would name a person who never touched the row — the same
+		-- fabrication the NULL-actor rule above refuses, arrived at from the
+		-- other direction. A NULL here is the truthful answer for an unmarked
+		-- connection, exactly as it is on the UPDATE arm.
+		NEW.updated_by := actor_id;
 	ELSE
 		-- Immutable: whatever the statement said about these two, the row keeps
 		-- what it was created with.
@@ -650,6 +658,35 @@ CREATE OR REPLACE TRIGGER "member_alias_audit"
 --     for that primary key (the most recent one — see the DESC note below);
 --   * `updated_at` / `updated_by` <- the LATEST event of ANY type for it.
 --
+-- **What the journal may and may not touch.** The journal FILLS A GAP; it never
+-- overwrites a value the row already carries. Four of these columns are new on
+-- nineteen tables and were already there on three, and the difference is not
+-- cosmetic: `finance_counterparty.created_by` and `finance_intake_item.created_by`
+-- mean «the SUBMITTER», not «who executed the INSERT». For a request filed on
+-- someone's behalf — which is the whole of the reconstructed population #517
+-- describes — those are two different people, the journal holds the operator,
+-- and the column holds the person the request is for. A backfill preferring the
+-- journal would rewrite the requester with the importer, on a value the finance
+-- board renders. So `created_by` and `updated_by` are
+-- `coalesce(<the row's value>, <the journal's>)`: stored first, journal second.
+-- No table carries a pre-existing `updated_by` today; the rule is written for
+-- both columns anyway, because the next table to arrive with one must not
+-- depend on this migration being re-read.
+--
+-- The two TIMESTAMPS cannot use the same shape, because they are NOT NULL with
+-- a default: `r.created_at` is never null, so a plain `coalesce` in that order
+-- would disable half the backfill outright. The honest question is «was this
+-- column added by THIS migration?», and the answer is in the value itself: the
+-- `ADD COLUMN … DEFAULT now()` block above stamps every pre-existing row with
+-- `now()`, which inside one transaction is `transaction_timestamp()` — the same
+-- instant this UPDATE reads. So `r.created_at = now()` is true exactly for a
+-- column this migration created, and false for one that arrived with real data
+-- earlier. Today that resolves to three exceptions preserved untouched:
+-- `member.created_at`, `member.updated_at`, `finance_counterparty.created_at`
+-- and `finance_purpose_proposal.created_at`. The issue's own acceptance line —
+-- «existing per-table `created_at` / `updated_at` moved onto the helper WITHOUT
+-- DATA LOSS» — is what this clause satisfies.
+--
 -- `actor_email` is mapped to `core.member.id`; an email no member carries (a
 -- departed person, a `db-direct` write) yields NULL rather than a guess. A row
 -- the journal does not cover keeps the `now()` default and a NULL actor — the
@@ -726,12 +763,20 @@ BEGIN
 
 		EXECUTE format('ALTER TABLE core.%I DISABLE TRIGGER USER', rec.table_name);
 
+		-- PRECEDENCE: a value the ROW already carries always wins; the journal
+		-- only ever fills a gap. See the «What the journal may and may not
+		-- touch» note above for why the two actor columns and the two
+		-- timestamps need different shapes of the same rule.
 		EXECUTE format(
 			'UPDATE core.%1$I AS r SET'
-			|| ' created_at = coalesce((select at from (%2$s) f), r.created_at),'
-			|| ' created_by = coalesce((select actor from (%2$s) f), r.created_by),'
-			|| ' updated_at = coalesce((select at from (%3$s) l), r.updated_at),'
-			|| ' updated_by = coalesce((select actor from (%3$s) l), r.updated_by)',
+			|| ' created_at = CASE WHEN r.created_at = now()'
+			|| '                   THEN coalesce((select at from (%2$s) f), r.created_at)'
+			|| '                   ELSE r.created_at END,'
+			|| ' created_by = coalesce(r.created_by, (select actor from (%2$s) f)),'
+			|| ' updated_at = CASE WHEN r.updated_at = now()'
+			|| '                   THEN coalesce((select at from (%3$s) l), r.updated_at)'
+			|| '                   ELSE r.updated_at END,'
+			|| ' updated_by = coalesce(r.updated_by, (select actor from (%3$s) l))',
 			rec.table_name, first_ev, last_ev);
 
 		EXECUTE format('ALTER TABLE core.%I ENABLE TRIGGER USER', rec.table_name);

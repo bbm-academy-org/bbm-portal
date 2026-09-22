@@ -308,6 +308,35 @@ helper keeps one return type instead of a conditional one.
 - on INSERT both are `coalesce(<what the statement wrote>, <the actor>)`, so a
   producer that legitimately knows the author — a backfill filing a request on
   someone's behalf — keeps it.
+- `updated_by` on INSERT is the SESSION ACTOR, not a copy of `created_by`. The
+  two answer different questions — «who is this row for» and «who last wrote
+  it» — and where a producer supplied `created_by` they are different people.
+- **The write layer never sets any of the four.** The trigger overrides what a
+  statement says about them, so an `updatedAt: new Date()` in a repository is a
+  dead value that reads as though application code owned the column. It does
+  not. (`src/lib/member/repository.ts` carried exactly that until #516 removed
+  it.)
+
+**`updated_at` is a ROW STAMP, not a ledger entry — and the difference is
+visible.** A statement that changes only bookkeeping — `set status = status`, or
+a write that the journal's EARS-3 rule correctly records as nothing at all —
+still moves `updated_at`, because the BEFORE trigger fires on the UPDATE while
+the AFTER trigger writes no row for an empty diff. That divergence is
+DELIBERATE and was weighed in review 1 of PR #523:
+
+- the column answers «when was this row last written», which is what a screen
+  showing «обновлено N минут назад» and what an incremental export both need.
+  A stamp that skips a no-op write makes «unchanged since» mean «unchanged in
+  the columns we happened to consider interesting», which is a far subtler lie
+  than a touch that advanced the clock;
+- making the trigger skip the bump would require it to decide which columns are
+  «real», i.e. to carry a second, per-table policy beside the journal's value
+  whitelist — a policy in two places, which is the drift this file's other
+  sections exist to prevent;
+- «what actually changed, and by whom» already has an exact answer, and it is
+  the journal. `core.audit_event` is the record that refuses to grow on a touch;
+  these four columns are the row's cheap current stamp. Reading `updated_at` as
+  a change log is reading the wrong record.
 
 **Two checks, at two levels.** `pnpm lint:audit-columns`
 (`tools/lint/audit-columns-lint.mjs`, **BLOCK** — `docs/ci-guardrails.md` §5)
