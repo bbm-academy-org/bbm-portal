@@ -11,6 +11,7 @@ import type {
   TrackView,
   UpcomingItem,
 } from '@/lib/path-map'
+import { plural } from '@/lib/path-map/derive'
 
 import {
   BrokenLinkIcon,
@@ -266,24 +267,47 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
   return card
 }
 
-function CollapsedFog({ nodes }: { nodes: PathNode[] }) {
+/**
+ * Everything beyond `limits.visible_stations`. On the map the names are a
+ * blurred hint; in «Проверить путь» each one is a real button, so a collapsed
+ * node can be checked like any other.
+ */
+function CollapsedFog({ nodes, ctx }: { nodes: PathNode[]; ctx: NodeCtx }) {
   const stations = nodes.filter((n) => n.type === 'station').length
+  const inChain = nodes.some((n) => ctx.chainIndex.has(n.id))
   return (
-    <div className="pm-card pm-fog pm-collapsed">
+    <div className={`pm-card pm-fog pm-collapsed${inChain ? ' is-chain' : ''}`}>
       <span className="pm-fog-kicker">
         <FogIcon />
         Дальше туман
       </span>
       <span className="pm-fog-text">
         {stations > 0
-          ? `Ещё ${stations} ${stations === 1 ? 'станция' : stations < 5 ? 'станции' : 'станций'} за горизонтом`
+          ? `Ещё ${stations} ${plural(stations, 'станция', 'станции', 'станций')} за горизонтом`
           : 'Дальше дорогу пока не видно'}
       </span>
-      <span className="pm-far-list" aria-hidden="true">
-        {nodes.map((n) => (
-          <span key={n.id}>{n.title}</span>
-        ))}
-      </span>
+      {ctx.interactive ? (
+        <span className="pm-far-list" data-interactive="">
+          {nodes.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              className={`pm-far-pick${ctx.chainIndex.has(n.id) ? ' is-chain' : ''}`}
+              aria-pressed={ctx.selectedId === n.id}
+              onClick={() => ctx.onPick(n.id)}
+            >
+              {n.title}
+              {chainSuffix(ctx, n.id)}
+            </button>
+          ))}
+        </span>
+      ) : (
+        <span className="pm-far-list" aria-hidden="true">
+          {nodes.map((n) => (
+            <span key={n.id}>{n.title}</span>
+          ))}
+        </span>
+      )}
     </div>
   )
 }
@@ -305,6 +329,23 @@ function BreakCard({ check, brk }: { check: PathCheck; brk: PathBreak }) {
   )
 }
 
+/** The node a break card is drawn above, for the break kinds that name one on the map. */
+function breakAnchor(check: PathCheck | null): string | null {
+  const brk = check?.break ?? null
+  return brk && (brk.kind === 'unknown-target' || brk.kind === 'no-opens' || brk.kind === 'cycle')
+    ? brk.at
+    : null
+}
+
+function BreakAbove({ check }: { check: PathCheck }) {
+  return check.break ? (
+    <>
+      <BreakCard check={check} brk={check.break} />
+      <Seg kind="broken" />
+    </>
+  ) : null
+}
+
 function TrackColumn({
   track,
   active,
@@ -319,11 +360,7 @@ function TrackColumn({
   check: PathCheck | null
 }) {
   const topDown = [...track.upcoming].reverse()
-  const brk = check?.break ?? null
-  const breakShownAt =
-    brk && (brk.kind === 'unknown-target' || brk.kind === 'no-opens' || brk.kind === 'cycle')
-      ? brk.at
-      : null
+  const breakShownAt = breakAnchor(check)
 
   const between = (upper: UpcomingItem, lower: UpcomingItem): SegKind => {
     if (upper.kind === 'node' && lower.kind === 'node') {
@@ -349,18 +386,18 @@ function TrackColumn({
       {topDown.map((item, i) => {
         const lower = topDown[i + 1]
         const id = item.kind === 'node' ? item.node.id : `collapsed-${i}`
+        const breaksHere =
+          breakShownAt !== null &&
+          (item.kind === 'node'
+            ? item.node.id === breakShownAt
+            : item.nodes.some((n) => n.id === breakShownAt))
         return (
           <Fragment key={id}>
-            {check && brk && item.kind === 'node' && breakShownAt === item.node.id ? (
-              <>
-                <BreakCard check={check} brk={brk} />
-                <Seg kind="broken" />
-              </>
-            ) : null}
+            {check && breaksHere ? <BreakAbove check={check} /> : null}
             {item.kind === 'node' ? (
               <NodeCard item={item} ctx={ctx} />
             ) : (
-              <CollapsedFog nodes={item.nodes} />
+              <CollapsedFog nodes={item.nodes} ctx={ctx} />
             )}
             {lower ? <Seg kind={between(item, lower)} /> : null}
           </Fragment>
@@ -387,8 +424,19 @@ function PassedChip({ item, ctx }: { item: PassedItem; ctx: NodeCtx }) {
   )
 }
 
-function PassedColumn({ track, active, ctx }: { track: TrackView; active: boolean; ctx: NodeCtx }) {
+function PassedColumn({
+  track,
+  active,
+  ctx,
+  check,
+}: {
+  track: TrackView
+  active: boolean
+  ctx: NodeCtx
+  check: PathCheck | null
+}) {
   const topDown = [...track.passed].reverse()
+  const breakShownAt = breakAnchor(check)
   return (
     <div className="pm-col pm-col--passed" data-active={active || undefined}>
       {topDown.length === 0 ? (
@@ -397,6 +445,7 @@ function PassedColumn({ track, active, ctx }: { track: TrackView; active: boolea
         <>
           {topDown.map((item) => (
             <Fragment key={item.node.id}>
+              {check && breakShownAt === item.node.id ? <BreakAbove check={check} /> : null}
               <Seg kind="passed" />
               <PassedChip item={item} ctx={ctx} />
             </Fragment>
@@ -674,7 +723,8 @@ export function PathMapScreen({
     // On the narrow layout the panel sits below the map: bring the answer into view.
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
       if (window.matchMedia('(max-width: 640px)').matches) {
-        panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        panelRef.current?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' })
       }
     }
   }
@@ -700,7 +750,7 @@ export function PathMapScreen({
           <span className="pm-map-title">{view.title}</span>
           {view.focusOverflow ? <span className="pm-badge-warn">фокус переполнен</span> : null}
         </div>
-        <nav aria-label="Режим карты" className="pm-modes">
+        <div role="group" aria-label="Режим карты" className="pm-modes">
           <button type="button" aria-pressed={!checking} onClick={() => switchMode('map')}>
             Карта
           </button>
@@ -713,7 +763,7 @@ export function PathMapScreen({
             <CheckIcon />
             Проверить путь
           </button>
-        </nav>
+        </div>
         <div className="pm-header-end" />
       </header>
 
@@ -757,9 +807,10 @@ export function PathMapScreen({
                   type="button"
                   aria-pressed={activeTrack === track.id}
                   onClick={() => setActiveTrack(track.id)}
+                  title={track.short === track.title ? undefined : track.title}
                 >
                   <span className="pm-dot" style={{ background: track.color }} aria-hidden="true" />
-                  <span className="pm-tab-label">{track.title}</span>
+                  <span className="pm-tab-label">{track.short}</span>
                 </button>
               ))}
             </div>
@@ -768,10 +819,10 @@ export function PathMapScreen({
                 На обочине:{' '}
                 {[
                   roadsideCount > 0
-                    ? `${roadsideCount} ${roadsideCount === 1 ? 'трек' : roadsideCount < 5 ? 'трека' : 'треков'}`
+                    ? `${roadsideCount} ${plural(roadsideCount, 'трек', 'трека', 'треков')}`
                     : null,
                   looseCount > 0
-                    ? `${looseCount} ${looseCount === 1 ? 'станция' : looseCount < 5 ? 'станции' : 'станций'} без «потому что»`
+                    ? `${looseCount} ${plural(looseCount, 'станция', 'станции', 'станций')} без «потому что»`
                     : null,
                 ]
                   .filter(Boolean)
@@ -812,6 +863,7 @@ export function PathMapScreen({
                 track={track}
                 active={activeTrack === track.id}
                 ctx={ctx}
+                check={selected && chainTracks.has(track.id) ? selected : null}
               />
             ))}
           </div>

@@ -25,12 +25,28 @@ const id = z
     'id: только латиница в нижнем регистре, цифры и дефис (например, first-lesson)',
   )
 
-const title = z.string().trim().min(1, 'пустое название')
+/** A YAML number (`title: 2026`) is read as the text it looks like. */
+const title = z.preprocess(
+  (v) => (typeof v === 'number' ? String(v) : v),
+  z.string().trim().min(1, 'пустое название'),
+)
+
+/** A real calendar day: `2026-13-45` and `2026-02-30` match the pattern but are no dates. */
+function isCalendarDate(value: string): boolean {
+  const [y, m, d] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
+}
 
 /** `YYYY-MM-DD`. YAML's core schema keeps it a string, so no Date coercion is involved. */
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'дата в формате ГГГГ-ММ-ДД, например 2026-10-21')
+  .refine(isCalendarDate, 'такой даты нет в календаре — проверьте месяц и день')
+
+/** A bare `nodes:` / `tracks:` is YAML null: read it as the empty list it means. */
+const listOf = <T extends z.ZodType>(item: T) =>
+  z.preprocess((v) => (v === null || v === undefined ? [] : v), z.array(item))
 
 export const CONFIDENCE = ['known', 'hypothesis', 'unknown'] as const
 export type Confidence = (typeof CONFIDENCE)[number]
@@ -71,9 +87,11 @@ export const TRACK_STATUS = ['focus', 'roadside'] as const
 export const trackSchema = z.strictObject({
   id,
   title,
+  /** A short label for the narrow-layout tabs («Контент»); falls back to `title`. */
+  short: title.optional(),
   status: z.enum(TRACK_STATUS).default('focus'),
   /** Ordered bottom → top along the road: the first node is the nearest one. */
-  nodes: z.array(nodeSchema).default([]),
+  nodes: listOf(nodeSchema),
 })
 
 export const limitsSchema = z.strictObject({
@@ -91,7 +109,7 @@ export const pathMapSchema = z.strictObject({
     why: z.string().trim().min(1).optional(),
   }),
   limits: limitsSchema.default({ focus_tracks: 3, visible_stations: 2, obstacles_per_station: 3 }),
-  tracks: z.array(trackSchema).default([]),
+  tracks: listOf(trackSchema),
 })
 
 export type PathMap = z.output<typeof pathMapSchema>

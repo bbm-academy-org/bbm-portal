@@ -12,7 +12,8 @@ import {
  *
  *   - `checkPath` — follow `opens` from a node up to the beacon: the chain, did
  *     it get there, and where it broke (unknown target, a station without
- *     «потому что», a cycle, a node that opens nothing, fog);
+ *     «потому что», a cycle, a node that opens nothing, fog without `opens`);
+ *     a fog card WITH `opens` is passable but drops the confidence to `unknown`;
  *   - `buildMapView` — per focus track: the passed path below «Мы здесь» (done
  *     obstacles), the road above it, the fog collapse beyond
  *     `limits.visible_stations`, the «разбей станцию» hint; plus the roadside
@@ -40,7 +41,10 @@ export interface PathCheck {
   chain: ChainLink[]
   reached: boolean
   break: PathBreak | null
-  /** The weakest station confidence along the chain — «по грунтовке» when `hypothesis`. */
+  /**
+   * The weakest confidence along the chain — «по грунтовке» when `hypothesis`,
+   * «через туман» when `unknown` (an unknown station or any fog card on the way).
+   */
   confidence: Confidence
 }
 
@@ -48,6 +52,11 @@ const CONFIDENCE_RANK: Record<Confidence, number> = { known: 2, hypothesis: 1, u
 
 type NodeIndex = Map<string, { node: PathNode; trackId: string; trackTitle: string }>
 
+// TODO(Антон): nodes of `status: roadside` tracks are indexed too, so a focus
+// road whose `opens` hops through a parked track's station still counts as
+// reached — and nothing on the map draws that hop (roadside tracks have no
+// column). Pending the owner's call on whether depending on a parked track is a
+// break; behaviour pinned in tests/unit/path-map-derive.spec.ts.
 function indexNodes(map: PathMap): NodeIndex {
   const index: NodeIndex = new Map()
   for (const track of map.tracks) {
@@ -88,6 +97,9 @@ export function checkPath(map: PathMap, startId: string, index = indexNodes(map)
       }
       if (!node.because) return done(false, { kind: 'missing-because', at: node.id })
     }
+    // Fog is always a break of certainty: without `opens` the road ends here
+    // (below); with `opens` it goes on, but «через туман» — never plain «доходит».
+    if (node.type === 'fog') confidence = 'unknown'
     if (!node.opens) {
       return done(
         false,
@@ -134,6 +146,8 @@ export interface PassedItem {
 export interface TrackView {
   id: string
   title: string
+  /** The narrow-layout tab label: the track's `short`, else its `title`. */
+  short: string
   color: string
   /** The road above «Мы здесь», ordered bottom → top. */
   upcoming: UpcomingItem[]
@@ -253,6 +267,7 @@ export function buildMapView(map: PathMap): MapView {
     return {
       id: track.id,
       title: track.title,
+      short: track.short ?? track.title,
       color: TRACK_COLORS[i % TRACK_COLORS.length],
       upcoming,
       passed,

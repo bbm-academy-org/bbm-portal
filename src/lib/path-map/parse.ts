@@ -1,6 +1,7 @@
 import { parseDocument } from 'yaml'
-import type { z } from 'zod'
+import { z } from 'zod'
 
+import { plural } from './derive'
 import { BEACON_ID, pathMapSchema, type PathMap } from './schema'
 
 /**
@@ -28,8 +29,33 @@ function formatPath(path: PropertyKey[]): string {
     .join('')
 }
 
+const TYPE_RU: Record<string, string> = {
+  array: 'список',
+  object: 'набор полей',
+  string: 'текст',
+  number: 'число',
+  boolean: 'да/нет',
+  null: 'пустое значение',
+}
+
+function typeOf(value: unknown): string {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  return typeof value
+}
+
+/** Russian fallback for zod's built-in messages; the schema's own messages win. */
+const ruErrors = z.locales.ru().localeError
+
 function formatIssue(issue: z.core.$ZodIssue): string {
   const where = issue.path.length > 0 ? formatPath(issue.path) : '(корень файла)'
+  if (issue.code === 'invalid_type') {
+    const input = (issue as { input?: unknown }).input
+    if (input === undefined) return `${where}: обязательное поле не заполнено`
+    const expected = TYPE_RU[issue.expected] ?? issue.expected
+    const got = TYPE_RU[typeOf(input)] ?? typeOf(input)
+    return `${where}: ожидается ${expected}, а в файле — ${got}`
+  }
   if (issue.code === 'unrecognized_keys') {
     return `${where}: неизвестное поле ${issue.keys.map((k) => `«${k}»`).join(', ')}`
   }
@@ -78,7 +104,17 @@ export function parsePathMap(source: string): ParseResult {
     }
   }
 
-  const parsed = pathMapSchema.safeParse(doc.toJS())
+  const data: unknown = doc.toJS()
+  if (data === null || data === undefined) {
+    return {
+      ok: false,
+      errors: [
+        'файл пуст: нужны как минимум title и beacon.title — пример в content/path-map/README.md',
+      ],
+    }
+  }
+
+  const parsed = pathMapSchema.safeParse(data, { reportInput: true, error: ruErrors })
   if (!parsed.success) {
     return { ok: false, errors: parsed.error.issues.map(formatIssue) }
   }
@@ -90,7 +126,7 @@ export function parsePathMap(source: string): ParseResult {
   const focus = parsed.data.tracks.filter((t) => t.status === 'focus').length
   if (focus > parsed.data.limits.focus_tracks) {
     warnings.push(
-      `фокус переполнен: в фокусе ${focus} трека при лимите ${parsed.data.limits.focus_tracks}`,
+      `фокус переполнен: в фокусе ${focus} ${plural(focus, 'трек', 'трека', 'треков')} при лимите ${parsed.data.limits.focus_tracks}`,
     )
   }
 

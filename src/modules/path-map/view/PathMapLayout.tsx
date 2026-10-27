@@ -5,9 +5,9 @@ import './path-map.css'
 
 /**
  * The «Карта пути» surface root (#530): self-hosted faces from `./fonts/`
- * (provenance and licences: `./fonts/README.md`) and the `.pm-root` scope every
- * rule of `./path-map.css` hangs under, so the night palette of this page does
- * not leak into the rest of the workspace. Same pattern as `OkrLayout.tsx`
+ * (provenance and licences: `./fonts/README.md`) and the `.pm-root` element
+ * that guards the element-level rules of `./path-map.css`; the rest of that
+ * file stays on this page by its `pm-` class prefix. Same pattern as `OkrLayout.tsx`
  * (#219): `next/font/local`, never the network-bound Google loader.
  */
 const cormorant = localFont({

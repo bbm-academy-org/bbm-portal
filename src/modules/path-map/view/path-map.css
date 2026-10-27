@@ -1,8 +1,13 @@
 /* ============================================================================
    «Карта пути» (#530) — the night map. Every value below is copied from the
    vendored Claude Design canvas `design-source/path-map/` (Main, Night-Check,
-   Mobile, Roadside, Victory, Empty). Everything hangs under `.pm-root` so the
-   palette stays on this page; fonts come from PathMapLayout.tsx (next/font/local).
+   Mobile, Roadside, Victory, Empty). Fonts come from PathMapLayout.tsx
+   (next/font/local).
+   Scoping: App Router CSS is global and stays loaded after navigating away, so
+   the page is kept to itself by the `pm-` class prefix (used nowhere else in
+   src/, same pattern as okr.css) — most rules are bare top-level `.pm-*`
+   classes. Only the element-level rules (`body:has(.pm-root)`, `.pm-root *`,
+   `.pm-root code`, focus rings) are guarded by `.pm-root`.
    ============================================================================ */
 
 body:has(.pm-root) {
@@ -717,6 +722,31 @@ body:has(.pm-root) {
   filter: blur(1.2px);
 }
 
+/* «Проверить путь»: the collapsed names become buttons, so they must be legible. */
+.pm-far-list[data-interactive] {
+  opacity: 1;
+  filter: none;
+  align-items: flex-start;
+}
+
+.pm-far-pick {
+  padding: 2px 0;
+  border: 0;
+  border-bottom: 1px dashed rgb(232 236 244 / 25%);
+  background: transparent;
+  color: var(--pm-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pm-far-pick:hover,
+.pm-far-pick[aria-pressed='true'],
+.pm-far-pick.is-chain {
+  color: var(--pm-text);
+  border-bottom-color: var(--pm-accent);
+}
+
 /* A station in the fog (confidence «unknown»). */
 .pm-far {
   max-width: 240px;
@@ -1253,12 +1283,17 @@ body:has(.pm-root) {
   color: var(--pm-muted);
 }
 
+/* Both sides shrink from their content width, so in a narrow panel the track
+   name and the status each wrap at word boundaries instead of the name being
+   squeezed to one word per line by a basis-0 flex item. */
 .pm-roads-name {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .pm-roads-status {
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--pm-text);
   font-weight: 700;
   text-align: right;
@@ -1554,5 +1589,22 @@ body:has(.pm-root) {
     border-left: 0;
     border-top: 1px solid var(--pm-line);
     padding: 28px 16px;
+  }
+}
+
+/* ── reduced motion ─────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-root *,
+  .pm-root *::before,
+  .pm-root *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .pm-pick:hover {
+    transform: none;
   }
 }

@@ -33,8 +33,9 @@ export function PathMapView({ result, file }: { result: ParseResult; file: strin
               В файле <code>{file}</code> есть ошибки — карта не рисуется, пока они не исправлены:
             </p>
             <ul className="pm-error-list">
-              {result.errors.map((error) => (
-                <li key={error}>
+              {result.errors.map((error, i) => (
+                // Two errors may read the same; the position keeps the keys unique.
+                <li key={`${i}:${error}`}>
                   <code>{error}</code>
                 </li>
               ))}

@@ -143,8 +143,14 @@ describe('PathMapView — review of PR #531', () => {
   it('selecting «Две поверхности платформы в проде» (the issue AC) shows the break in the panel and on the map', () => {
     renderShipped()
     enterCheck()
-    fireEvent.click(screen.getByRole('button', { name: /Две поверхности платформы в проде/ }))
+    // The station itself, not «Каталог экспертов», whose card says it opens this station.
+    const station = screen.getByRole('button', {
+      name: (name) =>
+        name.includes('Две поверхности платформы в проде') && !name.includes('открывает'),
+    })
+    fireEvent.click(station)
     const panel = screen.getByRole('complementary', { name: 'Проверка пути' })
+    expect(panel.textContent).toMatch(/«Две поверхности платформы в проде» → маяк/)
     expect(panel.textContent).toMatch(/обрывается/)
     expect(panel.textContent).toContain('experts-sell-courses')
     expect(mapBreakCards()).toHaveLength(1)
