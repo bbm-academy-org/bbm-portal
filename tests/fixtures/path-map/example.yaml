@@ -1,0 +1,123 @@
+# Тестовая фикстура (#530): пример карты из дизайна, отвязанный от боевого
+# content/path-map/doctor-school.yaml — тесты не зависят от реального содержимого карты.
+# Карта пути Doctor.School — страница /p/path рисуется из этого файла.
+# Правка карты = правка файла + деплой. Подробно: content/path-map/README.md.
+# Маяк (beacon) — куда идём и зачем. Треки (tracks) — дороги к маяку;
+#   status: focus — на дороге (не больше limits.focus_tracks), roadside — на обочине.
+#   short — короткое имя трека для вкладок на телефоне (необязательно; иначе title).
+# Узлы трека (nodes) перечисляются СНИЗУ ВВЕРХ: первый — ближайший к «Мы здесь».
+#   type: obstacle — шлагбаум (что мешает), owner — кто снимает (метка, например «ДС»);
+#         done: ГГГГ-ММ-ДД — шлагбаум снят, уходит в «Пройденный путь» под «Мы здесь».
+#   type: station  — станция (результат); because — «потому что»: чем она приближает маяк.
+#         Без because станция уходит на обочину. confidence: known (асфальт),
+#         hypothesis (грунтовка), unknown (туман).
+#   type: fog      — туман: открытый вопрос, на который пока нет ответа. Без opens дорога
+#         на нём обрывается; с opens — «доходит через туман» (уверенности нет).
+# opens — id узла, который этот узел открывает (можно из другого трека), или beacon.
+#   Несуществующий id — это «разрыв»: режим «Проверить путь» покажет, где дорога обрывается.
+# id — латиница в нижнем регистре и дефис, уникален на всю карту.
+
+title: Doctor.School
+started: 2026-10-06
+
+beacon:
+  title: 'Doctor.School — врачи учатся бесплатно, эксперты и фарма зарабатывают на платформе'
+  why: 'чтобы знания лучших экспертов доходили до практикующего врача без барьера цены'
+
+limits:
+  focus_tracks: 3
+  visible_stations: 2
+  obstacles_per_station: 3
+
+tracks:
+  - id: content
+    title: Контент уроков
+    short: Контент
+    status: focus
+    nodes:
+      - id: first-lesson-script
+        type: obstacle
+        title: Сценарий первого урока
+        owner: МК
+        opens: first-lesson
+        done: 2026-10-21
+      - id: studio
+        type: obstacle
+        title: Довести студию до готовности
+        owner: ДС
+        opens: first-lesson
+      - id: first-lesson
+        type: station
+        title: Готов первый урок
+        confidence: known
+        because: 'врачам появится что учить бесплатно — первая часть маяка'
+        opens: beacon
+      - id: multi-lesson-course
+        type: station
+        title: Курс из нескольких уроков
+        confidence: unknown
+        because: 'врач пройдёт путь целиком, а не отдельную тему'
+        opens: beacon
+      - id: course-fog
+        type: fog
+        title: 'Курс или серия отдельных уроков?'
+
+  - id: reach
+    title: Охват и подкасты
+    short: Охват
+    status: focus
+    nodes:
+      - id: podcast-pilot
+        type: station
+        title: Пилотный выпуск подкаста с экспертом
+        confidence: hypothesis
+        because: 'врачи придут за знакомым экспертом'
+        opens: beacon
+      - id: reach-fog
+        type: fog
+        title: 'Какой канал приведёт первых врачей?'
+
+  - id: platform
+    title: Своя платформа
+    short: Платформа
+    status: focus
+    nodes:
+      - id: platform-stack
+        type: obstacle
+        title: Выбран стек платформы
+        owner: ЕВ
+        opens: two-surfaces
+        done: 2026-10-14
+      - id: experts-catalog
+        type: obstacle
+        title: Каталог экспертов
+        owner: ЕВ
+        opens: two-surfaces
+      - id: two-surfaces
+        type: station
+        title: Две поверхности платформы в проде
+        confidence: known
+        because: 'эксперты смогут публиковать и продавать курсы'
+        # Намеренный разрыв: станции experts-sell-courses на карте нет.
+        opens: experts-sell-courses
+      - id: mobile-app
+        type: station
+        title: Мобильное приложение для врачей
+        # Нет because — станция стоит на обочине, пока не ясно, что она открывает выше.
+      - id: pharma-pay-fog
+        type: fog
+        title: 'Как фарма платит платформе?'
+
+  - id: pharma
+    title: Фарма-партнёры
+    status: roadside
+    nodes:
+      - id: first-pharma-pilot
+        type: station
+        title: Первый фарма-партнёр подписал пилот
+        confidence: hypothesis
+        because: 'фарма начнёт платить за доступ к аудитории врачей'
+        opens: beacon
+      - id: pharma-fog
+        type: fog
+        title: 'Что фарма получает взамен?'

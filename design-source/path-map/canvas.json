@@ -1,0 +1,25 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-27T03:58:00Z"},
+  "title": "Карта пути",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 300, "w": 1440, "h": 1580, "title": "2 · Карта в работе — desktop", "expand": "fill"},
+    "Night-Check.dc.html": {"x": 1520, "y": 300, "w": 1440, "h": 1580, "title": "4 · Проверить путь — найден разрыв", "expand": "fill"},
+    "Empty.dc.html": {"x": 0, "y": 2240, "w": 1440, "h": 1000, "title": "1 · Пустая карта", "expand": "fill"},
+    "AddStation.dc.html": {"x": 1520, "y": 2240, "w": 1440, "h": 1000, "title": "3 · Новая станция: «потому что» и уверенность", "expand": "fill"},
+    "Mobile.dc.html": {"x": 3040, "y": 2240, "w": 390, "h": 1700, "title": "2 · Карта в работе — mobile 390"},
+    "Roadside.dc.html": {"x": 0, "y": 4300, "w": 1440, "h": 1000, "title": "5 · Обочина: трек выходит в фокус", "expand": "fill"},
+    "Victory.dc.html": {"x": 1520, "y": 4300, "w": 1440, "h": 1000, "title": "6 · Победа: шлагбаум поднят", "expand": "fill"},
+    "Meeting.dc.html": {"x": 0, "y": 5660, "w": 1920, "h": 1080, "title": "7 · Режим встречи — большой экран", "expand": "fill"}
+  },
+  "order": ["Main.dc.html", "Night-Check.dc.html", "Empty.dc.html", "AddStation.dc.html", "Mobile.dc.html", "Roadside.dc.html", "Victory.dc.html", "Meeting.dc.html"],
+  "notes": {
+    "dirA": {"x": 0, "y": 40, "text": "Карта пути · основная карта и проверка", "kind": "title1", "maxW": 2960},
+    "rowStart": {"x": 0, "y": 1980, "text": "Старт, добавление и мобильная версия", "kind": "title1", "maxW": 3430},
+    "rowFocus": {"x": 0, "y": 4040, "text": "Фокус и момент победы", "kind": "title1", "maxW": 2960},
+    "rowMeet": {"x": 0, "y": 5400, "text": "Режим встречи", "kind": "title1", "maxW": 1920}
+  },
+  "designSystems": []
+}
