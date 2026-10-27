@@ -1340,6 +1340,17 @@ body:has(.pm-root) {
   text-align: center;
 }
 
+/* Below ~1140px the panel no longer fits beside the map and wraps under it:
+   let it span the full width instead of hugging the left edge. */
+@media (width <= 1140px) {
+  .pm-aside {
+    flex-basis: 100%;
+    max-width: none;
+    border-left: 0;
+    border-top: 1px solid var(--pm-line);
+  }
+}
+
 /* ── mobile — one track at a time (Mobile.dc.html) ──────────────────────── */
 
 .pm-mobile-nav {
@@ -1448,8 +1459,8 @@ body:has(.pm-root) {
 
   .pm-tabs button {
     min-width: 0;
-    height: 44px;
-    padding: 0 6px;
+    min-height: 44px;
+    padding: 4px 6px;
     border-radius: 10px;
     border: 0;
     background: transparent;
@@ -1475,9 +1486,10 @@ body:has(.pm-root) {
   }
 
   .pm-tab-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.15;
+    text-align: left;
+    overflow-wrap: anywhere;
   }
 
   .pm-roadside-link {

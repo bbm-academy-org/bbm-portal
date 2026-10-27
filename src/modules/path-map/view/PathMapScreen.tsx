@@ -154,6 +154,8 @@ interface NodeCtx {
 }
 
 function chainSuffix(ctx: NodeCtx, id: string): string {
+  // The selected node already carries its «Выбрано · звено 1» tag.
+  if (ctx.selectedId === id) return ''
   const link = ctx.chainIndex.get(id)
   return link ? ` · звено ${link}` : ''
 }
