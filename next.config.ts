@@ -11,6 +11,13 @@ const nextConfig: NextConfig = {
   // can ship a minimal self-contained server. Without this, output tracing is
   // skipped and the runner stage's `COPY .next/standalone` finds nothing.
   output: 'standalone',
+  // `/p/path` reads its map from a committed YAML file at request time (#530,
+  // `src/lib/path-map/load.ts`). The standalone image ships only what the
+  // tracer saw imported, so the data directory is named here explicitly —
+  // without it the page would read fine in dev and find no file in prod.
+  outputFileTracingIncludes: {
+    '/p/path': ['./content/path-map/**/*'],
+  },
   // Next rewrites its own guidance block into `AGENTS.md` on EVERY `next dev`
   // start (`next/dist/server/lib/generate-agent-files.js`). Off here, and the
   // reason is ownership rather than tidiness: `AGENTS.md` is part of this repo's

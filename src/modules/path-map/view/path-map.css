@@ -1,0 +1,1546 @@
+/* ============================================================================
+   «Карта пути» (#530) — the night map. Every value below is copied from the
+   vendored Claude Design canvas `design-source/path-map/` (Main, Night-Check,
+   Mobile, Roadside, Victory, Empty). Everything hangs under `.pm-root` so the
+   palette stays on this page; fonts come from PathMapLayout.tsx (next/font/local).
+   ============================================================================ */
+
+body:has(.pm-root) {
+  background: #0a1222;
+}
+
+.pm-root {
+  --pm-bg: #0a1222;
+  --pm-bg-night: #070d1a;
+  --pm-text: #e8ecf4;
+  --pm-muted: #c9d1df;
+  --pm-muted-2: #a9b3c6;
+  --pm-muted-3: #8c98ae;
+  --pm-accent: #f2b544;
+  --pm-accent-soft: #ffd27a;
+  --pm-barrier: #ffc93c;
+  --pm-ink: #111317;
+  --pm-card: #111c33;
+  --pm-road: #131c30;
+  --pm-bad: #ff6b5e;
+  --pm-bad-text: #ff8a80;
+  --pm-line: rgb(232 236 244 / 8%);
+  --pm-serif: var(--font-cormorant), 'Cormorant Garamond', georgia, serif;
+  --pm-sans: var(--font-manrope), 'Manrope', system-ui, sans-serif;
+
+  background: var(--pm-bg);
+  color: var(--pm-text);
+  font-family: var(--pm-sans);
+  overflow-x: clip;
+}
+
+.pm-root *,
+.pm-root *::before,
+.pm-root *::after {
+  box-sizing: border-box;
+}
+
+.pm-root code {
+  font-family: ui-monospace, 'SFMono-Regular', menlo, consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgb(232 236 244 / 8%);
+  overflow-wrap: anywhere;
+}
+
+.pm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── page frame ─────────────────────────────────────────────────────────── */
+
+.pm-page {
+  position: relative;
+  min-height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pm-page[data-mode='check'] {
+  background: var(--pm-bg-night);
+}
+
+.pm-glow {
+  position: absolute;
+  left: 39%;
+  top: 80px;
+  width: 1500px;
+  max-width: 200vw;
+  height: 900px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse 30% 42% at 50% 40%,
+    rgb(242 181 68 / 16%),
+    rgb(242 181 68 / 0%) 72%
+  );
+  pointer-events: none;
+}
+
+.pm-header {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 32px;
+  border-bottom: 1px solid var(--pm-line);
+  background: rgb(10 18 34 / 72%);
+}
+
+.pm-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.pm-brand-name {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.pm-sep {
+  width: 1px;
+  height: 20px;
+  background: rgb(232 236 244 / 16%);
+}
+
+.pm-map-title {
+  font-size: 15px;
+  color: var(--pm-muted);
+}
+
+.pm-header-end {
+  flex: 1 1 280px;
+}
+
+.pm-modes {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(232 236 244 / 6%);
+}
+
+.pm-modes button {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--pm-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.pm-modes button:hover {
+  color: var(--pm-text);
+  background: rgb(232 236 244 / 8%);
+}
+
+.pm-modes button[aria-pressed='true'] {
+  background: var(--pm-text);
+  color: var(--pm-bg);
+  font-weight: 700;
+}
+
+.pm-modes button[data-accent='check'][aria-pressed='true'] {
+  background: var(--pm-accent);
+  color: var(--pm-bg);
+  font-weight: 800;
+}
+
+.pm-root button:focus-visible,
+.pm-root a:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 3px;
+}
+
+.pm-badge-warn {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgb(255 107 94 / 14%);
+  border: 1px solid rgb(255 107 94 / 55%);
+  color: var(--pm-bad-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pm-checkbar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 24px;
+  background: rgb(242 181 68 / 10%);
+  border-bottom: 1px solid rgb(242 181 68 / 30%);
+  font-size: 14px;
+  color: #f5d693;
+  text-align: center;
+}
+
+.pm-checkbar-exit {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgb(242 181 68 / 50%);
+  background: transparent;
+  color: #f5d693;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pm-checkbar-exit:hover {
+  background: rgb(242 181 68 / 14%);
+}
+
+.pm-warnings {
+  margin: 0;
+  padding: 10px 32px;
+  list-style: none;
+  color: var(--pm-bad-text);
+  font-size: 13px;
+}
+
+.pm-body {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.pm-main {
+  position: relative;
+  flex: 999 1 760px;
+  min-width: 0;
+  padding: 0 40px 80px;
+}
+
+/* ── the beacon ─────────────────────────────────────────────────────────── */
+
+.pm-beacon {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 40px 24px 0;
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+.pm-beacon-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.pm-eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pm-accent);
+}
+
+.pm-beacon-title {
+  margin: 0;
+  font-family: var(--pm-serif);
+  font-weight: 600;
+  font-size: 46px;
+  line-height: 1.06;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+.pm-beacon-why {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--pm-muted-2);
+  max-width: 560px;
+  text-wrap: pretty;
+}
+
+.pm-beacon-why b {
+  color: var(--pm-text);
+  font-weight: 700;
+}
+
+.pm-beacon-mark {
+  flex: none;
+}
+
+/* ── roads converging onto the beacon ───────────────────────────────────── */
+
+.pm-converge {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+.pm-converge-bed {
+  stroke: var(--pm-road);
+  stroke-width: 64;
+  fill: none;
+}
+
+.pm-converge-line {
+  stroke: #3a4766;
+  stroke-width: 3;
+  stroke-dasharray: 12 14;
+  fill: none;
+}
+
+.pm-converge g[data-state='faint'] .pm-converge-bed {
+  stroke-opacity: 0.4;
+}
+
+.pm-converge g[data-state='faint'] .pm-converge-line {
+  stroke-opacity: 0.2;
+}
+
+.pm-converge g[data-state='reached'] .pm-converge-line {
+  stroke: var(--pm-text);
+  stroke-dasharray: 14 14;
+}
+
+.pm-converge g[data-state='broken'] .pm-converge-bed {
+  stroke: var(--pm-bad);
+  stroke-opacity: 0.08;
+}
+
+.pm-converge g[data-state='broken'] .pm-converge-line {
+  stroke: var(--pm-bad);
+  stroke-width: 2.5;
+  stroke-dasharray: 4 10;
+}
+
+/* ── the track grid ─────────────────────────────────────────────────────── */
+
+.pm-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--pm-cols, 3), minmax(0, 1fr));
+}
+
+.pm-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 18px;
+  min-width: 0;
+  transition: opacity 0.2s ease;
+}
+
+.pm-col[data-dimmed] {
+  opacity: 0.22;
+}
+
+.pm-track-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgb(232 236 244 / 24%);
+  background: #0e182c;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pm-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pm-dot--muted {
+  background: var(--pm-muted-3);
+}
+
+/* Road segments between cards. */
+.pm-seg {
+  position: relative;
+  flex: none;
+  width: 64px;
+  height: 40px;
+  background: var(--pm-road);
+  border-left: 1px solid rgb(232 236 244 / 10%);
+  border-right: 1px solid rgb(232 236 244 / 10%);
+}
+
+.pm-seg::after {
+  content: '';
+  position: absolute;
+  left: calc(50% - 1.5px);
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: repeating-linear-gradient(180deg, #3a4766 0 12px, transparent 12px 26px);
+}
+
+.pm-seg[data-kind='dirt'] {
+  height: 60px;
+  background-color: rgb(22 32 56 / 70%);
+  background-image: radial-gradient(rgb(232 236 244 / 16%) 1px, transparent 1.6px);
+  background-size: 11px 11px;
+  border-left: 2px dashed rgb(232 236 244 / 28%);
+  border-right: 2px dashed rgb(232 236 244 / 28%);
+}
+
+.pm-seg[data-kind='edges'] {
+  height: 26px;
+  background: rgb(22 32 56 / 70%);
+  border-left: 2px dashed rgb(232 236 244 / 22%);
+  border-right: 2px dashed rgb(232 236 244 / 22%);
+}
+
+.pm-seg[data-kind='fade'] {
+  height: 30px;
+  background: linear-gradient(180deg, rgb(19 28 48 / 20%), var(--pm-road));
+  border-color: transparent;
+}
+
+.pm-seg[data-kind='dirt']::after,
+.pm-seg[data-kind='edges']::after,
+.pm-seg[data-kind='fade']::after,
+.pm-seg[data-kind='passed-fade']::after {
+  content: none;
+}
+
+/* The open road right above «Мы здесь» — lit (Victory.dc.html). It grows so the
+   columns end level with the «Мы здесь» line whatever their length. */
+.pm-seg[data-kind='lit'] {
+  flex: 1 1 48px;
+  min-height: 48px;
+  background: #1b2440;
+  border-left: 2px solid var(--pm-accent);
+  border-right: 2px solid var(--pm-accent);
+  box-shadow:
+    0 0 30px rgb(242 181 68 / 30%),
+    inset 0 0 18px rgb(242 181 68 / 14%);
+}
+
+.pm-seg[data-kind='lit']::after {
+  background: repeating-linear-gradient(
+    180deg,
+    var(--pm-accent-soft) 0 14px,
+    transparent 14px 28px
+  );
+}
+
+.pm-seg[data-kind='chain'] {
+  background: #1b2440;
+  border-left: 2px solid var(--pm-text);
+  border-right: 2px solid var(--pm-text);
+  box-shadow: 0 0 26px rgb(232 236 244 / 25%);
+}
+
+.pm-seg[data-kind='chain']::after {
+  background: repeating-linear-gradient(180deg, #fff 0 14px, transparent 14px 28px);
+}
+
+.pm-seg[data-kind='broken'] {
+  height: 30px;
+  background: rgb(255 107 94 / 6%);
+  border-left: 2px dashed var(--pm-bad);
+  border-right: 2px dashed var(--pm-bad);
+}
+
+.pm-seg[data-kind='broken']::after {
+  content: none;
+}
+
+.pm-seg[data-kind='passed'] {
+  height: 30px;
+  background: #182035;
+  border-left: 2px solid rgb(242 181 68 / 50%);
+  border-right: 2px solid rgb(242 181 68 / 50%);
+}
+
+.pm-seg[data-kind='passed']::after {
+  background: repeating-linear-gradient(
+    180deg,
+    rgb(255 210 122 / 60%) 0 14px,
+    transparent 14px 28px
+  );
+}
+
+.pm-seg[data-kind='passed-fade'] {
+  height: 76px;
+  background: linear-gradient(#182035, rgb(24 32 53 / 0%));
+  border-left: 2px solid rgb(242 181 68 / 35%);
+  border-right: 2px solid rgb(242 181 68 / 35%);
+}
+
+.pm-seg[data-tall] {
+  height: 142px;
+}
+
+/* ── cards ──────────────────────────────────────────────────────────────── */
+
+.pm-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 268px;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+.pm-pick {
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.pm-pick:hover {
+  transform: translateY(-2px);
+}
+
+.pm-card-top,
+.pm-obstacle-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pm-muted-2);
+}
+
+/* Station — known: solid card; hypothesis: dashed (dirt road). */
+.pm-station {
+  gap: 10px;
+  padding: 16px 18px 14px;
+  border-radius: 18px;
+  background: var(--pm-card);
+  border: 1px solid rgb(232 236 244 / 20%);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+}
+
+.pm-station.is-dirt {
+  background: rgb(17 28 51 / 85%);
+  border: 1.5px dashed rgb(232 236 244 / 38%);
+  box-shadow: none;
+}
+
+.pm-pill {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(232 236 244 / 30%);
+  color: var(--pm-text);
+}
+
+.pm-pill[data-confidence='hypothesis'] {
+  border-style: dashed;
+  border-color: rgb(232 236 244 / 45%);
+}
+
+.pm-station-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.pm-because {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--pm-muted-2);
+  padding-top: 10px;
+  border-top: 1px solid var(--pm-line);
+}
+
+.pm-because b {
+  color: var(--pm-text);
+  font-weight: 600;
+}
+
+.pm-because-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pm-accent);
+}
+
+.pm-notfound {
+  color: var(--pm-bad-text);
+  font-weight: 700;
+}
+
+.pm-hint {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f5d693;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgb(242 181 68 / 10%);
+  border: 1px dashed rgb(242 181 68 / 45%);
+}
+
+/* Obstacle — the barrier: yellow with black stripes. */
+.pm-obstacle {
+  max-width: 280px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--pm-barrier);
+  color: var(--pm-ink);
+  overflow: hidden;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 50%);
+}
+
+.pm-stripes {
+  display: block;
+  height: 12px;
+  background: repeating-linear-gradient(135deg, var(--pm-ink) 0 10px, var(--pm-barrier) 10px 20px);
+}
+
+.pm-obstacle-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 14px 13px;
+}
+
+.pm-obstacle-kicker {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pm-owner {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--pm-ink);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pm-obstacle-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.pm-obstacle-opens {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3a3010;
+}
+
+/* Fog — the open question. */
+.pm-fog {
+  max-width: 260px;
+  gap: 6px;
+  padding: 14px 18px;
+  border-radius: 22px;
+  background: rgb(42 54 82 / 55%);
+  border: 1px dashed rgb(140 152 174 / 45%);
+  box-shadow: 0 0 40px 14px rgb(42 54 82 / 55%);
+}
+
+.pm-fog-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pm-muted-2);
+}
+
+.pm-fog-text {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--pm-muted);
+}
+
+.pm-far-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pm-muted);
+  opacity: 0.6;
+  filter: blur(1.2px);
+}
+
+/* A station in the fog (confidence «unknown»). */
+.pm-far {
+  max-width: 240px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #101a2e;
+  border: 1px solid rgb(232 236 244 / 10%);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.pm-far-title {
+  opacity: 0.6;
+  filter: blur(1.4px);
+}
+
+/* Check mode — chain, selection, break (Night-Check.dc.html). */
+.pm-station.is-chain {
+  background: #14213d;
+  border: 1.5px solid var(--pm-accent);
+  box-shadow: 0 0 34px rgb(242 181 68 / 25%);
+}
+
+.pm-station.is-chain .pm-kicker {
+  color: #f5d693;
+}
+
+.pm-station.is-broken .pm-because-icon {
+  color: var(--pm-bad-text);
+}
+
+.pm-fog.is-chain,
+.pm-far.is-chain {
+  border: 1.5px solid var(--pm-accent);
+}
+
+.pm-obstacle.is-selected,
+.pm-station.is-selected,
+.pm-fog.is-selected,
+.pm-far.is-selected {
+  outline: 3px solid var(--pm-text);
+  outline-offset: 3px;
+}
+
+.pm-selected-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 280px;
+}
+
+.pm-selected-tag {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pm-bg);
+  background: var(--pm-text);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.pm-break {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 300px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #1a1420;
+  border: 1.5px dashed var(--pm-bad);
+  box-shadow: 0 0 40px rgb(255 107 94 / 20%);
+}
+
+.pm-break-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pm-bad-text);
+}
+
+.pm-break-text {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pm-break-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pm-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── «Мы здесь» and the passed path ─────────────────────────────────────── */
+
+.pm-here {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 8px;
+  position: relative;
+}
+
+.pm-here-line {
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, rgb(242 181 68 / 0%), rgb(242 181 68 / 80%));
+}
+
+.pm-here-line--right {
+  background: linear-gradient(90deg, rgb(242 181 68 / 80%), rgb(242 181 68 / 0%));
+}
+
+.pm-here-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  background: var(--pm-accent);
+  color: var(--pm-bg);
+  font-weight: 800;
+  font-size: 15px;
+  white-space: nowrap;
+  box-shadow: 0 0 36px rgb(242 181 68 / 45%);
+}
+
+.pm-page[data-mode='check'] .pm-here {
+  opacity: 0.35;
+}
+
+.pm-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #111a2e;
+  border: 1px solid rgb(242 181 68 / 30%);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.pm-chip svg {
+  flex: none;
+}
+
+.pm-chip-title {
+  text-decoration: line-through;
+  text-decoration-color: rgb(242 181 68 / 70%);
+  min-width: 0;
+}
+
+.pm-chip-date {
+  flex: none;
+  color: var(--pm-muted-2);
+}
+
+.pm-chip.is-chain {
+  border-color: var(--pm-text);
+}
+
+.pm-passed-caption {
+  margin: 6px 0 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pm-muted-3);
+}
+
+/* ── side panels ────────────────────────────────────────────────────────── */
+
+.pm-aside {
+  flex: 1 1 300px;
+  max-width: 380px;
+  padding: 32px 24px;
+  border-left: 1px solid var(--pm-line);
+  background: rgb(6 11 22 / 55%);
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  position: relative;
+}
+
+.pm-aside--check {
+  padding: 32px 26px;
+  background: #0d1528;
+  gap: 26px;
+}
+
+.pm-aside:focus {
+  outline: none;
+}
+
+.pm-aside-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pm-aside-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-aside-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.pm-aside--check .pm-aside-title {
+  font-size: 22px;
+}
+
+.pm-aside-title--small {
+  font-size: 16px;
+}
+
+.pm-aside-lead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pm-muted-2);
+}
+
+.pm-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgb(232 236 244 / 5%);
+  font-size: 13px;
+}
+
+.pm-meter-label {
+  flex: 1;
+  color: var(--pm-muted);
+}
+
+.pm-meter-bars {
+  display: flex;
+  gap: 4px;
+}
+
+.pm-meter-bars span {
+  width: 18px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(232 236 244 / 14%);
+}
+
+.pm-meter-bars span[data-on] {
+  background: var(--pm-accent);
+}
+
+.pm-meter-bars span[data-over] {
+  background: var(--pm-bad);
+}
+
+.pm-roadside-track,
+.pm-roadside-station {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+}
+
+.pm-roadside-track {
+  border: 1px solid rgb(232 236 244 / 10%);
+  background: rgb(232 236 244 / 3%);
+}
+
+.pm-roadside-station {
+  border: 1px dashed rgb(232 236 244 / 16%);
+}
+
+.pm-roadside-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-roadside-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pm-muted);
+}
+
+.pm-roadside-tag {
+  font-size: 12px;
+  color: var(--pm-muted-3);
+}
+
+.pm-roadside-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pm-muted-3);
+}
+
+.pm-roadside-summary {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--pm-muted-3);
+}
+
+.pm-legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  font-size: 13px;
+  color: var(--pm-muted-2);
+}
+
+.pm-legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pm-legend b {
+  color: var(--pm-text);
+  font-weight: 800;
+}
+
+.pm-swatch {
+  flex: none;
+  position: relative;
+  width: 22px;
+  height: 26px;
+  background: var(--pm-road);
+  border-left: 1px solid rgb(232 236 244 / 20%);
+  border-right: 1px solid rgb(232 236 244 / 20%);
+}
+
+.pm-swatch[data-kind='asphalt']::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(180deg, var(--pm-muted-3) 0 6px, transparent 6px 12px);
+}
+
+.pm-swatch[data-kind='dirt'] {
+  background-color: rgb(22 32 56 / 90%);
+  background-image: radial-gradient(rgb(232 236 244 / 30%) 1px, transparent 1.6px);
+  background-size: 7px 7px;
+  border-left: 2px dashed rgb(232 236 244 / 40%);
+  border-right: 2px dashed rgb(232 236 244 / 40%);
+}
+
+.pm-swatch[data-kind='fog'] {
+  border: 0;
+  border-radius: 8px;
+  background: rgb(140 152 174 / 25%);
+  box-shadow: 0 0 10px 3px rgb(140 152 174 / 25%);
+}
+
+.pm-swatch[data-kind='barrier'] {
+  height: 12px;
+  border: 0;
+  border-radius: 3px;
+  background: repeating-linear-gradient(135deg, var(--pm-ink) 0 5px, var(--pm-barrier) 5px 10px);
+}
+
+/* The «Проверка пути» chain list. */
+.pm-status-ok,
+.pm-status-bad {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pm-status-ok {
+  color: var(--pm-text);
+}
+
+.pm-status-bad {
+  color: var(--pm-bad-text);
+}
+
+.pm-chain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.pm-chain li {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  padding-bottom: 18px;
+}
+
+.pm-chain li:last-child {
+  padding-bottom: 0;
+}
+
+.pm-chain li::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 22px;
+  bottom: 0;
+  width: 3px;
+  background: var(--pm-text);
+}
+
+.pm-chain li:last-child::before {
+  content: none;
+}
+
+.pm-chain li[data-kind='beacon-miss']::before,
+.pm-chain li[data-kind='break']::before {
+  width: 0;
+  border-left: 2px dashed var(--pm-bad);
+  background: none;
+}
+
+.pm-chain-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--pm-accent);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--pm-bg);
+}
+
+.pm-chain li[data-kind='beacon-ok'] .pm-chain-mark {
+  background: var(--pm-accent);
+  box-shadow: 0 0 14px rgb(242 181 68 / 60%);
+}
+
+.pm-chain li[data-kind='beacon-miss'] .pm-chain-mark {
+  background: transparent;
+  border: 2px dashed var(--pm-bad);
+}
+
+.pm-chain li[data-kind='break'] .pm-chain-mark {
+  background: var(--pm-bad);
+}
+
+.pm-chain li[data-kind='obstacle'] .pm-chain-mark {
+  width: 22px;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(135deg, var(--pm-ink) 0 5px, var(--pm-barrier) 5px 10px);
+}
+
+.pm-chain li[data-kind='fog'] .pm-chain-mark {
+  background: rgb(140 152 174 / 45%);
+}
+
+.pm-chain-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pm-chain-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pm-chain-name--bad {
+  color: var(--pm-bad-text);
+}
+
+.pm-chain-sub {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--pm-muted-2);
+  overflow-wrap: anywhere;
+}
+
+.pm-roads {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgb(232 236 244 / 4%);
+  border: 1px solid var(--pm-line);
+}
+
+.pm-roads-title {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pm-roads-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--pm-muted);
+}
+
+.pm-roads-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.pm-roads-status {
+  color: var(--pm-text);
+  font-weight: 700;
+  text-align: right;
+}
+
+.pm-roads-status--bad {
+  color: var(--pm-bad-text);
+}
+
+/* ── error and empty states ─────────────────────────────────────────────── */
+
+.pm-state {
+  position: relative;
+  flex: 1;
+  padding: 40px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pm-page--state .pm-beacon {
+  flex-direction: column;
+  padding-top: 0;
+}
+
+.pm-error {
+  width: 100%;
+  max-width: 640px;
+  padding: 26px 28px;
+  border-radius: 22px;
+  background: #1a1420;
+  border: 1.5px dashed var(--pm-bad);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pm-error-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--pm-bad-text);
+}
+
+.pm-error-lead,
+.pm-error-hint {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--pm-muted);
+}
+
+.pm-error-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.pm-empty-road {
+  width: 64px;
+  height: 56px;
+  border-left: 2px dashed rgb(242 181 68 / 45%);
+  border-right: 2px dashed rgb(242 181 68 / 45%);
+}
+
+.pm-empty-text {
+  margin: 0;
+  max-width: 520px;
+  padding: 22px 26px;
+  border-radius: 22px;
+  background: var(--pm-card);
+  border: 1px solid rgb(232 236 244 / 16%);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ── mobile — one track at a time (Mobile.dc.html) ──────────────────────── */
+
+.pm-mobile-nav {
+  display: none;
+}
+
+@media (width <= 640px) {
+  .pm-header {
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .pm-brand {
+    flex: 1 1 auto;
+  }
+
+  .pm-brand-name,
+  .pm-sep,
+  .pm-header-end {
+    display: none;
+  }
+
+  .pm-map-title {
+    font-weight: 800;
+    color: var(--pm-text);
+  }
+
+  .pm-modes button {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .pm-checkbar {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .pm-main {
+    padding: 0 0 48px;
+  }
+
+  .pm-glow {
+    left: 50%;
+    top: 120px;
+    width: 700px;
+    height: 600px;
+  }
+
+  .pm-beacon {
+    flex-direction: row;
+    align-items: flex-start;
+    text-align: left;
+    gap: 12px;
+    margin: 12px 16px 0;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgb(17 28 51 / 92%);
+    border: 1px solid rgb(242 181 68 / 28%);
+  }
+
+  .pm-beacon-mark {
+    width: 30px;
+    height: 24px;
+    margin-top: 4px;
+  }
+
+  .pm-beacon-copy {
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .pm-eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+  }
+
+  .pm-beacon-title {
+    font-size: 19px;
+    line-height: 1.2;
+  }
+
+  .pm-beacon-why {
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  .pm-mobile-nav {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px 0;
+  }
+
+  .pm-tabs {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 14px;
+    background: rgb(232 236 244 / 6%);
+  }
+
+  .pm-tabs button {
+    min-width: 0;
+    height: 44px;
+    padding: 0 6px;
+    border-radius: 10px;
+    border: 0;
+    background: transparent;
+    color: var(--pm-muted);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  .pm-tabs button:hover {
+    background: rgb(232 236 244 / 8%);
+  }
+
+  .pm-tabs button[aria-pressed='true'] {
+    background: var(--pm-text);
+    color: var(--pm-bg);
+    font-weight: 800;
+  }
+
+  .pm-tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pm-roadside-link {
+    align-self: flex-start;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--pm-muted-2);
+    text-decoration: none;
+    padding: 4px 0;
+  }
+
+  .pm-roadside-link:hover {
+    color: var(--pm-accent-soft);
+  }
+
+  .pm-converge {
+    display: none;
+  }
+
+  .pm-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 20px 0;
+  }
+
+  .pm-col {
+    padding: 0;
+  }
+
+  .pm-col:not([data-active]) {
+    display: none;
+  }
+
+  .pm-col[data-dimmed] {
+    opacity: 0.45;
+  }
+
+  .pm-track-label {
+    display: none;
+  }
+
+  .pm-seg {
+    width: 56px;
+  }
+
+  .pm-card,
+  .pm-selected-wrap,
+  .pm-break {
+    max-width: none;
+  }
+
+  .pm-far {
+    width: 86%;
+  }
+
+  .pm-here {
+    padding: 0 20px;
+  }
+
+  .pm-aside {
+    flex-basis: 100%;
+    max-width: none;
+    border-left: 0;
+    border-top: 1px solid var(--pm-line);
+    padding: 28px 16px;
+  }
+}

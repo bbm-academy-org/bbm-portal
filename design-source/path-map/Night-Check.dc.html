@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Карта пути — проверка пути</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#070D1A}
+a{color:#F2B544}a:hover{color:#FFD27A}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="min-height: 100vh; box-sizing: border-box; background: #070D1A; color: #E8ECF4; font-family: 'Manrope', system-ui, sans-serif; position: relative; overflow: hidden; display: flex; flex-direction: column">
+
+<header style="position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 32px; border-bottom: 1px solid rgba(232,236,244,0.08); background: rgba(10,18,34,0.72)">
+  <div style="display: flex; align-items: center; gap: 12px; flex: 1 1 280px">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F2B544" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 9 8.5 21h7L14 9z"/><rect x="9.5" y="5" width="5" height="4" rx=".5"/><path d="M12 2 9.5 5h5zM15 7l6-2M15 7l6 2M9 7 3 5M9 7 3 9M6 21h12"/></svg>
+    <span style="font-weight: 800; font-size: 15px; letter-spacing: 0.02em">Карта пути</span>
+    <span aria-hidden="true" style="width: 1px; height: 20px; background: rgba(232,236,244,0.16)"></span>
+    <span style="font-size: 15px; color: #C9D1DF">Doctor.School</span>
+  </div>
+  <nav aria-label="Режим карты" style="display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(232,236,244,0.06)">
+    <button aria-pressed="false" style="height: 40px; padding: 0 18px; border-radius: 999px; border: 0; background: transparent; color: #C9D1DF; font-size: 14px; font-weight: 600">Карта</button>
+    <button aria-pressed="true" style="height: 40px; padding: 0 18px; border-radius: 999px; border: 0; background: #F2B544; color: #0A1222; font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M6 17v-3a4 4 0 0 1 4-4h4a4 4 0 0 0 4-4"/></svg>Проверить путь</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 18px; border-radius: 999px; border: 0; background: transparent; color: #C9D1DF; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Режим встречи</button>
+  </nav>
+  <div style="display: flex; align-items: center; justify-content: flex-end; gap: 14px; flex: 1 1 280px">
+    <div style="display: flex; align-items: center">
+      <span style="width: 32px; height: 32px; border-radius: 50%; background: #F2B544; color: #0A1222; display: grid; place-items: center; font-size: 12px; font-weight: 800; border: 2px solid #0A1222">МК</span>
+      <span style="width: 32px; height: 32px; border-radius: 50%; background: #8FD3C1; color: #0A1222; display: grid; place-items: center; font-size: 12px; font-weight: 800; border: 2px solid #0A1222; margin-left: -8px">ДС</span>
+      <span style="width: 32px; height: 32px; border-radius: 50%; background: #B9A6F5; color: #0A1222; display: grid; place-items: center; font-size: 12px; font-weight: 800; border: 2px solid #0A1222; margin-left: -8px">ЕВ</span>
+      <span style="width: 32px; height: 32px; border-radius: 50%; background: #1C2740; color: #C9D1DF; display: grid; place-items: center; font-size: 12px; font-weight: 700; border: 2px solid #0A1222; margin-left: -8px">+7</span>
+    </div>
+  </div>
+</header>
+
+<div role="status" style="position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; padding: 10px 24px; background: rgba(242,181,68,0.1); border-bottom: 1px solid rgba(242,181,68,0.3); font-size: 14px; color: #F5D693">
+  <span>Режим проверки: нажмите на любой блок — подсветим дорогу от него до маяка</span>
+  <button style="height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(242,181,68,0.5); background: transparent; color: #F5D693; font-size: 13px; font-weight: 700">Выйти</button>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1; position: relative">
+
+<main style="flex: 999 1 760px; min-width: 0; box-sizing: border-box; padding: 0 40px 80px; position: relative">
+
+  <section aria-label="Маяк" style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; padding: 40px 24px 0; max-width: 780px; margin: 0 auto">
+    <span style="font-size: 12px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: #F2B544">Маяк</span>
+    <h1 style="margin: 0; font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 600; font-size: 46px; line-height: 1.06; text-wrap: balance">Doctor.School — врачи учатся бесплатно, <span style="text-decoration: underline; text-decoration-color: #FF6B5E; text-decoration-style: wavy; text-decoration-thickness: 2px; text-underline-offset: 8px">эксперты и фарма зарабатывают</span> на платформе</h1>
+    <p style="margin: 0; font-size: 14px; color: #FF8A80; font-weight: 700">Ни одна дорога пока не доходит до этой части маяка</p>
+    <svg width="120" height="96" viewBox="0 0 120 96" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-top: 12px">
+      <path d="M68 26 118 8M68 26l50 18M52 26 2 8M52 26 2 44" stroke="#F2B544" stroke-opacity="0.35" stroke-width="2"/>
+      <path d="M54 34 50 90h20l-4-56z" fill="#070D1A" stroke="#F2B544" stroke-width="2"/><path d="M52 34h16" stroke="#F2B544" stroke-width="2"/>
+      <rect x="54" y="20" width="12" height="14" rx="1" fill="#F2B544" fill-opacity="0.25" stroke="#F2B544" stroke-width="2"/>
+      <path d="M60 10l-7 10h14z" stroke="#F2B544" stroke-width="2"/><path d="M51.6 52h16.8M50.8 68h18.4" stroke="#F2B544" stroke-width="2"/>
+      <path d="M36 90h48" stroke="#F2B544" stroke-width="2"/>
+    </svg>
+  </section>
+
+  <svg aria-hidden="true" viewBox="0 0 600 100" preserveAspectRatio="none" style="display: block; width: 100%; height: 150px">
+    <path d="M100 100 C100 40 300 62 300 0" stroke="#131C30" stroke-opacity="0.4" stroke-width="64" fill="none" vector-effect="non-scaling-stroke"/>
+    <path d="M300 100 L300 0" stroke="#131C30" stroke-opacity="0.4" stroke-width="64" fill="none" vector-effect="non-scaling-stroke"/>
+    <path d="M500 100 C500 40 300 62 300 0" stroke="#FF6B5E" stroke-opacity="0.08" stroke-width="64" fill="none" vector-effect="non-scaling-stroke"/>
+    <path d="M500 100 C500 40 300 62 300 0" stroke="#FF6B5E" stroke-width="2.5" stroke-dasharray="4 10" fill="none" vector-effect="non-scaling-stroke"/>
+  </svg>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0">
+
+    <div aria-hidden="true" style="display: flex; flex-direction: column; align-items: center; padding: 0 18px; opacity: 0.22">
+      <div style="padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(232,236,244,0.24); background: #0E182C; font-size: 13px; font-weight: 700">Контент уроков</div>
+      <div style="width: 64px; height: 26px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 260px; height: 88px; border-radius: 22px; background: rgba(42,54,82,0.55)"></div>
+      <div style="width: 64px; height: 26px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 240px; height: 44px; border-radius: 14px; background: #101A2E"></div>
+      <div style="width: 64px; height: 34px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 268px; box-sizing: border-box; padding: 16px 18px; border-radius: 18px; background: #111C33; font-size: 19px; font-weight: 700">Готов первый урок</div>
+      <div style="width: 64px; height: 40px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 280px; box-sizing: border-box; padding: 22px 14px 14px; border-radius: 12px; background: #FFC93C; color: #111317; font-size: 17px; font-weight: 800">Довести студию до готовности</div>
+      <div style="box-sizing: border-box; width: 64px; flex: 1 1 48px; min-height: 48px; background: #1B2440; border-left: 2px solid #F2B544; border-right: 2px solid #F2B544"></div>
+    </div>
+
+    <div aria-hidden="true" style="display: flex; flex-direction: column; align-items: center; padding: 0 18px; opacity: 0.22">
+      <div style="padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(232,236,244,0.24); background: #0E182C; font-size: 13px; font-weight: 700">Охват и подкасты</div>
+      <div style="box-sizing: border-box; width: 64px; height: 26px; border-left: 2px dashed rgba(232,236,244,0.3); border-right: 2px dashed rgba(232,236,244,0.3)"></div>
+      <div style="width: 100%; max-width: 260px; height: 96px; border-radius: 22px; background: rgba(42,54,82,0.55)"></div>
+      <div style="box-sizing: border-box; width: 64px; height: 92px; border-left: 2px dashed rgba(232,236,244,0.3); border-right: 2px dashed rgba(232,236,244,0.3)"></div>
+      <div style="width: 100%; max-width: 268px; box-sizing: border-box; padding: 16px 18px; border-radius: 18px; border: 1.5px dashed rgba(232,236,244,0.38); font-size: 19px; font-weight: 700">Пилотный выпуск подкаста с экспертом</div>
+      <div style="box-sizing: border-box; width: 64px; flex: 1 1 48px; min-height: 48px; background: #1B2440; border-left: 2px solid #F2B544; border-right: 2px solid #F2B544"></div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; align-items: center; padding: 0 18px">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(232,236,244,0.3); background: #0E182C; font-size: 13px; font-weight: 700"><span style="width: 8px; height: 8px; border-radius: 50%; background: #B9A6F5"></span>Своя платформа</div>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 22px; border-left: 2px dashed #FF6B5E; border-right: 2px dashed #FF6B5E; background: rgba(255,107,94,0.06)"></div>
+      <article style="width: 100%; max-width: 300px; box-sizing: border-box; padding: 16px 18px; border-radius: 18px; background: #1A1420; border: 1.5px dashed #FF6B5E; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 40px rgba(255,107,94,0.2)">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #FF8A80">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7a5 5 0 0 1 0-10h2M15 7h2a5 5 0 0 1 4 8M8 12h3M3 3l18 18"/></svg>Разрыв · дороги нет
+        </div>
+        <p style="margin: 0; font-size: 16px; font-weight: 700; line-height: 1.35">Как «Две поверхности в проде» приводят к тому, что эксперты и фарма зарабатывают?</p>
+        <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #C9D1DF">В «потому что» сказано «эксперты смогут продавать курсы» — но такой станции на карте нет, а про фарму ни слова.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px">
+          <button style="height: 40px; padding: 0 14px; border-radius: 12px; border: 0; background: #F2B544; color: #0A1222; font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Станция в разрыв</button>
+          <button style="height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(232,236,244,0.3); background: transparent; color: #E8ECF4; font-size: 14px; font-weight: 700">Туман здесь</button>
+        </div>
+      </article>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 44px; border-left: 2px dashed #FF6B5E; border-right: 2px dashed #FF6B5E; background: rgba(255,107,94,0.06); position: relative"><svg width="60" height="14" viewBox="0 0 60 14" style="position: absolute; left: 0; bottom: 0"><path d="M0 14V6l8 4 7-7 9 6 8-5 9 7 8-6 11 5v4z" fill="#131C30"/></svg></div>
+      <article style="width: 100%; max-width: 268px; box-sizing: border-box; padding: 16px 18px 14px; border-radius: 18px; background: #14213D; border: 1.5px solid #F2B544; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 34px rgba(242,181,68,0.25)">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+          <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #F5D693">Станция · звено 2</span>
+          <span style="font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(232,236,244,0.3); color: #E8ECF4">знаем</span>
+        </div>
+        <h3 style="margin: 0; font-size: 19px; font-weight: 700; line-height: 1.25">Две поверхности платформы в проде</h3>
+        <div style="display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: #C9D1DF; padding-top: 10px; border-top: 1px solid rgba(232,236,244,0.1)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF8A80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+          <span><span style="color: #E8ECF4; font-weight: 600">потому что</span> эксперты смогут публиковать и продавать курсы <span style="color: #FF8A80; font-weight: 700">→ не найдено</span></span>
+        </div>
+      </article>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 40px; position: relative; background: #1B2440; border-left: 2px solid #E8ECF4; border-right: 2px solid #E8ECF4; box-shadow: 0 0 26px rgba(232,236,244,0.25)"><div style="position: absolute; left: calc(50% - 1.5px); top: 0; bottom: 0; width: 3px; background: repeating-linear-gradient(180deg, #FFFFFF 0 14px, transparent 14px 28px)"></div></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; max-width: 280px">
+        <span style="align-self: flex-start; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #0A1222; background: #E8ECF4; padding: 3px 10px; border-radius: 999px">Выбрано · звено 1</span>
+        <article style="width: 100%; box-sizing: border-box; border-radius: 12px; background: #FFC93C; color: #111317; overflow: hidden; outline: 3px solid #E8ECF4; outline-offset: 3px">
+          <div aria-hidden="true" style="height: 12px; background: repeating-linear-gradient(135deg, #111317 0 10px, #FFC93C 10px 20px)"></div>
+          <div style="padding: 11px 14px 13px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; align-items: center; gap: 8px"><span style="font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; flex: 1">Препятствие · проезд закрыт</span><span style="width: 26px; height: 26px; border-radius: 50%; background: #111317; color: #B9A6F5; display: grid; place-items: center; font-size: 11px; font-weight: 800">ЕВ</span></div>
+            <h3 style="margin: 0; font-size: 17px; font-weight: 800; line-height: 1.25">Каталог экспертов</h3>
+            <span style="font-size: 12px; font-weight: 600; color: #3A3010">открывает «Две поверхности платформы в проде»</span>
+          </div>
+        </article>
+      </div>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; flex: 1 1 48px; min-height: 48px; background: #1B2440; border-left: 2px solid #F2B544; border-right: 2px solid #F2B544; opacity: 0.3"></div>
+    </div>
+  </div>
+
+  <div aria-hidden="true" style="display: flex; align-items: center; gap: 16px; padding: 0 8px; opacity: 0.25">
+    <div style="flex: 1; height: 2px; background: #F2B544"></div>
+    <div style="padding: 11px 20px; border-radius: 999px; background: #F2B544; color: #0A1222; font-weight: 800; font-size: 15px">Мы здесь</div>
+    <div style="flex: 1; height: 2px; background: #F2B544"></div>
+  </div>
+</main>
+
+<aside aria-label="Проверка пути" style="flex: 1 1 300px; max-width: 380px; box-sizing: border-box; padding: 32px 26px; border-left: 1px solid rgba(232,236,244,0.08); background: #0D1528; display: flex; flex-direction: column; gap: 26px">
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: #F2B544">Проверка пути</span>
+    <h2 style="margin: 0; font-size: 22px; font-weight: 800; line-height: 1.25">«Каталог экспертов» → маяк</h2>
+    <p style="margin: 0; font-size: 14px; color: #FF8A80; font-weight: 700">Дорога обрывается после 2 звеньев</p>
+  </div>
+
+  <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column">
+    <li style="display: flex; gap: 14px">
+      <div style="display: flex; flex-direction: column; align-items: center"><span style="width: 20px; height: 20px; border-radius: 50%; border: 2px dashed #FF6B5E; box-sizing: border-box"></span><span aria-hidden="true" style="flex: 1; width: 0; border-left: 2px dashed #FF6B5E; min-height: 26px"></span></div>
+      <div style="padding-bottom: 18px"><div style="font-size: 15px; font-weight: 700">Маяк</div><div style="font-size: 13px; color: #FF8A80">не достигнут</div></div>
+    </li>
+    <li style="display: flex; gap: 14px">
+      <div style="display: flex; flex-direction: column; align-items: center"><span style="width: 20px; height: 20px; border-radius: 50%; background: #FF6B5E; color: #0A1222; display: grid; place-items: center; font-size: 13px; font-weight: 900">!</span><span aria-hidden="true" style="flex: 1; width: 0; border-left: 2px dashed #FF6B5E; min-height: 26px"></span></div>
+      <div style="padding-bottom: 18px"><div style="font-size: 15px; font-weight: 700; color: #FF8A80">Разрыв</div><div style="font-size: 13px; line-height: 1.45; color: #C9D1DF">нет участка дороги между платформой и тем, что эксперты и фарма зарабатывают</div></div>
+    </li>
+    <li style="display: flex; gap: 14px">
+      <div style="display: flex; flex-direction: column; align-items: center"><span style="width: 20px; height: 20px; border-radius: 50%; background: #F2B544"></span><span aria-hidden="true" style="flex: 1; width: 3px; background: #E8ECF4; min-height: 26px"></span></div>
+      <div style="padding-bottom: 18px"><div style="font-size: 15px; font-weight: 700">Две поверхности платформы в проде</div><div style="font-size: 13px; color: #A9B3C6">станция · знаем</div></div>
+    </li>
+    <li style="display: flex; gap: 14px">
+      <div style="display: flex; flex-direction: column; align-items: center"><span aria-hidden="true" style="width: 22px; height: 14px; border-radius: 3px; background: repeating-linear-gradient(135deg, #111317 0 5px, #FFC93C 5px 10px)"></span></div>
+      <div><div style="font-size: 15px; font-weight: 700">Каталог экспертов</div><div style="font-size: 13px; color: #A9B3C6">препятствие · ЕВ</div></div>
+    </li>
+  </ol>
+
+  <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 14px; background: rgba(232,236,244,0.04); border: 1px solid rgba(232,236,244,0.08)">
+    <span style="font-size: 13px; font-weight: 800; color: #E8ECF4">Остальные дороги</span>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #C9D1DF"><span style="width: 8px; height: 8px; border-radius: 50%; background: #F2B544"></span><span style="flex: 1">Контент уроков</span><span style="color: #E8ECF4; font-weight: 700">доходит</span></div>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #C9D1DF"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px dashed #E8ECF4; box-sizing: border-box"></span><span style="flex: 1">Охват и подкасты</span><span style="color: #E8ECF4; font-weight: 700">доходит, по грунтовке</span></div>
+  </div>
+
+  <button style="height: 48px; border-radius: 14px; border: 1px solid rgba(232,236,244,0.24); background: transparent; color: #E8ECF4; font-size: 15px; font-weight: 700">Проверить всю карту</button>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1580}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
