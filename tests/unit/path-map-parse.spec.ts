@@ -16,6 +16,8 @@ import { PATH_MAP_FILE, loadPathMap, parsePathMap } from '@/lib/path-map'
  */
 
 const repoRoot = join(import.meta.dirname, '..', '..')
+/** The design's example map, decoupled from the real content file (#530). */
+const EXAMPLE_FILE = 'tests/fixtures/path-map/example.yaml'
 
 const MINIMAL = `
 title: Тест
@@ -137,26 +139,31 @@ describe('parsePathMap — schema', () => {
   })
 })
 
-describe('the shipped map file', () => {
+describe('the real map file', () => {
   it('lives at the documented path', () => {
     expect(PATH_MAP_FILE).toBe('content/path-map/doctor-school.yaml')
   })
 
-  it('parses and passes validation', () => {
-    const result = parsePathMap(readFileSync(join(repoRoot, PATH_MAP_FILE), 'utf8'))
-    expect(result.ok ? [] : result.errors).toEqual([])
-  })
-
-  it('is what loadPathMap reads from the repo root', () => {
+  // The ONE check against the real content: whatever the map says, the file
+  // must parse and validate. Everything content-specific runs on the fixture.
+  it('is what loadPathMap reads from the repo root, and it parses with no errors', () => {
     const loaded = loadPathMap(repoRoot)
-    expect(loaded.ok).toBe(true)
+    expect(loaded.ok ? [] : loaded.errors).toEqual([])
     expect(loaded.file).toBe(PATH_MAP_FILE)
+  })
+})
+
+describe('the example map (test fixture)', () => {
+  const text = readFileSync(join(repoRoot, EXAMPLE_FILE), 'utf8')
+  const parsed = parsePathMap(text)
+
+  it('parses and passes validation', () => {
+    expect(parsed.ok ? [] : parsed.errors).toEqual([])
   })
 
   it('carries the seeded example: 3 focus tracks, 1 roadside track, the deliberate break', () => {
-    const loaded = loadPathMap(repoRoot)
-    if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
-    const { map } = loaded
+    if (!parsed.ok) throw new Error(parsed.errors.join('\n'))
+    const { map } = parsed
     expect(map.tracks.filter((t) => t.status === 'focus').map((t) => t.title)).toEqual([
       'Контент уроков',
       'Охват и подкасты',
@@ -172,7 +179,6 @@ describe('the shipped map file', () => {
   })
 
   it('opens with a Russian format comment so it can be edited without the docs', () => {
-    const text = readFileSync(join(repoRoot, PATH_MAP_FILE), 'utf8')
     const header = text.split('\n').filter((line) => line.startsWith('#'))
     expect(header.length).toBeGreaterThanOrEqual(10)
     expect(header.join('\n')).toMatch(/opens/)
@@ -185,5 +191,108 @@ describe('loadPathMap — a broken file', () => {
     expect(loaded.ok).toBe(false)
     if (loaded.ok) return
     expect(loaded.errors.join('\n')).toMatch(/не найден|не прочитан/)
+  })
+})
+
+describe('parsePathMap — friendliness to a hand or agent edit (review of PR #531)', () => {
+  const errorsOf = (source: string): string => {
+    const result = parsePathMap(source)
+    expect(result.ok).toBe(false)
+    return result.ok ? '' : result.errors.join('\n')
+  }
+
+  it('rejects an impossible calendar date with a Russian message', () => {
+    const errors = errorsOf(`${MINIMAL}
+      - id: o1
+        type: obstacle
+        title: Препятствие
+        opens: s1
+        done: 2026-13-45
+`)
+    expect(errors).toMatch(/tracks\[0\]\.nodes\[1\]\.done/)
+    expect(errors).toMatch(/такой даты нет/)
+  })
+
+  it('rejects 30 February too — the date must exist in the calendar', () => {
+    expect(errorsOf(MINIMAL.replace('title: Тест', 'title: Тест\nstarted: 2026-02-30'))).toMatch(
+      /такой даты нет/,
+    )
+  })
+
+  it('an empty file is a Russian error, not «expected object, received null»', () => {
+    for (const source of ['', '# только комментарий\n']) {
+      const errors = errorsOf(source)
+      expect(errors).toMatch(/файл пуст/)
+      expect(errors).not.toMatch(/expected|received/i)
+    }
+  })
+
+  it('a bare `nodes:` (YAML null) reads as an empty track, not an English type error', () => {
+    const result = parsePathMap(
+      'title: Т\nbeacon:\n  title: М\ntracks:\n  - id: a\n    title: А\n    nodes:\n',
+    )
+    expect(result.ok ? [] : result.errors).toEqual([])
+    if (!result.ok) return
+    expect(result.map.tracks[0].nodes).toEqual([])
+  })
+
+  it('a bare `tracks:` reads as the empty map', () => {
+    const result = parsePathMap('title: Т\nbeacon:\n  title: М\ntracks:\n')
+    expect(result.ok ? [] : result.errors).toEqual([])
+  })
+
+  it('a wrong value type is reported in Russian', () => {
+    const errors = errorsOf('title: Т\nbeacon:\n  title: М\ntracks: просто текст\n')
+    expect(errors).toMatch(/^tracks: /m)
+    expect(errors).not.toMatch(/expected|received|Invalid/i)
+  })
+
+  it('a missing required field is reported in Russian', () => {
+    const errors = errorsOf('title: Т\ntracks: []\n')
+    expect(errors).toMatch(/beacon/)
+    expect(errors).not.toMatch(/expected|received|Invalid/i)
+  })
+
+  it('accepts a numeric title by reading it as text', () => {
+    const result = parsePathMap(MINIMAL.replace('title: Станция', 'title: 2026'))
+    expect(result.ok ? [] : result.errors).toEqual([])
+    if (!result.ok) return
+    expect(result.map.tracks[0].nodes[0].title).toBe('2026')
+  })
+
+  it('pluralises the focus overflow warning («5 треков»)', () => {
+    const tracks = ['b', 'c', 'd', 'e']
+      .map((id) => `  - id: ${id}\n    title: Трек ${id}\n    nodes: []\n`)
+      .join('')
+    const result = parsePathMap(`${MINIMAL}${tracks}`)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.warnings.join('\n')).toContain('в фокусе 5 треков')
+  })
+})
+
+describe('parsePathMap — the track `short` label (mobile tabs)', () => {
+  it('accepts an optional `short` on a track', () => {
+    const result = parsePathMap(MINIMAL.replace('title: Трек А', 'title: Трек А\n    short: А'))
+    expect(result.ok ? [] : result.errors).toEqual([])
+    if (!result.ok) return
+    expect(result.map.tracks[0].short).toBe('А')
+  })
+
+  it('the example map gives every focus track a short label', () => {
+    const parsed = parsePathMap(readFileSync(join(repoRoot, EXAMPLE_FILE), 'utf8'))
+    if (!parsed.ok) throw new Error(parsed.errors.join('\n'))
+    expect(parsed.map.tracks.filter((t) => t.status === 'focus').map((t) => t.short)).toEqual([
+      'Контент',
+      'Охват',
+      'Платформа',
+    ])
+  })
+
+  it('the example file header documents `short` and fog with `opens`', () => {
+    const text = readFileSync(join(repoRoot, EXAMPLE_FILE), 'utf8')
+    const header = text.split('\n').filter((line) => line.startsWith('#'))
+    expect(header.join('\n')).toMatch(/short/)
+    expect(header.join('\n')).toMatch(/через туман/)
   })
 })

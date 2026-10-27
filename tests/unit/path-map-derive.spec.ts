@@ -213,3 +213,90 @@ tracks:
     })
   })
 })
+
+describe('checkPath — fog, roadside tracks and removed obstacles inside a chain (review of PR #531)', () => {
+  const map = mapOf(`${HEAD}
+tracks:
+  - id: a
+    title: А
+    nodes:
+      - { id: s0, type: station, title: Перед туманом, because: x, opens: fo }
+      - { id: fo, type: fog, title: Туман с ответом наперёд, opens: beacon }
+      - { id: fo2, type: fog, title: Туман к станции, opens: s9 }
+      - { id: s9, type: station, title: Станция за туманом, because: x, opens: beacon }
+      - { id: hop, type: station, title: Через обочину, because: x, opens: r1 }
+      - { id: s1, type: station, title: Через снятый шлагбаум, because: x, opens: gone }
+      - { id: gone, type: obstacle, title: Снятый шлагбаум, opens: beacon, done: 2026-10-14 }
+      - { id: gone-dead, type: obstacle, title: Снятый в никуда, opens: nowhere, done: 2026-10-15 }
+  - id: r
+    title: Р
+    status: roadside
+    nodes:
+      - { id: r1, type: station, title: Станция на обочине, because: x, opens: beacon }
+`)
+
+  it('a fog card with `opens` is passable but never certain: reached, confidence «unknown»', () => {
+    const result = checkPath(map, 'fo')
+    expect(result).toMatchObject({ reached: true, break: null, confidence: 'unknown' })
+  })
+
+  it('a chain THROUGH a fog card is «доходит через туман», not plain «доходит»', () => {
+    const result = checkPath(map, 's0')
+    expect(result.chain.map((l) => l.id)).toEqual(['s0', 'fo'])
+    expect(result).toMatchObject({ reached: true, confidence: 'unknown' })
+    // The certainty stays lost after the fog, even past a «known» station.
+    expect(checkPath(map, 'fo2')).toMatchObject({ reached: true, confidence: 'unknown' })
+  })
+
+  it('a fog card without `opens` is still a break of its own kind', () => {
+    const fogOnly = mapOf(`${HEAD}
+tracks:
+  - { id: a, title: А, nodes: [ { id: f, type: fog, title: Туман } ] }
+`)
+    expect(checkPath(fogOnly, 'f')).toMatchObject({
+      reached: false,
+      break: { kind: 'fog', at: 'f' },
+    })
+  })
+
+  // TODO(Антон): pins CURRENT behaviour, pending the owner's decision — a road
+  // that passes through a station of a `roadside` track counts as reached.
+  it('a hop through a roadside-track station currently counts as reached (pinned)', () => {
+    const result = checkPath(map, 'hop')
+    expect(result.reached).toBe(true)
+    expect(result.chain.map((l) => [l.id, l.trackId])).toEqual([
+      ['hop', 'a'],
+      ['r1', 'r'],
+    ])
+  })
+
+  it('a removed (done) obstacle inside a chain is walked through like any other link', () => {
+    const result = checkPath(map, 's1')
+    expect(result).toMatchObject({ reached: true, break: null, confidence: 'known' })
+    expect(result.chain.map((l) => l.id)).toEqual(['s1', 'gone'])
+  })
+
+  it('a removed obstacle whose `opens` points nowhere is a break at that obstacle', () => {
+    expect(checkPath(map, 'gone-dead').break).toEqual({
+      kind: 'unknown-target',
+      at: 'gone-dead',
+      target: 'nowhere',
+    })
+  })
+})
+
+describe('buildMapView — the track `short` label', () => {
+  it('uses `short` when set and falls back to the title', () => {
+    const view = buildMapView(
+      mapOf(`${HEAD}
+tracks:
+  - { id: a, title: Длинное название трека, short: Длинное, nodes: [] }
+  - { id: b, title: Б, nodes: [] }
+`),
+    )
+    expect(view.focus.map((t) => [t.title, t.short])).toEqual([
+      ['Длинное название трека', 'Длинное'],
+      ['Б', 'Б'],
+    ])
+  })
+})
