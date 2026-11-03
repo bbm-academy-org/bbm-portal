@@ -347,8 +347,14 @@ ${tasks}`
   })
 
   it('rejects a done that is neither yes/no nor a real date, in Russian', () => {
-    const errors = errorsOf(withTasks(`          - { title: Задача, done: 2026-02-30 }\n`))
-    expect(errors).toMatch(/tasks\[0\]\.done: .*true.*ГГГГ-ММ-ДД/)
+    // A date-shaped string is judged as a date: the calendar message names the problem.
+    expect(errorsOf(withTasks(`          - { title: Задача, done: 2026-02-30 }\n`))).toMatch(
+      /tasks\[0\]\.done: такой даты нет в календаре/,
+    )
+    // Anything else gets the field's own message: both accepted forms.
+    expect(errorsOf(withTasks(`          - { title: Задача, done: скоро }\n`))).toMatch(
+      /tasks\[0\]\.done: .*true.*ГГГГ-ММ-ДД/,
+    )
   })
 
   it('rejects a link that is not an http(s) URL', () => {

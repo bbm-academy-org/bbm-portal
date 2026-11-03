@@ -60,11 +60,59 @@ const common = {
   opens: id.optional(),
 }
 
+/**
+ * A task inside an obstacle (#536) — what has to happen for the barrier to lift.
+ * Recursive: a task may hold subtasks, to any depth the file needs; the depth is
+ * capped at `MAX_TASK_DEPTH` in `./parse.ts`, where the error can name the
+ * obstacle. Progress is counted over leaves in `./tasks.ts`.
+ */
+export interface PathTask {
+  title: string
+  /** `true` / a `YYYY-MM-DD` day = done; `false` or absent = open. */
+  done?: boolean | string
+  /** A free-text label of who carries it, like the node's `owner`. */
+  owner?: string
+  /** An http(s) URL — e.g. the Plane issue the task lives in. */
+  link?: string
+  tasks?: PathTask[]
+}
+
+const TASK_DONE_HINT = 'true / false или дата ГГГГ-ММ-ДД, например 2026-10-21'
+
+/** `true` / `false` / a real `YYYY-MM-DD`; every rejection names both accepted forms. */
+const taskDone = z.union(
+  [
+    z.boolean(),
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, TASK_DONE_HINT)
+      .refine(isCalendarDate, 'такой даты нет в календаре — проверьте месяц и день'),
+  ],
+  { error: TASK_DONE_HINT },
+)
+
+const taskLink = z
+  .string()
+  .trim()
+  .regex(/^https?:\/\/\S+$/, 'ссылка должна начинаться с http:// или https://, без пробелов')
+
+export const taskSchema: z.ZodType<PathTask> = z.lazy(() =>
+  z.strictObject({
+    title,
+    done: taskDone.optional(),
+    owner: z.string().trim().min(1).optional(),
+    link: taskLink.optional(),
+    tasks: z.array(taskSchema).optional(),
+  }),
+)
+
 const obstacleSchema = z.strictObject({
   ...common,
   type: z.literal('obstacle'),
   /** Set when the obstacle is removed: it moves to the passed path below «Мы здесь». */
   done: isoDate.optional(),
+  /** What has to happen for the barrier to lift (#536). Optional; depth ≤ `MAX_TASK_DEPTH`. */
+  tasks: z.array(taskSchema).optional(),
 })
 
 const stationSchema = z.strictObject({

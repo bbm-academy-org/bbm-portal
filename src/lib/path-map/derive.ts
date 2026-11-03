@@ -5,6 +5,7 @@ import {
   type PathNode,
   type PathObstacle,
 } from './schema'
+import { taskProgress, type TaskProgress } from './tasks'
 
 /**
  * Everything the map SHOWS that the file does not state outright (#530) — pure
@@ -17,7 +18,8 @@ import {
  *   - `buildMapView` — per focus track: the passed path below «Мы здесь» (done
  *     obstacles), the road above it, the fog collapse beyond
  *     `limits.visible_stations`, the «разбей станцию» hint; plus the roadside
- *     (roadside tracks, stations without «потому что») and the focus counter.
+ *     (roadside tracks, stations without «потому что») and the focus counter;
+ *     each obstacle carries its task progress (`./tasks.ts`, #536).
  */
 
 export interface ChainLink {
@@ -132,6 +134,8 @@ export type UpcomingItem =
       openObstacles: number
       /** `openObstacles` exceeds `limits.obstacles_per_station` → «разбей станцию». */
       overloaded: boolean
+      /** An obstacle's task progress (#536); `null` for other nodes and obstacles without tasks. */
+      progress: TaskProgress | null
     }
   | {
       /** Everything beyond `limits.visible_stations` upcoming stations, bottom → top. */
@@ -141,6 +145,10 @@ export type UpcomingItem =
 
 export interface PassedItem {
   node: PathObstacle & { done: string }
+  /** Title of what it opened («маяк» for the beacon); `null` when the target is missing. */
+  opensTitle: string | null
+  /** Task progress of the removed obstacle (#536); `null` without tasks. */
+  progress: TaskProgress | null
 }
 
 export interface TrackView {
@@ -237,7 +245,11 @@ export function buildMapView(map: PathMap): MapView {
 
     for (const node of track.nodes) {
       if (node.type === 'obstacle' && node.done) {
-        passed.push({ node: node as PathObstacle & { done: string } })
+        passed.push({
+          node: node as PathObstacle & { done: string },
+          opensTitle: opensTitleOf(node),
+          progress: taskProgress(node.tasks),
+        })
         continue
       }
       if (isRoadsideStation(node)) continue
@@ -260,6 +272,7 @@ export function buildMapView(map: PathMap): MapView {
         opensTitle: opensTitleOf(node),
         openObstacles,
         overloaded: openObstacles > obstacles_per_station,
+        progress: node.type === 'obstacle' ? taskProgress(node.tasks) : null,
       })
     }
     if (collapsed) upcoming.push({ kind: 'collapsed', nodes: collapsed })

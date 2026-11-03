@@ -1,6 +1,6 @@
 'use client'
 
-import React, { Fragment, useMemo, useRef, useState } from 'react'
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   MapView,
@@ -13,6 +13,7 @@ import type {
 } from '@/lib/path-map'
 import { plural } from '@/lib/path-map/derive'
 import { ANCHOR_IDS, buildNavAnchors, nodeAnchorId, shortDate } from '@/lib/path-map/nav'
+import type { TaskProgress } from '@/lib/path-map/tasks'
 
 import {
   BrokenLinkIcon,
@@ -24,6 +25,8 @@ import {
   PinIcon,
   UpArrowIcon,
 } from './icons'
+import { opensText, ownerColor } from './labels'
+import { INSIDE_PANEL_ID, InsidePanel, type InsideTarget } from './PathMapInside'
 import { PathMapNav } from './PathMapNav'
 
 /**
@@ -39,18 +42,15 @@ import { PathMapNav } from './PathMapNav'
  *
  * Everything here is presentation: the layout and every node's path check
  * arrive precomputed from `src/lib/path-map/derive.ts`.
+ *
+ * v2 (#536): in map mode a barrier is a button that opens «Что внутри»
+ * (`PathMapInside.tsx`) in place of the Обочина panel; its card carries a
+ * done/total counter and its striped arm lifts with the task progress.
  */
 
 type Mode = 'map' | 'check'
 
 const CONFIDENCE_LABEL = { known: 'знаем', hypothesis: 'гипотеза', unknown: 'не знаем' } as const
-const OWNER_COLORS = ['#8FD3C1', '#B9A6F5', '#F4A3A3', '#F2B544', '#9EC5FF']
-
-function ownerColor(owner: string): string {
-  let hash = 0
-  for (const ch of owner) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0
-  return OWNER_COLORS[hash % OWNER_COLORS.length]
-}
 
 function linksWord(n: number): string {
   const mod10 = n % 10
@@ -120,11 +120,33 @@ interface PickProps {
   label?: string
   /** The DOM id the left navigator jumps to (#532). */
   id?: string
+  /**
+   * Map mode only (#536): the node opens «Что внутри» — a disclosure button
+   * (`aria-expanded`) instead of an `<article>`. `undefined` = not openable.
+   */
+  open?: { expanded: boolean; onOpen: (trigger: HTMLElement) => void }
   children: React.ReactNode
 }
 
-/** A node is an `<article>` on the map and a real `<button>` in «Проверить путь». */
-function Pick({ interactive, pressed, onPick, className, label, id, children }: PickProps) {
+/**
+ * A node is an `<article>` on the map and a real `<button>` in «Проверить путь».
+ * An obstacle is a button on the map too: it opens «Что внутри» (#536).
+ */
+function Pick({ interactive, pressed, onPick, className, label, id, open, children }: PickProps) {
+  if (!interactive && open) {
+    return (
+      <button
+        id={id}
+        type="button"
+        className={`pm-pick ${className}${open.expanded ? ' is-open' : ''}`}
+        aria-expanded={open.expanded}
+        aria-controls={open.expanded ? INSIDE_PANEL_ID : undefined}
+        onClick={(e) => open.onOpen(e.currentTarget)}
+      >
+        {children}
+      </button>
+    )
+  }
   if (interactive) {
     return (
       <button
@@ -151,6 +173,51 @@ interface NodeCtx {
   chainIndex: Map<string, number>
   brokenAt: string | null
   onPick: (id: string) => void
+  /** The obstacle whose «Что внутри» is open (map mode, #536). */
+  openId: string | null
+  onOpen: (target: InsideTarget, trigger: HTMLElement) => void
+}
+
+function openProps(ctx: NodeCtx, target: InsideTarget): PickProps['open'] {
+  return {
+    expanded: ctx.openId === target.node.id,
+    onOpen: (trigger) => ctx.onOpen(target, trigger),
+  }
+}
+
+/**
+ * The barrier's done/total counter (#536), counted over leaf tasks
+ * (`src/lib/path-map/tasks.ts`). Absent when the obstacle has no tasks.
+ */
+function TaskCounter({ progress }: { progress: TaskProgress | null }) {
+  if (!progress) return null
+  return (
+    <span className="pm-count" data-full={progress.done === progress.total || undefined}>
+      <span className="pm-sr">
+        задачи: выполнено {progress.done} из {progress.total} —{' '}
+      </span>
+      <span aria-hidden="true">
+        {progress.done}/{progress.total}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * The striped top bar of a barrier card is its arm: it lifts with the task
+ * progress (#536) — flat at 0%, at its highest at 100%. The angle lives in CSS
+ * (`--pm-lift`, 0…1); without tasks the arm stays flat and carries no data.
+ */
+function BarrierArm({ progress }: { progress: TaskProgress | null }) {
+  if (!progress) return <span className="pm-stripes" aria-hidden="true" />
+  return (
+    <span
+      className="pm-stripes"
+      aria-hidden="true"
+      data-lift={Math.round(progress.ratio * 100)}
+      style={{ '--pm-lift': String(progress.ratio) } as React.CSSProperties}
+    />
+  )
 }
 
 function chainSuffix(ctx: NodeCtx, id: string): string {
@@ -175,16 +242,14 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
 
   let card: React.ReactNode
   if (node.type === 'obstacle') {
-    const opens = item.opensTitle
-      ? item.opensTitle === 'маяк'
-        ? 'открывает маяк'
-        : `открывает «${item.opensTitle}»`
-      : node.opens
-        ? `открывает «${node.opens}» — такого блока нет`
-        : 'ничего не открывает'
+    const opens = opensText(item.opensTitle, node.opens)
     card = (
-      <Pick {...common} className={`pm-card pm-obstacle${state}`}>
-        <span className="pm-stripes" aria-hidden="true" />
+      <Pick
+        {...common}
+        open={openProps(ctx, { node, opensTitle: item.opensTitle, progress: item.progress })}
+        className={`pm-card pm-obstacle${state}`}
+      >
+        <BarrierArm progress={item.progress} />
         <span className="pm-obstacle-body">
           <span className="pm-obstacle-top">
             <span className="pm-obstacle-kicker">
@@ -198,7 +263,10 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
             ) : null}
           </span>
           <Title className="pm-obstacle-title">{node.title}</Title>
-          <span className="pm-obstacle-opens">{opens}</span>
+          <span className="pm-obstacle-foot">
+            <span className="pm-obstacle-opens">{opens}</span>
+            <TaskCounter progress={item.progress} />
+          </span>
         </span>
       </Pick>
     )
@@ -415,6 +483,12 @@ function PassedChip({ item, ctx }: { item: PassedItem; ctx: NodeCtx }) {
       interactive={ctx.interactive}
       pressed={ctx.selectedId === node.id}
       onPick={() => ctx.onPick(node.id)}
+      // A removed barrier looks as before, but its tasks stay readable (#536).
+      open={
+        item.progress
+          ? openProps(ctx, { node, opensTitle: item.opensTitle, progress: item.progress })
+          : undefined
+      }
       id={nodeAnchorId(node.id)}
       className={`pm-chip${ctx.chainIndex.has(node.id) ? ' is-chain' : ''}`}
     >
@@ -707,6 +781,47 @@ export function PathMapScreen({
   const [activeTrack, setActiveTrack] = useState<string | null>(view.focus[0]?.id ?? null)
   const panelRef = useRef<HTMLElement | null>(null)
   const pageRef = useRef<HTMLDivElement | null>(null)
+  // «Что внутри» (#536): the open obstacle and the button that opened it, so
+  // closing the panel hands focus back to the barrier.
+  const [inside, setInside] = useState<InsideTarget | null>(null)
+  const insideRef = useRef<HTMLElement | null>(null)
+  const insideTrigger = useRef<HTMLElement | null>(null)
+
+  const closeInside = () => {
+    setInside(null)
+    insideTrigger.current?.focus({ preventScroll: true })
+  }
+
+  const openInside = (target: InsideTarget, trigger: HTMLElement) => {
+    if (inside?.node.id === target.node.id) {
+      closeInside()
+      return
+    }
+    insideTrigger.current = trigger
+    setInside(target)
+  }
+
+  // On open, focus moves into the panel — and where the panel sits below the
+  // map (≤1140px) it is scrolled into view first. Esc closes it.
+  const insideId = inside?.node.id ?? null
+  useEffect(() => {
+    if (!insideId) return
+    const panel = insideRef.current
+    if (panel && typeof window.matchMedia === 'function') {
+      if (window.matchMedia('(max-width: 1140px)').matches) {
+        const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        panel.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' })
+      }
+    }
+    panel?.focus({ preventScroll: true })
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setInside(null)
+      insideTrigger.current?.focus({ preventScroll: true })
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [insideId])
   // The navigator's points come from the same view model the map renders (#532).
   const anchors = useMemo(() => buildNavAnchors(view), [view])
 
@@ -736,9 +851,19 @@ export function PathMapScreen({
   const switchMode = (next: Mode) => {
     setMode(next)
     if (next === 'map') setSelectedId(null)
+    // Check mode owns the right panel; «Что внутри» does not survive the switch.
+    if (next === 'check') setInside(null)
   }
 
-  const ctx: NodeCtx = { interactive: checking, selectedId, chainIndex, brokenAt, onPick }
+  const ctx: NodeCtx = {
+    interactive: checking,
+    selectedId,
+    chainIndex,
+    brokenAt,
+    onPick,
+    openId: insideId,
+    onOpen: openInside,
+  }
   const columns = { '--pm-cols': view.focus.length } as React.CSSProperties
   const roadsideCount = view.roadsideTracks.length
   const looseCount = view.roadsideStations.length
@@ -879,6 +1004,8 @@ export function PathMapScreen({
 
         {checking ? (
           <CheckPanel view={view} selected={selected} panelRef={panelRef} />
+        ) : inside ? (
+          <InsidePanel target={inside} onClose={closeInside} panelRef={insideRef} />
         ) : (
           <RoadsidePanel view={view} />
         )}
