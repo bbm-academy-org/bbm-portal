@@ -8,8 +8,10 @@ import {
   PATH_MAP_FILE,
   PathMapSourceError,
   pathMapSourceFromEnv,
+  readFailureKind,
   type PathMapEnv,
   type PathMapOrigin,
+  type PathMapReadFailureKind,
 } from './source'
 
 /**
@@ -45,12 +47,25 @@ export function loadPathMap(root: string = process.cwd()): LoadResult {
   return { ...parsePathMap(source), file: PATH_MAP_FILE }
 }
 
+/**
+ * Why the map is not drawn (#534 review): the file was read but is invalid
+ * (`parse` — fix the YAML), or it could not be read at all (`read` — the fix is
+ * on the server or GitHub's side; the file may be fine). The page words the
+ * two differently and must never send a member to edit a file it never saw.
+ */
+export type PathMapLoadFailure =
+  { kind: 'parse' } | { kind: 'read'; reason: PathMapReadFailureKind; message: string }
+
 export type PathMapLoad = LoadResult & {
+  /** Absent when the map parsed. */
+  failure?: PathMapLoadFailure
   origin: PathMapOrigin
   /** Blob sha of the text that was parsed (GitHub only) — what an edit must send back. */
   sha: string | null
   /** True when GitHub failed and the last good copy is shown. */
   stale: boolean
+  /** With `stale`: what kind of failure made it stale — the notice is worded by it. */
+  staleReason?: PathMapReadFailureKind
   /** When the shown text was read (ISO). */
   asOf: string
 }
@@ -65,8 +80,9 @@ export interface GetPathMapOptions {
 
 /**
  * The map the page draws. Never throws: a source failure with no cached copy
- * becomes the same error state as an invalid file, naming the repo/path. The
- * local example is read per request (as in v1) — only the remote one is cached.
+ * becomes `failure: { kind: 'read', reason }` (its message names the repo/path),
+ * an invalid file `failure: { kind: 'parse' }`. The local example and a
+ * misconfigured source are read per request — only the GitHub one is cached.
  */
 export async function getPathMap(options: GetPathMapOptions = {}): Promise<PathMapLoad> {
   const now = options.now ?? new Date()
@@ -77,11 +93,22 @@ export async function getPathMap(options: GetPathMapOptions = {}): Promise<PathM
   const file = describeOrigin(source.origin)
 
   try {
-    const { doc, asOf, stale } =
-      source.origin.kind === 'local'
-        ? { doc: await source.read(), asOf: now.toISOString(), stale: false }
-        : await readCached(source, now)
-    return { ...parsePathMap(doc.content), file, origin: source.origin, sha: doc.sha, stale, asOf }
+    const cached =
+      source.kind === 'github'
+        ? await readCached(source, now)
+        : { doc: await source.read(), asOf: now.toISOString(), stale: false, error: undefined }
+    const parsed = parsePathMap(cached.doc.content)
+    const staleReason = cached.stale ? failureKindOf(cached.error) : undefined
+    return {
+      ...parsed,
+      ...(parsed.ok ? {} : { failure: { kind: 'parse' as const } }),
+      file,
+      origin: source.origin,
+      sha: cached.doc.sha,
+      stale: cached.stale,
+      ...(staleReason ? { staleReason } : {}),
+      asOf: cached.asOf,
+    }
   } catch (error) {
     const message =
       error instanceof PathMapSourceError ? error.message : `карта не прочитана: ${file}`
@@ -89,6 +116,7 @@ export async function getPathMap(options: GetPathMapOptions = {}): Promise<PathM
     return {
       ok: false,
       errors: [message],
+      failure: { kind: 'read', reason: failureKindOf(error), message },
       file,
       origin: source.origin,
       sha: null,
@@ -96,4 +124,9 @@ export async function getPathMap(options: GetPathMapOptions = {}): Promise<PathM
       asOf: now.toISOString(),
     }
   }
+}
+
+/** Anything that is not a `PathMapSourceError` (a bug, an odd throw) reads as transient. */
+function failureKindOf(error: unknown): PathMapReadFailureKind {
+  return error instanceof PathMapSourceError ? readFailureKind(error.reason) : 'network'
 }

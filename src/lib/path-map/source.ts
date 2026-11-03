@@ -10,15 +10,19 @@ import { join } from 'node:path'
  * public design example committed here (`content/path-map/doctor-school.yaml`),
  * so dev, CI and the tests run with no secret.
  *
- * `PathMapSource` is the seam task D (editing) extends: `read()` already
+ * `GithubPathMapSource` is the seam task D (editing) extends: `read()` already
  * returns the blob `sha` that the contents API's PUT needs for optimistic
- * concurrency. D adds, on the GitHub source only:
+ * concurrency. D adds to THAT interface only (not to the `AnyPathMapSource`
+ * union — the local example and a misconfigured source are never written):
  *
  *   write(content: string, sha: string, message: string): Promise<{ sha: string }>
  *
  * (PUT /repos/{repo}/contents/{path} with base64 `content`, `sha`, `message`,
  * optional `branch`; a 409/422 means the sha is stale → reload, never force),
- * then calls `resetPathMapCache()` so the next read sees its own write.
+ * then calls `primePathMapCache(source.origin, { content, sha })` with the
+ * response's new blob sha, so the next read sees its own write without a GET.
+ * Narrow by `source.kind === 'github'`: a malformed config is its own
+ * `kind: 'misconfigured'` source and never looks like GitHub.
  */
 
 /** The local public example, relative to the app root. Traced into the image by `next.config.ts`. */
@@ -28,8 +32,25 @@ export const PATH_MAPS_DEFAULT_FILE = 'maps/doctor-school.yaml'
 
 const GITHUB_API = 'https://api.github.com'
 
-export type PathMapOrigin =
-  { kind: 'github'; repo: string; path: string; branch?: string } | { kind: 'local'; path: string }
+export interface GithubPathMapOrigin {
+  kind: 'github'
+  repo: string
+  path: string
+  branch?: string
+}
+export interface LocalPathMapOrigin {
+  kind: 'local'
+  path: string
+}
+/** `PATH_MAPS_*` env that does not form a valid repo/path — the raw values, for the error state. */
+export interface MisconfiguredPathMapOrigin {
+  kind: 'misconfigured'
+  repo: string
+  path: string
+  branch?: string
+}
+
+export type PathMapOrigin = GithubPathMapOrigin | LocalPathMapOrigin | MisconfiguredPathMapOrigin
 
 export interface PathMapDocument {
   /** The YAML text, decoded. */
@@ -40,10 +61,32 @@ export interface PathMapDocument {
 }
 
 export interface PathMapSource {
+  readonly kind: PathMapOrigin['kind']
   readonly origin: PathMapOrigin
   /** Throws `PathMapSourceError`; its `message` is shown to the member, the `cause` goes to the logs. */
   read(): Promise<PathMapDocument>
 }
+
+/** The private repo. Task D adds `write()` here. */
+export interface GithubPathMapSource extends PathMapSource {
+  readonly kind: 'github'
+  readonly origin: GithubPathMapOrigin
+  read(): Promise<PathMapDocument & { sha: string; origin: GithubPathMapOrigin }>
+}
+
+/** The public example committed in this repo. Read-only. */
+export interface LocalPathMapSource extends PathMapSource {
+  readonly kind: 'local'
+  readonly origin: LocalPathMapOrigin
+}
+
+/** Malformed `PATH_MAPS_*` env: `read()` always rejects with a `config` error; nothing is fetched. */
+export interface MisconfiguredPathMapSource extends PathMapSource {
+  readonly kind: 'misconfigured'
+  readonly origin: MisconfiguredPathMapOrigin
+}
+
+export type AnyPathMapSource = GithubPathMapSource | LocalPathMapSource | MisconfiguredPathMapSource
 
 export type PathMapSourceFailure =
   | 'unauthorized'
@@ -52,8 +95,37 @@ export type PathMapSourceFailure =
   | 'rate-limit'
   | 'network'
   | 'bad-response'
+  | 'not-a-file'
   | 'config'
   | 'local-read'
+
+/**
+ * What the member is told to do about a failed read — the grouping the page
+ * and the stale notice are worded by. `network` covers transport errors, 5xx
+ * and an unreadable body (transient); `auth` covers 401 and a plain 403.
+ */
+export type PathMapReadFailureKind =
+  'auth' | 'not-found' | 'rate-limit' | 'network' | 'config' | 'local'
+
+export function readFailureKind(reason: PathMapSourceFailure): PathMapReadFailureKind {
+  switch (reason) {
+    case 'unauthorized':
+    case 'forbidden':
+      return 'auth'
+    case 'not-found':
+      return 'not-found'
+    case 'rate-limit':
+      return 'rate-limit'
+    case 'network':
+    case 'bad-response':
+      return 'network'
+    case 'not-a-file':
+    case 'config':
+      return 'config'
+    case 'local-read':
+      return 'local'
+  }
+}
 
 /**
  * A failed read. `message` is Russian and member-readable; it never carries the
@@ -74,6 +146,7 @@ export class PathMapSourceError extends Error {
 /** Human label of where the map came from — what the error and empty states name. */
 export function describeOrigin(origin: PathMapOrigin): string {
   if (origin.kind === 'local') return origin.path
+  if (origin.kind === 'misconfigured') return `${origin.repo} · ${origin.path} (настройки сервера)`
   return `${origin.repo}${origin.branch ? `@${origin.branch}` : ''} · ${origin.path}`
 }
 
@@ -99,10 +172,7 @@ function rateLimitWait(res: Response): string {
   return `повторите через ${Math.max(1, Math.ceil(seconds / 60))} мин`
 }
 
-function httpError(
-  res: Response,
-  origin: Extract<PathMapOrigin, { kind: 'github' }>,
-): PathMapSourceError {
+function httpError(res: Response, origin: GithubPathMapOrigin): PathMapSourceError {
   const where = describeOrigin(origin)
   const status = res.status
   const cause = new Error(`GitHub contents API ${status} on ${origin.repo}/${origin.path}`)
@@ -154,8 +224,8 @@ function httpError(
 export function githubPathMapSource(
   config: GithubSourceConfig,
   fetchImpl: FetchLike = fetch,
-): PathMapSource {
-  const origin: Extract<PathMapOrigin, { kind: 'github' }> = {
+): GithubPathMapSource {
+  const origin: GithubPathMapOrigin = {
     kind: 'github',
     repo: config.repo,
     path: config.path,
@@ -167,6 +237,7 @@ export function githubPathMapSource(
     (config.branch ? `?ref=${encodeURIComponent(config.branch)}` : '')
 
   return {
+    kind: 'github',
     origin,
     async read() {
       let res: Response
@@ -210,7 +281,7 @@ export function githubPathMapSource(
       ) {
         throw new PathMapSourceError(
           `По пути ${describeOrigin(origin)} в GitHub не файл карты (или файл больше 1 МБ)`,
-          'bad-response',
+          'not-a-file',
           res.status,
           {
             cause: new Error(
@@ -219,9 +290,10 @@ export function githubPathMapSource(
           },
         )
       }
+      const sha: string = body.sha
       return {
         content: Buffer.from(body.content, 'base64').toString('utf8'),
-        sha: body.sha,
+        sha,
         origin,
       }
     },
@@ -229,9 +301,10 @@ export function githubPathMapSource(
 }
 
 /** The public example committed in this repo. */
-export function localPathMapSource(root: string = process.cwd()): PathMapSource {
-  const origin: PathMapOrigin = { kind: 'local', path: PATH_MAP_FILE }
+export function localPathMapSource(root: string = process.cwd()): LocalPathMapSource {
+  const origin: LocalPathMapOrigin = { kind: 'local', path: PATH_MAP_FILE }
   return {
+    kind: 'local',
     origin,
     async read() {
       try {
@@ -254,35 +327,62 @@ export function localPathMapSource(root: string = process.cwd()): PathMapSource 
 /** `process.env`-shaped; the keys read are `PATH_MAPS_GITHUB_TOKEN|REPO|FILE|BRANCH`. */
 export type PathMapEnv = Readonly<Record<string, string | undefined>>
 
-const REPO_RE = /^[\w.-]+\/[\w.-]+$/
+/** A GitHub owner/repo/path segment: non-empty, not `.`/`..`, no backslash. */
+function validSegment(segment: string): boolean {
+  return segment.length > 0 && !/^\.+$/.test(segment) && !segment.includes('\\')
+}
+
+/** `owner/name`, each `[A-Za-z0-9_.-]`, neither all dots. */
+function repoProblem(repo: string): string | null {
+  const parts = repo.split('/')
+  if (parts.length !== 2 || !parts.every((p) => /^[\w.-]+$/.test(p) && validSegment(p))) {
+    return `PATH_MAPS_REPO задан неверно: «${repo}» — ожидается вид владелец/репозиторий`
+  }
+  return null
+}
+
+/** A relative path inside the repo: segments joined by `/`, none empty, `.` or `..`. */
+function fileProblem(path: string): string | null {
+  if (!path.split('/').every(validSegment)) {
+    return `PATH_MAPS_FILE задан неверно: «${path}» — ожидается путь внутри репозитория без «.», «..», «//» и «\\»`
+  }
+  return null
+}
+
+function misconfiguredSource(
+  origin: MisconfiguredPathMapOrigin,
+  message: string,
+): MisconfiguredPathMapSource {
+  return {
+    kind: 'misconfigured',
+    origin,
+    read: () => Promise.reject(new PathMapSourceError(message, 'config')),
+  }
+}
 
 /**
  * Token present → the private repo; absent (or blank) → the local example.
- * A malformed `PATH_MAPS_REPO` is a config error the page shows, never a
- * silent fall back to the example (that would pass the example off as live).
+ * A malformed `PATH_MAPS_REPO` / `PATH_MAPS_FILE` is a `misconfigured` source
+ * whose read is a config error the page shows — never a silent fall back to
+ * the example (that would pass the example off as live), and never a request
+ * carrying the token to whatever URL the env happened to spell.
  */
 export function pathMapSourceFromEnv(
   env: PathMapEnv = process.env,
   deps: { fetch?: FetchLike; root?: string } = {},
-): PathMapSource {
+): AnyPathMapSource {
   const token = env.PATH_MAPS_GITHUB_TOKEN?.trim()
   if (!token) return localPathMapSource(deps.root)
 
   const repo = env.PATH_MAPS_REPO?.trim() || PATH_MAPS_DEFAULT_REPO
   const path = (env.PATH_MAPS_FILE?.trim() || PATH_MAPS_DEFAULT_FILE).replace(/^\/+/, '')
   const branch = env.PATH_MAPS_BRANCH?.trim() || undefined
-  if (!REPO_RE.test(repo)) {
-    const origin: PathMapOrigin = { kind: 'github', repo, path, ...(branch ? { branch } : {}) }
-    return {
-      origin,
-      read: () =>
-        Promise.reject(
-          new PathMapSourceError(
-            `Репозиторий карт задан неверно: «${repo}» — ожидается вид владелец/репозиторий`,
-            'config',
-          ),
-        ),
-    }
+  const problem = repoProblem(repo) ?? fileProblem(path)
+  if (problem) {
+    return misconfiguredSource(
+      { kind: 'misconfigured', repo, path, ...(branch ? { branch } : {}) },
+      problem,
+    )
   }
   return githubPathMapSource({ token, repo, path, branch }, deps.fetch)
 }

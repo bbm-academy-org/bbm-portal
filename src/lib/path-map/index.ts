@@ -20,8 +20,8 @@ export type {
   UpcomingItem,
 } from './derive'
 export { getPathMap, loadPathMap, PATH_MAP_FILE } from './load'
-export type { GetPathMapOptions, LoadResult, PathMapLoad } from './load'
-export { PATH_MAP_CACHE_TTL_MS, resetPathMapCache } from './cache'
+export type { GetPathMapOptions, LoadResult, PathMapLoad, PathMapLoadFailure } from './load'
+export { PATH_MAP_CACHE_TTL_MS, primePathMapCache, resetPathMapCache } from './cache'
 export {
   describeOrigin,
   githubPathMapSource,
@@ -30,12 +30,21 @@ export {
   PATH_MAPS_DEFAULT_REPO,
   PathMapSourceError,
   pathMapSourceFromEnv,
+  readFailureKind,
 } from './source'
 export type {
+  AnyPathMapSource,
+  GithubPathMapOrigin,
+  GithubPathMapSource,
   GithubSourceConfig,
+  LocalPathMapOrigin,
+  LocalPathMapSource,
+  MisconfiguredPathMapOrigin,
+  MisconfiguredPathMapSource,
   PathMapDocument,
   PathMapEnv,
   PathMapOrigin,
+  PathMapReadFailureKind,
   PathMapSource,
   PathMapSourceFailure,
 } from './source'

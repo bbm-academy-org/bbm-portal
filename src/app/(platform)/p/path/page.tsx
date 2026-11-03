@@ -2,6 +2,7 @@ import React from 'react'
 
 import { getPathMap } from '@/lib/path-map'
 import { PathMapLayout } from '@/modules/path-map/view/PathMapLayout'
+import { PathMapReadError } from '@/modules/path-map/view/PathMapReadError'
 import { PathMapSourceNotice } from '@/modules/path-map/view/PathMapSourceNotice'
 import { PathMapView } from '@/modules/path-map/view/PathMapView'
 
@@ -23,8 +24,22 @@ export default async function PathMapPage() {
   const loaded = await getPathMap()
   return (
     <PathMapLayout>
-      <PathMapSourceNotice origin={loaded.origin.kind} stale={loaded.stale} asOf={loaded.asOf} />
-      <PathMapView result={loaded} file={loaded.file} />
+      <PathMapSourceNotice
+        origin={loaded.origin.kind}
+        stale={loaded.stale}
+        staleReason={loaded.staleReason}
+        asOf={loaded.asOf}
+      />
+      {/* A failed READ is not a broken file (#534 review): its own state, not «the file has errors». */}
+      {loaded.failure?.kind === 'read' ? (
+        <PathMapReadError
+          reason={loaded.failure.reason}
+          message={loaded.failure.message}
+          file={loaded.file}
+        />
+      ) : (
+        <PathMapView result={loaded} file={loaded.file} />
+      )}
     </PathMapLayout>
   )
 }
