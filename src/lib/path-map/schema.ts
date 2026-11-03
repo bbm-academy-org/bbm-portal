@@ -44,7 +44,7 @@ const isoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'дата в формате ГГГГ-ММ-ДД, например 2026-10-21')
   .refine(isCalendarDate, 'такой даты нет в календаре — проверьте месяц и день')
 
-/** A bare `nodes:` / `tracks:` is YAML null: read it as the empty list it means. */
+/** A bare `nodes:` / `tracks:` / `tasks:` is YAML null: read it as the empty list it means. */
 const listOf = <T extends z.ZodType>(item: T) =>
   z.preprocess((v) => (v === null || v === undefined ? [] : v), z.array(item))
 
@@ -96,13 +96,19 @@ const taskLink = z
   .trim()
   .regex(/^https?:\/\/\S+$/, 'ссылка должна начинаться с http:// или https://, без пробелов')
 
+/**
+ * Recursive and unbounded here: the depth cap (`MAX_TASK_DEPTH`) runs after
+ * parsing, in `./parse.ts`, so its error can name the obstacle. Fine for a
+ * hand-edited file; revisit if the file is ever written programmatically from
+ * untrusted input.
+ */
 export const taskSchema: z.ZodType<PathTask> = z.lazy(() =>
   z.strictObject({
     title,
     done: taskDone.optional(),
     owner: z.string().trim().min(1).optional(),
     link: taskLink.optional(),
-    tasks: z.array(taskSchema).optional(),
+    tasks: listOf(taskSchema).optional(),
   }),
 )
 
@@ -112,7 +118,7 @@ const obstacleSchema = z.strictObject({
   /** Set when the obstacle is removed: it moves to the passed path below «Мы здесь». */
   done: isoDate.optional(),
   /** What has to happen for the barrier to lift (#536). Optional; depth ≤ `MAX_TASK_DEPTH`. */
-  tasks: z.array(taskSchema).optional(),
+  tasks: listOf(taskSchema).optional(),
 })
 
 const stationSchema = z.strictObject({

@@ -248,7 +248,8 @@ export function buildMapView(map: PathMap): MapView {
         passed.push({
           node: node as PathObstacle & { done: string },
           opensTitle: opensTitleOf(node),
-          progress: taskProgress(node.tasks),
+          // The obstacle's own done closes all its tasks (#537 review).
+          progress: taskProgress(node.tasks, true),
         })
         continue
       }

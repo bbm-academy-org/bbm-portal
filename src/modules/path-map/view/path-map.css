@@ -536,6 +536,30 @@ body:has(.pm-root) {
   transform: translateY(-2px);
 }
 
+/* A map card that opens «Что внутри» (#536, #537 review): the card stays an
+   <article> with its heading; an empty disclosure button with a short name is
+   stretched over it, so the whole card is the click target. */
+.pm-pick--stretch {
+  position: relative;
+}
+
+.pm-stretch {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pm-stretch:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 3px;
+}
+
 .pm-card-top,
 .pm-obstacle-top {
   display: flex;
@@ -994,7 +1018,7 @@ body:has(.pm-root) {
   border-color: var(--pm-text);
 }
 
-/* A removed barrier with tasks is a button on the map (#536). */
+/* A chip is a button in «Проверить путь»; on the map its stretched button carries the ring. */
 .pm-chip:focus-visible {
   outline: 3px solid var(--pm-accent-soft);
   outline-offset: 3px;

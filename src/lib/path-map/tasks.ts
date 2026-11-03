@@ -9,6 +9,12 @@ import type { PathTask } from './schema'
  *     happens to group the work.
  *   - `done` on a parent closes its whole subtree: every leaf below counts done.
  *   - A parent without its own `done` is done exactly when every child is.
+ *   - The obstacle's own `done` closes all of its tasks, like a done parent
+ *     (callers pass `closed`), so a removed barrier never reads «1 из 3».
+ *
+ * Tasks carry no ids: people edit the YAML by hand. A task is addressed by its
+ * index path from the obstacle's list (`getTaskAt`); the editing task writes
+ * by that path under a whole-file sha check.
  */
 
 /** Deepest allowed nesting of `tasks` below an obstacle; enforced in `./parse.ts`. */
@@ -31,7 +37,9 @@ export interface FlatTask {
   done: boolean
 }
 
-const ownDone = (task: PathTask): boolean => task.done === true || typeof task.done === 'string'
+/** The task's own mark only — `true` or a date; its children do not count. */
+export const ownDone = (task: PathTask): boolean =>
+  task.done === true || typeof task.done === 'string'
 
 export function isTaskDone(task: PathTask): boolean {
   if (ownDone(task)) return true
@@ -62,10 +70,13 @@ function countLeaves(tasks: PathTask[], closed: boolean): { done: number; total:
   return { done, total }
 }
 
-/** Done / total leaves; `null` when the obstacle has no tasks (no counter is drawn). */
-export function taskProgress(tasks: PathTask[] | undefined): TaskProgress | null {
+/**
+ * Done / total leaves; `null` when the obstacle has no tasks (no counter is
+ * drawn). `closed` = the obstacle itself is done: every leaf counts done.
+ */
+export function taskProgress(tasks: PathTask[] | undefined, closed = false): TaskProgress | null {
   if (!tasks || tasks.length === 0) return null
-  const { done, total } = countLeaves(tasks, false)
+  const { done, total } = countLeaves(tasks, closed)
   return { done, total, ratio: total === 0 ? 0 : done / total }
 }
 
@@ -75,8 +86,11 @@ export function taskDepth(tasks: PathTask[] | undefined): number {
   return 1 + Math.max(...tasks.map((t) => taskDepth(t.tasks)))
 }
 
-/** Every task in reading order (depth-first), with its depth, path and effective done. */
-export function flattenTasks(tasks: PathTask[] | undefined): FlatTask[] {
+/**
+ * Every task in reading order (depth-first), with its depth, path and
+ * effective done. `closed` = the obstacle itself is done.
+ */
+export function flattenTasks(tasks: PathTask[] | undefined, closed = false): FlatTask[] {
   const out: FlatTask[] = []
   const walk = (list: PathTask[], depth: number, prefix: number[], closed: boolean) => {
     list.forEach((task, i) => {
@@ -86,6 +100,26 @@ export function flattenTasks(tasks: PathTask[] | undefined): FlatTask[] {
       if (task.tasks) walk(task.tasks, depth + 1, path, closed || ownDone(task))
     })
   }
-  walk(tasks ?? [], 0, [], false)
+  walk(tasks ?? [], 0, [], closed)
   return out
+}
+
+/**
+ * The task at an index path from the obstacle's list — `[1, 0]` is the first
+ * subtask of the second task; `null` when the path is empty or leads nowhere.
+ * The same paths `flattenTasks` hands out.
+ */
+export function getTaskAt(
+  tasks: readonly PathTask[] | undefined,
+  path: readonly number[],
+): PathTask | null {
+  if (path.length === 0) return null
+  let list: readonly PathTask[] | undefined = tasks
+  let found: PathTask | null = null
+  for (const index of path) {
+    if (!list || !Number.isInteger(index) || index < 0 || index >= list.length) return null
+    found = list[index]
+    list = found.tasks
+  }
+  return found
 }

@@ -2,13 +2,20 @@
 
 import React, { useId, useState } from 'react'
 
-import { plural } from '@/lib/path-map/derive'
+import { plural, type MapView } from '@/lib/path-map/derive'
 import { shortDate } from '@/lib/path-map/nav'
 import type { PathObstacle, PathTask } from '@/lib/path-map/schema'
-import { isTaskDone, taskDoneDate, taskProgress, type TaskProgress } from '@/lib/path-map/tasks'
+import {
+  isTaskDone,
+  ownDone,
+  taskDoneDate,
+  taskProgress,
+  type TaskProgress,
+} from '@/lib/path-map/tasks'
 
 import { ChevronIcon, CloseIcon, ExternalLinkIcon, TaskTickIcon } from './icons'
 import { opensText, ownerColor } from './labels'
+import { useScrollRegion } from './useScrollRegion'
 
 /**
  * «Что внутри» (#536) — the right panel a barrier opens in map mode: the
@@ -28,19 +35,49 @@ export interface InsideTarget {
 
 export const INSIDE_PANEL_ID = 'pm-inside'
 
-function TaskItem({ task, depth, closed }: { task: PathTask; depth: number; closed: boolean }) {
+/**
+ * The open obstacle, looked up in the CURRENT view by id (#537 review): the
+ * panel keeps only the id, so a reload (or a later edit) shows fresh tasks and
+ * progress, and `null` — the obstacle is gone — closes the panel.
+ */
+export function insideTargetOf(view: MapView, id: string | null): InsideTarget | null {
+  if (!id) return null
+  for (const track of view.focus) {
+    for (const item of track.upcoming) {
+      if (item.kind === 'node' && item.node.type === 'obstacle' && item.node.id === id) {
+        return { node: item.node, opensTitle: item.opensTitle, progress: item.progress }
+      }
+    }
+    for (const item of track.passed) {
+      if (item.node.id === id && item.progress) {
+        return { node: item.node, opensTitle: item.opensTitle, progress: item.progress }
+      }
+    }
+  }
+  return null
+}
+
+function TaskItem({
+  task,
+  path,
+  closed,
+}: {
+  task: PathTask
+  /** Index path from the obstacle's list — the task's address (`getTaskAt`). */
+  path: number[]
+  closed: boolean
+}) {
   // The first level of the tree is expanded; anything deeper waits for a click.
-  const [open, setOpen] = useState(depth === 0)
+  const [open, setOpen] = useState(path.length === 1)
   const done = closed || isTaskDone(task)
   const children = task.tasks ?? []
   const date = taskDoneDate(task)
-  const childrenClosed = closed || task.done === true || typeof task.done === 'string'
-  const sub = children.length > 0 ? taskProgress(children) : null
-  const subDone = sub ? (childrenClosed ? sub.total : sub.done) : 0
+  const childrenClosed = closed || ownDone(task)
+  const sub = children.length > 0 ? taskProgress(children, childrenClosed) : null
   const listId = useId()
 
   return (
-    <li className="pm-task" data-done={done ? 'true' : undefined}>
+    <li className="pm-task" data-done={done ? 'true' : undefined} data-path={path.join('.')}>
       <div className="pm-task-row">
         <span className="pm-task-check" aria-hidden="true">
           {done ? <TaskTickIcon /> : null}
@@ -57,7 +94,7 @@ function TaskItem({ task, depth, closed }: { task: PathTask; depth: number; clos
             <ChevronIcon />
             <span className="pm-task-title">{task.title}</span>
             <span className="pm-task-count">
-              {subDone}/{sub.total}
+              {sub.done}/{sub.total}
             </span>
           </button>
         ) : (
@@ -84,13 +121,9 @@ function TaskItem({ task, depth, closed }: { task: PathTask; depth: number; clos
       </div>
       {sub && open ? (
         <ul id={listId} className="pm-tasks pm-tasks--nested">
+          {/* Keyed by position: tasks have no ids (#537 review), so a rename keeps the row. */}
           {children.map((child, i) => (
-            <TaskItem
-              key={`${i}-${child.title}`}
-              task={child}
-              depth={depth + 1}
-              closed={childrenClosed}
-            />
+            <TaskItem key={i} task={child} path={[...path, i]} closed={childrenClosed} />
           ))}
         </ul>
       ) : null}
@@ -110,6 +143,7 @@ export function InsidePanel({
   const { node, opensTitle, progress } = target
   const tasks = node.tasks ?? []
   const percent = progress ? Math.round(progress.ratio * 100) : 0
+  const scroll = useScrollRegion('Что внутри — прокручиваемое содержимое')
 
   return (
     <aside
@@ -119,7 +153,7 @@ export function InsidePanel({
       className="pm-aside pm-aside--check pm-aside--inside"
       tabIndex={-1}
     >
-      <div className="pm-aside-inner pm-inside">
+      <div className="pm-aside-inner pm-inside" {...scroll}>
         <div className="pm-inside-bar">
           <span className="pm-eyebrow">Что внутри</span>
           <button type="button" className="pm-inside-close" aria-label="Закрыть" onClick={onClose}>
@@ -159,8 +193,9 @@ export function InsidePanel({
 
         {tasks.length > 0 ? (
           <ul className="pm-tasks" aria-label="Задачи шлагбаума">
+            {/* A removed obstacle's own done closes all its tasks (#537 review). */}
             {tasks.map((task, i) => (
-              <TaskItem key={`${i}-${task.title}`} task={task} depth={0} closed={false} />
+              <TaskItem key={i} task={task} path={[i]} closed={Boolean(node.done)} />
             ))}
           </ul>
         ) : (
