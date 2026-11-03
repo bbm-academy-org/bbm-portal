@@ -182,3 +182,19 @@ tracks:
     expect(panel()).toBeNull()
   })
 })
+
+describe('right panels stay in view (#536, orchestrator note on #535)', () => {
+  // jsdom has no layout: the clause pins the structure the sticky CSS hangs on —
+  // every right panel wraps its content in `.pm-aside-inner`.
+  const inner = (name: string) =>
+    screen.getByRole('complementary', { name }).querySelector(':scope > .pm-aside-inner')
+
+  it('Обочина, «Что внутри» and «Проверка пути» each have a sticky content wrapper', () => {
+    renderShipped()
+    expect(inner('Обочина')).not.toBeNull()
+    fireEvent.click(barrier(/Довести студию/))
+    expect(inner('Что внутри')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Проверить путь/ }))
+    expect(inner('Проверка пути')).not.toBeNull()
+  })
+})
