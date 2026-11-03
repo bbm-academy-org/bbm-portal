@@ -5,7 +5,9 @@ import type { PathTask } from '@/lib/path-map/schema'
 import {
   MAX_TASK_DEPTH,
   flattenTasks,
+  getTaskAt,
   isTaskDone,
+  ownDone,
   taskDepth,
   taskDoneDate,
   taskProgress,
@@ -74,6 +76,11 @@ describe('taskProgress', () => {
     expect(taskProgress(closed)).toEqual({ done: 3, total: 3, ratio: 1 })
   })
 
+  it("the obstacle's own done closes every task, like a done parent (#537 review)", () => {
+    expect(taskProgress(TREE, true)).toEqual({ done: 7, total: 7, ratio: 1 })
+    expect(taskProgress(TREE, false)).toEqual(taskProgress(TREE))
+  })
+
   it('a flat list of open tasks is 0 of n', () => {
     expect(taskProgress([t('a'), t('b')])).toEqual({ done: 0, total: 2, ratio: 0 })
   })
@@ -108,8 +115,47 @@ describe('flattenTasks', () => {
     ])
   })
 
+  it('a closed root (a removed obstacle) reads every task as done', () => {
+    expect(flattenTasks(TREE, true).every((f) => f.done)).toBe(true)
+  })
+
   it('children of a done parent read as done', () => {
     const flat = flattenTasks([t('p', { done: true, tasks: [t('a')] })])
     expect(flat.map((f) => f.done)).toEqual([true, true])
+  })
+})
+
+describe('ownDone', () => {
+  it("is the task's own mark only — true or a date; children do not count", () => {
+    expect(ownDone(t('a', { done: true }))).toBe(true)
+    expect(ownDone(t('a', { done: '2026-10-01' }))).toBe(true)
+    expect(ownDone(t('a', { done: false }))).toBe(false)
+    expect(ownDone(t('p', { tasks: [t('a', { done: true })] }))).toBe(false)
+  })
+})
+
+/**
+ * Tasks carry no ids — people edit the YAML by hand. A task is addressed by
+ * its index path from the obstacle's list (the write contract of the later
+ * editing task, checked against the whole file's sha).
+ */
+describe('getTaskAt — a task by its index path', () => {
+  it('finds a task at any depth', () => {
+    expect(getTaskAt(TREE, [0])?.title).toBe('Свет и звук')
+    expect(getTaskAt(TREE, [0, 2])?.title).toBe('Тест')
+    expect(getTaskAt(TREE, [1, 1, 1])?.title).toBe('Зал')
+  })
+
+  it('agrees with the paths flattenTasks hands out', () => {
+    for (const f of flattenTasks(TREE)) expect(getTaskAt(TREE, f.path)).toBe(f.task)
+  })
+
+  it('is null for an empty path, a missing index or a path through a leaf', () => {
+    expect(getTaskAt(TREE, [])).toBeNull()
+    expect(getTaskAt(TREE, [9])).toBeNull()
+    expect(getTaskAt(TREE, [-1])).toBeNull()
+    expect(getTaskAt(TREE, [2, 0])).toBeNull()
+    expect(getTaskAt(TREE, [0.5])).toBeNull()
+    expect(getTaskAt(undefined, [0])).toBeNull()
   })
 })

@@ -300,3 +300,28 @@ tracks:
     ])
   })
 })
+
+describe('buildMapView — task progress (#536)', () => {
+  it("a removed obstacle's own done closes all its tasks (#537 review)", () => {
+    const view = buildMapView(
+      mapOf(`${HEAD}
+tracks:
+  - id: a
+    title: А
+    nodes:
+      - id: gone
+        type: obstacle
+        title: Снят
+        done: 2026-10-21
+        opens: s1
+        tasks:
+          - { title: Сделано, done: true }
+          - title: Забыли отметить
+            tasks:
+              - { title: Лист }
+      - { id: s1, type: station, title: Станция, because: да, opens: beacon }
+`),
+    )
+    expect(view.focus[0].passed[0].progress).toEqual({ done: 2, total: 2, ratio: 1 })
+  })
+})

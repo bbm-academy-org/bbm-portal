@@ -362,6 +362,30 @@ ${tasks}`
     expect(errors).toMatch(/tasks\[0\]\.link: ссылка/)
   })
 
+  it.each([
+    ['javascript:alert(1)'],
+    ['JavaScript:alert(1)'],
+    ['data:text/html,<script>alert(1)</script>'],
+    ['//evil.example/path'],
+  ])('rejects a non-http(s) link: %s', (link) => {
+    const errors = errorsOf(withTasks(`          - { title: Задача, link: '${link}' }\n`))
+    expect(errors).toMatch(/tasks\[0\]\.link: ссылка/)
+  })
+
+  it('a bare `tasks:` is an empty list, like a bare `nodes:`', () => {
+    const result = parsePathMap(withTasks(''))
+    expect(result.ok ? [] : result.errors).toEqual([])
+    if (!result.ok) return
+    const obstacle = result.map.tracks[0].nodes[1]
+    if (obstacle.type !== 'obstacle') throw new Error('expected an obstacle')
+    expect(obstacle.tasks ?? []).toEqual([])
+  })
+
+  it('a bare `tasks:` inside a task is an empty list too', () => {
+    const result = parsePathMap(withTasks(`          - title: Задача\n            tasks:\n`))
+    expect(result.ok ? [] : result.errors).toEqual([])
+  })
+
   it('accepts five levels of nesting and rejects the sixth, in Russian', () => {
     const nest = (levels: number): string => {
       let yaml = ''
