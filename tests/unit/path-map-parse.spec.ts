@@ -296,3 +296,99 @@ describe('parsePathMap — the track `short` label (mobile tabs)', () => {
     expect(header.join('\n')).toMatch(/через туман/)
   })
 })
+
+describe('parsePathMap — tasks inside an obstacle (#536)', () => {
+  const withTasks = (tasks: string) => `${MINIMAL}
+      - id: o1
+        type: obstacle
+        title: Препятствие
+        opens: s1
+        tasks:
+${tasks}`
+
+  const errorsOf = (source: string) => {
+    const result = parsePathMap(source)
+    expect(result.ok).toBe(false)
+    return result.ok ? '' : result.errors.join('\n')
+  }
+
+  it('accepts nested tasks with done as true/false or a date, an owner and a link', () => {
+    const result = parsePathMap(
+      withTasks(`          - title: Свет и звук
+            owner: ДС
+            tasks:
+              - { title: Микрофоны, done: 2026-10-24 }
+              - { title: Свет, done: true, link: 'https://github.com/bbm-academy-org/bbm-portal/issues/536' }
+              - { title: Тест, done: false }
+          - title: Монтажёр
+`),
+    )
+    expect(result.ok ? [] : result.errors).toEqual([])
+    if (!result.ok) return
+    const obstacle = result.map.tracks[0].nodes[1]
+    if (obstacle.type !== 'obstacle') throw new Error('expected an obstacle')
+    expect(obstacle.tasks?.[0]).toMatchObject({ title: 'Свет и звук', owner: 'ДС' })
+    expect(obstacle.tasks?.[0].tasks?.map((t) => t.done)).toEqual(['2026-10-24', true, false])
+    expect(obstacle.tasks?.[0].tasks?.[1].link).toBe(
+      'https://github.com/bbm-academy-org/bbm-portal/issues/536',
+    )
+  })
+
+  it('rejects a misspelt task field, naming the path', () => {
+    const errors = errorsOf(withTasks(`          - { title: Задача, onwer: ДС }\n`))
+    expect(errors).toContain('tracks[0].nodes[1].tasks[0]')
+    expect(errors).toMatch(/неизвестное поле «onwer»/)
+  })
+
+  it('rejects a task without a title', () => {
+    expect(errorsOf(withTasks(`          - { done: true }\n`))).toMatch(
+      /tasks\[0\]\.title: обязательное поле не заполнено/,
+    )
+  })
+
+  it('rejects a done that is neither yes/no nor a real date, in Russian', () => {
+    const errors = errorsOf(withTasks(`          - { title: Задача, done: 2026-02-30 }\n`))
+    expect(errors).toMatch(/tasks\[0\]\.done: .*true.*ГГГГ-ММ-ДД/)
+  })
+
+  it('rejects a link that is not an http(s) URL', () => {
+    const errors = errorsOf(withTasks(`          - { title: Задача, link: 'plane DSO-1' }\n`))
+    expect(errors).toMatch(/tasks\[0\]\.link: ссылка/)
+  })
+
+  it('accepts five levels of nesting and rejects the sixth, in Russian', () => {
+    const nest = (levels: number): string => {
+      let yaml = ''
+      for (let i = 0; i < levels; i++) {
+        const pad = ' '.repeat(10 + i * 4)
+        yaml += `${pad}- title: Уровень ${i + 1}\n`
+        if (i < levels - 1) yaml += `${pad}  tasks:\n`
+      }
+      return yaml
+    }
+    expect(parsePathMap(withTasks(nest(5))).ok).toBe(true)
+    expect(errorsOf(withTasks(nest(6)))).toMatch(/tracks\[0\]\.nodes\[1\]: .*не глубже 5 уровней/)
+  })
+
+  it('tasks are an obstacle field only — a station with tasks is an error', () => {
+    const errors = errorsOf(
+      MINIMAL.replace('opens: beacon', 'opens: beacon\n        tasks: [ { title: Задача } ]'),
+    )
+    expect(errors).toMatch(/неизвестное поле «tasks»/)
+  })
+
+  it('the example map gives the open studio obstacle a two-level task tree', () => {
+    const parsed = parsePathMap(readFileSync(join(repoRoot, EXAMPLE_FILE), 'utf8'))
+    if (!parsed.ok) throw new Error(parsed.errors.join('\n'))
+    const studio = parsed.map.tracks[0].nodes.find((n) => n.id === 'studio')
+    if (studio?.type !== 'obstacle') throw new Error('studio is not an obstacle')
+    expect(studio.tasks?.some((t) => (t.tasks?.length ?? 0) > 0)).toBe(true)
+  })
+
+  it('the content file header documents `tasks`', () => {
+    const text = readFileSync(join(repoRoot, 'content/path-map/doctor-school.yaml'), 'utf8')
+    const header = text.split('\n').filter((line) => line.startsWith('#'))
+    expect(header.join('\n')).toMatch(/tasks/)
+    expect(header.join('\n')).toMatch(/link/)
+  })
+})
