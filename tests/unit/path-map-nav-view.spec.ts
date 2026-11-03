@@ -54,7 +54,7 @@ describe('left navigator', () => {
     expect(names.some((n) => /Станция «Готов первый урок»/.test(n))).toBe(true)
     expect(names.some((n) => /Станция «Две поверхности платформы в проде»/.test(n))).toBe(true)
     expect(names.some((n) => n === 'Мы здесь')).toBe(true)
-    expect(names.some((n) => /Октябрь 2026/.test(n))).toBe(true)
+    expect(names.some((n) => /в октябре 2026/.test(n))).toBe(true)
     expect(names.at(-1)).toBe('Старт 6 окт')
   })
 
