@@ -119,7 +119,7 @@ export function InsidePanel({
       className="pm-aside pm-aside--check pm-aside--inside"
       tabIndex={-1}
     >
-      <div className="pm-inside">
+      <div className="pm-aside-inner pm-inside">
         <div className="pm-inside-bar">
           <span className="pm-eyebrow">Что внутри</span>
           <button type="button" className="pm-inside-close" aria-label="Закрыть" onClick={onClose}>

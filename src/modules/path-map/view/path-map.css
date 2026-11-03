@@ -1461,20 +1461,28 @@ body:has(.pm-root) {
   text-align: center;
 }
 
-/* ── «Что внутри» — an obstacle's tasks (#536) ─────────────────────────────
-   No artboard: composed in the check panel's language (Night-Check.dc.html),
-   recorded in design-source/README.md. The panel keeps the aside's full-height
-   column; its content is sticky, so a barrier clicked far down the map still
-   shows its tasks in view (clear of the top bar and the sticky beacon). */
-.pm-inside {
+/* Every right panel (Обочина, Проверка пути, Что внутри) keeps the aside's
+   full-height column, and its CONTENT is sticky (#536): a node clicked far down
+   the map still has its answer in view, clear of the portal bar
+   (`--pm-chrome-top`) and the 48px sticky beacon bar, scrolling on its own
+   when taller than the viewport. Static again where the panel wraps under the
+   map (≤1140px). */
+.pm-aside-inner {
   position: sticky;
-  top: 112px;
+  top: calc(var(--pm-chrome-top, 0px) + 48px + 16px);
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  max-height: calc(100dvh - 136px);
+  gap: inherit;
+  max-height: calc(100dvh - var(--pm-chrome-top, 0px) - 48px - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* ── «Что внутри» — an obstacle's tasks (#536) ─────────────────────────────
+   No artboard: composed in the check panel's language (Night-Check.dc.html),
+   recorded in design-source/README.md. */
+.pm-aside-inner.pm-inside {
+  gap: 22px;
 }
 
 .pm-inside-bar {
@@ -1707,14 +1715,10 @@ body:has(.pm-root) {
   }
 
   /* Under the map the panel is a full-width section: no sticky, no inner scroll. */
-  .pm-inside {
+  .pm-aside-inner {
     position: static;
     max-height: none;
     overflow: visible;
-  }
-
-  .pm-aside--inside {
-    scroll-margin-top: 112px;
   }
 }
 

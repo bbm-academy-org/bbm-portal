@@ -606,53 +606,55 @@ function RoadsidePanel({ view }: { view: MapView }) {
   const bars = Math.max(view.focusLimit, view.focusCount)
   return (
     <aside id="pm-roadside" aria-label="Обочина" className="pm-aside">
-      <section className="pm-aside-sec">
-        <div className="pm-aside-head">
-          <h2 className="pm-aside-title">Обочина</h2>
-          <p className="pm-aside-lead">
-            Видно, но вне фокуса. Вывести трек на дорогу — значит отправить сюда другой.
-          </p>
-        </div>
-        <div className="pm-meter" data-overflow={view.focusOverflow || undefined}>
-          <span className="pm-meter-label">В фокусе</span>
-          <span className="pm-meter-bars" aria-hidden="true">
-            {Array.from({ length: bars }, (_, i) => (
-              <span
-                key={i}
-                data-on={i < view.focusCount || undefined}
-                data-over={i >= view.focusLimit || undefined}
-              />
-            ))}
-          </span>
-          <b>
-            {view.focusCount} из {view.focusLimit}
-          </b>
-        </div>
-        {view.focusOverflow ? <span className="pm-badge-warn">фокус переполнен</span> : null}
-        {view.roadsideTracks.map((track) => (
-          <div key={track.id} className="pm-roadside-track">
-            <span className="pm-roadside-row">
-              <span className="pm-dot pm-dot--muted" aria-hidden="true" />
-              <span className="pm-roadside-name">{track.title}</span>
-              <span className="pm-roadside-tag">трек</span>
-            </span>
-            <span className="pm-roadside-summary">{track.summary}</span>
+      <div className="pm-aside-inner">
+        <section className="pm-aside-sec">
+          <div className="pm-aside-head">
+            <h2 className="pm-aside-title">Обочина</h2>
+            <p className="pm-aside-lead">
+              Видно, но вне фокуса. Вывести трек на дорогу — значит отправить сюда другой.
+            </p>
           </div>
-        ))}
-        {view.roadsideStations.map(({ node, trackId, trackTitle }) => (
-          <div key={`${trackId}-${node.id}`} className="pm-roadside-station">
-            <span className="pm-roadside-kicker">Станция без «потому что»</span>
-            <span className="pm-roadside-name">{node.title}</span>
-            <span className="pm-roadside-summary">
-              Не входит в путь, пока не ясно, что она открывает выше. Трек «{trackTitle}».
+          <div className="pm-meter" data-overflow={view.focusOverflow || undefined}>
+            <span className="pm-meter-label">В фокусе</span>
+            <span className="pm-meter-bars" aria-hidden="true">
+              {Array.from({ length: bars }, (_, i) => (
+                <span
+                  key={i}
+                  data-on={i < view.focusCount || undefined}
+                  data-over={i >= view.focusLimit || undefined}
+                />
+              ))}
             </span>
+            <b>
+              {view.focusCount} из {view.focusLimit}
+            </b>
           </div>
-        ))}
-        {view.roadsideTracks.length === 0 && view.roadsideStations.length === 0 ? (
-          <p className="pm-aside-lead">На обочине пусто.</p>
-        ) : null}
-      </section>
-      <Legend />
+          {view.focusOverflow ? <span className="pm-badge-warn">фокус переполнен</span> : null}
+          {view.roadsideTracks.map((track) => (
+            <div key={track.id} className="pm-roadside-track">
+              <span className="pm-roadside-row">
+                <span className="pm-dot pm-dot--muted" aria-hidden="true" />
+                <span className="pm-roadside-name">{track.title}</span>
+                <span className="pm-roadside-tag">трек</span>
+              </span>
+              <span className="pm-roadside-summary">{track.summary}</span>
+            </div>
+          ))}
+          {view.roadsideStations.map(({ node, trackId, trackTitle }) => (
+            <div key={`${trackId}-${node.id}`} className="pm-roadside-station">
+              <span className="pm-roadside-kicker">Станция без «потому что»</span>
+              <span className="pm-roadside-name">{node.title}</span>
+              <span className="pm-roadside-summary">
+                Не входит в путь, пока не ясно, что она открывает выше. Трек «{trackTitle}».
+              </span>
+            </div>
+          ))}
+          {view.roadsideTracks.length === 0 && view.roadsideStations.length === 0 ? (
+            <p className="pm-aside-lead">На обочине пусто.</p>
+          ) : null}
+        </section>
+        <Legend />
+      </div>
     </aside>
   )
 }
@@ -703,65 +705,67 @@ function CheckPanel({
       className="pm-aside pm-aside--check"
       tabIndex={-1}
     >
-      <div className="pm-aside-head">
-        <span className="pm-eyebrow">Проверка пути</span>
-        {head}
-      </div>
+      <div className="pm-aside-inner">
+        <div className="pm-aside-head">
+          <span className="pm-eyebrow">Проверка пути</span>
+          {head}
+        </div>
 
-      {selected ? (
-        <ol className="pm-chain">
-          <li data-kind={selected.reached ? 'beacon-ok' : 'beacon-miss'}>
-            <span className="pm-chain-mark" aria-hidden="true" />
-            <span className="pm-chain-text">
-              <span className="pm-chain-name">Маяк</span>
-              <span className="pm-chain-sub">
-                {selected.reached ? 'достигнут' : 'не достигнут'}
-              </span>
-            </span>
-          </li>
-          {selected.break ? (
-            <li data-kind="break">
-              <span className="pm-chain-mark" aria-hidden="true">
-                !
-              </span>
-              <span className="pm-chain-text">
-                <span className="pm-chain-name pm-chain-name--bad">Разрыв</span>
-                <span className="pm-chain-sub">{describeBreak(selected, selected.break)}</span>
-              </span>
-            </li>
-          ) : null}
-          {[...selected.chain].reverse().map((link) => (
-            <li key={link.id} data-kind={link.node.type}>
+        {selected ? (
+          <ol className="pm-chain">
+            <li data-kind={selected.reached ? 'beacon-ok' : 'beacon-miss'}>
               <span className="pm-chain-mark" aria-hidden="true" />
               <span className="pm-chain-text">
-                <span className="pm-chain-name">{link.node.title}</span>
-                <span className="pm-chain-sub">{nodeKind(link.node)}</span>
+                <span className="pm-chain-name">Маяк</span>
+                <span className="pm-chain-sub">
+                  {selected.reached ? 'достигнут' : 'не достигнут'}
+                </span>
               </span>
             </li>
-          ))}
-        </ol>
-      ) : null}
+            {selected.break ? (
+              <li data-kind="break">
+                <span className="pm-chain-mark" aria-hidden="true">
+                  !
+                </span>
+                <span className="pm-chain-text">
+                  <span className="pm-chain-name pm-chain-name--bad">Разрыв</span>
+                  <span className="pm-chain-sub">{describeBreak(selected, selected.break)}</span>
+                </span>
+              </li>
+            ) : null}
+            {[...selected.chain].reverse().map((link) => (
+              <li key={link.id} data-kind={link.node.type}>
+                <span className="pm-chain-mark" aria-hidden="true" />
+                <span className="pm-chain-text">
+                  <span className="pm-chain-name">{link.node.title}</span>
+                  <span className="pm-chain-sub">{nodeKind(link.node)}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
 
-      <div className="pm-roads">
-        <span className="pm-roads-title">{selected ? 'Остальные дороги' : 'Все дороги'}</span>
-        {roads.map(({ trackId, result }) => {
-          const status = roadStatus(result)
-          return (
-            <div key={trackId} className="pm-roads-row">
-              <span
-                className="pm-dot"
-                style={{ background: colorOf(trackId) }}
-                aria-hidden="true"
-              />
-              <span className="pm-roads-name">{titleOf(trackId)}</span>
-              <span
-                className={status.ok ? 'pm-roads-status' : 'pm-roads-status pm-roads-status--bad'}
-              >
-                {status.text}
-              </span>
-            </div>
-          )
-        })}
+        <div className="pm-roads">
+          <span className="pm-roads-title">{selected ? 'Остальные дороги' : 'Все дороги'}</span>
+          {roads.map(({ trackId, result }) => {
+            const status = roadStatus(result)
+            return (
+              <div key={trackId} className="pm-roads-row">
+                <span
+                  className="pm-dot"
+                  style={{ background: colorOf(trackId) }}
+                  aria-hidden="true"
+                />
+                <span className="pm-roads-name">{titleOf(trackId)}</span>
+                <span
+                  className={status.ok ? 'pm-roads-status' : 'pm-roads-status pm-roads-status--bad'}
+                >
+                  {status.text}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </aside>
   )
