@@ -137,6 +137,30 @@ module.exports = {
       to: { path: '^src/(lib/finmodel|modules/finmodel)' },
     },
     {
+      name: 'path-map-must-not-import-cms',
+      comment:
+        'ADR-002 (#530): the path-map module (src/lib/path-map + src/modules/path-map) must not ' +
+        'import CMS internals. It owns no persisted data: the map is one committed YAML file under ' +
+        'content/path-map/, read per request.',
+      severity: 'error',
+      from: { path: '^src/(lib/path-map|modules/path-map)' },
+      to: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations)|^src/payload\\.config|^src/payload-types',
+      },
+    },
+    {
+      name: 'cms-must-not-import-path-map-internals',
+      comment:
+        'ADR-002/ADR-003 (#530): the CMS side may not reach into path-map internals. Only the ' +
+        '(platform) route group mounts the surface (the Zitadel-gated /p/path) — it is deliberately ' +
+        'absent from this from-set, exactly as in the OKR and hours rules above.',
+      severity: 'error',
+      from: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',
+      },
+      to: { path: '^src/(lib/path-map|modules/path-map)' },
+    },
+    {
       name: 'finance-must-not-import-cms',
       comment:
         'ADR-002 §3 / spec 338 EARS-323 (#356): the finance module (src/lib/finance + ' +
