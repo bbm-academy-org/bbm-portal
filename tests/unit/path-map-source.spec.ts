@@ -64,7 +64,7 @@ afterEach(() => {
   // The token must never reach a log line, whatever the scenario.
   for (const spy of logSpies) {
     for (const call of spy.mock.calls) {
-      const text = call.map((arg) =>
+      const text = call.map((arg: unknown) =>
         arg instanceof Error ? `${arg.message} ${String(arg.cause)}` : String(arg),
       )
       expect(text.join(' ')).not.toContain(TOKEN)

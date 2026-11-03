@@ -1,0 +1,17 @@
+/* «Карта пути» source notices (#533) — a thin muted line above the map. Uses
+   the `.pm-root` tokens of path-map.css; kept in its own file so the map's
+   stylesheet (reshaped by #532) is not touched. */
+
+.pm-source-note {
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--pm-line);
+  color: var(--pm-muted-3);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.pm-source-note--stale {
+  color: var(--pm-accent-soft);
+}
