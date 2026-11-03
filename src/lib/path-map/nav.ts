@@ -1,4 +1,4 @@
-import type { MapView } from './derive'
+import { plural, type MapView } from './derive'
 
 /**
  * «Карта пути» v2 (#532) — the left navigator and the sticky beacon, as pure
@@ -108,14 +108,6 @@ export function shortDate(iso: string): string {
   return `${day} ${MONTHS_GENITIVE[month - 1] ?? ''}`.trim()
 }
 
-function blocksWord(n: number): string {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return 'шлагбаум'
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'шлагбаума'
-  return 'шлагбаумов'
-}
-
 export function buildNavAnchors(view: MapView): NavAnchor[] {
   const anchors: NavAnchor[] = [
     {
@@ -187,7 +179,7 @@ export function buildNavAnchors(view: MapView): NavAnchor[] {
       kind: 'month',
       label: `${MONTHS_FULL[m - 1]} ${year}`,
       short: MONTHS_SHORT[m - 1],
-      ariaLabel: `Пройдено в ${MONTHS_PREPOSITIONAL[m - 1]} ${year}: ${month.count} ${blocksWord(month.count)}`,
+      ariaLabel: `Пройдено в ${MONTHS_PREPOSITIONAL[m - 1]} ${year}: ${month.count} ${plural(month.count, 'шлагбаум', 'шлагбаума', 'шлагбаумов')}`,
       target: nodeAnchorId(month.nodeId),
       compact: false,
     })

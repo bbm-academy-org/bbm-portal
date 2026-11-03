@@ -915,7 +915,6 @@ export function PathMapScreen({
 
       <div className="pm-body">
         <main className="pm-main">
-          <PathMapNav anchors={anchors} beaconTitle={view.beacon.title} pageRef={pageRef} />
           <section id={ANCHOR_IDS.beacon} aria-label="Маяк" className="pm-beacon">
             <LighthouseMark />
             <span className="pm-beacon-copy">
@@ -1000,6 +999,8 @@ export function PathMapScreen({
           <p id={ANCHOR_IDS.start} className="pm-passed-caption">
             Пройденный путь{view.started ? ` · старт ${shortDate(view.started)}` : ''}
           </p>
+          {/* Last in DOM so Tab walks the map before the rail's points (#535). */}
+          <PathMapNav anchors={anchors} beaconTitle={view.beacon.title} pageRef={pageRef} />
         </main>
 
         {checking ? (

@@ -65,6 +65,8 @@ interface Measured {
   thumb: { top: number; size: number }
   /** The rail track's height, px (0 until measured). */
   rail: number
+  /** The ≤640px layout: a thin edge rail whose thumb is not draggable. */
+  compact: boolean
 }
 
 const INITIAL: Measured = {
@@ -74,6 +76,26 @@ const INITIAL: Measured = {
   inView: [],
   thumb: { top: 0, size: 0 },
   rail: 0,
+  compact: false,
+}
+
+function sameMeasured(a: Measured, b: Measured): boolean {
+  if (
+    a.top !== b.top ||
+    a.stuck !== b.stuck ||
+    a.rail !== b.rail ||
+    a.compact !== b.compact ||
+    a.thumb.top !== b.thumb.top ||
+    a.thumb.size !== b.thumb.size ||
+    a.inView.length !== b.inView.length ||
+    a.inView.some((k, i) => k !== b.inView[i])
+  ) {
+    return false
+  }
+  const keys = Object.keys(a.points)
+  return (
+    keys.length === Object.keys(b.points).length && keys.every((k) => a.points[k] === b.points[k])
+  )
 }
 
 /**
@@ -86,6 +108,7 @@ function useMapScroll(
   railRef: React.RefObject<HTMLElement | null>,
 ): Measured {
   const [measured, setMeasured] = useState<Measured>(INITIAL)
+  const last = useRef<Measured>(INITIAL)
 
   useEffect(() => {
     let frame = 0
@@ -94,6 +117,9 @@ function useMapScroll(
       const page = pageRef.current
       if (!page) return
       const top = portalHeaderBottom()
+      // Pre-existing in-page jumps (the ≤640px check panel's scrollIntoView,
+      // `#pm-roadside`) clear the chrome through `scroll-margin-top` in CSS.
+      page.style.setProperty('--pm-chrome-top', `${top}px`)
       const scrollY = window.scrollY
       const beacon = document.getElementById(ANCHOR_IDS.beacon)
       const stuck =
@@ -115,7 +141,8 @@ function useMapScroll(
       const located = shown
         .map((a) => {
           const target = document.getElementById(a.target)
-          if (!target || geometry.pageHeight <= 0) return null
+          // Unmeasured rail or page: the point stays unplaced (hidden, untabbable).
+          if (!target || geometry.pageHeight <= 0 || railHeight <= 0) return null
           const y = target.getBoundingClientRect().top + scrollY - geometry.pageTop
           return { key: a.key, fraction: Math.min(Math.max(y / geometry.pageHeight, 0), 1) }
         })
@@ -132,7 +159,11 @@ function useMapScroll(
         .filter((l) => l.fraction >= thumb.top && l.fraction <= thumb.top + thumb.size)
         .map((l) => l.key)
 
-      setMeasured({ top, stuck, points, inView, thumb, rail: railHeight })
+      const next: Measured = { top, stuck, points, inView, thumb, rail: railHeight, compact }
+      // Most scroll frames move nothing the rail draws: no setState, no render.
+      if (sameMeasured(last.current, next)) return
+      last.current = next
+      setMeasured(next)
     }
     const schedule = () => {
       if (frame) return
@@ -147,6 +178,8 @@ function useMapScroll(
     const observer =
       typeof ResizeObserver === 'function' && pageRef.current ? new ResizeObserver(schedule) : null
     if (observer && pageRef.current) observer.observe(pageRef.current)
+    // The rail's own height changes once `--pm-nav-top` is set from the first measure.
+    if (observer && railRef.current) observer.observe(railRef.current)
     // Fonts swap in late and move every anchor.
     void document.fonts?.ready.then(schedule)
     return () => {
@@ -201,6 +234,8 @@ function Point({
       data-placed={y === undefined ? undefined : ''}
       data-in-view={inView || undefined}
       aria-label={anchor.ariaLabel}
+      // Unplaced = `visibility: hidden` in CSS; out of the tab order to match.
+      tabIndex={y === undefined ? -1 : undefined}
       style={
         {
           top: y === undefined ? undefined : `${y}px`,
@@ -225,8 +260,10 @@ function Point({
 }
 
 /**
- * The sticky beacon bar + the left rail. Rendered inside `.pm-main` (the rail's
- * gutter is that column's left padding); `pageRef` is the whole `.pm-page`.
+ * The sticky beacon bar + the left rail. Rendered at the END of `.pm-main` (the
+ * rail's gutter is that column's left padding; it is absolutely positioned, so
+ * the DOM slot only sets the tab order: the map first, then the navigator);
+ * `pageRef` is the whole `.pm-page`.
  */
 export function PathMapNav({
   anchors,
@@ -256,7 +293,12 @@ export function PathMapNav({
   const pageHeight = () => pageRef.current?.getBoundingClientRect().height ?? 0
   const railHeight = () => railRef.current?.clientHeight ?? 0
 
+  // ≤640px the thumb hugs the screen edge, where iOS Safari's back-swipe lives:
+  // there it only shows the visible window, and the page scrolls natively.
+  const draggable = !measured.compact
+
   const onThumbDown = (e: React.PointerEvent<HTMLSpanElement>) => {
+    if (!draggable) return
     e.preventDefault()
     e.currentTarget.setPointerCapture?.(e.pointerId)
     drag.current = { y: e.clientY, scroll: window.scrollY }
@@ -307,6 +349,7 @@ export function PathMapNav({
               <span
                 className="pm-nav-thumb"
                 aria-hidden="true"
+                data-passive={draggable ? undefined : ''}
                 style={{
                   top: `${measured.thumb.top * 100}%`,
                   height: `${measured.thumb.size * 100}%`,
