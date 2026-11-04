@@ -230,7 +230,7 @@
   background: #0f1930;
 }
 
-.pm-ed-hint {
+.pm-aside-lead.pm-ed-hint {
   padding-top: 4px;
 }
 
@@ -309,14 +309,33 @@
   border-style: dashed;
 }
 
-/* ── forms (AddStation artboard) ────────────────────────────────────────── */
+/* ── forms ──────────────────────────────────────────────────────────────── */
+
+/*
+   Form practice after the owner's review of #541 («грубо, плотно, всё в одну
+   кучу»): one column; labels small and above their input; inputs regular
+   weight with a light border; helper text muted; more space BETWEEN groups
+   than within them; one primary action; delete in its own zone at the end.
+   The scale lives in these few variables so the forms stay one system.
+*/
+.pm-ed-aside,
+.pm-ed-dialog {
+  --pm-ed-line: rgb(232 236 244 / 14%);
+  --pm-ed-line-strong: rgb(232 236 244 / 26%);
+  --pm-ed-field: rgb(232 236 244 / 4%);
+  --pm-ed-ring: 0 0 0 3px rgb(242 181 68 / 28%);
+  --pm-ed-gap-group: 28px;
+  --pm-ed-gap-field: 18px;
+  --pm-ed-gap-label: 6px;
+}
 
 .pm-ed-form {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: var(--pm-ed-gap-group);
 }
 
+/* Head: what is being edited, where it sits, and close. */
 .pm-ed-head {
   display: flex;
   align-items: flex-start;
@@ -327,142 +346,186 @@
 .pm-ed-head-text {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-}
-
-.pm-ed-eyebrow {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--pm-accent);
 }
 
 .pm-ed-title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 800;
+  font-size: 20px;
+  font-weight: 700;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-context {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--pm-muted-3);
   overflow-wrap: anywhere;
 }
 
 .pm-ed-close {
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
+  margin-top: -4px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 12px;
-  background: rgb(232 236 244 / 6%);
-  color: var(--pm-muted);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pm-muted-3);
   cursor: pointer;
 }
 
 .pm-ed-close:hover {
-  background: rgb(232 236 244 / 12%);
+  background: rgb(232 236 244 / 8%);
   color: var(--pm-text);
+}
+
+/* The editable fields, before the footer. */
+.pm-ed-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pm-ed-gap-group);
+}
+
+/* A group of related fields: a quiet heading, then its fields. */
+.pm-ed-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pm-ed-group-title {
+  float: left; /* lets the legend sit in normal flow above the body */
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--pm-text);
+}
+
+.pm-ed-group-title + * {
+  clear: both;
+}
+
+.pm-ed-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pm-ed-gap-field);
 }
 
 .pm-ed-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pm-ed-gap-label);
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
-  min-width: 0;
 }
 
 .pm-ed-labelrow {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 8px;
 }
 
 .pm-ed-label {
   padding: 0;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--pm-text);
-}
-
-legend.pm-ed-label {
-  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--pm-muted);
 }
 
 .pm-ed-req {
   flex: none;
   font-size: 12px;
-  font-weight: 700;
-  color: #f5d693;
+  font-weight: 400;
+  color: var(--pm-muted-3);
 }
 
 .pm-ed-input {
   width: 100%;
-  min-height: 44px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1.5px solid rgb(232 236 244 / 20%);
-  background: var(--pm-bg);
+  min-height: 40px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--pm-ed-line);
+  background: var(--pm-ed-field);
   color: var(--pm-text);
   font: inherit;
-  font-size: 16px;
-  line-height: 1.4;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.45;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.pm-ed-input::placeholder {
+  color: var(--pm-muted-3);
+  opacity: 0.8;
+}
+
+.pm-ed-input:hover {
+  border-color: var(--pm-ed-line-strong);
 }
 
 .pm-ed-input--short {
   max-width: 220px;
 }
 
+.pm-ed-input--date {
+  width: auto;
+  max-width: 180px;
+  color-scheme: dark;
+}
+
 .pm-ed-textarea {
-  resize: none;
-}
-
-.pm-ed-because {
-  border-color: var(--pm-accent);
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.pm-ed-input:focus-visible {
-  outline: 3px solid var(--pm-accent-soft);
-  outline-offset: 1px;
+  resize: vertical;
 }
 
 .pm-ed-hint {
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.45;
-  color: var(--pm-muted-2);
+  color: var(--pm-muted-3);
+}
+
+p.pm-ed-hint {
+  margin: 0;
 }
 
 .pm-ed-error {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1.4;
   color: var(--pm-bad-text);
 }
 
-/* «Потому что — что это открывает выше?»: the target pills. */
+/* «Что это открывает выше?» / «Куда ведёт?»: the target pills. */
 .pm-ed-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .pm-ed-pill {
   max-width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid rgb(232 236 244 / 20%);
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--pm-ed-line);
   background: transparent;
-  color: var(--pm-muted);
+  color: var(--pm-muted-2);
   font: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -470,23 +533,29 @@ legend.pm-ed-label {
   cursor: pointer;
 }
 
-.pm-ed-pill[aria-pressed='true'] {
-  border: 1.5px solid var(--pm-accent);
-  background: rgb(242 181 68 / 12%);
+.pm-ed-pill:hover {
+  border-color: var(--pm-ed-line-strong);
   color: var(--pm-text);
-  font-weight: 700;
+}
+
+.pm-ed-pill[aria-pressed='true'] {
+  border-color: var(--pm-accent);
+  background: rgb(242 181 68 / 10%);
+  color: var(--pm-text);
 }
 
 .pm-ed-pill--select {
-  background: var(--pm-bg);
-  max-width: 180px;
+  max-width: 170px;
+  background: var(--pm-ed-field);
+  color-scheme: dark;
 }
 
-/* «Насколько уверены?» — three road swatches. */
+/* «Насколько уверены?» — three road swatches as one segmented choice. */
 .pm-ed-confgrid {
+  clear: both;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .pm-ed-conf {
@@ -494,25 +563,32 @@ legend.pm-ed-label {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 12px 8px 10px;
-  border-radius: 14px;
-  border: 1px solid rgb(232 236 244 / 18%);
+  min-width: 0;
+  padding: 12px 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--pm-ed-line);
   background: transparent;
-  color: var(--pm-muted);
+  color: var(--pm-muted-2);
   font: inherit;
+  text-align: center;
   cursor: pointer;
 }
 
+.pm-ed-conf:hover {
+  border-color: var(--pm-ed-line-strong);
+}
+
 .pm-ed-conf[aria-pressed='true'] {
-  border: 1.5px solid var(--pm-accent);
+  border-color: var(--pm-accent);
   background: rgb(242 181 68 / 10%);
   color: var(--pm-text);
 }
 
 .pm-ed-conf-road {
   position: relative;
-  width: 30px;
-  height: 34px;
+  flex: none;
+  width: 18px;
+  height: 26px;
   background: var(--pm-road);
   border-left: 1px solid rgb(232 236 244 / 20%);
   border-right: 1px solid rgb(232 236 244 / 20%);
@@ -521,66 +597,79 @@ legend.pm-ed-label {
 .pm-ed-conf-road[data-kind='asphalt']::after {
   content: '';
   position: absolute;
-  left: 13px;
+  left: 7px;
   top: 0;
   bottom: 0;
   width: 2px;
-  background: repeating-linear-gradient(180deg, #8c98ae 0 6px, transparent 6px 12px);
+  background: repeating-linear-gradient(180deg, #8c98ae 0 5px, transparent 5px 10px);
 }
 
 .pm-ed-conf-road[data-kind='dirt'] {
   background-color: rgb(22 32 56 / 90%);
   background-image: radial-gradient(rgb(232 236 244 / 30%) 1px, transparent 1.6px);
-  background-size: 7px 7px;
-  border-left: 2px dashed rgb(232 236 244 / 40%);
-  border-right: 2px dashed rgb(232 236 244 / 40%);
+  background-size: 6px 6px;
+  border-left: 1px dashed rgb(232 236 244 / 40%);
+  border-right: 1px dashed rgb(232 236 244 / 40%);
 }
 
 .pm-ed-conf-road[data-kind='fog'] {
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgb(140 152 174 / 25%);
-  box-shadow: 0 0 12px 4px rgb(140 152 174 / 25%);
+  box-shadow: 0 0 8px 2px rgb(140 152 174 / 25%);
+}
+
+.pm-ed-conf-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
 }
 
 .pm-ed-conf-label {
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .pm-ed-conf-road-word {
   font-size: 12px;
-  color: var(--pm-muted-2);
+  line-height: 1.3;
+  color: var(--pm-muted-3);
 }
 
-.pm-ed-note {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgb(232 236 244 / 5%);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--pm-muted);
-}
-
-.pm-ed-check,
-.pm-ed-inline {
+/* Checkboxes and radios: the control, then its words. */
+.pm-ed-check {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   font-size: 14px;
+  line-height: 1.4;
+  color: var(--pm-text);
   cursor: pointer;
 }
 
 .pm-ed-check input {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
   accent-color: var(--pm-accent);
 }
 
-.pm-ed-removed {
+.pm-ed-check-note {
+  color: var(--pm-muted-3);
+}
+
+.pm-ed-choices {
   gap: 10px;
+}
+
+.pm-ed-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 0 26px;
 }
 
 .pm-ed-row {
@@ -590,11 +679,8 @@ legend.pm-ed-label {
   align-items: center;
 }
 
-.pm-ed-footer {
-  display: flex;
-  gap: 10px;
-}
-
+/* Buttons. The base `.pm-ed-btn` also dresses the map-side «Править маяк» and
+   «+ Трек»; the form look below is scoped to the panel's forms and dialogs. */
 .pm-ed-btn {
   min-height: 44px;
   padding: 0 16px;
@@ -617,24 +703,11 @@ legend.pm-ed-label {
   cursor: progress;
 }
 
-.pm-ed-footer .pm-ed-btn {
-  flex: 1;
-  height: 52px;
-  border-radius: 14px;
-  font-size: 15px;
-}
-
 .pm-ed-btn--primary {
   border: 0;
   background: var(--pm-accent);
   color: var(--pm-bg);
-  font-size: 15px;
   font-weight: 800;
-}
-
-.pm-ed-footer .pm-ed-btn--primary {
-  flex: 2;
-  font-size: 16px;
 }
 
 .pm-ed-btn--primary:hover {
@@ -653,25 +726,172 @@ legend.pm-ed-label {
   color: var(--pm-bad-text);
 }
 
+.pm-ed-form .pm-ed-btn,
+.pm-ed-confirm .pm-ed-btn,
+.pm-ed-dialog .pm-ed-btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border-color: var(--pm-ed-line-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pm-ed-form .pm-ed-btn--small,
+.pm-ed-confirm .pm-ed-btn--small {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.pm-ed-form .pm-ed-btn--primary,
+.pm-ed-dialog .pm-ed-btn--primary {
+  border: 0;
+  font-weight: 700;
+}
+
+.pm-ed-form .pm-ed-btn--ghost,
+.pm-ed-confirm .pm-ed-btn--ghost,
+.pm-ed-dialog .pm-ed-btn--ghost {
+  border-color: transparent;
+  color: var(--pm-muted);
+}
+
+.pm-ed-form .pm-ed-btn--ghost:hover,
+.pm-ed-confirm .pm-ed-btn--ghost:hover,
+.pm-ed-dialog .pm-ed-btn--ghost:hover {
+  color: var(--pm-text);
+}
+
+.pm-ed-confirm .pm-ed-btn--danger {
+  border: 0;
+  background: var(--pm-bad);
+  color: var(--pm-ink);
+  font-weight: 700;
+}
+
+.pm-ed-confirm .pm-ed-btn--danger:hover {
+  background: var(--pm-bad-text);
+}
+
+/* The one footer: quiet «Отмена», then the primary action, on the right. */
+.pm-ed-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--pm-line);
+}
+
+.pm-ed-footer .pm-ed-btn--primary {
+  min-width: 132px;
+}
+
+/* What saves at once (tasks, focus): a section under the footer. */
 .pm-ed-sec {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 18px;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pm-ed-sec > * {
+  align-self: stretch;
+}
+
+.pm-ed-sec > .pm-ed-btn {
+  align-self: flex-start;
+}
+
+.pm-ed-sec-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pm-ed-sec-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--pm-text);
+}
+
+/* Progressive disclosure: «Переместить», «Дополнительно». */
+.pm-ed-more {
+  border-top: 1px solid var(--pm-line);
+  padding-top: 16px;
+}
+
+.pm-ed-fields .pm-ed-more {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.pm-ed-more-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--pm-muted-2);
+  list-style: none;
+  cursor: pointer;
+}
+
+.pm-ed-more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.pm-ed-more-summary::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.pm-ed-more[open] > .pm-ed-more-summary::before {
+  transform: rotate(45deg);
+}
+
+.pm-ed-more-summary:hover {
+  color: var(--pm-text);
+}
+
+.pm-ed-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+/* Delete: last, apart, red words — never next to «Сохранить». */
+.pm-ed-danger {
+  display: flex;
+  flex-direction: column;
+  padding-top: 16px;
   border-top: 1px solid var(--pm-line);
 }
 
 .pm-ed-delete {
   align-self: flex-start;
+  min-height: 32px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--pm-bad-text);
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: underline;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+}
+
+.pm-ed-delete:hover {
+  text-decoration: underline;
 }
 
 .pm-ed-errors,
@@ -679,17 +899,22 @@ legend.pm-ed-label {
 .pm-ed-stale {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 13px;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
 .pm-ed-errors {
-  background: rgb(255 107 94 / 10%);
-  border: 1px solid rgb(255 107 94 / 45%);
+  gap: 4px;
+  background: rgb(255 107 94 / 8%);
+  border: 1px solid rgb(255 107 94 / 35%);
   color: var(--pm-bad-text);
+}
+
+.pm-ed-errors b {
+  font-weight: 600;
 }
 
 .pm-ed-errors ul,
@@ -699,41 +924,41 @@ legend.pm-ed-label {
 }
 
 .pm-ed-confirm {
-  background: rgb(255 107 94 / 8%);
-  border: 1px solid rgb(255 107 94 / 35%);
+  background: rgb(255 107 94 / 6%);
+  border: 1px solid rgb(255 107 94 / 30%);
   color: var(--pm-text);
 }
 
 .pm-ed-confirm-text {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .pm-ed-inbound {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  color: #f5d693;
-}
-
-.pm-ed-inbound li {
+  gap: 8px;
+  font-size: 13px;
   color: var(--pm-muted);
 }
 
+.pm-ed-inbound li {
+  color: var(--pm-muted-2);
+}
+
 .pm-ed-inbound .pm-ed-check {
-  color: var(--pm-text);
   font-size: 13px;
-  font-weight: 700;
 }
 
 .pm-ed-confirm-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
 .pm-ed-stale {
-  background: rgb(242 181 68 / 12%);
-  border: 1px solid rgb(242 181 68 / 55%);
+  background: rgb(242 181 68 / 10%);
+  border: 1px solid rgb(242 181 68 / 45%);
   color: #f5d693;
 }
 
@@ -779,31 +1004,52 @@ legend.pm-ed-label {
   background: transparent;
 }
 
-.pm-ed-addtask {
-  align-self: stretch;
-  border-style: dashed;
+.pm-ed-form .pm-ed-addtask {
+  align-self: flex-start;
+  padding: 0 4px;
+  color: var(--pm-accent);
+}
+
+.pm-ed-form .pm-ed-addtask:hover {
+  background: transparent;
+  color: var(--pm-accent-soft);
 }
 
 .pm-ed-taskform {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 6px 0 4px;
-  padding: 10px;
-  border-radius: 12px;
-  background: rgb(232 236 244 / 4%);
-  border: 1px solid rgb(232 236 244 / 12%);
+  gap: 12px;
+  margin: 8px 0;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgb(232 236 244 / 3%);
+  border: 1px solid var(--pm-ed-line);
 }
 
 .pm-ed-taskform .pm-ed-input {
-  min-height: 38px;
-  padding: 8px 12px;
-  border-radius: 10px;
+  min-height: 36px;
+  padding: 7px 10px;
   font-size: 14px;
 }
 
-.pm-ed-taskform .pm-ed-row .pm-ed-input {
-  flex: 1 1 140px;
+.pm-ed-taskform-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pm-ed-field--owner {
+  flex: 0 1 120px;
+}
+
+.pm-ed-field--grow {
+  flex: 1 1 160px;
+}
+
+.pm-ed-taskform-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .pm-ed-task-new {
@@ -824,52 +1070,51 @@ legend.pm-ed-label {
 }
 
 .pm-ed-dialog {
-  width: min(520px, 100%);
+  width: min(480px, 100%);
   padding: 24px;
-  border-radius: 22px;
+  border-radius: 16px;
   background: #111c33;
-  border: 1px solid rgb(232 236 244 / 20%);
-  box-shadow: 0 30px 80px rgb(0 0 0 / 60%);
+  border: 1px solid var(--pm-ed-line);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 55%);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   color: var(--pm-text);
 }
 
 .pm-ed-dialog-head {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.pm-ed-dialog-kicker {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--pm-accent);
+  gap: 8px;
 }
 
 .pm-ed-dialog-title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1.25;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.pm-ed-dialog-lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--pm-muted-2);
 }
 
 .pm-ed-radios {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .pm-ed-radio {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgb(232 236 244 / 16%);
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--pm-ed-line);
   background: transparent;
   color: var(--pm-text);
   font: inherit;
@@ -877,17 +1122,21 @@ legend.pm-ed-label {
   cursor: pointer;
 }
 
+.pm-ed-radio:hover {
+  border-color: var(--pm-ed-line-strong);
+}
+
 .pm-ed-radio[aria-checked='true'] {
-  border: 1.5px solid var(--pm-accent);
-  background: rgb(242 181 68 / 10%);
+  border-color: var(--pm-accent);
+  background: rgb(242 181 68 / 8%);
 }
 
 .pm-ed-radio-mark {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  border: 2px solid var(--pm-muted-3);
+  border: 1.5px solid var(--pm-muted-3);
 }
 
 .pm-ed-radio[aria-checked='true'] .pm-ed-radio-mark {
@@ -900,11 +1149,12 @@ legend.pm-ed-label {
   flex-direction: column;
   gap: 2px;
   font-size: 13px;
-  color: var(--pm-muted-2);
+  color: var(--pm-muted-3);
 }
 
 .pm-ed-radio-text b {
   font-size: 15px;
+  font-weight: 600;
   color: var(--pm-text);
 }
 
@@ -912,21 +1162,13 @@ legend.pm-ed-label {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--pm-muted-2);
+  color: var(--pm-muted-3);
 }
 
 .pm-ed-dialog-actions {
   display: flex;
-  gap: 10px;
-}
-
-.pm-ed-dialog-actions .pm-ed-btn {
-  flex: 1;
-  min-height: 52px;
-}
-
-.pm-ed-dialog-actions .pm-ed-btn--primary {
-  flex: 2;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* ── toast ──────────────────────────────────────────────────────────────── */
@@ -957,9 +1199,22 @@ legend.pm-ed-label {
 .pm-ed-pill:focus-visible,
 .pm-ed-conf:focus-visible,
 .pm-ed-sidenode:focus-visible,
-.pm-ed-close:focus-visible {
-  outline: 3px solid var(--pm-accent-soft);
+.pm-ed-close:focus-visible,
+.pm-ed-btn:focus-visible,
+.pm-ed-delete:focus-visible,
+.pm-ed-radio:focus-visible,
+.pm-ed-more-summary:focus-visible,
+.pm-ed-check input:focus-visible {
+  outline: 2px solid var(--pm-accent-soft);
   outline-offset: 2px;
+}
+
+/* A text field shows focus as an accent border with a soft ring. */
+.pm-ed-input:focus-visible,
+.pm-ed-pill--select:focus-visible {
+  outline: none;
+  border-color: var(--pm-accent);
+  box-shadow: var(--pm-ed-ring);
 }
 
 .pm-ed-slot .pm-ed-menubtn:hover,
@@ -975,7 +1230,6 @@ legend.pm-ed-label {
   background: rgb(232 236 244 / 8%);
 }
 
-.pm-ed-field[data-invalid='true'] .pm-ed-input,
 .pm-ed-input[aria-invalid='true'] {
   border-color: var(--pm-bad);
 }
@@ -1025,5 +1279,10 @@ legend.pm-ed-label {
 @media (prefers-reduced-motion: reduce) {
   .pm-ed-placeholder {
     animation: none;
+  }
+
+  .pm-ed-input,
+  .pm-ed-more-summary::before {
+    transition: none;
   }
 }

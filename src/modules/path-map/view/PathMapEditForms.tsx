@@ -36,13 +36,15 @@ import { ownerColor } from './labels'
  * The editor's right-panel forms (#539): a node (station / barrier / fog), a
  * track, the beacon, and the barrier's task tree.
  *
- * Look: the AddStation artboard of the owner's «Карта пути» canvas, vendored
- * as `design-source/path-map/AddStation.dc.html` (#541 rework) — the eyebrow
- * and title head with a 40px close button, «Что должно стать правдой?», the
- * «Потому что — что это открывает выше?» target pills over the explanation,
- * «Насколько уверены?» as three road-swatch buttons, the note, and the
- * Отмена / «Поставить на дорогу» footer. Its «Режим встречи» button is out of
- * scope. The swap dialog follows `Roadside.dc.html`.
+ * Content: the AddStation artboard of the owner's «Карта пути» canvas, vendored
+ * as `design-source/path-map/AddStation.dc.html` (#541 rework) — «Что должно
+ * стать правдой?», the target pills of «что это открывает выше» with the
+ * «потому что» under them, «Насколько уверены?» as three road swatches, and
+ * the Отмена / «Поставить на дорогу» footer. Its «Режим встречи» button is out
+ * of scope. The swap dialog follows `Roadside.dc.html`. Layout and type were
+ * reworked after the owner's review of #541 (form practice: grouped fields,
+ * quiet inputs, one primary action, delete apart) — see the anatomy note
+ * above the small parts below.
  *
  * Every form validates in the browser first (a station needs «потому что»),
  * then shows whatever the server refused. A stale map is the editor's banner,
@@ -50,6 +52,13 @@ import { ownerColor } from './labels'
  */
 
 // ── small parts ──────────────────────────────────────────────────────────────
+//
+// Form anatomy (#541 owner feedback «грубо, плотно, всё в одну кучу»): a head
+// (what is being edited + where), then labelled groups — one column, labels
+// above inputs, helper text muted under them, an error right under its field —
+// then ONE footer (quiet «Отмена», the primary action), then what saves at
+// once (the barrier's tasks), the rarely used «Переместить» collapsed, and the
+// delete action last, in its own zone.
 
 export function FormErrors({ errors }: { errors: string[] }) {
   if (errors.length === 0) return null
@@ -81,7 +90,7 @@ function Field({
   const id = useId()
   const hintId = `${id}-hint`
   const errorId = `${id}-error`
-  const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ')
+  const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(' ')
   return (
     <div className="pm-ed-field" data-invalid={error ? 'true' : undefined}>
       <span className="pm-ed-labelrow">
@@ -91,17 +100,27 @@ function Field({
         {required ? <span className="pm-ed-req">обязательно</span> : null}
       </span>
       {children({ id, describedBy: describedBy || undefined, invalid: Boolean(error) })}
-      {hint ? (
-        <span id={hintId} className="pm-ed-hint">
-          {hint}
-        </span>
-      ) : null}
       {error ? (
         <span id={errorId} className="pm-ed-error">
           {error}
         </span>
       ) : null}
+      {hint ? (
+        <span id={hintId} className="pm-ed-hint">
+          {hint}
+        </span>
+      ) : null}
     </div>
+  )
+}
+
+/** A labelled group of related fields: `<fieldset>` + `<legend>`. */
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="pm-ed-group">
+      <legend className="pm-ed-group-title">{title}</legend>
+      <div className="pm-ed-group-body">{children}</div>
+    </fieldset>
   )
 }
 
@@ -125,6 +144,9 @@ function ConfirmBar({
       <span className="pm-ed-confirm-text">{text}</span>
       {children}
       <span className="pm-ed-confirm-actions">
+        <button type="button" className="pm-ed-btn pm-ed-btn--ghost" onClick={onCancel}>
+          Отмена
+        </button>
         <button
           type="button"
           className="pm-ed-btn pm-ed-btn--danger"
@@ -132,9 +154,6 @@ function ConfirmBar({
           disabled={busy}
         >
           {confirm}
-        </button>
-        <button type="button" className="pm-ed-btn" onClick={onCancel}>
-          Отмена
         </button>
       </span>
     </div>
@@ -208,8 +227,8 @@ function ConfidencePicker({
   onChange: (next: Confidence) => void
 }) {
   return (
-    <fieldset className="pm-ed-field pm-ed-confidence">
-      <legend className="pm-ed-label">Насколько уверены?</legend>
+    <fieldset className="pm-ed-group">
+      <legend className="pm-ed-group-title">Насколько уверены?</legend>
       <div className="pm-ed-confgrid">
         {(['known', 'hypothesis', 'unknown'] as const).map((c) => (
           <button
@@ -224,8 +243,10 @@ function ConfidencePicker({
               data-kind={CONFIDENCE_LOOK[c].swatch}
               aria-hidden="true"
             />
-            <span className="pm-ed-conf-label">{CONFIDENCE_LOOK[c].label}</span>
-            <span className="pm-ed-conf-road-word">{CONFIDENCE_LOOK[c].road}</span>
+            <span className="pm-ed-conf-text">
+              <span className="pm-ed-conf-label">{CONFIDENCE_LOOK[c].label}</span>
+              <span className="pm-ed-conf-road-word">{CONFIDENCE_LOOK[c].road}</span>
+            </span>
           </button>
         ))}
       </div>
@@ -247,9 +268,7 @@ function OpensPicker({
   value,
   onChange,
   label,
-  required,
-  invalid,
-  children,
+  hint,
 }: {
   map: PathMap
   trackId: string
@@ -259,11 +278,10 @@ function OpensPicker({
   value: string
   onChange: (next: string) => void
   label: string
-  required?: boolean
-  invalid?: boolean
-  children?: React.ReactNode
+  hint?: string
 }) {
   const labelId = useId()
+  const hintId = `${labelId}-hint`
   const { above, others } = opensChoices(map, trackId, index, existing, selfId)
   const pills: Array<{ value: string; label: string }> = [
     ...above.slice(0, 2).map((n) => ({ value: n.id, label: `${NODE_KIND[n.type]}: ${n.title}` })),
@@ -277,14 +295,18 @@ function OpensPicker({
   }
   if (!value) pills.push({ value: '', label: 'Никуда — дорога обрывается' })
   return (
-    <div className="pm-ed-field" data-invalid={invalid ? 'true' : undefined}>
+    <div className="pm-ed-field">
       <span className="pm-ed-labelrow">
         <span id={labelId} className="pm-ed-label">
           {label}
         </span>
-        {required ? <span className="pm-ed-req">обязательно</span> : null}
       </span>
-      <div role="group" aria-labelledby={labelId} className="pm-ed-pills">
+      <div
+        role="group"
+        aria-labelledby={labelId}
+        aria-describedby={hint ? hintId : undefined}
+        className="pm-ed-pills"
+      >
         {pills.map((p) => (
           <button
             key={p.value || 'none'}
@@ -327,25 +349,30 @@ function OpensPicker({
           ))}
         </select>
       </div>
-      {children}
+      {hint ? (
+        <span id={hintId} className="pm-ed-hint">
+          {hint}
+        </span>
+      ) : null}
     </div>
   )
 }
 
+/** What is being edited (the heading) and where it sits (a muted line under it). */
 function PanelHead({
-  eyebrow,
   title,
+  context,
   onClose,
 }: {
-  eyebrow: string
   title: string
+  context?: string
   onClose: () => void
 }) {
   return (
     <div className="pm-ed-head">
       <span className="pm-ed-head-text">
-        <span className="pm-ed-eyebrow">{eyebrow}</span>
         <h2 className="pm-ed-title">{title}</h2>
+        {context ? <span className="pm-ed-context">{context}</span> : null}
       </span>
       <button type="button" className="pm-ed-close" aria-label="Закрыть" onClick={onClose}>
         <svg
@@ -354,7 +381,7 @@ function PanelHead({
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          strokeWidth="2.2"
+          strokeWidth="2"
           strokeLinecap="round"
           aria-hidden="true"
         >
@@ -384,6 +411,11 @@ function FormFooter({
       </button>
     </div>
   )
+}
+
+/** The delete action, apart from everything else, at the bottom of a form. */
+function DangerZone({ children }: { children: React.ReactNode }) {
+  return <div className="pm-ed-danger">{children}</div>
 }
 
 /**
@@ -476,8 +508,6 @@ export function NodeForm({
   const [repoint, setRepoint] = useState(true)
   const formRef = useRef<HTMLFormElement | null>(null)
   const titleRef = useRef<HTMLTextAreaElement | null>(null)
-  const becauseId = useId()
-  const becauseErrorId = `${becauseId}-error`
   // Text typed into a task row of the barrier counts as unsaved too (#541 re-review).
   const [tasksDirty, setTasksDirty] = useState(false)
 
@@ -496,7 +526,7 @@ export function NodeForm({
   if (target.mode === 'edit' && !found) {
     return (
       <div className="pm-ed-form">
-        <PanelHead eyebrow="Правка" title="Блока больше нет на карте" onClose={onClose} />
+        <PanelHead title="Блока больше нет на карте" onClose={onClose} />
         <p className="pm-aside-lead">Его удалили или переименовали — выберите другой блок.</p>
       </div>
     )
@@ -552,127 +582,138 @@ export function NodeForm({
       aria-label={isNew ? NEW_NODE_KIND[type] : `${kind}: ${node!.title}`}
     >
       <PanelHead
-        eyebrow={isNew ? NEW_NODE_KIND[type] : `${kind} · правка`}
-        title={`на треке «${track?.title ?? trackId}»`}
+        title={isNew ? NEW_NODE_KIND[type] : kind}
+        context={`Трек «${track?.title ?? trackId}»`}
         onClose={onClose}
       />
 
-      <Field label={TITLE_LABEL[type]} error={errors.title}>
-        {({ id, describedBy, invalid }) => (
-          <textarea
-            ref={titleRef}
-            id={id}
-            className="pm-ed-input pm-ed-textarea"
-            rows={2}
-            value={title}
-            aria-invalid={invalid || undefined}
-            aria-describedby={describedBy}
-            maxLength={300}
-            onChange={(e) => {
-              setTitle(e.target.value)
-              if (errors.title) setErrors({ ...errors, title: undefined })
-            }}
-          />
-        )}
-      </Field>
-
-      <OpensPicker
-        map={map}
-        trackId={trackId}
-        index={index}
-        existing={!isNew}
-        selfId={node?.id}
-        value={opens}
-        onChange={setOpens}
-        label={
-          type === 'station'
-            ? 'Потому что — что это открывает выше?'
-            : 'Куда ведёт — что откроется выше?'
-        }
-        required={type === 'station'}
-        invalid={Boolean(errors.because)}
-      >
-        {type === 'station' ? (
-          <>
-            <label htmlFor={becauseId} className="pm-sr">
-              Объяснение
-            </label>
+      <div className="pm-ed-fields">
+        <Field label={TITLE_LABEL[type]} error={errors.title}>
+          {({ id, describedBy, invalid }) => (
             <textarea
-              id={becauseId}
-              className="pm-ed-input pm-ed-textarea pm-ed-because"
-              value={because}
+              ref={titleRef}
+              id={id}
+              className="pm-ed-input pm-ed-textarea"
               rows={2}
-              placeholder="…чем эта станция приближает маяк"
-              aria-invalid={errors.because ? true : undefined}
-              aria-describedby={errors.because ? becauseErrorId : undefined}
-              maxLength={1000}
+              value={title}
+              aria-invalid={invalid || undefined}
+              aria-describedby={describedBy}
+              maxLength={300}
               onChange={(e) => {
-                setBecause(e.target.value)
-                if (errors.because) setErrors({ ...errors, because: undefined })
+                setTitle(e.target.value)
+                if (errors.title) setErrors({ ...errors, title: undefined })
               }}
             />
-            {errors.because ? (
-              <span id={becauseErrorId} className="pm-ed-error">
-                {errors.because}
-              </span>
+          )}
+        </Field>
+
+        {type === 'station' ? (
+          <>
+            <Group title="Зачем она нужна">
+              <OpensPicker
+                map={map}
+                trackId={trackId}
+                index={index}
+                existing={!isNew}
+                selfId={node?.id}
+                value={opens}
+                onChange={setOpens}
+                label="Что это открывает выше?"
+              />
+              <Field
+                label="Потому что"
+                required
+                hint="Чем станция приближает маяк. Без этого она встанет на обочину серой."
+                error={errors.because}
+              >
+                {({ id, describedBy, invalid }) => (
+                  <textarea
+                    id={id}
+                    className="pm-ed-input pm-ed-textarea"
+                    value={because}
+                    rows={2}
+                    aria-invalid={invalid || undefined}
+                    aria-describedby={describedBy}
+                    maxLength={1000}
+                    onChange={(e) => {
+                      setBecause(e.target.value)
+                      if (errors.because) setErrors({ ...errors, because: undefined })
+                    }}
+                  />
+                )}
+              </Field>
+            </Group>
+            <ConfidencePicker value={confidence} onChange={setConfidence} />
+          </>
+        ) : null}
+
+        {type === 'obstacle' ? (
+          <>
+            <OpensPicker
+              map={map}
+              trackId={trackId}
+              index={index}
+              existing={!isNew}
+              selfId={node?.id}
+              value={opens}
+              onChange={setOpens}
+              label="Куда ведёт?"
+            />
+            <Group title="Кто и когда снимает">
+              <Field label="Кто снимает" hint="Метка или имя, например «ДС»">
+                {({ id, describedBy }) => (
+                  <input
+                    id={id}
+                    className="pm-ed-input pm-ed-input--short"
+                    value={owner}
+                    aria-describedby={describedBy}
+                    maxLength={40}
+                    onChange={(e) => setOwner(e.target.value)}
+                  />
+                )}
+              </Field>
+              <div className="pm-ed-field">
+                <label className="pm-ed-check">
+                  <input
+                    type="checkbox"
+                    checked={removed}
+                    onChange={(e) => setRemoved(e.target.checked)}
+                  />
+                  <span>Снят — уходит в «Пройденный путь»</span>
+                </label>
+                {removed ? (
+                  <label className="pm-ed-inline">
+                    <span className="pm-ed-label">Дата</span>
+                    <input
+                      type="date"
+                      className="pm-ed-input pm-ed-input--date"
+                      value={removedOn}
+                      onChange={(e) => setRemovedOn(e.target.value || todayIso())}
+                    />
+                  </label>
+                ) : null}
+              </div>
+            </Group>
+            {isNew ? (
+              <p className="pm-ed-hint">Задачи можно добавить, когда шлагбаум встанет на дорогу.</p>
             ) : null}
           </>
         ) : null}
-      </OpensPicker>
 
-      {type === 'station' ? (
-        <>
-          <ConfidencePicker value={confidence} onChange={setConfidence} />
-          <p className="pm-ed-note">
-            Без «потому что» станция встанет на обочину серой и не войдёт в путь к маяку.
-          </p>
-        </>
-      ) : null}
-
-      {type === 'obstacle' ? (
-        <>
-          <Field label="Кто снимает" hint="Короткая метка или имя, например «ДС»">
-            {({ id, describedBy }) => (
-              <input
-                id={id}
-                className="pm-ed-input pm-ed-input--short"
-                value={owner}
-                aria-describedby={describedBy}
-                maxLength={40}
-                onChange={(e) => setOwner(e.target.value)}
-              />
-            )}
-          </Field>
-          <div className="pm-ed-field pm-ed-removed">
-            <label className="pm-ed-check">
-              <input
-                type="checkbox"
-                checked={removed}
-                onChange={(e) => setRemoved(e.target.checked)}
-              />
-              <span>Снят — шлагбаум поднят, уходит в «Пройденный путь»</span>
-            </label>
-            {removed ? (
-              <label className="pm-ed-inline">
-                <span>Дата</span>
-                <input
-                  type="date"
-                  className="pm-ed-input pm-ed-input--short"
-                  value={removedOn}
-                  onChange={(e) => setRemovedOn(e.target.value || todayIso())}
-                />
-              </label>
-            ) : null}
-          </div>
-        </>
-      ) : null}
-
-      {type === 'fog' ? (
-        <p className="pm-ed-note">
-          Туман — открытый вопрос. Без «куда ведёт» дорога на нём обрывается; с ним — «доходит через
-          туман».
-        </p>
-      ) : null}
+        {type === 'fog' ? (
+          <OpensPicker
+            map={map}
+            trackId={trackId}
+            index={index}
+            existing={!isNew}
+            selfId={node?.id}
+            value={opens}
+            onChange={setOpens}
+            label="Куда ведёт?"
+            hint="Туман — открытый вопрос. Без цели дорога на нём обрывается, с целью — «доходит через туман»."
+          />
+        ) : null}
+      </div>
 
       <FormErrors errors={serverErrors} />
       <FormFooter
@@ -684,32 +725,34 @@ export function NodeForm({
       {!isNew && node?.type === 'obstacle' ? (
         <TaskTreeEditor obstacle={node} run={run} busy={busy} onDirty={setTasksDirty} />
       ) : null}
-      {isNew && type === 'obstacle' ? (
-        <p className="pm-aside-lead">
-          Задачи шлагбаума добавляются после того, как он встанет на дорогу.
-        </p>
-      ) : null}
 
       {!isNew && node && track ? (
-        <section className="pm-ed-sec" aria-label="Положение на карте">
-          <span className="pm-ed-label">Положение</span>
-          <div className="pm-ed-row">
-            <button
-              type="button"
-              className="pm-ed-btn pm-ed-btn--small"
-              disabled={busy || index >= track.nodes.length - 1}
-              onClick={() => move({ op: 'node.move', nodeId: node.id, trackId, index: index + 1 })}
-            >
-              ↑ Выше
-            </button>
-            <button
-              type="button"
-              className="pm-ed-btn pm-ed-btn--small"
-              disabled={busy || index === 0}
-              onClick={() => move({ op: 'node.move', nodeId: node.id, trackId, index: index - 1 })}
-            >
-              ↓ Ниже
-            </button>
+        <details className="pm-ed-more">
+          <summary className="pm-ed-more-summary">Переместить</summary>
+          <div className="pm-ed-more-body">
+            <span className="pm-ed-hint">Перемещение сохраняется сразу.</span>
+            <div className="pm-ed-row" role="group" aria-label="Положение на дороге">
+              <button
+                type="button"
+                className="pm-ed-btn pm-ed-btn--small"
+                disabled={busy || index >= track.nodes.length - 1}
+                onClick={() =>
+                  move({ op: 'node.move', nodeId: node.id, trackId, index: index + 1 })
+                }
+              >
+                ↑ Выше
+              </button>
+              <button
+                type="button"
+                className="pm-ed-btn pm-ed-btn--small"
+                disabled={busy || index === 0}
+                onClick={() =>
+                  move({ op: 'node.move', nodeId: node.id, trackId, index: index - 1 })
+                }
+              >
+                ↓ Ниже
+              </button>
+            </div>
             {otherTracks.length > 0 ? (
               <select
                 className="pm-ed-input pm-ed-input--short"
@@ -736,44 +779,46 @@ export function NodeForm({
               </select>
             ) : null}
           </div>
-        </section>
+        </details>
       ) : null}
 
       {!isNew && node && links ? (
-        confirmDelete ? (
-          <ConfirmBar
-            text={`Удалить «${node.title}» с карты?`}
-            confirm="Удалить"
-            busy={busy}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={async () => {
-              const outcome = await run({
-                op: 'node.remove',
-                nodeId: node.id,
-                ...(links.referrers.length > 0
-                  ? { inbound: repoint && links.target ? 'repoint' : 'break' }
-                  : {}),
-              })
-              if (outcome.status === 'ok') onDone()
-              else {
-                setConfirmDelete(false)
-                setServerErrors(outcomeErrors(outcome))
-              }
-            }}
-          >
-            <InboundWarning
-              map={map}
-              links={links}
-              scope="node"
-              repoint={repoint}
-              onRepoint={setRepoint}
-            />
-          </ConfirmBar>
-        ) : (
-          <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
-            Удалить {NODE_ACCUSATIVE[type]}
-          </button>
-        )
+        <DangerZone>
+          {confirmDelete ? (
+            <ConfirmBar
+              text={`Удалить «${node.title}» с карты?`}
+              confirm="Удалить"
+              busy={busy}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={async () => {
+                const outcome = await run({
+                  op: 'node.remove',
+                  nodeId: node.id,
+                  ...(links.referrers.length > 0
+                    ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                    : {}),
+                })
+                if (outcome.status === 'ok') onDone()
+                else {
+                  setConfirmDelete(false)
+                  setServerErrors(outcomeErrors(outcome))
+                }
+              }}
+            >
+              <InboundWarning
+                map={map}
+                links={links}
+                scope="node"
+                repoint={repoint}
+                onRepoint={setRepoint}
+              />
+            </ConfirmBar>
+          ) : (
+            <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
+              Удалить {NODE_ACCUSATIVE[type]}
+            </button>
+          )}
+        </DangerZone>
       ) : null}
     </form>
   )
@@ -808,7 +853,8 @@ function TaskFieldsForm({
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const titleRef = useRef<HTMLInputElement | null>(null)
   const linkRef = useRef<HTMLInputElement | null>(null)
-  const errorId = `${useId()}-error`
+  const ids = useId()
+  const errorId = `${ids}-error`
   useEffect(() => titleRef.current?.focus(), [])
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
   useEffect(() => {
@@ -832,6 +878,12 @@ function TaskFieldsForm({
   }
   const invalid = (field: 'title' | 'link') =>
     error?.field === field ? { 'aria-invalid': true as const, 'aria-describedby': errorId } : {}
+  const errorFor = (field: 'title' | 'link') =>
+    error?.field === field ? (
+      <span id={errorId} className="pm-ed-error">
+        {error.text}
+      </span>
+    ) : null
 
   return (
     <div
@@ -851,43 +903,62 @@ function TaskFieldsForm({
         }
       }}
     >
-      <input
-        ref={titleRef}
-        className="pm-ed-input"
-        aria-label="Задача"
-        placeholder="Что сделать"
-        value={draft.title}
-        {...invalid('title')}
-        maxLength={300}
-        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-      />
-      <div className="pm-ed-row">
+      <div className="pm-ed-field">
+        <label htmlFor={`${ids}-title`} className="pm-ed-label">
+          Задача
+        </label>
         <input
-          className="pm-ed-input pm-ed-input--short"
-          aria-label="Исполнитель"
-          placeholder="Кто"
-          value={draft.owner}
-          maxLength={40}
-          onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
-        />
-        <input
-          ref={linkRef}
+          ref={titleRef}
+          id={`${ids}-title`}
           className="pm-ed-input"
-          aria-label="Ссылка"
-          placeholder="https://… (необязательно)"
-          value={draft.link}
-          {...invalid('link')}
-          maxLength={2000}
-          onChange={(e) => setDraft({ ...draft, link: e.target.value })}
+          placeholder="Что сделать"
+          value={draft.title}
+          {...invalid('title')}
+          maxLength={300}
+          onChange={(e) => setDraft({ ...draft, title: e.target.value })}
         />
+        {errorFor('title')}
       </div>
-      {error ? (
-        <span id={errorId} className="pm-ed-error">
-          {error.text}
-        </span>
-      ) : null}
+      <div className="pm-ed-taskform-row">
+        <div className="pm-ed-field pm-ed-field--owner">
+          <label htmlFor={`${ids}-owner`} className="pm-ed-label">
+            Исполнитель
+          </label>
+          <input
+            id={`${ids}-owner`}
+            className="pm-ed-input"
+            placeholder="Кто"
+            value={draft.owner}
+            maxLength={40}
+            onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
+          />
+        </div>
+        <div className="pm-ed-field pm-ed-field--grow">
+          <label htmlFor={`${ids}-link`} className="pm-ed-label">
+            Ссылка
+          </label>
+          <input
+            ref={linkRef}
+            id={`${ids}-link`}
+            className="pm-ed-input"
+            placeholder="https://…"
+            value={draft.link}
+            {...invalid('link')}
+            maxLength={2000}
+            onChange={(e) => setDraft({ ...draft, link: e.target.value })}
+          />
+          {errorFor('link')}
+        </div>
+      </div>
       <FormErrors errors={serverErrors} />
-      <div className="pm-ed-row">
+      <div className="pm-ed-taskform-actions">
+        <button
+          type="button"
+          className="pm-ed-btn pm-ed-btn--ghost pm-ed-btn--small"
+          onClick={onCancel}
+        >
+          Отмена
+        </button>
         <button
           type="button"
           className="pm-ed-btn pm-ed-btn--primary pm-ed-btn--small"
@@ -895,9 +966,6 @@ function TaskFieldsForm({
           onClick={() => void save()}
         >
           {submitLabel}
-        </button>
-        <button type="button" className="pm-ed-btn pm-ed-btn--small" onClick={onCancel}>
-          Отмена
         </button>
       </div>
     </div>
@@ -1124,9 +1192,9 @@ export function TaskTreeEditor({
   const tasks = obstacle.tasks ?? []
   return (
     <section className="pm-ed-sec" aria-label="Задачи шлагбаума">
-      <span className="pm-ed-labelrow">
-        <span className="pm-ed-label">Задачи</span>
-        <span className="pm-ed-hint">каждая правка сохраняется сразу</span>
+      <span className="pm-ed-sec-head">
+        <h3 className="pm-ed-sec-title">Задачи</h3>
+        <span className="pm-ed-hint">Каждое изменение сохраняется сразу.</span>
       </span>
       {tasks.length > 0 ? (
         <ul className="pm-tasks pm-ed-tasks">
@@ -1171,7 +1239,7 @@ export function TaskTreeEditor({
       ) : (
         <button
           type="button"
-          className="pm-ed-btn pm-ed-btn--small pm-ed-addtask"
+          className="pm-ed-btn pm-ed-btn--ghost pm-ed-btn--small pm-ed-addtask"
           onClick={() => setAdding(true)}
         >
           + Задача
@@ -1273,12 +1341,10 @@ export function SwapDialog({
         onKeyDown={onKeyDown}
       >
         <div className="pm-ed-dialog-head">
-          <span className="pm-ed-dialog-kicker">
-            Фокус полон · {focus.length} из {map.limits.focus_tracks}
-          </span>
-          <h2 className="pm-ed-dialog-title">
-            Выводим «{incoming.title}» на дорогу. Какой трек уходит на обочину?
-          </h2>
+          <h2 className="pm-ed-dialog-title">Какой трек уходит на обочину?</h2>
+          <p className="pm-ed-dialog-lead">
+            {`Фокус полон (${focus.length} из ${map.limits.focus_tracks}). Чтобы вывести «${incoming.title}» на дорогу, один трек из фокуса уйдёт на обочину.`}
+          </p>
         </div>
         <div
           role="radiogroup"
@@ -1306,11 +1372,10 @@ export function SwapDialog({
           ))}
         </div>
         <p className="pm-ed-dialog-note">
-          Трек на обочине остаётся видимым, со всеми станциями. Вернуть можно так же — обменом.
-          Лимит фокуса: {map.limits.focus_tracks}
+          Трек на обочине остаётся на карте со всеми станциями. Вернуть его можно так же — обменом.
         </p>
         <div className="pm-ed-dialog-actions">
-          <button type="button" className="pm-ed-btn" onClick={onCancel}>
+          <button type="button" className="pm-ed-btn pm-ed-btn--ghost" onClick={onCancel}>
             Отмена
           </button>
           <button
@@ -1369,7 +1434,7 @@ export function TrackForm({
   if (trackId && !track) {
     return (
       <div className="pm-ed-form">
-        <PanelHead eyebrow="Трек" title="Трека больше нет на карте" onClose={onClose} />
+        <PanelHead title="Трека больше нет на карте" onClose={onClose} />
       </div>
     )
   }
@@ -1417,70 +1482,89 @@ export function TrackForm({
       aria-label={track ? `Трек «${track.title}»` : 'Новый трек'}
     >
       <PanelHead
-        eyebrow={track ? 'Трек · правка' : 'Новый трек'}
-        title={track ? track.title : 'Новая дорога к маяку'}
+        title={track ? 'Трек' : 'Новый трек'}
+        context={track ? undefined : 'Новая дорога к маяку'}
         onClose={onClose}
       />
-      <Field label="Название" error={error}>
-        {({ id, describedBy, invalid }) => (
-          <input
-            id={id}
-            className="pm-ed-input"
-            value={title}
-            maxLength={120}
-            aria-invalid={invalid || undefined}
-            aria-describedby={describedBy}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        )}
-      </Field>
-      <Field label="Короткое имя" hint="Для вкладок на телефоне; пусто — полное название">
-        {({ id, describedBy }) => (
-          <input
-            id={id}
-            className="pm-ed-input pm-ed-input--short"
-            value={short}
-            maxLength={40}
-            aria-describedby={describedBy}
-            onChange={(e) => setShort(e.target.value)}
-          />
-        )}
-      </Field>
-      {!track ? (
-        <fieldset className="pm-ed-field">
-          <legend className="pm-ed-label">Куда ставим</legend>
-          <label className="pm-ed-check">
+      <div className="pm-ed-fields">
+        <Field label="Название" error={error}>
+          {({ id, describedBy, invalid }) => (
             <input
-              type="radio"
-              name="pm-new-track-status"
-              checked={status === 'focus'}
-              disabled={focusFull}
-              onChange={() => setStatus('focus')}
+              id={id}
+              className="pm-ed-input"
+              value={title}
+              maxLength={120}
+              aria-invalid={invalid || undefined}
+              aria-describedby={describedBy}
+              onChange={(e) => setTitle(e.target.value)}
             />
-            <span>
-              В фокус
-              {focusFull ? ` — фокус полон (${focusCount} из ${map.limits.focus_tracks})` : ''}
-            </span>
-          </label>
-          <label className="pm-ed-check">
-            <input
-              type="radio"
-              name="pm-new-track-status"
-              checked={status === 'roadside'}
-              onChange={() => setStatus('roadside')}
-            />
-            <span>На обочину</span>
-          </label>
-        </fieldset>
-      ) : null}
+          )}
+        </Field>
+        {!track ? (
+          <fieldset className="pm-ed-group">
+            <legend className="pm-ed-group-title">Куда ставим</legend>
+            <div className="pm-ed-group-body pm-ed-choices">
+              <label className="pm-ed-check">
+                <input
+                  type="radio"
+                  name="pm-new-track-status"
+                  checked={status === 'focus'}
+                  disabled={focusFull}
+                  onChange={() => setStatus('focus')}
+                />
+                <span>
+                  В фокус
+                  {focusFull ? (
+                    <span className="pm-ed-check-note">
+                      {` — фокус полон (${focusCount} из ${map.limits.focus_tracks})`}
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+              <label className="pm-ed-check">
+                <input
+                  type="radio"
+                  name="pm-new-track-status"
+                  checked={status === 'roadside'}
+                  onChange={() => setStatus('roadside')}
+                />
+                <span>На обочину</span>
+              </label>
+            </div>
+          </fieldset>
+        ) : null}
+        <details className="pm-ed-more" open={Boolean(track?.short) || undefined}>
+          <summary className="pm-ed-more-summary">Дополнительно</summary>
+          <div className="pm-ed-more-body">
+            <Field
+              label="Короткое имя"
+              hint="Для вкладок на телефоне. Пусто — покажем полное название."
+            >
+              {({ id, describedBy }) => (
+                <input
+                  id={id}
+                  className="pm-ed-input pm-ed-input--short"
+                  value={short}
+                  maxLength={40}
+                  aria-describedby={describedBy}
+                  onChange={(e) => setShort(e.target.value)}
+                />
+              )}
+            </Field>
+          </div>
+        </details>
+      </div>
 
       <FormErrors errors={serverErrors} />
       <FormFooter submit={track ? 'Сохранить' : 'Добавить трек'} busy={busy} onCancel={onClose} />
 
       {track ? (
         <section className="pm-ed-sec" aria-label="Фокус">
-          <span className="pm-ed-label">
-            {track.status === 'focus' ? 'Трек в фокусе — на дороге' : 'Трек на обочине'}
+          <span className="pm-ed-sec-head">
+            <h3 className="pm-ed-sec-title">
+              {track.status === 'focus' ? 'В фокусе — на дороге' : 'На обочине'}
+            </h3>
+            <span className="pm-ed-hint">Сохраняется сразу.</span>
           </span>
           {track.status === 'focus' ? (
             <button
@@ -1511,43 +1595,45 @@ export function TrackForm({
       ) : null}
 
       {track && links ? (
-        confirmDelete ? (
-          <ConfirmBar
-            text={
-              track.nodes.length > 0
-                ? `Удалить трек «${track.title}» вместе с ${track.nodes.length} ${track.nodes.length === 1 ? 'блоком' : 'блоками'}?`
-                : `Удалить трек «${track.title}»?`
-            }
-            confirm="Удалить трек"
-            busy={busy}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={() =>
-              void exec(
-                {
-                  op: 'track.remove',
-                  trackId: track.id,
-                  force: track.nodes.length > 0,
-                  ...(links.referrers.length > 0
-                    ? { inbound: repoint && links.target ? 'repoint' : 'break' }
-                    : {}),
-                },
-                true,
-              )
-            }
-          >
-            <InboundWarning
-              map={map}
-              links={links}
-              scope="track"
-              repoint={repoint}
-              onRepoint={setRepoint}
-            />
-          </ConfirmBar>
-        ) : (
-          <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
-            Удалить трек
-          </button>
-        )
+        <DangerZone>
+          {confirmDelete ? (
+            <ConfirmBar
+              text={
+                track.nodes.length > 0
+                  ? `Удалить трек «${track.title}» вместе с ${track.nodes.length} ${track.nodes.length === 1 ? 'блоком' : 'блоками'}?`
+                  : `Удалить трек «${track.title}»?`
+              }
+              confirm="Удалить трек"
+              busy={busy}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={() =>
+                void exec(
+                  {
+                    op: 'track.remove',
+                    trackId: track.id,
+                    force: track.nodes.length > 0,
+                    ...(links.referrers.length > 0
+                      ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                      : {}),
+                  },
+                  true,
+                )
+              }
+            >
+              <InboundWarning
+                map={map}
+                links={links}
+                scope="track"
+                repoint={repoint}
+                onRepoint={setRepoint}
+              />
+            </ConfirmBar>
+          ) : (
+            <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
+              Удалить трек
+            </button>
+          )}
+        </DangerZone>
       ) : null}
     </form>
   )
@@ -1590,33 +1676,36 @@ export function BeaconForm({
 
   return (
     <form className="pm-ed-form" onSubmit={submit} noValidate aria-label="Маяк">
-      <PanelHead eyebrow="Маяк · правка" title="Куда идём и зачем" onClose={onClose} />
-      <Field label="Маяк" error={error}>
-        {({ id, describedBy, invalid }) => (
-          <textarea
-            id={id}
-            className="pm-ed-input pm-ed-textarea"
-            rows={3}
-            value={title}
-            maxLength={300}
-            aria-invalid={invalid || undefined}
-            aria-describedby={describedBy}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        )}
-      </Field>
-      <Field label="Зачем">
-        {({ id }) => (
-          <textarea
-            id={id}
-            className="pm-ed-input pm-ed-textarea"
-            rows={3}
-            value={why}
-            maxLength={1000}
-            onChange={(e) => setWhy(e.target.value)}
-          />
-        )}
-      </Field>
+      <PanelHead title="Маяк" context="Куда идём и зачем" onClose={onClose} />
+      <div className="pm-ed-fields">
+        <Field label="Куда идём" error={error}>
+          {({ id, describedBy, invalid }) => (
+            <textarea
+              id={id}
+              className="pm-ed-input pm-ed-textarea"
+              rows={3}
+              value={title}
+              maxLength={300}
+              aria-invalid={invalid || undefined}
+              aria-describedby={describedBy}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          )}
+        </Field>
+        <Field label="Зачем" hint="Одна-две фразы: почему это важно.">
+          {({ id, describedBy }) => (
+            <textarea
+              id={id}
+              className="pm-ed-input pm-ed-textarea"
+              rows={3}
+              value={why}
+              maxLength={1000}
+              aria-describedby={describedBy}
+              onChange={(e) => setWhy(e.target.value)}
+            />
+          )}
+        </Field>
+      </div>
       <FormErrors errors={serverErrors} />
       <FormFooter submit="Сохранить" busy={busy} onCancel={onClose} />
     </form>

@@ -152,7 +152,9 @@ describe('«+» slots on the road', () => {
     fireEvent.click(within(picker).getByRole('menuitem', { name: 'Станция' }))
 
     const form = screen.getByRole('form', { name: 'Новая станция' })
-    expect(within(form).getByRole('heading', { name: 'на треке «Охват и подкасты»' })).toBeTruthy()
+    // The head names what is being edited, the track under it (#541 form rework).
+    expect(within(form).getByRole('heading', { name: 'Новая станция' })).toBeTruthy()
+    expect(within(form).getByText('Трек «Охват и подкасты»')).toBeTruthy()
     const placeholder = within(road('Охват и подкасты')).getByRole('status', {
       name: 'Здесь встанет новый блок',
     })
@@ -180,7 +182,7 @@ describe('station form (the AddStation artboard)', () => {
       target: { value: 'Первые 100 врачей' },
     })
     fireEvent.click(within(form).getByRole('button', { name: 'Поставить на дорогу' }))
-    const because = within(form).getByLabelText('Объяснение')
+    const because = within(form).getByLabelText('Потому что')
     expect(because.getAttribute('aria-invalid')).toBe('true')
     expect(within(form).getByText(/Без «потому что» станция не встанет на дорогу/)).toBeTruthy()
     expect(save).not.toHaveBeenCalled()
@@ -194,12 +196,12 @@ describe('station form (the AddStation artboard)', () => {
     fireEvent.change(within(form).getByLabelText('Что должно стать правдой?'), {
       target: { value: 'Первые 100 врачей' },
     })
-    // «Потому что — что это открывает выше?»: the beacon is the target above the top slot.
-    const targets = within(form).getByRole('group', { name: /^Потому что/ })
+    // «Что это открывает выше?»: the beacon is the target above the top slot.
+    const targets = within(form).getByRole('group', { name: 'Что это открывает выше?' })
     expect(within(targets).getByRole('button', { name: 'Маяк' }).getAttribute('aria-pressed')).toBe(
       'true',
     )
-    fireEvent.change(within(form).getByLabelText('Объяснение'), {
+    fireEvent.change(within(form).getByLabelText('Потому что'), {
       target: { value: 'появится аудитория' },
     })
     const confidence = within(form).getByRole('group', { name: 'Насколько уверены?' })
@@ -227,6 +229,27 @@ describe('station form (the AddStation artboard)', () => {
     expect(refresh).toHaveBeenCalled()
     expect(document.querySelector('.pm-ed-toast')?.textContent).toBe('Сохранено')
     expect(screen.queryByRole('form', { name: 'Новая станция' })).toBeNull()
+  })
+
+  it('groups the fields, keeps one footer, and puts moving and deleting last (#541 form rework)', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    fireEvent.click(screen.getByRole('button', { name: 'Править: станция «Готов первый урок»' }))
+    const form = screen.getByRole('form', { name: 'Станция: Готов первый урок' })
+    expect(within(form).getByRole('heading', { name: 'Станция' })).toBeTruthy()
+    const why = within(form).getByRole('group', { name: 'Зачем она нужна' })
+    expect(within(why).getByRole('group', { name: 'Что это открывает выше?' })).toBeTruthy()
+    expect(within(why).getByLabelText('Потому что')).toBeTruthy()
+    expect(within(form).getByRole('group', { name: 'Насколько уверены?' })).toBeTruthy()
+
+    // «Переместить» is collapsed; the delete action comes after the one footer.
+    const more = form.querySelector('details.pm-ed-more')
+    expect(more?.hasAttribute('open')).toBe(false)
+    expect(more?.querySelector('summary')?.textContent).toBe('Переместить')
+    const submit = within(form).getByRole('button', { name: 'Сохранить' })
+    const remove = within(form).getByRole('button', { name: 'Удалить станцию' })
+    expect(submit.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(remove.closest('.pm-ed-danger')).toBeTruthy()
   })
 
   it('opens the form of any card clicked on the map', () => {
@@ -629,7 +652,7 @@ describe('stale map', () => {
     enterEdit()
     fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
     const form = screen.getByRole('form', { name: 'Маяк' })
-    fireEvent.change(within(form).getByLabelText(/^Маяк/), { target: { value: 'Новый маяк' } })
+    fireEvent.change(within(form).getByLabelText('Куда идём'), { target: { value: 'Новый маяк' } })
     await act(async () => {
       fireEvent.click(within(form).getByRole('button', { name: 'Сохранить' }))
     })
@@ -639,7 +662,7 @@ describe('stale map', () => {
     fireEvent.click(within(alert).getByRole('button', { name: 'Перечитать карту' }))
     expect(refresh).toHaveBeenCalled()
     expect(
-      within(screen.getByRole('form', { name: 'Маяк' })).getByLabelText(/^Маяк/),
+      within(screen.getByRole('form', { name: 'Маяк' })).getByLabelText('Куда идём'),
     ).toHaveProperty('value', 'Новый маяк')
   })
 })
@@ -649,7 +672,7 @@ describe('closing a dirty form', () => {
     renderEditable(vi.fn())
     enterEdit()
     fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
-    const input = within(screen.getByRole('form', { name: 'Маяк' })).getByLabelText(/^Маяк/)
+    const input = within(screen.getByRole('form', { name: 'Маяк' })).getByLabelText('Куда идём')
     fireEvent.change(input, { target: { value: 'черновик' } })
     fireEvent.keyDown(input, { key: 'Escape' })
     const ask = await screen.findByRole('alertdialog', { name: 'Несохранённые изменения' })
