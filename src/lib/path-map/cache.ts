@@ -155,6 +155,16 @@ export function primePathMapCache(
   slot.checkedAt = t
 }
 
+/**
+ * The cached text for `origin`, if any — no read, no TTL check. The save
+ * (#539) uses it when GitHub's read lags behind the portal's own last write: a
+ * member editing on top of that write is not stale, and the PUT's sha check
+ * stays the authority either way.
+ */
+export function peekPathMapCache(origin: GithubPathMapOrigin): PathMapDocument | null {
+  return slot.key === keyOf(origin) ? slot.doc : null
+}
+
 /** Drop the cached copy — tests, and anything that must force the next read to GitHub. */
 export function resetPathMapCache(): void {
   clear(null)

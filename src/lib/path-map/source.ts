@@ -10,18 +10,15 @@ import { join } from 'node:path'
  * public design example committed here (`content/path-map/doctor-school.yaml`),
  * so dev, CI and the tests run with no secret.
  *
- * `GithubPathMapSource` is the seam task D (editing) extends: `read()` already
- * returns the blob `sha` that the contents API's PUT needs for optimistic
- * concurrency. D adds to THAT interface only (not to the `AnyPathMapSource`
- * union — the local example and a misconfigured source are never written):
- *
- *   write(content: string, sha: string, message: string): Promise<{ sha: string }>
- *
- * (PUT /repos/{repo}/contents/{path} with base64 `content`, `sha`, `message`,
- * optional `branch`; a 409/422 means the sha is stale → reload, never force),
- * then calls `primePathMapCache(source.origin, { content, sha })` with the
- * response's new blob sha, so the next read sees its own write without a GET.
- * Narrow by `source.kind === 'github'`: a malformed config is its own
+ * Writing (#539, editing the map in the UI) lives on `GithubPathMapSource`
+ * ONLY — the local example and a misconfigured source are never written:
+ * `write(content, sha, message)` is a contents-API PUT with the blob `sha`
+ * that `read()` returned (optimistic concurrency). A 409/422 means the sha is
+ * stale and surfaces as `PathMapConflictError` — the caller re-reads, the
+ * write is never forced or retried. After a write `./save.ts` calls
+ * `primePathMapCache(source.origin, { content, sha })` with the new blob sha,
+ * so the next read sees its own write without a GET. Narrow by
+ * `source.kind === 'github'`: a malformed config is its own
  * `kind: 'misconfigured'` source and never looks like GitHub.
  */
 
@@ -67,11 +64,17 @@ export interface PathMapSource {
   read(): Promise<PathMapDocument>
 }
 
-/** The private repo. Task D adds `write()` here. */
+/** The private repo — the only source that can be written (#539). */
 export interface GithubPathMapSource extends PathMapSource {
   readonly kind: 'github'
   readonly origin: GithubPathMapOrigin
   read(): Promise<PathMapDocument & { sha: string; origin: GithubPathMapOrigin }>
+  /**
+   * Commit `content` over the blob `sha` it was derived from. Resolves with the
+   * new blob sha and the commit sha; throws `PathMapConflictError` when `sha`
+   * is no longer the file's (409/422) and `PathMapSourceError` otherwise.
+   */
+  write(content: string, sha: string, message: string): Promise<{ sha: string; commit: string }>
 }
 
 /** The public example committed in this repo. Read-only. */
@@ -140,6 +143,19 @@ export class PathMapSourceError extends Error {
   ) {
     super(message, options)
     this.name = 'PathMapSourceError'
+  }
+}
+
+/**
+ * The file changed on GitHub since the text an edit was built on was read (a
+ * contents-API PUT answered 409/422). Never retried or forced: the member
+ * re-reads the map and applies the edit again.
+ */
+export class PathMapConflictError extends Error {
+  readonly reason = 'stale' as const
+  constructor(options?: { cause?: unknown }) {
+    super('карта обновилась — перечитайте', options)
+    this.name = 'PathMapConflictError'
   }
 }
 
@@ -232,9 +248,13 @@ export function githubPathMapSource(
     ...(config.branch ? { branch: config.branch } : {}),
   }
   const encodedPath = config.path.split('/').map(encodeURIComponent).join('/')
-  const url =
-    `${GITHUB_API}/repos/${config.repo}/contents/${encodedPath}` +
-    (config.branch ? `?ref=${encodeURIComponent(config.branch)}` : '')
+  const fileUrl = `${GITHUB_API}/repos/${config.repo}/contents/${encodedPath}`
+  const url = fileUrl + (config.branch ? `?ref=${encodeURIComponent(config.branch)}` : '')
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${config.token}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  }
 
   return {
     kind: 'github',
@@ -243,11 +263,7 @@ export function githubPathMapSource(
       let res: Response
       try {
         res = await fetchImpl(url, {
-          headers: {
-            Accept: 'application/vnd.github+json',
-            Authorization: `Bearer ${config.token}`,
-            'X-GitHub-Api-Version': '2022-11-28',
-          },
+          headers,
           // The module keeps its own TTL cache (cache.ts); Next must not add a second layer.
           cache: 'no-store',
         })
@@ -296,6 +312,67 @@ export function githubPathMapSource(
         sha,
         origin,
       }
+    },
+
+    async write(content, sha, message) {
+      let res: Response
+      try {
+        res = await fetchImpl(fileUrl, {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            content: Buffer.from(content, 'utf8').toString('base64'),
+            sha,
+            ...(config.branch ? { branch: config.branch } : {}),
+          }),
+          cache: 'no-store',
+        })
+      } catch (error) {
+        throw new PathMapSourceError(
+          `GitHub недоступен — правка карты ${describeOrigin(origin)} не сохранена`,
+          'network',
+          undefined,
+          { cause: error },
+        )
+      }
+      // 409: the sha is not the branch head's; 422: the sha does not match the file.
+      if (res.status === 409 || res.status === 422) {
+        throw new PathMapConflictError({
+          cause: new Error(
+            `GitHub contents API ${res.status} on PUT ${origin.repo}/${origin.path}`,
+          ),
+        })
+      }
+      if (res.status === 403 && res.headers.get('x-ratelimit-remaining') !== '0') {
+        throw new PathMapSourceError(
+          `У токена нет прав на запись в репозиторий карт ${origin.repo} (403) — правка не сохранена`,
+          'forbidden',
+          403,
+          { cause: new Error(`GitHub contents API 403 on PUT ${origin.repo}/${origin.path}`) },
+        )
+      }
+      if (!res.ok) throw httpError(res, origin)
+      let body: { content?: { sha?: string }; commit?: { sha?: string } }
+      try {
+        body = (await res.json()) as typeof body
+      } catch (error) {
+        throw new PathMapSourceError(
+          `GitHub вернул нечитаемый ответ на запись карты ${describeOrigin(origin)}`,
+          'bad-response',
+          res.status,
+          { cause: error },
+        )
+      }
+      const newSha = body.content?.sha
+      if (!newSha) {
+        throw new PathMapSourceError(
+          `GitHub не вернул версию записанной карты ${describeOrigin(origin)}`,
+          'bad-response',
+          res.status,
+        )
+      }
+      return { sha: newSha, commit: body.commit?.sha ?? '' }
     },
   }
 }
