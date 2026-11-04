@@ -21,7 +21,23 @@ import { PathMapView } from '@/modules/path-map/view/PathMapView'
  *
  * The Server Action is a stub passed as `editing.save`; `next/navigation`'s
  * router is mocked. Written with `React.createElement` (the include glob is `*.spec.ts`).
+ *
+ * #541 v2: the editor is the `@/ui` kit — forms in a Sheet, a combobox target
+ * picker, DropdownMenu menus, AlertDialog confirmations. Radix opens a menu on
+ * `pointerdown` (jsdom has no pointer events), so a test opens it the way a
+ * keyboard user does — ArrowDown on the trigger — and a portaled dialog is
+ * found on `screen`, not inside the form.
  */
+
+// Radix's menu captures pointers; jsdom implements none of it.
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.setPointerCapture ??= () => {}
+Element.prototype.releasePointerCapture ??= () => {}
+
+/** Open a kit DropdownMenu the way a keyboard user does. */
+function openMenu(trigger: HTMLElement) {
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+}
 
 const refresh = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
@@ -56,7 +72,7 @@ function enterEdit() {
 const road = (title: string) => screen.getByRole('group', { name: `Трек «${title}»` })
 
 function openSlotPicker(track: string, n: number) {
-  fireEvent.click(within(road(track)).getAllByRole('button', { name: /^Добавить блок/ })[n])
+  openMenu(within(road(track)).getAllByRole('button', { name: /^Добавить блок/ })[n])
   return screen.getByRole('menu', { name: /^Что поставить/ })
 }
 
@@ -196,11 +212,9 @@ describe('station form (the AddStation artboard)', () => {
     fireEvent.change(within(form).getByLabelText('Что должно стать правдой?'), {
       target: { value: 'Первые 100 врачей' },
     })
-    // «Что это открывает выше?»: the beacon is the target above the top slot.
-    const targets = within(form).getByRole('group', { name: 'Что это открывает выше?' })
-    expect(within(targets).getByRole('button', { name: 'Маяк' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    )
+    // «Что это открывает выше?»: one combobox; the beacon is the target above the top slot.
+    const target = within(form).getByRole('combobox', { name: 'Что это открывает выше?' })
+    expect(target.textContent).toBe('Маяк')
     fireEvent.change(within(form).getByLabelText('Потому что'), {
       target: { value: 'появится аудитория' },
     })
@@ -238,14 +252,13 @@ describe('station form (the AddStation artboard)', () => {
     const form = screen.getByRole('form', { name: 'Станция: Готов первый урок' })
     expect(within(form).getByRole('heading', { name: 'Станция' })).toBeTruthy()
     const why = within(form).getByRole('group', { name: 'Зачем она нужна' })
-    expect(within(why).getByRole('group', { name: 'Что это открывает выше?' })).toBeTruthy()
+    expect(within(why).getByRole('combobox', { name: 'Что это открывает выше?' })).toBeTruthy()
     expect(within(why).getByLabelText('Потому что')).toBeTruthy()
     expect(within(form).getByRole('group', { name: 'Насколько уверены?' })).toBeTruthy()
 
     // «Переместить» is collapsed; the delete action comes after the one footer.
-    const more = form.querySelector('details.pm-ed-more')
-    expect(more?.hasAttribute('open')).toBe(false)
-    expect(more?.querySelector('summary')?.textContent).toBe('Переместить')
+    const more = within(form).getByRole('button', { name: 'Переместить' })
+    expect(more.getAttribute('aria-expanded')).toBe('false')
     const submit = within(form).getByRole('button', { name: 'Сохранить' })
     const remove = within(form).getByRole('button', { name: 'Удалить станцию' })
     expect(submit.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -312,9 +325,7 @@ describe('barrier form — task tree', () => {
     renderEditable(save)
     enterEdit()
     const tree = openBarrier()
-    fireEvent.click(
-      within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }),
-    )
+    openMenu(within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }))
     const menu = screen.getByRole('menu', { name: 'Действия с задачей «Анкета эксперта»' })
     expect(
       within(menu)
@@ -332,9 +343,7 @@ describe('barrier form — task tree', () => {
       delta: -1,
     })
 
-    fireEvent.click(
-      within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }),
-    )
+    openMenu(within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Изменить…' }))
     const fields = within(tree).getByRole('group', { name: 'Сохранить задачу' })
     expect(within(fields).getByLabelText('Задача')).toHaveProperty('value', 'Анкета эксперта')
@@ -352,7 +361,7 @@ describe('task rows stay on their task (#541 re-review)', () => {
     return screen.getByRole('region', { name: 'Задачи шлагбаума' })
   }
   function rowMenu(tree: HTMLElement, title: string, item: string) {
-    fireEvent.click(within(tree).getByRole('button', { name: `Действия с задачей «${title}»` }))
+    openMenu(within(tree).getByRole('button', { name: `Действия с задачей «${title}»` }))
     fireEvent.click(screen.getByRole('menuitem', { name: item }))
   }
 
@@ -367,7 +376,9 @@ describe('task rows stay on their task (#541 re-review)', () => {
 
     rowMenu(tree, 'Список первых 10 экспертов', 'Удалить…')
     await act(async () => {
-      fireEvent.click(within(tree).getByRole('button', { name: 'Удалить' }))
+      fireEvent.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Удалить' }),
+      )
     })
     expect(save.mock.calls[0][0].command).toEqual({
       op: 'task.remove',
@@ -408,9 +419,7 @@ describe('task rows stay on their task (#541 re-review)', () => {
     enterEdit()
     const tree = openBarrier()
     rowMenu(tree, 'Шаблон карточки эксперта', 'Изменить…')
-    fireEvent.click(
-      within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }),
-    )
+    openMenu(within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }))
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: 'Выше' }))
     })
@@ -456,10 +465,10 @@ describe('task rows stay on their task (#541 re-review)', () => {
     fireEvent.click(within(tree).getByRole('button', { name: '+ Задача' }))
     fireEvent.change(within(tree).getByLabelText('Задача'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
-    await screen.findByRole('alertdialog', { name: 'Несохранённые изменения' })
+    await screen.findByRole('alertdialog', { name: 'Закрыть без сохранения?' })
     // Esc while the confirm is open means «Вернуться к форме».
     fireEvent.keyDown(document.body, { key: 'Escape' })
-    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(screen.getByRole('form', { name: 'Шлагбаум: Каталог экспертов' })).toBeTruthy()
     expect(within(tree).getByLabelText('Задача')).toHaveProperty('value', 'черновик')
     // The pending switch is dropped, not replaced by «close»: a second Esc asks again.
@@ -498,7 +507,7 @@ describe('focus after a menu choice (#541 re-review)', () => {
     const editing: PathMapEditing = { enabled: true, sha: 'sha-1', save }
     const view = render(el(PathMapView, { result: shipped, file: PATH_MAP_FILE, editing }))
     enterEdit()
-    fireEvent.click(
+    openMenu(
       within(road('Охват и подкасты')).getByRole('button', {
         name: 'Трек «Охват и подкасты»: действия',
       }),
@@ -528,7 +537,7 @@ describe('track «⋯» menu', () => {
     const save = okSave()
     renderEditable(save)
     enterEdit()
-    fireEvent.click(
+    openMenu(
       within(road('Охват и подкасты')).getByRole('button', {
         name: 'Трек «Охват и подкасты»: действия',
       }),
@@ -549,14 +558,14 @@ describe('track «⋯» menu', () => {
     })
   })
 
-  it('brings a roadside track into a full focus through the swap dialog (focus trapped, returned)', () => {
+  it('brings a roadside track into a full focus through the swap dialog (focus trapped, returned)', async () => {
     renderEditable(vi.fn())
     enterEdit()
     const roadside = screen.getByRole('complementary', { name: 'Обочина' })
     const trigger = within(roadside).getByRole('button', {
       name: 'Трек «Фарма-партнёры»: действия',
     })
-    fireEvent.click(trigger)
+    openMenu(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Вывести в фокус…' }))
 
     const dialog = screen.getByRole('dialog', { name: 'Вывести трек в фокус' })
@@ -571,17 +580,15 @@ describe('track «⋯» menu', () => {
     expect(document.activeElement).toBe(last)
 
     fireEvent.keyDown(dialog, { key: 'Escape' })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement).toBe(trigger)
+    expect(screen.queryByRole('dialog', { name: 'Вывести трек в фокус' })).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
   })
 
   it('moves through the swap dialog radios with the arrow keys (#541 re-review)', () => {
     renderEditable(vi.fn())
     enterEdit()
     const roadside = screen.getByRole('complementary', { name: 'Обочина' })
-    fireEvent.click(
-      within(roadside).getByRole('button', { name: 'Трек «Фарма-партнёры»: действия' }),
-    )
+    openMenu(within(roadside).getByRole('button', { name: 'Трек «Фарма-партнёры»: действия' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Вывести в фокус…' }))
     const dialog = screen.getByRole('dialog', { name: 'Вывести трек в фокус' })
     const radios = within(dialog).getAllByRole('radio')
@@ -610,15 +617,15 @@ describe('deleting a block other blocks lead to', () => {
     const form = screen.getByRole('form', { name: 'Станция: Готов первый урок' })
     fireEvent.click(within(form).getByRole('button', { name: 'Удалить станцию' }))
 
-    const confirm = within(form).getByRole('alertdialog')
+    const confirm = screen.getByRole('alertdialog')
     expect(confirm.textContent).toContain(
       'На этот блок ссылаются 2 блока — их связь станет разрывом',
     )
     expect(confirm.textContent).toContain('Сценарий первого урока')
     const repoint = within(confirm).getByRole('checkbox', {
       name: 'Перенаправить их на «маяк»',
-    }) as HTMLInputElement
-    expect(repoint.checked).toBe(true)
+    })
+    expect(repoint.getAttribute('aria-checked')).toBe('true')
     await act(async () => {
       fireEvent.click(within(confirm).getByRole('button', { name: 'Удалить' }))
     })
@@ -636,7 +643,7 @@ describe('deleting a block other blocks lead to', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Править: станция «Готов первый урок»' }))
     const form = screen.getByRole('form', { name: 'Станция: Готов первый урок' })
     fireEvent.click(within(form).getByRole('button', { name: 'Удалить станцию' }))
-    const confirm = within(form).getByRole('alertdialog')
+    const confirm = screen.getByRole('alertdialog')
     fireEvent.click(within(confirm).getByRole('checkbox'))
     await act(async () => {
       fireEvent.click(within(confirm).getByRole('button', { name: 'Удалить' }))
@@ -675,15 +682,14 @@ describe('closing a dirty form', () => {
     const input = within(screen.getByRole('form', { name: 'Маяк' })).getByLabelText('Куда идём')
     fireEvent.change(input, { target: { value: 'черновик' } })
     fireEvent.keyDown(input, { key: 'Escape' })
-    const ask = await screen.findByRole('alertdialog', { name: 'Несохранённые изменения' })
+    const ask = await screen.findByRole('alertdialog', { name: 'Закрыть без сохранения?' })
     fireEvent.click(within(ask).getByRole('button', { name: 'Вернуться к форме' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(screen.getByRole('form', { name: 'Маяк' })).toBeTruthy()
 
     fireEvent.keyDown(document.body, { key: 'Escape' })
     fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', {
-        name: 'Закрыть без сохранения',
-      }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Закрыть' }),
     )
     await waitFor(() => expect(screen.queryByRole('form', { name: 'Маяк' })).toBeNull())
   })

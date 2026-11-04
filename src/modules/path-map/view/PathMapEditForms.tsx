@@ -1,5 +1,6 @@
 'use client'
 
+import { CheckIcon, ChevronDownIcon, ChevronsUpDownIcon, PlusIcon, XIcon } from 'lucide-react'
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 import { plural } from '@/lib/path-map/derive'
@@ -15,6 +16,34 @@ import {
   type PathTrack,
 } from '@/lib/path-map/schema'
 import { isTaskDone, MAX_TASK_DEPTH } from '@/lib/path-map/tasks'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/ui/alert-dialog'
+import { Button } from '@/ui/button'
+import { Checkbox } from '@/ui/checkbox'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/ui/collapsible'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/ui/command'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/ui/dialog'
+import { Input } from '@/ui/input'
+import { Label } from '@/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
+import { SheetTitle } from '@/ui/sheet'
+import { Textarea } from '@/ui/textarea'
 
 import {
   NEW_NODE_KIND,
@@ -29,22 +58,28 @@ import {
   type RunEdit,
 } from './editing'
 import { EditMenu, type EditMenuItem } from './EditMenu'
-import { TaskTickIcon } from './icons'
+import { PM_KIT } from './kit'
 import { ownerColor } from './labels'
 
 /**
- * The editor's right-panel forms (#539): a node (station / barrier / fog), a
- * track, the beacon, and the barrier's task tree.
+ * The editor's forms (#539): a node (station / barrier / fog), a track, the
+ * beacon, and the barrier's task tree. They render inside the editor's side
+ * Sheet (`PathMapEditor.tsx`).
  *
  * Content: the AddStation artboard of the owner's «Карта пути» canvas, vendored
- * as `design-source/path-map/AddStation.dc.html` (#541 rework) — «Что должно
- * стать правдой?», the target pills of «что это открывает выше» with the
- * «потому что» under them, «Насколько уверены?» as three road swatches, and
- * the Отмена / «Поставить на дорогу» footer. Its «Режим встречи» button is out
- * of scope. The swap dialog follows `Roadside.dc.html`. Layout and type were
- * reworked after the owner's review of #541 (form practice: grouped fields,
- * quiet inputs, one primary action, delete apart) — see the anatomy note
- * above the small parts below.
+ * as `design-source/path-map/AddStation.dc.html` — «Что должно стать правдой?»,
+ * «что это открывает выше» with the «потому что» under it, «Насколько уверены?»
+ * as three road swatches, and the Отмена / «Поставить на дорогу» footer. Its
+ * «Режим встречи» button is out of scope. The swap dialog follows
+ * `Roadside.dc.html`.
+ *
+ * #541 v2 (the owner rejected v1 as «все моветоны UI в одном месте»): every
+ * control is the `@/ui` kit — Input / Textarea / Label / Checkbox / Select, a
+ * Popover + Command combobox for the target, DropdownMenu row actions,
+ * AlertDialog confirmations, Dialog for the swap. Groups are separated by
+ * whitespace and a quiet heading, never a frame; regular weights except the
+ * form title; one primary action. The rules and their sources are recorded
+ * in the PR #541 body (UX-record).
  *
  * Every form validates in the browser first (a station needs «потому что»),
  * then shows whatever the server refused. A stale map is the editor's banner,
@@ -52,19 +87,12 @@ import { ownerColor } from './labels'
  */
 
 // ── small parts ──────────────────────────────────────────────────────────────
-//
-// Form anatomy (#541 owner feedback «грубо, плотно, всё в одну кучу»): a head
-// (what is being edited + where), then labelled groups — one column, labels
-// above inputs, helper text muted under them, an error right under its field —
-// then ONE footer (quiet «Отмена», the primary action), then what saves at
-// once (the barrier's tasks), the rarely used «Переместить» collapsed, and the
-// delete action last, in its own zone.
 
 export function FormErrors({ errors }: { errors: string[] }) {
   if (errors.length === 0) return null
   return (
-    <div role="alert" className="pm-ed-errors">
-      <b>Не сохранено:</b>
+    <div role="alert" className="pm-f-errors">
+      <p>Не сохранено</p>
       <ul>
         {errors.map((e, i) => (
           <li key={`${i}:${e}`}>{e}</li>
@@ -92,71 +120,76 @@ function Field({
   const errorId = `${id}-error`
   const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(' ')
   return (
-    <div className="pm-ed-field" data-invalid={error ? 'true' : undefined}>
-      <span className="pm-ed-labelrow">
-        <label htmlFor={id} className="pm-ed-label">
+    <div className="pm-f-field">
+      <div className="pm-f-labelrow">
+        <Label htmlFor={id} className="pm-f-label">
           {label}
-        </label>
-        {required ? <span className="pm-ed-req">обязательно</span> : null}
-      </span>
+        </Label>
+        {required ? <span className="pm-f-req">обязательно</span> : null}
+      </div>
       {children({ id, describedBy: describedBy || undefined, invalid: Boolean(error) })}
       {error ? (
-        <span id={errorId} className="pm-ed-error">
+        <p id={errorId} className="pm-f-error">
           {error}
-        </span>
+        </p>
       ) : null}
       {hint ? (
-        <span id={hintId} className="pm-ed-hint">
+        <p id={hintId} className="pm-f-hint">
           {hint}
-        </span>
+        </p>
       ) : null}
     </div>
   )
 }
 
-/** A labelled group of related fields: `<fieldset>` + `<legend>`. */
+/** Related fields: `<fieldset>` + a quiet `<legend>` — grouped by space, not by a frame. */
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <fieldset className="pm-ed-group">
-      <legend className="pm-ed-group-title">{title}</legend>
-      <div className="pm-ed-group-body">{children}</div>
+    <fieldset className="pm-f-group">
+      <legend className="pm-f-legend">{title}</legend>
+      {children}
     </fieldset>
   )
 }
 
-function ConfirmBar({
-  text,
+/** A destructive or discarding confirmation: the kit AlertDialog, buttons in one row. */
+export function ConfirmDialog({
+  open,
+  title,
+  description,
   confirm,
+  cancel = 'Отмена',
   onConfirm,
   onCancel,
   busy,
   children,
 }: {
-  text: string
+  open: boolean
+  title: string
+  description?: string
   confirm: string
+  cancel?: string
   onConfirm: () => void
   onCancel: () => void
   busy?: boolean
   children?: React.ReactNode
 }) {
   return (
-    <div role="alertdialog" aria-label={text} className="pm-ed-confirm">
-      <span className="pm-ed-confirm-text">{text}</span>
-      {children}
-      <span className="pm-ed-confirm-actions">
-        <button type="button" className="pm-ed-btn pm-ed-btn--ghost" onClick={onCancel}>
-          Отмена
-        </button>
-        <button
-          type="button"
-          className="pm-ed-btn pm-ed-btn--danger"
-          onClick={onConfirm}
-          disabled={busy}
-        >
-          {confirm}
-        </button>
-      </span>
-    </div>
+    <AlertDialog open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
+      <AlertDialogContent className={`${PM_KIT} pm-f-alert`}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          {description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
+        </AlertDialogHeader>
+        {children}
+        <AlertDialogFooter className="pm-f-alert-footer">
+          <AlertDialogCancel variant="ghost">{cancel}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={busy} onClick={onConfirm}>
+            {confirm}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -185,6 +218,7 @@ function InboundWarning({
   repoint: boolean
   onRepoint: (next: boolean) => void
 }) {
+  const id = useId()
   const n = links.referrers.length
   if (n === 0) return null
   const blocks = `${n} ${plural(n, 'блок', 'блока', 'блоков')}`
@@ -193,8 +227,8 @@ function InboundWarning({
       ? `На этот блок ${n === 1 ? 'ссылается' : 'ссылаются'} ${blocks} — их связь станет разрывом.`
       : `На блоки этого трека ${n === 1 ? 'ссылается' : 'ссылаются'} ${blocks} из других треков — их связь станет разрывом.`
   return (
-    <span className="pm-ed-inbound">
-      <span>{lead}</span>
+    <div className="pm-f-inbound">
+      <p>{lead}</p>
       <ul>
         {links.referrers.slice(0, SHOWN_REFERRERS).map(({ node, track }) => (
           <li key={node.id}>
@@ -204,12 +238,14 @@ function InboundWarning({
         {n > SHOWN_REFERRERS ? <li>и ещё {n - SHOWN_REFERRERS}</li> : null}
       </ul>
       {links.target ? (
-        <label className="pm-ed-check">
-          <input type="checkbox" checked={repoint} onChange={(e) => onRepoint(e.target.checked)} />
-          <span>Перенаправить их на «{titleOf(map, links.target)}»</span>
-        </label>
+        <div className="pm-f-check">
+          <Checkbox id={id} checked={repoint} onCheckedChange={(v) => onRepoint(v === true)} />
+          <Label htmlFor={id} className="pm-f-check-label">
+            Перенаправить их на «{titleOf(map, links.target)}»
+          </Label>
+        </div>
       ) : null}
-    </span>
+    </div>
   )
 }
 
@@ -217,6 +253,32 @@ const CONFIDENCE_LOOK: Record<Confidence, { label: string; road: string; swatch:
   known: { label: 'Знаем', road: 'асфальт', swatch: 'asphalt' },
   hypothesis: { label: 'Гипотеза', road: 'грунтовка', swatch: 'dirt' },
   unknown: { label: 'Не знаем', road: 'станет туманом', swatch: 'fog' },
+}
+
+/** One pick among two or three always-visible options (no menu to open). */
+function Choice({
+  pressed,
+  disabled,
+  onClick,
+  children,
+}: {
+  pressed: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="pm-f-choice"
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  )
 }
 
 function ConfidencePicker({
@@ -227,37 +289,37 @@ function ConfidencePicker({
   onChange: (next: Confidence) => void
 }) {
   return (
-    <fieldset className="pm-ed-group">
-      <legend className="pm-ed-group-title">Насколько уверены?</legend>
-      <div className="pm-ed-confgrid">
+    <Group title="Насколько уверены?">
+      <div className="pm-f-choices pm-f-choices--3">
         {(['known', 'hypothesis', 'unknown'] as const).map((c) => (
-          <button
-            key={c}
-            type="button"
-            className="pm-ed-conf"
-            aria-pressed={value === c}
-            onClick={() => onChange(c)}
-          >
-            <span
-              className="pm-ed-conf-road"
-              data-kind={CONFIDENCE_LOOK[c].swatch}
-              aria-hidden="true"
-            />
-            <span className="pm-ed-conf-text">
-              <span className="pm-ed-conf-label">{CONFIDENCE_LOOK[c].label}</span>
-              <span className="pm-ed-conf-road-word">{CONFIDENCE_LOOK[c].road}</span>
+          <Choice key={c} pressed={value === c} onClick={() => onChange(c)}>
+            <span className="pm-f-road" data-kind={CONFIDENCE_LOOK[c].swatch} aria-hidden="true" />
+            <span className="pm-f-choice-text">
+              <span>{CONFIDENCE_LOOK[c].label}</span>
+              <span className="pm-f-choice-note">{CONFIDENCE_LOOK[c].road}</span>
             </span>
-          </button>
+          </Choice>
         ))}
       </div>
-    </fieldset>
+    </Group>
   )
 }
 
+const NOWHERE = '__none'
+
+/** Plain substring search (cmdk's default is fuzzy: «НМО» matched «Промомед»). */
+function containsFilter(value: string, search: string, keywords?: string[]): number {
+  const needle = search.trim().toLowerCase()
+  if (!needle) return 1
+  return [value, ...(keywords ?? [])].join(' ').toLowerCase().includes(needle) ? 1 : 0
+}
+
 /**
- * «Что это открывает выше?»: the nearest blocks above on this road and the
- * beacon as one-tap pills (the artboard), plus «Другой блок…» for anything
- * else — another road, or nothing at all.
+ * «Что это открывает выше?» / «Куда ведёт?»: ONE combobox (#541 v2 — a kit
+ * Popover + Command, the shadcn combobox pattern). The trigger shows the
+ * current target; the list searches every block of the map, grouped — the
+ * beacon and «никуда» first, then this road above the block, then each other
+ * track.
  */
 function OpensPicker({
   map,
@@ -280,85 +342,117 @@ function OpensPicker({
   label: string
   hint?: string
 }) {
-  const labelId = useId()
-  const hintId = `${labelId}-hint`
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const hintId = `${id}-hint`
   const { above, others } = opensChoices(map, trackId, index, existing, selfId)
-  const pills: Array<{ value: string; label: string }> = [
-    ...above.slice(0, 2).map((n) => ({ value: n.id, label: `${NODE_KIND[n.type]}: ${n.title}` })),
-    { value: BEACON_ID, label: 'Маяк' },
-  ]
-  if (value && !pills.some((p) => p.value === value)) {
-    pills.unshift({
-      value,
-      label: nodeExists(map, value) ? `${titleOf(map, value)}` : `«${value}» — такого блока нет`,
-    })
-  }
-  if (!value) pills.push({ value: '', label: 'Никуда — дорога обрывается' })
-  return (
-    <div className="pm-ed-field">
-      <span className="pm-ed-labelrow">
-        <span id={labelId} className="pm-ed-label">
-          {label}
+
+  const node =
+    value && value !== BEACON_ID
+      ? map.tracks.flatMap((t) => t.nodes).find((n) => n.id === value)
+      : undefined
+  const current =
+    value === BEACON_ID ? (
+      <span>Маяк</span>
+    ) : !value ? (
+      <span className="pm-f-muted">Никуда — дорога обрывается</span>
+    ) : node ? (
+      <span className="pm-f-target">
+        <span className="pm-f-kind" data-type={node.type}>
+          {NODE_KIND[node.type]}
         </span>
+        <span className="pm-f-target-title">{node.title}</span>
       </span>
-      <div
-        role="group"
-        aria-labelledby={labelId}
-        aria-describedby={hint ? hintId : undefined}
-        className="pm-ed-pills"
-      >
-        {pills.map((p) => (
-          <button
-            key={p.value || 'none'}
-            type="button"
-            className="pm-ed-pill"
-            aria-pressed={value === p.value}
-            onClick={() => onChange(p.value)}
-          >
-            {p.label}
-          </button>
-        ))}
-        <select
-          className="pm-ed-pill pm-ed-pill--select"
-          aria-label="Другой блок — куда ведёт"
-          value=""
-          onChange={(e) => {
-            if (e.target.value) onChange(e.target.value === '__none' ? '' : e.target.value)
-          }}
-        >
-          <option value="">Другой блок…</option>
-          <option value="__none">— никуда (дорога обрывается)</option>
-          <option value={BEACON_ID}>Маяк</option>
-          {above.length > 0 ? (
-            <optgroup label="Выше на этой дороге">
-              {above.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {NODE_KIND[n.type]}: {n.title}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-          {others.map(({ track, nodes }) => (
-            <optgroup key={track.id} label={`Трек «${track.title}»`}>
-              {nodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {NODE_KIND[n.type]}: {n.title}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </div>
-      {hint ? (
-        <span id={hintId} className="pm-ed-hint">
-          {hint}
+    ) : !nodeExists(map, value) ? (
+      <span className="pm-f-error">«{value}» — такого блока нет</span>
+    ) : (
+      <span>{titleOf(map, value)}</span>
+    )
+
+  const pick = (next: string) => {
+    onChange(next === NOWHERE ? '' : next)
+    setOpen(false)
+  }
+  const item = (n: PathNode) => (
+    <CommandItem
+      key={n.id}
+      value={`${n.id} ${n.title}`}
+      keywords={[NODE_KIND[n.type]]}
+      data-checked={value === n.id}
+      onSelect={() => pick(n.id)}
+    >
+      <span className="pm-f-target">
+        <span className="pm-f-kind" data-type={n.type}>
+          {NODE_KIND[n.type]}
         </span>
+        <span className="pm-f-target-title">{n.title}</span>
+      </span>
+    </CommandItem>
+  )
+
+  return (
+    <div className="pm-f-field">
+      <Label htmlFor={id} className="pm-f-label">
+        {label}
+      </Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            id={id}
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            aria-describedby={hint ? hintId : undefined}
+            className="pm-f-combo"
+          >
+            {current}
+            <ChevronsUpDownIcon className="pm-f-combo-icon" aria-hidden="true" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className={`${PM_KIT} pm-f-combo-pop`} align="start" aria-label={label}>
+          <Command filter={containsFilter}>
+            <CommandInput placeholder="Найти блок…" aria-label="Найти блок" />
+            <CommandList>
+              <CommandEmpty>Ничего не нашлось</CommandEmpty>
+              <CommandGroup>
+                <CommandItem
+                  value={`${BEACON_ID} Маяк`}
+                  data-checked={value === BEACON_ID}
+                  onSelect={() => pick(BEACON_ID)}
+                >
+                  Маяк
+                </CommandItem>
+                <CommandItem
+                  value={`${NOWHERE} Никуда дорога обрывается`}
+                  data-checked={!value}
+                  onSelect={() => pick(NOWHERE)}
+                >
+                  <span className="pm-f-muted">Никуда — дорога обрывается</span>
+                </CommandItem>
+              </CommandGroup>
+              {above.length > 0 ? (
+                <CommandGroup heading="Выше на этой дороге">{above.map(item)}</CommandGroup>
+              ) : null}
+              {others.map(({ track, nodes }) => (
+                <CommandGroup key={track.id} heading={`Трек «${track.title}»`}>
+                  {nodes.map(item)}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {hint ? (
+        <p id={hintId} className="pm-f-hint">
+          {hint}
+        </p>
       ) : null}
     </div>
   )
 }
 
-/** What is being edited (the heading) and where it sits (a muted line under it). */
+/** What is being edited (the Sheet's title) and where it sits (a muted line under it). */
 function PanelHead({
   title,
   context,
@@ -369,25 +463,21 @@ function PanelHead({
   onClose: () => void
 }) {
   return (
-    <div className="pm-ed-head">
-      <span className="pm-ed-head-text">
-        <h2 className="pm-ed-title">{title}</h2>
-        {context ? <span className="pm-ed-context">{context}</span> : null}
-      </span>
-      <button type="button" className="pm-ed-close" aria-label="Закрыть" onClick={onClose}>
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          aria-hidden="true"
-        >
-          <path d="M6 6l12 12M18 6 6 18" />
-        </svg>
-      </button>
+    <div className="pm-f-head">
+      <div className="pm-f-head-text">
+        <SheetTitle className="pm-f-title">{title}</SheetTitle>
+        {context ? <p className="pm-f-context">{context}</p> : null}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Закрыть"
+        className="pm-f-close"
+        onClick={onClose}
+      >
+        <XIcon aria-hidden="true" />
+      </Button>
     </div>
   )
 }
@@ -402,20 +492,74 @@ function FormFooter({
   onCancel: () => void
 }) {
   return (
-    <div className="pm-ed-footer">
-      <button type="button" className="pm-ed-btn pm-ed-btn--ghost" onClick={onCancel}>
+    <div className="pm-f-footer">
+      <Button type="button" variant="ghost" onClick={onCancel}>
         Отмена
-      </button>
-      <button type="submit" className="pm-ed-btn pm-ed-btn--primary" disabled={busy}>
+      </Button>
+      <Button type="submit" disabled={busy}>
         {submit}
-      </button>
+      </Button>
     </div>
+  )
+}
+
+/** A secondary section after the footer (tasks, focus): a quiet heading, then rows. */
+function Section({
+  label,
+  title,
+  hint,
+  children,
+}: {
+  label: string
+  title: string
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="pm-f-sec" aria-label={label}>
+      <div className="pm-f-sec-head">
+        <h3 className="pm-f-sec-title">{title}</h3>
+        {hint ? <p className="pm-f-hint">{hint}</p> : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** Rarely used fields, collapsed: a quiet disclosure row. */
+function More({
+  title,
+  defaultOpen,
+  children,
+}: {
+  title: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <Collapsible className="pm-f-more" defaultOpen={defaultOpen}>
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className="pm-f-more-trigger">
+          {title}
+          <ChevronDownIcon aria-hidden="true" className="pm-f-more-icon" />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pm-f-more-body">{children}</CollapsibleContent>
+    </Collapsible>
   )
 }
 
 /** The delete action, apart from everything else, at the bottom of a form. */
 function DangerZone({ children }: { children: React.ReactNode }) {
   return <div className="pm-ed-danger">{children}</div>
+}
+
+function DeleteButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <Button type="button" variant="ghost" size="sm" className="pm-f-delete" onClick={onClick}>
+      {children}
+    </Button>
+  )
 }
 
 /**
@@ -508,6 +652,7 @@ export function NodeForm({
   const [repoint, setRepoint] = useState(true)
   const formRef = useRef<HTMLFormElement | null>(null)
   const titleRef = useRef<HTMLTextAreaElement | null>(null)
+  const removedId = useId()
   // Text typed into a task row of the barrier counts as unsaved too (#541 re-review).
   const [tasksDirty, setTasksDirty] = useState(false)
 
@@ -525,9 +670,9 @@ export function NodeForm({
 
   if (target.mode === 'edit' && !found) {
     return (
-      <div className="pm-ed-form">
+      <div className="pm-f-form">
         <PanelHead title="Блока больше нет на карте" onClose={onClose} />
-        <p className="pm-aside-lead">Его удалили или переименовали — выберите другой блок.</p>
+        <p className="pm-f-hint">Его удалили или переименовали — выберите другой блок.</p>
       </div>
     )
   }
@@ -572,11 +717,24 @@ export function NodeForm({
 
   const otherTracks = map.tracks.filter((t) => t.id !== trackId)
   const links = node ? inboundLinks(map, [node.id]) : null
+  const opensPicker = (label: string, hint?: string) => (
+    <OpensPicker
+      map={map}
+      trackId={trackId}
+      index={index}
+      existing={!isNew}
+      selfId={node?.id}
+      value={opens}
+      onChange={setOpens}
+      label={label}
+      hint={hint}
+    />
+  )
 
   return (
     <form
       ref={formRef}
-      className="pm-ed-form"
+      className="pm-f-form"
       onSubmit={submit}
       noValidate
       aria-label={isNew ? NEW_NODE_KIND[type] : `${kind}: ${node!.title}`}
@@ -587,13 +745,12 @@ export function NodeForm({
         onClose={onClose}
       />
 
-      <div className="pm-ed-fields">
+      <div className="pm-f-fields">
         <Field label={TITLE_LABEL[type]} error={errors.title}>
           {({ id, describedBy, invalid }) => (
-            <textarea
+            <Textarea
               ref={titleRef}
               id={id}
-              className="pm-ed-input pm-ed-textarea"
               rows={2}
               value={title}
               aria-invalid={invalid || undefined}
@@ -610,16 +767,7 @@ export function NodeForm({
         {type === 'station' ? (
           <>
             <Group title="Зачем она нужна">
-              <OpensPicker
-                map={map}
-                trackId={trackId}
-                index={index}
-                existing={!isNew}
-                selfId={node?.id}
-                value={opens}
-                onChange={setOpens}
-                label="Что это открывает выше?"
-              />
+              {opensPicker('Что это открывает выше?')}
               <Field
                 label="Потому что"
                 required
@@ -627,9 +775,8 @@ export function NodeForm({
                 error={errors.because}
               >
                 {({ id, describedBy, invalid }) => (
-                  <textarea
+                  <Textarea
                     id={id}
-                    className="pm-ed-input pm-ed-textarea"
                     value={because}
                     rows={2}
                     aria-invalid={invalid || undefined}
@@ -649,22 +796,13 @@ export function NodeForm({
 
         {type === 'obstacle' ? (
           <>
-            <OpensPicker
-              map={map}
-              trackId={trackId}
-              index={index}
-              existing={!isNew}
-              selfId={node?.id}
-              value={opens}
-              onChange={setOpens}
-              label="Куда ведёт?"
-            />
+            {opensPicker('Куда ведёт?')}
             <Group title="Кто и когда снимает">
               <Field label="Кто снимает" hint="Метка или имя, например «ДС»">
                 {({ id, describedBy }) => (
-                  <input
+                  <Input
                     id={id}
-                    className="pm-ed-input pm-ed-input--short"
+                    className="pm-f-short"
                     value={owner}
                     aria-describedby={describedBy}
                     maxLength={40}
@@ -672,47 +810,42 @@ export function NodeForm({
                   />
                 )}
               </Field>
-              <div className="pm-ed-field">
-                <label className="pm-ed-check">
-                  <input
-                    type="checkbox"
-                    checked={removed}
-                    onChange={(e) => setRemoved(e.target.checked)}
-                  />
-                  <span>Снят — уходит в «Пройденный путь»</span>
-                </label>
-                {removed ? (
-                  <label className="pm-ed-inline">
-                    <span className="pm-ed-label">Дата</span>
-                    <input
+              <div className="pm-f-check">
+                <Checkbox
+                  id={removedId}
+                  checked={removed}
+                  onCheckedChange={(v) => setRemoved(v === true)}
+                />
+                <Label htmlFor={removedId} className="pm-f-check-label">
+                  Снят — уходит в «Пройденный путь»
+                </Label>
+              </div>
+              {removed ? (
+                <Field label="Дата">
+                  {({ id }) => (
+                    <Input
+                      id={id}
                       type="date"
-                      className="pm-ed-input pm-ed-input--date"
+                      className="pm-f-short"
                       value={removedOn}
                       onChange={(e) => setRemovedOn(e.target.value || todayIso())}
                     />
-                  </label>
-                ) : null}
-              </div>
+                  )}
+                </Field>
+              ) : null}
             </Group>
             {isNew ? (
-              <p className="pm-ed-hint">Задачи можно добавить, когда шлагбаум встанет на дорогу.</p>
+              <p className="pm-f-hint">Задачи можно добавить, когда шлагбаум встанет на дорогу.</p>
             ) : null}
           </>
         ) : null}
 
-        {type === 'fog' ? (
-          <OpensPicker
-            map={map}
-            trackId={trackId}
-            index={index}
-            existing={!isNew}
-            selfId={node?.id}
-            value={opens}
-            onChange={setOpens}
-            label="Куда ведёт?"
-            hint="Туман — открытый вопрос. Без цели дорога на нём обрывается, с целью — «доходит через туман»."
-          />
-        ) : null}
+        {type === 'fog'
+          ? opensPicker(
+              'Куда ведёт?',
+              'Туман — открытый вопрос. Без цели дорога на нём обрывается, с целью — «доходит через туман».',
+            )
+          : null}
       </div>
 
       <FormErrors errors={serverErrors} />
@@ -727,97 +860,90 @@ export function NodeForm({
       ) : null}
 
       {!isNew && node && track ? (
-        <details className="pm-ed-more">
-          <summary className="pm-ed-more-summary">Переместить</summary>
-          <div className="pm-ed-more-body">
-            <span className="pm-ed-hint">Перемещение сохраняется сразу.</span>
-            <div className="pm-ed-row" role="group" aria-label="Положение на дороге">
-              <button
-                type="button"
-                className="pm-ed-btn pm-ed-btn--small"
-                disabled={busy || index >= track.nodes.length - 1}
-                onClick={() =>
-                  move({ op: 'node.move', nodeId: node.id, trackId, index: index + 1 })
-                }
-              >
-                ↑ Выше
-              </button>
-              <button
-                type="button"
-                className="pm-ed-btn pm-ed-btn--small"
-                disabled={busy || index === 0}
-                onClick={() =>
-                  move({ op: 'node.move', nodeId: node.id, trackId, index: index - 1 })
-                }
-              >
-                ↓ Ниже
-              </button>
-            </div>
-            {otherTracks.length > 0 ? (
-              <select
-                className="pm-ed-input pm-ed-input--short"
-                aria-label="Перенести в трек"
-                value=""
-                disabled={busy}
-                onChange={(e) => {
-                  const to = map.tracks.find((t) => t.id === e.target.value)
-                  if (to)
-                    move({
-                      op: 'node.move',
-                      nodeId: node.id,
-                      trackId: to.id,
-                      index: to.nodes.length,
-                    })
-                }}
-              >
-                <option value="">Перенести в трек…</option>
-                {otherTracks.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
-            ) : null}
+        <More title="Переместить">
+          <p className="pm-f-hint">Перемещение сохраняется сразу.</p>
+          <div className="pm-f-row" role="group" aria-label="Положение на дороге">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy || index >= track.nodes.length - 1}
+              onClick={() => move({ op: 'node.move', nodeId: node.id, trackId, index: index + 1 })}
+            >
+              ↑ Выше
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy || index === 0}
+              onClick={() => move({ op: 'node.move', nodeId: node.id, trackId, index: index - 1 })}
+            >
+              ↓ Ниже
+            </Button>
           </div>
-        </details>
+          {otherTracks.length > 0 ? (
+            <Select
+              value=""
+              disabled={busy}
+              onValueChange={(to) => {
+                const dest = map.tracks.find((t) => t.id === to)
+                if (dest)
+                  void move({
+                    op: 'node.move',
+                    nodeId: node.id,
+                    trackId: dest.id,
+                    index: dest.nodes.length,
+                  })
+              }}
+            >
+              <SelectTrigger size="sm" aria-label="Перенести в трек" className="pm-f-short">
+                <SelectValue placeholder="Перенести в трек…" />
+              </SelectTrigger>
+              <SelectContent className={PM_KIT} position="popper">
+                {otherTracks.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+        </More>
       ) : null}
 
       {!isNew && node && links ? (
         <DangerZone>
-          {confirmDelete ? (
-            <ConfirmBar
-              text={`Удалить «${node.title}» с карты?`}
-              confirm="Удалить"
-              busy={busy}
-              onCancel={() => setConfirmDelete(false)}
-              onConfirm={async () => {
-                const outcome = await run({
-                  op: 'node.remove',
-                  nodeId: node.id,
-                  ...(links.referrers.length > 0
-                    ? { inbound: repoint && links.target ? 'repoint' : 'break' }
-                    : {}),
-                })
-                if (outcome.status === 'ok') onDone()
-                else {
-                  setConfirmDelete(false)
-                  setServerErrors(outcomeErrors(outcome))
-                }
-              }}
-            >
-              <InboundWarning
-                map={map}
-                links={links}
-                scope="node"
-                repoint={repoint}
-                onRepoint={setRepoint}
-              />
-            </ConfirmBar>
-          ) : (
-            <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
-              Удалить {NODE_ACCUSATIVE[type]}
-            </button>
-          )}
+          <DeleteButton onClick={() => setConfirmDelete(true)}>
+            Удалить {NODE_ACCUSATIVE[type]}
+          </DeleteButton>
+          <ConfirmDialog
+            open={confirmDelete}
+            title={`Удалить «${node.title}» с карты?`}
+            confirm="Удалить"
+            busy={busy}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={async () => {
+              setConfirmDelete(false)
+              const outcome = await run({
+                op: 'node.remove',
+                nodeId: node.id,
+                ...(links.referrers.length > 0
+                  ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                  : {}),
+              })
+              if (outcome.status === 'ok') onDone()
+              else setServerErrors(outcomeErrors(outcome))
+            }}
+          >
+            <InboundWarning
+              map={map}
+              links={links}
+              scope="node"
+              repoint={repoint}
+              onRepoint={setRepoint}
+            />
+          </ConfirmDialog>
         </DangerZone>
       ) : null}
     </form>
@@ -880,37 +1006,37 @@ function TaskFieldsForm({
     error?.field === field ? { 'aria-invalid': true as const, 'aria-describedby': errorId } : {}
   const errorFor = (field: 'title' | 'link') =>
     error?.field === field ? (
-      <span id={errorId} className="pm-ed-error">
+      <p id={errorId} className="pm-f-error">
         {error.text}
-      </span>
+      </p>
     ) : null
 
   return (
     <div
-      className="pm-ed-taskform"
+      className="pm-f-taskform"
       role="group"
       aria-label={submitLabel}
+      // Esc cancels this row only — the Sheet's Esc (close the panel) skips
+      // a `data-esc-local` subtree (#541 re-review).
+      data-esc-local=""
       onKeyDown={(e) => {
         if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
           e.preventDefault()
           void save()
         } else if (e.key === 'Escape') {
-          // Esc cancels this row only — the editor's Esc (close the panel)
-          // must not see it (#541 re-review).
           e.preventDefault()
           e.stopPropagation()
           onCancel()
         }
       }}
     >
-      <div className="pm-ed-field">
-        <label htmlFor={`${ids}-title`} className="pm-ed-label">
+      <div className="pm-f-field">
+        <Label htmlFor={`${ids}-title`} className="pm-f-label">
           Задача
-        </label>
-        <input
+        </Label>
+        <Input
           ref={titleRef}
           id={`${ids}-title`}
-          className="pm-ed-input"
           placeholder="Что сделать"
           value={draft.title}
           {...invalid('title')}
@@ -919,28 +1045,26 @@ function TaskFieldsForm({
         />
         {errorFor('title')}
       </div>
-      <div className="pm-ed-taskform-row">
-        <div className="pm-ed-field pm-ed-field--owner">
-          <label htmlFor={`${ids}-owner`} className="pm-ed-label">
+      <div className="pm-f-pair">
+        <div className="pm-f-field pm-f-field--owner">
+          <Label htmlFor={`${ids}-owner`} className="pm-f-label">
             Исполнитель
-          </label>
-          <input
+          </Label>
+          <Input
             id={`${ids}-owner`}
-            className="pm-ed-input"
             placeholder="Кто"
             value={draft.owner}
             maxLength={40}
             onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
           />
         </div>
-        <div className="pm-ed-field pm-ed-field--grow">
-          <label htmlFor={`${ids}-link`} className="pm-ed-label">
+        <div className="pm-f-field pm-f-field--grow">
+          <Label htmlFor={`${ids}-link`} className="pm-f-label">
             Ссылка
-          </label>
-          <input
+          </Label>
+          <Input
             ref={linkRef}
             id={`${ids}-link`}
-            className="pm-ed-input"
             placeholder="https://…"
             value={draft.link}
             {...invalid('link')}
@@ -951,22 +1075,13 @@ function TaskFieldsForm({
         </div>
       </div>
       <FormErrors errors={serverErrors} />
-      <div className="pm-ed-taskform-actions">
-        <button
-          type="button"
-          className="pm-ed-btn pm-ed-btn--ghost pm-ed-btn--small"
-          onClick={onCancel}
-        >
+      <div className="pm-f-row pm-f-row--end">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Отмена
-        </button>
-        <button
-          type="button"
-          className="pm-ed-btn pm-ed-btn--primary pm-ed-btn--small"
-          disabled={busy}
-          onClick={() => void save()}
-        >
+        </Button>
+        <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
           {submitLabel}
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -975,9 +1090,9 @@ function TaskFieldsForm({
 type RowMode = 'view' | 'edit' | 'add' | 'delete'
 
 /**
- * One task row (#541 rework): a done checkbox and the title (with the owner
- * label when set) — every other action is in the row's «⋯» menu, and editing
- * expands inline under the row.
+ * One task row: a done checkbox and the title (with the owner label when set)
+ * — every other action is in the row's «⋯» menu, and editing expands inline
+ * under the row.
  */
 function TaskEditItem({
   obstacle,
@@ -1049,20 +1164,14 @@ function TaskEditItem({
   ]
 
   return (
-    <li
-      className="pm-task pm-ed-task"
-      data-done={done ? 'true' : undefined}
-      data-path={path.join('.')}
-    >
-      <div className="pm-task-row pm-ed-task-row">
-        <button
-          type="button"
-          role="checkbox"
-          aria-checked={done}
+    <li className="pm-f-task" data-done={done ? 'true' : undefined} data-path={pathKey}>
+      <div className="pm-f-task-row">
+        <Checkbox
+          checked={done}
           aria-label={`Выполнено: ${task.title}`}
-          className="pm-task-check pm-ed-task-check"
+          className="pm-f-task-check"
           disabled={busy}
-          onClick={() =>
+          onCheckedChange={() =>
             void exec({
               op: 'task.toggle',
               nodeId: obstacle.id,
@@ -1071,21 +1180,20 @@ function TaskEditItem({
               date: todayIso(),
             })
           }
-        >
-          {done ? <TaskTickIcon /> : null}
-        </button>
-        <span className="pm-task-title">
+        />
+        <span className="pm-f-task-title">
           {task.title}
           {typeof task.done === 'string' ? (
-            <span className="pm-task-date"> · {shortDate(task.done)}</span>
+            <span className="pm-f-task-date"> · {shortDate(task.done)}</span>
           ) : null}
         </span>
         {task.owner ? (
-          <span className="pm-task-owner" style={{ color: ownerColor(task.owner) }}>
+          <span className="pm-f-task-owner" style={{ color: ownerColor(task.owner) }}>
             {task.owner}
           </span>
         ) : null}
         <EditMenu
+          look="quiet"
           className="pm-ed-taskmenu"
           label={`Действия с задачей «${task.title}»`}
           disabled={busy}
@@ -1104,22 +1212,21 @@ function TaskEditItem({
           }
         />
       ) : null}
-      {mode === 'delete' ? (
-        <ConfirmBar
-          text={
-            children.length > 0
-              ? `Удалить «${task.title}» вместе с подзадачами?`
-              : `Удалить «${task.title}»?`
-          }
-          confirm="Удалить"
-          busy={busy}
-          onCancel={() => setMode('view')}
-          onConfirm={() => void exec({ op: 'task.remove', nodeId: obstacle.id, path, expectTitle })}
-        />
-      ) : null}
+      <ConfirmDialog
+        open={mode === 'delete'}
+        title={
+          children.length > 0
+            ? `Удалить «${task.title}» вместе с подзадачами?`
+            : `Удалить «${task.title}»?`
+        }
+        confirm="Удалить"
+        busy={busy}
+        onCancel={() => setMode('view')}
+        onConfirm={() => void exec({ op: 'task.remove', nodeId: obstacle.id, path, expectTitle })}
+      />
       {errors.length > 0 && mode === 'view' ? <FormErrors errors={errors} /> : null}
       {children.length > 0 || mode === 'add' ? (
-        <ul className="pm-tasks pm-tasks--nested">
+        <ul className="pm-f-tasks pm-f-tasks--nested">
           {children.map((child, i) => (
             <TaskEditItem
               key={i}
@@ -1134,7 +1241,7 @@ function TaskEditItem({
             />
           ))}
           {mode === 'add' ? (
-            <li className="pm-ed-task-new">
+            <li className="pm-f-task-new">
               <TaskFieldsForm
                 initial={{ title: '', owner: '', link: '' }}
                 submitLabel="Добавить подзадачу"
@@ -1191,13 +1298,9 @@ export function TaskTreeEditor({
   const reportNew = useCallback((dirty: boolean) => report('+', dirty), [report])
   const tasks = obstacle.tasks ?? []
   return (
-    <section className="pm-ed-sec" aria-label="Задачи шлагбаума">
-      <span className="pm-ed-sec-head">
-        <h3 className="pm-ed-sec-title">Задачи</h3>
-        <span className="pm-ed-hint">Каждое изменение сохраняется сразу.</span>
-      </span>
+    <Section label="Задачи шлагбаума" title="Задачи" hint="Каждое изменение сохраняется сразу.">
       {tasks.length > 0 ? (
-        <ul className="pm-tasks pm-ed-tasks">
+        <ul className="pm-f-tasks">
           {tasks.map((task, i) => (
             <TaskEditItem
               key={`${epoch}:${i}`}
@@ -1213,7 +1316,7 @@ export function TaskTreeEditor({
           ))}
         </ul>
       ) : (
-        <p className="pm-aside-lead">Задач пока нет.</p>
+        <p className="pm-f-hint">Задач пока нет.</p>
       )}
       {adding ? (
         <TaskFieldsForm
@@ -1237,27 +1340,28 @@ export function TaskTreeEditor({
           }}
         />
       ) : (
-        <button
+        <Button
           type="button"
-          className="pm-ed-btn pm-ed-btn--ghost pm-ed-btn--small pm-ed-addtask"
+          variant="ghost"
+          size="sm"
+          className="pm-f-add"
+          aria-label="+ Задача"
           onClick={() => setAdding(true)}
         >
-          + Задача
-        </button>
+          <PlusIcon aria-hidden="true" />
+          Задача
+        </Button>
       )}
-    </section>
+    </Section>
   )
 }
 
 // ── the swap dialog (Roadside.dc.html) ───────────────────────────────────────
 
-const FOCUSABLE =
-  'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
 /**
- * «Фокус полон»: which focus track goes to the roadside. A modal dialog — focus
- * moves in, Tab and Shift+Tab are trapped inside, Esc cancels, and on close
- * focus returns to whatever opened it (#541 review).
+ * «Фокус полон»: which focus track goes to the roadside. The kit Dialog (#541
+ * v2): focus moves in and is trapped, Esc cancels; on close the editor puts
+ * focus back on whatever opened it (`onReturnFocus`).
  */
 export function SwapDialog({
   map,
@@ -1265,24 +1369,19 @@ export function SwapDialog({
   busy,
   onCancel,
   onSwap,
+  onReturnFocus,
 }: {
   map: PathMap
   incoming: PathTrack
   busy: boolean
   onCancel: () => void
   onSwap: (outgoingId: string) => void
+  /** Called instead of Radix's own return of focus when the dialog closes. */
+  onReturnFocus?: () => void
 }) {
   const focus = map.tracks.filter((t) => t.status === 'focus')
   const [choice, setChoice] = useState<string | null>(null)
-  const firstRef = useRef<HTMLButtonElement | null>(null)
-  const dialogRef = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    firstRef.current?.focus()
-    return () => {
-      if (opener && opener.isConnected) opener.focus()
-    }
-  }, [])
+  const groupRef = useRef<HTMLDivElement | null>(null)
 
   // One tab stop for the radio group: the checked radio, else the first.
   const checkedAt = focus.findIndex((t) => t.id === choice)
@@ -1296,7 +1395,7 @@ export function SwapDialog({
           ? -1
           : 0
     const radios = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>('[role="radio"]') ?? [],
+      groupRef.current?.querySelectorAll<HTMLElement>('[role="radio"]') ?? [],
     )
     const from = radios.indexOf(document.activeElement as HTMLElement)
     let to: number
@@ -1309,86 +1408,66 @@ export function SwapDialog({
     radios[to]?.focus()
   }
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      e.stopPropagation()
-      onCancel()
-      return
-    }
-    if (e.key !== 'Tab') return
-    const items = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
-    if (items.length === 0) return
-    const first = items[0]
-    const last = items[items.length - 1]
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
-
   return (
-    <div className="pm-ed-overlay">
-      <section
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+    <Dialog open onOpenChange={(next) => (next ? undefined : onCancel())}>
+      <DialogContent
+        className={`${PM_KIT} pm-f-dialog`}
+        showCloseButton={false}
         aria-label="Вывести трек в фокус"
-        className="pm-ed-dialog"
-        onKeyDown={onKeyDown}
+        aria-labelledby={undefined}
+        onCloseAutoFocus={(e) => {
+          if (!onReturnFocus) return
+          e.preventDefault()
+          onReturnFocus()
+        }}
       >
-        <div className="pm-ed-dialog-head">
-          <h2 className="pm-ed-dialog-title">Какой трек уходит на обочину?</h2>
-          <p className="pm-ed-dialog-lead">
+        <div className="pm-f-dialog-head">
+          <DialogTitle className="pm-f-title">Какой трек уходит на обочину?</DialogTitle>
+          <DialogDescription className="pm-f-hint">
             {`Фокус полон (${focus.length} из ${map.limits.focus_tracks}). Чтобы вывести «${incoming.title}» на дорогу, один трек из фокуса уйдёт на обочину.`}
-          </p>
+          </DialogDescription>
         </div>
         <div
+          ref={groupRef}
           role="radiogroup"
           aria-label="Трек для обочины"
-          className="pm-ed-radios"
+          className="pm-f-radios"
           onKeyDown={onRadioKey}
         >
           {focus.map((t, i) => (
-            <button
+            <Button
               key={t.id}
-              ref={i === 0 ? firstRef : undefined}
               type="button"
+              variant="ghost"
               role="radio"
               aria-checked={choice === t.id}
               tabIndex={i === stop ? 0 : -1}
-              className="pm-ed-radio"
+              className="pm-f-radio"
               onClick={() => setChoice(t.id)}
             >
-              <span className="pm-ed-radio-mark" aria-hidden="true" />
-              <span className="pm-ed-radio-text">
-                <b>{t.title}</b>
-                <span>{swapImpact(t)}</span>
+              <span className="pm-f-radio-mark" aria-hidden="true">
+                {choice === t.id ? <CheckIcon /> : null}
               </span>
-            </button>
+              <span className="pm-f-choice-text">
+                <span>{t.title}</span>
+                <span className="pm-f-choice-note">{swapImpact(t)}</span>
+              </span>
+            </Button>
           ))}
         </div>
-        <p className="pm-ed-dialog-note">
+        <p className="pm-f-hint">
           Трек на обочине остаётся на карте со всеми станциями. Вернуть его можно так же — обменом.
         </p>
-        <div className="pm-ed-dialog-actions">
-          <button type="button" className="pm-ed-btn pm-ed-btn--ghost" onClick={onCancel}>
+        <div className="pm-f-row pm-f-row--end">
+          <Button type="button" variant="ghost" onClick={onCancel}>
             Отмена
-          </button>
-          <button
-            type="button"
-            className="pm-ed-btn pm-ed-btn--primary"
-            disabled={!choice || busy}
-            onClick={() => choice && onSwap(choice)}
-          >
+          </Button>
+          <Button type="button" disabled={!choice || busy} onClick={() => choice && onSwap(choice)}>
             Поменять местами
-          </button>
+          </Button>
         </div>
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1433,7 +1512,7 @@ export function TrackForm({
 
   if (trackId && !track) {
     return (
-      <div className="pm-ed-form">
+      <div className="pm-f-form">
         <PanelHead title="Трека больше нет на карте" onClose={onClose} />
       </div>
     )
@@ -1476,7 +1555,7 @@ export function TrackForm({
   return (
     <form
       ref={formRef}
-      className="pm-ed-form"
+      className="pm-f-form"
       onSubmit={submit}
       noValidate
       aria-label={track ? `Трек «${track.title}»` : 'Новый трек'}
@@ -1486,12 +1565,11 @@ export function TrackForm({
         context={track ? undefined : 'Новая дорога к маяку'}
         onClose={onClose}
       />
-      <div className="pm-ed-fields">
+      <div className="pm-f-fields">
         <Field label="Название" error={error}>
           {({ id, describedBy, invalid }) => (
-            <input
+            <Input
               id={id}
-              className="pm-ed-input"
               value={title}
               maxLength={120}
               aria-invalid={invalid || undefined}
@@ -1501,138 +1579,129 @@ export function TrackForm({
           )}
         </Field>
         {!track ? (
-          <fieldset className="pm-ed-group">
-            <legend className="pm-ed-group-title">Куда ставим</legend>
-            <div className="pm-ed-group-body pm-ed-choices">
-              <label className="pm-ed-check">
-                <input
-                  type="radio"
-                  name="pm-new-track-status"
-                  checked={status === 'focus'}
-                  disabled={focusFull}
-                  onChange={() => setStatus('focus')}
-                />
-                <span>
-                  В фокус
+          <Group title="Куда ставим">
+            <div className="pm-f-choices pm-f-choices--2">
+              <Choice
+                pressed={status === 'focus'}
+                disabled={focusFull}
+                onClick={() => setStatus('focus')}
+              >
+                <span className="pm-f-choice-text">
+                  <span>В фокус</span>
                   {focusFull ? (
-                    <span className="pm-ed-check-note">
-                      {` — фокус полон (${focusCount} из ${map.limits.focus_tracks})`}
+                    <span className="pm-f-choice-note">
+                      фокус полон ({focusCount} из {map.limits.focus_tracks})
                     </span>
-                  ) : null}
+                  ) : (
+                    <span className="pm-f-choice-note">на дорогу</span>
+                  )}
                 </span>
-              </label>
-              <label className="pm-ed-check">
-                <input
-                  type="radio"
-                  name="pm-new-track-status"
-                  checked={status === 'roadside'}
-                  onChange={() => setStatus('roadside')}
-                />
-                <span>На обочину</span>
-              </label>
+              </Choice>
+              <Choice pressed={status === 'roadside'} onClick={() => setStatus('roadside')}>
+                <span className="pm-f-choice-text">
+                  <span>На обочину</span>
+                  <span className="pm-f-choice-note">видно, но вне фокуса</span>
+                </span>
+              </Choice>
             </div>
-          </fieldset>
+          </Group>
         ) : null}
-        <details className="pm-ed-more" open={Boolean(track?.short) || undefined}>
-          <summary className="pm-ed-more-summary">Дополнительно</summary>
-          <div className="pm-ed-more-body">
-            <Field
-              label="Короткое имя"
-              hint="Для вкладок на телефоне. Пусто — покажем полное название."
-            >
-              {({ id, describedBy }) => (
-                <input
-                  id={id}
-                  className="pm-ed-input pm-ed-input--short"
-                  value={short}
-                  maxLength={40}
-                  aria-describedby={describedBy}
-                  onChange={(e) => setShort(e.target.value)}
-                />
-              )}
-            </Field>
-          </div>
-        </details>
+        <More title="Дополнительно" defaultOpen={Boolean(track?.short)}>
+          <Field
+            label="Короткое имя"
+            hint="Для вкладок на телефоне. Пусто — покажем полное название."
+          >
+            {({ id, describedBy }) => (
+              <Input
+                id={id}
+                className="pm-f-short"
+                value={short}
+                maxLength={40}
+                aria-describedby={describedBy}
+                onChange={(e) => setShort(e.target.value)}
+              />
+            )}
+          </Field>
+        </More>
       </div>
 
       <FormErrors errors={serverErrors} />
       <FormFooter submit={track ? 'Сохранить' : 'Добавить трек'} busy={busy} onCancel={onClose} />
 
       {track ? (
-        <section className="pm-ed-sec" aria-label="Фокус">
-          <span className="pm-ed-sec-head">
-            <h3 className="pm-ed-sec-title">
-              {track.status === 'focus' ? 'В фокусе — на дороге' : 'На обочине'}
-            </h3>
-            <span className="pm-ed-hint">Сохраняется сразу.</span>
-          </span>
-          {track.status === 'focus' ? (
-            <button
-              type="button"
-              className="pm-ed-btn pm-ed-btn--small"
-              disabled={busy}
-              onClick={() =>
-                void exec({ op: 'track.status', trackId: track.id, status: 'roadside' }, false)
-              }
-            >
-              Убрать на обочину
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="pm-ed-btn pm-ed-btn--small"
-              disabled={busy}
-              onClick={() =>
-                focusFull
-                  ? onSwap(track.id)
-                  : void exec({ op: 'track.status', trackId: track.id, status: 'focus' }, false)
-              }
-            >
-              Вывести в фокус
-            </button>
-          )}
-        </section>
+        <Section
+          label="Фокус"
+          title={track.status === 'focus' ? 'В фокусе — на дороге' : 'На обочине'}
+          hint="Сохраняется сразу."
+        >
+          <div className="pm-f-row">
+            {track.status === 'focus' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void exec({ op: 'track.status', trackId: track.id, status: 'roadside' }, false)
+                }
+              >
+                Убрать на обочину
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  focusFull
+                    ? onSwap(track.id)
+                    : void exec({ op: 'track.status', trackId: track.id, status: 'focus' }, false)
+                }
+              >
+                Вывести в фокус
+              </Button>
+            )}
+          </div>
+        </Section>
       ) : null}
 
       {track && links ? (
         <DangerZone>
-          {confirmDelete ? (
-            <ConfirmBar
-              text={
-                track.nodes.length > 0
-                  ? `Удалить трек «${track.title}» вместе с ${track.nodes.length} ${track.nodes.length === 1 ? 'блоком' : 'блоками'}?`
-                  : `Удалить трек «${track.title}»?`
-              }
-              confirm="Удалить трек"
-              busy={busy}
-              onCancel={() => setConfirmDelete(false)}
-              onConfirm={() =>
-                void exec(
-                  {
-                    op: 'track.remove',
-                    trackId: track.id,
-                    force: track.nodes.length > 0,
-                    ...(links.referrers.length > 0
-                      ? { inbound: repoint && links.target ? 'repoint' : 'break' }
-                      : {}),
-                  },
-                  true,
-                )
-              }
-            >
-              <InboundWarning
-                map={map}
-                links={links}
-                scope="track"
-                repoint={repoint}
-                onRepoint={setRepoint}
-              />
-            </ConfirmBar>
-          ) : (
-            <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
-              Удалить трек
-            </button>
-          )}
+          <DeleteButton onClick={() => setConfirmDelete(true)}>Удалить трек</DeleteButton>
+          <ConfirmDialog
+            open={confirmDelete}
+            title={
+              track.nodes.length > 0
+                ? `Удалить трек «${track.title}» вместе с ${track.nodes.length} ${track.nodes.length === 1 ? 'блоком' : 'блоками'}?`
+                : `Удалить трек «${track.title}»?`
+            }
+            confirm="Удалить трек"
+            busy={busy}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={() => {
+              setConfirmDelete(false)
+              void exec(
+                {
+                  op: 'track.remove',
+                  trackId: track.id,
+                  force: track.nodes.length > 0,
+                  ...(links.referrers.length > 0
+                    ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                    : {}),
+                },
+                true,
+              )
+            }}
+          >
+            <InboundWarning
+              map={map}
+              links={links}
+              scope="track"
+              repoint={repoint}
+              onRepoint={setRepoint}
+            />
+          </ConfirmDialog>
         </DangerZone>
       ) : null}
     </form>
@@ -1675,14 +1744,13 @@ export function BeaconForm({
   }
 
   return (
-    <form className="pm-ed-form" onSubmit={submit} noValidate aria-label="Маяк">
+    <form className="pm-f-form" onSubmit={submit} noValidate aria-label="Маяк">
       <PanelHead title="Маяк" context="Куда идём и зачем" onClose={onClose} />
-      <div className="pm-ed-fields">
+      <div className="pm-f-fields">
         <Field label="Куда идём" error={error}>
           {({ id, describedBy, invalid }) => (
-            <textarea
+            <Textarea
               id={id}
-              className="pm-ed-input pm-ed-textarea"
               rows={3}
               value={title}
               maxLength={300}
@@ -1694,9 +1762,8 @@ export function BeaconForm({
         </Field>
         <Field label="Зачем" hint="Одна-две фразы: почему это важно.">
           {({ id, describedBy }) => (
-            <textarea
+            <Textarea
               id={id}
-              className="pm-ed-input pm-ed-textarea"
               rows={3}
               value={why}
               maxLength={1000}

@@ -2,11 +2,11 @@
    «Карта пути» — edit mode «Править» (#539, reworked in place by #541). Same
    tokens as path-map.css (`.pm-root` custom properties) and the same `pm-`
    prefix scoping. The map keeps its road layout; this file only adds the
-   overlay — the «+» slots on the road, the placeholder card, the «⋯» menus,
-   the editable Обочина — and the right-panel forms. Form and placeholder
-   values are copied from the vendored artboard
-   `design-source/path-map/AddStation.dc.html`; the swap dialog from
-   `Roadside.dc.html`.
+   overlay — the «+» slots on the road, the placeholder card, the «⋯» triggers
+   — then the editor's panel, which since #541 v2 is the `@/ui` kit themed onto
+   this palette (`.pm-kit`): what is left below is layout and spacing, not
+   hand-made controls. Placeholder and swatch values are copied from the
+   vendored artboard `design-source/path-map/AddStation.dc.html`.
    ============================================================================ */
 
 .pm-modes button[data-accent='edit'][aria-pressed='true'] {
@@ -102,53 +102,6 @@
   opacity: 0.75;
 }
 
-.pm-ed-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  padding: 6px;
-  border-radius: 14px;
-  border: 1px solid rgb(232 236 244 / 18%);
-  background: #111c33;
-  box-shadow: 0 18px 48px rgb(0 0 0 / 55%);
-}
-
-/* On the road the picker opens centred under the slot. */
-.pm-ed-slot .pm-ed-menu {
-  right: auto;
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 150px;
-}
-
-.pm-ed-menuitem {
-  min-height: 40px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--pm-text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pm-ed-menuitem[data-danger] {
-  color: var(--pm-bad-text);
-}
-
-.pm-ed-menuitem:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 /* With the «⋯» a label must still fit its column when many roads are in focus. */
 .pm-col[role='group'] .pm-track-label {
   flex-wrap: wrap;
@@ -211,400 +164,427 @@
 }
 
 .pm-ed-placeholder-title[data-empty] {
-  color: var(--pm-muted-3);
+  color: var(--pm-muted-3, #8c98ae);
   font-weight: 600;
 }
 
 .pm-ed-beaconbtn {
   margin-top: 4px;
+  font-weight: 400;
 }
 
-/* ── the right panel ────────────────────────────────────────────────────── */
+/* ── the kit on the night map (#541 v2) ─────────────────────────────────────
+   The editor's panel, forms, menus and dialogs are the `@/ui` kit (shadcn,
+   radix-nova). `.pm-kit` (with `.dark`, both put by `PM_KIT` in `fonts.ts`)
+   maps the kit's semantic tokens onto this page's palette — the same values as
+   the `.pm-root` custom properties in path-map.css — so a kit Input or Popover
+   reads as part of the night map, not as the neutral launcher theme.
+   `.dark.pm-kit` outranks the kit's own `.dark` block. */
+.dark.pm-kit {
+  --background: #0d1528;
+  --foreground: #e8ecf4;
+  --card: #111c33;
+  --card-foreground: #e8ecf4;
+  --popover: #111c33;
+  --popover-foreground: #e8ecf4;
+  --primary: #f2b544;
+  --primary-foreground: #111317;
+  --secondary: rgb(232 236 244 / 8%);
+  --secondary-foreground: #e8ecf4;
+  --muted: rgb(232 236 244 / 7%);
+  --muted-foreground: #a9b3c6;
+  --accent: rgb(232 236 244 / 8%);
+  --accent-foreground: #e8ecf4;
+  --destructive: #ff8a80;
+  --border: rgb(232 236 244 / 9%);
+  --input: rgb(232 236 244 / 16%);
+  --ring: #ffd27a;
+  --radius: 0.5rem;
 
-/* AddStation artboard: aside 380–460px, #0F1930, 28px padding. */
+  font-family: var(--font-manrope), 'Manrope', system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+/* A kit overlay's dimming layer, portaled to <body>: dark enough to read on the night map. */
+body:has(.pm-root) :is([data-slot='alert-dialog-overlay'], [data-slot='dialog-overlay']) {
+  background: rgb(3 7 15 / 62%);
+}
+
+/* The quiet «⋯» of a task row / roadside track: muted until hovered. */
+.pm-ed-quietbtn {
+  color: var(--pm-muted-3, #8c98ae);
+}
+
+/* ── the Обочина column (no form open, and beside the Sheet) ──────────────── */
+
 .pm-ed-aside {
-  flex: 1 1 380px;
-  max-width: 460px;
-  padding: 28px 28px 32px;
-  border-left: 1px solid rgb(232 236 244 / 10%);
-  background: #0f1930;
+  flex: 1 1 320px;
+  max-width: 400px;
+  display: block;
+  padding: 32px 24px 48px;
+  border-left: 1px solid var(--pm-line);
+  background: rgb(6 11 22 / 40%);
 }
 
-.pm-aside-lead.pm-ed-hint {
-  padding-top: 4px;
+.pm-side {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-/* The editable Обочина. */
-.pm-ed-sidetrack {
-  gap: 10px;
+.pm-side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.pm-ed-sidetrack .pm-roadside-row {
+.pm-side-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.pm-side-meter {
+  display: flex;
   align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--pm-muted-2);
 }
 
-.pm-ed-sidenodes,
-.pm-ed-sideloose {
+.pm-side-meter .pm-meter-bars {
+  margin-left: auto;
+}
+
+.pm-side-tracks {
+  display: flex;
+  flex-direction: column;
+}
+
+.pm-side-track {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 18px 0;
+  border-top: 1px solid var(--pm-line);
 }
 
-.pm-ed-sidenode {
+.pm-side-trackhead {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid rgb(232 236 244 / 14%);
-  background: rgb(17 28 51 / 70%);
-  color: var(--pm-text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
 }
 
-.pm-ed-sidenode:hover,
-.pm-ed-sidenode[aria-pressed='true'] {
-  border-color: var(--pm-accent);
-}
-
-.pm-ed-sidenode-kind {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--pm-muted-3);
-}
-
-.pm-ed-sidenode[data-type='obstacle'] .pm-ed-sidenode-kind {
-  color: var(--pm-barrier);
-}
-
-.pm-ed-sidenode-title {
-  font-size: 14px;
-  font-weight: 700;
+.pm-side-trackname {
+  font-size: 15px;
+  font-weight: 400;
   line-height: 1.35;
+  color: var(--pm-text);
   overflow-wrap: anywhere;
 }
 
-.pm-ed-sideadd {
-  align-self: flex-start;
-}
-
-.pm-ed-sideadd .pm-ed-menu {
-  right: auto;
-  left: 0;
-}
-
-.pm-ed-sideadd .pm-ed-menubtn {
-  height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-}
-
-.pm-ed-addtrack {
-  align-self: stretch;
-  border-style: dashed;
-}
-
-/* ── forms ──────────────────────────────────────────────────────────────── */
-
-/*
-   Form practice after the owner's review of #541 («грубо, плотно, всё в одну
-   кучу»): one column; labels small and above their input; inputs regular
-   weight with a light border; helper text muted; more space BETWEEN groups
-   than within them; one primary action; delete in its own zone at the end.
-   The scale lives in these few variables so the forms stay one system.
-*/
-.pm-ed-aside,
-.pm-ed-dialog {
-  --pm-ed-line: rgb(232 236 244 / 14%);
-  --pm-ed-line-strong: rgb(232 236 244 / 26%);
-  --pm-ed-field: rgb(232 236 244 / 4%);
-  --pm-ed-ring: 0 0 0 3px rgb(242 181 68 / 28%);
-  --pm-ed-gap-group: 28px;
-  --pm-ed-gap-field: 18px;
-  --pm-ed-gap-label: 6px;
-}
-
-.pm-ed-form {
+.pm-side-nodes {
   display: flex;
   flex-direction: column;
-  gap: var(--pm-ed-gap-group);
+  gap: 2px;
 }
 
-/* Head: what is being edited, where it sits, and close. */
-.pm-ed-head {
+/* A block on the roadside: a plain row — tiny type word, then its title. */
+.pm-ed-aside .pm-side-node {
+  width: calc(100% + 20px);
+  height: auto;
+  margin-left: -10px;
+  padding: 7px 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+
+.pm-ed-aside .pm-side-node[aria-pressed='true'] {
+  background: rgb(242 181 68 / 10%);
+}
+
+.pm-side-node-title {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--pm-muted);
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-aside :is(.pm-side-add, .pm-side-addtrack) {
+  align-self: flex-start;
+  margin-left: -10px;
+}
+
+.pm-ed-aside .pm-side-add .pm-ed-quietbtn,
+.pm-ed-aside .pm-side-addtrack {
+  font-weight: 400;
+  color: var(--pm-muted-2);
+}
+
+.pm-side-note {
+  padding-top: 20px;
+  border-top: 1px solid var(--pm-line);
+}
+
+/* ── the form Sheet ─────────────────────────────────────────────────────── */
+
+/* Beside the map the Sheet lies exactly over the Обочина column: while a form
+   is open that column takes the Sheet's width, so no road hides under it. */
+@media (width > 1140px) {
+  .pm-body[data-form] .pm-ed-aside {
+    flex: 0 0 420px;
+    max-width: 420px;
+  }
+}
+
+.pm-ed-sheet {
+  width: min(100%, 420px);
+  max-width: none;
+  padding: 28px 28px 40px;
+  gap: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(232 236 244 / 16%) transparent;
+  background: #0d1528;
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 60px rgb(0 0 0 / 35%);
+}
+
+.pm-f-form {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.pm-f-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.pm-ed-head-text {
+.pm-f-head-text {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
 
-.pm-ed-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-}
-
-.pm-ed-context {
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--pm-muted-3);
-  overflow-wrap: anywhere;
-}
-
-.pm-ed-close {
-  flex: none;
-  width: 32px;
-  height: 32px;
-  margin-top: -4px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--pm-muted-3);
-  cursor: pointer;
-}
-
-.pm-ed-close:hover {
-  background: rgb(232 236 244 / 8%);
-  color: var(--pm-text);
-}
-
-/* The editable fields, before the footer. */
-.pm-ed-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pm-ed-gap-group);
-}
-
-/* A group of related fields: a quiet heading, then its fields. */
-.pm-ed-group {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.pm-ed-group-title {
-  float: left; /* lets the legend sit in normal flow above the body */
-  width: 100%;
-  margin: 0 0 14px;
-  padding: 0;
-  font-size: 15px;
-  font-weight: 650;
+.pm-f-title {
+  font-size: 18px;
+  font-weight: 600;
   line-height: 1.3;
-  color: var(--pm-text);
+  color: var(--foreground);
 }
 
-.pm-ed-group-title + * {
-  clear: both;
+.pm-f-context {
+  font-size: 13px;
+  color: var(--pm-muted-3, #8c98ae);
+  overflow-wrap: anywhere;
 }
 
-.pm-ed-group-body {
+.pm-f-close {
+  margin: -4px -6px 0 0;
+  color: var(--muted-foreground);
+}
+
+.pm-f-fields {
   display: flex;
   flex-direction: column;
-  gap: var(--pm-ed-gap-field);
+  gap: 28px;
 }
 
-.pm-ed-field {
+.pm-f-field {
   display: flex;
   flex-direction: column;
-  gap: var(--pm-ed-gap-label);
+  gap: 8px;
   min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
 }
 
-.pm-ed-labelrow {
+/* Labels: regular weight, a step lighter than what is typed (#541 v2). */
+.pm-f-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #c9d1df;
+}
+
+.pm-f-labelrow {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
 
-.pm-ed-label {
-  padding: 0;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.35;
-  color: var(--pm-muted);
-}
-
-.pm-ed-req {
-  flex: none;
+.pm-f-req {
   font-size: 12px;
-  font-weight: 400;
-  color: var(--pm-muted-3);
+  color: #8c98ae;
 }
 
-.pm-ed-input {
-  width: 100%;
-  min-height: 40px;
-  padding: 9px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--pm-ed-line);
-  background: var(--pm-ed-field);
-  color: var(--pm-text);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 400;
-  line-height: 1.45;
-  transition:
-    border-color 0.12s ease,
-    box-shadow 0.12s ease;
+.pm-f-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8c98ae;
 }
 
-.pm-ed-input::placeholder {
-  color: var(--pm-muted-3);
-  opacity: 0.8;
+.pm-f-error {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #ff8a80;
 }
 
-.pm-ed-input:hover {
-  border-color: var(--pm-ed-line-strong);
+.pm-f-muted {
+  color: var(--muted-foreground);
 }
 
-.pm-ed-input--short {
+.pm-f-short {
   max-width: 220px;
 }
 
-.pm-ed-input--date {
-  width: auto;
-  max-width: 180px;
-  color-scheme: dark;
-}
-
-.pm-ed-textarea {
-  resize: vertical;
-}
-
-.pm-ed-hint {
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--pm-muted-3);
-}
-
-p.pm-ed-hint {
-  margin: 0;
-}
-
-.pm-ed-error {
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--pm-bad-text);
-}
-
-/* «Что это открывает выше?» / «Куда ведёт?»: the target pills. */
-.pm-ed-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.pm-ed-pill {
-  max-width: 100%;
-  min-height: 34px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--pm-ed-line);
-  background: transparent;
-  color: var(--pm-muted-2);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pm-ed-pill:hover {
-  border-color: var(--pm-ed-line-strong);
-  color: var(--pm-text);
-}
-
-.pm-ed-pill[aria-pressed='true'] {
-  border-color: var(--pm-accent);
-  background: rgb(242 181 68 / 10%);
-  color: var(--pm-text);
-}
-
-.pm-ed-pill--select {
-  max-width: 170px;
-  background: var(--pm-ed-field);
-  color-scheme: dark;
-}
-
-/* «Насколько уверены?» — three road swatches as one segmented choice. */
-.pm-ed-confgrid {
-  clear: both;
+/* A group: a quiet heading and space — no frame, no fill (#541 v2). */
+.pm-f-group {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.pm-ed-conf {
+.pm-f-legend {
+  padding: 0 0 14px;
+  font-size: 12.5px;
+  color: #8c98ae;
+}
+
+/* The target combobox trigger: the current value, wrapping, regular weight. */
+.pm-f-form .pm-f-combo {
+  width: 100%;
+  height: auto;
+  min-height: 36px;
+  padding: 7px 10px;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+
+.pm-f-combo-icon {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.pm-f-combo-pop {
+  width: max(var(--radix-popover-trigger-width), 320px);
+  max-width: calc(100vw - 32px);
+  padding: 0;
+}
+
+.pm-f-combo-pop [data-slot='command-list'] {
+  max-height: min(360px, 50vh);
+}
+
+.pm-f-target {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
-  padding: 12px 6px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--pm-ed-line);
-  background: transparent;
-  color: var(--pm-muted-2);
-  font: inherit;
-  text-align: center;
-  cursor: pointer;
 }
 
-.pm-ed-conf:hover {
-  border-color: var(--pm-ed-line-strong);
+.pm-f-kind {
+  flex: none;
+  font-size: 12px;
+  color: #8c98ae;
 }
 
-.pm-ed-conf[aria-pressed='true'] {
-  border-color: var(--pm-accent);
-  background: rgb(242 181 68 / 10%);
-  color: var(--pm-text);
+.pm-f-kind[data-type='obstacle'] {
+  color: var(--pm-barrier, #ffc93c);
 }
 
-.pm-ed-conf-road {
+.pm-f-target-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Two or three always-visible options (confidence, new track's place). */
+.pm-f-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.pm-f-choices--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pm-f-form .pm-f-choice {
+  height: auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  justify-content: flex-start;
+  gap: 10px;
+  border-color: var(--border);
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+
+.pm-f-form .pm-f-choice[aria-pressed='true'] {
+  border-color: rgb(242 181 68 / 55%);
+  background: rgb(242 181 68 / 9%);
+}
+
+.pm-f-choice-text {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 1px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.pm-f-choice-note {
+  font-size: 12px;
+  color: #8c98ae;
+}
+
+/* The confidence road swatch (AddStation artboard: asphalt / dirt / fog). */
+.pm-f-road {
   position: relative;
   flex: none;
-  width: 18px;
-  height: 26px;
-  background: var(--pm-road);
+  width: 14px;
+  height: 22px;
+  background: var(--pm-road, #131c30);
   border-left: 1px solid rgb(232 236 244 / 20%);
   border-right: 1px solid rgb(232 236 244 / 20%);
 }
 
-.pm-ed-conf-road[data-kind='asphalt']::after {
+.pm-f-road[data-kind='asphalt']::after {
   content: '';
   position: absolute;
-  left: 7px;
+  left: 5px;
   top: 0;
   bottom: 0;
   width: 2px;
   background: repeating-linear-gradient(180deg, #8c98ae 0 5px, transparent 5px 10px);
 }
 
-.pm-ed-conf-road[data-kind='dirt'] {
+.pm-f-road[data-kind='dirt'] {
   background-color: rgb(22 32 56 / 90%);
   background-image: radial-gradient(rgb(232 236 244 / 30%) 1px, transparent 1.6px);
   background-size: 6px 6px;
@@ -612,563 +592,278 @@ p.pm-ed-hint {
   border-right: 1px dashed rgb(232 236 244 / 40%);
 }
 
-.pm-ed-conf-road[data-kind='fog'] {
+.pm-f-road[data-kind='fog'] {
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: rgb(140 152 174 / 25%);
   box-shadow: 0 0 8px 2px rgb(140 152 174 / 25%);
 }
 
-.pm-ed-conf-text {
+.pm-f-check {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
-  min-width: 0;
-}
-
-.pm-ed-conf-label {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.pm-ed-conf-road-word {
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--pm-muted-3);
-}
-
-/* Checkboxes and radios: the control, then its words. */
-.pm-ed-check {
-  display: flex;
-  align-items: flex-start;
   gap: 10px;
+}
+
+.pm-f-check-label {
   font-size: 14px;
+  font-weight: 400;
   line-height: 1.4;
-  color: var(--pm-text);
-  cursor: pointer;
 }
 
-.pm-ed-check input {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin: 2px 0 0;
-  accent-color: var(--pm-accent);
-}
-
-.pm-ed-check-note {
-  color: var(--pm-muted-3);
-}
-
-.pm-ed-choices {
-  gap: 10px;
-}
-
-.pm-ed-inline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 6px 0 0 26px;
-}
-
-.pm-ed-row {
+.pm-f-footer,
+.pm-f-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
-}
-
-/* Buttons. The base `.pm-ed-btn` also dresses the map-side «Править маяк» and
-   «+ Трек»; the form look below is scoped to the panel's forms and dialogs. */
-.pm-ed-btn {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 12px;
-  border: 1px solid rgb(232 236 244 / 24%);
-  background: transparent;
-  color: var(--pm-text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.pm-ed-btn:hover {
-  background: rgb(232 236 244 / 6%);
-}
-
-.pm-ed-btn:disabled {
-  opacity: 0.5;
-  cursor: progress;
-}
-
-.pm-ed-btn--primary {
-  border: 0;
-  background: var(--pm-accent);
-  color: var(--pm-bg);
-  font-weight: 800;
-}
-
-.pm-ed-btn--primary:hover {
-  background: var(--pm-accent-soft);
-}
-
-.pm-ed-btn--small {
-  min-height: 36px;
-  padding: 0 12px;
-  font-size: 13px;
-  flex: none;
-}
-
-.pm-ed-btn--danger {
-  border-color: rgb(255 107 94 / 60%);
-  color: var(--pm-bad-text);
-}
-
-.pm-ed-form .pm-ed-btn,
-.pm-ed-confirm .pm-ed-btn,
-.pm-ed-dialog .pm-ed-btn {
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 10px;
-  border-color: var(--pm-ed-line-strong);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.pm-ed-form .pm-ed-btn--small,
-.pm-ed-confirm .pm-ed-btn--small {
-  min-height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-}
-
-.pm-ed-form .pm-ed-btn--primary,
-.pm-ed-dialog .pm-ed-btn--primary {
-  border: 0;
-  font-weight: 700;
-}
-
-.pm-ed-form .pm-ed-btn--ghost,
-.pm-ed-confirm .pm-ed-btn--ghost,
-.pm-ed-dialog .pm-ed-btn--ghost {
-  border-color: transparent;
-  color: var(--pm-muted);
-}
-
-.pm-ed-form .pm-ed-btn--ghost:hover,
-.pm-ed-confirm .pm-ed-btn--ghost:hover,
-.pm-ed-dialog .pm-ed-btn--ghost:hover {
-  color: var(--pm-text);
-}
-
-.pm-ed-confirm .pm-ed-btn--danger {
-  border: 0;
-  background: var(--pm-bad);
-  color: var(--pm-ink);
-  font-weight: 700;
-}
-
-.pm-ed-confirm .pm-ed-btn--danger:hover {
-  background: var(--pm-bad-text);
-}
-
-/* The one footer: quiet «Отмена», then the primary action, on the right. */
-.pm-ed-footer {
-  display: flex;
-  justify-content: flex-end;
   gap: 8px;
-  padding-top: 20px;
-  border-top: 1px solid var(--pm-line);
 }
 
-.pm-ed-footer .pm-ed-btn--primary {
-  min-width: 132px;
+.pm-f-footer,
+.pm-f-row--end {
+  justify-content: flex-end;
 }
 
-/* What saves at once (tasks, focus): a section under the footer. */
-.pm-ed-sec {
+.pm-f-errors {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #ff8a80;
+}
+
+.pm-f-errors ul {
+  margin-top: 2px;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+/* Secondary sections after the footer: a hairline and space, no box. */
+.pm-f-sec {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
 }
 
-.pm-ed-sec > * {
-  align-self: stretch;
-}
-
-.pm-ed-sec > .pm-ed-btn {
-  align-self: flex-start;
-}
-
-.pm-ed-sec-head {
+.pm-f-sec-head {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.pm-ed-sec-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 1.3;
-  color: var(--pm-text);
-}
-
-/* Progressive disclosure: «Переместить», «Дополнительно». */
-.pm-ed-more {
-  border-top: 1px solid var(--pm-line);
-  padding-top: 16px;
-}
-
-.pm-ed-fields .pm-ed-more {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.pm-ed-more-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+.pm-f-sec-title {
   font-size: 14px;
-  font-weight: 500;
-  color: var(--pm-muted-2);
-  list-style: none;
-  cursor: pointer;
+  font-weight: 400;
+  color: var(--foreground);
 }
 
-.pm-ed-more-summary::-webkit-details-marker {
-  display: none;
+.pm-f-form .pm-f-add,
+.pm-f-form .pm-f-more-trigger,
+.pm-f-form .pm-f-delete {
+  align-self: flex-start;
+  margin-left: -10px;
+  font-weight: 400;
+  color: var(--muted-foreground);
 }
 
-.pm-ed-more-summary::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  border-right: 1.5px solid currentcolor;
-  border-bottom: 1.5px solid currentcolor;
-  transform: rotate(-45deg);
+.pm-f-form .pm-f-delete {
+  color: #ff8a80;
+}
+
+.pm-f-more {
+  display: flex;
+  flex-direction: column;
+}
+
+.pm-f-more-icon {
   transition: transform 0.15s ease;
 }
 
-.pm-ed-more[open] > .pm-ed-more-summary::before {
-  transform: rotate(45deg);
+.pm-f-more-trigger[data-state='open'] .pm-f-more-icon {
+  transform: rotate(180deg);
 }
 
-.pm-ed-more-summary:hover {
-  color: var(--pm-text);
-}
-
-.pm-ed-more-body {
+.pm-f-more-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 12px;
+  padding: 10px 0 4px;
 }
 
-/* Delete: last, apart, red words — never next to «Сохранить». */
 .pm-ed-danger {
   display: flex;
-  flex-direction: column;
   padding-top: 16px;
-  border-top: 1px solid var(--pm-line);
+  border-top: 1px solid var(--border);
 }
 
-.pm-ed-delete {
-  align-self: flex-start;
-  min-height: 32px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--pm-bad-text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.pm-ed-delete:hover {
-  text-decoration: underline;
-}
-
-.pm-ed-errors,
-.pm-ed-confirm,
-.pm-ed-stale {
+.pm-f-stale {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  border-radius: 10px;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.pm-ed-errors {
-  gap: 4px;
-  background: rgb(255 107 94 / 8%);
-  border: 1px solid rgb(255 107 94 / 35%);
-  color: var(--pm-bad-text);
-}
-
-.pm-ed-errors b {
-  font-weight: 600;
-}
-
-.pm-ed-errors ul,
-.pm-ed-inbound ul {
-  margin: 0;
-  padding-left: 18px;
-}
-
-.pm-ed-confirm {
-  background: rgb(255 107 94 / 6%);
-  border: 1px solid rgb(255 107 94 / 30%);
-  color: var(--pm-text);
-}
-
-.pm-ed-confirm-text {
-  font-weight: 600;
-}
-
-.pm-ed-inbound {
-  display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-  font-size: 13px;
-  color: var(--pm-muted);
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
 }
 
-.pm-ed-inbound li {
-  color: var(--pm-muted-2);
-}
-
-.pm-ed-inbound .pm-ed-check {
-  font-size: 13px;
-}
-
-.pm-ed-confirm-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.pm-ed-stale {
-  background: rgb(242 181 68 / 10%);
-  border: 1px solid rgb(242 181 68 / 45%);
-  color: #f5d693;
-}
-
-.pm-ed-stale b {
-  font-size: 15px;
-  color: var(--pm-text);
-}
-
-.pm-ed-stale .pm-ed-btn {
-  align-self: flex-start;
-}
-
-/* ── the task tree editor: checkbox + title (+ owner) + «⋯» ─────────────── */
-
-.pm-ed-task {
-  flex-direction: column;
-}
-
-.pm-ed-task-row {
-  align-items: center;
-}
-
-.pm-ed-task-check {
-  padding: 0;
-  border: 1.5px solid var(--pm-muted-3);
-  background: transparent;
-  color: var(--pm-bg);
-  cursor: pointer;
-}
-
-.pm-ed-task[data-done='true'] > .pm-ed-task-row .pm-ed-task-check {
-  background: var(--pm-accent);
-  border-color: var(--pm-accent);
-}
-
-.pm-ed-task-row .pm-task-date {
-  color: var(--pm-muted-3);
-  font-size: 12px;
-}
-
-.pm-ed-taskmenu .pm-ed-menubtn {
-  border-color: transparent;
-  background: transparent;
-}
-
-.pm-ed-form .pm-ed-addtask {
-  align-self: flex-start;
-  padding: 0 4px;
-  color: var(--pm-accent);
-}
-
-.pm-ed-form .pm-ed-addtask:hover {
-  background: transparent;
-  color: var(--pm-accent-soft);
-}
-
-.pm-ed-taskform {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 8px 0;
-  padding: 14px;
-  border-radius: 10px;
-  background: rgb(232 236 244 / 3%);
-  border: 1px solid var(--pm-ed-line);
-}
-
-.pm-ed-taskform .pm-ed-input {
-  min-height: 36px;
-  padding: 7px 10px;
+.pm-f-stale-title {
   font-size: 14px;
+  color: #ffd27a;
 }
 
-.pm-ed-taskform-row {
+/* ── the barrier's task tree: rows, not cards ───────────────────────────── */
+
+.pm-f-tasks {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
 }
 
-.pm-ed-field--owner {
-  flex: 0 1 120px;
+.pm-f-tasks--nested {
+  padding-left: 26px;
 }
 
-.pm-ed-field--grow {
-  flex: 1 1 160px;
-}
-
-.pm-ed-taskform-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.pm-ed-task-new {
-  list-style: none;
-}
-
-/* ── the swap dialog (Roadside.dc.html) ─────────────────────────────────── */
-
-.pm-ed-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+.pm-f-task-row {
   display: flex;
   align-items: flex-start;
-  justify-content: center;
-  padding: 120px 16px 16px;
-  background: rgb(4 8 16 / 60%);
+  gap: 10px;
+  padding: 6px 0;
 }
 
-.pm-ed-dialog {
-  width: min(480px, 100%);
-  padding: 24px;
-  border-radius: 16px;
-  background: #111c33;
-  border: 1px solid var(--pm-ed-line);
-  box-shadow: 0 30px 80px rgb(0 0 0 / 55%);
+.pm-f-form .pm-f-task-check {
+  margin-top: 3px;
+}
+
+.pm-f-task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--pm-muted, #c9d1df);
+  overflow-wrap: anywhere;
+}
+
+.pm-f-task[data-done='true'] > .pm-f-task-row .pm-f-task-title {
+  color: #8c98ae;
+}
+
+.pm-f-task-date {
+  font-size: 12px;
+  color: #8c98ae;
+}
+
+.pm-f-task-owner {
+  flex: none;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.pm-f-task-row .pm-ed-menuwrap {
+  margin: -2px -6px 0 0;
+}
+
+.pm-f-taskform {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  color: var(--pm-text);
+  gap: 14px;
+  padding: 8px 0 14px 26px;
 }
 
-.pm-ed-dialog-head {
+.pm-f-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+
+/* ── dialogs: delete / discard (AlertDialog) and the swap (Dialog) ──────── */
+
+.pm-f-alert.pm-f-alert {
+  max-width: min(420px, calc(100vw - 32px));
+  gap: 16px;
+  padding: 22px;
+}
+
+/* Buttons in ONE row at every width; no grey footer band (#541 v2). */
+.pm-f-alert .pm-f-alert-footer {
+  flex-flow: row wrap;
+  justify-content: flex-end;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.pm-f-inbound {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.pm-ed-dialog-title {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.pm-ed-dialog-lead {
-  margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
-  color: var(--pm-muted-2);
+  color: var(--muted-foreground);
 }
 
-.pm-ed-radios {
+.pm-f-inbound ul {
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.pm-f-dialog {
+  gap: 18px;
+  padding: 24px;
+}
+
+.pm-f-dialog.pm-f-dialog {
+  max-width: min(440px, calc(100vw - 32px));
+}
+
+.pm-f-dialog-head {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.pm-ed-radio {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--pm-ed-line);
-  background: transparent;
-  color: var(--pm-text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.pm-ed-radio:hover {
-  border-color: var(--pm-ed-line-strong);
-}
-
-.pm-ed-radio[aria-checked='true'] {
-  border-color: var(--pm-accent);
-  background: rgb(242 181 68 / 8%);
-}
-
-.pm-ed-radio-mark {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1.5px solid var(--pm-muted-3);
-}
-
-.pm-ed-radio[aria-checked='true'] .pm-ed-radio-mark {
-  border: 5px solid var(--pm-accent);
-}
-
-.pm-ed-radio-text {
-  flex: 1;
+.pm-f-radios {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
-  color: var(--pm-muted-3);
+  gap: 6px;
 }
 
-.pm-ed-radio-text b {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--pm-text);
+.pm-f-dialog .pm-f-radio {
+  height: auto;
+  padding: 10px 12px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 12px;
+  border-color: var(--border);
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
 }
 
-.pm-ed-dialog-note {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--pm-muted-3);
+.pm-f-dialog .pm-f-radio[aria-checked='true'] {
+  border-color: rgb(242 181 68 / 55%);
+  background: rgb(242 181 68 / 9%);
 }
 
-.pm-ed-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+.pm-f-radio-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--input);
+  border-radius: 50%;
+  color: var(--primary-foreground);
+}
+
+.pm-f-radio[aria-checked='true'] .pm-f-radio-mark {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.pm-f-radio-mark svg {
+  width: 11px;
+  height: 11px;
 }
 
 /* ── toast ──────────────────────────────────────────────────────────────── */
@@ -1184,7 +879,7 @@ p.pm-ed-hint {
   background: var(--pm-accent);
   color: var(--pm-bg);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
 }
 
@@ -1192,29 +887,11 @@ p.pm-ed-hint {
   display: none;
 }
 
-/* ── interaction states (last: specificity order) ───────────────────── */
+/* ── interaction states of the canvas overlay (last: specificity order) ── */
 
-.pm-ed-menubtn:focus-visible,
-.pm-ed-menuitem:focus-visible,
-.pm-ed-pill:focus-visible,
-.pm-ed-conf:focus-visible,
-.pm-ed-sidenode:focus-visible,
-.pm-ed-close:focus-visible,
-.pm-ed-btn:focus-visible,
-.pm-ed-delete:focus-visible,
-.pm-ed-radio:focus-visible,
-.pm-ed-more-summary:focus-visible,
-.pm-ed-check input:focus-visible {
+.pm-ed-menubtn:focus-visible {
   outline: 2px solid var(--pm-accent-soft);
   outline-offset: 2px;
-}
-
-/* A text field shows focus as an accent border with a soft ring. */
-.pm-ed-input:focus-visible,
-.pm-ed-pill--select:focus-visible {
-  outline: none;
-  border-color: var(--pm-accent);
-  box-shadow: var(--pm-ed-ring);
 }
 
 .pm-ed-slot .pm-ed-menubtn:hover,
@@ -1223,20 +900,6 @@ p.pm-ed-hint {
   border-style: solid;
   background: rgb(242 181 68 / 18%);
   opacity: 1;
-}
-
-.pm-ed-menuitem:focus-visible,
-.pm-ed-menuitem:hover:not(:disabled) {
-  background: rgb(232 236 244 / 8%);
-}
-
-.pm-ed-input[aria-invalid='true'] {
-  border-color: var(--pm-bad);
-}
-
-.pm-ed-taskmenu .pm-ed-menubtn:hover,
-.pm-ed-taskmenu .pm-ed-menubtn[aria-expanded='true'] {
-  border-color: rgb(232 236 244 / 24%);
 }
 
 /* ── header toggle, disabled off the live map (last: specificity order) ── */
@@ -1248,7 +911,7 @@ p.pm-ed-hint {
 
 /* ── narrow ─────────────────────────────────────────────────────────────── */
 
-/* Under the map the panel is a full-width section (as the other panels). */
+/* Under the map the Обочина is a full-width section (as the other panels). */
 @media (width <= 1140px) {
   .pm-ed-aside {
     flex-basis: 100%;
@@ -1259,16 +922,19 @@ p.pm-ed-hint {
 }
 
 @media (width <= 640px) {
+  /* 28px on the left clears the navigator's 16px rail (#532), as «Что внутри». */
   .pm-ed-aside {
-    padding: 24px 16px;
+    padding: 24px 16px 40px 28px;
+  }
+
+  .pm-ed-sheet {
+    width: 100%;
+    padding: 20px 16px 32px;
+    border-left: 0;
   }
 
   .pm-ed-placeholder {
     max-width: none;
-  }
-
-  .pm-ed-overlay {
-    padding-top: 40px;
   }
 
   .pm-edit-off {
@@ -1281,8 +947,7 @@ p.pm-ed-hint {
     animation: none;
   }
 
-  .pm-ed-input,
-  .pm-ed-more-summary::before {
+  .pm-f-more-icon {
     transition: none;
   }
 }

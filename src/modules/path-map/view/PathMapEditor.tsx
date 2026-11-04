@@ -1,5 +1,6 @@
 'use client'
 
+import { PlusIcon } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import React, { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 
@@ -7,6 +8,8 @@ import type { MapView } from '@/lib/path-map'
 import type { EditCommand } from '@/lib/path-map/edit'
 import type { PathMapEditOutcome } from '@/lib/path-map/save'
 import type { PathMap, PathNode, PathTrack } from '@/lib/path-map/schema'
+import { Button } from '@/ui/button'
+import { Sheet, SheetContent } from '@/ui/sheet'
 
 import {
   CONFIDENCE_WORD,
@@ -19,15 +22,16 @@ import {
   type SlotAt,
 } from './editing'
 import { EditMenu, type EditMenuItem } from './EditMenu'
+import { PM_KIT } from './kit'
 import {
   BeaconForm,
+  ConfirmDialog,
   FormErrors,
   NodeForm,
   type NodeTarget,
   SwapDialog,
   TrackForm,
 } from './PathMapEditForms'
-import { useScrollRegion } from './useScrollRegion'
 
 import './path-map-edit.css'
 
@@ -40,12 +44,15 @@ import './path-map-edit.css'
  * component hands it the overlay as `RoadEdit` hooks): a small «+» slot on the
  * road between blocks, at the top of each road and just above «Мы здесь»
  * opens a mini-picker «станция / шлагбаум / туман»; the choice opens the form
- * in the right panel and puts a pulsing dashed placeholder card on the road at
+ * in a side Sheet and puts a pulsing dashed placeholder card on the road at
  * that spot (the AddStation artboard). Clicking any card opens its form; a
  * track label carries a «⋯» menu (rename, to the roadside / into focus with the
- * swap dialog, delete). With no form open the right panel is the editable
- * «Обочина»: roadside tracks and their blocks, stations without «потому что»,
- * «+ Трек».
+ * swap dialog, delete). The right column is the editable «Обочина»: roadside
+ * tracks and their blocks, stations without «потому что», «+ Трек».
+ *
+ * #541 v2: the form panel is the kit Sheet (non-modal), the discard and delete
+ * confirmations kit AlertDialogs, the menus the kit DropdownMenu; the Обочина is
+ * a flat list in the page's one scroll.
  *
  * The save loop: every command goes to the Server Action with the blob sha the
  * page was drawn from; on success the page is refreshed (`router.refresh()`,
@@ -102,17 +109,7 @@ function Placeholder({ draft }: { draft: NodeDraft }) {
   )
 }
 
-function isNarrow(): { narrow: boolean; still: boolean } {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return { narrow: false, still: false }
-  }
-  return {
-    narrow: window.matchMedia('(max-width: 1140px)').matches,
-    still: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  }
-}
-
-/** With no form open: the Обочина panel, editable (#541 rework). */
+/** With no form open: the Обочина panel, editable — a flat list (#541 v2). */
 function EditRoadside({
   map,
   view,
@@ -127,40 +124,41 @@ function EditRoadside({
   view: MapView
   busy: boolean
   panel: PanelTarget | null
-  trackMenu: (trackId: string) => React.ReactNode
+  trackMenu: (trackId: string, look: 'canvas' | 'quiet') => React.ReactNode
   onNode: (nodeId: string) => void
   onNewBlock: (track: PathTrack, type: PathNode['type']) => void
   onNewTrack: () => void
 }) {
   const roadside = map.tracks.filter((t) => t.status === 'roadside')
   const bars = Math.max(view.focusLimit, view.focusCount)
-  const nodeButton = (node: PathNode) => (
-    <button
-      key={node.id}
-      type="button"
-      className="pm-ed-sidenode"
-      data-type={node.type}
-      aria-label={`Править: ${NODE_KIND[node.type].toLowerCase()} «${node.title}»`}
-      aria-pressed={
-        panel?.kind === 'node' && panel.target.mode === 'edit' && panel.target.nodeId === node.id
-      }
-      onClick={() => onNode(node.id)}
-    >
-      <span className="pm-ed-sidenode-kind">{NODE_KIND[node.type]}</span>
-      <span className="pm-ed-sidenode-title">{node.title}</span>
-    </button>
+  const nodeRow = (node: PathNode) => (
+    <li key={node.id}>
+      <Button
+        type="button"
+        variant="ghost"
+        className="pm-side-node"
+        aria-label={`Править: ${NODE_KIND[node.type].toLowerCase()} «${node.title}»`}
+        aria-pressed={
+          panel?.kind === 'node' && panel.target.mode === 'edit' && panel.target.nodeId === node.id
+        }
+        onClick={() => onNode(node.id)}
+      >
+        <span className="pm-f-kind" data-type={node.type}>
+          {NODE_KIND[node.type]}
+        </span>
+        <span className="pm-side-node-title">{node.title}</span>
+      </Button>
+    </li>
   )
   return (
-    <>
-      <section className="pm-aside-sec">
-        <div className="pm-aside-head">
-          <h2 className="pm-aside-title">Обочина</h2>
-          <p className="pm-aside-lead">
-            Видно, но вне фокуса. Вывести трек на дорогу — значит отправить сюда другой.
-          </p>
-        </div>
-        <div className="pm-meter" data-overflow={view.focusOverflow || undefined}>
-          <span className="pm-meter-label">В фокусе</span>
+    <div className="pm-side">
+      <div className="pm-side-head">
+        <h2 className="pm-side-title">Обочина</h2>
+        <p className="pm-f-hint">
+          Видно, но вне фокуса. Вывести трек на дорогу — значит отправить сюда другой.
+        </p>
+        <p className="pm-side-meter" data-overflow={view.focusOverflow || undefined}>
+          <span>В фокусе</span>
           <span className="pm-meter-bars" aria-hidden="true">
             {Array.from({ length: bars }, (_, i) => (
               <span
@@ -170,58 +168,67 @@ function EditRoadside({
               />
             ))}
           </span>
-          <b>
+          <span>
             {view.focusCount} из {view.focusLimit}
-          </b>
+          </span>
+        </p>
+      </div>
+      {roadside.length > 0 ? (
+        <ul className="pm-side-tracks">
+          {roadside.map((track) => (
+            <li key={track.id} className="pm-side-track">
+              <div className="pm-side-trackhead">
+                <h3 className="pm-side-trackname">{track.title}</h3>
+                {trackMenu(track.id, 'quiet')}
+              </div>
+              {track.nodes.length > 0 ? (
+                <ul className="pm-side-nodes">{[...track.nodes].reverse().map(nodeRow)}</ul>
+              ) : (
+                <p className="pm-f-hint">пока без блоков</p>
+              )}
+              <EditMenu
+                look="quiet"
+                className="pm-side-add"
+                trigger="+ Блок"
+                label={`Добавить блок в трек «${track.title}»`}
+                menuLabel={`Что поставить: трек «${track.title}»`}
+                disabled={busy}
+                items={newBlockItems((type) => onNewBlock(track, type))}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {view.roadsideStations.length > 0 ? (
+        <div className="pm-side-track">
+          <h3 className="pm-side-trackname">Станции без «потому что»</h3>
+          <ul className="pm-side-nodes">
+            {view.roadsideStations.map(({ node }) => nodeRow(node))}
+          </ul>
         </div>
-        {roadside.map((track) => (
-          <div key={track.id} className="pm-roadside-track pm-ed-sidetrack">
-            <span className="pm-roadside-row">
-              <span className="pm-dot pm-dot--muted" aria-hidden="true" />
-              <span className="pm-roadside-name">{track.title}</span>
-              <span className="pm-roadside-tag">трек</span>
-              {trackMenu(track.id)}
-            </span>
-            {track.nodes.length > 0 ? (
-              <span className="pm-ed-sidenodes">{[...track.nodes].reverse().map(nodeButton)}</span>
-            ) : (
-              <span className="pm-roadside-summary">пока без блоков</span>
-            )}
-            <EditMenu
-              className="pm-ed-sideadd"
-              trigger="+ Блок"
-              label={`Добавить блок в трек «${track.title}»`}
-              menuLabel={`Что поставить: трек «${track.title}»`}
-              disabled={busy}
-              items={newBlockItems((type) => onNewBlock(track, type))}
-            />
-          </div>
-        ))}
-        {view.roadsideStations.length > 0 ? (
-          <div className="pm-ed-sideloose">
-            <span className="pm-roadside-kicker">Станции без «потому что»</span>
-            {view.roadsideStations.map(({ node }) => nodeButton(node))}
-          </div>
-        ) : null}
-        {roadside.length === 0 && view.roadsideStations.length === 0 ? (
-          <p className="pm-aside-lead">На обочине пусто.</p>
-        ) : null}
-        <button
-          type="button"
-          className="pm-ed-btn pm-ed-addtrack"
-          aria-pressed={panel?.kind === 'track' && panel.trackId === null}
-          disabled={busy}
-          onClick={onNewTrack}
-        >
-          + Трек
-        </button>
-      </section>
-      <p className="pm-aside-lead pm-ed-hint">
+      ) : null}
+      {roadside.length === 0 && view.roadsideStations.length === 0 ? (
+        <p className="pm-f-hint">На обочине пусто.</p>
+      ) : null}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="pm-side-addtrack"
+        aria-label="+ Трек"
+        aria-pressed={panel?.kind === 'track' && panel.trackId === null}
+        disabled={busy}
+        onClick={onNewTrack}
+      >
+        <PlusIcon aria-hidden="true" />
+        Трек
+      </Button>
+      <p className="pm-f-hint pm-side-note">
         «+» на дороге ставит новый блок на это место, клик по карточке открывает её форму, «⋯» у
         трека — название, фокус и удаление. Каждое сохранение — коммит в файл карты с вашим именем;
         люди и агенты продолжают править тот же файл через git.
       </p>
-    </>
+    </div>
   )
 }
 
@@ -264,8 +271,8 @@ export function PathMapEditor({
   const [actionErrors, setActionErrors] = useState<string[]>([])
   const dirty = useRef(false)
   const shaRef = useRef(editing.sha)
-  const asideRef = useRef<HTMLElement | null>(null)
-  const scroll = useScrollRegion('Правка карты — прокручиваемое содержимое')
+  // The «⋯» that opened the swap dialog: focus returns to it on close.
+  const swapOpener = useRef<string | null>(null)
 
   // A fresh page (after a save or a «Перечитать») brings the new base sha
   // and clears the stale banner (state adjusted during render, not in an effect).
@@ -353,37 +360,13 @@ export function PathMapEditor({
     [panel, open],
   )
 
-  // Opening a form where the panel sits under the map scrolls it into view.
-  useEffect(() => {
-    if (!panel) return
-    const { narrow, still } = isNarrow()
-    if (narrow)
-      asideRef.current?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' })
-  }, [panel])
-
-  // Esc closes the open form — with a confirm when it holds unsaved input.
+  // Esc (the Sheet's own) closes the open form — with a confirm when it holds
+  // unsaved input. The discard confirm is an AlertDialog above the Sheet, so
+  // Esc there means «Вернуться к форме» and never reaches the Sheet (#541).
   const requestRef = useRef(request)
   useEffect(() => {
     requestRef.current = request
   })
-  // Esc while the discard confirm is open means «Вернуться к форме» — it never
-  // replaces the waiting switch with «close» (#541 re-review).
-  const pendingRef = useRef(pending)
-  useEffect(() => {
-    pendingRef.current = pending
-  })
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      if (pendingRef.current) {
-        setPending(null)
-        return
-      }
-      requestRef.current(null)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [])
 
   const close = () => request(null)
   const done = () => {
@@ -417,7 +400,19 @@ export function PathMapEditor({
     }
   }, [map])
 
-  const trackMenu = (trackId: string) => {
+  const focusByLabel = (label: string | null) => {
+    if (!label) return
+    Array.from(document.querySelectorAll<HTMLElement>('[aria-label]'))
+      .find((el) => el.getAttribute('aria-label') === label)
+      ?.focus()
+  }
+  const openSwap = (trackId: string) => {
+    const track = map.tracks.find((t) => t.id === trackId)
+    swapOpener.current = track ? trackMenuLabel(track.title) : null
+    setSwapFor(trackId)
+  }
+
+  const trackMenu = (trackId: string, look: 'canvas' | 'quiet' = 'canvas') => {
     const track = map.tracks.find((t) => t.id === trackId)
     if (!track) return null
     const items: EditMenuItem[] = [
@@ -431,7 +426,7 @@ export function PathMapEditor({
             label: 'Вывести в фокус…',
             onSelect: () =>
               focusFull
-                ? setSwapFor(trackId)
+                ? openSwap(trackId)
                 : void moveTrack({ op: 'track.status', trackId, status: 'focus' }),
           },
       {
@@ -442,6 +437,7 @@ export function PathMapEditor({
     ]
     return (
       <EditMenu
+        look={look}
         className="pm-ed-trackmenu"
         label={trackMenuLabel(track.title)}
         disabled={busy}
@@ -489,14 +485,17 @@ export function PathMapEditor({
       ),
     trackMenu,
     beaconAction: (
-      <button
+      <Button
         type="button"
-        className="pm-ed-btn pm-ed-btn--small pm-ed-beaconbtn"
+        variant="outline"
+        size="sm"
+        data-bbm-ui=""
+        className={`${PM_KIT} pm-ed-beaconbtn`}
         aria-pressed={panel?.kind === 'beacon'}
         onClick={() => request({ kind: 'beacon' })}
       >
         Править маяк
-      </button>
+      </Button>
     ),
     indexOf,
     size: (trackId) => map.tracks.find((t) => t.id === trackId)?.nodes.length ?? 0,
@@ -530,7 +529,7 @@ export function PathMapEditor({
         onDirty={onDirty}
         onDone={done}
         onClose={close}
-        onSwap={setSwapFor}
+        onSwap={openSwap}
       />
     )
   } else if (panel?.kind === 'beacon') {
@@ -549,96 +548,129 @@ export function PathMapEditor({
 
   const swapTrack = swapFor ? map.tracks.find((t) => t.id === swapFor) : undefined
 
+  const notices = (
+    <>
+      {stale ? (
+        <div role="alert" className="pm-f-stale">
+          <p className="pm-f-stale-title">Карта обновилась — перечитайте.</p>
+          <p className="pm-f-hint">
+            Пока вы правили, файл карты изменили (другой человек или агент). Ваша правка не
+            сохранена, но введённое осталось в форме: перечитайте карту и сохраните ещё раз.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            disabled={refreshing}
+            onClick={() => startRefresh(() => router.refresh())}
+          >
+            {refreshing ? 'Перечитываем…' : 'Перечитать карту'}
+          </Button>
+        </div>
+      ) : null}
+      <FormErrors errors={actionErrors} />
+    </>
+  )
+
   return (
-    <div className="pm-body" data-editing="">
+    <div className="pm-body" data-editing="" data-form={form ? '' : undefined}>
       <MapMain road={road} render={renderMain} />
+      {/* One scroll (#541 v2): the Обочина is a plain column of the page — no
+          sticky inner scroll region. Forms open in the Sheet below. */}
       <aside
-        ref={asideRef}
         id="pm-roadside"
-        aria-label={form ? 'Правка карты' : 'Обочина'}
-        className="pm-aside pm-ed-aside"
-        data-form={form ? '' : undefined}
+        aria-label="Обочина"
+        data-bbm-ui=""
+        className={`pm-aside pm-ed-aside ${PM_KIT}`}
       >
-        <div className="pm-aside-inner pm-inside" {...scroll}>
-          {stale ? (
-            <div role="alert" className="pm-ed-stale">
-              <b>Карта обновилась — перечитайте.</b>
-              <span>
-                Пока вы правили, файл карты изменили (другой человек или агент). Ваша правка не
-                сохранена, но введённое осталось в форме: перечитайте карту и сохраните ещё раз.
-              </span>
-              <button
-                type="button"
-                className="pm-ed-btn pm-ed-btn--primary pm-ed-btn--small"
-                disabled={refreshing}
-                onClick={() => startRefresh(() => router.refresh())}
-              >
-                {refreshing ? 'Перечитываем…' : 'Перечитать карту'}
-              </button>
-            </div>
-          ) : null}
-          {pending ? (
-            <div role="alertdialog" aria-label="Несохранённые изменения" className="pm-ed-confirm">
-              <span>В форме есть несохранённые изменения. Закрыть без сохранения?</span>
-              <span className="pm-ed-confirm-actions">
-                <button
-                  type="button"
-                  className="pm-ed-btn pm-ed-btn--danger"
-                  onClick={() => {
-                    dirty.current = false
-                    open(pending.next)
-                    setPending(null)
-                  }}
-                >
-                  Закрыть без сохранения
-                </button>
-                <button type="button" className="pm-ed-btn" onClick={() => setPending(null)}>
-                  Вернуться к форме
-                </button>
-              </span>
-            </div>
-          ) : null}
-          <FormErrors errors={actionErrors} />
-          {form ?? (
-            <EditRoadside
-              map={map}
-              view={view}
-              busy={busy}
-              panel={panel}
-              trackMenu={trackMenu}
-              onNode={road.onNode}
-              onNewBlock={(track, type) =>
-                request({
-                  kind: 'node',
-                  target: { mode: 'new', trackId: track.id, index: track.nodes.length, type },
-                })
-              }
-              onNewTrack={() => request({ kind: 'track', trackId: null })}
-            />
-          )}
-        </div>
-        {swapTrack ? (
-          <SwapDialog
-            map={map}
-            incoming={swapTrack}
-            busy={busy}
-            onCancel={() => setSwapFor(null)}
-            onSwap={async (out) => {
-              const outcome = await moveTrack({
-                op: 'track.status',
-                trackId: swapTrack.id,
-                status: 'focus',
-                swapWith: out,
-              })
-              if (outcome.status === 'ok') setSwapFor(null)
-            }}
-          />
-        ) : null}
-        {/* Always mounted, so the live region announces «Сохранено» when it fills. */}
-        <div role="status" className="pm-ed-toast" data-shown={toast ? 'true' : undefined}>
-          {toast}
-        </div>
+        {form ? null : notices}
+        <EditRoadside
+          map={map}
+          view={view}
+          busy={busy}
+          panel={panel}
+          trackMenu={trackMenu}
+          onNode={road.onNode}
+          onNewBlock={(track, type) =>
+            request({
+              kind: 'node',
+              target: { mode: 'new', trackId: track.id, index: track.nodes.length, type },
+            })
+          }
+          onNewTrack={() => request({ kind: 'track', trackId: null })}
+        />
       </aside>
+      {/* The form panel: the kit Sheet, NON-modal — the map stays live beside it
+          (click another card to switch, the placeholder card stays in view),
+          and it is in view wherever on the long map the member clicked. */}
+      <Sheet
+        open={Boolean(form)}
+        modal={false}
+        onOpenChange={(next) => {
+          if (!next) close()
+        }}
+      >
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          aria-describedby={undefined}
+          className={`${PM_KIT} pm-ed-sheet`}
+          onInteractOutside={(e) => e.preventDefault()}
+          onOpenAutoFocus={(e) => {
+            // The first field, not the close button.
+            const first = (e.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
+              'textarea, input',
+            )
+            if (first) {
+              e.preventDefault()
+              first.focus()
+            }
+          }}
+          onEscapeKeyDown={(e) => {
+            e.preventDefault()
+            // A task row's own Esc cancels that row only (#541 re-review).
+            if ((e.target as Element | null)?.closest?.('[data-esc-local]')) return
+            requestRef.current(null)
+          }}
+        >
+          {notices}
+          {form}
+        </SheetContent>
+      </Sheet>
+      <ConfirmDialog
+        open={Boolean(pending)}
+        title="Закрыть без сохранения?"
+        description="В форме есть несохранённые изменения — они пропадут."
+        cancel="Вернуться к форме"
+        confirm="Закрыть"
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          dirty.current = false
+          open(pending?.next ?? null)
+          setPending(null)
+        }}
+      />
+      {swapTrack ? (
+        <SwapDialog
+          map={map}
+          incoming={swapTrack}
+          busy={busy}
+          onCancel={() => setSwapFor(null)}
+          onReturnFocus={() => focusByLabel(swapOpener.current)}
+          onSwap={async (out) => {
+            const outcome = await moveTrack({
+              op: 'track.status',
+              trackId: swapTrack.id,
+              status: 'focus',
+              swapWith: out,
+            })
+            if (outcome.status === 'ok') setSwapFor(null)
+          }}
+        />
+      ) : null}
+      {/* Always mounted, so the live region announces «Сохранено» when it fills. */}
+      <div role="status" className="pm-ed-toast" data-shown={toast ? 'true' : undefined}>
+        {toast}
+      </div>
     </div>
   )
 }
