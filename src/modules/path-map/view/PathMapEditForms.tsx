@@ -1496,8 +1496,8 @@ export function TrackForm({
   onDirty: (dirty: boolean) => void
   onDone: () => void
   onClose: () => void
-  /** Bringing a roadside track into a FULL focus: open the swap dialog. */
-  onSwap: (trackId: string) => void
+  /** Bringing a roadside track into a FULL focus: open the swap dialog; `opener` gets focus back when it closes. */
+  onSwap: (trackId: string, opener: HTMLElement) => void
 }) {
   const track = trackId ? map.tracks.find((t) => t.id === trackId) : undefined
   const focusCount = map.tracks.filter((t) => t.status === 'focus').length
@@ -1647,9 +1647,9 @@ export function TrackForm({
                   variant="outline"
                   size="sm"
                   disabled={busy}
-                  onClick={() =>
+                  onClick={(e) =>
                     focusFull
-                      ? onSwap(track.id)
+                      ? onSwap(track.id, e.currentTarget)
                       : void exec({ op: 'track.status', trackId: track.id, status: 'focus' }, false)
                   }
                 >

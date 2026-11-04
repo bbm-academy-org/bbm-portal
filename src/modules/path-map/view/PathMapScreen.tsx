@@ -1041,7 +1041,7 @@ export function PathMapScreen({
     const nodeCtx = road ? { ...ctx, road } : ctx
     const columns = { '--pm-cols': v.focus.length } as React.CSSProperties
     return (
-      <main className="pm-main">
+      <main className="pm-main" inert={road?.covered || undefined}>
         <section id={ANCHOR_IDS.beacon} aria-label="Маяк" className="pm-beacon">
           <LighthouseMark />
           <span className="pm-beacon-copy">

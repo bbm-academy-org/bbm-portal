@@ -168,6 +168,11 @@
   font-weight: 600;
 }
 
+/* The kit scope around «Править маяк» (#541 review): a wrapper that adds no box. */
+.pm-ed-beaconwrap {
+  display: contents;
+}
+
 .pm-ed-beaconbtn {
   margin-top: 4px;
   font-weight: 400;

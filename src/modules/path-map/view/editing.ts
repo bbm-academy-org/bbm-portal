@@ -56,6 +56,8 @@ export interface RoadEdit {
   indexOf: (nodeId: string) => number
   /** How many nodes a track has in the file. */
   size: (trackId: string) => number
+  /** The form Sheet covers the whole map (narrow screens): the map is `inert` meanwhile. */
+  covered?: boolean
 }
 
 /** Runs one command through the editor's save loop (sha, refresh, toast, conflict). */

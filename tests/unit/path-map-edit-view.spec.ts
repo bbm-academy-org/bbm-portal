@@ -701,3 +701,149 @@ describe('closing a dirty form', () => {
     await waitFor(() => expect(screen.queryByRole('form', { name: 'Маяк' })).toBeNull())
   })
 })
+
+describe('focus around the form Sheet (#541 review)', () => {
+  /** Opens the roadside track's form from its «⋯» menu. */
+  function openPharmaForm() {
+    const roadside = screen.getByRole('complementary', { name: 'Обочина' })
+    openMenu(within(roadside).getByRole('button', { name: 'Трек «Фарма-партнёры»: действия' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Переименовать…' }))
+    return screen.getByRole('form', { name: 'Трек «Фарма-партнёры»' })
+  }
+
+  it.each([['Esc'], ['Отмена']])(
+    'returns focus to «Вывести в фокус» in the track form when the swap dialog closes (%s)',
+    async (how) => {
+      renderEditable(vi.fn())
+      enterEdit()
+      const form = openPharmaForm()
+      const button = within(form).getByRole('button', { name: 'Вывести в фокус' })
+      button.focus()
+      fireEvent.click(button)
+      const dialog = screen.getByRole('dialog', { name: 'Вывести трек в фокус' })
+      if (how === 'Esc') fireEvent.keyDown(dialog, { key: 'Escape' })
+      else fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Вывести трек в фокус' })).toBeNull(),
+      )
+      await waitFor(() => expect(document.activeElement).toBe(button))
+      // The form is still open beside it.
+      expect(screen.getByRole('form', { name: 'Трек «Фарма-партнёры»' })).toBeTruthy()
+    },
+  )
+
+  it('returns focus to the card that opened the form when the Sheet closes', async () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const card = screen.getByRole('button', { name: 'Править: станция «Готов первый урок»' })
+    card.focus()
+    fireEvent.click(card)
+    const form = screen.getByRole('form', { name: 'Станция: Готов первый урок' })
+    expect(form.contains(document.activeElement)).toBe(true)
+    fireEvent.click(within(form).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByRole('form')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(card))
+  })
+
+  it('returns focus to «Править маяк» after Esc', async () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const beacon = screen.getByRole('button', { name: 'Править маяк' })
+    beacon.focus()
+    fireEvent.click(beacon)
+    const input = within(screen.getByRole('form', { name: 'Маяк' })).getByLabelText('Куда идём')
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('form')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(beacon))
+  })
+
+  it('returns focus to the «⋯» trigger whose menu opened the form', async () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const form = openPharmaForm()
+    fireEvent.click(within(form).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByRole('form')).toBeNull())
+    const roadside = screen.getByRole('complementary', { name: 'Обочина' })
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(roadside).getByRole('button', { name: 'Трек «Фарма-партнёры»: действия' }),
+      ),
+    )
+  })
+
+  it('returns focus to the «+» slot that the placeholder card stood in for', async () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const slot = within(road('Охват и подкасты')).getAllByRole('button', {
+      name: /^Добавить блок/,
+    })[0]
+    const label = slot.getAttribute('aria-label')
+    const picker = openSlotPicker('Охват и подкасты', 0)
+    fireEvent.click(within(picker).getByRole('menuitem', { name: 'Шлагбаум' }))
+    const form = screen.getByRole('form', { name: 'Новый шлагбаум' })
+    fireEvent.keyDown(within(form).getByLabelText('Что мешает проехать?'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('form')).toBeNull())
+    await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe(label))
+  })
+})
+
+describe('what the non-modal Sheet covers is inert (#541 review)', () => {
+  const realMatchMedia = window.matchMedia
+  function viewport(width: number) {
+    window.matchMedia = ((query: string) => {
+      const m = /\(width ([<>]=?) (\d+)px\)/.exec(query)
+      const at = m ? Number(m[2]) : 0
+      const op = m?.[1]
+      const matches =
+        op === '>' ? width > at : op === '>=' ? width >= at : op === '<' ? width < at : width <= at
+      return {
+        matches,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      } as unknown as MediaQueryList
+    }) as typeof window.matchMedia
+  }
+  afterEach(() => {
+    window.matchMedia = realMatchMedia
+  })
+
+  const aside = () => screen.getByRole('complementary', { name: 'Обочина', hidden: true })
+  const main = () => document.querySelector('main') as HTMLElement
+
+  it('wide: the Обочина under the Sheet is inert while a form is open; the map is not', async () => {
+    viewport(1400)
+    renderEditable(vi.fn())
+    enterEdit()
+    expect(aside().hasAttribute('inert')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
+    expect(aside().hasAttribute('inert')).toBe(true)
+    expect(main().hasAttribute('inert')).toBe(false)
+    fireEvent.click(
+      within(screen.getByRole('form', { name: 'Маяк' })).getByRole('button', { name: 'Отмена' }),
+    )
+    await waitFor(() => expect(aside().hasAttribute('inert')).toBe(false))
+  })
+
+  it('narrow: the full-width Sheet makes the map inert too', async () => {
+    viewport(400)
+    renderEditable(vi.fn())
+    enterEdit()
+    fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
+    expect(aside().hasAttribute('inert')).toBe(true)
+    expect(main().hasAttribute('inert')).toBe(true)
+    fireEvent.click(
+      within(screen.getByRole('form', { name: 'Маяк' })).getByRole('button', { name: 'Отмена' }),
+    )
+    await waitFor(() => expect(main().hasAttribute('inert')).toBe(false))
+  })
+
+  it('in between: the Sheet covers only part of the page — nothing is inert', () => {
+    viewport(900)
+    renderEditable(vi.fn())
+    enterEdit()
+    fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
+    expect(aside().hasAttribute('inert')).toBe(false)
+    expect(main().hasAttribute('inert')).toBe(false)
+  })
+})

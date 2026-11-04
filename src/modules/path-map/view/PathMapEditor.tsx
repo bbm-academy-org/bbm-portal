@@ -2,7 +2,14 @@
 
 import { PlusIcon } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import React, { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from 'react'
 
 import type { MapView } from '@/lib/path-map'
 import type { EditCommand } from '@/lib/path-map/edit'
@@ -67,6 +74,81 @@ type PanelTarget =
   | { kind: 'node'; target: NodeTarget }
   | { kind: 'track'; trackId: string | null; intent?: 'delete' }
   | { kind: 'beacon' }
+
+/**
+ * What opened a form or dialog, so focus can go back to it on close (#541
+ * review): the element, and its accessible name for when that element was
+ * replaced meanwhile (a «+» slot turns into the placeholder card; a track's «⋯»
+ * re-mounts on the other side of the road).
+ */
+interface Opener {
+  el: HTMLElement | null
+  label: string | null
+}
+
+function openerOf(el: HTMLElement | null): Opener | null {
+  return el ? { el, label: el.getAttribute('aria-label') } : null
+}
+
+function byLabel(root: ParentNode | null | undefined, label: string | null): HTMLElement | null {
+  if (!root || !label) return null
+  return (
+    Array.from(root.querySelectorAll<HTMLElement>('[aria-label]')).find(
+      (el) => el.getAttribute('aria-label') === label,
+    ) ?? null
+  )
+}
+
+/**
+ * The element that is opening a form right now, inside the editor `root`: the
+ * focused card / button, or — when a menu item was chosen — the trigger of that
+ * still-open menu (its items are portaled outside the page).
+ */
+function currentOpener(root: HTMLElement | null): Opener | null {
+  const active = document.activeElement as HTMLElement | null
+  if (!root || !active) return null
+  if (active.closest('[role="menu"]')) {
+    const trigger = root.querySelector<HTMLElement>('[aria-haspopup="menu"][aria-expanded="true"]')
+    return openerOf(trigger)
+  }
+  return root.contains(active) && active !== root ? openerOf(active) : null
+}
+
+/** Focus goes back to what opened the form, else to the same-named control, else the map. */
+function returnFocus(root: HTMLElement | null, opener: Opener | null) {
+  if (!root) return
+  const target =
+    (opener?.el?.isConnected ? opener.el : null) ??
+    byLabel(root, opener?.label ?? null) ??
+    root.querySelector<HTMLElement>('main')
+  if (!target) return
+  if (target.tagName === 'MAIN' && !target.hasAttribute('tabindex')) {
+    // Focusable for this one move only, so a later click on the map does not focus it.
+    target.setAttribute('tabindex', '-1')
+    target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true })
+  }
+  target.focus()
+}
+
+/**
+ * The Sheet's layout breakpoints (`path-map-edit.css`): above 1140px it lies
+ * exactly over the Обочина column; at 640px and below it covers the whole page.
+ */
+const SHEET_OVER_ASIDE = '(width > 1140px)'
+const SHEET_OVER_ALL = '(width <= 640px)'
+
+function useMedia(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      if (typeof window.matchMedia !== 'function') return () => {}
+      const mql = window.matchMedia(query)
+      mql.addEventListener('change', onChange)
+      return () => mql.removeEventListener('change', onChange)
+    },
+    () => typeof window.matchMedia === 'function' && window.matchMedia(query).matches,
+    () => false,
+  )
+}
 
 function sameTarget(a: PanelTarget | null, b: PanelTarget | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
@@ -264,15 +346,24 @@ export function PathMapEditor({
   const [panel, setPanel] = useState<PanelTarget | null>(null)
   const [draft, setDraft] = useState<NodeDraft | null>(null)
   // A switch (or close) waiting for the member to confirm discarding a dirty form.
-  const [pending, setPending] = useState<{ next: PanelTarget | null } | null>(null)
+  const [pending, setPending] = useState<{
+    next: PanelTarget | null
+    opener: Opener | null
+  } | null>(null)
   // A roadside track on its way into a FULL focus: the swap dialog (Roadside.dc.html).
   const [swapFor, setSwapFor] = useState<string | null>(null)
   // A refusal of a command run straight from a menu (no form to show it in).
   const [actionErrors, setActionErrors] = useState<string[]>([])
   const dirty = useRef(false)
   const shaRef = useRef(editing.sha)
-  // The «⋯» that opened the swap dialog: focus returns to it on close.
-  const swapOpener = useRef<string | null>(null)
+  // What opened the swap dialog: focus returns to it on close.
+  const swapOpener = useRef<Opener | null>(null)
+  // What opened the form in the Sheet: focus returns to it when the Sheet closes (#541 review).
+  const formOpener = useRef<Opener | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  // The non-modal Sheet hides what it covers from the keyboard and AT (`inert`, #541 review).
+  const overAside = useMedia(SHEET_OVER_ASIDE)
+  const overAll = useMedia(SHEET_OVER_ALL)
 
   // A fresh page (after a save or a «Перечитать») brings the new base sha
   // and clears the stale banner (state adjusted during render, not in an effect).
@@ -351,10 +442,16 @@ export function PathMapEditor({
   const request = useCallback(
     (next: PanelTarget | null) => {
       if (sameTarget(next, panel)) return
+      // A close keeps the opener of the form being closed; a switch from an
+      // open form with no readable opener (a click that focused nothing) keeps it too.
+      const opener = next
+        ? (currentOpener(rootRef.current) ?? (panel ? formOpener.current : null))
+        : formOpener.current
       if (dirty.current) {
-        setPending({ next })
+        setPending({ next, opener })
         return
       }
+      formOpener.current = opener
       open(next)
     },
     [panel, open],
@@ -400,16 +497,22 @@ export function PathMapEditor({
     }
   }, [map])
 
-  const focusByLabel = (label: string | null) => {
-    if (!label) return
-    Array.from(document.querySelectorAll<HTMLElement>('[aria-label]'))
-      .find((el) => el.getAttribute('aria-label') === label)
-      ?.focus()
-  }
-  const openSwap = (trackId: string) => {
+  /**
+   * From the track form, focus returns to its «Вывести в фокус» (`opener`);
+   * from a «⋯» menu, to the menu trigger found by its name — the trigger may
+   * re-mount meanwhile (#541 review).
+   */
+  const openSwap = (trackId: string, opener?: HTMLElement) => {
     const track = map.tracks.find((t) => t.id === trackId)
-    swapOpener.current = track ? trackMenuLabel(track.title) : null
+    swapOpener.current = opener
+      ? { el: opener, label: null }
+      : { el: null, label: track ? trackMenuLabel(track.title) : null }
     setSwapFor(trackId)
+  }
+  const swapReturnFocus = () => {
+    const o = swapOpener.current
+    const target = (o?.el?.isConnected ? o.el : null) ?? byLabel(document, o?.label ?? null)
+    target?.focus()
   }
 
   const trackMenu = (trackId: string, look: 'canvas' | 'quiet' = 'canvas') => {
@@ -484,21 +587,26 @@ export function PathMapEditor({
         />
       ),
     trackMenu,
+    // The kit scope sits on a wrapper: the kit's dark variants match
+    // DESCENDANTS of `.dark` (`theme.css`), so on the button itself the outline
+    // look never applied (#541 review).
     beaconAction: (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        data-bbm-ui=""
-        className={`${PM_KIT} pm-ed-beaconbtn`}
-        aria-pressed={panel?.kind === 'beacon'}
-        onClick={() => request({ kind: 'beacon' })}
-      >
-        Править маяк
-      </Button>
+      <span data-bbm-ui="" className={`${PM_KIT} pm-ed-beaconwrap`}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="pm-ed-beaconbtn"
+          aria-pressed={panel?.kind === 'beacon'}
+          onClick={() => request({ kind: 'beacon' })}
+        >
+          Править маяк
+        </Button>
+      </span>
     ),
     indexOf,
     size: (trackId) => map.tracks.find((t) => t.id === trackId)?.nodes.length ?? 0,
+    covered: panel !== null && overAll,
   }
 
   let form: React.ReactNode = null
@@ -572,7 +680,7 @@ export function PathMapEditor({
   )
 
   return (
-    <div className="pm-body" data-editing="" data-form={form ? '' : undefined}>
+    <div ref={rootRef} className="pm-body" data-editing="" data-form={form ? '' : undefined}>
       <MapMain road={road} render={renderMain} />
       {/* One scroll (#541 v2): the Обочина is a plain column of the page — no
           sticky inner scroll region. Forms open in the Sheet below. */}
@@ -581,6 +689,7 @@ export function PathMapEditor({
         aria-label="Обочина"
         data-bbm-ui=""
         className={`pm-aside pm-ed-aside ${PM_KIT}`}
+        inert={Boolean(form) && (overAside || overAll)}
       >
         {form ? null : notices}
         <EditRoadside
@@ -615,6 +724,15 @@ export function PathMapEditor({
           aria-describedby={undefined}
           className={`${PM_KIT} pm-ed-sheet`}
           onInteractOutside={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => {
+            // No SheetTrigger: Radix would drop focus to <body>. Back to the
+            // card / «+» / «⋯» / «Править маяк» that opened the form — unless the
+            // member has already moved focus elsewhere (#541 review).
+            e.preventDefault()
+            const active = document.activeElement
+            if (active && active !== document.body && active.isConnected) return
+            returnFocus(rootRef.current, formOpener.current)
+          }}
           onOpenAutoFocus={(e) => {
             // The first field, not the close button.
             const first = (e.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
@@ -645,6 +763,7 @@ export function PathMapEditor({
         onCancel={() => setPending(null)}
         onConfirm={() => {
           dirty.current = false
+          formOpener.current = pending?.opener ?? null
           open(pending?.next ?? null)
           setPending(null)
         }}
@@ -655,7 +774,7 @@ export function PathMapEditor({
           incoming={swapTrack}
           busy={busy}
           onCancel={() => setSwapFor(null)}
-          onReturnFocus={() => focusByLabel(swapOpener.current)}
+          onReturnFocus={swapReturnFocus}
           onSwap={async (out) => {
             const outcome = await moveTrack({
               op: 'track.status',
