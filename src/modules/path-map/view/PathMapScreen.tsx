@@ -1,6 +1,6 @@
 'use client'
 
-import React, { Fragment, useRef, useState } from 'react'
+import React, { Fragment, useMemo, useRef, useState } from 'react'
 
 import type {
   MapView,
@@ -12,6 +12,7 @@ import type {
   UpcomingItem,
 } from '@/lib/path-map'
 import { plural } from '@/lib/path-map/derive'
+import { ANCHOR_IDS, buildNavAnchors, nodeAnchorId, shortDate } from '@/lib/path-map/nav'
 
 import {
   BrokenLinkIcon,
@@ -23,6 +24,7 @@ import {
   PinIcon,
   UpArrowIcon,
 } from './icons'
+import { PathMapNav } from './PathMapNav'
 
 /**
  * The interactive half of `/p/path` (#530): the map and its two modes.
@@ -42,13 +44,7 @@ import {
 type Mode = 'map' | 'check'
 
 const CONFIDENCE_LABEL = { known: 'знаем', hypothesis: 'гипотеза', unknown: 'не знаем' } as const
-const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 const OWNER_COLORS = ['#8FD3C1', '#B9A6F5', '#F4A3A3', '#F2B544', '#9EC5FF']
-
-function shortDate(iso: string): string {
-  const [, month, day] = iso.split('-').map(Number)
-  return `${day} ${MONTHS[month - 1] ?? ''}`.trim()
-}
 
 function ownerColor(owner: string): string {
   let hash = 0
@@ -122,14 +118,17 @@ interface PickProps {
   onPick: () => void
   className: string
   label?: string
+  /** The DOM id the left navigator jumps to (#532). */
+  id?: string
   children: React.ReactNode
 }
 
 /** A node is an `<article>` on the map and a real `<button>` in «Проверить путь». */
-function Pick({ interactive, pressed, onPick, className, label, children }: PickProps) {
+function Pick({ interactive, pressed, onPick, className, label, id, children }: PickProps) {
   if (interactive) {
     return (
       <button
+        id={id}
         type="button"
         className={`pm-pick ${className}`}
         aria-pressed={pressed}
@@ -140,7 +139,7 @@ function Pick({ interactive, pressed, onPick, className, label, children }: Pick
     )
   }
   return (
-    <article className={className} aria-label={label}>
+    <article id={id} className={className} aria-label={label}>
       {children}
     </article>
   )
@@ -167,6 +166,7 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
   const selected = ctx.selectedId === node.id
   const inChain = ctx.chainIndex.has(node.id)
   const common = {
+    id: node.type === 'station' ? nodeAnchorId(node.id) : undefined,
     interactive: ctx.interactive,
     pressed: selected,
     onPick: () => ctx.onPick(node.id),
@@ -415,6 +415,7 @@ function PassedChip({ item, ctx }: { item: PassedItem; ctx: NodeCtx }) {
       interactive={ctx.interactive}
       pressed={ctx.selectedId === node.id}
       onPick={() => ctx.onPick(node.id)}
+      id={nodeAnchorId(node.id)}
       className={`pm-chip${ctx.chainIndex.has(node.id) ? ' is-chain' : ''}`}
     >
       <LiftedBarrierIcon />
@@ -705,6 +706,9 @@ export function PathMapScreen({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeTrack, setActiveTrack] = useState<string | null>(view.focus[0]?.id ?? null)
   const panelRef = useRef<HTMLElement | null>(null)
+  const pageRef = useRef<HTMLDivElement | null>(null)
+  // The navigator's points come from the same view model the map renders (#532).
+  const anchors = useMemo(() => buildNavAnchors(view), [view])
 
   const checking = mode === 'check'
   const selected = checking && selectedId ? (checks[selectedId] ?? null) : null
@@ -740,7 +744,7 @@ export function PathMapScreen({
   const looseCount = view.roadsideStations.length
 
   return (
-    <div className="pm-page" data-mode={mode}>
+    <div ref={pageRef} className="pm-page" data-mode={mode}>
       <div className="pm-glow" aria-hidden="true" />
       <header className="pm-header">
         <div className="pm-brand">
@@ -786,7 +790,7 @@ export function PathMapScreen({
 
       <div className="pm-body">
         <main className="pm-main">
-          <section aria-label="Маяк" className="pm-beacon">
+          <section id={ANCHOR_IDS.beacon} aria-label="Маяк" className="pm-beacon">
             <LighthouseMark />
             <span className="pm-beacon-copy">
               <span className="pm-eyebrow">Маяк</span>
@@ -847,7 +851,7 @@ export function PathMapScreen({
             ))}
           </div>
 
-          <div className="pm-here">
+          <div id={ANCHOR_IDS.here} className="pm-here">
             <span className="pm-here-line" aria-hidden="true" />
             <span className="pm-here-pill">
               <PinIcon />
@@ -867,9 +871,11 @@ export function PathMapScreen({
               />
             ))}
           </div>
-          <p className="pm-passed-caption">
+          <p id={ANCHOR_IDS.start} className="pm-passed-caption">
             Пройденный путь{view.started ? ` · старт ${shortDate(view.started)}` : ''}
           </p>
+          {/* Last in DOM so Tab walks the map before the rail's points (#535). */}
+          <PathMapNav anchors={anchors} beaconTitle={view.beacon.title} pageRef={pageRef} />
         </main>
 
         {checking ? (

@@ -139,15 +139,24 @@ const mapBreakCards = () => within(screen.getByRole('main')).queryAllByText(/Р�
 
 const HEAD = 'title: Тест\nbeacon:\n  title: Маяк\n'
 
+/**
+ * A node's button on the map itself. Since #532 the left navigator also names
+ * every visible station (a jump button), so a station title matches twice.
+ */
+function mapButton(name: string | RegExp | ((name: string) => boolean)) {
+  const found = screen.getAllByRole('button', { name }).filter((b) => !b.closest('nav'))
+  expect(found).toHaveLength(1)
+  return found[0]
+}
+
 describe('PathMapView — review of PR #531', () => {
   it('selecting «Две поверхности платформы в проде» (the issue AC) shows the break in the panel and on the map', () => {
     renderShipped()
     enterCheck()
     // The station itself, not «Каталог экспертов», whose card says it opens this station.
-    const station = screen.getByRole('button', {
-      name: (name) =>
-        name.includes('Две поверхности платформы в проде') && !name.includes('открывает'),
-    })
+    const station = mapButton(
+      (name) => name.includes('Две поверхности платформы в проде') && !name.includes('открывает'),
+    )
     fireEvent.click(station)
     const panel = screen.getByRole('complementary', { name: 'Проверка пути' })
     expect(panel.textContent).toMatch(/«Две поверхности платформы в проде» → маяк/)
@@ -167,7 +176,7 @@ describe('PathMapView — review of PR #531', () => {
     enterCheck()
     const panel = screen.getByRole('complementary', { name: 'Проверка пути' })
     expect(panel.textContent).toMatch(/Трек А\s*доходит через туман/)
-    fireEvent.click(screen.getByRole('button', { name: /Перед туманом/ }))
+    fireEvent.click(mapButton(/Перед туманом/))
     expect(panel.textContent).toMatch(/доходит до маяка, через туман/)
   })
 
@@ -194,7 +203,7 @@ tracks:
   it('a break on a collapsed node is drawn on the map too', () => {
     renderYaml(COLLAPSED)
     enterCheck()
-    fireEvent.click(screen.getByRole('button', { name: /Ближняя станция/ }))
+    fireEvent.click(mapButton(/Ближняя станция/))
     expect(screen.getByRole('complementary', { name: 'Проверка пути' }).textContent).toContain(
       'nowhere',
     )
@@ -218,7 +227,10 @@ tracks:
     renderShipped()
     const group = screen.getByRole('group', { name: 'Режим карты' })
     expect(within(group).getAllByRole('button')).toHaveLength(2)
-    expect(screen.queryByRole('navigation')).toBeNull()
+    // Since #532 the page has ONE navigation landmark — the left navigator — and it is not the toggle.
+    expect(screen.getAllByRole('navigation').map((n) => n.getAttribute('aria-label'))).toEqual([
+      'Навигатор по карте',
+    ])
   })
 
   it('the narrow-layout tabs use each track’s short label', () => {
