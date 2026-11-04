@@ -21,6 +21,8 @@ export async function savePathMapEditAction(input: unknown): Promise<PathMapEdit
     input,
     source: pathMapSourceFromEnv(process.env),
   })
-  if (outcome.status === 'ok') revalidatePath('/p/path')
+  // After a stale refusal the server cache already holds the newer file, so the
+  // member's «Перечитать» must not be served the old render either.
+  if (outcome.status === 'ok' || outcome.status === 'stale') revalidatePath('/p/path')
   return outcome
 }

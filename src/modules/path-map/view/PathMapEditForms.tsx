@@ -438,7 +438,10 @@ export function NodeForm({
             aria-invalid={invalid || undefined}
             aria-describedby={describedBy}
             maxLength={300}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value)
+              if (errors.title) setErrors({ ...errors, title: undefined })
+            }}
           />
         )}
       </Field>
@@ -460,7 +463,10 @@ export function NodeForm({
                 aria-invalid={invalid || undefined}
                 aria-describedby={describedBy}
                 maxLength={1000}
-                onChange={(e) => setBecause(e.target.value)}
+                onChange={(e) => {
+                  setBecause(e.target.value)
+                  if (errors.because) setErrors({ ...errors, because: undefined })
+                }}
               />
             )}
           </Field>

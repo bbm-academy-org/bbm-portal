@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { claimGateResponse, type SessionLike } from '@/lib/platform/authGate'
 
-import { peekPathMapCache, primePathMapCache } from './cache'
+import { peekPathMapCache, primePathMapCache, resetPathMapCache } from './cache'
 import { applyEdit, editCommandSchema, type EditCommand } from './edit'
 import { PathMapConflictError, PathMapSourceError, type AnyPathMapSource } from './source'
 
@@ -50,7 +50,12 @@ export async function savePathMapEdit(args: {
       // copy this portal wrote IS the base the member saw. The PUT's sha check
       // decides either way.
       const own = peekPathMapCache(source.origin)
-      if (own?.sha !== baseSha) return { status: 'stale' }
+      if (own?.sha !== baseSha) {
+        // The member is about to «Перечитать»: hand the page the newer file now
+        // instead of the cached copy it was drawn from (up to a TTL old).
+        primePathMapCache(source.origin, { content: fresh.content, sha: fresh.sha })
+        return { status: 'stale' }
+      }
       base = { ...fresh, content: own.content, sha: own.sha }
     }
 
@@ -61,7 +66,11 @@ export async function savePathMapEdit(args: {
     primePathMapCache(source.origin, { content: edited.text, sha: written.sha })
     return { status: 'ok', sha: written.sha, commit: written.commit, summary: edited.summary }
   } catch (error) {
-    if (error instanceof PathMapConflictError) return { status: 'stale' }
+    if (error instanceof PathMapConflictError) {
+      // The PUT knows the file moved but not to what: the next read goes to GitHub.
+      resetPathMapCache()
+      return { status: 'stale' }
+    }
     console.error('[path-map] edit not saved:', error)
     return {
       status: 'error',
