@@ -751,16 +751,49 @@ body:has(.pm-root) {
   text-transform: uppercase;
 }
 
+/* The owner chip (#538): 1–2 ink initials on a light disc — one colour pair for
+   every owner (≥4.5:1, tested via OWNER_CHIP in labels.ts), an ink ring so it
+   holds its edge on the yellow barrier. Fixed size; the full name is in the
+   title and, where there is room, beside it. On a barrier with tasks the
+   stretched button covers the chip, so the button's own title names the owner. */
 .pm-owner {
   flex: none;
   width: 26px;
   height: 26px;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: var(--pm-ink);
+  border: 1.5px solid var(--pm-ink);
+  background: var(--pm-text);
+  color: var(--pm-ink);
   display: grid;
   place-items: center;
+  overflow: hidden;
   font-size: 11px;
   font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+/* The chip with the full name beside it (panel header, task rows). */
+.pm-owner-named {
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pm-owner-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pm-text);
 }
 
 .pm-obstacle-title {
@@ -1238,11 +1271,17 @@ body:has(.pm-root) {
   border-right: 2px dashed rgb(232 236 244 / 40%);
 }
 
+/* The glow is painted INSIDE the swatch's own box (#538): an outer box-shadow
+   was clipped by the scrolling panel (`.pm-aside-inner` overflow). */
 .pm-swatch[data-kind='fog'] {
   border: 0;
-  border-radius: 8px;
-  background: rgb(140 152 174 / 25%);
-  box-shadow: 0 0 10px 3px rgb(140 152 174 / 25%);
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgb(140 152 174 / 60%) 0%,
+    rgb(140 152 174 / 35%) 55%,
+    rgb(140 152 174 / 0%) 100%
+  );
 }
 
 .pm-swatch[data-kind='barrier'] {
@@ -1616,6 +1655,36 @@ body:has(.pm-root) {
   line-height: 1.35;
 }
 
+/* The title and, under it, who does the task (#538): the full name gets the
+   row's whole width instead of squeezing the title. */
+.pm-task-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pm-task-owner {
+  max-width: 100%;
+  display: flex;
+}
+
+.pm-task-toggle + .pm-task-owner {
+  padding-left: 18px;
+}
+
+.pm-task-owner .pm-owner {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.pm-task-owner .pm-owner-name {
+  font-weight: 600;
+  color: var(--pm-muted-2);
+}
+
 .pm-task-check {
   flex: none;
   width: 18px;
@@ -1691,19 +1760,6 @@ body:has(.pm-root) {
   font-size: 12px;
   color: var(--pm-muted-3);
   padding-top: 1px;
-}
-
-.pm-task-owner {
-  flex: none;
-  min-width: 26px;
-  height: 22px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: rgb(232 236 244 / 8%);
-  display: inline-grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 800;
 }
 
 .pm-task-link {
