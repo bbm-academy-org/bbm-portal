@@ -12,7 +12,12 @@ import {
   pathMapSourceFromEnv,
   resetPathMapCache,
 } from '@/lib/path-map'
-import { commitMessage, runPathMapEdit, savePathMapEdit } from '@/lib/path-map/save'
+import {
+  commitMessage,
+  editAvailability,
+  runPathMapEdit,
+  savePathMapEdit,
+} from '@/lib/path-map/save'
 
 /**
  * «Карта пути» v2, task D (#539) — the write path: `GithubPathMapSource.write()`
@@ -104,6 +109,38 @@ describe('commitMessage', () => {
       'Антон Сидоров: добавить станцию «X» (/p/path)',
     )
   })
+
+  it('flattens the WHOLE message — a title cannot add forged trailers (#541 review)', () => {
+    const message = commitMessage(
+      'Антон',
+      'добавить станцию «X\n\nCo-authored-by: Mallory <m@evil.example>\r\nSigned-off-by: M»',
+    )
+    expect(message).not.toMatch(/[\r\n]/)
+    expect(message).toBe(
+      'Антон: добавить станцию «X Co-authored-by: Mallory <m@evil.example> Signed-off-by: M» (/p/path)',
+    )
+  })
+
+  it('caps the message at 200 characters and keeps the page suffix', () => {
+    const message = commitMessage('Антон', `изменить станцию «${'а'.repeat(400)}»`)
+    expect(message.length).toBeLessThanOrEqual(200)
+    expect(message.endsWith('… (/p/path)')).toBe(true)
+    expect(message.startsWith('Антон: изменить станцию «ааа')).toBe(true)
+  })
+})
+
+describe('editAvailability', () => {
+  it('is on only for the live map with a known version, and always says why it is off', () => {
+    expect(editAvailability({ origin: 'github', sha: 'sha-1' })).toEqual({ enabled: true })
+    expect(editAvailability({ origin: 'local', sha: null })).toEqual({
+      enabled: false,
+      reason: 'редактирование доступно только для живой карты',
+    })
+    expect(editAvailability({ origin: 'misconfigured', sha: null }).enabled).toBe(false)
+    const unknownVersion = editAvailability({ origin: 'github', sha: null })
+    expect(unknownVersion.enabled).toBe(false)
+    expect(unknownVersion.reason).toMatch(/версия файла карты неизвестна/)
+  })
 })
 
 describe('savePathMapEdit', () => {
@@ -164,6 +201,92 @@ describe('savePathMapEdit', () => {
     const before = fetchMock.mock.calls.length
     await readCached(source, new Date())
     expect(fetchMock.mock.calls.length).toBe(before + 1)
+  })
+
+  describe('GitHub returning an older version than our own write (#541 review)', () => {
+    /** One successful save through the portal: GitHub had sha-1, our PUT made sha-2. */
+    async function ownWrite() {
+      const source = githubPathMapSource(CONFIG, async (_u, init) =>
+        init?.method === 'PUT' ? putResponse('sha-2') : contentsResponse(example, 'sha-1'),
+      )
+      const outcome = await savePathMapEdit({ source, command, baseSha: 'sha-1', actor: 'А' })
+      expect(outcome).toMatchObject({ status: 'ok', sha: 'sha-2' })
+      return (await readCached(source, new Date())).doc.content
+    }
+
+    it('edits on top of our own write while GitHub still returns its parent', async () => {
+      const written = await ownWrite()
+      const calls: Array<{ method: string; body?: string }> = []
+      const source = githubPathMapSource(CONFIG, async (_u, init) => {
+        calls.push({ method: init?.method ?? 'GET', body: init?.body as string | undefined })
+        // GitHub lags: the read still returns sha-1, the version our write replaced.
+        return init?.method === 'PUT' ? putResponse('sha-3') : contentsResponse(example, 'sha-1')
+      })
+      const second = {
+        op: 'task.add',
+        nodeId: 'studio',
+        parent: [],
+        fields: { title: 'Сдать студию' },
+      } as const
+      const outcome = await savePathMapEdit({
+        source,
+        command: second,
+        baseSha: 'sha-2',
+        actor: 'А',
+      })
+      expect(outcome).toMatchObject({ status: 'ok', sha: 'sha-3' })
+      const put = JSON.parse(calls[1].body!)
+      // The PUT goes on top of OUR write (sha-2), built from our written text.
+      expect(put.sha).toBe('sha-2')
+      const text = Buffer.from(put.content, 'base64').toString('utf8')
+      expect(written).toContain("title: 'Новый маяк'")
+      expect(text).toContain("title: 'Новый маяк'")
+      expect(text).toContain('- title: Сдать студию')
+    })
+
+    it('still returns stale when the PUT on top of our own write conflicts', async () => {
+      await ownWrite()
+      const source = githubPathMapSource(CONFIG, async (_u, init) =>
+        init?.method === 'PUT'
+          ? new Response('{}', { status: 409 })
+          : contentsResponse(example, 'sha-1'),
+      )
+      await expect(
+        savePathMapEdit({ source, command, baseSha: 'sha-2', actor: 'А' }),
+      ).resolves.toEqual({ status: 'stale' })
+    })
+
+    it('does not trust a cached READ whose sha is the base — only our own write', async () => {
+      const fetchMock = vi.fn(async (_u: string, init?: RequestInit) =>
+        init?.method === 'PUT' ? putResponse('sha-x') : contentsResponse(example, 'sha-1'),
+      )
+      const source = githubPathMapSource(CONFIG, fetchMock)
+      // The page was drawn from a cached read with sha-1 …
+      await readCached(source, new Date())
+      // … and GitHub now has sha-9: the member's base is genuinely stale.
+      fetchMock.mockImplementation(async () => contentsResponse(example, 'sha-9'))
+      await expect(
+        savePathMapEdit({ source, command, baseSha: 'sha-1', actor: 'А' }),
+      ).resolves.toEqual({ status: 'stale' })
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+    })
+
+    it('a stale save does not roll the cache back from our write to its parent', async () => {
+      await ownWrite()
+      const source = githubPathMapSource(CONFIG, async () => contentsResponse(example, 'sha-1'))
+      // A member still on sha-0 saves while GitHub lags at sha-1.
+      await expect(
+        savePathMapEdit({ source, command, baseSha: 'sha-0', actor: 'А' }),
+      ).resolves.toEqual({ status: 'stale' })
+      expect((await readCached(source, new Date())).doc.sha).toBe('sha-2')
+    })
+
+    it('a cache refresh that returns the parent of our write keeps our write', async () => {
+      await ownWrite()
+      const source = githubPathMapSource(CONFIG, async () => contentsResponse(example, 'sha-1'))
+      const later = new Date(Date.now() + 120_000)
+      expect((await readCached(source, later)).doc.sha).toBe('sha-2')
+    })
   })
 
   it('returns the edit errors and writes nothing for an invalid command result', async () => {

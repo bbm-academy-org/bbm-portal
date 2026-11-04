@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { applyEdit, editCommandSchema, slugifyTitle, type EditCommand } from '@/lib/path-map/edit'
+import { inboundLinks } from '@/lib/path-map/links'
 import { parsePathMap } from '@/lib/path-map/parse'
 import type { PathMap } from '@/lib/path-map/schema'
 import { getTaskAt } from '@/lib/path-map/tasks'
@@ -228,6 +229,97 @@ describe('applyEdit — nodes', () => {
   })
 })
 
+describe('applyEdit — deleting a block other blocks lead to (#541 review)', () => {
+  const opensOf = (map: PathMap, id: string) =>
+    map.tracks.flatMap((t) => t.nodes).find((n) => n.id === id)?.opens
+
+  it('names the blocks that open a node about to be deleted', () => {
+    const links = inboundLinks(mapOf(FIXTURE), ['first-lesson'])
+    expect(links.referrers.map((r) => r.node.id)).toEqual(['first-lesson-script', 'studio'])
+    // What the deleted node itself opened — where the links are repointed to.
+    expect(links.target).toBe('beacon')
+    expect(inboundLinks(mapOf(FIXTURE), ['course-fog']).referrers).toEqual([])
+  })
+
+  it('repoints inbound links to what the deleted node opened, by default', () => {
+    const { map, summary } = apply({ op: 'node.remove', nodeId: 'first-lesson' })
+    expect(opensOf(map, 'first-lesson-script')).toBe('beacon')
+    expect(opensOf(map, 'studio')).toBe('beacon')
+    expect(summary).toBe('удалить станцию «Готов первый урок», 2 блока теперь ведут к «маяк»')
+  })
+
+  it('leaves them as a break when asked', () => {
+    const { map, summary } = apply({ op: 'node.remove', nodeId: 'first-lesson', inbound: 'break' })
+    expect(opensOf(map, 'studio')).toBe('first-lesson')
+    expect(summary).toBe('удалить станцию «Готов первый урок», 2 блока остались с разрывом')
+  })
+
+  it('drops the link when the deleted node opened nothing', () => {
+    const text = apply({
+      op: 'node.update',
+      nodeId: 'podcast-pilot',
+      fields: {
+        title: 'Пилотный выпуск подкаста с экспертом',
+        because: 'врачи придут за знакомым экспертом',
+        confidence: 'hypothesis',
+        opens: 'reach-fog',
+      },
+    }).text
+    const { map } = apply({ op: 'node.remove', nodeId: 'reach-fog' }, text)
+    expect(opensOf(map, 'podcast-pilot')).toBeUndefined()
+  })
+
+  it('repoints through a whole deleted track to the first block outside it', () => {
+    // A road from another track that leads into «Контент уроков».
+    const text = apply({
+      op: 'node.update',
+      nodeId: 'podcast-pilot',
+      fields: {
+        title: 'Пилотный выпуск подкаста с экспертом',
+        because: 'врачи придут за знакомым экспертом',
+        confidence: 'hypothesis',
+        opens: 'first-lesson-script',
+      },
+    }).text
+    const links = inboundLinks(mapOf(text), [
+      'first-lesson-script',
+      'studio',
+      'first-lesson',
+      'multi-lesson-course',
+      'course-fog',
+    ])
+    expect(links.referrers.map((r) => r.node.id)).toEqual(['podcast-pilot'])
+    const { map, summary } = apply({ op: 'track.remove', trackId: 'content', force: true }, text)
+    // first-lesson-script → first-lesson → beacon: the chain leaves the deleted set at the beacon.
+    expect(opensOf(map, 'podcast-pilot')).toBe('beacon')
+    expect(summary).toBe('удалить трек «Контент уроков», 1 блок теперь ведёт к «маяк»')
+  })
+
+  it('never makes a repointed block open itself', () => {
+    // two-surfaces is opened by experts-catalog; make two-surfaces open experts-catalog's twin loop.
+    const text = apply({
+      op: 'node.update',
+      nodeId: 'two-surfaces',
+      fields: {
+        title: 'Две поверхности платформы в проде',
+        because: 'эксперты смогут публиковать и продавать курсы',
+        confidence: 'known',
+        opens: 'pharma-pay-fog',
+      },
+    }).text
+    const looped = apply(
+      {
+        op: 'node.update',
+        nodeId: 'pharma-pay-fog',
+        fields: { title: 'Как фарма платит платформе?', opens: 'two-surfaces' },
+      },
+      text,
+    ).text
+    const { map } = apply({ op: 'node.remove', nodeId: 'two-surfaces' }, looped)
+    expect(opensOf(map, 'pharma-pay-fog')).toBeUndefined()
+  })
+})
+
 describe('applyEdit — tracks', () => {
   it('adds a track at the end with a generated id', () => {
     const { map, summary } = apply({ op: 'track.add', title: 'Юридика', status: 'roadside' })
@@ -384,6 +476,31 @@ describe('applyEdit — tasks', () => {
   })
 })
 
+describe('applyEdit — YAML aliases (#541 review)', () => {
+  it('refuses, in Russian, to edit a task that is a YAML alias', () => {
+    const text = FIXTURE.replace(
+      '- { title: Монтажёр на поток, owner: ЕВ }',
+      '- &editor { title: Монтажёр на поток, owner: ЕВ }',
+    ).replace(
+      '          - { title: Шаблон карточки эксперта }',
+      '          - { title: Шаблон карточки эксперта }\n          - *editor',
+    )
+    expect(parsePathMap(text).ok).toBe(true)
+    const result = applyEdit(text, {
+      op: 'task.update',
+      nodeId: 'experts-catalog',
+      path: [3],
+      fields: { title: 'Другой монтажёр' },
+    })
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        'эта задача в файле — YAML-ссылка (&якорь / *алиас) на другое место: правьте её в git',
+      ],
+    })
+  })
+})
+
 describe('applyEdit — beacon and refusals', () => {
   it('updates the beacon', () => {
     const { map, summary } = apply({ op: 'beacon.update', title: 'Маяк', why: undefined })
@@ -406,6 +523,43 @@ describe('editCommandSchema', () => {
       editCommandSchema.safeParse({ op: 'task.toggle', nodeId: 'studio', path: [0], date: 'today' })
         .success,
     ).toBe(false)
+  })
+
+  it('requires a non-empty task path where a task is addressed (#541 review)', () => {
+    for (const op of ['task.update', 'task.remove', 'task.toggle', 'task.move'] as const) {
+      const command = {
+        op,
+        nodeId: 'studio',
+        path: [],
+        fields: { title: 'x' },
+        date: '2026-11-04',
+        delta: 1,
+      }
+      const only = Object.fromEntries(
+        Object.entries(command).filter(([k]) =>
+          k === 'op' || k === 'nodeId' || k === 'path'
+            ? true
+            : op === 'task.update'
+              ? k === 'fields'
+              : op === 'task.toggle'
+                ? k === 'date'
+                : op === 'task.move'
+                  ? k === 'delta'
+                  : false,
+        ),
+      )
+      expect(editCommandSchema.safeParse(only).success, op).toBe(false)
+      expect(editCommandSchema.safeParse({ ...only, path: [0] }).success, op).toBe(true)
+    }
+    // `task.add`'s parent `[]` still means «a top-level task».
+    expect(
+      editCommandSchema.safeParse({
+        op: 'task.add',
+        nodeId: 'studio',
+        parent: [],
+        fields: { title: 'x' },
+      }).success,
+    ).toBe(true)
   })
 })
 

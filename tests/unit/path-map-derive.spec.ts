@@ -152,6 +152,13 @@ tracks:
     expect(collapsed.nodes.map((n) => n.id)).toEqual(['s3', 's4', 'f1'])
   })
 
+  it('edit mode (#539) draws every node of the road: nothing collapses into fog', () => {
+    const all = buildMapView(map, { expandAll: true }).focus.find((t) => t.id === 'a')!
+    expect(all.upcoming.every((item) => item.kind === 'node')).toBe(true)
+    const onRoad = all.upcoming.flatMap((item) => (item.kind === 'node' ? [item.node.id] : []))
+    expect(onRoad).toEqual(['o1', 'o2', 'o3', 's1', 's2', 's3', 's4', 'f1'])
+  })
+
   it('too many open obstacles on one station gives the «разбей станцию» hint', () => {
     const s1 = a.upcoming.find((item) => item.kind === 'node' && item.node.id === 's1')
     expect(s1).toMatchObject({ kind: 'node', openObstacles: 3, overloaded: true })
