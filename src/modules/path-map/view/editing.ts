@@ -1,7 +1,15 @@
+import type { ReactNode } from 'react'
+
 import type { EditCommand } from '@/lib/path-map/edit'
 import { plural } from '@/lib/path-map/derive'
 import type { PathMapEditOutcome } from '@/lib/path-map/save'
-import { BEACON_ID, type PathMap, type PathNode, type PathTrack } from '@/lib/path-map/schema'
+import {
+  BEACON_ID,
+  type Confidence,
+  type PathMap,
+  type PathNode,
+  type PathTrack,
+} from '@/lib/path-map/schema'
 
 /**
  * What the page hands the editor (#539). `save` is the Server Action
@@ -17,6 +25,39 @@ export interface PathMapEditing {
   save: (input: { command: EditCommand; baseSha: string }) => Promise<PathMapEditOutcome>
 }
 
+/** A «+» slot on a road: where a new block would go (`index` in the track's `nodes`). */
+export interface SlotAt {
+  trackId: string
+  trackTitle: string
+  index: number
+  /** The block just below the slot on the road, if any. */
+  lower?: PathNode
+  /** The block just above it, if any. */
+  upper?: PathNode
+}
+
+/**
+ * What edit mode overlays on the road map (#541 rework). The editor
+ * (`PathMapEditor.tsx`) owns the state and hands the map these hooks; the map
+ * (`PathMapScreen.tsx`) keeps its own layout and only asks where to put them.
+ */
+export interface RoadEdit {
+  /** The node whose form is open in the panel. */
+  selectedId: string | null
+  onNode: (nodeId: string) => void
+  /** The «+» slot — or, while its form is open, the placeholder card. */
+  slot: (at: SlotAt) => ReactNode
+  slotOpen: (trackId: string, index: number) => boolean
+  /** The «⋯» menu next to a track label. */
+  trackMenu: (trackId: string) => ReactNode
+  /** «Править маяк» under the beacon. */
+  beaconAction: ReactNode
+  /** A node's position in its track's `nodes` (file order). */
+  indexOf: (nodeId: string) => number
+  /** How many nodes a track has in the file. */
+  size: (trackId: string) => number
+}
+
 /** Runs one command through the editor's save loop (sha, refresh, toast, conflict). */
 export type RunEdit = (command: EditCommand) => Promise<PathMapEditOutcome>
 
@@ -24,6 +65,34 @@ export const NODE_KIND: Record<PathNode['type'], string> = {
   station: 'Станция',
   obstacle: 'Шлагбаум',
   fog: 'Туман',
+}
+
+/** «Новая станция» / «Новый шлагбаум» / «Новый туман» — the eyebrow of a new block's form. */
+export const NEW_NODE_KIND: Record<PathNode['type'], string> = {
+  station: 'Новая станция',
+  obstacle: 'Новый шлагбаум',
+  fog: 'Новый туман',
+}
+
+/** The accusative for «Удалить …». */
+export const NODE_ACCUSATIVE: Record<PathNode['type'], string> = {
+  station: 'станцию',
+  obstacle: 'шлагбаум',
+  fog: 'туман',
+}
+
+/** What the map draws for a station's confidence (the legend's words). */
+export const CONFIDENCE_WORD: Record<Confidence, string> = {
+  known: 'знаем',
+  hypothesis: 'гипотеза',
+  unknown: 'не знаем',
+}
+
+/** A new block's form, mirrored by the placeholder card on the road. */
+export interface NodeDraft {
+  type: PathNode['type']
+  title: string
+  confidence: Confidence
 }
 
 /** The member's local calendar day, `YYYY-MM-DD` — what «Снят» and a ticked task record. */

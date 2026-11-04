@@ -1,9 +1,12 @@
 /* ============================================================================
-   «Карта пути» — edit mode «Править» (#539). Same tokens as path-map.css
-   (`.pm-root` custom properties) and the same `pm-` prefix scoping. The
-   AddStation artboard is not vendored, so the form is composed in the
-   canvas's language (aside, eyebrow, legend swatches, accent primary); the
-   swap dialog copies Roadside.dc.html. Recorded in design-source/README.md.
+   «Карта пути» — edit mode «Править» (#539, reworked in place by #541). Same
+   tokens as path-map.css (`.pm-root` custom properties) and the same `pm-`
+   prefix scoping. The map keeps its road layout; this file only adds the
+   overlay — the «+» slots on the road, the placeholder card, the «⋯» menus,
+   the editable Обочина — and the right-panel forms. Form and placeholder
+   values are copied from the vendored artboard
+   `design-source/path-map/AddStation.dc.html`; the swap dialog from
+   `Roadside.dc.html`.
    ============================================================================ */
 
 .pm-modes button[data-accent='edit'][aria-pressed='true'] {
@@ -19,122 +22,53 @@
   text-align: right;
 }
 
-/* ── the board ──────────────────────────────────────────────────────────── */
+/* ── the overlay on the road ────────────────────────────────────────────── */
 
-.pm-ed-main {
-  padding: 0 32px 80px;
-}
-
-.pm-ed-beacon {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  max-width: 780px;
-  margin: 0 auto;
-  padding: 32px 16px 28px;
-  text-align: center;
-}
-
-.pm-ed-beacon .pm-beacon-title {
-  font-size: 36px;
-}
-
-.pm-ed-grid {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  overflow-x: auto;
-  padding-bottom: 12px;
-}
-
-.pm-ed-col {
-  flex: 1 0 240px;
-  max-width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 12px;
-  border-radius: 18px;
-  background: rgb(19 28 48 / 60%);
-  border: 1px solid var(--pm-line);
-}
-
-.pm-ed-col[data-status='roadside'] {
-  border-style: dashed;
-  background: rgb(19 28 48 / 30%);
-}
-
-.pm-ed-colhead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-}
-
-.pm-ed-coltitle {
-  flex: 1 1 0;
-  min-width: 0;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.3;
-  overflow-wrap: break-word;
-}
-
-/* The status sits on its own line under the title: no mid-word wraps in a narrow column. */
-.pm-ed-tag {
-  order: 3;
-  flex-basis: 100%;
-  padding-left: 18px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--pm-muted-3);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.pm-ed-menu {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid rgb(232 236 244 / 18%);
-  background: transparent;
-  color: var(--pm-text);
-  font: inherit;
-  font-size: 16px;
-  font-weight: 800;
+/* A clickable card in edit mode: the reading card, with a hover/selected ring. */
+.pm-ed-pick {
   cursor: pointer;
 }
 
-.pm-ed-menu[aria-pressed='true'],
-.pm-ed-menu:hover {
-  border-color: var(--pm-accent);
-  color: var(--pm-accent);
+.pm-ed-pick:hover {
+  box-shadow: 0 0 0 2px rgb(242 181 68 / 35%);
 }
 
-.pm-ed-road {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.pm-ed-pick[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--pm-accent);
+}
+
+/* Every «⋯» / «+» menu: a trigger with its list anchored under it. */
+.pm-ed-menuwrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* A road segment carrying a «+» slot: the slot sits on the road's centre line. */
+.pm-ed-gap {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  align-items: center;
 }
 
-.pm-ed-insert {
-  display: flex;
-  justify-content: center;
-  padding: 2px 0;
+.pm-ed-slot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
 }
 
-.pm-ed-insert-btn {
-  width: 100%;
-  height: 22px;
-  border-radius: 999px;
-  border: 1px dashed rgb(232 236 244 / 14%);
-  background: transparent;
-  color: var(--pm-muted-3);
+.pm-ed-menubtn {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid rgb(232 236 244 / 18%);
+  background: rgb(14 24 44 / 92%);
+  color: var(--pm-muted);
   font: inherit;
   font-size: 15px;
   font-weight: 800;
@@ -142,174 +76,360 @@
   cursor: pointer;
 }
 
-.pm-ed-insert-btn:hover,
-.pm-ed-insert-btn[aria-pressed='true'] {
+.pm-ed-menubtn:hover,
+.pm-ed-menubtn[aria-expanded='true'],
+.pm-ed-menubtn[aria-pressed='true'] {
   border-color: var(--pm-accent);
-  color: var(--pm-accent);
-  background: rgb(242 181 68 / 8%);
+  color: var(--pm-accent-soft);
 }
 
-.pm-ed-node {
-  position: relative;
-  width: 100%;
+.pm-ed-menubtn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* The road slot is a small round «+» — subtle until hovered or focused. */
+.pm-ed-slot .pm-ed-menubtn {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px dashed rgb(242 181 68 / 55%);
+  background: var(--pm-road);
+  color: var(--pm-accent);
+  font-size: 16px;
+  opacity: 0.75;
+}
+
+.pm-ed-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
+  min-width: 190px;
+  padding: 6px;
   border-radius: 14px;
-  border: 1px solid rgb(232 236 244 / 12%);
-  background: var(--pm-card);
+  border: 1px solid rgb(232 236 244 / 18%);
+  background: #111c33;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 55%);
+}
+
+/* On the road the picker opens centred under the slot. */
+.pm-ed-slot .pm-ed-menu {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 150px;
+}
+
+.pm-ed-menuitem {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--pm-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pm-ed-menuitem[data-danger] {
+  color: var(--pm-bad-text);
+}
+
+.pm-ed-menuitem:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* With the «⋯» a label must still fit its column when many roads are in focus. */
+.pm-col[role='group'] .pm-track-label {
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  row-gap: 4px;
+}
+
+/* The «⋯» after a track label. */
+.pm-ed-trackmenu {
+  margin-left: 4px;
+}
+
+.pm-ed-trackmenu .pm-ed-menubtn {
+  min-width: 24px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* The new block's place on the road (AddStation artboard: dashed, pulsing). */
+@keyframes pm-ed-slot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(242 181 68 / 35%);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgb(242 181 68 / 0%);
+  }
+}
+
+.pm-ed-placeholder {
+  width: 100%;
+  max-width: 250px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 2px dashed #f2b544;
+  background: rgb(242 181 68 / 8%);
+  animation: pm-ed-slot-pulse 1.8s ease-in-out infinite;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-ed-placeholder-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #f5d693;
+}
+
+.pm-ed-placeholder-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-placeholder-title[data-empty] {
+  color: var(--pm-muted-3);
+  font-weight: 600;
+}
+
+.pm-ed-beaconbtn {
+  margin-top: 4px;
+}
+
+/* ── the right panel ────────────────────────────────────────────────────── */
+
+/* AddStation artboard: aside 380–460px, #0F1930, 28px padding. */
+.pm-ed-aside {
+  flex: 1 1 380px;
+  max-width: 460px;
+  padding: 28px 28px 32px;
+  border-left: 1px solid rgb(232 236 244 / 10%);
+  background: #0f1930;
+}
+
+.pm-ed-hint {
+  padding-top: 4px;
+}
+
+/* The editable Обочина. */
+.pm-ed-sidetrack {
+  gap: 10px;
+}
+
+.pm-ed-sidetrack .pm-roadside-row {
+  align-items: center;
+}
+
+.pm-ed-sidenodes,
+.pm-ed-sideloose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-ed-sidenode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgb(232 236 244 / 14%);
+  background: rgb(17 28 51 / 70%);
   color: var(--pm-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  overflow: hidden;
 }
 
-.pm-ed-node:hover {
-  border-color: rgb(232 236 244 / 32%);
+.pm-ed-sidenode:hover,
+.pm-ed-sidenode[aria-pressed='true'] {
+  border-color: var(--pm-accent);
 }
 
-.pm-ed-node[aria-pressed='true'] {
-  border: 1.5px solid var(--pm-accent);
-  box-shadow: 0 0 0 3px rgb(242 181 68 / 18%);
-}
-
-.pm-ed-node[data-confidence='hypothesis'] {
-  border-style: dashed;
-}
-
-.pm-ed-node[data-type='obstacle'] {
-  padding-top: 18px;
-}
-
-.pm-ed-node .pm-stripes {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 7px;
-}
-
-.pm-ed-node[data-done='true'] {
-  opacity: 0.6;
-}
-
-.pm-ed-node[data-type='fog'] {
-  background: rgb(140 152 174 / 14%);
-}
-
-.pm-ed-node-kind {
-  font-size: 11px;
+.pm-ed-sidenode-kind {
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--pm-muted-3);
 }
 
-.pm-ed-node[data-type='obstacle'] .pm-ed-node-kind {
+.pm-ed-sidenode[data-type='obstacle'] .pm-ed-sidenode-kind {
   color: var(--pm-barrier);
 }
 
-.pm-ed-node-title {
-  font-size: 15px;
+.pm-ed-sidenode-title {
+  font-size: 14px;
   font-weight: 700;
-  line-height: 1.3;
-  overflow-wrap: break-word;
-}
-
-.pm-ed-node-line {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--pm-muted-2);
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
-.pm-ed-here {
-  font-size: 11px;
-  color: var(--pm-muted-3);
-  text-align: center;
+.pm-ed-sideadd {
+  align-self: flex-start;
+}
+
+.pm-ed-sideadd .pm-ed-menu {
+  right: auto;
+  left: 0;
+}
+
+.pm-ed-sideadd .pm-ed-menubtn {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 .pm-ed-addtrack {
-  flex: 0 0 140px;
-  min-height: 120px;
-  border-radius: 18px;
-  border: 1.5px dashed rgb(242 181 68 / 45%);
-  background: rgb(242 181 68 / 5%);
-  color: #f5d693;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
+  align-self: stretch;
+  border-style: dashed;
 }
 
-.pm-ed-addtrack:hover,
-.pm-ed-addtrack[aria-pressed='true'] {
-  background: rgb(242 181 68 / 12%);
-}
-
-/* ── the panel forms ────────────────────────────────────────────────────── */
+/* ── forms (AddStation artboard) ────────────────────────────────────────── */
 
 .pm-ed-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
+}
+
+.pm-ed-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pm-ed-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pm-ed-eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pm-accent);
+}
+
+.pm-ed-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: rgb(232 236 244 / 6%);
+  color: var(--pm-muted);
+  cursor: pointer;
+}
+
+.pm-ed-close:hover {
+  background: rgb(232 236 244 / 12%);
+  color: var(--pm-text);
 }
 
 .pm-ed-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   border: 0;
   min-width: 0;
 }
 
+.pm-ed-labelrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .pm-ed-label {
   padding: 0;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--pm-muted);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--pm-text);
+}
+
+legend.pm-ed-label {
+  margin-bottom: 10px;
 }
 
 .pm-ed-req {
-  color: var(--pm-accent);
-  text-transform: none;
-  letter-spacing: 0;
+  flex: none;
+  font-size: 12px;
   font-weight: 700;
+  color: #f5d693;
 }
 
 .pm-ed-input {
   width: 100%;
   min-height: 44px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgb(232 236 244 / 20%);
-  background: rgb(10 18 34 / 70%);
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1.5px solid rgb(232 236 244 / 20%);
+  background: var(--pm-bg);
   color: var(--pm-text);
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.4;
 }
 
 .pm-ed-input--short {
-  max-width: 200px;
+  max-width: 220px;
 }
 
 .pm-ed-textarea {
-  resize: vertical;
+  resize: none;
+}
+
+.pm-ed-because {
+  border-color: var(--pm-accent);
+  font-size: 15px;
   line-height: 1.45;
 }
 
 .pm-ed-input:focus-visible {
   outline: 3px solid var(--pm-accent-soft);
   outline-offset: 1px;
-}
-
-.pm-ed-field[data-invalid='true'] .pm-ed-input,
-.pm-ed-input[aria-invalid='true'] {
-  border-color: var(--pm-bad);
 }
 
 .pm-ed-hint {
@@ -325,67 +445,122 @@
   color: var(--pm-bad-text);
 }
 
-.pm-ed-types {
+/* «Потому что — что это открывает выше?»: the target pills. */
+.pm-ed-pills {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgb(232 236 244 / 6%);
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.pm-ed-type-btn {
-  flex: 1;
-  height: 36px;
-  border: 0;
-  border-radius: 999px;
+.pm-ed-pill {
+  max-width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgb(232 236 244 / 20%);
   background: transparent;
   color: var(--pm-muted);
   font: inherit;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.pm-ed-type-btn[aria-pressed='true'] {
-  background: var(--pm-text);
-  color: var(--pm-bg);
+.pm-ed-pill[aria-pressed='true'] {
+  border: 1.5px solid var(--pm-accent);
+  background: rgb(242 181 68 / 12%);
+  color: var(--pm-text);
+  font-weight: 700;
 }
 
-.pm-ed-choices {
+.pm-ed-pill--select {
+  background: var(--pm-bg);
+  max-width: 180px;
+}
+
+/* «Насколько уверены?» — three road swatches. */
+.pm-ed-confgrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pm-ed-conf {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.pm-ed-choice {
-  display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgb(232 236 244 / 14%);
+  gap: 8px;
+  padding: 12px 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgb(232 236 244 / 18%);
+  background: transparent;
+  color: var(--pm-muted);
+  font: inherit;
   cursor: pointer;
 }
 
-.pm-ed-choice[data-checked] {
+.pm-ed-conf[aria-pressed='true'] {
   border: 1.5px solid var(--pm-accent);
   background: rgb(242 181 68 / 10%);
+  color: var(--pm-text);
 }
 
-.pm-ed-choice input {
-  accent-color: var(--pm-accent);
+.pm-ed-conf-road {
+  position: relative;
+  width: 30px;
+  height: 34px;
+  background: var(--pm-road);
+  border-left: 1px solid rgb(232 236 244 / 20%);
+  border-right: 1px solid rgb(232 236 244 / 20%);
 }
 
-.pm-ed-choice-text {
-  display: flex;
-  flex-direction: column;
-  font-size: 13px;
+.pm-ed-conf-road[data-kind='asphalt']::after {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(180deg, #8c98ae 0 6px, transparent 6px 12px);
+}
+
+.pm-ed-conf-road[data-kind='dirt'] {
+  background-color: rgb(22 32 56 / 90%);
+  background-image: radial-gradient(rgb(232 236 244 / 30%) 1px, transparent 1.6px);
+  background-size: 7px 7px;
+  border-left: 2px dashed rgb(232 236 244 / 40%);
+  border-right: 2px dashed rgb(232 236 244 / 40%);
+}
+
+.pm-ed-conf-road[data-kind='fog'] {
+  border: 0;
+  border-radius: 10px;
+  background: rgb(140 152 174 / 25%);
+  box-shadow: 0 0 12px 4px rgb(140 152 174 / 25%);
+}
+
+.pm-ed-conf-label {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pm-ed-conf-road-word {
+  font-size: 12px;
   color: var(--pm-muted-2);
 }
 
-.pm-ed-choice-text b {
-  font-size: 14px;
-  color: var(--pm-text);
+.pm-ed-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgb(232 236 244 / 5%);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pm-muted);
 }
 
 .pm-ed-check,
@@ -398,6 +573,7 @@
 }
 
 .pm-ed-check input {
+  flex: none;
   width: 18px;
   height: 18px;
   accent-color: var(--pm-accent);
@@ -414,7 +590,7 @@
   align-items: center;
 }
 
-.pm-ed-actions {
+.pm-ed-footer {
   display: flex;
   gap: 10px;
 }
@@ -441,13 +617,24 @@
   cursor: progress;
 }
 
+.pm-ed-footer .pm-ed-btn {
+  flex: 1;
+  height: 52px;
+  border-radius: 14px;
+  font-size: 15px;
+}
+
 .pm-ed-btn--primary {
-  flex: 2;
   border: 0;
   background: var(--pm-accent);
   color: var(--pm-bg);
   font-size: 15px;
   font-weight: 800;
+}
+
+.pm-ed-footer .pm-ed-btn--primary {
+  flex: 2;
+  font-size: 16px;
 }
 
 .pm-ed-btn--primary:hover {
@@ -470,7 +657,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 16px;
+  padding-top: 18px;
   border-top: 1px solid var(--pm-line);
 }
 
@@ -505,7 +692,8 @@
   color: var(--pm-bad-text);
 }
 
-.pm-ed-errors ul {
+.pm-ed-errors ul,
+.pm-ed-inbound ul {
   margin: 0;
   padding-left: 18px;
 }
@@ -514,6 +702,27 @@
   background: rgb(255 107 94 / 8%);
   border: 1px solid rgb(255 107 94 / 35%);
   color: var(--pm-text);
+}
+
+.pm-ed-confirm-text {
+  font-weight: 700;
+}
+
+.pm-ed-inbound {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #f5d693;
+}
+
+.pm-ed-inbound li {
+  color: var(--pm-muted);
+}
+
+.pm-ed-inbound .pm-ed-check {
+  color: var(--pm-text);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .pm-ed-confirm-actions {
@@ -537,10 +746,14 @@
   align-self: flex-start;
 }
 
-/* ── the task tree editor ───────────────────────────────────────────────── */
+/* ── the task tree editor: checkbox + title (+ owner) + «⋯» ─────────────── */
 
 .pm-ed-task {
   flex-direction: column;
+}
+
+.pm-ed-task-row {
+  align-items: center;
 }
 
 .pm-ed-task-check {
@@ -556,38 +769,19 @@
   border-color: var(--pm-accent);
 }
 
-.pm-ed-task-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding-left: 28px;
-}
-
-.pm-ed-tool-btn {
-  min-height: 28px;
-  padding: 0 8px;
-  border-radius: 8px;
-  border: 1px solid rgb(232 236 244 / 12%);
-  background: transparent;
-  color: var(--pm-muted-2);
-  font: inherit;
+.pm-ed-task-row .pm-task-date {
+  color: var(--pm-muted-3);
   font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
 }
 
-.pm-ed-tool-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
+.pm-ed-taskmenu .pm-ed-menubtn {
+  border-color: transparent;
+  background: transparent;
 }
 
-.pm-ed-tool-btn:hover:not(:disabled) {
-  color: var(--pm-text);
-  border-color: rgb(232 236 244 / 32%);
-}
-
-.pm-ed-tool-btn.pm-ed-task-del {
-  color: var(--pm-bad-text);
+.pm-ed-addtask {
+  align-self: stretch;
+  border-style: dashed;
 }
 
 .pm-ed-taskform {
@@ -601,10 +795,15 @@
   border: 1px solid rgb(232 236 244 / 12%);
 }
 
+.pm-ed-taskform .pm-ed-input {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
 .pm-ed-taskform .pm-ed-row .pm-ed-input {
   flex: 1 1 140px;
-  min-height: 38px;
-  font-size: 14px;
 }
 
 .pm-ed-task-new {
@@ -751,6 +950,41 @@
   display: none;
 }
 
+/* ── interaction states (last: specificity order) ───────────────────── */
+
+.pm-ed-menubtn:focus-visible,
+.pm-ed-menuitem:focus-visible,
+.pm-ed-pill:focus-visible,
+.pm-ed-conf:focus-visible,
+.pm-ed-sidenode:focus-visible,
+.pm-ed-close:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 2px;
+}
+
+.pm-ed-slot .pm-ed-menubtn:hover,
+.pm-ed-slot .pm-ed-menubtn:focus-visible,
+.pm-ed-slot .pm-ed-menubtn[aria-expanded='true'] {
+  border-style: solid;
+  background: rgb(242 181 68 / 18%);
+  opacity: 1;
+}
+
+.pm-ed-menuitem:focus-visible,
+.pm-ed-menuitem:hover:not(:disabled) {
+  background: rgb(232 236 244 / 8%);
+}
+
+.pm-ed-field[data-invalid='true'] .pm-ed-input,
+.pm-ed-input[aria-invalid='true'] {
+  border-color: var(--pm-bad);
+}
+
+.pm-ed-taskmenu .pm-ed-menubtn:hover,
+.pm-ed-taskmenu .pm-ed-menubtn[aria-expanded='true'] {
+  border-color: rgb(232 236 244 / 24%);
+}
+
 /* ── header toggle, disabled off the live map (last: specificity order) ── */
 
 .pm-modes button:disabled {
@@ -760,33 +994,23 @@
 
 /* ── narrow ─────────────────────────────────────────────────────────────── */
 
-@media (width <= 640px) {
-  .pm-ed-main {
-    padding: 0 16px 40px;
-  }
-
-  .pm-ed-beacon .pm-beacon-title {
-    font-size: 26px;
-  }
-
-  .pm-ed-grid {
-    flex-direction: column;
-    align-items: stretch;
-    overflow-x: visible;
-  }
-
-  .pm-ed-col {
-    flex: none;
+/* Under the map the panel is a full-width section (as the other panels). */
+@media (width <= 1140px) {
+  .pm-ed-aside {
+    flex-basis: 100%;
     max-width: none;
+    border-left: 0;
+    border-top: 1px solid var(--pm-line);
   }
+}
 
-  .pm-ed-addtrack {
-    flex: none;
-    min-height: 56px;
-  }
-
+@media (width <= 640px) {
   .pm-ed-aside {
     padding: 24px 16px;
+  }
+
+  .pm-ed-placeholder {
+    max-width: none;
   }
 
   .pm-ed-overlay {
@@ -795,5 +1019,11 @@
 
   .pm-edit-off {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-ed-placeholder {
+    animation: none;
   }
 }

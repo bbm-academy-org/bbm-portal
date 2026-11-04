@@ -1,28 +1,51 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import React, { Fragment, useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import React, { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 
+import type { MapView } from '@/lib/path-map'
 import type { EditCommand } from '@/lib/path-map/edit'
-import { TRACK_COLORS } from '@/lib/path-map/derive'
-import { shortDate } from '@/lib/path-map/nav'
 import type { PathMapEditOutcome } from '@/lib/path-map/save'
 import type { PathMap, PathNode, PathTrack } from '@/lib/path-map/schema'
 
-import { NODE_KIND, type PathMapEditing } from './editing'
-import { BeaconForm, NodeForm, type NodeTarget, TrackForm } from './PathMapEditForms'
+import {
+  CONFIDENCE_WORD,
+  NEW_NODE_KIND,
+  NODE_KIND,
+  type NodeDraft,
+  outcomeErrors,
+  type PathMapEditing,
+  type RoadEdit,
+  type SlotAt,
+} from './editing'
+import { EditMenu, type EditMenuItem } from './EditMenu'
+import {
+  BeaconForm,
+  FormErrors,
+  NodeForm,
+  type NodeTarget,
+  SwapDialog,
+  TrackForm,
+} from './PathMapEditForms'
+import { useScrollRegion } from './useScrollRegion'
 
 import './path-map-edit.css'
 
 /**
- * «Править» — the edit mode of `/p/path` (#539).
+ * «Править» — editing the map IN PLACE (#539; reworked in #541 at the owner's
+ * direction: no column board, no horizontal scroll, editing complements the
+ * canvas instead of replacing it).
  *
- * The map's reading view folds far stations into fog and hides roadside tracks
- * in the side panel; an editor needs every node of every track in file order,
- * so edit mode draws its own board: one column per track (focus first, then
- * roadside), all nodes top-down, a «+» insert point between every two of them
- * and at both ends, «+ Трек» after the last column. Clicking anything opens its
- * form in the right panel (`PathMapEditForms.tsx`).
+ * The map keeps its road layout (`PathMapScreen.tsx` renders it; this
+ * component hands it the overlay as `RoadEdit` hooks): a small «+» slot on the
+ * road between blocks, at the top of each road and just above «Мы здесь»
+ * opens a mini-picker «станция / шлагбаум / туман»; the choice opens the form
+ * in the right panel and puts a pulsing dashed placeholder card on the road at
+ * that spot (the AddStation artboard). Clicking any card opens its form; a
+ * track label carries a «⋯» menu (rename, to the roadside / into focus with the
+ * swap dialog, delete). With no form open the right panel is the editable
+ * «Обочина»: roadside tracks and their blocks, stations without «потому что»,
+ * «+ Трек».
  *
  * The save loop: every command goes to the Server Action with the blob sha the
  * page was drawn from; on success the page is refreshed (`router.refresh()`,
@@ -35,169 +58,46 @@ import './path-map-edit.css'
 
 type PanelTarget =
   | { kind: 'node'; target: NodeTarget }
-  | { kind: 'track'; trackId: string | null }
+  | { kind: 'track'; trackId: string | null; intent?: 'delete' }
   | { kind: 'beacon' }
 
 function sameTarget(a: PanelTarget | null, b: PanelTarget | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-function nodeLine(node: PathNode): string {
-  if (node.type === 'station') {
-    const conf = { known: 'знаем', hypothesis: 'гипотеза', unknown: 'не знаем' }[node.confidence]
-    return node.because ? `${conf} · потому что ${node.because}` : `${conf} · без «потому что»`
-  }
-  if (node.type === 'obstacle') {
-    const tasks = node.tasks?.length ? ` · задач: ${node.tasks.length}` : ''
-    return `${node.done ? `снят ${shortDate(node.done)}` : 'проезд закрыт'}${node.owner ? ` · ${node.owner}` : ''}${tasks}`
-  }
-  return 'открытый вопрос'
+function slotLabel(at: SlotAt): string {
+  const { lower, upper } = at
+  if (lower && upper) return `Добавить блок между «${lower.title}» и «${upper.title}»`
+  if (lower) return `Добавить блок выше «${lower.title}» в треке «${at.trackTitle}»`
+  if (upper) return `Добавить блок ниже «${upper.title}» в треке «${at.trackTitle}»`
+  return `Добавить первый блок в трек «${at.trackTitle}»`
 }
 
-function InsertPoint({
-  track,
-  index,
-  lower,
-  upper,
-  active,
-  onInsert,
-}: {
-  track: PathTrack
-  index: number
-  lower?: PathNode
-  upper?: PathNode
-  active: boolean
-  onInsert: () => void
-}) {
-  const label =
-    upper && lower
-      ? `Добавить блок между «${lower.title}» и «${upper.title}»`
-      : lower
-        ? `Добавить блок выше «${lower.title}» в треке «${track.title}»`
-        : upper
-          ? `Добавить блок ниже «${upper.title}» в треке «${track.title}»`
-          : `Добавить первый блок в трек «${track.title}»`
-  return (
-    <li className="pm-ed-insert" data-index={index}>
-      <button
-        type="button"
-        className="pm-ed-insert-btn"
-        aria-label={label}
-        aria-pressed={active}
-        onClick={onInsert}
-      >
-        <span aria-hidden="true">+</span>
-      </button>
-    </li>
-  )
+function newBlockItems(open: (type: PathNode['type']) => void): EditMenuItem[] {
+  return (['station', 'obstacle', 'fog'] as const).map((type) => ({
+    label: NODE_KIND[type],
+    onSelect: () => open(type),
+  }))
 }
 
-function EditColumn({
-  track,
-  color,
-  panel,
-  onOpen,
-}: {
-  track: PathTrack
-  color: string
-  panel: PanelTarget | null
-  onOpen: (next: PanelTarget) => void
-}) {
-  const nodes = track.nodes
-  const focus = track.status === 'focus'
-  const insertActive = (index: number) =>
-    panel?.kind === 'node' &&
-    panel.target.mode === 'new' &&
-    panel.target.trackId === track.id &&
-    panel.target.index === index
-  const insert = (index: number) => () =>
-    onOpen({ kind: 'node', target: { mode: 'new', trackId: track.id, index } })
-
-  // Top-down: insert(len), node(len-1), insert(len-1), …, node(0), insert(0).
-  const items: React.ReactNode[] = [
-    <InsertPoint
-      key="i-top"
-      track={track}
-      index={nodes.length}
-      lower={nodes[nodes.length - 1]}
-      active={insertActive(nodes.length)}
-      onInsert={insert(nodes.length)}
-    />,
-  ]
-  for (let i = nodes.length - 1; i >= 0; i -= 1) {
-    const node = nodes[i]
-    const selected =
-      panel?.kind === 'node' && panel.target.mode === 'edit' && panel.target.nodeId === node.id
-    items.push(
-      <li key={node.id}>
-        <button
-          type="button"
-          className="pm-ed-node"
-          data-type={node.type}
-          data-confidence={node.type === 'station' ? node.confidence : undefined}
-          data-done={node.type === 'obstacle' && node.done ? 'true' : undefined}
-          aria-pressed={selected}
-          aria-label={`Править: ${NODE_KIND[node.type].toLowerCase()} «${node.title}»`}
-          onClick={() => onOpen({ kind: 'node', target: { mode: 'edit', nodeId: node.id } })}
-        >
-          {node.type === 'obstacle' ? <span className="pm-stripes" aria-hidden="true" /> : null}
-          <span className="pm-ed-node-kind">{NODE_KIND[node.type]}</span>
-          <span className="pm-ed-node-title">{node.title}</span>
-          <span className="pm-ed-node-line">{nodeLine(node)}</span>
-        </button>
-      </li>,
-      <InsertPoint
-        key={`i-${i}`}
-        track={track}
-        index={i}
-        upper={node}
-        lower={nodes[i - 1]}
-        active={insertActive(i)}
-        onInsert={insert(i)}
-      />,
-    )
-  }
-
-  const trackSelected = panel?.kind === 'track' && panel.trackId === track.id
+/** The dashed card that stands on the road where the new block will go (AddStation artboard). */
+function Placeholder({ draft }: { draft: NodeDraft }) {
+  const kicker =
+    draft.type === 'station'
+      ? `${NEW_NODE_KIND.station} · ${CONFIDENCE_WORD[draft.confidence]}`
+      : NEW_NODE_KIND[draft.type]
   return (
-    <section className="pm-ed-col" data-status={track.status} aria-label={`Трек «${track.title}»`}>
-      <div className="pm-ed-colhead">
-        <span
-          className="pm-dot"
-          style={{ background: focus ? color : undefined }}
-          aria-hidden="true"
-        />
-        <h2 className="pm-ed-coltitle">{track.title}</h2>
-        <span className="pm-ed-tag">{focus ? 'в фокусе' : 'обочина'}</span>
-        <button
-          type="button"
-          className="pm-ed-menu"
-          aria-pressed={trackSelected}
-          aria-label={`Настроить трек «${track.title}»`}
-          onClick={() => onOpen({ kind: 'track', trackId: track.id })}
-        >
-          ⋯
-        </button>
-      </div>
-      <ol className="pm-ed-road">{items}</ol>
-      <span className="pm-ed-here">↓ ближе к «Мы здесь»</span>
-    </section>
-  )
-}
-
-function Intro() {
-  return (
-    <div className="pm-ed-form">
-      <span className="pm-eyebrow">Правка карты</span>
-      <h2 className="pm-aside-title">Выберите блок или «+»</h2>
-      <p className="pm-aside-lead">
-        Нажмите на станцию, шлагбаум или туман — справа откроется форма. «+» между блоками ставит
-        новый блок на это место дороги, «⋯» у трека — название, фокус и удаление трека.
-      </p>
-      <p className="pm-aside-lead">
-        Каждое сохранение — коммит в файл карты в репозитории path-maps с вашим именем. Агенты и
-        люди продолжают править тот же файл через git.
-      </p>
+    <div
+      role="status"
+      aria-live="off"
+      aria-label="Здесь встанет новый блок"
+      className="pm-ed-placeholder"
+      data-type={draft.type}
+    >
+      <span className="pm-ed-placeholder-kicker">{kicker}</span>
+      <span className="pm-ed-placeholder-title" data-empty={draft.title.trim() ? undefined : ''}>
+        {draft.title.trim() || 'Название появится здесь'}
+      </span>
     </div>
   )
 }
@@ -212,18 +112,160 @@ function isNarrow(): { narrow: boolean; still: boolean } {
   }
 }
 
-export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMapEditing }) {
+/** With no form open: the Обочина panel, editable (#541 rework). */
+function EditRoadside({
+  map,
+  view,
+  busy,
+  panel,
+  trackMenu,
+  onNode,
+  onNewBlock,
+  onNewTrack,
+}: {
+  map: PathMap
+  view: MapView
+  busy: boolean
+  panel: PanelTarget | null
+  trackMenu: (trackId: string) => React.ReactNode
+  onNode: (nodeId: string) => void
+  onNewBlock: (track: PathTrack, type: PathNode['type']) => void
+  onNewTrack: () => void
+}) {
+  const roadside = map.tracks.filter((t) => t.status === 'roadside')
+  const bars = Math.max(view.focusLimit, view.focusCount)
+  const nodeButton = (node: PathNode) => (
+    <button
+      key={node.id}
+      type="button"
+      className="pm-ed-sidenode"
+      data-type={node.type}
+      aria-label={`Править: ${NODE_KIND[node.type].toLowerCase()} «${node.title}»`}
+      aria-pressed={
+        panel?.kind === 'node' && panel.target.mode === 'edit' && panel.target.nodeId === node.id
+      }
+      onClick={() => onNode(node.id)}
+    >
+      <span className="pm-ed-sidenode-kind">{NODE_KIND[node.type]}</span>
+      <span className="pm-ed-sidenode-title">{node.title}</span>
+    </button>
+  )
+  return (
+    <>
+      <section className="pm-aside-sec">
+        <div className="pm-aside-head">
+          <h2 className="pm-aside-title">Обочина</h2>
+          <p className="pm-aside-lead">
+            Видно, но вне фокуса. Вывести трек на дорогу — значит отправить сюда другой.
+          </p>
+        </div>
+        <div className="pm-meter" data-overflow={view.focusOverflow || undefined}>
+          <span className="pm-meter-label">В фокусе</span>
+          <span className="pm-meter-bars" aria-hidden="true">
+            {Array.from({ length: bars }, (_, i) => (
+              <span
+                key={i}
+                data-on={i < view.focusCount || undefined}
+                data-over={i >= view.focusLimit || undefined}
+              />
+            ))}
+          </span>
+          <b>
+            {view.focusCount} из {view.focusLimit}
+          </b>
+        </div>
+        {roadside.map((track) => (
+          <div key={track.id} className="pm-roadside-track pm-ed-sidetrack">
+            <span className="pm-roadside-row">
+              <span className="pm-dot pm-dot--muted" aria-hidden="true" />
+              <span className="pm-roadside-name">{track.title}</span>
+              <span className="pm-roadside-tag">трек</span>
+              {trackMenu(track.id)}
+            </span>
+            {track.nodes.length > 0 ? (
+              <span className="pm-ed-sidenodes">{[...track.nodes].reverse().map(nodeButton)}</span>
+            ) : (
+              <span className="pm-roadside-summary">пока без блоков</span>
+            )}
+            <EditMenu
+              className="pm-ed-sideadd"
+              trigger="+ Блок"
+              label={`Добавить блок в трек «${track.title}»`}
+              menuLabel={`Что поставить: трек «${track.title}»`}
+              disabled={busy}
+              items={newBlockItems((type) => onNewBlock(track, type))}
+            />
+          </div>
+        ))}
+        {view.roadsideStations.length > 0 ? (
+          <div className="pm-ed-sideloose">
+            <span className="pm-roadside-kicker">Станции без «потому что»</span>
+            {view.roadsideStations.map(({ node }) => nodeButton(node))}
+          </div>
+        ) : null}
+        {roadside.length === 0 && view.roadsideStations.length === 0 ? (
+          <p className="pm-aside-lead">На обочине пусто.</p>
+        ) : null}
+        <button
+          type="button"
+          className="pm-ed-btn pm-ed-addtrack"
+          aria-pressed={panel?.kind === 'track' && panel.trackId === null}
+          disabled={busy}
+          onClick={onNewTrack}
+        >
+          + Трек
+        </button>
+      </section>
+      <p className="pm-aside-lead pm-ed-hint">
+        «+» на дороге ставит новый блок на это место, клик по карточке открывает её форму, «⋯» у
+        трека — название, фокус и удаление. Каждое сохранение — коммит в файл карты с вашим именем;
+        люди и агенты продолжают править тот же файл через git.
+      </p>
+    </>
+  )
+}
+
+/** The map, drawn by `PathMapScreen` with the overlay hooks (a component boundary, not a call). */
+function MapMain({
+  road,
+  render,
+}: {
+  road: RoadEdit
+  render: (road: RoadEdit) => React.ReactNode
+}) {
+  return <>{render(road)}</>
+}
+
+export function PathMapEditor({
+  map,
+  view,
+  editing,
+  renderMain,
+}: {
+  map: PathMap
+  /** The edit view model (every open node of a focus road). */
+  view: MapView
+  editing: PathMapEditing
+  /** Renders the map (`<main>`) with the editor's overlay hooks. */
+  renderMain: (road: RoadEdit) => React.ReactNode
+}) {
   const router = useRouter()
   const [refreshing, startRefresh] = useTransition()
   const [saving, setSaving] = useState(false)
   const [stale, setStale] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [panel, setPanel] = useState<PanelTarget | null>(null)
+  const [draft, setDraft] = useState<NodeDraft | null>(null)
   // A switch (or close) waiting for the member to confirm discarding a dirty form.
   const [pending, setPending] = useState<{ next: PanelTarget | null } | null>(null)
+  // A roadside track on its way into a FULL focus: the swap dialog (Roadside.dc.html).
+  const [swapFor, setSwapFor] = useState<string | null>(null)
+  // A refusal of a command run straight from a menu (no form to show it in).
+  const [actionErrors, setActionErrors] = useState<string[]>([])
   const dirty = useRef(false)
   const shaRef = useRef(editing.sha)
   const asideRef = useRef<HTMLElement | null>(null)
+  const scroll = useScrollRegion('Правка карты — прокручиваемое содержимое')
 
   // A fresh page (after a save or a «Перечитать») brings the new base sha
   // and clears the stale banner (state adjusted during render, not in an effect).
@@ -274,8 +316,29 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
     [editing, router],
   )
 
+  /** A command straight from a menu: its refusal shows at the top of the panel. */
+  const runAction = useCallback(
+    async (command: EditCommand) => {
+      setActionErrors([])
+      const outcome = await run(command)
+      if (outcome.status !== 'ok') setActionErrors(outcomeErrors(outcome))
+      return outcome
+    },
+    [run],
+  )
+
   const onDirty = useCallback((value: boolean) => {
     dirty.current = value
+  }, [])
+
+  const open = useCallback((next: PanelTarget | null) => {
+    setPanel(next)
+    setActionErrors([])
+    if (next?.kind === 'node' && next.target.mode === 'new') {
+      setDraft({ type: next.target.type ?? 'station', title: '', confidence: 'hypothesis' })
+    } else {
+      setDraft(null)
+    }
   }, [])
 
   const request = useCallback(
@@ -285,12 +348,12 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
         setPending({ next })
         return
       }
-      setPanel(next)
+      open(next)
     },
-    [panel],
+    [panel, open],
   )
 
-  // Opening a form where the panel sits under the board scrolls it into view.
+  // Opening a form where the panel sits under the map scrolls it into view.
   useEffect(() => {
     if (!panel) return
     const { narrow, still } = isNarrow()
@@ -315,15 +378,97 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
   const close = () => request(null)
   const done = () => {
     dirty.current = false
-    setPanel(null)
+    open(null)
   }
 
-  const focusFirst = map.tracks.filter((t) => t.status === 'focus')
-  const ordered = [...focusFirst, ...map.tracks.filter((t) => t.status !== 'focus')]
-  const colorOf = (track: PathTrack) =>
-    TRACK_COLORS[Math.max(0, focusFirst.indexOf(track)) % TRACK_COLORS.length]
+  const focusFull = map.tracks.filter((t) => t.status === 'focus').length >= map.limits.focus_tracks
 
-  let form: React.ReactNode = <Intro />
+  const trackMenu = (trackId: string) => {
+    const track = map.tracks.find((t) => t.id === trackId)
+    if (!track) return null
+    const items: EditMenuItem[] = [
+      { label: 'Переименовать…', onSelect: () => request({ kind: 'track', trackId }) },
+      track.status === 'focus'
+        ? {
+            label: 'Убрать на обочину',
+            onSelect: () => void runAction({ op: 'track.status', trackId, status: 'roadside' }),
+          }
+        : {
+            label: 'Вывести в фокус…',
+            onSelect: () =>
+              focusFull
+                ? setSwapFor(trackId)
+                : void runAction({ op: 'track.status', trackId, status: 'focus' }),
+          },
+      {
+        label: 'Удалить трек…',
+        danger: true,
+        onSelect: () => request({ kind: 'track', trackId, intent: 'delete' }),
+      },
+    ]
+    return (
+      <EditMenu
+        className="pm-ed-trackmenu"
+        label={`Трек «${track.title}»: действия`}
+        disabled={busy}
+        pressed={panel?.kind === 'track' && panel.trackId === trackId}
+        items={items}
+      />
+    )
+  }
+
+  const indexOf = (nodeId: string) => {
+    for (const track of map.tracks) {
+      const i = track.nodes.findIndex((n) => n.id === nodeId)
+      if (i >= 0) return i
+    }
+    return 0
+  }
+
+  const slotOpen = (trackId: string, index: number) =>
+    panel?.kind === 'node' &&
+    panel.target.mode === 'new' &&
+    panel.target.trackId === trackId &&
+    panel.target.index === index
+
+  const road: RoadEdit = {
+    selectedId: panel?.kind === 'node' && panel.target.mode === 'edit' ? panel.target.nodeId : null,
+    onNode: (nodeId) => request({ kind: 'node', target: { mode: 'edit', nodeId } }),
+    slotOpen,
+    slot: (at) =>
+      slotOpen(at.trackId, at.index) && draft ? (
+        <Placeholder draft={draft} />
+      ) : (
+        <EditMenu
+          className="pm-ed-slot"
+          trigger="+"
+          label={slotLabel(at)}
+          menuLabel={`Что поставить: ${slotLabel(at).replace(/^Добавить блок /, '')}`}
+          disabled={busy}
+          items={newBlockItems((type) =>
+            request({
+              kind: 'node',
+              target: { mode: 'new', trackId: at.trackId, index: at.index, type },
+            }),
+          )}
+        />
+      ),
+    trackMenu,
+    beaconAction: (
+      <button
+        type="button"
+        className="pm-ed-btn pm-ed-btn--small pm-ed-beaconbtn"
+        aria-pressed={panel?.kind === 'beacon'}
+        onClick={() => request({ kind: 'beacon' })}
+      >
+        Править маяк
+      </button>
+    ),
+    indexOf,
+    size: (trackId) => map.tracks.find((t) => t.id === trackId)?.nodes.length ?? 0,
+  }
+
+  let form: React.ReactNode = null
   const formKey = JSON.stringify(panel)
   if (panel?.kind === 'node') {
     form = (
@@ -334,6 +479,7 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
         run={run}
         busy={busy}
         onDirty={onDirty}
+        onDraft={setDraft}
         onDone={done}
         onClose={close}
       />
@@ -344,11 +490,13 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
         key={formKey}
         map={map}
         trackId={panel.trackId}
+        initialDelete={panel.intent === 'delete'}
         run={run}
         busy={busy}
         onDirty={onDirty}
         onDone={done}
         onClose={close}
+        onSwap={setSwapFor}
       />
     )
   } else if (panel?.kind === 'beacon') {
@@ -365,50 +513,19 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
     )
   }
 
+  const swapTrack = swapFor ? map.tracks.find((t) => t.id === swapFor) : undefined
+
   return (
-    <div className="pm-body pm-ed-body">
-      <main className="pm-main pm-ed-main">
-        <section aria-label="Маяк" className="pm-ed-beacon">
-          <span className="pm-eyebrow">Маяк</span>
-          <h1 className="pm-beacon-title">{map.beacon.title}</h1>
-          {map.beacon.why ? (
-            <span className="pm-beacon-why">
-              <b>Зачем:</b> {map.beacon.why}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="pm-ed-btn pm-ed-btn--small"
-            aria-pressed={panel?.kind === 'beacon'}
-            onClick={() => request({ kind: 'beacon' })}
-          >
-            Править маяк
-          </button>
-        </section>
-
-        <div className="pm-ed-grid">
-          {ordered.map((track) => (
-            <Fragment key={track.id}>
-              <EditColumn track={track} color={colorOf(track)} panel={panel} onOpen={request} />
-            </Fragment>
-          ))}
-          <button
-            type="button"
-            className="pm-ed-addtrack"
-            aria-pressed={panel?.kind === 'track' && panel.trackId === null}
-            onClick={() => request({ kind: 'track', trackId: null })}
-          >
-            + Трек
-          </button>
-        </div>
-      </main>
-
+    <div className="pm-body" data-editing="">
+      <MapMain road={road} render={renderMain} />
       <aside
         ref={asideRef}
-        aria-label="Правка карты"
-        className="pm-aside pm-aside--check pm-ed-aside"
+        id="pm-roadside"
+        aria-label={form ? 'Правка карты' : 'Обочина'}
+        className="pm-aside pm-ed-aside"
+        data-form={form ? '' : undefined}
       >
-        <div className="pm-aside-inner pm-inside">
+        <div className="pm-aside-inner pm-inside" {...scroll}>
           {stale ? (
             <div role="alert" className="pm-ed-stale">
               <b>Карта обновилась — перечитайте.</b>
@@ -435,7 +552,7 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
                   className="pm-ed-btn pm-ed-btn--danger"
                   onClick={() => {
                     dirty.current = false
-                    setPanel(pending.next)
+                    open(pending.next)
                     setPending(null)
                   }}
                 >
@@ -447,14 +564,47 @@ export function PathMapEditor({ map, editing }: { map: PathMap; editing: PathMap
               </span>
             </div>
           ) : null}
-          {form}
+          <FormErrors errors={actionErrors} />
+          {form ?? (
+            <EditRoadside
+              map={map}
+              view={view}
+              busy={busy}
+              panel={panel}
+              trackMenu={trackMenu}
+              onNode={road.onNode}
+              onNewBlock={(track, type) =>
+                request({
+                  kind: 'node',
+                  target: { mode: 'new', trackId: track.id, index: track.nodes.length, type },
+                })
+              }
+              onNewTrack={() => request({ kind: 'track', trackId: null })}
+            />
+          )}
+        </div>
+        {swapTrack ? (
+          <SwapDialog
+            map={map}
+            incoming={swapTrack}
+            busy={busy}
+            onCancel={() => setSwapFor(null)}
+            onSwap={async (out) => {
+              const outcome = await runAction({
+                op: 'track.status',
+                trackId: swapTrack.id,
+                status: 'focus',
+                swapWith: out,
+              })
+              if (outcome.status === 'ok') setSwapFor(null)
+            }}
+          />
+        ) : null}
+        {/* Always mounted, so the live region announces «Сохранено» when it fills. */}
+        <div role="status" className="pm-ed-toast" data-shown={toast ? 'true' : undefined}>
+          {toast}
         </div>
       </aside>
-
-      {/* Always mounted, so the live region announces «Сохранено» when it fills. */}
-      <div role="status" className="pm-ed-toast" data-shown={toast ? 'true' : undefined}>
-        {toast}
-      </div>
     </div>
   )
 }

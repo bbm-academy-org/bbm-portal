@@ -2,10 +2,11 @@
 
 import React, { useEffect, useId, useRef, useState } from 'react'
 
+import { plural } from '@/lib/path-map/derive'
+import { inboundLinks, type InboundLinks } from '@/lib/path-map/links'
 import { shortDate } from '@/lib/path-map/nav'
 import {
   BEACON_ID,
-  CONFIDENCE,
   type Confidence,
   type PathMap,
   type PathNode,
@@ -16,7 +17,10 @@ import {
 import { isTaskDone, MAX_TASK_DEPTH } from '@/lib/path-map/tasks'
 
 import {
+  NEW_NODE_KIND,
+  NODE_ACCUSATIVE,
   NODE_KIND,
+  type NodeDraft,
   nodeExists,
   opensChoices,
   outcomeErrors,
@@ -24,19 +28,21 @@ import {
   todayIso,
   type RunEdit,
 } from './editing'
-import { ExternalLinkIcon, TaskTickIcon } from './icons'
+import { EditMenu, type EditMenuItem } from './EditMenu'
+import { TaskTickIcon } from './icons'
 import { ownerColor } from './labels'
 
 /**
  * The editor's right-panel forms (#539): a node (station / barrier / fog), a
  * track, the beacon, and the barrier's task tree.
  *
- * Look: the AddStation artboard of the «Карта пути» canvas is NOT vendored in
- * `design-source/path-map/` (only Main, Night-Check, Mobile, Roadside, Victory,
- * Empty are), so the form is composed in the canvas's language — the aside,
- * eyebrow and title of the panels, the legend's road swatches for the
- * confidence picker, the accent primary button — as recorded in
- * `design-source/README.md`. The swap dialog follows `Roadside.dc.html`.
+ * Look: the AddStation artboard of the owner's «Карта пути» canvas, vendored
+ * as `design-source/path-map/AddStation.dc.html` (#541 rework) — the eyebrow
+ * and title head with a 40px close button, «Что должно стать правдой?», the
+ * «Потому что — что это открывает выше?» target pills over the explanation,
+ * «Насколько уверены?» as three road-swatch buttons, the note, and the
+ * Отмена / «Поставить на дорогу» footer. Its «Режим встречи» button is out of
+ * scope. The swap dialog follows `Roadside.dc.html`.
  *
  * Every form validates in the browser first (a station needs «потому что»),
  * then shows whatever the server refused. A stale map is the editor's banner,
@@ -45,7 +51,7 @@ import { ownerColor } from './labels'
 
 // ── small parts ──────────────────────────────────────────────────────────────
 
-function FormErrors({ errors }: { errors: string[] }) {
+export function FormErrors({ errors }: { errors: string[] }) {
   if (errors.length === 0) return null
   return (
     <div role="alert" className="pm-ed-errors">
@@ -78,10 +84,12 @@ function Field({
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ')
   return (
     <div className="pm-ed-field" data-invalid={error ? 'true' : undefined}>
-      <label htmlFor={id} className="pm-ed-label">
-        {label}
-        {required ? <span className="pm-ed-req"> · обязательно</span> : null}
-      </label>
+      <span className="pm-ed-labelrow">
+        <label htmlFor={id} className="pm-ed-label">
+          {label}
+        </label>
+        {required ? <span className="pm-ed-req">обязательно</span> : null}
+      </span>
       {children({ id, describedBy: describedBy || undefined, invalid: Boolean(error) })}
       {hint ? (
         <span id={hintId} className="pm-ed-hint">
@@ -103,16 +111,19 @@ function ConfirmBar({
   onConfirm,
   onCancel,
   busy,
+  children,
 }: {
   text: string
   confirm: string
   onConfirm: () => void
   onCancel: () => void
   busy?: boolean
+  children?: React.ReactNode
 }) {
   return (
     <div role="alertdialog" aria-label={text} className="pm-ed-confirm">
-      <span>{text}</span>
+      <span className="pm-ed-confirm-text">{text}</span>
+      {children}
       <span className="pm-ed-confirm-actions">
         <button
           type="button"
@@ -130,10 +141,63 @@ function ConfirmBar({
   )
 }
 
+function titleOf(map: PathMap, id: string): string {
+  if (id === BEACON_ID) return 'маяк'
+  return map.tracks.flatMap((t) => t.nodes).find((n) => n.id === id)?.title ?? id
+}
+
+/** Named in the delete confirm; the rest are counted. */
+const SHOWN_REFERRERS = 5
+
+/**
+ * The delete confirm's warning (#541 review): the blocks that lead into what
+ * is being deleted, and — by default — repointing them to what it opened.
+ */
+function InboundWarning({
+  map,
+  links,
+  scope,
+  repoint,
+  onRepoint,
+}: {
+  map: PathMap
+  links: InboundLinks
+  scope: 'node' | 'track'
+  repoint: boolean
+  onRepoint: (next: boolean) => void
+}) {
+  const n = links.referrers.length
+  if (n === 0) return null
+  const blocks = `${n} ${plural(n, 'блок', 'блока', 'блоков')}`
+  const lead =
+    scope === 'node'
+      ? `На этот блок ${n === 1 ? 'ссылается' : 'ссылаются'} ${blocks} — их связь станет разрывом.`
+      : `На блоки этого трека ${n === 1 ? 'ссылается' : 'ссылаются'} ${blocks} из других треков — их связь станет разрывом.`
+  return (
+    <span className="pm-ed-inbound">
+      <span>{lead}</span>
+      <ul>
+        {links.referrers.slice(0, SHOWN_REFERRERS).map(({ node, track }) => (
+          <li key={node.id}>
+            {NODE_KIND[node.type]} «{node.title}» · трек «{track.title}»
+          </li>
+        ))}
+        {n > SHOWN_REFERRERS ? <li>и ещё {n - SHOWN_REFERRERS}</li> : null}
+      </ul>
+      {links.target ? (
+        <label className="pm-ed-check">
+          <input type="checkbox" checked={repoint} onChange={(e) => onRepoint(e.target.checked)} />
+          <span>Перенаправить их на «{titleOf(map, links.target)}»</span>
+        </label>
+      ) : null}
+    </span>
+  )
+}
+
 const CONFIDENCE_LOOK: Record<Confidence, { label: string; road: string; swatch: string }> = {
   known: { label: 'Знаем', road: 'асфальт', swatch: 'asphalt' },
   hypothesis: { label: 'Гипотеза', road: 'грунтовка', swatch: 'dirt' },
-  unknown: { label: 'Не знаем', road: 'туман', swatch: 'fog' },
+  unknown: { label: 'Не знаем', road: 'станет туманом', swatch: 'fog' },
 }
 
 function ConfidencePicker({
@@ -143,33 +207,38 @@ function ConfidencePicker({
   value: Confidence
   onChange: (next: Confidence) => void
 }) {
-  const name = useId()
   return (
     <fieldset className="pm-ed-field pm-ed-confidence">
-      <legend className="pm-ed-label">Уверенность — какая под станцией дорога</legend>
-      <div className="pm-ed-choices">
-        {CONFIDENCE.map((c) => (
-          <label key={c} className="pm-ed-choice" data-checked={value === c || undefined}>
-            <input
-              type="radio"
-              name={name}
-              value={c}
-              checked={value === c}
-              onChange={() => onChange(c)}
+      <legend className="pm-ed-label">Насколько уверены?</legend>
+      <div className="pm-ed-confgrid">
+        {(['known', 'hypothesis', 'unknown'] as const).map((c) => (
+          <button
+            key={c}
+            type="button"
+            className="pm-ed-conf"
+            aria-pressed={value === c}
+            onClick={() => onChange(c)}
+          >
+            <span
+              className="pm-ed-conf-road"
+              data-kind={CONFIDENCE_LOOK[c].swatch}
+              aria-hidden="true"
             />
-            <span className="pm-swatch" data-kind={CONFIDENCE_LOOK[c].swatch} aria-hidden="true" />
-            <span className="pm-ed-choice-text">
-              <b>{CONFIDENCE_LOOK[c].label}</b>
-              <span>{CONFIDENCE_LOOK[c].road}</span>
-            </span>
-          </label>
+            <span className="pm-ed-conf-label">{CONFIDENCE_LOOK[c].label}</span>
+            <span className="pm-ed-conf-road-word">{CONFIDENCE_LOOK[c].road}</span>
+          </button>
         ))}
       </div>
     </fieldset>
   )
 }
 
-function OpensSelect({
+/**
+ * «Что это открывает выше?»: the nearest blocks above on this road and the
+ * beacon as one-tap pills (the artboard), plus «Другой блок…» for anything
+ * else — another road, or nothing at all.
+ */
+function OpensPicker({
   map,
   trackId,
   index,
@@ -177,6 +246,10 @@ function OpensSelect({
   selfId,
   value,
   onChange,
+  label,
+  required,
+  invalid,
+  children,
 }: {
   map: PathMap
   trackId: string
@@ -185,25 +258,55 @@ function OpensSelect({
   selfId?: string
   value: string
   onChange: (next: string) => void
+  label: string
+  required?: boolean
+  invalid?: boolean
+  children?: React.ReactNode
 }) {
+  const labelId = useId()
   const { above, others } = opensChoices(map, trackId, index, existing, selfId)
-  const dangling = value && !nodeExists(map, value)
+  const pills: Array<{ value: string; label: string }> = [
+    ...above.slice(0, 2).map((n) => ({ value: n.id, label: `${NODE_KIND[n.type]}: ${n.title}` })),
+    { value: BEACON_ID, label: 'Маяк' },
+  ]
+  if (value && !pills.some((p) => p.value === value)) {
+    pills.unshift({
+      value,
+      label: nodeExists(map, value) ? `${titleOf(map, value)}` : `«${value}» — такого блока нет`,
+    })
+  }
+  if (!value) pills.push({ value: '', label: 'Никуда — дорога обрывается' })
   return (
-    <Field
-      label="Куда ведёт"
-      hint="Что этот блок открывает выше: блок на этой дороге, на другой или сразу маяк"
-    >
-      {({ id, describedBy }) => (
+    <div className="pm-ed-field" data-invalid={invalid ? 'true' : undefined}>
+      <span className="pm-ed-labelrow">
+        <span id={labelId} className="pm-ed-label">
+          {label}
+        </span>
+        {required ? <span className="pm-ed-req">обязательно</span> : null}
+      </span>
+      <div role="group" aria-labelledby={labelId} className="pm-ed-pills">
+        {pills.map((p) => (
+          <button
+            key={p.value || 'none'}
+            type="button"
+            className="pm-ed-pill"
+            aria-pressed={value === p.value}
+            onClick={() => onChange(p.value)}
+          >
+            {p.label}
+          </button>
+        ))}
         <select
-          id={id}
-          aria-describedby={describedBy}
-          className="pm-ed-input"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          className="pm-ed-pill pm-ed-pill--select"
+          aria-label="Другой блок — куда ведёт"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) onChange(e.target.value === '__none' ? '' : e.target.value)
+          }}
         >
-          <option value="">— никуда (дорога обрывается)</option>
+          <option value="">Другой блок…</option>
+          <option value="__none">— никуда (дорога обрывается)</option>
           <option value={BEACON_ID}>Маяк</option>
-          {dangling ? <option value={value}>«{value}» — такого блока нет</option> : null}
           {above.length > 0 ? (
             <optgroup label="Выше на этой дороге">
               {above.map((n) => (
@@ -223,8 +326,9 @@ function OpensSelect({
             </optgroup>
           ))}
         </select>
-      )}
-    </Field>
+      </div>
+      {children}
+    </div>
   )
 }
 
@@ -238,26 +342,47 @@ function PanelHead({
   onClose: () => void
 }) {
   return (
-    <>
-      <div className="pm-inside-bar">
-        <span className="pm-eyebrow">{eyebrow}</span>
-        <button type="button" className="pm-inside-close" aria-label="Закрыть" onClick={onClose}>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <path d="M6 6l12 12M18 6 6 18" />
-          </svg>
-        </button>
-      </div>
-      <h2 className="pm-aside-title">{title}</h2>
-    </>
+    <div className="pm-ed-head">
+      <span className="pm-ed-head-text">
+        <span className="pm-ed-eyebrow">{eyebrow}</span>
+        <h2 className="pm-ed-title">{title}</h2>
+      </span>
+      <button type="button" className="pm-ed-close" aria-label="Закрыть" onClick={onClose}>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+function FormFooter({
+  submit,
+  busy,
+  onCancel,
+}: {
+  submit: string
+  busy: boolean
+  onCancel: () => void
+}) {
+  return (
+    <div className="pm-ed-footer">
+      <button type="button" className="pm-ed-btn pm-ed-btn--ghost" onClick={onCancel}>
+        Отмена
+      </button>
+      <button type="submit" className="pm-ed-btn pm-ed-btn--primary" disabled={busy}>
+        {submit}
+      </button>
+    </div>
   )
 }
 
@@ -292,12 +417,19 @@ function locate(map: PathMap, nodeId: string) {
   return null
 }
 
+const TITLE_LABEL: Record<PathNode['type'], string> = {
+  station: 'Что должно стать правдой?',
+  obstacle: 'Что мешает проехать?',
+  fog: 'Какой вопрос пока без ответа?',
+}
+
 export function NodeForm({
   map,
   target,
   run,
   busy,
   onDirty,
+  onDraft,
   onDone,
   onClose,
 }: {
@@ -306,6 +438,8 @@ export function NodeForm({
   run: RunEdit
   busy: boolean
   onDirty: (dirty: boolean) => void
+  /** A new block mirrors its type, title and confidence on the road's placeholder card. */
+  onDraft?: (draft: NodeDraft) => void
   onDone: () => void
   onClose: () => void
 }) {
@@ -320,13 +454,12 @@ export function NodeForm({
     return above ? above.id : BEACON_ID
   }
 
-  const [type, setType] = useState<PathNode['type']>(
-    node?.type ?? (target.mode === 'new' ? (target.type ?? 'station') : 'station'),
-  )
+  const type: PathNode['type'] =
+    node?.type ?? (target.mode === 'new' ? (target.type ?? 'station') : 'station')
   const [title, setTitle] = useState(node?.title ?? '')
   const [because, setBecause] = useState(node?.type === 'station' ? (node.because ?? '') : '')
   const [confidence, setConfidence] = useState<Confidence>(
-    node?.type === 'station' ? node.confidence : 'known',
+    node?.type === 'station' ? node.confidence : 'hypothesis',
   )
   const [owner, setOwner] = useState(node?.owner ?? '')
   const [opens, setOpens] = useState(node ? (node.opens ?? '') : defaultOpens())
@@ -337,9 +470,17 @@ export function NodeForm({
   const [errors, setErrors] = useState<{ title?: string; because?: string }>({})
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [repoint, setRepoint] = useState(true)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const becauseId = useId()
+  const becauseErrorId = `${becauseId}-error`
 
-  useDirty({ type, title, because, confidence, owner, opens, removed, removedOn }, onDirty)
+  useDirty({ title, because, confidence, owner, opens, removed, removedOn }, onDirty)
+
+  const isNew = target.mode === 'new'
+  useEffect(() => {
+    if (isNew) onDraft?.({ type, title, confidence })
+  }, [isNew, onDraft, type, title, confidence])
 
   if (target.mode === 'edit' && !found) {
     return (
@@ -350,7 +491,6 @@ export function NodeForm({
     )
   }
 
-  const isNew = target.mode === 'new'
   const kind = NODE_KIND[type]
 
   const submit = async (e: React.FormEvent) => {
@@ -390,6 +530,7 @@ export function NodeForm({
   }
 
   const otherTracks = map.tracks.filter((t) => t.id !== trackId)
+  const links = node ? inboundLinks(map, [node.id]) : null
 
   return (
     <form
@@ -397,43 +538,20 @@ export function NodeForm({
       className="pm-ed-form"
       onSubmit={submit}
       noValidate
-      aria-label={isNew ? 'Новый блок' : `Правка: ${node!.title}`}
+      aria-label={isNew ? NEW_NODE_KIND[type] : `${kind}: ${node!.title}`}
     >
       <PanelHead
-        eyebrow={isNew ? `Новый блок · трек «${track?.title ?? trackId}»` : `${kind} · правка`}
-        title={
-          isNew
-            ? `Новая ${type === 'station' ? 'станция' : type === 'obstacle' ? 'преграда — шлагбаум' : 'неизвестность — туман'}`
-            : node!.title
-        }
+        eyebrow={isNew ? NEW_NODE_KIND[type] : `${kind} · правка`}
+        title={`на треке «${track?.title ?? trackId}»`}
         onClose={onClose}
       />
 
-      {isNew ? (
-        <div role="group" aria-label="Что ставим" className="pm-ed-types">
-          {(['station', 'obstacle', 'fog'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              className="pm-ed-type-btn"
-              aria-pressed={type === t}
-              onClick={() => setType(t)}
-            >
-              {NODE_KIND[t]}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      <Field
-        label={type === 'fog' ? 'Вопрос' : type === 'obstacle' ? 'Что мешает проехать' : 'Название'}
-        error={errors.title}
-        required
-      >
+      <Field label={TITLE_LABEL[type]} error={errors.title}>
         {({ id, describedBy, invalid }) => (
-          <input
+          <textarea
             id={id}
-            className="pm-ed-input"
+            className="pm-ed-input pm-ed-textarea"
+            rows={2}
             value={title}
             aria-invalid={invalid || undefined}
             aria-describedby={describedBy}
@@ -446,37 +564,62 @@ export function NodeForm({
         )}
       </Field>
 
+      <OpensPicker
+        map={map}
+        trackId={trackId}
+        index={index}
+        existing={!isNew}
+        selfId={node?.id}
+        value={opens}
+        onChange={setOpens}
+        label={
+          type === 'station'
+            ? 'Потому что — что это открывает выше?'
+            : 'Куда ведёт — что откроется выше?'
+        }
+        required={type === 'station'}
+        invalid={Boolean(errors.because)}
+      >
+        {type === 'station' ? (
+          <>
+            <label htmlFor={becauseId} className="pm-sr">
+              Объяснение
+            </label>
+            <textarea
+              id={becauseId}
+              className="pm-ed-input pm-ed-textarea pm-ed-because"
+              value={because}
+              rows={2}
+              placeholder="…чем эта станция приближает маяк"
+              aria-invalid={errors.because ? true : undefined}
+              aria-describedby={errors.because ? becauseErrorId : undefined}
+              maxLength={1000}
+              onChange={(e) => {
+                setBecause(e.target.value)
+                if (errors.because) setErrors({ ...errors, because: undefined })
+              }}
+            />
+            {errors.because ? (
+              <span id={becauseErrorId} className="pm-ed-error">
+                {errors.because}
+              </span>
+            ) : null}
+          </>
+        ) : null}
+      </OpensPicker>
+
       {type === 'station' ? (
         <>
-          <Field
-            label="Потому что"
-            hint="Чем эта станция приближает маяк. Без ответа станция стоит на обочине."
-            error={errors.because}
-            required
-          >
-            {({ id, describedBy, invalid }) => (
-              <textarea
-                id={id}
-                className="pm-ed-input pm-ed-textarea"
-                value={because}
-                rows={3}
-                aria-invalid={invalid || undefined}
-                aria-describedby={describedBy}
-                maxLength={1000}
-                onChange={(e) => {
-                  setBecause(e.target.value)
-                  if (errors.because) setErrors({ ...errors, because: undefined })
-                }}
-              />
-            )}
-          </Field>
           <ConfidencePicker value={confidence} onChange={setConfidence} />
+          <p className="pm-ed-note">
+            Без «потому что» станция встанет на обочину серой и не войдёт в путь к маяку.
+          </p>
         </>
       ) : null}
 
       {type === 'obstacle' ? (
         <>
-          <Field label="Кто снимает" hint="Короткая метка, например «ДС»">
+          <Field label="Кто снимает" hint="Короткая метка или имя, например «ДС»">
             {({ id, describedBy }) => (
               <input
                 id={id}
@@ -512,26 +655,28 @@ export function NodeForm({
         </>
       ) : null}
 
-      <OpensSelect
-        map={map}
-        trackId={trackId}
-        index={index}
-        existing={!isNew}
-        selfId={node?.id}
-        value={opens}
-        onChange={setOpens}
-      />
+      {type === 'fog' ? (
+        <p className="pm-ed-note">
+          Туман — открытый вопрос. Без «куда ведёт» дорога на нём обрывается; с ним — «доходит через
+          туман».
+        </p>
+      ) : null}
 
       <FormErrors errors={serverErrors} />
+      <FormFooter
+        submit={isNew ? 'Поставить на дорогу' : 'Сохранить'}
+        busy={busy}
+        onCancel={onClose}
+      />
 
-      <div className="pm-ed-actions">
-        <button type="submit" className="pm-ed-btn pm-ed-btn--primary" disabled={busy}>
-          {isNew ? 'Поставить на дорогу' : 'Сохранить'}
-        </button>
-        <button type="button" className="pm-ed-btn" onClick={onClose}>
-          Отмена
-        </button>
-      </div>
+      {!isNew && node?.type === 'obstacle' ? (
+        <TaskTreeEditor obstacle={node} run={run} busy={busy} />
+      ) : null}
+      {isNew && type === 'obstacle' ? (
+        <p className="pm-aside-lead">
+          Задачи шлагбаума добавляются после того, как он встанет на дорогу.
+        </p>
+      ) : null}
 
       {!isNew && node && track ? (
         <section className="pm-ed-sec" aria-label="Положение на карте">
@@ -582,16 +727,7 @@ export function NodeForm({
         </section>
       ) : null}
 
-      {!isNew && node?.type === 'obstacle' ? (
-        <TaskTreeEditor obstacle={node} run={run} busy={busy} />
-      ) : null}
-      {isNew && type === 'obstacle' ? (
-        <p className="pm-aside-lead">
-          Задачи шлагбаума добавляются после того, как он встанет на дорогу.
-        </p>
-      ) : null}
-
-      {!isNew && node ? (
+      {!isNew && node && links ? (
         confirmDelete ? (
           <ConfirmBar
             text={`Удалить «${node.title}» с карты?`}
@@ -599,17 +735,31 @@ export function NodeForm({
             busy={busy}
             onCancel={() => setConfirmDelete(false)}
             onConfirm={async () => {
-              const outcome = await run({ op: 'node.remove', nodeId: node.id })
+              const outcome = await run({
+                op: 'node.remove',
+                nodeId: node.id,
+                ...(links.referrers.length > 0
+                  ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                  : {}),
+              })
               if (outcome.status === 'ok') onDone()
               else {
                 setConfirmDelete(false)
                 setServerErrors(outcomeErrors(outcome))
               }
             }}
-          />
+          >
+            <InboundWarning
+              map={map}
+              links={links}
+              scope="node"
+              repoint={repoint}
+              onRepoint={setRepoint}
+            />
+          </ConfirmBar>
         ) : (
           <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
-            Удалить {kind.toLowerCase()}
+            Удалить {NODE_ACCUSATIVE[type]}
           </button>
         )
       ) : null}
@@ -684,7 +834,7 @@ function TaskFieldsForm({
         <input
           className="pm-ed-input pm-ed-input--short"
           aria-label="Исполнитель"
-          placeholder="Кто (метка)"
+          placeholder="Кто"
           value={draft.owner}
           maxLength={40}
           onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
@@ -719,6 +869,11 @@ function TaskFieldsForm({
 
 type RowMode = 'view' | 'edit' | 'add' | 'delete'
 
+/**
+ * One task row (#541 rework): a done checkbox and the title (with the owner
+ * label when set) — every other action is in the row's «⋯» menu, and editing
+ * expands inline under the row.
+ */
 function TaskEditItem({
   obstacle,
   task,
@@ -752,6 +907,26 @@ function TaskEditItem({
     return errs
   }
 
+  const items: EditMenuItem[] = [
+    { label: 'Изменить…', onSelect: () => setMode('edit') },
+    {
+      label: 'Добавить подзадачу',
+      disabled: path.length >= MAX_TASK_DEPTH,
+      onSelect: () => setMode('add'),
+    },
+    {
+      label: 'Выше',
+      disabled: at === 0,
+      onSelect: () => void exec({ op: 'task.move', nodeId: obstacle.id, path, delta: -1 }),
+    },
+    {
+      label: 'Ниже',
+      disabled: at >= siblings - 1,
+      onSelect: () => void exec({ op: 'task.move', nodeId: obstacle.id, path, delta: 1 }),
+    },
+    { label: 'Удалить…', danger: true, onSelect: () => setMode('delete') },
+  ]
+
   return (
     <li
       className="pm-task pm-ed-task"
@@ -772,76 +947,23 @@ function TaskEditItem({
         >
           {done ? <TaskTickIcon /> : null}
         </button>
-        <span className="pm-task-title">{task.title}</span>
-        {typeof task.done === 'string' ? (
-          <span className="pm-task-date">{shortDate(task.done)}</span>
-        ) : null}
+        <span className="pm-task-title">
+          {task.title}
+          {typeof task.done === 'string' ? (
+            <span className="pm-task-date"> · {shortDate(task.done)}</span>
+          ) : null}
+        </span>
         {task.owner ? (
           <span className="pm-task-owner" style={{ color: ownerColor(task.owner) }}>
             {task.owner}
           </span>
         ) : null}
-        {task.link ? (
-          <a
-            className="pm-task-link"
-            href={task.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Открыть «${task.title}» в новой вкладке`}
-          >
-            <ExternalLinkIcon />
-          </a>
-        ) : null}
-      </div>
-      <div
-        className="pm-ed-task-tools"
-        role="group"
-        aria-label={`Действия с задачей «${task.title}»`}
-      >
-        <button
-          className="pm-ed-tool-btn"
-          type="button"
+        <EditMenu
+          className="pm-ed-taskmenu"
+          label={`Действия с задачей «${task.title}»`}
           disabled={busy}
-          onClick={() => setMode('edit')}
-        >
-          Изменить
-        </button>
-        {path.length < MAX_TASK_DEPTH ? (
-          <button
-            className="pm-ed-tool-btn"
-            type="button"
-            disabled={busy}
-            onClick={() => setMode('add')}
-          >
-            + подзадача
-          </button>
-        ) : null}
-        <button
-          className="pm-ed-tool-btn"
-          type="button"
-          aria-label={`Выше: ${task.title}`}
-          disabled={busy || at === 0}
-          onClick={() => void exec({ op: 'task.move', nodeId: obstacle.id, path, delta: -1 })}
-        >
-          ↑
-        </button>
-        <button
-          className="pm-ed-tool-btn"
-          type="button"
-          aria-label={`Ниже: ${task.title}`}
-          disabled={busy || at >= siblings - 1}
-          onClick={() => void exec({ op: 'task.move', nodeId: obstacle.id, path, delta: 1 })}
-        >
-          ↓
-        </button>
-        <button
-          type="button"
-          className="pm-ed-tool-btn pm-ed-task-del"
-          disabled={busy}
-          onClick={() => setMode('delete')}
-        >
-          Удалить
-        </button>
+          items={items}
+        />
       </div>
       {mode === 'edit' ? (
         <TaskFieldsForm
@@ -911,9 +1033,12 @@ export function TaskTreeEditor({
   const tasks = obstacle.tasks ?? []
   return (
     <section className="pm-ed-sec" aria-label="Задачи шлагбаума">
-      <span className="pm-ed-label">Задачи · каждая правка сохраняется сразу</span>
+      <span className="pm-ed-labelrow">
+        <span className="pm-ed-label">Задачи</span>
+        <span className="pm-ed-hint">каждая правка сохраняется сразу</span>
+      </span>
       {tasks.length > 0 ? (
-        <ul className="pm-tasks">
+        <ul className="pm-tasks pm-ed-tasks">
           {tasks.map((task, i) => (
             <TaskEditItem
               key={i}
@@ -952,7 +1077,7 @@ export function TaskTreeEditor({
       ) : (
         <button
           type="button"
-          className="pm-ed-btn pm-ed-btn--small"
+          className="pm-ed-btn pm-ed-btn--small pm-ed-addtask"
           onClick={() => setAdding(true)}
         >
           + Задача
@@ -962,9 +1087,17 @@ export function TaskTreeEditor({
   )
 }
 
-// ── track form + the swap dialog (Roadside.dc.html) ──────────────────────────
+// ── the swap dialog (Roadside.dc.html) ───────────────────────────────────────
 
-function SwapDialog({
+const FOCUSABLE =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * «Фокус полон»: which focus track goes to the roadside. A modal dialog — focus
+ * moves in, Tab and Shift+Tab are trapped inside, Esc cancels, and on close
+ * focus returns to whatever opened it (#541 review).
+ */
+export function SwapDialog({
   map,
   incoming,
   busy,
@@ -980,21 +1113,45 @@ function SwapDialog({
   const focus = map.tracks.filter((t) => t.status === 'focus')
   const [choice, setChoice] = useState<string | null>(null)
   const firstRef = useRef<HTMLButtonElement | null>(null)
-  useEffect(() => firstRef.current?.focus(), [])
+  const dialogRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    firstRef.current?.focus()
+    return () => {
+      if (opener && opener.isConnected) opener.focus()
+    }
+  }, [])
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      onCancel()
+      return
+    }
+    if (e.key !== 'Tab') return
+    const items = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
+    if (items.length === 0) return
+    const first = items[0]
+    const last = items[items.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
+
   return (
     <div className="pm-ed-overlay">
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Вывести трек в фокус"
         className="pm-ed-dialog"
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.preventDefault()
-            e.stopPropagation()
-            onCancel()
-          }
-        }}
+        onKeyDown={onKeyDown}
       >
         <div className="pm-ed-dialog-head">
           <span className="pm-ed-dialog-kicker">
@@ -1045,23 +1202,31 @@ function SwapDialog({
   )
 }
 
+// ── track form ───────────────────────────────────────────────────────────────
+
 export function TrackForm({
   map,
   trackId,
+  initialDelete,
   run,
   busy,
   onDirty,
   onDone,
   onClose,
+  onSwap,
 }: {
   map: PathMap
   /** `null` — a new track. */
   trackId: string | null
+  /** Opened from the track menu's «Удалить трек…»: the confirm is shown at once. */
+  initialDelete?: boolean
   run: RunEdit
   busy: boolean
   onDirty: (dirty: boolean) => void
   onDone: () => void
   onClose: () => void
+  /** Bringing a roadside track into a FULL focus: open the swap dialog. */
+  onSwap: (trackId: string) => void
 }) {
   const track = trackId ? map.tracks.find((t) => t.id === trackId) : undefined
   const focusCount = map.tracks.filter((t) => t.status === 'focus').length
@@ -1071,8 +1236,8 @@ export function TrackForm({
   const [status, setStatus] = useState<'focus' | 'roadside'>(focusFull ? 'roadside' : 'focus')
   const [error, setError] = useState<string | undefined>()
   const [serverErrors, setServerErrors] = useState<string[]>([])
-  const [swapping, setSwapping] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(Boolean(initialDelete))
+  const [repoint, setRepoint] = useState(true)
   const formRef = useRef<HTMLFormElement | null>(null)
   useDirty({ title, short, status }, onDirty)
 
@@ -1111,6 +1276,13 @@ export function TrackForm({
     )
   }
 
+  const links = track
+    ? inboundLinks(
+        map,
+        track.nodes.map((n) => n.id),
+      )
+    : null
+
   return (
     <form
       ref={formRef}
@@ -1124,7 +1296,7 @@ export function TrackForm({
         title={track ? track.title : 'Новая дорога к маяку'}
         onClose={onClose}
       />
-      <Field label="Название" error={error} required>
+      <Field label="Название" error={error}>
         {({ id, describedBy, invalid }) => (
           <input
             id={id}
@@ -1178,14 +1350,7 @@ export function TrackForm({
       ) : null}
 
       <FormErrors errors={serverErrors} />
-      <div className="pm-ed-actions">
-        <button type="submit" className="pm-ed-btn pm-ed-btn--primary" disabled={busy}>
-          {track ? 'Сохранить' : 'Добавить трек'}
-        </button>
-        <button type="button" className="pm-ed-btn" onClick={onClose}>
-          Отмена
-        </button>
-      </div>
+      <FormFooter submit={track ? 'Сохранить' : 'Добавить трек'} busy={busy} onCancel={onClose} />
 
       {track ? (
         <section className="pm-ed-sec" aria-label="Фокус">
@@ -1210,7 +1375,7 @@ export function TrackForm({
               disabled={busy}
               onClick={() =>
                 focusFull
-                  ? setSwapping(true)
+                  ? onSwap(track.id)
                   : void exec({ op: 'track.status', trackId: track.id, status: 'focus' }, false)
               }
             >
@@ -1220,7 +1385,7 @@ export function TrackForm({
         </section>
       ) : null}
 
-      {track ? (
+      {track && links ? (
         confirmDelete ? (
           <ConfirmBar
             text={
@@ -1233,32 +1398,31 @@ export function TrackForm({
             onCancel={() => setConfirmDelete(false)}
             onConfirm={() =>
               void exec(
-                { op: 'track.remove', trackId: track.id, force: track.nodes.length > 0 },
+                {
+                  op: 'track.remove',
+                  trackId: track.id,
+                  force: track.nodes.length > 0,
+                  ...(links.referrers.length > 0
+                    ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                    : {}),
+                },
                 true,
               )
             }
-          />
+          >
+            <InboundWarning
+              map={map}
+              links={links}
+              scope="track"
+              repoint={repoint}
+              onRepoint={setRepoint}
+            />
+          </ConfirmBar>
         ) : (
           <button type="button" className="pm-ed-delete" onClick={() => setConfirmDelete(true)}>
             Удалить трек
           </button>
         )
-      ) : null}
-
-      {swapping && track ? (
-        <SwapDialog
-          map={map}
-          incoming={track}
-          busy={busy}
-          onCancel={() => setSwapping(false)}
-          onSwap={async (out) => {
-            const ok = await exec(
-              { op: 'track.status', trackId: track.id, status: 'focus', swapWith: out },
-              false,
-            )
-            if (ok) setSwapping(false)
-          }}
-        />
       ) : null}
     </form>
   )
@@ -1302,7 +1466,7 @@ export function BeaconForm({
   return (
     <form className="pm-ed-form" onSubmit={submit} noValidate aria-label="Маяк">
       <PanelHead eyebrow="Маяк · правка" title="Куда идём и зачем" onClose={onClose} />
-      <Field label="Маяк" error={error} required>
+      <Field label="Маяк" error={error}>
         {({ id, describedBy, invalid }) => (
           <textarea
             id={id}
@@ -1329,14 +1493,7 @@ export function BeaconForm({
         )}
       </Field>
       <FormErrors errors={serverErrors} />
-      <div className="pm-ed-actions">
-        <button type="submit" className="pm-ed-btn pm-ed-btn--primary" disabled={busy}>
-          Сохранить
-        </button>
-        <button type="button" className="pm-ed-btn" onClick={onClose}>
-          Отмена
-        </button>
-      </div>
+      <FormFooter submit="Сохранить" busy={busy} onCancel={onClose} />
     </form>
   )
 }

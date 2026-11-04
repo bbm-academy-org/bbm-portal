@@ -84,7 +84,14 @@ describe('«Править» toggle', () => {
   })
 
   it('shows every node of a focus road in edit mode — nothing folds into fog', () => {
-    renderEditable(vi.fn())
+    const folded = parsePathMap(
+      readFileSync(join(repoRoot, 'tests/fixtures/path-map/example.yaml'), 'utf8').replace(
+        'visible_stations: 2',
+        'visible_stations: 1',
+      ),
+    )
+    const editing: PathMapEditing = { enabled: true, sha: 'sha-1', save: vi.fn() }
+    render(el(PathMapView, { result: folded, file: PATH_MAP_FILE, editing }))
     expect(document.querySelector('.pm-collapsed')).not.toBeNull()
     enterEdit()
     expect(document.querySelector('.pm-collapsed')).toBeNull()
