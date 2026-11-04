@@ -3,6 +3,7 @@ import React from 'react'
 import { buildMapView, checkPath } from '@/lib/path-map/derive'
 import type { ParseResult } from '@/lib/path-map/parse'
 
+import type { PathMapEditing } from './editing'
 import { LighthouseIcon, LighthouseMark } from './icons'
 import { PathMapScreen } from './PathMapScreen'
 
@@ -14,9 +15,18 @@ import { PathMapScreen } from './PathMapScreen'
  *
  * States: invalid file → the error list (the map is not drawn from a file it
  * could not read); no tracks → the empty state (beacon + where to add one);
- * otherwise the map.
+ * otherwise the map. With `editing` (#539) the screen offers «Править».
  */
-export function PathMapView({ result, file }: { result: ParseResult; file: string }) {
+export function PathMapView({
+  result,
+  file,
+  editing,
+}: {
+  result: ParseResult
+  file: string
+  /** #539: present on the page; absent in read-only renders. */
+  editing?: PathMapEditing
+}) {
   if (!result.ok) {
     return (
       <div className="pm-page pm-page--state">
@@ -50,6 +60,20 @@ export function PathMapView({ result, file }: { result: ParseResult; file: strin
   }
 
   const view = buildMapView(result.map)
+
+  // An empty LIVE map opens straight in the editor: its first track is added there (#539).
+  if (view.empty && editing?.enabled) {
+    return (
+      <PathMapScreen
+        view={view}
+        checks={{}}
+        warnings={result.warnings}
+        map={result.map}
+        editing={editing}
+        initialMode="edit"
+      />
+    )
+  }
 
   if (view.empty) {
     return (
@@ -88,5 +112,13 @@ export function PathMapView({ result, file }: { result: ParseResult; file: strin
     ),
   )
 
-  return <PathMapScreen view={view} checks={checks} warnings={result.warnings} />
+  return (
+    <PathMapScreen
+      view={view}
+      checks={checks}
+      warnings={result.warnings}
+      map={result.map}
+      editing={editing}
+    />
+  )
 }

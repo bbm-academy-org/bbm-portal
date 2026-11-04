@@ -1,0 +1,792 @@
+/* ============================================================================
+   «Карта пути» — edit mode «Править» (#539). Same tokens as path-map.css
+   (`.pm-root` custom properties) and the same `pm-` prefix scoping. The
+   AddStation artboard is not vendored, so the form is composed in the
+   canvas's language (aside, eyebrow, legend swatches, accent primary); the
+   swap dialog copies Roadside.dc.html. Recorded in design-source/README.md.
+   ============================================================================ */
+
+.pm-modes button[data-accent='edit'][aria-pressed='true'] {
+  background: var(--pm-accent-soft);
+  color: var(--pm-bg);
+  font-weight: 800;
+}
+
+.pm-edit-off {
+  display: block;
+  font-size: 12px;
+  color: var(--pm-muted-2);
+  text-align: right;
+}
+
+/* ── the board ──────────────────────────────────────────────────────────── */
+
+.pm-ed-main {
+  padding: 0 32px 80px;
+}
+
+.pm-ed-beacon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 32px 16px 28px;
+  text-align: center;
+}
+
+.pm-ed-beacon .pm-beacon-title {
+  font-size: 36px;
+}
+
+.pm-ed-grid {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+
+.pm-ed-col {
+  flex: 1 0 240px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 12px;
+  border-radius: 18px;
+  background: rgb(19 28 48 / 60%);
+  border: 1px solid var(--pm-line);
+}
+
+.pm-ed-col[data-status='roadside'] {
+  border-style: dashed;
+  background: rgb(19 28 48 / 30%);
+}
+
+.pm-ed-colhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-ed-coltitle {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pm-muted-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pm-ed-menu {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgb(232 236 244 / 18%);
+  background: transparent;
+  color: var(--pm-text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pm-ed-menu[aria-pressed='true'],
+.pm-ed-menu:hover {
+  border-color: var(--pm-accent);
+  color: var(--pm-accent);
+}
+
+.pm-ed-road {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pm-ed-insert {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
+}
+
+.pm-ed-insert-btn {
+  width: 100%;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px dashed rgb(232 236 244 / 14%);
+  background: transparent;
+  color: var(--pm-muted-3);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pm-ed-insert-btn:hover,
+.pm-ed-insert-btn[aria-pressed='true'] {
+  border-color: var(--pm-accent);
+  color: var(--pm-accent);
+  background: rgb(242 181 68 / 8%);
+}
+
+.pm-ed-node {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgb(232 236 244 / 12%);
+  background: var(--pm-card);
+  color: var(--pm-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.pm-ed-node:hover {
+  border-color: rgb(232 236 244 / 32%);
+}
+
+.pm-ed-node[aria-pressed='true'] {
+  border: 1.5px solid var(--pm-accent);
+  box-shadow: 0 0 0 3px rgb(242 181 68 / 18%);
+}
+
+.pm-ed-node[data-confidence='hypothesis'] {
+  border-style: dashed;
+}
+
+.pm-ed-node[data-type='obstacle'] {
+  padding-top: 18px;
+}
+
+.pm-ed-node .pm-stripes {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 7px;
+}
+
+.pm-ed-node[data-done='true'] {
+  opacity: 0.6;
+}
+
+.pm-ed-node[data-type='fog'] {
+  background: rgb(140 152 174 / 14%);
+}
+
+.pm-ed-node-kind {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pm-muted-3);
+}
+
+.pm-ed-node[data-type='obstacle'] .pm-ed-node-kind {
+  color: var(--pm-barrier);
+}
+
+.pm-ed-node-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-node-line {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pm-muted-2);
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-here {
+  font-size: 11px;
+  color: var(--pm-muted-3);
+  text-align: center;
+}
+
+.pm-ed-addtrack {
+  flex: 0 0 140px;
+  min-height: 120px;
+  border-radius: 18px;
+  border: 1.5px dashed rgb(242 181 68 / 45%);
+  background: rgb(242 181 68 / 5%);
+  color: #f5d693;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pm-ed-addtrack:hover,
+.pm-ed-addtrack[aria-pressed='true'] {
+  background: rgb(242 181 68 / 12%);
+}
+
+/* ── the panel forms ────────────────────────────────────────────────────── */
+
+.pm-ed-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pm-ed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.pm-ed-label {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pm-muted);
+}
+
+.pm-ed-req {
+  color: var(--pm-accent);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 700;
+}
+
+.pm-ed-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgb(232 236 244 / 20%);
+  background: rgb(10 18 34 / 70%);
+  color: var(--pm-text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.pm-ed-input--short {
+  max-width: 200px;
+}
+
+.pm-ed-textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.pm-ed-input:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 1px;
+}
+
+.pm-ed-field[data-invalid='true'] .pm-ed-input,
+.pm-ed-input[aria-invalid='true'] {
+  border-color: var(--pm-bad);
+}
+
+.pm-ed-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pm-muted-2);
+}
+
+.pm-ed-error {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--pm-bad-text);
+}
+
+.pm-ed-types {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(232 236 244 / 6%);
+}
+
+.pm-ed-type-btn {
+  flex: 1;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pm-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pm-ed-type-btn[aria-pressed='true'] {
+  background: var(--pm-text);
+  color: var(--pm-bg);
+}
+
+.pm-ed-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-ed-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgb(232 236 244 / 14%);
+  cursor: pointer;
+}
+
+.pm-ed-choice[data-checked] {
+  border: 1.5px solid var(--pm-accent);
+  background: rgb(242 181 68 / 10%);
+}
+
+.pm-ed-choice input {
+  accent-color: var(--pm-accent);
+}
+
+.pm-ed-choice-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: var(--pm-muted-2);
+}
+
+.pm-ed-choice-text b {
+  font-size: 14px;
+  color: var(--pm-text);
+}
+
+.pm-ed-check,
+.pm-ed-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pm-ed-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--pm-accent);
+}
+
+.pm-ed-removed {
+  gap: 10px;
+}
+
+.pm-ed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pm-ed-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.pm-ed-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgb(232 236 244 / 24%);
+  background: transparent;
+  color: var(--pm-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pm-ed-btn:hover {
+  background: rgb(232 236 244 / 6%);
+}
+
+.pm-ed-btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.pm-ed-btn--primary {
+  flex: 2;
+  border: 0;
+  background: var(--pm-accent);
+  color: var(--pm-bg);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.pm-ed-btn--primary:hover {
+  background: var(--pm-accent-soft);
+}
+
+.pm-ed-btn--small {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  flex: none;
+}
+
+.pm-ed-btn--danger {
+  border-color: rgb(255 107 94 / 60%);
+  color: var(--pm-bad-text);
+}
+
+.pm-ed-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--pm-line);
+}
+
+.pm-ed-delete {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pm-bad-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pm-ed-errors,
+.pm-ed-confirm,
+.pm-ed-stale {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pm-ed-errors {
+  background: rgb(255 107 94 / 10%);
+  border: 1px solid rgb(255 107 94 / 45%);
+  color: var(--pm-bad-text);
+}
+
+.pm-ed-errors ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pm-ed-confirm {
+  background: rgb(255 107 94 / 8%);
+  border: 1px solid rgb(255 107 94 / 35%);
+  color: var(--pm-text);
+}
+
+.pm-ed-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pm-ed-stale {
+  background: rgb(242 181 68 / 12%);
+  border: 1px solid rgb(242 181 68 / 55%);
+  color: #f5d693;
+}
+
+.pm-ed-stale b {
+  font-size: 15px;
+  color: var(--pm-text);
+}
+
+.pm-ed-stale .pm-ed-btn {
+  align-self: flex-start;
+}
+
+/* ── the task tree editor ───────────────────────────────────────────────── */
+
+.pm-ed-task {
+  flex-direction: column;
+}
+
+.pm-ed-task-check {
+  padding: 0;
+  border: 1.5px solid var(--pm-muted-3);
+  background: transparent;
+  color: var(--pm-bg);
+  cursor: pointer;
+}
+
+.pm-ed-task[data-done='true'] > .pm-ed-task-row .pm-ed-task-check {
+  background: var(--pm-accent);
+  border-color: var(--pm-accent);
+}
+
+.pm-ed-task-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 28px;
+}
+
+.pm-ed-tool-btn {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgb(232 236 244 / 12%);
+  background: transparent;
+  color: var(--pm-muted-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pm-ed-tool-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pm-ed-tool-btn:hover:not(:disabled) {
+  color: var(--pm-text);
+  border-color: rgb(232 236 244 / 32%);
+}
+
+.pm-ed-tool-btn.pm-ed-task-del {
+  color: var(--pm-bad-text);
+}
+
+.pm-ed-taskform {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgb(232 236 244 / 4%);
+  border: 1px solid rgb(232 236 244 / 12%);
+}
+
+.pm-ed-taskform .pm-ed-row .pm-ed-input {
+  flex: 1 1 140px;
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.pm-ed-task-new {
+  list-style: none;
+}
+
+/* ── the swap dialog (Roadside.dc.html) ─────────────────────────────────── */
+
+.pm-ed-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 120px 16px 16px;
+  background: rgb(4 8 16 / 60%);
+}
+
+.pm-ed-dialog {
+  width: min(520px, 100%);
+  padding: 24px;
+  border-radius: 22px;
+  background: #111c33;
+  border: 1px solid rgb(232 236 244 / 20%);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 60%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--pm-text);
+}
+
+.pm-ed-dialog-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-ed-dialog-kicker {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pm-accent);
+}
+
+.pm-ed-dialog-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.pm-ed-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pm-ed-radio {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgb(232 236 244 / 16%);
+  background: transparent;
+  color: var(--pm-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pm-ed-radio[aria-checked='true'] {
+  border: 1.5px solid var(--pm-accent);
+  background: rgb(242 181 68 / 10%);
+}
+
+.pm-ed-radio-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--pm-muted-3);
+}
+
+.pm-ed-radio[aria-checked='true'] .pm-ed-radio-mark {
+  border: 5px solid var(--pm-accent);
+}
+
+.pm-ed-radio-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--pm-muted-2);
+}
+
+.pm-ed-radio-text b {
+  font-size: 15px;
+  color: var(--pm-text);
+}
+
+.pm-ed-dialog-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pm-muted-2);
+}
+
+.pm-ed-dialog-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.pm-ed-dialog-actions .pm-ed-btn {
+  flex: 1;
+  min-height: 52px;
+}
+
+.pm-ed-dialog-actions .pm-ed-btn--primary {
+  flex: 2;
+}
+
+/* ── toast ──────────────────────────────────────────────────────────────── */
+
+.pm-ed-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 60;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--pm-accent);
+  color: var(--pm-bg);
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+}
+
+.pm-ed-toast:not([data-shown]) {
+  display: none;
+}
+
+/* ── header toggle, disabled off the live map (last: specificity order) ── */
+
+.pm-modes button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── narrow ─────────────────────────────────────────────────────────────── */
+
+@media (width <= 640px) {
+  .pm-ed-main {
+    padding: 0 16px 40px;
+  }
+
+  .pm-ed-beacon .pm-beacon-title {
+    font-size: 26px;
+  }
+
+  .pm-ed-grid {
+    flex-direction: column;
+    align-items: stretch;
+    overflow-x: visible;
+  }
+
+  .pm-ed-col {
+    flex: none;
+    max-width: none;
+  }
+
+  .pm-ed-addtrack {
+    flex: none;
+    min-height: 56px;
+  }
+
+  .pm-ed-aside {
+    padding: 24px 16px;
+  }
+
+  .pm-ed-overlay {
+    padding-top: 40px;
+  }
+
+  .pm-edit-off {
+    display: none;
+  }
+}

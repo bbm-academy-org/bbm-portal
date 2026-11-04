@@ -13,6 +13,7 @@ import type {
 } from '@/lib/path-map'
 import { plural } from '@/lib/path-map/derive'
 import { ANCHOR_IDS, buildNavAnchors, nodeAnchorId, shortDate } from '@/lib/path-map/nav'
+import type { PathMap } from '@/lib/path-map/schema'
 import type { TaskProgress } from '@/lib/path-map/tasks'
 
 import {
@@ -25,7 +26,9 @@ import {
   PinIcon,
   UpArrowIcon,
 } from './icons'
+import type { PathMapEditing } from './editing'
 import { opensText, ownerColor } from './labels'
+import { PathMapEditor } from './PathMapEditor'
 import { INSIDE_PANEL_ID, InsidePanel, insideTargetOf } from './PathMapInside'
 import { PathMapNav } from './PathMapNav'
 import { useScrollRegion } from './useScrollRegion'
@@ -47,9 +50,13 @@ import { useScrollRegion } from './useScrollRegion'
  * v2 (#536): in map mode a barrier is a button that opens «Что внутри»
  * (`PathMapInside.tsx`) in place of the Обочина panel; its card carries a
  * done/total counter and its striped arm lifts with the task progress.
+ *
+ * #539: a third mode, «Править», swaps the map body for the editor
+ * (`PathMapEditor.tsx`); the reading view stays as it was. Off (with the
+ * reason) when the map is the local example or the source is misconfigured.
  */
 
-type Mode = 'map' | 'check'
+type Mode = 'map' | 'check' | 'edit'
 
 const CONFIDENCE_LABEL = { known: 'знаем', hypothesis: 'гипотеза', unknown: 'не знаем' } as const
 
@@ -800,12 +807,19 @@ export function PathMapScreen({
   view,
   checks,
   warnings,
+  map,
+  editing,
+  initialMode = 'map',
 }: {
   view: MapView
   checks: Record<string, PathCheck>
   warnings: string[]
+  /** The parsed map, for the editor (#539). */
+  map?: PathMap
+  editing?: PathMapEditing
+  initialMode?: Mode
 }) {
-  const [mode, setMode] = useState<Mode>('map')
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeTrack, setActiveTrack] = useState<string | null>(view.focus[0]?.id ?? null)
   const panelRef = useRef<HTMLElement | null>(null)
@@ -892,8 +906,8 @@ export function PathMapScreen({
   const switchMode = (next: Mode) => {
     setMode(next)
     if (next === 'map') setSelectedId(null)
-    // Check mode owns the right panel; «Что внутри» does not survive the switch.
-    if (next === 'check') setOpenId(null)
+    // Check and edit mode own the right panel; «Что внутри» does not survive the switch.
+    if (next !== 'map') setOpenId(null)
   }
 
   const ctx: NodeCtx = {
@@ -933,8 +947,26 @@ export function PathMapScreen({
             <CheckIcon />
             Проверить путь
           </button>
+          {editing && map ? (
+            <button
+              type="button"
+              aria-pressed={mode === 'edit'}
+              data-accent="edit"
+              disabled={!editing.enabled}
+              aria-describedby={editing.enabled ? undefined : 'pm-edit-off'}
+              onClick={() => switchMode(mode === 'edit' ? 'map' : 'edit')}
+            >
+              Править
+            </button>
+          ) : null}
         </div>
-        <div className="pm-header-end" />
+        <div className="pm-header-end">
+          {editing && !editing.enabled ? (
+            <span id="pm-edit-off" className="pm-edit-off">
+              {editing.reason}
+            </span>
+          ) : null}
+        </div>
       </header>
 
       {checking ? (
@@ -954,109 +986,117 @@ export function PathMapScreen({
         </ul>
       ) : null}
 
-      <div className="pm-body">
-        <main className="pm-main">
-          <section id={ANCHOR_IDS.beacon} aria-label="Маяк" className="pm-beacon">
-            <LighthouseMark />
-            <span className="pm-beacon-copy">
-              <span className="pm-eyebrow">Маяк</span>
-              <h1 className="pm-beacon-title">{view.beacon.title}</h1>
-              {view.beacon.why ? (
-                <span className="pm-beacon-why">
-                  <b>Зачем:</b> {view.beacon.why}
-                </span>
-              ) : null}
-            </span>
-          </section>
+      {mode === 'edit' && editing && map ? (
+        <PathMapEditor map={map} editing={editing} />
+      ) : (
+        <div className="pm-body">
+          <main className="pm-main">
+            <section id={ANCHOR_IDS.beacon} aria-label="Маяк" className="pm-beacon">
+              <LighthouseMark />
+              <span className="pm-beacon-copy">
+                <span className="pm-eyebrow">Маяк</span>
+                <h1 className="pm-beacon-title">{view.beacon.title}</h1>
+                {view.beacon.why ? (
+                  <span className="pm-beacon-why">
+                    <b>Зачем:</b> {view.beacon.why}
+                  </span>
+                ) : null}
+              </span>
+            </section>
 
-          <div className="pm-mobile-nav">
-            <div role="group" aria-label="Треки в фокусе" className="pm-tabs">
+            <div className="pm-mobile-nav">
+              <div role="group" aria-label="Треки в фокусе" className="pm-tabs">
+                {view.focus.map((track) => (
+                  <button
+                    key={track.id}
+                    type="button"
+                    aria-pressed={activeTrack === track.id}
+                    onClick={() => setActiveTrack(track.id)}
+                    title={track.short === track.title ? undefined : track.title}
+                  >
+                    <span
+                      className="pm-dot"
+                      style={{ background: track.color }}
+                      aria-hidden="true"
+                    />
+                    <span className="pm-tab-label">{track.short}</span>
+                  </button>
+                ))}
+              </div>
+              {!checking && roadsideCount + looseCount > 0 ? (
+                <a href="#pm-roadside" className="pm-roadside-link">
+                  На обочине:{' '}
+                  {[
+                    roadsideCount > 0
+                      ? `${roadsideCount} ${plural(roadsideCount, 'трек', 'трека', 'треков')}`
+                      : null,
+                    looseCount > 0
+                      ? `${looseCount} ${plural(looseCount, 'станция', 'станции', 'станций')} без «потому что»`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}{' '}
+                  →
+                </a>
+              ) : null}
+            </div>
+
+            <ConvergingRoads view={view} chainTracks={chainTracks} check={selected} />
+
+            <div className="pm-grid" style={columns}>
               {view.focus.map((track) => (
-                <button
+                <TrackColumn
                   key={track.id}
-                  type="button"
-                  aria-pressed={activeTrack === track.id}
-                  onClick={() => setActiveTrack(track.id)}
-                  title={track.short === track.title ? undefined : track.title}
-                >
-                  <span className="pm-dot" style={{ background: track.color }} aria-hidden="true" />
-                  <span className="pm-tab-label">{track.short}</span>
-                </button>
+                  track={track}
+                  active={activeTrack === track.id}
+                  dimmed={Boolean(selected) && !chainTracks.has(track.id)}
+                  ctx={ctx}
+                  check={selected && chainTracks.has(track.id) ? selected : null}
+                />
               ))}
             </div>
-            {!checking && roadsideCount + looseCount > 0 ? (
-              <a href="#pm-roadside" className="pm-roadside-link">
-                На обочине:{' '}
-                {[
-                  roadsideCount > 0
-                    ? `${roadsideCount} ${plural(roadsideCount, 'трек', 'трека', 'треков')}`
-                    : null,
-                  looseCount > 0
-                    ? `${looseCount} ${plural(looseCount, 'станция', 'станции', 'станций')} без «потому что»`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(', ')}{' '}
-                →
-              </a>
-            ) : null}
-          </div>
 
-          <ConvergingRoads view={view} chainTracks={chainTracks} check={selected} />
+            <div id={ANCHOR_IDS.here} className="pm-here">
+              <span className="pm-here-line" aria-hidden="true" />
+              <span className="pm-here-pill">
+                <PinIcon />
+                <span>Мы здесь</span>
+              </span>
+              <span className="pm-here-line pm-here-line--right" aria-hidden="true" />
+            </div>
 
-          <div className="pm-grid" style={columns}>
-            {view.focus.map((track) => (
-              <TrackColumn
-                key={track.id}
-                track={track}
-                active={activeTrack === track.id}
-                dimmed={Boolean(selected) && !chainTracks.has(track.id)}
-                ctx={ctx}
-                check={selected && chainTracks.has(track.id) ? selected : null}
-              />
-            ))}
-          </div>
+            <div className="pm-grid" style={columns}>
+              {view.focus.map((track) => (
+                <PassedColumn
+                  key={track.id}
+                  track={track}
+                  active={activeTrack === track.id}
+                  ctx={ctx}
+                  check={selected && chainTracks.has(track.id) ? selected : null}
+                />
+              ))}
+            </div>
+            <p id={ANCHOR_IDS.start} className="pm-passed-caption">
+              Пройденный путь{view.started ? ` · старт ${shortDate(view.started)}` : ''}
+            </p>
+            {/* Last in DOM so Tab walks the map before the rail's points (#535). */}
+            <PathMapNav anchors={anchors} beaconTitle={view.beacon.title} pageRef={pageRef} />
+          </main>
 
-          <div id={ANCHOR_IDS.here} className="pm-here">
-            <span className="pm-here-line" aria-hidden="true" />
-            <span className="pm-here-pill">
-              <PinIcon />
-              <span>Мы здесь</span>
-            </span>
-            <span className="pm-here-line pm-here-line--right" aria-hidden="true" />
-          </div>
-
-          <div className="pm-grid" style={columns}>
-            {view.focus.map((track) => (
-              <PassedColumn
-                key={track.id}
-                track={track}
-                active={activeTrack === track.id}
-                ctx={ctx}
-                check={selected && chainTracks.has(track.id) ? selected : null}
-              />
-            ))}
-          </div>
-          <p id={ANCHOR_IDS.start} className="pm-passed-caption">
-            Пройденный путь{view.started ? ` · старт ${shortDate(view.started)}` : ''}
-          </p>
-          {/* Last in DOM so Tab walks the map before the rail's points (#535). */}
-          <PathMapNav anchors={anchors} beaconTitle={view.beacon.title} pageRef={pageRef} />
-        </main>
-
-        {checking ? (
-          <CheckPanel view={view} selected={selected} panelRef={panelRef} />
-        ) : inside ? (
-          <InsidePanel
-            key={inside.node.id}
-            target={inside}
-            onClose={closeInside}
-            panelRef={insideRef}
-          />
-        ) : (
-          <RoadsidePanel view={view} />
-        )}
-      </div>
+          {checking ? (
+            <CheckPanel view={view} selected={selected} panelRef={panelRef} />
+          ) : inside ? (
+            <InsidePanel
+              key={inside.node.id}
+              target={inside}
+              onClose={closeInside}
+              panelRef={insideRef}
+            />
+          ) : (
+            <RoadsidePanel view={view} />
+          )}
+        </div>
+      )}
     </div>
   )
 }
