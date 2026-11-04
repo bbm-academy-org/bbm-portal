@@ -70,7 +70,9 @@ body:has(.pm-root) {
   min-height: calc(100vh - 56px);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* clip, not hidden: `hidden` makes a scroll container and would pin the
+     navigator's `position: sticky` to this box instead of the viewport (#532). */
+  overflow: clip;
 }
 
 .pm-page[data-mode='check'] {
@@ -242,7 +244,8 @@ body:has(.pm-root) {
   position: relative;
   flex: 999 1 760px;
   min-width: 0;
-  padding: 0 40px 80px;
+  /* The left padding is the navigator's gutter (#532). */
+  padding: 0 40px 80px 72px;
 }
 
 /* ── the beacon ─────────────────────────────────────────────────────────── */
@@ -936,6 +939,16 @@ body:has(.pm-root) {
 
 /* ── side panels ────────────────────────────────────────────────────────── */
 
+/* In-page jumps the browser does itself — the ≤640px check panel's
+   scrollIntoView, the `#pm-roadside` link — land below the portal bar
+   (`--pm-chrome-top`, measured in PathMapNav.tsx) and the 48px sticky bar,
+   instead of under them (#535; 48px = STICKY_HEIGHT). The navigator's own
+   jumps offset in JS. */
+.pm-page [id],
+.pm-aside {
+  scroll-margin-top: calc(var(--pm-chrome-top, 0px) + 48px + 16px);
+}
+
 .pm-aside {
   flex: 1 1 300px;
   max-width: 380px;
@@ -1589,6 +1602,320 @@ body:has(.pm-root) {
     border-left: 0;
     border-top: 1px solid var(--pm-line);
     padding: 28px 16px;
+  }
+}
+
+/* ── v2 (#532): the sticky beacon bar ───────────────────────────────────── */
+
+/* No artboard draws it: composed from the beacon block's own tokens — the
+   amber eyebrow, the serif title, the night ground. Pinned right under the
+   portal's top bar (its bottom edge is measured, see PathMapNav.tsx), below it
+   in z-order so the bar's menus stay on top. Height = STICKY_HEIGHT there. */
+.pm-sticky {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  background: rgb(10 18 34 / 92%);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgb(242 181 68 / 22%);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 35%);
+  animation: pm-sticky-in 0.18s ease-out;
+}
+
+@keyframes pm-sticky-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.pm-sticky-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  height: 38px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pm-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pm-sticky-btn:hover {
+  background: rgb(232 236 244 / 6%);
+}
+
+.pm-sticky-btn svg {
+  flex: none;
+}
+
+.pm-sticky-eyebrow {
+  flex: none;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pm-accent);
+}
+
+.pm-sticky-title {
+  min-width: 0;
+  font-family: var(--pm-serif);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── v2 (#532): the left navigator rail ─────────────────────────────────── */
+
+/* The gutter is `.pm-main`'s left padding; the rail sticks inside it for the
+   whole height of the map. Points are placed by PathMapNav.tsx (px from the
+   track's top); until measured they stay invisible. */
+.pm-nav-gutter {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 64px;
+  z-index: 5;
+}
+
+.pm-nav {
+  position: sticky;
+  top: var(--pm-nav-top, 116px);
+  height: calc(100dvh - var(--pm-nav-top, 116px) - 28px);
+  padding: 12px 0;
+}
+
+.pm-nav-track {
+  position: relative;
+  height: 100%;
+  cursor: pointer;
+}
+
+.pm-nav-line {
+  position: absolute;
+  left: 50px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: rgb(232 236 244 / 10%);
+  pointer-events: none;
+}
+
+.pm-nav-thumb {
+  position: absolute;
+  left: 45px;
+  width: 12px;
+  min-height: 24px;
+  border-radius: 999px;
+  background: rgb(242 181 68 / 12%);
+  border: 1px solid rgb(242 181 68 / 40%);
+  cursor: grab;
+  touch-action: none;
+}
+
+.pm-nav-thumb:active {
+  cursor: grabbing;
+  background: rgb(242 181 68 / 22%);
+}
+
+.pm-nav-point {
+  position: absolute;
+  left: 51px;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pm-muted-3);
+  font: inherit;
+  cursor: pointer;
+  /* Unplaced (before the first measure, or a missing target): invisible AND
+     unfocusable — PathMapNav.tsx also drops it from the tab order. */
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity 0.2s,
+    visibility 0.2s;
+}
+
+.pm-nav-point[data-placed] {
+  visibility: visible;
+  opacity: 1;
+}
+
+.pm-nav-point svg {
+  width: 16px;
+  height: 16px;
+  color: var(--pm-accent);
+}
+
+.pm-nav-mark {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--pm-point, var(--pm-muted-3));
+  transition: transform 0.15s;
+}
+
+.pm-nav-point[data-kind='station'] .pm-nav-mark {
+  opacity: 0.7;
+}
+
+.pm-nav-point[data-in-view] .pm-nav-mark,
+.pm-nav-point:hover .pm-nav-mark {
+  opacity: 1;
+  transform: scale(1.35);
+}
+
+.pm-nav-point[data-kind='here'] .pm-nav-mark {
+  width: 12px;
+  height: 12px;
+  background: var(--pm-accent);
+  box-shadow: 0 0 12px rgb(242 181 68 / 70%);
+}
+
+.pm-nav-point[data-kind='month'] .pm-nav-mark {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgb(242 181 68 / 55%);
+}
+
+.pm-nav-point[data-kind='start'] .pm-nav-mark {
+  width: 9px;
+  height: 9px;
+  background: transparent;
+  border: 2px solid rgb(242 181 68 / 55%);
+}
+
+.pm-nav-short {
+  position: absolute;
+  right: calc(100% + 1px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--pm-muted-3);
+  pointer-events: none;
+}
+
+.pm-nav-tip {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  max-width: 280px;
+  padding: 6px 10px;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  border: 1px solid rgb(242 181 68 / 28%);
+  background: var(--pm-card);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 40%);
+  color: var(--pm-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.pm-nav-short::before,
+.pm-nav-tip::before {
+  content: attr(data-text);
+}
+
+.pm-nav-point:hover .pm-nav-tip,
+.pm-nav-point:focus-visible .pm-nav-tip {
+  opacity: 1;
+}
+
+/* ≤640px: a thin rail at the screen edge — only Маяк, «Мы здесь», «Старт».
+   It lives in the 16px the narrow layout already leaves free on the left
+   (the beacon card and the track tabs start at 16px, the cards at 20px), so it
+   never covers the per-track tabs. */
+@media (width <= 640px) {
+  .pm-sticky {
+    padding: 0 8px;
+  }
+
+  .pm-sticky-title {
+    font-size: 17px;
+  }
+
+  .pm-nav-gutter {
+    width: 16px;
+  }
+
+  /* Fixed, not sticky: on the narrow layout the panel stacks under the map,
+     and a sticky rail would scroll away with the end of the map column. */
+  .pm-nav {
+    position: fixed;
+    left: 0;
+    width: 16px;
+  }
+
+  .pm-nav-line {
+    left: 11px;
+  }
+
+  /* A passive indicator here: a drag at the very screen edge would fight iOS
+     Safari's back-swipe, and the page scrolls natively under the finger. */
+  .pm-nav-thumb {
+    left: 8px;
+    width: 8px;
+    pointer-events: none;
+    cursor: default;
+  }
+
+  /* 24px wide (WCAG 2.5.8) — it overhangs the 16px gutter by 8px, transparent,
+     at only three spots (Маяк, «Мы здесь», «Старт»). */
+  .pm-nav-point {
+    left: 12px;
+    width: 24px;
+    height: 28px;
+  }
+
+  .pm-nav-point:not([data-compact]),
+  .pm-nav-short {
+    display: none;
+  }
+
+  .pm-nav-point svg {
+    width: 12px;
+    height: 12px;
   }
 }
 
