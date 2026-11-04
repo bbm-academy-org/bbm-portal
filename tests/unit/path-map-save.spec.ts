@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { readCached } from '@/lib/path-map/cache'
+import type { EditCommand } from '@/lib/path-map/edit'
 import {
   githubPathMapSource,
   localPathMapSource,
@@ -222,12 +223,12 @@ describe('savePathMapEdit', () => {
         // GitHub lags: the read still returns sha-1, the version our write replaced.
         return init?.method === 'PUT' ? putResponse('sha-3') : contentsResponse(example, 'sha-1')
       })
-      const second = {
+      const second: EditCommand = {
         op: 'task.add',
         nodeId: 'studio',
         parent: [],
         fields: { title: 'Сдать студию' },
-      } as const
+      }
       const outcome = await savePathMapEdit({
         source,
         command: second,

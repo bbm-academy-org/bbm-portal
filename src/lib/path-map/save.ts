@@ -2,9 +2,14 @@ import { z } from 'zod'
 
 import { claimGateResponse, type SessionLike } from '@/lib/platform/authGate'
 
-import { peekPathMapCache, primePathMapCache, resetPathMapCache } from './cache'
+import { ownWriteOf, primePathMapCache, recordOwnWrite, resetPathMapCache } from './cache'
 import { applyEdit, editCommandSchema, type EditCommand } from './edit'
-import { PathMapConflictError, PathMapSourceError, type AnyPathMapSource } from './source'
+import {
+  PathMapConflictError,
+  PathMapSourceError,
+  type AnyPathMapSource,
+  type PathMapOrigin,
+} from './source'
 
 /**
  * Saving one UI edit of the map (#539): re-read the file, refuse when it moved
@@ -18,6 +23,25 @@ import { PathMapConflictError, PathMapSourceError, type AnyPathMapSource } from 
  */
 
 export const EDIT_DISABLED_REASON = 'редактирование доступно только для живой карты'
+export const EDIT_UNKNOWN_VERSION_REASON =
+  'версия файла карты неизвестна — обновите страницу, чтобы править'
+
+/**
+ * Whether the page offers «Править», and why not (#541 review: the button is
+ * never disabled without a reason). Live map with a known blob sha → on.
+ */
+export function editAvailability(loaded: { origin: PathMapOrigin['kind']; sha: string | null }): {
+  enabled: boolean
+  reason?: string
+} {
+  if (loaded.origin !== 'github') return { enabled: false, reason: EDIT_DISABLED_REASON }
+  if (!loaded.sha) return { enabled: false, reason: EDIT_UNKNOWN_VERSION_REASON }
+  return { enabled: true }
+}
+
+/** A commit subject is one line: no title can add a body or forged trailers. */
+const COMMIT_MESSAGE_MAX = 200
+const COMMIT_SUFFIX = ' (/p/path)'
 
 export type PathMapEditOutcome =
   | { status: 'ok'; sha: string; commit: string; summary: string }
@@ -27,10 +51,18 @@ export type PathMapEditOutcome =
   | { status: 'forbidden'; message: string }
   | { status: 'error'; message: string }
 
-/** `<Имя>: <действие> «<название>» (/p/path)` — one line, whatever the name holds. */
+/**
+ * `<Имя>: <действие> «<название>» (/p/path)` — ONE line of at most 200
+ * characters, whatever the name or the titles hold (#541 review): every run
+ * of whitespace, line breaks included, is one space, so a title cannot start
+ * a commit body or forge a `Co-authored-by:` trailer.
+ */
 export function commitMessage(actor: string, summary: string): string {
-  const name = actor.replace(/\s+/g, ' ').trim() || 'Участник'
-  return `${name}: ${summary} (/p/path)`
+  const flat = (value: string) => value.replace(/\s+/g, ' ').trim()
+  const head = `${flat(actor) || 'Участник'}: ${flat(summary)}`
+  const room = COMMIT_MESSAGE_MAX - COMMIT_SUFFIX.length
+  const body = head.length > room ? `${head.slice(0, room - 1).trimEnd()}…` : head
+  return `${body}${COMMIT_SUFFIX}`
 }
 
 export async function savePathMapEdit(args: {
@@ -46,24 +78,32 @@ export async function savePathMapEdit(args: {
     const fresh = await source.read()
     let base = fresh
     if (fresh.sha !== baseSha) {
-      // GitHub's read can lag behind the portal's own write for a moment: the
-      // copy this portal wrote IS the base the member saw. The PUT's sha check
-      // decides either way.
-      const own = peekPathMapCache(source.origin)
-      if (own?.sha !== baseSha) {
-        // The member is about to «Перечитать»: hand the page the newer file now
-        // instead of the cached copy it was drawn from (up to a TTL old).
-        primePathMapCache(source.origin, { content: fresh.content, sha: fresh.sha })
+      const own = ownWriteOf(source.origin)
+      if (own && own.sha === baseSha) {
+        // GitHub's read can lag behind the portal's OWN last write for a
+        // moment: that write IS the base the member saw. Only our own write
+        // counts — a cached read proves nothing. The PUT's sha check decides.
+        base = { ...fresh, content: own.content, sha: own.sha }
+      } else {
+        // The member is about to «Перечитать»: hand the page the newer file
+        // now — unless the read is merely the version our own write replaced
+        // (GitHub lagging), which must not roll the cache back.
+        if (!own || fresh.sha !== own.parentSha) {
+          primePathMapCache(source.origin, { content: fresh.content, sha: fresh.sha })
+        }
         return { status: 'stale' }
       }
-      base = { ...fresh, content: own.content, sha: own.sha }
     }
 
     const edited = applyEdit(base.content, command)
     if (!edited.ok) return { status: 'invalid', errors: edited.errors }
 
     const written = await source.write(edited.text, base.sha, commitMessage(actor, edited.summary))
-    primePathMapCache(source.origin, { content: edited.text, sha: written.sha })
+    recordOwnWrite(source.origin, {
+      content: edited.text,
+      sha: written.sha,
+      parentSha: base.sha,
+    })
     return { status: 'ok', sha: written.sha, commit: written.commit, summary: edited.summary }
   } catch (error) {
     if (error instanceof PathMapConflictError) {

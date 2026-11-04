@@ -39,6 +39,20 @@ interface CacheSlot {
   inflight: Promise<PathMapDocument> | null
   /** Bumped by every prime/reset: a read started before it must not write its older text. */
   generation: number
+  /**
+   * The portal's own last write to this map (#541 review): its blob sha, the
+   * sha it replaced, and the text. Kept apart from `doc` on purpose — a cached
+   * READ with the member's base sha proves nothing about GitHub lagging; only
+   * our own write does. Cleared with the key and by `resetPathMapCache`.
+   */
+  own: OwnWrite | null
+}
+
+export interface OwnWrite {
+  sha: string
+  /** The blob our write replaced — what a lagging GitHub read still returns. */
+  parentSha: string
+  content: string
 }
 
 const globalSlot = globalThis as typeof globalThis & { __pathMapCache?: CacheSlot }
@@ -50,7 +64,10 @@ const slot: CacheSlot = (globalSlot.__pathMapCache ??= {
   error: undefined,
   inflight: null,
   generation: 0,
+  own: null,
 })
+// A slot created by an older build (dev HMR) has no `own` yet.
+slot.own ??= null
 
 function keyOf(origin: PathMapOrigin): string {
   return `${origin.kind}:${describeOrigin(origin)}`
@@ -84,7 +101,10 @@ function snapshot(doc: PathMapDocument): CachedDocument {
 export async function readCached(source: GithubPathMapSource, now: Date): Promise<CachedDocument> {
   const key = keyOf(source.origin)
   // Another repo/path/branch (config changed): the old copy is not this map.
-  if (slot.key !== key) clear(key)
+  if (slot.key !== key) {
+    clear(key)
+    slot.own = null
+  }
 
   const t = now.getTime()
   if (slot.checkedAt && t - slot.checkedAt < PATH_MAP_CACHE_TTL_MS) {
@@ -99,6 +119,14 @@ export async function readCached(source: GithubPathMapSource, now: Date): Promis
       .read()
       .then(
         (doc) => {
+          // GitHub's read may lag behind our own write for a moment and hand
+          // back the version that write replaced: never roll the copy back to it.
+          if (current() && slot.own && doc.sha === slot.own.parentSha && slot.doc) {
+            slot.readAt = t
+            slot.checkedAt = t
+            slot.error = undefined
+            return slot.doc
+          }
           if (current()) {
             slot.doc = doc
             slot.readAt = t
@@ -155,17 +183,32 @@ export function primePathMapCache(
   slot.checkedAt = t
 }
 
-/**
- * The cached text for `origin`, if any — no read, no TTL check. The save
- * (#539) uses it when GitHub's read lags behind the portal's own last write: a
- * member editing on top of that write is not stale, and the PUT's sha check
- * stays the authority either way.
- */
+/** The cached text for `origin`, if any — no read, no TTL check. */
 export function peekPathMapCache(origin: GithubPathMapOrigin): PathMapDocument | null {
   return slot.key === keyOf(origin) ? slot.doc : null
+}
+
+/**
+ * Record a successful PUT by the portal (#539, #541 review): primes the cache
+ * with the written text and remembers the write — its sha and the sha it
+ * replaced — so the save can tell GitHub's read lag from a genuinely newer file.
+ */
+export function recordOwnWrite(
+  origin: GithubPathMapOrigin,
+  written: OwnWrite,
+  now: Date = new Date(),
+): void {
+  primePathMapCache(origin, written, now)
+  slot.own = { sha: written.sha, parentSha: written.parentSha, content: written.content }
+}
+
+/** The portal's own last write to `origin`, if it is still the one on record. */
+export function ownWriteOf(origin: GithubPathMapOrigin): OwnWrite | null {
+  return slot.key === keyOf(origin) ? slot.own : null
 }
 
 /** Drop the cached copy — tests, and anything that must force the next read to GitHub. */
 export function resetPathMapCache(): void {
   clear(null)
+  slot.own = null
 }

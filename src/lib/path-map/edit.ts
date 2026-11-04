@@ -1,5 +1,6 @@
 import {
   type Document,
+  isAlias,
   isMap,
   isScalar,
   isSeq,
@@ -9,6 +10,8 @@ import {
 } from 'yaml'
 import { z } from 'zod'
 
+import { plural } from './derive'
+import { inboundLinks, repointTarget } from './links'
 import { parsePathMap } from './parse'
 import { BEACON_ID, CONFIDENCE, TRACK_STATUS, type PathMap, type PathTask } from './schema'
 import { getTaskAt, isTaskDone, ownDone } from './tasks'
@@ -41,7 +44,15 @@ const text = (max: number) => z.string().max(max, `не длиннее ${max} с
 const optional = (max: number) => text(max).optional()
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'дата в формате ГГГГ-ММ-ДД')
 const indexPath = z.array(z.number().int().min(0).max(9999)).max(10)
+/** The address of one task: never empty (`[]` is the obstacle itself, #541 review). */
+const taskPath = indexPath.min(1, 'не указано, какая задача')
 const nodeType = z.enum(['station', 'obstacle', 'fog'])
+/**
+ * Deleting what other blocks lead to (#541 review): `repoint` (the default)
+ * sends their `opens` to what the deleted block opened; `break` leaves the
+ * dangling id — a «разрыв» the map shows.
+ */
+const inbound = z.enum(['repoint', 'break']).optional()
 const trackStatus = z.enum(TRACK_STATUS)
 
 const nodeFields = z.strictObject({
@@ -71,7 +82,7 @@ export const editCommandSchema = z.discriminatedUnion('op', [
     fields: nodeFields,
   }),
   z.strictObject({ op: z.literal('node.update'), nodeId: ref, fields: nodeFields }),
-  z.strictObject({ op: z.literal('node.remove'), nodeId: ref }),
+  z.strictObject({ op: z.literal('node.remove'), nodeId: ref, inbound }),
   z.strictObject({
     op: z.literal('node.move'),
     nodeId: ref,
@@ -93,7 +104,12 @@ export const editCommandSchema = z.discriminatedUnion('op', [
     title: text(120),
     short: optional(40),
   }),
-  z.strictObject({ op: z.literal('track.remove'), trackId: ref, force: z.boolean().optional() }),
+  z.strictObject({
+    op: z.literal('track.remove'),
+    trackId: ref,
+    force: z.boolean().optional(),
+    inbound,
+  }),
   z.strictObject({
     op: z.literal('track.status'),
     trackId: ref,
@@ -111,15 +127,15 @@ export const editCommandSchema = z.discriminatedUnion('op', [
   z.strictObject({
     op: z.literal('task.update'),
     nodeId: ref,
-    path: indexPath,
+    path: taskPath,
     fields: taskFields,
   }),
-  z.strictObject({ op: z.literal('task.remove'), nodeId: ref, path: indexPath }),
-  z.strictObject({ op: z.literal('task.toggle'), nodeId: ref, path: indexPath, date: day }),
+  z.strictObject({ op: z.literal('task.remove'), nodeId: ref, path: taskPath }),
+  z.strictObject({ op: z.literal('task.toggle'), nodeId: ref, path: taskPath, date: day }),
   z.strictObject({
     op: z.literal('task.move'),
     nodeId: ref,
-    path: indexPath,
+    path: taskPath,
     delta: z.union([z.literal(-1), z.literal(1)]),
   }),
   z.strictObject({ op: z.literal('beacon.update'), title: text(300), why: optional(1000) }),
@@ -218,6 +234,7 @@ function insertPair(doc: Document, map: YAMLMap, key: string, value: unknown, or
 function ensureSeq(doc: Document, map: YAMLMap, key: string, order: string[]): YAMLSeq {
   const existing = map.get(key, true)
   if (isSeq(existing)) return existing
+  if (isAlias(existing)) refuse(ALIAS_REFUSAL.list)
   const seq = doc.createNode([]) as YAMLSeq
   if (map.has(key)) map.set(key, seq)
   else insertPair(doc, map, key, seq, order)
@@ -254,9 +271,27 @@ interface Ctx {
   map: PathMap
 }
 
+/**
+ * A hand-written file may reuse a block with a YAML anchor (`&a` … `*a`).
+ * Editing through the alias would change every place that uses it, so such a
+ * spot is refused with a pointer to git instead of a TypeError (#541 review).
+ */
+const ALIAS_REFUSAL = {
+  track: 'этот трек в файле — YAML-ссылка (&якорь / *алиас) на другое место: правьте его в git',
+  node: 'этот блок в файле — YAML-ссылка (&якорь / *алиас) на другое место: правьте его в git',
+  task: 'эта задача в файле — YAML-ссылка (&якорь / *алиас) на другое место: правьте её в git',
+  list: 'этот список в файле — YAML-ссылка (&якорь / *алиас) на другое место: правьте его в git',
+} as const
+
+function mapItem(item: unknown, what: keyof typeof ALIAS_REFUSAL): YAMLMap {
+  if (isMap(item)) return item
+  return refuse(isAlias(item) ? ALIAS_REFUSAL[what] : `в файле карты не найден ${what}`)
+}
+
 function tracksSeq(ctx: Ctx): YAMLSeq {
   const tracks = ctx.doc.get('tracks', true)
   if (isSeq(tracks)) return tracks
+  if (isAlias(tracks)) refuse(ALIAS_REFUSAL.list)
   const seq = ctx.doc.createNode([]) as YAMLSeq
   ctx.doc.set('tracks', seq)
   return seq
@@ -266,7 +301,7 @@ function trackAt(ctx: Ctx, trackId: string) {
   const t = ctx.map.tracks.findIndex((track) => track.id === trackId)
   if (t < 0)
     refuse(`трека «${trackId}» на карте нет — возможно, его уже удалили; перечитайте карту`)
-  const yaml = tracksSeq(ctx).items[t] as YAMLMap
+  const yaml = mapItem(tracksSeq(ctx).items[t], 'track')
   return { t, track: ctx.map.tracks[t], yaml }
 }
 
@@ -278,9 +313,9 @@ function nodeAt(ctx: Ctx, nodeId: string) {
   for (const [t, track] of ctx.map.tracks.entries()) {
     const n = track.nodes.findIndex((node) => node.id === nodeId)
     if (n < 0) continue
-    const trackYaml = tracksSeq(ctx).items[t] as YAMLMap
+    const trackYaml = mapItem(tracksSeq(ctx).items[t], 'track')
     const seq = nodesOf(ctx, trackYaml)
-    return { t, n, track, node: track.nodes[n], seq, yaml: seq.items[n] as YAMLMap }
+    return { t, n, track, node: track.nodes[n], seq, yaml: mapItem(seq.items[n], 'node') }
   }
   return refuse(`блока «${nodeId}» на карте нет — возможно, его уже удалили; перечитайте карту`)
 }
@@ -295,6 +330,8 @@ const TASK_MISSING = 'задачи по этому адресу нет — во�
 
 /** The task at an index path, its YAML row, and the list (and that list's owner) it sits in. */
 function taskAt(ctx: Ctx, nodeId: string, path: number[]) {
+  // An empty path is the obstacle itself, not a task (#541 review).
+  if (path.length === 0) return refuse(TASK_MISSING)
   const { node, yaml } = obstacleAt(ctx, nodeId)
   const task = getTaskAt(node.tasks, path) ?? refuse(TASK_MISSING)
   let owner: YAMLMap = yaml
@@ -303,11 +340,15 @@ function taskAt(ctx: Ctx, nodeId: string, path: number[]) {
   let item: YAMLMap | null = null
   for (const index of path) {
     const seq = owner.get('tasks', true)
-    if (!isSeq(seq) || !isMap(seq.items[index])) return refuse(TASK_MISSING)
+    if (isAlias(seq)) return refuse(ALIAS_REFUSAL.list)
+    if (!isSeq(seq)) return refuse(TASK_MISSING)
+    const row = seq.items[index]
+    if (isAlias(row)) return refuse(ALIAS_REFUSAL.task)
+    if (!isMap(row)) return refuse(TASK_MISSING)
     parentOwner = owner
     parentSeq = seq
-    item = seq.items[index] as YAMLMap
-    owner = item
+    item = row
+    owner = row
   }
   return { node, task, item: item!, parentSeq: parentSeq!, parentOwner }
 }
@@ -344,6 +385,33 @@ function nodeValues(type: keyof typeof NODE_NOUN, fields: NodeFields, selfId?: s
   return values
 }
 
+/**
+ * Before deleting `removed` ids: repoint (or knowingly leave) the `opens` of
+ * every block outside the set that leads into it (#541 review). Runs before
+ * the splice, so the referrers' positions in the document are still the
+ * parsed map's. Returns the summary's tail — «, 2 блока теперь ведут к «…»».
+ */
+function relinkInbound(ctx: Ctx, removed: string[], mode: 'repoint' | 'break' = 'repoint'): string {
+  const { referrers, target } = inboundLinks(ctx.map, removed)
+  if (referrers.length === 0) return ''
+  const n = referrers.length
+  const blocks = `${n} ${plural(n, 'блок', 'блока', 'блоков')}`
+  const broken = `, ${blocks} ${n === 1 ? 'остался' : 'остались'} с разрывом`
+  if (mode === 'break') return broken
+  for (const { node } of referrers) {
+    const next = repointTarget(ctx.map, removed, node.opens!)
+    // A block never opens itself: such a link becomes a break instead.
+    const value = next && next !== node.id ? next : undefined
+    setKey(ctx.doc, nodeAt(ctx, node.id).yaml, 'opens', value, NODE_KEYS)
+  }
+  if (!target) return broken
+  const title =
+    target === BEACON_ID
+      ? 'маяк'
+      : (ctx.map.tracks.flatMap((t) => t.nodes).find((x) => x.id === target)?.title ?? target)
+  return `, ${blocks} теперь ${n === 1 ? 'ведёт' : 'ведут'} к «${title}»`
+}
+
 // ── the commands ─────────────────────────────────────────────────────────────
 
 function run(ctx: Ctx, command: EditCommand): string {
@@ -370,8 +438,9 @@ function run(ctx: Ctx, command: EditCommand): string {
     }
     case 'node.remove': {
       const { node, seq, n } = nodeAt(ctx, command.nodeId)
+      const tail = relinkInbound(ctx, [node.id], command.inbound)
       seq.items.splice(n, 1)
-      return `удалить ${NODE_NOUN[node.type]} «${node.title}»`
+      return `удалить ${NODE_NOUN[node.type]} «${node.title}»${tail}`
     }
     case 'node.move': {
       const from = nodeAt(ctx, command.nodeId)
@@ -425,8 +494,13 @@ function run(ctx: Ctx, command: EditCommand): string {
           `в треке «${track.title}» есть блоки (${track.nodes.length}) — его можно удалить только вместе с ними, подтвердите удаление`,
         )
       }
+      const tail = relinkInbound(
+        ctx,
+        track.nodes.map((node) => node.id),
+        command.inbound,
+      )
       tracksSeq(ctx).items.splice(t, 1)
-      return `удалить трек «${track.title}»`
+      return `удалить трек «${track.title}»${tail}`
     }
     case 'track.status': {
       const { track, yaml } = trackAt(ctx, command.trackId)

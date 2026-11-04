@@ -218,9 +218,18 @@ function roadsideSummary(nodes: PathNode[]): string {
   return foggy ? `${head} · дальше туман` : head
 }
 
-export function buildMapView(map: PathMap): MapView {
+export interface BuildMapViewOptions {
+  /**
+   * Edit mode (#539): draw every open node of a focus road — nothing beyond
+   * `limits.visible_stations` collapses into fog, so each one can be clicked.
+   */
+  expandAll?: boolean
+}
+
+export function buildMapView(map: PathMap, options: BuildMapViewOptions = {}): MapView {
   const index = indexNodes(map)
-  const { visible_stations, obstacles_per_station, focus_tracks } = map.limits
+  const { obstacles_per_station, focus_tracks } = map.limits
+  const visible_stations = options.expandAll ? Infinity : map.limits.visible_stations
 
   const openObstaclesFor = new Map<string, number>()
   for (const { node } of index.values()) {

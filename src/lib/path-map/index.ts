@@ -9,6 +9,7 @@
  */
 export { buildMapView, checkPath, plural, TRACK_COLORS } from './derive'
 export type {
+  BuildMapViewOptions,
   ChainLink,
   MapView,
   NodeLook,
@@ -24,10 +25,13 @@ export { getPathMap, loadPathMap, PATH_MAP_FILE } from './load'
 export type { GetPathMapOptions, LoadResult, PathMapLoad, PathMapLoadFailure } from './load'
 export {
   PATH_MAP_CACHE_TTL_MS,
+  ownWriteOf,
   peekPathMapCache,
   primePathMapCache,
+  recordOwnWrite,
   resetPathMapCache,
 } from './cache'
+export type { OwnWrite } from './cache'
 export {
   describeOrigin,
   githubPathMapSource,
@@ -57,7 +61,16 @@ export type {
 } from './source'
 export { applyEdit, editCommandSchema, slugifyTitle } from './edit'
 export type { EditCommand, EditResult, NodeFields, TaskFields } from './edit'
-export { commitMessage, EDIT_DISABLED_REASON, runPathMapEdit, savePathMapEdit } from './save'
+export {
+  commitMessage,
+  EDIT_DISABLED_REASON,
+  EDIT_UNKNOWN_VERSION_REASON,
+  editAvailability,
+  runPathMapEdit,
+  savePathMapEdit,
+} from './save'
+export { inboundLinks, repointTarget } from './links'
+export type { InboundLinks } from './links'
 export type { PathMapEditOutcome } from './save'
 export { parsePathMap } from './parse'
 export type { ParseResult } from './parse'

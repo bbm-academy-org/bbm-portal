@@ -14,7 +14,10 @@ vi.mock('@/app/(platform)/p/path/actions', () => ({ savePathMapEditAction: async
 vi.mock('@/modules/path-map/view/PathMapLayout', () => ({
   PathMapLayout: ({ children }: { children: unknown }) => children,
 }))
-vi.mock('@/lib/path-map', () => ({ getPathMap: loadMock }))
+vi.mock('@/lib/path-map', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/path-map')>()),
+  getPathMap: loadMock,
+}))
 
 const base = {
   file: 'bbm-academy-org/path-maps · maps/doctor-school.yaml',

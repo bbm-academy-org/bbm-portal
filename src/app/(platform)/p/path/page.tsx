@@ -1,6 +1,6 @@
 import React from 'react'
 
-import { EDIT_DISABLED_REASON, getPathMap } from '@/lib/path-map'
+import { editAvailability, getPathMap } from '@/lib/path-map'
 import { PathMapLayout } from '@/modules/path-map/view/PathMapLayout'
 import { PathMapReadError } from '@/modules/path-map/view/PathMapReadError'
 import { PathMapSourceNotice } from '@/modules/path-map/view/PathMapSourceNotice'
@@ -46,8 +46,7 @@ export default async function PathMapPage() {
           result={loaded}
           file={loaded.file}
           editing={{
-            enabled: loaded.origin.kind === 'github' && loaded.sha !== null,
-            reason: loaded.origin.kind === 'github' ? undefined : EDIT_DISABLED_REASON,
+            ...editAvailability({ origin: loaded.origin.kind, sha: loaded.sha }),
             sha: loaded.sha,
             save: savePathMapEditAction,
           }}
