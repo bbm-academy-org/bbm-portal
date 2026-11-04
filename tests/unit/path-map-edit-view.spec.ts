@@ -11,10 +11,13 @@ import type { PathMapEditing } from '@/modules/path-map/view/editing'
 import { PathMapView } from '@/modules/path-map/view/PathMapView'
 
 /**
- * «Карта пути» v2, task D (#539) — the edit mode in the view: the «Править»
- * toggle (and its disabled state off the live map), the board with «+» insert
- * points, the station form's required «потому что», the save loop (refresh +
- * «Сохранено») and the stale-map message that keeps the form input.
+ * «Карта пути» v2, task D (#539) — editing IN PLACE on the map (#541 rework):
+ * «Править» keeps the road layout (beacon, roads, «Мы здесь», passed path) and
+ * overlays it with «+» slots on the road, a mini-picker «станция / шлагбаум /
+ * туман», a pulsing placeholder card where the new block will stand, clickable
+ * cards, a «⋯» menu on each track label and the editable «Обочина» panel. Forms
+ * open in the right panel (the AddStation artboard). The barrier's task tree
+ * keeps each row to a checkbox and a title; everything else is in a row «⋯».
  *
  * The Server Action is a stub passed as `editing.save`; `next/navigation`'s
  * router is mocked. Written with `React.createElement` (the include glob is `*.spec.ts`).
@@ -31,6 +34,9 @@ const shipped = parsePathMap(
 
 type Save = PathMapEditing['save']
 
+const okSave = () =>
+  vi.fn<Save>(async () => ({ status: 'ok', sha: 'sha-2', commit: 'c', summary: 's' }))
+
 function renderEditable(save: Save, overrides: Partial<PathMapEditing> = {}) {
   const editing: PathMapEditing = { enabled: true, sha: 'sha-1', save, ...overrides }
   return render(el(PathMapView, { result: shipped, file: PATH_MAP_FILE, editing }))
@@ -40,32 +46,51 @@ function enterEdit() {
   fireEvent.click(screen.getByRole('button', { name: 'Править' }))
 }
 
+const road = (title: string) => screen.getByRole('group', { name: `Трек «${title}»` })
+
+function openSlotPicker(track: string, n: number) {
+  fireEvent.click(within(road(track)).getAllByRole('button', { name: /^Добавить блок/ })[n])
+  return screen.getByRole('menu', { name: /^Что поставить/ })
+}
+
 beforeEach(() => refresh.mockReset())
 afterEach(cleanup)
 
 describe('«Править» toggle', () => {
-  it('switches the map body to the edit board and back', () => {
+  it('keeps the road map and overlays it with edit affordances', () => {
     renderEditable(vi.fn())
     const toggle = screen.getByRole('button', { name: 'Править' })
     expect(toggle.getAttribute('aria-pressed')).toBe('false')
-    expect(screen.queryByRole('complementary', { name: 'Правка карты' })).toBeNull()
+    expect(screen.queryAllByRole('button', { name: /^Добавить блок/ })).toHaveLength(0)
 
     enterEdit()
     expect(toggle.getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('complementary', { name: 'Правка карты' })).toBeTruthy()
-    // Every track — the roadside one too — is a column of the board.
-    for (const title of [
-      'Контент уроков',
-      'Охват и подкасты',
-      'Своя платформа',
-      'Фарма-партнёры',
-    ]) {
-      expect(screen.getByRole('region', { name: `Трек «${title}»` })).toBeTruthy()
+    // The same road layout: beacon, focus roads, «Мы здесь», passed path.
+    expect(screen.getByRole('region', { name: 'Маяк' })).toBeTruthy()
+    expect(screen.getByText('Мы здесь')).toBeTruthy()
+    expect(document.querySelectorAll('.pm-grid')).toHaveLength(2)
+    for (const title of ['Контент уроков', 'Охват и подкасты', 'Своя платформа']) {
+      expect(road(title)).toBeTruthy()
     }
-    expect(screen.getByRole('button', { name: '+ Трек' })).toBeTruthy()
+    // The roadside track is edited from the Обочина panel, not as a column.
+    expect(screen.queryByRole('group', { name: 'Трек «Фарма-партнёры»' })).toBeNull()
+    const roadside = screen.getByRole('complementary', { name: 'Обочина' })
+    expect(within(roadside).getByRole('button', { name: '+ Трек' })).toBeTruthy()
+    // No separate column board any more.
+    expect(document.querySelector('.pm-ed-grid')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Карта' }))
-    expect(screen.queryByRole('complementary', { name: 'Правка карты' })).toBeNull()
+    expect(screen.queryAllByRole('button', { name: /^Добавить блок/ })).toHaveLength(0)
+  })
+
+  it('shows every node of a focus road in edit mode — nothing folds into fog', () => {
+    renderEditable(vi.fn())
+    expect(document.querySelector('.pm-collapsed')).not.toBeNull()
+    enterEdit()
+    expect(document.querySelector('.pm-collapsed')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Править: туман «Курс или серия отдельных уроков?»' }),
+    ).toBeTruthy()
   })
 
   it('is disabled with the reason off the live map', () => {
@@ -86,59 +111,85 @@ describe('«Править» toggle', () => {
   })
 })
 
-describe('the board', () => {
-  it('puts a «+» insert point between nodes and at both ends of a road', () => {
+describe('«+» slots on the road', () => {
+  it('sit at the top of a road, between its blocks and just above «Мы здесь»', () => {
     renderEditable(vi.fn())
     enterEdit()
-    const reach = screen.getByRole('region', { name: 'Трек «Охват и подкасты»' })
-    const inserts = within(reach).getAllByRole('button', { name: /^Добавить блок/ })
-    // Two nodes → three insert points.
-    expect(inserts).toHaveLength(3)
-    expect(inserts[1].getAttribute('aria-label')).toBe(
+    const slots = within(road('Охват и подкасты')).getAllByRole('button', {
+      name: /^Добавить блок/,
+    })
+    // Two blocks on the road → top, between, bottom.
+    expect(slots.map((s) => s.getAttribute('aria-label'))).toEqual([
+      'Добавить блок выше «Какой канал приведёт первых врачей?» в треке «Охват и подкасты»',
       'Добавить блок между «Пилотный выпуск подкаста с экспертом» и «Какой канал приведёт первых врачей?»',
-    )
+      'Добавить блок ниже «Пилотный выпуск подкаста с экспертом» в треке «Охват и подкасты»',
+    ])
+  })
+
+  it('open a mini-picker; the choice opens the form and a placeholder card on the road', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const picker = openSlotPicker('Охват и подкасты', 0)
+    expect(
+      within(picker)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent),
+    ).toEqual(['Станция', 'Шлагбаум', 'Туман'])
+    fireEvent.click(within(picker).getByRole('menuitem', { name: 'Станция' }))
+
+    const form = screen.getByRole('form', { name: 'Новая станция' })
+    expect(within(form).getByRole('heading', { name: 'на треке «Охват и подкасты»' })).toBeTruthy()
+    const placeholder = within(road('Охват и подкасты')).getByRole('status', {
+      name: 'Здесь встанет новый блок',
+    })
+    expect(placeholder.textContent).toContain('Новая станция · гипотеза')
+    fireEvent.change(within(form).getByLabelText('Что должно стать правдой?'), {
+      target: { value: 'Первые 100 врачей' },
+    })
+    expect(placeholder.textContent).toContain('Первые 100 врачей')
   })
 })
 
-describe('station form', () => {
-  it('refuses to save a new station without «потому что» and does not call the server', async () => {
+describe('station form (the AddStation artboard)', () => {
+  function newStation() {
+    const picker = openSlotPicker('Охват и подкасты', 0)
+    fireEvent.click(within(picker).getByRole('menuitem', { name: 'Станция' }))
+    return screen.getByRole('form', { name: 'Новая станция' })
+  }
+
+  it('refuses to save without «потому что» and does not call the server', () => {
     const save = vi.fn<Save>()
     renderEditable(save)
     enterEdit()
-    const reach = screen.getByRole('region', { name: 'Трек «Охват и подкасты»' })
-    fireEvent.click(within(reach).getAllByRole('button', { name: /^Добавить блок/ })[0])
-
-    const form = screen.getByRole('form', { name: 'Новый блок' })
-    fireEvent.change(within(form).getByLabelText(/^Название/), {
+    const form = newStation()
+    fireEvent.change(within(form).getByLabelText('Что должно стать правдой?'), {
       target: { value: 'Первые 100 врачей' },
     })
     fireEvent.click(within(form).getByRole('button', { name: 'Поставить на дорогу' }))
-
-    const because = within(form).getByLabelText(/^Потому что/)
+    const because = within(form).getByLabelText('Объяснение')
     expect(because.getAttribute('aria-invalid')).toBe('true')
     expect(within(form).getByText(/Без «потому что» станция не встанет на дорогу/)).toBeTruthy()
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('saves a valid station with the base sha, refreshes and says «Сохранено»', async () => {
-    const save = vi.fn<Save>(async () => ({
-      status: 'ok',
-      sha: 'sha-2',
-      commit: 'c',
-      summary: 's',
-    }))
+  it('saves with the base sha, the chosen target and confidence; refreshes and says «Сохранено»', async () => {
+    const save = okSave()
     renderEditable(save)
     enterEdit()
-    const reach = screen.getByRole('region', { name: 'Трек «Охват и подкасты»' })
-    fireEvent.click(within(reach).getAllByRole('button', { name: /^Добавить блок/ })[0])
-    const form = screen.getByRole('form', { name: 'Новый блок' })
-    fireEvent.change(within(form).getByLabelText(/^Название/), {
+    const form = newStation()
+    fireEvent.change(within(form).getByLabelText('Что должно стать правдой?'), {
       target: { value: 'Первые 100 врачей' },
     })
-    fireEvent.change(within(form).getByLabelText(/^Потому что/), {
+    // «Потому что — что это открывает выше?»: the beacon is the target above the top slot.
+    const targets = within(form).getByRole('group', { name: /^Потому что/ })
+    expect(within(targets).getByRole('button', { name: 'Маяк' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    fireEvent.change(within(form).getByLabelText('Объяснение'), {
       target: { value: 'появится аудитория' },
     })
-    fireEvent.click(within(form).getByLabelText(/Гипотеза/))
+    const confidence = within(form).getByRole('group', { name: 'Насколько уверены?' })
+    fireEvent.click(within(confidence).getByRole('button', { name: /Знаем/ }))
     await act(async () => {
       fireEvent.click(within(form).getByRole('button', { name: 'Поставить на дорогу' }))
     })
@@ -148,7 +199,6 @@ describe('station form', () => {
       command: {
         op: 'node.add',
         trackId: 'reach',
-        // The topmost insert point of a two-node road.
         index: 2,
         type: 'station',
         fields: {
@@ -156,28 +206,55 @@ describe('station form', () => {
           owner: undefined,
           opens: 'beacon',
           because: 'появится аудитория',
-          confidence: 'hypothesis',
+          confidence: 'known',
         },
       },
     })
     expect(refresh).toHaveBeenCalled()
     expect(document.querySelector('.pm-ed-toast')?.textContent).toBe('Сохранено')
-    expect(screen.queryByRole('form', { name: 'Новый блок' })).toBeNull()
+    expect(screen.queryByRole('form', { name: 'Новая станция' })).toBeNull()
+  })
+
+  it('opens the form of any card clicked on the map', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Править: станция «Пилотный выпуск подкаста с экспертом»',
+      }),
+    )
+    const form = screen.getByRole('form', { name: 'Станция: Пилотный выпуск подкаста с экспертом' })
+    expect(within(form).getByLabelText('Что должно стать правдой?')).toHaveProperty(
+      'value',
+      'Пилотный выпуск подкаста с экспертом',
+    )
   })
 })
 
-describe('barrier form', () => {
-  it('shows the task tree editor and toggles a task with today’s date', async () => {
-    const save = vi.fn<Save>(async () => ({
-      status: 'ok',
-      sha: 'sha-2',
-      commit: 'c',
-      summary: 's',
-    }))
+describe('barrier form — task tree', () => {
+  function openBarrier() {
+    fireEvent.click(screen.getByRole('button', { name: 'Править: шлагбаум «Каталог экспертов»' }))
+    return screen.getByRole('region', { name: 'Задачи шлагбаума' })
+  }
+
+  it('keeps each row to a checkbox and a title; no tool-button rows', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const tree = openBarrier()
+    for (const name of ['Изменить', '+ подзадача', 'Удалить', '↑', '↓']) {
+      expect(within(tree).queryByRole('button', { name })).toBeNull()
+    }
+    expect(
+      within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }),
+    ).toBeTruthy()
+    expect(within(tree).getByRole('button', { name: '+ Задача' })).toBeTruthy()
+  })
+
+  it('toggles a task with today’s date', async () => {
+    const save = okSave()
     renderEditable(save)
     enterEdit()
-    fireEvent.click(screen.getByRole('button', { name: 'Править: шлагбаум «Каталог экспертов»' }))
-    const tree = screen.getByRole('region', { name: 'Задачи шлагбаума' })
+    const tree = openBarrier()
     const box = within(tree).getByRole('checkbox', { name: 'Выполнено: Анкета эксперта' })
     expect(box.getAttribute('aria-checked')).toBe('false')
     await act(async () => {
@@ -186,6 +263,135 @@ describe('barrier form', () => {
     const call = save.mock.calls[0][0]
     expect(call.command).toMatchObject({ op: 'task.toggle', nodeId: 'experts-catalog', path: [1] })
     expect((call.command as { date: string }).date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('moves, edits and deletes through the row «⋯» menu', async () => {
+    const save = okSave()
+    renderEditable(save)
+    enterEdit()
+    const tree = openBarrier()
+    fireEvent.click(
+      within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }),
+    )
+    const menu = screen.getByRole('menu', { name: 'Действия с задачей «Анкета эксперта»' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent),
+    ).toEqual(['Изменить…', 'Добавить подзадачу', 'Выше', 'Ниже', 'Удалить…'])
+    await act(async () => {
+      fireEvent.click(within(menu).getByRole('menuitem', { name: 'Выше' }))
+    })
+    expect(save.mock.calls[0][0].command).toEqual({
+      op: 'task.move',
+      nodeId: 'experts-catalog',
+      path: [1],
+      delta: -1,
+    })
+
+    fireEvent.click(
+      within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }),
+    )
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Изменить…' }))
+    const fields = within(tree).getByRole('group', { name: 'Сохранить задачу' })
+    expect(within(fields).getByLabelText('Задача')).toHaveProperty('value', 'Анкета эксперта')
+  })
+})
+
+describe('track «⋯» menu', () => {
+  it('sends a focus track to the roadside', async () => {
+    const save = okSave()
+    renderEditable(save)
+    enterEdit()
+    fireEvent.click(
+      within(road('Охват и подкасты')).getByRole('button', {
+        name: 'Трек «Охват и подкасты»: действия',
+      }),
+    )
+    const menu = screen.getByRole('menu', { name: 'Трек «Охват и подкасты»: действия' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent),
+    ).toEqual(['Переименовать…', 'Убрать на обочину', 'Удалить трек…'])
+    await act(async () => {
+      fireEvent.click(within(menu).getByRole('menuitem', { name: 'Убрать на обочину' }))
+    })
+    expect(save.mock.calls[0][0].command).toEqual({
+      op: 'track.status',
+      trackId: 'reach',
+      status: 'roadside',
+    })
+  })
+
+  it('brings a roadside track into a full focus through the swap dialog (focus trapped, returned)', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const roadside = screen.getByRole('complementary', { name: 'Обочина' })
+    const trigger = within(roadside).getByRole('button', {
+      name: 'Трек «Фарма-партнёры»: действия',
+    })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Вывести в фокус…' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Вывести трек в фокус' })
+    const first = within(dialog).getAllByRole('radio')[0]
+    const last = within(dialog).getByRole('button', { name: 'Отмена' })
+    expect(document.activeElement).toBe(first)
+    // Tab from the last enabled control wraps to the first; Shift+Tab from the first wraps back.
+    last.focus()
+    fireEvent.keyDown(last, { key: 'Tab' })
+    expect(document.activeElement).toBe(first)
+    fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last)
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+})
+
+describe('deleting a block other blocks lead to', () => {
+  it('warns, and repoints them by default — or leaves the break when unticked', async () => {
+    const save = okSave()
+    renderEditable(save)
+    enterEdit()
+    fireEvent.click(screen.getByRole('button', { name: 'Править: станция «Готов первый урок»' }))
+    const form = screen.getByRole('form', { name: 'Станция: Готов первый урок' })
+    fireEvent.click(within(form).getByRole('button', { name: 'Удалить станцию' }))
+
+    const confirm = within(form).getByRole('alertdialog')
+    expect(confirm.textContent).toContain(
+      'На этот блок ссылаются 2 блока — их связь станет разрывом',
+    )
+    expect(confirm.textContent).toContain('Сценарий первого урока')
+    const repoint = within(confirm).getByRole('checkbox', {
+      name: 'Перенаправить их на «маяк»',
+    }) as HTMLInputElement
+    expect(repoint.checked).toBe(true)
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Удалить' }))
+    })
+    expect(save.mock.calls[0][0].command).toEqual({
+      op: 'node.remove',
+      nodeId: 'first-lesson',
+      inbound: 'repoint',
+    })
+  })
+
+  it('sends `inbound: break` when the member keeps the break', async () => {
+    const save = okSave()
+    renderEditable(save)
+    enterEdit()
+    fireEvent.click(screen.getByRole('button', { name: 'Править: станция «Готов первый урок»' }))
+    const form = screen.getByRole('form', { name: 'Станция: Готов первый урок' })
+    fireEvent.click(within(form).getByRole('button', { name: 'Удалить станцию' }))
+    const confirm = within(form).getByRole('alertdialog')
+    fireEvent.click(within(confirm).getByRole('checkbox'))
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Удалить' }))
+    })
+    expect(save.mock.calls[0][0].command).toMatchObject({ inbound: 'break' })
   })
 })
 
