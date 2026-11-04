@@ -4,18 +4,12 @@
  * the panel does not import from it.
  */
 
-/** The chip's disc colours; the initials on them are always {@link OWNER_INK} (≥4.5:1, #538). */
-export const OWNER_COLORS = ['#8FD3C1', '#B9A6F5', '#F4A3A3', '#F2B544', '#9EC5FF']
-
-/** The initials' colour on every chip — the map's `--pm-ink`. */
-export const OWNER_INK = '#111317'
-
-/** A stable colour per owner, so «Эдуард» reads the same on the card and in the panel. */
-export function ownerColor(owner: string): string {
-  let hash = 0
-  for (const ch of owner) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0
-  return OWNER_COLORS[hash % OWNER_COLORS.length]
-}
+/**
+ * The owner chip's one colour pair (#538: the same look for every owner, no
+ * per-person colours) — the map's `--pm-ink` initials on a `--pm-text` disc.
+ * Mirrors `.pm-owner` in path-map.css; the contrast (≥4.5:1) is tested.
+ */
+export const OWNER_CHIP = { background: '#e8ecf4', ink: '#111317' } as const
 
 const LETTER = /\p{L}/u
 
@@ -25,6 +19,12 @@ function graphemes(text: string): string[] {
     new Intl.Segmenter('ru', { granularity: 'grapheme' }).segment(text),
     (s) => s.segment,
   )
+}
+
+/** Upper case that never turns one letter into two («ß» → «SS» keeps «ß»). */
+function upper(g: string): string {
+  const u = g.toUpperCase()
+  return graphemes(u).length === 1 ? u : g
 }
 
 /**
@@ -47,9 +47,9 @@ export function ownerInitials(owner: string): string {
     // Already initials: «ДС», «ЕВ», «ИТМО» — an all-capitals word keeps its first two.
     const caps =
       letters.length > 1 && letters.every((g) => g === g.toUpperCase() && g !== g.toLowerCase())
-    return (caps ? letters.slice(0, 2) : letters.slice(0, 1)).join('').toUpperCase()
+    return (caps ? letters.slice(0, 2) : letters.slice(0, 1)).map(upper).join('')
   }
-  return (words[0][0] + words[1][0]).toUpperCase()
+  return upper(words[0][0]) + upper(words[1][0])
 }
 
 /** What an obstacle opens, in words: «открывает «X»», «открывает маяк», or why it does not. */

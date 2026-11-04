@@ -751,9 +751,11 @@ body:has(.pm-root) {
   text-transform: uppercase;
 }
 
-/* The owner chip (#538): 1–2 ink initials on the owner's disc (≥4.5:1 for every
-   disc colour, tested), an ink ring so it holds its edge on the yellow barrier.
-   Fixed size; the full name is in the title and, where there is room, beside it. */
+/* The owner chip (#538): 1–2 ink initials on a light disc — one colour pair for
+   every owner (≥4.5:1, tested via OWNER_CHIP in labels.ts), an ink ring so it
+   holds its edge on the yellow barrier. Fixed size; the full name is in the
+   title and, where there is room, beside it. On a barrier with tasks the
+   stretched button covers the chip, so the button's own title names the owner. */
 .pm-owner {
   flex: none;
   width: 26px;
@@ -761,6 +763,7 @@ body:has(.pm-root) {
   box-sizing: border-box;
   border-radius: 50%;
   border: 1.5px solid var(--pm-ink);
+  background: var(--pm-text);
   color: var(--pm-ink);
   display: grid;
   place-items: center;
