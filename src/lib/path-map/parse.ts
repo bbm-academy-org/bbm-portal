@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import { plural } from './derive'
 import { BEACON_ID, pathMapSchema, type PathMap } from './schema'
+import { MAX_TASK_DEPTH, taskDepth } from './tasks'
 
 /**
  * YAML text → a validated map, or the list of reasons it is not one (#530).
@@ -11,7 +12,8 @@ import { BEACON_ID, pathMapSchema, type PathMap } from './schema'
  * Two severities, and the split is the contract the file's header promises:
  *
  *   - `errors`   — the page refuses to draw the map and lists them: YAML syntax,
- *                  schema violations, duplicate ids, the reserved id;
+ *                  schema violations, duplicate ids, the reserved id, an obstacle's
+ *                  task tree deeper than `MAX_TASK_DEPTH`;
  *   - `warnings` — the map draws and carries a badge: more focus tracks than
  *                  `limits.focus_tracks` («фокус переполнен»).
  *
@@ -86,6 +88,13 @@ function crossChecks(map: PathMap): string[] {
       const first = seen.get(node.id)
       if (first) errors.push(`${where}: id «${node.id}» уже занят (${first})`)
       else seen.set(node.id, where)
+      // The task tree is recursive in the schema; its depth is capped here, where
+      // the error can name the obstacle (#536).
+      if (node.type === 'obstacle' && taskDepth(node.tasks) > MAX_TASK_DEPTH) {
+        errors.push(
+          `${where}: задачи вложены на ${taskDepth(node.tasks)} ${plural(taskDepth(node.tasks), 'уровень', 'уровня', 'уровней')} — допускается не глубже ${MAX_TASK_DEPTH} уровней; вынесите часть в отдельный шлагбаум`,
+        )
+      }
     })
   })
 

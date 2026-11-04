@@ -536,6 +536,30 @@ body:has(.pm-root) {
   transform: translateY(-2px);
 }
 
+/* A map card that opens «Что внутри» (#536, #537 review): the card stays an
+   <article> with its heading; an empty disclosure button with a short name is
+   stretched over it, so the whole card is the click target. */
+.pm-pick--stretch {
+  position: relative;
+}
+
+.pm-stretch {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pm-stretch:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 3px;
+}
+
 .pm-card-top,
 .pm-obstacle-top {
   display: flex;
@@ -627,22 +651,48 @@ body:has(.pm-root) {
   border: 1px dashed rgb(242 181 68 / 45%);
 }
 
-/* Obstacle — the barrier: yellow with black stripes. */
+/* Obstacle — the barrier: yellow with black stripes.
+   v2 (#536): the striped bar is the barrier's ARM and lifts with the task
+   progress, so the yellow lives on the body and the card itself is
+   transparent — at 0% (and without tasks) it reads exactly as v1. */
 .pm-obstacle {
   max-width: 280px;
   padding: 0;
   border: 0;
   border-radius: 12px;
-  background: var(--pm-barrier);
+  background: transparent;
   color: var(--pm-ink);
-  overflow: hidden;
-  box-shadow: 0 14px 34px rgb(0 0 0 / 50%);
 }
 
 .pm-stripes {
+  position: relative;
   display: block;
   height: 12px;
+  border-radius: 12px 12px 0 0;
   background: repeating-linear-gradient(135deg, var(--pm-ink) 0 10px, var(--pm-barrier) 10px 20px);
+  /* The pivot is the left end of the arm; 100% raises the far end ~40px —
+     one road segment — so a lifted arm never reaches the card above. */
+  transform-origin: 6px 100%;
+  transform: rotate(calc(var(--pm-lift, 0) * -9deg));
+  transition: transform 0.6s cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+
+/* Once the arm has moved, it shows its pivot post and loses the corner it
+   shared with the body. */
+.pm-stripes[data-lift]:not([data-lift='0']) {
+  border-radius: 6px;
+}
+
+.pm-stripes[data-lift]:not([data-lift='0'])::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--pm-ink);
+  box-shadow: 0 0 0 2px var(--pm-barrier);
 }
 
 .pm-obstacle-body {
@@ -650,6 +700,47 @@ body:has(.pm-root) {
   flex-direction: column;
   gap: 8px;
   padding: 11px 14px 13px;
+  border-radius: 0 0 12px 12px;
+  background: var(--pm-barrier);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 50%);
+}
+
+/* The bottom row: what the barrier opens, and its done/total counter (#536). */
+.pm-obstacle-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* The done/total counter (#536): ink on yellow, the owner chip's weight. */
+.pm-count {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--pm-ink);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-count[data-full] {
+  background: var(--pm-ink);
+  color: var(--pm-barrier);
+}
+
+/* The barrier whose «Что внутри» is open. */
+.pm-obstacle.is-open {
+  outline: 3px solid var(--pm-text);
+  outline-offset: 3px;
+}
+
+.pm-obstacle:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 3px;
 }
 
 .pm-obstacle-kicker {
@@ -925,6 +1016,12 @@ body:has(.pm-root) {
 
 .pm-chip.is-chain {
   border-color: var(--pm-text);
+}
+
+/* A chip is a button in «Проверить путь»; on the map its stretched button carries the ring. */
+.pm-chip:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 3px;
 }
 
 .pm-passed-caption {
@@ -1388,6 +1485,249 @@ body:has(.pm-root) {
   text-align: center;
 }
 
+/* Every right panel (Обочина, Проверка пути, Что внутри) keeps the aside's
+   full-height column, and its CONTENT is sticky (#536): a node clicked far down
+   the map still has its answer in view, clear of the portal bar
+   (`--pm-chrome-top`) and the 48px sticky beacon bar, scrolling on its own
+   when taller than the viewport. Static again where the panel wraps under the
+   map (≤1140px). */
+.pm-aside-inner {
+  position: sticky;
+  top: calc(var(--pm-chrome-top, 0px) + 48px + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+  max-height: calc(100dvh - var(--pm-chrome-top, 0px) - 48px - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── «Что внутри» — an obstacle's tasks (#536) ─────────────────────────────
+   No artboard: composed in the check panel's language (Night-Check.dc.html),
+   recorded in design-source/README.md. */
+.pm-aside-inner.pm-inside {
+  gap: 22px;
+}
+
+.pm-inside-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pm-inside-close {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid rgb(232 236 244 / 18%);
+  background: transparent;
+  color: var(--pm-muted);
+  cursor: pointer;
+}
+
+.pm-inside-close:hover {
+  background: rgb(232 236 244 / 8%);
+  color: var(--pm-text);
+}
+
+.pm-inside-close:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 2px;
+}
+
+.pm-inside-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pm-barrier);
+}
+
+.pm-inside-meta {
+  margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--pm-muted-2);
+}
+
+.pm-inside-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pm-inside-meter {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgb(232 236 244 / 10%) 0 6px,
+    rgb(232 236 244 / 4%) 6px 12px
+  );
+  overflow: hidden;
+}
+
+.pm-inside-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pm-barrier);
+}
+
+.pm-inside-progress-text {
+  font-size: 13px;
+  color: var(--pm-muted-2);
+}
+
+.pm-inside-progress-text b {
+  color: var(--pm-text);
+  font-weight: 800;
+}
+
+.pm-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pm-tasks--nested {
+  margin: 2px 0 4px 10px;
+  padding-left: 14px;
+  border-left: 1px solid rgb(232 236 244 / 12%);
+}
+
+.pm-task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.pm-task-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 5px;
+  border: 1.5px solid rgb(232 236 244 / 40%);
+  display: grid;
+  place-items: center;
+  color: var(--pm-ink);
+}
+
+.pm-task[data-done] > .pm-task-row .pm-task-check {
+  border-color: var(--pm-barrier);
+  background: var(--pm-barrier);
+}
+
+.pm-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pm-task[data-done] > .pm-task-row .pm-task-title {
+  color: var(--pm-muted-2);
+  text-decoration: line-through;
+  text-decoration-color: rgb(242 181 68 / 60%);
+}
+
+.pm-task-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: -2px 0 0 -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pm-text);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pm-task-toggle:hover {
+  background: rgb(232 236 244 / 6%);
+}
+
+.pm-chevron {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pm-muted-3);
+  transition: transform 0.15s ease;
+}
+
+.pm-task-toggle[aria-expanded='true'] .pm-chevron {
+  transform: rotate(90deg);
+}
+
+.pm-task-count {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pm-muted-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-task-date {
+  flex: none;
+  font-size: 12px;
+  color: var(--pm-muted-3);
+  padding-top: 1px;
+}
+
+.pm-task-owner {
+  flex: none;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgb(232 236 244 / 8%);
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pm-task-link {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -2px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--pm-muted-2);
+}
+
+.pm-task-link:hover {
+  color: var(--pm-accent-soft);
+  background: rgb(232 236 244 / 6%);
+}
+
+.pm-task-toggle:focus-visible,
+.pm-task-link:focus-visible {
+  outline: 3px solid var(--pm-accent-soft);
+  outline-offset: 2px;
+}
+
 /* Below ~1140px the panel no longer fits beside the map and wraps under it:
    let it span the full width instead of hugging the left edge. */
 @media (width <= 1140px) {
@@ -1396,6 +1736,13 @@ body:has(.pm-root) {
     max-width: none;
     border-left: 0;
     border-top: 1px solid var(--pm-line);
+  }
+
+  /* Under the map the panel is a full-width section: no sticky, no inner scroll. */
+  .pm-aside-inner {
+    position: static;
+    max-height: none;
+    overflow: visible;
   }
 }
 
@@ -1602,6 +1949,11 @@ body:has(.pm-root) {
     border-left: 0;
     border-top: 1px solid var(--pm-line);
     padding: 28px 16px;
+  }
+
+  /* «Что внутри» (#536): clear the 16px navigator rail (#532) on the left. */
+  .pm-aside--inside {
+    padding-left: 28px;
   }
 }
 
@@ -1933,5 +2285,10 @@ body:has(.pm-root) {
 
   .pm-pick:hover {
     transform: none;
+  }
+
+  /* The arm still shows the progress — it just does not swing there. */
+  .pm-stripes {
+    transition: none;
   }
 }

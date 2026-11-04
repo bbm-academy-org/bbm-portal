@@ -1,6 +1,6 @@
 'use client'
 
-import React, { Fragment, useMemo, useRef, useState } from 'react'
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   MapView,
@@ -13,6 +13,7 @@ import type {
 } from '@/lib/path-map'
 import { plural } from '@/lib/path-map/derive'
 import { ANCHOR_IDS, buildNavAnchors, nodeAnchorId, shortDate } from '@/lib/path-map/nav'
+import type { TaskProgress } from '@/lib/path-map/tasks'
 
 import {
   BrokenLinkIcon,
@@ -24,7 +25,10 @@ import {
   PinIcon,
   UpArrowIcon,
 } from './icons'
+import { opensText, ownerColor } from './labels'
+import { INSIDE_PANEL_ID, InsidePanel, insideTargetOf } from './PathMapInside'
 import { PathMapNav } from './PathMapNav'
+import { useScrollRegion } from './useScrollRegion'
 
 /**
  * The interactive half of `/p/path` (#530): the map and its two modes.
@@ -39,18 +43,15 @@ import { PathMapNav } from './PathMapNav'
  *
  * Everything here is presentation: the layout and every node's path check
  * arrive precomputed from `src/lib/path-map/derive.ts`.
+ *
+ * v2 (#536): in map mode a barrier is a button that opens «Что внутри»
+ * (`PathMapInside.tsx`) in place of the Обочина panel; its card carries a
+ * done/total counter and its striped arm lifts with the task progress.
  */
 
 type Mode = 'map' | 'check'
 
 const CONFIDENCE_LABEL = { known: 'знаем', hypothesis: 'гипотеза', unknown: 'не знаем' } as const
-const OWNER_COLORS = ['#8FD3C1', '#B9A6F5', '#F4A3A3', '#F2B544', '#9EC5FF']
-
-function ownerColor(owner: string): string {
-  let hash = 0
-  for (const ch of owner) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0
-  return OWNER_COLORS[hash % OWNER_COLORS.length]
-}
 
 function linksWord(n: number): string {
   const mod10 = n % 10
@@ -120,11 +121,42 @@ interface PickProps {
   label?: string
   /** The DOM id the left navigator jumps to (#532). */
   id?: string
+  /**
+   * Map mode only (#536): the node opens «Что внутри». It stays an `<article>`
+   * (its title keeps its `<h3>`) and a disclosure button (`aria-expanded`) is
+   * stretched over the whole card. `undefined` = not openable.
+   */
+  open?: { expanded: boolean; name: string; onOpen: (trigger: HTMLElement) => void }
   children: React.ReactNode
 }
 
-/** A node is an `<article>` on the map and a real `<button>` in «Проверить путь». */
-function Pick({ interactive, pressed, onPick, className, label, id, children }: PickProps) {
+/**
+ * A node is an `<article>` on the map and a real `<button>` in «Проверить путь».
+ * An obstacle on the map opens «Что внутри» (#536): the card stays an
+ * `<article>` with its heading, and a short-named disclosure button covers it
+ * (#537 review: a heading inside a `<button>` is invalid and drops out of
+ * heading navigation).
+ */
+function Pick({ interactive, pressed, onPick, className, label, id, open, children }: PickProps) {
+  if (!interactive && open) {
+    return (
+      <article
+        id={id}
+        className={`pm-pick pm-pick--stretch ${className}${open.expanded ? ' is-open' : ''}`}
+        aria-label={label}
+      >
+        {children}
+        <button
+          type="button"
+          className="pm-stretch"
+          aria-label={open.name}
+          aria-expanded={open.expanded}
+          aria-controls={open.expanded ? INSIDE_PANEL_ID : undefined}
+          onClick={(e) => open.onOpen(e.currentTarget)}
+        />
+      </article>
+    )
+  }
   if (interactive) {
     return (
       <button
@@ -151,6 +183,52 @@ interface NodeCtx {
   chainIndex: Map<string, number>
   brokenAt: string | null
   onPick: (id: string) => void
+  /** The obstacle whose «Что внутри» is open (map mode, #536). */
+  openId: string | null
+  onOpen: (id: string, trigger: HTMLElement) => void
+}
+
+function openProps(ctx: NodeCtx, node: { id: string; title: string }): PickProps['open'] {
+  return {
+    expanded: ctx.openId === node.id,
+    name: `Что внутри: ${node.title}`,
+    onOpen: (trigger) => ctx.onOpen(node.id, trigger),
+  }
+}
+
+/**
+ * The barrier's done/total counter (#536), counted over leaf tasks
+ * (`src/lib/path-map/tasks.ts`). Absent when the obstacle has no tasks.
+ */
+function TaskCounter({ progress }: { progress: TaskProgress | null }) {
+  if (!progress) return null
+  return (
+    <span className="pm-count" data-full={progress.done === progress.total || undefined}>
+      <span className="pm-sr">
+        задачи: выполнено {progress.done} из {progress.total} —{' '}
+      </span>
+      <span aria-hidden="true">
+        {progress.done}/{progress.total}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * The striped top bar of a barrier card is its arm: it lifts with the task
+ * progress (#536) — flat at 0%, at its highest at 100%. The angle lives in CSS
+ * (`--pm-lift`, 0…1); without tasks the arm stays flat and carries no data.
+ */
+function BarrierArm({ progress }: { progress: TaskProgress | null }) {
+  if (!progress) return <span className="pm-stripes" aria-hidden="true" />
+  return (
+    <span
+      className="pm-stripes"
+      aria-hidden="true"
+      data-lift={Math.round(progress.ratio * 100)}
+      style={{ '--pm-lift': String(progress.ratio) } as React.CSSProperties}
+    />
+  )
 }
 
 function chainSuffix(ctx: NodeCtx, id: string): string {
@@ -175,16 +253,10 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
 
   let card: React.ReactNode
   if (node.type === 'obstacle') {
-    const opens = item.opensTitle
-      ? item.opensTitle === 'маяк'
-        ? 'открывает маяк'
-        : `открывает «${item.opensTitle}»`
-      : node.opens
-        ? `открывает «${node.opens}» — такого блока нет`
-        : 'ничего не открывает'
+    const opens = opensText(item.opensTitle, node.opens)
     card = (
-      <Pick {...common} className={`pm-card pm-obstacle${state}`}>
-        <span className="pm-stripes" aria-hidden="true" />
+      <Pick {...common} open={openProps(ctx, node)} className={`pm-card pm-obstacle${state}`}>
+        <BarrierArm progress={item.progress} />
         <span className="pm-obstacle-body">
           <span className="pm-obstacle-top">
             <span className="pm-obstacle-kicker">
@@ -198,7 +270,10 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
             ) : null}
           </span>
           <Title className="pm-obstacle-title">{node.title}</Title>
-          <span className="pm-obstacle-opens">{opens}</span>
+          <span className="pm-obstacle-foot">
+            <span className="pm-obstacle-opens">{opens}</span>
+            <TaskCounter progress={item.progress} />
+          </span>
         </span>
       </Pick>
     )
@@ -415,6 +490,8 @@ function PassedChip({ item, ctx }: { item: PassedItem; ctx: NodeCtx }) {
       interactive={ctx.interactive}
       pressed={ctx.selectedId === node.id}
       onPick={() => ctx.onPick(node.id)}
+      // A removed barrier looks as before, but its tasks stay readable (#536).
+      open={item.progress ? openProps(ctx, node) : undefined}
       id={nodeAnchorId(node.id)}
       className={`pm-chip${ctx.chainIndex.has(node.id) ? ' is-chain' : ''}`}
     >
@@ -529,56 +606,59 @@ function Legend() {
 }
 
 function RoadsidePanel({ view }: { view: MapView }) {
+  const scroll = useScrollRegion('Обочина — прокручиваемое содержимое')
   const bars = Math.max(view.focusLimit, view.focusCount)
   return (
     <aside id="pm-roadside" aria-label="Обочина" className="pm-aside">
-      <section className="pm-aside-sec">
-        <div className="pm-aside-head">
-          <h2 className="pm-aside-title">Обочина</h2>
-          <p className="pm-aside-lead">
-            Видно, но вне фокуса. Вывести трек на дорогу — значит отправить сюда другой.
-          </p>
-        </div>
-        <div className="pm-meter" data-overflow={view.focusOverflow || undefined}>
-          <span className="pm-meter-label">В фокусе</span>
-          <span className="pm-meter-bars" aria-hidden="true">
-            {Array.from({ length: bars }, (_, i) => (
-              <span
-                key={i}
-                data-on={i < view.focusCount || undefined}
-                data-over={i >= view.focusLimit || undefined}
-              />
-            ))}
-          </span>
-          <b>
-            {view.focusCount} из {view.focusLimit}
-          </b>
-        </div>
-        {view.focusOverflow ? <span className="pm-badge-warn">фокус переполнен</span> : null}
-        {view.roadsideTracks.map((track) => (
-          <div key={track.id} className="pm-roadside-track">
-            <span className="pm-roadside-row">
-              <span className="pm-dot pm-dot--muted" aria-hidden="true" />
-              <span className="pm-roadside-name">{track.title}</span>
-              <span className="pm-roadside-tag">трек</span>
-            </span>
-            <span className="pm-roadside-summary">{track.summary}</span>
+      <div className="pm-aside-inner" {...scroll}>
+        <section className="pm-aside-sec">
+          <div className="pm-aside-head">
+            <h2 className="pm-aside-title">Обочина</h2>
+            <p className="pm-aside-lead">
+              Видно, но вне фокуса. Вывести трек на дорогу — значит отправить сюда другой.
+            </p>
           </div>
-        ))}
-        {view.roadsideStations.map(({ node, trackId, trackTitle }) => (
-          <div key={`${trackId}-${node.id}`} className="pm-roadside-station">
-            <span className="pm-roadside-kicker">Станция без «потому что»</span>
-            <span className="pm-roadside-name">{node.title}</span>
-            <span className="pm-roadside-summary">
-              Не входит в путь, пока не ясно, что она открывает выше. Трек «{trackTitle}».
+          <div className="pm-meter" data-overflow={view.focusOverflow || undefined}>
+            <span className="pm-meter-label">В фокусе</span>
+            <span className="pm-meter-bars" aria-hidden="true">
+              {Array.from({ length: bars }, (_, i) => (
+                <span
+                  key={i}
+                  data-on={i < view.focusCount || undefined}
+                  data-over={i >= view.focusLimit || undefined}
+                />
+              ))}
             </span>
+            <b>
+              {view.focusCount} из {view.focusLimit}
+            </b>
           </div>
-        ))}
-        {view.roadsideTracks.length === 0 && view.roadsideStations.length === 0 ? (
-          <p className="pm-aside-lead">На обочине пусто.</p>
-        ) : null}
-      </section>
-      <Legend />
+          {view.focusOverflow ? <span className="pm-badge-warn">фокус переполнен</span> : null}
+          {view.roadsideTracks.map((track) => (
+            <div key={track.id} className="pm-roadside-track">
+              <span className="pm-roadside-row">
+                <span className="pm-dot pm-dot--muted" aria-hidden="true" />
+                <span className="pm-roadside-name">{track.title}</span>
+                <span className="pm-roadside-tag">трек</span>
+              </span>
+              <span className="pm-roadside-summary">{track.summary}</span>
+            </div>
+          ))}
+          {view.roadsideStations.map(({ node, trackId, trackTitle }) => (
+            <div key={`${trackId}-${node.id}`} className="pm-roadside-station">
+              <span className="pm-roadside-kicker">Станция без «потому что»</span>
+              <span className="pm-roadside-name">{node.title}</span>
+              <span className="pm-roadside-summary">
+                Не входит в путь, пока не ясно, что она открывает выше. Трек «{trackTitle}».
+              </span>
+            </div>
+          ))}
+          {view.roadsideTracks.length === 0 && view.roadsideStations.length === 0 ? (
+            <p className="pm-aside-lead">На обочине пусто.</p>
+          ) : null}
+        </section>
+        <Legend />
+      </div>
     </aside>
   )
 }
@@ -592,6 +672,7 @@ function CheckPanel({
   selected: PathCheck | null
   panelRef: React.RefObject<HTMLElement | null>
 }) {
+  const scroll = useScrollRegion('Проверка пути — прокручиваемое содержимое')
   const chainTracks = new Set(selected?.chain.map((l) => l.trackId) ?? [])
   const roads = view.trackChecks.filter((c) => !chainTracks.has(c.trackId))
   const titleOf = (trackId: string) => view.focus.find((t) => t.id === trackId)?.title ?? trackId
@@ -629,67 +710,89 @@ function CheckPanel({
       className="pm-aside pm-aside--check"
       tabIndex={-1}
     >
-      <div className="pm-aside-head">
-        <span className="pm-eyebrow">Проверка пути</span>
-        {head}
-      </div>
+      <div className="pm-aside-inner" {...scroll}>
+        <div className="pm-aside-head">
+          <span className="pm-eyebrow">Проверка пути</span>
+          {head}
+        </div>
 
-      {selected ? (
-        <ol className="pm-chain">
-          <li data-kind={selected.reached ? 'beacon-ok' : 'beacon-miss'}>
-            <span className="pm-chain-mark" aria-hidden="true" />
-            <span className="pm-chain-text">
-              <span className="pm-chain-name">Маяк</span>
-              <span className="pm-chain-sub">
-                {selected.reached ? 'достигнут' : 'не достигнут'}
-              </span>
-            </span>
-          </li>
-          {selected.break ? (
-            <li data-kind="break">
-              <span className="pm-chain-mark" aria-hidden="true">
-                !
-              </span>
-              <span className="pm-chain-text">
-                <span className="pm-chain-name pm-chain-name--bad">Разрыв</span>
-                <span className="pm-chain-sub">{describeBreak(selected, selected.break)}</span>
-              </span>
-            </li>
-          ) : null}
-          {[...selected.chain].reverse().map((link) => (
-            <li key={link.id} data-kind={link.node.type}>
+        {selected ? (
+          <ol className="pm-chain">
+            <li data-kind={selected.reached ? 'beacon-ok' : 'beacon-miss'}>
               <span className="pm-chain-mark" aria-hidden="true" />
               <span className="pm-chain-text">
-                <span className="pm-chain-name">{link.node.title}</span>
-                <span className="pm-chain-sub">{nodeKind(link.node)}</span>
+                <span className="pm-chain-name">Маяк</span>
+                <span className="pm-chain-sub">
+                  {selected.reached ? 'достигнут' : 'не достигнут'}
+                </span>
               </span>
             </li>
-          ))}
-        </ol>
-      ) : null}
+            {selected.break ? (
+              <li data-kind="break">
+                <span className="pm-chain-mark" aria-hidden="true">
+                  !
+                </span>
+                <span className="pm-chain-text">
+                  <span className="pm-chain-name pm-chain-name--bad">Разрыв</span>
+                  <span className="pm-chain-sub">{describeBreak(selected, selected.break)}</span>
+                </span>
+              </li>
+            ) : null}
+            {[...selected.chain].reverse().map((link) => (
+              <li key={link.id} data-kind={link.node.type}>
+                <span className="pm-chain-mark" aria-hidden="true" />
+                <span className="pm-chain-text">
+                  <span className="pm-chain-name">{link.node.title}</span>
+                  <span className="pm-chain-sub">{nodeKind(link.node)}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
 
-      <div className="pm-roads">
-        <span className="pm-roads-title">{selected ? 'Остальные дороги' : 'Все дороги'}</span>
-        {roads.map(({ trackId, result }) => {
-          const status = roadStatus(result)
-          return (
-            <div key={trackId} className="pm-roads-row">
-              <span
-                className="pm-dot"
-                style={{ background: colorOf(trackId) }}
-                aria-hidden="true"
-              />
-              <span className="pm-roads-name">{titleOf(trackId)}</span>
-              <span
-                className={status.ok ? 'pm-roads-status' : 'pm-roads-status pm-roads-status--bad'}
-              >
-                {status.text}
-              </span>
-            </div>
-          )
-        })}
+        <div className="pm-roads">
+          <span className="pm-roads-title">{selected ? 'Остальные дороги' : 'Все дороги'}</span>
+          {roads.map(({ trackId, result }) => {
+            const status = roadStatus(result)
+            return (
+              <div key={trackId} className="pm-roads-row">
+                <span
+                  className="pm-dot"
+                  style={{ background: colorOf(trackId) }}
+                  aria-hidden="true"
+                />
+                <span className="pm-roads-name">{titleOf(trackId)}</span>
+                <span
+                  className={status.ok ? 'pm-roads-status' : 'pm-roads-status pm-roads-status--bad'}
+                >
+                  {status.text}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </aside>
+  )
+}
+
+/** Whether «Что внутри» sits below the map (≤1140px) and whether motion is reduced. */
+function layoutMedia(): { narrow: boolean; still: boolean } {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return { narrow: false, still: false }
+  }
+  return {
+    narrow: window.matchMedia('(max-width: 1140px)').matches,
+    still: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  }
+}
+
+/** An Esc typed into a field belongs to the field (a future editor cancels its edit first). */
+function isTypingTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !==
+      null
   )
 }
 
@@ -707,6 +810,59 @@ export function PathMapScreen({
   const [activeTrack, setActiveTrack] = useState<string | null>(view.focus[0]?.id ?? null)
   const panelRef = useRef<HTMLElement | null>(null)
   const pageRef = useRef<HTMLDivElement | null>(null)
+  // «Что внутри» (#536): only the open obstacle's id is kept; its data is read
+  // from the current view on every render (#537 review), and the panel closes
+  // when the obstacle is gone. The trigger is the button that opened it, so
+  // closing hands the reader back to the barrier.
+  const [openId, setOpenId] = useState<string | null>(null)
+  const inside = insideTargetOf(view, openId)
+  if (openId && !inside) setOpenId(null)
+  const insideRef = useRef<HTMLElement | null>(null)
+  const insideTrigger = useRef<HTMLElement | null>(null)
+
+  const closeInside = () => {
+    setOpenId(null)
+    const trigger = insideTrigger.current
+    if (!trigger) return
+    // ≤1140px the panel sits below the map: without this the reader is left at
+    // the bottom of the page, far below the barrier (#537 review).
+    const { narrow, still } = layoutMedia()
+    if (narrow) trigger.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' })
+    trigger.focus({ preventScroll: true })
+  }
+
+  const openInside = (id: string, trigger: HTMLElement) => {
+    if (openId === id) {
+      closeInside()
+      return
+    }
+    insideTrigger.current = trigger
+    setOpenId(id)
+  }
+
+  // On open, focus moves into the panel — and where the panel sits below the
+  // map (≤1140px) it is scrolled into view first. Esc closes it, unless another
+  // handler took the key or the reader is typing (#537 review).
+  const insideId = inside ? openId : null
+  const closeRef = useRef(closeInside)
+  useEffect(() => {
+    closeRef.current = closeInside
+  })
+  useEffect(() => {
+    if (!insideId) return
+    const panel = insideRef.current
+    const { narrow, still } = layoutMedia()
+    if (panel && narrow) {
+      panel.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' })
+    }
+    panel?.focus({ preventScroll: true })
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || isTypingTarget(e.target)) return
+      closeRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [insideId])
   // The navigator's points come from the same view model the map renders (#532).
   const anchors = useMemo(() => buildNavAnchors(view), [view])
 
@@ -736,9 +892,19 @@ export function PathMapScreen({
   const switchMode = (next: Mode) => {
     setMode(next)
     if (next === 'map') setSelectedId(null)
+    // Check mode owns the right panel; «Что внутри» does not survive the switch.
+    if (next === 'check') setOpenId(null)
   }
 
-  const ctx: NodeCtx = { interactive: checking, selectedId, chainIndex, brokenAt, onPick }
+  const ctx: NodeCtx = {
+    interactive: checking,
+    selectedId,
+    chainIndex,
+    brokenAt,
+    onPick,
+    openId: insideId,
+    onOpen: openInside,
+  }
   const columns = { '--pm-cols': view.focus.length } as React.CSSProperties
   const roadsideCount = view.roadsideTracks.length
   const looseCount = view.roadsideStations.length
@@ -880,6 +1046,13 @@ export function PathMapScreen({
 
         {checking ? (
           <CheckPanel view={view} selected={selected} panelRef={panelRef} />
+        ) : inside ? (
+          <InsidePanel
+            key={inside.node.id}
+            target={inside}
+            onClose={closeInside}
+            panelRef={insideRef}
+          />
         ) : (
           <RoadsidePanel view={view} />
         )}
