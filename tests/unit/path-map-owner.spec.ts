@@ -6,7 +6,8 @@ import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { PATH_MAP_FILE, parsePathMap } from '@/lib/path-map'
-import { OWNER_COLORS, OWNER_INK, ownerColor, ownerInitials } from '@/modules/path-map/view/labels'
+import { OWNER_CHIP, ownerInitials } from '@/modules/path-map/view/labels'
+import { OwnerChip } from '@/modules/path-map/view/OwnerChip'
 import { PathMapView } from '@/modules/path-map/view/PathMapView'
 
 /**
@@ -43,6 +44,8 @@ describe('ownerInitials', () => {
     ['Анна-Мария', 'А'],
     ['🚀 Эдуард', 'Э'],
     ['Эдуард 🚀', 'Э'],
+    ['ßtraße', 'ß'],
+    ['ß Müller', 'ßM'],
   ])('%j → %j', (owner, initials) => {
     expect(ownerInitials(owner)).toBe(initials)
   })
@@ -79,13 +82,8 @@ function contrast(a: string, b: string): number {
 }
 
 describe('owner chip colours', () => {
-  it('every chip colour carries its ink initials at ≥4.5:1', () => {
-    for (const color of OWNER_COLORS) expect(contrast(color, OWNER_INK)).toBeGreaterThanOrEqual(4.5)
-  })
-
-  it('one owner gets the same colour wherever the chip appears', () => {
-    expect(ownerColor('Эдуард')).toBe(ownerColor('Эдуард'))
-    expect(OWNER_COLORS).toContain(ownerColor('Антон Сидоров'))
+  it('one colour pair for every chip: ink initials on the light disc at ≥4.5:1', () => {
+    expect(contrast(OWNER_CHIP.background, OWNER_CHIP.ink)).toBeGreaterThanOrEqual(4.5)
   })
 
   it('the circle is the chip background, the initials are ink and cannot overflow', () => {
@@ -93,6 +91,7 @@ describe('owner chip colours', () => {
     expect(rule).toMatch(/width:\s*26px/)
     expect(rule).toMatch(/height:\s*26px/)
     expect(rule).toMatch(/color:\s*var\(--pm-ink\)/)
+    expect(rule).toMatch(/background:\s*var\(--pm-text\)/)
     expect(rule).toMatch(/overflow:\s*hidden/)
   })
 })
@@ -140,6 +139,41 @@ describe('owner chip with full-name owners', () => {
     const editor = within(p).getByText('Монтажёр на поток').closest('li')!
     expect(editor.querySelector('.pm-owner [aria-hidden="true"]')?.textContent).toBe('ЕВ')
     expect(editor.querySelector('.pm-owner-name')?.textContent).toMatch(/ЕВ/)
+  })
+})
+
+describe('one chip look for every owner (#538: no per-person colours)', () => {
+  it('every rendered chip — card, panel header, task rows — has no inline colour', () => {
+    renderFullNames()
+    fireEvent.click(barrier(/Довести студию/))
+    const chips = [...document.querySelectorAll<HTMLElement>('.pm-owner')]
+    expect(chips.length).toBeGreaterThan(3)
+    const owners = new Set(chips.map((c) => c.getAttribute('title')))
+    expect(owners.size).toBeGreaterThan(1)
+    for (const chip of chips) {
+      expect(chip.getAttribute('style')).toBeNull()
+      expect(chip.className).toBe('pm-owner')
+    }
+  })
+
+  it('the chip trims the owner for its title and accessible name', () => {
+    render(el(OwnerChip, { owner: '  Эдуард  ' }))
+    const chip = document.querySelector('.pm-owner')!
+    expect(chip.getAttribute('title')).toBe('Эдуард')
+    expect(chip.textContent).toBe('исполнитель ЭдуардЭ')
+  })
+})
+
+describe('the barrier card with tasks: the full name is reachable', () => {
+  it('the stretched disclosure button — the hover target over the chip — carries the owner', () => {
+    renderFullNames()
+    const button = barrier(/Довести студию/)
+    // The stretch button covers the card (and its chip), so its own tooltip names the owner.
+    expect(button.getAttribute('title')).toBe('Что внутри: Довести студию до готовности · Эдуард')
+    expect(button.getAttribute('aria-label')).toBe('Что внутри: Довести студию до готовности')
+    expect(button.closest('article')!.querySelector('.pm-owner')?.getAttribute('title')).toBe(
+      'Эдуард',
+    )
   })
 })
 
