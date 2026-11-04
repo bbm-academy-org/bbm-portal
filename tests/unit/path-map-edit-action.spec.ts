@@ -45,8 +45,14 @@ describe('savePathMapEditAction', () => {
     expect(state.revalidated).toEqual(['/p/path'])
   })
 
-  it('does not revalidate when nothing was written', async () => {
+  it('revalidates on stale too, so «Перечитать» renders the newer file', async () => {
     state.outcome = { status: 'stale' }
+    await savePathMapEditAction({ command: {}, baseSha: 'x' })
+    expect(state.revalidated).toEqual(['/p/path'])
+  })
+
+  it('does not revalidate when nothing was written', async () => {
+    state.outcome = { status: 'invalid', errors: ['x'] }
     await savePathMapEditAction({ command: {}, baseSha: 'x' })
     expect(state.revalidated).toEqual([])
   })

@@ -143,17 +143,27 @@ describe('savePathMapEdit', () => {
       savePathMapEdit({ source, command, baseSha: 'sha-1', actor: 'Антон' }),
     ).resolves.toEqual({ status: 'stale' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    // «Перечитать» must show the newer file at once, not the cached copy the
+    // member already had for up to a TTL: the fresh read is put in the cache.
+    const cached = await readCached(source, new Date())
+    expect(cached.doc.sha).toBe('sha-9')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('maps a conflict on the PUT itself to stale', async () => {
-    const source = githubPathMapSource(CONFIG, async (_u, init) =>
+  it('maps a conflict on the PUT itself to stale and drops the cached copy', async () => {
+    const fetchMock = vi.fn(async (_u: string, init?: RequestInit) =>
       init?.method === 'PUT'
         ? new Response('{}', { status: 409 })
         : contentsResponse(example, 'sha-1'),
     )
+    const source = githubPathMapSource(CONFIG, fetchMock)
+    await readCached(source, new Date())
     await expect(
       savePathMapEdit({ source, command, baseSha: 'sha-1', actor: 'Антон' }),
     ).resolves.toEqual({ status: 'stale' })
+    const before = fetchMock.mock.calls.length
+    await readCached(source, new Date())
+    expect(fetchMock.mock.calls.length).toBe(before + 1)
   })
 
   it('returns the edit errors and writes nothing for an invalid command result', async () => {
