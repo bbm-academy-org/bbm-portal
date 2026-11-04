@@ -56,9 +56,12 @@ export interface RoadEdit {
   indexOf: (nodeId: string) => number
   /** How many nodes a track has in the file. */
   size: (trackId: string) => number
-  /** The form Sheet covers the whole map (narrow screens): the map is `inert` meanwhile. */
+  /** The form Sheet covers the whole page (narrow screens): the map is `inert` meanwhile (the header via `onCover`). */
   covered?: boolean
 }
+
+/** Leaves «Править»: runs `leave` now, or after the member confirms discarding a dirty form. */
+export type LeaveGuard = (leave: () => void) => void
 
 /** Runs one command through the editor's save loop (sha, refresh, toast, conflict). */
 export type RunEdit = (command: EditCommand) => Promise<PathMapEditOutcome>

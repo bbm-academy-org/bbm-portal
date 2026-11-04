@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -23,6 +24,7 @@ import {
   NEW_NODE_KIND,
   NODE_KIND,
   type NodeDraft,
+  type LeaveGuard,
   outcomeErrors,
   type PathMapEditing,
   type RoadEdit,
@@ -330,6 +332,8 @@ export function PathMapEditor({
   view,
   editing,
   renderMain,
+  onCover,
+  leaveGuardRef,
 }: {
   map: PathMap
   /** The edit view model (every open node of a focus road). */
@@ -337,6 +341,10 @@ export function PathMapEditor({
   editing: PathMapEditing
   /** Renders the map (`<main>`) with the editor's overlay hooks. */
   renderMain: (road: RoadEdit) => React.ReactNode
+  /** The Sheet now covers the whole page (narrow): the screen makes its header inert (#541 re-review). */
+  onCover?: (covered: boolean) => void
+  /** Filled while mounted: leaving «Править» goes through the dirty-form confirm (#541 re-review). */
+  leaveGuardRef?: React.RefObject<LeaveGuard | null>
 }) {
   const router = useRouter()
   const [refreshing, startRefresh] = useTransition()
@@ -346,9 +354,11 @@ export function PathMapEditor({
   const [panel, setPanel] = useState<PanelTarget | null>(null)
   const [draft, setDraft] = useState<NodeDraft | null>(null)
   // A switch (or close) waiting for the member to confirm discarding a dirty form.
+  // `leave` set: the switch is out of «Править» (the page header), not to another form.
   const [pending, setPending] = useState<{
     next: PanelTarget | null
     opener: Opener | null
+    leave?: () => void
   } | null>(null)
   // A roadside track on its way into a FULL focus: the swap dialog (Roadside.dc.html).
   const [swapFor, setSwapFor] = useState<string | null>(null)
@@ -364,6 +374,13 @@ export function PathMapEditor({
   // The non-modal Sheet hides what it covers from the keyboard and AT (`inert`, #541 review).
   const overAside = useMedia(SHEET_OVER_ASIDE)
   const overAll = useMedia(SHEET_OVER_ALL)
+  const covered = panel !== null && overAll
+  // Before paint and before the Sheet's deferred close-focus, so the header is
+  // never tabbable under the Sheet nor still inert when focus returns.
+  useLayoutEffect(() => {
+    onCover?.(covered)
+    return () => onCover?.(false)
+  }, [covered, onCover])
 
   // A fresh page (after a save or a «Перечитать») brings the new base sha
   // and clears the stale banner (state adjusted during render, not in an effect).
@@ -464,6 +481,18 @@ export function PathMapEditor({
   useEffect(() => {
     requestRef.current = request
   })
+
+  // Leaving «Править» unmounts the editor with its form: a dirty one asks first.
+  useEffect(() => {
+    if (!leaveGuardRef) return
+    leaveGuardRef.current = (leave) => {
+      if (!dirty.current) return leave()
+      setPending({ next: null, opener: formOpener.current, leave })
+    }
+    return () => {
+      leaveGuardRef.current = null
+    }
+  }, [leaveGuardRef])
 
   const close = () => request(null)
   const done = () => {
@@ -606,7 +635,7 @@ export function PathMapEditor({
     ),
     indexOf,
     size: (trackId) => map.tracks.find((t) => t.id === trackId)?.nodes.length ?? 0,
-    covered: panel !== null && overAll,
+    covered,
   }
 
   let form: React.ReactNode = null
@@ -763,6 +792,11 @@ export function PathMapEditor({
         onCancel={() => setPending(null)}
         onConfirm={() => {
           dirty.current = false
+          if (pending?.leave) {
+            setPending(null)
+            pending.leave()
+            return
+          }
           formOpener.current = pending?.opener ?? null
           open(pending?.next ?? null)
           setPending(null)

@@ -682,6 +682,41 @@ describe('stale map', () => {
 })
 
 describe('closing a dirty form', () => {
+  it('asks before leaving «Править» from the header with a dirty form open (#541 re-review)', async () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
+    const input = within(screen.getByRole('form', { name: 'Маяк' })).getByLabelText('Куда идём')
+    fireEvent.change(input, { target: { value: 'черновик' } })
+    const modes = screen.getByRole('group', { name: 'Режим карты' })
+    fireEvent.click(within(modes).getByRole('button', { name: 'Карта' }))
+    const ask = await screen.findByRole('alertdialog', { name: 'Закрыть без сохранения?' })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Вернуться к форме' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(screen.getByRole('form', { name: 'Маяк' })).toBeTruthy()
+    expect(
+      within(modes).getByRole('button', { name: 'Править' }).getAttribute('aria-pressed'),
+    ).toBe('true')
+
+    fireEvent.click(within(modes).getByRole('button', { name: 'Править' }))
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Закрыть' }),
+    )
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Маяк' })).toBeNull())
+    expect(
+      within(modes).getByRole('button', { name: 'Править' }).getAttribute('aria-pressed'),
+    ).toBe('false')
+  })
+
+  it('leaves «Править» at once when the open form is clean', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Править' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(screen.queryByRole('form', { name: 'Маяк' })).toBeNull()
+  })
+
   it('asks before discarding on Esc, and keeps the form on «Вернуться»', async () => {
     renderEditable(vi.fn())
     enterEdit()
@@ -810,6 +845,7 @@ describe('what the non-modal Sheet covers is inert (#541 review)', () => {
 
   const aside = () => screen.getByRole('complementary', { name: 'Обочина', hidden: true })
   const main = () => document.querySelector('main') as HTMLElement
+  const header = () => document.querySelector('.pm-header') as HTMLElement
 
   it('wide: the Обочина under the Sheet is inert while a form is open; the map is not', async () => {
     viewport(1400)
@@ -825,17 +861,21 @@ describe('what the non-modal Sheet covers is inert (#541 review)', () => {
     await waitFor(() => expect(aside().hasAttribute('inert')).toBe(false))
   })
 
-  it('narrow: the full-width Sheet makes the map inert too', async () => {
+  it('narrow: the full-width Sheet makes the map and the page header inert too', async () => {
     viewport(400)
     renderEditable(vi.fn())
     enterEdit()
+    expect(header().hasAttribute('inert')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
     expect(aside().hasAttribute('inert')).toBe(true)
     expect(main().hasAttribute('inert')).toBe(true)
+    // The mode switch («Править» → map) is not reachable behind the Sheet (#541 re-review).
+    expect(header().hasAttribute('inert')).toBe(true)
     fireEvent.click(
       within(screen.getByRole('form', { name: 'Маяк' })).getByRole('button', { name: 'Отмена' }),
     )
     await waitFor(() => expect(main().hasAttribute('inert')).toBe(false))
+    expect(header().hasAttribute('inert')).toBe(false)
   })
 
   it('in between: the Sheet covers only part of the page — nothing is inert', () => {
@@ -845,5 +885,6 @@ describe('what the non-modal Sheet covers is inert (#541 review)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
     expect(aside().hasAttribute('inert')).toBe(false)
     expect(main().hasAttribute('inert')).toBe(false)
+    expect(header().hasAttribute('inert')).toBe(false)
   })
 })

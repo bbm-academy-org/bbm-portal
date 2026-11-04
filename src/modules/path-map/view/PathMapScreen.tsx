@@ -26,7 +26,13 @@ import {
   PinIcon,
   UpArrowIcon,
 } from './icons'
-import { NODE_KIND, type PathMapEditing, type RoadEdit, type SlotAt } from './editing'
+import {
+  type LeaveGuard,
+  NODE_KIND,
+  type PathMapEditing,
+  type RoadEdit,
+  type SlotAt,
+} from './editing'
 import { opensText } from './labels'
 import { OwnerChip } from './OwnerChip'
 import { PathMapEditor } from './PathMapEditor'
@@ -933,6 +939,10 @@ export function PathMapScreen({
   const [activeTrack, setActiveTrack] = useState<string | null>(view.focus[0]?.id ?? null)
   const panelRef = useRef<HTMLElement | null>(null)
   const pageRef = useRef<HTMLDivElement | null>(null)
+  // «Править»: the narrow full-page Sheet hides the header from the keyboard and
+  // AT too, and leaving the mode asks before dropping a dirty form (#541 re-review).
+  const [sheetCovers, setSheetCovers] = useState(false)
+  const leaveGuard = useRef<LeaveGuard | null>(null)
   // «Что внутри» (#536): only the open obstacle's id is kept; its data is read
   // from the current view on every render (#537 review), and the panel closes
   // when the obstacle is gone. The trigger is the button that opened it, so
@@ -1017,6 +1027,13 @@ export function PathMapScreen({
   }
 
   const switchMode = (next: Mode) => {
+    if (mode === 'edit' && next !== 'edit' && leaveGuard.current) {
+      leaveGuard.current(() => applyMode(next))
+      return
+    }
+    applyMode(next)
+  }
+  const applyMode = (next: Mode) => {
     setMode(next)
     if (next === 'map') setSelectedId(null)
     // Check and edit mode own the right panel; «Что внутри» does not survive the switch.
@@ -1136,7 +1153,7 @@ export function PathMapScreen({
   return (
     <div ref={pageRef} className="pm-page" data-mode={mode}>
       <div className="pm-glow" aria-hidden="true" />
-      <header className="pm-header">
+      <header className="pm-header" inert={sheetCovers || undefined}>
         <div className="pm-brand">
           <LighthouseIcon />
           <span className="pm-brand-name">Карта пути</span>
@@ -1189,7 +1206,7 @@ export function PathMapScreen({
       ) : null}
 
       {warnings.length > 0 && !view.focusOverflow ? (
-        <ul className="pm-warnings">
+        <ul className="pm-warnings" inert={sheetCovers || undefined}>
           {warnings.map((w) => (
             <li key={w}>{w}</li>
           ))}
@@ -1197,7 +1214,14 @@ export function PathMapScreen({
       ) : null}
 
       {editMode && editing && map ? (
-        <PathMapEditor map={map} view={editView} editing={editing} renderMain={mapMain} />
+        <PathMapEditor
+          map={map}
+          view={editView}
+          editing={editing}
+          renderMain={mapMain}
+          onCover={setSheetCovers}
+          leaveGuardRef={leaveGuard}
+        />
       ) : (
         <div className="pm-body">
           {mapMain()}
