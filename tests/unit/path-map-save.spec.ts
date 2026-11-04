@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { readCached } from '@/lib/path-map/cache'
+import { PATH_MAP_CACHE_TTL_MS, readCached } from '@/lib/path-map/cache'
 import type { EditCommand } from '@/lib/path-map/edit'
 import {
   githubPathMapSource,
@@ -287,6 +287,33 @@ describe('savePathMapEdit', () => {
       const source = githubPathMapSource(CONFIG, async () => contentsResponse(example, 'sha-1'))
       const later = new Date(Date.now() + 120_000)
       expect((await readCached(source, later)).doc.sha).toBe('sha-2')
+    })
+
+    it('after the lag window, a read of the parent is the truth — a `git revert` shows (#541 re-review)', async () => {
+      await ownWrite()
+      // Someone reverted the portal's commit: GitHub has the parent's blob again.
+      const source = githubPathMapSource(CONFIG, async () => contentsResponse(example, 'sha-1'))
+      const after = new Date(Date.now() + 2 * PATH_MAP_CACHE_TTL_MS + 1_000)
+      const cached = await readCached(source, after)
+      expect(cached.doc.sha).toBe('sha-1')
+      expect(cached.doc.content).toBe(example)
+    })
+
+    it('after the lag window, a save no longer builds on our own write', async () => {
+      await ownWrite()
+      vi.useFakeTimers({ now: Date.now() + 2 * PATH_MAP_CACHE_TTL_MS + 1_000 })
+      try {
+        const fetchMock = vi.fn(async () => contentsResponse(example, 'sha-1'))
+        const source = githubPathMapSource(CONFIG, fetchMock)
+        await expect(
+          savePathMapEdit({ source, command, baseSha: 'sha-2', actor: 'А' }),
+        ).resolves.toEqual({ status: 'stale' })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        // «Перечитать» shows the reverted file at once.
+        expect((await readCached(source, new Date())).doc.sha).toBe('sha-1')
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 

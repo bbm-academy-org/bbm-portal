@@ -407,6 +407,7 @@ describe('applyEdit — tasks', () => {
       op: 'task.add',
       nodeId: 'studio',
       parent: [2],
+      parentTitle: 'Монтажёр на поток',
       fields: { title: 'Найти монтажёра', owner: 'ЕВ' },
     })
     expect(getTaskAt(obstacle(sub.map).tasks, [2, 0])).toEqual({
@@ -421,6 +422,7 @@ describe('applyEdit — tasks', () => {
       op: 'task.update',
       nodeId: 'studio',
       path: [0],
+      expectTitle: 'Свет и звук',
       fields: { title: 'Свет, звук и камера', owner: 'МК', link: 'https://plane.example/1' },
     })
     const task = getTaskAt(obstacle(map).tasks, [0])
@@ -433,46 +435,158 @@ describe('applyEdit — tasks', () => {
   })
 
   it('toggles a leaf task done with a date and back', () => {
-    const done = apply({ op: 'task.toggle', nodeId: 'studio', path: [0, 2], date: '2026-11-04' })
+    const toggle = {
+      op: 'task.toggle',
+      nodeId: 'studio',
+      path: [0, 2],
+      expectTitle: 'Тестовая запись на 10 минут',
+      date: '2026-11-04',
+    } as const
+    const done = apply(toggle)
     expect(getTaskAt(obstacle(done.map).tasks, [0, 2])?.done).toBe('2026-11-04')
-    const open = apply(
-      { op: 'task.toggle', nodeId: 'studio', path: [0, 2], date: '2026-11-04' },
-      done.text,
-    )
+    const open = apply(toggle, done.text)
     expect(open.text).toBe(FIXTURE)
   })
 
   it('removes and reorders tasks', () => {
-    const removed = apply({ op: 'task.remove', nodeId: 'studio', path: [1, 1, 0] })
+    const removed = apply({
+      op: 'task.remove',
+      nodeId: 'studio',
+      path: [1, 1, 0],
+      expectTitle: 'Согласовать дни с экспертом',
+    })
     expect(getTaskAt(obstacle(removed.map).tasks, [1, 1])?.tasks).toHaveLength(1)
 
-    const moved = apply({ op: 'task.move', nodeId: 'studio', path: [2], delta: -1 })
+    const moved = apply({
+      op: 'task.move',
+      nodeId: 'studio',
+      path: [2],
+      expectTitle: 'Монтажёр на поток',
+      delta: -1,
+    })
     expect(obstacle(moved.map).tasks?.map((t) => t.title)).toEqual([
       'Свет и звук',
       'Монтажёр на поток',
       'Площадка',
     ])
-    const edge = applyEdit(FIXTURE, { op: 'task.move', nodeId: 'studio', path: [0], delta: -1 })
+    const edge = applyEdit(FIXTURE, {
+      op: 'task.move',
+      nodeId: 'studio',
+      path: [0],
+      expectTitle: 'Свет и звук',
+      delta: -1,
+    })
     expect(edge.ok).toBe(false)
   })
 
   it('refuses a task path that leads nowhere and a subtree deeper than the cap', () => {
-    expect(applyEdit(FIXTURE, { op: 'task.remove', nodeId: 'studio', path: [9] }).ok).toBe(false)
+    expect(
+      applyEdit(FIXTURE, { op: 'task.remove', nodeId: 'studio', path: [9], expectTitle: 'x' }).ok,
+    ).toBe(false)
     let text = FIXTURE
     let parent: number[] = [1, 1, 0]
     // depth 3 → 4 → 5 fine, 6 refused by the parser's depth cap.
     for (const title of ['d4', 'd5']) {
-      text = apply({ op: 'task.add', nodeId: 'studio', parent, fields: { title } }, text).text
+      const parentTitle = getTaskAt(obstacle(mapOf(text)).tasks, parent)!.title
+      text = apply(
+        { op: 'task.add', nodeId: 'studio', parent, parentTitle, fields: { title } },
+        text,
+      ).text
       parent = [...parent, 0]
     }
     const tooDeep = applyEdit(text, {
       op: 'task.add',
       nodeId: 'studio',
       parent,
+      parentTitle: 'd5',
       fields: { title: 'd6' },
     })
     expect(tooDeep.ok).toBe(false)
     if (!tooDeep.ok) expect(tooDeep.errors.join()).toMatch(/не глубже 5 уровней/)
+  })
+})
+
+describe('applyEdit — a task command names the task it targets (#541 re-review)', () => {
+  const CHANGED = 'список задач изменился — откройте задачу заново'
+
+  it('refuses to save a row draft into another task after a row above was deleted', () => {
+    // The member opened «Монтажёр на поток» (index 2); someone deleted row 0.
+    const removed = apply({
+      op: 'task.remove',
+      nodeId: 'studio',
+      path: [0],
+      expectTitle: 'Свет и звук',
+    })
+    // Index 2 no longer exists; index 1 is now «Монтажёр на поток».
+    const stale = applyEdit(removed.text, {
+      op: 'task.update',
+      nodeId: 'studio',
+      path: [1],
+      expectTitle: 'Площадка',
+      fields: { title: 'Площадка и свет' },
+    })
+    expect(stale).toEqual({ ok: false, errors: [CHANGED] })
+  })
+
+  it('refuses after a move put another task at the path', () => {
+    const moved = apply({
+      op: 'task.move',
+      nodeId: 'studio',
+      path: [2],
+      expectTitle: 'Монтажёр на поток',
+      delta: -1,
+    })
+    for (const command of [
+      {
+        op: 'task.update',
+        nodeId: 'studio',
+        path: [1],
+        expectTitle: 'Площадка',
+        fields: { title: 'x' },
+      },
+      { op: 'task.remove', nodeId: 'studio', path: [1], expectTitle: 'Площадка' },
+      {
+        op: 'task.toggle',
+        nodeId: 'studio',
+        path: [1],
+        expectTitle: 'Площадка',
+        date: '2026-11-04',
+      },
+      { op: 'task.move', nodeId: 'studio', path: [1], expectTitle: 'Площадка', delta: 1 },
+      {
+        op: 'task.add',
+        nodeId: 'studio',
+        parent: [1],
+        parentTitle: 'Площадка',
+        fields: { title: 'x' },
+      },
+    ] as EditCommand[]) {
+      expect(applyEdit(moved.text, command), command.op).toEqual({ ok: false, errors: [CHANGED] })
+    }
+    // The task's own new path still works.
+    expect(
+      applyEdit(moved.text, {
+        op: 'task.update',
+        nodeId: 'studio',
+        path: [2],
+        expectTitle: 'Площадка',
+        fields: { title: 'Площадка и свет' },
+      }).ok,
+    ).toBe(true)
+  })
+
+  it('requires the expected title on every addressed task, and the parent title on a subtask', () => {
+    expect(
+      editCommandSchema.safeParse({ op: 'task.remove', nodeId: 'studio', path: [0] }).success,
+    ).toBe(false)
+    expect(
+      applyEdit(FIXTURE, {
+        op: 'task.add',
+        nodeId: 'studio',
+        parent: [0],
+        fields: { title: 'x' },
+      }),
+    ).toEqual({ ok: false, errors: [CHANGED] })
   })
 })
 
@@ -490,6 +604,7 @@ describe('applyEdit — YAML aliases (#541 review)', () => {
       op: 'task.update',
       nodeId: 'experts-catalog',
       path: [3],
+      expectTitle: 'Монтажёр на поток',
       fields: { title: 'Другой монтажёр' },
     })
     expect(result).toEqual({
@@ -531,13 +646,14 @@ describe('editCommandSchema', () => {
         op,
         nodeId: 'studio',
         path: [],
+        expectTitle: 'x',
         fields: { title: 'x' },
         date: '2026-11-04',
         delta: 1,
       }
       const only = Object.fromEntries(
         Object.entries(command).filter(([k]) =>
-          k === 'op' || k === 'nodeId' || k === 'path'
+          k === 'op' || k === 'nodeId' || k === 'path' || k === 'expectTitle'
             ? true
             : op === 'task.update'
               ? k === 'fields'

@@ -32,6 +32,13 @@ const shipped = parsePathMap(
   readFileSync(join(repoRoot, 'tests/fixtures/path-map/example.yaml'), 'utf8'),
 )
 
+/** The example map with one focus track sent to the roadside — what a refresh brings. */
+function movedToRoadside(yaml: string, trackId: string): string {
+  const at = yaml.indexOf(`- id: ${trackId}`)
+  const status = yaml.indexOf('status: focus', at)
+  return `${yaml.slice(0, status)}status: roadside${yaml.slice(status + 'status: focus'.length)}`
+}
+
 type Save = PathMapEditing['save']
 
 const okSave = () =>
@@ -268,7 +275,12 @@ describe('barrier form — task tree', () => {
       fireEvent.click(box)
     })
     const call = save.mock.calls[0][0]
-    expect(call.command).toMatchObject({ op: 'task.toggle', nodeId: 'experts-catalog', path: [1] })
+    expect(call.command).toMatchObject({
+      op: 'task.toggle',
+      nodeId: 'experts-catalog',
+      path: [1],
+      expectTitle: 'Анкета эксперта',
+    })
     expect((call.command as { date: string }).date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
@@ -293,6 +305,7 @@ describe('barrier form — task tree', () => {
       op: 'task.move',
       nodeId: 'experts-catalog',
       path: [1],
+      expectTitle: 'Анкета эксперта',
       delta: -1,
     })
 
@@ -302,6 +315,185 @@ describe('barrier form — task tree', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Изменить…' }))
     const fields = within(tree).getByRole('group', { name: 'Сохранить задачу' })
     expect(within(fields).getByLabelText('Задача')).toHaveProperty('value', 'Анкета эксперта')
+  })
+})
+
+describe('task rows stay on their task (#541 re-review)', () => {
+  const YAML = readFileSync(join(repoRoot, 'tests/fixtures/path-map/example.yaml'), 'utf8')
+  const withoutFirst = parsePathMap(
+    YAML.replace(/ {10}- \{ title: Список первых 10 экспертов, done: 2026-10-28 \}\r?\n/, ''),
+  )
+
+  function openBarrier() {
+    fireEvent.click(screen.getByRole('button', { name: 'Править: шлагбаум «Каталог экспертов»' }))
+    return screen.getByRole('region', { name: 'Задачи шлагбаума' })
+  }
+  function rowMenu(tree: HTMLElement, title: string, item: string) {
+    fireEvent.click(within(tree).getByRole('button', { name: `Действия с задачей «${title}»` }))
+    fireEvent.click(screen.getByRole('menuitem', { name: item }))
+  }
+
+  it('closes an open row draft when another row is deleted, and the save names its task', async () => {
+    const save = okSave()
+    const editing: PathMapEditing = { enabled: true, sha: 'sha-1', save }
+    const view = render(el(PathMapView, { result: shipped, file: PATH_MAP_FILE, editing }))
+    enterEdit()
+    const tree = openBarrier()
+    rowMenu(tree, 'Шаблон карточки эксперта', 'Изменить…')
+    expect(within(tree).getByRole('group', { name: 'Сохранить задачу' })).toBeTruthy()
+
+    rowMenu(tree, 'Список первых 10 экспертов', 'Удалить…')
+    await act(async () => {
+      fireEvent.click(within(tree).getByRole('button', { name: 'Удалить' }))
+    })
+    expect(save.mock.calls[0][0].command).toEqual({
+      op: 'task.remove',
+      nodeId: 'experts-catalog',
+      path: [0],
+      expectTitle: 'Список первых 10 экспертов',
+    })
+    expect(withoutFirst.ok).toBe(true)
+    view.rerender(
+      el(PathMapView, {
+        result: withoutFirst,
+        file: PATH_MAP_FILE,
+        editing: { ...editing, sha: 'sha-2' },
+      }),
+    )
+    // The draft of «Шаблон…» (was row 2) is closed, not left on whatever row 2 is now.
+    expect(within(tree).queryByRole('group', { name: 'Сохранить задачу' })).toBeNull()
+
+    rowMenu(tree, 'Шаблон карточки эксперта', 'Изменить…')
+    const fields = within(tree).getByRole('group', { name: 'Сохранить задачу' })
+    expect(within(fields).getByLabelText('Задача')).toHaveProperty(
+      'value',
+      'Шаблон карточки эксперта',
+    )
+    await act(async () => {
+      fireEvent.click(within(fields).getByRole('button', { name: 'Сохранить задачу' }))
+    })
+    expect(save.mock.calls[1][0].command).toMatchObject({
+      op: 'task.update',
+      path: [1],
+      expectTitle: 'Шаблон карточки эксперта',
+    })
+  })
+
+  it('closes an open row draft when another row is moved', async () => {
+    const save = okSave()
+    renderEditable(save)
+    enterEdit()
+    const tree = openBarrier()
+    rowMenu(tree, 'Шаблон карточки эксперта', 'Изменить…')
+    await act(async () => {
+      rowMenu(tree, 'Анкета эксперта', 'Выше')
+    })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(within(tree).queryByRole('group', { name: 'Сохранить задачу' })).toBeNull()
+  })
+
+  it('names the parent on a new subtask', async () => {
+    const save = okSave()
+    renderEditable(save)
+    enterEdit()
+    const tree = openBarrier()
+    rowMenu(tree, 'Анкета эксперта', 'Добавить подзадачу')
+    const fields = within(tree).getByRole('group', { name: 'Добавить подзадачу' })
+    fireEvent.change(within(fields).getByLabelText('Задача'), { target: { value: 'Вопросы' } })
+    await act(async () => {
+      fireEvent.click(within(fields).getByRole('button', { name: 'Добавить подзадачу' }))
+    })
+    expect(save.mock.calls[0][0].command).toMatchObject({
+      op: 'task.add',
+      parent: [1],
+      parentTitle: 'Анкета эксперта',
+    })
+  })
+
+  it('Esc in a row form cancels that row only; the barrier form stays', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const tree = openBarrier()
+    rowMenu(tree, 'Анкета эксперта', 'Изменить…')
+    const input = within(tree).getByLabelText('Задача')
+    fireEvent.change(input, { target: { value: 'Анкета эксперта v2' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(within(tree).queryByRole('group', { name: 'Сохранить задачу' })).toBeNull()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(screen.getByRole('form', { name: 'Шлагбаум: Каталог экспертов' })).toBeTruthy()
+  })
+
+  it('counts typed task text as unsaved; Esc on the confirm returns to the form', async () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const tree = openBarrier()
+    fireEvent.click(within(tree).getByRole('button', { name: '+ Задача' }))
+    fireEvent.change(within(tree).getByLabelText('Задача'), { target: { value: 'черновик' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Править маяк' }))
+    await screen.findByRole('alertdialog', { name: 'Несохранённые изменения' })
+    // Esc while the confirm is open means «Вернуться к форме».
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(screen.getByRole('form', { name: 'Шлагбаум: Каталог экспертов' })).toBeTruthy()
+    expect(within(tree).getByLabelText('Задача')).toHaveProperty('value', 'черновик')
+    // The pending switch is dropped, not replaced by «close»: a second Esc asks again.
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(await screen.findByRole('alertdialog')).toBeTruthy()
+  })
+
+  it('ties the link error to the field', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const tree = openBarrier()
+    fireEvent.click(within(tree).getByRole('button', { name: '+ Задача' }))
+    const fields = within(tree).getByRole('group', { name: 'Добавить задачу' })
+    fireEvent.change(within(fields).getByLabelText('Задача'), { target: { value: 'x' } })
+    const link = within(fields).getByLabelText('Ссылка')
+    fireEvent.change(link, { target: { value: 'plane/1' } })
+    fireEvent.click(within(fields).getByRole('button', { name: 'Добавить задачу' }))
+    expect(link.getAttribute('aria-invalid')).toBe('true')
+    const described = document.getElementById(link.getAttribute('aria-describedby') ?? '')
+    expect(described?.textContent).toBe('Ссылка должна начинаться с http:// или https://')
+  })
+})
+
+describe('focus after a menu choice (#541 re-review)', () => {
+  it('moves to the first field when a type is chosen in a «+» slot', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const picker = openSlotPicker('Охват и подкасты', 0)
+    fireEvent.click(within(picker).getByRole('menuitem', { name: 'Шлагбаум' }))
+    const form = screen.getByRole('form', { name: 'Новый шлагбаум' })
+    expect(document.activeElement).toBe(within(form).getByLabelText('Что мешает проехать?'))
+  })
+
+  it('follows a track that moved to the roadside to its new «⋯»', async () => {
+    const save = okSave()
+    const editing: PathMapEditing = { enabled: true, sha: 'sha-1', save }
+    const view = render(el(PathMapView, { result: shipped, file: PATH_MAP_FILE, editing }))
+    enterEdit()
+    fireEvent.click(
+      within(road('Охват и подкасты')).getByRole('button', {
+        name: 'Трек «Охват и подкасты»: действия',
+      }),
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Убрать на обочину' }))
+    })
+    const yaml = readFileSync(join(repoRoot, 'tests/fixtures/path-map/example.yaml'), 'utf8')
+    const moved = parsePathMap(movedToRoadside(yaml, 'reach'))
+    expect(moved.ok).toBe(true)
+    view.rerender(
+      el(PathMapView, {
+        result: moved,
+        file: PATH_MAP_FILE,
+        editing: { ...editing, sha: 'sha-2' },
+      }),
+    )
+    const roadside = screen.getByRole('complementary', { name: 'Обочина' })
+    expect(document.activeElement).toBe(
+      within(roadside).getByRole('button', { name: 'Трек «Охват и подкасты»: действия' }),
+    )
   })
 })
 
@@ -355,6 +547,31 @@ describe('track «⋯» menu', () => {
     fireEvent.keyDown(dialog, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(trigger)
+  })
+
+  it('moves through the swap dialog radios with the arrow keys (#541 re-review)', () => {
+    renderEditable(vi.fn())
+    enterEdit()
+    const roadside = screen.getByRole('complementary', { name: 'Обочина' })
+    fireEvent.click(
+      within(roadside).getByRole('button', { name: 'Трек «Фарма-партнёры»: действия' }),
+    )
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Вывести в фокус…' }))
+    const dialog = screen.getByRole('dialog', { name: 'Вывести трек в фокус' })
+    const radios = within(dialog).getAllByRole('radio')
+    expect(radios.length).toBeGreaterThan(1)
+    // One tab stop for the group.
+    expect(radios.map((r) => r.getAttribute('tabindex'))).toEqual(
+      radios.map((_, i) => (i === 0 ? '0' : '-1')),
+    )
+    fireEvent.keyDown(radios[0], { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(radios[1])
+    expect(radios[1].getAttribute('aria-checked')).toBe('true')
+    fireEvent.keyDown(radios[1], { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(radios[0])
+    expect(radios[0].getAttribute('aria-checked')).toBe('true')
+    fireEvent.keyDown(radios[0], { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(radios[radios.length - 1])
   })
 })
 
