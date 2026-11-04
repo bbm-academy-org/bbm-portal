@@ -1,7 +1,17 @@
 'use client'
 
+import { zodResolver } from '@hookform/resolvers/zod'
 import { CheckIcon, ChevronDownIcon, ChevronsUpDownIcon, PlusIcon, XIcon } from 'lucide-react'
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
+import {
+  type Control,
+  type ControllerRenderProps,
+  type FieldPath,
+  type FieldValues,
+  useForm,
+  useWatch,
+} from 'react-hook-form'
+import { z } from 'zod'
 
 import { plural } from '@/lib/path-map/derive'
 import { inboundLinks, type InboundLinks } from '@/lib/path-map/links'
@@ -38,6 +48,15 @@ import {
   CommandList,
 } from '@/ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/ui/dialog'
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/ui/form'
 import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/ui/popover'
@@ -74,7 +93,9 @@ import { ownerColor } from './labels'
  * `Roadside.dc.html`.
  *
  * #541 v2 (the owner rejected v1 as «все моветоны UI в одном месте»): every
- * control is the `@/ui` kit — Input / Textarea / Label / Checkbox / Select, a
+ * form is the kit `Form` block (react-hook-form + one zod schema per form, the
+ * settled row of `docs/design/ui-whitelist.md`), every control the `@/ui` kit —
+ * Input / Textarea / Label / Checkbox / Select, a
  * Popover + Command combobox for the target, DropdownMenu row actions,
  * AlertDialog confirmations, Dialog for the swap. Groups are separated by
  * whitespace and a quiet heading, never a frame; regular weights except the
@@ -102,45 +123,48 @@ export function FormErrors({ errors }: { errors: string[] }) {
   )
 }
 
-function Field({
+/**
+ * One labelled field on the kit `Form` block (`docs/design/ui-whitelist.md` →
+ * Form): the field state is react-hook-form's, the message is the zod
+ * schema's, rendered in the field's own `FormMessage`; the label, the
+ * `aria-invalid` and the `aria-describedby` wiring are `FormControl`'s.
+ */
+function KitField<T extends FieldValues, N extends FieldPath<T>>({
+  control,
+  name,
   label,
   hint,
-  error,
   required,
-  children,
+  render,
 }: {
+  control: Control<T>
+  name: N
   label: string
   hint?: string
-  error?: string
   required?: boolean
-  children: (ids: { id: string; describedBy?: string; invalid: boolean }) => React.ReactNode
+  render: (field: ControllerRenderProps<T, N>) => React.ReactElement
 }) {
-  const id = useId()
-  const hintId = `${id}-hint`
-  const errorId = `${id}-error`
-  const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(' ')
   return (
-    <div className="pm-f-field">
-      <div className="pm-f-labelrow">
-        <Label htmlFor={id} className="pm-f-label">
-          {label}
-        </Label>
-        {required ? <span className="pm-f-req">обязательно</span> : null}
-      </div>
-      {children({ id, describedBy: describedBy || undefined, invalid: Boolean(error) })}
-      {error ? (
-        <p id={errorId} className="pm-f-error">
-          {error}
-        </p>
-      ) : null}
-      {hint ? (
-        <p id={hintId} className="pm-f-hint">
-          {hint}
-        </p>
-      ) : null}
-    </div>
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className="pm-f-field">
+          <div className="pm-f-labelrow">
+            <FormLabel className="pm-f-label">{label}</FormLabel>
+            {required ? <span className="pm-f-req">обязательно</span> : null}
+          </div>
+          <FormControl>{render(field)}</FormControl>
+          <FormMessage className="pm-f-error" />
+          {hint ? <FormDescription className="pm-f-hint">{hint}</FormDescription> : null}
+        </FormItem>
+      )}
+    />
   )
 }
+
+/** A required text: not blank. The value itself is sent as typed (no trim). */
+const filled = (message: string) => z.string().refine((v) => v.trim().length > 0, message)
 
 /** Related fields: `<fieldset>` + a quiet `<legend>` — grouped by space, not by a frame. */
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
@@ -576,12 +600,6 @@ function useDirty(state: unknown, onDirty: (dirty: boolean) => void, also = fals
   return dirty
 }
 
-/** Focus the first field marked invalid after a refused submit. */
-function focusFirstInvalid(form: HTMLFormElement | null) {
-  const el = form?.querySelector<HTMLElement>('[aria-invalid="true"]')
-  el?.focus()
-}
-
 // ── node form ────────────────────────────────────────────────────────────────
 
 export type NodeTarget =
@@ -601,6 +619,26 @@ const TITLE_LABEL: Record<PathNode['type'], string> = {
   obstacle: 'Что мешает проехать?',
   fog: 'Какой вопрос пока без ответа?',
 }
+
+/** The node form's one zod schema; which texts are required depends on the block's type. */
+function nodeSchema(type: PathNode['type']) {
+  return z.object({
+    title: filled(type === 'fog' ? 'Сформулируйте вопрос' : 'Введите название'),
+    because:
+      type === 'station'
+        ? filled(
+            'Без «потому что» станция не встанет на дорогу — напишите, чем она приближает маяк',
+          )
+        : z.string(),
+    confidence: z.enum(['known', 'hypothesis', 'unknown']),
+    owner: z.string(),
+    opens: z.string(),
+    removed: z.boolean(),
+    removedOn: z.string(),
+  })
+}
+
+type NodeValues = z.infer<ReturnType<typeof nodeSchema>>
 
 export function NodeForm({
   map,
@@ -635,35 +673,37 @@ export function NodeForm({
 
   const type: PathNode['type'] =
     node?.type ?? (target.mode === 'new' ? (target.type ?? 'station') : 'station')
-  const [title, setTitle] = useState(node?.title ?? '')
-  const [because, setBecause] = useState(node?.type === 'station' ? (node.because ?? '') : '')
-  const [confidence, setConfidence] = useState<Confidence>(
-    node?.type === 'station' ? node.confidence : 'hypothesis',
-  )
-  const [owner, setOwner] = useState(node?.owner ?? '')
-  const [opens, setOpens] = useState(node ? (node.opens ?? '') : defaultOpens())
-  const [removed, setRemoved] = useState(node?.type === 'obstacle' ? Boolean(node.done) : false)
-  const [removedOn, setRemovedOn] = useState(
-    node?.type === 'obstacle' && node.done ? node.done : todayIso(),
-  )
-  const [errors, setErrors] = useState<{ title?: string; because?: string }>({})
+  const [schema] = useState(() => nodeSchema(type))
+  const form = useForm<NodeValues>({
+    resolver: zodResolver(schema),
+    reValidateMode: 'onChange',
+    defaultValues: {
+      title: node?.title ?? '',
+      because: node?.type === 'station' ? (node.because ?? '') : '',
+      confidence: node?.type === 'station' ? node.confidence : 'hypothesis',
+      owner: node?.owner ?? '',
+      opens: node ? (node.opens ?? '') : defaultOpens(),
+      removed: node?.type === 'obstacle' ? Boolean(node.done) : false,
+      removedOn: node?.type === 'obstacle' && node.done ? node.done : todayIso(),
+    },
+  })
+  const values = useWatch({ control: form.control }) as NodeValues
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [repoint, setRepoint] = useState(true)
-  const formRef = useRef<HTMLFormElement | null>(null)
-  const titleRef = useRef<HTMLTextAreaElement | null>(null)
-  const removedId = useId()
   // Text typed into a task row of the barrier counts as unsaved too (#541 re-review).
   const [tasksDirty, setTasksDirty] = useState(false)
 
-  useDirty({ title, because, confidence, owner, opens, removed, removedOn }, onDirty, tasksDirty)
+  useDirty(values, onDirty, tasksDirty)
 
   const isNew = target.mode === 'new'
   // A «+» slot's trigger unmounts when its placeholder takes the spot: focus
   // goes to the form's first field, not to <body> (#541 re-review).
+  const { setFocus } = form
   useEffect(() => {
-    if (isNew) titleRef.current?.focus()
-  }, [isNew])
+    if (isNew) setFocus('title')
+  }, [isNew, setFocus])
+  const { title, confidence } = values
   useEffect(() => {
     if (isNew) onDraft?.({ type, title, confidence })
   }, [isNew, onDraft, type, title, confidence])
@@ -679,26 +719,14 @@ export function NodeForm({
 
   const kind = NODE_KIND[type]
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const next: typeof errors = {}
-    if (!title.trim()) next.title = type === 'fog' ? 'Сформулируйте вопрос' : 'Введите название'
-    if (type === 'station' && !because.trim()) {
-      next.because =
-        'Без «потому что» станция не встанет на дорогу — напишите, чем она приближает маяк'
-    }
-    setErrors(next)
+  const submit = async (v: NodeValues) => {
     setServerErrors([])
-    if (next.title || next.because) {
-      requestAnimationFrame(() => focusFirstInvalid(formRef.current))
-      return
-    }
     const fields = {
-      title,
-      owner: type === 'obstacle' ? owner : node?.owner,
-      opens: opens || undefined,
-      ...(type === 'station' ? { because, confidence } : {}),
-      ...(type === 'obstacle' && removed ? { done: removedOn } : {}),
+      title: v.title,
+      owner: type === 'obstacle' ? v.owner : node?.owner,
+      opens: v.opens || undefined,
+      ...(type === 'station' ? { because: v.because, confidence: v.confidence } : {}),
+      ...(type === 'obstacle' && v.removed ? { done: v.removedOn } : {}),
     }
     const outcome = await run(
       isNew
@@ -718,246 +746,257 @@ export function NodeForm({
   const otherTracks = map.tracks.filter((t) => t.id !== trackId)
   const links = node ? inboundLinks(map, [node.id]) : null
   const opensPicker = (label: string, hint?: string) => (
-    <OpensPicker
-      map={map}
-      trackId={trackId}
-      index={index}
-      existing={!isNew}
-      selfId={node?.id}
-      value={opens}
-      onChange={setOpens}
-      label={label}
-      hint={hint}
+    <FormField
+      control={form.control}
+      name="opens"
+      render={({ field }) => (
+        <OpensPicker
+          map={map}
+          trackId={trackId}
+          index={index}
+          existing={!isNew}
+          selfId={node?.id}
+          value={field.value}
+          onChange={field.onChange}
+          label={label}
+          hint={hint}
+        />
+      )}
     />
   )
 
   return (
-    <form
-      ref={formRef}
-      className="pm-f-form"
-      onSubmit={submit}
-      noValidate
-      aria-label={isNew ? NEW_NODE_KIND[type] : `${kind}: ${node!.title}`}
-    >
-      <PanelHead
-        title={isNew ? NEW_NODE_KIND[type] : kind}
-        context={`Трек «${track?.title ?? trackId}»`}
-        onClose={onClose}
-      />
+    <Form {...form}>
+      <form
+        className="pm-f-form"
+        onSubmit={form.handleSubmit(submit, () => setServerErrors([]))}
+        noValidate
+        aria-label={isNew ? NEW_NODE_KIND[type] : `${kind}: ${node!.title}`}
+      >
+        <PanelHead
+          title={isNew ? NEW_NODE_KIND[type] : kind}
+          context={`Трек «${track?.title ?? trackId}»`}
+          onClose={onClose}
+        />
 
-      <div className="pm-f-fields">
-        <Field label={TITLE_LABEL[type]} error={errors.title}>
-          {({ id, describedBy, invalid }) => (
-            <Textarea
-              ref={titleRef}
-              id={id}
-              rows={2}
-              value={title}
-              aria-invalid={invalid || undefined}
-              aria-describedby={describedBy}
-              maxLength={300}
-              onChange={(e) => {
-                setTitle(e.target.value)
-                if (errors.title) setErrors({ ...errors, title: undefined })
-              }}
-            />
-          )}
-        </Field>
+        <div className="pm-f-fields">
+          <KitField
+            control={form.control}
+            name="title"
+            label={TITLE_LABEL[type]}
+            render={(field) => <Textarea rows={2} maxLength={300} {...field} />}
+          />
 
-        {type === 'station' ? (
-          <>
-            <Group title="Зачем она нужна">
-              {opensPicker('Что это открывает выше?')}
-              <Field
-                label="Потому что"
-                required
-                hint="Чем станция приближает маяк. Без этого она встанет на обочину серой."
-                error={errors.because}
-              >
-                {({ id, describedBy, invalid }) => (
-                  <Textarea
-                    id={id}
-                    value={because}
-                    rows={2}
-                    aria-invalid={invalid || undefined}
-                    aria-describedby={describedBy}
-                    maxLength={1000}
-                    onChange={(e) => {
-                      setBecause(e.target.value)
-                      if (errors.because) setErrors({ ...errors, because: undefined })
-                    }}
-                  />
-                )}
-              </Field>
-            </Group>
-            <ConfidencePicker value={confidence} onChange={setConfidence} />
-          </>
-        ) : null}
-
-        {type === 'obstacle' ? (
-          <>
-            {opensPicker('Куда ведёт?')}
-            <Group title="Кто и когда снимает">
-              <Field label="Кто снимает" hint="Метка или имя, например «ДС»">
-                {({ id, describedBy }) => (
-                  <Input
-                    id={id}
-                    className="pm-f-short"
-                    value={owner}
-                    aria-describedby={describedBy}
-                    maxLength={40}
-                    onChange={(e) => setOwner(e.target.value)}
-                  />
-                )}
-              </Field>
-              <div className="pm-f-check">
-                <Checkbox
-                  id={removedId}
-                  checked={removed}
-                  onCheckedChange={(v) => setRemoved(v === true)}
+          {type === 'station' ? (
+            <>
+              <Group title="Зачем она нужна">
+                {opensPicker('Что это открывает выше?')}
+                <KitField
+                  control={form.control}
+                  name="because"
+                  label="Потому что"
+                  required
+                  hint="Чем станция приближает маяк. Без этого она встанет на обочину серой."
+                  render={(field) => <Textarea rows={2} maxLength={1000} {...field} />}
                 />
-                <Label htmlFor={removedId} className="pm-f-check-label">
-                  Снят — уходит в «Пройденный путь»
-                </Label>
-              </div>
-              {removed ? (
-                <Field label="Дата">
-                  {({ id }) => (
-                    <Input
-                      id={id}
-                      type="date"
-                      className="pm-f-short"
-                      value={removedOn}
-                      onChange={(e) => setRemovedOn(e.target.value || todayIso())}
-                    />
+              </Group>
+              <FormField
+                control={form.control}
+                name="confidence"
+                render={({ field }) => (
+                  <ConfidencePicker value={field.value} onChange={field.onChange} />
+                )}
+              />
+            </>
+          ) : null}
+
+          {type === 'obstacle' ? (
+            <>
+              {opensPicker('Куда ведёт?')}
+              <Group title="Кто и когда снимает">
+                <KitField
+                  control={form.control}
+                  name="owner"
+                  label="Кто снимает"
+                  hint="Метка или имя, например «ДС»"
+                  render={(field) => <Input className="pm-f-short" maxLength={40} {...field} />}
+                />
+                <FormField
+                  control={form.control}
+                  name="removed"
+                  render={({ field }) => (
+                    <FormItem className="pm-f-check">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={(v) => field.onChange(v === true)}
+                        />
+                      </FormControl>
+                      <FormLabel className="pm-f-check-label">
+                        Снят — уходит в «Пройденный путь»
+                      </FormLabel>
+                    </FormItem>
                   )}
-                </Field>
+                />
+                {values.removed ? (
+                  <KitField
+                    control={form.control}
+                    name="removedOn"
+                    label="Дата"
+                    render={(field) => (
+                      <Input
+                        type="date"
+                        className="pm-f-short"
+                        {...field}
+                        onChange={(e) => field.onChange(e.target.value || todayIso())}
+                      />
+                    )}
+                  />
+                ) : null}
+              </Group>
+              {isNew ? (
+                <p className="pm-f-hint">
+                  Задачи можно добавить, когда шлагбаум встанет на дорогу.
+                </p>
               ) : null}
-            </Group>
-            {isNew ? (
-              <p className="pm-f-hint">Задачи можно добавить, когда шлагбаум встанет на дорогу.</p>
-            ) : null}
-          </>
+            </>
+          ) : null}
+
+          {type === 'fog'
+            ? opensPicker(
+                'Куда ведёт?',
+                'Туман — открытый вопрос. Без цели дорога на нём обрывается, с целью — «доходит через туман».',
+              )
+            : null}
+        </div>
+
+        <FormErrors errors={serverErrors} />
+        <FormFooter
+          submit={isNew ? 'Поставить на дорогу' : 'Сохранить'}
+          busy={busy}
+          onCancel={onClose}
+        />
+
+        {!isNew && node?.type === 'obstacle' ? (
+          <TaskTreeEditor obstacle={node} run={run} busy={busy} onDirty={setTasksDirty} />
         ) : null}
 
-        {type === 'fog'
-          ? opensPicker(
-              'Куда ведёт?',
-              'Туман — открытый вопрос. Без цели дорога на нём обрывается, с целью — «доходит через туман».',
-            )
-          : null}
-      </div>
+        {!isNew && node && track ? (
+          <More title="Переместить">
+            <p className="pm-f-hint">Перемещение сохраняется сразу.</p>
+            <div className="pm-f-row" role="group" aria-label="Положение на дороге">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy || index >= track.nodes.length - 1}
+                onClick={() =>
+                  move({ op: 'node.move', nodeId: node.id, trackId, index: index + 1 })
+                }
+              >
+                ↑ Выше
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy || index === 0}
+                onClick={() =>
+                  move({ op: 'node.move', nodeId: node.id, trackId, index: index - 1 })
+                }
+              >
+                ↓ Ниже
+              </Button>
+            </div>
+            {otherTracks.length > 0 ? (
+              <Select
+                value=""
+                disabled={busy}
+                onValueChange={(to) => {
+                  const dest = map.tracks.find((t) => t.id === to)
+                  if (dest)
+                    void move({
+                      op: 'node.move',
+                      nodeId: node.id,
+                      trackId: dest.id,
+                      index: dest.nodes.length,
+                    })
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Перенести в трек" className="pm-f-short">
+                  <SelectValue placeholder="Перенести в трек…" />
+                </SelectTrigger>
+                <SelectContent className={PM_KIT} position="popper">
+                  {otherTracks.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+          </More>
+        ) : null}
 
-      <FormErrors errors={serverErrors} />
-      <FormFooter
-        submit={isNew ? 'Поставить на дорогу' : 'Сохранить'}
-        busy={busy}
-        onCancel={onClose}
-      />
-
-      {!isNew && node?.type === 'obstacle' ? (
-        <TaskTreeEditor obstacle={node} run={run} busy={busy} onDirty={setTasksDirty} />
-      ) : null}
-
-      {!isNew && node && track ? (
-        <More title="Переместить">
-          <p className="pm-f-hint">Перемещение сохраняется сразу.</p>
-          <div className="pm-f-row" role="group" aria-label="Положение на дороге">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy || index >= track.nodes.length - 1}
-              onClick={() => move({ op: 'node.move', nodeId: node.id, trackId, index: index + 1 })}
-            >
-              ↑ Выше
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy || index === 0}
-              onClick={() => move({ op: 'node.move', nodeId: node.id, trackId, index: index - 1 })}
-            >
-              ↓ Ниже
-            </Button>
-          </div>
-          {otherTracks.length > 0 ? (
-            <Select
-              value=""
-              disabled={busy}
-              onValueChange={(to) => {
-                const dest = map.tracks.find((t) => t.id === to)
-                if (dest)
-                  void move({
-                    op: 'node.move',
-                    nodeId: node.id,
-                    trackId: dest.id,
-                    index: dest.nodes.length,
-                  })
+        {!isNew && node && links ? (
+          <DangerZone>
+            <DeleteButton onClick={() => setConfirmDelete(true)}>
+              Удалить {NODE_ACCUSATIVE[type]}
+            </DeleteButton>
+            <ConfirmDialog
+              open={confirmDelete}
+              title={`Удалить «${node.title}» с карты?`}
+              confirm="Удалить"
+              busy={busy}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={async () => {
+                setConfirmDelete(false)
+                const outcome = await run({
+                  op: 'node.remove',
+                  nodeId: node.id,
+                  ...(links.referrers.length > 0
+                    ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                    : {}),
+                })
+                if (outcome.status === 'ok') onDone()
+                else setServerErrors(outcomeErrors(outcome))
               }}
             >
-              <SelectTrigger size="sm" aria-label="Перенести в трек" className="pm-f-short">
-                <SelectValue placeholder="Перенести в трек…" />
-              </SelectTrigger>
-              <SelectContent className={PM_KIT} position="popper">
-                {otherTracks.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
-        </More>
-      ) : null}
-
-      {!isNew && node && links ? (
-        <DangerZone>
-          <DeleteButton onClick={() => setConfirmDelete(true)}>
-            Удалить {NODE_ACCUSATIVE[type]}
-          </DeleteButton>
-          <ConfirmDialog
-            open={confirmDelete}
-            title={`Удалить «${node.title}» с карты?`}
-            confirm="Удалить"
-            busy={busy}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={async () => {
-              setConfirmDelete(false)
-              const outcome = await run({
-                op: 'node.remove',
-                nodeId: node.id,
-                ...(links.referrers.length > 0
-                  ? { inbound: repoint && links.target ? 'repoint' : 'break' }
-                  : {}),
-              })
-              if (outcome.status === 'ok') onDone()
-              else setServerErrors(outcomeErrors(outcome))
-            }}
-          >
-            <InboundWarning
-              map={map}
-              links={links}
-              scope="node"
-              repoint={repoint}
-              onRepoint={setRepoint}
-            />
-          </ConfirmDialog>
-        </DangerZone>
-      ) : null}
-    </form>
+              <InboundWarning
+                map={map}
+                links={links}
+                scope="node"
+                repoint={repoint}
+                onRepoint={setRepoint}
+              />
+            </ConfirmDialog>
+          </DangerZone>
+        ) : null}
+      </form>
+    </Form>
   )
 }
 
 // ── barrier task tree ────────────────────────────────────────────────────────
 
-interface TaskDraft {
-  title: string
-  owner: string
-  link: string
-}
+const taskSchema = z.object({
+  title: filled('Введите задачу'),
+  owner: z.string(),
+  link: z
+    .string()
+    .refine(
+      (v) => !v.trim() || /^https?:\/\/\S+$/.test(v.trim()),
+      'Ссылка должна начинаться с http:// или https://',
+    ),
+})
 
+type TaskDraft = z.infer<typeof taskSchema>
+
+/**
+ * A task's fields, inline under its row. Not a `<form>` element (it lives
+ * inside the barrier's form), but the same kit `Form` block: Enter in a field
+ * or the button submits through `handleSubmit`.
+ */
 function TaskFieldsForm({
   initial,
   submitLabel,
@@ -974,116 +1013,75 @@ function TaskFieldsForm({
   /** Whether the draft differs from `initial` — the editor's unsaved-input confirm. */
   onDirty?: (dirty: boolean) => void
 }) {
-  const [draft, setDraft] = useState(initial)
-  const [error, setError] = useState<{ field: 'title' | 'link'; text: string } | null>(null)
+  const form = useForm<TaskDraft>({
+    resolver: zodResolver(taskSchema),
+    reValidateMode: 'onChange',
+    defaultValues: initial,
+  })
   const [serverErrors, setServerErrors] = useState<string[]>([])
-  const titleRef = useRef<HTMLInputElement | null>(null)
-  const linkRef = useRef<HTMLInputElement | null>(null)
-  const ids = useId()
-  const errorId = `${ids}-error`
-  useEffect(() => titleRef.current?.focus(), [])
-  const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
+  const { setFocus } = form
+  useEffect(() => setFocus('title'), [setFocus])
+  const dirty = JSON.stringify(useWatch({ control: form.control })) !== JSON.stringify(initial)
   useEffect(() => {
     onDirty?.(dirty)
   }, [dirty, onDirty])
   useEffect(() => () => onDirty?.(false), [onDirty])
 
-  const save = async () => {
-    if (!draft.title.trim()) {
-      setError({ field: 'title', text: 'Введите задачу' })
-      titleRef.current?.focus()
-      return
-    }
-    if (draft.link.trim() && !/^https?:\/\/\S+$/.test(draft.link.trim())) {
-      setError({ field: 'link', text: 'Ссылка должна начинаться с http:// или https://' })
-      linkRef.current?.focus()
-      return
-    }
-    setError(null)
+  const save = form.handleSubmit(async (draft) => {
     setServerErrors(await onSubmit(draft))
-  }
-  const invalid = (field: 'title' | 'link') =>
-    error?.field === field ? { 'aria-invalid': true as const, 'aria-describedby': errorId } : {}
-  const errorFor = (field: 'title' | 'link') =>
-    error?.field === field ? (
-      <p id={errorId} className="pm-f-error">
-        {error.text}
-      </p>
-    ) : null
+  })
 
   return (
-    <div
-      className="pm-f-taskform"
-      role="group"
-      aria-label={submitLabel}
-      // Esc cancels this row only — the Sheet's Esc (close the panel) skips
-      // a `data-esc-local` subtree (#541 re-review).
-      data-esc-local=""
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
-          e.preventDefault()
-          void save()
-        } else if (e.key === 'Escape') {
-          e.preventDefault()
-          e.stopPropagation()
-          onCancel()
-        }
-      }}
-    >
-      <div className="pm-f-field">
-        <Label htmlFor={`${ids}-title`} className="pm-f-label">
-          Задача
-        </Label>
-        <Input
-          ref={titleRef}
-          id={`${ids}-title`}
-          placeholder="Что сделать"
-          value={draft.title}
-          {...invalid('title')}
-          maxLength={300}
-          onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+    <Form {...form}>
+      <div
+        className="pm-f-taskform"
+        role="group"
+        aria-label={submitLabel}
+        // Esc cancels this row only — the Sheet's Esc (close the panel) skips
+        // a `data-esc-local` subtree (#541 re-review).
+        data-esc-local=""
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+            e.preventDefault()
+            void save()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            e.stopPropagation()
+            onCancel()
+          }
+        }}
+      >
+        <KitField
+          control={form.control}
+          name="title"
+          label="Задача"
+          render={(field) => <Input placeholder="Что сделать" maxLength={300} {...field} />}
         />
-        {errorFor('title')}
-      </div>
-      <div className="pm-f-pair">
-        <div className="pm-f-field pm-f-field--owner">
-          <Label htmlFor={`${ids}-owner`} className="pm-f-label">
-            Исполнитель
-          </Label>
-          <Input
-            id={`${ids}-owner`}
-            placeholder="Кто"
-            value={draft.owner}
-            maxLength={40}
-            onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
+        <div className="pm-f-pair">
+          <KitField
+            control={form.control}
+            name="owner"
+            label="Исполнитель"
+            render={(field) => <Input placeholder="Кто" maxLength={40} {...field} />}
+          />
+          <KitField
+            control={form.control}
+            name="link"
+            label="Ссылка"
+            render={(field) => <Input placeholder="https://…" maxLength={2000} {...field} />}
           />
         </div>
-        <div className="pm-f-field pm-f-field--grow">
-          <Label htmlFor={`${ids}-link`} className="pm-f-label">
-            Ссылка
-          </Label>
-          <Input
-            ref={linkRef}
-            id={`${ids}-link`}
-            placeholder="https://…"
-            value={draft.link}
-            {...invalid('link')}
-            maxLength={2000}
-            onChange={(e) => setDraft({ ...draft, link: e.target.value })}
-          />
-          {errorFor('link')}
+        <FormErrors errors={serverErrors} />
+        <div className="pm-f-row pm-f-row--end">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Отмена
+          </Button>
+          <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
+            {submitLabel}
+          </Button>
         </div>
       </div>
-      <FormErrors errors={serverErrors} />
-      <div className="pm-f-row pm-f-row--end">
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-          Отмена
-        </Button>
-        <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
-          {submitLabel}
-        </Button>
-      </div>
-    </div>
+    </Form>
   )
 }
 
@@ -1473,6 +1471,14 @@ export function SwapDialog({
 
 // ── track form ───────────────────────────────────────────────────────────────
 
+const trackSchema = z.object({
+  title: filled('Введите название трека'),
+  short: z.string(),
+  status: z.enum(['focus', 'roadside']),
+})
+
+type TrackValues = z.infer<typeof trackSchema>
+
 export function TrackForm({
   map,
   trackId,
@@ -1500,15 +1506,19 @@ export function TrackForm({
   const track = trackId ? map.tracks.find((t) => t.id === trackId) : undefined
   const focusCount = map.tracks.filter((t) => t.status === 'focus').length
   const focusFull = focusCount >= map.limits.focus_tracks
-  const [title, setTitle] = useState(track?.title ?? '')
-  const [short, setShort] = useState(track?.short ?? '')
-  const [status, setStatus] = useState<'focus' | 'roadside'>(focusFull ? 'roadside' : 'focus')
-  const [error, setError] = useState<string | undefined>()
+  const form = useForm<TrackValues>({
+    resolver: zodResolver(trackSchema),
+    reValidateMode: 'onChange',
+    defaultValues: {
+      title: track?.title ?? '',
+      short: track?.short ?? '',
+      status: focusFull ? 'roadside' : 'focus',
+    },
+  })
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [confirmDelete, setConfirmDelete] = useState(Boolean(initialDelete))
   const [repoint, setRepoint] = useState(true)
-  const formRef = useRef<HTMLFormElement | null>(null)
-  useDirty({ title, short, status }, onDirty)
+  useDirty(useWatch({ control: form.control }), onDirty)
 
   if (trackId && !track) {
     return (
@@ -1529,14 +1539,7 @@ export function TrackForm({
     return false
   }
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!title.trim()) {
-      setError('Введите название трека')
-      requestAnimationFrame(() => focusFirstInvalid(formRef.current))
-      return
-    }
-    setError(undefined)
+  const submit = async ({ title, short, status }: TrackValues) => {
     await exec(
       track
         ? { op: 'track.update', trackId: track.id, title, short: short || undefined }
@@ -1553,162 +1556,165 @@ export function TrackForm({
     : null
 
   return (
-    <form
-      ref={formRef}
-      className="pm-f-form"
-      onSubmit={submit}
-      noValidate
-      aria-label={track ? `Трек «${track.title}»` : 'Новый трек'}
-    >
-      <PanelHead
-        title={track ? 'Трек' : 'Новый трек'}
-        context={track ? undefined : 'Новая дорога к маяку'}
-        onClose={onClose}
-      />
-      <div className="pm-f-fields">
-        <Field label="Название" error={error}>
-          {({ id, describedBy, invalid }) => (
-            <Input
-              id={id}
-              value={title}
-              maxLength={120}
-              aria-invalid={invalid || undefined}
-              aria-describedby={describedBy}
-              onChange={(e) => setTitle(e.target.value)}
+    <Form {...form}>
+      <form
+        className="pm-f-form"
+        onSubmit={form.handleSubmit(submit, () => setServerErrors([]))}
+        noValidate
+        aria-label={track ? `Трек «${track.title}»` : 'Новый трек'}
+      >
+        <PanelHead
+          title={track ? 'Трек' : 'Новый трек'}
+          context={track ? undefined : 'Новая дорога к маяку'}
+          onClose={onClose}
+        />
+        <div className="pm-f-fields">
+          <KitField
+            control={form.control}
+            name="title"
+            label="Название"
+            render={(field) => <Input maxLength={120} {...field} />}
+          />
+          {!track ? (
+            <FormField
+              control={form.control}
+              name="status"
+              render={({ field }) => (
+                <Group title="Куда ставим">
+                  <div className="pm-f-choices pm-f-choices--2">
+                    <Choice
+                      pressed={field.value === 'focus'}
+                      disabled={focusFull}
+                      onClick={() => field.onChange('focus')}
+                    >
+                      <span className="pm-f-choice-text">
+                        <span>В фокус</span>
+                        {focusFull ? (
+                          <span className="pm-f-choice-note">
+                            фокус полон ({focusCount} из {map.limits.focus_tracks})
+                          </span>
+                        ) : (
+                          <span className="pm-f-choice-note">на дорогу</span>
+                        )}
+                      </span>
+                    </Choice>
+                    <Choice
+                      pressed={field.value === 'roadside'}
+                      onClick={() => field.onChange('roadside')}
+                    >
+                      <span className="pm-f-choice-text">
+                        <span>На обочину</span>
+                        <span className="pm-f-choice-note">видно, но вне фокуса</span>
+                      </span>
+                    </Choice>
+                  </div>
+                </Group>
+              )}
             />
-          )}
-        </Field>
-        {!track ? (
-          <Group title="Куда ставим">
-            <div className="pm-f-choices pm-f-choices--2">
-              <Choice
-                pressed={status === 'focus'}
-                disabled={focusFull}
-                onClick={() => setStatus('focus')}
-              >
-                <span className="pm-f-choice-text">
-                  <span>В фокус</span>
-                  {focusFull ? (
-                    <span className="pm-f-choice-note">
-                      фокус полон ({focusCount} из {map.limits.focus_tracks})
-                    </span>
-                  ) : (
-                    <span className="pm-f-choice-note">на дорогу</span>
-                  )}
-                </span>
-              </Choice>
-              <Choice pressed={status === 'roadside'} onClick={() => setStatus('roadside')}>
-                <span className="pm-f-choice-text">
-                  <span>На обочину</span>
-                  <span className="pm-f-choice-note">видно, но вне фокуса</span>
-                </span>
-              </Choice>
+          ) : null}
+          <More title="Дополнительно" defaultOpen={Boolean(track?.short)}>
+            <KitField
+              control={form.control}
+              name="short"
+              label="Короткое имя"
+              hint="Для вкладок на телефоне. Пусто — покажем полное название."
+              render={(field) => <Input className="pm-f-short" maxLength={40} {...field} />}
+            />
+          </More>
+        </div>
+
+        <FormErrors errors={serverErrors} />
+        <FormFooter submit={track ? 'Сохранить' : 'Добавить трек'} busy={busy} onCancel={onClose} />
+
+        {track ? (
+          <Section
+            label="Фокус"
+            title={track.status === 'focus' ? 'В фокусе — на дороге' : 'На обочине'}
+            hint="Сохраняется сразу."
+          >
+            <div className="pm-f-row">
+              {track.status === 'focus' ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() =>
+                    void exec({ op: 'track.status', trackId: track.id, status: 'roadside' }, false)
+                  }
+                >
+                  Убрать на обочину
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() =>
+                    focusFull
+                      ? onSwap(track.id)
+                      : void exec({ op: 'track.status', trackId: track.id, status: 'focus' }, false)
+                  }
+                >
+                  Вывести в фокус
+                </Button>
+              )}
             </div>
-          </Group>
+          </Section>
         ) : null}
-        <More title="Дополнительно" defaultOpen={Boolean(track?.short)}>
-          <Field
-            label="Короткое имя"
-            hint="Для вкладок на телефоне. Пусто — покажем полное название."
-          >
-            {({ id, describedBy }) => (
-              <Input
-                id={id}
-                className="pm-f-short"
-                value={short}
-                maxLength={40}
-                aria-describedby={describedBy}
-                onChange={(e) => setShort(e.target.value)}
+
+        {track && links ? (
+          <DangerZone>
+            <DeleteButton onClick={() => setConfirmDelete(true)}>Удалить трек</DeleteButton>
+            <ConfirmDialog
+              open={confirmDelete}
+              title={
+                track.nodes.length > 0
+                  ? `Удалить трек «${track.title}» вместе с ${track.nodes.length} ${track.nodes.length === 1 ? 'блоком' : 'блоками'}?`
+                  : `Удалить трек «${track.title}»?`
+              }
+              confirm="Удалить трек"
+              busy={busy}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={() => {
+                setConfirmDelete(false)
+                void exec(
+                  {
+                    op: 'track.remove',
+                    trackId: track.id,
+                    force: track.nodes.length > 0,
+                    ...(links.referrers.length > 0
+                      ? { inbound: repoint && links.target ? 'repoint' : 'break' }
+                      : {}),
+                  },
+                  true,
+                )
+              }}
+            >
+              <InboundWarning
+                map={map}
+                links={links}
+                scope="track"
+                repoint={repoint}
+                onRepoint={setRepoint}
               />
-            )}
-          </Field>
-        </More>
-      </div>
-
-      <FormErrors errors={serverErrors} />
-      <FormFooter submit={track ? 'Сохранить' : 'Добавить трек'} busy={busy} onCancel={onClose} />
-
-      {track ? (
-        <Section
-          label="Фокус"
-          title={track.status === 'focus' ? 'В фокусе — на дороге' : 'На обочине'}
-          hint="Сохраняется сразу."
-        >
-          <div className="pm-f-row">
-            {track.status === 'focus' ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() =>
-                  void exec({ op: 'track.status', trackId: track.id, status: 'roadside' }, false)
-                }
-              >
-                Убрать на обочину
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() =>
-                  focusFull
-                    ? onSwap(track.id)
-                    : void exec({ op: 'track.status', trackId: track.id, status: 'focus' }, false)
-                }
-              >
-                Вывести в фокус
-              </Button>
-            )}
-          </div>
-        </Section>
-      ) : null}
-
-      {track && links ? (
-        <DangerZone>
-          <DeleteButton onClick={() => setConfirmDelete(true)}>Удалить трек</DeleteButton>
-          <ConfirmDialog
-            open={confirmDelete}
-            title={
-              track.nodes.length > 0
-                ? `Удалить трек «${track.title}» вместе с ${track.nodes.length} ${track.nodes.length === 1 ? 'блоком' : 'блоками'}?`
-                : `Удалить трек «${track.title}»?`
-            }
-            confirm="Удалить трек"
-            busy={busy}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={() => {
-              setConfirmDelete(false)
-              void exec(
-                {
-                  op: 'track.remove',
-                  trackId: track.id,
-                  force: track.nodes.length > 0,
-                  ...(links.referrers.length > 0
-                    ? { inbound: repoint && links.target ? 'repoint' : 'break' }
-                    : {}),
-                },
-                true,
-              )
-            }}
-          >
-            <InboundWarning
-              map={map}
-              links={links}
-              scope="track"
-              repoint={repoint}
-              onRepoint={setRepoint}
-            />
-          </ConfirmDialog>
-        </DangerZone>
-      ) : null}
-    </form>
+            </ConfirmDialog>
+          </DangerZone>
+        ) : null}
+      </form>
+    </Form>
   )
 }
 
 // ── beacon ───────────────────────────────────────────────────────────────────
+
+const beaconSchema = z.object({
+  title: filled('Маяку нужно название — куда идём'),
+  why: z.string(),
+})
+
+type BeaconValues = z.infer<typeof beaconSchema>
 
 export function BeaconForm({
   map,
@@ -1725,56 +1731,43 @@ export function BeaconForm({
   onDone: () => void
   onClose: () => void
 }) {
-  const [title, setTitle] = useState(map.beacon.title)
-  const [why, setWhy] = useState(map.beacon.why ?? '')
-  const [error, setError] = useState<string | undefined>()
+  const form = useForm<BeaconValues>({
+    resolver: zodResolver(beaconSchema),
+    reValidateMode: 'onChange',
+    defaultValues: { title: map.beacon.title, why: map.beacon.why ?? '' },
+  })
   const [serverErrors, setServerErrors] = useState<string[]>([])
-  useDirty({ title, why }, onDirty)
+  useDirty(useWatch({ control: form.control }), onDirty)
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!title.trim()) {
-      setError('Маяку нужно название — куда идём')
-      return
-    }
-    setError(undefined)
+  const submit = async ({ title, why }: BeaconValues) => {
+    setServerErrors([])
     const outcome = await run({ op: 'beacon.update', title, why: why || undefined })
     if (outcome.status === 'ok') onDone()
     else setServerErrors(outcomeErrors(outcome))
   }
 
   return (
-    <form className="pm-f-form" onSubmit={submit} noValidate aria-label="Маяк">
-      <PanelHead title="Маяк" context="Куда идём и зачем" onClose={onClose} />
-      <div className="pm-f-fields">
-        <Field label="Куда идём" error={error}>
-          {({ id, describedBy, invalid }) => (
-            <Textarea
-              id={id}
-              rows={3}
-              value={title}
-              maxLength={300}
-              aria-invalid={invalid || undefined}
-              aria-describedby={describedBy}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          )}
-        </Field>
-        <Field label="Зачем" hint="Одна-две фразы: почему это важно.">
-          {({ id, describedBy }) => (
-            <Textarea
-              id={id}
-              rows={3}
-              value={why}
-              maxLength={1000}
-              aria-describedby={describedBy}
-              onChange={(e) => setWhy(e.target.value)}
-            />
-          )}
-        </Field>
-      </div>
-      <FormErrors errors={serverErrors} />
-      <FormFooter submit="Сохранить" busy={busy} onCancel={onClose} />
-    </form>
+    <Form {...form}>
+      <form className="pm-f-form" onSubmit={form.handleSubmit(submit)} noValidate aria-label="Маяк">
+        <PanelHead title="Маяк" context="Куда идём и зачем" onClose={onClose} />
+        <div className="pm-f-fields">
+          <KitField
+            control={form.control}
+            name="title"
+            label="Куда идём"
+            render={(field) => <Textarea rows={3} maxLength={300} {...field} />}
+          />
+          <KitField
+            control={form.control}
+            name="why"
+            label="Зачем"
+            hint="Одна-две фразы: почему это важно."
+            render={(field) => <Textarea rows={3} maxLength={1000} {...field} />}
+          />
+        </div>
+        <FormErrors errors={serverErrors} />
+        <FormFooter submit="Сохранить" busy={busy} onCancel={onClose} />
+      </form>
+    </Form>
   )
 }

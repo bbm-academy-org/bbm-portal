@@ -189,7 +189,7 @@ describe('station form (the AddStation artboard)', () => {
     return screen.getByRole('form', { name: 'Новая станция' })
   }
 
-  it('refuses to save without «потому что» and does not call the server', () => {
+  it('refuses to save without «потому что» and does not call the server', async () => {
     const save = vi.fn<Save>()
     renderEditable(save)
     enterEdit()
@@ -197,7 +197,10 @@ describe('station form (the AddStation artboard)', () => {
     fireEvent.change(within(form).getByLabelText('Что должно стать правдой?'), {
       target: { value: 'Первые 100 врачей' },
     })
-    fireEvent.click(within(form).getByRole('button', { name: 'Поставить на дорогу' }))
+    // Validation is the form's zod schema (the kit Form block) — it resolves asynchronously.
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Поставить на дорогу' }))
+    })
     const because = within(form).getByLabelText('Потому что')
     expect(because.getAttribute('aria-invalid')).toBe('true')
     expect(within(form).getByText(/Без «потому что» станция не встанет на дорогу/)).toBeTruthy()
@@ -476,7 +479,7 @@ describe('task rows stay on their task (#541 re-review)', () => {
     expect(await screen.findByRole('alertdialog')).toBeTruthy()
   })
 
-  it('ties the link error to the field', () => {
+  it('ties the link error to the field', async () => {
     renderEditable(vi.fn())
     enterEdit()
     const tree = openBarrier()
@@ -485,10 +488,14 @@ describe('task rows stay on their task (#541 re-review)', () => {
     fireEvent.change(within(fields).getByLabelText('Задача'), { target: { value: 'x' } })
     const link = within(fields).getByLabelText('Ссылка')
     fireEvent.change(link, { target: { value: 'plane/1' } })
-    fireEvent.click(within(fields).getByRole('button', { name: 'Добавить задачу' }))
+    await act(async () => {
+      fireEvent.click(within(fields).getByRole('button', { name: 'Добавить задачу' }))
+    })
     expect(link.getAttribute('aria-invalid')).toBe('true')
-    const described = document.getElementById(link.getAttribute('aria-describedby') ?? '')
-    expect(described?.textContent).toBe('Ссылка должна начинаться с http:// или https://')
+    // The kit FormControl lists the description id, then the message id.
+    const ids = (link.getAttribute('aria-describedby') ?? '').split(' ')
+    const described = ids.map((id) => document.getElementById(id)?.textContent).filter(Boolean)
+    expect(described).toContain('Ссылка должна начинаться с http:// или https://')
   })
 })
 
