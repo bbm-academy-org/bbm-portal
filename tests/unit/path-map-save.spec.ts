@@ -285,7 +285,9 @@ describe('savePathMapEdit', () => {
     it('a cache refresh that returns the parent of our write keeps our write', async () => {
       await ownWrite()
       const source = githubPathMapSource(CONFIG, async () => contentsResponse(example, 'sha-1'))
-      const later = new Date(Date.now() + 120_000)
+      // Past the cache TTL (60 s) but well inside the 120 s lag window: exactly
+      // +120 s raced the window edge on slow CI (main d540abf).
+      const later = new Date(Date.now() + 90_000)
       expect((await readCached(source, later)).doc.sha).toBe('sha-2')
     })
 
