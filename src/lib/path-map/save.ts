@@ -82,7 +82,8 @@ export async function savePathMapEdit(args: {
       if (own && own.sha === baseSha) {
         // GitHub's read can lag behind the portal's OWN last write for a
         // moment: that write IS the base the member saw. Only our own write
-        // counts — a cached read proves nothing. The PUT's sha check decides.
+        // counts — a cached read proves nothing — and only within the lag
+        // window (`OWN_WRITE_LAG_WINDOW_MS`). The PUT's sha check decides.
         base = { ...fresh, content: own.content, sha: own.sha }
       } else {
         // The member is about to «Перечитать»: hand the page the newer file

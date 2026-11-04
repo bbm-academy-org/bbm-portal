@@ -19,6 +19,13 @@ import {
 
 export const PATH_MAP_CACHE_TTL_MS = 60_000
 
+/**
+ * How long after our own write a GitHub read of the version it replaced still
+ * counts as lag (#541 re-review). Past it the read is the truth: a `git revert`
+ * of the portal's commit restores exactly that blob, and readers must see it.
+ */
+export const OWN_WRITE_LAG_WINDOW_MS = 2 * PATH_MAP_CACHE_TTL_MS
+
 export interface CachedDocument {
   doc: PathMapDocument
   /** When `doc` was read from the source (ISO). */
@@ -43,9 +50,10 @@ interface CacheSlot {
    * The portal's own last write to this map (#541 review): its blob sha, the
    * sha it replaced, and the text. Kept apart from `doc` on purpose — a cached
    * READ with the member's base sha proves nothing about GitHub lagging; only
-   * our own write does. Cleared with the key and by `resetPathMapCache`.
+   * our own write does. Cleared with the key, by `resetPathMapCache`, and
+   * once the lag window since `at` is over.
    */
-  own: OwnWrite | null
+  own: (OwnWrite & { at: number }) | null
 }
 
 export interface OwnWrite {
@@ -81,6 +89,12 @@ function clear(key: string | null): void {
   slot.error = undefined
   slot.inflight = null
   slot.generation += 1
+}
+
+/** Our own last write while its lag window is open; past the window it is forgotten. */
+function liveOwn(t: number): (OwnWrite & { at: number }) | null {
+  if (slot.own && t - slot.own.at > OWN_WRITE_LAG_WINDOW_MS) slot.own = null
+  return slot.own
 }
 
 function snapshot(doc: PathMapDocument): CachedDocument {
@@ -120,8 +134,10 @@ export async function readCached(source: GithubPathMapSource, now: Date): Promis
       .then(
         (doc) => {
           // GitHub's read may lag behind our own write for a moment and hand
-          // back the version that write replaced: never roll the copy back to it.
-          if (current() && slot.own && doc.sha === slot.own.parentSha && slot.doc) {
+          // back the version that write replaced: within the lag window never
+          // roll the copy back to it; past the window it is the truth (a revert).
+          const own = current() ? liveOwn(t) : null
+          if (own && doc.sha === own.parentSha && slot.doc) {
             slot.readAt = t
             slot.checkedAt = t
             slot.error = undefined
@@ -199,12 +215,22 @@ export function recordOwnWrite(
   now: Date = new Date(),
 ): void {
   primePathMapCache(origin, written, now)
-  slot.own = { sha: written.sha, parentSha: written.parentSha, content: written.content }
+  slot.own = {
+    sha: written.sha,
+    parentSha: written.parentSha,
+    content: written.content,
+    at: now.getTime(),
+  }
 }
 
-/** The portal's own last write to `origin`, if it is still the one on record. */
-export function ownWriteOf(origin: GithubPathMapOrigin): OwnWrite | null {
-  return slot.key === keyOf(origin) ? slot.own : null
+/**
+ * The portal's own last write to `origin`, if it is still the one on record and
+ * its lag window (`OWN_WRITE_LAG_WINDOW_MS`) is still open.
+ */
+export function ownWriteOf(origin: GithubPathMapOrigin, now: Date = new Date()): OwnWrite | null {
+  if (slot.key !== keyOf(origin)) return null
+  const own = liveOwn(now.getTime())
+  return own ? { sha: own.sha, parentSha: own.parentSha, content: own.content } : null
 }
 
 /** Drop the cached copy — tests, and anything that must force the next read to GitHub. */

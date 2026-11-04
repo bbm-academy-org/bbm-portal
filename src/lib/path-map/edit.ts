@@ -46,6 +46,12 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'дата в формате 
 const indexPath = z.array(z.number().int().min(0).max(9999)).max(10)
 /** The address of one task: never empty (`[]` is the obstacle itself, #541 review). */
 const taskPath = indexPath.min(1, 'не указано, какая задача')
+/**
+ * The title of the task at `path` as the member's page showed it (#541
+ * re-review): an index path alone can point at another task once a row above
+ * was deleted or moved, so the server refuses when the titles differ.
+ */
+const expectTitle = z.string().max(300)
 const nodeType = z.enum(['station', 'obstacle', 'fog'])
 /**
  * Deleting what other blocks lead to (#541 review): `repoint` (the default)
@@ -122,20 +128,30 @@ export const editCommandSchema = z.discriminatedUnion('op', [
     nodeId: ref,
     /** The parent task's index path; `[]` = a top-level task of the obstacle. */
     parent: indexPath,
+    /** The parent task's title as the page showed it; required for a subtask. */
+    parentTitle: expectTitle.optional(),
     fields: taskFields,
   }),
   z.strictObject({
     op: z.literal('task.update'),
     nodeId: ref,
     path: taskPath,
+    expectTitle,
     fields: taskFields,
   }),
-  z.strictObject({ op: z.literal('task.remove'), nodeId: ref, path: taskPath }),
-  z.strictObject({ op: z.literal('task.toggle'), nodeId: ref, path: taskPath, date: day }),
+  z.strictObject({ op: z.literal('task.remove'), nodeId: ref, path: taskPath, expectTitle }),
+  z.strictObject({
+    op: z.literal('task.toggle'),
+    nodeId: ref,
+    path: taskPath,
+    expectTitle,
+    date: day,
+  }),
   z.strictObject({
     op: z.literal('task.move'),
     nodeId: ref,
     path: taskPath,
+    expectTitle,
     delta: z.union([z.literal(-1), z.literal(1)]),
   }),
   z.strictObject({ op: z.literal('beacon.update'), title: text(300), why: optional(1000) }),
@@ -327,13 +343,20 @@ function obstacleAt(ctx: Ctx, nodeId: string) {
 }
 
 const TASK_MISSING = 'задачи по этому адресу нет — возможно, её уже удалили; перечитайте карту'
+export const TASK_LIST_CHANGED = 'список задач изменился — откройте задачу заново'
 
-/** The task at an index path, its YAML row, and the list (and that list's owner) it sits in. */
-function taskAt(ctx: Ctx, nodeId: string, path: number[]) {
+/**
+ * The task at an index path, its YAML row, and the list (and that list's owner)
+ * it sits in. `expected` is the title the member's page showed at that path: a
+ * different task there (a row above was deleted or moved) is refused, so a row
+ * draft never saves into another task (#541 re-review).
+ */
+function taskAt(ctx: Ctx, nodeId: string, path: number[], expected: string | undefined) {
   // An empty path is the obstacle itself, not a task (#541 review).
   if (path.length === 0) return refuse(TASK_MISSING)
   const { node, yaml } = obstacleAt(ctx, nodeId)
   const task = getTaskAt(node.tasks, path) ?? refuse(TASK_MISSING)
+  if (task.title !== expected) refuse(TASK_LIST_CHANGED)
   let owner: YAMLMap = yaml
   let parentOwner: YAMLMap = yaml
   let parentSeq: YAMLSeq | null = null
@@ -354,10 +377,15 @@ function taskAt(ctx: Ctx, nodeId: string, path: number[]) {
 }
 
 /** The task list at a parent path (`[]` = the obstacle's own `tasks`), created if absent. */
-function listFor(ctx: Ctx, nodeId: string, parent: number[]): YAMLSeq {
+function listFor(
+  ctx: Ctx,
+  nodeId: string,
+  parent: number[],
+  parentTitle: string | undefined,
+): YAMLSeq {
   const { yaml } = obstacleAt(ctx, nodeId)
   if (parent.length === 0) return ensureSeq(ctx.doc, yaml, 'tasks', NODE_KEYS)
-  const { item } = taskAt(ctx, nodeId, parent)
+  const { item } = taskAt(ctx, nodeId, parent, parentTitle)
   // A `{ title: … }` row that gains subtasks becomes a block map: a nested
   // flow list inside a flow row would be unreadable.
   if (item.flow) item.flow = false
@@ -529,7 +557,7 @@ function run(ctx: Ctx, command: EditCommand): string {
     }
     case 'task.add': {
       const { node } = obstacleAt(ctx, command.nodeId)
-      const seq = listFor(ctx, command.nodeId, command.parent)
+      const seq = listFor(ctx, command.nodeId, command.parent, command.parentTitle)
       const title = requireTitle(command.fields.title)
       const value = ordered(
         { title, owner: clean(command.fields.owner), link: clean(command.fields.link) },
@@ -539,7 +567,7 @@ function run(ctx: Ctx, command: EditCommand): string {
       return `добавить задачу «${title}» в «${node.title}»`
     }
     case 'task.update': {
-      const { item } = taskAt(ctx, command.nodeId, command.path)
+      const { item } = taskAt(ctx, command.nodeId, command.path, command.expectTitle)
       const title = requireTitle(command.fields.title)
       setKey(doc, item, 'title', title, TASK_KEYS)
       setKey(doc, item, 'owner', clean(command.fields.owner), TASK_KEYS)
@@ -547,14 +575,19 @@ function run(ctx: Ctx, command: EditCommand): string {
       return `изменить задачу «${title}»`
     }
     case 'task.remove': {
-      const { task, parentSeq, parentOwner } = taskAt(ctx, command.nodeId, command.path)
+      const { task, parentSeq, parentOwner } = taskAt(
+        ctx,
+        command.nodeId,
+        command.path,
+        command.expectTitle,
+      )
       parentSeq.items.splice(command.path[command.path.length - 1], 1)
       // An emptied list would turn its parent into a heading over nothing.
       if (parentSeq.items.length === 0) parentOwner.delete('tasks')
       return `удалить задачу «${task.title}»`
     }
     case 'task.toggle': {
-      const { task, item } = taskAt(ctx, command.nodeId, command.path)
+      const { task, item } = taskAt(ctx, command.nodeId, command.path, command.expectTitle)
       if (!isTaskDone(task)) {
         setKey(doc, item, 'done', command.date, TASK_KEYS)
         return `отметить задачу «${task.title}» выполненной`
@@ -567,7 +600,7 @@ function run(ctx: Ctx, command: EditCommand): string {
       return `снять отметку с задачи «${task.title}»`
     }
     case 'task.move': {
-      const { task, parentSeq } = taskAt(ctx, command.nodeId, command.path)
+      const { task, parentSeq } = taskAt(ctx, command.nodeId, command.path, command.expectTitle)
       const from = command.path[command.path.length - 1]
       const to = from + command.delta
       if (to < 0 || to >= parentSeq.items.length) refuse('задачу некуда сдвинуть')

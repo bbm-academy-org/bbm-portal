@@ -385,8 +385,11 @@ describe('task rows stay on their task (#541 re-review)', () => {
     enterEdit()
     const tree = openBarrier()
     rowMenu(tree, 'Шаблон карточки эксперта', 'Изменить…')
+    fireEvent.click(
+      within(tree).getByRole('button', { name: 'Действия с задачей «Анкета эксперта»' }),
+    )
     await act(async () => {
-      rowMenu(tree, 'Анкета эксперта', 'Выше')
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Выше' }))
     })
     expect(save).toHaveBeenCalledTimes(1)
     expect(within(tree).queryByRole('group', { name: 'Сохранить задачу' })).toBeNull()

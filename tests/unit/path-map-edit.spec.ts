@@ -435,13 +435,13 @@ describe('applyEdit — tasks', () => {
   })
 
   it('toggles a leaf task done with a date and back', () => {
-    const toggle = {
+    const toggle: EditCommand = {
       op: 'task.toggle',
       nodeId: 'studio',
       path: [0, 2],
       expectTitle: 'Тестовая запись на 10 минут',
       date: '2026-11-04',
-    } as const
+    }
     const done = apply(toggle)
     expect(getTaskAt(obstacle(done.map).tasks, [0, 2])?.done).toBe('2026-11-04')
     const open = apply(toggle, done.text)

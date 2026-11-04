@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useId, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 import { plural } from '@/lib/path-map/derive'
 import { inboundLinks, type InboundLinks } from '@/lib/path-map/links'
@@ -386,10 +386,13 @@ function FormFooter({
   )
 }
 
-/** Reports dirtiness up whenever the serialised form state differs from its start. */
-function useDirty(state: unknown, onDirty: (dirty: boolean) => void) {
+/**
+ * Reports dirtiness up whenever the serialised form state differs from its
+ * start, or `also` says a nested draft (a task row) holds unsaved text.
+ */
+function useDirty(state: unknown, onDirty: (dirty: boolean) => void, also = false) {
   const [initial] = useState(() => JSON.stringify(state))
-  const dirty = JSON.stringify(state) !== initial
+  const dirty = also || JSON.stringify(state) !== initial
   useEffect(() => {
     onDirty(dirty)
   }, [dirty, onDirty])
@@ -472,12 +475,20 @@ export function NodeForm({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [repoint, setRepoint] = useState(true)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const titleRef = useRef<HTMLTextAreaElement | null>(null)
   const becauseId = useId()
   const becauseErrorId = `${becauseId}-error`
+  // Text typed into a task row of the barrier counts as unsaved too (#541 re-review).
+  const [tasksDirty, setTasksDirty] = useState(false)
 
-  useDirty({ title, because, confidence, owner, opens, removed, removedOn }, onDirty)
+  useDirty({ title, because, confidence, owner, opens, removed, removedOn }, onDirty, tasksDirty)
 
   const isNew = target.mode === 'new'
+  // A «+» slot's trigger unmounts when its placeholder takes the spot: focus
+  // goes to the form's first field, not to <body> (#541 re-review).
+  useEffect(() => {
+    if (isNew) titleRef.current?.focus()
+  }, [isNew])
   useEffect(() => {
     if (isNew) onDraft?.({ type, title, confidence })
   }, [isNew, onDraft, type, title, confidence])
@@ -549,6 +560,7 @@ export function NodeForm({
       <Field label={TITLE_LABEL[type]} error={errors.title}>
         {({ id, describedBy, invalid }) => (
           <textarea
+            ref={titleRef}
             id={id}
             className="pm-ed-input pm-ed-textarea"
             rows={2}
@@ -670,7 +682,7 @@ export function NodeForm({
       />
 
       {!isNew && node?.type === 'obstacle' ? (
-        <TaskTreeEditor obstacle={node} run={run} busy={busy} />
+        <TaskTreeEditor obstacle={node} run={run} busy={busy} onDirty={setTasksDirty} />
       ) : null}
       {isNew && type === 'obstacle' ? (
         <p className="pm-aside-lead">
@@ -781,32 +793,45 @@ function TaskFieldsForm({
   busy,
   onSubmit,
   onCancel,
+  onDirty,
 }: {
   initial: TaskDraft
   submitLabel: string
   busy: boolean
   onSubmit: (draft: TaskDraft) => Promise<string[]>
   onCancel: () => void
+  /** Whether the draft differs from `initial` — the editor's unsaved-input confirm. */
+  onDirty?: (dirty: boolean) => void
 }) {
   const [draft, setDraft] = useState(initial)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ field: 'title' | 'link'; text: string } | null>(null)
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const titleRef = useRef<HTMLInputElement | null>(null)
+  const linkRef = useRef<HTMLInputElement | null>(null)
+  const errorId = `${useId()}-error`
   useEffect(() => titleRef.current?.focus(), [])
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
+  useEffect(() => {
+    onDirty?.(dirty)
+  }, [dirty, onDirty])
+  useEffect(() => () => onDirty?.(false), [onDirty])
 
   const save = async () => {
     if (!draft.title.trim()) {
-      setError('Введите задачу')
+      setError({ field: 'title', text: 'Введите задачу' })
       titleRef.current?.focus()
       return
     }
     if (draft.link.trim() && !/^https?:\/\/\S+$/.test(draft.link.trim())) {
-      setError('Ссылка должна начинаться с http:// или https://')
+      setError({ field: 'link', text: 'Ссылка должна начинаться с http:// или https://' })
+      linkRef.current?.focus()
       return
     }
     setError(null)
     setServerErrors(await onSubmit(draft))
   }
+  const invalid = (field: 'title' | 'link') =>
+    error?.field === field ? { 'aria-invalid': true as const, 'aria-describedby': errorId } : {}
 
   return (
     <div
@@ -817,6 +842,12 @@ function TaskFieldsForm({
         if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
           e.preventDefault()
           void save()
+        } else if (e.key === 'Escape') {
+          // Esc cancels this row only — the editor's Esc (close the panel)
+          // must not see it (#541 re-review).
+          e.preventDefault()
+          e.stopPropagation()
+          onCancel()
         }
       }}
     >
@@ -826,7 +857,7 @@ function TaskFieldsForm({
         aria-label="Задача"
         placeholder="Что сделать"
         value={draft.title}
-        aria-invalid={error ? true : undefined}
+        {...invalid('title')}
         maxLength={300}
         onChange={(e) => setDraft({ ...draft, title: e.target.value })}
       />
@@ -840,15 +871,21 @@ function TaskFieldsForm({
           onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
         />
         <input
+          ref={linkRef}
           className="pm-ed-input"
           aria-label="Ссылка"
           placeholder="https://… (необязательно)"
           value={draft.link}
+          {...invalid('link')}
           maxLength={2000}
           onChange={(e) => setDraft({ ...draft, link: e.target.value })}
         />
       </div>
-      {error ? <span className="pm-ed-error">{error}</span> : null}
+      {error ? (
+        <span id={errorId} className="pm-ed-error">
+          {error.text}
+        </span>
+      ) : null}
       <FormErrors errors={serverErrors} />
       <div className="pm-ed-row">
         <button
@@ -881,6 +918,8 @@ function TaskEditItem({
   siblings,
   run,
   busy,
+  onShift,
+  onDirty,
 }: {
   obstacle: PathObstacle
   task: PathTask
@@ -888,18 +927,30 @@ function TaskEditItem({
   siblings: number
   run: RunEdit
   busy: boolean
+  /** A row was deleted or moved: every open row draft is closed (indices shifted). */
+  onShift: () => void
+  onDirty: (key: string, dirty: boolean) => void
 }) {
   const [mode, setMode] = useState<RowMode>('view')
   const [errors, setErrors] = useState<string[]>([])
   const done = isTaskDone(task)
   const children = task.tasks ?? []
   const at = path[path.length - 1]
+  const expectTitle = task.title
+  // `path` is a fresh array each render; its joined form is the row's identity.
+  const pathKey = path.join('.')
+  const reportDirty = useCallback((dirty: boolean) => onDirty(pathKey, dirty), [onDirty, pathKey])
+  const reportAddDirty = useCallback(
+    (dirty: boolean) => onDirty(`${pathKey}+`, dirty),
+    [onDirty, pathKey],
+  )
 
   const exec = async (command: Parameters<RunEdit>[0]): Promise<string[]> => {
     const outcome = await run(command)
     if (outcome.status === 'ok') {
       setMode('view')
       setErrors([])
+      if (command.op === 'task.remove' || command.op === 'task.move') onShift()
       return []
     }
     const errs = outcomeErrors(outcome)
@@ -917,12 +968,14 @@ function TaskEditItem({
     {
       label: 'Выше',
       disabled: at === 0,
-      onSelect: () => void exec({ op: 'task.move', nodeId: obstacle.id, path, delta: -1 }),
+      onSelect: () =>
+        void exec({ op: 'task.move', nodeId: obstacle.id, path, expectTitle, delta: -1 }),
     },
     {
       label: 'Ниже',
       disabled: at >= siblings - 1,
-      onSelect: () => void exec({ op: 'task.move', nodeId: obstacle.id, path, delta: 1 }),
+      onSelect: () =>
+        void exec({ op: 'task.move', nodeId: obstacle.id, path, expectTitle, delta: 1 }),
     },
     { label: 'Удалить…', danger: true, onSelect: () => setMode('delete') },
   ]
@@ -942,7 +995,13 @@ function TaskEditItem({
           className="pm-task-check pm-ed-task-check"
           disabled={busy}
           onClick={() =>
-            void exec({ op: 'task.toggle', nodeId: obstacle.id, path, date: todayIso() })
+            void exec({
+              op: 'task.toggle',
+              nodeId: obstacle.id,
+              path,
+              expectTitle,
+              date: todayIso(),
+            })
           }
         >
           {done ? <TaskTickIcon /> : null}
@@ -971,7 +1030,10 @@ function TaskEditItem({
           submitLabel="Сохранить задачу"
           busy={busy}
           onCancel={() => setMode('view')}
-          onSubmit={(d) => exec({ op: 'task.update', nodeId: obstacle.id, path, fields: d })}
+          onDirty={reportDirty}
+          onSubmit={(d) =>
+            exec({ op: 'task.update', nodeId: obstacle.id, path, expectTitle, fields: d })
+          }
         />
       ) : null}
       {mode === 'delete' ? (
@@ -984,7 +1046,7 @@ function TaskEditItem({
           confirm="Удалить"
           busy={busy}
           onCancel={() => setMode('view')}
-          onConfirm={() => void exec({ op: 'task.remove', nodeId: obstacle.id, path })}
+          onConfirm={() => void exec({ op: 'task.remove', nodeId: obstacle.id, path, expectTitle })}
         />
       ) : null}
       {errors.length > 0 && mode === 'view' ? <FormErrors errors={errors} /> : null}
@@ -999,6 +1061,8 @@ function TaskEditItem({
               siblings={children.length}
               run={run}
               busy={busy}
+              onShift={onShift}
+              onDirty={onDirty}
             />
           ))}
           {mode === 'add' ? (
@@ -1008,8 +1072,15 @@ function TaskEditItem({
                 submitLabel="Добавить подзадачу"
                 busy={busy}
                 onCancel={() => setMode('view')}
+                onDirty={reportAddDirty}
                 onSubmit={(d) =>
-                  exec({ op: 'task.add', nodeId: obstacle.id, parent: path, fields: d })
+                  exec({
+                    op: 'task.add',
+                    nodeId: obstacle.id,
+                    parent: path,
+                    parentTitle: expectTitle,
+                    fields: d,
+                  })
                 }
               />
             </li>
@@ -1024,12 +1095,32 @@ export function TaskTreeEditor({
   obstacle,
   run,
   busy,
+  onDirty,
 }: {
   obstacle: PathObstacle
   run: RunEdit
   busy: boolean
+  /** Whether any task draft holds unsaved text. */
+  onDirty?: (dirty: boolean) => void
 }) {
   const [adding, setAdding] = useState(false)
+  // Bumped when a row is deleted or moved: the rows are keyed by index, so
+  // every row remounts and no open draft is left over another task (#541
+  // re-review). The server refuses a mismatched title regardless.
+  const [epoch, setEpoch] = useState(0)
+  const onShift = useCallback(() => setEpoch((n) => n + 1), [])
+  const drafts = useRef(new Set<string>())
+  const onDirtyRef = useRef(onDirty)
+  useEffect(() => {
+    onDirtyRef.current = onDirty
+  })
+  const report = useCallback((key: string, dirty: boolean) => {
+    const before = drafts.current.size
+    if (dirty) drafts.current.add(key)
+    else drafts.current.delete(key)
+    if (before > 0 !== drafts.current.size > 0) onDirtyRef.current?.(drafts.current.size > 0)
+  }, [])
+  const reportNew = useCallback((dirty: boolean) => report('+', dirty), [report])
   const tasks = obstacle.tasks ?? []
   return (
     <section className="pm-ed-sec" aria-label="Задачи шлагбаума">
@@ -1041,13 +1132,15 @@ export function TaskTreeEditor({
         <ul className="pm-tasks pm-ed-tasks">
           {tasks.map((task, i) => (
             <TaskEditItem
-              key={i}
+              key={`${epoch}:${i}`}
               obstacle={obstacle}
               task={task}
               path={[i]}
               siblings={tasks.length}
               run={run}
               busy={busy}
+              onShift={onShift}
+              onDirty={report}
             />
           ))}
         </ul>
@@ -1060,6 +1153,7 @@ export function TaskTreeEditor({
           submitLabel="Добавить задачу"
           busy={busy}
           onCancel={() => setAdding(false)}
+          onDirty={reportNew}
           onSubmit={async (d) => {
             const outcome = await run({
               op: 'task.add',
@@ -1122,6 +1216,31 @@ export function SwapDialog({
     }
   }, [])
 
+  // One tab stop for the radio group: the checked radio, else the first.
+  const checkedAt = focus.findIndex((t) => t.id === choice)
+  const stop = checkedAt >= 0 ? checkedAt : 0
+  /** ↑/←/↓/→ (and Home/End) move to the next radio and check it, wrapping (#541 re-review). */
+  const onRadioKey = (e: React.KeyboardEvent) => {
+    const step =
+      e.key === 'ArrowDown' || e.key === 'ArrowRight'
+        ? 1
+        : e.key === 'ArrowUp' || e.key === 'ArrowLeft'
+          ? -1
+          : 0
+    const radios = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>('[role="radio"]') ?? [],
+    )
+    const from = radios.indexOf(document.activeElement as HTMLElement)
+    let to: number
+    if (e.key === 'Home') to = 0
+    else if (e.key === 'End') to = focus.length - 1
+    else if (step !== 0 && from >= 0) to = (from + step + focus.length) % focus.length
+    else return
+    e.preventDefault()
+    setChoice(focus[to].id)
+    radios[to]?.focus()
+  }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
@@ -1161,7 +1280,12 @@ export function SwapDialog({
             Выводим «{incoming.title}» на дорогу. Какой трек уходит на обочину?
           </h2>
         </div>
-        <div role="radiogroup" aria-label="Трек для обочины" className="pm-ed-radios">
+        <div
+          role="radiogroup"
+          aria-label="Трек для обочины"
+          className="pm-ed-radios"
+          onKeyDown={onRadioKey}
+        >
           {focus.map((t, i) => (
             <button
               key={t.id}
@@ -1169,6 +1293,7 @@ export function SwapDialog({
               type="button"
               role="radio"
               aria-checked={choice === t.id}
+              tabIndex={i === stop ? 0 : -1}
               className="pm-ed-radio"
               onClick={() => setChoice(t.id)}
             >

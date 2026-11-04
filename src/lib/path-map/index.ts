@@ -24,6 +24,7 @@ export type {
 export { getPathMap, loadPathMap, PATH_MAP_FILE } from './load'
 export type { GetPathMapOptions, LoadResult, PathMapLoad, PathMapLoadFailure } from './load'
 export {
+  OWN_WRITE_LAG_WINDOW_MS,
   PATH_MAP_CACHE_TTL_MS,
   ownWriteOf,
   peekPathMapCache,

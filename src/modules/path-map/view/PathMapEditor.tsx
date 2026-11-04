@@ -366,9 +366,19 @@ export function PathMapEditor({
   useEffect(() => {
     requestRef.current = request
   })
+  // Esc while the discard confirm is open means «Вернуться к форме» — it never
+  // replaces the waiting switch with «close» (#541 re-review).
+  const pendingRef = useRef(pending)
+  useEffect(() => {
+    pendingRef.current = pending
+  })
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (pendingRef.current) {
+        setPending(null)
+        return
+      }
       requestRef.current(null)
     }
     document.addEventListener('keydown', onKey)
@@ -383,6 +393,30 @@ export function PathMapEditor({
 
   const focusFull = map.tracks.filter((t) => t.status === 'focus').length >= map.limits.focus_tracks
 
+  // A track that moves between the road and the Обочина loses its «⋯» trigger
+  // (it re-mounts in the other place): once the refreshed map lands, focus
+  // follows it to the new trigger instead of dropping to <body> (#541 re-review).
+  const refocus = useRef<string | null>(null)
+  const trackMenuLabel = (title: string) => `Трек «${title}»: действия`
+  const moveTrack = async (command: Extract<EditCommand, { op: 'track.status' }>) => {
+    const track = map.tracks.find((t) => t.id === command.trackId)
+    refocus.current = track ? trackMenuLabel(track.title) : null
+    const outcome = await runAction(command)
+    if (outcome.status !== 'ok') refocus.current = null
+    return outcome
+  }
+  useEffect(() => {
+    const label = refocus.current
+    if (!label) return
+    const target = Array.from(document.querySelectorAll<HTMLElement>('[aria-label]')).find(
+      (el) => el.getAttribute('aria-label') === label,
+    )
+    if (target && target !== document.activeElement && !target.isSameNode(document.body)) {
+      refocus.current = null
+      target.focus()
+    }
+  }, [map])
+
   const trackMenu = (trackId: string) => {
     const track = map.tracks.find((t) => t.id === trackId)
     if (!track) return null
@@ -391,14 +425,14 @@ export function PathMapEditor({
       track.status === 'focus'
         ? {
             label: 'Убрать на обочину',
-            onSelect: () => void runAction({ op: 'track.status', trackId, status: 'roadside' }),
+            onSelect: () => void moveTrack({ op: 'track.status', trackId, status: 'roadside' }),
           }
         : {
             label: 'Вывести в фокус…',
             onSelect: () =>
               focusFull
                 ? setSwapFor(trackId)
-                : void runAction({ op: 'track.status', trackId, status: 'focus' }),
+                : void moveTrack({ op: 'track.status', trackId, status: 'focus' }),
           },
       {
         label: 'Удалить трек…',
@@ -409,7 +443,7 @@ export function PathMapEditor({
     return (
       <EditMenu
         className="pm-ed-trackmenu"
-        label={`Трек «${track.title}»: действия`}
+        label={trackMenuLabel(track.title)}
         disabled={busy}
         pressed={panel?.kind === 'track' && panel.trackId === trackId}
         items={items}
@@ -590,7 +624,7 @@ export function PathMapEditor({
             busy={busy}
             onCancel={() => setSwapFor(null)}
             onSwap={async (out) => {
-              const outcome = await runAction({
+              const outcome = await moveTrack({
                 op: 'track.status',
                 trackId: swapTrack.id,
                 status: 'focus',
