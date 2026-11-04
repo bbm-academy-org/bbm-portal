@@ -9,6 +9,9 @@ import { describe, expect, it, vi } from 'vitest'
  * transform that vitest does not run.
  */
 
+// The edit Server Action (#539) pulls in Auth.js, which needs Next's runtime; the
+// page only passes it through, so a stub stands in.
+vi.mock('@/app/(platform)/p/path/actions', () => ({ savePathMapEditAction: async () => null }))
 vi.mock('@/modules/path-map/view/PathMapLayout', () => ({
   PathMapLayout: ({ children }: { children: unknown }) => children,
 }))
@@ -26,7 +29,13 @@ describe('/p/path page', () => {
       props: {
         children: [
           { props: { origin: string; stale: boolean } },
-          { props: { result: { ok: boolean }; file: string } },
+          {
+            props: {
+              result: { ok: boolean }
+              file: string
+              editing: { enabled: boolean; reason?: string }
+            }
+          },
         ]
       }
     }
@@ -35,6 +44,11 @@ describe('/p/path page', () => {
     expect(notice.props.stale).toBe(false)
     expect(view.props.file).toBe('content/path-map/doctor-school.yaml')
     expect(view.props.result.ok).toBe(true)
+    // The local example is never written (#539): editing is off, with the reason.
+    expect(view.props.editing).toMatchObject({
+      enabled: false,
+      reason: 'редактирование доступно только для живой карты',
+    })
   })
 })
 

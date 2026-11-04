@@ -8,6 +8,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 const loadMock = vi.hoisted(() => vi.fn())
 
+// The edit Server Action (#539) pulls in Auth.js, which needs Next's runtime; the
+// page only passes it through, so a stub stands in.
+vi.mock('@/app/(platform)/p/path/actions', () => ({ savePathMapEditAction: async () => null }))
 vi.mock('@/modules/path-map/view/PathMapLayout', () => ({
   PathMapLayout: ({ children }: { children: unknown }) => children,
 }))
