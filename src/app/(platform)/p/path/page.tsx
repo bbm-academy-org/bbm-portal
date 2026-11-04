@@ -1,26 +1,45 @@
 import React from 'react'
 
-import { loadPathMap } from '@/lib/path-map'
+import { getPathMap } from '@/lib/path-map'
 import { PathMapLayout } from '@/modules/path-map/view/PathMapLayout'
+import { PathMapReadError } from '@/modules/path-map/view/PathMapReadError'
+import { PathMapSourceNotice } from '@/modules/path-map/view/PathMapSourceNotice'
 import { PathMapView } from '@/modules/path-map/view/PathMapView'
 
-// «Карта пути» (#530): a read-only strategy map rendered from ONE committed YAML
-// file (`content/path-map/doctor-school.yaml`). Auth is enforced by the
-// (platform) root layout (Zitadel OIDC gate) and `/p/layout.tsx` (workspace
-// membership); the host allowlist keeps `/p/*` off the CMS host. Dynamic: the
-// file is read per request, so a redeploy is the only edit path and an invalid
-// file shows its errors instead of failing the build.
+// «Карта пути» (#530): a read-only strategy map. Since #533 its YAML is read
+// from the private repo `bbm-academy-org/path-maps` (GitHub contents API, ~60s
+// server cache, stale copy on a GitHub failure); without
+// `PATH_MAPS_GITHUB_TOKEN` the public example `content/path-map/doctor-school.yaml`
+// is shown with a notice. Auth is enforced by the (platform) root layout
+// (Zitadel OIDC gate) and `/p/layout.tsx` (workspace membership); the host
+// allowlist keeps `/p/*` off the CMS host. Dynamic: read per request, so an
+// invalid file shows its errors instead of failing the build.
 export const dynamic = 'force-dynamic'
 
 export const metadata = {
   title: 'Карта пути · BBM',
 }
 
-export default function PathMapPage() {
-  const loaded = loadPathMap()
+export default async function PathMapPage() {
+  const loaded = await getPathMap()
   return (
     <PathMapLayout>
-      <PathMapView result={loaded} file={loaded.file} />
+      <PathMapSourceNotice
+        origin={loaded.origin.kind}
+        stale={loaded.stale}
+        staleReason={loaded.staleReason}
+        asOf={loaded.asOf}
+      />
+      {/* A failed READ is not a broken file (#534 review): its own state, not «the file has errors». */}
+      {loaded.failure?.kind === 'read' ? (
+        <PathMapReadError
+          reason={loaded.failure.reason}
+          message={loaded.failure.message}
+          file={loaded.file}
+        />
+      ) : (
+        <PathMapView result={loaded} file={loaded.file} />
+      )}
     </PathMapLayout>
   )
 }
