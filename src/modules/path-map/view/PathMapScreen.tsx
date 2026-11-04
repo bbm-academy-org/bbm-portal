@@ -25,7 +25,8 @@ import {
   PinIcon,
   UpArrowIcon,
 } from './icons'
-import { opensText, ownerColor } from './labels'
+import { opensText } from './labels'
+import { OwnerChip } from './OwnerChip'
 import { INSIDE_PANEL_ID, InsidePanel, insideTargetOf } from './PathMapInside'
 import { PathMapNav } from './PathMapNav'
 import { useScrollRegion } from './useScrollRegion'
@@ -262,12 +263,7 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
             <span className="pm-obstacle-kicker">
               Препятствие · проезд закрыт{chainSuffix(ctx, node.id)}
             </span>
-            {node.owner ? (
-              <span className="pm-owner" style={{ color: ownerColor(node.owner) }}>
-                <span className="pm-sr">исполнитель </span>
-                {node.owner}
-              </span>
-            ) : null}
+            {node.owner ? <OwnerChip owner={node.owner} /> : null}
           </span>
           <Title className="pm-obstacle-title">{node.title}</Title>
           <span className="pm-obstacle-foot">

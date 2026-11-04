@@ -14,7 +14,8 @@ import {
 } from '@/lib/path-map/tasks'
 
 import { ChevronIcon, CloseIcon, ExternalLinkIcon, TaskTickIcon } from './icons'
-import { opensText, ownerColor } from './labels'
+import { opensText } from './labels'
+import { OwnerChip } from './OwnerChip'
 import { useScrollRegion } from './useScrollRegion'
 
 /**
@@ -83,30 +84,31 @@ function TaskItem({
           {done ? <TaskTickIcon /> : null}
         </span>
         <span className="pm-sr">{done ? 'выполнено: ' : 'не выполнено: '}</span>
-        {sub ? (
-          <button
-            type="button"
-            className="pm-task-toggle"
-            aria-expanded={open}
-            aria-controls={open ? listId : undefined}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <ChevronIcon />
+        <span className="pm-task-main">
+          {sub ? (
+            <button
+              type="button"
+              className="pm-task-toggle"
+              aria-expanded={open}
+              aria-controls={open ? listId : undefined}
+              onClick={() => setOpen((v) => !v)}
+            >
+              <ChevronIcon />
+              <span className="pm-task-title">{task.title}</span>
+              <span className="pm-task-count">
+                {sub.done}/{sub.total}
+              </span>
+            </button>
+          ) : (
             <span className="pm-task-title">{task.title}</span>
-            <span className="pm-task-count">
-              {sub.done}/{sub.total}
+          )}
+          {task.owner ? (
+            <span className="pm-task-owner">
+              <OwnerChip owner={task.owner} withName />
             </span>
-          </button>
-        ) : (
-          <span className="pm-task-title">{task.title}</span>
-        )}
+          ) : null}
+        </span>
         {date ? <span className="pm-task-date">{shortDate(date)}</span> : null}
-        {task.owner ? (
-          <span className="pm-task-owner" style={{ color: ownerColor(task.owner) }}>
-            <span className="pm-sr">исполнитель </span>
-            {task.owner}
-          </span>
-        ) : null}
         {task.link ? (
           <a
             className="pm-task-link"
@@ -167,12 +169,7 @@ export function InsidePanel({
           </span>
           <h2 className="pm-aside-title">{node.title}</h2>
           <p className="pm-inside-meta">
-            {node.owner ? (
-              <span className="pm-task-owner" style={{ color: ownerColor(node.owner) }}>
-                <span className="pm-sr">исполнитель </span>
-                {node.owner}
-              </span>
-            ) : null}
+            {node.owner ? <OwnerChip owner={node.owner} withName /> : null}
             <span>{opensText(opensTitle, node.opens)}</span>
           </p>
         </div>
