@@ -1,0 +1,952 @@
+/* ============================================================================
+   «Карта пути» — edit mode «Править» (#539, reworked in place by #541). Same
+   tokens as path-map.css (`.pm-root` custom properties) and the same `pm-`
+   prefix scoping. The map keeps its road layout; this file only adds the
+   overlay — the «+» slots on the road, the placeholder card, the «⋯» triggers
+   — then the editor's panel, which since #541 v2 is the `@/ui` kit themed onto
+   this palette (`.pm-kit`): what is left below is layout and spacing, not
+   hand-made controls. Placeholder and swatch values are copied from the
+   vendored artboard `design-source/path-map/AddStation.dc.html`.
+   ============================================================================ */
+
+.pm-modes button[data-accent='edit'][aria-pressed='true'] {
+  background: var(--pm-accent-soft);
+  color: var(--pm-bg);
+  font-weight: 800;
+}
+
+.pm-edit-off {
+  display: block;
+  font-size: 12px;
+  color: var(--pm-muted-2);
+  text-align: right;
+}
+
+/* ── the overlay on the road ────────────────────────────────────────────── */
+
+/* A clickable card in edit mode: the reading card, with a hover/selected ring. */
+.pm-ed-pick {
+  cursor: pointer;
+}
+
+.pm-ed-pick:hover {
+  box-shadow: 0 0 0 2px rgb(242 181 68 / 35%);
+}
+
+.pm-ed-pick[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--pm-accent);
+}
+
+/* Every «⋯» / «+» menu: a trigger with its list anchored under it. */
+.pm-ed-menuwrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* A road segment carrying a «+» slot: the slot sits on the road's centre line. */
+.pm-ed-gap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pm-ed-slot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+}
+
+.pm-ed-menubtn {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid rgb(232 236 244 / 18%);
+  background: rgb(14 24 44 / 92%);
+  color: var(--pm-muted);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pm-ed-menubtn:hover,
+.pm-ed-menubtn[aria-expanded='true'],
+.pm-ed-menubtn[aria-pressed='true'] {
+  border-color: var(--pm-accent);
+  color: var(--pm-accent-soft);
+}
+
+.pm-ed-menubtn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* The road slot is a small round «+» — subtle until hovered or focused. */
+.pm-ed-slot .pm-ed-menubtn {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px dashed rgb(242 181 68 / 55%);
+  background: var(--pm-road);
+  color: var(--pm-accent);
+  font-size: 16px;
+  opacity: 0.75;
+}
+
+/* With the «⋯» a label must still fit its column when many roads are in focus. */
+.pm-col[role='group'] .pm-track-label {
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  row-gap: 4px;
+}
+
+/* The «⋯» after a track label. */
+.pm-ed-trackmenu {
+  margin-left: 4px;
+}
+
+.pm-ed-trackmenu .pm-ed-menubtn {
+  min-width: 24px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* The new block's place on the road (AddStation artboard: dashed, pulsing). */
+@keyframes pm-ed-slot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(242 181 68 / 35%);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgb(242 181 68 / 0%);
+  }
+}
+
+.pm-ed-placeholder {
+  width: 100%;
+  max-width: 250px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 2px dashed #f2b544;
+  background: rgb(242 181 68 / 8%);
+  animation: pm-ed-slot-pulse 1.8s ease-in-out infinite;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-ed-placeholder-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #f5d693;
+}
+
+.pm-ed-placeholder-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-placeholder-title[data-empty] {
+  color: var(--pm-muted-3, #8c98ae);
+  font-weight: 600;
+}
+
+/* The kit scope around «Править маяк» (#541 review): a wrapper that adds no box. */
+.pm-ed-beaconwrap {
+  display: contents;
+}
+
+.pm-ed-beaconbtn {
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+/* ── the kit on the night map (#541 v2) ─────────────────────────────────────
+   The editor's panel, forms, menus and dialogs are the `@/ui` kit (shadcn,
+   radix-nova). `.pm-kit` (with `.dark`, both put by `PM_KIT` in `fonts.ts`)
+   maps the kit's semantic tokens onto this page's palette — the same values as
+   the `.pm-root` custom properties in path-map.css — so a kit Input or Popover
+   reads as part of the night map, not as the neutral launcher theme.
+   `.dark.pm-kit` outranks the kit's own `.dark` block. */
+.dark.pm-kit {
+  --background: #0d1528;
+  --foreground: #e8ecf4;
+  --card: #111c33;
+  --card-foreground: #e8ecf4;
+  --popover: #111c33;
+  --popover-foreground: #e8ecf4;
+  --primary: #f2b544;
+  --primary-foreground: #111317;
+  --secondary: rgb(232 236 244 / 8%);
+  --secondary-foreground: #e8ecf4;
+  --muted: rgb(232 236 244 / 7%);
+  --muted-foreground: #a9b3c6;
+  --accent: rgb(232 236 244 / 8%);
+  --accent-foreground: #e8ecf4;
+  --destructive: #ff8a80;
+  --border: rgb(232 236 244 / 9%);
+  --input: rgb(232 236 244 / 16%);
+  --ring: #ffd27a;
+  --radius: 0.5rem;
+
+  font-family: var(--font-manrope), 'Manrope', system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+/* A kit overlay's dimming layer, portaled to <body>: dark enough to read on the night map. */
+body:has(.pm-root) :is([data-slot='alert-dialog-overlay'], [data-slot='dialog-overlay']) {
+  background: rgb(3 7 15 / 62%);
+}
+
+/* The quiet «⋯» of a task row / roadside track: muted until hovered. */
+.pm-ed-quietbtn {
+  color: var(--pm-muted-3, #8c98ae);
+}
+
+/* ── the Обочина column (no form open, and beside the Sheet) ──────────────── */
+
+.pm-ed-aside {
+  flex: 1 1 320px;
+  max-width: 400px;
+  display: block;
+  padding: 32px 24px 48px;
+  border-left: 1px solid var(--pm-line);
+  background: rgb(6 11 22 / 40%);
+}
+
+.pm-side {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.pm-side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pm-side-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.pm-side-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--pm-muted-2);
+}
+
+.pm-side-meter .pm-meter-bars {
+  margin-left: auto;
+}
+
+.pm-side-tracks {
+  display: flex;
+  flex-direction: column;
+}
+
+.pm-side-track {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 0;
+  border-top: 1px solid var(--pm-line);
+}
+
+.pm-side-trackhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.pm-side-trackname {
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--pm-text);
+  overflow-wrap: anywhere;
+}
+
+.pm-side-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A block on the roadside: a plain row — tiny type word, then its title. */
+.pm-ed-aside .pm-side-node {
+  width: calc(100% + 20px);
+  height: auto;
+  margin-left: -10px;
+  padding: 7px 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+
+.pm-ed-aside .pm-side-node[aria-pressed='true'] {
+  background: rgb(242 181 68 / 10%);
+}
+
+.pm-side-node-title {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--pm-muted);
+  overflow-wrap: anywhere;
+}
+
+.pm-ed-aside :is(.pm-side-add, .pm-side-addtrack) {
+  align-self: flex-start;
+  margin-left: -10px;
+}
+
+.pm-ed-aside .pm-side-add .pm-ed-quietbtn,
+.pm-ed-aside .pm-side-addtrack {
+  font-weight: 400;
+  color: var(--pm-muted-2);
+}
+
+.pm-side-note {
+  padding-top: 20px;
+  border-top: 1px solid var(--pm-line);
+}
+
+/* ── the form Sheet ─────────────────────────────────────────────────────── */
+
+/* Beside the map the Sheet lies exactly over the Обочина column: while a form
+   is open that column takes the Sheet's width, so no road hides under it. */
+@media (width > 1140px) {
+  .pm-body[data-form] .pm-ed-aside {
+    flex: 0 0 420px;
+    max-width: 420px;
+  }
+}
+
+.pm-ed-sheet {
+  width: min(100%, 420px);
+  max-width: none;
+  padding: 28px 28px 40px;
+  gap: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(232 236 244 / 16%) transparent;
+  background: #0d1528;
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 60px rgb(0 0 0 / 35%);
+}
+
+.pm-f-form {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.pm-f-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pm-f-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pm-f-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.pm-f-context {
+  font-size: 13px;
+  color: var(--pm-muted-3, #8c98ae);
+  overflow-wrap: anywhere;
+}
+
+.pm-f-close {
+  margin: -4px -6px 0 0;
+  color: var(--muted-foreground);
+}
+
+.pm-f-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.pm-f-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Labels: regular weight, a step lighter than what is typed (#541 v2). */
+.pm-f-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #c9d1df;
+}
+
+.pm-f-labelrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pm-f-req {
+  font-size: 12px;
+  color: #8c98ae;
+}
+
+.pm-f-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8c98ae;
+}
+
+.pm-f-error {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #ff8a80;
+}
+
+.pm-f-muted {
+  color: var(--muted-foreground);
+}
+
+.pm-f-short {
+  max-width: 220px;
+}
+
+/* A group: a quiet heading and space — no frame, no fill (#541 v2). */
+.pm-f-group {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pm-f-legend {
+  padding: 0 0 14px;
+  font-size: 12.5px;
+  color: #8c98ae;
+}
+
+/* The target combobox trigger: the current value, wrapping, regular weight. */
+.pm-f-form .pm-f-combo {
+  width: 100%;
+  height: auto;
+  min-height: 36px;
+  padding: 7px 10px;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+
+.pm-f-combo-icon {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.pm-f-combo-pop {
+  width: max(var(--radix-popover-trigger-width), 320px);
+  max-width: calc(100vw - 32px);
+  padding: 0;
+}
+
+.pm-f-combo-pop [data-slot='command-list'] {
+  max-height: min(360px, 50vh);
+}
+
+.pm-f-target {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pm-f-kind {
+  flex: none;
+  font-size: 12px;
+  color: #8c98ae;
+}
+
+.pm-f-kind[data-type='obstacle'] {
+  color: var(--pm-barrier, #ffc93c);
+}
+
+.pm-f-target-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Two or three always-visible options (confidence, new track's place). */
+.pm-f-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.pm-f-choices--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pm-f-form .pm-f-choice {
+  height: auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  justify-content: flex-start;
+  gap: 10px;
+  border-color: var(--border);
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+
+.pm-f-form .pm-f-choice[aria-pressed='true'] {
+  border-color: rgb(242 181 68 / 55%);
+  background: rgb(242 181 68 / 9%);
+}
+
+.pm-f-choice-text {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 1px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.pm-f-choice-note {
+  font-size: 12px;
+  color: #8c98ae;
+}
+
+/* The confidence road swatch (AddStation artboard: asphalt / dirt / fog). */
+.pm-f-road {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 22px;
+  background: var(--pm-road, #131c30);
+  border-left: 1px solid rgb(232 236 244 / 20%);
+  border-right: 1px solid rgb(232 236 244 / 20%);
+}
+
+.pm-f-road[data-kind='asphalt']::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(180deg, #8c98ae 0 5px, transparent 5px 10px);
+}
+
+.pm-f-road[data-kind='dirt'] {
+  background-color: rgb(22 32 56 / 90%);
+  background-image: radial-gradient(rgb(232 236 244 / 30%) 1px, transparent 1.6px);
+  background-size: 6px 6px;
+  border-left: 1px dashed rgb(232 236 244 / 40%);
+  border-right: 1px dashed rgb(232 236 244 / 40%);
+}
+
+.pm-f-road[data-kind='fog'] {
+  border: 0;
+  border-radius: 7px;
+  background: rgb(140 152 174 / 25%);
+  box-shadow: 0 0 8px 2px rgb(140 152 174 / 25%);
+}
+
+.pm-f-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pm-f-check-label {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.pm-f-footer,
+.pm-f-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-f-footer,
+.pm-f-row--end {
+  justify-content: flex-end;
+}
+
+.pm-f-errors {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #ff8a80;
+}
+
+.pm-f-errors ul {
+  margin-top: 2px;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+/* Secondary sections after the footer: a hairline and space, no box. */
+.pm-f-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.pm-f-sec-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pm-f-sec-title {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--foreground);
+}
+
+.pm-f-form .pm-f-add,
+.pm-f-form .pm-f-more-trigger,
+.pm-f-form .pm-f-delete {
+  align-self: flex-start;
+  margin-left: -10px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+
+.pm-f-form .pm-f-delete {
+  color: #ff8a80;
+}
+
+.pm-f-more {
+  display: flex;
+  flex-direction: column;
+}
+
+.pm-f-more-icon {
+  transition: transform 0.15s ease;
+}
+
+.pm-f-more-trigger[data-state='open'] .pm-f-more-icon {
+  transform: rotate(180deg);
+}
+
+.pm-f-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 0 4px;
+}
+
+.pm-ed-danger {
+  display: flex;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.pm-f-stale {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pm-f-stale-title {
+  font-size: 14px;
+  color: #ffd27a;
+}
+
+/* ── the barrier's task tree: rows, not cards ───────────────────────────── */
+
+.pm-f-tasks {
+  display: flex;
+  flex-direction: column;
+}
+
+.pm-f-tasks--nested {
+  padding-left: 26px;
+}
+
+.pm-f-task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.pm-f-form .pm-f-task-check {
+  margin-top: 3px;
+}
+
+.pm-f-task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--pm-muted, #c9d1df);
+  overflow-wrap: anywhere;
+}
+
+.pm-f-task[data-done='true'] > .pm-f-task-row .pm-f-task-title {
+  color: #8c98ae;
+}
+
+.pm-f-task-date {
+  font-size: 12px;
+  color: #8c98ae;
+}
+
+.pm-f-task-row .pm-ed-menuwrap {
+  margin: -2px -6px 0 0;
+}
+
+.pm-f-taskform {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 0 14px 26px;
+}
+
+.pm-f-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+
+/* ── dialogs: delete / discard (AlertDialog) and the swap (Dialog) ──────── */
+
+.pm-f-alert.pm-f-alert {
+  max-width: min(420px, calc(100vw - 32px));
+  gap: 16px;
+  padding: 22px;
+}
+
+/* Buttons in ONE row at every width; no grey footer band (#541 v2). */
+.pm-f-alert .pm-f-alert-footer {
+  flex-flow: row wrap;
+  justify-content: flex-end;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.pm-f-inbound {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.pm-f-inbound ul {
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.pm-f-dialog {
+  gap: 18px;
+  padding: 24px;
+}
+
+.pm-f-dialog.pm-f-dialog {
+  max-width: min(440px, calc(100vw - 32px));
+}
+
+.pm-f-dialog-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-f-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-f-dialog .pm-f-radio {
+  height: auto;
+  padding: 10px 12px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 12px;
+  border-color: var(--border);
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+
+.pm-f-dialog .pm-f-radio[aria-checked='true'] {
+  border-color: rgb(242 181 68 / 55%);
+  background: rgb(242 181 68 / 9%);
+}
+
+.pm-f-radio-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--input);
+  border-radius: 50%;
+  color: var(--primary-foreground);
+}
+
+.pm-f-radio[aria-checked='true'] .pm-f-radio-mark {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.pm-f-radio-mark svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* ── toast ──────────────────────────────────────────────────────────────── */
+
+.pm-ed-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 60;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--pm-accent);
+  color: var(--pm-bg);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+}
+
+.pm-ed-toast:not([data-shown]) {
+  display: none;
+}
+
+/* ── interaction states of the canvas overlay (last: specificity order) ── */
+
+.pm-ed-menubtn:focus-visible {
+  outline: 2px solid var(--pm-accent-soft);
+  outline-offset: 2px;
+}
+
+.pm-ed-slot .pm-ed-menubtn:hover,
+.pm-ed-slot .pm-ed-menubtn:focus-visible,
+.pm-ed-slot .pm-ed-menubtn[aria-expanded='true'] {
+  border-style: solid;
+  background: rgb(242 181 68 / 18%);
+  opacity: 1;
+}
+
+/* ── header toggle, disabled off the live map (last: specificity order) ── */
+
+.pm-modes button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── narrow ─────────────────────────────────────────────────────────────── */
+
+/* Under the map the Обочина is a full-width section (as the other panels). */
+@media (width <= 1140px) {
+  .pm-ed-aside {
+    flex-basis: 100%;
+    max-width: none;
+    border-left: 0;
+    border-top: 1px solid var(--pm-line);
+  }
+}
+
+@media (width <= 640px) {
+  /* 28px on the left clears the navigator's 16px rail (#532), as «Что внутри». */
+  .pm-ed-aside {
+    padding: 24px 16px 40px 28px;
+  }
+
+  .pm-ed-sheet {
+    width: 100%;
+    padding: 20px 16px 32px;
+    border-left: 0;
+  }
+
+  .pm-ed-placeholder {
+    max-width: none;
+  }
+
+  .pm-edit-off {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-ed-placeholder {
+    animation: none;
+  }
+
+  .pm-f-more-icon {
+    transition: none;
+  }
+}

@@ -11,8 +11,9 @@ import type {
   TrackView,
   UpcomingItem,
 } from '@/lib/path-map'
-import { plural } from '@/lib/path-map/derive'
+import { buildMapView, plural } from '@/lib/path-map/derive'
 import { ANCHOR_IDS, buildNavAnchors, nodeAnchorId, shortDate } from '@/lib/path-map/nav'
+import type { PathMap } from '@/lib/path-map/schema'
 import type { TaskProgress } from '@/lib/path-map/tasks'
 
 import {
@@ -25,8 +26,16 @@ import {
   PinIcon,
   UpArrowIcon,
 } from './icons'
+import {
+  type LeaveGuard,
+  NODE_KIND,
+  type PathMapEditing,
+  type RoadEdit,
+  type SlotAt,
+} from './editing'
 import { opensText } from './labels'
 import { OwnerChip } from './OwnerChip'
+import { PathMapEditor } from './PathMapEditor'
 import { INSIDE_PANEL_ID, InsidePanel, insideTargetOf } from './PathMapInside'
 import { PathMapNav } from './PathMapNav'
 import { useScrollRegion } from './useScrollRegion'
@@ -48,9 +57,16 @@ import { useScrollRegion } from './useScrollRegion'
  * v2 (#536): in map mode a barrier is a button that opens «Что внутри»
  * (`PathMapInside.tsx`) in place of the Обочина panel; its card carries a
  * done/total counter and its striped arm lifts with the task progress.
+ *
+ * #539: a third mode, «Править», edits IN PLACE (#541 rework): the same road
+ * layout stays, with every open node of a focus road drawn (nothing folds into
+ * fog), and the editor (`PathMapEditor.tsx`) overlays it — «+» slots on the
+ * road, clickable cards, a «⋯» menu on each track label, «Править маяк» — and
+ * owns the right panel. Off (with the reason) when the map is the local
+ * example, the source is misconfigured or the file version is unknown.
  */
 
-type Mode = 'map' | 'check'
+type Mode = 'map' | 'check' | 'edit'
 
 const CONFIDENCE_LABEL = { known: 'знаем', hypothesis: 'гипотеза', unknown: 'не знаем' } as const
 
@@ -134,6 +150,8 @@ interface PickProps {
     title: string
     onOpen: (trigger: HTMLElement) => void
   }
+  /** Edit mode (#539): the card is a button that opens its form in the panel. */
+  edit?: { label: string; pressed: boolean; onEdit: () => void }
   children: React.ReactNode
 }
 
@@ -144,7 +162,31 @@ interface PickProps {
  * (#537 review: a heading inside a `<button>` is invalid and drops out of
  * heading navigation).
  */
-function Pick({ interactive, pressed, onPick, className, label, id, open, children }: PickProps) {
+function Pick({
+  interactive,
+  pressed,
+  onPick,
+  className,
+  label,
+  id,
+  open,
+  edit,
+  children,
+}: PickProps) {
+  if (edit) {
+    return (
+      <button
+        id={id}
+        type="button"
+        className={`pm-pick pm-ed-pick ${className}`}
+        aria-label={edit.label}
+        aria-pressed={edit.pressed}
+        onClick={edit.onEdit}
+      >
+        {children}
+      </button>
+    )
+  }
   if (!interactive && open) {
     return (
       <article
@@ -194,6 +236,18 @@ interface NodeCtx {
   /** The obstacle whose «Что внутри» is open (map mode, #536). */
   openId: string | null
   onOpen: (id: string, trigger: HTMLElement) => void
+  /** Edit mode (#539): the editor's overlay hooks. */
+  road?: RoadEdit
+}
+
+function editProps(ctx: NodeCtx, node: PathNode): PickProps['edit'] {
+  const road = ctx.road
+  if (!road) return undefined
+  return {
+    label: `Править: ${NODE_KIND[node.type].toLowerCase()} «${node.title}»`,
+    pressed: road.selectedId === node.id,
+    onEdit: () => road.onNode(node.id),
+  }
 }
 
 function openProps(
@@ -254,7 +308,7 @@ function chainSuffix(ctx: NodeCtx, id: string): string {
 
 function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>; ctx: NodeCtx }) {
   const { node } = item
-  const Title = ctx.interactive ? 'span' : 'h3'
+  const Title = ctx.interactive || ctx.road ? 'span' : 'h3'
   const selected = ctx.selectedId === node.id
   const inChain = ctx.chainIndex.has(node.id)
   const common = {
@@ -262,14 +316,20 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
     interactive: ctx.interactive,
     pressed: selected,
     onPick: () => ctx.onPick(node.id),
+    edit: editProps(ctx, node),
   }
-  const state = `${inChain ? ' is-chain' : ''}${selected ? ' is-selected' : ''}`
+  const editing = ctx.road?.selectedId === node.id
+  const state = `${inChain ? ' is-chain' : ''}${selected || editing ? ' is-selected' : ''}`
 
   let card: React.ReactNode
   if (node.type === 'obstacle') {
     const opens = opensText(item.opensTitle, node.opens)
     card = (
-      <Pick {...common} open={openProps(ctx, node)} className={`pm-card pm-obstacle${state}`}>
+      <Pick
+        {...common}
+        open={ctx.road ? undefined : openProps(ctx, node)}
+        className={`pm-card pm-obstacle${state}`}
+      >
         <BarrierArm progress={item.progress} />
         <span className="pm-obstacle-body">
           <span className="pm-obstacle-top">
@@ -456,17 +516,58 @@ function TrackColumn({
   }
 
   const top = topDown[0]
+  const road = ctx.road
+  const nodeOf = (item: UpcomingItem | undefined) => (item?.kind === 'node' ? item.node : undefined)
+  // Edit mode (#539): a road segment carries a «+» slot — or, while the slot's
+  // form is open, the pulsing placeholder card of the block being added.
+  const gap = (seg: React.ReactNode, at: SlotAt | null, key?: string) => {
+    if (!road || !at) return seg
+    if (road.slotOpen(at.trackId, at.index)) {
+      return (
+        <Fragment key={key}>
+          {seg}
+          {road.slot(at)}
+          <Seg kind="dirt" />
+        </Fragment>
+      )
+    }
+    return (
+      <div key={key} className="pm-ed-gap">
+        {seg}
+        {road.slot(at)}
+      </div>
+    )
+  }
+  const slotAt = (index: number, lower?: PathNode, upper?: PathNode): SlotAt => ({
+    trackId: track.id,
+    trackTitle: track.title,
+    index,
+    lower,
+    upper,
+  })
+  const lowest = nodeOf(topDown[topDown.length - 1])
+
   return (
-    <div className="pm-col" data-active={active || undefined} data-dimmed={dimmed || undefined}>
+    <div
+      className="pm-col"
+      data-active={active || undefined}
+      data-dimmed={dimmed || undefined}
+      role={road ? 'group' : undefined}
+      aria-label={road ? `Трек «${track.title}»` : undefined}
+    >
       <div className="pm-track-label">
         <span className="pm-dot" style={{ background: track.color }} aria-hidden="true" />
         {track.title}
+        {road ? road.trackMenu(track.id) : null}
       </div>
-      <Seg
-        kind={
-          !top || top.kind === 'collapsed' || top.node.type === 'fog' ? 'edges' : lookOfItem(top)
-        }
-      />
+      {gap(
+        <Seg
+          kind={
+            !top || top.kind === 'collapsed' || top.node.type === 'fog' ? 'edges' : lookOfItem(top)
+          }
+        />,
+        road ? slotAt(road.size(track.id), nodeOf(top)) : null,
+      )}
       {topDown.map((item, i) => {
         const lower = topDown[i + 1]
         const id = item.kind === 'node' ? item.node.id : `collapsed-${i}`
@@ -475,6 +576,7 @@ function TrackColumn({
           (item.kind === 'node'
             ? item.node.id === breakShownAt
             : item.nodes.some((n) => n.id === breakShownAt))
+        const lowerNode = nodeOf(lower)
         return (
           <Fragment key={id}>
             {check && breaksHere ? <BreakAbove check={check} /> : null}
@@ -483,11 +585,21 @@ function TrackColumn({
             ) : (
               <CollapsedFog nodes={item.nodes} ctx={ctx} />
             )}
-            {lower ? <Seg kind={between(item, lower)} /> : null}
+            {lower
+              ? gap(
+                  <Seg kind={between(item, lower)} />,
+                  road && lowerNode
+                    ? slotAt(road.indexOf(lowerNode.id) + 1, lowerNode, nodeOf(item))
+                    : null,
+                )
+              : null}
           </Fragment>
         )
       })}
-      <Seg kind="lit" />
+      {gap(
+        <Seg kind="lit" />,
+        road && lowest ? slotAt(road.indexOf(lowest.id), undefined, lowest) : null,
+      )}
     </div>
   )
 }
@@ -500,7 +612,8 @@ function PassedChip({ item, ctx }: { item: PassedItem; ctx: NodeCtx }) {
       pressed={ctx.selectedId === node.id}
       onPick={() => ctx.onPick(node.id)}
       // A removed barrier looks as before, but its tasks stay readable (#536).
-      open={item.progress ? openProps(ctx, node) : undefined}
+      open={item.progress && !ctx.road ? openProps(ctx, node) : undefined}
+      edit={editProps(ctx, node)}
       id={nodeAnchorId(node.id)}
       className={`pm-chip${ctx.chainIndex.has(node.id) ? ' is-chain' : ''}`}
     >
@@ -809,16 +922,27 @@ export function PathMapScreen({
   view,
   checks,
   warnings,
+  map,
+  editing,
+  initialMode = 'map',
 }: {
   view: MapView
   checks: Record<string, PathCheck>
   warnings: string[]
+  /** The parsed map, for the editor (#539). */
+  map?: PathMap
+  editing?: PathMapEditing
+  initialMode?: Mode
 }) {
-  const [mode, setMode] = useState<Mode>('map')
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeTrack, setActiveTrack] = useState<string | null>(view.focus[0]?.id ?? null)
   const panelRef = useRef<HTMLElement | null>(null)
   const pageRef = useRef<HTMLDivElement | null>(null)
+  // «Править»: the narrow full-page Sheet hides the header from the keyboard and
+  // AT too, and leaving the mode asks before dropping a dirty form (#541 re-review).
+  const [sheetCovers, setSheetCovers] = useState(false)
+  const leaveGuard = useRef<LeaveGuard | null>(null)
   // «Что внутри» (#536): only the open obstacle's id is kept; its data is read
   // from the current view on every render (#537 review), and the panel closes
   // when the obstacle is gone. The trigger is the button that opened it, so
@@ -872,8 +996,12 @@ export function PathMapScreen({
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [insideId])
+  // Edit mode draws every open node of a focus road (#539): its own view model.
+  const editView = useMemo(() => (map ? buildMapView(map, { expandAll: true }) : view), [map, view])
+  const editMode = mode === 'edit' && Boolean(editing && map)
+  const shown = editMode ? editView : view
   // The navigator's points come from the same view model the map renders (#532).
-  const anchors = useMemo(() => buildNavAnchors(view), [view])
+  const anchors = useMemo(() => buildNavAnchors(shown), [shown])
 
   const checking = mode === 'check'
   const selected = checking && selectedId ? (checks[selectedId] ?? null) : null
@@ -899,10 +1027,17 @@ export function PathMapScreen({
   }
 
   const switchMode = (next: Mode) => {
+    if (mode === 'edit' && next !== 'edit' && leaveGuard.current) {
+      leaveGuard.current(() => applyMode(next))
+      return
+    }
+    applyMode(next)
+  }
+  const applyMode = (next: Mode) => {
     setMode(next)
     if (next === 'map') setSelectedId(null)
-    // Check mode owns the right panel; «Что внутри» does not survive the switch.
-    if (next === 'check') setOpenId(null)
+    // Check and edit mode own the right panel; «Что внутри» does not survive the switch.
+    if (next !== 'map') setOpenId(null)
   }
 
   const ctx: NodeCtx = {
@@ -914,14 +1049,111 @@ export function PathMapScreen({
     openId: insideId,
     onOpen: openInside,
   }
-  const columns = { '--pm-cols': view.focus.length } as React.CSSProperties
-  const roadsideCount = view.roadsideTracks.length
-  const looseCount = view.roadsideStations.length
+  const roadsideCount = shown.roadsideTracks.length
+  const looseCount = shown.roadsideStations.length
+
+  /** The map itself — the same road layout in every mode, the editor's overlay in «Править». */
+  const mapMain = (road?: RoadEdit) => {
+    const v = road ? editView : view
+    const nodeCtx = road ? { ...ctx, road } : ctx
+    const columns = { '--pm-cols': v.focus.length } as React.CSSProperties
+    return (
+      <main className="pm-main" inert={road?.covered || undefined}>
+        <section id={ANCHOR_IDS.beacon} aria-label="Маяк" className="pm-beacon">
+          <LighthouseMark />
+          <span className="pm-beacon-copy">
+            <span className="pm-eyebrow">Маяк</span>
+            <h1 className="pm-beacon-title">{v.beacon.title}</h1>
+            {v.beacon.why ? (
+              <span className="pm-beacon-why">
+                <b>Зачем:</b> {v.beacon.why}
+              </span>
+            ) : null}
+            {road ? road.beaconAction : null}
+          </span>
+        </section>
+
+        <div className="pm-mobile-nav">
+          <div role="group" aria-label="Треки в фокусе" className="pm-tabs">
+            {v.focus.map((track) => (
+              <button
+                key={track.id}
+                type="button"
+                aria-pressed={activeTrack === track.id}
+                onClick={() => setActiveTrack(track.id)}
+                title={track.short === track.title ? undefined : track.title}
+              >
+                <span className="pm-dot" style={{ background: track.color }} aria-hidden="true" />
+                <span className="pm-tab-label">{track.short}</span>
+              </button>
+            ))}
+          </div>
+          {!checking && roadsideCount + looseCount > 0 ? (
+            <a href="#pm-roadside" className="pm-roadside-link">
+              На обочине:{' '}
+              {[
+                roadsideCount > 0
+                  ? `${roadsideCount} ${plural(roadsideCount, 'трек', 'трека', 'треков')}`
+                  : null,
+                looseCount > 0
+                  ? `${looseCount} ${plural(looseCount, 'станция', 'станции', 'станций')} без «потому что»`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(', ')}{' '}
+              →
+            </a>
+          ) : null}
+        </div>
+
+        <ConvergingRoads view={v} chainTracks={chainTracks} check={selected} />
+
+        <div className="pm-grid" style={columns}>
+          {v.focus.map((track) => (
+            <TrackColumn
+              key={track.id}
+              track={track}
+              active={activeTrack === track.id}
+              dimmed={Boolean(selected) && !chainTracks.has(track.id)}
+              ctx={nodeCtx}
+              check={selected && chainTracks.has(track.id) ? selected : null}
+            />
+          ))}
+        </div>
+
+        <div id={ANCHOR_IDS.here} className="pm-here">
+          <span className="pm-here-line" aria-hidden="true" />
+          <span className="pm-here-pill">
+            <PinIcon />
+            <span>Мы здесь</span>
+          </span>
+          <span className="pm-here-line pm-here-line--right" aria-hidden="true" />
+        </div>
+
+        <div className="pm-grid" style={columns}>
+          {v.focus.map((track) => (
+            <PassedColumn
+              key={track.id}
+              track={track}
+              active={activeTrack === track.id}
+              ctx={nodeCtx}
+              check={selected && chainTracks.has(track.id) ? selected : null}
+            />
+          ))}
+        </div>
+        <p id={ANCHOR_IDS.start} className="pm-passed-caption">
+          Пройденный путь{v.started ? ` · старт ${shortDate(v.started)}` : ''}
+        </p>
+        {/* Last in DOM so Tab walks the map before the rail's points (#535). */}
+        <PathMapNav anchors={anchors} beaconTitle={v.beacon.title} pageRef={pageRef} />
+      </main>
+    )
+  }
 
   return (
     <div ref={pageRef} className="pm-page" data-mode={mode}>
       <div className="pm-glow" aria-hidden="true" />
-      <header className="pm-header">
+      <header className="pm-header" inert={sheetCovers || undefined}>
         <div className="pm-brand">
           <LighthouseIcon />
           <span className="pm-brand-name">Карта пути</span>
@@ -930,7 +1162,7 @@ export function PathMapScreen({
           {view.focusOverflow ? <span className="pm-badge-warn">фокус переполнен</span> : null}
         </div>
         <div role="group" aria-label="Режим карты" className="pm-modes">
-          <button type="button" aria-pressed={!checking} onClick={() => switchMode('map')}>
+          <button type="button" aria-pressed={mode === 'map'} onClick={() => switchMode('map')}>
             Карта
           </button>
           <button
@@ -942,8 +1174,26 @@ export function PathMapScreen({
             <CheckIcon />
             Проверить путь
           </button>
+          {editing && map ? (
+            <button
+              type="button"
+              aria-pressed={mode === 'edit'}
+              data-accent="edit"
+              disabled={!editing.enabled}
+              aria-describedby={editing.enabled ? undefined : 'pm-edit-off'}
+              onClick={() => switchMode(mode === 'edit' ? 'map' : 'edit')}
+            >
+              Править
+            </button>
+          ) : null}
         </div>
-        <div className="pm-header-end" />
+        <div className="pm-header-end">
+          {editing && !editing.enabled ? (
+            <span id="pm-edit-off" className="pm-edit-off">
+              {editing.reason}
+            </span>
+          ) : null}
+        </div>
       </header>
 
       {checking ? (
@@ -956,116 +1206,39 @@ export function PathMapScreen({
       ) : null}
 
       {warnings.length > 0 && !view.focusOverflow ? (
-        <ul className="pm-warnings">
+        <ul className="pm-warnings" inert={sheetCovers || undefined}>
           {warnings.map((w) => (
             <li key={w}>{w}</li>
           ))}
         </ul>
       ) : null}
 
-      <div className="pm-body">
-        <main className="pm-main">
-          <section id={ANCHOR_IDS.beacon} aria-label="Маяк" className="pm-beacon">
-            <LighthouseMark />
-            <span className="pm-beacon-copy">
-              <span className="pm-eyebrow">Маяк</span>
-              <h1 className="pm-beacon-title">{view.beacon.title}</h1>
-              {view.beacon.why ? (
-                <span className="pm-beacon-why">
-                  <b>Зачем:</b> {view.beacon.why}
-                </span>
-              ) : null}
-            </span>
-          </section>
-
-          <div className="pm-mobile-nav">
-            <div role="group" aria-label="Треки в фокусе" className="pm-tabs">
-              {view.focus.map((track) => (
-                <button
-                  key={track.id}
-                  type="button"
-                  aria-pressed={activeTrack === track.id}
-                  onClick={() => setActiveTrack(track.id)}
-                  title={track.short === track.title ? undefined : track.title}
-                >
-                  <span className="pm-dot" style={{ background: track.color }} aria-hidden="true" />
-                  <span className="pm-tab-label">{track.short}</span>
-                </button>
-              ))}
-            </div>
-            {!checking && roadsideCount + looseCount > 0 ? (
-              <a href="#pm-roadside" className="pm-roadside-link">
-                На обочине:{' '}
-                {[
-                  roadsideCount > 0
-                    ? `${roadsideCount} ${plural(roadsideCount, 'трек', 'трека', 'треков')}`
-                    : null,
-                  looseCount > 0
-                    ? `${looseCount} ${plural(looseCount, 'станция', 'станции', 'станций')} без «потому что»`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(', ')}{' '}
-                →
-              </a>
-            ) : null}
-          </div>
-
-          <ConvergingRoads view={view} chainTracks={chainTracks} check={selected} />
-
-          <div className="pm-grid" style={columns}>
-            {view.focus.map((track) => (
-              <TrackColumn
-                key={track.id}
-                track={track}
-                active={activeTrack === track.id}
-                dimmed={Boolean(selected) && !chainTracks.has(track.id)}
-                ctx={ctx}
-                check={selected && chainTracks.has(track.id) ? selected : null}
-              />
-            ))}
-          </div>
-
-          <div id={ANCHOR_IDS.here} className="pm-here">
-            <span className="pm-here-line" aria-hidden="true" />
-            <span className="pm-here-pill">
-              <PinIcon />
-              <span>Мы здесь</span>
-            </span>
-            <span className="pm-here-line pm-here-line--right" aria-hidden="true" />
-          </div>
-
-          <div className="pm-grid" style={columns}>
-            {view.focus.map((track) => (
-              <PassedColumn
-                key={track.id}
-                track={track}
-                active={activeTrack === track.id}
-                ctx={ctx}
-                check={selected && chainTracks.has(track.id) ? selected : null}
-              />
-            ))}
-          </div>
-          <p id={ANCHOR_IDS.start} className="pm-passed-caption">
-            Пройденный путь{view.started ? ` · старт ${shortDate(view.started)}` : ''}
-          </p>
-          {/* Last in DOM so Tab walks the map before the rail's points (#535). */}
-          <PathMapNav anchors={anchors} beaconTitle={view.beacon.title} pageRef={pageRef} />
-        </main>
-
-        {checking ? (
-          <CheckPanel view={view} selected={selected} panelRef={panelRef} />
-        ) : inside ? (
-          <InsidePanel
-            key={inside.node.id}
-            target={inside}
-            onClose={closeInside}
-            panelRef={insideRef}
-          />
-        ) : (
-          <RoadsidePanel view={view} />
-        )}
-      </div>
+      {editMode && editing && map ? (
+        <PathMapEditor
+          map={map}
+          view={editView}
+          editing={editing}
+          renderMain={mapMain}
+          onCover={setSheetCovers}
+          leaveGuardRef={leaveGuard}
+        />
+      ) : (
+        <div className="pm-body">
+          {mapMain()}
+          {checking ? (
+            <CheckPanel view={view} selected={selected} panelRef={panelRef} />
+          ) : inside ? (
+            <InsidePanel
+              key={inside.node.id}
+              target={inside}
+              onClose={closeInside}
+              panelRef={insideRef}
+            />
+          ) : (
+            <RoadsidePanel view={view} />
+          )}
+        </div>
+      )}
     </div>
   )
 }

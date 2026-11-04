@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Карта пути — новая станция</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A1222}
+a{color:#F2B544}a:hover{color:#FFD27A}
+button,input,textarea{font-family:inherit}
+button{cursor:pointer}
+@keyframes slotPulse{0%,100%{box-shadow:0 0 0 0 rgba(242,181,68,0.35)}50%{box-shadow:0 0 0 10px rgba(242,181,68,0)}}
+</style>
+</helmet>
+<div style="min-height: 100vh; box-sizing: border-box; background: #0A1222; color: #E8ECF4; font-family: 'Manrope', system-ui, sans-serif; position: relative; overflow: hidden; display: flex; flex-direction: column">
+
+<header style="position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 32px; border-bottom: 1px solid rgba(232,236,244,0.08); background: rgba(10,18,34,0.72)">
+  <div style="display: flex; align-items: center; gap: 12px; flex: 1 1 280px">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F2B544" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 9 8.5 21h7L14 9z"/><rect x="9.5" y="5" width="5" height="4" rx=".5"/><path d="M12 2 9.5 5h5zM15 7l6-2M15 7l6 2M9 7 3 5M9 7 3 9M6 21h12"/></svg>
+    <span style="font-weight: 800; font-size: 15px">Карта пути</span>
+    <span aria-hidden="true" style="width: 1px; height: 20px; background: rgba(232,236,244,0.16)"></span>
+    <span style="font-size: 15px; color: #C9D1DF">Doctor.School</span>
+  </div>
+  <nav aria-label="Режим карты" style="display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(232,236,244,0.06)">
+    <button aria-pressed="true" style="height: 40px; padding: 0 18px; border-radius: 999px; border: 0; background: #E8ECF4; color: #0A1222; font-size: 14px; font-weight: 700">Карта</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 18px; border-radius: 999px; border: 0; background: transparent; color: #C9D1DF; font-size: 14px; font-weight: 600">Проверить путь</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 18px; border-radius: 999px; border: 0; background: transparent; color: #C9D1DF; font-size: 14px; font-weight: 600">Режим встречи</button>
+  </nav>
+  <div style="flex: 1 1 280px"></div>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1">
+
+<main style="flex: 999 1 640px; min-width: 0; box-sizing: border-box; padding: 0 32px 40px; position: relative">
+  <div style="display: flex; align-items: center; gap: 14px; padding: 14px 18px; margin: 18px 0 0; border-radius: 16px; background: rgba(17,28,51,0.85); border: 1px solid rgba(242,181,68,0.25)">
+    <svg width="26" height="30" viewBox="0 0 64 80" fill="none" stroke="#F2B544" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M26 30 22 72h20l-4-42z"/><rect x="26" y="17" width="12" height="13" rx="1"/><path d="M32 7l-7 10h14zM14 72h36"/></svg>
+    <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; color: #F2B544">Маяк</span>
+    <span style="font-family: 'Cormorant Garamond', Georgia, serif; font-size: 22px; font-weight: 600; line-height: 1.2; flex: 1; min-width: 0">Doctor.School — врачи учатся бесплатно, эксперты и фарма зарабатывают на платформе</span>
+  </div>
+
+  <svg aria-hidden="true" viewBox="0 0 600 100" preserveAspectRatio="none" style="display: block; width: 100%; height: 60px">
+    <path d="M100 100 C100 40 300 62 300 0" stroke="#131C30" stroke-width="64" fill="none" vector-effect="non-scaling-stroke"/>
+    <path d="M500 100 C500 40 300 62 300 0" stroke="#131C30" stroke-width="64" fill="none" vector-effect="non-scaling-stroke"/>
+    <path d="M300 100 L300 0" stroke="#162038" stroke-width="64" fill="none" vector-effect="non-scaling-stroke"/>
+  </svg>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0">
+    <div style="display: flex; flex-direction: column; align-items: center; padding: 0 14px">
+      <div style="padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(232,236,244,0.24); background: #0E182C; font-size: 13px; font-weight: 700">Контент уроков</div>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 22px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 250px; box-sizing: border-box; padding: 12px 16px; border-radius: 22px; background: rgba(42,54,82,0.55); border: 1.5px solid #F2B544; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #F5D693">Туман · сюда ведёт «потому что»</span>
+        <span style="font-size: 14px; line-height: 1.4; color: #E8ECF4">Курс или серия отдельных уроков?</span>
+      </div>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 28px; background-color: rgba(22,32,56,0.7); background-image: radial-gradient(rgba(232,236,244,0.16) 1px, transparent 1.6px); background-size: 11px 11px; border-left: 2px dashed rgba(242,181,68,0.6); border-right: 2px dashed rgba(242,181,68,0.6)"></div>
+      <div style="width: 100%; max-width: 250px; box-sizing: border-box; padding: 14px 16px; border-radius: 18px; border: 2px dashed #F2B544; background: rgba(242,181,68,0.08); animation: slotPulse 1.8s ease-in-out infinite; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #F5D693">Новая станция · гипотеза</span>
+        <span style="font-size: 16px; font-weight: 700; line-height: 1.3">Врачи досматривают первый урок до конца</span>
+      </div>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 28px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 250px; box-sizing: border-box; padding: 14px 16px; border-radius: 18px; background: #111C33; border: 1px solid rgba(232,236,244,0.2); font-size: 17px; font-weight: 700">Готов первый урок</div>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 28px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 262px; box-sizing: border-box; border-radius: 12px; background: #FFC93C; color: #111317; overflow: hidden">
+        <div aria-hidden="true" style="height: 10px; background: repeating-linear-gradient(135deg, #111317 0 10px, #FFC93C 10px 20px)"></div>
+        <div style="padding: 10px 14px; font-size: 15px; font-weight: 800">Довести студию до готовности</div>
+      </div>
+      <div aria-hidden="true" style="box-sizing: border-box; width: 64px; height: 120px; position: relative; background: #1B2440; border-left: 2px solid #F2B544; border-right: 2px solid #F2B544; box-shadow: 0 0 30px rgba(242,181,68,0.3)"><div style="position: absolute; left: calc(50% - 1.5px); top: 0; bottom: 0; width: 3px; background: repeating-linear-gradient(180deg, #FFD27A 0 14px, transparent 14px 28px)"></div></div>
+    </div>
+
+    <div aria-hidden="true" style="display: flex; flex-direction: column; align-items: center; padding: 0 14px; opacity: 0.35">
+      <div style="padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(232,236,244,0.24); background: #0E182C; font-size: 13px; font-weight: 700">Охват и подкасты</div>
+      <div style="box-sizing: border-box; width: 64px; height: 22px; border-left: 2px dashed rgba(232,236,244,0.3); border-right: 2px dashed rgba(232,236,244,0.3)"></div>
+      <div style="width: 100%; max-width: 250px; height: 78px; border-radius: 22px; background: rgba(42,54,82,0.55)"></div>
+      <div style="box-sizing: border-box; width: 64px; height: 60px; border-left: 2px dashed rgba(232,236,244,0.3); border-right: 2px dashed rgba(232,236,244,0.3)"></div>
+      <div style="width: 100%; max-width: 250px; box-sizing: border-box; padding: 14px 16px; border-radius: 18px; border: 1.5px dashed rgba(232,236,244,0.38); font-size: 17px; font-weight: 700">Пилотный выпуск подкаста</div>
+      <div style="box-sizing: border-box; width: 64px; height: 180px; background: #1B2440; border-left: 2px solid #F2B544; border-right: 2px solid #F2B544"></div>
+    </div>
+
+    <div aria-hidden="true" style="display: flex; flex-direction: column; align-items: center; padding: 0 14px; opacity: 0.35">
+      <div style="padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(232,236,244,0.24); background: #0E182C; font-size: 13px; font-weight: 700">Своя платформа</div>
+      <div style="width: 64px; height: 22px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 250px; height: 78px; border-radius: 22px; background: rgba(42,54,82,0.55)"></div>
+      <div style="width: 64px; height: 60px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 250px; box-sizing: border-box; padding: 14px 16px; border-radius: 18px; background: #111C33; font-size: 17px; font-weight: 700">Две поверхности платформы в проде</div>
+      <div style="width: 64px; height: 28px; background: #131C30"></div>
+      <div style="width: 100%; max-width: 262px; box-sizing: border-box; padding: 20px 14px 10px; border-radius: 12px; background: #FFC93C; color: #111317; font-size: 15px; font-weight: 800">Каталог экспертов</div>
+      <div style="box-sizing: border-box; width: 64px; height: 80px; background: #1B2440; border-left: 2px solid #F2B544; border-right: 2px solid #F2B544"></div>
+    </div>
+  </div>
+</main>
+
+<aside aria-label="Новая станция" style="flex: 1 1 380px; max-width: 460px; box-sizing: border-box; padding: 28px 28px 32px; border-left: 1px solid rgba(232,236,244,0.1); background: #0F1930; display: flex; flex-direction: column; gap: 22px">
+  <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: #F2B544">Новая станция</span>
+      <h2 style="margin: 0; font-size: 22px; font-weight: 800">на треке «Контент уроков»</h2>
+    </div>
+    <button aria-label="Закрыть" style="width: 40px; height: 40px; border-radius: 12px; border: 0; background: rgba(232,236,244,0.06); color: #C9D1DF; display: grid; place-items: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <label for="st-title" style="font-size: 14px; font-weight: 700">Что должно стать правдой?</label>
+    <textarea id="st-title" rows="2" style="box-sizing: border-box; width: 100%; padding: 12px 14px; border-radius: 14px; border: 1.5px solid rgba(232,236,244,0.2); background: #0A1222; color: #E8ECF4; font-size: 16px; line-height: 1.4; resize: none">Врачи досматривают первый урок до конца</textarea>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px">
+      <span id="because-label" style="font-size: 14px; font-weight: 700">Потому что — что это открывает выше?</span>
+      <span style="font-size: 12px; font-weight: 700; color: #F5D693">обязательно</span>
+    </div>
+    <div role="group" aria-labelledby="because-label" style="display: flex; flex-wrap: wrap; gap: 8px">
+      <button aria-pressed="true" style="min-height: 40px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid #F2B544; background: rgba(242,181,68,0.12); color: #E8ECF4; font-size: 13px; font-weight: 700; text-align: left">Туман: курс или серия уроков?</button>
+      <button aria-pressed="false" style="min-height: 40px; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(232,236,244,0.2); background: transparent; color: #C9D1DF; font-size: 13px; font-weight: 600">Маяк</button>
+    </div>
+    <label for="st-because" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Объяснение</label>
+    <textarea id="st-because" rows="2" style="box-sizing: border-box; width: 100%; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #F2B544; background: #0A1222; color: #E8ECF4; font-size: 15px; line-height: 1.45; resize: none">…увидим, что формат держит внимание, и решим: делать курс или серию</textarea>
+  </div>
+
+  <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 10px">
+    <legend style="padding: 0; margin-bottom: 10px; font-size: 14px; font-weight: 700">Насколько уверены?</legend>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <button aria-pressed="false" style="padding: 12px 8px 10px; border-radius: 14px; border: 1px solid rgba(232,236,244,0.18); background: transparent; color: #C9D1DF; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span aria-hidden="true" style="box-sizing: border-box; width: 30px; height: 34px; position: relative; background: #131C30; border-left: 1px solid rgba(232,236,244,0.2); border-right: 1px solid rgba(232,236,244,0.2)"><span style="position: absolute; left: 13px; top: 0; bottom: 0; width: 2px; background: repeating-linear-gradient(180deg, #8C98AE 0 6px, transparent 6px 12px)"></span></span>
+        <span style="font-size: 14px; font-weight: 800">Знаем</span>
+        <span style="font-size: 12px; color: #A9B3C6">асфальт</span>
+      </button>
+      <button aria-pressed="true" style="padding: 12px 8px 10px; border-radius: 14px; border: 1.5px solid #F2B544; background: rgba(242,181,68,0.1); color: #E8ECF4; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span aria-hidden="true" style="box-sizing: border-box; width: 30px; height: 34px; background-color: rgba(22,32,56,0.9); background-image: radial-gradient(rgba(232,236,244,0.3) 1px, transparent 1.6px); background-size: 7px 7px; border-left: 2px dashed rgba(232,236,244,0.4); border-right: 2px dashed rgba(232,236,244,0.4)"></span>
+        <span style="font-size: 14px; font-weight: 800">Гипотеза</span>
+        <span style="font-size: 12px; color: #A9B3C6">грунтовка</span>
+      </button>
+      <button aria-pressed="false" style="padding: 12px 8px 10px; border-radius: 14px; border: 1px solid rgba(232,236,244,0.18); background: transparent; color: #C9D1DF; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span aria-hidden="true" style="width: 30px; height: 34px; border-radius: 10px; background: rgba(140,152,174,0.25); box-shadow: 0 0 12px 4px rgba(140,152,174,0.25)"></span>
+        <span style="font-size: 14px; font-weight: 800">Не знаем</span>
+        <span style="font-size: 12px; color: #A9B3C6">станет туманом</span>
+      </button>
+    </div>
+  </fieldset>
+
+  <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: rgba(232,236,244,0.05); font-size: 13px; line-height: 1.5; color: #C9D1DF">Без «потому что» станция встанет на обочину серой и не войдёт в путь к маяку.</p>
+
+  <div style="display: flex; gap: 10px; margin-top: auto">
+    <button style="flex: 1; height: 52px; border-radius: 14px; border: 1px solid rgba(232,236,244,0.24); background: transparent; color: #E8ECF4; font-size: 15px; font-weight: 700">Отмена</button>
+    <button style="flex: 2; height: 52px; border-radius: 14px; border: 0; background: #F2B544; color: #0A1222; font-size: 16px; font-weight: 800">Поставить на дорогу</button>
+  </div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
