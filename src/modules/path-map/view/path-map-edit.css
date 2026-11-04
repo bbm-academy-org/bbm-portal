@@ -751,12 +751,6 @@ body:has(.pm-root) :is([data-slot='alert-dialog-overlay'], [data-slot='dialog-ov
   color: #8c98ae;
 }
 
-.pm-f-task-owner {
-  flex: none;
-  font-size: 12px;
-  line-height: 1.9;
-}
-
 .pm-f-task-row .pm-ed-menuwrap {
   margin: -2px -6px 0 0;
 }

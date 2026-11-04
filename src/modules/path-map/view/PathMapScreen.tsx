@@ -27,7 +27,8 @@ import {
   UpArrowIcon,
 } from './icons'
 import { NODE_KIND, type PathMapEditing, type RoadEdit, type SlotAt } from './editing'
-import { opensText, ownerColor } from './labels'
+import { opensText } from './labels'
+import { OwnerChip } from './OwnerChip'
 import { PathMapEditor } from './PathMapEditor'
 import { INSIDE_PANEL_ID, InsidePanel, insideTargetOf } from './PathMapInside'
 import { PathMapNav } from './PathMapNav'
@@ -136,7 +137,13 @@ interface PickProps {
    * (its title keeps its `<h3>`) and a disclosure button (`aria-expanded`) is
    * stretched over the whole card. `undefined` = not openable.
    */
-  open?: { expanded: boolean; name: string; onOpen: (trigger: HTMLElement) => void }
+  open?: {
+    expanded: boolean
+    name: string
+    /** The hover tooltip: the name plus the owner — the button covers the card's owner chip (#538). */
+    title: string
+    onOpen: (trigger: HTMLElement) => void
+  }
   /** Edit mode (#539): the card is a button that opens its form in the panel. */
   edit?: { label: string; pressed: boolean; onEdit: () => void }
   children: React.ReactNode
@@ -186,6 +193,7 @@ function Pick({
           type="button"
           className="pm-stretch"
           aria-label={open.name}
+          title={open.title}
           aria-expanded={open.expanded}
           aria-controls={open.expanded ? INSIDE_PANEL_ID : undefined}
           onClick={(e) => open.onOpen(e.currentTarget)}
@@ -236,10 +244,16 @@ function editProps(ctx: NodeCtx, node: PathNode): PickProps['edit'] {
   }
 }
 
-function openProps(ctx: NodeCtx, node: { id: string; title: string }): PickProps['open'] {
+function openProps(
+  ctx: NodeCtx,
+  node: { id: string; title: string; owner?: string },
+): PickProps['open'] {
+  const name = `Что внутри: ${node.title}`
+  const owner = node.owner?.trim()
   return {
     expanded: ctx.openId === node.id,
-    name: `Что внутри: ${node.title}`,
+    name,
+    title: owner ? `${name} · ${owner}` : name,
     onOpen: (trigger) => ctx.onOpen(node.id, trigger),
   }
 }
@@ -316,12 +330,7 @@ function NodeCard({ item, ctx }: { item: Extract<UpcomingItem, { kind: 'node' }>
             <span className="pm-obstacle-kicker">
               Препятствие · проезд закрыт{chainSuffix(ctx, node.id)}
             </span>
-            {node.owner ? (
-              <span className="pm-owner" style={{ color: ownerColor(node.owner) }}>
-                <span className="pm-sr">исполнитель </span>
-                {node.owner}
-              </span>
-            ) : null}
+            {node.owner ? <OwnerChip owner={node.owner} /> : null}
           </span>
           <Title className="pm-obstacle-title">{node.title}</Title>
           <span className="pm-obstacle-foot">

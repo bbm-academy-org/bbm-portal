@@ -78,7 +78,7 @@ import {
 } from './editing'
 import { EditMenu, type EditMenuItem } from './EditMenu'
 import { PM_KIT } from './kit'
-import { ownerColor } from './labels'
+import { OwnerChip } from './OwnerChip'
 
 /**
  * The editor's forms (#539): a node (station / barrier / fog), a track, the
@@ -1185,11 +1185,7 @@ function TaskEditItem({
             <span className="pm-f-task-date"> · {shortDate(task.done)}</span>
           ) : null}
         </span>
-        {task.owner ? (
-          <span className="pm-f-task-owner" style={{ color: ownerColor(task.owner) }}>
-            {task.owner}
-          </span>
-        ) : null}
+        {task.owner ? <OwnerChip owner={task.owner} /> : null}
         <EditMenu
           look="quiet"
           className="pm-ed-taskmenu"
