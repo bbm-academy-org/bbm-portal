@@ -11,10 +11,12 @@ const nextConfig: NextConfig = {
   // can ship a minimal self-contained server. Without this, output tracing is
   // skipped and the runner stage's `COPY .next/standalone` finds nothing.
   output: 'standalone',
-  // `/p/path` reads its map from a committed YAML file at request time (#530,
-  // `src/lib/path-map/load.ts`). The standalone image ships only what the
-  // tracer saw imported, so the data directory is named here explicitly —
-  // without it the page would read fine in dev and find no file in prod.
+  // `/p/path` reads its map from the private repo `bbm-academy-org/path-maps`
+  // (#533); without `PATH_MAPS_GITHUB_TOKEN` it falls back to the committed
+  // example YAML at request time (#530, `src/lib/path-map/source.ts`). The
+  // standalone image ships only what the tracer saw imported, so the data
+  // directory is named here explicitly — without it the fallback would read
+  // fine in dev and find no file in prod.
   outputFileTracingIncludes: {
     '/p/path': ['./content/path-map/**/*'],
   },

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 /**
- * `/p/path` (#530): the route is a thin mount of the path-map view over the
- * committed YAML file. Pinned here: it renders per request (the (platform)
+ * `/p/path` (#530, #533): the route is a thin mount of the path-map view over
+ * the map `getPathMap` read (the private repo, or the local example). Pinned here: it renders per request (the (platform)
  * cache gate, spec 060 req.6 — same rule as `/p/okr` and `/p/hours`), and it
- * hands the view what `loadPathMap` read, with the file path for the error and
+ * hands the view what `getPathMap` read, with the file path for the error and
  * empty states. The font-loading layout is mocked: `next/font` is a build-time
  * transform that vitest does not run.
  */
@@ -19,12 +19,20 @@ describe('/p/path page', () => {
     expect(page.dynamic).toBe('force-dynamic')
   })
 
-  it('passes the loaded map and its file path to the view', async () => {
+  it('passes the loaded map and its file path to the view, after the source notice', async () => {
+    // No PATH_MAPS_GITHUB_TOKEN in the test env → the local public example (#533).
     const page = await import('@/app/(platform)/p/path/page')
-    const tree = page.default() as unknown as {
-      props: { children: { props: { result: { ok: boolean }; file: string } } }
+    const tree = (await page.default()) as unknown as {
+      props: {
+        children: [
+          { props: { origin: string; stale: boolean } },
+          { props: { result: { ok: boolean }; file: string } },
+        ]
+      }
     }
-    const view = tree.props.children
+    const [notice, view] = tree.props.children
+    expect(notice.props.origin).toBe('local')
+    expect(notice.props.stale).toBe(false)
     expect(view.props.file).toBe('content/path-map/doctor-school.yaml')
     expect(view.props.result.ok).toBe(true)
   })

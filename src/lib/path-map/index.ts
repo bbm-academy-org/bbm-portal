@@ -1,6 +1,8 @@
 /**
  * Path map module (#530) — «Карта пути»: a read-only strategy map rendered from
- * one YAML file in the repo (`content/path-map/`). Public surface of the
+ * one YAML file — since #533 read from the private repo `bbm-academy-org/path-maps`
+ * (GitHub contents API), with the public example in `content/path-map/` as the
+ * no-token fallback. Public surface of the
  * module, consumed by `src/modules/path-map/view` and `/p/path`; nothing here
  * may import CMS internals (enforced by dependency-cruiser).
  */
@@ -17,8 +19,35 @@ export type {
   TrackView,
   UpcomingItem,
 } from './derive'
-export { loadPathMap, PATH_MAP_FILE } from './load'
-export type { LoadResult } from './load'
+export { getPathMap, loadPathMap, PATH_MAP_FILE } from './load'
+export type { GetPathMapOptions, LoadResult, PathMapLoad, PathMapLoadFailure } from './load'
+export { PATH_MAP_CACHE_TTL_MS, primePathMapCache, resetPathMapCache } from './cache'
+export {
+  describeOrigin,
+  githubPathMapSource,
+  localPathMapSource,
+  PATH_MAPS_DEFAULT_FILE,
+  PATH_MAPS_DEFAULT_REPO,
+  PathMapSourceError,
+  pathMapSourceFromEnv,
+  readFailureKind,
+} from './source'
+export type {
+  AnyPathMapSource,
+  GithubPathMapOrigin,
+  GithubPathMapSource,
+  GithubSourceConfig,
+  LocalPathMapOrigin,
+  LocalPathMapSource,
+  MisconfiguredPathMapOrigin,
+  MisconfiguredPathMapSource,
+  PathMapDocument,
+  PathMapEnv,
+  PathMapOrigin,
+  PathMapReadFailureKind,
+  PathMapSource,
+  PathMapSourceFailure,
+} from './source'
 export { parsePathMap } from './parse'
 export type { ParseResult } from './parse'
 export { BEACON_ID, CONFIDENCE, pathMapSchema } from './schema'
