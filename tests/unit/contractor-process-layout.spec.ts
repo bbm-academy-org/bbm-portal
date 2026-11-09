@@ -89,7 +89,7 @@ describe('contractor-process layout — matches the visual', () => {
     expect(at(sub!, 'p3').lines).toEqual(['Обновляет', 'условия', 'оплаты'])
   })
 
-  it('routes the forward edges and places their labels as the visual does', () => {
+  it('routes every edge and places its label as the visual does', () => {
     const route = (d: DiagramLayout, from: string, to: string) =>
       d.edges.find((e) => e.edge.from === from && e.edge.to === to)!
     expect(route(main, 'e1', 'e2').points).toEqual([
@@ -102,14 +102,28 @@ describe('contractor-process layout — matches the visual', () => {
       [449, 234],
       [475, 234],
     ])
+    // The alt bypass comes first in the data, so it takes e4's left port and
+    // «да» enters from the top — the visual's port bookkeeping, not a choice here.
+    const advance = route(main, 'e2', 'e4')
+    expect(advance.points).toEqual([
+      [384, 280],
+      [384, 358],
+      [787, 358],
+    ])
+    expect(advance.label).toEqual({ x: 522.5, y: 337, width: 126, height: 18 })
     const yes = route(main, 'd1', 'e4')
     expect(yes.points).toEqual([
       [766, 110],
-      [774, 110],
-      [774, 358],
-      [787, 358],
+      [852, 110],
+      [852, 312],
     ])
-    expect(yes.label).toEqual({ x: 780, y: 225, width: 25, height: 18 })
+    expect(yes.label).toEqual({ x: 858, y: 202, width: 25, height: 18 })
+    expect(route(main, 'e3', 'd1').points).toEqual([
+      [605, 234],
+      [613, 234],
+      [613, 110],
+      [626, 110],
+    ])
     expect(route(sub!, 'p2', 'p3').label).toEqual({ x: 678, y: 245, width: 90, height: 18 })
   })
 })
@@ -141,16 +155,6 @@ describe('contractor-process layout — invariants', () => {
             expect(routeIsClear(e.points, a, b, d.steps), `${e.edge.from}→${e.edge.to}`).toBe(true)
           }
         }
-      })
-
-      it('routes an edge back to an earlier column (the visual has no route for it)', () => {
-        const back = layout.main.edges.find((e) => {
-          const a = layout.main.steps.find((s) => s.step.id === e.edge.from)!
-          const b = layout.main.steps.find((s) => s.step.id === e.edge.to)!
-          return b.step.col < a.step.col
-        })
-        expect(back).toBeDefined()
-        expect(back!.points.length).toBeGreaterThanOrEqual(2)
       })
 
       it('keeps every step inside its own lane and the diagram', () => {
@@ -193,6 +197,45 @@ describe('contractor-process layout — invariants', () => {
     expect(e2.autoTag).toBeDefined()
     expect(main.lanes.find((l) => l.lane.id === 'l2')!.chip).toBeDefined()
     expect(main.stages.map((s) => s.separator)).toEqual([false, true, true])
+  })
+})
+
+describe('contractor-process layout — an edge back to an earlier column', () => {
+  // The visual has no candidate route for it (its renderer throws), but real
+  // data may carry one: the full-shape fixture's «нет — вернуть автору» d1→e1.
+  const { main } = layoutProcess(fullShape, measure)
+  const step = (id: string) => main.steps.find((s) => s.step.id === id)!
+  const back = main.edges.find((e) => step(e.edge.to).step.col < step(e.edge.from).step.col)
+
+  it('gets an orthogonal route that crosses no other step', () => {
+    expect(back?.edge).toMatchObject({ from: 'd1', to: 'e1', alt: true })
+    const pts = back!.points
+    expect(pts.length).toBeGreaterThanOrEqual(2)
+    for (let i = 0; i < pts.length - 1; i++)
+      expect(pts[i][0] === pts[i + 1][0] || pts[i][1] === pts[i + 1][1]).toBe(true)
+    expect(routeIsClear(pts, step('d1'), step('e1'), main.steps)).toBe(true)
+  })
+
+  it('places its label on no step and across no other edge', () => {
+    const r = back!.label!
+    expect(r).toBeDefined()
+    for (const s of main.steps)
+      expect(
+        r.x + r.width > s.x && r.x < s.x + s.width && r.y + r.height > s.y && r.y < s.y + s.height,
+        s.step.id,
+      ).toBe(false)
+    for (const e of main.edges) {
+      if (e === back) continue
+      for (let i = 0; i < e.points.length - 1; i++) {
+        const [p, q] = [e.points[i], e.points[i + 1]]
+        const crosses =
+          Math.max(p[0], q[0]) > r.x &&
+          Math.min(p[0], q[0]) < r.x + r.width &&
+          Math.max(p[1], q[1]) > r.y &&
+          Math.min(p[1], q[1]) < r.y + r.height
+        expect(crosses, `${e.edge.from}→${e.edge.to}`).toBe(false)
+      }
+    }
   })
 })
 

@@ -25,7 +25,8 @@ import type {
  * undefined). Here such an edge gets fallback routes (an L through the
  * target's top or bottom, or a run along a lane gutter), tried only after
  * every one of the visual's own candidates, so where the visual draws an edge
- * this draws the same one.
+ * this draws the same one. The label of such a route may also slide along its
+ * segments to stay off the other edges (`slidPositions`).
  */
 
 /** Width of `text` set in `font` (a CSS font shorthand), in px. */
@@ -307,8 +308,8 @@ function layoutDiagram(
   })
 
   const byId = new Map(steps.map((s) => [s.step.id, s]))
-  const routes = routeEdges(input.edges, byId, steps, { TOP, LH })
-  const edges = placeLabels(input.edges, routes, steps, { W, H, TOP }, measure)
+  const { routes, fallback } = routeEdges(input.edges, byId, steps, { TOP, LH })
+  const edges = placeLabels(input.edges, routes, fallback, steps, { W, H, TOP }, measure)
 
   return {
     width: W,
@@ -427,7 +428,7 @@ function routeEdges(
   byId: Map<string, StepLayout>,
   steps: StepLayout[],
   grid: { TOP: number; LH: number },
-): Point[][] {
+): { routes: Point[][]; fallback: boolean[] } {
   const usedOut = new Set<string>()
   const usedIn = new Set<string>()
   /** A port taken in EITHER direction — what a fallback route must also keep off. */
@@ -455,22 +456,22 @@ function routeEdges(
       }
     return null
   }
-  return edges.map((edge) => {
+  const fallbackUsed: boolean[] = []
+  const routes = edges.map((edge) => {
     const a = byId.get(edge.from)!
     const b = byId.get(edge.to)!
     const own = candidates(a, b)
     const fallback = fallbackCandidates(a, b, grid)
-    const pick =
-      choose(own, a, b, taken.own) ??
-      choose(fallback, a, b, taken.fallback) ??
-      own[0] ??
-      fallback[0]
+    const visual = choose(own, a, b, taken.own)
+    const pick = visual ?? choose(fallback, a, b, taken.fallback) ?? own[0] ?? fallback[0]
+    fallbackUsed.push(!visual && fallback.includes(pick))
     usedOut.add(a.step.id + pick.sp)
     usedIn.add(b.step.id + pick.dp)
     usedAny.add(a.step.id + pick.sp)
     usedAny.add(b.step.id + pick.dp)
     return pick.pts
   })
+  return { routes, fallback: fallbackUsed }
 }
 
 // ── edge labels ─────────────────────────────────────────────────────────────
@@ -504,10 +505,43 @@ function segmentHitsBox(s: Segment, r: Box): boolean {
   return x2 > r.x - 1 && x1 < r.x + r.width + 1 && y2 > r.y - 1 && y1 < r.y + r.height + 1
 }
 
-/** The visual's label placement: on the longest segment, off the steps, off placed labels, then off other edges. */
+/**
+ * Positions slid along a segment, nearest to its middle first, each still
+ * touching the segment. Only for a route the visual does not have (see
+ * `fallbackCandidates`): such a route runs through a lane gutter, where the
+ * visual's two midpoint positions often sit across another edge.
+ */
+function slidPositions(s: Segment, tw: number, th: number): Box[] {
+  const STEP = 4
+  const out: { r: Box; d: number }[] = []
+  if (Math.abs(s[0][1] - s[1][1]) < 1) {
+    const x1 = Math.min(s[0][0], s[1][0])
+    const x2 = Math.max(s[0][0], s[1][0])
+    const mx = (x1 + x2) / 2
+    for (let x = x1 - tw + 12; x <= x2 - 12; x += STEP)
+      for (const y of [s[0][1] - th - 3, s[0][1] + 3])
+        out.push({ r: { x, y, width: tw, height: th }, d: Math.abs(x + tw / 2 - mx) })
+  } else {
+    const y1 = Math.min(s[0][1], s[1][1])
+    const y2 = Math.max(s[0][1], s[1][1])
+    const my = (y1 + y2) / 2
+    for (let y = y1 - th + 6; y <= y2 - 6; y += STEP)
+      for (const x of [s[0][0] + 6, s[0][0] - 6 - tw])
+        out.push({ r: { x, y, width: tw, height: th }, d: Math.abs(y + th / 2 - my) })
+  }
+  return out.sort((p, q) => p.d - q.d).map((o) => o.r)
+}
+
+/**
+ * The visual's label placement: on the longest segment, off the steps, off
+ * placed labels, then off other edges. A fallback route (one the visual has
+ * no candidate for) also tries positions slid along its segments, off the
+ * other edges, before it settles for one across a line.
+ */
 function placeLabels(
   edges: ProcessEdge[],
   routes: Point[][],
+  fallback: boolean[],
   steps: StepLayout[],
   frame: { W: number; H: number; TOP: number },
   measure: MeasureText,
@@ -551,14 +585,12 @@ function placeLabels(
           }
       return true
     }
-    let pick: { r: Box; host: Segment } | null = null
-    for (let pass = 0; pass < 2 && !pick; pass++)
-      for (const c of list)
-        if (ok(c, pass === 0)) {
-          pick = c
-          break
-        }
-    pick ??= list[0]
+    const first = (cs: { r: Box; host: Segment }[], strict: boolean) =>
+      cs.find((c) => ok(c, strict)) ?? null
+    const slid = fallback[ei]
+      ? ordered.flatMap(({ s }) => slidPositions(s, tw, th).map((r) => ({ r, host: s })))
+      : []
+    const pick = first(list, true) ?? first(slid, true) ?? first(list, false) ?? list[0]
     placed.push(pick.r)
     return { edge, points: routes[ei], label: pick.r }
   })
