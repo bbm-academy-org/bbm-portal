@@ -21,8 +21,14 @@ import { contractorProcessSourceFromEnv } from './source'
 
 /** Where the data came from: the private repo, the local example, or a malformed env. */
 export type ContractorProcessOrigin = PathMapOrigin
-/** What the member is told to do about a failed read: `auth | not-found | rate-limit | network | config | local`. */
-export type ContractorProcessReadFailureKind = PathMapReadFailureKind
+/**
+ * What the member is told to do about a failed read: the path map's grouping
+ * (`auth | not-found | rate-limit | network | config | local`) plus
+ * `not-a-file` — GitHub answered, but the path is a directory or a file over
+ * 1 MB. The path map folds that into `config` («fix PATH_MAPS_REPO /
+ * PATH_MAPS_BRANCH»); here the path is a constant, so the fix is the file itself.
+ */
+export type ContractorProcessReadFailureKind = PathMapReadFailureKind | 'not-a-file'
 
 /**
  * Why the process is not drawn: the file was read but is invalid (`parse` —
@@ -105,5 +111,6 @@ export async function getContractorProcess(
 
 /** Anything that is not a `PathMapSourceError` (a bug, an odd throw) reads as transient. */
 function failureKindOf(error: unknown): ContractorProcessReadFailureKind {
-  return error instanceof PathMapSourceError ? readFailureKind(error.reason) : 'network'
+  if (!(error instanceof PathMapSourceError)) return 'network'
+  return error.reason === 'not-a-file' ? 'not-a-file' : readFailureKind(error.reason)
 }

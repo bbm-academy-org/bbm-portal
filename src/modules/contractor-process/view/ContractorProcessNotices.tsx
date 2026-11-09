@@ -36,6 +36,8 @@ const STALE_CAUSE: Record<ContractorProcessReadFailureKind, string> = {
   'rate-limit': 'превышен лимит запросов к GitHub',
   network: 'GitHub сейчас не отвечает',
   config: 'источник настроен неверно — проверьте PATH_MAPS_REPO / PATH_MAPS_BRANCH',
+  'not-a-file':
+    'по пути processes/contractors.json в GitHub не файл процесса (папка или файл больше 1 МБ)',
   local: 'пример процесса не прочитан',
 }
 
@@ -98,6 +100,12 @@ const READ_COPY: Record<ContractorProcessReadFailureKind, { title: string; next:
   config: {
     title: 'Источник процесса настроен неверно',
     next: 'Исправьте PATH_MAPS_REPO / PATH_MAPS_BRANCH в окружении сервера портала.',
+  },
+  'not-a-file': {
+    title: 'По пути процесса в GitHub не файл',
+    next:
+      'На месте processes/contractors.json в репозитории папка или файл больше 1 МБ — GitHub не отдаёт его содержимое. ' +
+      'Это один JSON-файл процесса: верните его на этот путь и держите меньше 1 МБ. Настройки сервера здесь ни при чём.',
   },
   local: {
     title: 'Пример процесса не прочитан',
