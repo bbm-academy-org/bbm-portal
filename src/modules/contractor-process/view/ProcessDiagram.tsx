@@ -234,7 +234,7 @@ export const ProcessDiagram = forwardRef<DiagramHandle, ProcessDiagramProps>(
                   transform={`translate(${n.x},${n.y})`}
                   tabIndex={0}
                   role="button"
-                  aria-label={n.step.title}
+                  aria-label={withState(n.step.title, n.chip, n.autoTag)}
                   aria-expanded={selectedStepId === n.step.id}
                   aria-controls={panelId}
                   data-step-id={n.step.id}
@@ -301,7 +301,7 @@ export const ProcessDiagram = forwardRef<DiagramHandle, ProcessDiagramProps>(
                 className={lane.lane.open ? 'cp-laneh open' : 'cp-laneh'}
                 tabIndex={0}
                 role="button"
-                aria-label={`Дорожка «${lane.lane.title}»`}
+                aria-label={withState(`Дорожка «${lane.lane.title}»`, lane.chip)}
                 aria-expanded={selectedLaneId === lane.lane.id}
                 aria-controls={panelId}
                 data-lane-id={lane.lane.id}
@@ -332,6 +332,16 @@ export const ProcessDiagram = forwardRef<DiagramHandle, ProcessDiagramProps>(
     )
   },
 )
+
+/**
+ * The accessible name of a step or a lane: its title plus what its box shows
+ * as SVG text — the «вопрос открыт» chip, the «авто» tag. The `aria-label`
+ * overrides the `<text>` children, so without this neither is announced.
+ */
+function withState(title: string, chip?: unknown, autoTag?: unknown): string {
+  const state = [chip ? OPEN_LABEL : '', autoTag ? AUTO_LABEL : ''].filter(Boolean)
+  return state.length ? `${title} — ${state.join(', ')}` : title
+}
 
 function Chip({ box }: { box: { x: number; y: number; width: number; height: number } }) {
   return (
