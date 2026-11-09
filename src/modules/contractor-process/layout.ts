@@ -13,20 +13,30 @@ import type {
  * a «column × lane» grid in SVG user units, steps sized by their wrapped
  * titles, orthogonal edge routes that avoid other steps, edge labels placed
  * off the steps and off the other edges. The numbers and the order of every
- * choice are the visual's, so the same data lands on the same coordinates.
+ * choice are the visual's, so the same data lands on the same coordinates —
+ * except for the one deviation below.
  *
  * Text width is the one browser dependency (the visual measures with a canvas
  * 2D context), so it is a parameter: the view passes a canvas `measureText`,
  * the tests a deterministic stub.
  *
- * One deliberate addition (recorded in the PR): an edge for which the visual
- * has NO candidate route — a step pointing back to an earlier column, which
- * the visual's `cands()` never offers — crashes the visual (`pick` is
- * undefined). Here such an edge gets fallback routes (an L through the
- * target's top or bottom, or a run along a lane gutter), tried only after
- * every one of the visual's own candidates, so where the visual draws an edge
- * this draws the same one. The label of such a route may also slide along its
- * segments to stay off the other edges (`slidPositions`).
+ * One deliberate deviation (recorded in the PR and the UX record): fallback
+ * routes (an L through the target's top or bottom, or a run along a lane
+ * gutter) for an edge NONE of whose visual candidates is clear of the other
+ * steps. Two cases reach them:
+ *
+ *   - no candidate at all — a step pointing back to an earlier column, which
+ *     the visual's `cands()` never offers: the visual crashes (`pick` is
+ *     undefined);
+ *   - candidates that all cross a step — e.g. a same-lane skip a→c over b:
+ *     the visual falls back to its first candidate and draws the edge
+ *     straight through b, hidden under the box. Here it runs along the lane
+ *     gutter instead, so the drawing DIFFERS from the visual's.
+ *
+ * Fallbacks are tried only after every one of the visual's own candidates, so
+ * wherever the visual itself draws an edge clear of the steps this draws the
+ * same route and label. The label of a fallback route may also slide along
+ * its segments to stay off the other edges (`slidPositions`).
  */
 
 /** Width of `text` set in `font` (a CSS font shorthand), in px. */
@@ -362,9 +372,11 @@ function candidates(a: StepLayout, b: StepLayout): Candidate[] {
 }
 
 /**
- * Routes the visual does not have, for an edge it offers no candidate for (a
- * step pointing back to an earlier column, or one stacked above another in a
- * column it does not share the centre of). Tried only after the visual's own.
+ * Routes the visual does not have, for an edge none of whose visual candidates
+ * is clear: it offers none (a step pointing back to an earlier column, or one
+ * stacked above another in a column it does not share the centre of), or
+ * every one crosses another step (a same-lane skip over a step in between —
+ * where the visual draws through that step). Tried only after the visual's own.
  */
 function fallbackCandidates(
   a: StepLayout,
@@ -534,9 +546,9 @@ function slidPositions(s: Segment, tw: number, th: number): Box[] {
 
 /**
  * The visual's label placement: on the longest segment, off the steps, off
- * placed labels, then off other edges. A fallback route (one the visual has
- * no candidate for) also tries positions slid along its segments, off the
- * other edges, before it settles for one across a line.
+ * placed labels, then off other edges. A fallback route (one taken because
+ * none of the visual's candidates was clear) also tries positions slid along
+ * its segments, off the other edges, before it settles for one across a line.
  */
 function placeLabels(
   edges: ProcessEdge[],
