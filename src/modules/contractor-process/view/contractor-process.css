@@ -120,6 +120,23 @@ main:has(.cp-root) {
   padding: 0 16px 8px;
 }
 
+/* Addition: the notices are the kit's `Alert`, set on the portal's light
+   theme, which does not follow the OS. In a dark OS the section's surface is
+   the visual's dark palette, so here — and only here — the kit's semantic
+   tokens are mapped onto it (the path map's `.pm-kit` move): the notice reads
+   as part of the dark surface instead of a white card on it. `--destructive`
+   is the kit's own dark-theme value (`src/ui/theme.css` `.dark`). */
+@media (prefers-color-scheme: dark) {
+  .cp-notices {
+    --card: var(--cp-panel);
+    --card-foreground: var(--cp-fg);
+    --foreground: var(--cp-fg);
+    --muted-foreground: var(--cp-muted);
+    --border: var(--cp-line);
+    --destructive: oklch(0.704 0.191 22.216);
+  }
+}
+
 .cp-bar {
   display: flex;
   flex-wrap: wrap;
