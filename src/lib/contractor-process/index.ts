@@ -7,6 +7,15 @@
  * `content/finance/` as the no-token fallback. Nothing here may import CMS
  * internals (enforced by dependency-cruiser).
  */
+export { CONTRACTOR_PROCESS_CACHE_TTL_MS, resetContractorProcessCache } from './cache'
+export { getContractorProcess } from './load'
+export type {
+  ContractorProcessLoad,
+  ContractorProcessLoadFailure,
+  ContractorProcessOrigin,
+  ContractorProcessReadFailureKind,
+  GetContractorProcessOptions,
+} from './load'
 export { CONTRACTOR_PROCESS_EXAMPLE_FILE, CONTRACTOR_PROCESS_REMOTE_FILE } from './paths'
 export { parseContractorProcess } from './parse'
 export type { ContractorProcessParseResult } from './parse'

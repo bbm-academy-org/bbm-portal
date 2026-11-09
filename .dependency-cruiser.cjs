@@ -161,6 +161,32 @@ module.exports = {
       to: { path: '^src/(lib/path-map|modules/path-map)' },
     },
     {
+      name: 'contractor-process-must-not-import-cms',
+      comment:
+        'ADR-002 (#545): the contractor-process module (src/lib/contractor-process + ' +
+        'src/modules/contractor-process) must not import CMS internals. It owns no persisted data: ' +
+        'the process is one JSON file read from the private path-maps repo (or the committed ' +
+        'example under content/finance/), cached briefly in memory.',
+      severity: 'error',
+      from: { path: '^src/(lib/contractor-process|modules/contractor-process)' },
+      to: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations)|^src/payload\\.config|^src/payload-types',
+      },
+    },
+    {
+      name: 'cms-must-not-import-contractor-process-internals',
+      comment:
+        'ADR-002/ADR-003 (#545): the CMS side may not reach into contractor-process internals. ' +
+        'Only the (platform) route group mounts the surface (the Zitadel-gated ' +
+        '/p/finance/contractor-process) — it is deliberately absent from this from-set, exactly ' +
+        'as in the path-map rules above.',
+      severity: 'error',
+      from: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',
+      },
+      to: { path: '^src/(lib/contractor-process|modules/contractor-process)' },
+    },
+    {
       name: 'finance-must-not-import-cms',
       comment:
         'ADR-002 §3 / spec 338 EARS-323 (#356): the finance module (src/lib/finance + ' +

@@ -410,7 +410,7 @@ function validSegment(segment: string): boolean {
 }
 
 /** `owner/name`, each `[A-Za-z0-9_.-]`, neither all dots. */
-function repoProblem(repo: string): string | null {
+export function repoProblem(repo: string): string | null {
   const parts = repo.split('/')
   if (parts.length !== 2 || !parts.every((p) => /^[\w.-]+$/.test(p) && validSegment(p))) {
     return `PATH_MAPS_REPO задан неверно: «${repo}» — ожидается вид владелец/репозиторий`
@@ -426,7 +426,7 @@ function fileProblem(path: string): string | null {
   return null
 }
 
-function misconfiguredSource(
+export function misconfiguredSource(
   origin: MisconfiguredPathMapOrigin,
   message: string,
 ): MisconfiguredPathMapSource {
