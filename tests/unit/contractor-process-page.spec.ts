@@ -89,6 +89,48 @@ describe('/p/finance/contractor-process page', () => {
     expect(html).not.toContain('Схема рисуется')
   })
 
+  it('a path that is not a readable file says so, and does not send the operator to the env', async () => {
+    loadMock.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        errors: ['не файл'],
+        failure: { kind: 'read', reason: 'not-a-file', message: 'не файл' },
+        stale: false,
+        ...base,
+      }),
+    )
+    const html = await render()
+    expect(html).toContain('data-cp-error="read"')
+    expect(html).toContain('По пути процесса в GitHub не файл')
+    expect(html).toContain('больше 1 МБ')
+    expect(html).not.toContain('PATH_MAPS_REPO')
+    expect(html).not.toContain('PATH_MAPS_BRANCH')
+    expect(html).not.toMatch(/карт/i)
+  })
+
+  it('a failed read of the local example is not also announced as «показан пример»', async () => {
+    loadMock.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        errors: ['файл процесса не найден: content/finance/contractor-process.example.json'],
+        failure: {
+          kind: 'read',
+          reason: 'local',
+          message: 'файл процесса не найден: content/finance/contractor-process.example.json',
+        },
+        stale: false,
+        file: 'content/finance/contractor-process.example.json',
+        origin: { kind: 'local', path: 'content/finance/contractor-process.example.json' },
+        asOf: base.asOf,
+      }),
+    )
+    const html = await render()
+    expect(html).toContain('Пример процесса не прочитан')
+    expect(html).not.toContain('Показан пример')
+    expect(html).not.toContain('data-cp-notice="example"')
+    expect(html).not.toContain('Схема рисуется')
+  })
+
   it('lists the field errors of an invalid file', async () => {
     loadMock.mockReturnValueOnce(
       Promise.resolve({

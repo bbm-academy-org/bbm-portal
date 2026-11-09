@@ -239,6 +239,59 @@ describe('contractor-process layout — an edge back to an earlier column', () =
   })
 })
 
+describe('contractor-process layout — a same-lane skip edge the visual would draw through a step', () => {
+  // A deliberate deviation from the visual (recorded in the PR and the UX
+  // record): a forward edge whose every candidate of the visual crosses another
+  // step. The vendored renderer takes its first candidate anyway and draws a→c
+  // straight through b, hidden under the box; the port tries its own fallback
+  // routes first and runs a→c along the lane's lower gutter instead.
+  const st = (id: string, col: number) => ({
+    id,
+    lane: 'l1',
+    col,
+    title: id,
+    now: 'n',
+    auto: '',
+    q: [],
+  })
+  const process: ContractorProcess = {
+    lanes: [{ id: 'l1', title: 'L', q: [] }],
+    stages: [{ title: 'S', c0: 0, c1: 2 }],
+    steps: [st('a', 0), st('b', 1), st('c', 2)],
+    edges: [
+      { from: 'a', to: 'b' },
+      { from: 'b', to: 'c' },
+      { from: 'a', to: 'c', alt: true },
+    ],
+  }
+  const { main } = layoutProcess(process, measure)
+  const step = (id: string) => main.steps.find((s) => s.step.id === id)!
+  const bypass = main.edges.find((e) => e.edge.from === 'a' && e.edge.to === 'c')!
+
+  it("keeps the visual's straight routes for the edges it draws clear", () => {
+    expect(main.edges.slice(0, 2).map((e) => e.points)).toEqual([
+      [
+        [293, 110],
+        [319, 110],
+      ],
+      [
+        [449, 110],
+        [475, 110],
+      ],
+    ])
+  })
+
+  it('runs a→c along the lane gutter under b instead of through it', () => {
+    expect(bypass.points).toEqual([
+      [228, 156],
+      [228, 167],
+      [540, 167],
+      [540, 156],
+    ])
+    expect(routeIsClear(bypass.points, step('a'), step('c'), main.steps)).toBe(true)
+  })
+})
+
 describe('wrapText', () => {
   it('wraps greedily and never splits a word', () => {
     expect(wrapText('Обновляет условия оплаты', 110, '14px x', measure)).toEqual([

@@ -86,6 +86,20 @@ describe('contractor-process view', () => {
     expect(p.getByText('Вопросов к этой дорожке нет.')).toBeTruthy()
   })
 
+  it('announces what the boxes show: «вопрос открыт» and «авто» are in the accessible names', async () => {
+    const { container } = await mount()
+    const name = (el: Element) => el.getAttribute('aria-label')
+    // A plain step and a plain lane: the title alone.
+    expect(name(step(container, 'e1'))).toBe('Формулирует задачу')
+    expect(name(lane(container, 'l1'))).toBe('Дорожка «Заказчик»')
+    // The open-question chip and the automation tag are drawn as SVG text the
+    // label overrides, so the label has to carry them itself.
+    expect(name(step(container, 'e3'))).toBe('Выполняет работу — вопрос открыт')
+    expect(name(step(container, 'e2'))).toBe('Подтверждает условия — авто')
+    expect(name(lane(container, 'l2'))).toBe('Дорожка «Исполнитель» — вопрос открыт')
+    expect(screen.getByRole('button', { name: 'Оценивает изменение — вопрос открыт' })).toBeTruthy()
+  })
+
   it('names the subprocess in a subprocess step’s meta line', async () => {
     const { container } = await mount()
     fireEvent.click(step(container, 'p2'))

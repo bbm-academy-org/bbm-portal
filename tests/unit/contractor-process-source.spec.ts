@@ -51,6 +51,22 @@ function contentsResponse(text: string, sha = 'abc123') {
   )
 }
 
+/**
+ * The two 200 answers of the contents API that are NOT a readable file: a
+ * directory (an array of entries) and a file over 1 MB (`encoding: "none"`,
+ * empty `content`). Both are `not-a-file` in the shared client.
+ */
+function notAFileResponse(kind: 'directory' | 'too-large') {
+  const body =
+    kind === 'directory'
+      ? [{ type: 'file', name: 'contractors.json', path: 'processes/contractors.json' }]
+      : { type: 'file', encoding: 'none', content: '', sha: 'big', size: 2_000_000 }
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function errorResponse(status: number, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify({ message: 'nope' }), { status, headers })
 }
@@ -219,6 +235,38 @@ describe('getContractorProcess — the GitHub source (token present)', () => {
     })
     if (tooMany.ok) throw new Error('a 429 must not render')
     expect(tooMany.failure).toMatchObject({ kind: 'read', reason: 'rate-limit' })
+  })
+})
+
+describe('getContractorProcess — a path that is not a readable file', () => {
+  it.each(['directory', 'too-large'] as const)(
+    'a %s is its own `not-a-file` failure, not a config error',
+    async (kind) => {
+      const loaded = await getContractorProcess({
+        env: ENV,
+        fetch: vi.fn(async () => notAFileResponse(kind)),
+        now: T0,
+      })
+      if (loaded.ok) throw new Error('a non-file must not render')
+      expect(loaded.failure).toMatchObject({ kind: 'read', reason: 'not-a-file' })
+      expect(loaded.stale).toBe(false)
+    },
+  )
+
+  it('a stale copy after a `not-a-file` read keeps that reason', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(contentsResponse(processJson))
+      .mockResolvedValueOnce(notAFileResponse('too-large'))
+    await getContractorProcess({ env: ENV, fetch: fetchMock, now: T0 })
+    const stale = await getContractorProcess({
+      env: ENV,
+      fetch: fetchMock,
+      now: at(CONTRACTOR_PROCESS_CACHE_TTL_MS + 1),
+    })
+    expect(stale.ok).toBe(true)
+    expect(stale.stale).toBe(true)
+    expect(stale.staleReason).toBe('not-a-file')
   })
 })
 

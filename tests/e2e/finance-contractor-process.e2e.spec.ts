@@ -86,15 +86,19 @@ test.describe('«Как работаем с исполнителями» (#545)'
 
     // A step: its title heads the panel.
     const step = diagram.locator('[data-step-id]').first()
-    const title = await step.getAttribute('aria-label')
+    // The accessible name is the title, plus « — вопрос открыт» / « — авто» when the box shows them.
+    const title = (await step.getAttribute('aria-label'))!.split(' — ')[0]
     await step.click()
-    await expect(panel.getByRole('heading', { level: 2 })).toHaveText(title!)
+    await expect(panel.getByRole('heading', { level: 2 })).toHaveText(title)
     await expect(step).toHaveAttribute('aria-expanded', 'true')
 
     // A lane opened from the keyboard: «О роли» when the role is described,
     // the no-questions hint otherwise — either way the lane's own panel.
     const lane = diagram.locator('[data-lane-id]').first()
-    const laneName = (await lane.getAttribute('aria-label'))!.replace(/^Дорожка «|»$/g, '')
+    const laneName = (await lane.getAttribute('aria-label'))!.replace(
+      /^Дорожка «(.*)»(?: — .*)?$/,
+      '$1',
+    )
     await lane.focus()
     await page.keyboard.press('Enter')
     await expect(panel.getByRole('heading', { level: 2 })).toHaveText(laneName)
