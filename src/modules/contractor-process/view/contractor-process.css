@@ -1,0 +1,499 @@
+/* «Как работаем с исполнителями» (#545). The approved visual's own stylesheet
+   (design-source/finance/contractor-process.visual.html), scoped under
+   `.cp-root` and prefixed `cp-`. The palette is the visual's, value for value,
+   and its dark theme follows `prefers-color-scheme` as in the visual — owner
+   decision, Юлия Тарасенко, 2026-11-09: a separate feature with its own
+   design, not remapped onto the portal tokens. The custom properties carry a
+   `--cp-` prefix only so they cannot shadow the kit's own `--muted` & co. for
+   the `@/ui` notices rendered inside this root.
+
+   Additions the visual does not have, each marked below: the full-bleed
+   breakout, hover / active / focus-visible on the controls, hover on steps and
+   lanes, and the loading placeholder. */
+
+.cp-root {
+  --cp-bg: #f7f7f5;
+  --cp-fg: #1d1f23;
+  --cp-muted: #5d636c;
+  --cp-line: #c4c8ce;
+  --cp-node: #fff;
+  --cp-node-line: #8d949d;
+  --cp-band-a: #f0f0ec;
+  --cp-band-b: #f7f7f5;
+  --cp-stage: #e6e7e2;
+  --cp-arrow: #4b5058;
+  --cp-accent: #b26a00;
+  --cp-accent-bg: #fff3dc;
+  --cp-auto: #1f7a8c;
+  --cp-panel: #fff;
+  --cp-chip: #eceee9;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cp-root {
+    --cp-bg: #16181b;
+    --cp-fg: #e8e9eb;
+    --cp-muted: #a0a6ae;
+    --cp-line: #3a3f46;
+    --cp-node: #22262b;
+    --cp-node-line: #6a717a;
+    --cp-band-a: #1c1f23;
+    --cp-band-b: #16181b;
+    --cp-stage: #262a30;
+    --cp-arrow: #aab0b8;
+    --cp-accent: #f0b25a;
+    --cp-accent-bg: #3a2d14;
+    --cp-auto: #5fc0d0;
+    --cp-panel: #1e2125;
+    --cp-chip: #2a2e34;
+  }
+}
+
+/* Addition: the diagram is a full-screen tool in the visual, so the section
+   breaks out of the finance layout's 1160px column to the full width of
+   `main` (container units: `100vw` would count a classic scrollbar and scroll
+   the page sideways). */
+main:has(.cp-root) {
+  container-type: inline-size;
+}
+
+.cp-root {
+  box-sizing: border-box;
+  width: 100cqi;
+  margin-inline: calc(50% - 50cqi);
+  background: var(--cp-bg);
+  color: var(--cp-fg);
+  font:
+    14px/1.45 system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+.cp-root *,
+.cp-root *::before,
+.cp-root *::after {
+  box-sizing: border-box;
+}
+
+.cp-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  align-items: baseline;
+  padding: 12px 16px 6px;
+}
+
+.cp-header h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.cp-sub {
+  color: var(--cp-muted);
+  font-size: 13px;
+}
+
+.cp-back {
+  color: var(--cp-muted);
+  font-size: 13px;
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.cp-back:hover {
+  color: var(--cp-fg);
+  text-decoration: underline;
+}
+
+.cp-back:focus-visible {
+  outline: 2px solid var(--cp-fg);
+  outline-offset: 2px;
+}
+
+.cp-notices {
+  display: grid;
+  gap: 8px;
+  max-width: 900px;
+  padding: 0 16px 8px;
+}
+
+.cp-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  padding: 0 16px 8px;
+  color: var(--cp-muted);
+  font-size: 13px;
+}
+
+.cp-bar .cp-it {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cp-bar .cp-spacer {
+  flex: 1;
+}
+
+.cp-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--cp-line);
+  border-radius: 6px;
+  background: var(--cp-node);
+  color: var(--cp-fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Addition: hover / active / focus-visible — the visual's buttons have none. */
+.cp-btn:hover {
+  background: var(--cp-chip);
+}
+
+.cp-btn:active {
+  background: var(--cp-stage);
+}
+
+.cp-btn:focus-visible {
+  outline: 2px solid var(--cp-fg);
+  outline-offset: 1px;
+}
+
+.cp-btn.on {
+  border-color: var(--cp-fg);
+}
+
+.cp-stage {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  border-top: 1px solid var(--cp-line);
+  border-bottom: 1px solid var(--cp-line);
+}
+
+.cp-col {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cp-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.cp-wrap svg {
+  display: block;
+}
+
+.cp-wrap text {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+/* Addition: what fills the frame for the instant before the client measures the text. */
+.cp-loading {
+  min-height: 320px;
+  padding: 16px;
+  color: var(--cp-muted);
+  font-size: 13px;
+}
+
+.cp-subp {
+  border-top: 1px solid var(--cp-line);
+}
+
+.cp-subp h2 {
+  margin: 0;
+  padding: 12px 16px 2px;
+  font-size: 16px;
+}
+
+.cp-subp p {
+  max-width: 900px;
+  margin: 0;
+  padding: 0 16px 8px;
+  color: var(--cp-muted);
+  font-size: 13px;
+}
+
+.cp-node {
+  outline: none;
+  cursor: pointer;
+}
+
+.cp-node .cp-box {
+  fill: var(--cp-node);
+  stroke: var(--cp-node-line);
+  stroke-width: 1;
+}
+
+/* Addition: hover on a step. */
+.cp-node:hover .cp-box {
+  stroke: var(--cp-fg);
+}
+
+.cp-node.open .cp-box {
+  stroke: var(--cp-accent);
+  stroke-dasharray: 5 3;
+}
+
+/* Addition: active (pressed) on a step. */
+.cp-node:active .cp-box {
+  fill: var(--cp-chip);
+}
+
+.cp-node.sel .cp-box {
+  stroke: var(--cp-fg);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+
+.cp-node:focus-visible .cp-box {
+  stroke: var(--cp-fg);
+  stroke-width: 2;
+}
+
+.cp-node.open.sel .cp-box {
+  stroke: var(--cp-accent);
+  stroke-dasharray: 5 3;
+}
+
+.cp-node-t {
+  fill: var(--cp-fg);
+  font-size: 14px;
+}
+
+.cp-node.dec .cp-node-t {
+  font-size: 13px;
+}
+
+.cp-chip-r {
+  fill: var(--cp-accent-bg);
+  stroke: var(--cp-accent);
+  stroke-width: 1;
+}
+
+.cp-chip-t {
+  fill: var(--cp-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cp-atag-r {
+  fill: var(--cp-chip);
+  stroke: var(--cp-node-line);
+  stroke-width: 1;
+}
+
+.cp-atag-t {
+  fill: var(--cp-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.cp-edge {
+  fill: none;
+  stroke: var(--cp-arrow);
+  stroke-width: 1.4;
+}
+
+.cp-edge.alt {
+  stroke-dasharray: 6 4;
+}
+
+.cp-elabel-r {
+  fill: var(--cp-bg);
+  opacity: 0.92;
+}
+
+.cp-elabel-t {
+  fill: var(--cp-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.cp-laneh {
+  outline: none;
+  cursor: pointer;
+}
+
+.cp-laneh rect.cp-hd {
+  fill: none;
+  stroke: var(--cp-line);
+  stroke-width: 1;
+}
+
+/* Addition: hover on a lane label. */
+.cp-laneh:hover rect.cp-hd {
+  stroke: var(--cp-node-line);
+}
+
+.cp-laneh.open rect.cp-hd {
+  stroke: var(--cp-accent);
+  stroke-dasharray: 5 3;
+}
+
+.cp-laneh:focus-visible rect.cp-hd {
+  stroke: var(--cp-fg);
+  stroke-width: 2;
+}
+
+.cp-lane-t {
+  fill: var(--cp-fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cp-stage-t {
+  fill: var(--cp-fg);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cp-autoview .cp-node:not(.has-auto) {
+  opacity: 0.3;
+}
+
+.cp-autoview .cp-edge,
+.cp-autoview .cp-elabel {
+  opacity: 0.35;
+}
+
+.cp-autoview .cp-node.has-auto .cp-box {
+  stroke: var(--cp-auto);
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+
+.cp-panel {
+  display: none;
+  position: sticky;
+  top: 0;
+  flex: none;
+  align-self: flex-start;
+  width: 380px;
+  max-height: 100vh;
+  padding: 14px 16px 20px;
+  overflow: auto;
+  border-left: 1px solid var(--cp-line);
+  background: var(--cp-panel);
+}
+
+.cp-stage.with-panel .cp-panel {
+  display: block;
+}
+
+.cp-panel h2 {
+  margin: 0 28px 2px 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.cp-panel .cp-meta {
+  margin-bottom: 10px;
+  color: var(--cp-muted);
+  font-size: 13px;
+}
+
+.cp-panel h3 {
+  margin: 12px 0 3px;
+  color: var(--cp-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cp-panel pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+.cp-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cp-panel li {
+  position: relative;
+  margin: 0 0 6px;
+  padding-left: 12px;
+}
+
+.cp-panel li::before {
+  content: '';
+  position: absolute;
+  top: 0.65em;
+  left: 0;
+  width: 5px;
+  height: 1px;
+  background: var(--cp-muted);
+}
+
+.cp-panel li.open::before {
+  background: var(--cp-accent);
+}
+
+.cp-pclose {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--cp-line);
+  border-radius: 6px;
+  background: var(--cp-node);
+  color: var(--cp-fg);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Addition: hover / active / focus-visible on the close button. */
+.cp-pclose:hover {
+  background: var(--cp-chip);
+}
+
+.cp-pclose:active {
+  background: var(--cp-stage);
+}
+
+.cp-pclose:focus-visible {
+  outline: 2px solid var(--cp-fg);
+  outline-offset: 1px;
+}
+
+.cp-hint {
+  margin-top: 10px;
+  color: var(--cp-muted);
+}
+
+@media (max-width: 900px) {
+  .cp-stage.with-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* The visual makes it `static`, which sends its ✕ to the top of the page; relative keeps it on the panel. */
+  .cp-panel {
+    position: relative;
+    width: 100%;
+    max-height: none;
+    border-top: 1px solid var(--cp-line);
+    border-left: 0;
+  }
+}

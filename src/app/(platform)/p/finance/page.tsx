@@ -50,10 +50,17 @@ export default async function FinancePage({
         </div>
         {/* The overview answers «сколько денег»; the board answers «что с ними
             собираются сделать». One is never read without reaching for the
-            other, so the link lives at the title's right edge (#388). */}
-        <Button asChild variant="outline">
-          <Link href="/p/finance/requests">Заявки</Link>
-        </Button>
+            other, so the link lives at the title's right edge (#388). The
+            contractor process (#545) starts and ends in finance, so its map is
+            the second way out of the overview, in the same shape. */}
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/p/finance/requests">Заявки</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/p/finance/contractor-process">Как работаем с исполнителями</Link>
+          </Button>
+        </div>
       </div>
 
       <Card role="group" aria-label="Итого" className="bg-primary text-primary-foreground">
