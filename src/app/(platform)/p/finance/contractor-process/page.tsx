@@ -30,12 +30,15 @@ export default async function ContractorProcessPage() {
   return (
     <ContractorProcessLayout interactive={loaded.ok}>
       <div className="cp-notices">
-        <ContractorProcessSourceNotice
-          origin={loaded.origin.kind}
-          stale={loaded.stale}
-          staleReason={loaded.staleReason}
-          asOf={loaded.asOf}
-        />
+        {/* «Показан пример» only when the example IS drawn — never next to its own read or parse error. */}
+        {loaded.origin.kind === 'local' && loaded.failure ? null : (
+          <ContractorProcessSourceNotice
+            origin={loaded.origin.kind}
+            stale={loaded.stale}
+            staleReason={loaded.staleReason}
+            asOf={loaded.asOf}
+          />
+        )}
         {/* A failed READ is not a broken file: its own state, never «the file has errors». */}
         {loaded.failure?.kind === 'read' ? (
           <ContractorProcessReadError reason={loaded.failure.reason} file={loaded.file} />
