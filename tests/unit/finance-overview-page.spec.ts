@@ -183,4 +183,14 @@ describe('/p/finance F1b overview (spec 338 EARS-325)', () => {
     expect(html).toContain('href="/p/finance/requests"')
     expect(html).toContain('Заявки')
   })
+  it('#545: leads from the overview to «Как работаем с исполнителями», next to «Заявки»', async () => {
+    const page = await import('@/app/(platform)/p/finance/page')
+    const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }))
+
+    expect(html).toContain('href="/p/finance/contractor-process"')
+    expect(html).toContain('Как работаем с исполнителями')
+    expect(html.indexOf('href="/p/finance/requests"')).toBeLessThan(
+      html.indexOf('href="/p/finance/contractor-process"'),
+    )
+  })
 })
