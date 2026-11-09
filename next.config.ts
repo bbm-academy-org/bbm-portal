@@ -17,8 +17,11 @@ const nextConfig: NextConfig = {
   // standalone image ships only what the tracer saw imported, so the data
   // directory is named here explicitly — without it the fallback would read
   // fine in dev and find no file in prod.
+  // `/p/finance/contractor-process` (#545) reads `processes/contractors.json`
+  // from the same repo the same way and falls back to its own public example.
   outputFileTracingIncludes: {
     '/p/path': ['./content/path-map/**/*'],
+    '/p/finance/contractor-process': ['./content/finance/contractor-process.example.json'],
   },
   // Next rewrites its own guidance block into `AGENTS.md` on EVERY `next dev`
   // start (`next/dist/server/lib/generate-agent-files.js`). Off here, and the

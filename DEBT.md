@@ -275,6 +275,19 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-14-0dea1e1a7d -->
 
+- [ ] 2026-11-09 Бокс macOS (Юлия) не описан: `.claude/rules/dev-env.md` знает
+      только Windows-бокс (portable Node 22 в `%LOCALAPPDATA%`, PowerShell-команды
+      гашения стенда). Здесь Node 22 — `brew node@22` первым в PATH через
+      `~/.zshrc`. И, в отличие от записи выше, хуков здесь ДЕЙСТВИТЕЛЬНО нет:
+      в основном чекауте `pnpm install` не запускался, общий `.git/hooks` пуст
+      (только `*.sample`), а `prepare` в worktree их поставить не может (тот же
+      ENOTDIR). Вся работа по #545 шла без pre-commit, батарея прогонялась
+      руками. Лечится разделом про macOS в `dev-env.md` и установкой хуков в
+      общий каталог (или фиксом #453) — return condition: следующая сессия на
+      этом боксе, либо мерж #453. Всплыло при работе над #545.
+
+<!-- debt-entry-end: 2026-11-09-6d8caae4df -->
+
 - [ ] 2026-08-14 `.github/branch-protection.json` and the live protection on `main`
       drift independently: editing the file does not touch the branch, and editing
       the protection in the GitHub UI does not touch the file. Nothing detects the
