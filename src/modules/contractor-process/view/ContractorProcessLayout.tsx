@@ -34,3 +34,19 @@ export function ContractorProcessLayout({
     </div>
   )
 }
+
+/**
+ * What fills the map's frame before there is a map: the instant before the
+ * client measures the text (server render), and the route's `loading.tsx`
+ * while the process is read. One element for both, so the frame does not
+ * change between them.
+ */
+export function ContractorProcessPlaceholder() {
+  return (
+    <div className="cp-view">
+      <p className="cp-loading" role="status" aria-busy="true">
+        Схема рисуется…
+      </p>
+    </div>
+  )
+}

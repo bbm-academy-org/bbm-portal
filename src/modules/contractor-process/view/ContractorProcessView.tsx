@@ -20,6 +20,7 @@ import {
   type StepLayout,
 } from '../layout'
 
+import { ContractorProcessPlaceholder } from './ContractorProcessLayout'
 import { ProcessDiagram, type DiagramHandle } from './ProcessDiagram'
 
 /**
@@ -140,15 +141,7 @@ export function ContractorProcessView({ process }: { process: ContractorProcess 
     setSelection({ diagram, kind, id })
   }
 
-  if (!layout) {
-    return (
-      <div className="cp-view">
-        <p className="cp-loading" role="status" aria-busy="true">
-          Схема рисуется…
-        </p>
-      </div>
-    )
-  }
+  if (!layout) return <ContractorProcessPlaceholder />
 
   const { main, sub } = layout
   const fit = zoom === 'fit'
