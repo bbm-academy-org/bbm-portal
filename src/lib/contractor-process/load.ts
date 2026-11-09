@@ -5,7 +5,7 @@ import {
   type PathMapEnv,
   type PathMapOrigin,
   type PathMapReadFailureKind,
-} from '@/lib/path-map/source'
+} from '@/lib/path-map'
 
 import { readCachedProcess } from './cache'
 import { parseContractorProcess, type ContractorProcessParseResult } from './parse'

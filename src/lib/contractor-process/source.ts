@@ -12,7 +12,7 @@ import {
   type LocalPathMapSource,
   type MisconfiguredPathMapSource,
   type PathMapEnv,
-} from '@/lib/path-map/source'
+} from '@/lib/path-map'
 
 import { CONTRACTOR_PROCESS_EXAMPLE_FILE, CONTRACTOR_PROCESS_REMOTE_FILE } from './paths'
 

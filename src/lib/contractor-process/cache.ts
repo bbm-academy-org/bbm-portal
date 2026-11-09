@@ -3,7 +3,7 @@ import {
   type GithubPathMapSource,
   type PathMapDocument,
   type PathMapOrigin,
-} from '@/lib/path-map/source'
+} from '@/lib/path-map'
 
 /**
  * Short server-side cache of the remote process text (#545).

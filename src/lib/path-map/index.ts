@@ -37,12 +37,14 @@ export {
   describeOrigin,
   githubPathMapSource,
   localPathMapSource,
+  misconfiguredSource,
   PATH_MAPS_DEFAULT_FILE,
   PATH_MAPS_DEFAULT_REPO,
   PathMapConflictError,
   PathMapSourceError,
   pathMapSourceFromEnv,
   readFailureKind,
+  repoProblem,
 } from './source'
 export type {
   AnyPathMapSource,
