@@ -70,6 +70,13 @@ const request = {
   alreadyPaid: false,
   personalFunds: false,
   createdBy: 15,
+  // «Подана» + where (#517). The instant is the audit column `0016` added; the
+  // provenance object is what `0017` lifted out of `note` for the 47
+  // reconstructed rows, and it is what the URL resolver dispatches on.
+  createdAt: new Date('2026-04-20T14:21:39Z'),
+  updatedAt: new Date('2026-07-01T12:00:00Z'),
+  updatedBy: 16,
+  provenance: null,
   decidedBy: 16,
   decidedAt: new Date('2026-07-01T12:00:00Z'),
   refusalReason: null,
@@ -359,6 +366,122 @@ describe('/p/finance/api/requests read model', () => {
 })
 
 describe('/p/finance/api/requests writes', () => {
+  /** The body every #517 case below varies one field of. */
+  function body(extra: Record<string, unknown> = {}) {
+    return JSON.stringify({
+      amount: '4500000',
+      currency: 'RUB',
+      purposeId: 11,
+      projectId: 12,
+      productId: 13,
+      counterpartyId: 14,
+      alreadyPaid: false,
+      personalFunds: false,
+      ...extra,
+    })
+  }
+
+  it('EARS-504: a link another request already names is refused with 409, not a 500', async () => {
+    // The refusal is the module's real class, so the route has to recognise
+    // it by what it IS — before #525 review N2 its name fell through
+    // `requestApiError` and the member got a server error for a plain refusal.
+    const { FinanceIntakeDuplicate } = await import('@/lib/finance')
+    state.createExpenseRequest.mockRejectedValue(
+      new FinanceIntakeDuplicate(
+        { ...request, id: 7, createdBy: 99 } as never,
+        'Эта ссылка на источник уже указана в другой заявке.',
+      ),
+    )
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: body({ sourceRef: 'https://chat.bbm.academy/bbm/pl/once' }),
+      }),
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.text()).toBe('Эта ссылка на источник уже указана в другой заявке.')
+  })
+
+  it('#517: stores the source link the form collected', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 52, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: body({ sourceRef: '  https://chat.bbm.academy/bbm/pl/abc  ' }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(state.createExpenseRequest).toHaveBeenCalledWith(
+      expect.any(Object),
+      // Trimmed by the schema, stored verbatim by the spine.
+      expect.objectContaining({ sourceRef: 'https://chat.bbm.academy/bbm/pl/abc' }),
+    )
+  })
+
+  it('#517: files a request with no source link at all — the field is optional', async () => {
+    state.createExpenseRequest.mockResolvedValue({ ...request, id: 53, status: 'draft' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(new Request(BASE, { method: 'POST', body: body() }))
+
+    expect(response.status).toBe(201)
+    expect(state.createExpenseRequest).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ sourceRef: null }),
+    )
+  })
+
+  it('#517: refuses a source that is not an http(s) address, before anything is filed', async () => {
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, { method: 'POST', body: body({ sourceRef: 'см. в чате' }) }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/адрес/i)
+    expect(state.createExpenseRequest).not.toHaveBeenCalled()
+  })
+
+  it('EARS-555: an edit leaves the source link out of the patch instead of refusing the edit', async () => {
+    state.editExpenseRequest.mockResolvedValue({ ...request, id: 41, status: 'submitted' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+
+    // `sourceRef: null` is exactly what the edit form sends (request-form-model
+    // clears the field on a reopened request), so it must not cost the edit.
+    const response = await route.PATCH(
+      new Request(`${BASE}/41`, { method: 'PATCH', body: body({ sourceRef: null }) }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+
+    expect(response.status).toBe(200)
+    const patch = state.editExpenseRequest.mock.calls[0]?.[2] as Record<string, unknown>
+    expect(patch).toMatchObject({ amount: 4_500_000n })
+    expect(Object.keys(patch)).not.toContain('sourceRef')
+  })
+
+  it('EARS-555: an edit that names a source link is refused — provenance is immutable after submit', async () => {
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+
+    const response = await route.PATCH(
+      new Request(`${BASE}/41`, {
+        method: 'PATCH',
+        body: body({ sourceRef: 'https://chat.bbm.academy/bbm/pl/rewritten' }),
+      }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/источник/i)
+    expect(state.editExpenseRequest).not.toHaveBeenCalled()
+  })
+
   it('EARS-508/532: creates an inline counterparty before the draft request', async () => {
     state.createCounterparty.mockResolvedValue({ id: 24, name: 'Новый поставщик' })
     state.createExpenseRequest.mockResolvedValue({ ...request, id: 51, status: 'draft' })

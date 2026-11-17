@@ -6,10 +6,14 @@
 // the whitelist's List block (`docs/design/ui-whitelist.md`).
 import { describe, expect, it } from 'vitest'
 
-import { REQUEST_STATUS_BADGE_VARIANT } from '@/app/(platform)/p/finance/requests/constants'
+import {
+  formatDateTime,
+  REQUEST_STATUS_BADGE_VARIANT,
+} from '@/app/(platform)/p/finance/requests/constants'
 import type { RequestBoardItem } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import {
   requestAmountTotals,
+  requestTableColumnPlan,
   selectRequestPage,
 } from '@/app/(platform)/p/finance/requests/request-table-model'
 
@@ -19,6 +23,10 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     own: false,
     status: 'submitted',
     occurredOn: '2026-08-22',
+    createdAt: '2026-08-20T09:30:00.000Z',
+    sourceRef: null,
+    sourceUrl: null,
+    sourceLabel: null,
     amount: '4500000',
     currency: 'RUB',
     paidAmount: null,
@@ -155,11 +163,44 @@ describe('selectRequestPage — what the board provider answers getList with (#3
     expect(page.totals).toEqual([{ currency: 'RUB', amount: '1000' }])
   })
 
+  it('EARS-556: sorts by «Подана» under the id the column carries, which is what refine sends', () => {
+    // `@refinedev/react-table` turns the TanStack sorting state into
+    // `sorters: [{ field: sorting.id }]` — the COLUMN id, not its accessor key.
+    // The id is read off the plan rather than spelled here, so a sort key that
+    // drifts from the column id fails this test instead of silently no-oping.
+    const filedId = requestTableColumnPlan({ scope: 'mine', canApprove: false })[0]!.id
+    const filed = [
+      item({ id: 1, createdAt: '2026-08-20T09:30:00.000Z', occurredOn: '2026-08-01' }),
+      item({ id: 2, createdAt: '2026-04-20T14:21:39.000Z', occurredOn: '2026-08-20' }),
+      item({ id: 3, createdAt: '2026-06-01T00:00:00.000Z', occurredOn: null }),
+    ]
+    const order = (direction: 'asc' | 'desc') =>
+      selectRequestPage(filed, { sorters: [{ field: filedId, order: direction }] }).rows.map(
+        (row) => row.id,
+      )
+    expect(order('asc')).toEqual([2, 3, 1])
+    expect(order('desc')).toEqual([1, 3, 2])
+  })
+
   it('leaves an unknown sort field alone rather than shuffling the register', () => {
     expect(
       selectRequestPage(rows, { sorters: [{ field: 'nonsense', order: 'asc' }] }).rows.map(
         (row) => row.id,
       ),
     ).toEqual([3, 2, 4, 1])
+  })
+})
+
+describe('formatDateTime — «Подана» in Moscow time (#517, #525 review N3)', () => {
+  it('EARS-556: names a UTC instant in Europe/Moscow, minutes truncated', () => {
+    expect(formatDateTime('2026-04-20T14:21:39.000Z')).toBe('20.04.2026 17:21')
+  })
+
+  it('EARS-556: rolls the DATE over too when Moscow is already past midnight', () => {
+    expect(formatDateTime('2026-04-20T22:30:00.000Z')).toBe('21.04.2026 01:30')
+  })
+
+  it('EARS-556: returns an unparseable value as it came rather than «Invalid Date»', () => {
+    expect(formatDateTime('not-a-date')).toBe('not-a-date')
   })
 })

@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- BBMP-281: кликабельный прототип очереди заявок «Финансы → Заявки» (шаблон без данных; данные подставляются локально).
+     Действия меняют только локальное состояние страницы, в прод ничего не пишется. -->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Очередь заявок — прототип</title>
+<style>
+:root{--bg:#fff;--fg:#0a0a0a;--muted:#737373;--line:#ececec;--soft:#f5f5f5;--accent:#0a0a0a;--warn:#b45309;--warnbg:#fff7ed;--ok:#15803d;--okbg:#f0fdf4;--bad:#b91c1c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif}
+.top{display:flex;align-items:center;gap:20px;padding:14px 32px;border-bottom:1px solid var(--line)}
+.top b{font-weight:600}.top span{color:var(--muted)}
+main{max-width:1180px;margin:0 auto;padding:36px 32px 80px}
+.proto{font-size:12px;color:var(--warn);background:var(--warnbg);padding:6px 10px;border-radius:6px;display:inline-block;margin-bottom:16px}
+h1{font-size:26px;margin:0 0 4px;font-weight:650}
+.sub{color:var(--muted);margin:0 0 24px}
+.head{display:flex;justify-content:space-between;align-items:flex-start}
+button{font:inherit;cursor:pointer;border-radius:7px;border:1px solid var(--line);background:#fff;padding:6px 12px}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+button:disabled{opacity:.4;cursor:default}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin:8px 0 28px}
+.kpi{cursor:pointer}
+.kpi .l{color:var(--muted);font-size:13px}
+.kpi .v{font-size:22px;font-weight:600;margin-top:2px}
+.kpi .n{color:var(--muted);font-size:13px}
+.kpi.on .l{color:var(--fg);text-decoration:underline;text-underline-offset:4px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.bar input,.bar select{font:inherit;border:1px solid var(--line);border-radius:7px;padding:6px 10px;background:#fff}
+.bar input{min-width:260px}
+.seg{display:inline-flex;background:var(--soft);border-radius:8px;padding:3px}
+.seg button{border:0;background:transparent;padding:5px 12px;color:var(--muted)}
+.seg button.on{background:#fff;color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.group{margin-top:28px}
+.gh{display:flex;align-items:baseline;gap:12px;padding:0 0 8px;cursor:pointer;user-select:none}
+.gh h2{font-size:15px;margin:0;font-weight:600}
+.gh .c{color:var(--muted)}
+.gh .t{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.gh .hint{color:var(--muted);font-size:13px}
+table{width:100%;border-collapse:collapse}
+th{font-weight:500;color:var(--muted);text-align:left;font-size:12px;padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
+th.num,td.num{text-align:right}
+td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.row{cursor:pointer}tr.row:hover td{background:#fafafa}
+.date{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}
+.date .age{display:block;font-size:12px}
+.date .age.old{color:var(--warn)}
+.who{white-space:nowrap}
+.pur{max-width:340px}
+.pur .p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pur .n{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.amt{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:500}
+.tag{font-size:12px;color:var(--muted)}
+.tag.warn{color:var(--warn)}
+.act{white-space:nowrap;text-align:right}
+.empty{color:var(--muted);padding:12px 8px}
+.id{color:var(--muted);font-variant-numeric:tabular-nums}
+/* sheet */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:#fff;box-shadow:-8px 0 24px rgba(0,0,0,.08);padding:28px;overflow:auto;display:none}
+.open .ov,.open .sheet{display:block}
+.sheet h3{margin:0 0 2px;font-size:20px}
+.sheet .meta{color:var(--muted);margin-bottom:18px}
+.big{font-size:28px;font-weight:650;font-variant-numeric:tabular-nums}
+dl{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;margin:18px 0}
+dt{color:var(--muted)}dd{margin:0;white-space:pre-wrap}
+.sec{margin-top:22px}
+.sec h4{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.callout{background:var(--warnbg);color:var(--warn);padding:10px 12px;border-radius:8px}
+.callout.ok{background:var(--okbg);color:var(--ok)}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{padding:4px 0 4px 18px;position:relative}
+.tl li:before{content:"";position:absolute;left:3px;top:11px;width:7px;height:7px;border-radius:50%;background:var(--fg)}
+.tl li.todo{color:var(--muted)}.tl li.todo:before{background:#fff;border:1px solid var(--muted)}
+.form{display:grid;gap:10px;margin-top:10px}
+.form label{display:grid;gap:4px;color:var(--muted);font-size:13px}
+.form input,.form select{font:inherit;border:1px solid var(--line);border-radius:7px;padding:7px 10px;color:var(--fg)}
+.actions{display:flex;gap:8px;margin-top:22px;flex-wrap:wrap}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--fg);color:#fff;padding:10px 16px;border-radius:8px;display:none}
+@media (max-width:760px){main{padding:24px 16px}.kpis{grid-template-columns:1fr}.hide-sm{display:none}.bar input{min-width:0;flex:1}}
+</style>
+</head>
+<body>
+<div class="top"><b>Платформа BBM</b><span>Финансы</span><span style="margin-left:auto">Текущий пользователь</span></div>
+<main>
+  <div class="proto">Прототип BBMP-281. Кнопки меняют только эту страницу.</div>
+  <div class="head">
+    <div><h1>Заявки</h1><p class="sub">Что ждёт вашего решения, что пора оплатить и кому вернуть деньги.</p></div>
+    <button class="primary">Новая заявка</button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="bar">
+    <input id="q" placeholder="Поиск: кто, кому, на что, № заявки">
+    <select id="fAuthor"><option value="">Все заявители</option></select>
+    <select id="fProject"><option value="">Все проекты</option></select>
+    <select id="fPeriod">
+      <option value="">За всё время</option><option value="7">За 7 дней</option><option value="30">За 30 дней</option><option value="90">За 90 дней</option>
+    </select>
+    <div class="seg" id="cur" style="margin-left:auto" title="Валюта отображения"><button data-v="RUB" class="on">₽</button><button data-v="USD">$</button><button data-v="EUR">€</button></div>
+    <div class="seg" id="scope"><button data-v="active" class="on">В работе</button><button data-v="done">Закрытые</button><button data-v="mine">Мои</button></div>
+  </div>
+
+  <div id="groups"></div>
+</main>
+
+<div id="layer"><div class="ov" id="ov"></div><aside class="sheet" id="sheet"></aside></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const DATA = /*DATA*/[];
+// Курсы ЦБ РФ (₽ за единицу) по датам; подставляются вместе с данными
+const RATES = /*RATES*/{};
+const TODAY = '2026-11-17';
+const ME = 'Текущий пользователь';
+const NOW = new Date('2026-11-17T16:00:00+03:00');
+const ACCOUNTS = ['Счёт 1, RUB', 'Счёт 2, RUB', 'Счёт 3, USD', 'Кошелёк, USDT'];
+
+// --- модель: из статусов БД выводим «что с заявкой происходит» на языке владельца
+const items = DATA.map(x => ({...x,
+  amount: Number(x.amount) / 100, fee: x.fee == null ? null : Number(x.fee) / 100,
+  created: new Date(x.created_at), posted: x.posted_at ? new Date(x.posted_at) : null}));
+
+function stage(x){
+  if (x.posted) return 'paid';
+  if (x.status === 'refused') return 'refused';
+  if (x.status === 'draft') return 'draft';
+  if (x.status === 'submitted') return x.already_paid ? 'reimburse' : 'decide';
+  if (x.status === 'approved') return x.already_paid ? 'reimburse' : 'pay';
+  return 'other';
+}
+const GROUPS = [
+  {k:'decide', t:'Ждёт решения', hint:'одобрить или отклонить; после одобрения уходит в «К оплате»', act:'Одобрить'},
+  {k:'pay', t:'К оплате', hint:'одобрено, деньги ещё не отправлены', act:'Отметить оплату'},
+  {k:'reimburse', t:'Вернуть сотруднику', hint:'человек заплатил сам, чек приложен; компания ему должна', act:'Отметить возврат'},
+  {k:'draft', t:'Черновики', hint:'автор ещё не отправил', act:null},
+  {k:'paid', t:'Оплачено', hint:'', act:null},
+  {k:'refused', t:'Отклонено', hint:'', act:null},
+];
+const ACTIVE = ['decide','pay','reimburse','draft'], DONE = ['paid','refused'];
+
+const fmtMoney = (v,c) => v.toLocaleString('ru-RU',{minimumFractionDigits:v%1?2:0,maximumFractionDigits:2}) + ' ' + ({RUB:'₽',USD:'$',EUR:'€'}[c]||c);
+const fmtDate = d => d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'}) + (d.getFullYear()!==NOW.getFullYear()?' '+d.getFullYear():'');
+const fmtDT = d => d.toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Moscow'});
+function age(d){const days=Math.floor((NOW-d)/864e5);return days===0?'сегодня':days===1?'вчера':days+' дн. назад'}
+// Релевантный курс: человек уже заплатил сам → ЦБ на дату траты; иначе ЦБ на сегодня (столько это стоит сейчас)
+const rateDate = x => x.already_paid && x.occurred_on && RATES[x.occurred_on] ? x.occurred_on : TODAY;
+const rubPer = (c,d) => c==='RUB' ? 1 : RATES[d][c];
+const conv = x => x.amount * rubPer(x.currency, rateDate(x)) / rubPer(st.cur, rateDate(x));
+const money = x => fmtMoney(Math.round(conv(x)*100)/100, st.cur);
+const orig = x => x.currency===st.cur ? '' : fmtMoney(x.amount,x.currency);
+function rateNote(x){const d=rateDate(x);const pair=[x.currency,st.cur].find(c=>c!=='RUB');
+  return `курс ЦБ на ${RATES[d].effective}${d===TODAY?' (сегодня)':' (дата траты)'}: 1 ${pair} = ${RATES[d][pair].toLocaleString('ru-RU')} ₽`}
+function totals(list){return list.length?fmtMoney(Math.round(list.reduce((s,x)=>s+conv(x),0)),st.cur):'—'}
+const payee = x => x.member && x.already_paid ? x.member : (x.counterparty || x.member || '—');
+const hasPayInfo = x => /https?:\/\/|\b\d{16,20}\b|БИК|ИНН|р\/с|карт/i.test(x.note||'');
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// --- состояние фильтров
+const st = {cur:'RUB',q:'',author:'',project:'',period:'',scope:'active',sort:{k:'created',d:-1},collapsed:{draft:true,refused:true},kpi:null};
+const uniq = f => [...new Set(items.map(f).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
+uniq(x=>x.author).forEach(v=>fAuthor.add(new Option(v,v)));
+uniq(x=>x.project).forEach(v=>fProject.add(new Option(v,v)));
+
+function filtered(){
+  const q=st.q.trim().toLowerCase();
+  return items.filter(x=>{
+    if (st.author && x.author!==st.author) return false;
+    if (st.project && x.project!==st.project) return false;
+    if (st.period && (NOW-x.created)/864e5 > +st.period) return false;
+    if (st.scope==='mine' && x.author!==ME) return false;
+    if (q && !(['#'+x.id,x.author,x.counterparty,x.member,x.purpose,x.note,x.project,x.product].join(' ').toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+const SORT = {created:x=>x.created.getTime(), author:x=>x.author||'', payee:x=>payee(x), amount:x=>conv(x), purpose:x=>x.purpose||''};
+
+function render(){
+  const list = filtered();
+  // KPI считаются по всем данным без фильтров: это сводка «сколько висит»
+  const by = k => items.filter(x=>stage(x)===k);
+  kpis.innerHTML = [['decide','Ждёт вашего решения'],['pay','К оплате'],['reimburse','Вернуть сотрудникам']].map(([k,l])=>{
+    const g=by(k);return `<div class="kpi ${st.kpi===k?'on':''}" data-k="${k}"><div class="l">${l}</div><div class="v">${totals(g)}</div><div class="n">${g.length} ${plural(g.length)}</div></div>`}).join('');
+  const keys = st.kpi ? [st.kpi] : (st.scope==='done' ? DONE : st.scope==='mine' ? [...ACTIVE,...DONE] : ACTIVE);
+  groups.innerHTML = keys.map(k=>{
+    const g = GROUPS.find(z=>z.k===k);
+    const rows = list.filter(x=>stage(x)===k).sort((a,b)=>{const f=SORT[st.sort.k];const va=f(a),vb=f(b);return (va>vb?1:va<vb?-1:0)*st.sort.d || b.id-a.id});
+    const col = st.collapsed[k] && !st.kpi;
+    return `<section class="group"><div class="gh" data-g="${k}"><h2>${col?'▸':'▾'} ${g.t}</h2><span class="c">${rows.length}</span><span class="hint hide-sm">${g.hint}</span><span class="t">${rows.length?totals(rows):''}</span>${(k==='pay'||k==='reimburse')&&rows.length>1&&!col?`<button class="ghost" data-bulk="${k}">Отметить все ${rows.length} как оплаченные…</button>`:''}</div>
+    ${col?'':rows.length?table(rows,g):'<div class="empty">Ничего нет</div>'}</section>`}).join('');
+}
+const plural = n => n%10===1&&n%100!==11?'заявка':[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?'заявки':'заявок';
+function th(k,l,cls=''){const on=st.sort.k===k;return `<th class="${cls}" data-s="${k}">${l}${on?(st.sort.d<0?' ↓':' ↑'):''}</th>`}
+function table(rows,g){
+  return `<table><thead><tr>${th('created','Подана')}${th('author','От кого')}${th('payee','Кому платим')}${th('purpose','На что')}${th('amount','Сумма','num')}<th></th></tr></thead><tbody>${rows.map(x=>{
+    const days=(NOW-x.created)/864e5;
+    const warn = (stage(x)==='decide'||stage(x)==='pay') && !x.already_paid && !hasPayInfo(x) && !x.docs;
+    return `<tr class="row" data-id="${x.id}">
+      <td class="date">${fmtDate(x.created)}<span class="age ${days>14&&ACTIVE.includes(stage(x))?'old':''}">${age(x.created)}</span></td>
+      <td class="who">${esc(x.author)}</td>
+      <td class="who">${esc(payee(x))}${x.already_paid?'<div class="tag">заплатил(а) сам(а)</div>':''}</td>
+      <td class="pur"><div class="p">${esc(x.purpose||'Назначение не выбрано')}</div><div class="n">${esc(x.note||'')}</div></td>
+      <td class="num"><span class="amt">${money(x)}</span>${orig(x)?`<div class="tag">${orig(x)}</div>`:''}</td>
+      <td class="act">${g.act?`<button data-act="${g.k}" data-id="${x.id}">${g.act}</button>`:''}</td></tr>`}).join('')}</tbody></table>`;
+}
+
+// --- карточка
+function open(id, mode){
+  const x = items.find(z=>z.id===id), s=stage(x);
+  const steps = [
+    ['Подана', fmtDT(x.created), true],
+    ['Решение', x.decided_at ? fmtDT(new Date(x.decided_at)) + (x.decided_by?' · '+x.decided_by:'') : (s==='refused'?'отклонена':'ждёт'), !!x.decided_at || ['pay','paid'].includes(s)],
+    [x.already_paid?'Возврат сотруднику':'Оплата', x.posted ? fmtDT(x.posted) : 'ещё нет', !!x.posted],
+  ];
+  const payInfo = x.already_paid
+    ? `<div class="callout">${esc(x.member||x.author)} заплатил(а) ${x.occurred_on?new Date(x.occurred_on).toLocaleDateString('ru-RU'):''} из своих денег. Чеков: ${x.docs}. Вернуть: <b>${fmtMoney(x.amount,x.currency)}</b>.</div>`
+    : hasPayInfo(x) ? `<div class="callout ok">Реквизиты есть в комментарии к заявке.</div>`
+    : `<div class="callout">Реквизитов или ссылки на оплату нет${x.docs?' (вложение: '+x.docs+' файл., проверьте)':''}. <button class="ghost" style="padding:0;color:inherit;text-decoration:underline">Запросить у автора</button></div>`;
+  const payForm = mode==='pay' ? `<div class="sec"><h4>${x.already_paid?'Отметить возврат':'Отметить оплату'}</h4><div class="form">
+      <label>Дата<input type="date" value="2026-11-17"></label>
+      <label>Откуда<select>${ACCOUNTS.map(a=>`<option>${a}</option>`).join('')}</select></label>
+      <label>Списано фактически<input value="${x.amount}"></label>
+      <label>Чек или скриншот оплаты (необязательно)<input type="file"></label>
+      <div><button class="primary" data-do="paid" data-id="${x.id}">Оплачено</button> <button data-do="close">Отмена</button></div></div></div>` : '';
+  const acts = s==='decide' ? `<button class="primary" data-do="approve" data-id="${x.id}">Одобрить</button><button data-do="approvepay" data-id="${x.id}">Одобрить и отметить оплату</button><button data-do="refuse" data-id="${x.id}">Отклонить</button>`
+    : (s==='pay'||s==='reimburse') && mode!=='pay' ? `<button class="primary" data-do="payform" data-id="${x.id}">${x.already_paid?'Отметить возврат':'Отметить оплату'}</button>${s==='reimburse'&&x.status==='submitted'?'':''}<button data-do="refuse" data-id="${x.id}">Отозвать</button>` : '';
+  sheet.innerHTML = `<div class="meta">Заявка №${x.id} · ${esc(GROUPS.find(g=>g.k===s).t)}</div>
+    <h3>${esc(x.purpose||'Назначение не выбрано')}</h3>
+    <div class="big">${money(x)}</div>${orig(x)?`<div class="tag">заявлено ${orig(x)} · ${rateNote(x)}</div>`:''}${x.fee?`<div class="tag">в т.ч. комиссия ${fmtMoney(x.fee,x.currency)}</div>`:''}
+    <dl><dt>От кого</dt><dd>${esc(x.author)}</dd><dt>Кому платим</dt><dd>${esc(payee(x))}</dd><dt>Проект</dt><dd>${esc(x.project||'—')}${x.product?' · '+esc(x.product):''}</dd>${x.note?`<dt>Комментарий</dt><dd>${esc(x.note)}</dd>`:''}${x.refusal_reason?`<dt>Причина отказа</dt><dd>${esc(x.refusal_reason)}</dd>`:''}</dl>
+    <div class="sec"><h4>Как оплатить</h4>${payInfo}</div>
+    <div class="sec"><h4>Файлы</h4>${x.docs?Array.from({length:x.docs},(_,i)=>`<div>📎 Вложение ${i+1}</div>`).join(''):'<span class="tag">нет</span>'}</div>
+    <div class="sec"><h4>Ход заявки</h4><ul class="tl">${steps.map(([a,b,d])=>`<li class="${d?'':'todo'}"><b>${a}</b> · ${b}</li>`).join('')}</ul></div>
+    ${payForm}<div class="actions">${acts}<button data-do="close" class="ghost">Закрыть</button></div>`;
+  document.body.classList.add('open');
+}
+function toast(t){toastEl.textContent=t;toastEl.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>toastEl.style.display='none',2200)}
+const toastEl=document.getElementById('toast');
+function act(kind,id){
+  const x=items.find(z=>z.id===id);
+  if (kind==='approve'){x.status='approved';x.decided_at=NOW.toISOString();x.decided_by=ME;toast(`№${id} одобрена${x.already_paid?', ждёт возврата':', перешла в «К оплате»'}`);close();}
+  else if (kind==='approvepay'){x.status='approved';x.decided_at=NOW.toISOString();x.decided_by=ME;open(id,'pay');}
+  else if (kind==='refuse'){const r=prompt('Причина отказа');if(!r)return;x.status='refused';x.refusal_reason=r;toast(`№${id} отклонена`);close();}
+  else if (kind==='paid'){x.status='approved';x.posted=NOW;toast(`№${id}: оплата отмечена`);close();}
+  else if (kind==='payform') open(id,'pay');
+  render();
+}
+function close(){document.body.classList.remove('open')}
+
+// --- события
+q.oninput=e=>{st.q=e.target.value;render()};
+fAuthor.onchange=e=>{st.author=e.target.value;render()};
+fProject.onchange=e=>{st.project=e.target.value;render()};
+fPeriod.onchange=e=>{st.period=e.target.value;render()};
+cur.onclick=e=>{const b=e.target.closest('button');if(!b)return;st.cur=b.dataset.v;[...cur.children].forEach(c=>c.classList.toggle('on',c===b));render()};
+scope.onclick=e=>{const b=e.target.closest('button');if(!b)return;st.scope=b.dataset.v;st.kpi=null;[...scope.children].forEach(c=>c.classList.toggle('on',c===b));render()};
+kpis.onclick=e=>{const k=e.target.closest('.kpi');if(!k)return;st.kpi=st.kpi===k.dataset.k?null:k.dataset.k;render()};
+groups.onclick=e=>{
+  const bulk=e.target.closest('button[data-bulk]');
+  if(bulk){e.stopPropagation();const ids=filtered().filter(x=>stage(x)===bulk.dataset.bulk);
+    // Массовая отметка: один счёт на пачку, без чеков (в спеке — EARS-547/548; где прототип и спека расходятся, права спека)
+    if(confirm(`Отметить ${ids.length} заявок оплаченными задним числом (без чеков, дата = дата заявки)?`)){ids.forEach(x=>x.posted=x.created);toast(`${ids.length} заявок перенесены в «Оплачено»`);render()}return}
+  const b=e.target.closest('button[data-act]');
+  if(b){e.stopPropagation();const id=+b.dataset.id,k=b.dataset.act;return k==='decide'?act('approve',id):open(id,'pay')}
+  const h=e.target.closest('th[data-s]');if(h){const k=h.dataset.s;st.sort={k,d:st.sort.k===k?-st.sort.d:(k==='created'||k==='amount'?-1:1)};return render()}
+  const g=e.target.closest('.gh');if(g){st.collapsed[g.dataset.g]=!st.collapsed[g.dataset.g];return render()}
+  const r=e.target.closest('tr.row');if(r)open(+r.dataset.id);
+};
+sheet.onclick=e=>{const b=e.target.closest('button[data-do]');if(!b)return;b.dataset.do==='close'?close():act(b.dataset.do,+b.dataset.id)};
+ov.onclick=close;document.onkeydown=e=>{if(e.key==='Escape')close()};
+render();
+</script>
+</body>
+</html>
