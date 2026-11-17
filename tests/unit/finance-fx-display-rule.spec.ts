@@ -196,7 +196,9 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
         'finance-intake-item',
         'finance-account',
       ]) {
-        expect(f.text, `${f.path} → ${ledger}`).not.toContain(`schema/finance/${ledger}'`)
+        // A TYPE import (the request status union) carries no table handle.
+        const valueImport = new RegExp(`^import (?!type )[^;]*schema/finance/${ledger}'`, 'm')
+        expect(f.text, `${f.path} → ${ledger}`).not.toMatch(valueImport)
       }
     }
   })

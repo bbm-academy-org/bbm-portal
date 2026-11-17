@@ -209,6 +209,9 @@ const DOMAIN_VALUE_WHITELIST = {
   // The F2 intake spine (spec 339, #381). `finance_intake_item` is the one table
   // here that is EDITABLE by design, so its old/new pairs are the record of the
   // status machine in motion — the approval, the bounce, the refusal reason.
+  // The Bank of Russia display rates (spec 339 §I, #548): public reference
+  // data written only by the sync job — every column by value.
+  finance_fx_rate: ['id', 'source', 'currency', 'rate_date', 'nominal', 'value_rub'],
   finance_counterparty: ['id', 'name', 'created_by', 'created_at'],
   finance_purpose_proposal: [
     'id',

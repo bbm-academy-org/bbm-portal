@@ -127,6 +127,13 @@
       "when": 1790081195746,
       "tag": "0017_finance_intake_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794926327589,
+      "tag": "0018_finance_fx_rate",
+      "breakpoints": true
     }
   ]
 }
