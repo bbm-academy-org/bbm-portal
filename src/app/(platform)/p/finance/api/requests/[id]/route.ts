@@ -38,6 +38,15 @@ export async function PATCH(
 
   const parsed = expenseRequestBodySchema.safeParse(rawBody)
   if (!parsed.success) return textResponse(400, parsed.error.issues[0]?.message)
+  // Where the request came from is fixed at filing (EARS-536, #517). The edit
+  // form sends `sourceRef: null`, which is no claim at all; a link, though, is
+  // an attempt to rewrite the source, and is refused by name.
+  if ((parsed.data.sourceRef ?? null) !== null) {
+    return textResponse(
+      400,
+      'Источник заявки фиксируется при подаче и правкой не меняется (EARS-536).',
+    )
+  }
   // The same gate as the create (decision 36): a refusal a PATCH walks around
   // is no refusal at all — an edit files exactly the same money facts.
   const companyRefusal = companyAccountRefusal(gate.actor, parsed.data)
@@ -48,7 +57,10 @@ export async function PATCH(
     if (before === null) return textResponse(404, `Заявки #${id} не существует.`)
     const body = parsed.data
     const counterpartyId = await resolveRequestCounterpartyId(gate.actor, body)
-    const item = await editExpenseRequest(gate.actor, id, expenseRequestInput(body, counterpartyId))
+    // `sourceRef` leaves the patch: the spine refuses any key outside its edit
+    // whitelist, so carrying even a null one would refuse every edit.
+    const { sourceRef: _filedOnly, ...patch } = expenseRequestInput(body, counterpartyId)
+    const item = await editExpenseRequest(gate.actor, id, patch)
     return jsonResponse({
       id: item.id,
       status: item.status,
