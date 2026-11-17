@@ -46,7 +46,10 @@ link from a request to its payment fact arrives weeks later as a separate
 post. F2 replaces that channel with a structured intake: expense requests
 with documents and direct entry — all flowing into the F1 ledger through one
 pluggable layer, gated by two roles and by the rule that
-**nothing posts without its confirming document** (decision 24).
+**nothing posts without its confirming document** (decision 24) — save the
+one exception the owner made on 2026-11-17: an approve-role human
+mark-paid act posts an expense request without one, the receipt following
+later (decision 37, EARS-506/543–546).
 
 The historical corpus is reconstructed once as private operator work using the
 same shipped one-item intake boundary. It is not a product surface or a reusable
@@ -258,8 +261,10 @@ conversions — or the books cannot be rebuilt.
   EARS-543; no document required since 2026-11-17, EARS-506) · → `refused`
   (approve role revokes an unposted authorization, reason required).
 - `submitted` → `approved` → `posted` in **one** act: «Одобрить и отметить
-  оплату» / the mark-paid act on a `submitted` item records the approver as
-  both decider and poster (EARS-510/543). Approving alone never posts.
+  оплату» / the mark-paid act / the refund act («Отметить возврат») on a
+  `submitted` item records the approver as both decider and poster
+  (EARS-510/543/544; the bulk act inherits it per row — EARS-547). These are
+  the only one-act paths. Approving alone never posts.
 - A posted `personal_funds` request is **settled** when a reimbursement
   transfer names it through `settles_item` (EARS-528/544) — the only way a
   request is settled, since every non-backfill liability transfer must name
@@ -585,8 +590,11 @@ a declared clause.
   IS the counter-leg, not an extra one. The liability is recorded **in the
   currency actually charged to the member** — `paid_currency`, falling back
   to `currency` — for the amount the member's card actually lost (WHERE the
-  request is posted by the EARS-544 refund act, the refunded sum is that
-  amount); WHERE that
+  request is posted by the EARS-544 refund act, the refunded sum less the
+  item's fee is that amount); a fee on a `personal_funds` item is charged to
+  the same liability, in the same currency (shipped `assertFeeCurrency`), so
+  the item's **liability amount** is (`paid_amount`, falling back to
+  `amount`) + `fee_amount` where a fee is recorded; WHERE that
   differs from the document currency, the expense leg stays in the document
   currency and the cross-currency rule above supplies the conversion legs
   (corpus: every «оплачено с моей карты» is a USD/foreign spend from a RUB
@@ -603,7 +611,9 @@ a declared clause.
   unique): the EARS-513 reimbursement is entered exactly this way — an
   ordinary transfer debiting the liability account with the same
   `member_id`, in the settled item's liability currency and for its
-  liability amount. IF such a transfer names no `settles_item` (outside
+  liability amount (EARS-513: `paid_amount`, falling back to `amount`, plus
+  `fee_amount` where recorded — exactly the sum its posting credited to the
+  liability). IF such a transfer names no `settles_item` (outside
   `backfill`), or names an item that is not a posted `personal_funds` item of
   the same member, or differs from that item's liability currency or amount,
   or names an item another transfer already settles, THEN the system shall
@@ -712,7 +722,9 @@ The retired requirement numbers 517–521 are not reused.
 
 - **EARS-524.** The system shall refuse any intake-item transition or edit
   outside the status machine of this spec: the listed transitions with their
-  role gates; money/dimension edits only in `draft`/`submitted`; an edit of
+  role gates; the one-act `submitted` → `approved` → `posted` only through
+  EARS-510, EARS-543 or EARS-544 (and EARS-547, which performs the latter
+  two per row); money/dimension edits only in `draft`/`submitted`; an edit of
   those fields in `approved` returning the item to `submitted`; `refused`,
   `cancelled` and `posted` terminal; no deletion past `draft`.
 
@@ -802,32 +814,58 @@ the corpus's «потерялась в канале» case).
   the ledger's write-order refusal (EARS-319/328 — the immutable ledger does
   not recompute an FX result it has already recognised), naming that
   operation's date and saying that earlier foreign-currency payments are to
-  be marked before later ones. The guard is the shipped one, kept and not
+  be marked before later ones (this text replaces the shipped message,
+  which points the owner to `backfill` — #549 changes it). The guard is the
+  shipped one, kept and not
   bypassed: routing the backlog through `backfill` would skip it and mis-state
   the realized FX already recognised for later dates, while marking oldest
   first needs no new machinery.
 - **EARS-544.** WHEN the owner submits «Отметить возврат» on a
   `personal_funds` request with the date, the account the refund left and
-  the amount debited from it, the system shall, in one transaction: post the
-  request if it is not yet posted, writing the refunded amount and currency
-  as its `paid_amount`/`paid_currency` inside the posting act (the status
-  machine's sanctioned write, EARS-533) — the act asserts that the member's
-  card lost exactly the sum refunded, so the liability (EARS-513) is booked
-  in the refund account's currency, and where that differs from the document
-  currency the cross-currency rule supplies the conversion legs from the two
-  recorded amounts (EARS-543's write-order refusal applies); and post the
-  reimbursement transfer (EARS-528) in that currency for that amount, naming
-  the request in `settles_item`, so that the member's liability for it
-  returns to zero and the request moves to «Оплачено»; a receipt is
-  optional. WHERE the unposted request already records `paid_amount`/
-  `paid_currency` (the member stated what the card lost), the refund shall
-  be in that currency, its amount prefilled from it. IF the request is
-  already posted, or records `paid_currency`, and its liability currency
-  (`paid_currency`, falling back to `currency`) differs from the refund
-  account's currency, THEN the system shall refuse and say so: a transfer is
-  single-currency (EARS-528), the debt is settled by a refund from an account
-  in the liability's currency, and a cross-currency settlement of an
-  already-booked debt is out of scope in v1.
+  the refund amount debited from it, the system shall, in one transaction:
+  approve the request first if it was `submitted` (as EARS-543; EARS-510);
+  post it if it is not yet posted (EARS-505/533); and post the
+  reimbursement transfer (EARS-528) for the **refund amount** in the refund
+  account's currency, naming the request in `settles_item`, so that the
+  member's liability for it returns to zero and the request moves to
+  «Оплачено»; a receipt is optional. The refund amount is the item's whole
+  liability amount (EARS-513), fee included: the act asserts that the
+  member's card lost exactly the refund less the fee for the spend itself,
+  and the fee on top. Posting an unposted request therefore books the
+  liability in the refund account's currency, and:
+  - WHERE that currency equals the document currency and the request records
+    no `paid_currency`, no `paid_amount`/`paid_currency` is written (shipped
+    `assertNoRedundantPaidAmount`: one currency, one authoritative amount),
+    and the refund shall equal `amount` + `fee_amount`;
+  - WHERE that currency differs from the document currency, the posting act
+    writes `paid_amount` = refund − `fee_amount` and `paid_currency` = the
+    refund currency (the status machine's sanctioned write, EARS-533), and
+    the cross-currency rule supplies the conversion legs from the two
+    recorded amounts (EARS-543's write-order refusal applies);
+  - WHERE the unposted request already records `paid_amount`/`paid_currency`
+    (the member stated what the card lost), the refund shall be in
+    `paid_currency` and equal `paid_amount` + `fee_amount`, prefilled so;
+    the act never overwrites the member-stated sum — correcting it is an
+    ordinary edit of the request under the status machine, not part of the
+    refund (it is not among EARS-533's posting-act fields).
+
+  IF the refund amount differs from the sum these rules require, or a
+  recorded fee is in another currency than the liability (shipped
+  `assertFeeCurrency`), THEN the system shall refuse and name the required
+  sum. IF the request is already posted, or records `paid_currency`, and its
+  liability currency (`paid_currency`, falling back to `currency`) differs
+  from the refund account's currency, THEN the system shall refuse and say
+  so: a transfer is single-currency (EARS-528), the debt is settled by a
+  refund from an account in the liability's currency, and a cross-currency
+  settlement of an already-booked debt is out of scope in v1. On an already
+  posted request the refund shall equal its posted liability amount.
+
+  _Revised 2026-11-17 (re-review of PR #552 at `42007c8`). The previous
+  version did not approve a `submitted` request first and wrote the whole
+  refund as `paid_amount` — with a fee the transfer could not settle the
+  liability, and in the document currency a refund ≠ `amount` was refused
+  by the ledger._
+
 - **EARS-545.** The system shall let the submitter or an entry/approve-role
   holder attach a document to a **posted** request; the link is carried to
   its operation, changes no amount and no status, and is audited (spec 201);
@@ -857,8 +895,11 @@ the corpus's «потерялась в канале» case).
   refusal), listed with that refusal. The submission-date default writes
   `occurred_on`, which EARS-508 defines as the date money moved: decision 40
   accepts the submission date as the best-known money date of a backlog paid
-  outside the system, and the dialog shows the date per row so the override
-  can replace it. The act exists only as this confirmed UI act and its API;
+  outside the system, and covers both postings of a `reimburse` row — the
+  request and its refund transfer take the same row date — and the dialog
+  shows the date per row so the override can replace it. A `submitted`
+  `reimburse` row is approved first in the same transaction, as EARS-544
+  says; the refund amount of each row is its EARS-544 required sum. The act exists only as this confirmed UI act and its API;
   no CLI, script or agent invokes it on production.
 - **EARS-548.** IF any request of a confirmed batch changed after the dialog
   was opened (its snapshot no longer matches), THEN the system shall post
@@ -1092,7 +1133,8 @@ reference from day one (decision 30, EARS-532).
   rates older than three days are flagged stale (EARS-552). Added after the
   independent review of PR #552: every non-backfill reimbursement transfer
   must name the item it settles (EARS-528); the refund act books the debt in
-  the refunded currency and amount (EARS-544); cross-currency marks keep the
+  the refunded currency, for the refund less the fee, and approves a
+  `submitted` request first (EARS-544, re-review); cross-currency marks keep the
   ledger's write-order refusal, and the bulk act posts oldest first
   (EARS-543/547); attach-later opens `posted` items only, `refused` and
   `cancelled` stay closed (EARS-545).
@@ -1110,4 +1152,8 @@ reference from day one (decision 30, EARS-532).
   write-order refusal applies: they have to be marked **oldest first and
   before any later-dated operation of their currency pair is posted** —
   once a newer USD or EUR conversion is in the ledger, an older backlog item
-  of that pair can no longer be posted live.
+  of that pair can no longer be posted live. Checked on production
+  2026-11-17: the ledger holds **0 operations and 0 conversion steps**, so no
+  existing later-dated FX record blocks oldest-first posting of the
+  backlog; the risk is only that someone posts a newer cross-currency
+  operation before the backlog is marked.
