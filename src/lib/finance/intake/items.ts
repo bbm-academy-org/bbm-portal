@@ -48,7 +48,7 @@ import {
   type FinanceActor,
 } from '../core/actor'
 import { FinanceAccessRefusal, financeMemberRecordRefusal, FinanceRefusal } from '../core/errors'
-import { assertIntakeAccountPlacement } from './account-placement'
+import { assertIntakeAccountPlacement, assertIntakeSettlement } from './account-placement'
 import {
   resolveIntakeProducer,
   resolveIntakeSourceRef,
@@ -105,6 +105,8 @@ export type FinanceIntakeItemView = {
   postedBy: number | null
   postedAt: Date | null
   operationId: number | null
+  /** The `personal_funds` item this reimbursement settles (EARS-528/544). */
+  settlesItemId: number | null
 }
 
 /**
@@ -184,6 +186,8 @@ export type CreateIntakeItemInput = {
   note?: string | null
   alreadyPaid?: boolean
   personalFunds?: boolean
+  /** EARS-528: the posted `personal_funds` item a reimbursement transfer settles. */
+  settlesItemId?: number | null
   /** EARS-503 ref material — what the producer composes the ref from. */
   sourceRef?: string | null
   documentNumber?: string | null
@@ -224,6 +228,7 @@ const CREATE_INPUT_KEYS = new Set([
   'note',
   'alreadyPaid',
   'personalFunds',
+  'settlesItemId',
   'sourceRef',
   'documentNumber',
   'mattermostPostId',
@@ -460,16 +465,60 @@ export async function createIntakeItem(
   input: CreateIntakeItemInput,
   options: CreateIntakeItemOptions = {},
 ): Promise<FinanceIntakeItemView> {
+  assertCreateInputKeys(input)
+  assertKnownSource(input.source)
+  // EARS-502: filing a request is the submitter's own act and needs no flow
+  // role; every other source is direct entry and demands `finance-entry`.
+  assertFinanceIntakeAccess(actor, { ownRequest: input.source === 'request' })
+  const prepared = prepareIntakeInsert(input)
+  const { sourceRef } = prepared
+  const createdBy = await requireMemberId(actor)
+
+  // A human source (`request`/`manual`: the ref is optional) hears the refusal
+  // in words meant for a person; a backfill or an import keeps the EARS-504
+  // text that points at the original (#525 review N2).
+  const duplicate = duplicateRefusalFor(input.source, createdBy)
+
+  try {
+    return await platformTransaction(financeAuditContext(actor), async (tx) => {
+      await options.validate?.(tx)
+      return insertPreparedIntakeItem(tx, prepared, createdBy, duplicate)
+    })
+  } catch (error) {
+    // Lost the race between the read above and the insert: the winner is
+    // committed by now, so answer with it exactly as the read would have.
+    if (sourceRef === null || !isSourceRefCollision(error)) throw error
+    const winner = await platformTransaction(financeAuditContext(actor), (tx) =>
+      findBySourceRef(tx, input.source, sourceRef),
+    )
+    if (winner === undefined) throw error
+    throw duplicate(intakeItemToView(winner))
+  }
+}
+
+function duplicateRefusalFor(
+  source: FinanceIntakeSource,
+  createdBy: number,
+): (existing: FinanceIntakeItemView) => FinanceIntakeDuplicate {
+  const humanSource = resolveIntakeProducer(source).sourceRefPolicy === 'optional'
+  return (existing) =>
+    humanSource
+      ? new FinanceIntakeDuplicate(existing, sourceRefTakenMessage(existing, createdBy))
+      : new FinanceIntakeDuplicate(existing)
+}
+
+function assertCreateInputKeys(input: CreateIntakeItemInput): void {
   for (const key of Object.keys(input)) {
     if (!CREATE_INPUT_KEYS.has(key)) {
       throw new FinanceRefusal(`Поле «${key}» позиция приёмки не принимает.`)
     }
   }
-  assertKnownSource(input.source)
-  // EARS-502: filing a request is the submitter's own act and needs no flow
-  // role; every other source is direct entry and demands `finance-entry`.
-  assertFinanceIntakeAccess(actor, { ownRequest: input.source === 'request' })
+}
 
+type PreparedIntakeInsert = ReturnType<typeof prepareIntakeInsert>
+
+/** The row's values, its shape asserted and its EARS-503 ref resolved — no database yet. */
+function prepareIntakeInsert(input: CreateIntakeItemInput) {
   const values = {
     source: input.source,
     kind: input.kind,
@@ -490,50 +539,57 @@ export async function createIntakeItem(
     note: input.note ?? null,
     alreadyPaid: input.alreadyPaid ?? false,
     personalFunds: input.personalFunds ?? false,
+    settlesItemId: input.settlesItemId ?? null,
   }
   assertItemShape(values)
-
   const sourceRef = resolveIntakeSourceRef(input.source, {
     sourceRef: input.sourceRef,
     documentNumber: input.documentNumber,
     mattermostPostId: input.mattermostPostId,
     natural: input.natural,
   })
-  const createdBy = await requireMemberId(actor)
+  return { values, sourceRef }
+}
 
-  // A human source (`request`/`manual`: the ref is optional) hears the refusal
-  // in words meant for a person; a backfill or an import keeps the EARS-504
-  // text that points at the original (#525 review N2).
-  const humanSource = resolveIntakeProducer(input.source).sourceRefPolicy === 'optional'
-  const duplicate = (existing: FinanceIntakeItemView) =>
-    humanSource
-      ? new FinanceIntakeDuplicate(existing, sourceRefTakenMessage(existing, createdBy))
-      : new FinanceIntakeDuplicate(existing)
-
-  try {
-    return await platformTransaction(financeAuditContext(actor), async (tx) => {
-      await options.validate?.(tx)
-      await assertIntakeAccountPlacement(tx, values)
-      if (sourceRef !== null) {
-        const existing = await findBySourceRef(tx, input.source, sourceRef)
-        if (existing !== undefined) throw duplicate(intakeItemToView(existing))
-      }
-      const [row] = await tx
-        .insert(financeIntakeItem)
-        .values({ ...values, sourceRef, status: 'draft', createdBy })
-        .returning()
-      return intakeItemToView(row)
-    })
-  } catch (error) {
-    // Lost the race between the read above and the insert: the winner is
-    // committed by now, so answer with it exactly as the read would have.
-    if (sourceRef === null || !isSourceRefCollision(error)) throw error
-    const winner = await platformTransaction(financeAuditContext(actor), (tx) =>
-      findBySourceRef(tx, input.source, sourceRef),
-    )
-    if (winner === undefined) throw error
-    throw duplicate(intakeItemToView(winner))
+async function insertPreparedIntakeItem(
+  tx: PlatformTx,
+  { values, sourceRef }: PreparedIntakeInsert,
+  createdBy: number,
+  duplicate: (existing: FinanceIntakeItemView) => FinanceIntakeDuplicate,
+): Promise<FinanceIntakeItemView> {
+  await assertIntakeAccountPlacement(tx, values)
+  await assertIntakeSettlement(tx, { ...values, id: null, status: 'draft' })
+  if (sourceRef !== null) {
+    const existing = await findBySourceRef(tx, values.source, sourceRef)
+    if (existing !== undefined) throw duplicate(intakeItemToView(existing))
   }
+  const [row] = await tx
+    .insert(financeIntakeItem)
+    .values({ ...values, sourceRef, status: 'draft', createdBy })
+    .returning()
+  return intakeItemToView(row)
+}
+
+/**
+ * The insert inside the CALLER's transaction — so an act that files and posts
+ * in one go (the EARS-544 refund: the request and its reimbursement in one
+ * `platformTransaction`) gets the same shape, placement, settlement and
+ * duplicate checks as any other filing. It asks no ROLE: whoever calls it has
+ * already gated the act it belongs to.
+ */
+export async function createIntakeItemInTransaction(
+  tx: PlatformTx,
+  input: CreateIntakeItemInput,
+  createdBy: number,
+): Promise<FinanceIntakeItemView> {
+  assertCreateInputKeys(input)
+  assertKnownSource(input.source)
+  return insertPreparedIntakeItem(
+    tx,
+    prepareIntakeInsert(input),
+    createdBy,
+    duplicateRefusalFor(input.source, createdBy),
+  )
 }
 
 /** Public callers create requests only through `createExpenseRequest` (EARS-508). */
@@ -741,6 +797,17 @@ export async function editIntakeItem(
       paidAmount: next.paidAmount ?? null,
       paidCurrency: next.paidCurrency ?? null,
       personalFunds: next.personalFunds,
+    })
+    await assertIntakeSettlement(tx, {
+      id: next.id,
+      source: next.source,
+      kind: next.kind,
+      status: next.status,
+      amount: next.amount,
+      currency: next.currency,
+      memberId: next.memberId ?? null,
+      counterAccountId: next.counterAccountId ?? null,
+      settlesItemId: next.settlesItemId ?? null,
     })
     await options.validate?.(tx, intakeItemToView(next))
 

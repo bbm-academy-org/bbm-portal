@@ -170,9 +170,9 @@ const DEFERRALS_BY_ISSUE = {
       'spec 339 §I (owner payment queue, #547): the Bank of Russia rate store, its sync job and the display-conversion rule. The list is EMPTY because #548 landed: EARS-550/552/553 are asserted in tests/unit/finance-fx-cbr.spec.ts, finance-fx-display-rule.spec.ts, finance-fx-sync-cli.spec.ts and tests/int/platform/finance-fx-rates.int.spec.ts.',
   },
   549: {
-    ids: ['EARS-535', 'EARS-543', 'EARS-544', 'EARS-545', 'EARS-547', 'EARS-548'],
+    ids: [],
     reason:
-      'spec 339 §I (#547): stage derivation (the read model #550 renders), mark-paid without a document, reimbursement in one act with the mandatory settles_item link, attach-later and the bulk retroactive act — the domain and API half, whose tests #549 writes.',
+      'spec 339 §I (#547): stage derivation, mark-paid without a document, reimbursement in one act with the mandatory settles_item link, attach-later and the bulk retroactive act. The list is EMPTY because #549 landed: EARS-535/543/544/545/547/548 are asserted in tests/int/platform/finance-payment-queue.int.spec.ts, tests/unit/finance-request-stage.spec.ts and tests/unit/finance-requests-api.spec.ts.',
   },
   550: {
     ids: [

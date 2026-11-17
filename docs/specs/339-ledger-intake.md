@@ -290,7 +290,8 @@ conversions — or the books cannot be rebuilt.
 - `submitted` → `approved` (approve role) · → `refused` (approve role, reason
   required) · → `cancelled` (the submitter withdraws).
 - `approved` → `posted` (approve role, through the explicit mark-paid act —
-  EARS-543; no document required since 2026-11-17, EARS-506) · → `refused`
+  EARS-543 — or the refund act — EARS-544; no document required since
+  2026-11-17, EARS-506) · → `refused`
   (approve role revokes an unposted authorization, reason required).
 - `submitted` → `approved` → `posted` in **one** act: «Одобрить и отметить
   оплату» / the mark-paid act / the refund act («Отметить возврат») on a
@@ -931,6 +932,17 @@ the corpus's «потерялась в канале» case).
   refund from an account in the liability's currency, and a cross-currency
   settlement of an already-booked debt is out of scope in v1. On an already
   posted request the refund shall equal its posted liability amount.
+  WHERE the act's refund date differs from the request's own `occurred_on`,
+  the request posts at its own `occurred_on` (the date the member's card was
+  charged — EARS-508; an `already_paid` request always carries it) and the
+  reimbursement transfer at the refund date; only the bulk act (EARS-547)
+  writes one row date to both. IF a cross-currency refund does not exceed the
+  recorded fee, THEN the system shall refuse it and say so — nothing would be
+  left for the spend itself (`paid_amount` = refund − fee must be positive).
+
+  The `settles_item` uniqueness (EARS-528) holds among **live** transfers: a
+  refused or cancelled reimbursement moved no money and frees the item again
+  (a partial unique index, #549).
 
   _Revised 2026-11-17 (re-review of PR #552 at `42007c8`). The previous
   version did not approve a `submitted` request first and wrote the whole

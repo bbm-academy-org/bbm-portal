@@ -42,10 +42,10 @@ export function planRequestDrop(
  * Does this act have to ask the finance role for the money facts first?
  *
  * EARS-533: the paying account and the date money moved are the POSTING act's
- * input, and two acts post — `confirm` always, and `approve` in EARS-510's one
- * act where the confirming document is already attached. An act that only
- * AUTHORISES (approve with no document) posts nothing, so it has nowhere to
- * write them and must not ask: the server refuses them there on purpose.
+ * input, and only `confirm` posts. Since 2026-11-17 (EARS-510 revised, #549)
+ * `approve` AUTHORISES and nothing else, an attached invoice included, so it
+ * has nowhere to write them and must not ask: the server refuses them there on
+ * purpose. `confirm` asks whether or not a document is attached (EARS-506).
  *
  * An «уже потрачено» request already carries both, so it is posted straight
  * from what it says — no re-entry of what the request already told us.
@@ -54,8 +54,7 @@ export function postingActNeedsMoneyFacts(
   request: RequestBoardItem,
   act: FinanceRequestBoardAct,
 ): boolean {
-  const posts = act === 'confirm' || (act === 'approve' && request.documents.length > 0)
-  if (!posts) return false
+  if (act !== 'confirm') return false
   return request.occurredOn === null || (request.account === null && !request.personalFunds)
 }
 

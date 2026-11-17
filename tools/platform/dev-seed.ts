@@ -41,6 +41,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
   approveExpenseRequest,
+  markExpenseRequestPaid,
   cancelExpenseRequest,
   confirmExpenseRequest,
   createCounterparty,
@@ -393,15 +394,14 @@ async function walkRequestTo(
         await refuseExpenseRequest(approver, item.id, request.refusalReason!)
         return { documentsUploaded }
       case 'approved':
-        // Deliberately WITHOUT a document: with a ready document `approve` is
-        // the one-act confirmation and posts in the same transaction
-        // (EARS-510/511), so an `approved` fixture is precisely a request still
-        // waiting for its file.
+        // Approve only authorizes since 2026-11-17 (EARS-510 revised, #549);
+        // an `approved` fixture is a request waiting for its mark-paid act.
         await approveExpenseRequest(approver, item.id)
         return { documentsUploaded }
       case 'posted':
+        // «Одобрить и отметить оплату» — the one act from `submitted` (EARS-543).
         await ensureDocument()
-        await approveExpenseRequest(approver, item.id)
+        await markExpenseRequestPaid(approver, item.id)
         return { documentsUploaded }
       default:
         break

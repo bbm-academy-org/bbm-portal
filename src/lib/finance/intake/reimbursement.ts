@@ -12,10 +12,10 @@
  * no rule of its own: the placement rule lives in `./account-placement` and
  * runs inside `createIntakeItem`'s transaction like for any other item.
  *
- * Seam for #549 («reimburse in one act», spec PR #552): that act settles a
- * specific request and names it through `settles_item`. It composes this same
- * shape (`reimbursementTransferValues`) inside its own transaction; the column
- * and its uniqueness arrive with #549, not here.
+ * Since #549 the transfer names the posted `personal_funds` item it settles
+ * (`settlesItemId`, EARS-528 revised): mandatory outside `backfill`, for that
+ * item's whole liability. The refund act («Отметить возврат», EARS-544) builds
+ * this same shape (`reimbursementTransferValues`) inside its own transaction.
  */
 import { and, eq } from 'drizzle-orm'
 
@@ -41,6 +41,8 @@ export type CreateReimbursementTransferInput = {
   note?: string | null
   feeAmount?: bigint | null
   feeCurrency?: string | null
+  /** The posted `personal_funds` item this settles (EARS-528); refused when missing. */
+  settlesItemId?: number | null
 }
 
 /** The intake shape of a reimbursement, given the liability account of its currency. */
@@ -62,6 +64,7 @@ export function reimbursementTransferValues(
     note: input.note ?? null,
     feeAmount: input.feeAmount ?? null,
     feeCurrency: input.feeCurrency ?? null,
+    settlesItemId: input.settlesItemId ?? null,
   }
 }
 

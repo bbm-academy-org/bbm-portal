@@ -126,8 +126,8 @@ export async function assertRealizedFxWriteOrder(
     if (latest !== null && occurredOn < latest.occurredOn) {
       throw new FinanceRefusal(
         `Операция от ${occurredOn} не может быть записана после уже проведённой операции валютной пары ${pair.key} от ${latest.occurredOn}: ` +
-          'неизменяемый ledger не пересчитывает уже признанный FX-результат (EARS-319/328). ' +
-          'История вносится источником backfill в хронологическом порядке.',
+          'неизменяемый ledger не пересчитывает уже признанный FX-результат (EARS-319/328, EARS-543) — ' +
+          'отметьте более ранние валютные оплаты раньше более поздних.',
       )
     }
   }

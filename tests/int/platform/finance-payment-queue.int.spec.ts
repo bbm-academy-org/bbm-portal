@@ -578,7 +578,7 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
 
   it('EARS-528: the one-time data step links a pre-column transfer to its single candidate and stops on ambiguity', async () => {
     const step = readFileSync(
-      resolve(process.cwd(), 'src/lib/platform/db/migrations/0017_finance_settles_item.sql'),
+      resolve(process.cwd(), 'src/lib/platform/db/migrations/0019_finance_settles_item.sql'),
       'utf8',
     )
     const begin = step.indexOf('-- data-step:begin')

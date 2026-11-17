@@ -278,12 +278,50 @@ function isOwnRequestSet(
   return items.every((item) => item.source === 'request' && item.createdBy === memberId)
 }
 
+/**
+ * Which items still take a new document. `posted` does since EARS-545 (a
+ * receipt may follow the posting — the link changes no amount and no status);
+ * `refused` and `cancelled` stay closed (EARS-516).
+ */
 function assertItemsAcceptDocument(items: readonly { status: string; id: number }[]): void {
-  const terminal = items.filter((item) => ['posted', 'refused', 'cancelled'].includes(item.status))
-  if (terminal.length === 0) return
+  const closed = items.filter((item) => ['refused', 'cancelled'].includes(item.status))
+  if (closed.length === 0) return
   throw new FinanceRefusal(
-    `К терминальным позициям приёмки (${terminal.map((item) => `#${item.id}`).join(', ')}) нельзя прикреплять новые документы (EARS-516).`,
+    `К отклонённым и отменённым позициям приёмки (${closed.map((item) => `#${item.id}`).join(', ')}) нельзя прикреплять новые документы (EARS-516, EARS-545).`,
   )
+}
+
+function attachesToPostedOnly(items: readonly { status: string }[]): boolean {
+  return items.length > 0 && items.every((item) => item.status === 'posted')
+}
+
+/**
+ * Link already-uploaded ready documents to an item inside the CALLER's
+ * transaction — the «optional document ids» of the EARS-543/544 acts, carried
+ * by the act that posts the item. The act's own gate (`finance-approve`) is the
+ * access rule here; nothing else in the module calls it.
+ */
+export async function linkReadyDocumentsInTransaction(
+  tx: PlatformTx,
+  documentIds: readonly number[],
+  intakeItemId: number,
+  linkedBy: number,
+): Promise<void> {
+  for (const documentId of [...new Set(documentIds)]) {
+    const document = await requireDocument(tx, documentId, true)
+    assertDocumentReady(document, 'прикреплять его')
+    const [existing] = await tx
+      .select({ id: financeDocumentLink.id })
+      .from(financeDocumentLink)
+      .where(
+        and(
+          eq(financeDocumentLink.documentId, document.id),
+          eq(financeDocumentLink.intakeItemId, intakeItemId),
+        ),
+      )
+    if (existing !== undefined) continue
+    await tx.insert(financeDocumentLink).values({ documentId: document.id, intakeItemId, linkedBy })
+  }
 }
 
 /**
@@ -318,7 +356,10 @@ export async function uploadFinanceDocument(
 
   const pending = await platformTransaction(financeAuditContext(actor), async (tx) => {
     const items = await loadItems(tx, itemIds)
-    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, uploadedBy) })
+    assertFinanceIntakeAccess(actor, {
+      ownRequest: isOwnRequestSet(items, uploadedBy),
+      attachToPosted: attachesToPostedOnly(items),
+    })
     assertItemsAcceptDocument(items)
 
     const [row] = await tx
@@ -419,7 +460,10 @@ export async function resumeFinanceDocumentUpload(
     return await platformTransaction(financeAuditContext(actor), async (tx) => {
       const document = await requireDocument(tx, documentId, true)
       const items = await linkedItems(tx, document.id, true)
-      assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet(items, memberId) })
+      assertFinanceIntakeAccess(actor, {
+        ownRequest: isOwnRequestSet(items, memberId),
+        attachToPosted: attachesToPostedOnly(items),
+      })
       assertRecoveryBytes(document, bytes)
 
       if (document.storageState === 'pending_delete') {
@@ -677,7 +721,10 @@ export async function attachFinanceDocument(
     const document = await requireDocument(tx, input.documentId, true)
     assertDocumentReady(document, 'прикреплять его')
     const [item] = await loadItems(tx, [input.intakeItemId])
-    assertFinanceIntakeAccess(actor, { ownRequest: isOwnRequestSet([item], linkedBy) })
+    assertFinanceIntakeAccess(actor, {
+      ownRequest: isOwnRequestSet([item], linkedBy),
+      attachToPosted: attachesToPostedOnly([item]),
+    })
     assertItemsAcceptDocument([item])
 
     const [existing] = await tx

@@ -172,6 +172,11 @@ export function assertFinanceLedgerAccess(actor: FinanceActor): void {
   }
 }
 
+/** The same question as a boolean — for a READ that shapes itself by role, never for a write. */
+export function holdsFinanceLedgerRole(actor: FinanceActor): boolean {
+  return holds(actor, FINANCE_APPROVE_ROLE)
+}
+
 /**
  * What the act touches, as far as the ROLE question is concerned.
  *
@@ -187,6 +192,12 @@ export function assertFinanceLedgerAccess(actor: FinanceActor): void {
 export type FinanceIntakeAct = {
   /** True when the act is one of EARS-502's, on an intake item the actor submitted. */
   ownRequest?: boolean
+  /**
+   * True when every item the act touches is already POSTED and the act only
+   * attaches a document to it — spec 339 EARS-545 names «the submitter or an
+   * entry/approve-role holder» for that one act. It opens nothing else.
+   */
+  attachToPosted?: boolean
 }
 
 /**
@@ -209,6 +220,9 @@ export function assertFinanceIntakeAccess(actor: FinanceActor, act: FinanceIntak
   assertAttributable(actor)
   if (act.ownRequest === true) return
   if (holds(actor, FINANCE_ENTRY_ROLE)) return
+  // EARS-545 (2026-11-17): the clause itself adds the approve role to the
+  // attach-after-posting act — the one place it writes to intake data.
+  if (act.attachToPosted === true && holds(actor, FINANCE_APPROVE_ROLE)) return
   throw new FinanceAccessRefusal(
     `Ведение заявок и документов вне собственной заявки — роль «${FINANCE_ENTRY_ROLE}» ` +
       `(EARS-501). У ${actor.email} её нет. Своя заявка на /p/finance/requests доступна ` +

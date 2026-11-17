@@ -62,6 +62,7 @@
  */
 import { sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -195,6 +196,14 @@ export const financeIntakeItem = core.table(
     postedAt: timestamp('posted_at', { withTimezone: true }),
     /** Filled at posting (EARS-505); unique — an operation has at most one item. */
     operationId: integer('operation_id').references(() => financeOperation.id),
+    /**
+     * The `personal_funds` item a reimbursement transfer settles (EARS-528/544).
+     * Set only on a `kind = transfer` into the system liability account and
+     * mandatory there outside `backfill`; «settled» is a read of this link, not
+     * a status. Unique among LIVE transfers (the partial index below): a refused
+     * or cancelled transfer settled nothing, so it must not hold the debt hostage.
+     */
+    settlesItemId: integer('settles_item_id').references((): AnyPgColumn => financeIntakeItem.id),
     ...auditColumns(),
     /**
      * `created_by` stays NOT NULL here: the submitter is a REQUIRED fact of this
@@ -305,6 +314,17 @@ export const financeIntakeItem = core.table(
       .on(table.source, table.sourceRef)
       .where(sql`${table.sourceRef} is not null`),
     uniqueIndex('finance_intake_item_operation_unique').on(table.operationId),
+    // EARS-528: one debt, one settlement. Partial on purpose — a refused or
+    // cancelled reimbursement moved no money and frees the item again.
+    uniqueIndex('finance_intake_item_settles_item_unique')
+      .on(table.settlesItemId)
+      .where(
+        sql`${table.settlesItemId} is not null and ${table.status} not in ('refused', 'cancelled')`,
+      ),
+    check(
+      'finance_intake_item_settles_transfer',
+      sql`${table.settlesItemId} is null or (${table.kind} = 'transfer' and ${table.settlesItemId} <> ${table.id})`,
+    ),
     // The queue reads by status, the member's own list by author.
     index('finance_intake_item_status_idx').on(table.status),
     index('finance_intake_item_created_by_idx').on(table.createdBy),

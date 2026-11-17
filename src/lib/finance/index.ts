@@ -193,7 +193,24 @@ export type {
   FinanceDocumentVerificationContext,
   FinanceDocumentVerificationVerdict,
   FinanceDocumentVerifier,
+  FinanceExpenseRequestView,
 } from './intake/requests'
+// ── the owner's payment queue (spec 339 §I, EARS-535/543/544/547/548) ────────
+export {
+  bulkMarkExpenseRequestsPaid,
+  markExpenseRequestPaid,
+  markExpenseRequestReimbursed,
+} from './intake/payment-acts'
+export type {
+  BulkAccountSideAmountPolicy,
+  BulkMarkExpenseRequestsInput,
+  BulkMarkExpenseRequestsResult,
+  BulkMarkGroup,
+  MarkExpenseRequestPaidInput,
+  MarkExpenseRequestReimbursedInput,
+} from './intake/payment-acts'
+export { deriveExpenseRequestStage, EXPENSE_REQUEST_STAGES } from './intake/request-queue'
+export type { ExpenseRequestStage, ExpenseRequestStageInput } from './intake/request-queue'
 // `registerIntakeProducer` is deliberately NOT re-exported. Registration is a
 // LOAD-TIME act inside the module (`./intake/sources` registers the four sources
 // spec 339 fixes), and the registry is a module-global `Map` keyed by source: a
