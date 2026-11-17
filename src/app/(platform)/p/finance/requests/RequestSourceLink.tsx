@@ -2,6 +2,8 @@
 
 import { ExternalLinkIcon } from 'lucide-react'
 
+import { Button } from '@/ui/button'
+
 import type { RequestBoardItem } from './request-board-contract'
 
 /**
@@ -42,17 +44,21 @@ export function RequestSourceLink({
     return <span className="text-muted-foreground">{request.sourceRef}</span>
   }
   const name = `Открыть источник заявки №${request.id}${label === null ? '' : ` (${label})`}`
+  // The kit's link primitive, not a raw `<a>` (#525 review N5): the focus ring
+  // and hover are the kit's, the same as every other `variant="link"` control.
+  // `h-auto p-0` lets it sit inline in a table cell, as the reference lists do.
   return (
-    <a
-      href={request.sourceUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={name}
-      aria-label={compact ? name : undefined}
-      className="inline-flex items-center gap-1 rounded-sm text-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none active:opacity-70"
-    >
-      {compact ? null : <span>{label}</span>}
-      <ExternalLinkIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-    </a>
+    <Button asChild variant="link" size="sm" className="h-auto gap-1 p-0 font-normal">
+      <a
+        href={request.sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={name}
+        aria-label={compact ? name : undefined}
+      >
+        {compact ? null : <span>{label}</span>}
+        <ExternalLinkIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      </a>
+    </Button>
   )
 }
