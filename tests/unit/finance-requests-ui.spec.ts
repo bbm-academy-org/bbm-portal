@@ -1735,6 +1735,10 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     // A new tab, and `noopener noreferrer` is what makes that safe.
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // The kit's link primitive (`Button asChild variant="link"`), so its focus
+    // ring is the kit's, not a hand-rolled one (#525 review N5).
+    expect(link.getAttribute('data-slot')).toBe('button')
+    expect(link.getAttribute('data-variant')).toBe('link')
     // The row with no source carries NO link at all — not a dash, not a
     // disabled icon.
     expect(within(table).queryByRole('link', { name: /Открыть источник заявки №2/ })).toBeNull()
