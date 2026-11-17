@@ -96,6 +96,16 @@ describe('the CBR daily XML (EARS-552)', () => {
     expect(daily.effectiveDate).toBe('2026-11-14')
   })
 
+  it('EARS-552: the request carries a timeout, so a hung cbr.ru cannot hold the cron', async () => {
+    let signal: AbortSignal | undefined
+    const fakeFetch = (async (_url: string, init?: RequestInit) => {
+      signal = init?.signal ?? undefined
+      return new Response(SUNDAY_BYTES, { status: 200 })
+    }) as unknown as typeof fetch
+    await fetchCbrDaily('2026-11-15', fakeFetch)
+    expect(signal).toBeInstanceOf(AbortSignal)
+  })
+
   it('EARS-552: a non-2xx answer from cbr.ru is an error, not an empty day', async () => {
     const fakeFetch = (async () => new Response('busy', { status: 503 })) as unknown as typeof fetch
     await expect(fetchCbrDaily('2026-11-15', fakeFetch)).rejects.toThrow(CbrResponseError)

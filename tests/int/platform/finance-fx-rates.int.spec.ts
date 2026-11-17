@@ -123,6 +123,27 @@ describe('core.finance_fx_rate (EARS-552)', () => {
     expect(await latestRateDate()).toBe('2026-11-14')
   })
 
+  it("EARS-552: after a manual run up to tomorrow, the next morning's run without a range still succeeds", async () => {
+    // CBR publishes tomorrow's rate in the afternoon, so `--to <tomorrow>` is
+    // allowed and leaves the last stored date AFTER the next run's today.
+    const withTomorrow = async (date: string): Promise<CbrDaily> =>
+      date === '2026-11-16'
+        ? { ...BY_REQUEST['2026-11-13'], effectiveDate: '2026-11-16' }
+        : fixtureFetch(date)
+    await syncCbrRates({
+      from: '2026-11-15',
+      to: '2026-11-16',
+      today: '2026-11-15',
+      fetchDaily: withTomorrow,
+    })
+    expect(await latestRateDate()).toBe('2026-11-16')
+    asked.length = 0
+    const summary = await syncCbrRates({ today: '2026-11-15', fetchDaily: withTomorrow })
+    expect(summary.from).toBe('2026-11-15')
+    expect(summary.to).toBe('2026-11-15')
+    expect(summary.inserted).toBe(0)
+  })
+
   it("EARS-552: rateOn for a Sunday returns the stored rate whose rate_date is the fixture's ValCurs/@Date", async () => {
     await syncCbrRates({ from: '2026-11-13', to: '2026-11-15', fetchDaily: fixtureFetch })
     expect(await rateOn('USD', '2026-11-15')).toEqual({
