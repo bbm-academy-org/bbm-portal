@@ -49,7 +49,11 @@ import {
 } from '../core/actor'
 import { FinanceAccessRefusal, financeMemberRecordRefusal, FinanceRefusal } from '../core/errors'
 import { assertIntakeAccountPlacement } from './account-placement'
-import { resolveIntakeSourceRef, type FinanceIntakeNaturalKey } from './sources'
+import {
+  resolveIntakeProducer,
+  resolveIntakeSourceRef,
+  type FinanceIntakeNaturalKey,
+} from './sources'
 import {
   assertIntakeTransition,
   planIntakeEdit,
@@ -83,6 +87,18 @@ export type FinanceIntakeItemView = {
   alreadyPaid: boolean
   personalFunds: boolean
   createdBy: number
+  /**
+   * WHEN THE REQUEST WAS FILED — the audit column `0016` added, and the one
+   * thing the board calls «Подана» (#517). It is stamped by
+   * `core.audit_columns_stamp()` and immutable afterwards; for the 47
+   * reconstructed rows migration `0017` set it from the Mattermost post's own
+   * instant, so it is the FILING moment rather than the import's clock.
+   */
+  createdAt: Date
+  updatedAt: Date
+  updatedBy: number | null
+  /** What the SOURCE said, structured (#517). Immutable after submit (EARS-555). */
+  provenance: Record<string, string> | null
   decidedBy: number | null
   decidedAt: Date | null
   refusalReason: string | null
@@ -100,15 +116,51 @@ export type FinanceIntakeItemView = {
 export class FinanceIntakeDuplicate extends FinanceRefusal {
   readonly existing: FinanceIntakeItemView
 
-  constructor(existing: FinanceIntakeItemView) {
-    super(
-      `Позиция с source = «${existing.source}» и source_ref = «${existing.sourceRef}» уже есть ` +
-        `в приёмке — это заявка #${existing.id} в статусе «${existing.status}» (EARS-504). ` +
-        'Повторный разбор той же истории ничего не проводит второй раз.',
-    )
+  constructor(
+    existing: FinanceIntakeItemView,
+    message = `Позиция с source = «${existing.source}» и source_ref = «${existing.sourceRef}» уже есть ` +
+      `в приёмке — это заявка #${existing.id} в статусе «${existing.status}» (EARS-504). ` +
+      'Повторный разбор той же истории ничего не проводит второй раз.',
+  ) {
+    super(message)
     this.name = 'FinanceIntakeDuplicate'
     this.existing = existing
   }
+}
+
+/**
+ * THE SAME REFUSAL, SAID TO A PERSON (#525 review N2).
+ *
+ * The default text above is written for a backfill or a bank import — it names
+ * `source_ref` and the existing item's number and status, which is exactly what
+ * a re-run of a history needs. A member filing through the form is not
+ * re-running anything, and the request holding the link may be someone else's,
+ * which a member with the «мои» scope may not see. So the number is named only
+ * to the member who filed that request, and its status to no one: the member
+ * already sees their own request's status on the board.
+ */
+export function sourceRefTakenMessage(
+  existing: Pick<FinanceIntakeItemView, 'id' | 'createdBy'>,
+  actorMemberId: number,
+): string {
+  return existing.createdBy === actorMemberId
+    ? `Эта ссылка на источник уже указана в вашей заявке №${existing.id}: одна ссылка — ` +
+        'одна заявка. Откройте ту заявку или подайте эту без ссылки.'
+    : 'Эта ссылка на источник уже указана в другой заявке: одна ссылка — одна заявка. ' +
+        'Подайте заявку без ссылки, а источник опишите в комментарии.'
+}
+
+/**
+ * The race behind EARS-504: two arrivals both pass the read in `createIntakeItem`
+ * and the second insert hits `finance_intake_item_source_ref_unique`. Recognised
+ * by SQLSTATE and constraint name through the driver's `cause` chain, so any
+ * other unique violation (the operation link, say) still surfaces as itself.
+ */
+export function isSourceRefCollision(error: unknown): boolean {
+  const node = error as { code?: unknown; constraint?: unknown; cause?: unknown } | undefined
+  if (node === null || typeof node !== 'object') return false
+  if (node.code === '23505') return node.constraint === 'finance_intake_item_source_ref_unique'
+  return node.cause === undefined ? false : isSourceRefCollision(node.cause)
 }
 
 export type CreateIntakeItemInput = {
@@ -449,19 +501,39 @@ export async function createIntakeItem(
   })
   const createdBy = await requireMemberId(actor)
 
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    await options.validate?.(tx)
-    await assertIntakeAccountPlacement(tx, values)
-    if (sourceRef !== null) {
-      const existing = await findBySourceRef(tx, input.source, sourceRef)
-      if (existing !== undefined) throw new FinanceIntakeDuplicate(intakeItemToView(existing))
-    }
-    const [row] = await tx
-      .insert(financeIntakeItem)
-      .values({ ...values, sourceRef, status: 'draft', createdBy })
-      .returning()
-    return intakeItemToView(row)
-  })
+  // A human source (`request`/`manual`: the ref is optional) hears the refusal
+  // in words meant for a person; a backfill or an import keeps the EARS-504
+  // text that points at the original (#525 review N2).
+  const humanSource = resolveIntakeProducer(input.source).sourceRefPolicy === 'optional'
+  const duplicate = (existing: FinanceIntakeItemView) =>
+    humanSource
+      ? new FinanceIntakeDuplicate(existing, sourceRefTakenMessage(existing, createdBy))
+      : new FinanceIntakeDuplicate(existing)
+
+  try {
+    return await platformTransaction(financeAuditContext(actor), async (tx) => {
+      await options.validate?.(tx)
+      await assertIntakeAccountPlacement(tx, values)
+      if (sourceRef !== null) {
+        const existing = await findBySourceRef(tx, input.source, sourceRef)
+        if (existing !== undefined) throw duplicate(intakeItemToView(existing))
+      }
+      const [row] = await tx
+        .insert(financeIntakeItem)
+        .values({ ...values, sourceRef, status: 'draft', createdBy })
+        .returning()
+      return intakeItemToView(row)
+    })
+  } catch (error) {
+    // Lost the race between the read above and the insert: the winner is
+    // committed by now, so answer with it exactly as the read would have.
+    if (sourceRef === null || !isSourceRefCollision(error)) throw error
+    const winner = await platformTransaction(financeAuditContext(actor), (tx) =>
+      findBySourceRef(tx, input.source, sourceRef),
+    )
+    if (winner === undefined) throw error
+    throw duplicate(intakeItemToView(winner))
+  }
 }
 
 /** Public callers create requests only through `createExpenseRequest` (EARS-508). */

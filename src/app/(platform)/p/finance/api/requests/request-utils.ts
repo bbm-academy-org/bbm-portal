@@ -6,10 +6,34 @@ import {
   listCounterparties,
   FINANCE_APPROVE_ROLE,
   FINANCE_ENTRY_ROLE,
+  FINANCE_INTAKE_SOURCE_REF_MAX,
   type CreateExpenseRequestInput,
   type FinanceActor,
 } from '@/lib/finance'
 import { claimGateResponse, PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
+
+/**
+ * WHAT THE FORM MAY PUT IN `source_ref` (#517, revised EARS-503).
+ *
+ * An http(s) URL and nothing else. The column also holds Mattermost POST IDS —
+ * migration `0017` wrote 47 of them — but those come from a reconstruction, not
+ * from a person: a member typing into a browser has a URL in their clipboard,
+ * and accepting a bare identifier here would mean accepting any typo at all as
+ * «an identifier in some system», which the resolver could then never turn into
+ * a link. So the refusal is early and says what shape is wanted.
+ */
+function isHttpLink(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+export const SOURCE_REF_REFUSAL =
+  'Ссылка на источник должна быть адресом вида https://… — например, ссылкой на пост в ' +
+  'Mattermost, где обсуждали трату.'
 
 export const expenseRequestBodySchema = z
   .object({
@@ -26,6 +50,15 @@ export const expenseRequestBodySchema = z
     counterpartyId: z.number().int().positive().nullable().optional(),
     counterpartyName: z.string().trim().min(1).max(200).nullable().optional(),
     note: z.string().trim().max(2_000).nullable().optional(),
+    /** Optional, filing-only, immutable afterwards (#517, EARS-554/555). */
+    sourceRef: z
+      .string()
+      .trim()
+      .min(1)
+      .max(FINANCE_INTAKE_SOURCE_REF_MAX)
+      .refine(isHttpLink, { message: SOURCE_REF_REFUSAL })
+      .nullable()
+      .optional(),
     alreadyPaid: z.boolean(),
     personalFunds: z.boolean(),
   })
@@ -171,6 +204,7 @@ export function expenseRequestInput(
     productId: body.productId ?? null,
     counterpartyId,
     note: body.note ?? null,
+    sourceRef: body.sourceRef ?? null,
     alreadyPaid: body.alreadyPaid,
     personalFunds: body.personalFunds,
   }
@@ -201,6 +235,10 @@ export async function financeRequestActor(): Promise<
 export function requestApiError(cause: unknown): Response {
   const error = cause as { name?: string; message?: string }
   if (error?.name === 'FinanceAccessRefusal') return textResponse(403, error.message)
+  // EARS-504: the link is already another request's — a conflict with existing
+  // state, refused in words; before #525 review N2 its own class name fell
+  // through to `throw` and the member saw a 500.
+  if (error?.name === 'FinanceIntakeDuplicate') return textResponse(409, error.message)
   if (error?.name === 'FinanceRefusal') return textResponse(422, error.message)
   throw cause
 }
