@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
   // fine in dev and find no file in prod.
   outputFileTracingIncludes: {
     '/p/path': ['./content/path-map/**/*'],
+    // `/p/processes/*` reads the invented example only with PROCESS_MODELS_SOURCE=example (#553).
+    '/p/processes/ds-content-production': ['./content/processes/example/**/*'],
   },
   // Next rewrites its own guidance block into `AGENTS.md` on EVERY `next dev`
   // start (`next/dist/server/lib/generate-agent-files.js`). Off here, and the
