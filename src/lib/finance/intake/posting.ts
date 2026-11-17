@@ -53,6 +53,7 @@ import {
   requireCurrency,
   type FinanceAccountView,
 } from '../references'
+import { assertIntakeAccountPlacement, isReimbursementTransfer } from './account-placement'
 import {
   intakeItemToView,
   intakeMoneyFactsRefusal,
@@ -255,6 +256,8 @@ export async function postIntakeItem(
       paidAmount: withDetails.paidAmount,
       paidCurrency: withDetails.paidCurrency,
     } as PostingItem
+    // EARS-528 again at the last door: a row may predate the filing-time rule.
+    await assertIntakeAccountPlacement(tx, postingItem)
     await assertRequestPurposeReady(tx, item.id)
     await requireReadyDocument(tx, item.id)
     const postedBy = await requireActorMemberId(tx, actor)
@@ -470,16 +473,8 @@ async function recordTransfer(tx: PlatformTx, item: PostingItem): Promise<Record
   const target = await requireAccount(tx, item.counterAccountId)
   assertAccountCurrency(source, item.currency, 'счёта списания')
   assertAccountCurrency(target, item.currency, 'счёта зачисления')
-  if (target.isSystem && target.kind !== 'liability') {
-    throw new FinanceRefusal(
-      'Перевод из приёмки может назвать системным только liability-счёт (EARS-528).',
-    )
-  }
-  if (target.kind === 'liability' && item.memberId === null) {
-    throw new FinanceRefusal(
-      'Возмещение обязано назвать участника, чей долг оно закрывает (EARS-528).',
-    )
-  }
+  // Which system account may stand here, and with which member, was already
+  // decided by `assertIntakeAccountPlacement` before this writer ran.
   assertFeeCurrency(item, source.currency)
   const postings: PostingDraft[] = [
     { accountId: source.id, amount: -item.amount, currency: item.currency },
@@ -487,7 +482,7 @@ async function recordTransfer(tx: PlatformTx, item: PostingItem): Promise<Record
       accountId: target.id,
       amount: item.amount,
       currency: item.currency,
-      memberId: target.kind === 'liability' ? item.memberId : null,
+      memberId: isReimbursementTransfer(item, target) ? item.memberId : null,
     },
     ...(await feePostings(tx, item, source)),
   ]

@@ -48,6 +48,7 @@ import {
   type FinanceActor,
 } from '../core/actor'
 import { FinanceAccessRefusal, financeMemberRecordRefusal, FinanceRefusal } from '../core/errors'
+import { assertIntakeAccountPlacement } from './account-placement'
 import { resolveIntakeSourceRef, type FinanceIntakeNaturalKey } from './sources'
 import {
   assertIntakeTransition,
@@ -450,6 +451,7 @@ export async function createIntakeItem(
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     await options.validate?.(tx)
+    await assertIntakeAccountPlacement(tx, values)
     if (sourceRef !== null) {
       const existing = await findBySourceRef(tx, input.source, sourceRef)
       if (existing !== undefined) throw new FinanceIntakeDuplicate(intakeItemToView(existing))
@@ -656,6 +658,16 @@ export async function editIntakeItem(
       feeAmount: next.feeAmount ?? null,
       feeCurrency: next.feeCurrency ?? null,
       alreadyPaid: next.alreadyPaid,
+      personalFunds: next.personalFunds,
+    })
+    await assertIntakeAccountPlacement(tx, {
+      kind: next.kind,
+      currency: next.currency,
+      accountId: next.accountId ?? null,
+      counterAccountId: next.counterAccountId ?? null,
+      memberId: next.memberId ?? null,
+      paidAmount: next.paidAmount ?? null,
+      paidCurrency: next.paidCurrency ?? null,
       personalFunds: next.personalFunds,
     })
     await options.validate?.(tx, intakeItemToView(next))
