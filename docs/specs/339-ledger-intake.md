@@ -30,9 +30,10 @@ updated: 2026-11-17
 - **Issues (§I, owner's payment queue, 2026-11-17):** #547 (parent, sub-issue
   of #339) → #548 (Bank of Russia FX rates + display conversion) — head of the
   path; #549 (mark paid without a document, reimburse in one act, bulk
-  retroactive posting — API) ← #466; #550 (queue screen) ← #548 + #517; #551
-  (details sheet, forms, bulk dialog) ← #549 + #550. #548 and the #466 → #549
-  strand run in parallel.
+  retroactive posting — API) ← #466; #550 (queue screen) ← #548 + #517 + #549
+  (it reads #549's stage model and must not ship an «Одобрить» button while
+  approve still posts); #551 (details sheet, forms, bulk dialog) ← #549 +
+  #550. #548 and the #466 → #549 strand run in parallel.
 
 ## Why
 
@@ -220,7 +221,9 @@ form. Pick = the owner's «Го» on the clickable prototype, vendored verbatim
 at `fidelity: wireframe` — it records the LAYOUT; the look stays the
 shadcn/Refine row with its recorded `Design-fidelity: GO`. The table's status
 and «Деньги ушли» columns go away (the group IS the status). The kanban board
-toggle for `finance-approve` is unchanged. Build: #550 (screen), #551 (sheet).
+toggle for `finance-approve` is unchanged, its drops following revised
+EARS-510/511: a drop on «approved» only approves, a drop on «posted» opens
+the mark-paid form. Build: #550 (screen), #551 (sheet).
 
 **`/p/finance/intake` — still pending.** The manual-entry / liability workspace
 has no Stage-A pick yet; it runs at #389
@@ -236,14 +239,14 @@ able to express everything the backfill has to reconstruct from zero
 (decision 17) — expenses, income, transfers between own accounts and
 conversions — or the books cannot be rebuilt.
 
-| Table                      | Carries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Key points                                                                                                                                                                                                                               |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `finance_intake_item`      | `id`, `source` (`request`\|`manual`\|`backfill`\|`bank_import`), `source_ref` (nullable; **unique per source where set**), `kind` (`expense`\|`income`\|`transfer`\|`conversion`), `status` (`draft`\|`submitted`\|`approved`\|`refused`\|`cancelled`\|`posted`), `occurred_on` (always the date money moved, never the document's date — EARS-508; **nullable while an unposted pre-spend request has no money date yet**, filled by the posting act — EARS-533; a `posted` item always has it), `account` FK (the money account; **nullable** — empty when `personal_funds` (EARS-513), and also while an unposted pre-spend request has named no account yet (EARS-533); a `posted` non-`personal_funds` item always names one), `counter_account` FK (nullable — transfer/conversion target; a system `liability` account only per EARS-528), `amount` + `currency` (document side, bigint minimal units), `paid_amount` + `paid_currency` (nullable — the account side when it differs; for `kind = conversion` — the target side), `fee_amount` + `fee_currency` (nullable), `purpose` FK (nullable — expense only), `project` FK, `product` FK (per binding), `counterparty` FK → `finance_counterparty` (EARS-532), `member` FK (nullable — the person the payment is attributable to, spec 338 EARS-322; required for `personal_funds` and liability transfers), `note`, `already_paid`, `personal_funds`, `created_by` → `core.member`, `decided_by`, `decided_at`, `refusal_reason`, `posted_by`, `posted_at`, `operation` FK (nullable, unique), `settles_item` FK → `finance_intake_item` (nullable, unique — set only on a `kind = transfer` reimbursement, naming the `personal_funds` request it settles; EARS-528/544) | one spine for all sources (decision 3); items are editable until posted per the status machine below — the ledger stays immutable; `operation` filled at posting                                                                         |
-| `finance_document`         | `id`, `storage_key` (private object storage), `content_digest` (server-computed immutable SHA-256), `storage_state` (`pending_upload`\|`ready`\|`pending_delete`), `filename`, `mime`, `size`, `kind` (`ru_invoice`\|`fiscal_receipt`\|`foreign_invoice`\|`payment_order`\|`bank_screenshot`\|`bank_statement`\|`other`), `uploaded_by`, `uploaded_at`; items linked via `finance_document_link`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | files in a **private** bucket/prefix, never the public media bucket (EARS-514); the durable state records intent before storage side effects and leaves an audited retry handle on failure; **not** in Payload — owner ruling 2026-08-26 |
-| `finance_document_link`    | `document` FK, `intake_item` FK (pair unique)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **one document may confirm several items** (corpus: one screenshot proving two consultations; «$370 + $22» in one payment); the operation link is derived through each item's `operation` FK                                             |
-| `finance_counterparty`     | `id`, `name` (case-insensitively unique), `created_by`, `created_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | who is being paid — a reference, not free text (owner decision 30, 2026-08-26); inline creation from the forms, renaming is admin (EARS-532)                                                                                             |
-| `finance_fx_rate`          | `id`, `source` (`cbr`), `currency` (ISO code as CBR quotes it), `rate_date` (the CBR effective date, `ValCurs/@Date`), `nominal` (integer), `value_rub` (exact decimal text — roubles per `nominal` units), `auditColumns()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | §I display rates only (EARS-552/553); unique (`source`, `currency`, `rate_date`); written only by the sync job (`system:finance-fx-sync`); never referenced by a posting or a conversion step                                            |
-| `finance_purpose_proposal` | `id`, `text`, `proposed_by`, `created_at`, `resolved_purpose` FK (nullable), `resolved_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | US-21: a missing purpose is proposed as free text that only an admin can turn into a purpose — free text never becomes a purpose by itself (decision 21)                                                                                 |
+| Table                      | Carries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Key points                                                                                                                                                                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `finance_intake_item`      | `id`, `source` (`request`\|`manual`\|`backfill`\|`bank_import`), `source_ref` (nullable; **unique per source where set**), `kind` (`expense`\|`income`\|`transfer`\|`conversion`), `status` (`draft`\|`submitted`\|`approved`\|`refused`\|`cancelled`\|`posted`), `occurred_on` (always the date money moved, never the document's date — EARS-508; **nullable while an unposted pre-spend request has no money date yet**, filled by the posting act — EARS-533; a `posted` item always has it), `account` FK (the money account; **nullable** — empty when `personal_funds` (EARS-513), and also while an unposted pre-spend request has named no account yet (EARS-533); a `posted` non-`personal_funds` item always names one), `counter_account` FK (nullable — transfer/conversion target; a system `liability` account only per EARS-528), `amount` + `currency` (document side, bigint minimal units), `paid_amount` + `paid_currency` (nullable — the account side when it differs; for `kind = conversion` — the target side), `fee_amount` + `fee_currency` (nullable), `purpose` FK (nullable — expense only), `project` FK, `product` FK (per binding), `counterparty` FK → `finance_counterparty` (EARS-532), `member` FK (nullable — the person the payment is attributable to, spec 338 EARS-322; required for `personal_funds` and liability transfers), `note`, `already_paid`, `personal_funds`, `created_by` → `core.member`, `decided_by`, `decided_at`, `refusal_reason`, `posted_by`, `posted_at`, `operation` FK (nullable, unique), `settles_item` FK → `finance_intake_item` (nullable, unique — set only on a `kind = transfer` reimbursement, naming the `personal_funds` item it settles; mandatory there except from `backfill` — EARS-528/544) | one spine for all sources (decision 3); items are editable until posted per the status machine below — the ledger stays immutable; `operation` filled at posting                                                                         |
+| `finance_document`         | `id`, `storage_key` (private object storage), `content_digest` (server-computed immutable SHA-256), `storage_state` (`pending_upload`\|`ready`\|`pending_delete`), `filename`, `mime`, `size`, `kind` (`ru_invoice`\|`fiscal_receipt`\|`foreign_invoice`\|`payment_order`\|`bank_screenshot`\|`bank_statement`\|`other`), `uploaded_by`, `uploaded_at`; items linked via `finance_document_link`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | files in a **private** bucket/prefix, never the public media bucket (EARS-514); the durable state records intent before storage side effects and leaves an audited retry handle on failure; **not** in Payload — owner ruling 2026-08-26 |
+| `finance_document_link`    | `document` FK, `intake_item` FK (pair unique)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | **one document may confirm several items** (corpus: one screenshot proving two consultations; «$370 + $22» in one payment); the operation link is derived through each item's `operation` FK                                             |
+| `finance_counterparty`     | `id`, `name` (case-insensitively unique), `created_by`, `created_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | who is being paid — a reference, not free text (owner decision 30, 2026-08-26); inline creation from the forms, renaming is admin (EARS-532)                                                                                             |
+| `finance_fx_rate`          | `id`, `source` (`cbr`), `currency` (ISO code as CBR quotes it), `rate_date` (the CBR effective date, `ValCurs/@Date`), `nominal` (integer), `value_rub` (exact decimal text — roubles per `nominal` units), `auditColumns()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §I display rates only (EARS-552/553); unique (`source`, `currency`, `rate_date`); written only by the sync job (`system:finance-fx-sync`); never referenced by a posting or a conversion step                                            |
+| `finance_purpose_proposal` | `id`, `text`, `proposed_by`, `created_at`, `resolved_purpose` FK (nullable), `resolved_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | US-21: a missing purpose is proposed as free text that only an admin can turn into a purpose — free text never becomes a purpose by itself (decision 21)                                                                                 |
 
 **Status machine** (every transition not listed is refused — EARS-524):
 
@@ -258,8 +261,9 @@ conversions — or the books cannot be rebuilt.
   оплату» / the mark-paid act on a `submitted` item records the approver as
   both decider and poster (EARS-510/543). Approving alone never posts.
 - A posted `personal_funds` request is **settled** when a reimbursement
-  transfer names it through `settles_item` (EARS-528/544); settled is a read
-  of that link, not a status.
+  transfer names it through `settles_item` (EARS-528/544) — the only way a
+  request is settled, since every non-backfill liability transfer must name
+  its item; settled is a read of that link, not a status.
 - Money/dimension fields (`kind`, `account`, `counter_account`, amounts,
   currencies, `purpose`, `project`, `product`, `occurred_on`) are editable in
   `draft` and `submitted`; editing any of them in `approved` returns the item
@@ -416,31 +420,41 @@ a declared clause.
   `posted_at` are recorded, and the item shall accept no further edit —
   except attaching a document (EARS-545).
 - **EARS-506.** IF an intake item has no attached document, THEN the system
-  shall refuse to post it: the item shall wait, visibly, in the intake
-  list, and the books shall not contain it until a document is attached —
-  mandatory enrichment (decision 24). The document's **kind** is not the
-  gate (EARS-515): the guard against posting an unpaid invoice as a
+  shall refuse to post it through direct entry (#389) or the automated
+  verifier (EARS-531 — it has nothing to verify without a document): the
+  item shall wait, visibly, in the intake list, and the books shall not
+  contain it until a document is attached — mandatory enrichment
+  (decision 24). The one exception is an expense request (with its EARS-544
+  reimbursement transfer) posted by the approve-role **human mark-paid act**
+  (EARS-543/544/547): it shall post with no document, because the recorded
+  act and its author are the assertion that money moved (owner decision 37);
+  the receipt may be attached later (EARS-545), and until then the posting
+  carries the «без чека» marker (EARS-546). The document's **kind** is not
+  the gate (EARS-515): the guard against posting an unpaid invoice as a
   movement (decision 23) is the confirming act itself — the verifier
-  (human in v1, agent later — EARS-511/531) asserts that money moved and
-  the document corresponds, and that assertion is recorded to its author
-  (owner decision 29, 2026-08-26).
+  (human in v1, agent later — EARS-511/531) asserts that money moved and,
+  where a document is attached, that it corresponds, and that assertion is
+  recorded to its author (owner decision 29, 2026-08-26).
 
   _Revised 2026-11-17 — owner decision 37, Антон, BBMP-281 prototype go
   (#547): «отметка оплаты не должна требовать подтверждающего документа».
-  The gate now binds the automated verifier (EARS-531 — it has nothing to
-  verify without a document) and direct entry (#389); an **expense request
-  posted by the approve-role human mark-paid act (EARS-543/544/547) needs no
-  document** — the recorded act and its author are the assertion that money
-  moved, and the receipt may be attached later (EARS-545). A posting made
-  without a document carries the visible «без чека» marker (EARS-546). This
-  is a deliberate requirement change, not a relaxation by accident: the
-  2026-11-17 prod snapshot holds 39 approved-or-already-paid requests the old
-  gate kept out of the books although the money had moved._
+  The previous version said: «IF an intake item has no attached document,
+  THEN the system shall refuse to post it» — on every path, the human
+  confirmation included. That gate kept requests whose money had already
+  moved out of the books; the gate now binds direct entry and the automated
+  verifier only. A deliberate requirement change, not an accidental
+  relaxation._
 
 - **EARS-507.** The system shall create no posting from any hours-module
   event (period close, publication): only an actual movement of money,
-  entered through intake with its document, posts (decision 23). F2 ships no
-  automatic hours accrual.
+  entered through intake — with its document, or by the human mark-paid act
+  of EARS-506's exception — posts (decision 23). F2 ships no automatic hours
+  accrual.
+
+  _Revised 2026-11-17 (#547): the previous version said «entered through
+  intake with its document»; the documentless human mark-paid act of
+  EARS-506 is the only addition._
+
 - **EARS-525.** Adding a future source (a bank API, an AI agent) shall add a
   producer of intake items and change no other source and no posting path
   (decision 3, US-15).
@@ -494,31 +508,36 @@ a declared clause.
   approvers' queue with its documents readable in place (US-3) and in the
   member's own list; WHEN its status changes, the member shall see the new
   status without asking (US-2).
-- **EARS-510.** WHEN an approver approves a request that already carries its
-  confirming document (the retroactive path — decision 12), that single act
-  shall post the operation with the approver recorded as both decider and
+- **EARS-510.** WHEN an approver approves a request, the system shall record
+  the decision and post nothing, whether or not a document is attached (an
+  attached pre-spend invoice is not proof of payment). WHEN the approver
+  instead submits «Одобрить и отметить оплату» on a `submitted` request — the
+  EARS-543 mark-paid act, with or without a document, the retroactive
+  `already_paid` path included (decision 12) — that single act shall approve
+  and post the operation with the approver recorded as both decider and
   poster (US-4, US-18); no second act of entering data shall exist.
 
-  _Revised 2026-11-17 — owner decision 37 (#547): an attached document no
-  longer turns «approve» into «post» (a pre-spend invoice is not proof of
-  payment). Approving alone never posts. The one act is now explicit: «Одобрить
-  и отметить оплату» — the EARS-543 mark-paid act on a `submitted` item —
-  approves and posts together, with the approver recorded as decider and
-  poster, with or without a document._
+  _Revised 2026-11-17 — owner decision 37 (#547). The previous version said:
+  «WHEN an approver approves a request that already carries its confirming
+  document (the retroactive path — decision 12), that single act shall post
+  the operation» — an attached document silently turned «approve» into
+  «post». Approving alone now never posts; the one act is explicit._
 
-- **EARS-511.** WHEN an approver approves a pre-spend request that has no
-  confirming document yet, the approval shall authorize the spend without
-  posting (EARS-506); WHEN the confirming document is later attached (by the
-  submitter or an entry-role holder — EARS-502), the system shall offer the
-  approve role a one-act confirmation that posts the operation from the
-  already-entered data plus the money facts EARS-533 asks for — the corpus's
-  «Оплачено ✅», with no re-entry of what the request already said. The
-  full transition set is the status machine above (EARS-524).
+- **EARS-511.** WHEN an approver approves a pre-spend request, the approval
+  shall authorize the spend without posting (EARS-510). WHILE the request is
+  `approved` and unposted, the system shall offer the approve role a one-act
+  confirmation — the EARS-543 «Отметить оплату», with or without an attached
+  document — that posts the operation from the already-entered data plus the
+  money facts EARS-533 asks for: the corpus's «Оплачено ✅», with no re-entry
+  of what the request already said. WHERE an automated verifier is plugged in
+  (EARS-531), a document attached later (by the submitter or an entry-role
+  holder — EARS-502) is what triggers it. The full transition set is the
+  status machine above (EARS-524).
 
-  _Revised 2026-11-17 — owner decision 37 (#547): the one-act confirmation
-  is offered with or without an attached document; it is the EARS-543
-  mark-paid act. The document-attached trigger remains only for the
-  automated verifier (EARS-531)._
+  _Revised 2026-11-17 — owner decision 37 (#547). The previous version said:
+  «WHEN the confirming document is later attached …, the system shall offer
+  the approve role a one-act confirmation» — the human confirmation waited
+  for a document; now only the automated verifier does._
 
 - **EARS-533.** The posting act on an expense request — EARS-511's one-act
   confirmation, and EARS-510's approve-and-post where the request never
@@ -565,7 +584,9 @@ a declared clause.
   credit the per-currency system `liability` account instead — the liability
   IS the counter-leg, not an extra one. The liability is recorded **in the
   currency actually charged to the member** — `paid_currency`, falling back
-  to `currency` — for the amount the member's card actually lost; WHERE that
+  to `currency` — for the amount the member's card actually lost (WHERE the
+  request is posted by the EARS-544 refund act, the refunded sum is that
+  amount); WHERE that
   differs from the document currency, the expense leg stays in the document
   currency and the cross-currency rule above supplies the conversion legs
   (corpus: every «оплачено с моей карты» is a USD/foreign spend from a RUB
@@ -577,20 +598,33 @@ a declared clause.
   currently owes and how much, per currency (scenario 5).
 - **EARS-528.** A `kind = transfer` intake item may name the system
   `liability` account as its `counter_account` and shall then carry the
-  `member` whose debt it settles: the EARS-513 reimbursement is entered
-  exactly this way — an ordinary transfer debiting the liability account
-  with the same `member_id`. This is the **only** place an intake item names
-  a system account (spec 338 EARS-305 stands — the cabinet still cannot
-  create, edit or retire them); the running link between debt and repayment
-  is the shared (account, member) pair, and no separate settlement entity
-  exists (out of scope per `339-product.md`).
+  `member` whose debt it settles and — on every source except `backfill` —
+  the posted `personal_funds` intake item it settles (`settles_item`,
+  unique): the EARS-513 reimbursement is entered exactly this way — an
+  ordinary transfer debiting the liability account with the same
+  `member_id`, in the settled item's liability currency and for its
+  liability amount. IF such a transfer names no `settles_item` (outside
+  `backfill`), or names an item that is not a posted `personal_funds` item of
+  the same member, or differs from that item's liability currency or amount,
+  or names an item another transfer already settles, THEN the system shall
+  refuse it and say which. This is the **only** place an intake item names a
+  system account (spec 338 EARS-305 stands — the cabinet still cannot
+  create, edit or retire them); `settles_item` is a column on the transfer
+  item, and no separate settlement entity exists (out of scope per
+  `339-product.md`). The EARS-527 liability view stays the (account, member)
+  balance.
 
-  _Revised 2026-11-17 (#547): the reimbursement transfer MAY name the
-  `personal_funds` request it settles (`settles_item`, unique), so the queue
-  can tell a settled request from an open debt per request (EARS-535/544).
-  This is a column on the transfer item, still no settlement entity; a
-  transfer that names no request settles the (account, member) pair exactly
-  as before._
+  _Revised 2026-11-17 (#547, review of PR #552). The previous version said:
+  «the running link between debt and repayment is the shared (account,
+  member) pair» — a pair-level transfer could repay a request while the
+  queue (EARS-535) still showed it open, inviting a second refund. The link
+  is now per item and mandatory, and the unique `settles_item` makes a second
+  settlement of the same item impossible. `backfill` stays pair-level: §E
+  reconstructs pre-portal history, which holds no portal request. A
+  liability transfer posted by #466 before the column exists is linked once
+  by #549's data step where exactly one posted, unsettled `personal_funds`
+  item of the same member, currency and amount exists; any other is
+  reported to the owner and blocks #549's production deploy until linked._
 
 - **EARS-532.** The module shall maintain a **counterparty reference**
   (`finance_counterparty`; owner decision 30, 2026-08-26 — a reference from
@@ -747,7 +781,8 @@ the corpus's «потерялась в канале» case).
   дата траты | дата оплаты)»), the fee, submitter, payee, project · product,
   note and refusal reason; a «Как оплатить» block — for `personal_funds`, who
   paid, when, and how much to return; otherwise «реквизиты есть» when the
-  note carries a link or bank requisites or a document is attached, else a
+  note contains an `http(s)://` URL or a run of 20 digits (a Russian bank
+  account number), or a document is attached, else a
   warning that payment details are missing («Запросить у автора» is shown as
   text, not an act, in v1); the files (EARS-523 still governs who reads
   them); a timeline Подана → Решение → Оплата / Возврат; and the acts of its
@@ -761,18 +796,45 @@ the corpus's «потерялась в канале» case).
   transaction if it was `submitted` (EARS-510); a receipt file is
   **optional**. IF the account-side amount is missing for a cross-currency
   payment, THEN the system shall refuse and say so; the amount is never
-  computed from a rate (the authoritative-amount rule above).
+  computed from a rate (the authoritative-amount rule above). IF a
+  cross-currency payment's `occurred_on` precedes the newest already-posted
+  operation of the same currency pair, THEN the system shall refuse it with
+  the ledger's write-order refusal (EARS-319/328 — the immutable ledger does
+  not recompute an FX result it has already recognised), naming that
+  operation's date and saying that earlier foreign-currency payments are to
+  be marked before later ones. The guard is the shipped one, kept and not
+  bypassed: routing the backlog through `backfill` would skip it and mis-state
+  the realized FX already recognised for later dates, while marking oldest
+  first needs no new machinery.
 - **EARS-544.** WHEN the owner submits «Отметить возврат» on a
   `personal_funds` request with the date, the account the refund left and
-  the amount debited from it, the system shall, in one transaction, post the
-  request (its liability counter-leg, EARS-513) if it is not yet posted, and
-  post the reimbursement transfer (EARS-528) naming the request in
-  `settles_item`, so that the member's liability for it returns to zero and
-  the request moves to «Оплачено»; a receipt is optional.
+  the amount debited from it, the system shall, in one transaction: post the
+  request if it is not yet posted, writing the refunded amount and currency
+  as its `paid_amount`/`paid_currency` inside the posting act (the status
+  machine's sanctioned write, EARS-533) — the act asserts that the member's
+  card lost exactly the sum refunded, so the liability (EARS-513) is booked
+  in the refund account's currency, and where that differs from the document
+  currency the cross-currency rule supplies the conversion legs from the two
+  recorded amounts (EARS-543's write-order refusal applies); and post the
+  reimbursement transfer (EARS-528) in that currency for that amount, naming
+  the request in `settles_item`, so that the member's liability for it
+  returns to zero and the request moves to «Оплачено»; a receipt is
+  optional. WHERE the unposted request already records `paid_amount`/
+  `paid_currency` (the member stated what the card lost), the refund shall
+  be in that currency, its amount prefilled from it. IF the request is
+  already posted, or records `paid_currency`, and its liability currency
+  (`paid_currency`, falling back to `currency`) differs from the refund
+  account's currency, THEN the system shall refuse and say so: a transfer is
+  single-currency (EARS-528), the debt is settled by a refund from an account
+  in the liability's currency, and a cross-currency settlement of an
+  already-booked debt is out of scope in v1.
 - **EARS-545.** The system shall let the submitter or an entry/approve-role
   holder attach a document to a **posted** request; the link is carried to
   its operation, changes no amount and no status, and is audited (spec 201);
-  deleting or replacing a linked document stays refused (EARS-516).
+  deleting or replacing a linked document stays refused (EARS-516). This
+  narrows the shipped link guard (the migration-0014 trigger and
+  `assertItemsAcceptDocument`) for `posted` items only, by a new migration;
+  `refused` and `cancelled` items stay closed to new links.
 - **EARS-546.** WHILE a posted request has no attached document, the queue
   row and the details sheet shall mark it «без чека».
 - **EARS-547.** WHERE the viewer holds `finance-approve` and a «К оплате» or
@@ -782,12 +844,22 @@ the corpus's «потерялась в канале» case).
   request: its `occurred_on`, else its submission date, Europe/Moscow), no
   receipt — the system shall perform EARS-543 (for `pay`) or EARS-544 (for
   `reimburse`) for every eligible request of the rows shown, **all in one
-  transaction** (one `txid` in `core.audit_event`, actor = the owner). A
-  request is ineligible — listed in the dialog with its reason and left
-  untouched — when its purpose is only proposed (EARS-526), or its document
-  currency differs from the batch account's (the debited amount is unknown;
-  see Open questions Q2). The act exists only as this confirmed UI act and
-  its API; no CLI, script or agent invokes it on production.
+  transaction** (one `txid` in `core.audit_event`, actor = the owner), in
+  ascending order of the date each is posted at, then request id, so the
+  batch itself never trips EARS-543's write-order refusal. A request is
+  ineligible — listed in the dialog with its reason and left untouched —
+  when its account-side currency (`pay`) or its liability currency
+  (`reimburse`) — in both cases `paid_currency`, falling back to `currency`
+  — differs from the batch account's (the debited amount is unknown; see
+  Open questions Q2), or when the posting gate would refuse it for any other
+  reason (a purpose missing or only proposed — EARS-526 —, a `personal_funds`
+  request without its member, a missing project, EARS-543's write-order
+  refusal), listed with that refusal. The submission-date default writes
+  `occurred_on`, which EARS-508 defines as the date money moved: decision 40
+  accepts the submission date as the best-known money date of a backlog paid
+  outside the system, and the dialog shows the date per row so the override
+  can replace it. The act exists only as this confirmed UI act and its API;
+  no CLI, script or agent invokes it on production.
 - **EARS-548.** IF any request of a confirmed batch changed after the dialog
   was opened (its snapshot no longer matches), THEN the system shall post
   nothing for the whole batch and say which request changed.
@@ -797,12 +869,14 @@ the corpus's «потерялась в канале» case).
   be shown small under the converted one. Sums add converted amounts and
   round once, at display.
 - **EARS-550.** The display conversion of a request shall use: for an
-  unpaid request — the CBR rate for today (Moscow); for a request already
-  paid by a member (`already_paid`) and not posted — the CBR rate on its
-  `occurred_on`; for a posted request — the ledger's own recorded amount
-  where the posting already holds the display currency (the account-side
-  amount of a cross-currency payment), else the recorded conversion-step rate
-  where it covers the pair, else the CBR rate on the operation's date.
+  unpaid request — the CBR rate for today (Moscow); for a request filed
+  `already_paid` (by a member or from a company account) and not posted —
+  the CBR rate on its `occurred_on`, falling back to today where it has
+  none; for a posted request — the ledger's own recorded amount where the
+  posting already holds the display currency (the account-side amount of a
+  cross-currency payment), else the recorded conversion-step rate where it
+  covers the pair, else the CBR rate on the operation's `occurred_on` (the
+  date money moved, never `posted_at`).
   Cross-currency pairs go through RUB. Amounts are bigint minor units and the
   arithmetic is decimal; no floating-point value enters it.
 - **EARS-551.** IF no CBR rate exists on or before the needed date for a
@@ -834,7 +908,8 @@ the corpus's «потерялась в канале» case).
 | approvals (approve/refuse/confirm-post) | `finance-approve` only (EARS-501); the posting act also enters the paying account, `occurred_on` and the account-side amount (EARS-533) | queue — approve role                                                                                                                                                                                                                                        | n/a — a decision is not edited; a wrong posting is corrected by reversal                    | n/a                                                                                                   |
 
 Deliberately unsupported: editing or deleting anything already posted (the
-ledger's own EARS-313 stands); posting without a document (EARS-506);
+ledger's own EARS-313 stands); posting without a document on any path but
+the human mark-paid act (EARS-506);
 free-text purpose (decision 21; proposals are not purposes — EARS-526);
 income, transfers and conversions **through the request form** — those enter
 via the entry role (manual/backfill); `personal_funds` without `already_paid`
@@ -859,7 +934,8 @@ register, that dependency is named in the step:
    approve actions are still refused (EARS-501).
 2. **Request → approval → books, one act.** File a request «уже оплачено» in
    THB paid from a RUB card (both amounts), receipt attached; as an approver,
-   approve it — one act, the item shows `posted` with your name, and the
+   «Одобрить и отметить оплату» — one act, the item shows `posted` with your
+   name (plain «Одобрить» would only approve), and the
    intake item opens the operation with the receipt readable from it
    (EARS-508/509/510, EARS-505; register browsing beyond the item — F1b/F3).
 3. **Pre-spend path.** File a request without a receipt — the form asks for
@@ -902,9 +978,10 @@ register, that dependency is named in the step:
     «без чека». Attach the receipt from the sheet — the marker goes away
     (EARS-506/542/543/545/546). On a USD request paid from the RUB account
     the form refuses until the debited roubles are entered (EARS-543).
-11. **Reimbursement.** On a «Вернуть сотруднику» request «Отметить возврат»
-    from the RUB account — it moves to «Оплачено», and the liability view no
-    longer shows that debt to the member (EARS-544).
+11. **Reimbursement.** On a USD «Вернуть сотруднику» request «Отметить
+    возврат» from the RUB account with the roubles refunded — it moves to
+    «Оплачено», its operation shows the debt booked in roubles for that sum,
+    and the member's RUB liability balance drops by exactly it (EARS-544).
 12. **The backlog, in bulk.** On «К оплате» press «Отметить все N как
     оплаченные…»: the dialog shows the count, the sum, one account, and lists
     the cross-currency requests it leaves out. Confirm — the rest move to
@@ -1012,12 +1089,25 @@ reference from day one (decision 30, EARS-532).
   оплате» (EARS-535); «Отменено» is a third closed group; «Отметить возврат»
   books the debt AND its settlement in one act, linked by `settles_item`
   (EARS-544, EARS-528 revised); the bulk act is all-or-nothing (EARS-548);
-  rates older than three days are flagged stale (EARS-552).
-- **Q2 — cross-currency requests in the bulk act.** About 17 of the 39
-  backlog requests (2026-11-17 snapshot: 9 of 25 «К оплате», 8 of 14
-  «Вернуть сотруднику») are in USD/EUR, and the amount the RUB card actually
-  lost is unknown. The spec's authoritative-amount rule forbids computing it
-  from a rate, so EARS-547 leaves them out (to be marked one by one with the
-  real amount). The alternative is an owner exception: post them at the CBR
-  rate of their date, flagged «сумма списания оценена по курсу ЦБ». Owner's
-  fork; until answered, the exclusion stands.
+  rates older than three days are flagged stale (EARS-552). Added after the
+  independent review of PR #552: every non-backfill reimbursement transfer
+  must name the item it settles (EARS-528); the refund act books the debt in
+  the refunded currency and amount (EARS-544); cross-currency marks keep the
+  ledger's write-order refusal, and the bulk act posts oldest first
+  (EARS-543/547); attach-later opens `posted` items only, `refused` and
+  `cancelled` stay closed (EARS-545).
+- **Q2 — cross-currency requests in the bulk act.** 16 of the 39 backlog
+  requests (2026-11-17 snapshot: 8 of 25 «К оплате» — 1 EUR, 7 USD — and
+  8 of 14 «Вернуть сотруднику», USD) are in a foreign currency, and the
+  amount the RUB account or card actually lost is unknown. Two answers, both
+  expressible in this text: **(a) actual per item** — the default: EARS-547
+  leaves them out, and each is marked one by one through EARS-543/544 with
+  the real debited amount; **(b) CBR-estimated** — an owner exception to the
+  authoritative-amount rule and to EARS-553: the bulk act writes
+  `paid_amount` from the CBR rate of the item's date, flagged «сумма
+  списания оценена по курсу ЦБ». Owner's fork; until answered, (a) stands.
+  Under either answer the items post cross-currency, so EARS-543's
+  write-order refusal applies: they have to be marked **oldest first and
+  before any later-dated operation of their currency pair is posted** —
+  once a newer USD or EUR conversion is in the ledger, an older backlog item
+  of that pair can no longer be posted live.

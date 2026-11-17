@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- BBMP-281: кликабельный прототип очереди заявок «Финансы → Заявки» на снимке прод-данных 17.11.
+<!-- BBMP-281: кликабельный прототип очереди заявок «Финансы → Заявки» (шаблон без данных; данные подставляются локально).
      Действия меняют только локальное состояние страницы, в прод ничего не пишется. -->
 <html lang="ru">
 <head>
@@ -83,9 +83,9 @@ dt{color:var(--muted)}dd{margin:0;white-space:pre-wrap}
 </style>
 </head>
 <body>
-<div class="top"><b>Платформа BBM</b><span>Финансы</span><span style="margin-left:auto">Антон Сидоров</span></div>
+<div class="top"><b>Платформа BBM</b><span>Финансы</span><span style="margin-left:auto">Текущий пользователь</span></div>
 <main>
-  <div class="proto">Прототип BBMP-281 на снимке данных прода от 17.11. Кнопки меняют только эту страницу.</div>
+  <div class="proto">Прототип BBMP-281. Кнопки меняют только эту страницу.</div>
   <div class="head">
     <div><h1>Заявки</h1><p class="sub">Что ждёт вашего решения, что пора оплатить и кому вернуть деньги.</p></div>
     <button class="primary">Новая заявка</button>
@@ -112,12 +112,12 @@ dt{color:var(--muted)}dd{margin:0;white-space:pre-wrap}
 
 <script>
 const DATA = /*DATA*/[];
-// Курсы ЦБ РФ (₽ за единицу) по датам; снимок на 17.11
+// Курсы ЦБ РФ (₽ за единицу) по датам; подставляются вместе с данными
 const RATES = /*RATES*/{};
 const TODAY = '2026-11-17';
-const ME = 'Антон Сидоров';
+const ME = 'Текущий пользователь';
 const NOW = new Date('2026-11-17T16:00:00+03:00');
-const ACCOUNTS = ['Т-Банк BBM, RUB', 'Карта Антона, RUB', 'Wise, USD', 'USDT-кошелёк'];
+const ACCOUNTS = ['Счёт 1, RUB', 'Счёт 2, RUB', 'Счёт 3, USD', 'Кошелёк, USDT'];
 
 // --- модель: из статусов БД выводим «что с заявкой происходит» на языке владельца
 const items = DATA.map(x => ({...x,
@@ -223,7 +223,7 @@ function open(id, mode){
       <label>Дата<input type="date" value="2026-11-17"></label>
       <label>Откуда<select>${ACCOUNTS.map(a=>`<option>${a}</option>`).join('')}</select></label>
       <label>Списано фактически<input value="${x.amount}"></label>
-      <label>Чек или скриншот оплаты<input type="file"></label>
+      <label>Чек или скриншот оплаты (необязательно)<input type="file"></label>
       <div><button class="primary" data-do="paid" data-id="${x.id}">Оплачено</button> <button data-do="close">Отмена</button></div></div></div>` : '';
   const acts = s==='decide' ? `<button class="primary" data-do="approve" data-id="${x.id}">Одобрить</button><button data-do="approvepay" data-id="${x.id}">Одобрить и отметить оплату</button><button data-do="refuse" data-id="${x.id}">Отклонить</button>`
     : (s==='pay'||s==='reimburse') && mode!=='pay' ? `<button class="primary" data-do="payform" data-id="${x.id}">${x.already_paid?'Отметить возврат':'Отметить оплату'}</button>${s==='reimburse'&&x.status==='submitted'?'':''}<button data-do="refuse" data-id="${x.id}">Отозвать</button>` : '';
@@ -261,7 +261,7 @@ kpis.onclick=e=>{const k=e.target.closest('.kpi');if(!k)return;st.kpi=st.kpi===k
 groups.onclick=e=>{
   const bulk=e.target.closest('button[data-bulk]');
   if(bulk){e.stopPropagation();const ids=filtered().filter(x=>stage(x)===bulk.dataset.bulk);
-    // Бэклог 17–18.09 по сути уже оплачен вне системы: одна дата и один счёт на пачку, без чеков
+    // Массовая отметка: один счёт на пачку, без чеков (в спеке — EARS-547/548; где прототип и спека расходятся, права спека)
     if(confirm(`Отметить ${ids.length} заявок оплаченными задним числом (без чеков, дата = дата заявки)?`)){ids.forEach(x=>x.posted=x.created);toast(`${ids.length} заявок перенесены в «Оплачено»`);render()}return}
   const b=e.target.closest('button[data-act]');
   if(b){e.stopPropagation();const id=+b.dataset.id,k=b.dataset.act;return k==='decide'?act('approve',id):open(id,'pay')}
