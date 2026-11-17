@@ -1,0 +1,33 @@
+# Invented example (#553). Context diagram.
+id: A-0
+parent: null
+title: Испечь и продать хлеб
+viewpoint: Пекарь-владелец небольшой пекарни.
+purpose: Пример формата модели для тестов портала — не реальный процесс.
+boxes:
+  - id: A0
+    name: Испечь и продать хлеб
+    functions: [F-001]
+    mechanisms: [Пекарь, Печь]
+    note: Пример — от заказа муки до продажи.
+arrows:
+  - id: I1
+    label: Мука и вода
+    objects: [O-001]
+    from: { boundary: I1 }
+    to: { box: A0, side: I }
+  - id: C1
+    label: Рецептура
+    objects: [O-002]
+    from: { boundary: C1 }
+    to: { box: A0, side: C }
+  - id: O1
+    label: Проданный хлеб
+    objects: [O-003]
+    from: { box: A0, side: O }
+    to: { boundary: O1 }
+  - id: M1
+    label: Пекарь
+    objects: [O-004]
+    from: { boundary: M1 }
+    to: { box: A0, side: M }

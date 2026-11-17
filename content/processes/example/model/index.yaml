@@ -1,0 +1,16 @@
+# INVENTED public example of an IDEF0 model package (#553) — NOT the DS model.
+# The real model is read at request time from bbm-academy-org/bbm-kb
+# (content/processes/ds-content-production/); this copy exists so tests and an
+# offline stand (PROCESS_MODELS_SOURCE=example) run without GitHub.
+# Format: the bbm-kb package's model/FORMAT-ru.md.
+root: A-0
+diagrams:
+  - id: A-0
+    file: A-0.yaml
+    parent: null
+  - id: A0
+    file: A0.yaml
+    parent: A-0
+  - id: A2
+    file: A2.yaml
+    parent: A0
