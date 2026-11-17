@@ -10,6 +10,7 @@ import { REQUEST_STATUS_BADGE_VARIANT } from '@/app/(platform)/p/finance/request
 import type { RequestBoardItem } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import {
   requestAmountTotals,
+  requestTableColumnPlan,
   selectRequestPage,
 } from '@/app/(platform)/p/finance/requests/request-table-model'
 
@@ -157,6 +158,25 @@ describe('selectRequestPage — what the board provider answers getList with (#3
     const page = selectRequestPage(rows, { currentPage: 1, pageSize: 1 })
     expect(page.rows).toHaveLength(1)
     expect(page.totals).toEqual([{ currency: 'RUB', amount: '1000' }])
+  })
+
+  it('EARS-537: sorts by «Подана» under the id the column carries, which is what refine sends', () => {
+    // `@refinedev/react-table` turns the TanStack sorting state into
+    // `sorters: [{ field: sorting.id }]` — the COLUMN id, not its accessor key.
+    // The id is read off the plan rather than spelled here, so a sort key that
+    // drifts from the column id fails this test instead of silently no-oping.
+    const filedId = requestTableColumnPlan({ scope: 'mine', canApprove: false })[0]!.id
+    const filed = [
+      item({ id: 1, createdAt: '2026-08-20T09:30:00.000Z', occurredOn: '2026-08-01' }),
+      item({ id: 2, createdAt: '2026-04-20T14:21:39.000Z', occurredOn: '2026-08-20' }),
+      item({ id: 3, createdAt: '2026-06-01T00:00:00.000Z', occurredOn: null }),
+    ]
+    const order = (direction: 'asc' | 'desc') =>
+      selectRequestPage(filed, { sorters: [{ field: filedId, order: direction }] }).rows.map(
+        (row) => row.id,
+      )
+    expect(order('asc')).toEqual([2, 3, 1])
+    expect(order('desc')).toEqual([1, 3, 2])
   })
 
   it('leaves an unknown sort field alone rather than shuffling the register', () => {
