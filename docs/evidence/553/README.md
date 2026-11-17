@@ -6,6 +6,10 @@ Eyes-on matrix per `.claude/skills/task-cycle/SKILL.md` stage 5 item 3. Captured
 `tests/e2e/support/platform-session.ts` (`signInAsPlatformMember`, role
 `platform-user`). Dark = the theme's `.dark` class added on `<html>`.
 
+Re-captured 2026-11-17 at `336390a`, after `10bfb54` (themed page background: in
+dark the page is dark and the viewer stays a light card) and `336390a` (htm
+`class` → `className`): no console errors on any frame, no «1 Issue» dev badge.
+
 File name: `<step>--<breakpoint>-<theme>.png`, breakpoints desktop 1440×900 and
 mobile 390×844, every frame full-page.
 
