@@ -141,6 +141,28 @@ describe('the layout rules (spec 553 EARS-610)', () => {
 })
 
 describe('the panel (spec 553 EARS-611)', () => {
+  it('renders the ported htm markup without React DOM-property warnings (class → className)', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const model = exampleModel()
+    const { container } = render(
+      el(viewer.Details, {
+        diagram: diagram(model, 'A0'),
+        focus: { type: 'box', id: 'A2' },
+        knowledge: model.knowledge,
+        knowledgeError: null,
+        hasChild: (id: string) => id === 'A2',
+        onOpen: () => {},
+        onTrace: () => {},
+      }),
+    )
+    const warned = errors.mock.calls.some((args) =>
+      String(args[0]).includes('Invalid DOM property'),
+    )
+    errors.mockRestore()
+    expect(warned).toBe(false)
+    expect(container.querySelector('.xp-name')).toBeTruthy()
+  })
+
   it('EARS-611: a box shows its arrows by ICOM side, its roles and its registry functions with the TO-BE step', () => {
     const model = exampleModel()
     render(
