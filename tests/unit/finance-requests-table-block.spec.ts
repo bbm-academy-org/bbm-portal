@@ -6,7 +6,10 @@
 // the whitelist's List block (`docs/design/ui-whitelist.md`).
 import { describe, expect, it } from 'vitest'
 
-import { REQUEST_STATUS_BADGE_VARIANT } from '@/app/(platform)/p/finance/requests/constants'
+import {
+  formatDateTime,
+  REQUEST_STATUS_BADGE_VARIANT,
+} from '@/app/(platform)/p/finance/requests/constants'
 import type { RequestBoardItem } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import {
   requestAmountTotals,
@@ -185,5 +188,19 @@ describe('selectRequestPage — what the board provider answers getList with (#3
         (row) => row.id,
       ),
     ).toEqual([3, 2, 4, 1])
+  })
+})
+
+describe('formatDateTime — «Подана» in Moscow time (#517, #525 review N3)', () => {
+  it('EARS-537: names a UTC instant in Europe/Moscow, minutes truncated', () => {
+    expect(formatDateTime('2026-04-20T14:21:39.000Z')).toBe('20.04.2026 17:21')
+  })
+
+  it('EARS-537: rolls the DATE over too when Moscow is already past midnight', () => {
+    expect(formatDateTime('2026-04-20T22:30:00.000Z')).toBe('21.04.2026 01:30')
+  })
+
+  it('EARS-537: returns an unparseable value as it came rather than «Invalid Date»', () => {
+    expect(formatDateTime('not-a-date')).toBe('not-a-date')
   })
 })

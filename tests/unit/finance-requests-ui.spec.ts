@@ -1706,9 +1706,9 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     expect(within(table).queryByRole('columnheader', { name: /^Дата$/ })).toBeNull()
     expect(within(table).queryByRole('columnheader', { name: /^Деньги ушли/ })).toBeNull()
     expect(within(table).getByText('ещё не двигались')).toBeTruthy()
-    // Date AND time, in the zone the instants are stored in — the acceptance
-    // line of #517 for the Higgsfield post written at 14:21:39Z.
-    expect(within(table).getByText('20.08.2026 09:30')).toBeTruthy()
+    // Date AND time, in Moscow time — the zone the team reads the register in
+    // (#525 review N3): the fixture's 09:30Z is 12:30 МСК.
+    expect(within(table).getByText('20.08.2026 12:30')).toBeTruthy()
   })
 
   it('EARS-535/537: puts the source link on the row and in the sheet, and nothing where there is none', async () => {
@@ -1745,7 +1745,9 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = within(screen.getByRole('dialog'))
     expect(sheet.getByText('Подана')).toBeTruthy()
-    expect(sheet.getByText('20.04.2026 14:21')).toBeTruthy()
+    // The Higgsfield post written at 14:21:39Z — 17:21 МСК, the time the
+    // Mattermost client shows the same post at.
+    expect(sheet.getByText('20.04.2026 17:21')).toBeTruthy()
     expect(sheet.getByText('Источник')).toBeTruthy()
     expect(sheet.getByText('Mattermost')).toBeTruthy()
   })
