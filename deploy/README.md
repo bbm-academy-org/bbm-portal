@@ -588,6 +588,54 @@ docker compose -f docker-compose.prod.yml logs -f caddy   # watch cert issuance
 re-create just that container — `docker compose -f docker-compose.prod.yml pull
 preview && docker compose -f docker-compose.prod.yml up -d preview`.
 
+## Scheduled jobs — `deploy@`'s crontab
+
+The box has no root and no systemd units of ours; scheduled work is a line in
+`deploy@`'s user crontab, exactly as the nightly backup is (_Notes_ below). A
+job that touches the portal's data runs through the compose `migrate`
+(tooling) service — the image `pnpm deploy:prod` rebuilds on every deploy, with
+`.env.prod` — so the job always runs the code that is deployed, and the script
+it calls ships inside the tree (extract-and-swap replaces it with each deploy).
+
+### Bank of Russia rates — `finance-fx-sync` (#548)
+
+`deploy/cron/finance-fx-sync.sh` runs `pnpm platform:finance:fx:sync`, which
+stores the cbr.ru `XML_daily` rates into `core.finance_fx_rate` (spec
+`docs/specs/339-ledger-intake.md` §I, EARS-552). They are display rates for the
+requests queue only (EARS-553). The run is idempotent: with no arguments it
+asks for every day from the newest stored effective date to today (Moscow), so
+a missed day is caught up by the next run. The box reaches cbr.ru directly; no
+env variable is involved beyond the `PLATFORM_DATABASE_URL` `.env.prod`
+already carries.
+
+Install once (idempotent — the `grep -v` drops an older copy of the line):
+
+```bash
+ssh portal-prod-tw
+mkdir -p ~/portal-fx-sync
+( crontab -l 2>/dev/null | grep -v 'deploy/cron/finance-fx-sync.sh' ;   echo '15 6 * * * $HOME/bbm-portal/deploy/cron/finance-fx-sync.sh >> $HOME/portal-fx-sync/sync.log 2>&1' ) | crontab -
+crontab -l | grep finance-fx-sync
+```
+
+06:15 UTC is 09:15 Moscow: CBR sets each day's rate the afternoon before, so
+today's is always there by then.
+
+One-off backfill — from the earliest request date the queue has to convert
+(the request `occurred_on` dates and the Sept–Nov 2026 backlog), through the
+same script:
+
+```bash
+~/bbm-portal/deploy/cron/finance-fx-sync.sh --from 2026-09-01 --to "$(TZ=Europe/Moscow date +%F)"
+```
+
+Find the true earliest date first rather than trusting `2026-09-01`:
+
+```bash
+cd ~/bbm-portal/deploy && docker compose -f docker-compose.prod.yml exec -T postgres   psql -U payload -d platform -Atc "select least(min(occurred_on), min(created_at)::date) from core.finance_intake_item"
+```
+
+Check: `tail ~/portal-fx-sync/sync.log` ends with `✓ platform:finance:fx:sync`.
+
 ## Notes
 
 - **Persistence:** named volumes `pgdata` (database), `caddy_data` (TLS certs),
