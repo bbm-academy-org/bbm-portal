@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-09-14
+updated: 2026-11-17
 ---
 
 # F2 — Filling the ledger: manual entry, expense requests and one-time history reconstruction (#339)
@@ -87,6 +87,18 @@ picked kanban stays as a **board toggle available to `finance-approve`**, and
 the same approve/refuse acts are available as row actions in the table. Members
 without `finance-approve` get the table read-only plus «new request».
 _(decision 35, owner 2026-09-14)_
+
+**Amended by decisions 37–40 (owner 2026-11-17, BBMP-281 prototype «Го»,
+#547).** The default view becomes the owner's **payment queue**: requests
+grouped by what has to happen next — «Ждёт решения», «К оплате», «Вернуть
+сотруднику», «Черновики»; closed ones under «Закрытые» — with three sums on
+top (decide / pay / reimburse) and every amount in one display currency
+(₽ / $ / €, the Bank of Russia rate, display only). Marking a request paid or
+reimbursed needs no receipt (the receipt may come later, and the request
+shows «без чека» until it does); the September backlog that was paid outside
+the system is closed by one explicit, confirmed bulk act of the owner.
+Vendored as `design-source/finance/RequestPaymentQueue.html`; the
+requirements are spec 339 §I. The board toggle stays.
 
 The manual-entry surface still needs a Stage-A pick vendored into
 `design-source/` before any markup (`.claude/rules/design-process.md`).
