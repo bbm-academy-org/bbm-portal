@@ -164,6 +164,35 @@ const DEFERRALS_BY_ISSUE = {
     reason:
       "spec 311 §F — moving the hours administration into the cabinet and retiring /p/hours/admin. EARS-421 (HOURS_ADMIN_EMAILS gone from the shipped code) sits here rather than in §B because the spec's «Frame-level work» table gives #317 the rewrite-or-retire of the five unit specs that assert the old env gate",
   },
+  548: {
+    ids: ['EARS-550', 'EARS-552', 'EARS-553'],
+    reason:
+      'spec 339 §I (owner payment queue, #547): the Bank of Russia rate store, its sync job and the display-conversion rule. The spec leads its implementation — the clauses landed on 2026-11-17 with the owner-approved prototype, and #548 writes their tests.',
+  },
+  549: {
+    ids: ['EARS-535', 'EARS-543', 'EARS-544', 'EARS-545', 'EARS-547', 'EARS-548'],
+    reason:
+      'spec 339 §I (#547): stage derivation (the read model #550 renders), mark-paid without a document, reimbursement in one act with the mandatory settles_item link, attach-later and the bulk retroactive act — the domain and API half, whose tests #549 writes.',
+  },
+  550: {
+    ids: [
+      'EARS-536',
+      'EARS-537',
+      'EARS-538',
+      'EARS-539',
+      'EARS-540',
+      'EARS-541',
+      'EARS-549',
+      'EARS-551',
+    ],
+    reason:
+      'spec 339 §I (#547): the queue screen — groups, sums, columns, sort, search, filters, role-gated row acts, the display-currency switch and the «нет курса» / «без N заявок» rendering; #550 writes the tests. EARS-535 (stage derivation) is owned by #549, which builds the read model.',
+  },
+  551: {
+    ids: ['EARS-542', 'EARS-546'],
+    reason:
+      'spec 339 §I (#547): the details sheet with «как оплатить» and the «без чека» marker, in the sheet and in the queue rows; #551 writes the tests.',
+  },
 }
 
 export const BUILTIN_DEFERRALS = Object.fromEntries(
