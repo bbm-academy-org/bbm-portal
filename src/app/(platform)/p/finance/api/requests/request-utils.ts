@@ -235,6 +235,10 @@ export async function financeRequestActor(): Promise<
 export function requestApiError(cause: unknown): Response {
   const error = cause as { name?: string; message?: string }
   if (error?.name === 'FinanceAccessRefusal') return textResponse(403, error.message)
+  // EARS-504: the link is already another request's — a conflict with existing
+  // state, refused in words; before #525 review N2 its own class name fell
+  // through to `throw` and the member saw a 500.
+  if (error?.name === 'FinanceIntakeDuplicate') return textResponse(409, error.message)
   if (error?.name === 'FinanceRefusal') return textResponse(422, error.message)
   throw cause
 }
