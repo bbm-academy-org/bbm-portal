@@ -288,10 +288,13 @@ const SORT_KEYS: Record<string, (request: RequestBoardItem) => string> = {
   // An intent has no date at all (EARS-533); it sorts as the far future so the
   // two views of this queue agree about what «newest first» means.
   occurredOn: (request) => request.occurredOn ?? '9999-12-31',
-  // «Подана» (#517). An ISO instant compares correctly as a string, and unlike
-  // the money date every row has one — which is what makes it the column the
-  // merged first cell offers its sorter on.
-  createdAt: (request) => request.createdAt,
+  // «Подана» (#517). Keyed by the COLUMN id (`filed`), not by its accessor
+  // `createdAt`: refine sends `sorters: [{ field: <column id> }]`, and a key
+  // named after the accessor made this sorter a silent no-op (#525 review B1).
+  // An ISO instant compares correctly as a string, and unlike the money date
+  // every row has one — which is what makes it the column the merged first
+  // cell offers its sorter on.
+  filed: (request) => request.createdAt,
   createdByName: (request) => request.createdByName ?? '',
   // Minor units, zero-padded: a string compare over money is only honest once
   // every value is the same width.
