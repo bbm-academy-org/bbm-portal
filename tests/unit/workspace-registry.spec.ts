@@ -10,6 +10,7 @@ import { hoursWorkspaceEntry } from '@/lib/hours'
 import { memberWorkspaceEntry } from '@/lib/member'
 import { okrWorkspaceEntry } from '@/lib/okr'
 import { pathMapWorkspaceEntry } from '@/lib/path-map'
+import { processesWorkspaceEntry } from '@/lib/processes'
 import type {
   ExternalWorkspaceEntry,
   InternalWorkspaceEntry,
@@ -230,6 +231,7 @@ describe('the composition root (spec 311 EARS-402, EARS-403, D-2)', () => {
       'memberWorkspaceEntry',
       'okrWorkspaceEntry',
       'pathMapWorkspaceEntry',
+      'processesWorkspaceEntry',
     ])
 
     const unregistered = declared.filter((d) => !registrySource.includes(d.name))
@@ -244,6 +246,7 @@ describe('the composition root (spec 311 EARS-402, EARS-403, D-2)', () => {
     expect(WORKSPACE_REGISTRY).toContain(memberWorkspaceEntry)
     expect(WORKSPACE_REGISTRY).toContain(okrWorkspaceEntry)
     expect(WORKSPACE_REGISTRY).toContain(pathMapWorkspaceEntry)
+    expect(WORKSPACE_REGISTRY).toContain(processesWorkspaceEntry)
   })
 
   it('EARS-402: the launcher, the top bar and the switcher hold no list of apps of their own', () => {

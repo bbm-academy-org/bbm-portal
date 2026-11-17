@@ -1,0 +1,64 @@
+# Invented example (#553). Decomposition of A2.
+id: A2
+parent: A0
+title: Выпечь хлеб
+icom:
+  I1: a1
+  C1: C1
+  C2: a3
+  O1: a2
+  M1: M1
+boxes:
+  - id: A21
+    name: Разогреть печь
+    functions: []
+    mechanisms: [Пекарь]
+    leaf: true
+    effort:
+      role: Пекарь
+      unit: смена
+      hours_draft: 0.5
+      driver: число смен
+      basis: пример
+  - id: A22
+    name: Выпекать
+    functions: [F-002]
+    mechanisms: [Пекарь]
+    leaf: true
+    effort:
+      role: Пекарь
+      unit: партия
+      hours_draft: [0.7, 1]
+      driver: число партий
+      basis: пример
+arrows:
+  - id: I1
+    label: Тесто
+    objects: [O-005]
+    from: { boundary: I1 }
+    to: { box: A22, side: I }
+  - id: C1
+    label: Рецептура
+    objects: [O-002]
+    from: { boundary: C1 }
+    to: { box: A22, side: C }
+  - id: C2
+    label: Жалобы на корку
+    objects: [O-007]
+    from: { boundary: C2 }
+    to: { box: A22, side: C }
+  - id: O1
+    label: Хлеб
+    objects: [O-006]
+    from: { box: A22, side: O }
+    to: { boundary: O1 }
+  - id: M1
+    label: Пекарь
+    objects: [O-004]
+    from: { boundary: M1 }
+    to: [{ box: A21, side: M }, { box: A22, side: M }]
+  - id: a1
+    label: Горячая печь
+    objects: []
+    from: { box: A21, side: O }
+    to: { box: A22, side: M }

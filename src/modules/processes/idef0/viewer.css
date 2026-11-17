@@ -1,0 +1,362 @@
+/* PORTED from bbm-academy-org/bbm-kb `components/idef0-viewer/viewer.css` (#553; source vendored in
+   `design-source/processes/viewer.css`). The look is the owner-accepted one, so the rules are kept as
+   they are, in their order — which is why `no-descending-specificity` is off for this file: reordering
+   to satisfy it would change which rule wins. Adaptations are marked «portal:». */
+/* stylelint-disable no-descending-specificity */
+/* IDEF0 viewer styles (from the former viewer/index.html), scoped to .idef0-viewer. The viewer keeps its
+   own light palette in both KB themes: color-scheme, background and ink are set on the wrapper. */
+.idef0-viewer {
+  color-scheme: light;
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #5f6368;
+  --line: #2b2b2e;
+  --frame: #9aa0a6;
+  --box-bg: #ffffff;
+  --box-border: #1d1d1f;
+  --accent: #0b57d0;
+  --hl: #d93025;
+  --i: #1a73e8;
+  --c: #b06000;
+  --o: #188038;
+  --m: #6f6f78;
+  --chip: #eef1f5;
+  --label-bg: rgba(247, 247, 245, 0.92);
+}
+.idef0-viewer, .idef0-viewer * {
+  box-sizing: border-box;
+}
+/* The page body has no fixed height: the viewer takes the viewport below the KB navbar and the page
+   title, never less than a workable canvas. */
+.idef0-viewer {
+  margin: 0;
+  height: calc(100dvh - 11rem);
+  min-height: 560px;
+  border: 1px solid var(--frame);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.idef0-viewer {
+  background: var(--bg);
+  color: var(--ink);
+  font:
+    14px/1.4 system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+.idef0-viewer .app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+.idef0-viewer header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--frame);
+  background: var(--panel);
+}
+.idef0-viewer .crumbs button {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.idef0-viewer .crumbs button[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+  cursor: default;
+}
+.idef0-viewer main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  min-height: 0;
+}
+@media (max-width: 760px) {
+  .idef0-viewer main {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 40%;
+  }
+}
+.idef0-viewer .canvas {
+  min-height: 0;
+  position: relative;
+}
+.idef0-viewer aside {
+  overflow: auto;
+  border-left: 1px solid var(--frame);
+  background: var(--panel);
+  padding: 12px 16px;
+}
+.idef0-viewer aside h2 {
+  font-size: 15px;
+  margin: 4px 0 8px;
+}
+.idef0-viewer aside h3 {
+  font-size: 13px;
+  margin: 12px 0 4px;
+  color: var(--muted);
+}
+.idef0-viewer aside ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.idef0-viewer .muted {
+  color: var(--muted);
+}
+.idef0-viewer .err {
+  color: var(--hl);
+}
+/* IDEF0 frame and boxes. The frame is a backdrop: React Flow raises it under the pointer
+   between the two clicks of a double-click, so it must never take pointer events. */
+.idef0-viewer .react-flow__node-frame {
+  pointer-events: none !important;
+}
+.idef0-viewer .frame {
+  border: 1px dashed var(--frame);
+  width: 100%;
+  height: 100%;
+  position: relative;
+  pointer-events: none;
+}
+.idef0-viewer .code {
+  position: absolute;
+  font:
+    600 12px ui-monospace,
+    Consolas,
+    monospace;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.idef0-viewer .box {
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--box-border);
+  background: var(--box-bg);
+  color: var(--ink);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 10px 22px;
+  text-align: center;
+  cursor: pointer;
+}
+.idef0-viewer .box:hover,
+.idef0-viewer .box.selected {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.idef0-viewer .box .name {
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 19px;
+}
+.idef0-viewer .box .num {
+  position: absolute;
+  right: 6px;
+  bottom: 3px;
+  font:
+    600 12px ui-monospace,
+    Consolas,
+    monospace;
+}
+.idef0-viewer .box .mech {
+  position: absolute;
+  left: 6px;
+  bottom: 4px;
+  right: 34px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.idef0-viewer .box .drill {
+  position: absolute;
+  right: 6px;
+  top: 3px;
+  font-size: 11px;
+  color: var(--accent);
+}
+.idef0-viewer .react-flow__handle {
+  opacity: 0;
+  width: 2px;
+  height: 2px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+}
+.idef0-viewer .arrow-label {
+  position: absolute;
+  font-size: 13px;
+  line-height: 16px;
+  padding: 2px 4px;
+  background: var(--label-bg);
+  color: var(--ink);
+  border-radius: 3px;
+  white-space: pre;
+  pointer-events: all;
+  cursor: pointer;
+}
+.idef0-viewer .arrow-label.active {
+  outline: 2px solid var(--hl);
+}
+.idef0-viewer .react-flow__edge.active path.react-flow__edge-path {
+  stroke: var(--hl) !important;
+  stroke-width: 1.8px !important;
+}
+/* A focused box lights its own arrows and dims the rest. */
+.idef0-viewer .react-flow__edge.lit path.react-flow__edge-path {
+  stroke-width: 2.2px !important;
+}
+.idef0-viewer .react-flow__edge.dim {
+  opacity: 0.18;
+}
+.idef0-viewer .arrow-label.lit {
+  outline: 2px solid;
+}
+.idef0-viewer .arrow-label.dim {
+  opacity: 0.3;
+}
+/* A box's arrows in the panel: hovering a row traces its branch on the canvas. */
+.idef0-viewer .icom-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+.idef0-viewer .icom-list li {
+  padding: 2px 6px;
+  border-left: 3px solid;
+  margin: 2px 0;
+  cursor: default;
+}
+.idef0-viewer .icom-list li:hover {
+  background: var(--chip);
+}
+/* Boxes not reached by the focused paths dim like the dimmed arrows. */
+.idef0-viewer .react-flow__node.dim {
+  opacity: 0.18;
+}
+/* Flow animation: dashes run from source to target (the path is drawn in arrow
+   direction); the arrowhead is a marker outside the dashed path and stays solid. */
+.idef0-viewer .canvas.animate .react-flow__edge path.react-flow__edge-path {
+  stroke-dasharray: 8 4;
+  animation: idef-flow 0.9s linear infinite;
+}
+@keyframes idef-flow {
+  from {
+    stroke-dashoffset: 12;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.idef0-viewer .switches {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+.idef0-viewer .switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+/* Hover card: never takes the pointer, so the hovered element keeps its hover. */
+.idef0-viewer .hover-card {
+  position: absolute;
+  z-index: 20;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--frame);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 8px 12px 10px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.idef0-viewer .hover-card h2 {
+  font-size: 14px;
+  margin: 2px 0 4px;
+}
+.idef0-viewer .hover-card p {
+  margin: 2px 0;
+}
+.idef0-viewer .xp-list {
+  list-style: none;
+  padding-left: 0 !important;
+  margin: 0;
+}
+.idef0-viewer .xp {
+  padding: 4px 0;
+  border-top: 1px solid var(--chip);
+}
+.idef0-viewer .xp-name {
+  font-weight: 600;
+}
+.idef0-viewer .xp-def,
+.idef0-viewer .xp-fate {
+  font-size: 12px;
+}
+.idef0-viewer .xp-fate {
+  color: var(--c);
+}
+.idef0-viewer .xp-id {
+  font:
+    11px ui-monospace,
+    Consolas,
+    monospace;
+  color: var(--muted);
+}
+.idef0-viewer .legend {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.idef0-viewer .legend b {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+/* Browser defaults the original standalone page relied on and the KB's Tailwind preflight resets:
+   bold headings, paragraph spacing, list bullets and a visible push button. */
+.idef0-viewer h2,
+.idef0-viewer h3 {
+  font-weight: 700;
+}
+.idef0-viewer aside p {
+  margin: 1em 0;
+}
+.idef0-viewer aside ul:not(.icom-list):not(.xp-list) {
+  list-style: disc;
+}
+.idef0-viewer aside button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--chip);
+  border: 1px solid var(--frame);
+  border-radius: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.idef0-viewer aside button:hover {
+  border-color: var(--accent);
+}

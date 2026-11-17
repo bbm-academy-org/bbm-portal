@@ -149,6 +149,18 @@ module.exports = {
       },
     },
     {
+      name: 'processes-must-not-import-cms',
+      comment:
+        'ADR-002 (#553): the processes module (src/lib/processes + src/modules/processes) must not ' +
+        'import CMS internals. It owns no persisted data: a model is read per request from the repo ' +
+        'that masters it (bbm-kb), the invented example from content/processes/example/.',
+      severity: 'error',
+      from: { path: '^src/(lib/processes|modules/processes)' },
+      to: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations)|^src/payload\.config|^src/payload-types',
+      },
+    },
+    {
       name: 'cms-must-not-import-path-map-internals',
       comment:
         'ADR-002/ADR-003 (#530): the CMS side may not reach into path-map internals. Only the ' +
