@@ -162,6 +162,9 @@ export {
   transitionIntakeItemPublic as transitionIntakeItem,
 } from './intake/items'
 export { postIntakeItemPublic as postIntakeItem } from './intake/posting'
+// ── the reimbursement route (spec 339 EARS-528) ──────────────────────────────
+export { createReimbursementTransfer } from './intake/reimbursement'
+export type { CreateReimbursementTransferInput } from './intake/reimbursement'
 export type {
   CreateDirectIntakeItemInput as CreateIntakeItemInput,
   EditIntakeItemPatch,
