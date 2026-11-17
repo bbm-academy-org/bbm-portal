@@ -32,6 +32,9 @@ const state = vi.hoisted(() => ({
   approveExpenseRequest: vi.fn(),
   confirmExpenseRequest: vi.fn(),
   refuseExpenseRequest: vi.fn(),
+  markExpenseRequestPaid: vi.fn(),
+  markExpenseRequestReimbursed: vi.fn(),
+  bulkMarkExpenseRequestsPaid: vi.fn(),
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
@@ -1225,5 +1228,184 @@ describe('/p/finance/api/requests — who may say the company paid (decision 36,
 
     expect(response.status).toBe(403)
     expect(state.editExpenseRequest).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The owner's payment queue acts (spec 339 §I, #549): «Отметить оплату»,
+ * «Отметить возврат» and the bulk retroactive act. The route validates the
+ * body's SHAPE and forwards; every rule about the data is the module's, and
+ * the role is asked before any of it (EARS-501).
+ */
+describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)', () => {
+  const BULK = 'http://portal.test/p/finance/api/requests/bulk-mark-paid'
+
+  function actOn(body: Record<string, unknown>) {
+    return import('@/app/(platform)/p/finance/api/requests/[id]/actions/route').then((route) =>
+      route.POST(
+        new Request(`${BASE}/41/actions`, { method: 'POST', body: JSON.stringify(body) }),
+        { params: Promise.resolve({ id: '41' }) },
+      ),
+    )
+  }
+
+  function bulk(body: unknown) {
+    return import('@/app/(platform)/p/finance/api/requests/bulk-mark-paid/route').then((route) =>
+      route.POST(new Request(BULK, { method: 'POST', body: JSON.stringify(body) })),
+    )
+  }
+
+  it('EARS-543: mark-paid forwards the date, the account, the debited amount and the receipts to the module', async () => {
+    state.markExpenseRequestPaid.mockResolvedValue({ ...request, status: 'posted', operationId: 5 })
+
+    const response = await actOn({
+      act: 'mark-paid',
+      occurredOn: '2026-09-01',
+      accountId: 7,
+      paidAmount: '900000',
+      paidCurrency: 'RUB',
+      documentIds: [3, 4],
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ id: 41, status: 'posted', operationId: 5 })
+    expect(state.markExpenseRequestPaid).toHaveBeenCalledWith(expect.any(Object), 41, {
+      occurredOn: '2026-09-01',
+      accountId: 7,
+      paidAmount: 900_000n,
+      paidCurrency: 'RUB',
+      documentIds: [3, 4],
+    })
+  })
+
+  it('EARS-543: mark-paid without a money date is a 400; the amount pair travels together', async () => {
+    const noDate = await actOn({ act: 'mark-paid', accountId: 7 })
+    const halfPair = await actOn({
+      act: 'mark-paid',
+      occurredOn: '2026-09-01',
+      accountId: 7,
+      paidAmount: '900000',
+    })
+
+    expect([noDate.status, halfPair.status]).toEqual([400, 400])
+    expect(state.markExpenseRequestPaid).not.toHaveBeenCalled()
+  })
+
+  it('EARS-543: a role-less member gets 403 from the module’s refusal', async () => {
+    state.session = { user: { email: 'member@bbm.academy', roles: [PLATFORM_USER_ROLE] } }
+    state.markExpenseRequestPaid.mockRejectedValue(
+      Object.assign(new Error('Нужна роль finance-approve.'), { name: 'FinanceAccessRefusal' }),
+    )
+
+    const response = await actOn({ act: 'mark-paid', occurredOn: '2026-09-01', accountId: 7 })
+
+    expect(response.status).toBe(403)
+  })
+
+  it('EARS-544: mark-reimbursed forwards the refund date, account and amount', async () => {
+    state.markExpenseRequestReimbursed.mockResolvedValue({
+      ...request,
+      status: 'posted',
+      operationId: 6,
+    })
+
+    const response = await actOn({
+      act: 'mark-reimbursed',
+      occurredOn: '2026-09-04',
+      accountId: 7,
+      amount: '900000',
+    })
+    const missingAmount = await actOn({
+      act: 'mark-reimbursed',
+      occurredOn: '2026-09-04',
+      accountId: 7,
+    })
+
+    expect([response.status, missingAmount.status]).toEqual([200, 400])
+    expect(state.markExpenseRequestReimbursed).toHaveBeenCalledTimes(1)
+    expect(state.markExpenseRequestReimbursed).toHaveBeenCalledWith(expect.any(Object), 41, {
+      occurredOn: '2026-09-04',
+      accountId: 7,
+      amount: 900_000n,
+    })
+  })
+
+  it('EARS-547: the bulk act refuses a role-less member with 403 before reading the body', async () => {
+    state.session = { user: { email: 'member@bbm.academy', roles: [PLATFORM_USER_ROLE] } }
+
+    const response = await bulk({ nonsense: true })
+
+    expect(response.status).toBe(403)
+    expect(state.bulkMarkExpenseRequestsPaid).not.toHaveBeenCalled()
+  })
+
+  it('EARS-547: the bulk act validates its body and forwards the explicit rows with their tokens', async () => {
+    state.bulkMarkExpenseRequestsPaid.mockResolvedValue({
+      posted: [{ id: 41, operationId: 5, occurredOn: '2026-09-01', settlementId: null }],
+      excluded: [{ id: 42, reason: 'Валюта USD ≠ RUB' }],
+    })
+
+    const malformed = await bulk({ group: 'pay', accountId: 7, items: [] })
+    const unknownGroup = await bulk({
+      group: 'everything',
+      accountId: 7,
+      items: [{ id: 41, snapshot: 'a' }],
+    })
+    const ok = await bulk({
+      group: 'pay',
+      accountId: 7,
+      occurredOn: '2026-09-01',
+      items: [
+        { id: 41, snapshot: 'a' },
+        { id: 42, snapshot: 'b' },
+      ],
+    })
+
+    expect([malformed.status, unknownGroup.status, ok.status]).toEqual([400, 400, 200])
+    expect(state.bulkMarkExpenseRequestsPaid).toHaveBeenCalledTimes(1)
+    expect(state.bulkMarkExpenseRequestsPaid).toHaveBeenCalledWith(expect.any(Object), {
+      group: 'pay',
+      accountId: 7,
+      occurredOn: '2026-09-01',
+      items: [
+        { id: 41, snapshot: 'a' },
+        { id: 42, snapshot: 'b' },
+      ],
+      preview: false,
+    })
+    expect(await ok.json()).toEqual({
+      posted: [{ id: 41, operationId: 5, occurredOn: '2026-09-01', settlementId: null }],
+      excluded: [{ id: 42, reason: 'Валюта USD ≠ RUB' }],
+    })
+  })
+
+  it('EARS-548: a changed row makes the whole batch a 422 naming it', async () => {
+    state.bulkMarkExpenseRequestsPaid.mockRejectedValue(
+      Object.assign(new Error('Заявка #42 изменилась после открытия диалога (EARS-548).'), {
+        name: 'FinanceRefusal',
+      }),
+    )
+
+    const response = await bulk({
+      group: 'reimburse',
+      accountId: 7,
+      items: [{ id: 42, snapshot: 'stale' }],
+    })
+
+    expect(response.status).toBe(422)
+    expect(await response.text()).toContain('#42')
+  })
+
+  it('EARS-535/546: the list carries each request’s stage, «без чека» fact and snapshot token', async () => {
+    state.listExpenseRequests.mockResolvedValue([
+      { ...request, stage: 'pay', hasDocument: false, settledBy: null, snapshot: 'tok' },
+    ])
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.GET()
+
+    expect(await response.json()).toMatchObject({
+      requests: [{ id: 41, stage: 'pay', hasDocument: false, settledBy: null, snapshot: 'tok' }],
+    })
   })
 })

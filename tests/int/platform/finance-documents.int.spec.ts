@@ -670,7 +670,7 @@ describe('who may read a document (spec 339 EARS-523)', () => {
 })
 
 describe('a document does not move once it confirmed a posting (spec 339 EARS-516)', () => {
-  it('EARS-516: upload refuses every terminal item and the database backstops direct link INSERT', async () => {
+  it('EARS-516/545: upload refuses refused and cancelled items, accepts a posted one, and the database backstops direct link INSERT', async () => {
     const refs = await seedIntakeReferences()
     const posted = await seedIntakeItemFor(MEMBER, refs, { source: 'request' })
     const refused = await seedIntakeItemFor(ENTRY, refs)
@@ -693,7 +693,8 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
       `)
     })
 
-    await expect(uploadFor(MEMBER, [posted.id])).rejects.toThrow(FinanceRefusal)
+    // EARS-545: a receipt may follow the posting — the posted item accepts it.
+    const lateReceipt = await uploadFor(MEMBER, [posted.id])
     await expect(uploadFor(ENTRY, [refused.id])).rejects.toThrow(FinanceRefusal)
     await expect(uploadFor(ENTRY, [cancelled.id])).rejects.toThrow(FinanceRefusal)
 
@@ -710,14 +711,14 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
         const documentId = Number((inserted.rows[0] as { id: number }).id)
         await tx.execute(sql`
           insert into core.finance_document_link (document_id, intake_item_id, linked_by)
-          values (${documentId}, ${posted.id}, ${refs.entryMemberId})
+          values (${documentId}, ${refused.id}, ${refs.entryMemberId})
         `)
       }),
       /EARS-516/,
     )
     expect(
-      (await listFinanceDocuments(MEMBER, { intakeItemId: posted.id })).map((d) => d.id),
-    ).toEqual([postedDocument.id])
+      (await listFinanceDocuments(MEMBER, { intakeItemId: posted.id })).map((d) => d.id).sort(),
+    ).toEqual([postedDocument.id, lateReceipt.id].sort())
   })
 
   it('EARS-516: a document linked to a posted operation is never deleted', async () => {
