@@ -17,7 +17,12 @@ import {
 // The registry MUTATOR is module-internal on purpose (see src/lib/finance/index.ts):
 // this suite is the one caller that registers a producer, and it reaches for it
 // where it lives rather than asking for a public hole to do it through.
-import { intakeMoneyFactsRefusal, intakePaidPairRefusal } from '@/lib/finance/intake/items'
+import {
+  intakeMoneyFactsRefusal,
+  intakePaidPairRefusal,
+  isSourceRefCollision,
+  sourceRefTakenMessage,
+} from '@/lib/finance/intake/items'
 import { namesIntakePostingMoneyFacts } from '@/lib/finance/intake/posting'
 import { registerIntakeProducer } from '@/lib/finance/intake/sources'
 import {
@@ -349,5 +354,35 @@ describe('The money facts the posting act enters (EARS-533)', () => {
     expect(intakePaidPairRefusal({ paidAmount: 3n, paidCurrency: 'THB' })).toBeNull()
     expect(intakePaidPairRefusal({ paidAmount: 3n, paidCurrency: null })).toMatch(/парой/i)
     expect(intakePaidPairRefusal({ paidAmount: null, paidCurrency: 'THB' })).toMatch(/парой/i)
+  })
+})
+
+describe('A link a human source already used (EARS-504, #525 review N2)', () => {
+  const existing = { id: 17, status: 'approved', createdBy: 5 } as const
+
+  it('EARS-504: names the earlier request only to the member who filed it', () => {
+    const own = sourceRefTakenMessage(existing, 5)
+    expect(own).toContain('№17')
+    expect(own).not.toContain('source_ref')
+  })
+
+  it('EARS-504: tells anyone else neither the number nor the status of a request they may not see', () => {
+    const other = sourceRefTakenMessage(existing, 6)
+    expect(other).not.toMatch(/17/)
+    expect(other).not.toMatch(/approved|одобрен/i)
+    // Nor the backfill wording, which speaks of re-parsing a history.
+    expect(other).not.toMatch(/разбор/i)
+  })
+
+  it('EARS-504: recognises the unique-index race through the driver wrapper, and nothing else', () => {
+    const raw = { code: '23505', constraint: 'finance_intake_item_source_ref_unique' }
+    expect(isSourceRefCollision(raw)).toBe(true)
+    expect(isSourceRefCollision(Object.assign(new Error('query failed'), { cause: raw }))).toBe(
+      true,
+    )
+    expect(
+      isSourceRefCollision({ code: '23505', constraint: 'finance_intake_item_operation_unique' }),
+    ).toBe(false)
+    expect(isSourceRefCollision(new Error('boom'))).toBe(false)
   })
 })

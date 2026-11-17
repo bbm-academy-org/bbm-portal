@@ -6,11 +6,12 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
-import { createExpenseRequest, FinanceRefusal } from '@/lib/finance'
+import { createExpenseRequest, FinanceIntakeDuplicate, FinanceRefusal } from '@/lib/finance'
 
 import {
   ENTRY,
   fixtureWrite,
+  MEMBER,
   seedIntakeReferences,
   truncateFinanceTables,
   type FinanceIntakeRefs,
@@ -298,5 +299,32 @@ describe('a request files the link to where it was made (#517, EARS-535)', () =>
     await expect(
       createExpenseRequest(ENTRY, filing('https://chat.bbm.academy/bbm/pl/once')),
     ).rejects.toBeInstanceOf(FinanceRefusal)
+  })
+
+  it('EARS-504: does not tell another member the number or status of the request holding the link', async () => {
+    const first = await createExpenseRequest(
+      ENTRY,
+      filing('https://chat.bbm.academy/bbm/pl/theirs'),
+    )
+    const refusal = await createExpenseRequest(
+      MEMBER,
+      filing('https://chat.bbm.academy/bbm/pl/theirs'),
+    ).catch((error: unknown) => error)
+
+    expect(refusal).toBeInstanceOf(FinanceIntakeDuplicate)
+    expect((refusal as Error).message).not.toContain(String(first.id))
+    expect((refusal as Error).message).not.toContain(first.status)
+  })
+
+  it('EARS-504: two filings racing for one link end in one request and one refusal, never a raw 23505', async () => {
+    const link = 'https://chat.bbm.academy/bbm/pl/race'
+    const outcomes = await Promise.allSettled([
+      createExpenseRequest(ENTRY, filing(link)),
+      createExpenseRequest(ENTRY, filing(link)),
+    ])
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1)
+    const [lost] = outcomes.filter((outcome) => outcome.status === 'rejected')
+    expect((lost as PromiseRejectedResult).reason).toBeInstanceOf(FinanceIntakeDuplicate)
   })
 })

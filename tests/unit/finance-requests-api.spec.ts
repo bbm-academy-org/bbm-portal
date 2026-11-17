@@ -381,6 +381,30 @@ describe('/p/finance/api/requests writes', () => {
     })
   }
 
+  it('EARS-504: a link another request already names is refused with 409, not a 500', async () => {
+    // The refusal is the module's real class, so the route has to recognise
+    // it by what it IS — before #525 review N2 its name fell through
+    // `requestApiError` and the member got a server error for a plain refusal.
+    const { FinanceIntakeDuplicate } = await import('@/lib/finance')
+    state.createExpenseRequest.mockRejectedValue(
+      new FinanceIntakeDuplicate(
+        { ...request, id: 7, createdBy: 99 } as never,
+        'Эта ссылка на источник уже указана в другой заявке.',
+      ),
+    )
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const response = await route.POST(
+      new Request(BASE, {
+        method: 'POST',
+        body: body({ sourceRef: 'https://chat.bbm.academy/bbm/pl/once' }),
+      }),
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.text()).toBe('Эта ссылка на источник уже указана в другой заявке.')
+  })
+
   it('#517: stores the source link the form collected', async () => {
     state.createExpenseRequest.mockResolvedValue({ ...request, id: 52, status: 'draft' })
     const route = await import('@/app/(platform)/p/finance/api/requests/route')
