@@ -1396,7 +1396,7 @@ describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)'
     expect(await response.text()).toContain('#42')
   })
 
-  it('EARS-535/546: the list carries each request’s stage, «без чека» fact and snapshot token', async () => {
+  it('EARS-535: the list carries each request’s stage, «без чека» fact and snapshot token', async () => {
     state.listExpenseRequests.mockResolvedValue([
       { ...request, stage: 'pay', hasDocument: false, settledBy: null, snapshot: 'tok' },
     ])

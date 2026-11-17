@@ -46,6 +46,7 @@ import {
   seedMember,
   truncateFinanceTables,
 } from './finance-helpers'
+import { asMigrator } from './privilege-helpers'
 
 /**
  * The owner's payment queue — the domain half (spec 339 §I, issue #549):
@@ -614,7 +615,7 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
       })
 
     const linked = await legacyTransfer()
-    await fixtureWrite((tx) => tx.execute(sql.raw(dataStep)))
+    await asMigrator((client) => client.query(dataStep))
     const after = await db.execute(sql`
       select settles_item_id from core.finance_intake_item where id = ${linked}
     `)
@@ -623,12 +624,12 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
     // A second transfer of the same member and sum: no unsettled candidate is
     // left for it, so the step must stop and name it rather than guess.
     const orphan = await legacyTransfer()
-    const refusal = await refusalOf(fixtureWrite((tx) => tx.execute(sql.raw(dataStep))))
+    const refusal = await refusalOf(asMigrator((client) => client.query(dataStep)))
     expect(String(refusal)).toContain(String(orphan))
   })
 })
 
-describe('the queue stage and the «без чека» fact come from the read model (EARS-535/546)', () => {
+describe('the queue stage and the «без чека» fact come from the read model (EARS-535)', () => {
   it('EARS-535: listExpenseRequests carries the derived stage and whether a document is attached', async () => {
     const refs = await seedRefs()
     const decide = await submitted(MEMBER, preSpend(refs))
@@ -692,7 +693,7 @@ describe('a receipt may follow the posting (EARS-545)', () => {
 
     await expect(upload(MEMBER, [refused.id])).rejects.toThrow(FinanceRefusal)
 
-    await expect(
+    const direct = await refusalOf(
       fixtureWrite(async (tx) => {
         const inserted = await tx.execute(sql`
           insert into core.finance_document
@@ -708,7 +709,9 @@ describe('a receipt may follow the posting (EARS-545)', () => {
                   ${refs.entryMemberId})
         `)
       }),
-    ).rejects.toThrow(/EARS-516|EARS-545/)
+    )
+    const cause = (direct as { cause?: { message?: string } } | null)?.cause
+    expect(String(cause?.message ?? direct)).toMatch(/EARS-516|EARS-545/)
   })
 })
 

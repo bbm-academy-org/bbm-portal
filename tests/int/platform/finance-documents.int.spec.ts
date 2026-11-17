@@ -736,19 +736,20 @@ describe('a document does not move once it confirmed a posting (spec 339 EARS-51
     expect((await readFinanceDocument(ENTRY, doc.id)).bytes.equals(PDF)).toBe(true)
   })
 
-  it('EARS-516: nor is it replaced — the module offers no replace at all', async () => {
+  it('EARS-516/545: nor is it replaced — a later document is ADDED beside it, never instead of it', async () => {
     const refs = await seedIntakeReferences()
     const item = await seedIntakeItemFor(ENTRY, refs)
     const doc = await uploadFor(ENTRY, [item.id])
 
     await postIntakeItem(item.id)
 
-    // A posted evidence set is immutable in both directions.
+    // The posted evidence never changes; since EARS-545 a correction is a
+    // SECOND document attached beside the first, which stays.
     await expect(setFinanceDocumentKind(ENTRY, doc.id, 'other')).rejects.toThrow(FinanceRefusal)
-    await expect(uploadFor(ENTRY, [item.id], 'fiscal_receipt')).rejects.toThrow(FinanceRefusal)
+    const added = await uploadFor(ENTRY, [item.id], 'fiscal_receipt')
     expect(
       (await listFinanceDocuments(ENTRY, { intakeItemId: item.id })).map((d) => d.id).sort(),
-    ).toEqual([doc.id])
+    ).toEqual([doc.id, added.id].sort())
   })
 
   it('EARS-516: an unlinked document and one on an unposted item are still deletable', async () => {
