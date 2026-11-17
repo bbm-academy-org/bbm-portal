@@ -58,7 +58,7 @@ export function ProcessModelScreen({
   loaded: ProcessModelLoad
 }) {
   return (
-    <main className="processes-page">
+    <main className="processes-page min-h-[calc(100vh-3.25rem)] bg-background">
       <div data-bbm-ui className="bg-background px-4 pt-5 pb-3 sm:px-6">
         <h1 className="font-heading text-xl font-semibold tracking-tight text-foreground">
           {entry.name}: IDEF0-модель
