@@ -185,6 +185,55 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
     }
   })
 
+  // The fx functions are also re-exported from the `@/lib/finance` barrel, so a
+  // path check alone misses `import { convertForDisplay } from '@/lib/finance'`
+  // in a report or F1b surface under src/app/**. The rule is therefore on the
+  // identifiers, everywhere in src/** and tools/**: only the requests queue
+  // display (spec 339 §Out of scope: «outside the requests queue display»), the
+  // fx directory itself, the barrel that re-exports it and the sync CLI may use
+  // them.
+  const FX_VALUE_EXPORTS = [
+    'convertForDisplay',
+    'rateOn',
+    'convertAtRubRates',
+    'syncCbrRates',
+    'latestRateDate',
+    'displayRateBasis',
+    'roundExact',
+    'moscowToday',
+  ]
+  const FX_CONSUMERS_ALLOWED = [
+    FX_DIR,
+    'src/lib/finance/index.ts',
+    'src/app/(platform)/p/finance/requests/',
+    'tools/platform/finance-fx-sync.ts',
+  ]
+  const isAllowedConsumer = (path: string) =>
+    FX_CONSUMERS_ALLOWED.some((allowed) => path === allowed || path.startsWith(allowed))
+  // Comments may name the functions (the schema file documents its writer).
+  const stripComments = (text: string) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
+
+  it('EARS-553: outside the requests queue nothing uses the fx functions, via the barrel or otherwise', () => {
+    const scanned = [
+      ...files,
+      ...walk(join(ROOT, 'tools')).map((f) => ({
+        path: relative(ROOT, f).replaceAll('\\', '/'),
+        text: readFileSync(f, 'utf8'),
+      })),
+    ]
+    expect(scanned.some((f) => f.path.startsWith('src/app/'))).toBe(true)
+    const pattern = new RegExp(`\\b(${FX_VALUE_EXPORTS.join('|')})\\b`)
+    const offenders = scanned
+      .filter((f) => !isAllowedConsumer(f.path))
+      .filter((f) => {
+        const code = stripComments(f.text)
+        return pattern.test(code) || /from ['"](@\/lib\/finance|(\.\.?\/)+)[^'"]*\bfx\//.test(code)
+      })
+      .map((f) => f.path)
+    expect(offenders).toEqual([])
+  })
+
   it('EARS-553: the fx directory writes no ledger table', () => {
     const fx = files.filter((f) => f.path.startsWith(FX_DIR))
     expect(fx.length).toBeGreaterThan(0)
