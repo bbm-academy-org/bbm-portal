@@ -37,7 +37,16 @@ import htm from "htm";
 
 // Lowest zoom at which box names and arrow labels stay legible; the initial view never goes below it.
 const READABLE_ZOOM = 0.65;
-const html = htm.bind(React.createElement);
+// portal: the templates keep the bbm-kb `class=` spelling verbatim; React wants `className`,
+// so the factory renames it once here instead of editing every template.
+function h(type, props, ...children) {
+  if (props && typeof type === "string" && "class" in props) {
+    const { class: className, ...rest } = props;
+    props = { ...rest, className };
+  }
+  return React.createElement(type, props, ...children);
+}
+const html = htm.bind(h);
 const { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } =
   React;
 
