@@ -51,3 +51,12 @@ tools/lint/guard-tests/fixtures/
 # entries above: the puller is the only writer. `.mdx` is outside the
 # `format:check` globs today, so this is defense in depth (#193).
 src/lib/finmodel/snapshot/rules.mdx
+
+# The IDEF0 viewer PORTED from bbm-kb (#553): kept in the source's own formatting
+# (double quotes, semicolons, 80 columns) so `diff design-source/processes/<f>
+# <port>` shows only the recorded adaptations — a parity question is answered by
+# a diff, not by re-reading a reformatted copy. Same rule as the byte-exact
+# snapshot above: the upstream file's printer owns its layout.
+src/modules/processes/idef0/viewer.mjs
+src/modules/processes/idef0/viewer.css
+src/lib/processes/registry.mjs

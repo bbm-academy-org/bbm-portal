@@ -1,0 +1,68 @@
+# Invented example (#553). Decomposition of A0.
+id: A0
+parent: A-0
+title: Испечь и продать хлеб
+icom:
+  I1: I1
+  C1: C1
+  O1: O1
+  M1: M1
+boxes:
+  - id: A1
+    name: Замесить тесто
+    functions: [F-001]
+    mechanisms: [Пекарь]
+    process_blocks: [1]
+  - id: A2
+    name: Выпечь хлеб
+    functions: [F-002]
+    mechanisms: [Пекарь, Печь]
+    process_blocks: [1]
+  - id: A3
+    name: Продать хлеб
+    functions: [F-003]
+    mechanisms: [Пекарь]
+    process_blocks: [2]
+    leaf: true
+    effort:
+      role: Пекарь
+      unit: буханка
+      hours_draft: [0.1, 0.2]
+      driver: число покупателей
+      basis: пример
+arrows:
+  - id: I1
+    label: Мука и вода
+    objects: [O-001]
+    from: { boundary: I1 }
+    to: { box: A1, side: I }
+  - id: C1
+    label: Рецептура
+    objects: [O-002]
+    from: { boundary: C1 }
+    to: [{ box: A1, side: C }, { box: A2, side: C }]
+  - id: O1
+    label: Проданный хлеб
+    objects: [O-003]
+    from: { box: A3, side: O }
+    to: { boundary: O1 }
+  - id: M1
+    label: Пекарь
+    objects: [O-004]
+    from: { boundary: M1 }
+    to: [{ box: A1, side: M }, { box: A2, side: M }, { box: A3, side: M }]
+  - id: a1
+    label: Тесто
+    objects: [O-005]
+    from: { box: A1, side: O }
+    to: { box: A2, side: I }
+  - id: a2
+    label: Хлеб
+    objects: [O-006]
+    from: { box: A2, side: O }
+    to: { box: A3, side: I }
+  - id: a3
+    label: Жалобы на корку
+    objects: [O-007]
+    from: { box: A3, side: O }
+    to: { box: A2, side: C }
