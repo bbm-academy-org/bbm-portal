@@ -119,6 +119,9 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // `provenance jsonb` + the revised EARS-503 ref policy, and the one-off
       // repair that lifts the Mattermost `key=value` block out of `note` (#517).
       '0017_finance_intake_provenance.sql',
+      // The Bank of Russia display rates (spec 339 §I, #548) — outside the
+      // ledger (EARS-553), but still a committed migration and no runtime DDL.
+      '0018_finance_fx_rate.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {

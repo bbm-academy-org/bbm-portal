@@ -312,3 +312,18 @@ export type {
 } from '@/lib/platform/db/schema/finance/finance-intake-item'
 export { FINANCE_PRODUCT_BINDINGS } from '@/lib/platform/db/schema/finance/finance-purpose'
 export type { FinanceProductBinding } from '@/lib/platform/db/schema/finance/finance-purpose'
+
+// ── Bank of Russia display rates (spec 339 §I, EARS-550/552/553, #548) ────────
+// A presentation source for the requests queue ONLY: no posting, conversion,
+// balance, current-money card or report reads these (EARS-553).
+export { convertForDisplay, latestRateDate, rateOn, syncCbrRates } from './fx/store'
+export type { DisplayConversion, FxSyncOptions, FxSyncSummary } from './fx/store'
+export { convertAtRubRates, moscowToday, roundExact } from './fx/rates'
+export type { ConvertedAmount, ExactAmount, FxRate } from './fx/rates'
+export { displayRateBasis } from './fx/display-rate'
+export type {
+  CbrRateReason,
+  DisplayRateBasis,
+  DisplayRatePostingFacts,
+  DisplayRateRequestSnapshot,
+} from './fx/display-rate'

@@ -165,9 +165,9 @@ const DEFERRALS_BY_ISSUE = {
       "spec 311 §F — moving the hours administration into the cabinet and retiring /p/hours/admin. EARS-421 (HOURS_ADMIN_EMAILS gone from the shipped code) sits here rather than in §B because the spec's «Frame-level work» table gives #317 the rewrite-or-retire of the five unit specs that assert the old env gate",
   },
   548: {
-    ids: ['EARS-550', 'EARS-552', 'EARS-553'],
+    ids: [],
     reason:
-      'spec 339 §I (owner payment queue, #547): the Bank of Russia rate store, its sync job and the display-conversion rule. The spec leads its implementation — the clauses landed on 2026-11-17 with the owner-approved prototype, and #548 writes their tests.',
+      'spec 339 §I (owner payment queue, #547): the Bank of Russia rate store, its sync job and the display-conversion rule. The list is EMPTY because #548 landed: EARS-550/552/553 are asserted in tests/unit/finance-fx-cbr.spec.ts, finance-fx-display-rule.spec.ts, finance-fx-sync-cli.spec.ts and tests/int/platform/finance-fx-rates.int.spec.ts.',
   },
   549: {
     ids: ['EARS-535', 'EARS-543', 'EARS-544', 'EARS-545', 'EARS-547', 'EARS-548'],

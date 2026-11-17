@@ -77,5 +77,10 @@ the single fund project row is seeded there (EARS-304); and
 triggers refusing every mutation, because the fact core is append-only and its
 only correction is a reversal (EARS-313). No table here stores a balance or a
 capitalization — both are sums over postings, always (EARS-317).
+`finance_fx_rate` (`migrations/0018_finance_fx_rate.sql`, #548) sits beside
+them but outside the ledger: the Bank of Russia daily rates the requests queue
+displays amounts with (spec 339 §I, EARS-552), written only by
+`pnpm platform:finance:fx:sync` and read by nothing that posts, converts or
+reports (EARS-553).
 
 Pipeline: [`../README.md`](../README.md).

@@ -610,6 +610,8 @@ describe('the person dimension (EARS-322)', () => {
       'finance_document_link.created_by → SET NULL',
       'finance_document_link.linked_by → RESTRICT',
       'finance_document_link.updated_by → SET NULL',
+      'finance_fx_rate.created_by → SET NULL',
+      'finance_fx_rate.updated_by → SET NULL',
       'finance_intake_item.created_by → RESTRICT',
       'finance_intake_item.decided_by → RESTRICT',
       'finance_intake_item.member_id → RESTRICT',
