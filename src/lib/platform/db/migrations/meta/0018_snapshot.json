@@ -102,12 +102,8 @@
           "tableFrom": "finance_account",
           "tableTo": "finance_currency",
           "schemaTo": "core",
-          "columnsFrom": [
-            "currency"
-          ],
-          "columnsTo": [
-            "code"
-          ],
+          "columnsFrom": ["currency"],
+          "columnsTo": ["code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -286,12 +282,8 @@
           "tableFrom": "finance_conversion_step",
           "tableTo": "finance_operation",
           "schemaTo": "core",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -300,12 +292,8 @@
           "tableFrom": "finance_conversion_step",
           "tableTo": "finance_currency",
           "schemaTo": "core",
-          "columnsFrom": [
-            "from_currency"
-          ],
-          "columnsTo": [
-            "code"
-          ],
+          "columnsFrom": ["from_currency"],
+          "columnsTo": ["code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -314,12 +302,8 @@
           "tableFrom": "finance_conversion_step",
           "tableTo": "finance_currency",
           "schemaTo": "core",
-          "columnsFrom": [
-            "to_currency"
-          ],
-          "columnsTo": [
-            "code"
-          ],
+          "columnsFrom": ["to_currency"],
+          "columnsTo": ["code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -592,12 +576,8 @@
           "tableFrom": "finance_document_link",
           "tableTo": "finance_document",
           "schemaTo": "core",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["document_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -606,12 +586,8 @@
           "tableFrom": "finance_document_link",
           "tableTo": "finance_intake_item",
           "schemaTo": "core",
-          "columnsFrom": [
-            "intake_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["intake_item_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -738,9 +714,7 @@
         "finance_document_storage_key_unique": {
           "name": "finance_document_storage_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "storage_key"
-          ]
+          "columns": ["storage_key"]
         }
       },
       "policies": {},
@@ -1175,12 +1149,8 @@
           "tableFrom": "finance_intake_item",
           "tableTo": "finance_account",
           "schemaTo": "core",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1189,12 +1159,8 @@
           "tableFrom": "finance_intake_item",
           "tableTo": "finance_account",
           "schemaTo": "core",
-          "columnsFrom": [
-            "counter_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["counter_account_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1203,12 +1169,8 @@
           "tableFrom": "finance_intake_item",
           "tableTo": "finance_purpose",
           "schemaTo": "core",
-          "columnsFrom": [
-            "purpose_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["purpose_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1217,12 +1179,8 @@
           "tableFrom": "finance_intake_item",
           "tableTo": "finance_project",
           "schemaTo": "core",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1231,12 +1189,8 @@
           "tableFrom": "finance_intake_item",
           "tableTo": "finance_product",
           "schemaTo": "core",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1245,12 +1199,8 @@
           "tableFrom": "finance_intake_item",
           "tableTo": "finance_counterparty",
           "schemaTo": "core",
-          "columnsFrom": [
-            "counterparty_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["counterparty_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1259,12 +1209,8 @@
           "tableFrom": "finance_intake_item",
           "tableTo": "finance_operation",
           "schemaTo": "core",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1429,12 +1375,8 @@
           "tableFrom": "finance_operation",
           "tableTo": "finance_purpose",
           "schemaTo": "core",
-          "columnsFrom": [
-            "purpose_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["purpose_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1443,12 +1385,8 @@
           "tableFrom": "finance_operation",
           "tableTo": "finance_operation",
           "schemaTo": "core",
-          "columnsFrom": [
-            "reverses"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["reverses"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1570,12 +1508,8 @@
           "tableFrom": "finance_posting",
           "tableTo": "finance_operation",
           "schemaTo": "core",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1584,12 +1518,8 @@
           "tableFrom": "finance_posting",
           "tableTo": "finance_account",
           "schemaTo": "core",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1598,12 +1528,8 @@
           "tableFrom": "finance_posting",
           "tableTo": "finance_project",
           "schemaTo": "core",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1612,12 +1538,8 @@
           "tableFrom": "finance_posting",
           "tableTo": "finance_category",
           "schemaTo": "core",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["category_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1626,12 +1548,8 @@
           "tableFrom": "finance_posting",
           "tableTo": "finance_product",
           "schemaTo": "core",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1640,12 +1558,8 @@
           "tableFrom": "finance_posting",
           "tableTo": "finance_conversion_step",
           "schemaTo": "core",
-          "columnsFrom": [
-            "conversion_step_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["conversion_step_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1730,12 +1644,8 @@
           "tableFrom": "finance_product",
           "tableTo": "finance_project",
           "schemaTo": "core",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1744,12 +1654,8 @@
           "tableFrom": "finance_product",
           "tableTo": "finance_currency",
           "schemaTo": "core",
-          "columnsFrom": [
-            "sale_price_currency"
-          ],
-          "columnsTo": [
-            "code"
-          ],
+          "columnsFrom": ["sale_price_currency"],
+          "columnsTo": ["code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1967,12 +1873,8 @@
           "tableFrom": "finance_purpose_proposal",
           "tableTo": "finance_intake_item",
           "schemaTo": "core",
-          "columnsFrom": [
-            "intake_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["intake_item_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1981,12 +1883,8 @@
           "tableFrom": "finance_purpose_proposal",
           "tableTo": "finance_purpose",
           "schemaTo": "core",
-          "columnsFrom": [
-            "resolved_purpose_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["resolved_purpose_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2074,12 +1972,8 @@
           "tableFrom": "finance_purpose",
           "tableTo": "finance_category",
           "schemaTo": "core",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["category_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2239,12 +2133,8 @@
           "tableFrom": "hours_assessment",
           "tableTo": "hours_period",
           "schemaTo": "core",
-          "columnsFrom": [
-            "period_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2505,12 +2395,8 @@
           "tableFrom": "hours_publication_message",
           "tableTo": "hours_publication",
           "schemaTo": "core",
-          "columnsFrom": [
-            "period_id"
-          ],
-          "columnsTo": [
-            "period_id"
-          ],
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["period_id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2518,10 +2404,7 @@
       "compositePrimaryKeys": {
         "hours_publication_message_period_position_pk": {
           "name": "hours_publication_message_period_position_pk",
-          "columns": [
-            "period_id",
-            "position"
-          ]
+          "columns": ["period_id", "position"]
         }
       },
       "uniqueConstraints": {},
@@ -2606,12 +2489,8 @@
           "tableFrom": "hours_publication",
           "tableTo": "hours_period",
           "schemaTo": "core",
-          "columnsFrom": [
-            "period_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["period_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2717,12 +2596,8 @@
           "tableFrom": "member_alias",
           "tableTo": "member",
           "schemaTo": "core",
-          "columnsFrom": [
-            "member_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
