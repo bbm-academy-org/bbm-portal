@@ -47,3 +47,11 @@ tools/**/*.mjs text eol=lf
 # локально (в CI/Linux зелёный). Правило берёт всю папку снимка, чтобы
 # следующий файл в ней не завёл ту же ошибку заново.
 src/lib/finmodel/snapshot/** text eol=lf
+
+# Recorded Bank of Russia responses (#548) are windows-1251 bytes exactly as
+# cbr.ru served them; the parser's decoding is what the tests pin, so git must
+# never re-encode or re-end them.
+tests/unit/fixtures/cbr/*.xml binary
+
+# The CBR sync cron wrapper runs on the Linux production box (#548).
+deploy/cron/*.sh text eol=lf
