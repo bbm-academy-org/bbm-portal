@@ -165,7 +165,7 @@ export const financeIntakeItem = core.table(
     note: text('note'),
     /**
      * WHAT THE PRODUCER KNEW, VERBATIM — the structured half of an item's
-     * origin (#517, spec 339 EARS-535/536).
+     * origin (#517, spec 339 EARS-554/555).
      *
      * `note` is HUMAN TEXT. It stopped being that during the Mattermost
      * reconstruction, which had nowhere else to put `source_system=…`,
@@ -181,7 +181,7 @@ export const financeIntakeItem = core.table(
      * column when that task consumes them. Typing today's 80-odd accidental
      * keys would freeze a corpus that is meant to shrink.
      *
-     * IMMUTABLE AFTER SUBMIT (EARS-536): nothing in the write layer offers an
+     * IMMUTABLE AFTER SUBMIT (EARS-555): nothing in the write layer offers an
      * edit path, and the request form does not collect it. What a human means
      * to say about the request is `note`; what the SOURCE said is this.
      */

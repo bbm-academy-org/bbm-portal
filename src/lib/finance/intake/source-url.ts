@@ -1,6 +1,6 @@
 /**
  * From `(source, source_ref, provenance)` to a URL a reader can open (#517,
- * spec 339 §B EARS-535).
+ * spec 339 §B EARS-554).
  *
  * **Why this is a function and not a column.** A permalink is composed of two
  * halves that age differently: the POST's identity, which is a permanent fact

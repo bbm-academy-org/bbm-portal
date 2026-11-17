@@ -100,7 +100,7 @@ export type CreateRequestBody = {
   counterpartyId?: number | null
   counterpartyName?: string | null
   note?: string | null
-  /** Optional and FILING-ONLY: provenance is immutable after submit (EARS-536). */
+  /** Optional and FILING-ONLY: provenance is immutable after submit (EARS-555). */
   sourceRef?: string | null
   alreadyPaid: boolean
   personalFunds: boolean

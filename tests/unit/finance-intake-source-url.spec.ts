@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { sourceRefLabel, sourceRefToUrl } from '@/lib/finance/intake/source-url'
 
 /**
- * `(source, source_ref, provenance)` → a URL (#517, spec 339 EARS-535).
+ * `(source, source_ref, provenance)` → a URL (#517, spec 339 EARS-554).
  *
  * Pure with respect to its env argument, so every branch — including «this
  * stand has no Mattermost configured» — is a unit test rather than an

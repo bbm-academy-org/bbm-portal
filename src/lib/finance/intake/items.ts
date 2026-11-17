@@ -97,7 +97,7 @@ export type FinanceIntakeItemView = {
   createdAt: Date
   updatedAt: Date
   updatedBy: number | null
-  /** What the SOURCE said, structured (#517). Immutable after submit (EARS-536). */
+  /** What the SOURCE said, structured (#517). Immutable after submit (EARS-555). */
   provenance: Record<string, string> | null
   decidedBy: number | null
   decidedAt: Date | null

@@ -38,13 +38,13 @@ export async function PATCH(
 
   const parsed = expenseRequestBodySchema.safeParse(rawBody)
   if (!parsed.success) return textResponse(400, parsed.error.issues[0]?.message)
-  // Where the request came from is fixed at filing (EARS-536, #517). The edit
+  // Where the request came from is fixed at filing (EARS-555, #517). The edit
   // form sends `sourceRef: null`, which is no claim at all; a link, though, is
   // an attempt to rewrite the source, and is refused by name.
   if ((parsed.data.sourceRef ?? null) !== null) {
     return textResponse(
       400,
-      'Источник заявки фиксируется при подаче и правкой не меняется (EARS-536).',
+      'Источник заявки фиксируется при подаче и правкой не меняется (EARS-555).',
     )
   }
   // The same gate as the create (decision 36): a refusal a PATCH walks around

@@ -1,6 +1,6 @@
 -- `core.finance_intake_item.provenance`, and the note the reconstruction
 -- overwrote (issue #517; owner go, Антон, 2026-09-22; spec 339 §B EARS-503
--- revised, EARS-535/536/537).
+-- revised, EARS-554/555/556).
 --
 -- THE RULE: `note` is HUMAN TEXT, `provenance` is WHAT THE SOURCE SAID, and
 -- `source_ref` is WHERE IT WAS SAID. Three different questions, three places.
@@ -37,7 +37,7 @@ ALTER TABLE "core"."finance_intake_item" ADD CONSTRAINT "finance_intake_item_sou
 -- `core.audit_row_change()` records ONLY the columns its trigger arguments
 -- name, and a column added later starts OUTSIDE that whitelist by design (spec
 -- 201 EARS-27). `provenance` belongs inside it: it is the row's origin, it is
--- the one thing #517 declares immutable after submit (EARS-536), and a silent
+-- the one thing #517 declares immutable after submit (EARS-555), and a silent
 -- rewrite of it is exactly the class of change the journal exists to make
 -- visible. Nothing in it is a person's contact data — the class EARS-17 keeps
 -- out — because it holds what a Mattermost post said about an expense.

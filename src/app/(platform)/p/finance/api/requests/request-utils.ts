@@ -50,7 +50,7 @@ export const expenseRequestBodySchema = z
     counterpartyId: z.number().int().positive().nullable().optional(),
     counterpartyName: z.string().trim().min(1).max(200).nullable().optional(),
     note: z.string().trim().max(2_000).nullable().optional(),
-    /** Optional, filing-only, immutable afterwards (#517, EARS-535/536). */
+    /** Optional, filing-only, immutable afterwards (#517, EARS-554/555). */
     sourceRef: z
       .string()
       .trim()

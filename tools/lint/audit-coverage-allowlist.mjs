@@ -244,7 +244,7 @@ const DOMAIN_VALUE_WHITELIST = {
     'personal_funds',
     // WHAT THE SOURCE SAID (#517). In the journal's whitelist because it is the
     // row's origin and the one thing spec 339 declares immutable after submit
-    // (EARS-536): a silent rewrite of it is exactly the class of change the
+    // (EARS-555): a silent rewrite of it is exactly the class of change the
     // journal exists to make visible. Nothing in it is a person's contact data
     // — the class EARS-17 keeps out — it is what a Mattermost post said about
     // an expense.

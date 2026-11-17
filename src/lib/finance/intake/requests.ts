@@ -73,7 +73,7 @@ export type CreateExpenseRequestInput = {
    * spend was asked for in.
    *
    * FILING ONLY, and deliberately absent from the edit patch below: provenance
-   * is immutable after submit (EARS-536). Where a request came from is a fact
+   * is immutable after submit (EARS-555). Where a request came from is a fact
    * of the moment it was filed, and a surface that let it be rewritten would
    * make every «Источник» link a claim rather than a record.
    */
@@ -82,7 +82,7 @@ export type CreateExpenseRequestInput = {
 
 /**
  * `sourceRef` is NOT here, and its absence is the clause, not an omission
- * (EARS-536, #517). `Omit` rather than a hand-written twin, so a field added to
+ * (EARS-555, #517). `Omit` rather than a hand-written twin, so a field added to
  * the create input keeps arriving here without anyone remembering to copy it.
  */
 export type EditExpenseRequestPatch = Partial<Omit<CreateExpenseRequestInput, 'sourceRef'>>

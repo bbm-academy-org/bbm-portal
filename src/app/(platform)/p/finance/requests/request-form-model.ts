@@ -66,7 +66,7 @@ export type RequestFormValue = {
   counterpartyId: string
   counterpartyName: string
   note: string
-  /** «Ссылка на источник» — where the spend was asked for (#517, EARS-535). */
+  /** «Ссылка на источник» — where the spend was asked for (#517, EARS-554). */
   sourceRef: string
   alreadyPaid: boolean
   personalFunds: boolean
@@ -421,7 +421,7 @@ export function requestFormDefaults(
     counterpartyName: '',
     note: request.note ?? '',
     // Reopened for EDITING, and provenance is immutable after submit
-    // (EARS-536): the field comes back empty and the body below never sends it,
+    // (EARS-555): the field comes back empty and the body below never sends it,
     // so a re-save cannot rewrite where the request came from.
     sourceRef: '',
     alreadyPaid: request.alreadyPaid,

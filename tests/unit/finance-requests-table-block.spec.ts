@@ -163,7 +163,7 @@ describe('selectRequestPage — what the board provider answers getList with (#3
     expect(page.totals).toEqual([{ currency: 'RUB', amount: '1000' }])
   })
 
-  it('EARS-537: sorts by «Подана» under the id the column carries, which is what refine sends', () => {
+  it('EARS-556: sorts by «Подана» under the id the column carries, which is what refine sends', () => {
     // `@refinedev/react-table` turns the TanStack sorting state into
     // `sorters: [{ field: sorting.id }]` — the COLUMN id, not its accessor key.
     // The id is read off the plan rather than spelled here, so a sort key that
@@ -192,15 +192,15 @@ describe('selectRequestPage — what the board provider answers getList with (#3
 })
 
 describe('formatDateTime — «Подана» in Moscow time (#517, #525 review N3)', () => {
-  it('EARS-537: names a UTC instant in Europe/Moscow, minutes truncated', () => {
+  it('EARS-556: names a UTC instant in Europe/Moscow, minutes truncated', () => {
     expect(formatDateTime('2026-04-20T14:21:39.000Z')).toBe('20.04.2026 17:21')
   })
 
-  it('EARS-537: rolls the DATE over too when Moscow is already past midnight', () => {
+  it('EARS-556: rolls the DATE over too when Moscow is already past midnight', () => {
     expect(formatDateTime('2026-04-20T22:30:00.000Z')).toBe('21.04.2026 01:30')
   })
 
-  it('EARS-537: returns an unparseable value as it came rather than «Invalid Date»', () => {
+  it('EARS-556: returns an unparseable value as it came rather than «Invalid Date»', () => {
     expect(formatDateTime('not-a-date')).toBe('not-a-date')
   })
 })

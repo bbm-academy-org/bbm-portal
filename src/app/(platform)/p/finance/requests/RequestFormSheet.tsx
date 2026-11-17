@@ -331,7 +331,7 @@ export function RequestFormSheet({
                 )}
               />
 
-              {/* «ГДЕ ЭТО ОБСУЖДАЛИ» (#517, EARS-535), last in «Что покупаем»
+              {/* «ГДЕ ЭТО ОБСУЖДАЛИ» (#517, EARS-554), last in «Что покупаем»
                   and optional.
                   It sits here rather than in «Сколько и кому» because it
                   describes the REQUEST, not the money, and it sits LAST because
@@ -339,7 +339,7 @@ export function RequestFormSheet({
                   source elsewhere — an optional field asked before the required
                   ones reads as one more thing owed.
                   Only offered on a NEW request: provenance is immutable after
-                  submit (EARS-536), so a reopened request has nothing to fill
+                  submit (EARS-555), so a reopened request has nothing to fill
                   in here and is not shown an input that would do nothing. */}
               {request === undefined ? (
                 <FormField

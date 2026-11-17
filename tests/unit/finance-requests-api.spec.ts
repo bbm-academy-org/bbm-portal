@@ -449,7 +449,7 @@ describe('/p/finance/api/requests writes', () => {
     expect(state.createExpenseRequest).not.toHaveBeenCalled()
   })
 
-  it('EARS-536: an edit leaves the source link out of the patch instead of refusing the edit', async () => {
+  it('EARS-555: an edit leaves the source link out of the patch instead of refusing the edit', async () => {
     state.editExpenseRequest.mockResolvedValue({ ...request, id: 41, status: 'submitted' })
     const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
 
@@ -466,7 +466,7 @@ describe('/p/finance/api/requests writes', () => {
     expect(Object.keys(patch)).not.toContain('sourceRef')
   })
 
-  it('EARS-536: an edit that names a source link is refused — provenance is immutable after submit', async () => {
+  it('EARS-555: an edit that names a source link is refused — provenance is immutable after submit', async () => {
     const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
 
     const response = await route.PATCH(
