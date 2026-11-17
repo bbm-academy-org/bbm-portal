@@ -450,9 +450,9 @@ a declared clause.
   the period) leave `provenance` when that task consumes them.
 - **EARS-537.** The submission moment of an intake item is the audit column
   `created_at` (spec 201 / ADR-004 A2), and the request surface shall show it as
-  «Подана» with **date and time**, in the zone the instants are stored in (UTC),
-  so that every reader of a shared register sees the same value for the same
-  row. For the reconstructed corpus of §E that column is set from the source's
+  «Подана» with **date and time**, in one fixed zone — Moscow time
+  (`Europe/Moscow`, the team's zone; #525 review) — never the reader's own, so
+  that every reader of a shared register sees the same value for the same row. For the reconstructed corpus of §E that column is set from the source's
   own recorded instant, not from the date the reconstruction ran.
 - **EARS-504.** IF an intake item arrives with a (`source`, `source_ref`)
   pair that already exists, THEN the system shall refuse that item and answer
@@ -1075,7 +1075,7 @@ register, that dependency is named in the step:
 13. **When it was filed, and where** (#517). On `/p/finance/requests` the
     register's first column is «Подана» and carries a date AND a time. Open
     request 6 of the reconstructed corpus — «Higgsfield Ultra» — and the sheet
-    says «Подана 20.04.2026 14:21» and offers a «Источник» link that opens the
+    says «Подана 20.04.2026 17:21» (14:21:39Z in МСК) and offers a «Источник» link that opens the
     Mattermost post `q41r3h4nxjnozgft493okar9tw` in a new tab
     (EARS-535/537). Its «Комментарий» is a sentence again: no
     `source_system=` / `source_post_id=` line is anywhere on the screen

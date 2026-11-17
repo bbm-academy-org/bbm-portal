@@ -97,28 +97,47 @@ export function formatDate(iso: string): string {
 }
 
 /**
- * An INSTANT as «дд.мм.гггг чч:мм» — «Подана» (#517).
+ * The zone «Подана» is named in — Moscow, where the owner and the team read the
+ * register (#525 review N3). The same `Europe/Moscow` the rest of the platform
+ * formats its instants in (`HoursPublicationScreen`, `OkrView`, the member
+ * default).
+ */
+const FILED_AT = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Europe/Moscow',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+/**
+ * An INSTANT as «дд.мм.гггг чч:мм» in Moscow time — «Подана» (#517).
  *
- * READ OFF THE STRING, exactly as `formatDate` above reads a date off its own.
- * That is a decision, not an oversight: the server serializes `created_at` as
- * an ISO-Z instant, and `new Date(...).toLocaleString()` would render it in
+ * ONE FIXED ZONE, NOT THE READER'S. The server serializes `created_at` as an
+ * ISO-Z instant, and `new Date(...).toLocaleString()` would render it in
  * whatever zone the reader's laptop is set to — so the same request would read
- * «14:21» in Moscow, «11:21» in Lisbon and «17:21» in Tbilisi, and two people
- * comparing a register over a call would disagree about when it was filed.
+ * differently in Moscow, Lisbon and Tbilisi, and two people comparing a
+ * register over a call would disagree about when it was filed. A finance
+ * register is a shared record: every row of it must say the same thing to
+ * everyone looking at it.
  *
- * A finance register is a shared record: every row of it must say the same
- * thing to everyone looking at it. UTC is the zone the instants are STORED in
- * and the one the Mattermost corpus recorded (`source_created_at=…Z`), so it is
- * the zone the screen names them in — which is also what makes the issue's own
- * acceptance line true: the Higgsfield post written at 14:21:39Z reads «Подана
- * 20.04.2026 14:21» for every reader, on every machine.
+ * MOSCOW, NOT UTC. The first cut named the instant in UTC, the zone it is
+ * stored in; but the team lives in МСК, and the Mattermost client shows the
+ * Higgsfield post written at 14:21:39Z as 17:21 — a register reading «14:21»
+ * for the same post, with no zone on screen, was a three-hour puzzle (#525
+ * review N3). It now reads «20.04.2026 17:21», matching the chat.
  *
  * Seconds are dropped rather than rounded: the minute is the resolution a human
  * asks this question at, and a truncation cannot make a request look filed
- * later than it was.
+ * later than it was. A value that is not an instant comes back as it came.
  */
 export function formatDateTime(iso: string): string {
-  const date = formatDate(iso)
-  const time = iso.slice(11, 16)
-  return /^\d{2}:\d{2}$/.test(time) ? `${date} ${time}` : date
+  const instant = new Date(iso)
+  if (Number.isNaN(instant.getTime())) return iso
+  const part = Object.fromEntries(
+    FILED_AT.formatToParts(instant).map(({ type, value }) => [type, value]),
+  ) as Partial<Record<Intl.DateTimeFormatPartTypes, string>>
+  return `${part.day}.${part.month}.${part.year} ${part.hour}:${part.minute}`
 }

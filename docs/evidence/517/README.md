@@ -92,6 +92,10 @@ refuse any database that is not a `platform_<N>` branch.
 
 ## The frames
 
+> These frames were captured before «Подана» moved from UTC to Moscow time
+> (#525 review): the sheet now reads «20.04.2026 17:21» for request 6 where
+> the frame shows 14:21. Layout is unchanged.
+
 Five states × 1440×900 (`desktop`) and 390×844 (`phone`) × light and dark, plus
 the link's three interaction states.
 
