@@ -146,7 +146,7 @@ afterAll(async () => {
 })
 
 describe('0017 lifts the provenance block out of `note`', () => {
-  it('splits row 6 into a human note, a provenance object, a ref and a filing moment', async () => {
+  it('EARS-536/537: splits row 6 into a human note, a provenance object, a ref and a filing moment', async () => {
     const id = await seedReconstructedRow(ROW_6_NOTE)
 
     await runRepair()
@@ -280,7 +280,7 @@ describe('a request files the link to where it was made (#517, EARS-535)', () =>
     }
   }
 
-  it('stores the link verbatim and leaves `provenance` alone', async () => {
+  it('EARS-535/536: stores the link verbatim and leaves `provenance` alone', async () => {
     const filed = await createExpenseRequest(ENTRY, filing('https://chat.bbm.academy/bbm/pl/abc'))
 
     expect(filed.sourceRef).toBe('https://chat.bbm.academy/bbm/pl/abc')

@@ -1694,7 +1694,7 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     }
   })
 
-  it('leads with «Подана» and still names what the money did, under it', async () => {
+  it('EARS-537: leads with «Подана» and still names what the money did, under it', async () => {
     refine.custom.data = snapshot({ requests: [item({ id: 1, own: true, occurredOn: null })] })
     renderScreen()
     const table = requestsTable()
@@ -1711,7 +1711,7 @@ describe('/p/finance/requests — the board rebuilt on the whitelist List block 
     expect(within(table).getByText('20.08.2026 09:30')).toBeTruthy()
   })
 
-  it('#517: puts the source link on the row and in the sheet, and nothing where there is none', async () => {
+  it('EARS-535/537: puts the source link on the row and in the sheet, and nothing where there is none', async () => {
     refine.custom.data = snapshot({
       requests: [
         item({

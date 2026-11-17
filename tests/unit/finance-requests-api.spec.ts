@@ -425,6 +425,39 @@ describe('/p/finance/api/requests writes', () => {
     expect(state.createExpenseRequest).not.toHaveBeenCalled()
   })
 
+  it('EARS-536: an edit leaves the source link out of the patch instead of refusing the edit', async () => {
+    state.editExpenseRequest.mockResolvedValue({ ...request, id: 41, status: 'submitted' })
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+
+    // `sourceRef: null` is exactly what the edit form sends (request-form-model
+    // clears the field on a reopened request), so it must not cost the edit.
+    const response = await route.PATCH(
+      new Request(`${BASE}/41`, { method: 'PATCH', body: body({ sourceRef: null }) }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+
+    expect(response.status).toBe(200)
+    const patch = state.editExpenseRequest.mock.calls[0]?.[2] as Record<string, unknown>
+    expect(patch).toMatchObject({ amount: 4_500_000n })
+    expect(Object.keys(patch)).not.toContain('sourceRef')
+  })
+
+  it('EARS-536: an edit that names a source link is refused — provenance is immutable after submit', async () => {
+    const route = await import('@/app/(platform)/p/finance/api/requests/[id]/route')
+
+    const response = await route.PATCH(
+      new Request(`${BASE}/41`, {
+        method: 'PATCH',
+        body: body({ sourceRef: 'https://chat.bbm.academy/bbm/pl/rewritten' }),
+      }),
+      { params: Promise.resolve({ id: '41' }) },
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/источник/i)
+    expect(state.editExpenseRequest).not.toHaveBeenCalled()
+  })
+
   it('EARS-508/532: creates an inline counterparty before the draft request', async () => {
     state.createCounterparty.mockResolvedValue({ id: 24, name: 'Новый поставщик' })
     state.createExpenseRequest.mockResolvedValue({ ...request, id: 51, status: 'draft' })
