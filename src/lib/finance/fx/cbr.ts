@@ -84,6 +84,9 @@ export function parseCbrDaily(body: Uint8Array | string): CbrDaily {
   return { effectiveDate, rates }
 }
 
+/** Per-request budget for cbr.ru; the cron retries the day on its next run. */
+export const CBR_FETCH_TIMEOUT_MS = 30_000
+
 /**
  * Fetch and parse the document for one requested date. `fetchImpl` is the seam
  * the tests use; production passes nothing and reaches cbr.ru.
@@ -93,7 +96,11 @@ export async function fetchCbrDaily(
   fetchImpl: typeof fetch = fetch,
 ): Promise<CbrDaily> {
   const url = cbrDailyUrl(isoDate)
-  const response = await fetchImpl(url, { headers: { accept: 'application/xml' } })
+  // A hung cbr.ru must not hold the daily cron until undici's own timeout.
+  const response = await fetchImpl(url, {
+    headers: { accept: 'application/xml' },
+    signal: AbortSignal.timeout(CBR_FETCH_TIMEOUT_MS),
+  })
   if (!response.ok) {
     throw new CbrResponseError(`cbr.ru answered ${response.status} for ${url}`)
   }

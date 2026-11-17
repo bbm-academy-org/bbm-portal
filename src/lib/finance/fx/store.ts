@@ -148,7 +148,13 @@ export type FxSyncSummary = {
 export async function syncCbrRates(options: FxSyncOptions = {}): Promise<FxSyncSummary> {
   const today = options.today ?? moscowToday()
   const to = options.to ?? today
-  const from = options.from ?? (await latestRateDate()) ?? to
+  // A manual `--to <tomorrow>` leaves the last stored date after today; resume
+  // from no later than `to`, so the next morning's run does not fail on from > to.
+  let from = options.from
+  if (from === undefined) {
+    const latest = await latestRateDate()
+    from = latest !== null && latest < to ? latest : to
+  }
   for (const [name, value] of [
     ['from', from],
     ['to', to],
