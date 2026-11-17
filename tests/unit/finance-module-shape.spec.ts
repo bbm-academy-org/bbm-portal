@@ -122,6 +122,9 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // The Bank of Russia display rates (spec 339 §I, #548) — outside the
       // ledger (EARS-553), but still a committed migration and no runtime DDL.
       '0018_finance_fx_rate.sql',
+      // `settles_item_id`, the attach-after-posting link guard and the one-off
+      // reimbursement link step of the payment queue (#549).
+      '0019_finance_settles_item.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {
