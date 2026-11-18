@@ -13,6 +13,7 @@ import {
   reverseOperation,
 } from '@/lib/finance'
 import { loadMarketEntries, marketEntryForItem } from '@/lib/finance/fx/market-valuation'
+import { syncCbrRates } from '@/lib/finance/fx/store'
 import { closePlatformDb } from '@/lib/platform/db/client'
 
 import {
@@ -44,13 +45,21 @@ afterAll(async () => {
   await closePlatformDb()
 })
 
+/**
+ * A CBR quote stored through its ONLY writer, the sync job (EARS-552) — a raw
+ * insert would put a non-sync door into the rate table's audit trail, which
+ * `finance-fx-rates.int.spec.ts` asserts never happens.
+ */
 async function seedRate(currency: string, rateDate: string, valueRub: string, nominal = 1) {
-  await fixtureWrite((tx) =>
-    tx.execute(sql`
-      insert into core.finance_fx_rate (source, currency, rate_date, nominal, value_rub)
-      values ('cbr', ${currency}, ${rateDate}, ${nominal}, ${valueRub})
-    `),
-  )
+  await syncCbrRates({
+    from: rateDate,
+    to: rateDate,
+    today: rateDate,
+    fetchDaily: async () => ({
+      effectiveDate: rateDate,
+      rates: [{ currency, nominal, valueRub }],
+    }),
+  })
 }
 
 async function seedLedger() {
