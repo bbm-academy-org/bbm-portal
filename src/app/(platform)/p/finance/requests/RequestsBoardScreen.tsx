@@ -44,6 +44,8 @@ import { toRequestBody, type RequestFormValue } from './request-form-model'
 import type { QueueAct } from './request-queue-model'
 import {
   bulkResultMessage,
+  linkedRequestId,
+  linkedRequestNotice,
   type BulkBody,
   type BulkGroup,
   type BulkPreview,
@@ -102,6 +104,39 @@ function subscribeStoredView(listener: () => void): () => void {
     storedViewListeners.delete(listener)
     window.removeEventListener('storage', listener)
   }
+}
+
+/**
+ * THE DEEP LINK `?request=<id>` (lead addition on #551 — the «Курс против рынка»
+ * report links a payment to its request). The address is read as an external
+ * store: it lives outside React and is absent on the server. Closing the sheet
+ * drops the parameter, so a reload does not reopen what the reader closed.
+ */
+const linkListeners = new Set<() => void>()
+
+function readSearch(): string {
+  return window.location.search
+}
+
+function serverSearch(): string {
+  return ''
+}
+
+function subscribeSearch(listener: () => void): () => void {
+  linkListeners.add(listener)
+  window.addEventListener('popstate', listener)
+  return () => {
+    linkListeners.delete(listener)
+    window.removeEventListener('popstate', listener)
+  }
+}
+
+function dropRequestLink(): void {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('request')) return
+  url.searchParams.delete('request')
+  window.history.replaceState(window.history.state, '', url)
+  for (const listener of linkListeners) listener()
 }
 
 const ACT_DONE: Record<RequestAct, string> = {
@@ -233,6 +268,8 @@ export function RequestsBoardScreen() {
    * `{ data: snapshot }` and stays `undefined` until the read actually
    * succeeds.
    */
+  const search = React.useSyncExternalStore(subscribeSearch, readSearch, serverSearch)
+  const linked = linkedRequestId(search)
   const snapshot = (query.data?.data ?? null) as RequestsSnapshot | null
   const refetch = query.refetch
 
@@ -339,6 +376,7 @@ export function RequestsBoardScreen() {
         {
           onSuccess: () => {
             closeSheets()
+            dropRequestLink()
             if (receipt !== undefined) attachDocument(request, receipt.file, receipt.kind)
             void refetch()
             void refreshRegister()
@@ -400,6 +438,7 @@ export function RequestsBoardScreen() {
         {
           onSuccess: () => {
             closeSheets()
+            dropRequestLink()
             void refetch()
             void refreshRegister()
           },
@@ -447,6 +486,7 @@ export function RequestsBoardScreen() {
         {
           onSuccess: () => {
             closeSheets()
+            dropRequestLink()
             void refetch()
             void refreshRegister()
           },
@@ -485,7 +525,9 @@ export function RequestsBoardScreen() {
   const { permissions, references, requests, liabilities, fx } = snapshot
   const groups = groupRequestsByStatus(requests)
   const view = resolveRequestsView(storedView, permissions.canApprove)
-  const selected = requests.find((request) => request.id === selectedId) ?? null
+  // A sheet the reader opened wins; otherwise the one the address names.
+  const selected = requests.find((request) => request.id === (selectedId ?? linked)) ?? null
+  const linkNotice = selectedId === null ? linkedRequestNotice(linked, requests) : null
   const editing = typeof formFor === 'number' ? requests.find((r) => r.id === formFor) : undefined
 
   /** The chosen view, remembered for THIS browser and nowhere else. */
@@ -576,6 +618,11 @@ export function RequestsBoardScreen() {
           </TabsList>
 
           <TabsContent value="requests">
+            {linkNotice === null ? null : (
+              <p role="status" className="mb-4 text-sm text-muted-foreground">
+                {linkNotice}
+              </p>
+            )}
             <section aria-label="Список заявок" className="space-y-4">
               {view === 'board' ? (
                 <div className="flex min-w-0 items-center justify-between gap-3">
@@ -721,7 +768,10 @@ export function RequestsBoardScreen() {
           onAct={(act, payload, receipt) => runAct(selected, act, payload, receipt)}
           onAttach={(file, kind) => attachDocument(selected, file, kind)}
           onEdit={() => setFormFor(selected.id)}
-          onClose={closeSheets}
+          onClose={() => {
+            closeSheets()
+            dropRequestLink()
+          }}
         />
       ) : null}
 
@@ -734,7 +784,10 @@ export function RequestsBoardScreen() {
           failure={bulkFailure}
           onPreview={previewBulk}
           onConfirm={confirmBulk}
-          onClose={closeSheets}
+          onClose={() => {
+            closeSheets()
+            dropRequestLink()
+          }}
         />
       )}
     </ListView>

@@ -866,3 +866,39 @@ describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
     expect(within(group('К оплате')).queryByRole('button', { name: /^Отметить все/ })).toBeNull()
   })
 })
+
+describe('the deep link ?request=<id> (lead addition on #551)', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  it('EARS-542: /p/finance/requests?request=<id> opens that request’s sheet on load, with the list row’s token', async () => {
+    window.history.replaceState(null, '', '/p/finance/requests?request=3')
+    renderScreen()
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText('Заявка №3 · К оплате')).toBeTruthy()
+
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Отметить оплату' }))
+    const form = await within(sheet).findByRole('region', { name: 'Отметить оплату' })
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0].values).toMatchObject({ snapshot: 'token-1' })
+  })
+
+  it('EARS-542: closing the linked sheet drops the parameter, so the queue stays a queue', async () => {
+    window.history.replaceState(null, '', '/p/finance/requests?request=3')
+    renderScreen()
+    const sheet = await screen.findByRole('dialog')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Закрыть' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(window.location.search).toBe('')
+  })
+
+  it('EARS-542: an unknown or unreadable id leaves the plain queue with a quiet notice', () => {
+    window.history.replaceState(null, '', '/p/finance/requests?request=999')
+    renderScreen()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(
+      screen.getByText('Заявки №999 нет в списке — она удалена или недоступна вам.'),
+    ).toBeTruthy()
+    expect(group('Ждёт решения')).toBeTruthy()
+  })
+})

@@ -17,6 +17,8 @@ import {
   howToPay,
   initialSheetForm,
   lacksReceipt,
+  linkedRequestId,
+  linkedRequestNotice,
   markPaidDefaults,
   marketBlockView,
   mayAttachDocument,
@@ -308,7 +310,7 @@ describe('the details sheet — header and timeline (EARS-542/546)', () => {
 
   it('EARS-542: the fee is named in its own currency', () => {
     expect(sheetFee(item({ feeAmount: '5000', feeCurrency: 'RUB' }), REFERENCES)).toBe(
-      'в т.ч. комиссия 50,00 ₽',
+      'комиссия 50,00 ₽',
     )
     expect(sheetFee(item(), REFERENCES)).toBe(null)
   })
@@ -759,6 +761,25 @@ describe('the bulk dialog (EARS-547/548)', () => {
     expect(bulkResultMessage({ posted: [1, 2], excluded: [] })).toBe('Отмечено оплаченными: 2.')
     expect(bulkResultMessage({ posted: [1], excluded: [2] })).toBe(
       'Отмечено оплаченными: 1, исключено: 1.',
+    )
+  })
+})
+
+describe('the deep link ?request=<id>', () => {
+  it('EARS-542: reads the id a link names, and nothing from anything else', () => {
+    expect(linkedRequestId('?request=36')).toBe(36)
+    expect(linkedRequestId('?scope=closed&request=7')).toBe(7)
+    expect(linkedRequestId('')).toBe(null)
+    expect(linkedRequestId('?request=abc')).toBe(null)
+    expect(linkedRequestId('?request=0')).toBe(null)
+    expect(linkedRequestId('?request=-3')).toBe(null)
+  })
+
+  it('EARS-542: a link to a request the reader cannot see is a quiet notice, never an error', () => {
+    expect(linkedRequestNotice(36, [{ id: 36 }])).toBe(null)
+    expect(linkedRequestNotice(null, [])).toBe(null)
+    expect(linkedRequestNotice(99, [{ id: 36 }])).toBe(
+      'Заявки №99 нет в списке — она удалена или недоступна вам.',
     )
   })
 })

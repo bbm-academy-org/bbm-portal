@@ -1,0 +1,15 @@
+USD from RUB account, no debited amount: «Оплачено» disabled = true
+#35 §J: 9 200,00 ₽=true 9 384,00 ₽=true +184,00 ₽=true хуже рынка на 2,0%=true
+#35 in $: «хуже рынка на 2,0%» kept = true, «+2,00 $» = true
+#38 liability:RUB postings for the member: op14 −9 016,00 / op15 +9 016,00 — the debt booked and repaid in one act, balance unchanged (SQL)
+write-order refusal shown verbatim in the form (frame 15): «Операция от 2026-11-10 не может быть записана после уже проведённой операции валютной пары RUB/USD от 2026-11-13 …»
+#14 after «Прикрепить чек»: «без чека» markers in the sheet = 0
+stale snapshot refusal: Заявка #16 изменилась после того, как карточка её показала — отметка не проведена; откройте заявку заново (EARS-543/544, EARS-548).
+bulk preview excluded: Не войдут: 1 заявка№36 · Хостинг на год, уже оплачено картой компанииВалюта списания USD ≠ RUB — валюте счёта пакета: сумма, фактически списанная со счёта, неизвестна; отметьте заявку отдельно с этой суммой (EARS-547, Q2).
+bulk cancelled — «К оплате» rows still with their act: 5
+bulk confirm: Отметить 4 как оплаченные
+bulk toast: Отмечено оплаченными: 4, исключено: 1.
+#33 no rate: true
+Escape closes the sheet: true
+member sheet acts: 0
+?request=36 opens: 1

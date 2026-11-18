@@ -298,14 +298,14 @@ export function sheetAmount(
   return { main, note: `заявлено ${original} · ${how}` }
 }
 
-/** «в т.ч. комиссия 50,00 ₽» — the fee in its own currency, or `null`. */
+/** «комиссия 50,00 ₽» — the fee recorded with the spend, in its own currency, or `null`. */
 export function sheetFee(
   request: RequestBoardItem,
   references: RequestBoardReferences,
 ): string | null {
   if (request.feeAmount === null || BigInt(request.feeAmount) === 0n) return null
   const currency = request.feeCurrency ?? request.paidCurrency ?? request.currency
-  return `в т.ч. комиссия ${formatOriginalMoney(
+  return `комиссия ${formatOriginalMoney(
     request.feeAmount,
     currency,
     currencyPrecision(references.currencies, currency),
@@ -812,4 +812,23 @@ export function bulkResultMessage(result: { posted: unknown[]; excluded: unknown
   return excluded === 0
     ? `Отмечено оплаченными: ${posted}.`
     : `Отмечено оплаченными: ${posted}, исключено: ${excluded}.`
+}
+
+// ── the deep link `?request=<id>` (lead addition on #551; the §J report links here) ──
+
+/** The request id a `?request=<id>` link names, or `null` when it names none. */
+export function linkedRequestId(search: string): number | null {
+  const raw = new URLSearchParams(search).get('request')
+  if (raw === null || !/^\d+$/.test(raw.trim())) return null
+  const id = Number(raw.trim())
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+/** The quiet notice for a link to a request this reader cannot see — or `null`. */
+export function linkedRequestNotice(
+  linked: number | null,
+  requests: readonly Pick<RequestBoardItem, 'id'>[],
+): string | null {
+  if (linked === null || requests.some((request) => request.id === linked)) return null
+  return `Заявки №${linked} нет в списке — она удалена или недоступна вам.`
 }
