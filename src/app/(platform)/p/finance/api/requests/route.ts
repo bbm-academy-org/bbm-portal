@@ -23,8 +23,13 @@ import {
 } from '@/lib/finance'
 import { findMemberByEmail, getMembersByIds } from '@/lib/member'
 
-import type { DisplayCurrencyCode, QueueDisplayAmount } from '../../requests/request-board-contract'
+import type {
+  DisplayCurrencyCode,
+  QueueDisplayAmount,
+  RequestMarketBlock,
+} from '../../requests/request-board-contract'
 import { loadQueueDisplay } from '../../requests/queue-display-loader'
+import { loadQueueMarket } from '../../requests/queue-market-loader'
 
 import {
   companyAccountRefusal,
@@ -65,6 +70,7 @@ function serializeItem(
     actorMemberId: number | null
     documents: FinanceDocumentView[]
     display: Record<DisplayCurrencyCode, QueueDisplayAmount> | undefined
+    market: RequestMarketBlock | null
   },
 ) {
   const purpose = item.purposeId === null ? null : (context.purposes.get(item.purposeId) ?? null)
@@ -79,6 +85,11 @@ function serializeItem(
     currency: item.currency,
     paidAmount: item.paidAmount?.toString() ?? null,
     paidCurrency: item.paidCurrency,
+    feeAmount: item.feeAmount?.toString() ?? null,
+    feeCurrency: item.feeCurrency,
+    // The §J «Курс против рынка» block (EARS-563), valued on the server from
+    // the #558 read model — the sheet renders it and computes nothing.
+    market: context.market,
     note: item.note,
     // WHEN IT WAS FILED, and WHERE IT WAS FILED (#517).
     //
@@ -239,16 +250,18 @@ export async function GET(): Promise<Response> {
     // request filed by ANOTHER member arrived with no proposal at all: the
     // purpose cell then printed «Назначение предложено» and refused to say
     // what was proposed.
-    const [members, documentsByItem, register, proposals, queueDisplay] = await Promise.all([
-      getMembersByIds(memberIds),
-      listFinanceDocumentsByItems(
-        actor,
-        requests.map((request) => request.id),
-      ),
-      registerEntriesByIds(operationIds),
-      listPendingPurposeProposalsForRequests(requests.map((request) => request.id)),
-      loadQueueDisplay(requests, currencies),
-    ])
+    const [members, documentsByItem, register, proposals, queueDisplay, queueMarket] =
+      await Promise.all([
+        getMembersByIds(memberIds),
+        listFinanceDocumentsByItems(
+          actor,
+          requests.map((request) => request.id),
+        ),
+        registerEntriesByIds(operationIds),
+        listPendingPurposeProposalsForRequests(requests.map((request) => request.id)),
+        loadQueueDisplay(requests, currencies),
+        loadQueueMarket(),
+      ])
     const accountMap = byId(accounts)
     const counterpartyMap = byId(counterparties)
     const productMap = byId(products)
@@ -312,6 +325,7 @@ export async function GET(): Promise<Response> {
           actorMemberId: actorMember?.id ?? null,
           documents: documentsByItem.get(request.id) ?? [],
           display: queueDisplay.byRequest.get(request.id),
+          market: queueMarket.get(request.id) ?? null,
         }),
       ),
       liabilities: debts.map((debt) => ({
