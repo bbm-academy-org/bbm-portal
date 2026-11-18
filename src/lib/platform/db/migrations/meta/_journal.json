@@ -134,6 +134,13 @@
       "when": 1794926327589,
       "tag": "0018_finance_fx_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794979117148,
+      "tag": "0019_finance_settles_item",
+      "breakpoints": true
     }
   ]
 }

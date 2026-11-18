@@ -1,6 +1,6 @@
 {
-  "id": "7a71ec5e-babd-49f3-9a78-12a6a9d73fad",
-  "prevId": "fdd16501-4183-4f1c-b180-8b412981d4f4",
+  "id": "80d9d5fc-6846-44a1-8f67-c58ca318b3c6",
+  "prevId": "9b886abd-77b9-4699-85cf-1961aead25e0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -738,6 +738,130 @@
         "finance_document_content_digest_allowed": {
           "name": "finance_document_content_digest_allowed",
           "value": "\"core\".\"finance_document\".\"content_digest\" = 'legacy-unverified' or \"core\".\"finance_document\".\"content_digest\" ~ '^sha256:[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.finance_fx_rate": {
+      "name": "finance_fx_rate",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rate_date": {
+          "name": "rate_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nominal": {
+          "name": "nominal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value_rub": {
+          "name": "value_rub",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "finance_fx_rate_source_currency_date_unique": {
+          "name": "finance_fx_rate_source_currency_date_unique",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "currency",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rate_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "finance_fx_rate_source_known": {
+          "name": "finance_fx_rate_source_known",
+          "value": "\"core\".\"finance_fx_rate\".\"source\" in ('cbr')"
+        },
+        "finance_fx_rate_currency_shape": {
+          "name": "finance_fx_rate_currency_shape",
+          "value": "\"core\".\"finance_fx_rate\".\"currency\" ~ '^[A-Z]{3}$'"
+        },
+        "finance_fx_rate_nominal_positive": {
+          "name": "finance_fx_rate_nominal_positive",
+          "value": "\"core\".\"finance_fx_rate\".\"nominal\" > 0"
+        },
+        "finance_fx_rate_value_decimal": {
+          "name": "finance_fx_rate_value_decimal",
+          "value": "\"core\".\"finance_fx_rate\".\"value_rub\" ~ '^[0-9]+(\\.[0-9]+)?$'"
+        },
+        "finance_fx_rate_value_positive": {
+          "name": "finance_fx_rate_value_positive",
+          "value": "(\"core\".\"finance_fx_rate\".\"value_rub\")::numeric > 0"
         }
       },
       "isRLSEnabled": false
