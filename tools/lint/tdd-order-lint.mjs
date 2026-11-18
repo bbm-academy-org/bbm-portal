@@ -162,6 +162,14 @@
 // structurally uncitable, and route layouts and Drizzle tables are not imported
 // by path. See `evaluateStaged` for the full reasoning.
 //
+// A MERGE being concluded (#565) is read against EVERY parent, not HEAD alone.
+// Read against HEAD, each module `origin/main` brought in arrived together with
+// its test and looked like a MIXED commit — the staged plane's first confirmed
+// false BLOCK, which pushed agents into rebases and once into `--no-verify`
+// (PR #564). Only a path new against all parents is the resolution's own
+// authorship, and a test committed on any parent is already committed. See
+// `stagedAdditions`.
+//
 // TWO SEVERITIES, and the split is the design rather than a compromise. The
 // staged plane reads only the local tree and index through git plumbing — no
 // network, no PR metadata — and its ONE blocking rule (mixed) has a false-BLOCK
@@ -185,6 +193,8 @@
 // Findings: stderr + exit 1. Clean/skip: exit 0. Same contract on both planes.
 
 import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { ghCommit, ghPrCommits } from './lib/gh.mjs'
 import {
@@ -590,14 +600,64 @@ function git(root, args) {
 }
 
 /**
- * Files the INDEX adds outright, as repo-relative paths. `-M` keeps rename
- * detection on, so a moved module reports `R` and never reaches this list:
- * relocating tracked code re-opens no TDD obligation.
+ * The other parents of a merge in progress — the shas in `MERGE_HEAD` (several
+ * for an octopus), or `[]` when no merge is being concluded. `--git-path` is what
+ * finds the file from a linked worktree, whose `.git` is a file, not a directory.
  */
-function stagedAdditions(root) {
-  const out = git(root, ['diff', '--cached', '--name-only', '--diff-filter=A', '-M'])
+function mergeHeads(root) {
+  const rel = git(root, ['rev-parse', '--git-path', 'MERGE_HEAD'])
+  if (rel === null) return []
+  const file = resolve(root, rel.trim())
+  if (!existsSync(file)) return []
+  return readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Files the INDEX adds outright against `rev` (HEAD when absent), as
+ * repo-relative paths. `-M` keeps rename detection on, so a moved module
+ * reports `R` and never reaches this list: relocating tracked code re-opens no
+ * TDD obligation.
+ */
+function additionsAgainst(root, rev) {
+  const args = ['diff', '--cached', '--name-only', '--diff-filter=A', '-M']
+  if (rev) args.push(rev)
+  const out = git(root, args)
   if (out === null) return null
   return out.split(/\r?\n/).filter(Boolean).map(toPosix)
+}
+
+/**
+ * What THIS commit adds. For a plain commit: the index against HEAD. For a
+ * merge being concluded (#565): the paths new against EVERY parent. Read
+ * against HEAD alone, the index of `git merge origin/main` holds each module
+ * main landed — with its test — as a staged addition, and the MIXED rule then
+ * blocked the merge over code the branch never wrote. A path present on any
+ * parent arrived from that parent (as is, or edited by the resolution — a
+ * modification, out of scope in v1 like any other), so only a path new against
+ * all of them is the resolution's own authorship.
+ *
+ * Rebase and cherry-pick continuations need no such case (probed on git 2.55):
+ * `git rebase --continue` runs no pre-commit hook, and a manual commit
+ * mid-sequence stages only the picked commit's own delta against HEAD — the
+ * plain-commit reading, unchanged.
+ *
+ * @param {string} root
+ * @param {string[]} parents the merge's other parents (`[]` for a plain commit)
+ * @returns {string[]|null} null when git cannot answer
+ */
+function stagedAdditions(root, parents) {
+  let kept = additionsAgainst(root)
+  for (const sha of parents) {
+    if (kept === null) return null
+    const vsParent = additionsAgainst(root, sha)
+    if (vsParent === null) return null
+    const set = new Set(vsParent)
+    kept = kept.filter((p) => set.has(p))
+  }
+  return kept
 }
 
 /**
@@ -622,9 +682,17 @@ function testsMatching(root, rev, needles) {
 
 /** The pre-commit plane: read the index, never the network. */
 function runStaged(out, root) {
-  const additions = stagedAdditions(root)
+  const parents = mergeHeads(root)
+  const merging = parents.length > 0
+  const additions = stagedAdditions(root, parents)
   if (additions === null) {
     out.ok('not a git working tree (or git is unavailable), nothing to check')
+  }
+  if (merging) {
+    out.info(
+      `merge in progress: judging only what the resolution adds against HEAD and ` +
+        `${parents.length} merged parent(s); files arriving from a parent are not this commit's authorship`,
+    )
   }
 
   const newModules = additions.filter((p) => isPlatformModule(p))
@@ -635,11 +703,14 @@ function runStaged(out, root) {
   }
 
   const hasHead = git(root, ['rev-parse', '--verify', '-q', 'HEAD']) !== null
+  // A test committed on ANY parent of the commit being made is a RED commit that
+  // already happened — for a merge, that includes the merged branch's tests.
+  const committedRevs = [...(hasHead ? ['HEAD'] : []), ...parents]
   const modules = newModules.map((path) => {
     const needles = needlesFor(path)
     return {
       path,
-      headTests: hasHead ? testsMatching(root, 'HEAD', needles) : [],
+      headTests: committedRevs.flatMap((rev) => testsMatching(root, rev, needles)),
       indexTests: testsMatching(root, '--cached', needles),
     }
   })
@@ -671,14 +742,19 @@ function runStaged(out, root) {
       `mixed commit   ${m.path}  is staged together with its test (${m.tests.join(', ')})`,
     )
   }
+  // The way on is spelled out so that nobody needs a hook bypass to find one: an
+  // agent shown «the escape hatch is --no-verify» used it (PR #564, #565).
   out.fail(
-    `${mixed.length} new platform module(s) staged together with their own tests. ` +
+    `${mixed.length} new platform module(s) staged together with their own tests` +
+      (merging ? ', introduced by this merge resolution itself (not by a merged parent). ' : '. ') +
       'task-cycle stage 3: commit the failing test first, then the implementation on top of it — ' +
       'two commits, in that order, so the RED run is a real artifact rather than a claim. ' +
-      'Unstage the module (`git restore --staged <file>`), commit the test alone, then commit ' +
-      "the module. The escape hatches are git's own and this repo's existing one — " +
-      '`git commit --no-verify` or `SKIP_SIMPLE_GIT_HOOKS=1` — and both skip EVERY pre-commit ' +
-      'check, not just this one. Canon: docs/ci-guardrails.md §5.',
+      'How to proceed without `--no-verify`: unstage the module (`git restore --staged <file>`; ' +
+      'the file stays in your working tree), ' +
+      (merging ? 'conclude the merge with the test alone, ' : 'commit the test alone, ') +
+      'then `git add` the module and commit it on top. No hook bypass is needed — ' +
+      '`--no-verify` / `SKIP_SIMPLE_GIT_HOOKS=1` would skip EVERY pre-commit check, not just ' +
+      'this one. Canon: docs/ci-guardrails.md §5.',
   )
 }
 

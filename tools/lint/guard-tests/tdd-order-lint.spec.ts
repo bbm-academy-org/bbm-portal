@@ -973,4 +973,159 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     const res = staged(root)
     expect(res.code).toBe(0)
   })
+
+  // #565: the refusal is the developer's next step, so it must name a way on that
+  // is not a hook bypass — an agent that read «the escape hatch is --no-verify»
+  // used it (PR #564, 60e38e82).
+  it('the MIXED refusal says how to proceed without --no-verify', () => {
+    const root = repo((r) => {
+      put(r, MODULE, 'export const intake = () => true\n')
+      put(r, TEST, testBody)
+      git(r, 'add', '.')
+    })
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('git restore --staged')
+    expect(res.stderr).toContain('without `--no-verify`')
+  })
+})
+
+/**
+ * #565 — a MERGE in progress (MERGE_HEAD present). The index then holds every
+ * file the other parent brought in; read against HEAD alone, main's module and
+ * its test arrive together and look like a MIXED commit this branch authored.
+ * Only what the resolution itself introduces — new against EVERY parent — is
+ * this commit's authorship, and a test already committed on ANY parent is a RED
+ * commit that already happened.
+ *
+ * Rebase / cherry-pick continuations need no special case (probed on git 2.55):
+ * `git rebase --continue` runs no pre-commit hook, and a manual `git commit` or
+ * `git cherry-pick --continue` mid-sequence stages only the picked commit's own
+ * delta against HEAD — the plain-commit rule, unchanged. The last case pins it.
+ */
+describe('tdd-order --staged during a merge (#565)', () => {
+  const repos: string[] = []
+  afterAll(() => {
+    for (const dir of repos) rmSync(dir, { recursive: true, force: true })
+  })
+
+  const git = (cwd: string, ...args: string[]) => {
+    const res = spawnSync('git', args, { cwd, encoding: 'utf8' })
+    if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`)
+    return res.stdout
+  }
+  /** Exit code only — a conflicting merge exits non-zero by design. */
+  const gitTry = (cwd: string, ...args: string[]) =>
+    spawnSync('git', args, { cwd, encoding: 'utf8' }).status
+
+  const put = (root: string, rel: string, text: string) => {
+    mkdirSync(dirname(join(root, rel)), { recursive: true })
+    writeFileSync(join(root, rel), text)
+  }
+
+  const MODULE = 'src/lib/leads/intake.ts'
+  const TEST = 'tests/unit/leads-intake.spec.ts'
+  const testBody = "import { intake } from '@/lib/leads/intake'\nit('reds', () => intake())\n"
+  const EXTRA = 'src/lib/leads/extra.ts'
+  const EXTRA_TEST = 'tests/unit/leads-extra.spec.ts'
+
+  /**
+   * `main` lands a module the honest way (test commit, then module commit) and
+   * edits `shared.md`; `feature` edits `shared.md` too and touches no module, so
+   * merging `main` conflicts — the case where git runs the pre-commit hook.
+   * Returns the repo with `feature` checked out and `main` not yet merged.
+   */
+  const diverged = (opts: { mainMixed?: boolean; extraRedOnMain?: boolean } = {}) => {
+    const root = mkdtempSync(join(tmpdir(), 'tdd-order-merge-'))
+    repos.push(root)
+    git(root, 'init', '-q')
+    git(root, 'config', 'user.email', 'guard@test.local')
+    git(root, 'config', 'user.name', 'guard test')
+    git(root, 'config', 'core.autocrlf', 'false')
+    put(root, 'shared.md', 'base\n')
+    git(root, 'add', '.')
+    git(root, 'commit', '-qm', 'base')
+    git(root, 'branch', '-M', 'main')
+    git(root, 'checkout', '-qb', 'feature')
+    put(root, 'shared.md', 'feature\n')
+    put(root, 'docs/feature.md', 'prose\n')
+    git(root, 'add', '.')
+    git(root, 'commit', '-qm', 'docs: feature')
+    git(root, 'checkout', '-q', 'main')
+    put(root, TEST, testBody)
+    if (opts.extraRedOnMain) put(root, EXTRA_TEST, "import { extra } from '@/lib/leads/extra'\n")
+    if (!opts.mainMixed) {
+      git(root, 'add', '.')
+      git(root, 'commit', '-qm', 'test(leads): RED')
+    }
+    put(root, MODULE, 'export const intake = () => true\n')
+    put(root, 'shared.md', 'main\n')
+    git(root, 'add', '.')
+    git(root, 'commit', '-qm', 'feat(leads): intake')
+    git(root, 'checkout', '-q', 'feature')
+    return root
+  }
+
+  const staged = (root: string) => runGuard('tdd-order-lint.mjs', root, { extraArgs: ['--staged'] })
+
+  it('exits 0 concluding a CONFLICTED merge of main that brings a module and its test', () => {
+    const root = diverged()
+    expect(gitTry(root, 'merge', '--no-edit', 'main')).not.toBe(0)
+    put(root, 'shared.md', 'resolved\n')
+    git(root, 'add', 'shared.md')
+    const res = staged(root)
+    expect(res.stderr).toBe('')
+    expect(res.code).toBe(0)
+  })
+
+  it('exits 0 even when main itself landed its module and test in one commit', () => {
+    // Whatever main did was judged on main's own PR; this merge did not author it.
+    const root = diverged({ mainMixed: true })
+    expect(gitTry(root, 'merge', '--no-edit', 'main')).not.toBe(0)
+    put(root, 'shared.md', 'resolved\n')
+    git(root, 'add', 'shared.md')
+    expect(staged(root).code).toBe(0)
+  })
+
+  it('still BLOCKS a resolution that itself introduces a new module together with its test', () => {
+    const root = diverged()
+    gitTry(root, 'merge', '--no-edit', 'main')
+    put(root, 'shared.md', 'resolved\n')
+    put(root, 'src/lib/evil/merge.ts', 'export const evil = () => true\n')
+    put(root, 'tests/unit/evil-merge.spec.ts', "import { evil } from '@/lib/evil/merge'\n")
+    git(root, 'add', '.')
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('src/lib/evil/merge.ts')
+    // main's module arrived unchanged from the other parent — not this commit's authorship.
+    expect(res.stderr).not.toContain(MODULE)
+    expect(res.stderr).toContain('merge')
+    expect(res.stderr).toContain('without `--no-verify`')
+  })
+
+  it('exits 0 when the resolution adds a module whose RED test was committed on the merged parent', () => {
+    const root = diverged({ extraRedOnMain: true })
+    gitTry(root, 'merge', '--no-edit', 'main')
+    put(root, 'shared.md', 'resolved\n')
+    put(root, EXTRA, 'export const extra = 1\n')
+    git(root, 'add', '.')
+    expect(staged(root).code).toBe(0)
+  })
+
+  it('without MERGE_HEAD, the same files staged by hand are still a MIXED commit', () => {
+    const root = diverged()
+    put(root, MODULE, 'export const intake = () => true\n')
+    put(root, TEST, testBody)
+    git(root, 'add', '.')
+    expect(staged(root).code).toBe(1)
+  })
+
+  it('a cherry-pick continuation of an honest module commit exits 0 — the plain rule applies', () => {
+    const root = diverged()
+    git(root, 'cherry-pick', 'main~1') // the RED test commit — applies cleanly
+    expect(gitTry(root, 'cherry-pick', 'main')).not.toBe(0) // module + shared.md conflict
+    put(root, 'shared.md', 'resolved\n')
+    git(root, 'add', 'shared.md')
+    expect(staged(root).code).toBe(0)
+  })
 })
