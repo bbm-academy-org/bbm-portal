@@ -13,3 +13,16 @@ bulk toast: Отмечено оплаченными: 4, исключено: 1.
 Escape closes the sheet: true
 member sheet acts: 0
 ?request=36 opens: 1
+
+# re-capture after the review of PR #564 (recapture.ts)
+decide: #8 (decide, RUB)
+pay, no details: #6 (pay, RUB)
+pay, already paid: #36 (pay, USD)
+reimburse, USD, open refund currency: #51 (reimburse, USD)
+pay form, foreign currency: #36 (pay, USD)
+pay form open: «Подтверждающий документ» pickers = 0
+pay, foreign currency, for the write-order refusal: #36 (pay, USD)
+refusal shown: Операция от 01.07.2026 не может быть записана после уже проведённой операции валютной пары RUB/USD от 13.11.2026: неизменяемый ledger не пересчитывает уже признанный FX-результат — отметьте более ранние валютные оплаты раньше более поздних.
+refusal carries EARS codes = false, ISO dates = false
+К оплате: bulk act «Отметить все 3 как оплаченные…»
+Вернуть сотруднику: bulk act «Отметить все 3 как возвращённые…»

@@ -64,3 +64,31 @@ Also verified, not framed: Escape and the overlay close the sheet; cancelling
 the bulk dialog posts nothing (the «К оплате» rows keep their acts); #38's
 member liability postings are −9 016,00 and +9 016,00 in the one act, so the
 member's RUB balance is unchanged (SQL on `core.finance_posting`).
+
+## Re-capture after the review of PR #564 (2026-11-18)
+
+`recapture.ts` (this folder) re-took the frames the review changed, on the stand
+as `capture.ts` left it, signed in by a minted Auth.js session
+(`tests/e2e/support/platform-session.ts`, `AUTH_SECRET` from the env). Its
+`prepare` step added stand-only data through the API: #6 and #7 approved (an
+unpaid «К оплате» row with no details, and three rows for the bulk act), and
+#51 filed — a member's USD 45,00 card spend with no stated charge (the refund
+currency still open). The frames below REPLACE the earlier ones of the same
+number (they now show other requests where the earlier ones had been posted);
+32 and 33 are new.
+
+| Frame | State after the fixes                                                                                                                                                                                                                                |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 01    | #8 «Ждёт решения»: the title is the queue row's line (the note's first line), the purpose under it (UX 4)                                                                                                                                            |
+| 02    | #6 «К оплате», unpaid, no details: the warning «Реквизитов или ссылки на оплату нет» — the one stage that still gets it (EARS-542)                                                                                                                   |
+| 32    | #36 «К оплате», already paid from the company account: «Уже оплачено 10.11.2026 — осталось отметить оплату», no details warning (EARS-542, UX 1)                                                                                                     |
+| 04    | #51 «Вернуть сотруднику», USD, refund currency open: «Вернуть: 45,00 $ со счёта в USD; со счёта в другой валюте — сумму, фактически списанную с карты»; §J «факт не внесён — укажите сумму возврата при «Отметить возврат»» (EARS-544/563, S3, UX 5) |
+| 13    | the same with «Отметить возврат» open: the files block hides its picker — the form's receipt is the one upload control (UX 2)                                                                                                                        |
+| 07    | #36 «Отметить оплату» open: one upload control (UX 2)                                                                                                                                                                                                |
+| 15    | the FX write-order refusal in the form: no EARS codes, dates as 01.07.2026 / 13.11.2026 (UX 7)                                                                                                                                                       |
+| 25    | the bulk preview on «К оплате»: rows wrap — №, the author's line, the date and the payee, the amount — nothing truncated at 390 px; the exclusion reason without codes (UX 3, UX 7)                                                                  |
+| 33    | «Вернуть сотруднику»: «Отметить все 3 как возвращённые…» and its preview; cancelled, nothing posted (EARS-547)                                                                                                                                       |
+
+S1 (a refused form remounts on the re-read row with fresh defaults and token)
+and S2 (a receipt failing after its act) are behaviours of the screen's state,
+pinned by `tests/unit/finance-requests-queue-ui.spec.ts`, not framed.
