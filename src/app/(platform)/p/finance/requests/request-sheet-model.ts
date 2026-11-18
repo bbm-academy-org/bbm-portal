@@ -76,7 +76,10 @@ export function sheetActs(
   permissions: { canApprove: boolean },
 ): SheetActButton[] {
   const acts: SheetActButton[] = []
-  if (permissions.canApprove && request.snapshot !== null) {
+  if (permissions.canApprove) {
+    // The money acts carry the EARS-548 token of the LIST row; a row without
+    // one (a reader the list did not give it to) is offered none of them.
+    const token = request.snapshot !== null
     const refuse: SheetActButton | null =
       request.status === 'submitted'
         ? { act: 'refuse', label: 'Отклонить', variant: 'destructive' }
@@ -85,21 +88,27 @@ export function sheetActs(
           : null
     switch (request.stage) {
       case 'decide':
-        acts.push(
-          { act: 'approve', label: 'Одобрить', variant: 'default' },
-          { act: 'approve-and-pay', label: 'Одобрить и отметить оплату', variant: 'outline' },
-        )
+        acts.push({ act: 'approve', label: 'Одобрить', variant: 'default' })
+        if (token) {
+          acts.push({
+            act: 'approve-and-pay',
+            label: 'Одобрить и отметить оплату',
+            variant: 'outline',
+          })
+        }
         break
       case 'pay':
-        acts.push(PAY_ACT)
+        if (token) acts.push(PAY_ACT)
         break
       case 'reimburse':
-        acts.push(REIMBURSE_ACT)
+        if (token) acts.push(REIMBURSE_ACT)
         break
       default:
         break
     }
-    if (refuse !== null && ['decide', 'pay', 'reimburse'].includes(request.stage)) acts.push(refuse)
+    if (refuse !== null && ['decide', 'pay', 'reimburse'].includes(request.stage)) {
+      acts.push(refuse)
+    }
   }
   if (request.own && request.status === 'draft') {
     acts.push({
@@ -475,7 +484,15 @@ export function marketBlockView(
 
 // ── the mark-paid form (EARS-543) ───────────────────────────────────────────
 
-export type MarkPaidFormValue = {
+/** The optional receipt both payment forms carry (EARS-543/544) — checked at submit, sent after the act. */
+export type ReceiptFields = { receiptKind?: string; receipt?: FileList | null }
+
+const receiptShape = {
+  receiptKind: z.string().optional(),
+  receipt: z.custom<FileList | null>(() => true).optional(),
+}
+
+export type MarkPaidFormValue = ReceiptFields & {
   occurredOn: string
   accountId: string
   paidAmount: string
@@ -545,7 +562,12 @@ export function createMarkPaidSchema(
   references: RequestBoardReferences,
 ) {
   return z
-    .object({ occurredOn: z.string(), accountId: z.string(), paidAmount: z.string() })
+    .object({
+      occurredOn: z.string(),
+      accountId: z.string(),
+      paidAmount: z.string(),
+      ...receiptShape,
+    })
     .superRefine((value, context) => {
       if (!ISO_DATE.test(value.occurredOn)) {
         context.addIssue({
@@ -610,7 +632,7 @@ export function toMarkPaidBody(
 
 // ── the mark-reimbursed form (EARS-544) ─────────────────────────────────────
 
-export type ReimburseFormValue = {
+export type ReimburseFormValue = ReceiptFields & {
   occurredOn: string
   accountId: string
   amount: string
@@ -659,7 +681,7 @@ export function createReimburseSchema(
   references: RequestBoardReferences,
 ) {
   return z
-    .object({ occurredOn: z.string(), accountId: z.string(), amount: z.string() })
+    .object({ occurredOn: z.string(), accountId: z.string(), amount: z.string(), ...receiptShape })
     .superRefine((value, context) => {
       if (!ISO_DATE.test(value.occurredOn)) {
         context.addIssue({

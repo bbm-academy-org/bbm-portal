@@ -27,7 +27,6 @@ import {
   DEFAULT_QUEUE_SCOPE,
   DEFAULT_QUEUE_SORT,
   DISPLAY_CURRENCIES,
-  DISPLAY_CURRENCY_STORAGE_KEY,
   EMPTY_QUEUE_FILTERS,
   filterQueueRows,
   formatDisplayMoney,
@@ -62,6 +61,8 @@ import {
   type QueueSum,
 } from './request-queue-model'
 import { RequestSourceLink } from './RequestSourceLink'
+import { useDisplayCurrency, writeDisplayCurrency } from './display-currency-store'
+import { bulkGroupOf, bulkLabel, lacksReceipt, type BulkGroup } from './request-sheet-model'
 
 /**
  * THE OWNER'S PAYMENT QUEUE — the default view of `/p/finance/requests`
@@ -106,39 +107,9 @@ export type RequestsQueueProps = {
   toolbarEnd?: React.ReactNode
   onOpen: (request: RequestBoardItem) => void
   onAct: (request: RequestBoardItem, act: QueueAct) => void
+  /** «Отметить все N как оплаченные…» on a group header (EARS-547) — the rows it shows. */
+  onBulk?: (group: BulkGroup, rows: RequestBoardItem[]) => void
 }
-
-// ── the remembered display currency, as an external store (EARS-549) ────────
-
-const currencyListeners = new Set<() => void>()
-
-function readStoredCurrency(): string | null {
-  try {
-    return window.localStorage.getItem(DISPLAY_CURRENCY_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function writeStoredCurrency(next: DisplayCurrencyCode): void {
-  try {
-    window.localStorage.setItem(DISPLAY_CURRENCY_STORAGE_KEY, next)
-  } catch {
-    // The choice holds for this visit; only its memory is refused.
-  }
-  for (const listener of currencyListeners) listener()
-}
-
-function subscribeStoredCurrency(listener: () => void): () => void {
-  currencyListeners.add(listener)
-  window.addEventListener('storage', listener)
-  return () => {
-    currencyListeners.delete(listener)
-    window.removeEventListener('storage', listener)
-  }
-}
-
-const serverStoredCurrency = () => null
 
 // ── the phone layout switch ─────────────────────────────────────────────────
 
@@ -305,8 +276,16 @@ function TitleCell({
       >
         {title}
       </Button>
-      <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
-        {subtitle}
+      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="truncate" title={subtitle}>
+          {subtitle}
+        </span>
+        {/* EARS-546: a posted request with no attached document. */}
+        {lacksReceipt(request) ? (
+          <Badge variant="outline" className="shrink-0">
+            без чека
+          </Badge>
+        ) : null}
       </span>
     </div>
   )
@@ -634,6 +613,7 @@ function QueueGroup({
   narrow,
   sort,
   onSort,
+  onBulk,
 }: {
   stage: QueueStage
   rows: RequestBoardItem[]
@@ -644,8 +624,10 @@ function QueueGroup({
   narrow: boolean
   sort: QueueSort
   onSort: (next: QueueSort) => void
+  onBulk?: (group: BulkGroup, rows: RequestBoardItem[]) => void
 }) {
   const group = QUEUE_GROUPS[stage]
+  const bulk = isCollapsed || onBulk === undefined ? null : bulkGroupOf(stage, rows, canApprove)
   const { currency, now } = context
   const sum = sumInDisplay(rows, currency)
   const slot = groupSlot(stage, canApprove)
@@ -681,6 +663,11 @@ function QueueGroup({
             <SumText sum={sum} currency={currency} stacked={narrow} />
           </span>
         )}
+        {bulk === null ? null : (
+          <Button variant="outline" size="sm" onClick={() => onBulk?.(bulk, rows)}>
+            {bulkLabel(rows.length)}
+          </Button>
+        )}
       </div>
       {isCollapsed ? null : rows.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">Ничего нет</p>
@@ -703,18 +690,14 @@ export function RequestsQueue({
   toolbarEnd,
   onOpen,
   onAct,
+  onBulk,
 }: RequestsQueueProps) {
   const [scope, setScope] = React.useState<QueueScope>(DEFAULT_QUEUE_SCOPE)
   const [kpi, setKpi] = React.useState<QueueStage | null>(null)
   const [filters, setFilters] = React.useState<QueueFilters>(EMPTY_QUEUE_FILTERS)
   const [sort, setSort] = React.useState<QueueSort>(DEFAULT_QUEUE_SORT)
   const [collapsed, setCollapsed] = React.useState<Partial<Record<QueueStage, boolean>>>({})
-  const stored = React.useSyncExternalStore(
-    subscribeStoredCurrency,
-    readStoredCurrency,
-    serverStoredCurrency,
-  )
-  const currency = parseStoredDisplayCurrency(stored)
+  const currency = useDisplayCurrency()
   const narrow = useNarrow()
   // One clock for the page: every age on it is measured from the same instant.
   const [now] = React.useState(() => new Date())
@@ -859,7 +842,7 @@ export function RequestsQueue({
         <div className="flex flex-wrap items-center gap-2">
           <Tabs
             value={currency}
-            onValueChange={(next) => writeStoredCurrency(parseStoredDisplayCurrency(next))}
+            onValueChange={(next) => writeDisplayCurrency(parseStoredDisplayCurrency(next))}
           >
             <TabsList aria-label="Валюта отображения">
               {DISPLAY_CURRENCIES.map((option) => (
@@ -905,6 +888,7 @@ export function RequestsQueue({
           narrow={narrow}
           sort={sort}
           onSort={setSort}
+          onBulk={onBulk}
         />
       ))}
     </div>

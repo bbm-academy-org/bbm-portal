@@ -20,7 +20,14 @@ import {
 } from './constants'
 import { LiabilityPanel } from './LiabilityPanel'
 import { RequestCard } from './RequestCard'
-import { RequestDetailsSheet, type RequestAct, type RequestActPayload } from './RequestDetailsSheet'
+import { BulkMarkPaidSheet } from './BulkMarkPaidSheet'
+import {
+  RequestDetailsSheet,
+  type ActReceipt,
+  type RequestAct,
+  type RequestActPayload,
+  type SheetOpening,
+} from './RequestDetailsSheet'
 import { RequestFormSheet } from './RequestFormSheet'
 import type { RequestBoardItem, RequestsSnapshot } from './request-board-contract'
 import {
@@ -35,6 +42,12 @@ import {
 } from './request-board-model'
 import { toRequestBody, type RequestFormValue } from './request-form-model'
 import type { QueueAct } from './request-queue-model'
+import {
+  bulkResultMessage,
+  type BulkBody,
+  type BulkGroup,
+  type BulkPreview,
+} from './request-sheet-model'
 import { RequestsQueue } from './RequestsQueue'
 import { RequestsSkeleton } from './RequestsSkeleton'
 import {
@@ -96,7 +109,9 @@ const ACT_DONE: Record<RequestAct, string> = {
   confirm: 'Операция проведена.',
   refuse: 'Заявка отклонена.',
   submit: 'Заявка подана.',
-  cancel: 'Заявка отозвана.',
+  cancel: 'Заявка отменена.',
+  'mark-paid': 'Оплата отмечена.',
+  'mark-reimbursed': 'Возврат отмечен.',
 }
 
 const ACT_FAILED: Record<RequestAct, string> = {
@@ -104,7 +119,15 @@ const ACT_FAILED: Record<RequestAct, string> = {
   confirm: 'Не удалось провести операцию.',
   refuse: 'Не удалось отклонить заявку.',
   submit: 'Не удалось подать заявку.',
-  cancel: 'Не удалось отозвать заявку.',
+  cancel: 'Не удалось отменить заявку.',
+  'mark-paid': 'Оплата не отмечена.',
+  'mark-reimbursed': 'Возврат не отмечен.',
+}
+
+/** What a board drop opens in the sheet — the drag initiates, it never decides. */
+function openingOfDrop(act: 'approve' | 'confirm' | 'refuse'): SheetOpening {
+  if (act === 'refuse') return 'refuse'
+  return act === 'confirm' ? 'pay' : null
 }
 
 /**
@@ -168,7 +191,12 @@ export function RequestsBoardScreen() {
   )
 
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
-  const [pendingAct, setPendingAct] = React.useState<RequestAct | null>(null)
+  const [opening, setOpening] = React.useState<SheetOpening>(null)
+  const [actFailure, setActFailure] = React.useState<string | undefined>(undefined)
+  const [bulk, setBulk] = React.useState<{ group: BulkGroup; rows: RequestBoardItem[] } | null>(
+    null,
+  )
+  const [bulkFailure, setBulkFailure] = React.useState<string | undefined>(undefined)
   const [formFor, setFormFor] = React.useState<'new' | number | null>(null)
   const [formFailure, setFormFailure] = React.useState<string | undefined>(undefined)
   const [uploading, setUploading] = React.useState(false)
@@ -210,9 +238,12 @@ export function RequestsBoardScreen() {
 
   const closeSheets = React.useCallback(() => {
     setSelectedId(null)
-    setPendingAct(null)
+    setOpening(null)
     setFormFor(null)
     setUploadFailure(undefined)
+    setActFailure(undefined)
+    setBulk(null)
+    setBulkFailure(undefined)
   }, [])
 
   /**
@@ -221,10 +252,11 @@ export function RequestsBoardScreen() {
    * notification channel as every act.
    *
    * POST-SUBMIT IS THE DECISION HERE: unlike an act, a successful upload does
-   * NOT close the sheet. The whole point of attaching is what it unlocks — the
-   * board re-reads itself, the document appears in the pane above the picker,
-   * and «Провести» becomes available one click away in the same footer. Closing
-   * would send the approver back to the board to find the card again.
+   * NOT close the sheet. The board re-reads itself, the document appears in
+   * the pane above the picker and a posted request loses its «без чека»
+   * (EARS-545/546) on the screen the reader is looking at. It is also the
+   * second step of a payment form that carried a receipt: the act posts, then
+   * the receipt is attached to the posted request.
    */
   const attachDocument = React.useCallback(
     (request: RequestBoardItem, file: File, kind: string) => {
@@ -266,19 +298,36 @@ export function RequestsBoardScreen() {
     [mutate, refetch, refreshRegister],
   )
 
+  /**
+   * An act from the sheet. Its refusal is kept where the reader is still
+   * looking — the form that sent it — as well as in the toast (EARS-543/548
+   * want the server's own words), and the board re-reads itself so a stale
+   * snapshot is replaced by the request as it now is.
+   *
+   * A RECEIPT FOLLOWS THE ACT. The payment forms' optional receipt is uploaded
+   * once the act has posted, linked to the now-posted request (EARS-545): a
+   * refused act leaves no orphan file, and the act's token is the one the
+   * owner saw.
+   */
   const runAct = React.useCallback(
-    (request: RequestBoardItem, act: RequestAct, payload?: RequestActPayload) => {
+    (
+      request: RequestBoardItem,
+      act: RequestAct,
+      payload?: RequestActPayload,
+      receipt?: ActReceipt,
+    ) => {
+      setActFailure(undefined)
       mutate(
         {
           url: `${REQUESTS_ENDPOINT}/${request.id}/actions`,
           method: 'post',
-          // The act's own fields travel with it: EARS-512's reason, and the
-          // EARS-533 money facts the posting act enters. An act that names none
-          // sends none — an absent fact is not a null the server has to read.
           values: { act, ...(payload ?? {}) },
           successNotification: {
             type: 'success',
-            message: ACT_DONE[act],
+            message:
+              act === 'mark-paid' && request.status === 'submitted'
+                ? 'Заявка одобрена, оплата отмечена.'
+                : ACT_DONE[act],
             description: `Заявка №${request.id}`,
           },
           errorNotification: (error: unknown) => ({
@@ -290,8 +339,73 @@ export function RequestsBoardScreen() {
         {
           onSuccess: () => {
             closeSheets()
+            if (receipt !== undefined) attachDocument(request, receipt.file, receipt.kind)
             void refetch()
             void refreshRegister()
+          },
+          onError: (error: unknown) => {
+            setActFailure(errorMessage(error, ACT_FAILED[act]))
+            void refetch()
+          },
+        },
+      )
+    },
+    [attachDocument, closeSheets, mutate, refetch, refreshRegister],
+  )
+
+  /** The bulk act's PLAN — `preview: true` writes nothing, so it raises no toast. */
+  const previewBulk = React.useCallback(
+    (body: BulkBody) =>
+      new Promise<BulkPreview>((resolve, reject) => {
+        mutate(
+          {
+            url: `${REQUESTS_ENDPOINT}/bulk-mark-paid`,
+            method: 'post',
+            values: body as unknown as Record<string, unknown>,
+            successNotification: false,
+            errorNotification: false,
+          },
+          {
+            onSuccess: (response) => resolve((response as unknown as { data: BulkPreview }).data),
+            onError: (error: unknown) =>
+              reject(new Error(errorMessage(error, 'Не удалось получить план отметки.'))),
+          },
+        )
+      }),
+    [mutate],
+  )
+
+  /** The confirmed batch (EARS-547): all or nothing; the toast counts what posted and what did not. */
+  const confirmBulk = React.useCallback(
+    (body: BulkBody) => {
+      setBulkFailure(undefined)
+      mutate(
+        {
+          url: `${REQUESTS_ENDPOINT}/bulk-mark-paid`,
+          method: 'post',
+          values: body as unknown as Record<string, unknown>,
+          successNotification: (response: unknown) => ({
+            type: 'success' as const,
+            message: bulkResultMessage(
+              (response as { data: { posted: unknown[]; excluded: unknown[] } }).data,
+            ),
+            description: 'Пакетная отметка оплаты',
+          }),
+          errorNotification: (error: unknown) => ({
+            type: 'error' as const,
+            message: 'Пакет не отмечен.',
+            description: errorMessage(error, 'Ничего не проведено.'),
+          }),
+        },
+        {
+          onSuccess: () => {
+            closeSheets()
+            void refetch()
+            void refreshRegister()
+          },
+          onError: (error: unknown) => {
+            setBulkFailure(errorMessage(error, 'Пакет не отмечен — ничего не проведено.'))
+            void refetch()
           },
         },
       )
@@ -393,7 +507,8 @@ export function RequestsBoardScreen() {
       return
     }
     setFormFor(null)
-    setPendingAct(null)
+    setActFailure(undefined)
+    setOpening('pay')
     setSelectedId(request.id)
   }
 
@@ -408,8 +523,9 @@ export function RequestsBoardScreen() {
         toast.error('Перенос не выполнен.', { description: plan.message })
         return
       }
+      setActFailure(undefined)
       setSelectedId(request.id)
-      setPendingAct(plan.act)
+      setOpening(openingOfDrop(plan.act))
     }
   }
 
@@ -535,7 +651,8 @@ export function RequestsBoardScreen() {
                               canApprove={permissions.canApprove}
                               precision={currencyPrecision(references.currencies, request.currency)}
                               onOpen={() => {
-                                setPendingAct(null)
+                                setOpening(null)
+                                setActFailure(undefined)
                                 setSelectedId(request.id)
                               }}
                             />
@@ -553,10 +670,15 @@ export function RequestsBoardScreen() {
                   fx={fx}
                   toolbarEnd={viewToggle}
                   onOpen={(request) => {
-                    setPendingAct(null)
+                    setOpening(null)
+                    setActFailure(undefined)
                     setSelectedId(request.id)
                   }}
                   onAct={runQueueAct}
+                  onBulk={(group, rows) => {
+                    setBulkFailure(undefined)
+                    setBulk({ group, rows })
+                  }}
                 />
               )}
             </section>
@@ -585,21 +707,36 @@ export function RequestsBoardScreen() {
           // The document count is part of the identity: when an upload lands,
           // the re-read brings a request that carries it, and re-keying resets
           // the attach picker instead of leaving the just-sent file in it.
-          key={`${selected.id}-${pendingAct ?? 'none'}-${selected.documents.length}`}
+          key={`${selected.id}-${opening ?? 'none'}-${selected.documents.length}`}
           request={selected}
           references={references}
           canApprove={permissions.canApprove}
           canEnter={permissions.canEnter}
+          today={fx.today}
           pending={mutation.isPending}
-          pendingAct={pendingAct}
+          opening={opening}
+          actFailure={actFailure}
           uploading={uploading}
           uploadFailure={uploadFailure}
-          onAct={(act, payload) => runAct(selected, act, payload)}
+          onAct={(act, payload, receipt) => runAct(selected, act, payload, receipt)}
           onAttach={(file, kind) => attachDocument(selected, file, kind)}
           onEdit={() => setFormFor(selected.id)}
           onClose={closeSheets}
         />
       ) : null}
+
+      {bulk === null ? null : (
+        <BulkMarkPaidSheet
+          group={bulk.group}
+          rows={bulk.rows}
+          references={references}
+          pending={mutation.isPending}
+          failure={bulkFailure}
+          onPreview={previewBulk}
+          onConfirm={confirmBulk}
+          onClose={closeSheets}
+        />
+      )}
     </ListView>
   )
 }
