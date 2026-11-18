@@ -20,12 +20,10 @@ import {
 } from '@/app/(platform)/p/finance/requests/request-board-model'
 import {
   canToggleRequestsView,
-  DEFAULT_REQUEST_TABLE_SCOPE,
-  requestRowActs,
   requestTableRows,
-  REQUEST_TABLE_SCOPES,
   resolveRequestsView,
 } from '@/app/(platform)/p/finance/requests/request-table-model'
+import { withQueueFields } from '../helpers/finance-request-fixture'
 
 describe('request-board status machine (spec 339 EARS-510/511/512/524)', () => {
   it('EARS-510/511/512: maps every legal drag to the act that must still be confirmed', () => {
@@ -46,7 +44,7 @@ describe('request-board status machine (spec 339 EARS-510/511/512/524)', () => {
 })
 
 function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
-  return {
+  return withQueueFields({
     id: 1,
     own: false,
     status: 'submitted',
@@ -71,7 +69,7 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     counterparty: null,
     documents: [],
     ...overrides,
-  }
+  })
 }
 
 describe('request board composition (spec 339 EARS-509/512/524, Stage-A pick D)', () => {
@@ -346,25 +344,6 @@ describe('requests table model (decision 35, PRD 339 US-2/US-3)', () => {
     // moved is not «oldest», it is the newest thing on the screen; equal dates
     // break by the newer id.
     expect(requestTableRows(requests, 'all').map((row) => row.id)).toEqual([2, 4, 3, 1])
-  })
-
-  it('decision 35: «mine» is the preselected scope, and both scopes are offered', () => {
-    expect(DEFAULT_REQUEST_TABLE_SCOPE).toBe('mine')
-    expect(REQUEST_TABLE_SCOPES.map((scope) => scope.value)).toEqual(['mine', 'all'])
-  })
-
-  it('decision 35: row acts belong to the approve role and to the two acting statuses only', () => {
-    expect(requestRowActs(item({ status: 'submitted' }), true)).toEqual(['approve', 'refuse'])
-    expect(requestRowActs(item({ status: 'approved' }), true)).toEqual(['refuse'])
-    for (const status of ['posted', 'refused', 'draft', 'cancelled'] as const) {
-      expect(requestRowActs(item({ status }), true)).toEqual([])
-    }
-  })
-
-  it('decision 35: a reader without `finance-approve` is offered no row act at all', () => {
-    for (const status of FINANCE_REQUEST_BOARD_STATUSES) {
-      expect(requestRowActs(item({ status, own: true }), false)).toEqual([])
-    }
   })
 
   it('decision 35: the board toggle exists for the approve role and for nobody else', () => {

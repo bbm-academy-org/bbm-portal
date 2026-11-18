@@ -21,6 +21,7 @@ import type {
 } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import { RequestDetailsSheet } from '@/app/(platform)/p/finance/requests/RequestDetailsSheet'
 import { RequestsToaster } from '@/app/(platform)/p/finance/requests/RequestsToaster'
+import { withQueueFields } from '../helpers/finance-request-fixture'
 
 const references: RequestBoardReferences = {
   accounts: [{ id: 1, name: 'Банк RUB', currency: 'RUB' }],
@@ -31,7 +32,7 @@ const references: RequestBoardReferences = {
   purposes: [{ id: 21, name: 'Продакшн', categoryId: 5, productBinding: 'optional' }],
 }
 
-const request: RequestBoardItem = {
+const request: RequestBoardItem = withQueueFields({
   id: 1,
   own: true,
   status: 'approved',
@@ -56,7 +57,7 @@ const request: RequestBoardItem = {
   account: { id: 1, name: 'Банк RUB', currency: 'RUB' },
   counterparty: { id: 7, name: 'ООО «Студия-7»' },
   documents: [],
-}
+})
 
 function sheet() {
   return React.createElement(RequestDetailsSheet, {

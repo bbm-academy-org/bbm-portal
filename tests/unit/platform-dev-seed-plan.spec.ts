@@ -5,6 +5,7 @@ import { FINANCE_INTAKE_STATUSES } from '@/lib/platform/db/schema/finance/financ
 
 import {
   DEV_SEED_COUNTERPARTIES,
+  DEV_SEED_CURRENCIES,
   DEV_SEED_HOURS_PARTICIPANTS,
   DEV_SEED_HOURS_PERIODS,
   DEV_SEED_INTAKE_ITEMS,
@@ -68,9 +69,28 @@ describe('the seeded volume the owner ruling asks for', () => {
       expect(request.account, request.slug).toBeNull()
       expect(request.alreadyPaid, request.slug).toBe(true)
     }
+    // A company-funds request names its account once money moved; a pre-spend
+    // one may name none yet — the posting act supplies it (EARS-533).
     for (const request of DEV_SEED_REQUESTS.filter((row) => !row.personalFunds)) {
-      expect(request.account, request.slug).not.toBeNull()
+      if (request.alreadyPaid || request.status === 'posted') {
+        expect(request.account, request.slug).not.toBeNull()
+      }
     }
+  })
+
+  it('EARS-549/551: seeds the payment queue’s currency cases — €, USDT as $, and one CBR does not quote', () => {
+    const currencies = new Set(DEV_SEED_REQUESTS.map((request) => request.currency))
+    for (const code of ['RUB', 'USD', 'EUR', 'USDT', 'USDC']) {
+      expect(currencies.has(code), code).toBe(true)
+    }
+    expect(DEV_SEED_CURRENCIES.map((currency) => currency.code)).toEqual(['EUR', 'USDT', 'USDC'])
+    // EARS-535: an already-paid company-account request is «К оплате», not «Ждёт решения».
+    expect(
+      DEV_SEED_REQUESTS.some(
+        (request) =>
+          request.alreadyPaid && !request.personalFunds && request.status === 'submitted',
+      ),
+    ).toBe(true)
   })
 
   it('seeds hours periods in both statuses, with participants and assessments', () => {

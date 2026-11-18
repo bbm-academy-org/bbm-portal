@@ -45,9 +45,11 @@ import {
   cancelExpenseRequest,
   confirmExpenseRequest,
   createCounterparty,
+  createCurrency,
   createExpenseRequest,
   createIntakeItem,
   listCounterparties,
+  listCurrencies,
   listExpenseRequests,
   listFinanceDocuments,
   listIntakeItems,
@@ -82,6 +84,7 @@ import { assertDevPlatformDatabase } from './dev-database-guard.mjs'
 import {
   DEV_SEED_APPROVER_SLUG,
   DEV_SEED_COUNTERPARTIES,
+  DEV_SEED_CURRENCIES,
   DEV_SEED_DOCUMENT_BYTES,
   DEV_SEED_DOCUMENT_MIME,
   DEV_SEED_HOURS_PARTICIPANTS,
@@ -313,6 +316,14 @@ async function resolveFinanceRefs(): Promise<FinanceRefs> {
   }
 }
 
+/** The queue's display-currency cases (#550): registered once, reused on a rerun. */
+async function seedCurrencies(actor: FinanceActor): Promise<void> {
+  const existing = new Set((await listCurrencies()).map((row) => row.code))
+  for (const currency of DEV_SEED_CURRENCIES) {
+    if (!existing.has(currency.code)) await createCurrency(actor, currency)
+  }
+}
+
 async function seedCounterparties(actor: FinanceActor): Promise<DevSeedSummary['counterparties']> {
   const summary = { created: 0, reused: 0 }
   const existing = new Set((await listCounterparties()).map((row) => row.name))
@@ -539,6 +550,7 @@ export async function seedDevData(options: DevSeedOptions = {}): Promise<DevSeed
 
   const approver = approverActor()
   const finance = await seedFinanceAcceptance(approver)
+  await seedCurrencies(approver)
   const counterparties = await seedCounterparties(approver)
   const refs = await resolveFinanceRefs()
   const { requests, documents } = await seedRequests(approver, refs)

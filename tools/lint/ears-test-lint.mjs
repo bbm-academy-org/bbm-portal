@@ -175,18 +175,9 @@ const DEFERRALS_BY_ISSUE = {
       'spec 339 §I (#547): stage derivation, mark-paid without a document, reimbursement in one act with the mandatory settles_item link, attach-later and the bulk retroactive act. The list is EMPTY because #549 landed: EARS-535/543/544/545/547/548 are asserted in tests/int/platform/finance-payment-queue.int.spec.ts, tests/unit/finance-request-stage.spec.ts and tests/unit/finance-requests-api.spec.ts.',
   },
   550: {
-    ids: [
-      'EARS-536',
-      'EARS-537',
-      'EARS-538',
-      'EARS-539',
-      'EARS-540',
-      'EARS-541',
-      'EARS-549',
-      'EARS-551',
-    ],
+    ids: [],
     reason:
-      'spec 339 §I (#547): the queue screen — groups, sums, columns, sort, search, filters, role-gated row acts, the display-currency switch and the «нет курса» / «без N заявок» rendering; #550 writes the tests. EARS-535 (stage derivation) is owned by #549, which builds the read model.',
+      'spec 339 §I (#547): the queue screen — groups, sums, columns, sort, search, filters, role-gated row acts, the display-currency switch and the «нет курса» / «без N заявок» rendering. The list is EMPTY because #550 landed: EARS-536…541/549/551 are asserted in tests/unit/finance-request-queue-model.spec.ts, finance-request-queue-display.spec.ts and finance-requests-queue-ui.spec.ts.',
   },
   551: {
     ids: ['EARS-542', 'EARS-546', 'EARS-563'],

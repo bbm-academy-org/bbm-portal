@@ -23,6 +23,9 @@ import {
 } from '@/lib/finance'
 import { findMemberByEmail, getMembersByIds } from '@/lib/member'
 
+import type { DisplayCurrencyCode, QueueDisplayAmount } from '../../requests/request-board-contract'
+import { loadQueueDisplay } from '../../requests/queue-display-loader'
+
 import {
   companyAccountRefusal,
   expenseRequestBodySchema,
@@ -61,6 +64,7 @@ function serializeItem(
     >
     actorMemberId: number | null
     documents: FinanceDocumentView[]
+    display: Record<DisplayCurrencyCode, QueueDisplayAmount> | undefined
   },
 ) {
   const purpose = item.purposeId === null ? null : (context.purposes.get(item.purposeId) ?? null)
@@ -96,6 +100,12 @@ function serializeItem(
     personalFunds: item.personalFunds,
     createdBy: item.createdBy,
     createdByName: context.members.get(item.createdBy)?.name ?? `Участник #${item.createdBy}`,
+    // «Кому платим» of a `personal_funds` request is this member (EARS-538).
+    memberId: item.memberId,
+    memberName:
+      item.memberId === null
+        ? null
+        : (context.members.get(item.memberId)?.name ?? `Участник #${item.memberId}`),
     decidedBy: item.decidedBy,
     decidedByName:
       item.decidedBy === null
@@ -163,6 +173,9 @@ function serializeItem(
     hasDocument: item.hasDocument,
     settledBy: item.settledBy,
     snapshot: item.snapshot,
+    // The amount in ₽ / $ / € (EARS-549/550/551), converted on the server:
+    // the rates never reach the browser.
+    display: context.display,
     documents: context.documents.map((document) => ({
       id: document.id,
       filename: document.filename,
@@ -206,7 +219,7 @@ export async function GET(): Promise<Response> {
     const memberIds = [
       ...new Set(
         requests.flatMap((request) =>
-          [request.createdBy, request.decidedBy, request.postedBy].filter(
+          [request.createdBy, request.decidedBy, request.postedBy, request.memberId].filter(
             (id): id is number => id !== null,
           ),
         ),
@@ -226,7 +239,7 @@ export async function GET(): Promise<Response> {
     // request filed by ANOTHER member arrived with no proposal at all: the
     // purpose cell then printed «Назначение предложено» and refused to say
     // what was proposed.
-    const [members, documentsByItem, register, proposals] = await Promise.all([
+    const [members, documentsByItem, register, proposals, queueDisplay] = await Promise.all([
       getMembersByIds(memberIds),
       listFinanceDocumentsByItems(
         actor,
@@ -234,6 +247,7 @@ export async function GET(): Promise<Response> {
       ),
       registerEntriesByIds(operationIds),
       listPendingPurposeProposalsForRequests(requests.map((request) => request.id)),
+      loadQueueDisplay(requests, currencies),
     ])
     const accountMap = byId(accounts)
     const counterpartyMap = byId(counterparties)
@@ -297,6 +311,7 @@ export async function GET(): Promise<Response> {
           operations: operationMap,
           actorMemberId: actorMember?.id ?? null,
           documents: documentsByItem.get(request.id) ?? [],
+          display: queueDisplay.byRequest.get(request.id),
         }),
       ),
       liabilities: debts.map((debt) => ({
@@ -305,6 +320,7 @@ export async function GET(): Promise<Response> {
         currency: debt.currency,
         balance: debt.balance.toString(),
       })),
+      fx: queueDisplay.fx,
     })
   } catch (cause) {
     return requestApiError(cause)

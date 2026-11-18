@@ -19,6 +19,7 @@ import type {
   RequestBoardItem,
   RequestBoardReferences,
 } from '@/app/(platform)/p/finance/requests/request-board-contract'
+import { withQueueFields } from '../helpers/finance-request-fixture'
 
 const references: RequestBoardReferences = {
   accounts: [
@@ -197,7 +198,7 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
   })
 
   it('EARS-533: reopens a filed pre-spend request with both money fields still empty', () => {
-    const filed: RequestBoardItem = {
+    const filed: RequestBoardItem = withQueueFields({
       id: 5,
       own: true,
       status: 'submitted',
@@ -221,7 +222,7 @@ describe('request form contract (spec 339 EARS-508/513/526/532/533)', () => {
       account: null,
       counterparty: null,
       documents: [],
-    }
+    })
     expect(requestFormDefaults(references, filed)).toMatchObject({
       occurredOn: '',
       accountId: '',
