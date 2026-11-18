@@ -517,6 +517,68 @@ describe('the queue row carries what the replaced table carried (#480, #517)', (
   })
 })
 
+describe('the owner sees the latest request (pre-acceptance UX pass, items 1–2)', () => {
+  it('names the newest submitted request under the header — number, what, payee, amount, age — and opens its sheet', async () => {
+    const fresh = new Date(Date.now() - 2 * 3_600_000).toISOString()
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 1, createdAt: '2026-10-01T09:30:00.000Z' }),
+        item({ id: 2, stage: 'paid', status: 'posted', note: 'Свежая оплата', createdAt: fresh }),
+        item({
+          id: 5,
+          status: 'draft',
+          stage: 'draft',
+          note: 'Черновик новее',
+          createdAt: new Date().toISOString(),
+        }),
+      ],
+    })
+    renderScreen()
+    const latest = screen.getByRole('status', { name: 'Последняя заявка' })
+    expect(latest.textContent).toBe(
+      'Новых за сутки: 1 · Последняя заявка: №2 · Свежая оплата · ООО «Студия-7» · 10 000,00 ₽ · 2 ч назад',
+    )
+    fireEvent.click(within(latest).getByRole('button', { name: 'Открыть последнюю заявку №2' }))
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText(/^Заявка №2 ·/)).toBeTruthy()
+  })
+
+  it('says only «Последняя заявка» when nothing came in the last 24 hours, and nothing when nothing was submitted', () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 1, createdAt: '2026-10-01T09:30:00.000Z' })],
+    })
+    renderScreen()
+    expect(screen.getByRole('status', { name: 'Последняя заявка' }).textContent).toMatch(
+      /^Последняя заявка: №1 · /,
+    )
+    cleanup()
+    refine.custom.data = snapshot({ requests: [item({ id: 5, status: 'draft', stage: 'draft' })] })
+    renderScreen()
+    expect(screen.queryByRole('status', { name: 'Последняя заявка' })).toBeNull()
+  })
+
+  it('the group headings carry the tiers: decide / pay primary, reimburse secondary, drafts archived', () => {
+    renderScreen()
+    const tier = (title: string) =>
+      within(group(title)).getByRole('heading', { level: 2 }).getAttribute('data-tier')
+    expect(tier('Ждёт решения')).toBe('primary')
+    expect(tier('К оплате')).toBe('primary')
+    expect(tier('Вернуть сотруднику')).toBe('secondary')
+    expect(tier('Черновики')).toBe('archived')
+    pick('Закрытые')
+    expect(tier('Оплачено')).toBe('archived')
+  })
+
+  it('«новая» is a filled mark, legible next to the muted date', () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 2, createdAt: new Date(Date.now() - 3_600_000).toISOString() })],
+    })
+    renderScreen()
+    const mark = within(group('Ждёт решения')).getByText('новая')
+    expect(mark.getAttribute('data-variant')).toBe('default')
+  })
+})
+
 describe('the queue as the owner reads it (review of #562, UX defects)', () => {
   it('bolds what the author wrote, with the purpose and «№N» under it', () => {
     renderScreen()
@@ -777,12 +839,22 @@ describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
   it('EARS-543/545: an open payment form is the one upload control — the files block hides its picker', async () => {
     renderScreen()
     const sheet = await openSheet(/^Заявка №3:/)
-    expect(within(sheet).getByLabelText('Подтверждающий документ')).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: 'Прикрепить файл' })).toBeTruthy()
     const form = await startAct(sheet, 'Отметить оплату')
     expect(within(form).getByLabelText('Чек или скриншот оплаты')).toBeTruthy()
-    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+    expect(within(sheet).queryByRole('button', { name: 'Прикрепить файл' })).toBeNull()
     fireEvent.click(within(form).getByRole('button', { name: 'Отмена' }))
-    expect(within(sheet).getByLabelText('Подтверждающий документ')).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: 'Прикрепить файл' })).toBeTruthy()
+  })
+
+  it('the sheet’s section labels are one label style, apart from the body text', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №1:/)
+    const labels = within(sheet)
+      .getAllByRole('heading', { level: 3 })
+      .filter((node) => ['Как оплатить', 'Файлы', 'Ход заявки'].includes(node.textContent ?? ''))
+    expect(labels).toHaveLength(3)
+    for (const label of labels) expect(label.getAttribute('data-section-label')).toBe('')
   })
 
   it('EARS-542: an already-paid request is not asked for payment details', async () => {
@@ -811,7 +883,10 @@ describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
     renderScreen()
     const sheet = await openSheet(/^Заявка №1:/)
     expect(within(sheet).getByText('Заявка №1 · Ждёт решения')).toBeTruthy()
-    expect(within(sheet).getByText('Реквизитов или ссылки на оплату нет')).toBeTruthy()
+    // A quiet inline note, not an error box louder than the acts (UX pass, item 5).
+    const missing = within(sheet).getByText('Реквизитов или ссылки на оплату нет')
+    expect(missing.closest('[role="alert"], [data-slot="alert"]')).toBeNull()
+    expect(within(sheet).getByText(/Запросить у автора/)).toBeTruthy()
     for (const label of ['Одобрить', 'Одобрить и отметить оплату', 'Отклонить']) {
       expect(within(sheet).getByRole('button', { name: label })).toBeTruthy()
     }
@@ -886,6 +961,28 @@ describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
     sheet = await openSheet(/^Заявка №11:/)
     const usd = within(sheet).getByRole('region', { name: 'Курс против рынка' })
     expect(usd.textContent).toMatch(/\+2,00\s\$хуже рынка на 2,0%/)
+  })
+
+  it('EARS-563/560: «факт не внесён» reads in the body colour with its hint, not as faint grey', async () => {
+    const pending = item({
+      id: 12,
+      status: 'approved',
+      stage: 'pay',
+      alreadyPaid: true,
+      note: 'Подписка в долларах',
+      currency: 'USD',
+      amount: '10000',
+      market: { kind: 'not_posted', statedPaidAmount: null },
+      display: { RUB: cbr('920000'), USD: same('10000'), EUR: cbr('8500') },
+    })
+    refine.custom.data = snapshot({ requests: [pending] })
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №12:/)
+    const block = within(sheet).getByRole('region', { name: 'Курс против рынка' })
+    const note = within(block).getByText('факт не внесён')
+    expect(note.closest('p')?.className).toContain('text-foreground')
+    expect(note.closest('p')?.className).not.toContain('text-muted-foreground')
+    expect(block.textContent).toContain('укажите списанную сумму при отметке оплаты')
   })
 
   it('EARS-547: «Отметить все N как оплаченные…» previews the plan and its exclusions, and posts only on the explicit confirm', async () => {

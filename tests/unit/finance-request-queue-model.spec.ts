@@ -13,6 +13,8 @@ import {
   isNewRequest,
   newCountLabel,
   isOverdue,
+  latestRequest,
+  latestRequestAge,
   missingRateNote,
   parseStoredDisplayCurrency,
   QUEUE_GROUPS,
@@ -425,5 +427,47 @@ describe('the row as the owner reads it (review of #562, UX 2–7)', () => {
     expect(formatOriginalMoney('125000', 'USD', 2)).toBe('1 250,00 $')
     expect(formatOriginalMoney('84000', 'EUR', 2)).toBe('840,00 €')
     expect(formatOriginalMoney('30000000', 'USDC', 6)).toBe('30,000000 USDC')
+  })
+})
+
+describe('the owner finds the latest request (pre-acceptance UX pass, «не вижу последнюю заявку»)', () => {
+  it('names the newest SUBMITTED request of any stage — never a draft — and counts the ones of the last 24 hours', () => {
+    const rows = [
+      item({ id: 1, stage: 'paid', createdAt: '2026-11-18T07:00:00.000Z' }),
+      item({ id: 2, stage: 'draft', createdAt: '2026-11-18T08:30:00.000Z' }),
+      item({ id: 3, stage: 'decide', createdAt: '2026-11-17T10:00:00.000Z' }),
+      item({ id: 4, stage: 'pay', createdAt: '2026-11-10T10:00:00.000Z' }),
+    ]
+    const latest = latestRequest(rows, NOW)
+    expect(latest?.request.id).toBe(1)
+    // №1 (paid, filed today) and №3 count; the draft does not; №4 is a week old.
+    expect(latest?.fresh).toBe(2)
+  })
+
+  it('is nothing when only drafts exist, and counts zero fresh ones when the newest is old', () => {
+    expect(latestRequest([item({ stage: 'draft' })], NOW)).toBeNull()
+    expect(latestRequest([], NOW)).toBeNull()
+    expect(latestRequest([item({ id: 9, createdAt: '2026-11-01T10:00:00.000Z' })], NOW)).toEqual({
+      request: expect.objectContaining({ id: 9 }),
+      fresh: 0,
+    })
+  })
+
+  it('says how old the latest one is in minutes and hours on its first day, then in days', () => {
+    expect(latestRequestAge('2026-11-18T08:59:30.000Z', NOW)).toBe('только что')
+    expect(latestRequestAge('2026-11-18T08:35:00.000Z', NOW)).toBe('25 мин назад')
+    expect(latestRequestAge('2026-11-18T06:00:00.000Z', NOW)).toBe('3 ч назад')
+    expect(latestRequestAge('2026-11-16T10:00:00.000Z', NOW)).toBe('2 дн. назад')
+  })
+})
+
+describe('the stage groups read as tiers (pre-acceptance UX pass)', () => {
+  it('decide and pay are the primary work, reimburse secondary, drafts and the closed ones archived', () => {
+    expect(QUEUE_GROUPS.decide.tier).toBe('primary')
+    expect(QUEUE_GROUPS.pay.tier).toBe('primary')
+    expect(QUEUE_GROUPS.reimburse.tier).toBe('secondary')
+    for (const stage of ['draft', 'paid', 'refused', 'cancelled'] as const) {
+      expect(QUEUE_GROUPS[stage].tier).toBe('archived')
+    }
   })
 })

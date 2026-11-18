@@ -672,8 +672,28 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     renderBoard()
     openCard(id)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    return screen.getByRole('dialog')
+    const sheet = screen.getByRole('dialog')
+    // The picker is put away until asked for (pre-acceptance UX pass, item 4).
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить файл' }))
+    return sheet
   }
+
+  it('the files block shows the list or «Нет файлов.», and no picker until «Прикрепить файл»', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 2, status: 'approved', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(2)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).getByText('Нет файлов.')).toBeTruthy()
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+    expect(sheet.querySelector('input[type="file"]')).toBeNull()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить файл' }))
+    expect(within(sheet).getByLabelText('Подтверждающий документ')).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Не прикреплять' }))
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+  })
 
   /**
    * DEFECT G (#388, owner on the live stand 2026-09-16). Choosing a file used
@@ -830,7 +850,7 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(
       within(sheet).getByText('Документ виден подавшему заявку и финансовой роли.'),
     ).toBeTruthy()
-    expect(within(sheet).queryByText('Документ не приложен.')).toBeNull()
+    expect(within(sheet).queryByText('Нет файлов.')).toBeNull()
   })
 
   it('EARS-506: an empty document block on OWN request still reports the absence', async () => {
@@ -843,7 +863,7 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = screen.getByRole('dialog')
-    expect(within(sheet).getByText('Документ не приложен.')).toBeTruthy()
+    expect(within(sheet).getByText('Нет файлов.')).toBeTruthy()
   })
 })
 
@@ -991,6 +1011,7 @@ describe('/p/finance/requests — a 390 px reader never scrolls the sheet sidewa
     openCard(1)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = screen.getByRole('dialog')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить файл' }))
 
     const kind = within(sheet).getByLabelText('Вид документа')
     expect(kind.className).toContain('min-w-0')
@@ -1129,13 +1150,12 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
     const sheet = await openWithDocument(60)
 
     expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
-    expect(within(sheet).getByText(/уже приложен/i)).toBeTruthy()
-    expect(within(sheet).getByRole('button', { name: /Приложить ещё документ/ })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: 'Прикрепить ещё файл' })).toBeTruthy()
   })
 
   it('item 6: adding a SECOND document is a deliberate answer, and then it attaches', async () => {
     const sheet = await openWithDocument(61)
-    fireEvent.click(within(sheet).getByRole('button', { name: /Приложить ещё документ/ }))
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить ещё файл' }))
 
     const picker = await within(sheet).findByLabelText('Подтверждающий документ')
     fireEvent.change(picker, {

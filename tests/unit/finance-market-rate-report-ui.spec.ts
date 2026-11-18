@@ -53,6 +53,8 @@ import {
   measuredLabel,
   monthLabel,
   requestHref,
+  splitMeasuredRows,
+  unmeasuredReason,
 } from '@/app/(platform)/p/finance/reports/market-rate/market-rate-view'
 import { DISPLAY_CURRENCY_STORAGE_KEY } from '@/app/(platform)/p/finance/requests/request-queue-model'
 import { measureChain, measureIntakeItem, type MarketContext } from '@/lib/finance/fx/market'
@@ -217,9 +219,17 @@ describe('the period total (EARS-564)', () => {
     expect(within(total).getByText('+3 400,00 ₽')).toBeTruthy()
     expect(within(total).getByText('хуже рынка на 3,0%')).toBeTruthy()
     expect(total.textContent).toContain('Факт 118 400,00 ₽ · Рынок 115 000,00 ₽')
-    expect(total.textContent).toContain(
-      '2 платежа · 1 конвертация · без курса: 1 · факт не внесён: 1',
-    )
+    expect(total.textContent).toContain('2 платежа · 1 конвертация')
+    // The counted-not-summed figures stand beside the headline, at body size
+    // (pre-acceptance UX pass, item 9) — not in the fine print under it.
+    const counters = within(total).getByRole('list', { name: 'Не учтено в сумме' })
+    expect(
+      within(counters)
+        .getAllByRole('listitem')
+        .map((node) => node.textContent),
+    ).toEqual(['без курса: 1', 'факт не внесён: 1'])
+    expect(counters.className).toContain('text-sm')
+    expect(counters.className).not.toContain('text-muted-foreground')
   })
 
   it('EARS-564: the period selector offers the five periods and navigates to the chosen one', () => {
@@ -231,13 +241,14 @@ describe('the period total (EARS-564)', () => {
     expect(router.push).toHaveBeenCalledWith('/p/finance/reports/market-rate?period=quarter')
   })
 
-  it('EARS-564: an empty period says so in both tables and shows «—» for every sum, never a 0 that reads as a result', () => {
+  it('EARS-564: an empty period is ONE compact empty state — no dash headline, no empty tables, never a 0 that reads as a result', () => {
     renderReport(buildMarketReport([], CONTEXT, ['RUB', 'USD', 'EUR'], {}))
-    expect(screen.getAllByText('За этот период платежей в валюте нет')).toHaveLength(2)
-    const total = screen.getByRole('group', { name: 'Итого за период' })
-    expect(total.textContent).not.toContain('0,00')
-    expect(total.textContent).toContain('Факт — · Рынок —')
-    expect(total.textContent).toContain('ничего не измерено')
+    expect(screen.getAllByText('За период нет валютных платежей')).toHaveLength(1)
+    expect(screen.queryByRole('group', { name: 'Итого за период' })).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByText(/0,00/)).toBeNull()
+    // The period choice stays, so the reader can pick another one.
+    expect(screen.getByRole('combobox', { name: 'Период' })).toBeTruthy()
   })
 
   it('EARS-564: a period that only «факт не внесён» fills shows «—» in the headline and in every «Итого»', () => {
@@ -254,9 +265,13 @@ describe('the period total (EARS-564)', () => {
     )!
     renderReport(buildMarketReport([pending], CONTEXT, ['RUB', 'USD', 'EUR'], {}))
     expect(screen.queryByText(/0,00/)).toBe(null)
+    const total = screen.getByRole('group', { name: 'Итого за период' })
+    expect(total.textContent).toContain('Факт — · Рынок —')
+    // Nothing measured: no table of dashes, the row is the muted «не измерено» line.
     for (const name of ['По месяцам', 'По получателям и маршрутам']) {
-      const footer = within(screen.getByRole('region', { name })).getByText('Итого')
-      expect(footer.closest('tr')?.textContent).toBe('Итого————')
+      const region = screen.getByRole('region', { name })
+      expect(within(region).queryByRole('table')).toBeNull()
+      expect(region.textContent).toContain('не измерено: факт не внесён')
     }
   })
 
@@ -319,6 +334,46 @@ describe('the breakdowns (EARS-565)', () => {
     const sheet = screen.getByRole('dialog', { description: 'счёт не указан → USD' })
     expect(sheet.textContent).not.toContain('Переплата 0,00')
     expect(sheet.textContent).not.toContain('· —')
+  })
+})
+
+describe('rows with nothing measured (pre-acceptance UX pass, item 7)', () => {
+  it('says why a row was not measured, in words', () => {
+    const base = {
+      percentTenths: null,
+      wording: '—',
+      measured: { payments: 0, chains: 0 },
+      noRate: { payments: 0, chains: 0 },
+      notPosted: 0,
+    }
+    expect(unmeasuredReason({ ...base, notPosted: 1 }, 0, 'RUB')).toBe('факт не внесён')
+    expect(unmeasuredReason({ ...base, noRate: { payments: 1, chains: 0 } }, 0, 'RUB')).toBe(
+      'нет курса ЦБ на дату',
+    )
+    expect(
+      unmeasuredReason({ ...base, measured: { payments: 1, chains: 0 }, notPosted: 1 }, 1, 'EUR'),
+    ).toBe('факт не внесён, нет курса в EUR')
+  })
+
+  it('puts the measured rows first and the rest after them, each side in the server order', () => {
+    const rows = report().payees
+    const { measured, unmeasured } = splitMeasuredRows(rows, 'RUB')
+    expect(measured.length + unmeasured.length).toBe(rows.length)
+    expect(unmeasured.map((row) => row.route)).toEqual(['счёт не указан → USD'])
+    expect(measured.every((row) => row.measured.payments + row.measured.chains > 0)).toBe(true)
+  })
+
+  it('draws an unmeasured row under the table as one muted line, not a row of dashes', () => {
+    renderReport()
+    const months = screen.getByRole('region', { name: 'По месяцам' })
+    const table = within(months).getByRole('table')
+    expect(within(table).queryByRole('button', { name: 'Октябрь 2026' })).toBeNull()
+    const line = within(months).getByRole('listitem')
+    expect(line.textContent).toBe('Октябрь 2026 · не измерено: нет курса ЦБ на дату')
+    expect(line.className).toContain('text-muted-foreground')
+    // Still opens its sheet: the reader can see which payment it is.
+    fireEvent.click(within(line).getByRole('button', { name: 'Октябрь 2026' }))
+    expect(within(screen.getByRole('dialog')).getByText('без курса ЦБ на дату')).toBeTruthy()
   })
 })
 
