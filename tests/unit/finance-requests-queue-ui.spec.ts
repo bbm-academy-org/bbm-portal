@@ -474,7 +474,7 @@ describe('the queue row carries what the replaced table carried (#480, #517)', (
     })
     renderScreen()
     expect(
-      within(group('Ждёт решения')).getByText('Назначение предложено: Подкаст-оборудование'),
+      within(group('Ждёт решения')).getByText(/Назначение предложено: Подкаст-оборудование$/),
     ).toBeTruthy()
   })
 

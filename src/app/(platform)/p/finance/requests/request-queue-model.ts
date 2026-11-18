@@ -224,19 +224,35 @@ export function missingRateNote(missing: number): string | null {
   return `без ${missing} ${russianPlural(missing, 'заявки', 'заявок', 'заявок')}`
 }
 
-/** A display amount as text: «12 500 ₽», «100,50 $». Kopecks only when there are any. */
+function groupedMoney(minor: bigint, precision: number): string {
+  const negative = minor < 0n
+  const digits = (negative ? -minor : minor).toString().padStart(precision + 1, '0')
+  const integer = precision === 0 ? digits : digits.slice(0, digits.length - precision)
+  const fraction = precision === 0 ? '' : `,${digits.slice(digits.length - precision)}`
+  return `${negative ? '−' : ''}${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${fraction}`
+}
+
+/**
+ * A display amount as text: «12 500,00 ₽», «41,24 $». ONE RULE for every amount
+ * and every sum on the page — always the currency's two decimals — so the
+ * digits of a column stand under each other (review of #562, UX 6).
+ */
 export function formatDisplayMoney(
   minor: bigint,
   currency: DisplayCurrencyCode,
   precision = 2,
 ): string {
-  const negative = minor < 0n
-  const digits = (negative ? -minor : minor).toString().padStart(precision + 1, '0')
-  const integer = digits.slice(0, digits.length - precision)
-  const fraction = digits.slice(digits.length - precision)
-  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
-  const shown = /^0*$/.test(fraction) ? grouped : `${grouped},${fraction}`
-  return `${negative ? '−' : ''}${shown} ${displaySymbol(currency)}`
+  return `${groupedMoney(minor, precision)} ${displaySymbol(currency)}`
+}
+
+/**
+ * The request's ORIGINAL amount, under the converted one: the same ₽ / $ / €
+ * the converted amount uses for the three switch currencies, the code for any
+ * other («30,000000 USDC») — never «RUB» next to «₽» (review of #562, UX 7).
+ */
+export function formatOriginalMoney(amount: string, currency: string, precision: number): string {
+  const symbol = DISPLAY_CURRENCIES.find((option) => option.code === currency)?.symbol ?? currency
+  return `${groupedMoney(BigInt(amount), precision)} ${symbol}`
 }
 
 /**
@@ -301,6 +317,56 @@ export function queueRowAct(stage: QueueStage, canApprove: boolean): QueueAct | 
   return QUEUE_GROUPS[stage].act
 }
 
+/**
+ * What the row is called (review of #562, UX 2–3). The bold line is what the
+ * AUTHOR wrote — the first line of the note, the thing a reader recognises a
+ * request by — because the purpose is nearly always the same few names and
+ * leaves the rows indistinguishable; without a note the purpose stands in. The
+ * muted line under it carries the request's number, the «№N» the toasts and
+ * the search use, and the purpose when the note took the bold line.
+ */
+export function queueRowTitle(request: RequestBoardItem): { title: string; subtitle: string } {
+  const purpose = requestPurposeLabel(request)
+  const written = request.note
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line !== '')
+  const number = `№${request.id}`
+  if (written === undefined) return { title: purpose, subtitle: number }
+  return { title: written, subtitle: purpose === '—' ? number : `${number} · ${purpose}` }
+}
+
+/**
+ * What closed a request — what an archive row is read for (review of #562,
+ * UX 5): the day the money moved for «Оплачено» (the posting's date, else the
+ * request's own), the reason for «Отклонено». Nothing for any other stage.
+ */
+export type QueueOutcome = { kind: 'paid'; date: string } | { kind: 'refused'; reason: string }
+
+export function queueOutcome(request: RequestBoardItem): QueueOutcome | null {
+  if (request.stage === 'paid') {
+    const date = request.operation?.occurredOn ?? request.occurredOn
+    return date === null ? null : { kind: 'paid', date }
+  }
+  if (request.stage === 'refused' && request.refusalReason !== null) {
+    return { kind: 'refused', reason: request.refusalReason }
+  }
+  return null
+}
+
+/** «новая»: filed in the last 24 hours, so the newest submission is found at a glance. */
+export const QUEUE_NEW_HOURS = 24
+
+export function isNewRequest(createdAt: string, now: Date): boolean {
+  const age = now.getTime() - Date.parse(createdAt)
+  return age >= 0 && age <= QUEUE_NEW_HOURS * 3_600_000
+}
+
+/** A group heading's «1 новая», «2 новые», «5 новых» — for a group whose rows are folded away. */
+export function newCountLabel(count: number): string {
+  return `${count} ${russianPlural(count, 'новая', 'новые', 'новых')}`
+}
+
 // ── search and filters (EARS-540) ───────────────────────────────────────────
 
 export type QueuePeriod = 'all' | '7' | '30' | '90'
@@ -328,17 +394,19 @@ export const EMPTY_QUEUE_FILTERS: QueueFilters = {
 }
 
 /**
- * The search of EARS-540: «#N» is the request NUMBER, exactly; any other text
- * is a case-insensitive substring of the submitter, the payee, the member, the
- * purpose, the note, the project and the product.
+ * The search of EARS-540: «№N» (or «#N») is the request NUMBER, exactly — the
+ * number the row shows; any other text is a case-insensitive substring of the
+ * submitter, the payee, the member, the purpose, the note, the project and the
+ * product.
  */
 export function matchesQueueSearch(request: RequestBoardItem, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase('ru-RU')
   if (needle === '') return true
-  const number = /^#\s*(\d+)$/.exec(needle)
+  const number = /^[#№]\s*(\d+)$/.exec(needle)
   if (number !== null) return request.id === Number(number[1])
   const haystack = [
     `#${request.id}`,
+    `№${request.id}`,
     request.createdByName,
     request.counterparty?.name,
     request.memberName,
@@ -428,7 +496,7 @@ export function sortQueueRows(
         order = direction * COLLATOR.compare(queuePayee(left).name, queuePayee(right).name)
         break
       case 'purpose':
-        order = direction * COLLATOR.compare(requestPurposeLabel(left), requestPurposeLabel(right))
+        order = direction * COLLATOR.compare(queueRowTitle(left).title, queueRowTitle(right).title)
         break
       case 'amount': {
         const a = displayedValue(left, currency)

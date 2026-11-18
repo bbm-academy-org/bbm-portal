@@ -6,6 +6,7 @@ import type { Column, ColumnDef, SortingState, Updater } from '@tanstack/react-t
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import React from 'react'
 
+import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Input } from '@/ui/input'
 import { DataTable } from '@/ui/refine-ui/data-table/data-table'
@@ -21,7 +22,7 @@ import type {
   RequestBoardReferences,
   RequestsSnapshot,
 } from './request-board-contract'
-import { currencyPrecision, formatRequestMoney, requestPurposeLabel } from './request-board-model'
+import { currencyPrecision } from './request-board-model'
 import {
   DEFAULT_QUEUE_SCOPE,
   DEFAULT_QUEUE_SORT,
@@ -30,8 +31,11 @@ import {
   EMPTY_QUEUE_FILTERS,
   filterQueueRows,
   formatDisplayMoney,
+  formatOriginalMoney,
+  isNewRequest,
   isOverdue,
   missingRateNote,
+  newCountLabel,
   parseStoredDisplayCurrency,
   QUEUE_GROUPS,
   QUEUE_PERIODS,
@@ -40,8 +44,10 @@ import {
   queueGroupRows,
   queueGroupStages,
   queueKpis,
+  queueOutcome,
   queuePayee,
   queueRowAct,
+  queueRowTitle,
   rateStaleness,
   requestAge,
   requestCountLabel,
@@ -70,6 +76,16 @@ import { RequestSourceLink } from './RequestSourceLink'
  * Антон, 2026-09-03` on the same glob): every group's table is the whitelist's
  * List block, the controls are the kit's, and nothing is boxed in a box — the
  * sums and the group headings are type, not cards.
+ *
+ * Deviations from the prototype taken on the review of PR #562 (UX 1–8), each
+ * an agent's composition decision recorded in the PR:
+ *  - the AMOUNT is always the LAST column, the row act (or, in a closed group,
+ *    what closed it) sits before it — so a group heading's sum and its rows'
+ *    amounts share one right edge in every group;
+ *  - a group shows the act column only when it has an act, and a closed group
+ *    shows what the archive is read for instead: the payment date, the reason;
+ *  - on a phone a row is ONE stacked cell (when · who → payee · what) beside
+ *    the amount and its act — the block's own horizontal scroll hid the amount.
  *
  * ONE MOMENT, ONE ORDER. The rows are the screen's ONE snapshot read (the same
  * object the chrome, the board and the sheet read), handed to each group's
@@ -124,6 +140,33 @@ function subscribeStoredCurrency(listener: () => void): () => void {
 
 const serverStoredCurrency = () => null
 
+// ── the phone layout switch ─────────────────────────────────────────────────
+
+/**
+ * Below the kit's mobile breakpoint (`src/ui/hooks/use-mobile.ts`, 768 px) a
+ * row is drawn as one stacked cell. An external store rather than the kit hook
+ * because the screen also renders where `matchMedia` does not exist (the unit
+ * stand) — there it is simply the wide layout.
+ */
+const NARROW_QUERY = '(max-width: 767px)'
+
+function narrowQuery(): MediaQueryList | null {
+  return typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_QUERY) : null
+}
+
+function subscribeNarrow(listener: () => void): () => void {
+  const query = narrowQuery()
+  query?.addEventListener('change', listener)
+  return () => query?.removeEventListener('change', listener)
+}
+
+const readNarrow = () => narrowQuery()?.matches ?? false
+const serverNarrow = () => false
+
+function useNarrow(): boolean {
+  return React.useSyncExternalStore(subscribeNarrow, readNarrow, serverNarrow)
+}
+
 // ── formatting ──────────────────────────────────────────────────────────────
 
 const FILED_DAY = new Intl.DateTimeFormat('ru-RU', {
@@ -142,13 +185,31 @@ function filedDay(iso: string, now: Date): string {
     : `${FILED_DAY.format(instant)} ${year}`
 }
 
-function SumText({ sum, currency }: { sum: QueueSum; currency: DisplayCurrencyCode }) {
+/** A calendar date («2026-10-29») read as that Moscow day. */
+function calendarDay(date: string, now: Date): string {
+  return filedDay(`${date}T12:00:00+03:00`, now)
+}
+
+function SumText({
+  sum,
+  currency,
+  stacked = false,
+}: {
+  sum: QueueSum
+  currency: DisplayCurrencyCode
+  /** The «без N заявок» note on its own line — a narrow heading has no room beside the sum. */
+  stacked?: boolean
+}) {
   const note = missingRateNote(sum.missing)
   return (
     <>
       {sum.amount === null ? '—' : formatDisplayMoney(sum.amount, currency)}
       {note === null ? null : (
-        <span className="ml-1.5 text-xs font-normal text-muted-foreground">{note}</span>
+        <span
+          className={cn('text-xs font-normal text-muted-foreground', stacked ? 'block' : 'ml-1.5')}
+        >
+          {note}
+        </span>
       )}
     </>
   )
@@ -183,6 +244,328 @@ function Sorter({ column, sortKey }: { column: Column<RequestBoardItem>; sortKey
       aria-label={SORTER_LABEL[sortKey]}
     />
   )
+}
+
+// ── the cells ───────────────────────────────────────────────────────────────
+
+type CellContext = {
+  currency: DisplayCurrencyCode
+  now: Date
+  references: RequestBoardReferences
+  onOpen: (request: RequestBoardItem) => void
+  onAct: (request: RequestBoardItem, act: QueueAct) => void
+}
+
+/** «новая» — the newest submissions are found at a glance (review of #562, UX «последняя заявка»). */
+function NewMark({ request, now }: { request: RequestBoardItem; now: Date }) {
+  if (!isNewRequest(request.createdAt, now)) return null
+  return <Badge variant="secondary">новая</Badge>
+}
+
+function AgeText({ request, now }: { request: RequestBoardItem; now: Date }) {
+  const age = requestAge(request.createdAt, now)
+  const overdue = isOverdue(request.stage, age.days)
+  return (
+    <span
+      data-overdue={overdue ? 'true' : undefined}
+      className={overdue ? 'font-medium text-destructive' : 'text-muted-foreground'}
+    >
+      {age.label}
+    </span>
+  )
+}
+
+/**
+ * «На что» — what the AUTHOR wrote in bold, the number and the purpose muted
+ * under it (`queueRowTitle`). The bold line is the row's named control: the
+ * block owns its `TableRow`, so a whole-row click is outside its API (and is
+ * what `lint:interaction-states` exists for).
+ */
+function TitleCell({
+  request,
+  onOpen,
+  wrap,
+}: {
+  request: RequestBoardItem
+  onOpen: (request: RequestBoardItem) => void
+  wrap: boolean
+}) {
+  const { title, subtitle } = queueRowTitle(request)
+  return (
+    <div className="min-w-0">
+      <Button
+        variant="link"
+        className={cn(
+          'block h-auto max-w-full p-0 text-left font-medium text-foreground',
+          wrap ? 'line-clamp-2 whitespace-normal' : 'truncate',
+        )}
+        aria-label={`Заявка №${request.id}: ${title}`}
+        title={title}
+        onClick={() => onOpen(request)}
+      >
+        {title}
+      </Button>
+      <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
+        {subtitle}
+      </span>
+    </div>
+  )
+}
+
+function AmountCell({ request, context }: { request: RequestBoardItem; context: CellContext }) {
+  const { currency, references } = context
+  const shown = request.display[currency]
+  const original = formatOriginalMoney(
+    request.amount,
+    request.currency,
+    currencyPrecision(references.currencies, request.currency),
+  )
+  if (shown.kind === 'no_rate') {
+    return (
+      <>
+        <span className="block font-medium">{original}</span>
+        <span className="block text-xs text-muted-foreground">нет курса</span>
+      </>
+    )
+  }
+  return (
+    <>
+      <span className="block font-medium">
+        {formatDisplayMoney(BigInt(shown.amount), currency)}
+      </span>
+      {request.currency === currency ? null : (
+        <span className="block text-xs text-muted-foreground">{original}</span>
+      )}
+    </>
+  )
+}
+
+function ActButton({
+  request,
+  act,
+  onAct,
+}: {
+  request: RequestBoardItem
+  act: QueueAct
+  onAct: (request: RequestBoardItem, act: QueueAct) => void
+}) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      aria-label={actAccessibleName(act, request.id)}
+      onClick={() => onAct(request, act)}
+    >
+      {ACT_LABEL[act]}
+    </Button>
+  )
+}
+
+/** What closed the request, as the phone's last line: «оплачено 29 окт.», «отказ: …». */
+function OutcomeLine({ request, now }: { request: RequestBoardItem; now: Date }) {
+  const outcome = queueOutcome(request)
+  if (outcome === null) return null
+  const text =
+    outcome.kind === 'paid'
+      ? `оплачено ${calendarDay(outcome.date, now)}`
+      : `отказ: ${outcome.reason}`
+  return (
+    <span className="block truncate text-xs text-muted-foreground" title={text}>
+      {text}
+    </span>
+  )
+}
+
+// ── the columns of one group ────────────────────────────────────────────────
+
+/**
+ * What the column before the amount carries in a group: the row act, the
+ * payment date, the refusal reason — or nothing, and then there is no column.
+ */
+type GroupSlot = 'act' | 'paid' | 'refused' | null
+
+function groupSlot(stage: QueueStage, canApprove: boolean): GroupSlot {
+  if (queueRowAct(stage, canApprove) !== null) return 'act'
+  if (stage === 'paid') return 'paid'
+  if (stage === 'refused') return 'refused'
+  return null
+}
+
+function sortableHeader(label: string, sortKey: QueueSortKey, alignEnd = false) {
+  const Header = ({ column }: { column: Column<RequestBoardItem> }) => (
+    <div className={cn('flex items-center gap-1', alignEnd && 'ml-auto')}>
+      {label}
+      <Sorter column={column} sortKey={sortKey} />
+    </div>
+  )
+  Header.displayName = `QueueHeader(${sortKey})`
+  return Header
+}
+
+function amountColumn(context: CellContext, size: number, withAct: boolean, stage: QueueStage) {
+  const column: ColumnDef<RequestBoardItem> = {
+    id: 'amount',
+    size,
+    header: sortableHeader('Сумма', 'amount', true),
+    cell: ({ row }) => {
+      const act = withAct ? queueRowAct(stage, true) : null
+      return (
+        <div className="space-y-1.5 text-right tabular-nums">
+          <div>
+            <AmountCell request={row.original} context={context} />
+          </div>
+          {act === null ? null : (
+            <ActButton request={row.original} act={act} onAct={context.onAct} />
+          )}
+        </div>
+      )
+    },
+  }
+  return column
+}
+
+/** The phone row: one stacked cell, then the amount with its act under it. */
+function narrowColumns(
+  context: CellContext,
+  stage: QueueStage,
+  slot: GroupSlot,
+): ColumnDef<RequestBoardItem>[] {
+  const { now, onOpen } = context
+  return [
+    {
+      id: 'filed',
+      size: 210,
+      header: sortableHeader('Заявка', 'filed'),
+      cell: ({ row }) => {
+        const request = row.original
+        const payee = queuePayee(request)
+        return (
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+              <span>{filedDay(request.createdAt, now)}</span>
+              <span aria-hidden>·</span>
+              <AgeText request={request} now={now} />
+              <RequestSourceLink request={request} compact />
+              <NewMark request={request} now={now} />
+            </div>
+            <span className="block truncate text-xs">
+              {request.createdByName ?? '—'} → {payee.name}
+              {payee.paidSelf ? (
+                <span className="text-muted-foreground"> · заплатил(а) сам(а)</span>
+              ) : null}
+            </span>
+            <TitleCell request={request} onOpen={onOpen} wrap />
+            <OutcomeLine request={request} now={now} />
+          </div>
+        )
+      },
+    },
+    amountColumn(context, 150, slot === 'act', stage),
+  ]
+}
+
+function wideColumns(
+  context: CellContext,
+  stage: QueueStage,
+  slot: GroupSlot,
+): ColumnDef<RequestBoardItem>[] {
+  const { now, onOpen, onAct } = context
+  const columns: ColumnDef<RequestBoardItem>[] = [
+    {
+      id: 'filed',
+      size: 130,
+      header: sortableHeader('Подана', 'filed'),
+      cell: ({ row }) => {
+        const request = row.original
+        return (
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-1.5 tabular-nums text-muted-foreground">
+              <span>{filedDay(request.createdAt, now)}</span>
+              <RequestSourceLink request={request} compact />
+              <NewMark request={request} now={now} />
+            </div>
+            <span className="block text-xs">
+              <AgeText request={request} now={now} />
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      id: 'author',
+      size: 140,
+      header: sortableHeader('От кого', 'author'),
+      cell: ({ row }) => (
+        <span
+          className="line-clamp-2 whitespace-normal break-words"
+          title={row.original.createdByName}
+        >
+          {row.original.createdByName ?? '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'payee',
+      size: 180,
+      header: sortableHeader('Кому платим', 'payee'),
+      cell: ({ row }) => {
+        const payee = queuePayee(row.original)
+        return (
+          <div className="min-w-0">
+            <span className="line-clamp-2 whitespace-normal break-words" title={payee.name}>
+              {payee.name}
+            </span>
+            {payee.paidSelf ? (
+              <span className="block text-xs text-muted-foreground">заплатил(а) сам(а)</span>
+            ) : null}
+          </div>
+        )
+      },
+    },
+    {
+      id: 'purpose',
+      size: 360,
+      header: sortableHeader('На что', 'purpose'),
+      cell: ({ row }) => <TitleCell request={row.original} onOpen={onOpen} wrap={false} />,
+    },
+  ]
+  if (slot === 'act') {
+    columns.push({
+      id: 'act',
+      size: 150,
+      enableSorting: false,
+      header: () => <span className="sr-only">Действие</span>,
+      cell: ({ row }) => {
+        const act = queueRowAct(stage, true)
+        return act === null ? null : (
+          <div className="flex justify-end">
+            <ActButton request={row.original} act={act} onAct={onAct} />
+          </div>
+        )
+      },
+    })
+  } else if (slot === 'paid' || slot === 'refused') {
+    columns.push({
+      id: 'outcome',
+      size: slot === 'paid' ? 120 : 220,
+      enableSorting: false,
+      header: () => <span>{slot === 'paid' ? 'Оплачено' : 'Причина отказа'}</span>,
+      cell: ({ row }) => {
+        const outcome = queueOutcome(row.original)
+        if (outcome === null) return <span className="text-muted-foreground">—</span>
+        if (outcome.kind === 'paid') {
+          return <span className="tabular-nums">{calendarDay(outcome.date, now)}</span>
+        }
+        return (
+          <span className="line-clamp-2 whitespace-normal break-words" title={outcome.reason}>
+            {outcome.reason}
+          </span>
+        )
+      },
+    })
+  }
+  columns.push(amountColumn(context, 150, false, stage))
+  return columns
 }
 
 // ── one group's table ───────────────────────────────────────────────────────
@@ -241,6 +624,73 @@ function QueueGroupTable({
   return <DataTable table={table} paginated={false} />
 }
 
+function QueueGroup({
+  stage,
+  rows,
+  isCollapsed,
+  onToggle,
+  context,
+  canApprove,
+  narrow,
+  sort,
+  onSort,
+}: {
+  stage: QueueStage
+  rows: RequestBoardItem[]
+  isCollapsed: boolean
+  onToggle: () => void
+  context: CellContext
+  canApprove: boolean
+  narrow: boolean
+  sort: QueueSort
+  onSort: (next: QueueSort) => void
+}) {
+  const group = QUEUE_GROUPS[stage]
+  const { currency, now } = context
+  const sum = sumInDisplay(rows, currency)
+  const slot = groupSlot(stage, canApprove)
+  const columns = React.useMemo(
+    () => (narrow ? narrowColumns(context, stage, slot) : wideColumns(context, stage, slot)),
+    [context, narrow, slot, stage],
+  )
+  const fresh = rows.filter((request) => isNewRequest(request.createdAt, now)).length
+  return (
+    <section aria-label={group.title} className="space-y-2">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="font-heading text-base font-semibold">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={!isCollapsed}
+            onClick={onToggle}
+            className="-ml-2 gap-1 px-2 text-base font-semibold aria-expanded:bg-transparent hover:bg-muted"
+          >
+            {isCollapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
+            {group.title}
+          </Button>
+        </h2>
+        <span className="text-sm text-muted-foreground tabular-nums">{rows.length}</span>
+        {fresh === 0 ? null : <Badge variant="secondary">{newCountLabel(fresh)}</Badge>}
+        {group.hint === '' ? null : (
+          <span className="hidden text-sm text-muted-foreground md:inline">{group.hint}</span>
+        )}
+        {rows.length === 0 ? null : (
+          // `pr-2` is the block's cell padding: the heading's sum ends where
+          // the amounts of its rows end — the last column of every group.
+          <span className="ml-auto pr-2 text-right text-sm font-medium tabular-nums">
+            <SumText sum={sum} currency={currency} stacked={narrow} />
+          </span>
+        )}
+      </div>
+      {isCollapsed ? null : rows.length === 0 ? (
+        <p className="py-2 text-sm text-muted-foreground">Ничего нет</p>
+      ) : (
+        <QueueGroupTable rows={rows} columns={columns} sort={sort} onSort={onSort} />
+      )}
+    </section>
+  )
+}
+
 // ── the screen ──────────────────────────────────────────────────────────────
 
 const ALL = 'all'
@@ -265,6 +715,7 @@ export function RequestsQueue({
     serverStoredCurrency,
   )
   const currency = parseStoredDisplayCurrency(stored)
+  const narrow = useNarrow()
   // One clock for the page: every age on it is measured from the same instant.
   const [now] = React.useState(() => new Date())
 
@@ -275,179 +726,10 @@ export function RequestsQueue({
   )
   const authors = React.useMemo(() => queueAuthors(requests), [requests])
   const stale = rateStaleness(fx.latestRateDate, fx.today)
-
-  const columns = React.useMemo<ColumnDef<RequestBoardItem>[]>(() => {
-    const defined: ColumnDef<RequestBoardItem>[] = [
-      {
-        id: 'filed',
-        size: 130,
-        header: ({ column }) => (
-          <>
-            Подана
-            <Sorter column={column} sortKey="filed" />
-          </>
-        ),
-        cell: ({ row }) => {
-          const request = row.original
-          const age = requestAge(request.createdAt, now)
-          const overdue = isOverdue(request.stage, age.days)
-          return (
-            <div className="min-w-0 space-y-0.5">
-              <div className="flex items-center gap-1.5 tabular-nums text-muted-foreground">
-                <span>{filedDay(request.createdAt, now)}</span>
-                <RequestSourceLink request={request} compact />
-              </div>
-              <span
-                data-overdue={overdue ? 'true' : undefined}
-                className={cn(
-                  'block text-xs',
-                  overdue ? 'font-medium text-destructive' : 'text-muted-foreground',
-                )}
-              >
-                {age.label}
-              </span>
-            </div>
-          )
-        },
-      },
-      {
-        id: 'author',
-        size: 150,
-        header: ({ column }) => (
-          <>
-            От кого
-            <Sorter column={column} sortKey="author" />
-          </>
-        ),
-        cell: ({ row }) => (
-          <span className="block truncate" title={row.original.createdByName}>
-            {row.original.createdByName ?? '—'}
-          </span>
-        ),
-      },
-      {
-        id: 'payee',
-        size: 170,
-        header: ({ column }) => (
-          <>
-            Кому платим
-            <Sorter column={column} sortKey="payee" />
-          </>
-        ),
-        cell: ({ row }) => {
-          const payee = queuePayee(row.original)
-          return (
-            <div className="min-w-0">
-              <span className="block truncate" title={payee.name}>
-                {payee.name}
-              </span>
-              {payee.paidSelf ? (
-                <span className="block text-xs text-muted-foreground">заплатил(а) сам(а)</span>
-              ) : null}
-            </div>
-          )
-        },
-      },
-      {
-        id: 'purpose',
-        size: 320,
-        header: ({ column }) => (
-          <>
-            На что
-            <Sorter column={column} sortKey="purpose" />
-          </>
-        ),
-        // OPENING A ROW IS A NAMED CONTROL. The block owns its `TableRow`, so a
-        // whole-row click is outside its API (and is what
-        // `lint:interaction-states` exists for); the purpose — what a reader
-        // recognises a request by — is the control, named with the number.
-        cell: ({ row }) => {
-          const request = row.original
-          const label = requestPurposeLabel(request)
-          return (
-            <div className="min-w-0">
-              <Button
-                variant="link"
-                className="block h-auto max-w-full truncate p-0 text-left font-medium text-foreground"
-                aria-label={`Заявка №${request.id}: ${label}`}
-                title={label}
-                onClick={() => onOpen(request)}
-              >
-                {label}
-              </Button>
-              {request.note === null ? null : (
-                <span className="block truncate text-xs text-muted-foreground" title={request.note}>
-                  {request.note}
-                </span>
-              )}
-            </div>
-          )
-        },
-      },
-      {
-        id: 'amount',
-        size: 150,
-        header: ({ column }) => (
-          <div className="ml-auto flex items-center gap-1">
-            Сумма
-            <Sorter column={column} sortKey="amount" />
-          </div>
-        ),
-        cell: ({ row }) => {
-          const request = row.original
-          const shown = request.display[currency]
-          const original = formatRequestMoney(
-            request.amount,
-            request.currency,
-            currencyPrecision(references.currencies, request.currency),
-          )
-          if (shown.kind === 'no_rate') {
-            return (
-              <div className="text-right tabular-nums">
-                <span className="block font-medium">{original}</span>
-                <span className="block text-xs text-muted-foreground">нет курса</span>
-              </div>
-            )
-          }
-          return (
-            <div className="text-right tabular-nums">
-              <span className="block font-medium">
-                {formatDisplayMoney(BigInt(shown.amount), currency)}
-              </span>
-              {request.currency === currency ? null : (
-                <span className="block text-xs text-muted-foreground">{original}</span>
-              )}
-            </div>
-          )
-        },
-      },
-    ]
-    if (canApprove) {
-      defined.push({
-        id: 'act',
-        size: 170,
-        enableSorting: false,
-        header: () => <span className="sr-only">Действие</span>,
-        cell: ({ row }) => {
-          const act = queueRowAct(row.original.stage, canApprove)
-          if (act === null) return null
-          return (
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label={actAccessibleName(act, row.original.id)}
-                onClick={() => onAct(row.original, act)}
-              >
-                {ACT_LABEL[act]}
-              </Button>
-            </div>
-          )
-        },
-      })
-    }
-    return defined
-  }, [canApprove, currency, now, onAct, onOpen, references.currencies])
+  const context = React.useMemo<CellContext>(
+    () => ({ currency, now, references, onOpen, onAct }),
+    [currency, now, references, onOpen, onAct],
+  )
 
   const stages = queueGroupStages(scope, kpi)
 
@@ -455,8 +737,9 @@ export function RequestsQueue({
     <div className="space-y-6">
       {/* THE THREE SUMS (EARS-537) — over every request, whatever is searched
           or filtered; a click shows only that group, a second click restores
-          the scope. Type, not cards: the prototype draws them bare. */}
-      <div role="group" aria-label="Итоги очереди" className="grid gap-4 sm:grid-cols-3 sm:gap-8">
+          the scope. Type, not cards: the prototype draws them bare. On a phone
+          they sit in one row, so the first request is not a screen away. */}
+      <div role="group" aria-label="Итоги очереди" className="grid grid-cols-3 gap-2 sm:gap-8">
         {kpis.map((entry) => {
           const on = kpi === entry.stage
           return (
@@ -465,20 +748,20 @@ export function RequestsQueue({
               variant="ghost"
               aria-pressed={on}
               onClick={() => setKpi(on ? null : entry.stage)}
-              className="-mx-2 h-auto flex-col items-start gap-0.5 px-2 py-1.5 text-left font-normal whitespace-normal"
+              className="-mx-2 h-auto min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left font-normal whitespace-normal"
             >
               <span
                 className={cn(
-                  'text-sm',
+                  'text-xs sm:text-sm',
                   on ? 'text-foreground underline underline-offset-4' : 'text-muted-foreground',
                 )}
               >
                 {entry.label}
               </span>
-              <span className="font-heading text-2xl font-semibold tracking-tight tabular-nums">
-                <SumText sum={entry.sum} currency={currency} />
+              <span className="font-heading text-base font-semibold tracking-tight tabular-nums sm:text-2xl">
+                <SumText sum={entry.sum} currency={currency} stacked={narrow} />
               </span>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-xs text-muted-foreground sm:text-sm">
                 {requestCountLabel(entry.sum.count)}
               </span>
             </Button>
@@ -495,70 +778,82 @@ export function RequestsQueue({
       )}
 
       {/* ONE TOOLBAR, the prototype's: what to look for on the left, how to show
-          it on the right. It wraps on a narrow screen rather than scrolling. */}
+          it on the right. When the row is too narrow for both it breaks as two
+          whole halves — the filters, then the switches — never control by
+          control. */}
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          aria-label="Поиск по заявкам"
-          placeholder="Поиск: кто, кому, на что, № заявки"
-          value={filters.query}
-          onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
-          className="w-full sm:w-72"
-        />
-        <Select
-          value={filters.author === null ? ALL : String(filters.author)}
-          onValueChange={(value) =>
-            setFilters((current) => ({ ...current, author: value === ALL ? null : Number(value) }))
-          }
-        >
-          <SelectTrigger aria-label="Заявитель" className="min-w-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Все заявители</SelectItem>
-            {authors.map((author) => (
-              <SelectItem key={author.id} value={String(author.id)}>
-                {author.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.project === null ? ALL : String(filters.project)}
-          onValueChange={(value) =>
-            setFilters((current) => ({ ...current, project: value === ALL ? null : Number(value) }))
-          }
-        >
-          <SelectTrigger aria-label="Проект" className="min-w-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Все проекты</SelectItem>
-            {references.projects.map((project) => (
-              <SelectItem key={project.id} value={String(project.id)}>
-                {project.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.period}
-          onValueChange={(value) =>
-            setFilters((current) => ({ ...current, period: value as QueuePeriod }))
-          }
-        >
-          <SelectTrigger aria-label="Период" className="min-w-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {QUEUE_PERIODS.map((period) => (
-              <SelectItem key={period.value} value={period.value}>
-                {period.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <Input
+            type="search"
+            aria-label="Поиск по заявкам"
+            placeholder="Поиск: кто, кому, на что, №"
+            value={filters.query}
+            onChange={(event) =>
+              setFilters((current) => ({ ...current, query: event.target.value }))
+            }
+            className="w-full sm:w-60"
+          />
+          <Select
+            value={filters.author === null ? ALL : String(filters.author)}
+            onValueChange={(value) =>
+              setFilters((current) => ({
+                ...current,
+                author: value === ALL ? null : Number(value),
+              }))
+            }
+          >
+            <SelectTrigger aria-label="Заявитель" className="min-w-0 flex-1 sm:flex-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Все заявители</SelectItem>
+              {authors.map((author) => (
+                <SelectItem key={author.id} value={String(author.id)}>
+                  {author.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={filters.project === null ? ALL : String(filters.project)}
+            onValueChange={(value) =>
+              setFilters((current) => ({
+                ...current,
+                project: value === ALL ? null : Number(value),
+              }))
+            }
+          >
+            <SelectTrigger aria-label="Проект" className="min-w-0 flex-1 sm:flex-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Все проекты</SelectItem>
+              {references.projects.map((project) => (
+                <SelectItem key={project.id} value={String(project.id)}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={filters.period}
+            onValueChange={(value) =>
+              setFilters((current) => ({ ...current, period: value as QueuePeriod }))
+            }
+          >
+            <SelectTrigger aria-label="Период" className="min-w-0 flex-1 sm:flex-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {QUEUE_PERIODS.map((period) => (
+                <SelectItem key={period.value} value={period.value}>
+                  {period.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Tabs
             value={currency}
             onValueChange={(next) => writeStoredCurrency(parseStoredDisplayCurrency(next))}
@@ -590,44 +885,25 @@ export function RequestsQueue({
         </div>
       </div>
 
-      {stages.map((stage) => {
-        const group = QUEUE_GROUPS[stage]
-        const rows = queueGroupRows(visible, stage, sort, currency)
-        const isCollapsed = kpi === null && (collapsed[stage] ?? group.collapsedByDefault)
-        const sum = sumInDisplay(rows, currency)
-        return (
-          <section key={stage} aria-label={group.title} className="space-y-2">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="font-heading text-base font-semibold">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  aria-expanded={!isCollapsed}
-                  onClick={() => setCollapsed((current) => ({ ...current, [stage]: !isCollapsed }))}
-                  className="-ml-2 gap-1 px-2 text-base font-semibold aria-expanded:bg-transparent hover:bg-muted"
-                >
-                  {isCollapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
-                  {group.title}
-                </Button>
-              </h2>
-              <span className="text-sm text-muted-foreground tabular-nums">{rows.length}</span>
-              {group.hint === '' ? null : (
-                <span className="hidden text-sm text-muted-foreground md:inline">{group.hint}</span>
-              )}
-              {rows.length === 0 ? null : (
-                <span className="ml-auto text-sm font-medium tabular-nums">
-                  <SumText sum={sum} currency={currency} />
-                </span>
-              )}
-            </div>
-            {isCollapsed ? null : rows.length === 0 ? (
-              <p className="py-2 text-sm text-muted-foreground">Ничего нет</p>
-            ) : (
-              <QueueGroupTable rows={rows} columns={columns} sort={sort} onSort={setSort} />
-            )}
-          </section>
-        )
-      })}
+      {stages.map((stage) => (
+        <QueueGroup
+          key={stage}
+          stage={stage}
+          rows={queueGroupRows(visible, stage, sort, currency)}
+          isCollapsed={kpi === null && (collapsed[stage] ?? QUEUE_GROUPS[stage].collapsedByDefault)}
+          onToggle={() =>
+            setCollapsed((current) => ({
+              ...current,
+              [stage]: !(current[stage] ?? QUEUE_GROUPS[stage].collapsedByDefault),
+            }))
+          }
+          context={context}
+          canApprove={canApprove}
+          narrow={narrow}
+          sort={sort}
+          onSort={setSort}
+        />
+      ))}
     </div>
   )
 }
