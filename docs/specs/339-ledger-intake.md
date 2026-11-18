@@ -867,15 +867,34 @@ the corpus's «потерялась в канале» case).
   amount (EARS-549, with the rate it used — «курс ЦБ на <дата> (сегодня |
   дата траты | дата оплаты)»), the fee, submitter, payee, project · product,
   note and refusal reason; a «Как оплатить» block — for `personal_funds`, who
-  paid, when, and how much to return; otherwise «реквизиты есть» when the
-  note contains an `http(s)://` URL or a run of 20 digits (a Russian bank
-  account number), or a document is attached, else a
-  warning that payment details are missing («Запросить у автора» is shown as
-  text, not an act, in v1); the files (EARS-523 still governs who reads
-  them); a timeline Подана → Решение → Оплата / Возврат; and the acts of its
-  stage: «Одобрить», «Одобрить и отметить оплату», «Отклонить» (reason
-  required, EARS-512), «Отметить оплату» / «Отметить возврат», «Отозвать»
-  (revoke an unposted approval, reason required).
+  paid, when, and how much to return, stated in the currency the
+  «Отметить возврат» form asks for (EARS-544): a booked or stated debt in its
+  own currency, with the document amount shown small when it differs; where
+  the refund currency follows the chosen account, the document-currency sum
+  for an account in that currency and «the amount actually debited from the
+  card» for any other, never a sum computed from a rate; otherwise — only
+  while the owner still has to pay (`decide` / `pay`, not posted and not
+  filed `already_paid`) — «реквизиты есть» when the note contains an
+  `http(s)://` URL or a run of 20 digits (a Russian bank account number), or
+  a document is attached, else a warning that payment details are missing
+  («Запросить у автора» is shown as text, not an act, in v1); a request filed
+  `already_paid` from a company account says «Уже оплачено <дата> — осталось
+  отметить оплату» instead, and a posted one has no block; the files
+  (EARS-523 still governs who reads them); a timeline Подана → Решение →
+  Оплата / Возврат; and the acts of its stage: «Одобрить», «Одобрить и
+  отметить оплату», «Отклонить» (reason required, EARS-512), «Отметить
+  оплату» / «Отметить возврат», «Отозвать» (revoke an unposted approval,
+  reason required).
+
+  _Revised 2026-11-18 (review of PR #564, UX 1 and UX 6). Previous wording:
+  «a «Как оплатить» block — for `personal_funds`, who paid, when, and how
+  much to return; otherwise «реквизиты есть» when the note contains an
+  `http(s)://` URL or a run of 20 digits (a Russian bank account number), or
+  a document is attached, else a warning that payment details are missing
+  («Запросить у автора» is shown as text, not an act, in v1)». It asked the
+  author for details of money already gone, and stated a dollar refund the
+  form then asked for in roubles._
+
 - **EARS-543.** WHEN the owner submits «Отметить оплату» with the date money
   moved, the paying account and — WHERE the account's currency differs from
   the document's — the amount actually debited, the system shall post the
@@ -963,7 +982,8 @@ the corpus's «потерялась в канале» case).
   row and the details sheet shall mark it «без чека».
 - **EARS-547.** WHERE the viewer holds `finance-approve` and a «К оплате» or
   «Вернуть сотруднику» group shows at least two rows, the group shall offer
-  «Отметить все N как оплаченные…»; WHEN the owner confirms its dialog — one
+  «Отметить все N как оплаченные…» («Отметить все N как возвращённые…» on
+  «Вернуть сотруднику»); WHEN the owner confirms its dialog — one
   paying account for the batch, an optional single date (default per
   request: its `occurred_on`, else its submission date, Europe/Moscow), no
   receipt — the system shall perform EARS-543 (for `pay`) or EARS-544 (for
@@ -987,6 +1007,11 @@ the corpus's «потерялась в канале» case).
   `reimburse` row is approved first in the same transaction, as EARS-544
   says; the refund amount of each row is its EARS-544 required sum. The act exists only as this confirmed UI act and its API;
   no CLI, script or agent invokes it on production.
+
+  _Revised 2026-11-18 (review of PR #564, UX 4). Previous wording: the group
+  «shall offer «Отметить все N как оплаченные…»» on both groups — a refund is
+  not a payment, so «Вернуть сотруднику» now names its own act._
+
 - **EARS-548.** IF any request of a confirmed batch changed after the dialog
   was opened (its snapshot no longer matches), THEN the system shall post
   nothing for the whole batch and say which request changed.
@@ -1168,12 +1193,20 @@ USD-pegged stablecoin (lead's decision on #559).
   wording; the amounts in the display currency (EARS-549, converted per
   EARS-566). For a «без курса» payment the block shall say «нет курса ЦБ на
   <дата>»; for a «факт не внесён» request that states no debited amount it
-  shall say «факт не внесён — укажите списанную сумму при отметке оплаты»;
-  for one that states it (a `personal_funds` request's amount is the
+  shall say «факт не внесён — укажите списанную сумму при отметке оплаты»,
+  and in «Вернуть сотруднику» (EARS-535 `reimburse`, where the refund sum of
+  «Отметить возврат» is the fact, EARS-544) «факт не внесён — укажите сумму
+  возврата при «Отметить возврат»»; for one that states it (a `personal_funds` request's amount is the
   member's and stays authoritative, EARS-544) it shall say «факт не
   проведён — появится после «Отметить возврат»» for `personal_funds` and
   «…после «Отметить оплату»» otherwise; a same-currency request shall show
   no block.
+
+  _Revised 2026-11-18 (review of PR #564, S3). Previous wording: «for a
+  «факт не внесён» request that states no debited amount it shall say «факт
+  не внесён — укажите списанную сумму при отметке оплаты»» for every stage —
+  in «Вернуть сотруднику» it pointed at an act that stage does not offer._
+
 - **EARS-564.** `/p/finance/reports/market-rate` «Курс против рынка»,
   linked from the `/p/finance` header beside «Заявки», shall show, for a
   chosen period of payment dates (month, quarter, year, the last 12 months

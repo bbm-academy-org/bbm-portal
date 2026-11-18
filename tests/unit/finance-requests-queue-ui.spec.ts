@@ -504,7 +504,7 @@ describe('the queue row carries what the replaced table carried (#480, #517)', (
     renderScreen()
     fireEvent.click(screen.getByRole('button', { name: /^Заявка №2: / }))
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getByText(/Монтаж/)).toBeTruthy()
+    expect(within(sheet).getByRole('heading', { name: 'Монтаж' })).toBeTruthy()
   })
 
   it('a long note truncates inside its column and stays readable in full on hover', () => {
@@ -675,18 +675,63 @@ describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
     })
   })
 
-  it('EARS-543/548: the server’s refusal is shown verbatim in the form, and the board re-reads itself', async () => {
+  it('EARS-543/548: the server’s refusal is shown in its own words in the form — without spec codes, dates as ДД.ММ.ГГГГ — and the board re-reads itself', async () => {
     renderScreen()
     const sheet = await openSheet(/^Заявка №3:/)
     const form = await startAct(sheet, 'Отметить оплату')
     fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
     await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
     const refusal =
-      'Заявка #3 изменилась после того, как карточка её показала — отметка не проведена; откройте заявку заново (EARS-543/544, EARS-548).'
+      'Операция от 2026-11-01 не может быть записана после уже проведённой операции валютной пары RUB/USD от 2026-11-10: ' +
+      'неизменяемый ledger не пересчитывает уже признанный FX-результат (EARS-319/328, EARS-543) — ' +
+      'отметьте более ранние валютные оплаты раньше более поздних.'
     await act(async () => refine.mutate.mock.calls[0][1].onError({ message: refusal }))
 
-    expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toBe(refusal)
+    expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toBe(
+      'Операция от 01.11.2026 не может быть записана после уже проведённой операции валютной пары RUB/USD от 10.11.2026: ' +
+        'неизменяемый ledger не пересчитывает уже признанный FX-результат — ' +
+        'отметьте более ранние валютные оплаты раньше более поздних.',
+    )
     expect(refine.custom.refetch).toHaveBeenCalled()
+  })
+
+  it('EARS-548: after a stale refusal the re-read row remounts the open form — fresh defaults, fresh token, the refusal still shown', async () => {
+    const { rerender } = renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    fireEvent.change(within(form).getByLabelText('Дата оплаты'), {
+      target: { value: '2026-11-02' },
+    })
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0].values).toMatchObject({ snapshot: 'token-1' })
+    await act(async () =>
+      refine.mutate.mock.calls[0][1].onError({
+        message: 'Заявка #3 изменилась — откройте заявку заново (EARS-548).',
+      }),
+    )
+
+    // The re-read brings the request as it now is: a new token, a new date.
+    refine.custom.data = snapshot({
+      requests: QUEUE.map((row) =>
+        row.id === 3 ? { ...row, snapshot: 'token-2', occurredOn: '2026-11-05' } : row,
+      ),
+    })
+    rerender(React.createElement(RequestsBoardScreen))
+
+    const fresh = within(screen.getByRole('dialog')).getByRole('region', {
+      name: 'Отметить оплату',
+    })
+    expect(within(fresh).getByLabelText('Дата оплаты')).toHaveProperty('value', '2026-11-05')
+    expect(within(fresh).getByRole('alert').textContent).toBe(
+      'Заявка #3 изменилась — откройте заявку заново.',
+    )
+    fireEvent.click(within(fresh).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(2))
+    expect(refine.mutate.mock.calls[1][0].values).toMatchObject({
+      snapshot: 'token-2',
+      occurredOn: '2026-11-05',
+    })
   })
 
   it('EARS-543/545: a chosen receipt is attached to the request once the act has posted', async () => {
@@ -705,6 +750,46 @@ describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
     const upload = refine.mutate.mock.calls[1][0]
     expect(upload.url).toBe('/p/finance/api/documents')
     expect((upload.values as FormData).get('intakeItemId')).toBe('3')
+  })
+
+  it('EARS-545: a receipt that fails after the act says the payment WAS marked, and the next sheet opens clean', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    fireEvent.change(within(form).getByLabelText('Чек или скриншот оплаты'), {
+      target: { files: [new File(['%PDF-1.4'], 'чек.pdf', { type: 'application/pdf' })] },
+    })
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    await act(async () => refine.mutate.mock.calls[0][1].onSuccess({ data: {} }))
+    const upload = refine.mutate.mock.calls[1]
+    expect(upload[0].errorNotification({ message: 'Файл больше предела.' })).toEqual({
+      type: 'error',
+      message: 'Оплата отмечена, но чек не приложен.',
+      description: 'Заявка №3: приложите чек позже в карточке заявки. Файл больше предела.',
+    })
+    await act(async () => upload[1].onError({ message: 'Файл больше предела.' }))
+
+    const next = await openSheet(/^Заявка №1:/)
+    expect(within(next).queryByText('Файл больше предела.')).toBeNull()
+  })
+
+  it('EARS-543/545: an open payment form is the one upload control — the files block hides its picker', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    expect(within(sheet).getByLabelText('Подтверждающий документ')).toBeTruthy()
+    const form = await startAct(sheet, 'Отметить оплату')
+    expect(within(form).getByLabelText('Чек или скриншот оплаты')).toBeTruthy()
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+    fireEvent.click(within(form).getByRole('button', { name: 'Отмена' }))
+    expect(within(sheet).getByLabelText('Подтверждающий документ')).toBeTruthy()
+  })
+
+  it('EARS-542: an already-paid request is not asked for payment details', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    expect(within(sheet).queryByText('Реквизитов или ссылки на оплату нет')).toBeNull()
+    expect(within(sheet).getByText(/Уже оплачено/)).toBeTruthy()
   })
 
   it('EARS-544: «Отметить возврат» prefills the required refund and sends it in the account’s minor units', async () => {
@@ -834,19 +919,49 @@ describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
         data: {
           posted: [],
           planned: [{ id: 3, occurredOn: '2026-09-17' }],
-          excluded: [{ id: 9, reason: 'Валюта списания USD ≠ RUB — валюте счёта пакета.' }],
+          excluded: [
+            {
+              id: 9,
+              reason: 'Валюта списания USD ≠ RUB — валюте счёта пакета (EARS-547, Q2).',
+            },
+          ],
         },
       }),
     )
     const planned = within(dialog).getByRole('region', { name: 'Будет отмечено' })
-    expect(planned.textContent).toMatch(/17\.09\.2026№3/)
-    expect(within(dialog).getByRole('region', { name: 'Не войдут в пакет' }).textContent).toMatch(
-      /№9.*Валюта списания USD ≠ RUB/,
-    )
+    expect(planned.textContent).toMatch(/№3.*17\.09\.2026/)
+    const left = within(dialog).getByRole('region', { name: 'Не войдут в пакет' }).textContent
+    expect(left).toMatch(/№9.*Валюта списания USD ≠ RUB — валюте счёта пакета\.$/)
+    expect(left).not.toMatch(/EARS-/)
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Отметить 1 как оплаченные' }))
     expect(refine.mutate).toHaveBeenCalledTimes(2)
     expect(refine.mutate.mock.calls[1][0].values).toMatchObject({ preview: false, accountId: 1 })
+    // The confirm sends the very rows and tokens the preview was asked for.
+    expect(refine.mutate.mock.calls[1][0].values.items).toEqual(preview.values.items)
+  })
+
+  it('EARS-547: on «Вернуть сотруднику» the bulk act reads «как возвращённые»', async () => {
+    const second = item({
+      id: 14,
+      stage: 'reimburse',
+      alreadyPaid: true,
+      personalFunds: true,
+      memberName: 'Б. Сидорова',
+      counterparty: null,
+      display: rubDisplay(50_000n),
+    })
+    refine.custom.data = snapshot({ requests: [...QUEUE, second] })
+    renderScreen()
+    fireEvent.click(
+      within(group('Вернуть сотруднику')).getByRole('button', {
+        name: 'Отметить все 2 как возвращённые…',
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByRole('heading', { name: 'Отметить все 2 как возвращённые' }),
+    ).toBeTruthy()
   })
 
   it('EARS-547: cancelling the bulk dialog posts nothing', async () => {

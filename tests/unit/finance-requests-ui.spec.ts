@@ -1198,7 +1198,7 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
     openCard(42)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
 
-    const title = within(screen.getByRole('dialog')).getByText(new RegExp(LONG_NOTE.slice(0, 30)))
+    const title = within(screen.getByRole('dialog')).getByRole('heading', { name: LONG_NOTE })
     expect(title.textContent).toContain(LONG_NOTE)
     expect(clippedInsideSheet(title)).toBe(false)
     expect(title.className).toMatch(/break-words|break-all|wrap-anywhere/)

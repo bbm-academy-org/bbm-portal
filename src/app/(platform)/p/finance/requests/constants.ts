@@ -86,9 +86,26 @@ export const DOCUMENT_KIND_LABELS: Record<string, string> = {
 export function errorMessage(error: unknown, fallback: string): string {
   if (typeof error === 'object' && error !== null && 'message' in error) {
     const message = (error as { message?: unknown }).message
-    if (typeof message === 'string' && message.trim()) return message
+    if (typeof message === 'string' && message.trim()) return ownerFacingText(message)
   }
   return fallback
+}
+
+/** «(EARS-543/544, EARS-548)», «(EARS-547, Q2)», «(EARS-529, решение 34 от …)» — a spec citation in brackets. */
+const CITATION = /\s*\(EARS-\d+[^()]*\)/g
+/** A bare «EARS-319/328» left in running text. */
+const BARE_CODE = /\s*\bEARS-\d+(?:\/\d+)*(?:,\s*EARS-\d+(?:\/\d+)*)*/g
+const ISO_DAY = /\b(\d{4})-(\d{2})-(\d{2})(?!\d)/g
+
+/**
+ * A module refusal as the OWNER reads it (review of #564, UX 7). The module
+ * writes its refusals for the record — they cite the spec clause and carry
+ * ISO dates, and the logs and the tests keep them so. On the screen the
+ * clause is noise and the date is in the register's one format: the codes go,
+ * and «2026-11-10» reads «10.11.2026». The words themselves are kept.
+ */
+export function ownerFacingText(message: string): string {
+  return message.replace(CITATION, '').replace(BARE_CODE, '').replace(ISO_DAY, '$3.$2.$1').trim()
 }
 
 export function formatDate(iso: string): string {

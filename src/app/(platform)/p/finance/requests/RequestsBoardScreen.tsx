@@ -46,9 +46,11 @@ import {
   bulkResultMessage,
   linkedRequestId,
   linkedRequestNotice,
+  receiptAfterActFailed,
   type BulkBody,
   type BulkGroup,
   type BulkPreview,
+  type ReceiptAct,
 } from './request-sheet-model'
 import { RequestsQueue } from './RequestsQueue'
 import { RequestsSkeleton } from './RequestsSkeleton'
@@ -159,6 +161,12 @@ const ACT_FAILED: Record<RequestAct, string> = {
   'mark-reimbursed': 'Возврат не отмечен.',
 }
 
+/** The form a refused act was sent from — reopened when the re-read remounts the sheet. */
+function openingOfAct(act: RequestAct): SheetOpening {
+  if (act === 'mark-paid' || act === 'mark-reimbursed') return 'pay'
+  return act === 'refuse' ? 'refuse' : null
+}
+
 /** What a board drop opens in the sheet — the drag initiates, it never decides. */
 function openingOfDrop(act: 'approve' | 'confirm' | 'refuse'): SheetOpening {
   if (act === 'refuse') return 'refuse'
@@ -228,6 +236,15 @@ export function RequestsBoardScreen() {
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
   const [opening, setOpening] = React.useState<SheetOpening>(null)
   const [actFailure, setActFailure] = React.useState<string | undefined>(undefined)
+  /**
+   * THE FORM A REFUSED ACT CAME FROM (review of #564, S1). The sheet is keyed
+   * on the list row's snapshot token, so the re-read after a stale refusal
+   * REMOUNTS it on the request as it now is; this tells the remount to open
+   * the same form again — with fresh defaults and the fresh token — with the
+   * refusal shown in it. A refusal that changed nothing keeps the key, so the
+   * open form and what the owner typed stay as they are.
+   */
+  const [refusedForm, setRefusedForm] = React.useState<SheetOpening>(null)
   const [bulk, setBulk] = React.useState<{ group: BulkGroup; rows: RequestBoardItem[] } | null>(
     null,
   )
@@ -276,6 +293,7 @@ export function RequestsBoardScreen() {
   const closeSheets = React.useCallback(() => {
     setSelectedId(null)
     setOpening(null)
+    setRefusedForm(null)
     setFormFor(null)
     setUploadFailure(undefined)
     setActFailure(undefined)
@@ -296,7 +314,7 @@ export function RequestsBoardScreen() {
    * the receipt is attached to the posted request.
    */
   const attachDocument = React.useCallback(
-    (request: RequestBoardItem, file: File, kind: string) => {
+    (request: RequestBoardItem, file: File, kind: string, after?: ReceiptAct) => {
       setUploadFailure(undefined)
       setUploading(true)
       const body = new FormData()
@@ -313,11 +331,17 @@ export function RequestsBoardScreen() {
             message: 'Документ приложен.',
             description: `Заявка №${request.id}`,
           },
-          errorNotification: (error: unknown) => ({
-            type: 'error' as const,
-            message: 'Не удалось приложить документ.',
-            description: errorMessage(error, `Заявка №${request.id}`),
-          }),
+          errorNotification: (error: unknown) =>
+            after === undefined
+              ? {
+                  type: 'error' as const,
+                  message: 'Не удалось приложить документ.',
+                  description: errorMessage(error, `Заявка №${request.id}`),
+                }
+              : {
+                  type: 'error' as const,
+                  ...receiptAfterActFailed(after, request.id, errorMessage(error, '')),
+                },
         },
         {
           onSuccess: () => {
@@ -327,6 +351,9 @@ export function RequestsBoardScreen() {
           },
           onError: (error: unknown) => {
             setUploading(false)
+            // After an act the sheet is already closed: the toast says it
+            // all, and nothing is left to surface in the NEXT sheet opened.
+            if (after !== undefined) return
             setUploadFailure(errorMessage(error, 'Не удалось приложить документ.'))
           },
         },
@@ -354,6 +381,7 @@ export function RequestsBoardScreen() {
       receipt?: ActReceipt,
     ) => {
       setActFailure(undefined)
+      setRefusedForm(null)
       mutate(
         {
           url: `${REQUESTS_ENDPOINT}/${request.id}/actions`,
@@ -377,12 +405,15 @@ export function RequestsBoardScreen() {
           onSuccess: () => {
             closeSheets()
             dropRequestLink()
-            if (receipt !== undefined) attachDocument(request, receipt.file, receipt.kind)
+            if (receipt !== undefined && (act === 'mark-paid' || act === 'mark-reimbursed')) {
+              attachDocument(request, receipt.file, receipt.kind, act)
+            }
             void refetch()
             void refreshRegister()
           },
           onError: (error: unknown) => {
             setActFailure(errorMessage(error, ACT_FAILED[act]))
+            setRefusedForm(openingOfAct(act))
             void refetch()
           },
         },
@@ -426,6 +457,7 @@ export function RequestsBoardScreen() {
             type: 'success' as const,
             message: bulkResultMessage(
               (response as { data: { posted: unknown[]; excluded: unknown[] } }).data,
+              body.group,
             ),
             description: 'Пакетная отметка оплаты',
           }),
@@ -549,9 +581,20 @@ export function RequestsBoardScreen() {
       return
     }
     setFormFor(null)
+    openSheet(request.id, 'pay')
+  }
+
+  /**
+   * Every way into the details sheet — a row, a card, a row act, a drop —
+   * starts clean: no refusal, no upload failure and no remembered form from
+   * the request opened before (review of #564, S2).
+   */
+  function openSheet(id: number, next: SheetOpening) {
     setActFailure(undefined)
-    setOpening('pay')
-    setSelectedId(request.id)
+    setUploadFailure(undefined)
+    setRefusedForm(null)
+    setOpening(next)
+    setSelectedId(id)
   }
 
   function onDrop(status: FinanceRequestBoardStatus) {
@@ -565,9 +608,7 @@ export function RequestsBoardScreen() {
         toast.error('Перенос не выполнен.', { description: plan.message })
         return
       }
-      setActFailure(undefined)
-      setSelectedId(request.id)
-      setOpening(openingOfDrop(plan.act))
+      openSheet(request.id, openingOfDrop(plan.act))
     }
   }
 
@@ -697,11 +738,7 @@ export function RequestsBoardScreen() {
                               request={request}
                               canApprove={permissions.canApprove}
                               precision={currencyPrecision(references.currencies, request.currency)}
-                              onOpen={() => {
-                                setOpening(null)
-                                setActFailure(undefined)
-                                setSelectedId(request.id)
-                              }}
+                              onOpen={() => openSheet(request.id, null)}
                             />
                           ))}
                         </section>
@@ -716,11 +753,7 @@ export function RequestsBoardScreen() {
                   canApprove={permissions.canApprove}
                   fx={fx}
                   toolbarEnd={viewToggle}
-                  onOpen={(request) => {
-                    setOpening(null)
-                    setActFailure(undefined)
-                    setSelectedId(request.id)
-                  }}
+                  onOpen={(request) => openSheet(request.id, null)}
                   onAct={runQueueAct}
                   onBulk={(group, rows) => {
                     setBulkFailure(undefined)
@@ -753,15 +786,18 @@ export function RequestsBoardScreen() {
         <RequestDetailsSheet
           // The document count is part of the identity: when an upload lands,
           // the re-read brings a request that carries it, and re-keying resets
-          // the attach picker instead of leaving the just-sent file in it.
-          key={`${selected.id}-${opening ?? 'none'}-${selected.documents.length}`}
+          // the attach picker instead of leaving the just-sent file in it. So
+          // is the list row's snapshot token (review of #564, S1): a request
+          // that changed under an open form remounts it on what it now is —
+          // fresh defaults, fresh token — never a stale form with a new token.
+          key={`${selected.id}-${opening ?? 'none'}-${selected.documents.length}-${selected.snapshot ?? ''}`}
           request={selected}
           references={references}
           canApprove={permissions.canApprove}
           canEnter={permissions.canEnter}
           today={fx.today}
           pending={mutation.isPending}
-          opening={opening}
+          opening={opening ?? refusedForm}
           actFailure={actFailure}
           uploading={uploading}
           uploadFailure={uploadFailure}

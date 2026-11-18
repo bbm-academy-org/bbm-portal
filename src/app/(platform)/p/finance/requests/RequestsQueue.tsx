@@ -107,7 +107,7 @@ export type RequestsQueueProps = {
   toolbarEnd?: React.ReactNode
   onOpen: (request: RequestBoardItem) => void
   onAct: (request: RequestBoardItem, act: QueueAct) => void
-  /** «Отметить все N как оплаченные…» on a group header (EARS-547) — the rows it shows. */
+  /** «Отметить все N как оплаченные…» / «…как возвращённые…» on a group header (EARS-547) — the rows it shows. */
   onBulk?: (group: BulkGroup, rows: RequestBoardItem[]) => void
 }
 
@@ -665,7 +665,7 @@ function QueueGroup({
         )}
         {bulk === null ? null : (
           <Button variant="outline" size="sm" onClick={() => onBulk?.(bulk, rows)}>
-            {bulkLabel(rows.length)}
+            {bulkLabel(rows.length, bulk)}
           </Button>
         )}
       </div>

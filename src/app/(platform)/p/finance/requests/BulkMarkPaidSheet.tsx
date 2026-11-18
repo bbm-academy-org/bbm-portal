@@ -17,19 +17,22 @@ import {
   SheetTitle,
 } from '@/ui/sheet'
 
-import { formatDate } from './constants'
+import { formatDate, ownerFacingText } from './constants'
 import { useDisplayCurrency } from './display-currency-store'
 import type { RequestBoardItem, RequestBoardReferences } from './request-board-contract'
 import {
   formatDisplayMoney,
   missingRateNote,
   QUEUE_GROUPS,
+  queuePayee,
   queueRowTitle,
   requestCountLabel,
   sumInDisplay,
 } from './request-queue-model'
 import {
+  bulkConfirmLabel,
   bulkPlannedRows,
+  bulkTitle,
   toBulkBody,
   type BulkBody,
   type BulkGroup,
@@ -46,8 +49,9 @@ type PreviewState =
   | { kind: 'failed'; message: string }
 
 /**
- * «Отметить все N как оплаченные…» — the bulk retroactive act's confirmation
- * (spec 339 EARS-547/548, #551).
+ * «Отметить все N как оплаченные…» («…как возвращённые…» on «Вернуть
+ * сотруднику») — the bulk retroactive act's confirmation (spec 339
+ * EARS-547/548, #551).
  *
  * THE SCREEN'S ONE OVERLAY SHAPE. The issue says «dialog»; this screen runs
  * every act through a `Sheet` (`docs/design/ui-whitelist.md` → «One overlay
@@ -125,7 +129,7 @@ export function BulkMarkPaidSheet({
       <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-lg">
         <SheetHeader className="gap-1 pr-12">
           <SheetTitle className="font-heading text-xl font-semibold tracking-tight">
-            Отметить все {rows.length} как оплаченные
+            {bulkTitle(rows.length, group)}
           </SheetTitle>
           <SheetDescription>
             «{QUEUE_GROUPS[group].title}»: одним актом, с одного счёта, без чеков — чеки
@@ -231,16 +235,16 @@ export function BulkMarkPaidSheet({
                   <ol className="divide-y text-sm">
                     {planned.map(({ request, occurredOn }) => {
                       const shown = request.display[currency]
+                      // The row WRAPS rather than truncates (review of #564,
+                      // UX 3): on a phone «№16 · [see…» identifies nothing.
                       return (
                         <li key={request.id} className="flex items-baseline gap-3 py-1.5">
-                          <span className="w-20 shrink-0 text-muted-foreground tabular-nums">
-                            {formatDate(occurredOn)}
-                          </span>
-                          <span
-                            className="min-w-0 flex-1 truncate"
-                            title={queueRowTitle(request).title}
-                          >
+                          <span className="min-w-0 flex-1 break-words">
                             №{request.id} · {queueRowTitle(request).title}
+                            <span className="block text-muted-foreground">
+                              <span className="tabular-nums">{formatDate(occurredOn)}</span> ·{' '}
+                              {queuePayee(request).name}
+                            </span>
                           </span>
                           <span className="shrink-0 tabular-nums">
                             {shown.kind === 'converted'
@@ -265,7 +269,9 @@ export function BulkMarkPaidSheet({
                           №{row.id}
                           {byId.has(row.id) ? ` · ${queueRowTitle(byId.get(row.id)!).title}` : ''}
                         </span>
-                        <span className="block text-muted-foreground">{row.reason}</span>
+                        <span className="block text-muted-foreground">
+                          {ownerFacingText(row.reason)}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -296,7 +302,7 @@ export function BulkMarkPaidSheet({
               )
             }}
           >
-            {pending ? 'Отмечаем…' : `Отметить ${planned.length} как оплаченные`}
+            {pending ? 'Отмечаем…' : bulkConfirmLabel(planned.length, group)}
           </Button>
           <Button variant="outline" disabled={pending} onClick={onClose}>
             Отмена

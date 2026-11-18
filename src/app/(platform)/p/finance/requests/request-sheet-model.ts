@@ -187,39 +187,87 @@ export function noteHasPaymentDetails(note: string | null): boolean {
   return note !== null && PAYMENT_DETAILS.test(note)
 }
 
+type Money = { amount: string; currency: string }
+
+/**
+ * What is owed back, in the currency the «Отметить возврат» form asks for
+ * (EARS-544). `fixed` — the form asks exactly this sum in this currency: a
+ * booked or stated debt, or a refund whose every account is in the document
+ * currency; `original` is the request's own sum when it is in another one.
+ * `by-account` — the currency follows the chosen account: from an account in
+ * the document currency the refund is `same`, from any other it is the amount
+ * actually debited — a fact the act names, never computed from a rate.
+ */
+export type RefundDue =
+  | { kind: 'fixed'; due: Money; original: Money | null }
+  | { kind: 'by-account'; same: Money | null; original: Money }
+
 export type HowToPay =
   | {
       kind: 'reimburse'
       member: string
       paidOn: string | null
-      /** What is owed back, in the liability currency; `null` while the refund currency is open. */
-      due: { amount: string; currency: string } | null
+      refund: RefundDue
       /** The debt is booked (the request posted) but not yet paid back. */
       booked: boolean
     }
   | { kind: 'details'; source: 'note' | 'document' }
+  /** Money already left a company account (`already_paid`): nothing to ask the author for. */
+  | { kind: 'paid'; paidOn: string | null }
   | { kind: 'missing' }
 
 /**
  * The «Как оплатить» block of an open request (EARS-542). A personal-funds
- * request is a refund to the member; any other is a payment to someone, and
- * the block says whether its details are on the request — in the note or as an
- * attached document — or warns that they are not.
+ * request is a refund to the member. Any other is a payment to someone — but
+ * only while the owner still has to pay it (`decide` / `pay`, not yet paid):
+ * then the block says whether its details are on the request — in the note or
+ * as an attached document — or warns that they are not. A request filed as
+ * already paid is never asked for details; it only waits for its marking.
  */
-export function howToPay(request: RequestBoardItem): HowToPay | null {
+export function howToPay(
+  request: RequestBoardItem,
+  references: RequestBoardReferences,
+): HowToPay | null {
   if (!['decide', 'pay', 'reimburse'].includes(request.stage)) return null
   if (request.personalFunds) {
     return {
       kind: 'reimburse',
       member: request.memberName ?? request.createdByName ?? '—',
       paidOn: request.occurredOn,
-      due: refundDue(request),
+      refund: refundOwed(request, references),
       booked: request.status === 'posted',
     }
   }
+  if (request.status === 'posted' || !['decide', 'pay'].includes(request.stage)) return null
+  if (request.alreadyPaid) return { kind: 'paid', paidOn: request.occurredOn }
   if (noteHasPaymentDetails(request.note)) return { kind: 'details', source: 'note' }
   if (request.hasDocument) return { kind: 'details', source: 'document' }
   return { kind: 'missing' }
+}
+
+/** EARS-544's refund as «Как оплатить» states it — see `RefundDue`. */
+export function refundOwed(
+  request: RequestBoardItem,
+  references: RequestBoardReferences,
+): RefundDue {
+  const original = {
+    amount: withFee(request, BigInt(request.amount), request.currency).toString(),
+    currency: request.currency,
+  }
+  const fixed = refundCurrencyFixed(request)
+  if (fixed !== null) {
+    const due = refundDue(request)!
+    return { kind: 'fixed', due, original: due.currency === request.currency ? null : original }
+  }
+  const currencies = new Set(refundAccounts(request, references).map((row) => row.currency))
+  if (currencies.size === 1 && currencies.has(request.currency)) {
+    return { kind: 'fixed', due: original, original: null }
+  }
+  return {
+    kind: 'by-account',
+    same: currencies.has(request.currency) ? original : null,
+    original,
+  }
 }
 
 /** The fee added to `amount` when it is recorded in the same currency (the shipped fee rule). */
@@ -419,9 +467,14 @@ export function marketBlockView(
   }
   if (block.kind === 'not_posted') {
     if (block.statedPaidAmount === null) {
+      // The act that will name the fact is the stage's own: in «Вернуть
+      // сотруднику» it is «Отметить возврат», whose refund sum is the fact.
       return {
         kind: 'note',
-        text: 'факт не внесён — укажите списанную сумму при отметке оплаты',
+        text:
+          request.stage === 'reimburse'
+            ? 'факт не внесён — укажите сумму возврата при «Отметить возврат»'
+            : 'факт не внесён — укажите списанную сумму при отметке оплаты',
       }
     }
     return {
@@ -745,11 +798,36 @@ export function receiptRefusal(file: File | null): string | null {
   return file === null ? null : documentUploadRefusal(file)
 }
 
+/** The acts whose form may carry a receipt, uploaded once the act has posted. */
+export type ReceiptAct = 'mark-paid' | 'mark-reimbursed'
+
+/**
+ * The toast when the receipt of a payment form fails AFTER its act posted
+ * (review of #564, S2): the money act stands — say so first — and the receipt
+ * is attached later in the request's sheet.
+ */
+export function receiptAfterActFailed(
+  act: ReceiptAct,
+  id: number,
+  reason: string,
+): { message: string; description: string } {
+  const done = act === 'mark-paid' ? 'Оплата отмечена' : 'Возврат отмечен'
+  return {
+    message: `${done}, но чек не приложен.`,
+    description: [
+      `Заявка №${id}: приложите чек позже в карточке заявки.`,
+      reason === '' ? null : reason,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  }
+}
+
 // ── the bulk dialog (EARS-547/548) ──────────────────────────────────────────
 
 export type BulkGroup = 'pay' | 'reimburse'
 
-/** «Отметить все N как оплаченные…» — on «К оплате» / «Вернуть сотруднику», two rows or more, the approve role. */
+/** The bulk act on «К оплате» / «Вернуть сотруднику» — two rows or more, the approve role. */
 export function bulkGroupOf(
   stage: QueueStage,
   rows: readonly RequestBoardItem[],
@@ -760,8 +838,25 @@ export function bulkGroupOf(
   return rows.every((row) => row.snapshot !== null) ? stage : null
 }
 
-export function bulkLabel(count: number): string {
-  return `Отметить все ${count} как оплаченные…`
+/** «как оплаченные» on «К оплате», «как возвращённые» on «Вернуть сотруднику» (EARS-547). */
+const BULK_DONE: Record<BulkGroup, { label: string; result: string }> = {
+  pay: { label: 'как оплаченные', result: 'Отмечено оплаченными' },
+  reimburse: { label: 'как возвращённые', result: 'Отмечено возвращёнными' },
+}
+
+/** «Отметить все N как оплаченные» / «…как возвращённые» — the dialog's heading. */
+export function bulkTitle(count: number, group: BulkGroup): string {
+  return `Отметить все ${count} ${BULK_DONE[group].label}`
+}
+
+/** The group header's act: the heading with «…», for it opens a dialog. */
+export function bulkLabel(count: number, group: BulkGroup): string {
+  return `${bulkTitle(count, group)}…`
+}
+
+/** «Отметить N как оплаченные» / «…как возвращённые» — the dialog's confirm. */
+export function bulkConfirmLabel(count: number, group: BulkGroup): string {
+  return `Отметить ${count} ${BULK_DONE[group].label}`
 }
 
 export type BulkPreview = {
@@ -806,12 +901,14 @@ export function bulkPlannedRows(
 }
 
 /** The toast after a confirmed batch: what posted, what was left out. */
-export function bulkResultMessage(result: { posted: unknown[]; excluded: unknown[] }): string {
+export function bulkResultMessage(
+  result: { posted: unknown[]; excluded: unknown[] },
+  group: BulkGroup,
+): string {
   const posted = result.posted.length
   const excluded = result.excluded.length
-  return excluded === 0
-    ? `Отмечено оплаченными: ${posted}.`
-    : `Отмечено оплаченными: ${posted}, исключено: ${excluded}.`
+  const done = BULK_DONE[group].result
+  return excluded === 0 ? `${done}: ${posted}.` : `${done}: ${posted}, исключено: ${excluded}.`
 }
 
 // ── the deep link `?request=<id>` (lead addition on #551; the §J report links here) ──

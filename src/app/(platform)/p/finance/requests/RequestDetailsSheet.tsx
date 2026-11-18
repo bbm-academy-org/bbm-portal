@@ -44,7 +44,7 @@ import {
   formatRequestMoney,
   requestPurposeLabel,
 } from './request-board-model'
-import { formatOriginalMoney, queuePayee } from './request-queue-model'
+import { formatOriginalMoney, queuePayee, queueRowTitle } from './request-queue-model'
 import {
   createMarkPaidSchema,
   createReimburseSchema,
@@ -825,15 +825,30 @@ export function RequestDetailsSheet({
   const acts = sheetActs(request, { canApprove })
   const amount = sheetAmount(request, currency, references)
   const fee = sheetFee(request, references)
-  const how = howToPay(request)
+  const how = howToPay(request, references)
   const market = marketBlockView(request, currency, references)
   const timeline = sheetTimeline(request)
   const payee = queuePayee(request)
-  // The prototype's heading: what the money is for. The author's own words
-  // follow under «Комментарий», in full.
-  const title = requestPurposeLabel(request)
+  // The SAME identifying line as the queue row (review of #564, UX 4): what the
+  // author wrote — the note's first line — else the purpose. When the note
+  // took the heading, the purpose follows it as the secondary line; the
+  // author's words stay in full under «Комментарий».
+  const heading = queueRowTitle(request)
+  const purpose = requestPurposeLabel(request)
+  const secondary = heading.title === purpose || purpose === '—' ? null : purpose
   const noReceipt = lacksReceipt(request)
   const mayAttach = mayAttachDocument(request, permissions)
+
+  const money = (value: { amount: string; currency: string }) =>
+    formatOriginalMoney(
+      value.amount,
+      value.currency,
+      currencyPrecision(references.currencies, value.currency),
+    )
+  // While a payment form is open its own «Чек или скриншот оплаты» is the one
+  // upload control (review of #564, UX 2): two pickers at once leave the
+  // owner guessing which one counts.
+  const paymentFormOpen = form === 'mark-paid' || form === 'mark-reimbursed'
 
   const start = (act: SheetAct) => {
     const next = sheetFormOf(act)
@@ -862,8 +877,11 @@ export function RequestDetailsSheet({
             ) : null}
           </SheetDescription>
           <SheetTitle className="font-heading text-xl font-semibold tracking-tight break-words">
-            {title}
+            {heading.title}
           </SheetTitle>
+          {secondary === null ? null : (
+            <p className="text-sm break-words text-muted-foreground">{secondary}</p>
+          )}
           <div className="pt-2">
             <p className="font-heading text-3xl font-semibold tracking-tight tabular-nums">
               {amount.main}
@@ -910,15 +928,26 @@ export function RequestDetailsSheet({
               {how.kind === 'reimburse' ? (
                 <Alert role="status">
                   <AlertDescription>
-                    {how.member} заплатил(а)
-                    {how.paidOn === null ? '' : ` ${formatDate(how.paidOn)}`} из своих денег.
-                    {how.due === null
-                      ? null
-                      : ` ${how.booked ? 'Долг записан, вернуть' : 'Вернуть'}: ${formatOriginalMoney(
-                          how.due.amount,
-                          how.due.currency,
-                          currencyPrecision(references.currencies, how.due.currency),
-                        )}.`}
+                    <p>
+                      {how.member} заплатил(а)
+                      {how.paidOn === null ? '' : ` ${formatDate(how.paidOn)}`} из своих денег.{' '}
+                      {how.refund.kind === 'fixed'
+                        ? `${how.booked ? 'Долг записан, вернуть' : 'Вернуть'}: ${money(how.refund.due)}.`
+                        : how.refund.same === null
+                          ? 'Вернуть: сумму, фактически списанную с карты, — в валюте счёта возврата.'
+                          : `Вернуть: ${money(how.refund.same)} со счёта в ${how.refund.same.currency}; со счёта в другой валюте — сумму, фактически списанную с карты.`}
+                    </p>
+                    {how.refund.original === null ||
+                    (how.refund.kind === 'by-account' && how.refund.same !== null) ? null : (
+                      <p className="text-xs">заявлено {money(how.refund.original)}</p>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              ) : how.kind === 'paid' ? (
+                <Alert role="status">
+                  <AlertDescription>
+                    Уже оплачено{how.paidOn === null ? '' : ` ${formatDate(how.paidOn)}`} — осталось
+                    отметить оплату.
                   </AlertDescription>
                 </Alert>
               ) : how.kind === 'details' ? (
@@ -1009,7 +1038,7 @@ export function RequestDetailsSheet({
                   : emptyDocumentNote(request, canEnter, canApprove)}
               </p>
             )}
-            {mayAttach ? (
+            {mayAttach && !paymentFormOpen ? (
               <AttachDocumentForm
                 key={request.documents.length}
                 pending={uploading}

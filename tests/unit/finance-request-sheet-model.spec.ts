@@ -7,6 +7,7 @@ import type {
   RequestMarketBlock,
 } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import {
+  bulkConfirmLabel,
   bulkGroupOf,
   bulkLabel,
   bulkPlannedRows,
@@ -23,6 +24,7 @@ import {
   marketBlockView,
   mayAttachDocument,
   noteHasPaymentDetails,
+  receiptAfterActFailed,
   refundAccounts,
   refundDue,
   reimburseDefaults,
@@ -35,6 +37,7 @@ import {
   toMarkPaidBody,
   toReimburseBody,
 } from '@/app/(platform)/p/finance/requests/request-sheet-model'
+import { ownerFacingText } from '@/app/(platform)/p/finance/requests/constants'
 import { deriveExpenseRequestStage } from '@/lib/finance/intake/request-queue'
 
 /**
@@ -205,47 +208,107 @@ describe('the details sheet — «Как оплатить» (EARS-542)', () => {
     expect(noteHasPaymentDetails('р/с 40702810900000012345, БИК 044525225')).toBe(true)
     expect(noteHasPaymentDetails('счёт 4070281090000001234')).toBe(false) // 19 digits
     expect(noteHasPaymentDetails('реквизиты в чате')).toBe(false)
-    expect(howToPay(item({ note: 'https://pay.example/1' }))).toEqual({
+    expect(howToPay(item({ note: 'https://pay.example/1' }), REFERENCES)).toEqual({
       kind: 'details',
       source: 'note',
     })
   })
 
   it('EARS-542: an attached document counts as the details too', () => {
-    expect(howToPay(item({ hasDocument: true }))).toEqual({ kind: 'details', source: 'document' })
+    expect(howToPay(item({ hasDocument: true }), REFERENCES)).toEqual({
+      kind: 'details',
+      source: 'document',
+    })
   })
 
   it('EARS-542: an approved pre-spend request with no link, no account number and no document warns', () => {
-    expect(howToPay(item({ status: 'approved', note: 'Аренда студии' }))).toEqual({
+    expect(howToPay(item({ status: 'approved', note: 'Аренда студии' }), REFERENCES)).toEqual({
       kind: 'missing',
     })
   })
 
   it('EARS-542/544: a personal-funds request says who paid, when, and how much to return', () => {
-    expect(
-      howToPay(
-        item({
-          alreadyPaid: true,
-          personalFunds: true,
-          occurredOn: '2026-11-01',
-          memberName: 'Мария',
-          amount: '450000',
-          feeAmount: '5000',
-          feeCurrency: 'RUB',
-        }),
-      ),
-    ).toEqual({
+    const personal = item({
+      alreadyPaid: true,
+      personalFunds: true,
+      occurredOn: '2026-11-01',
+      memberName: 'Мария',
+      amount: '450000',
+      feeAmount: '5000',
+      feeCurrency: 'RUB',
+    })
+    const rubOnly = { ...REFERENCES, accounts: REFERENCES.accounts.slice(0, 2) }
+    expect(howToPay(personal, rubOnly)).toEqual({
       kind: 'reimburse',
       member: 'Мария',
       paidOn: '2026-11-01',
-      due: { amount: '455000', currency: 'RUB' },
+      refund: { kind: 'fixed', due: { amount: '455000', currency: 'RUB' }, original: null },
       booked: false,
+    })
+    // With a USD account too, the refund follows the account: amount + fee
+    // from a RUB one, the debited fact from any other (EARS-544).
+    expect(howToPay(personal, REFERENCES)).toMatchObject({
+      refund: {
+        kind: 'by-account',
+        same: { amount: '455000', currency: 'RUB' },
+        original: { amount: '455000', currency: 'RUB' },
+      },
+    })
+  })
+
+  it('EARS-542/544: a USD refund is stated in the currency the refund form asks for, with the original small', () => {
+    const usd = {
+      alreadyPaid: true,
+      personalFunds: true,
+      occurredOn: '2026-11-13',
+      currency: 'USD',
+      amount: '10000',
+    } as const
+    const rubOnly = { ...REFERENCES, accounts: REFERENCES.accounts.slice(0, 2) }
+    // Only RUB accounts: the form asks the roubles actually debited — no sum is invented.
+    expect(howToPay(item(usd), rubOnly)).toMatchObject({
+      refund: { kind: 'by-account', same: null, original: { amount: '10000', currency: 'USD' } },
+    })
+    // A booked RUB debt: the form asks exactly its roubles; the dollars are the original.
+    expect(
+      howToPay(
+        item({
+          ...usd,
+          status: 'posted',
+          operationId: 9,
+          paidAmount: '901600',
+          paidCurrency: 'RUB',
+        }),
+        REFERENCES,
+      ),
+    ).toMatchObject({
+      booked: true,
+      refund: {
+        kind: 'fixed',
+        due: { amount: '901600', currency: 'RUB' },
+        original: { amount: '10000', currency: 'USD' },
+      },
+    })
+  })
+
+  it('EARS-542: an already-paid company-account request is never asked for details — it waits for its marking', () => {
+    expect(
+      howToPay(
+        item({ status: 'approved', alreadyPaid: true, occurredOn: '2026-11-05' }),
+        REFERENCES,
+      ),
+    ).toEqual({ kind: 'paid', paidOn: '2026-11-05' })
+    expect(howToPay(item({ alreadyPaid: true, occurredOn: '2026-11-05' }), REFERENCES)).toEqual({
+      kind: 'paid',
+      paidOn: '2026-11-05',
     })
   })
 
   it('EARS-542: a closed request has nothing to pay — no block', () => {
-    expect(howToPay(item({ status: 'posted', alreadyPaid: true, operationId: 9 }))).toBe(null)
-    expect(howToPay(item({ status: 'refused' }))).toBe(null)
+    expect(
+      howToPay(item({ status: 'posted', alreadyPaid: true, operationId: 9 }), REFERENCES),
+    ).toBe(null)
+    expect(howToPay(item({ status: 'refused' }), REFERENCES)).toBe(null)
   })
 })
 
@@ -504,6 +567,22 @@ describe('the details sheet — «Курс против рынка» (EARS-563)'
     })
   })
 
+  it('EARS-563/535: in «Вернуть сотруднику» an unstated fact is named by «Отметить возврат» — its refund sum', () => {
+    const personal = item({
+      alreadyPaid: true,
+      personalFunds: true,
+      occurredOn: '2026-11-13',
+      currency: 'USD',
+      amount: '10000',
+      market: { kind: 'not_posted', statedPaidAmount: null },
+    })
+    expect(personal.stage).toBe('reimburse')
+    expect(marketBlockView(personal, 'RUB', REFERENCES)).toEqual({
+      kind: 'note',
+      text: 'факт не внесён — укажите сумму возврата при «Отметить возврат»',
+    })
+  })
+
   it('EARS-563/535: a stated amount reads «факт не проведён» — after «Отметить возврат» in «Вернуть сотруднику», after «Отметить оплату» otherwise', () => {
     const stated = { kind: 'not_posted', statedPaidAmount: '933400' } as const
     const personal = item({
@@ -716,7 +795,9 @@ describe('the bulk dialog (EARS-547/548)', () => {
 
   it('EARS-547: «Отметить все N как оплаченные…» on «К оплате» / «Вернуть сотруднику» with two rows or more, approve role only', () => {
     expect(bulkGroupOf('pay', pay, true)).toBe('pay')
-    expect(bulkLabel(2)).toBe('Отметить все 2 как оплаченные…')
+    expect(bulkLabel(2, 'pay')).toBe('Отметить все 2 как оплаченные…')
+    expect(bulkLabel(3, 'reimburse')).toBe('Отметить все 3 как возвращённые…')
+    expect(bulkConfirmLabel(1, 'reimburse')).toBe('Отметить 1 как возвращённые')
     expect(bulkGroupOf('pay', pay.slice(0, 1), true)).toBe(null)
     expect(bulkGroupOf('pay', pay, false)).toBe(null)
     expect(bulkGroupOf('decide', pay, true)).toBe(null)
@@ -758,9 +839,14 @@ describe('the bulk dialog (EARS-547/548)', () => {
   })
 
   it('EARS-547: the toast counts what posted and what was left out', () => {
-    expect(bulkResultMessage({ posted: [1, 2], excluded: [] })).toBe('Отмечено оплаченными: 2.')
-    expect(bulkResultMessage({ posted: [1], excluded: [2] })).toBe(
+    expect(bulkResultMessage({ posted: [1, 2], excluded: [] }, 'pay')).toBe(
+      'Отмечено оплаченными: 2.',
+    )
+    expect(bulkResultMessage({ posted: [1], excluded: [2] }, 'pay')).toBe(
       'Отмечено оплаченными: 1, исключено: 1.',
+    )
+    expect(bulkResultMessage({ posted: [1, 2], excluded: [] }, 'reimburse')).toBe(
+      'Отмечено возвращёнными: 2.',
     )
   })
 })
@@ -780,6 +866,43 @@ describe('the deep link ?request=<id>', () => {
     expect(linkedRequestNotice(null, [])).toBe(null)
     expect(linkedRequestNotice(99, [{ id: 36 }])).toBe(
       'Заявки №99 нет в списке — она удалена или недоступна вам.',
+    )
+  })
+})
+
+describe('a receipt that fails after its act (review of #564, S2)', () => {
+  it('EARS-545: the toast says the money act stands and the receipt is attached later', () => {
+    expect(receiptAfterActFailed('mark-paid', 36, 'Файл больше предела.')).toEqual({
+      message: 'Оплата отмечена, но чек не приложен.',
+      description: 'Заявка №36: приложите чек позже в карточке заявки. Файл больше предела.',
+    })
+    expect(receiptAfterActFailed('mark-reimbursed', 38, '').message).toBe(
+      'Возврат отмечен, но чек не приложен.',
+    )
+  })
+})
+
+describe('a module refusal as the owner reads it (review of #564, UX 7)', () => {
+  it('drops the spec citations and writes dates as ДД.ММ.ГГГГ, keeping the words', () => {
+    expect(
+      ownerFacingText(
+        'Валюта списания USD ≠ RUB — валюте счёта пакета: сумма неизвестна; отметьте заявку отдельно (EARS-547, Q2).',
+      ),
+    ).toBe(
+      'Валюта списания USD ≠ RUB — валюте счёта пакета: сумма неизвестна; отметьте заявку отдельно.',
+    )
+    expect(
+      ownerFacingText(
+        'Операция от 2026-11-01 не может быть записана после операции от 2026-11-10: FX-результат (EARS-319/328, EARS-543) — отметьте раньше.',
+      ),
+    ).toBe(
+      'Операция от 01.11.2026 не может быть записана после операции от 10.11.2026: FX-результат — отметьте раньше.',
+    )
+    expect(ownerFacingText('Роль выдаёт админ (EARS-529, решение 34 от 2026-09-14).')).toBe(
+      'Роль выдаёт админ.',
+    )
+    expect(ownerFacingText('Дата «01.11» записана не в формате ГГГГ-ММ-ДД.')).toBe(
+      'Дата «01.11» записана не в формате ГГГГ-ММ-ДД.',
     )
   })
 })
