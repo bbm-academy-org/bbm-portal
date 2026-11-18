@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # F2 — Filling the ledger: manual entry, expense requests and one-time history reconstruction (#339)
@@ -100,6 +100,19 @@ the system is closed by one explicit, confirmed bulk act of the owner.
 Vendored as `design-source/finance/RequestPaymentQueue.html`; the
 requirements are spec 339 §I. The board toggle stays.
 
+**Extended by decision 41 (owner 2026-11-18, «Го», #547).** For every
+foreign-currency payment and every currency conversion the owner sees
+**Рынок** (the document amount at the Bank of Russia rate of the payment
+date), **Факт** (what the account actually lost, fees included) and
+**Переплата** — the difference in roubles as an amount, and as a percentage
+worded «хуже / лучше рынка на X%». It shows in the request's details sheet
+and in a «Курс против рынка» report on `/p/finance` (period total, by month,
+by payee and route; payments without a rate or without the actual amount
+are counted, never summed). USDT counts as USD. The comparison is shown,
+never booked: the ledger and its balances stay on recorded amounts. The
+logic comes from the owner's personal budgeting app («Мой курс против
+рынка»), which shows only the percentage. Requirements: spec 339 §J.
+
 The manual-entry surface still needs a Stage-A pick vendored into
 `design-source/` before any markup (`.claude/rules/design-process.md`).
 
@@ -172,6 +185,14 @@ The manual-entry surface still needs a Stage-A pick vendored into
 - **US-22** — As an owner backfilling history, I start from BBM's first operation
   and carry it forward; the accounts stand at zero until the backfilled
   operations move them, so I never enter an opening balance. _(decision 17)_
+- **US-23** — As the owner, for a request paid in a foreign currency I see what
+  it would have cost at the Bank of Russia rate of the payment date, what it
+  actually cost us with fees, and the overpayment in roubles and in percent.
+  _(decision 41)_
+- **US-24** — As the owner, I see for a period how much we overpaid against
+  the Bank of Russia rate in total, by month and by payee or route — currency
+  conversions included — weighted by amount, with the payments that have no
+  rate or no actual amount counted separately. _(decision 41)_
 
 ## Flows
 
@@ -264,6 +285,10 @@ same path as every other source. No existing source changes.
 - A backfilled operation is distinguishable from one captured live.
 - Every operation in the register names the source that produced it.
 - A wrong operation from any source is corrected by reversal, never by editing.
+- A posted foreign-currency request shows its market cost, its actual cost and
+  the overpayment in roubles and percent; a «Курс против рынка» report shows
+  the period's total overpayment and its breakdown, and no ledger balance or
+  report total changes because of a market rate.
 
 ## Out of scope
 

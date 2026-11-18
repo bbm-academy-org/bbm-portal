@@ -1,7 +1,7 @@
 ---
 status: In dev
 issue: 339
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Finance F2 — filling the ledger: requests, documents, backfill, intake layer — spec (issue #339)
@@ -34,6 +34,12 @@ updated: 2026-11-17
   (it reads #549's stage model and must not ship an «Одобрить» button while
   approve still posts); #551 (details sheet, forms, bulk dialog) ← #549 +
   #550. #548 and the #466 → #549 strand run in parallel.
+- **Issues (§J, market valuation of foreign-currency payments, 2026-11-18):**
+  under the same parent #547 — #558 (the Рынок / Факт / Переплата read model
+  and its weighted aggregates; the EARS-553 isolation test's write-path
+  assertion) ← #548 — head of the path; #559 (the «Курс против рынка» report
+  on `/p/finance/reports/market-rate`) ← #548 + #550 + #558; #551 (the details
+  sheet) gains the per-request block and ← #558.
 
 ## Why
 
@@ -133,6 +139,19 @@ these hidden; they are owner-visible items at the go):
    alone (owner decision 39): it never enters a posting, a conversion step, a
    balance or a report (EARS-553). Spec 338 is not amended; the narrowing is
    recorded here and in the #115 decision log.
+   **Widened 2026-11-18 (owner decision 41, §J):** the same rates may also be
+   read as the **market side of a comparison** — what a foreign-currency
+   payment or a conversion would have cost at the Bank of Russia rate of its
+   date, set against what the ledger recorded it actually cost. The line that
+   does not move: no ledger number — a posting, a conversion step, a balance,
+   the F1b current-money card (spec 338 EARS-325, and #425's harvested series
+   that will replace its rate) or an F3 period-report total (decision 18) —
+   reads them, and no stored amount is computed from them (EARS-553
+   rewritten). A comparison is shown, never booked. _Previous wording: «…as
+   a presentation source for the requests queue alone (owner decision 39): it
+   never enters a posting, a conversion step, a balance or a report».
+   (The sentence above is kept as the decision-39 record; this paragraph is
+   the 2026-11-18 amendment.)_
 
 **§I decisions — owner go on the BBMP-281 clickable prototype, Антон,
 2026-11-17** (vendored as `design-source/finance/RequestPaymentQueue.html`;
@@ -151,6 +170,19 @@ recorded as decisions 37–40 on #115):
 - **Decision 39 — one display currency at the Bank of Russia rate.** Every
   amount on the queue is shown in one currency (₽ / $ / €, default ₽) at the
   CBR rate chosen by EARS-550; display only.
+- **Decision 41 (Антон, «Го», 2026-11-18) — the market against the fact, in
+  roubles.** For every foreign-currency payment and every recorded
+  conversion, show **Рынок** (the document amount at the CBR rate of the
+  payment date), **Факт** (what the account actually lost, fees included)
+  and **Переплата** — Факт − Рынок as a money amount in ₽ (the owner wants
+  the amount, not only the percentage) and Факт / Рынок − 1 as %; in the
+  request's details sheet and in a «Курс против рынка» report on
+  `/p/finance`. USDT is valued as USD at the CBR rate (no crypto price
+  source), in the §I queue display too (EARS-551 revised, §J Q4 closed). Product logic adopted from the owner's personal budgeting app
+  («Мой курс против рынка»), not its code (§J). It also answers §I Q2:
+  cross-currency backlog requests take their actual debited amount per item,
+  and the market side is computed — an estimated actual would make the
+  overpayment zero by construction.
 - **Decision 40 — an explicit bulk act for the retroactive backlog.** The
   owner may mark a whole «К оплате» / «Вернуть сотруднику» group paid in one
   confirmed, audited act (the September 17–18 backlog was paid outside the
@@ -248,7 +280,7 @@ conversions — or the books cannot be rebuilt.
 | `finance_document`         | `id`, `storage_key` (private object storage), `content_digest` (server-computed immutable SHA-256), `storage_state` (`pending_upload`\|`ready`\|`pending_delete`), `filename`, `mime`, `size`, `kind` (`ru_invoice`\|`fiscal_receipt`\|`foreign_invoice`\|`payment_order`\|`bank_screenshot`\|`bank_statement`\|`other`), `uploaded_by`, `uploaded_at`; items linked via `finance_document_link`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | files in a **private** bucket/prefix, never the public media bucket (EARS-514); the durable state records intent before storage side effects and leaves an audited retry handle on failure; **not** in Payload — owner ruling 2026-08-26 |
 | `finance_document_link`    | `document` FK, `intake_item` FK (pair unique)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | **one document may confirm several items** (corpus: one screenshot proving two consultations; «$370 + $22» in one payment); the operation link is derived through each item's `operation` FK                                             |
 | `finance_counterparty`     | `id`, `name` (case-insensitively unique), `created_by`, `created_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | who is being paid — a reference, not free text (owner decision 30, 2026-08-26); inline creation from the forms, renaming is admin (EARS-532)                                                                                             |
-| `finance_fx_rate`          | `id`, `source` (`cbr`), `currency` (ISO code as CBR quotes it), `rate_date` (the CBR effective date, `ValCurs/@Date`), `nominal` (integer), `value_rub` (exact decimal text — roubles per `nominal` units), `auditColumns()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | §I display rates only (EARS-552/553); unique (`source`, `currency`, `rate_date`); written only by the sync job (`system:finance-fx-sync`); never referenced by a posting or a conversion step                                            |
+| `finance_fx_rate`          | `id`, `source` (`cbr`), `currency` (ISO code as CBR quotes it), `rate_date` (the CBR effective date, `ValCurs/@Date`), `nominal` (integer), `value_rub` (exact decimal text — roubles per `nominal` units), `auditColumns()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | §I display rates and the §J market side of comparisons only (EARS-552/553); unique (`source`, `currency`, `rate_date`); written only by the sync job (`system:finance-fx-sync`); never referenced by a posting or a conversion step      |
 | `finance_purpose_proposal` | `id`, `text`, `proposed_by`, `created_at`, `resolved_purpose` FK (nullable), `resolved_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | US-21: a missing purpose is proposed as free text that only an admin can turn into a purpose — free text never becomes a purpose by itself (decision 21)                                                                                 |
 
 **Status machine** (every transition not listed is refused — EARS-524):
@@ -960,11 +992,23 @@ the corpus's «потерялась в канале» case).
   date money moved, never `posted_at`).
   Cross-currency pairs go through RUB. Amounts are bigint minor units and the
   arithmetic is decimal; no floating-point value enters it.
-- **EARS-551.** IF no CBR rate exists on or before the needed date for a
-  currency (CBR does not quote it — USDT; or the date precedes the stored
-  series), THEN the row shall show the original amount with «нет курса», and
-  every sum that leaves it out shall say «без N заявок» — never a silent
-  zero and never a wrong-currency addition.
+- **EARS-551.** A USDT request shall be converted at the CBR rate of USD
+  (CBR does not quote USDT; decision 41), the same rule as the §J market
+  side (EARS-558). IF no CBR rate exists on or before the needed date for a
+  currency (CBR does not quote it, or the date precedes the stored series),
+  THEN the row shall show the original amount with «нет курса», and every
+  sum that leaves it out shall say «без N заявок» — never a silent zero and
+  never a wrong-currency addition.
+
+  _Revised 2026-11-18 (owner decision 41, §J — USDT = USD applies to the
+  queue display too, so one USDT request reads the same in the row, the
+  sheet header and the §J block). The previous version read: «IF no CBR
+  rate exists on or before the needed date for a currency (CBR does not
+  quote it — USDT; or the date precedes the stored series), THEN the row
+  shall show the original amount with «нет курса», and every sum that leaves
+  it out shall say «без N заявок» — never a silent zero and never a
+  wrong-currency addition.»_
+
 - **EARS-552.** The finance module shall keep the Bank of Russia daily rates
   in `finance_fx_rate`, fetched from cbr.ru by an idempotent sync job that
   runs daily on the production host and can backfill a date range; a lookup
@@ -972,10 +1016,143 @@ the corpus's «потерялась в канале» case).
   the requested date. WHEN the newest stored rate is more than three days
   older than today, the page shall say the rates are stale and from which
   date.
-- **EARS-553.** The CBR rates shall be a presentation source only: no
-  posting, conversion step, balance, F1b card value or F3 report shall read
-  them, and no amount the ledger stores shall be computed from them
-  (Prior-decisions change 5).
+- **EARS-553.** The CBR rates shall never be a ledger source: no posting,
+  conversion step, balance, F1b current-money card value or F3 period-report
+  total shall read them, and no amount the ledger stores shall be computed
+  from them. They shall be read only by display and comparison code — the
+  §I display conversion (EARS-550) and the §J market valuation
+  (EARS-557…566) — whose results are shown and never stored
+  (Prior-decisions change 5, widened 2026-11-18). The isolation test holds
+  three lines: the rate table is read only inside `src/lib/finance/fx/`,
+  where the §J read model also lives; outside that directory the fx
+  functions are used only by an explicit allowlist — the module barrel, the
+  sync CLI, the requests queue (`src/app/(platform)/p/finance/requests/`)
+  and the §J report route (`src/app/(platform)/p/finance/reports/market-rate/`)
+  — and never by `operations.ts`, `conversions.ts`, `current-money.ts`,
+  `queries.ts` or `intake/posting.ts`; and no file of the fx directory
+  imports a ledger write path (`recordOperation`, `recordConversion*`,
+  `appendPostings`, the intake posting functions).
+
+  _Revised 2026-11-18 (owner decision 41, §J). The previous version read:
+  «The CBR rates shall be a presentation source only: no posting, conversion
+  step, balance, F1b card value or F3 report shall read them, and no amount
+  the ledger stores shall be computed from them (Prior-decisions change 5).»
+  It barred every report, which would have excluded the §J comparison; the
+  rule now bars the ledger and its period totals, not comparisons, and names
+  the allowlist the test enforces._
+
+### J. Market valuation of foreign-currency payments (2026-11-18, #547)
+
+The owner's question (decision 41): «сколько мы на самом деле заплатили за
+валюту против курса ЦБ — в рублях, и на чём». Every clause below is a
+reading: it compares what the ledger recorded with what the same payment
+would have cost at the Bank of Russia rate of its date, and stores nothing.
+The rates are §I's store (EARS-552) under the rewritten EARS-553. Reading is
+open to every member, as the requests queue is (EARS-530/534); no clause
+adds an act.
+
+**Donor & benchmark pass (§J):** the product logic is the owner's own
+personal budgeting app («Мой курс против рынка»: the market of the day the
+money arrived, a 14-day nearest-previous rate window, amount-weighted period
+rates, «хуже / лучше рынка» wording, missing rates counted and never
+substituted) — adopted as product logic, not as code. That app reports only
+the percentage; the rouble amount is the owner's addition. The CBR rate is
+the market because it is the rate Russian accounting itself uses for a
+foreign-currency operation on its date (ПБУ 3/2006 п. 4–5) — the same
+justification as §I, so no owner question was spent on the source. USDT has
+no CBR quote and is valued as USD (decision 41).
+
+- **EARS-557.** The system shall treat as a **foreign-currency payment**
+  every posted intake item of kind `expense` — from any source,
+  `personal_funds` included — whose account-side currency (`paid_currency`)
+  differs from its document currency, excluding an item whose operation is
+  reversed and the reversal itself. Its **Факт** shall be what the account
+  (or, for `personal_funds`, the member's card) actually lost — the sum
+  `paid_amount + fee_amount`, both in `paid_currency` (the shipped fee rule
+  keeps the fee in that currency). Its **payment date** shall be the item's
+  `occurred_on` — the date money moved (EARS-508), never `posted_at`. For a
+  `personal_funds` item reimbursed in another currency, Факт is the refund
+  (EARS-544) and the date is the member's spend date, so its Переплата holds
+  both the member's own exchange cost and the refund lag.
+- **EARS-558.** The system shall value both sides in roubles at the Bank of
+  Russia rate of the payment date: **Рынок** = the document amount × the CBR
+  rate of the document currency, and Факт in roubles = Факт × the CBR rate of
+  `paid_currency` (one for RUB). The rate of a date shall be the stored rate
+  on that date or the nearest previous one (EARS-552's lookup), at most 14
+  days older than the payment date and never a later one; cross pairs go
+  through RUB; USDT shall be valued at the USD rate. IF either side has no
+  such rate, THEN the payment shall be «без курса».
+- **EARS-559.** The system shall show for a measured payment **Переплата** =
+  Факт − Рынок in roubles, as a money amount, and **Переплата, %** = Факт /
+  Рынок − 1; a positive value shall read «хуже рынка на X,X%», a negative one
+  «лучше рынка на X,X%» (the amount with its sign, the words carrying the
+  direction), and a percentage that rounds to 0,0 «как на рынке». Amounts are
+  bigint minor units, the arithmetic is decimal and exact, and rounding
+  happens once, at display (one decimal for the percentage, kopecks for the
+  amount); no floating-point value enters it.
+- **EARS-560.** IF an `already_paid` request is not yet posted and its
+  debit currency — the named account's currency, else its stated
+  `paid_currency` — differs from its document currency, or is unknown (no
+  account and no `paid_currency`) on a non-RUB document, THEN it shall be
+  «факт не внесён» — the money moved, but what it cost is not in the ledger
+  yet, even where the request states an amount (Факт is a ledger fact, the
+  same predicate as EARS-557). It shall be counted in a period by its
+  `occurred_on`, else by its submission date (EARS-556). A «факт не внесён»
+  or a «без курса» item shall be left out of every Факт, Рынок and Переплата
+  sum and counted separately, by kind, wherever such a sum is shown — never
+  converted 1:1, never a silent zero.
+- **EARS-561.** The system shall measure every recorded conversion operation
+  (spec 338 EARS-318, `src/lib/finance/conversions.ts`, multi-step chains
+  such as RUB → USDT → USD included), not reversed, as one **chain**: Факт =
+  what left the source money account in the operation (its net outflow, the
+  fees it bore included), valued in roubles; Рынок = what arrived on the
+  target money account (its net inflow, net of fees), valued in roubles —
+  both at the CBR rates of the operation's `occurred_on` (the arrival date;
+  a chain is one operation with one date), under EARS-558's rate rule
+  (USDT as USD); and Переплата per EARS-559. The conversion legs that an
+  intake expense's own posting builds (Prior-decisions change 4) belong to
+  that payment (EARS-557), not to a separate chain. A chain's **route** is
+  its currency path in step order («RUB → USDT → USD»).
+- **EARS-562.** Every aggregate of payments and chains — a period, a month,
+  a payee, a route — shall be weighted by amount: Σ Переплата = Σ Факт −
+  Σ Рынок and its % = Σ Факт / Σ Рынок − 1 over the measured items only
+  (EARS-560), never the mean of the items' percentages.
+- **EARS-563.** WHEN the details sheet (EARS-542) shows a posted
+  foreign-currency payment or a «факт не внесён» request (EARS-560), it
+  shall carry a «Курс против рынка» block:
+  «Рынок» with the CBR rate and its date, «Факт» with the account it left
+  and the fee inside it, and «Переплата» as the amount and the EARS-559
+  wording; the amounts in the display currency (EARS-549, converted per
+  EARS-566). For a «без курса» payment the block shall say «нет курса ЦБ на
+  <дата>»; for a «факт не внесён» request that states no debited amount it
+  shall say «факт не внесён — укажите списанную сумму при отметке оплаты»;
+  for one that states it (a `personal_funds` request's amount is the
+  member's and stays authoritative, EARS-544) it shall say «факт не
+  проведён — появится после «Отметить возврат»» for `personal_funds` and
+  «…после «Отметить оплату»» otherwise; a same-currency request shall show
+  no block.
+- **EARS-564.** `/p/finance/reports/market-rate` «Курс против рынка»,
+  linked from the `/p/finance` header beside «Заявки», shall show, for a
+  chosen period of payment dates (month, quarter, year, the last 12 months
+  — the default —, all time): Σ Переплата as an amount and its weighted %
+  with the EARS-559 wording, Σ Факт, Σ Рынок, the number of payments and
+  chains measured, and the counts «без курса: N» and «факт не внесён: N»
+  (EARS-560).
+- **EARS-565.** The report shall break the period down by **month** and by
+  **payee / route** — payments by the EARS-538 «Кому платим» payee with
+  their route (the paying account, or «свои средства» for `personal_funds`,
+  and the currency pair), chains by their EARS-561 route — each row with
+  Факт, Рынок, Переплата and its weighted % (EARS-562), so that each table
+  sums to the period total; WHEN a row is opened, the report shall list the
+  payments and chains behind it with their date, document amount, Рынок,
+  Факт and Переплата, a payment linking to its request.
+- **EARS-566.** The report shall show its amounts in the display currency
+  of EARS-549 (₽ / $ / €, the same remembered per-viewer choice as the
+  requests queue), converting each item's rouble figures at the CBR rate of
+  its own payment date before any sum; a percentage shall not change with
+  the display currency. IF the display currency has no rate for an item's
+  date under EARS-558's rule, THEN that item shall be left out of the
+  displayed sums and counted «без курса: N», as in EARS-551.
 
 ## CRUD check (task-cycle stage 1a)
 
@@ -999,6 +1176,10 @@ via the entry role (manual/backfill); `personal_funds` without `already_paid`
 (EARS-508); multi-step conversion chains through intake (one implicit step
 only — the F1 API takes the rest); any cabinet surface for the calendar
 (#372).
+The §J market valuation (Рынок / Факт / Переплата) is not a resource: it is
+computed at read time from the ledger and the CBR store, has no create, edit
+or delete path anywhere, and is never stored (EARS-553); correcting a wrong
+Факт is correcting the payment's own record (reversal, EARS-313).
 
 ## Acceptance scenarios
 
@@ -1053,8 +1234,10 @@ register, that dependency is named in the step:
 9. **One currency.** Switch ₽ → $: every amount and sum changes; a USD request
    viewed in ₽ shows its dollars small underneath, and its sheet names the
    CBR rate and its date — today for an unpaid request, the spend date for a
-   member's own payment (EARS-549/550). A USDT request shows «нет курса» and
-   the sums say «без 1 заявки» (EARS-551).
+   member's own payment (EARS-549/550). A USDT request is converted at the
+   USD rate, its sheet naming the USD rate and its date; a request in a
+   currency CBR does not quote shows «нет курса» and the sums say «без 1
+   заявки» (EARS-551 revised).
 10. **Paid without a receipt.** Open an approved pre-spend request with no
     file: «Как оплатить» warns that details are missing. «Отметить оплату»
     with a date and a RUB account and no file — it moves to «Оплачено» marked
@@ -1084,6 +1267,24 @@ register, that dependency is named in the step:
     there instead — the field refuses it and says what shape is wanted, and
     nothing is filed (EARS-503 revised). Open a request that has no source at
     all — the sheet shows «—» and the row carries no link (EARS-554).
+14. **Курс против рынка (§J).** On a stand seeded with CBR rates and three
+    posted payments — USD 100 paid from the RUB account for 9 384 ₽ incl. a
+    50 ₽ fee on a day the CBR USD rate is 92,00; a USD 100 personal-funds
+    request reimbursed for 9 016 ₽; a USDT invoice paid in roubles — plus one
+    RUB → USDT → USD conversion and one already-paid USD request with no
+    debited amount: open the first request — its sheet says «Рынок 9 200 ₽
+    (курс ЦБ на <дата>)», «Факт 9 384 ₽», «Переплата +184 ₽ · хуже рынка на
+    2,0%»; the second says «лучше рынка на 2,0%»; the third is valued at the
+    USD rate; the unposted one says «факт не внесён» (EARS-557…560, 563).
+    Open «Курс против рынка» from `/p/finance`: the period total is the sum
+    of the measured rows, its % equals Σ Факт / Σ Рынок − 1 (not the mean of
+    the rows' %), the conversion is listed under its route «RUB → USDT →
+    USD», «факт не внесён: 1» is counted and not summed; delete the stand's
+    CBR rates for the 15 days up to and including the conversion's date (so
+    no rate within EARS-558's 14-day window remains) and it moves to «без
+    курса: 1»
+    (EARS-561/562/564/565). Switch ₽ → $: the amounts change, the
+    percentages do not (EARS-566).
 
 ### Verified by CI, not by the owner
 
@@ -1108,7 +1309,10 @@ mark-paid, reimbursement, attach-later and «без чека» acts
 (EARS-543…546), the bulk act and its all-or-nothing refusal
 (EARS-547/548), the display currency, its rate rule and missing-rate
 behaviour (EARS-549…551), the CBR rate store and its isolation from the
-ledger (EARS-552/553) — plus `pnpm boundaries` green on the module (ADR-004 §6).
+ledger (EARS-552/553), the market valuation of payments and chains, its
+missing-fact / missing-rate exclusions and weighted aggregates
+(EARS-557…562), the details-sheet block (EARS-563) and the «Курс против
+рынка» report (EARS-564…566) — plus `pnpm boundaries` green on the module (ADR-004 §6).
 
 ## Out of scope
 
@@ -1135,8 +1339,13 @@ ledger (EARS-552/553) — plus `pnpm boundaries` green on the module (ADR-004 §
   service period on the request — #518 and its children.
 - Sending «Запросить у автора» (a notification to the submitter) — v1 shows
   the missing-details warning only; a follow-up after the §I acceptance.
-- Any use of the CBR rates outside the requests queue display (EARS-553);
-  market rates for valuation stay excluded (#425).
+- Any use of the CBR rates by the ledger — postings, conversion steps,
+  balances, the F1b current-money card, F3 period totals — (EARS-553); the
+  current-money valuation stays on recorded rates (#425). Display (§I) and
+  comparison (§J) are the only readers.
+- A crypto price source — USDT is valued as USD (decision 41); a holding's
+  gain or loss between purchase and disposal is not separated from the
+  exchange cost (a chain is one operation with one date, EARS-561).
 - Running the EARS-547 bulk act on production by an agent — it is the
   owner's own act from the UI.
 
@@ -1211,3 +1420,32 @@ reference from day one (decision 30, EARS-532).
   existing later-dated FX record blocks oldest-first posting of the
   backlog; the risk is only that someone posts a newer cross-currency
   operation before the backlog is marked.
+  **Answered 2026-11-18 — (a), actual per item** (owner decision 41,
+  Антон): cross-currency backlog requests take their real debited amount one
+  by one, and the market side is computed by §J. A CBR-estimated actual
+  would make the overpayment of exactly those requests zero by
+  construction.
+
+### Open questions — §J (2026-11-18, #547)
+
+- **Q3 — the go on this delta.** The owner's «Го» (2026-11-18) was given on
+  the product rule (decision 41); EARS-557…566 and the EARS-553 rewrite
+  transcribe it, and #558/#559 do not start before the owner confirms this
+  text on PR review. Lead-level calls, for the record: only **posted**
+  items are measured — an unposted already-paid foreign-currency request is
+  «факт не внесён» even when it states an amount, because Факт is a ledger
+  fact (EARS-557/560), and it is dated by its `occurred_on`, else its
+  submission date, for the period counts; both sides are valued in roubles at the CBR rates of one
+  date, so a payment from a non-RUB account (THB invoice from a USD card)
+  is measured too (EARS-558); a conversion's Факт is the source account's
+  net outflow and its Рынок the target account's net inflow, so every fee
+  in the chain is inside the figure (EARS-561); «как на рынке» is a
+  percentage that rounds to 0,0 (EARS-559); the report's default period is
+  the last 12 months and it sits at `/p/finance/reports/market-rate`, the
+  first route of the F3 reports area, until F3 (#340) builds that area's
+  navigation (EARS-564).
+- **Q4 — USDT in the requests queue display. Closed 2026-11-18 (lead's
+  decision, final).** Decision 41's USDT = USD applies to the §I queue display
+  too, so one USDT request reads the same in the row, the sheet header and
+  the §J block: EARS-551 is rewritten (previous wording recorded under it),
+  scenario 9 and #550's acceptance criteria follow.
