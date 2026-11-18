@@ -7,14 +7,19 @@ import type {
 import {
   DEFAULT_QUEUE_SORT,
   filterQueueRows,
+  formatDisplayMoney,
+  formatOriginalMoney,
+  isNewRequest,
   isOverdue,
   missingRateNote,
   parseStoredDisplayCurrency,
   QUEUE_GROUPS,
   queueGroupStages,
   queueKpis,
+  queueOutcome,
   queuePayee,
   queueRowAct,
+  queueRowTitle,
   rateStaleness,
   requestAge,
   requestCountLabel,
@@ -337,5 +342,79 @@ describe('the display currency (EARS-549/551)', () => {
       since: '2026-11-14',
     })
     expect(rateStaleness(null, '2026-11-18')).toEqual({ kind: 'none' })
+  })
+})
+
+describe('the row as the owner reads it (review of #562, UX 2–7)', () => {
+  it('names a request by what its author wrote, the purpose under it, and its number', () => {
+    const titled = queueRowTitle(item({ id: 63, note: 'Figma Organization на год\nоплата картой' }))
+    expect(titled).toEqual({ title: 'Figma Organization на год', subtitle: '№63 · Продакшн' })
+    expect(queueRowTitle(item({ id: 7, note: '  ' }))).toEqual({
+      title: 'Продакшн',
+      subtitle: '№7',
+    })
+  })
+
+  it('sorts «На что» by the line the row shows in bold', () => {
+    const rows = [
+      item({ id: 1, note: 'Я последний' }),
+      item({ id: 2, note: 'А первый' }),
+      item({ id: 3, note: null }),
+    ]
+    expect(sortQueueRows(rows, { key: 'purpose', desc: false }, 'RUB').map((r) => r.id)).toEqual([
+      2, 3, 1,
+    ])
+  })
+
+  it('finds a request by «№63», «№ 63» and «#63» alike — the number the row shows', () => {
+    const rows = [item({ id: 63 }), item({ id: 163 })]
+    for (const query of ['№63', '№ 63', '#63']) {
+      expect(
+        filterQueueRows(rows, { ...NO_FILTERS, query }, { scope: 'active', now: NOW }).map(
+          (r) => r.id,
+        ),
+      ).toEqual([63])
+    }
+  })
+
+  it('says what closed a request: the payment date, or the refusal reason', () => {
+    expect(
+      queueOutcome(
+        item({
+          stage: 'paid',
+          occurredOn: '2026-08-29',
+          operation: { id: 4, occurredOn: '2026-08-30', postings: [] },
+        }),
+      ),
+    ).toEqual({ kind: 'paid', date: '2026-08-30' })
+    expect(queueOutcome(item({ stage: 'paid', occurredOn: '2026-08-29' }))).toEqual({
+      kind: 'paid',
+      date: '2026-08-29',
+    })
+    expect(queueOutcome(item({ stage: 'refused', refusalReason: 'Дубль заявки №12' }))).toEqual({
+      kind: 'refused',
+      reason: 'Дубль заявки №12',
+    })
+    expect(queueOutcome(item({ stage: 'decide' }))).toBeNull()
+    expect(queueOutcome(item({ stage: 'cancelled' }))).toBeNull()
+  })
+
+  it('marks a request filed in the last 24 hours as new', () => {
+    expect(isNewRequest('2026-11-18T08:00:00.000Z', NOW)).toBe(true)
+    expect(isNewRequest('2026-11-17T09:00:01.000Z', NOW)).toBe(true)
+    expect(isNewRequest('2026-11-17T08:59:59.000Z', NOW)).toBe(false)
+  })
+
+  it('prints every display amount with its two decimals, so a column lines up', () => {
+    expect(formatDisplayMoney(125000n, 'USD')).toBe('1 250,00 $')
+    expect(formatDisplayMoney(4124n, 'USD')).toBe('41,24 $')
+    expect(formatDisplayMoney(-340000n, 'RUB')).toBe('−3 400,00 ₽')
+  })
+
+  it('prints the original amount with the same ₽ / $ / € the converted one uses', () => {
+    expect(formatOriginalMoney('340000', 'RUB', 2)).toBe('3 400,00 ₽')
+    expect(formatOriginalMoney('125000', 'USD', 2)).toBe('1 250,00 $')
+    expect(formatOriginalMoney('84000', 'EUR', 2)).toBe('840,00 €')
+    expect(formatOriginalMoney('30000000', 'USDC', 6)).toBe('30,000000 USDC')
   })
 })

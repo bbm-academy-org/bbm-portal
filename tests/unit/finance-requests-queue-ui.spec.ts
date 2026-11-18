@@ -292,10 +292,10 @@ describe('the payment queue groups (EARS-536)', () => {
 describe('the three sums (EARS-537)', () => {
   it('EARS-537: shows the decide / pay / reimburse sums with counts, equal to the group totals', () => {
     renderScreen()
-    expect(kpi(/Ждёт решения/).textContent).toMatch(/15\s000\s₽/)
+    expect(kpi(/Ждёт решения/).textContent).toMatch(/15\s000,00\s₽/)
     expect(kpi(/Ждёт решения/).textContent).toMatch(/2 заявки/)
-    expect(kpi(/К оплате/).textContent).toMatch(/3\s000\s₽/)
-    expect(kpi(/Вернуть сотрудникам/).textContent).toMatch(/800\s₽/)
+    expect(kpi(/К оплате/).textContent).toMatch(/3\s000,00\s₽/)
+    expect(kpi(/Вернуть сотрудникам/).textContent).toMatch(/800,00\s₽/)
   })
 
   it('EARS-537: a click on «К оплате» shows only that group; a second click restores all four', () => {
@@ -416,8 +416,8 @@ describe('the display currency (EARS-549/551)', () => {
     const decide = group('Ждёт решения')
     expect(screen.getByRole('tab', { name: '₽', selected: true })).toBeTruthy()
     const usdRow = within(decide).getByText('Подписка в долларах').closest('tr')!
-    expect(usdRow.textContent).toMatch(/8\s000\s₽/)
-    expect(usdRow.textContent).toMatch(/100\s\$|100,00 USD/)
+    expect(usdRow.textContent).toMatch(/8\s000,00\s₽/)
+    expect(usdRow.textContent).toMatch(/100,00\s\$/)
     const rubRow = within(decide).getByText('Аренда студии').closest('tr')!
     expect(rubRow.textContent).not.toMatch(/RUB/)
   })
@@ -426,9 +426,9 @@ describe('the display currency (EARS-549/551)', () => {
     refine.custom.data = snapshot({ requests: [item({ id: 1 }), usd] })
     renderScreen()
     pick('$')
-    expect(kpi(/Ждёт решения/).textContent).toMatch(/225\s\$/)
+    expect(kpi(/Ждёт решения/).textContent).toMatch(/225,00\s\$/)
     const usdRow = within(group('Ждёт решения')).getByText('Подписка в долларах').closest('tr')!
-    expect(usdRow.textContent).toMatch(/100\s\$/)
+    expect(usdRow.textContent).toMatch(/100,00\s\$/)
     expect(window.localStorage.getItem(DISPLAY_CURRENCY_STORAGE_KEY)).toBe('USD')
   })
 
@@ -510,5 +510,103 @@ describe('the queue row carries what the replaced table carried (#480, #517)', (
     const line = within(group('Ждёт решения')).getByText(note)
     expect(line.className).toMatch(/truncate/)
     expect(line.getAttribute('title')).toBe(note)
+  })
+})
+
+describe('the queue as the owner reads it (review of #562, UX defects)', () => {
+  it('bolds what the author wrote, with the purpose and «№N» under it', () => {
+    renderScreen()
+    const title = within(group('Ждёт решения')).getByRole('button', { name: /^Заявка №2: / })
+    expect(title.textContent).toBe('Монтаж')
+    expect(within(group('Ждёт решения')).getByText('№2 · Продакшн')).toBeTruthy()
+    expect(
+      screen.getByRole('searchbox', { name: 'Поиск по заявкам' }).getAttribute('placeholder'),
+    ).toMatch(/№/)
+  })
+
+  it('marks a request filed in the last 24 hours «новая», even inside the collapsed drafts', () => {
+    const fresh = new Date(Date.now() - 3_600_000).toISOString()
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 1, createdAt: '2026-10-01T09:30:00.000Z' }),
+        item({ id: 2, createdAt: fresh, note: 'Свежая' }),
+        item({ id: 5, status: 'draft', stage: 'draft', note: 'Свежий черновик', createdAt: fresh }),
+      ],
+    })
+    renderScreen()
+    const decide = group('Ждёт решения')
+    const rows = within(decide).getAllByRole('row').slice(1)
+    expect(rows[0]!.textContent).toMatch(/Свежая/)
+    expect(within(rows[0]!).getByText('новая')).toBeTruthy()
+    expect(within(rows[1]!).queryByText('новая')).toBeNull()
+    const drafts = group('Черновики')
+    expect(within(drafts).queryByText('Свежий черновик')).toBeNull()
+    expect(within(drafts).getByText('1 новая')).toBeTruthy()
+  })
+
+  it('a closed group has no empty act column: Оплачено shows the payment date, Отклонено the reason', () => {
+    const reason = 'Дубль заявки №12, оплачено по старой '.repeat(4).trim()
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 7,
+          status: 'posted',
+          stage: 'paid',
+          note: 'Оплачено в октябре',
+          occurredOn: '2026-10-29',
+        }),
+        item({ id: 8, status: 'refused', stage: 'refused', note: 'Отказ', refusalReason: reason }),
+      ],
+    })
+    renderScreen()
+    pick('Закрытые')
+    const paid = group('Оплачено')
+    expect(within(paid).queryByRole('columnheader', { name: 'Действие' })).toBeNull()
+    expect(within(paid).getByRole('columnheader', { name: /Оплачено/ })).toBeTruthy()
+    expect(within(paid).getByText('29 окт.')).toBeTruthy()
+    const refused = group('Отклонено')
+    const line = within(refused).getByText(reason)
+    expect(line.getAttribute('title')).toBe(reason)
+    expect(within(refused).getByRole('columnheader', { name: /Причина отказа/ })).toBeTruthy()
+  })
+
+  it('the original amount uses the same symbols as the converted one', () => {
+    refine.custom.data = snapshot({ requests: [item({ id: 1 })] })
+    renderScreen()
+    pick('$')
+    const row = within(group('Ждёт решения')).getByText('Аренда студии').closest('tr')!
+    expect(row.textContent).toMatch(/10\s000,00\s₽/)
+    expect(row.textContent).not.toMatch(/RUB/)
+  })
+
+  describe('on a phone', () => {
+    const original = window.matchMedia
+    beforeEach(() => {
+      window.matchMedia = ((query: string) => ({
+        matches: query.includes('max-width'),
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia
+    })
+    afterEach(() => {
+      window.matchMedia = original
+    })
+
+    it('renders each request as one stacked row: when, who → payee, what, amount and act', () => {
+      renderScreen()
+      const decide = group('Ждёт решения')
+      expect(within(decide).queryByRole('columnheader', { name: /От кого/ })).toBeNull()
+      expect(within(decide).getByRole('columnheader', { name: /Заявка/ })).toBeTruthy()
+      expect(within(decide).getByRole('columnheader', { name: /Сумма/ })).toBeTruthy()
+      const row = within(decide).getByText('Аренда студии').closest('tr')!
+      expect(row.textContent).toMatch(/М\. Иванова → ООО «Студия-7»/)
+      expect(row.textContent).toMatch(/10\s000,00\s₽/)
+      expect(within(row).getByRole('button', { name: 'Одобрить заявку №1' })).toBeTruthy()
+    })
   })
 })
