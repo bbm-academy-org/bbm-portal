@@ -42,6 +42,8 @@ const state = vi.hoisted(() => ({
   latestRateDate: vi.fn(),
   operationDisplayFacts: vi.fn(),
   moscowToday: vi.fn(),
+  // The details sheet's §J block (#551): the #558 valuation, read once per board.
+  loadMarketValuation: vi.fn(),
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
@@ -163,6 +165,10 @@ beforeEach(() => {
   state.latestRateDate.mockResolvedValue(null)
   state.operationDisplayFacts.mockResolvedValue(new Map())
   state.moscowToday.mockReturnValue('2026-11-18')
+  state.loadMarketValuation.mockResolvedValue({
+    entries: [],
+    context: { series: [], precisions: new Map([['RUB', 2]]) },
+  })
   state.liabilityBalances.mockResolvedValue([
     {
       accountId: 99,
@@ -255,6 +261,63 @@ describe('/p/finance/api/requests read model', () => {
       memberName: 'Антон Сидоров',
       display: { RUB: { kind: 'no_rate', currency: 'DAI' } },
     })
+  })
+
+  it('EARS-563: carries the fee and the §J «Курс против рынка» block of each request, valued once per board', async () => {
+    const { measureIntakeItem } = await import('@/lib/finance')
+    const context = {
+      series: [{ currency: 'USD', rateDate: '2026-11-13', nominal: 1, valueRub: '92.0000' }],
+      precisions: new Map([
+        ['RUB', 2],
+        ['USD', 2],
+        ['EUR', 2],
+      ]),
+    }
+    const entry = measureIntakeItem(
+      {
+        itemId: 41,
+        kind: 'expense',
+        status: 'posted',
+        alreadyPaid: true,
+        personalFunds: false,
+        occurredOn: '2026-11-13',
+        submittedOn: '2026-11-10',
+        amount: 100_00n,
+        currency: 'USD',
+        paidAmount: 9_334_00n,
+        paidCurrency: 'RUB',
+        feeAmount: 50_00n,
+        feeCurrency: 'RUB',
+        accountName: 'Основной банк',
+        accountCurrency: 'RUB',
+        operationId: 70,
+        operationReversed: false,
+        counterpartyName: null,
+        memberName: null,
+      },
+      context,
+    )
+    state.loadMarketValuation.mockResolvedValue({ entries: [entry], context })
+    state.listExpenseRequests.mockResolvedValue([
+      { ...request, id: 41, feeAmount: 50_00n, feeCurrency: 'RUB' },
+      { ...request, id: 43 },
+    ])
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const body = await (await route.GET()).json()
+
+    expect(state.loadMarketValuation).toHaveBeenCalledTimes(1)
+    expect(body.requests[0]).toMatchObject({
+      feeAmount: '5000',
+      feeCurrency: 'RUB',
+      market: {
+        kind: 'measured',
+        wording: 'хуже рынка на 2,0%',
+        display: { RUB: { fact: '938400', market: '920000', overpayment: '18400' } },
+      },
+    })
+    // A request outside the §J set carries no block — the sheet then shows none.
+    expect(body.requests[1]).toMatchObject({ feeAmount: null, market: null })
   })
 
   it('#470: reads the documents of the whole board in ONE call, not one transaction per row', async () => {
