@@ -65,8 +65,9 @@ function sheet() {
     references,
     canApprove: true,
     canEnter: true,
+    today: '2026-11-18',
     pending: false,
-    pendingAct: null,
+    opening: null,
     uploading: false,
     onAct: vi.fn(),
     onAttach: vi.fn(),
@@ -115,7 +116,7 @@ describe('the toast never sits on the details sheet’s footer (#473 item 1)', (
 
     // The footer is the reason: its controls are the next act, and the toast
     // used to cover them for its whole lifetime on both breakpoints.
-    expect(screen.getByRole('button', { name: 'Отклонить…' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Отозвать' })).toBeTruthy()
     expect(bottomOffsetPx()).toBeGreaterThanOrEqual(96)
   })
 

@@ -44,6 +44,41 @@ export type QueueDisplayAmount =
   /** CBR has no quote on or before `date` for `currency` (EARS-551). */
   | { kind: 'no_rate'; currency: string; date: string }
 
+/** Факт, Рынок and Переплата of one payment in one display currency — minor units, as strings. */
+export type MarketDisplayFigures = { fact: string; market: string; overpayment: string }
+
+/**
+ * The §J «Курс против рынка» block of one request (spec 339 EARS-557…563,
+ * #551), built on the server from the #558 read model — the browser receives
+ * figures, never a rate table, and computes nothing (EARS-553/563).
+ */
+export type RequestMarketBlock =
+  | {
+      kind: 'measured'
+      /** The payment date — the date money moved (EARS-557). */
+      date: string
+      /** The CBR quote that valued the document side (USDT / USDC: the USD one). */
+      rate: { currency: string; rateDate: string; nominal: number; valueRub: string }
+      /** What the account (or the member's card) lost: `amount` includes `fee`. */
+      fact: {
+        amount: string
+        currency: string
+        fee: { amount: string; currency: string } | null
+        /** The paying account; `null` — the member's own card. */
+        account: string | null
+      }
+      /** (Факт / Рынок − 1) in tenths of a percent, signed — the ROUBLE figure (EARS-562/566). */
+      percentTenths: string | null
+      /** «хуже рынка на X,X%» / «лучше рынка на X,X%» / «как на рынке» (EARS-559). */
+      wording: string
+      /** Per display currency; `null` where that currency has no rate on the payment date. */
+      display: Record<DisplayCurrencyCode, MarketDisplayFigures | null>
+    }
+  /** EARS-558: no CBR quote within 14 days of the payment date. */
+  | { kind: 'no_rate'; currency: string; date: string }
+  /** EARS-560: the money moved, what it cost is not in the ledger yet. */
+  | { kind: 'not_posted'; statedPaidAmount: string | null }
+
 export type RequestBoardItem = {
   id: number
   own: boolean
@@ -84,6 +119,15 @@ export type RequestBoardItem = {
   currency: string
   paidAmount: string | null
   paidCurrency: string | null
+  /** The fee recorded with the spend, in its own currency (EARS-513/544); null when none. */
+  feeAmount: string | null
+  feeCurrency: string | null
+  /**
+   * The §J block (EARS-563): a posted foreign-currency payment or a «факт не
+   * внесён» request; `null` for everything else, a same-currency request among
+   * them — and then the sheet shows no block.
+   */
+  market: RequestMarketBlock | null
   note: string | null
   alreadyPaid: boolean
   personalFunds: boolean

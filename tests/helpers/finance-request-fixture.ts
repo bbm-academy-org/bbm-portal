@@ -13,7 +13,15 @@ import { deriveExpenseRequestStage } from '@/lib/finance/intake/request-queue'
  * The display amounts are «already in that currency» for all three: a fixture
  * that is not about conversion says nothing about rates.
  */
-type QueueKeys = 'stage' | 'hasDocument' | 'settledBy' | 'snapshot' | 'display'
+type QueueKeys =
+  | 'stage'
+  | 'hasDocument'
+  | 'settledBy'
+  | 'snapshot'
+  | 'display'
+  | 'feeAmount'
+  | 'feeCurrency'
+  | 'market'
 
 export function queueFields(
   row: Pick<
@@ -39,6 +47,10 @@ export function queueFields(
     settledBy,
     snapshot: null,
     display: { RUB: same, USD: same, EUR: same },
+    // No fee and no §J block (#551): a same-currency fixture is outside §J.
+    feeAmount: null,
+    feeCurrency: null,
+    market: null,
   }
 }
 

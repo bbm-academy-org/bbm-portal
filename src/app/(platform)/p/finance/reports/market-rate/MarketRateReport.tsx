@@ -48,6 +48,8 @@ import {
   monthLabel,
   periodHref,
   requestHref,
+  splitMeasuredRows,
+  unmeasuredReason,
   wordingVariant,
 } from './market-rate-view'
 
@@ -397,6 +399,62 @@ function ReportTable<TRow extends { key: string }>({
   )
 }
 
+/**
+ * One breakdown (pre-acceptance UX pass, item 7): the rows with a sum in the
+ * List block, then the rows with nothing measured as one muted line each —
+ * «Октябрь 2026 · не измерено: нет курса ЦБ на дату» — still opening their
+ * sheet, never a row of dashes dressed like a result.
+ */
+function Breakdown({
+  id,
+  title,
+  rows,
+  columns,
+  currency,
+  onOpen,
+}: {
+  id: string
+  title: string
+  rows: MarketReportRow[]
+  columns: ColumnDef<MarketReportRow>[]
+  currency: DisplayCurrencyCode
+  onOpen: (row: MarketReportRow) => void
+}) {
+  const { measured, unmeasured } = splitMeasuredRows(rows, currency)
+  return (
+    <section aria-labelledby={id} className="space-y-2">
+      <h2 id={id} className="font-heading text-base font-semibold">
+        {title}
+      </h2>
+      {measured.length === 0 ? null : (
+        <ReportTable
+          rows={measured}
+          columns={columns}
+          emptyTitle="Ничего не измерено"
+          emptyDescription=""
+        />
+      )}
+      {unmeasured.length === 0 ? null : (
+        <ul className="space-y-1">
+          {unmeasured.map((row) => (
+            <li key={row.key} className="text-sm text-muted-foreground">
+              <Button
+                variant="link"
+                className="h-auto p-0 align-baseline font-normal text-muted-foreground"
+                onClick={() => onOpen(row)}
+              >
+                {rowTitle(row)}
+              </Button>
+              {row.route === null ? '' : ` · ${row.route}`}
+              {` · не измерено: ${unmeasuredReason(row, row.figures[currency].noDisplayRate, currency)}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 // ── the screen ──────────────────────────────────────────────────────────────
 
 export function MarketRateReport({ report, period, periods, precisions }: MarketRateReportProps) {
@@ -422,10 +480,9 @@ export function MarketRateReport({ report, period, periods, precisions }: Market
   const payeeColumns = rowColumns(currency, narrow, 'Кому и каким маршрутом', total, setOpened)
   const openedColumns = itemColumns(currency, precisions)
 
-  const empty = {
-    emptyTitle: 'За этот период платежей в валюте нет',
-    emptyDescription: 'Выберите другой период — например, «Всё время».',
-  }
+  // Nothing in the period at all: one quiet line instead of a dash headline
+  // over two empty tables (pre-acceptance UX pass, item 8).
+  const isEmpty = report.months.length === 0 && report.payees.length === 0
 
   return (
     <section aria-labelledby="market-rate-heading" className="space-y-6">
@@ -475,42 +532,64 @@ export function MarketRateReport({ report, period, periods, precisions }: Market
         </div>
       </div>
 
-      <div role="group" aria-label="Итого за период" className="space-y-2">
-        <p className="text-sm text-muted-foreground">
-          {`${totalShown ? head.label : 'Переплата'} · ${periodLabel.toLowerCase()}`}
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="font-heading text-4xl font-semibold tracking-tight tabular-nums">
-            {totalShown ? head.amount : '—'}
-          </span>
-          <Wording percentTenths={total.percentTenths} wording={total.wording} />
-        </div>
-        {currency !== 'RUB' && totalShown ? (
-          // EARS-566: the % is the rouble one, so a sum in $ / € may not share its sign.
-          <p className="text-xs text-muted-foreground">% против рынка считается в рублях</p>
-        ) : null}
+      {isEmpty ? (
         <p className="text-sm">
-          Факт {totalShown ? <Num>{formatMoney(totals.fact, currency)}</Num> : '—'} · Рынок{' '}
-          {totalShown ? <Num>{formatMoney(totals.market, currency)}</Num> : '—'}
+          <span className="font-medium">За период нет валютных платежей</span>
+          <span className="text-muted-foreground"> — выберите другой, например «Всё время».</span>
         </p>
-        <p className="text-sm text-muted-foreground">
-          {[measuredLabel(total.measured), ...notes].join(' · ')}
-        </p>
-      </div>
+      ) : (
+        <>
+          <div role="group" aria-label="Итого за период" className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              {`${totalShown ? head.label : 'Переплата'} · ${periodLabel.toLowerCase()}`}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-heading text-4xl font-semibold tracking-tight tabular-nums">
+                {totalShown ? head.amount : '—'}
+              </span>
+              <Wording percentTenths={total.percentTenths} wording={total.wording} />
+              {notes.length === 0 ? null : (
+                // Counted, not summed (EARS-560/564) — beside the headline at
+                // body size, so they are read with it (item 9).
+                <ul
+                  aria-label="Не учтено в сумме"
+                  className="flex flex-wrap gap-x-3 text-sm text-foreground"
+                >
+                  {notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {currency !== 'RUB' && totalShown ? (
+              // EARS-566: the % is the rouble one, so a sum in $ / € may not share its sign.
+              <p className="text-xs text-muted-foreground">% против рынка считается в рублях</p>
+            ) : null}
+            <p className="text-sm">
+              Факт {totalShown ? <Num>{formatMoney(totals.fact, currency)}</Num> : '—'} · Рынок{' '}
+              {totalShown ? <Num>{formatMoney(totals.market, currency)}</Num> : '—'}
+            </p>
+            <p className="text-sm text-muted-foreground">{measuredLabel(total.measured)}</p>
+          </div>
 
-      <section aria-labelledby="market-rate-months" className="space-y-2">
-        <h2 id="market-rate-months" className="font-heading text-base font-semibold">
-          По месяцам
-        </h2>
-        <ReportTable rows={report.months} columns={monthColumns} {...empty} />
-      </section>
-
-      <section aria-labelledby="market-rate-payees" className="space-y-2">
-        <h2 id="market-rate-payees" className="font-heading text-base font-semibold">
-          По получателям и маршрутам
-        </h2>
-        <ReportTable rows={report.payees} columns={payeeColumns} {...empty} />
-      </section>
+          <Breakdown
+            id="market-rate-months"
+            title="По месяцам"
+            rows={report.months}
+            columns={monthColumns}
+            currency={currency}
+            onOpen={setOpened}
+          />
+          <Breakdown
+            id="market-rate-payees"
+            title="По получателям и маршрутам"
+            rows={report.payees}
+            columns={payeeColumns}
+            currency={currency}
+            onOpen={setOpened}
+          />
+        </>
+      )}
 
       {opened !== null ? (
         <Sheet open onOpenChange={(open) => (open ? undefined : setOpened(null))}>

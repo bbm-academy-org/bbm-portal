@@ -3,7 +3,7 @@
 // default view of RequestsBoardScreen.tsx. The Refine hooks are mocked at their
 // boundary the way finance-requests-ui.spec.ts mocks them; the List block and
 // TanStack render for real.
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -140,6 +140,9 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     currency: 'RUB',
     paidAmount: null,
     paidCurrency: null,
+    feeAmount: null,
+    feeCurrency: null,
+    market: null,
     note: 'Аренда студии',
     alreadyPaid: false,
     personalFunds: false,
@@ -384,11 +387,12 @@ describe('the row act (EARS-541)', () => {
     })
   })
 
-  it('EARS-541: «Отметить оплату» opens the details sheet of that row, carrying its list row', async () => {
+  it('EARS-541/543: «Отметить оплату» opens the details sheet of that row with its pay form open', async () => {
     renderScreen()
     fireEvent.click(screen.getByRole('button', { name: 'Отметить оплату заявки №3' }))
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getByText(/10\s000,00 RUB — Аренда студии/)).toBeTruthy()
+    expect(within(sheet).getByText('Заявка №3 · К оплате')).toBeTruthy()
+    expect(within(sheet).getByRole('region', { name: 'Отметить оплату' })).toBeTruthy()
     expect(refine.mutate).not.toHaveBeenCalled()
   })
 
@@ -500,7 +504,7 @@ describe('the queue row carries what the replaced table carried (#480, #517)', (
     renderScreen()
     fireEvent.click(screen.getByRole('button', { name: /^Заявка №2: / }))
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getByText(/Монтаж/)).toBeTruthy()
+    expect(within(sheet).getByRole('heading', { name: 'Монтаж' })).toBeTruthy()
   })
 
   it('a long note truncates inside its column and stays readable in full on hover', () => {
@@ -510,6 +514,68 @@ describe('the queue row carries what the replaced table carried (#480, #517)', (
     const line = within(group('Ждёт решения')).getByText(note)
     expect(line.className).toMatch(/truncate/)
     expect(line.getAttribute('title')).toBe(note)
+  })
+})
+
+describe('the owner sees the latest request (pre-acceptance UX pass, items 1–2)', () => {
+  it('names the newest submitted request under the header — number, what, payee, amount, age — and opens its sheet', async () => {
+    const fresh = new Date(Date.now() - 2 * 3_600_000).toISOString()
+    refine.custom.data = snapshot({
+      requests: [
+        item({ id: 1, createdAt: '2026-10-01T09:30:00.000Z' }),
+        item({ id: 2, stage: 'paid', status: 'posted', note: 'Свежая оплата', createdAt: fresh }),
+        item({
+          id: 5,
+          status: 'draft',
+          stage: 'draft',
+          note: 'Черновик новее',
+          createdAt: new Date().toISOString(),
+        }),
+      ],
+    })
+    renderScreen()
+    const latest = screen.getByRole('status', { name: 'Последняя заявка' })
+    expect(latest.textContent).toBe(
+      'Новых за сутки: 1 · Последняя заявка: №2 · Свежая оплата · ООО «Студия-7» · 10 000,00 ₽ · 2 ч назад',
+    )
+    fireEvent.click(within(latest).getByRole('button', { name: 'Открыть последнюю заявку №2' }))
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText(/^Заявка №2 ·/)).toBeTruthy()
+  })
+
+  it('says only «Последняя заявка» when nothing came in the last 24 hours, and nothing when nothing was submitted', () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 1, createdAt: '2026-10-01T09:30:00.000Z' })],
+    })
+    renderScreen()
+    expect(screen.getByRole('status', { name: 'Последняя заявка' }).textContent).toMatch(
+      /^Последняя заявка: №1 · /,
+    )
+    cleanup()
+    refine.custom.data = snapshot({ requests: [item({ id: 5, status: 'draft', stage: 'draft' })] })
+    renderScreen()
+    expect(screen.queryByRole('status', { name: 'Последняя заявка' })).toBeNull()
+  })
+
+  it('the group headings carry the tiers: decide / pay primary, reimburse secondary, drafts archived', () => {
+    renderScreen()
+    const tier = (title: string) =>
+      within(group(title)).getByRole('heading', { level: 2 }).getAttribute('data-tier')
+    expect(tier('Ждёт решения')).toBe('primary')
+    expect(tier('К оплате')).toBe('primary')
+    expect(tier('Вернуть сотруднику')).toBe('secondary')
+    expect(tier('Черновики')).toBe('archived')
+    pick('Закрытые')
+    expect(tier('Оплачено')).toBe('archived')
+  })
+
+  it('«новая» is a filled mark, legible next to the muted date', () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 2, createdAt: new Date(Date.now() - 3_600_000).toISOString() })],
+    })
+    renderScreen()
+    const mark = within(group('Ждёт решения')).getByText('новая')
+    expect(mark.getAttribute('data-variant')).toBe('default')
   })
 })
 
@@ -608,5 +674,443 @@ describe('the queue as the owner reads it (review of #562, UX defects)', () => {
       expect(row.textContent).toMatch(/10\s000,00\s₽/)
       expect(within(row).getByRole('button', { name: 'Одобрить заявку №1' })).toBeTruthy()
     })
+  })
+})
+
+// ── #551: the details sheet, its forms and the bulk dialog (spec 339 §I/§J) ──
+
+describe('the details sheet of the queue (EARS-542…548, EARS-563)', () => {
+  const usdApproved = item({
+    id: 9,
+    status: 'approved',
+    stage: 'pay',
+    note: 'Подписка в долларах',
+    amount: '10000',
+    currency: 'USD',
+    account: { id: 1, name: 'Банк RUB', currency: 'RUB' },
+    display: { RUB: cbr('920000'), USD: same('10000'), EUR: cbr('8500') },
+  })
+
+  async function openSheet(name: RegExp) {
+    fireEvent.click(screen.getByRole('button', { name }))
+    return screen.findByRole('dialog')
+  }
+
+  async function startAct(sheet: HTMLElement, label: string) {
+    fireEvent.click(within(sheet).getByRole('button', { name: label }))
+    return within(sheet).findByRole('region', { name: label })
+  }
+
+  it('EARS-543: «Отметить оплату» with a date and an account and no file posts the list row’s token', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    expect(within(form).getByLabelText('Дата оплаты')).toHaveProperty('value', '2026-11-18')
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0]).toMatchObject({
+      url: '/p/finance/api/requests/3/actions',
+      values: { act: 'mark-paid', snapshot: 'token-1', occurredOn: '2026-11-18', accountId: 1 },
+    })
+    expect(refine.mutate.mock.calls[0][0].values).not.toHaveProperty('paidAmount')
+  })
+
+  it('EARS-543: a USD request paid from a RUB account cannot be marked until the debited roubles are entered', async () => {
+    refine.custom.data = snapshot({ requests: [usdApproved] })
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №9:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    const submit = within(form).getByRole('button', { name: 'Оплачено' }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+
+    fireEvent.change(within(form).getByLabelText(/Списано фактически, RUB/), {
+      target: { value: '9 384,00' },
+    })
+    expect(submit.disabled).toBe(false)
+    fireEvent.click(submit)
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0].values).toMatchObject({
+      act: 'mark-paid',
+      paidAmount: '938400',
+      paidCurrency: 'RUB',
+    })
+  })
+
+  it('EARS-543/548: the server’s refusal is shown in its own words in the form — without spec codes, dates as ДД.ММ.ГГГГ — and the board re-reads itself', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    const refusal =
+      'Операция от 2026-11-01 не может быть записана после уже проведённой операции валютной пары RUB/USD от 2026-11-10: ' +
+      'неизменяемый ledger не пересчитывает уже признанный FX-результат (EARS-319/328, EARS-543) — ' +
+      'отметьте более ранние валютные оплаты раньше более поздних.'
+    await act(async () => refine.mutate.mock.calls[0][1].onError({ message: refusal }))
+
+    expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toBe(
+      'Операция от 01.11.2026 не может быть записана после уже проведённой операции валютной пары RUB/USD от 10.11.2026: ' +
+        'неизменяемый ledger не пересчитывает уже признанный FX-результат — ' +
+        'отметьте более ранние валютные оплаты раньше более поздних.',
+    )
+    expect(refine.custom.refetch).toHaveBeenCalled()
+  })
+
+  it('EARS-548: after a stale refusal the re-read row remounts the open form — fresh defaults, fresh token, the refusal still shown', async () => {
+    const { rerender } = renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    fireEvent.change(within(form).getByLabelText('Дата оплаты'), {
+      target: { value: '2026-11-02' },
+    })
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0].values).toMatchObject({ snapshot: 'token-1' })
+    await act(async () =>
+      refine.mutate.mock.calls[0][1].onError({
+        message: 'Заявка #3 изменилась — откройте заявку заново (EARS-548).',
+      }),
+    )
+
+    // The re-read brings the request as it now is: a new token, a new date.
+    refine.custom.data = snapshot({
+      requests: QUEUE.map((row) =>
+        row.id === 3 ? { ...row, snapshot: 'token-2', occurredOn: '2026-11-05' } : row,
+      ),
+    })
+    rerender(React.createElement(RequestsBoardScreen))
+
+    const fresh = within(screen.getByRole('dialog')).getByRole('region', {
+      name: 'Отметить оплату',
+    })
+    expect(within(fresh).getByLabelText('Дата оплаты')).toHaveProperty('value', '2026-11-05')
+    expect(within(fresh).getByRole('alert').textContent).toBe(
+      'Заявка #3 изменилась — откройте заявку заново.',
+    )
+    fireEvent.click(within(fresh).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(2))
+    expect(refine.mutate.mock.calls[1][0].values).toMatchObject({
+      snapshot: 'token-2',
+      occurredOn: '2026-11-05',
+    })
+  })
+
+  it('EARS-543/545: a chosen receipt is attached to the request once the act has posted', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    fireEvent.change(within(form).getByLabelText('Чек или скриншот оплаты'), {
+      target: { files: [new File(['%PDF-1.4'], 'чек.pdf', { type: 'application/pdf' })] },
+    })
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0].values).not.toHaveProperty('documentIds')
+
+    await act(async () => refine.mutate.mock.calls[0][1].onSuccess({ data: {} }))
+    expect(refine.mutate).toHaveBeenCalledTimes(2)
+    const upload = refine.mutate.mock.calls[1][0]
+    expect(upload.url).toBe('/p/finance/api/documents')
+    expect((upload.values as FormData).get('intakeItemId')).toBe('3')
+  })
+
+  it('EARS-545: a receipt that fails after the act says the payment WAS marked, and the next sheet opens clean', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    const form = await startAct(sheet, 'Отметить оплату')
+    fireEvent.change(within(form).getByLabelText('Чек или скриншот оплаты'), {
+      target: { files: [new File(['%PDF-1.4'], 'чек.pdf', { type: 'application/pdf' })] },
+    })
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    await act(async () => refine.mutate.mock.calls[0][1].onSuccess({ data: {} }))
+    const upload = refine.mutate.mock.calls[1]
+    expect(upload[0].errorNotification({ message: 'Файл больше предела.' })).toEqual({
+      type: 'error',
+      message: 'Оплата отмечена, но чек не приложен.',
+      description: 'Заявка №3: приложите чек позже в карточке заявки. Файл больше предела.',
+    })
+    await act(async () => upload[1].onError({ message: 'Файл больше предела.' }))
+
+    const next = await openSheet(/^Заявка №1:/)
+    expect(within(next).queryByText('Файл больше предела.')).toBeNull()
+  })
+
+  it('EARS-543/545: an open payment form is the one upload control — the files block hides its picker', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    expect(within(sheet).getByRole('button', { name: 'Прикрепить файл' })).toBeTruthy()
+    const form = await startAct(sheet, 'Отметить оплату')
+    expect(within(form).getByLabelText('Чек или скриншот оплаты')).toBeTruthy()
+    expect(within(sheet).queryByRole('button', { name: 'Прикрепить файл' })).toBeNull()
+    fireEvent.click(within(form).getByRole('button', { name: 'Отмена' }))
+    expect(within(sheet).getByRole('button', { name: 'Прикрепить файл' })).toBeTruthy()
+  })
+
+  it('the sheet’s section labels are one label style, apart from the body text', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №1:/)
+    const labels = within(sheet)
+      .getAllByRole('heading', { level: 3 })
+      .filter((node) => ['Как оплатить', 'Файлы', 'Ход заявки'].includes(node.textContent ?? ''))
+    expect(labels).toHaveLength(3)
+    for (const label of labels) expect(label.getAttribute('data-section-label')).toBe('')
+  })
+
+  it('EARS-542: an already-paid request is not asked for payment details', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    expect(within(sheet).queryByText('Реквизитов или ссылки на оплату нет')).toBeNull()
+    expect(within(sheet).getByText(/Уже оплачено/)).toBeTruthy()
+  })
+
+  it('EARS-544: «Отметить возврат» prefills the required refund and sends it in the account’s minor units', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №4:/)
+    const form = await startAct(sheet, 'Отметить возврат')
+    expect(within(form).getByLabelText(/Сумма возврата/)).toHaveProperty('value', '10000,00')
+    fireEvent.click(within(form).getByRole('button', { name: 'Возвращено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0].values).toMatchObject({
+      act: 'mark-reimbursed',
+      snapshot: 'token-1',
+      accountId: 1,
+      amount: '1000000',
+    })
+  })
+
+  it('EARS-542: the sheet of a «Ждёт решения» request offers its three acts and warns that payment details are missing', async () => {
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №1:/)
+    expect(within(sheet).getByText('Заявка №1 · Ждёт решения')).toBeTruthy()
+    // A quiet inline note, not an error box louder than the acts (UX pass, item 5).
+    const missing = within(sheet).getByText('Реквизитов или ссылки на оплату нет')
+    expect(missing.closest('[role="alert"], [data-slot="alert"]')).toBeNull()
+    expect(within(sheet).getByText(/Запросить у автора/)).toBeTruthy()
+    for (const label of ['Одобрить', 'Одобрить и отметить оплату', 'Отклонить']) {
+      expect(within(sheet).getByRole('button', { name: label })).toBeTruthy()
+    }
+    expect(within(sheet).getByText('Подана')).toBeTruthy()
+    expect(within(sheet).getByText('Решение')).toBeTruthy()
+  })
+
+  it('EARS-541/542: a reader without `finance-approve` gets the sheet with no act at all', async () => {
+    refine.custom.data = snapshot({ permissions: { canApprove: false, canEnter: false } })
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №3:/)
+    expect(
+      within(sheet).queryByRole('button', { name: /^(Одобрить|Отметить|Отклонить|Отозвать)/ }),
+    ).toBeNull()
+  })
+
+  it('EARS-546: a paid request with no document is marked «без чека» in its row and in its sheet', async () => {
+    renderScreen()
+    pick('Закрытые')
+    const paid = group('Оплачено')
+    const row = within(paid).getByText('Оплачено в октябре').closest('tr')!
+    expect(within(row).getByText('без чека')).toBeTruthy()
+    const sheet = await openSheet(/^Заявка №7:/)
+    expect(within(sheet).getByText('без чека')).toBeTruthy()
+  })
+
+  it('EARS-563: a posted USD payment carries «Курс против рынка» — Рынок, Факт, Переплата — and $ changes the amounts, not the %', async () => {
+    const posted = item({
+      id: 11,
+      status: 'posted',
+      stage: 'paid',
+      alreadyPaid: true,
+      hasDocument: true,
+      note: 'Инвойс в долларах',
+      currency: 'USD',
+      amount: '10000',
+      occurredOn: '2026-11-13',
+      market: {
+        kind: 'measured',
+        date: '2026-11-13',
+        rate: { currency: 'USD', rateDate: '2026-11-13', nominal: 1, valueRub: '92.0000' },
+        fact: {
+          amount: '938400',
+          currency: 'RUB',
+          fee: { amount: '5000', currency: 'RUB' },
+          account: 'Банк RUB',
+        },
+        percentTenths: '20',
+        wording: 'хуже рынка на 2,0%',
+        display: {
+          RUB: { fact: '938400', market: '920000', overpayment: '18400' },
+          USD: { fact: '10200', market: '10000', overpayment: '200' },
+          EUR: null,
+        },
+      },
+      display: { RUB: cbr('938400'), USD: same('10000'), EUR: cbr('8500') },
+    })
+    refine.custom.data = snapshot({ requests: [posted] })
+    renderScreen()
+    pick('Закрытые')
+    let sheet = await openSheet(/^Заявка №11:/)
+    const block = within(sheet).getByRole('region', { name: 'Курс против рынка' })
+    expect(block.textContent).toMatch(/Рынок9\s200,00\s₽курс ЦБ на 13\.11\.2026/)
+    expect(block.textContent).toMatch(
+      /Факт9\s384,00\s₽со счёта «Банк RUB» · в т\.ч\. комиссия 50,00 ₽/,
+    )
+    expect(block.textContent).toMatch(/Переплата\+184,00\s₽хуже рынка на 2,0%/)
+
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Закрыть' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    pick('$')
+    sheet = await openSheet(/^Заявка №11:/)
+    const usd = within(sheet).getByRole('region', { name: 'Курс против рынка' })
+    expect(usd.textContent).toMatch(/\+2,00\s\$хуже рынка на 2,0%/)
+  })
+
+  it('EARS-563/560: «факт не внесён» reads in the body colour with its hint, not as faint grey', async () => {
+    const pending = item({
+      id: 12,
+      status: 'approved',
+      stage: 'pay',
+      alreadyPaid: true,
+      note: 'Подписка в долларах',
+      currency: 'USD',
+      amount: '10000',
+      market: { kind: 'not_posted', statedPaidAmount: null },
+      display: { RUB: cbr('920000'), USD: same('10000'), EUR: cbr('8500') },
+    })
+    refine.custom.data = snapshot({ requests: [pending] })
+    renderScreen()
+    const sheet = await openSheet(/^Заявка №12:/)
+    const block = within(sheet).getByRole('region', { name: 'Курс против рынка' })
+    const note = within(block).getByText('факт не внесён')
+    expect(note.closest('p')?.className).toContain('text-foreground')
+    expect(note.closest('p')?.className).not.toContain('text-muted-foreground')
+    expect(block.textContent).toContain('укажите списанную сумму при отметке оплаты')
+  })
+
+  it('EARS-547: «Отметить все N как оплаченные…» previews the plan and its exclusions, and posts only on the explicit confirm', async () => {
+    refine.custom.data = snapshot({ requests: [...QUEUE, usdApproved] })
+    renderScreen()
+    fireEvent.click(
+      within(group('К оплате')).getByRole('button', { name: 'Отметить все 2 как оплаченные…' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(refine.mutate).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(within(dialog).getByRole('combobox', { name: 'Счёт пакета' }), {
+      key: 'ArrowDown',
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'Банк RUB · RUB' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    const preview = refine.mutate.mock.calls[0][0]
+    expect(preview.values).toMatchObject({
+      group: 'pay',
+      accountId: 1,
+      preview: true,
+    })
+    expect(preview.values.items).toEqual(
+      expect.arrayContaining([
+        { id: 3, snapshot: 'token-1' },
+        { id: 9, snapshot: 'token-1' },
+      ]),
+    )
+    await act(async () =>
+      refine.mutate.mock.calls[0][1].onSuccess({
+        data: {
+          posted: [],
+          planned: [{ id: 3, occurredOn: '2026-09-17' }],
+          excluded: [
+            {
+              id: 9,
+              reason: 'Валюта списания USD ≠ RUB — валюте счёта пакета (EARS-547, Q2).',
+            },
+          ],
+        },
+      }),
+    )
+    const planned = within(dialog).getByRole('region', { name: 'Будет отмечено' })
+    expect(planned.textContent).toMatch(/№3.*17\.09\.2026/)
+    const left = within(dialog).getByRole('region', { name: 'Не войдут в пакет' }).textContent
+    expect(left).toMatch(/№9.*Валюта списания USD ≠ RUB — валюте счёта пакета\.$/)
+    expect(left).not.toMatch(/EARS-/)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отметить 1 как оплаченные' }))
+    expect(refine.mutate).toHaveBeenCalledTimes(2)
+    expect(refine.mutate.mock.calls[1][0].values).toMatchObject({ preview: false, accountId: 1 })
+    // The confirm sends the very rows and tokens the preview was asked for.
+    expect(refine.mutate.mock.calls[1][0].values.items).toEqual(preview.values.items)
+  })
+
+  it('EARS-547: on «Вернуть сотруднику» the bulk act reads «как возвращённые»', async () => {
+    const second = item({
+      id: 14,
+      stage: 'reimburse',
+      alreadyPaid: true,
+      personalFunds: true,
+      memberName: 'Б. Сидорова',
+      counterparty: null,
+      display: rubDisplay(50_000n),
+    })
+    refine.custom.data = snapshot({ requests: [...QUEUE, second] })
+    renderScreen()
+    fireEvent.click(
+      within(group('Вернуть сотруднику')).getByRole('button', {
+        name: 'Отметить все 2 как возвращённые…',
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByRole('heading', { name: 'Отметить все 2 как возвращённые' }),
+    ).toBeTruthy()
+  })
+
+  it('EARS-547: cancelling the bulk dialog posts nothing', async () => {
+    refine.custom.data = snapshot({ requests: [...QUEUE, usdApproved] })
+    renderScreen()
+    fireEvent.click(
+      within(group('К оплате')).getByRole('button', { name: 'Отметить все 2 как оплаченные…' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(refine.mutate).not.toHaveBeenCalled()
+  })
+
+  it('EARS-547: a group with a single row has no bulk act', () => {
+    renderScreen()
+    expect(within(group('К оплате')).queryByRole('button', { name: /^Отметить все/ })).toBeNull()
+  })
+})
+
+describe('the deep link ?request=<id> (lead addition on #551)', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  it('EARS-542: /p/finance/requests?request=<id> opens that request’s sheet on load, with the list row’s token', async () => {
+    window.history.replaceState(null, '', '/p/finance/requests?request=3')
+    renderScreen()
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText('Заявка №3 · К оплате')).toBeTruthy()
+
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Отметить оплату' }))
+    const form = await within(sheet).findByRole('region', { name: 'Отметить оплату' })
+    fireEvent.click(within(form).getByRole('button', { name: 'Оплачено' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
+    expect(refine.mutate.mock.calls[0][0].values).toMatchObject({ snapshot: 'token-1' })
+  })
+
+  it('EARS-542: closing the linked sheet drops the parameter, so the queue stays a queue', async () => {
+    window.history.replaceState(null, '', '/p/finance/requests?request=3')
+    renderScreen()
+    const sheet = await screen.findByRole('dialog')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Закрыть' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(window.location.search).toBe('')
+  })
+
+  it('EARS-542: an unknown or unreadable id leaves the plain queue with a quiet notice', () => {
+    window.history.replaceState(null, '', '/p/finance/requests?request=999')
+    renderScreen()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(
+      screen.getByText('Заявки №999 нет в списке — она удалена или недоступна вам.'),
+    ).toBeTruthy()
+    expect(group('Ждёт решения')).toBeTruthy()
   })
 })

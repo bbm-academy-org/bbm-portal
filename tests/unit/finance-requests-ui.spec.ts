@@ -407,61 +407,21 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(invalidated).toContain('finance-liabilities')
   })
 
-  it('EARS-511: offers the one-act confirmation only on an approved request that carries a document', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 2, status: 'approved', documents: [] }),
-        item({
-          id: 3,
-          status: 'approved',
-          documents: [
-            {
-              id: 9,
-              filename: 'акт.pdf',
-              mime: 'application/pdf',
-              size: 10,
-              kind: 'ru_invoice',
-              uploadedAt: '2026-08-22T10:00:00.000Z',
-            },
-          ],
-        }),
-      ],
-    })
-    renderBoard()
-
-    openCard(2)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    expect(
-      within(screen.getByRole('dialog')).queryByRole('button', { name: 'Провести' }),
-    ).toBeNull()
-    expect(
-      within(screen.getByRole('dialog')).getByText(/без подтверждающего документа/i),
-    ).toBeTruthy()
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Закрыть' }))
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    openCard(3)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Провести' }))
-    expect(refine.mutate.mock.calls[0][0]).toMatchObject({
-      url: '/p/finance/api/requests/3/actions',
-      values: { act: 'confirm' },
-    })
-  })
-
   it('EARS-512: insists on a reason before a refusal leaves the screen', async () => {
     renderBoard()
     openCard(1)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Отклонить…' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Отклонить' }))
 
-    const reason = await screen.findByLabelText('Причина отказа')
-    fireEvent.click(screen.getByRole('button', { name: 'Отклонить заявку' }))
+    const section = await screen.findByRole('region', { name: 'Отклонить заявку' })
+    const reason = within(section).getByLabelText('Причина')
+    fireEvent.click(within(section).getByRole('button', { name: 'Отклонить' }))
+    await waitFor(() => expect(within(section).getByText('Укажите причину.')).toBeTruthy())
     expect(refine.mutate).not.toHaveBeenCalled()
-    expect(screen.getByText('Укажите причину отказа.')).toBeTruthy()
 
     fireEvent.change(reason, { target: { value: 'есть на складе' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Отклонить заявку' }))
+    fireEvent.click(within(section).getByRole('button', { name: 'Отклонить' }))
+    await waitFor(() => expect(refine.mutate).toHaveBeenCalled())
     expect(refine.mutate.mock.calls[0][0]).toMatchObject({
       url: '/p/finance/api/requests/1/actions',
       values: { act: 'refuse', reason: 'есть на складе' },
@@ -553,7 +513,7 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = screen.getByRole('dialog')
     expect(within(sheet).queryByRole('button', { name: 'Одобрить' })).toBeNull()
-    expect(within(sheet).getByRole('button', { name: 'Отозвать' })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: 'Отменить заявку' })).toBeTruthy()
   })
 
   it('EARS-527: shows what BBM owes its members in its own view beside the board', async () => {
@@ -712,8 +672,28 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     renderBoard()
     openCard(id)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    return screen.getByRole('dialog')
+    const sheet = screen.getByRole('dialog')
+    // The picker is put away until asked for (pre-acceptance UX pass, item 4).
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить файл' }))
+    return sheet
   }
+
+  it('the files block shows the list or «Нет файлов.», and no picker until «Прикрепить файл»', async () => {
+    refine.custom.data = snapshot({
+      requests: [item({ id: 2, status: 'approved', own: true, documents: [] })],
+    })
+    renderBoard()
+    openCard(2)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).getByText('Нет файлов.')).toBeTruthy()
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+    expect(sheet.querySelector('input[type="file"]')).toBeNull()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить файл' }))
+    expect(within(sheet).getByLabelText('Подтверждающий документ')).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Не прикреплять' }))
+    expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
+  })
 
   /**
    * DEFECT G (#388, owner on the live stand 2026-09-16). Choosing a file used
@@ -790,40 +770,6 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
       refine.mutate.mock.calls[0][1].onSuccess()
     })
     expect(refine.custom.refetch).toHaveBeenCalled()
-  })
-
-  it('EARS-511: the one-act confirmation appears on the still-open sheet once the document lands', async () => {
-    await openAttachable(2)
-    expect(screen.queryByRole('button', { name: 'Провести' })).toBeNull()
-
-    // What the re-read brings back: the same request, now carrying its document.
-    refine.custom.data = snapshot({
-      requests: [
-        item({
-          id: 2,
-          status: 'approved',
-          own: true,
-          documents: [
-            {
-              id: 9,
-              filename: 'чек.pdf',
-              mime: 'application/pdf',
-              size: 17,
-              kind: 'fiscal_receipt',
-              uploadedAt: '2026-09-03T10:00:00.000Z',
-            },
-          ],
-        }),
-      ],
-    })
-    cleanup()
-    renderBoard()
-    openCard(2)
-
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    expect(
-      within(screen.getByRole('dialog')).getByRole('button', { name: 'Провести' }),
-    ).toBeTruthy()
   })
 
   it('EARS-514: refuses an oversize or wrong-typed file on selection and sends nothing', async () => {
@@ -904,7 +850,7 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
     expect(
       within(sheet).getByText('Документ виден подавшему заявку и финансовой роли.'),
     ).toBeTruthy()
-    expect(within(sheet).queryByText('Документ не приложен.')).toBeNull()
+    expect(within(sheet).queryByText('Нет файлов.')).toBeNull()
   })
 
   it('EARS-506: an empty document block on OWN request still reports the absence', async () => {
@@ -917,7 +863,7 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = screen.getByRole('dialog')
-    expect(within(sheet).getByText('Документ не приложен.')).toBeTruthy()
+    expect(within(sheet).getByText('Нет файлов.')).toBeTruthy()
   })
 })
 
@@ -954,70 +900,12 @@ describe('/p/finance/requests — the money facts belong to the posting act (EAR
     expect(within(form).getByText('Дата движения денег')).toBeTruthy()
   })
 
-  it('EARS-533: the card and the sheet name the emptiness instead of printing it as a value', async () => {
+  it('EARS-533: the card names the emptiness instead of printing it as a value', async () => {
     refine.custom.data = snapshot({
       requests: [item({ id: 4, status: 'submitted', occurredOn: null, account: null })],
     })
     renderBoard()
     expect(screen.getAllByText(/деньги ещё не двигались/i).length).toBeGreaterThan(0)
-
-    openCard(4)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    const sheet = screen.getByRole('dialog')
-    expect(within(sheet).getAllByText('вводится при проведении').length).toBe(2)
-    expect(within(sheet).queryByText('22.08.2026')).toBeNull()
-  })
-
-  it('EARS-533: the confirmation asks for the account and the date, and refuses while either is missing', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 5, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
-      ],
-    })
-    renderBoard()
-    openCard(5)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
-
-    const posting = await screen.findByRole('region', { name: /Провести заявку №5/ })
-    fireEvent.click(within(posting).getByRole('button', { name: 'Провести' }))
-    await waitFor(() =>
-      expect(within(posting).getByText('Выберите счёт, с которого ушли деньги.')).toBeTruthy(),
-    )
-    expect(within(posting).getByText('Укажите дату, когда деньги действительно ушли.')).toBeTruthy()
-    expect(refine.mutate).not.toHaveBeenCalled()
-  })
-
-  it('EARS-533: the act carries the account and the date the finance role entered', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 6, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
-      ],
-    })
-    renderBoard()
-    openCard(6)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
-    const posting = await screen.findByRole('region', { name: /Провести заявку №6/ })
-
-    fireEvent.click(within(posting).getByRole('combobox'))
-    fireEvent.click(await screen.findByRole('option', { name: /Банк RUB/ }))
-    fireEvent.change(within(posting).getByLabelText('Дата движения денег'), {
-      target: { value: '2026-09-01' },
-    })
-    fireEvent.click(within(posting).getByRole('button', { name: 'Провести' }))
-
-    await waitFor(() => expect(refine.mutate).toHaveBeenCalledTimes(1))
-    expect(refine.mutate.mock.calls[0][0]).toMatchObject({
-      url: '/p/finance/api/requests/6/actions',
-      values: {
-        act: 'confirm',
-        accountId: 1,
-        occurredOn: '2026-09-01',
-        paidAmount: null,
-        paidCurrency: null,
-      },
-    })
   })
 
   it('EARS-506/511/533: an approval that only authorises asks for nothing and sends nothing', async () => {
@@ -1041,112 +929,6 @@ describe('/p/finance/requests — the money facts belong to the posting act (EAR
 // other two were misreadings of the frames, and the assertions that PROVE them
 // misreadings live here too, so the next reader does not re-open them from the
 // pictures alone.
-describe('/p/finance/requests — the stage-5 UX sanity pass on the posting states', () => {
-  const receipt = {
-    id: 9,
-    filename: 'чек.pdf',
-    mime: 'application/pdf',
-    size: 10,
-    kind: 'fiscal_receipt' as const,
-    uploadedAt: '2026-09-03T10:00:00.000Z',
-  }
-
-  function fieldGrid() {
-    const label = screen.getByText('Контрагент')
-    const grid = label.parentElement?.parentElement
-    if (!grid) throw new Error('the field block has no grid container')
-    return grid
-  }
-
-  // DEFECT 3 (real, steps 26 and 30 at 390 px). Two columns inside a 390 px
-  // sheet leave ~180 px per cell, and `truncate` then eats the very words that
-  // ARE the state: «вводится при пр…», «Операционные …». A state the surface
-  // exists to say may not be clipped, so the grid collapses to one column
-  // below `sm` and the value wraps instead of ending in an ellipsis. The
-  // desktop half of the same clipping is #473 item 3, and dropping `truncate`
-  // settles it in the same line of CSS.
-  it('the sheet field grid is ONE column below `sm`, so a 390 px reader sees the whole state', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 8, status: 'submitted', occurredOn: null, account: null })],
-    })
-    renderBoard()
-    openCard(8)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-
-    const grid = fieldGrid()
-    expect(grid.className).toContain('grid-cols-1')
-    expect(grid.className).toContain('sm:grid-cols-2')
-    expect(grid.className).not.toMatch(/(^|\s)grid-cols-2(\s|$)/)
-  })
-
-  it('a field VALUE wraps rather than being clipped — «вводится при проведении» is never «вводится при пр…»', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 9, status: 'submitted', occurredOn: null, account: null })],
-    })
-    renderBoard()
-    openCard(9)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-
-    for (const value of screen.getAllByText('вводится при проведении')) {
-      const paragraph = value.closest('p')
-      expect(paragraph).not.toBeNull()
-      expect(paragraph?.className).not.toContain('truncate')
-    }
-  })
-
-  // DEFECT 1 (NOT a defect — a misreading of `27..29-*-desktop-dark.png`, where
-  // the two footer buttons are 24 px tall in a 1440 px frame). The dialog's
-  // dominant CTA is the kit's `default` variant and «Отмена» its `outline` one,
-  // the same pair the sheet footer uses. Pinned as data attributes so the
-  // question is answered by a test and not by squinting at a screenshot again.
-  // ONE OVERLAY SHAPE since #388 (owner go, Антон, 2026-09-15): the posting act
-  // is a SECTION of the details sheet, not a second overlay on top of it — so
-  // it is a `region`, and its action row is the sheet footer's grammar.
-  it('the posting section carries the primary CTA and a secondary «Отмена», like the sheet footer', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 10, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
-      ],
-    })
-    renderBoard()
-    openCard(10)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
-
-    const posting = await screen.findByRole('region', { name: /Провести заявку №10/ })
-    const cta = within(posting).getByRole('button', { name: 'Провести' })
-    expect(cta.getAttribute('data-variant')).toBe('default')
-    expect(cta.getAttribute('type')).toBe('submit')
-    expect(
-      within(posting).getByRole('button', { name: 'Отмена' }).getAttribute('data-variant'),
-    ).toBe('outline')
-    // The kit's own interaction treatment comes WITH `data-variant="default"`
-    // above: the frames of step 31 show no change under the forced pseudo-states
-    // because the capture forced them on the SHEET's «Приложить документ» behind
-    // the dialog (the diff between 29 and each 31 frame sits at x≈1080–1256,
-    // y≈730–773), not because the CTA lacks the states. The utilities that carry
-    // them belong to `@/ui/button` and are asserted where that kit is tested —
-    // pinning their strings here would break this finance test on a kit bump
-    // that changed nothing about this surface (#388 review round 2).
-  })
-
-  // DEFECT 2 (NOT a defect either): the dialog DOES take focus off the sheet
-  // when it opens, so `:focus-visible` on its CTA is reachable by keyboard.
-  it('opening the posting section moves focus INTO it, off the record behind', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 11, status: 'approved', occurredOn: null, account: null, documents: [receipt] }),
-      ],
-    })
-    renderBoard()
-    openCard(11)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
-
-    const posting = await screen.findByRole('region', { name: /Провести заявку №11/ })
-    await waitFor(() => expect(posting.contains(document.activeElement)).toBe(true))
-  })
-})
 
 // The stage-5 UX sanity pass on the 390 px frames of the SHEET that files a
 // request (PR #470 review, states 09/23/24/32/33).
@@ -1229,41 +1011,10 @@ describe('/p/finance/requests — a 390 px reader never scrolls the sheet sidewa
     openCard(1)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
     const sheet = screen.getByRole('dialog')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить файл' }))
 
     const kind = within(sheet).getByLabelText('Вид документа')
     expect(kind.className).toContain('min-w-0')
-  })
-
-  it('the account select of the posting section may shrink below its longest account name', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({
-          id: 12,
-          status: 'approved',
-          occurredOn: null,
-          account: null,
-          documents: [
-            {
-              id: 9,
-              filename: 'чек.pdf',
-              mime: 'application/pdf',
-              size: 10,
-              kind: 'fiscal_receipt' as const,
-              uploadedAt: '2026-09-03T10:00:00.000Z',
-            },
-          ],
-        }),
-      ],
-    })
-    renderBoard()
-    openCard(12)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Провести' }))
-
-    const posting = await screen.findByRole('region', { name: /Провести заявку №12/ })
-    for (const trigger of comboboxes(posting)) {
-      expect(trigger.className).toContain('min-w-0')
-    }
   })
 })
 
@@ -1372,52 +1123,6 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
     return within(sheet).getByRole('region', { name: 'Приложить документ' })
   }
 
-  it('item 5: the approved request with no document makes ATTACHING the dominant control', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 50, status: 'approved', own: true, documents: [] })],
-    })
-    renderBoard()
-    openCard(50)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    const sheet = screen.getByRole('dialog')
-
-    expect(attachSection(sheet).getAttribute('data-emphasis')).toBe('primary')
-    // …and nothing in the footer outranks it: the only footer act of this
-    // state is the refusal, and it stays a tinted destructive, never the
-    // screen's primary weight.
-    const refuse = within(sheet).getByRole('button', { name: 'Отклонить…' })
-    expect(refuse.getAttribute('data-variant')).toBe('destructive')
-    expect(
-      within(sheet)
-        .getAllByRole('button')
-        .filter((button) => button.getAttribute('data-variant') === 'default'),
-    ).toEqual([])
-  })
-
-  it('item 5: the same block is ordinary weight where attaching is not the next step', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 51, status: 'submitted', own: true, documents: [] })],
-    })
-    renderBoard()
-    openCard(51)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-
-    expect(attachSection(screen.getByRole('dialog')).getAttribute('data-emphasis')).toBe('default')
-  })
-
-  it('item 5: the state says why the document is needed ONCE, not in two slots', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 52, status: 'approved', own: true, documents: [] })],
-    })
-    renderBoard()
-    openCard(52)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-
-    const sheet = screen.getByRole('dialog')
-    const said = (sheet.textContent ?? '').match(/проводка появится/g) ?? []
-    expect(said.length).toBe(1)
-  })
-
   // ITEM 6. Attaching left the picker live and said nothing about what is
   // already there, so a second click attached a second copy of the same file —
   // request #69 on the #388 stand carries two `receipt-388.pdf`. A second
@@ -1445,13 +1150,12 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
     const sheet = await openWithDocument(60)
 
     expect(within(sheet).queryByLabelText('Подтверждающий документ')).toBeNull()
-    expect(within(sheet).getByText(/уже приложен/i)).toBeTruthy()
-    expect(within(sheet).getByRole('button', { name: /Приложить ещё документ/ })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: 'Прикрепить ещё файл' })).toBeTruthy()
   })
 
   it('item 6: adding a SECOND document is a deliberate answer, and then it attaches', async () => {
     const sheet = await openWithDocument(61)
-    fireEvent.click(within(sheet).getByRole('button', { name: /Приложить ещё документ/ }))
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Прикрепить ещё файл' }))
 
     const picker = await within(sheet).findByLabelText('Подтверждающий документ')
     fireEvent.change(picker, {
@@ -1514,7 +1218,7 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
     openCard(42)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
 
-    const title = within(screen.getByRole('dialog')).getByText(new RegExp(LONG_NOTE.slice(0, 30)))
+    const title = within(screen.getByRole('dialog')).getByRole('heading', { name: LONG_NOTE })
     expect(title.textContent).toContain(LONG_NOTE)
     expect(clippedInsideSheet(title)).toBe(false)
     expect(title.className).toMatch(/break-words|break-all|wrap-anywhere/)

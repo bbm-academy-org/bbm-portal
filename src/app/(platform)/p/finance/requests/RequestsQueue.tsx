@@ -27,13 +27,14 @@ import {
   DEFAULT_QUEUE_SCOPE,
   DEFAULT_QUEUE_SORT,
   DISPLAY_CURRENCIES,
-  DISPLAY_CURRENCY_STORAGE_KEY,
   EMPTY_QUEUE_FILTERS,
   filterQueueRows,
   formatDisplayMoney,
   formatOriginalMoney,
   isNewInQueue,
   isOverdue,
+  latestRequest,
+  latestRequestAge,
   missingRateNote,
   newCountLabel,
   parseStoredDisplayCurrency,
@@ -60,8 +61,11 @@ import {
   type QueueSortKey,
   type QueueStage,
   type QueueSum,
+  type QueueTier,
 } from './request-queue-model'
 import { RequestSourceLink } from './RequestSourceLink'
+import { useDisplayCurrency, writeDisplayCurrency } from './display-currency-store'
+import { bulkGroupOf, bulkLabel, lacksReceipt, type BulkGroup } from './request-sheet-model'
 
 /**
  * THE OWNER'S PAYMENT QUEUE — the default view of `/p/finance/requests`
@@ -106,39 +110,9 @@ export type RequestsQueueProps = {
   toolbarEnd?: React.ReactNode
   onOpen: (request: RequestBoardItem) => void
   onAct: (request: RequestBoardItem, act: QueueAct) => void
+  /** «Отметить все N как оплаченные…» / «…как возвращённые…» on a group header (EARS-547) — the rows it shows. */
+  onBulk?: (group: BulkGroup, rows: RequestBoardItem[]) => void
 }
-
-// ── the remembered display currency, as an external store (EARS-549) ────────
-
-const currencyListeners = new Set<() => void>()
-
-function readStoredCurrency(): string | null {
-  try {
-    return window.localStorage.getItem(DISPLAY_CURRENCY_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function writeStoredCurrency(next: DisplayCurrencyCode): void {
-  try {
-    window.localStorage.setItem(DISPLAY_CURRENCY_STORAGE_KEY, next)
-  } catch {
-    // The choice holds for this visit; only its memory is refused.
-  }
-  for (const listener of currencyListeners) listener()
-}
-
-function subscribeStoredCurrency(listener: () => void): () => void {
-  currencyListeners.add(listener)
-  window.addEventListener('storage', listener)
-  return () => {
-    currencyListeners.delete(listener)
-    window.removeEventListener('storage', listener)
-  }
-}
-
-const serverStoredCurrency = () => null
 
 // ── the phone layout switch ─────────────────────────────────────────────────
 
@@ -259,7 +233,9 @@ type CellContext = {
 /** «новая» — the newest submissions are found at a glance (review of #562, UX «последняя заявка»). */
 function NewMark({ request, now }: { request: RequestBoardItem; now: Date }) {
   if (!isNewInQueue(request, now)) return null
-  return <Badge variant="secondary">новая</Badge>
+  // The kit's filled badge: the secondary fill sat on the muted date line and
+  // read as part of it (pre-acceptance UX pass, item 2).
+  return <Badge>новая</Badge>
 }
 
 function AgeText({ request, now }: { request: RequestBoardItem; now: Date }) {
@@ -305,8 +281,16 @@ function TitleCell({
       >
         {title}
       </Button>
-      <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
-        {subtitle}
+      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="truncate" title={subtitle}>
+          {subtitle}
+        </span>
+        {/* EARS-546: a posted request with no attached document. */}
+        {lacksReceipt(request) ? (
+          <Badge variant="outline" className="shrink-0">
+            без чека
+          </Badge>
+        ) : null}
       </span>
     </div>
   )
@@ -624,6 +608,18 @@ function QueueGroupTable({
   return <DataTable table={table} paginated={false} />
 }
 
+/**
+ * The group heading carries the tier (pre-acceptance UX pass, item 2) — size,
+ * weight and colour from the theme's tokens, no box: the decisions and the
+ * payments are the page's work, a debt to a colleague the next thing, the
+ * drafts and the closed groups the archive.
+ */
+const TIER_HEADING: Record<QueueTier, string> = {
+  primary: 'text-lg font-semibold text-foreground',
+  secondary: 'text-base font-medium text-foreground',
+  archived: 'text-sm font-medium text-muted-foreground',
+}
+
 function QueueGroup({
   stage,
   rows,
@@ -634,6 +630,7 @@ function QueueGroup({
   narrow,
   sort,
   onSort,
+  onBulk,
 }: {
   stage: QueueStage
   rows: RequestBoardItem[]
@@ -644,8 +641,10 @@ function QueueGroup({
   narrow: boolean
   sort: QueueSort
   onSort: (next: QueueSort) => void
+  onBulk?: (group: BulkGroup, rows: RequestBoardItem[]) => void
 }) {
   const group = QUEUE_GROUPS[stage]
+  const bulk = isCollapsed || onBulk === undefined ? null : bulkGroupOf(stage, rows, canApprove)
   const { currency, now } = context
   const sum = sumInDisplay(rows, currency)
   const slot = groupSlot(stage, canApprove)
@@ -657,20 +656,23 @@ function QueueGroup({
   return (
     <section aria-label={group.title} className="space-y-2">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="font-heading text-base font-semibold">
+        <h2 data-tier={group.tier} className="font-heading">
           <Button
             variant="ghost"
             size="sm"
             aria-expanded={!isCollapsed}
             onClick={onToggle}
-            className="-ml-2 gap-1 px-2 text-base font-semibold aria-expanded:bg-transparent hover:bg-muted"
+            className={cn(
+              '-ml-2 gap-1 px-2 aria-expanded:bg-transparent hover:bg-muted',
+              TIER_HEADING[group.tier],
+            )}
           >
             {isCollapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
             {group.title}
           </Button>
         </h2>
         <span className="text-sm text-muted-foreground tabular-nums">{rows.length}</span>
-        {fresh === 0 ? null : <Badge variant="secondary">{newCountLabel(fresh)}</Badge>}
+        {fresh === 0 ? null : <Badge>{newCountLabel(fresh)}</Badge>}
         {group.hint === '' ? null : (
           <span className="hidden text-sm text-muted-foreground md:inline">{group.hint}</span>
         )}
@@ -681,6 +683,11 @@ function QueueGroup({
             <SumText sum={sum} currency={currency} stacked={narrow} />
           </span>
         )}
+        {bulk === null ? null : (
+          <Button variant="outline" size="sm" onClick={() => onBulk?.(bulk, rows)}>
+            {bulkLabel(rows.length, bulk)}
+          </Button>
+        )}
       </div>
       {isCollapsed ? null : rows.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">Ничего нет</p>
@@ -688,6 +695,63 @@ function QueueGroup({
         <QueueGroupTable rows={rows} columns={columns} sort={sort} onSort={onSort} />
       )}
     </section>
+  )
+}
+
+// ── the latest request ─────────────────────────────────────────────────────
+
+/**
+ * «Последняя заявка: №N · what · payee · amount · age» right under the page
+ * header (pre-acceptance UX pass, item 1 — the owner's «не вижу последнюю
+ * заявку»), led by «Новых за сутки: K» when the last 24 hours brought any. ONE
+ * line, no box; the number and what it is open the request's sheet. Read off
+ * every request the screen holds, whatever the scope and the filters show.
+ */
+function LatestRequestLine({
+  requests,
+  now,
+  context,
+}: {
+  requests: readonly RequestBoardItem[]
+  now: Date
+  context: CellContext
+}) {
+  const latest = latestRequest(requests, now)
+  if (latest === null) return null
+  const { request, fresh } = latest
+  const shown = request.display[context.currency]
+  const amount =
+    shown.kind === 'no_rate'
+      ? formatOriginalMoney(
+          request.amount,
+          request.currency,
+          currencyPrecision(context.references.currencies, request.currency),
+        )
+      : formatDisplayMoney(BigInt(shown.amount), context.currency)
+  const rest = [queuePayee(request).name, amount, latestRequestAge(request.createdAt, now)]
+  return (
+    // One line from the tablet up: what it is gives way (ellipsis) so the
+    // payee, the amount and the age stay whole; a phone lets it wrap.
+    <p
+      role="status"
+      aria-label="Последняя заявка"
+      className="min-w-0 text-sm sm:flex sm:items-baseline sm:gap-x-1.5 sm:text-base sm:whitespace-nowrap"
+    >
+      {fresh === 0 ? null : (
+        <span className="font-semibold sm:shrink-0">{`Новых за сутки: ${fresh} · `}</span>
+      )}
+      <span className="text-muted-foreground sm:shrink-0">Последняя заявка: </span>
+      <Button
+        variant="link"
+        aria-label={`Открыть последнюю заявку №${request.id}`}
+        title={queueRowTitle(request).title}
+        className="inline h-auto max-w-full min-w-0 p-0 text-left align-baseline text-sm font-semibold whitespace-normal text-foreground sm:inline-flex sm:shrink sm:overflow-hidden sm:text-base sm:whitespace-nowrap"
+        onClick={() => context.onOpen(request)}
+      >
+        <span className="sm:min-w-0 sm:truncate">{`№${request.id} · ${queueRowTitle(request).title}`}</span>
+      </Button>
+      <span className="tabular-nums sm:shrink-0">{` · ${rest.join(' · ')}`}</span>
+    </p>
   )
 }
 
@@ -703,18 +767,14 @@ export function RequestsQueue({
   toolbarEnd,
   onOpen,
   onAct,
+  onBulk,
 }: RequestsQueueProps) {
   const [scope, setScope] = React.useState<QueueScope>(DEFAULT_QUEUE_SCOPE)
   const [kpi, setKpi] = React.useState<QueueStage | null>(null)
   const [filters, setFilters] = React.useState<QueueFilters>(EMPTY_QUEUE_FILTERS)
   const [sort, setSort] = React.useState<QueueSort>(DEFAULT_QUEUE_SORT)
   const [collapsed, setCollapsed] = React.useState<Partial<Record<QueueStage, boolean>>>({})
-  const stored = React.useSyncExternalStore(
-    subscribeStoredCurrency,
-    readStoredCurrency,
-    serverStoredCurrency,
-  )
-  const currency = parseStoredDisplayCurrency(stored)
+  const currency = useDisplayCurrency()
   const narrow = useNarrow()
   // One clock for the page: every age on it is measured from the same instant.
   const [now] = React.useState(() => new Date())
@@ -735,6 +795,8 @@ export function RequestsQueue({
 
   return (
     <div className="space-y-6">
+      <LatestRequestLine requests={requests} now={now} context={context} />
+
       {/* THE THREE SUMS (EARS-537) — over every request, whatever is searched
           or filtered; a click shows only that group, a second click restores
           the scope. Type, not cards: the prototype draws them bare. On a phone
@@ -859,7 +921,7 @@ export function RequestsQueue({
         <div className="flex flex-wrap items-center gap-2">
           <Tabs
             value={currency}
-            onValueChange={(next) => writeStoredCurrency(parseStoredDisplayCurrency(next))}
+            onValueChange={(next) => writeDisplayCurrency(parseStoredDisplayCurrency(next))}
           >
             <TabsList aria-label="Валюта отображения">
               {DISPLAY_CURRENCIES.map((option) => (
@@ -905,6 +967,7 @@ export function RequestsQueue({
           narrow={narrow}
           sort={sort}
           onSort={setSort}
+          onBulk={onBulk}
         />
       ))}
     </div>
