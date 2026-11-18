@@ -1003,6 +1003,8 @@ describe('personal funds and reimbursements share the liability cut (EARS-513/52
       currency: 'RUB',
       projectId: refs.projectId,
       memberId: refs.payerMemberId,
+      // EARS-528 (revised, #549): a reimbursement names the item it settles.
+      settlesItemId: debt.id,
     })
     await approve(repayment.id, refs.approverMemberId)
     await attachDocument(repayment.id, refs.approverMemberId)

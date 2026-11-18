@@ -259,6 +259,8 @@ const DOMAIN_VALUE_WHITELIST = {
     'posted_by',
     'posted_at',
     'operation_id',
+    // #549: the reimbursement → settled-item link (EARS-528/544).
+    'settles_item_id',
   ],
   // Finance documents (spec 339 §D, #382). EARS-516 asks for this twice over:
   // «every document write is audited» is its own half-sentence, on top of the

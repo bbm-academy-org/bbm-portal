@@ -267,13 +267,17 @@ describe('the money facts the posting act asks for (spec 339 EARS-533)', () => {
     expect(postingActNeedsMoneyFacts(preSpend, 'refuse')).toBe(false)
   })
 
-  it('EARS-510/533: an approval that posts in one act does ask for them', () => {
+  it('EARS-510/533: approval never posts, even over an attached invoice, so it never asks for them', () => {
     expect(
       postingActNeedsMoneyFacts(
         { ...preSpend, status: 'submitted', documents: [document] },
         'approve',
       ),
-    ).toBe(true)
+    ).toBe(false)
+  })
+
+  it('EARS-506/533: the confirmation asks for them with no document attached at all', () => {
+    expect(postingActNeedsMoneyFacts({ ...preSpend, documents: [] }, 'confirm')).toBe(true)
   })
 
   it('EARS-511/533: an «уже потрачено» request is posted from what it already said', () => {

@@ -53,7 +53,11 @@ import {
   requireCurrency,
   type FinanceAccountView,
 } from '../references'
-import { assertIntakeAccountPlacement, isReimbursementTransfer } from './account-placement'
+import {
+  assertIntakeAccountPlacement,
+  assertIntakeSettlement,
+  isReimbursementTransfer,
+} from './account-placement'
 import {
   intakeItemToView,
   intakeMoneyFactsRefusal,
@@ -179,11 +183,24 @@ export function namesIntakePostingMoneyFacts(details: IntakePostingMoneyDetails)
   )
 }
 
-type PostIntakeItemOptions = IntakePostingMoneyDetails & {
+export type PostIntakeItemOptions = IntakePostingMoneyDetails & {
   /** EARS-510: approve a submitted expense request and post it in this transaction. */
   approveSubmittedRequest?: boolean
   /** The exact request/document identity approved by the verifier (EARS-510/531). */
   expectedSnapshot?: IntakePostingSnapshot
+  /**
+   * EARS-506's one exception: the approve-role HUMAN mark-paid act (EARS-543,
+   * the EARS-544 refund with its reimbursement, the EARS-547 bulk act) posts
+   * with no document — the recorded act and its author are the assertion that
+   * money moved. Direct entry and an automated verifier never set it.
+   */
+  humanMarkPaidAct?: boolean
+  /**
+   * The caller already re-checked the request's snapshot under the row lock in
+   * THIS transaction (the bulk act checks the token the dialog showed; the
+   * single acts check the one they read). Only the module's own acts set it.
+   */
+  snapshotCheckedByCaller?: boolean
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -196,90 +213,129 @@ export async function postIntakeItem(
 ): Promise<FinanceIntakeItemView> {
   assertFinanceLedgerAccess(actor)
 
-  return platformTransaction(financeAuditContext(actor), async (tx) => {
-    const item = await lockIntakeItem(tx, itemId)
-    if (item.source === 'request' && options.expectedSnapshot === undefined) {
-      throw new FinanceRefusal(
-        `Заявка #${item.id} проводится только по снимку, который подтвердил document verifier ` +
-          '(EARS-531).',
-      )
-    }
-    const approveAndPost = options.approveSubmittedRequest === true
-    const expectedStatus = approveAndPost ? 'submitted' : 'approved'
-    if (item.status !== expectedStatus) {
-      throw new FinanceRefusal(
-        `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: ` +
-          `${approveAndPost ? 'одноактное согласование ожидает submitted' : 'проводка доступна только после approved'} ` +
-          '(EARS-505/510).',
-      )
-    }
-    if (approveAndPost && (item.source !== 'request' || item.kind !== 'expense')) {
-      throw new FinanceRefusal(
-        'Одноактное согласование и проведение относится только к заявке на расход ' +
-          '(EARS-510). Остальные позиции сначала проходят обычный approved.',
-      )
-    }
-    if (
-      namesIntakePostingMoneyFacts(options) &&
-      (item.source !== 'request' || item.kind !== 'expense')
-    ) {
-      throw new FinanceRefusal(
-        'Счёт списания и фактическая дата вводятся в момент проведения только у заявки на ' +
-          'расход (EARS-508/511/533).',
-      )
-    }
-    if (options.occurredOn !== undefined && !ISO_DATE.test(options.occurredOn)) {
-      throw new FinanceRefusal(
-        `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
-          '(EARS-508/511/533).',
-      )
-    }
-    const withDetails = applyIntakePostingDetails(intakeItemToView(item), options)
-    // EARS-533: the gate. Everything below reads one date and one payer.
-    const moneyFacts = intakeMoneyFactsRefusal(withDetails, { posting: true })
-    if (moneyFacts !== null) throw new FinanceRefusal(moneyFacts)
-    // The charged pair belongs to the same gate: a caller of the module's own
-    // API may half-name it, and without this the row invariant aborts the
-    // transaction with a constraint name (#388 review round 2).
-    const paidPair = intakePaidPairRefusal(withDetails)
-    if (paidPair !== null) throw new FinanceRefusal(paidPair)
-    if (options.expectedSnapshot !== undefined) {
-      await assertIntakePostingSnapshot(tx, withDetails, options.expectedSnapshot)
-    }
-    // Built from the ROW plus the act's money facts, not from the view: the
-    // ledger writers below read row fields the view does not carry, and a cast
-    // of the view would hand them `undefined` without a type error.
-    const postingItem = {
-      ...item,
-      occurredOn: withDetails.occurredOn,
-      accountId: withDetails.accountId,
-      paidAmount: withDetails.paidAmount,
-      paidCurrency: withDetails.paidCurrency,
-    } as PostingItem
-    // EARS-528 again at the last door: a row may predate the filing-time rule.
-    await assertIntakeAccountPlacement(tx, postingItem)
-    await assertRequestPurposeReady(tx, item.id)
+  return platformTransaction(financeAuditContext(actor), (tx) =>
+    postIntakeItemInTransaction(tx, actor, itemId, options),
+  )
+}
+
+/**
+ * The posting itself, inside the CALLER's transaction (EARS-505): the refund
+ * act posts a request and its reimbursement, and the bulk act posts every row
+ * of a batch, each in ONE `platformTransaction` — one `txid` in the journal.
+ * The caller has asked `assertFinanceLedgerAccess` already.
+ */
+export async function postIntakeItemInTransaction(
+  tx: PlatformTx,
+  actor: FinanceActor,
+  itemId: number,
+  options: PostIntakeItemOptions = {},
+): Promise<FinanceIntakeItemView> {
+  const item = await lockIntakeItem(tx, itemId)
+  if (
+    item.source === 'request' &&
+    options.expectedSnapshot === undefined &&
+    options.snapshotCheckedByCaller !== true
+  ) {
+    throw new FinanceRefusal(
+      `Заявка #${item.id} проводится только по снимку, который подтвердил document verifier ` +
+        '(EARS-531).',
+    )
+  }
+  const approveAndPost = options.approveSubmittedRequest === true
+  const expectedStatus = approveAndPost ? 'submitted' : 'approved'
+  if (item.status !== expectedStatus) {
+    throw new FinanceRefusal(
+      `Позиция приёмки #${item.id} не проводится из статуса «${item.status}»: ` +
+        `${approveAndPost ? 'одноактное согласование ожидает submitted' : 'проводка доступна только после approved'} ` +
+        '(EARS-505/510).',
+    )
+  }
+  if (approveAndPost && (item.source !== 'request' || item.kind !== 'expense')) {
+    throw new FinanceRefusal(
+      'Одноактное согласование и проведение относится только к заявке на расход ' +
+        '(EARS-510). Остальные позиции сначала проходят обычный approved.',
+    )
+  }
+  if (
+    namesIntakePostingMoneyFacts(options) &&
+    (item.source !== 'request' || item.kind !== 'expense')
+  ) {
+    throw new FinanceRefusal(
+      'Счёт списания и фактическая дата вводятся в момент проведения только у заявки на ' +
+        'расход (EARS-508/511/533).',
+    )
+  }
+  if (options.occurredOn !== undefined && !ISO_DATE.test(options.occurredOn)) {
+    throw new FinanceRefusal(
+      `Фактическая дата «${options.occurredOn}» записана не в формате ГГГГ-ММ-ДД ` +
+        '(EARS-508/511/533).',
+    )
+  }
+  const withDetails = applyIntakePostingDetails(intakeItemToView(item), options)
+  // EARS-533: the gate. Everything below reads one date and one payer.
+  const moneyFacts = intakeMoneyFactsRefusal(withDetails, { posting: true })
+  if (moneyFacts !== null) throw new FinanceRefusal(moneyFacts)
+  // The charged pair belongs to the same gate: a caller of the module's own
+  // API may half-name it, and without this the row invariant aborts the
+  // transaction with a constraint name (#388 review round 2).
+  const paidPair = intakePaidPairRefusal(withDetails)
+  if (paidPair !== null) throw new FinanceRefusal(paidPair)
+  if (options.expectedSnapshot !== undefined) {
+    await assertIntakePostingSnapshot(tx, withDetails, options.expectedSnapshot)
+  }
+  // Built from the ROW plus the act's money facts, not from the view: the
+  // ledger writers below read row fields the view does not carry, and a cast
+  // of the view would hand them `undefined` without a type error.
+  const postingItem = {
+    ...item,
+    occurredOn: withDetails.occurredOn,
+    accountId: withDetails.accountId,
+    paidAmount: withDetails.paidAmount,
+    paidCurrency: withDetails.paidCurrency,
+  } as PostingItem
+  // EARS-528 again at the last door: a row may predate the filing-time rule.
+  await assertIntakeAccountPlacement(tx, postingItem)
+  await assertIntakeSettlement(tx, postingItem)
+  await assertRequestPurposeReady(tx, item.id)
+  if (options.humanMarkPaidAct === true) {
+    assertHumanMarkPaidScope(postingItem)
+  } else {
     await requireReadyDocument(tx, item.id)
-    const postedBy = await requireActorMemberId(tx, actor)
-    const operation = await recordItemOperation(tx, postingItem)
-    const postedAt = new Date()
-    const [updated] = await tx
-      .update(financeIntakeItem)
-      .set({
-        status: 'posted',
-        occurredOn: postingItem.occurredOn,
-        accountId: postingItem.accountId,
-        paidAmount: postingItem.paidAmount,
-        paidCurrency: postingItem.paidCurrency,
-        ...(approveAndPost ? { decidedBy: postedBy, decidedAt: postedAt } : {}),
-        operationId: operation.id,
-        postedBy,
-        postedAt,
-      })
-      .where(eq(financeIntakeItem.id, item.id))
-      .returning()
-    return intakeItemToView(updated)
-  })
+  }
+  const postedBy = await requireActorMemberId(tx, actor)
+  const operation = await recordItemOperation(tx, postingItem)
+  const postedAt = new Date()
+  const [updated] = await tx
+    .update(financeIntakeItem)
+    .set({
+      status: 'posted',
+      occurredOn: postingItem.occurredOn,
+      accountId: postingItem.accountId,
+      paidAmount: postingItem.paidAmount,
+      paidCurrency: postingItem.paidCurrency,
+      ...(approveAndPost ? { decidedBy: postedBy, decidedAt: postedAt } : {}),
+      operationId: operation.id,
+      postedBy,
+      postedAt,
+    })
+    .where(eq(financeIntakeItem.id, item.id))
+    .returning()
+  return intakeItemToView(updated)
+}
+
+/**
+ * Where the documentless human act reaches (EARS-506): an expense REQUEST, and
+ * the reimbursement transfer the refund act books with it. Nothing else — a
+ * manual line or a backfill row stays document-gated whoever posts it.
+ */
+function assertHumanMarkPaidScope(item: PostingItem): void {
+  const request = item.source === 'request' && item.kind === 'expense'
+  const reimbursement = item.kind === 'transfer' && item.settlesItemId !== null
+  if (request || reimbursement) return
+  throw new FinanceRefusal(
+    `Позиция приёмки #${item.id} проводится только с подтверждающим документом: отметка оплаты ` +
+      'без чека относится к заявке на расход и её возмещению (EARS-506).',
+  )
 }
 
 /** Public posting keeps request confirmation behind the verifier-owned workflow. */

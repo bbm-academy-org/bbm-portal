@@ -42,6 +42,7 @@ const ITEM: FinanceIntakeItemView = {
   postedBy: null,
   postedAt: null,
   operationId: null,
+  settlesItemId: null,
 }
 
 const DOCUMENT = {

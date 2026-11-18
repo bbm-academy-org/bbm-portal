@@ -119,7 +119,7 @@ async function approveAndPost(itemId: number, refs: Refs) {
 }
 
 /** The EARS-513 debt: an expense paid from the member's own card, posted. */
-async function postPersonalFundsDebt(refs: Refs, amount: bigint): Promise<void> {
+async function postPersonalFundsDebt(refs: Refs, amount: bigint): Promise<number> {
   const debt = await createIntakeItem(ENTRY, {
     source: 'manual',
     kind: 'expense',
@@ -135,6 +135,7 @@ async function postPersonalFundsDebt(refs: Refs, amount: bigint): Promise<void> 
     memberId: refs.payerMemberId,
   })
   await approveAndPost(debt.id, refs)
+  return debt.id
 }
 
 async function intakeCount(): Promise<number> {
@@ -163,7 +164,8 @@ describe('a reimbursement must name the member whose debt it settles (EARS-528)'
 
   it('EARS-528: refuses an edit that drops the member from a reimbursement', async () => {
     const refs = await seedReferences()
-    const item = await createIntakeItem(ENTRY, transferInput(refs))
+    const debtId = await postPersonalFundsDebt(refs, 300_000n)
+    const item = await createIntakeItem(ENTRY, transferInput(refs, { settlesItemId: debtId }))
     const refusal = await refusalOf(editIntakeItem(ENTRY, item.id, { memberId: null }))
     expect(refusal).toBeInstanceOf(FinanceRefusal)
     expect(String(refusal)).toContain('EARS-528')
@@ -256,7 +258,8 @@ describe('intake names a system account nowhere else (EARS-528, spec 338 EARS-30
 
   it('EARS-528: refuses an edit that turns a reimbursement into a different kind', async () => {
     const refs = await seedReferences()
-    const item = await createIntakeItem(ENTRY, transferInput(refs))
+    const debtId = await postPersonalFundsDebt(refs, 300_000n)
+    const item = await createIntakeItem(ENTRY, transferInput(refs, { settlesItemId: debtId }))
     const refusal = await refusalOf(editIntakeItem(ENTRY, item.id, { kind: 'income' }))
     expect(refusal).toBeInstanceOf(FinanceRefusal)
     expect(String(refusal)).toContain('EARS-528')
@@ -265,9 +268,10 @@ describe('intake names a system account nowhere else (EARS-528, spec 338 EARS-30
 })
 
 describe('a posted reimbursement lowers exactly that member debt (EARS-513/527/528)', () => {
-  it('EARS-528: the member-filtered liability drops by exactly the transferred amount, audited to the poster', async () => {
+  it('EARS-528: the member-filtered liability drops by exactly the settled item’s amount, audited to the poster', async () => {
     const refs = await seedReferences()
-    await postPersonalFundsDebt(refs, 875_000n)
+    const otherDebtId = await postPersonalFundsDebt(refs, 575_000n)
+    const debtId = await postPersonalFundsDebt(refs, 300_000n)
     expect(await liabilityBalances({ memberId: refs.payerMemberId })).toEqual([
       expect.objectContaining({ currency: 'RUB', balance: -875_000n }),
     ])
@@ -279,7 +283,8 @@ describe('a posted reimbursement lowers exactly that member debt (EARS-513/527/5
       currency: 'RUB',
       memberId: refs.payerMemberId,
       projectId: refs.projectId,
-      note: 'Возврат части долга',
+      settlesItemId: debtId,
+      note: 'Возврат по одной позиции',
     })
     expect(repayment).toMatchObject({
       source: 'manual',
@@ -287,7 +292,9 @@ describe('a posted reimbursement lowers exactly that member debt (EARS-513/527/5
       status: 'draft',
       counterAccountId: refs.liabilityId,
       memberId: refs.payerMemberId,
+      settlesItemId: debtId,
     })
+    expect(otherDebtId).not.toBe(debtId)
 
     const before = await db.execute(sql`select coalesce(max(id), 0) as id from core.audit_event`)
     const since = (before.rows[0] as { id: string }).id
@@ -323,6 +330,7 @@ describe('a posted reimbursement lowers exactly that member debt (EARS-513/527/5
         currency: 'THB',
         memberId: refs.payerMemberId,
         projectId: refs.projectId,
+        settlesItemId: 1,
       }),
     )
     expect(refusal).toBeInstanceOf(FinanceRefusal)

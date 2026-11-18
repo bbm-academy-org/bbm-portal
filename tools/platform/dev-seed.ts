@@ -41,12 +41,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
   approveExpenseRequest,
+  markExpenseRequestPaid,
   cancelExpenseRequest,
   confirmExpenseRequest,
   createCounterparty,
   createExpenseRequest,
   createIntakeItem,
   listCounterparties,
+  listExpenseRequests,
   listFinanceDocuments,
   listIntakeItems,
   listAccounts,
@@ -98,6 +100,13 @@ import { seedFinanceAcceptance } from './finance-acceptance-seed'
 import { loadPlatformToolEnv } from './load-env.mjs'
 
 const TAG = 'dev:seed'
+
+/** The EARS-548 token the queue shows the approver — what the card sends with mark-paid (#549). */
+async function queueSnapshotOf(approver: FinanceActor, id: number): Promise<string> {
+  const row = (await listExpenseRequests(approver)).find((request) => request.id === id)
+  if (row?.snapshot == null) throw new Error(`request #${id} carries no approver snapshot`)
+  return row.snapshot
+}
 
 export type DevSeedOptions = {
   /** Defaults to `PLATFORM_DATABASE_URL`; named explicitly by the refusal tests. */
@@ -393,15 +402,16 @@ async function walkRequestTo(
         await refuseExpenseRequest(approver, item.id, request.refusalReason!)
         return { documentsUploaded }
       case 'approved':
-        // Deliberately WITHOUT a document: with a ready document `approve` is
-        // the one-act confirmation and posts in the same transaction
-        // (EARS-510/511), so an `approved` fixture is precisely a request still
-        // waiting for its file.
+        // Approve only authorizes since 2026-11-17 (EARS-510 revised, #549);
+        // an `approved` fixture is a request waiting for its mark-paid act.
         await approveExpenseRequest(approver, item.id)
         return { documentsUploaded }
       case 'posted':
+        // «Одобрить и отметить оплату» — the one act from `submitted` (EARS-543).
         await ensureDocument()
-        await approveExpenseRequest(approver, item.id)
+        await markExpenseRequestPaid(approver, item.id, {
+          snapshot: await queueSnapshotOf(approver, item.id),
+        })
         return { documentsUploaded }
       default:
         break

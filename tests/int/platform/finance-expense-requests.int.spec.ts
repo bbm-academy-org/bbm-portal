@@ -24,6 +24,7 @@ import {
   listExpenseRequests,
   listFinanceDocuments,
   listFinanceDocumentsByItems,
+  markExpenseRequestPaid,
   postIntakeItem,
   readFinanceDocument,
   refuseExpenseRequest,
@@ -141,6 +142,13 @@ async function uploadReceipt(actor: FinanceActor, intakeItemId: number) {
     },
     storage,
   )
+}
+
+/** The EARS-548 token the queue shows an approver — what the request card sends back with mark-paid. */
+async function snapshotOf(id: number): Promise<string> {
+  const row = (await listExpenseRequests(APPROVER)).find((request) => request.id === id)
+  if (row?.snapshot == null) throw new Error(`request #${id} carries no approver snapshot`)
+  return row.snapshot
 }
 
 describe('expense request member lifecycle (EARS-502/508/509)', () => {
@@ -393,7 +401,7 @@ describe('expense request member lifecycle (EARS-502/508/509)', () => {
 })
 
 describe('expense request decisions (EARS-510/511/512/531)', () => {
-  it('EARS-510: approving a request with its receipt posts once and records the approver as decider and poster', async () => {
+  it('EARS-510/543: «Одобрить и отметить оплату» posts a receipted request once and records the approver as decider and poster', async () => {
     const refs = await seedIntakeReferences()
     await createCurrency(ADMIN, { code: 'THB', name: 'Бат', precision: 2 })
     const request = await createExpenseRequest(
@@ -409,7 +417,9 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
     const receipt = await uploadReceipt(MEMBER, request.id)
     await submitExpenseRequest(MEMBER, request.id)
 
-    const posted = await approveExpenseRequest(APPROVER, request.id)
+    const posted = await markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
+    })
 
     expect(posted).toMatchObject({
       status: 'posted',
@@ -424,7 +434,7 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
     expect(Number((operations.rows[0] as { count: number }).count)).toBe(1)
   })
 
-  it('EARS-510: a failed one-act post leaves the request submitted and records no decision', async () => {
+  it('EARS-510/543: a failed one-act post leaves the request submitted and records no decision', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs, { alreadyPaid: true }))
     await uploadReceipt(MEMBER, request.id)
@@ -443,7 +453,9 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
       `)
     })
     try {
-      await expect(approveExpenseRequest(APPROVER, request.id)).rejects.toThrow()
+      await expect(
+        markExpenseRequestPaid(APPROVER, request.id, { snapshot: await snapshotOf(request.id) }),
+      ).rejects.toThrow()
     } finally {
       await asMigrator(async (client) => {
         await client.query(
@@ -462,11 +474,12 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
     })
   })
 
-  it('EARS-510/531: verifier approval cannot post a different request and document snapshot', async () => {
+  it('EARS-511/531: a verifier’s confirmation cannot post a different request and document snapshot', async () => {
     const refs = await seedIntakeReferences()
     const request = await createExpenseRequest(MEMBER, requestInput(refs, { alreadyPaid: true }))
     const originalDocument = await uploadReceipt(MEMBER, request.id)
     await submitExpenseRequest(MEMBER, request.id)
+    await approveExpenseRequest(APPROVER, request.id)
     const verifierStarted = deferred()
     const releaseVerifier = deferred()
     const verifier: FinanceDocumentVerifier = {
@@ -480,9 +493,10 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
       },
     }
 
-    const approval = approveExpenseRequest(APPROVER, request.id, { verifier })
+    const approval = confirmExpenseRequest(APPROVER, request.id, { verifier })
     await verifierStarted.promise
-    await editExpenseRequest(MEMBER, request.id, { amount: 125_000n })
+    // An edit of a money field in `approved` bounces it to `submitted` (EARS-524).
+    await editExpenseRequest(ENTRY, request.id, { amount: 125_000n })
     await detachFinanceDocument(ENTRY, {
       documentId: originalDocument.id,
       intakeItemId: request.id,
@@ -490,7 +504,9 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
     const replacementDocument = await uploadReceipt(ENTRY, request.id)
     releaseVerifier.resolve()
 
-    await expect(approval).rejects.toThrow(/измен|сним|провер/i)
+    // Refused either by the snapshot re-check or by the bounce itself — both
+    // say the approval no longer covers what is being posted.
+    await expect(approval).rejects.toThrow(/измен|сним|провер|статус/i)
     expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({
       status: 'submitted',
       amount: 125_000n,

@@ -4,6 +4,8 @@ import {
   approveExpenseRequest,
   cancelExpenseRequest,
   confirmExpenseRequest,
+  markExpenseRequestPaid,
+  markExpenseRequestReimbursed,
   refuseExpenseRequest,
   submitExpenseRequest,
 } from '@/lib/finance'
@@ -39,16 +41,42 @@ const moneyDetailsShape = {
  * read — so the pair is refused here, in the same 400 shape every other
  * malformed body gets.
  */
+/** Already-uploaded receipts the act attaches; a receipt is optional (EARS-543/544). */
+const documentIdsShape = {
+  documentIds: z.array(z.number().int().positive()).max(20).optional(),
+}
+
+/** The EARS-548 token the card read the request at; a changed request is refused (EARS-543/544). */
+const snapshotShape = { snapshot: z.string().trim().min(1).max(128) }
+
 const actionSchema = z
   .discriminatedUnion('act', [
     z.object({ act: z.literal('submit') }),
     z.object({ act: z.literal('cancel') }),
     z.object({ act: z.literal('approve'), ...moneyDetailsShape }),
     z.object({ act: z.literal('confirm'), ...moneyDetailsShape }),
+    // EARS-543 «Отметить оплату» / «Одобрить и отметить оплату»: the date money
+    // moved is required; the account and the debited amount as EARS-533 says.
+    z.object({
+      act: z.literal('mark-paid'),
+      ...snapshotShape,
+      ...moneyDetailsShape,
+      occurredOn: z.iso.date(),
+      ...documentIdsShape,
+    }),
+    // EARS-544 «Отметить возврат»: the refund's date, account and amount.
+    z.object({
+      act: z.literal('mark-reimbursed'),
+      ...snapshotShape,
+      occurredOn: z.iso.date(),
+      accountId: z.number().int().positive(),
+      amount: z.string().regex(/^\d+$/),
+      ...documentIdsShape,
+    }),
     z.object({ act: z.literal('refuse'), reason: z.string().trim().min(1).max(2_000) }),
   ])
   .superRefine((value, context) => {
-    if (value.act !== 'approve' && value.act !== 'confirm') return
+    if (value.act !== 'approve' && value.act !== 'confirm' && value.act !== 'mark-paid') return
     // Three states, not two: absent (the fact is not being touched), null (it is
     // being cleared) and set. The CHECK compares nullness, so both facts must be
     // in the SAME state — clearing one while setting the other breaks it too.
@@ -91,16 +119,35 @@ export async function POST(
   if (!parsed.success) return textResponse(400, parsed.error.issues[0]?.message)
 
   try {
-    const item =
-      parsed.data.act === 'submit'
-        ? await submitExpenseRequest(gate.actor, id)
-        : parsed.data.act === 'cancel'
-          ? await cancelExpenseRequest(gate.actor, id)
-          : parsed.data.act === 'approve'
-            ? await approveExpenseRequest(gate.actor, id, moneyDetails(parsed.data))
-            : parsed.data.act === 'confirm'
-              ? await confirmExpenseRequest(gate.actor, id, moneyDetails(parsed.data))
-              : await refuseExpenseRequest(gate.actor, id, parsed.data.reason)
+    const data = parsed.data
+    const item = await (() => {
+      switch (data.act) {
+        case 'submit':
+          return submitExpenseRequest(gate.actor, id)
+        case 'cancel':
+          return cancelExpenseRequest(gate.actor, id)
+        case 'approve':
+          return approveExpenseRequest(gate.actor, id, moneyDetails(data))
+        case 'confirm':
+          return confirmExpenseRequest(gate.actor, id, moneyDetails(data))
+        case 'mark-paid':
+          return markExpenseRequestPaid(gate.actor, id, {
+            snapshot: data.snapshot,
+            ...moneyDetails(data),
+            ...(data.documentIds === undefined ? {} : { documentIds: data.documentIds }),
+          })
+        case 'mark-reimbursed':
+          return markExpenseRequestReimbursed(gate.actor, id, {
+            snapshot: data.snapshot,
+            occurredOn: data.occurredOn,
+            accountId: data.accountId,
+            amount: BigInt(data.amount),
+            ...(data.documentIds === undefined ? {} : { documentIds: data.documentIds }),
+          })
+        case 'refuse':
+          return refuseExpenseRequest(gate.actor, id, data.reason)
+      }
+    })()
     return jsonResponse({ id: item.id, status: item.status, operationId: item.operationId })
   } catch (cause) {
     return requestApiError(cause)

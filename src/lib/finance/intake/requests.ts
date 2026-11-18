@@ -4,17 +4,20 @@
  *
  * A request is not a second persistence path: every function below delegates
  * row lifecycle to `items.ts`, document access to `documents.ts`, and every
- * ledger write to `postIntakeItem`. This file owns only the product act that
- * composes those primitives: approve means post immediately when the confirming
- * document is already present, otherwise authorize and wait.
+ * ledger write to `postIntakeItem`. This file owns only the product acts that
+ * compose those primitives. Since 2026-11-17 (owner decision 37, #547/#549)
+ * approve only authorizes — an attached invoice is not proof of payment — and
+ * the human confirmation posts with or without a document (EARS-506/510/511);
+ * the owner's payment-queue acts live in `./payment-acts`.
  */
 import { eq } from 'drizzle-orm'
 
 import { findMemberByEmail } from '@/lib/member'
 import { financeCounterparty } from '@/lib/platform/db/schema/finance/finance-counterparty'
+import { getPlatformDb } from '@/lib/platform/db/client'
 import type { PlatformTx } from '@/lib/platform/db/transaction'
 
-import { assertFinanceLedgerAccess, type FinanceActor } from '../core/actor'
+import { assertFinanceLedgerAccess, holdsFinanceLedgerRole, type FinanceActor } from '../core/actor'
 import { FinanceAccessRefusal, FinanceRefusal } from '../core/errors'
 import { assertProductBinding } from '../core/invariants'
 import { listFinanceDocuments, type FinanceDocumentView } from '../documents/documents'
@@ -35,6 +38,7 @@ import {
   type FinanceIntakeItemView,
   type ListIntakeItemsFilter,
 } from './items'
+import { settlementsOf } from './account-placement'
 import {
   applyIntakePostingDetails,
   assertIntakePostingSnapshot,
@@ -43,6 +47,12 @@ import {
   postIntakeItem,
   type IntakePostingMoneyDetails,
 } from './posting'
+import {
+  deriveExpenseRequestStage,
+  expenseRequestQueueSnapshot,
+  readyQueueDocuments,
+  type ExpenseRequestStage,
+} from './request-queue'
 
 /** The fields the member-facing request form owns (EARS-508). */
 export type CreateExpenseRequestInput = {
@@ -358,10 +368,24 @@ export async function getExpenseRequest(
   return item
 }
 
+/**
+ * A request as the queue reads it (spec 339 §I): the item plus the facts the
+ * payment queue derives — its EARS-535 stage, whether a ready document is
+ * attached (the «без чека» fact #551 renders), which posted reimbursement settles it, and
+ * the EARS-548 snapshot token the bulk dialog sends back.
+ */
+export type FinanceExpenseRequestView = FinanceIntakeItemView & {
+  stage: ExpenseRequestStage
+  hasDocument: boolean
+  settledBy: number | null
+  /** Null for a reader without `finance-approve` — the token serves only the bulk act. */
+  snapshot: string | null
+}
+
 export async function listExpenseRequests(
   actor: FinanceActor,
   filter: Pick<ListIntakeItemsFilter, 'status'> = {},
-): Promise<FinanceIntakeItemView[]> {
+): Promise<FinanceExpenseRequestView[]> {
   // EVERY SIGNED-IN MEMBER READS EVERY REQUEST (owner decision 35, Антон,
   // 2026-09-14, #115; PRD 339 US-2, acceptance «and of every other member's
   // requests»): the shared table is the point of the decision, and a «все»
@@ -369,8 +393,27 @@ export async function listExpenseRequests(
   // screen. It widens THIS list only — the documents attached to those requests
   // keep their own restriction (EARS-523), and the single-item read keeps its
   // own (the edit path).
-  const items = await listIntakeItems(actor, { ...filter, source: ['request'] }, 'every-member')
-  return items.filter((item) => item.kind === 'expense')
+  const items = (
+    await listIntakeItems(actor, { ...filter, source: ['request'] }, 'every-member')
+  ).filter((item) => item.kind === 'expense')
+  const ids = items.map((item) => item.id)
+  const db = getPlatformDb()
+  const [documents, settlements] = await Promise.all([
+    readyQueueDocuments(db, ids),
+    settlementsOf(db, ids),
+  ])
+  const approver = holdsFinanceLedgerRole(actor)
+  return items.map((item) => {
+    const ready = documents.get(item.id) ?? []
+    const settledBy = settlements.get(item.id) ?? null
+    return {
+      ...item,
+      stage: deriveExpenseRequestStage({ ...item, settled: settledBy !== null }),
+      hasDocument: ready.length > 0,
+      settledBy,
+      snapshot: approver ? expenseRequestQueueSnapshot(item, ready, settledBy) : null,
+    }
+  })
 }
 
 export type FinanceDocumentVerificationVerdict =
@@ -403,8 +446,14 @@ export type ConfirmExpenseRequestOptions = IntakePostingMoneyDetails & {
 }
 
 /**
- * Verify and post an already-authorized request. The ledger door remains
- * `postIntakeItem`; a verifier can decide WHETHER it is called, never replace it.
+ * Verify and post an already-authorized request — EARS-511's one-act
+ * confirmation. The ledger door remains `postIntakeItem`; a verifier can decide
+ * WHETHER it is called, never replace it.
+ *
+ * With the v1 human verifier it posts with or without a document (EARS-506's
+ * exception, owner decision 37): the recorded act and its author are the
+ * assertion that money moved. An automated verifier has nothing to verify
+ * without a document and keeps requiring one (EARS-531).
  */
 export async function confirmExpenseRequest(
   actor: FinanceActor,
@@ -414,10 +463,11 @@ export async function confirmExpenseRequest(
   assertFinanceLedgerAccess(actor)
   const request = await requireExpenseRequest(actor, id)
   const documents = await listFinanceDocuments(actor, { intakeItemId: id })
-  if (documents.length === 0) {
+  const verifier = options.verifier ?? humanFinanceDocumentVerifier
+  if (verifier !== humanFinanceDocumentVerifier && documents.length === 0) {
     throw new FinanceRefusal(
-      `Заявка #${id} ждёт подтверждающий документ: подтверждать и проводить пока нечего ` +
-        '(EARS-506/511).',
+      `Заявка #${id} без подтверждающего документа: автоматической проверке нечего сверять, ` +
+        'отметку оплаты делает человек с ролью finance-approve (EARS-506/531).',
     )
   }
 
@@ -454,10 +504,16 @@ async function verifyAndPostExpenseRequest(
     paidCurrency: options.paidCurrency,
     approveSubmittedRequest: options.approveSubmittedRequest,
     expectedSnapshot,
+    humanMarkPaidAct: verifier === humanFinanceDocumentVerifier,
   })
 }
 
-/** Approve now; with a ready document the same act verifies and posts. */
+/**
+ * Approve — authorize the spend and post nothing, whether or not a document is
+ * attached (EARS-510 as revised 2026-11-17: an attached pre-spend invoice is
+ * not proof of payment). The one act that approves AND posts is the explicit
+ * mark-paid act (`markExpenseRequestPaid`, EARS-543).
+ */
 export async function approveExpenseRequest(
   actor: FinanceActor,
   id: number,
@@ -465,28 +521,22 @@ export async function approveExpenseRequest(
 ): Promise<FinanceIntakeItemView> {
   assertFinanceLedgerAccess(actor)
   const request = await requireExpenseRequest(actor, id)
-  const documents = await listFinanceDocuments(actor, { intakeItemId: id })
-  if (documents.length === 0) {
-    // Authorization only: nothing posts, so the EARS-533 money facts have
-    // nowhere to be written and are refused rather than quietly dropped.
-    if (namesIntakePostingMoneyFacts(options)) {
-      throw new FinanceRefusal(
-        `Заявка #${id} ещё без подтверждающего документа: одобрение только авторизует трату, ` +
-          'а счёт и дату вводят в момент проведения (EARS-506/511/533).',
-      )
-    }
-    const expectedSnapshot = createIntakePostingSnapshot(request, documents)
-    return (await transitionIntakeItem(actor, id, 'approve', {
-      async validate(tx, current) {
-        assertExpenseRequest(current)
-        await assertIntakePostingSnapshot(tx, current, expectedSnapshot)
-      },
-    }))!
+  // Authorization only: nothing posts, so the EARS-533 money facts have
+  // nowhere to be written and are refused rather than quietly dropped.
+  if (namesIntakePostingMoneyFacts(options)) {
+    throw new FinanceRefusal(
+      `Одобрение заявки #${id} только авторизует трату и ничего не проводит: счёт и дату ` +
+        'вводят в момент отметки оплаты (EARS-510/533).',
+    )
   }
-  return verifyAndPostExpenseRequest(actor, request, documents, {
-    ...options,
-    approveSubmittedRequest: true,
-  })
+  const documents = await listFinanceDocuments(actor, { intakeItemId: id })
+  const expectedSnapshot = createIntakePostingSnapshot(request, documents)
+  return (await transitionIntakeItem(actor, id, 'approve', {
+    async validate(tx, current) {
+      assertExpenseRequest(current)
+      await assertIntakePostingSnapshot(tx, current, expectedSnapshot)
+    },
+  }))!
 }
 
 /** Refuse a submitted claim or revoke an unposted authorization. */

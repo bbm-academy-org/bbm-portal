@@ -19,7 +19,7 @@ import {
   sourceRefLabel,
   sourceRefToUrl,
   type FinanceDocumentView,
-  type FinanceIntakeItemView,
+  type FinanceExpenseRequestView,
 } from '@/lib/finance'
 import { findMemberByEmail, getMembersByIds } from '@/lib/member'
 
@@ -41,7 +41,7 @@ function byId<T extends { id: number }>(rows: T[]): Map<number, T> {
 }
 
 function serializeItem(
-  item: FinanceIntakeItemView,
+  item: FinanceExpenseRequestView,
   context: {
     accounts: Map<number, { id: number; name: string; currency: string }>
     counterparties: Map<number, { id: number; name: string }>
@@ -156,6 +156,13 @@ function serializeItem(
             counterparty ? { id: counterparty.id, name: counterparty.name } : null)(
             context.counterparties.get(item.counterpartyId),
           ),
+    // Spec 339 §I read model (#549): the EARS-535 stage, the «без
+    // чека» fact (whether ANY ready document is attached — not which, so it
+    // stays inside EARS-523), the settling reimbursement and the EARS-548 token.
+    stage: item.stage,
+    hasDocument: item.hasDocument,
+    settledBy: item.settledBy,
+    snapshot: item.snapshot,
     documents: context.documents.map((document) => ({
       id: document.id,
       filename: document.filename,
