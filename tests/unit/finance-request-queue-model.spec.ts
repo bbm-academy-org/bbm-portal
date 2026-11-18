@@ -9,6 +9,7 @@ import {
   filterQueueRows,
   formatDisplayMoney,
   formatOriginalMoney,
+  isNewInQueue,
   isNewRequest,
   newCountLabel,
   isOverdue,
@@ -404,6 +405,9 @@ describe('the row as the owner reads it (review of #562, UX 2–7)', () => {
     expect(isNewRequest('2026-11-18T08:00:00.000Z', NOW)).toBe(true)
     expect(isNewRequest('2026-11-17T09:00:01.000Z', NOW)).toBe(true)
     expect(isNewRequest('2026-11-17T08:59:59.000Z', NOW)).toBe(false)
+    const fresh = '2026-11-18T08:00:00.000Z'
+    expect(isNewInQueue(item({ stage: 'draft', createdAt: fresh }), NOW)).toBe(true)
+    expect(isNewInQueue(item({ stage: 'paid', createdAt: fresh }), NOW)).toBe(false)
     expect([1, 2, 5, 21].map(newCountLabel)).toEqual(['1 новая', '2 новые', '5 новых', '21 новая'])
   })
 

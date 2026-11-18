@@ -362,6 +362,11 @@ export function isNewRequest(createdAt: string, now: Date): boolean {
   return age >= 0 && age <= QUEUE_NEW_HOURS * 3_600_000
 }
 
+/** The «новая» mark is for the work still to do — a closed request filed today is not news. */
+export function isNewInQueue(request: RequestBoardItem, now: Date): boolean {
+  return ACTIVE_STAGES.includes(request.stage) && isNewRequest(request.createdAt, now)
+}
+
 /** A group heading's «1 новая», «2 новые», «5 новых» — for a group whose rows are folded away. */
 export function newCountLabel(count: number): string {
   return `${count} ${russianPlural(count, 'новая', 'новые', 'новых')}`

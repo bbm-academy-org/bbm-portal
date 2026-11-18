@@ -32,7 +32,7 @@ import {
   filterQueueRows,
   formatDisplayMoney,
   formatOriginalMoney,
-  isNewRequest,
+  isNewInQueue,
   isOverdue,
   missingRateNote,
   newCountLabel,
@@ -258,7 +258,7 @@ type CellContext = {
 
 /** «новая» — the newest submissions are found at a glance (review of #562, UX «последняя заявка»). */
 function NewMark({ request, now }: { request: RequestBoardItem; now: Date }) {
-  if (!isNewRequest(request.createdAt, now)) return null
+  if (!isNewInQueue(request, now)) return null
   return <Badge variant="secondary">новая</Badge>
 }
 
@@ -524,7 +524,7 @@ function wideColumns(
     },
     {
       id: 'purpose',
-      size: 360,
+      size: 320,
       header: sortableHeader('На что', 'purpose'),
       cell: ({ row }) => <TitleCell request={row.original} onOpen={onOpen} wrap={false} />,
     },
@@ -547,7 +547,7 @@ function wideColumns(
   } else if (slot === 'paid' || slot === 'refused') {
     columns.push({
       id: 'outcome',
-      size: slot === 'paid' ? 120 : 220,
+      size: slot === 'paid' ? 120 : 170,
       enableSorting: false,
       header: () => <span>{slot === 'paid' ? 'Оплачено' : 'Причина отказа'}</span>,
       cell: ({ row }) => {
@@ -653,7 +653,7 @@ function QueueGroup({
     () => (narrow ? narrowColumns(context, stage, slot) : wideColumns(context, stage, slot)),
     [context, narrow, slot, stage],
   )
-  const fresh = rows.filter((request) => isNewRequest(request.createdAt, now)).length
+  const fresh = rows.filter((request) => isNewInQueue(request, now)).length
   return (
     <section aria-label={group.title} className="space-y-2">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -802,7 +802,10 @@ export function RequestsQueue({
               }))
             }
           >
-            <SelectTrigger aria-label="Заявитель" className="min-w-0 flex-1 sm:flex-none">
+            <SelectTrigger
+              aria-label="Заявитель"
+              className="min-w-36 flex-1 sm:min-w-0 sm:flex-none"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -823,7 +826,7 @@ export function RequestsQueue({
               }))
             }
           >
-            <SelectTrigger aria-label="Проект" className="min-w-0 flex-1 sm:flex-none">
+            <SelectTrigger aria-label="Проект" className="min-w-36 flex-1 sm:min-w-0 sm:flex-none">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -841,7 +844,7 @@ export function RequestsQueue({
               setFilters((current) => ({ ...current, period: value as QueuePeriod }))
             }
           >
-            <SelectTrigger aria-label="Период" className="min-w-0 flex-1 sm:flex-none">
+            <SelectTrigger aria-label="Период" className="min-w-36 flex-1 sm:min-w-0 sm:flex-none">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
