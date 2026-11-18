@@ -35,6 +35,13 @@ const state = vi.hoisted(() => ({
   markExpenseRequestPaid: vi.fn(),
   markExpenseRequestReimbursed: vi.fn(),
   bulkMarkExpenseRequestsPaid: vi.fn(),
+  // The queue's display conversion (#550): the CBR store and the ledger's
+  // posting facts, read once per board.
+  rateSeries: vi.fn(),
+  rateOn: vi.fn(),
+  latestRateDate: vi.fn(),
+  operationDisplayFacts: vi.fn(),
+  moscowToday: vi.fn(),
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => state.session }))
@@ -151,6 +158,11 @@ beforeEach(() => {
   ])
   state.listRegister.mockResolvedValue([])
   state.registerEntriesByIds.mockResolvedValue([])
+  state.rateSeries.mockResolvedValue([])
+  state.rateOn.mockResolvedValue(null)
+  state.latestRateDate.mockResolvedValue(null)
+  state.operationDisplayFacts.mockResolvedValue(new Map())
+  state.moscowToday.mockReturnValue('2026-11-18')
   state.liabilityBalances.mockResolvedValue([
     {
       accountId: 99,
@@ -195,6 +207,52 @@ describe('/p/finance/api/requests read model', () => {
         },
       ],
       liabilities: [{ memberName: 'Мария Иванова', currency: 'RUB', balance: '-72000' }],
+    })
+  })
+
+  it('EARS-549/551: carries each request in ₽, $ and €, the payee member and the rate store’s age', async () => {
+    state.listCurrencies.mockResolvedValue([
+      { code: 'RUB', name: 'Российский рубль', precision: 2, retiredAt: null },
+      { code: 'USD', name: 'Доллар США', precision: 2, retiredAt: null },
+      { code: 'USDC', name: 'USD Coin', precision: 2, retiredAt: null },
+    ])
+    state.listExpenseRequests.mockResolvedValue([
+      { ...request, id: 41, stage: 'pay', hasDocument: false, settledBy: null, snapshot: 'tok-41' },
+      {
+        ...request,
+        id: 42,
+        amount: 100_00n,
+        currency: 'USDC',
+        memberId: 16,
+        stage: 'pay',
+        hasDocument: false,
+        settledBy: null,
+        snapshot: 'tok-42',
+      },
+    ])
+    state.rateSeries.mockResolvedValue([
+      { currency: 'USD', rateDate: '2026-11-18', nominal: 1, valueRub: '80' },
+    ])
+    state.latestRateDate.mockResolvedValue('2026-11-18')
+    const route = await import('@/app/(platform)/p/finance/api/requests/route')
+
+    const body = await (await route.GET()).json()
+
+    expect(body.fx).toEqual({ latestRateDate: '2026-11-18', today: '2026-11-18' })
+    expect(body.requests[0]).toMatchObject({
+      stage: 'pay',
+      snapshot: 'tok-41',
+      display: {
+        RUB: { kind: 'converted', amount: '4500000', basis: 'same_currency' },
+        USD: { kind: 'converted', amount: '56250', basis: 'cbr', rateDate: '2026-11-18' },
+        // EUR is not quoted in this series: no rate, never a zero.
+        EUR: { kind: 'no_rate' },
+      },
+    })
+    expect(body.requests[1]).toMatchObject({
+      memberId: 16,
+      memberName: 'Антон Сидоров',
+      display: { RUB: { kind: 'no_rate', currency: 'USDC' } },
     })
   })
 
