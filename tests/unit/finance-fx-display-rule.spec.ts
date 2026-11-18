@@ -215,6 +215,9 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
     'displayMarketTotals',
     'loadMarketEntries',
     'marketEntryForItem',
+    'loadMarketValuation',
+    'loadMarketContext',
+    'marketQuoteCurrency',
   ]
   const FX_CONSUMERS_ALLOWED = [
     FX_DIR,

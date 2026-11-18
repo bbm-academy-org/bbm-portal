@@ -14,6 +14,7 @@ import {
   pickMarketRate,
   type MarketContext,
   type MarketEntry,
+  type MarketPaymentEntry,
 } from '@/lib/finance/fx/market'
 import type { FxRate } from '@/lib/finance/fx/rates'
 import type { MarketChainFact, MarketIntakeFact } from '@/lib/finance/market-facts'
@@ -277,7 +278,7 @@ describe('«факт не внесён» and «без курса» (EARS-560)', 
       ),
       measureIntakeItem(fact({ itemId: 4, currency: 'THB' }), USD_92), // «без курса»
       measureIntakeItem(pending({ itemId: 5, amount: 99_999_999n }), USD_92), // «факт не внесён»
-    ].filter((e): e is MarketEntry => e !== null)
+    ].filter((e): e is MarketPaymentEntry => e !== null)
     expect(entries).toHaveLength(5)
     const totals = aggregateMarket(entries)
     expect(totals.factRub).toBe(938_400n + 920_000n + 901_600n + 1_000n)
@@ -498,5 +499,16 @@ describe('amount-weighted aggregates (EARS-562)', () => {
 
     const inRub = displayMarketTotals(entries, 'RUB', ctx(series))
     expect(inRub).toMatchObject({ fact: rub.factRub, market: rub.marketRub, noDisplayRate: 0 })
+  })
+
+  it('EARS-562: a display currency the ledger does not register converts nothing — every measured item is «без курса», never a guessed precision', () => {
+    const series = [rate('USD', '2026-10-01', '100.0000'), rate('CNY', '2026-10-01', '13.0000')]
+    const entries = [measureIntakeItem(a, ctx(series))!]
+    expect(displayMarketTotals(entries, 'CNY', ctx(series))).toMatchObject({
+      fact: 0n,
+      market: 0n,
+      noDisplayRate: 1,
+      percentTenths: 10n,
+    })
   })
 })

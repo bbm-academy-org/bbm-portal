@@ -67,6 +67,7 @@ async function seedLedger() {
   const counterpartyId = await seedCounterparty('Anthropic', entryMemberId)
   await seedRate('USD', DAY, '92.0000')
   return {
+    entryMemberId,
     approverMemberId,
     rubId: rub.id,
     rub2Id: rub2.id,
@@ -124,19 +125,21 @@ async function postedExpense(refs: Refs, overrides: Record<string, unknown>) {
 describe('the measured set, read from the ledger (EARS-557)', () => {
   it('EARS-557: a posted USD expense paid from a RUB account is measured with Факт 9 250 ₽; a same-currency item, a reversed item and the reversal are not', async () => {
     const refs = await seedLedger()
-    const measuredItem = await postedExpense(refs, {
-      feeAmount: 5_000n,
-      feeCurrency: 'RUB',
-      occurredOn: '2026-11-14', // a Saturday: Friday's rate
-    })
+    // Posted in date order: the ledger refuses an FX-pair write dated before
+    // one already posted (EARS-328's write order).
+    const reversed = await postedExpense(refs, { paidAmount: 930_000n })
+    await reverseOperation(APPROVER, reversed.operationId!)
     await postedExpense(refs, {
       amount: 120_000n,
       currency: 'RUB',
       paidAmount: null,
       paidCurrency: null,
     })
-    const reversed = await postedExpense(refs, { paidAmount: 930_000n })
-    await reverseOperation(APPROVER, reversed.operationId!)
+    const measuredItem = await postedExpense(refs, {
+      feeAmount: 5_000n,
+      feeCurrency: 'RUB',
+      occurredOn: '2026-11-14', // a Saturday: Friday's rate
+    })
 
     const entries = await loadMarketEntries()
     expect(entries).toHaveLength(1)
@@ -172,7 +175,7 @@ describe('the measured set, read from the ledger (EARS-557)', () => {
 })
 
 describe('«факт не внесён», read from the intake (EARS-560)', () => {
-  it('EARS-560: an already-paid, unposted USD request with no account and no paid currency is «факт не внесён», dated by occurred_on', async () => {
+  it("EARS-560: an already-paid, unposted USD request paid from the member's card with no paid currency stated is «факт не внесён», dated by occurred_on", async () => {
     const refs = await seedLedger()
     const item = await createIntakeItem(ENTRY, {
       source: 'manual',
@@ -188,7 +191,9 @@ describe('«факт не внесён», read from the intake (EARS-560)', () =
     })
     await fixtureWrite((tx) =>
       tx.execute(sql`
-        update core.finance_intake_item set status = 'submitted', account_id = null
+        update core.finance_intake_item
+           set status = 'submitted', account_id = null, personal_funds = true,
+               member_id = ${refs.entryMemberId}
          where id = ${item.id}
       `),
     )
@@ -196,6 +201,10 @@ describe('«факт не внесён», read from the intake (EARS-560)', () =
     expect(entry).toMatchObject({
       subject: 'payment',
       date: '2026-11-02',
+      personalFunds: true,
+      payee: 'Entry Clerk',
+      route: 'свои средства · ? → USD',
+      fact: null,
       valuation: { status: 'not_posted', statedPaidAmount: null },
     })
     expect(await loadMarketEntries()).toHaveLength(1)
