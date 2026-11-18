@@ -17,12 +17,13 @@ import {
   marketChainFacts,
   marketIntakeFacts,
   type MarketChainFact,
+  type MarketFactsPeriod,
   type MarketIntakeFact,
 } from '../market-facts'
 import {
   marketQuoteCurrency,
   MARKET_RATE_WINDOW_DAYS,
-  measureChain,
+  measureChains,
   measureIntakeItem,
   pickMarketRate,
   type MarketContext,
@@ -33,7 +34,7 @@ import { addDays, type FxRate } from './rates'
 import { rateOn, rateSeries } from './store'
 
 /** A period of payment dates, inclusive at both ends; an open end is unbounded. */
-export type MarketPeriod = { from?: string; to?: string }
+export type MarketPeriod = MarketFactsPeriod
 
 /** The CBR quote valuing `currency` on `date` under EARS-558's rule, or `null`. */
 export async function marketRateOn(currency: string, date: string): Promise<FxRate | null> {
@@ -85,24 +86,23 @@ function datesOf(intake: readonly MarketIntakeFact[], chains: readonly MarketCha
   return [...intake.map((f) => f.occurredOn ?? f.submittedOn), ...chains.map((f) => f.occurredOn)]
 }
 
-function inPeriod(date: string, period: MarketPeriod): boolean {
-  return (
-    (period.from === undefined || date >= period.from) &&
-    (period.to === undefined || date <= period.to)
-  )
-}
-
 /**
  * Every §J entry of the period — foreign-currency payments, «факт не внесён»
  * requests and conversion chains — each valued (or marked «без курса»), in
- * date order. `extraCurrencies` (the display currencies) are added to the
- * returned context so the caller can run `displayMarketTotals` on it.
+ * date order. The period is applied in SQL. A chain whose legs cannot be read
+ * as two ends is not valued and not summed: its operation id is returned in
+ * `excludedChains`, so the report counts it instead of failing (#559).
+ * `extraCurrencies` (the display currencies) are added to the returned context
+ * so the caller can convert on it (EARS-566).
  */
 export async function loadMarketValuation(
   period: MarketPeriod = {},
   extraCurrencies: readonly string[] = [],
-): Promise<{ entries: MarketEntry[]; context: MarketContext }> {
-  const [intake, chains] = await Promise.all([marketIntakeFacts(), marketChainFacts()])
+): Promise<{ entries: MarketEntry[]; context: MarketContext; excludedChains: number[] }> {
+  const [intake, chains] = await Promise.all([
+    marketIntakeFacts({ period }),
+    marketChainFacts({ period }),
+  ])
   const context = await loadMarketContext(
     [...currenciesOf(intake, chains), ...extraCurrencies],
     datesOf(intake, chains),
@@ -110,14 +110,12 @@ export async function loadMarketValuation(
   const entries: MarketEntry[] = []
   for (const fact of intake) {
     const entry = measureIntakeItem(fact, context)
-    if (entry !== null && inPeriod(entry.date, period)) entries.push(entry)
+    if (entry !== null) entries.push(entry)
   }
-  for (const fact of chains) {
-    if (!inPeriod(fact.occurredOn, period)) continue
-    entries.push(measureChain(fact, context))
-  }
+  const measuredChains = measureChains(chains, context)
+  entries.push(...measuredChains.entries)
   entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  return { entries, context }
+  return { entries, context, excludedChains: measuredChains.excluded }
 }
 
 /** The entries of `loadMarketValuation`, without the context. */
