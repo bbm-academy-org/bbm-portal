@@ -25,12 +25,19 @@ type DataTableProps<TData extends BaseRecord> = {
   emptyTitle?: string
   /** The empty state's second line — say what to do next, not only that it is empty. */
   emptyDescription?: string
+  /**
+   * `false` for a register that is never paged — the whole set is the answer
+   * (a payment-queue group, #550). The pager then controls nothing, so the
+   * block does not draw it. Default `true`: every other register is paged.
+   */
+  paginated?: boolean
 }
 
 export function DataTable<TData extends BaseRecord>({
   table,
   emptyTitle = 'Записей пока нет',
   emptyDescription = 'Здесь появятся строки, как только они будут созданы.',
+  paginated = true,
 }: DataTableProps<TData>) {
   const {
     reactTable: { getHeaderGroups, getFooterGroups, getRowModel, getAllColumns },
@@ -238,7 +245,7 @@ export function DataTable<TData extends BaseRecord>({
           ) : null}
         </Table>
       </div>
-      {!isLoading && getRowModel().rows?.length > 0 && (
+      {paginated && !isLoading && getRowModel().rows?.length > 0 && (
         <DataTablePagination
           currentPage={currentPage}
           pageCount={pageCount}

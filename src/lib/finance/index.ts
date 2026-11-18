@@ -293,6 +293,7 @@ export {
   currentMoneyOverview,
   liabilityBalances,
   listRegister,
+  operationDisplayFacts,
   postingsMissingOptionalProduct,
   registerEntriesByIds,
 } from './queries'
@@ -301,6 +302,7 @@ export type {
   LiabilityBalance,
   RegisterEntry,
   MissingProductPosting,
+  OperationDisplayFacts,
 } from './queries'
 export type { CurrentMoneyAccount, CurrentMoneyPool, CurrentMoneyValuation } from './current-money'
 

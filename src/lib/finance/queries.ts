@@ -327,3 +327,104 @@ export async function postingsMissingOptionalProduct(): Promise<MissingProductPo
     projectId: row.project_id === null ? null : Number(row.project_id),
   }))
 }
+
+/** What the requests queue's display conversion reads of one posted operation (EARS-550). */
+export type OperationDisplayFacts = {
+  operationId: number
+  /** `finance_operation.occurred_on` — the date money moved. */
+  occurredOn: string
+  /**
+   * The signed amounts on MONEY accounts (not system accounts), step fees
+   * excluded — the account side of the payment as the ledger recorded it.
+   */
+  moneyAmounts: { currency: string; amount: bigint }[]
+  /** Each recorded exchange step by its two amounts, from its `conversion` legs. */
+  conversionSteps: {
+    fromCurrency: string
+    toCurrency: string
+    fromAmount: bigint
+    toAmount: bigint
+  }[]
+}
+
+/**
+ * The posting facts of a bounded set of operations, for the §I display
+ * conversion (spec 339 EARS-550, #550). A READ of the ledger and nothing more:
+ * it knows no rate, and the fx code that consumes it is the one that reads the
+ * CBR store (EARS-553 — fx reads the ledger, never the other way round).
+ *
+ * A step's amounts are its two `conversion`-account legs, which carry the step
+ * (`conversions.ts`/`intake/posting.ts`: the from-leg debits the step's
+ * from-currency, the to-leg credits its to-currency). The realized-FX counter
+ * posting lands on a `conversion` account too but names no step, so it is not
+ * counted here.
+ */
+export async function operationDisplayFacts(
+  operationIds: readonly number[],
+): Promise<Map<number, OperationDisplayFacts>> {
+  const ids = [...new Set(operationIds)]
+  const facts = new Map<number, OperationDisplayFacts>()
+  if (ids.length === 0) return facts
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new RangeError('Finance operation ids must be positive integers.')
+  }
+  const scope = sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  )
+  const db = getPlatformDb()
+  const [operations, money, steps] = await Promise.all([
+    db.execute(sql`
+      select id, occurred_on::text as occurred_on
+        from core.finance_operation
+       where id in (${scope})
+    `),
+    db.execute(sql`
+      select p.operation_id, p.currency, p.amount::text as amount
+        from core.finance_posting p
+        join core.finance_account a on a.id = p.account_id
+       where p.operation_id in (${scope})
+         and not a.is_system
+         and p.conversion_step_id is null
+       order by p.operation_id, p.id
+    `),
+    db.execute(sql`
+      select s.operation_id, s.from_currency, s.to_currency,
+             coalesce(sum(p.amount) filter (where p.currency = s.from_currency and p.amount > 0), 0)::text
+               as from_amount,
+             coalesce(-sum(p.amount) filter (where p.currency = s.to_currency and p.amount < 0), 0)::text
+               as to_amount
+        from core.finance_conversion_step s
+        left join core.finance_posting p on p.conversion_step_id = s.id
+        left join core.finance_account a on a.id = p.account_id and a.kind = 'conversion'
+       where s.operation_id in (${scope})
+         and (p.id is null or a.id is not null)
+       group by s.id, s.operation_id, s.step_no, s.from_currency, s.to_currency
+       order by s.operation_id, s.step_no
+    `),
+  ])
+  for (const row of operations.rows as Record<string, unknown>[]) {
+    const operationId = Number(row.id)
+    facts.set(operationId, {
+      operationId,
+      occurredOn: String(row.occurred_on).slice(0, 10),
+      moneyAmounts: [],
+      conversionSteps: [],
+    })
+  }
+  for (const row of money.rows as Record<string, unknown>[]) {
+    facts.get(Number(row.operation_id))?.moneyAmounts.push({
+      currency: String(row.currency),
+      amount: BigInt(String(row.amount)),
+    })
+  }
+  for (const row of steps.rows as Record<string, unknown>[]) {
+    facts.get(Number(row.operation_id))?.conversionSteps.push({
+      fromCurrency: String(row.from_currency),
+      toCurrency: String(row.to_currency),
+      fromAmount: BigInt(String(row.from_amount)),
+      toAmount: BigInt(String(row.to_amount)),
+    })
+  }
+  return facts
+}

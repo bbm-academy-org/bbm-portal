@@ -231,8 +231,11 @@ function group(title: string) {
   return screen.getByRole('region', { name: title })
 }
 
+/** The three sums sit in their own group, apart from the group headings they share words with. */
 function kpi(label: RegExp) {
-  return screen.getByRole('button', { name: label })
+  return within(screen.getByRole('group', { name: 'Итоги очереди' })).getByRole('button', {
+    name: label,
+  })
 }
 
 beforeEach(() => {
@@ -310,8 +313,11 @@ describe('the three sums (EARS-537)', () => {
 describe('the queue row (EARS-538)', () => {
   it('EARS-538: says when it was filed, how long ago, and marks an age over 14 days', () => {
     renderScreen()
-    const old = within(group('Ждёт решения')).getByText(/дн\. назад/)
-    expect(old.getAttribute('data-overdue')).toBe('true')
+    const ages = within(group('Ждёт решения')).getAllByText(/дн\. назад|вчера|сегодня/)
+    const overdue = ages.filter((age) => age.getAttribute('data-overdue') === 'true')
+    // Request 2 was filed on 20 October — weeks ago; request 1 two days before «now».
+    expect(overdue).toHaveLength(1)
+    expect(overdue[0]!.closest('tr')!.textContent).toMatch(/Монтаж/)
   })
 
   it('EARS-538: names who pays, with «заплатил(а) сам(а)» under a member who paid', () => {
@@ -382,7 +388,7 @@ describe('the row act (EARS-541)', () => {
     renderScreen()
     fireEvent.click(screen.getByRole('button', { name: 'Отметить оплату заявки №3' }))
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getByText(/№3/)).toBeTruthy()
+    expect(within(sheet).getByText(/10\s000,00 RUB — Аренда студии/)).toBeTruthy()
     expect(refine.mutate).not.toHaveBeenCalled()
   })
 
@@ -452,5 +458,57 @@ describe('the display currency (EARS-549/551)', () => {
     refine.custom.data = snapshot({ fx: { latestRateDate: '2026-11-10', today: '2026-11-18' } })
     renderScreen()
     expect(screen.getByText(/Курсы ЦБ устарели.*10\.11\.2026/)).toBeTruthy()
+  })
+})
+
+describe('the queue row carries what the replaced table carried (#480, #517)', () => {
+  it('EARS-534: another member’s PROPOSED purpose is read with its text on the row', () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 1,
+          purpose: null,
+          proposal: { id: 4, text: 'Подкаст-оборудование', status: 'pending' },
+        }),
+      ],
+    })
+    renderScreen()
+    expect(
+      within(group('Ждёт решения')).getByText('Назначение предложено: Подкаст-оборудование'),
+    ).toBeTruthy()
+  })
+
+  it('EARS-554/556: puts the source link next to «Подана», and nothing where there is none', () => {
+    refine.custom.data = snapshot({
+      requests: [
+        item({
+          id: 1,
+          sourceRef: 'mm:post/abc',
+          sourceUrl: 'https://chat.example/pl/abc',
+          sourceLabel: 'Mattermost',
+        }),
+        item({ id: 2, note: 'Без источника' }),
+      ],
+    })
+    renderScreen()
+    const links = within(group('Ждёт решения')).getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.getAttribute('href')).toBe('https://chat.example/pl/abc')
+  })
+
+  it('opens the details sheet from the row’s purpose, a named control', async () => {
+    renderScreen()
+    fireEvent.click(screen.getByRole('button', { name: /^Заявка №2: / }))
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText(/Монтаж/)).toBeTruthy()
+  })
+
+  it('a long note truncates inside its column and stays readable in full on hover', () => {
+    const note = 'Очень длинный комментарий '.repeat(12).trim()
+    refine.custom.data = snapshot({ requests: [item({ id: 1, note })] })
+    renderScreen()
+    const line = within(group('Ждёт решения')).getByText(note)
+    expect(line.className).toMatch(/truncate/)
+    expect(line.getAttribute('title')).toBe(note)
   })
 })

@@ -30,22 +30,18 @@ import {
   filedRequestNotification,
   groupRequestsByStatus,
   planRequestDrop,
-  postingActNeedsMoneyFacts,
   REQUEST_BOARD_COLUMNS,
-  type FinanceRequestBoardAct,
   type FinanceRequestBoardStatus,
 } from './request-board-model'
 import { toRequestBody, type RequestFormValue } from './request-form-model'
+import type { QueueAct } from './request-queue-model'
+import { RequestsQueue } from './RequestsQueue'
 import { RequestsSkeleton } from './RequestsSkeleton'
-import { RequestsTable } from './RequestsTable'
 import {
   canToggleRequestsView,
-  DEFAULT_REQUEST_TABLE_SCOPE,
   REQUESTS_VIEW_STORAGE_KEY,
-  REQUEST_TABLE_SCOPES,
   requestsLoadingView,
   resolveRequestsView,
-  type RequestTableScope,
 } from './request-table-model'
 
 type SnapshotRecord = RequestsSnapshot & { id?: never }
@@ -185,7 +181,6 @@ export function RequestsBoardScreen() {
    * a decision: the drop still only opens the act `planRequestDrop` names.
    */
   const [dragOver, setDragOver] = React.useState<FinanceRequestBoardStatus | null>(null)
-  const [scope, setScope] = React.useState<RequestTableScope>(DEFAULT_REQUEST_TABLE_SCOPE)
   /**
    * WHICH VIEW THIS BROWSER LAST CHOSE (decision 35) — the raw stored string,
    * subscribed to rather than copied into state. The server has no
@@ -373,7 +368,7 @@ export function RequestsBoardScreen() {
     )
   }
 
-  const { permissions, references, requests, liabilities } = snapshot
+  const { permissions, references, requests, liabilities, fx } = snapshot
   const groups = groupRequestsByStatus(requests)
   const view = resolveRequestsView(storedView, permissions.canApprove)
   const selected = requests.find((request) => request.id === selectedId) ?? null
@@ -385,21 +380,21 @@ export function RequestsBoardScreen() {
   }
 
   /**
-   * A ROW ACT INITIATES THE SAME ACT THE BOARD'S DRAG DOES (decision 35). An
-   * approval that only AUTHORISES is complete in itself and runs from the row;
-   * a refusal needs its mandatory reason (EARS-512) and an approval that would
-   * POST needs the money facts (EARS-533), and both of those are asked in the
-   * details sheet — so the row opens the sheet ARMED with the act instead of
-   * growing a second copy of those dialogs.
+   * THE QUEUE ROW'S PRIMARY ACT (EARS-541). «Одобрить» is complete in itself —
+   * approval never posts since #549 (EARS-510 revised) — and runs from the row.
+   * «Отметить оплату» / «Отметить возврат» need the money facts and, since
+   * #549, the EARS-548 snapshot token, which only the LIST row carries: they
+   * open the details sheet ON THAT ROW (the very object the list answered
+   * with), whose pay-mode form is #551's.
    */
-  function runRowAct(request: RequestBoardItem, act: FinanceRequestBoardAct) {
-    if (act === 'refuse' || postingActNeedsMoneyFacts(request, act)) {
-      setFormFor(null)
-      setSelectedId(request.id)
-      setPendingAct(act)
+  function runQueueAct(request: RequestBoardItem, act: QueueAct) {
+    if (act === 'approve') {
+      runAct(request, 'approve')
       return
     }
-    runAct(request, act)
+    setFormFor(null)
+    setPendingAct(null)
+    setSelectedId(request.id)
   }
 
   function onDrop(status: FinanceRequestBoardStatus) {
@@ -418,6 +413,16 @@ export function RequestsBoardScreen() {
     }
   }
 
+  /** The approve role's view toggle (decision 35) — the board stays as it is. */
+  const viewToggle = canToggleRequestsView(permissions.canApprove) ? (
+    <Tabs value={view} onValueChange={chooseView}>
+      <TabsList aria-label="Вид">
+        <TabsTrigger value="table">Очередь</TabsTrigger>
+        <TabsTrigger value="board">Доска</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  ) : null
+
   return (
     <ListView>
       <section aria-labelledby="requests-heading" className="space-y-6">
@@ -435,7 +440,7 @@ export function RequestsBoardScreen() {
                   board was being told how to use one (live pass, 2026-09-14). */}
               {view === 'board'
                 ? 'Расходы BBM от подачи до проводки. Перенос карточки открывает акт — сам по себе статус он не меняет.'
-                : 'Расходы BBM от подачи до проводки — кто подал, на что и чем это кончилось.'}
+                : 'Что ждёт вашего решения, что пора оплатить и кому вернуть деньги.'}
             </p>
           </div>
           <Button
@@ -456,44 +461,14 @@ export function RequestsBoardScreen() {
 
           <TabsContent value="requests">
             <section aria-label="Список заявок" className="space-y-4">
-              {/* THE TOOLBAR IS THE TWO QUESTIONS, and only the ones this
-                  reader may answer: whose requests (everyone), and in which
-                  view (the approve role only — decision 35). The scope filter
-                  belongs to the table: the board is a queue of decisions, and
-                  «мои» over a decision queue is a filter on somebody else's
-                  work. */}
-              {/* ONE ROW (owner acceptance, Антон, 2026-09-15: «the filter
-                  toolbar in one row, not toggles stacked vertically»). Both
-                  controls are `TabsList`s of the kit, and the row never wraps:
-                  the two groups are short, they sit at opposite edges, and the
-                  board's sentence is what gives way below `sm` — a hint that
-                  disappears costs the reader nothing, a control that jumps to
-                  its own line costs them the row. */}
-              <div className="flex min-w-0 items-center justify-between gap-3">
-                {view === 'table' ? (
-                  <Tabs value={scope} onValueChange={(next) => setScope(next as RequestTableScope)}>
-                    <TabsList aria-label="Чьи заявки">
-                      {REQUEST_TABLE_SCOPES.map((option) => (
-                        <TabsTrigger key={option.value} value={option.value}>
-                          {option.label}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
-                ) : (
+              {view === 'board' ? (
+                <div className="flex min-w-0 items-center justify-between gap-3">
                   <p className="hidden min-w-0 truncate text-sm text-muted-foreground sm:block">
                     Доска: четыре состояния машины статусов. Перенос карточки открывает акт.
                   </p>
-                )}
-                {canToggleRequestsView(permissions.canApprove) ? (
-                  <Tabs value={view} onValueChange={chooseView}>
-                    <TabsList aria-label="Вид">
-                      <TabsTrigger value="table">Таблица</TabsTrigger>
-                      <TabsTrigger value="board">Доска</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                ) : null}
-              </div>
+                  {viewToggle}
+                </div>
+              ) : null}
 
               {view === 'board' ? (
                 requests.length === 0 ? (
@@ -571,18 +546,17 @@ export function RequestsBoardScreen() {
                   </div>
                 )
               ) : (
-                /* The empty state is the BLOCK's since #388 — one place, one
-                   shape, per-scope copy through its `emptyTitle` props. */
-                <RequestsTable
+                <RequestsQueue
                   requests={requests}
                   references={references}
                   canApprove={permissions.canApprove}
-                  scope={scope}
+                  fx={fx}
+                  toolbarEnd={viewToggle}
                   onOpen={(request) => {
                     setPendingAct(null)
                     setSelectedId(request.id)
                   }}
-                  onAct={runRowAct}
+                  onAct={runQueueAct}
                 />
               )}
             </section>

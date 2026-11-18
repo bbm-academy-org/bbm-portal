@@ -417,7 +417,7 @@ const DOCUMENT_KINDS: readonly string[] = [
   'bank_screenshot',
 ]
 
-export const DEV_SEED_REQUESTS: readonly DevSeedRequest[] = (() => {
+const LIFECYCLE_REQUESTS: readonly DevSeedRequest[] = (() => {
   const counters: Record<string, number> = {}
   let refused = 0
   let posted = 0
@@ -458,6 +458,126 @@ export const DEV_SEED_REQUESTS: readonly DevSeedRequest[] = (() => {
     },
   )
 })()
+
+/**
+ * The currencies the payment queue's display switch has to be seen working on
+ * (spec 339 §I, EARS-549/551; #550): EUR is a display currency, USDT is quoted
+ * as USD (decision 41), and USDC is one the Bank of Russia does not quote at
+ * all — the row a stand needs to show «нет курса» and «без N заявок».
+ */
+export const DEV_SEED_CURRENCIES: readonly { code: string; name: string; precision: number }[] = [
+  { code: 'EUR', name: 'Евро', precision: 2 },
+  { code: 'USDT', name: 'Tether USD', precision: 2 },
+  { code: 'USDC', name: 'USD Coin', precision: 2 },
+]
+
+/**
+ * The queue's own cases (#550), on top of the lifecycle spread above: requests
+ * in a foreign currency in every active stage, a company-account request that
+ * was already paid (EARS-535: «К оплате», not «Ждёт решения»), a member who
+ * paid in dollars, and a note long enough to have to truncate.
+ */
+const QUEUE_REQUESTS: readonly DevSeedRequest[] = [
+  {
+    slug: 'req-fx-01',
+    status: 'submitted',
+    submitterSlug: DEV_SEED_MEMBERS[2].slug,
+    occurredOn: '2026-08-27',
+    amount: 1_250_00n,
+    currency: 'USD',
+    account: null,
+    counterparty: 4,
+    note: 'Figma Organization на год, оплата картой в долларах',
+    alreadyPaid: false,
+    personalFunds: false,
+  },
+  {
+    slug: 'req-fx-02',
+    status: 'submitted',
+    submitterSlug: DEV_SEED_MEMBERS[6].slug,
+    occurredOn: '2026-08-28',
+    amount: 300_00n,
+    currency: 'USDC',
+    account: null,
+    counterparty: 1,
+    note: 'Монтаж ролика, исполнитель просит оплату в USDC',
+    alreadyPaid: false,
+    personalFunds: false,
+  },
+  {
+    slug: 'req-fx-03',
+    status: 'approved',
+    submitterSlug: DEV_SEED_MEMBERS[9].slug,
+    occurredOn: '2026-08-29',
+    amount: 840_00n,
+    currency: 'EUR',
+    account: null,
+    counterparty: 0,
+    note: 'Регистрационный взнос конференции, счёт в евро',
+    alreadyPaid: false,
+    personalFunds: false,
+  },
+  {
+    slug: 'req-fx-04',
+    status: 'approved',
+    submitterSlug: DEV_SEED_MEMBERS[12].slug,
+    occurredOn: '2026-08-30',
+    amount: 500_00n,
+    currency: 'USDT',
+    account: null,
+    counterparty: 2,
+    note: 'Аренда GPU-сервера, оплата в USDT',
+    alreadyPaid: false,
+    personalFunds: false,
+  },
+  {
+    slug: 'req-fx-05',
+    status: 'submitted',
+    submitterSlug: DEV_SEED_MEMBERS[15].slug,
+    occurredOn: '2026-08-31',
+    amount: 12_300_00n,
+    currency: 'RUB',
+    account: 'bank',
+    counterparty: 5,
+    note: 'Уже оплачено с карты компании — нужен чек для учёта',
+    alreadyPaid: true,
+    personalFunds: false,
+  },
+  {
+    slug: 'req-fx-06',
+    status: 'submitted',
+    submitterSlug: DEV_SEED_MEMBERS[18].slug,
+    occurredOn: '2026-09-01',
+    amount: 45_00n,
+    currency: 'USD',
+    account: null,
+    counterparty: 2,
+    note: 'Продление домена, оплатил с личной карты в долларах',
+    alreadyPaid: true,
+    personalFunds: true,
+  },
+  {
+    slug: 'req-fx-07',
+    status: 'submitted',
+    submitterSlug: DEV_SEED_MEMBERS[21].slug,
+    occurredOn: '2026-09-02',
+    amount: 27_600_00n,
+    currency: 'RUB',
+    account: 'bank',
+    counterparty: 3,
+    note:
+      'Печать раздаточных материалов для выездной школы: 120 комплектов, ' +
+      'по счёту № 4512 от 02.09, реквизиты в счёте, оплатить до пятницы, ' +
+      'иначе типография сдвигает тираж на следующую неделю',
+    alreadyPaid: false,
+    personalFunds: false,
+  },
+]
+
+export const DEV_SEED_REQUESTS: readonly DevSeedRequest[] = [
+  ...LIFECYCLE_REQUESTS,
+  ...QUEUE_REQUESTS,
+]
 
 // ── finance: the non-request half of the intake list ────────────────────────
 

@@ -1,16 +1,15 @@
 import type { RequestBoardItem, RequestsSnapshot } from './request-board-contract'
-import type { FinanceRequestBoardAct } from './request-board-model'
 
 /**
- * THE TABLE VIEW OF `/p/finance/requests` — owner decision 35 (Антон,
- * 2026-09-14, issue #115), PRD 339 US-2/US-3.
+ * THE VIEW SWITCH OF `/p/finance/requests` and the requests REGISTER the data
+ * provider answers `getList` with — owner decision 35 (Антон, 2026-09-14,
+ * issue #115), PRD 339 US-2/US-3.
  *
- * The route stays ONE page. What changed is which view it opens on: every
- * signed-in member now reads the whole queue as a TABLE — date, submitter,
- * amount, purpose, status, refusal reason — with a «мои / все» filter
- * preselected on «мои». The picked kanban (Stage-A option D, #339) is not
- * retired: it becomes a view TOGGLE offered to `finance-approve`, who also gets
- * the approve / refuse acts as row actions in the table.
+ * The route stays ONE page. Since spec 339 §I (#550) its default view is the
+ * owner's payment queue (`request-queue-model.ts`, `RequestsQueue.tsx`), which
+ * replaced the decision-35 flat table; the picked kanban (Stage-A option D,
+ * #339) stays a view TOGGLE offered to `finance-approve`. What is left here is
+ * that toggle and the register's selection rules.
  *
  * Everything here is pure, for the same reason `request-board-model.ts` is: the
  * questions «whose requests are these», «which order» and «who may act on this
@@ -24,14 +23,6 @@ import type { FinanceRequestBoardAct } from './request-board-model'
 
 export type RequestTableScope = 'mine' | 'all'
 export type RequestsView = 'table' | 'board'
-
-/** «Мои» is preselected: the reader's own filings are what they came for. */
-export const DEFAULT_REQUEST_TABLE_SCOPE: RequestTableScope = 'mine'
-
-export const REQUEST_TABLE_SCOPES: readonly { value: RequestTableScope; label: string }[] = [
-  { value: 'mine', label: 'Мои' },
-  { value: 'all', label: 'Все' },
-]
 
 /** Where the reader's chosen view is remembered — this browser, nothing else. */
 export const REQUESTS_VIEW_STORAGE_KEY = 'bbm.finance.requests.view'
@@ -54,25 +45,6 @@ export function requestTableRows(
     .filter((request) => scope === 'all' || request.own)
     .slice()
     .sort((left, right) => key(right).localeCompare(key(left)) || right.id - left.id)
-}
-
-/**
- * The acts a row offers, in the order they are rendered.
- *
- * Only the approve role acts (EARS-501/502), and only on the two statuses that
- * have a decision left in them — the same pair `canDragRequest` lets the board
- * pick up. `confirm` is deliberately NOT a row act: posting needs the
- * confirming document read and, for a pre-spend item, the money facts entered
- * (EARS-511/533), and neither is readable from a table row.
- */
-export function requestRowActs(
-  request: RequestBoardItem,
-  canApprove: boolean,
-): FinanceRequestBoardAct[] {
-  if (!canApprove) return []
-  if (request.status === 'submitted') return ['approve', 'refuse']
-  if (request.status === 'approved') return ['refuse']
-  return []
 }
 
 /** The board is the approve role's view of the queue (decision 35). */
@@ -105,139 +77,6 @@ export function resolveRequestsView(stored: string | null, canApprove: boolean):
  */
 export function requestsLoadingView(stored: string | null): RequestsView {
   return stored === 'board' ? 'board' : 'table'
-}
-
-/**
- * THE DESKTOP WIDTH BUDGET OF THE REGISTER (#388 defect B, eyes-on matrix of
- * 2026-09-16).
- *
- * The block lays the table out `table-layout: fixed` and writes each column's
- * declared `size` into the cell's inline `width`, so the SUM of the sizes is
- * the table's width — there is no reflow to save a plan that overspends. At
- * 1440×900 the `/p` shell gives this surface a 1110 px container; the previous
- * plan declared 1200 px (1420 with the refusal column), the table measured
- * 1214 px, «Отклонить…» was cut mid-word and the row's «Открыть» — the only
- * control wave 3 leaves for opening a request — was laid out at x 1291–1369 and
- * never painted.
- *
- * 1110 is therefore a CEILING the plan is checked against, not a target: the
- * plan below spends at most 1080 of it in its widest combination. Below `sm`
- * the table still scrolls sideways, and the swipe hint above it still says so —
- * that is the accepted phone behaviour, not this budget's business.
- */
-export const REQUEST_TABLE_WIDTH_BUDGET = 1110
-
-export type RequestTableColumnId =
-  'filed' | 'createdByName' | 'amount' | 'purpose' | 'status' | 'actions'
-
-export type RequestTableColumn = { id: RequestTableColumnId; size: number }
-
-/**
- * WHAT THE «Деньги ушли» COLUMN MUST AFFORD (#388 defect E, re-driven matrix of
- * 2026-09-16).
- *
- * A pre-spend intent has no date (EARS-533), and this surface NAMES that
- * emptiness rather than printing «—» — so the placeholder is not decoration,
- * it is the state, and a state may not be clipped. It measured 114 px at
- * 1440×900 against a cell offering 102, and read «ещё не двига…»; the block's
- * own `div.truncate` carries no `title`, so the words were nowhere on screen.
- *
- * It is the one column whose longest content is a FIXED string, which is why it
- * can be sized to it at all — the free-text column below never can, and is
- * therefore the one that gives the width up.
- */
-export const REQUEST_TABLE_NO_MOVEMENT_LABEL = 'ещё не двигались'
-
-/**
- * THE REGISTER'S FIRST COLUMN CARRIES BOTH DATES, AND «Подана» LEADS (#517).
- *
- * The owner's complaint that opened this task was that the filing moment «сейчас
- * вообще не отображается нигде» (Антон, 2026-09-22). It is the one date EVERY
- * row of a register of REQUESTS has: EARS-533 leaves `occurred_on` empty on
- * every pre-spend intent, which on the reconstructed corpus is most of them, so
- * a register led by the money date opens on a column of placeholders.
- *
- * Two date columns do not fit. The desktop budget above is 1110 px and the
- * widest combination already declared 1080 — a second 136 px column overspends
- * it, and the block lays the table out `table-layout: fixed`, so there is no
- * reflow to absorb the overflow. What exists instead is a CELL with two lines,
- * the pattern this register already uses twice: «Назначение» carries the note
- * under the purpose, «Статус» carries the refusal reason under the badge.
- *
- *   Подана
- *   20.04.2026 14:21  ↗        ← the filing moment, and the link to its source
- *   ушли 22.08.2026            ← muted; «ещё не двигались» when they have not
- *
- * Nothing is lost by the merge and nothing is invented: both values were on the
- * screen before, both are on it now, and the details sheet still carries each
- * one as a labelled field of its own.
- */
-export const REQUEST_TABLE_MONEY_MOVED_PREFIX = 'ушли'
-/** Measured live in the running stand at 1440×900, not computed. */
-export const REQUEST_TABLE_NO_MOVEMENT_LABEL_WIDTH = 114
-/** The block's cell padding — `p-2` on both sides of every `TableCell`. */
-export const REQUEST_TABLE_CELL_PADDING = 16
-
-/** What each column is worth in the budget, in the reading order it is spent. */
-const REQUEST_TABLE_COLUMN_WIDTHS: Record<RequestTableColumnId, number> = {
-  // «дд.мм.гггг чч:мм» plus the source link's icon on the first line, and the
-  // money-movement line under it — see `filed` above for why the two dates
-  // share one column. 144 px of content, 16 px of the block's cell padding.
-  filed: 160,
-  createdByName: 140,
-  amount: 124,
-  // The column that gives: it carries free text, so no width ever fits its
-  // content and every px here is a px the fixed-width columns cannot spend.
-  purpose: 185,
-  status: 190,
-  actions: 300,
-}
-
-/** A reader who cannot act has ONE control in the trailing column: «Открыть». */
-const REQUEST_TABLE_READ_ONLY_ACTIONS_WIDTH = 130
-
-/**
- * The columns this reader's register carries, in reading order, with the width
- * each is given.
- *
- * TWO THINGS COME OUT OF THE PLAN, and both are the agent's composition call
- * (`.claude/rules/design-process.md` §1 — composition, control choice and
- * grouping are the agent's; the visual language is the owner's):
- *
- *  - «Кто подал» is NOT on the table under «Мои». Every row of that scope names
- *    the same person — the reader — so the column is 140 px spent repeating the
- *    heading. It returns the moment the scope widens to «Все», which is the only
- *    scope where the answer varies.
- *  - THE REFUSAL REASON IS NO LONGER A COLUMN. It is the second line of the
- *    «Статус» cell, under the badge that says «Отклонена» — the reason explains
- *    exactly that status and nothing else, and a column of its own cost 220 px
- *    that the seventh column pushed «Открыть» off the screen with. Nothing is
- *    lost: the cell carries the reason, and the details sheet carries it in
- *    full.
- */
-export function requestTableColumnPlan({
-  scope,
-  canApprove,
-}: {
-  scope: RequestTableScope
-  canApprove: boolean
-}): RequestTableColumn[] {
-  const ids: RequestTableColumnId[] = [
-    'filed',
-    ...(scope === 'all' ? (['createdByName'] as const) : []),
-    'amount',
-    'purpose',
-    'status',
-  ]
-  return [
-    ...ids.map((id) => ({ id, size: REQUEST_TABLE_COLUMN_WIDTHS[id] })),
-    {
-      id: 'actions' as const,
-      size: canApprove
-        ? REQUEST_TABLE_COLUMN_WIDTHS.actions
-        : REQUEST_TABLE_READ_ONLY_ACTIONS_WIDTH,
-    },
-  ]
 }
 
 export type RequestAmountTotal = { currency: string; amount: string }

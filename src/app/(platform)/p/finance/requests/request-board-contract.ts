@@ -1,4 +1,10 @@
-import type { FinanceDocumentKind, FinanceIntakeStatus, FinanceProductBinding } from '@/lib/finance'
+import type {
+  CbrRateReason,
+  ExpenseRequestStage,
+  FinanceDocumentKind,
+  FinanceIntakeStatus,
+  FinanceProductBinding,
+} from '@/lib/finance'
 
 export type RequestReference = { id: number; name: string }
 
@@ -11,10 +17,52 @@ export type RequestBoardDocument = {
   uploadedAt: string
 }
 
+/** The three currencies the queue's ₽ / $ / € switch offers (EARS-549). */
+export const DISPLAY_CURRENCY_CODES = ['RUB', 'USD', 'EUR'] as const
+export type DisplayCurrencyCode = (typeof DISPLAY_CURRENCY_CODES)[number]
+
+/**
+ * One request's amount in one display currency (spec 339 EARS-549/550/551,
+ * #550), computed on the server from the ledger's record and the stored CBR
+ * series — the browser never sees a rate table and never converts.
+ *
+ * `amount` is rounded once; `numerator / denominator` is the exact value, so a
+ * SUM of many rows adds exact values and rounds once at the end (EARS-549).
+ * All three are bigint minor units of the display currency, as strings.
+ */
+export type QueueDisplayAmount =
+  | {
+      kind: 'converted'
+      amount: string
+      numerator: string
+      denominator: string
+      basis: 'same_currency' | 'ledger_amount' | 'ledger_step' | 'cbr'
+      /** The CBR quote date used, for `basis: 'cbr'` — what the sheet names. */
+      rateDate: string | null
+      reason: CbrRateReason | null
+    }
+  /** CBR has no quote on or before `date` for `currency` (EARS-551). */
+  | { kind: 'no_rate'; currency: string; date: string }
+
 export type RequestBoardItem = {
   id: number
   own: boolean
   status: FinanceIntakeStatus
+  /** The EARS-535 queue stage (#549) — a reading of the spine, never a status. */
+  stage: ExpenseRequestStage
+  /** Whether a ready document is attached — the «без чека» fact (#551 renders it). */
+  hasDocument: boolean
+  /** The posted reimbursement that settles this request, if any (EARS-528). */
+  settledBy: number | null
+  /**
+   * The EARS-548 snapshot token, for `finance-approve` readers only (null
+   * otherwise). Only this LIST carries it — the single-request read does not —
+   * so every row act and the sheet take it from the list row they were opened
+   * from (lead note on #550).
+   */
+  snapshot: string | null
+  /** The request in each display currency (EARS-549/550/551). */
+  display: Record<DisplayCurrencyCode, QueueDisplayAmount>
   /**
    * The date money moved — NULL while an unposted pre-spend request has none
    * (EARS-533). No surface renders that emptiness as a value.
@@ -41,6 +89,9 @@ export type RequestBoardItem = {
   personalFunds: boolean
   createdBy?: number
   createdByName?: string
+  /** The member a `personal_funds` request is owed to — «Кому платим» (EARS-538). */
+  memberId?: number | null
+  memberName?: string | null
   decidedBy?: number | null
   decidedByName?: string | null
   postedByName?: string | null
@@ -82,6 +133,11 @@ export type RequestsSnapshot = {
     currency: string
     balance: string
   }>
+  /**
+   * The CBR store's age (EARS-552): the newest stored effective date (null when
+   * none is stored) and today in Moscow, so the page can say the rates are stale.
+   */
+  fx: { latestRateDate: string | null; today: string }
 }
 
 export type CreateRequestBody = {

@@ -90,9 +90,17 @@ vi.mock('@refinedev/react-table', async () => {
     useTable: <TData>({
       columns,
       refineCoreProps,
+      data,
+      state,
+      onSortingChange,
     }: {
       columns: never[]
       refineCoreProps?: Record<string, never>
+      // The payment queue (#550) hands each group's rows and its shared sort
+      // state to the block itself; a register that does not is read below.
+      data?: TData[]
+      state?: { sorting?: { id: string; desc: boolean }[] }
+      onSortingChange?: never
     }) => {
       const props = (refineCoreProps ?? {}) as Record<string, never>
       refine.tableProps = props
@@ -135,14 +143,14 @@ vi.mock('@refinedev/react-table', async () => {
       }
 
       const reactTable = useReactTable<TData>({
-        data: rows as TData[],
+        data: data ?? (rows as TData[]),
         columns,
         getCoreRowModel: getCoreRowModel(),
         manualPagination: true,
         manualSorting: true,
         manualFiltering: true,
-        state: { sorting },
-        onSortingChange: setSorting as never,
+        state: data === undefined ? { sorting } : { sorting: state?.sorting ?? [] },
+        onSortingChange: data === undefined ? (setSorting as never) : onSortingChange,
       })
 
       return {
@@ -174,9 +182,10 @@ import type {
   RequestsSnapshot,
 } from '@/app/(platform)/p/finance/requests/request-board-contract'
 import { RequestsBoardScreen } from '@/app/(platform)/p/finance/requests/RequestsBoardScreen'
+import { withQueueFields } from '../helpers/finance-request-fixture'
 
 function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
-  return {
+  return withQueueFields({
     id: 1,
     own: false,
     status: 'submitted',
@@ -202,7 +211,7 @@ function item(overrides: Partial<RequestBoardItem> = {}): RequestBoardItem {
     counterparty: { id: 7, name: 'ООО «Студия-7»' },
     documents: [],
     ...overrides,
-  }
+  })
 }
 
 function snapshot(overrides: Partial<RequestsSnapshot> = {}): RequestsSnapshot {
@@ -218,6 +227,7 @@ function snapshot(overrides: Partial<RequestsSnapshot> = {}): RequestsSnapshot {
     },
     requests: [item()],
     liabilities: [],
+    fx: { latestRateDate: '2026-11-18', today: '2026-11-18' },
     ...overrides,
   }
 }
@@ -225,19 +235,6 @@ function snapshot(overrides: Partial<RequestsSnapshot> = {}): RequestsSnapshot {
 /** The screen as a reader first meets it since decision 35: the TABLE view. */
 function renderScreen() {
   return render(React.createElement(RequestsBoardScreen))
-}
-
-/** The table's own region — every row assertion is scoped to it. */
-function requestsTable() {
-  return screen.getByRole('region', { name: 'Список заявок' })
-}
-
-function pick(role: 'tab', name: string | RegExp) {
-  // Radix activates a tab on mousedown, not on a bare click.
-  const control = screen.getByRole(role, { name })
-  fireEvent.mouseDown(control)
-  fireEvent.click(control)
-  return control
 }
 
 /**
@@ -875,9 +872,8 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
       requests: [item({ id: 2, status: 'approved', own: false, documents: [] })],
     })
     renderBoard()
-    // Somebody else's request, so it is behind «Все» on the table this reader
-    // has instead of the board (decision 35).
-    pick('tab', 'Все')
+    // Somebody else's request, read from the queue this reader has instead of
+    // the board — «В работе» shows every member's requests (EARS-536).
     openCard(2)
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
@@ -901,7 +897,6 @@ describe('/p/finance/requests board (spec 339 §C, Stage-A pick D)', () => {
       requests: [item({ id: 2, status: 'approved', own: false, documents: [] })],
     })
     renderBoard()
-    pick('tab', 'Все')
     openCard(2)
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
@@ -1153,58 +1148,6 @@ describe('/p/finance/requests — the stage-5 UX sanity pass on the posting stat
   })
 })
 
-describe('/p/finance/requests — the stage-5 UX sanity pass on the requests table', () => {
-  // DEFECT (real, step 04 at 390 px). The kit's `TableCell` carries
-  // `whitespace-nowrap`, which is right for a date or a sum and wrong for the
-  // one FREE-TEXT column: a note of ordinary length made «Что» 543 px wide and
-  // the table 968 px inside a 343 px scroll container, so Сумма, Статус and the
-  // row's «Открыть» sat ~600 px off-screen with nothing saying they were there.
-  // The table stays a table — the fix is that the free-text column WRAPS, the
-  // table keeps a floor so the four short columns are not crushed, and a hint
-  // below `sm` says the rest is a swipe to the right.
-  const LONG_NOTE = 'Приёмочный прогон #388 — намерение, деньги ещё не двигались (mobile-light)'
-
-  // The «Мои заявки» TAB is gone since decision 35 — «мои» is now the
-  // preselected scope of the one table, which is what the route opens on. The
-  // defect below is the table's either way, so the test follows it there.
-  async function mineTab() {
-    return requestsTable()
-  }
-
-  it('a long note TRUNCATES inside its own column instead of pushing the row off a 390 px screen', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 5, own: true, note: LONG_NOTE })],
-    })
-    renderScreen()
-    const mine = await mineTab()
-
-    // The block's `TableCell` is `whitespace-nowrap` and its table is
-    // `table-layout: fixed`, so the fix is no longer «the cell wraps» but «the
-    // column has a declared width and the free text clips inside it». The four
-    // short columns keep theirs either way, which is what the defect was about.
-    const note = within(mine).getByText(LONG_NOTE)
-    expect(note.className).toContain('truncate')
-    const cell = note.closest('td')
-    expect(cell).not.toBeNull()
-    expect(cell?.style.width).not.toBe('')
-  })
-
-  it('the table keeps the kit’s scroll container, and says below `sm` that there is more to the right', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 6, own: true, note: LONG_NOTE })],
-    })
-    renderScreen()
-    const mine = await mineTab()
-
-    const table = within(mine).getByRole('table')
-    expect(table.style.tableLayout).toBe('fixed')
-    expect(table.parentElement?.className).toContain('overflow-x-auto')
-
-    const hint = within(mine).getByText(/прокру[тч]/i)
-    expect(hint.className).toContain('sm:hidden')
-  })
-})
-
 // The stage-5 UX sanity pass on the 390 px frames of the SHEET that files a
 // request (PR #470 review, states 09/23/24/32/33).
 //
@@ -1325,226 +1268,6 @@ describe('/p/finance/requests — a 390 px reader never scrolls the sheet sidewa
 })
 
 /**
- * DECISION 35 (owner Антон, 2026-09-14, #115), PRD 339 US-2/US-3: the route
- * opens on a TABLE of every request for every signed-in member — date,
- * submitter, amount, purpose, status, refusal reason — with a «мои / все»
- * filter preselected on «мои». The picked kanban stays as a board TOGGLE for
- * `finance-approve`, who also gets approve / refuse as row actions.
- */
-describe('/p/finance/requests — the table is the default view (decision 35)', () => {
-  it('decision 35: opens on the table with «Мои» preselected, for an approver too', async () => {
-    renderScreen()
-
-    expect(requestsTable()).toBeTruthy()
-    expect(screen.queryByRole('region', { name: /Ждут/ })).toBeNull()
-    expect(screen.getByRole('tab', { name: 'Мои' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('tab', { name: 'Все' }).getAttribute('aria-selected')).toBe('false')
-  })
-
-  it('decision 35: the row says the date, the submitter, the amount with its currency, the purpose and the status', async () => {
-    refine.custom.data = snapshot({
-      requests: [item({ id: 1, own: true, createdByName: 'М. Иванова' })],
-    })
-    renderScreen()
-    const table = requestsTable()
-
-    // «Дата» became «Деньги ушли» (owner acceptance 2026-09-15) and «Подана»
-    // since #517: the first column now leads with the FILING moment — the one
-    // date every row of a register of requests has — and carries the money
-    // date under it. Each header also carries the block's sorter, whose aria
-    // text joins the accessible name — hence the prefix match.
-    for (const head of ['Подана', 'Сумма', 'Назначение', 'Статус']) {
-      expect(within(table).getByRole('columnheader', { name: new RegExp(`^${head}`) })).toBeTruthy()
-    }
-    // «Кто подал» is NOT one of them under «Мои» (#388 defect B): every row of
-    // that scope names the reader, so the column repeats its own heading and
-    // spends width the acts column needs. It returns under «Все».
-    expect(within(table).queryByRole('columnheader', { name: /^Кто подал/ })).toBeNull()
-    pick('tab', 'Все')
-    await waitFor(() =>
-      expect(
-        within(requestsTable()).getByRole('columnheader', { name: /^Кто подал/ }),
-      ).toBeTruthy(),
-    )
-    expect(within(requestsTable()).getByText('М. Иванова')).toBeTruthy()
-    pick('tab', 'Мои')
-    // On the row, and again in the block's totals footer — one request is its
-    // own total.
-    expect(within(table).getAllByText('45 000,00 RUB')).toHaveLength(2)
-    expect(within(table).getByText('Продакшн')).toBeTruthy()
-    expect(within(table).getByText('Ждёт решения')).toBeTruthy()
-  })
-
-  it('decision 35: «Мои» shows only the reader’s own filings and «Все» the whole queue', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 1, own: true, note: 'Моя заявка' }),
-        item({ id: 2, own: false, note: 'Чужая заявка' }),
-      ],
-    })
-    renderScreen()
-
-    expect(within(requestsTable()).queryByText('Чужая заявка')).toBeNull()
-    pick('tab', 'Все')
-    await waitFor(() => expect(within(requestsTable()).getByText('Чужая заявка')).toBeTruthy())
-    expect(within(requestsTable()).getByText('Моя заявка')).toBeTruthy()
-  })
-
-  it('the refusal reason is read under the status it explains, never in a column of its own (#388 defect B)', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true })] })
-    renderScreen()
-    expect(
-      within(requestsTable()).queryByRole('columnheader', { name: 'Причина отказа' }),
-    ).toBeNull()
-
-    cleanup()
-    refine.custom.data = snapshot({
-      requests: [item({ id: 2, own: true, status: 'refused', refusalReason: 'есть на складе' })],
-    })
-    renderScreen()
-    // Still no seventh column — the one that pushed «Открыть» off a 1440 px
-    // screen — and the reason is still on the row, beside «Отклонена».
-    expect(
-      within(requestsTable()).queryByRole('columnheader', { name: 'Причина отказа' }),
-    ).toBeNull()
-    const reason = within(requestsTable()).getByText('есть на складе')
-    expect(reason).toBeTruthy()
-    expect(reason.closest('td')?.textContent).toContain('Отклонена')
-  })
-
-  it('decision 35: a row opens the same details sheet the board’s card opens', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true })] })
-    renderScreen()
-    openCard(1)
-
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    expect(within(screen.getByRole('dialog')).getByText(/ООО «Студия-7»/)).toBeTruthy()
-  })
-
-  it('#480: another member’s PROPOSED purpose is read WITH its text, on the row and in the sheet', async () => {
-    // The board combined the open-book request list with the OWN-ONLY cabinet
-    // read, so a request filed by someone else arrived with no proposal and
-    // the cell printed the label alone — a row that says a purpose was
-    // proposed and refuses to say which. Owner decision (Антон,
-    // 2026-09-16): the pending proposal text is part of the open book.
-    refine.custom.data = snapshot({
-      permissions: { canApprove: false, canEnter: false },
-      requests: [
-        item({
-          id: 8,
-          own: false,
-          status: 'draft',
-          purpose: null,
-          proposal: { id: 9, text: 'Подписка на AI-инструменты', status: 'pending' },
-        }),
-      ],
-    })
-    renderScreen()
-    pick('tab', 'Все')
-
-    await waitFor(() =>
-      expect(
-        within(requestsTable()).getByText('Назначение предложено: Подписка на AI-инструменты'),
-      ).toBeTruthy(),
-    )
-    // Never the bare label: the defect this test exists for.
-    expect(within(requestsTable()).queryByText('Назначение предложено')).toBeNull()
-
-    openCard(8)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    expect(
-      within(screen.getByRole('dialog')).getByText(
-        'Назначение предложено: Подписка на AI-инструменты',
-      ),
-    ).toBeTruthy()
-  })
-
-  it('decision 35: a reader without the approve role gets no board toggle and no row act', async () => {
-    refine.custom.data = snapshot({
-      permissions: { canApprove: false, canEnter: false },
-      requests: [item({ id: 1, own: true, status: 'submitted' })],
-    })
-    renderScreen()
-
-    expect(screen.queryByRole('tab', { name: 'Доска' })).toBeNull()
-    expect(screen.queryByRole('tab', { name: 'Таблица' })).toBeNull()
-    expect(within(requestsTable()).queryByRole('button', { name: 'Одобрить' })).toBeNull()
-    expect(within(requestsTable()).queryByRole('button', { name: 'Отклонить…' })).toBeNull()
-    // The one action that stays open to everyone (EARS-502).
-    expect(screen.getByRole('button', { name: 'Новая заявка' })).toBeTruthy()
-  })
-
-  it('decision 35: an approver switches to the board, and the browser remembers the choice', async () => {
-    renderScreen()
-    expect(screen.queryByRole('region', { name: /Ждут/ })).toBeNull()
-
-    pick('tab', 'Доска')
-    await waitFor(() => expect(screen.getByRole('region', { name: /Ждут/ })).toBeTruthy())
-
-    cleanup()
-    renderScreen()
-    await waitFor(() => expect(screen.getByRole('region', { name: /Ждут/ })).toBeTruthy())
-  })
-
-  it('decision 35: a stored board is not a way back into a view the role no longer grants', async () => {
-    renderScreen()
-    pick('tab', 'Доска')
-    await waitFor(() => expect(screen.getByRole('region', { name: /Ждут/ })).toBeTruthy())
-
-    cleanup()
-    refine.custom.data = snapshot({ permissions: { canApprove: false, canEnter: false } })
-    renderScreen()
-    expect(requestsTable()).toBeTruthy()
-    expect(screen.queryByRole('region', { name: /Ждут/ })).toBeNull()
-  })
-
-  it('decision 35: the approve row act runs the existing act contract, unchanged', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: false, status: 'submitted' })] })
-    renderScreen()
-    pick('tab', 'Все')
-
-    // The row act names its row: a register of ten «Одобрить» buttons tells a
-    // screen reader nothing about which request it would approve.
-    fireEvent.click(within(requestsTable()).getByRole('button', { name: 'Одобрить заявку №1' }))
-    expect(refine.mutate.mock.calls[0][0]).toMatchObject({
-      url: '/p/finance/api/requests/1/actions',
-      method: 'post',
-      values: { act: 'approve' },
-    })
-  })
-
-  it('decision 35: the refuse row act asks for the reason instead of refusing in one click', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: false, status: 'submitted' })] })
-    renderScreen()
-    pick('tab', 'Все')
-
-    fireEvent.click(within(requestsTable()).getByRole('button', { name: 'Отклонить… заявку №1' }))
-    const reason = await screen.findByLabelText('Причина отказа')
-    expect(refine.mutate).not.toHaveBeenCalled()
-
-    fireEvent.change(reason, { target: { value: 'есть на складе' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Отклонить заявку' }))
-    expect(refine.mutate.mock.calls[0][0]).toMatchObject({
-      values: { act: 'refuse', reason: 'есть на складе' },
-    })
-  })
-
-  it('decision 35: a terminal row carries no act at all', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 1, own: false, status: 'posted' }),
-        item({ id: 2, own: false, status: 'refused', refusalReason: 'есть на складе' }),
-      ],
-    })
-    renderScreen()
-    pick('tab', 'Все')
-
-    expect(within(requestsTable()).queryByRole('button', { name: 'Одобрить' })).toBeNull()
-    expect(within(requestsTable()).queryByRole('button', { name: 'Отклонить…' })).toBeNull()
-  })
-})
-
-/**
  * DECISION 36 (owner Антон, 2026-09-14, #115), spec 339 EARS-508 revision
  * 2026-09-14: the company-account branch of the already-paid path is offered
  * only to `finance-entry` / `finance-approve`. The API refusal is the gate
@@ -1601,204 +1324,6 @@ describe('/p/finance/requests — the company-account choice is a role’s (deci
   // `finance-request-form-model.spec.ts`, «the body a role-less submitter
   // files says own money». Driving eleven Radix selects to re-assert it here
   // would test react-hook-form, not the decision.
-})
-
-// The owner's rebuild list of 2026-09-15, read back off the rendered screen.
-// Every item here was a DEFECT on the rejected stand of PR #470.
-describe('/p/finance/requests — the board rebuilt on the whitelist List block (#388 wave 3)', () => {
-  it('renders the register through the kit block, not a hand-built table', async () => {
-    renderScreen()
-    const table = within(requestsTable()).getByRole('table')
-
-    // The block's own markers: a fixed layout inside its rounded, bordered
-    // scroll container. `RequestsTable` itself writes no <table>.
-    expect(table.style.tableLayout).toBe('fixed')
-    expect(table.parentElement?.className).toContain('overflow-x-auto')
-  })
-
-  it('carries the block’s pager, which a hand-built table never had', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true })] })
-    renderScreen()
-    const table = requestsTable()
-
-    expect(within(table).getByRole('button', { name: 'Следующая страница' })).toBeTruthy()
-    expect(within(table).getByText('Строк на странице')).toBeTruthy()
-  })
-
-  it('offers sorting from the column headers', async () => {
-    renderScreen()
-    const table = requestsTable()
-
-    for (const label of [
-      'Сортировать по дате подачи',
-      'Сортировать по сумме',
-      'Сортировать по статусу',
-    ]) {
-      expect(within(table).getByRole('button', { name: label })).toBeTruthy()
-    }
-  })
-
-  it('re-orders the register when a header sorter is pressed', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 1, own: true, amount: '100', note: 'Дешёвая' }),
-        item({ id: 2, own: true, amount: '900', note: 'Дорогая' }),
-      ],
-    })
-    renderScreen()
-    const table = requestsTable()
-
-    const notesNow = () =>
-      within(table)
-        .getAllByText(/Дешёвая|Дорогая/)
-        .map((node) => node.textContent)
-
-    expect(notesNow()).toEqual(['Дорогая', 'Дешёвая'])
-    fireEvent.click(within(table).getByRole('button', { name: 'Сортировать по сумме' }))
-    await waitFor(() => expect(notesNow()).toEqual(['Дешёвая', 'Дорогая']))
-  })
-
-  it('adds the register up in the block’s totals row, per currency', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 1, own: true, amount: '100000', currency: 'RUB' }),
-        item({ id: 2, own: true, amount: '250000', currency: 'RUB' }),
-      ],
-    })
-    renderScreen()
-
-    const footer = within(requestsTable()).getByRole('table').querySelector('tfoot')
-    expect(footer).not.toBeNull()
-    expect(footer?.textContent).toContain('Итого')
-    expect(footer?.textContent).toContain('3 500,00 RUB')
-  })
-
-  it('gives each status its own stock badge variant, so status reads without being read', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({ id: 1, own: true, status: 'submitted' }),
-        item({ id: 2, own: true, status: 'approved' }),
-        item({ id: 3, own: true, status: 'refused', refusalReason: 'есть на складе' }),
-        item({ id: 4, own: true, status: 'posted' }),
-      ],
-    })
-    renderScreen()
-
-    const variants = Array.from(
-      within(requestsTable()).getByRole('table').querySelectorAll('tbody [data-slot="badge"]'),
-    ).map((node) => node.getAttribute('data-variant'))
-
-    expect(new Set(variants).size).toBe(4)
-    for (const variant of variants) {
-      expect(['default', 'secondary', 'destructive', 'outline']).toContain(variant)
-    }
-  })
-
-  it('EARS-556: leads with «Подана» and still names what the money did, under it', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true, occurredOn: null })] })
-    renderScreen()
-    const table = requestsTable()
-
-    // The header names the FILING moment (#517); the money date keeps its own
-    // honest wording as the cell's second line, so «ещё не двигались» still
-    // answers the question that was asked rather than printing «—».
-    expect(within(table).getByRole('columnheader', { name: /^Подана/ })).toBeTruthy()
-    expect(within(table).queryByRole('columnheader', { name: /^Дата$/ })).toBeNull()
-    expect(within(table).queryByRole('columnheader', { name: /^Деньги ушли/ })).toBeNull()
-    expect(within(table).getByText('ещё не двигались')).toBeTruthy()
-    // Date AND time, in Moscow time — the zone the team reads the register in
-    // (#525 review N3): the fixture's 09:30Z is 12:30 МСК.
-    expect(within(table).getByText('20.08.2026 12:30')).toBeTruthy()
-  })
-
-  it('EARS-554/556: puts the source link on the row and in the sheet, and nothing where there is none', async () => {
-    refine.custom.data = snapshot({
-      requests: [
-        item({
-          id: 1,
-          own: true,
-          createdAt: '2026-04-20T14:21:39.000Z',
-          sourceRef: 'q41r3h4nxjnozgft493okar9tw',
-          sourceUrl: 'https://chat.bbm.academy/bbm/pl/q41r3h4nxjnozgft493okar9tw',
-          sourceLabel: 'Mattermost',
-        }),
-        item({ id: 2, own: true }),
-      ],
-    })
-    renderScreen()
-    const table = requestsTable()
-
-    const link = within(table).getByRole('link', { name: /Открыть источник заявки №1/ })
-    expect(link.getAttribute('href')).toBe(
-      'https://chat.bbm.academy/bbm/pl/q41r3h4nxjnozgft493okar9tw',
-    )
-    // A new tab, and `noopener noreferrer` is what makes that safe.
-    expect(link.getAttribute('target')).toBe('_blank')
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
-    // The kit's link primitive (`Button asChild variant="link"`), so its focus
-    // ring is the kit's, not a hand-rolled one (#525 review N5).
-    expect(link.getAttribute('data-slot')).toBe('button')
-    expect(link.getAttribute('data-variant')).toBe('link')
-    // The row with no source carries NO link at all — not a dash, not a
-    // disabled icon.
-    expect(within(table).queryByRole('link', { name: /Открыть источник заявки №2/ })).toBeNull()
-    expect(within(table).getAllByRole('link')).toHaveLength(1)
-
-    // And the sheet says both halves in words.
-    fireEvent.click(within(table).getByRole('button', { name: 'Заявка №1' }))
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-    const sheet = within(screen.getByRole('dialog'))
-    expect(sheet.getByText('Подана')).toBeTruthy()
-    // The Higgsfield post written at 14:21:39Z — 17:21 МСК, the time the
-    // Mattermost client shows the same post at.
-    expect(sheet.getByText('20.04.2026 17:21')).toBeTruthy()
-    expect(sheet.getByText('Источник')).toBeTruthy()
-    expect(sheet.getByText('Mattermost')).toBeTruthy()
-  })
-
-  it('offers no hover underline on a row: opening one is a named control, not a link', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: true })] })
-    renderScreen()
-    const open = within(requestsTable()).getByRole('button', { name: 'Заявка №1' })
-
-    expect(open.getAttribute('data-variant')).not.toBe('link')
-    expect(open.className).not.toMatch(/underline/)
-    for (const row of within(requestsTable()).getByRole('table').querySelectorAll('tbody tr')) {
-      expect(row.className).not.toMatch(/underline/)
-      expect(row.getAttribute('onclick')).toBeNull()
-    }
-  })
-
-  it('keeps the whole toolbar on ONE row', async () => {
-    renderScreen()
-    const scope = screen.getByRole('tablist', { name: 'Чьи заявки' })
-    const view = screen.getByRole('tablist', { name: 'Вид' })
-
-    // The nearest ancestor that holds BOTH toggles is the toolbar; it is a
-    // flex ROW that never wraps, which is the whole of the owner's complaint.
-    let toolbar: HTMLElement | null = scope
-    while (toolbar !== null && !toolbar.contains(view)) toolbar = toolbar.parentElement
-    expect(toolbar).not.toBeNull()
-    expect(toolbar?.className).toContain('flex')
-    expect(toolbar?.className).not.toContain('flex-wrap')
-    expect(toolbar?.className).not.toContain('flex-col')
-  })
-
-  it('runs every act of this screen through ONE overlay shape — the Sheet', async () => {
-    refine.custom.data = snapshot({ requests: [item({ id: 1, own: false, status: 'submitted' })] })
-    renderScreen()
-    pick('tab', 'Все')
-    openCard(1)
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
-
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Отклонить…' }))
-    await screen.findByRole('region', { name: 'Отклонить заявку' })
-
-    // ONE dialog on the screen — the sheet. The refusal is a section inside it,
-    // not a second overlay with a second footer grammar.
-    expect(screen.getAllByRole('dialog')).toHaveLength(1)
-    expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull()
-  })
 })
 
 /**
@@ -2027,18 +1552,5 @@ describe('/p/finance/requests — the #473 acceptance defects', () => {
       expect(clippedInsideSheet(line)).toBe(false)
       expect(line.className).toMatch(/break-words|break-all|wrap-anywhere/)
     }
-  })
-
-  it('item 2: the register behind the same snapshot is bounded by the same budget', async () => {
-    const { BOARD_READ_ERROR_BUDGET_MS, boardReadWorstCaseErrorMs } =
-      await import('@/app/(platform)/p/finance/requests/request-board-model')
-    renderScreen()
-
-    const options = refine.tableProps?.queryOptions as
-      { retry?: number; retryDelay?: number } | undefined
-    expect(options).toBeTruthy()
-    expect(
-      boardReadWorstCaseErrorMs(options?.retry ?? 3, options?.retryDelay ?? 1000),
-    ).toBeLessThanOrEqual(BOARD_READ_ERROR_BUDGET_MS)
   })
 })
