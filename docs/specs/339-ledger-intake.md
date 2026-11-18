@@ -178,7 +178,7 @@ recorded as decisions 37–40 on #115):
   the amount, not only the percentage) and Факт / Рынок − 1 as %; in the
   request's details sheet and in a «Курс против рынка» report on
   `/p/finance`. USDT is valued as USD at the CBR rate (no crypto price
-  source). Product logic adopted from the owner's personal budgeting app
+  source), in the §I queue display too (EARS-551 revised, §J Q4 closed). Product logic adopted from the owner's personal budgeting app
   («Мой курс против рынка»), not its code (§J). It also answers §I Q2:
   cross-currency backlog requests take their actual debited amount per item,
   and the market side is computed — an estimated actual would make the
@@ -992,11 +992,23 @@ the corpus's «потерялась в канале» case).
   date money moved, never `posted_at`).
   Cross-currency pairs go through RUB. Amounts are bigint minor units and the
   arithmetic is decimal; no floating-point value enters it.
-- **EARS-551.** IF no CBR rate exists on or before the needed date for a
-  currency (CBR does not quote it — USDT; or the date precedes the stored
-  series), THEN the row shall show the original amount with «нет курса», and
-  every sum that leaves it out shall say «без N заявок» — never a silent
-  zero and never a wrong-currency addition.
+- **EARS-551.** A USDT request shall be converted at the CBR rate of USD
+  (CBR does not quote USDT; decision 41), the same rule as the §J market
+  side (EARS-558). IF no CBR rate exists on or before the needed date for a
+  currency (CBR does not quote it, or the date precedes the stored series),
+  THEN the row shall show the original amount with «нет курса», and every
+  sum that leaves it out shall say «без N заявок» — never a silent zero and
+  never a wrong-currency addition.
+
+  _Revised 2026-11-18 (owner decision 41, §J — USDT = USD applies to the
+  queue display too, so one USDT request reads the same in the row, the
+  sheet header and the §J block). The previous version read: «IF no CBR
+  rate exists on or before the needed date for a currency (CBR does not
+  quote it — USDT; or the date precedes the stored series), THEN the row
+  shall show the original amount with «нет курса», and every sum that leaves
+  it out shall say «без N заявок» — never a silent zero and never a
+  wrong-currency addition.»_
+
 - **EARS-552.** The finance module shall keep the Bank of Russia daily rates
   in `finance_fx_rate`, fetched from cbr.ru by an idempotent sync job that
   runs daily on the production host and can backfill a date range; a lookup
@@ -1055,10 +1067,13 @@ no CBR quote and is valued as USD (decision 41).
   `personal_funds` included — whose account-side currency (`paid_currency`)
   differs from its document currency, excluding an item whose operation is
   reversed and the reversal itself. Its **Факт** shall be what the account
-  (or, for `personal_funds`, the member's card) actually lost: `paid_amount`
-  - `fee_amount` in `paid_currency` (the shipped fee rule keeps the fee in
-    that currency). Its **payment date** shall be the item's `occurred_on` —
-    the date money moved (EARS-508), never `posted_at`.
+  (or, for `personal_funds`, the member's card) actually lost — the sum
+  `paid_amount + fee_amount`, both in `paid_currency` (the shipped fee rule
+  keeps the fee in that currency). Its **payment date** shall be the item's
+  `occurred_on` — the date money moved (EARS-508), never `posted_at`. For a
+  `personal_funds` item reimbursed in another currency, Факт is the refund
+  (EARS-544) and the date is the member's spend date, so its Переплата holds
+  both the member's own exchange cost and the refund lag.
 - **EARS-558.** The system shall value both sides in roubles at the Bank of
   Russia rate of the payment date: **Рынок** = the document amount × the CBR
   rate of the document currency, and Факт in roubles = Факт × the CBR rate of
@@ -1075,13 +1090,16 @@ no CBR quote and is valued as USD (decision 41).
   bigint minor units, the arithmetic is decimal and exact, and rounding
   happens once, at display (one decimal for the percentage, kopecks for the
   amount); no floating-point value enters it.
-- **EARS-560.** IF an `already_paid` request in a non-RUB document currency
-  is not yet posted and names no account in its document currency, THEN it
-  shall be «факт не внесён» — the money moved, but what it cost is not in
-  the ledger yet, even where the request states an amount (Факт is a ledger
-  fact, EARS-557). A «факт не внесён» or a «без
-  курса» item shall be left out of every Факт, Рынок and Переплата sum and
-  counted separately, by kind, wherever such a sum is shown — never
+- **EARS-560.** IF an `already_paid` request is not yet posted and its
+  debit currency — the named account's currency, else its stated
+  `paid_currency` — differs from its document currency, or is unknown (no
+  account and no `paid_currency`) on a non-RUB document, THEN it shall be
+  «факт не внесён» — the money moved, but what it cost is not in the ledger
+  yet, even where the request states an amount (Факт is a ledger fact, the
+  same predicate as EARS-557). It shall be counted in a period by its
+  `occurred_on`, else by its submission date (EARS-556). A «факт не внесён»
+  or a «без курса» item shall be left out of every Факт, Рынок and Переплата
+  sum and counted separately, by kind, wherever such a sum is shown — never
   converted 1:1, never a silent zero.
 - **EARS-561.** The system shall measure every recorded conversion operation
   (spec 338 EARS-318, `src/lib/finance/conversions.ts`, multi-step chains
@@ -1100,14 +1118,19 @@ no CBR quote and is valued as USD (decision 41).
   Σ Рынок and its % = Σ Факт / Σ Рынок − 1 over the measured items only
   (EARS-560), never the mean of the items' percentages.
 - **EARS-563.** WHEN the details sheet (EARS-542) shows a posted
-  foreign-currency payment, it shall carry a «Курс против рынка» block:
+  foreign-currency payment or a «факт не внесён» request (EARS-560), it
+  shall carry a «Курс против рынка» block:
   «Рынок» with the CBR rate and its date, «Факт» with the account it left
   and the fee inside it, and «Переплата» as the amount and the EARS-559
   wording; the amounts in the display currency (EARS-549, converted per
   EARS-566). For a «без курса» payment the block shall say «нет курса ЦБ на
-  <дата>»; for a «факт не внесён» request it shall say «факт не внесён —
-  укажите списанную сумму при отметке оплаты»; a same-currency request
-  shall show no block.
+  <дата>»; for a «факт не внесён» request that states no debited amount it
+  shall say «факт не внесён — укажите списанную сумму при отметке оплаты»;
+  for one that states it (a `personal_funds` request's amount is the
+  member's and stays authoritative, EARS-544) it shall say «факт не
+  проведён — появится после «Отметить возврат»» for `personal_funds` and
+  «…после «Отметить оплату»» otherwise; a same-currency request shall show
+  no block.
 - **EARS-564.** `/p/finance/reports/market-rate` «Курс против рынка»,
   linked from the `/p/finance` header beside «Заявки», shall show, for a
   chosen period of payment dates (month, quarter, year, the last 12 months
@@ -1127,7 +1150,9 @@ no CBR quote and is valued as USD (decision 41).
   of EARS-549 (₽ / $ / €, the same remembered per-viewer choice as the
   requests queue), converting each item's rouble figures at the CBR rate of
   its own payment date before any sum; a percentage shall not change with
-  the display currency.
+  the display currency. IF the display currency has no rate for an item's
+  date under EARS-558's rule, THEN that item shall be left out of the
+  displayed sums and counted «без курса: N», as in EARS-551.
 
 ## CRUD check (task-cycle stage 1a)
 
@@ -1209,8 +1234,10 @@ register, that dependency is named in the step:
 9. **One currency.** Switch ₽ → $: every amount and sum changes; a USD request
    viewed in ₽ shows its dollars small underneath, and its sheet names the
    CBR rate and its date — today for an unpaid request, the spend date for a
-   member's own payment (EARS-549/550). A USDT request shows «нет курса» and
-   the sums say «без 1 заявки» (EARS-551).
+   member's own payment (EARS-549/550). A USDT request is converted at the
+   USD rate, its sheet naming the USD rate and its date; a request in a
+   currency CBR does not quote shows «нет курса» and the sums say «без 1
+   заявки» (EARS-551 revised).
 10. **Paid without a receipt.** Open an approved pre-spend request with no
     file: «Как оплатить» warns that details are missing. «Отметить оплату»
     with a date and a RUB account and no file — it moves to «Оплачено» marked
@@ -1253,7 +1280,9 @@ register, that dependency is named in the step:
     of the measured rows, its % equals Σ Факт / Σ Рынок − 1 (not the mean of
     the rows' %), the conversion is listed under its route «RUB → USDT →
     USD», «факт не внесён: 1» is counted and not summed; delete the stand's
-    CBR rates for the conversion's week and it moves to «без курса: 1»
+    CBR rates for the 15 days up to and including the conversion's date (so
+    no rate within EARS-558's 14-day window remains) and it moves to «без
+    курса: 1»
     (EARS-561/562/564/565). Switch ₽ → $: the amounts change, the
     percentages do not (EARS-566).
 
@@ -1415,10 +1444,8 @@ reference from day one (decision 30, EARS-532).
   the last 12 months and it sits at `/p/finance/reports/market-rate`, the
   first route of the F3 reports area, until F3 (#340) builds that area's
   navigation (EARS-564).
-- **Q4 — USDT in the requests queue display.** Decision 41 values USDT as
-  USD for the market side (EARS-558). The §I queue display still shows a
-  USDT request with «нет курса» (EARS-551, scenario 9). Applying the same
-  rule there is a one-line change to the display lookup, but it changes a
-  shipped clause, so it is the owner's call and is not made here; until
-  answered, EARS-551 stands and a USDT request is valued as USD in the §J
-  block and report only.
+- **Q4 — USDT in the requests queue display. Closed 2026-11-18 (lead's
+  decision, final).** Decision 41's USDT = USD applies to the §I queue display
+  too, so one USDT request reads the same in the row, the sheet header and
+  the §J block: EARS-551 is rewritten (previous wording recorded under it),
+  scenario 9 and #550's acceptance criteria follow.
