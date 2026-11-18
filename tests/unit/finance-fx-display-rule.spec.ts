@@ -260,10 +260,12 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
       'src/lib/finance/operations.ts',
       'src/lib/finance/conversions.ts',
       'src/lib/finance/intake/posting.ts',
+      // The payment-queue acts (#549) write the ledger through the posting door.
+      'src/lib/finance/intake/payment-acts.ts',
       'src/lib/finance/index.ts',
     ]
     const WRITERS =
-      /\b(recordOperation\w*|recordConversion\w*|appendPostings|postIntakeItem\w*|reverseOperation)\b/
+      /\b(recordOperation\w*|recordConversion\w*|appendPostings|postIntakeItem\w*|reverseOperation|markExpenseRequest\w*|bulkMarkExpenseRequests\w*)\b/
     const byPath = new Map(files.map((f) => [f.path, f.text]))
     const resolveImport = (from: string, spec: string): string | null => {
       let base: string

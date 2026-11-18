@@ -1260,6 +1260,7 @@ describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)'
 
     const response = await actOn({
       act: 'mark-paid',
+      snapshot: 'seen-token',
       occurredOn: '2026-09-01',
       accountId: 7,
       paidAmount: '900000',
@@ -1270,6 +1271,7 @@ describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)'
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ id: 41, status: 'posted', operationId: 5 })
     expect(state.markExpenseRequestPaid).toHaveBeenCalledWith(expect.any(Object), 41, {
+      snapshot: 'seen-token',
       occurredOn: '2026-09-01',
       accountId: 7,
       paidAmount: 900_000n,
@@ -1278,16 +1280,18 @@ describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)'
     })
   })
 
-  it('EARS-543: mark-paid without a money date is a 400; the amount pair travels together', async () => {
-    const noDate = await actOn({ act: 'mark-paid', accountId: 7 })
+  it('EARS-543: mark-paid without a money date or the snapshot it was read at is a 400; the amount pair travels together', async () => {
+    const noDate = await actOn({ act: 'mark-paid', snapshot: 'seen-token', accountId: 7 })
+    const noSnapshot = await actOn({ act: 'mark-paid', occurredOn: '2026-09-01', accountId: 7 })
     const halfPair = await actOn({
       act: 'mark-paid',
+      snapshot: 'seen-token',
       occurredOn: '2026-09-01',
       accountId: 7,
       paidAmount: '900000',
     })
 
-    expect([noDate.status, halfPair.status]).toEqual([400, 400])
+    expect([noDate.status, noSnapshot.status, halfPair.status]).toEqual([400, 400, 400])
     expect(state.markExpenseRequestPaid).not.toHaveBeenCalled()
   })
 
@@ -1297,12 +1301,17 @@ describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)'
       Object.assign(new Error('Нужна роль finance-approve.'), { name: 'FinanceAccessRefusal' }),
     )
 
-    const response = await actOn({ act: 'mark-paid', occurredOn: '2026-09-01', accountId: 7 })
+    const response = await actOn({
+      act: 'mark-paid',
+      snapshot: 'seen-token',
+      occurredOn: '2026-09-01',
+      accountId: 7,
+    })
 
     expect(response.status).toBe(403)
   })
 
-  it('EARS-544: mark-reimbursed forwards the refund date, account and amount', async () => {
+  it('EARS-544: mark-reimbursed forwards the snapshot, refund date, account and amount', async () => {
     state.markExpenseRequestReimbursed.mockResolvedValue({
       ...request,
       status: 'posted',
@@ -1311,19 +1320,28 @@ describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)'
 
     const response = await actOn({
       act: 'mark-reimbursed',
+      snapshot: 'seen-token',
       occurredOn: '2026-09-04',
       accountId: 7,
       amount: '900000',
     })
     const missingAmount = await actOn({
       act: 'mark-reimbursed',
+      snapshot: 'seen-token',
       occurredOn: '2026-09-04',
       accountId: 7,
     })
+    const missingSnapshot = await actOn({
+      act: 'mark-reimbursed',
+      occurredOn: '2026-09-04',
+      accountId: 7,
+      amount: '900000',
+    })
 
-    expect([response.status, missingAmount.status]).toEqual([200, 400])
+    expect([response.status, missingAmount.status, missingSnapshot.status]).toEqual([200, 400, 400])
     expect(state.markExpenseRequestReimbursed).toHaveBeenCalledTimes(1)
     expect(state.markExpenseRequestReimbursed).toHaveBeenCalledWith(expect.any(Object), 41, {
+      snapshot: 'seen-token',
       occurredOn: '2026-09-04',
       accountId: 7,
       amount: 900_000n,

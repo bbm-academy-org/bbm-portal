@@ -144,6 +144,13 @@ async function uploadReceipt(actor: FinanceActor, intakeItemId: number) {
   )
 }
 
+/** The EARS-548 token the queue shows an approver — what the request card sends back with mark-paid. */
+async function snapshotOf(id: number): Promise<string> {
+  const row = (await listExpenseRequests(APPROVER)).find((request) => request.id === id)
+  if (row?.snapshot == null) throw new Error(`request #${id} carries no approver snapshot`)
+  return row.snapshot
+}
+
 describe('expense request member lifecycle (EARS-502/508/509)', () => {
   it('EARS-508: the public generic create APIs exclude and refuse request-source input', async () => {
     type PublicIntakeSource = Parameters<typeof createIntakeItem>[1]['source']
@@ -410,7 +417,9 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
     const receipt = await uploadReceipt(MEMBER, request.id)
     await submitExpenseRequest(MEMBER, request.id)
 
-    const posted = await markExpenseRequestPaid(APPROVER, request.id, {})
+    const posted = await markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
+    })
 
     expect(posted).toMatchObject({
       status: 'posted',
@@ -444,7 +453,9 @@ describe('expense request decisions (EARS-510/511/512/531)', () => {
       `)
     })
     try {
-      await expect(markExpenseRequestPaid(APPROVER, request.id, {})).rejects.toThrow()
+      await expect(
+        markExpenseRequestPaid(APPROVER, request.id, { snapshot: await snapshotOf(request.id) }),
+      ).rejects.toThrow()
     } finally {
       await asMigrator(async (client) => {
         await client.query(

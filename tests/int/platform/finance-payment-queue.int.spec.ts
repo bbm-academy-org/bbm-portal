@@ -8,6 +8,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   approveExpenseRequest,
   bulkMarkExpenseRequestsPaid,
+  cancelExpenseRequest,
   createAccount,
   createCurrency,
   createExpenseRequest,
@@ -214,6 +215,13 @@ async function queueRow(actor: FinanceActor, id: number) {
   return row
 }
 
+/** The EARS-548 token the queue shows an approver for this request — what a card sends back. */
+async function snapshotOf(id: number): Promise<string> {
+  const { snapshot } = await queueRow(APPROVER, id)
+  if (snapshot === null) throw new Error(`request #${id} carries no snapshot for the approver`)
+  return snapshot
+}
+
 describe('marking paid needs no document (EARS-506/510/543)', () => {
   it('EARS-506: an approved pre-spend request with zero documents posts through mark-paid with account and date', async () => {
     const refs = await seedRefs()
@@ -221,6 +229,7 @@ describe('marking paid needs no document (EARS-506/510/543)', () => {
     expect(await listFinanceDocuments(APPROVER, { intakeItemId: request.id })).toEqual([])
 
     const posted = await markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
       occurredOn: '2026-09-02',
       accountId: refs.rubAccountId,
     })
@@ -267,6 +276,7 @@ describe('marking paid needs no document (EARS-506/510/543)', () => {
     const since = await auditCursor()
 
     const posted = await markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
       occurredOn: '2026-09-03',
       accountId: refs.rubAccountId,
     })
@@ -290,6 +300,7 @@ describe('marking paid needs no document (EARS-506/510/543)', () => {
 
     const refusal = await refusalOf(
       markExpenseRequestPaid(APPROVER, request.id, {
+        snapshot: await snapshotOf(request.id),
         occurredOn: '2026-09-03',
         accountId: refs.rubAccountId,
       }),
@@ -305,18 +316,65 @@ describe('marking paid needs no document (EARS-506/510/543)', () => {
     })
   })
 
+  it('EARS-543: a mark-paid over a request that changed after the card read it is refused and posts nothing', async () => {
+    const refs = await seedRefs()
+    const request = await approved(MEMBER, preSpend(refs))
+    const seen = await snapshotOf(request.id)
+    await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item set amount = 150000 where id = ${request.id}
+      `),
+    )
+
+    const refusal = await refusalOf(
+      markExpenseRequestPaid(APPROVER, request.id, {
+        snapshot: seen,
+        occurredOn: '2026-09-02',
+        accountId: refs.rubAccountId,
+      }),
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain(`#${request.id}`)
+    expect(String(refusal)).toContain('EARS-548')
+    expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({
+      status: 'approved',
+      operationId: null,
+    })
+  })
+
+  it('EARS-543: a receipt attached after the card was read makes its mark-paid stale', async () => {
+    const refs = await seedRefs()
+    const request = await submitted(MEMBER, preSpend(refs))
+    const seen = await snapshotOf(request.id)
+    await upload(MEMBER, [request.id])
+
+    const refusal = await refusalOf(
+      markExpenseRequestPaid(APPROVER, request.id, {
+        snapshot: seen,
+        occurredOn: '2026-09-02',
+        accountId: refs.rubAccountId,
+      }),
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({ status: 'submitted' })
+  })
+
   it('EARS-543: a role-less member is refused as an access refusal, before any data is read', async () => {
     const refs = await seedRefs()
     const request = await approved(MEMBER, preSpend(refs))
 
     const own = await refusalOf(
       markExpenseRequestPaid(MEMBER, request.id, {
+        snapshot: 'x',
         occurredOn: '2026-09-03',
         accountId: refs.rubAccountId,
       }),
     )
     const missing = await refusalOf(
       markExpenseRequestPaid(MEMBER, 999_999, {
+        snapshot: 'x',
         occurredOn: '2026-09-03',
         accountId: refs.rubAccountId,
       }),
@@ -346,6 +404,7 @@ describe('marking paid needs no document (EARS-506/510/543)', () => {
 
     const refusal = await refusalOf(
       markExpenseRequestPaid(APPROVER, request.id, {
+        snapshot: await snapshotOf(request.id),
         occurredOn: '2026-09-05',
         accountId: refs.rubAccountId,
         paidAmount: 900_000n,
@@ -368,6 +427,7 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
     const request = await submitted(MEMBER, ownFunds(refs, { amount: 10_000n, currency: 'USD' }))
 
     const settled = await markExpenseRequestReimbursed(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
       occurredOn: '2026-09-04',
       accountId: refs.rubAccountId,
       amount: 900_000n,
@@ -396,6 +456,7 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
 
     const second = await refusalOf(
       markExpenseRequestReimbursed(APPROVER, request.id, {
+        snapshot: await snapshotOf(request.id),
         occurredOn: '2026-09-05',
         accountId: refs.rubAccountId,
         amount: 900_000n,
@@ -408,11 +469,15 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
   it('EARS-544: on an already-posted USD-liability request a RUB refund is refused readably', async () => {
     const refs = await seedRefs()
     const request = await submitted(MEMBER, ownFunds(refs, { amount: 10_000n, currency: 'USD' }))
-    await markExpenseRequestPaid(APPROVER, request.id, { occurredOn: '2026-09-01' })
+    await markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
+      occurredOn: '2026-09-01',
+    })
     expect((await queueRow(APPROVER, request.id)).stage).toBe('reimburse')
 
     const refusal = await refusalOf(
       markExpenseRequestReimbursed(APPROVER, request.id, {
+        snapshot: await snapshotOf(request.id),
         occurredOn: '2026-09-04',
         accountId: refs.rubAccountId,
         amount: 900_000n,
@@ -431,6 +496,7 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
 
     const refusal = await refusalOf(
       markExpenseRequestReimbursed(APPROVER, request.id, {
+        snapshot: await snapshotOf(request.id),
         occurredOn: '2026-09-04',
         accountId: refs.rubAccountId,
         amount: 100_000n,
@@ -443,11 +509,66 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
     expect(await transfersSettling(request.id)).toEqual([])
   })
 
+  it('EARS-544: a refund over a request that changed after the card read it is refused and writes nothing', async () => {
+    const refs = await seedRefs()
+    const request = await submitted(MEMBER, ownFunds(refs))
+    const seen = await snapshotOf(request.id)
+    await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item set note = 'изменено после открытия карточки'
+         where id = ${request.id}
+      `),
+    )
+
+    const refusal = await refusalOf(
+      markExpenseRequestReimbursed(APPROVER, request.id, {
+        snapshot: seen,
+        occurredOn: '2026-09-04',
+        accountId: refs.rubAccountId,
+        amount: 120_000n,
+      }),
+    )
+
+    expect(refusal).toBeInstanceOf(FinanceRefusal)
+    expect(String(refusal)).toContain('EARS-548')
+    expect(await getExpenseRequest(APPROVER, request.id)).toMatchObject({ status: 'submitted' })
+    expect(await transfersSettling(request.id)).toEqual([])
+  })
+
+  it('EARS-544: a refund with a receipt on a refused or cancelled request is a readable refusal, nothing linked', async () => {
+    const refs = await seedRefs()
+    const refused = await submitted(MEMBER, ownFunds(refs))
+    await refuseExpenseRequest(APPROVER, refused.id, 'не наш расход')
+    const cancelled = await submitted(MEMBER, ownFunds(refs))
+    await cancelExpenseRequest(MEMBER, cancelled.id)
+    const receipt = await upload(APPROVER, [])
+
+    for (const request of [refused, cancelled]) {
+      const refusal = await refusalOf(
+        markExpenseRequestReimbursed(APPROVER, request.id, {
+          snapshot: await snapshotOf(request.id),
+          occurredOn: '2026-09-04',
+          accountId: refs.rubAccountId,
+          amount: 120_000n,
+          documentIds: [receipt.id],
+        }),
+      )
+      expect(refusal).toBeInstanceOf(FinanceRefusal)
+      expect(String(refusal)).toContain(`#${request.id}`)
+      expect(String(refusal)).toMatch(/EARS-524\/544/)
+    }
+    const links = await db.execute(sql`
+      select count(*)::int as n from core.finance_document_link where document_id = ${receipt.id}
+    `)
+    expect((links.rows[0] as { n: number }).n).toBe(0)
+  })
+
   it('EARS-544: a role-less member cannot mark a refund', async () => {
     const refs = await seedRefs()
     const request = await submitted(MEMBER, ownFunds(refs))
     const refusal = await refusalOf(
       markExpenseRequestReimbursed(MEMBER, request.id, {
+        snapshot: 'x',
         occurredOn: '2026-09-04',
         accountId: refs.rubAccountId,
         amount: 120_000n,
@@ -461,7 +582,10 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
   /** A posted RUB personal-funds request of MEMBER — the debt to settle. */
   async function postedDebt(refs: Refs, amount = 120_000n) {
     const request = await submitted(MEMBER, ownFunds(refs, { amount }))
-    return markExpenseRequestPaid(APPROVER, request.id, { occurredOn: '2026-09-01' })
+    return markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
+      occurredOn: '2026-09-01',
+    })
   }
 
   function reimbursement(refs: Refs, overrides: Record<string, unknown> = {}) {
@@ -503,7 +627,10 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
     // A USD liability account has to exist for the currency refusal to be the
     // settlement rule's and not «no debt in USD».
     const usdDebt = await submitted(MEMBER, ownFunds(refs, { amount: 5_000n, currency: 'USD' }))
-    await markExpenseRequestPaid(APPROVER, usdDebt.id, { occurredOn: '2026-09-01' })
+    await markExpenseRequestPaid(APPROVER, usdDebt.id, {
+      snapshot: await snapshotOf(usdDebt.id),
+      occurredOn: '2026-09-01',
+    })
     const otherCurrency = await refusalOf(
       createReimbursementTransfer(
         ENTRY,
@@ -576,7 +703,8 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
     expect(posted).toMatchObject({ status: 'posted' })
   })
 
-  it('EARS-528: the one-time data step links a pre-column transfer to its single candidate and stops on ambiguity', async () => {
+  /** The migration's data step, exactly as 0019 ships it. */
+  function dataStepSql(): string {
     const step = readFileSync(
       resolve(process.cwd(), 'src/lib/platform/db/migrations/0019_finance_settles_item.sql'),
       'utf8',
@@ -585,36 +713,42 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
     const end = step.indexOf('-- data-step:end')
     expect(begin).toBeGreaterThan(-1)
     expect(end).toBeGreaterThan(begin)
-    const dataStep = step.slice(begin, end).replaceAll('--> statement-breakpoint', '')
+    return step.slice(begin, end).replaceAll('--> statement-breakpoint', '')
+  }
 
+  /** A posted RUB liability transfer written the pre-0019 way — no `settles_item_id`. */
+  async function legacyTransfer(refs: Refs): Promise<number> {
+    return fixtureWrite(async (tx) => {
+      const liability = await tx.execute(sql`
+        select id from core.finance_account where kind = 'liability' and currency = 'RUB'
+      `)
+      const liabilityId = Number((liability.rows[0] as { id: number }).id)
+      const operation = await tx.execute(sql`
+        insert into core.finance_operation (occurred_on, source) values ('2026-09-06', 'manual')
+        returning id
+      `)
+      const inserted = await tx.execute(sql`
+        insert into core.finance_intake_item
+          (source, kind, status, occurred_on, account_id, counter_account_id, amount,
+           currency, project_id, member_id, created_by, decided_by, decided_at,
+           posted_by, posted_at, operation_id)
+        values ('manual', 'transfer', 'posted', '2026-09-06', ${refs.rubAccountId},
+                ${liabilityId}, 120000, 'RUB', ${refs.projectId}, ${refs.memberMemberId},
+                ${refs.entryMemberId}, ${refs.approverMemberId}, now(),
+                ${refs.approverMemberId}, now(),
+                ${Number((operation.rows[0] as { id: number }).id)})
+        returning id
+      `)
+      return Number((inserted.rows[0] as { id: number }).id)
+    })
+  }
+
+  it('EARS-528: the one-time data step links a pre-column transfer to its single candidate and stops on ambiguity', async () => {
+    const dataStep = dataStepSql()
     const refs = await seedRefs()
     const debt = await postedDebt(refs)
-    const legacyTransfer = async () =>
-      fixtureWrite(async (tx) => {
-        const liability = await tx.execute(sql`
-          select id from core.finance_account where kind = 'liability' and currency = 'RUB'
-        `)
-        const liabilityId = Number((liability.rows[0] as { id: number }).id)
-        const operation = await tx.execute(sql`
-          insert into core.finance_operation (occurred_on, source) values ('2026-09-06', 'manual')
-          returning id
-        `)
-        const inserted = await tx.execute(sql`
-          insert into core.finance_intake_item
-            (source, kind, status, occurred_on, account_id, counter_account_id, amount,
-             currency, project_id, member_id, created_by, decided_by, decided_at,
-             posted_by, posted_at, operation_id)
-          values ('manual', 'transfer', 'posted', '2026-09-06', ${refs.rubAccountId},
-                  ${liabilityId}, 120000, 'RUB', ${refs.projectId}, ${refs.memberMemberId},
-                  ${refs.entryMemberId}, ${refs.approverMemberId}, now(),
-                  ${refs.approverMemberId}, now(),
-                  ${Number((operation.rows[0] as { id: number }).id)})
-          returning id
-        `)
-        return Number((inserted.rows[0] as { id: number }).id)
-      })
 
-    const linked = await legacyTransfer()
+    const linked = await legacyTransfer(refs)
     await asMigrator((client) => client.query(dataStep))
     const after = await db.execute(sql`
       select settles_item_id from core.finance_intake_item where id = ${linked}
@@ -623,9 +757,28 @@ describe('every non-backfill reimbursement names the item it settles (EARS-528)'
 
     // A second transfer of the same member and sum: no unsettled candidate is
     // left for it, so the step must stop and name it rather than guess.
-    const orphan = await legacyTransfer()
+    const orphan = await legacyTransfer(refs)
     const refusal = await refusalOf(asMigrator((client) => client.query(dataStep)))
     expect(String(refusal)).toContain(String(orphan))
+  })
+
+  it('EARS-528: the data step stops on MORE than one candidate, names the transfer and links nothing', async () => {
+    const dataStep = dataStepSql()
+    const refs = await seedRefs()
+    // Two identical posted debts of one member: the transfer could settle
+    // either, so the step must not pick one.
+    await postedDebt(refs)
+    await postedDebt(refs)
+    const ambiguous = await legacyTransfer(refs)
+
+    const refusal = await refusalOf(asMigrator((client) => client.query(dataStep)))
+
+    expect(String(refusal)).toContain('EARS-528')
+    expect(String(refusal)).toContain(`#${ambiguous} (кандидатов: 2)`)
+    const after = await db.execute(sql`
+      select count(*)::int as n from core.finance_intake_item where settles_item_id is not null
+    `)
+    expect((after.rows[0] as { n: number }).n).toBe(0)
   })
 })
 
@@ -663,6 +816,7 @@ describe('a receipt may follow the posting (EARS-545)', () => {
     const refs = await seedRefs()
     const request = await approved(MEMBER, preSpend(refs))
     const posted = await markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
       occurredOn: '2026-09-02',
       accountId: refs.rubAccountId,
     })
@@ -787,6 +941,56 @@ describe('the bulk retroactive act (EARS-547/548)', () => {
       expect((await queueRow(APPROVER, request.id)).stage).toBe('paid')
     }
     expect(rubBalance(await liabilityBalances({ memberId: refs.memberMemberId }))).toBe(0n)
+  })
+
+  it('EARS-547: a debt a pending manual transfer already settles is listed ineligible; the rest of the batch posts', async () => {
+    const refs = await seedRefs()
+    const pending = await submitted(MEMBER, ownFunds(refs, { occurredOn: '2026-09-02' }))
+    await markExpenseRequestPaid(APPROVER, pending.id, {
+      snapshot: await snapshotOf(pending.id),
+      occurredOn: '2026-09-02',
+    })
+    const manual = await createReimbursementTransfer(ENTRY, {
+      occurredOn: '2026-09-05',
+      accountId: refs.rubAccountId,
+      amount: 120_000n,
+      currency: 'RUB',
+      memberId: refs.memberMemberId,
+      projectId: refs.projectId,
+      settlesItemId: pending.id,
+    })
+    const free = await submitted(MEMBER, ownFunds(refs, { occurredOn: '2026-09-03' }))
+    const shown = (await listExpenseRequests(APPROVER)).filter((row) => row.stage === 'reimburse')
+    expect(shown.map((row) => row.id).sort()).toEqual([pending.id, free.id].sort())
+
+    const items = shown.map((row) => ({ id: row.id, snapshot: row.snapshot! }))
+    const preview = await bulkMarkExpenseRequestsPaid(APPROVER, {
+      group: 'reimburse',
+      accountId: refs.rubAccountId,
+      items,
+      preview: true,
+    })
+    expect(preview.planned.map((row) => row.id)).toEqual([free.id])
+
+    const result = await bulkMarkExpenseRequestsPaid(APPROVER, {
+      group: 'reimburse',
+      accountId: refs.rubAccountId,
+      items,
+    })
+
+    expect(result.posted.map((row) => row.id)).toEqual([free.id])
+    expect(result.excluded).toEqual([
+      expect.objectContaining({
+        id: pending.id,
+        reason: expect.stringContaining(`#${manual.id}`),
+      }),
+    ])
+    expect(await transfersSettling(pending.id)).toEqual([
+      expect.objectContaining({ id: manual.id }),
+    ])
+    expect(await transfersSettling(free.id)).toEqual([
+      expect.objectContaining({ status: 'posted' }),
+    ])
   })
 
   it('EARS-547: a role-less member cannot run the bulk act', async () => {
