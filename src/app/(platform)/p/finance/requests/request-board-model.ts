@@ -301,7 +301,7 @@ export function canAttachDocument(request: RequestBoardItem, canEnter: boolean):
 /**
  * What an EMPTY document block is allowed to SAY — and it is not one sentence.
  *
- * «Документ не приложен.» is an observation only for a reader who would
+ * «Нет файлов.» is an observation only for a reader who would
  * have been shown the document had there been one. Since owner decision 35
  * (#115, 2026-09-14; spec 339 EARS-534) the list is every member's, while
  * EARS-523 keeps document CONTENT to the submitter and the two finance flow
@@ -315,7 +315,7 @@ export function emptyDocumentNote(
   canEnter: boolean,
   canApprove: boolean,
 ): string {
-  if (request.own || canEnter || canApprove) return 'Документ не приложен.'
+  if (request.own || canEnter || canApprove) return 'Нет файлов.'
   return 'Документ виден подавшему заявку и финансовой роли.'
 }
 

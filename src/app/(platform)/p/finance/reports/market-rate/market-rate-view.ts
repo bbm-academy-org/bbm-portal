@@ -1,4 +1,4 @@
-import type { MarketReportStats } from '@/lib/finance/fx/market-report'
+import type { MarketReportRow, MarketReportStats } from '@/lib/finance/fx/market-report'
 
 import type { DisplayCurrencyCode } from '../../requests/request-board-contract'
 import { formatDisplayMoney } from '../../requests/request-queue-model'
@@ -118,6 +118,38 @@ export function leftOutNotes(
   }
   if (excludedChains > 0) notes.push(`не учтено конвертаций: ${excludedChains}`)
   return notes
+}
+
+/**
+ * Why a row has no sum (pre-acceptance UX pass, item 7) — the one line it is
+ * drawn as under its table: «нет курса ЦБ на дату», «факт не внесён», «нет
+ * курса в EUR», whichever apply, in that order.
+ */
+export function unmeasuredReason(
+  stats: MarketReportStats,
+  noDisplayRate: number,
+  currency: DisplayCurrencyCode,
+): string {
+  const reasons: string[] = []
+  if (stats.noRate.payments + stats.noRate.chains > 0) reasons.push('нет курса ЦБ на дату')
+  if (stats.notPosted > 0) reasons.push('факт не внесён')
+  if (noDisplayRate > 0 && currency !== 'RUB') reasons.push(`нет курса в ${currency}`)
+  return reasons.length === 0 ? 'нет данных' : reasons.join(', ')
+}
+
+/**
+ * The rows with a sum in this display currency, then the rows without one —
+ * each side in the server's order. The second side is not a table row of
+ * dashes: the screen lists it, muted, under the table (item 7).
+ */
+export function splitMeasuredRows(
+  rows: readonly MarketReportRow[],
+  currency: DisplayCurrencyCode,
+): { measured: MarketReportRow[]; unmeasured: MarketReportRow[] } {
+  const measured: MarketReportRow[] = []
+  const unmeasured: MarketReportRow[] = []
+  for (const row of rows) (hasSum(row, row.figures[currency]) ? measured : unmeasured).push(row)
+  return { measured, unmeasured }
 }
 
 /** Which kit badge a direction reads in: worse than the market is the warning. */

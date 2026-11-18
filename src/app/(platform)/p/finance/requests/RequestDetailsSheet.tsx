@@ -7,7 +7,7 @@ import { useForm, useFormContext } from 'react-hook-form'
 import { z } from 'zod'
 
 import type { FinanceDocumentKind } from '@/lib/finance'
-import { Alert, AlertDescription, AlertTitle } from '@/ui/alert'
+import { Alert, AlertDescription } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import {
@@ -96,13 +96,40 @@ export type SheetOpening = 'pay' | 'refuse' | null
 
 // ── small parts ─────────────────────────────────────────────────────────────
 
-/** A section of the sheet: a plain heading over its content — type, not a box. */
+/**
+ * A section of the sheet: a plain heading over its content — type, not a box.
+ * The heading is a LABEL (pre-acceptance UX pass, item 3): small tracked
+ * capitals in the muted token, so it never reads as one more line of the body
+ * and never competes with the amount or the primary act.
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section aria-label={title} className="space-y-2">
-      <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
+      <h3
+        data-section-label=""
+        className="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+      >
+        {title}
+      </h3>
       {children}
     </section>
+  )
+}
+
+/**
+ * «факт не внесён — укажите …» (§J, EARS-560/563): the state in the body
+ * colour, then what to do about it (pre-acceptance UX pass, item 6). It asks
+ * for an act, so it is not fine print.
+ */
+function MarketNote({ text }: { text: string }) {
+  const [state, ...hint] = text.split(' — ')
+  return (
+    <p className="text-sm text-foreground">
+      <span className="font-medium">{state}</span>
+      {hint.length === 0 ? null : (
+        <span className="text-muted-foreground">{` — ${hint.join(' — ')}`}</span>
+      )}
+    </p>
   )
 }
 
@@ -637,9 +664,12 @@ type AttachValue = { kind: FinanceDocumentKind; file: FileList | null }
 
 /**
  * CHOOSING IS ATTACHING — there is no second control (#388 defect G): the
- * file input's `change` uploads at once. On a posted request with no receipt
- * the block carries the reason it is there and the picker wears the primary
- * fill, because attaching is what that state waits for (EARS-545/546).
+ * file input's `change` uploads at once. The picker is PUT AWAY until the
+ * reader asks for it with «Прикрепить файл» (pre-acceptance UX pass, item 4):
+ * the block above already lists the files or says «Нет файлов.», and an open
+ * dropzone under it read as a step still missing. On a posted request with no
+ * receipt the button wears the primary fill and carries the reason it is
+ * there, because attaching is what that state waits for (EARS-545/546).
  */
 function AttachDocumentForm({
   pending,
@@ -657,8 +687,8 @@ function AttachDocumentForm({
   const form = useForm<AttachValue>({ defaultValues: { file: null, kind: 'fiscal_receipt' } })
   const [uploadingName, setUploadingName] = React.useState<string | null>(null)
   // Initialised, not synchronised: the sheet is re-keyed on the document
-  // count, so a landed upload mounts the collapsed state (#473 item 6).
-  const [adding, setAdding] = React.useState(attached === 0)
+  // count, so a landed upload mounts the put-away state (#473 item 6).
+  const [adding, setAdding] = React.useState(false)
 
   const choose = (files: FileList | null) => {
     form.clearErrors('file')
@@ -673,80 +703,86 @@ function AttachDocumentForm({
     onAttach(file, form.getValues('kind'))
   }
 
-  return (
-    <div
-      data-emphasis={emphasis ? 'primary' : 'default'}
-      className={cn(
-        'space-y-3 rounded-lg border p-3',
-        emphasis ? 'border-primary/40 bg-primary/5' : 'border-dashed',
-      )}
-    >
-      {emphasis ? (
-        <p className="text-sm text-foreground">
-          Оплата отмечена без чека. Приложите чек — отметка «без чека» уйдёт.
-        </p>
-      ) : null}
-      {adding ? (
-        <Form {...form}>
-          <div className="grid gap-3">
-            <FormField
-              control={form.control}
-              name="kind"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Вид документа</FormLabel>
-                  <KindSelect value={field.value} onChange={field.onChange} disabled={pending} />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="file"
-              render={() => (
-                <FormItem>
-                  <FormLabel>{emphasis ? 'Прикрепить чек' : 'Подтверждающий документ'}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="file"
-                      accept={DOCUMENT_UPLOAD_ACCEPT}
-                      disabled={pending}
-                      className={cn(
-                        'h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:px-2 file:transition-colors',
-                        emphasis
-                          ? 'file:bg-primary file:text-primary-foreground hover:file:bg-primary/80'
-                          : 'file:bg-secondary hover:file:bg-secondary/70',
-                      )}
-                      onChange={(event) => choose(event.target.files)}
-                    />
-                  </FormControl>
-                  <FormDescription>Файл прикладывается сразу после выбора.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {pending && uploadingName !== null ? (
-              <p className="text-sm text-muted-foreground" role="status">
-                Загружаем «{uploadingName}»…
-              </p>
-            ) : null}
-            {failure ? (
-              <p className="text-sm text-destructive" role="alert">
-                {failure}
-              </p>
-            ) : null}
-          </div>
-        </Form>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Документ уже приложен. Второй файл добавится к нему, а не заменит его.
+  if (!adding) {
+    return (
+      <div data-emphasis={emphasis ? 'primary' : 'default'} className="space-y-2">
+        {emphasis ? (
+          <p className="text-sm text-foreground">
+            Оплата отмечена без чека. Приложите чек — отметка «без чека» уйдёт.
           </p>
-          <Button type="button" variant="outline" onClick={() => setAdding(true)}>
-            Приложить ещё документ
+        ) : null}
+        <Button
+          type="button"
+          variant={emphasis ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setAdding(true)}
+        >
+          {attached === 0 ? 'Прикрепить файл' : 'Прикрепить ещё файл'}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <Form {...form}>
+      <div data-emphasis={emphasis ? 'primary' : 'default'} className="grid gap-3">
+        <FormField
+          control={form.control}
+          name="kind"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Вид документа</FormLabel>
+              <KindSelect value={field.value} onChange={field.onChange} disabled={pending} />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="file"
+          render={() => (
+            <FormItem>
+              <FormLabel>{emphasis ? 'Прикрепить чек' : 'Подтверждающий документ'}</FormLabel>
+              <FormControl>
+                <Input
+                  type="file"
+                  accept={DOCUMENT_UPLOAD_ACCEPT}
+                  disabled={pending}
+                  className="h-auto cursor-pointer py-1.5 file:mr-2 file:cursor-pointer file:rounded-md file:bg-secondary file:px-2 file:transition-colors hover:file:bg-secondary/70"
+                  onChange={(event) => choose(event.target.files)}
+                />
+              </FormControl>
+              <FormDescription>
+                {attached === 0
+                  ? 'Файл прикладывается сразу после выбора.'
+                  : 'Файл прикладывается сразу после выбора и добавится к уже приложенным.'}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        {pending && uploadingName !== null ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Загружаем «{uploadingName}»…
+          </p>
+        ) : null}
+        {failure ? (
+          <p className="text-sm text-destructive" role="alert">
+            {failure}
+          </p>
+        ) : null}
+        <div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            onClick={() => setAdding(false)}
+          >
+            Не прикреплять
           </Button>
         </div>
-      )}
-    </div>
+      </div>
+    </Form>
   )
 }
 
@@ -959,12 +995,25 @@ export function RequestDetailsSheet({
                   </AlertDescription>
                 </Alert>
               ) : (
-                <Alert variant="destructive" role="status">
-                  <AlertTitle>Реквизитов или ссылки на оплату нет</AlertTitle>
-                  <AlertDescription>
-                    Запросить у автора — {request.createdByName ?? 'подавшего заявку'}.
-                  </AlertDescription>
-                </Alert>
+                // A quiet inline note, not an error box louder than the acts
+                // (pre-acceptance UX pass, item 5). The ask goes where the
+                // request was filed — its thread — when there is one.
+                <p role="status" className="text-sm text-muted-foreground">
+                  <span className="text-foreground">Реквизитов или ссылки на оплату нет</span>
+                  {' · '}
+                  {request.sourceUrl === null ? (
+                    <span>Запросить у автора — {request.createdByName ?? 'подавшего заявку'}</span>
+                  ) : (
+                    <>
+                      <Button asChild variant="link" className="h-auto p-0 align-baseline">
+                        <a href={request.sourceUrl} target="_blank" rel="noopener noreferrer">
+                          Запросить у автора
+                        </a>
+                      </Button>
+                      {request.createdByName ? ` — ${request.createdByName}` : null}
+                    </>
+                  )}
+                </p>
               )}
             </Section>
           )}
@@ -972,7 +1021,7 @@ export function RequestDetailsSheet({
           {market === null ? null : (
             <Section title="Курс против рынка">
               {market.kind === 'note' ? (
-                <p className="text-sm text-muted-foreground">{market.text}</p>
+                <MarketNote text={market.text} />
               ) : (
                 <div className="space-y-2">
                   <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

@@ -48,7 +48,15 @@ export type QueueGroup = {
   hint: string
   act: QueueAct | null
   collapsedByDefault: boolean
+  /**
+   * How loud the group's heading is (pre-acceptance UX pass): the decisions and
+   * the payments are the work, a debt to a colleague comes next, the drafts
+   * and the closed groups are the archive. The heading carries it, not a box.
+   */
+  tier: QueueTier
 }
+
+export type QueueTier = 'primary' | 'secondary' | 'archived'
 
 export const QUEUE_GROUPS: Record<QueueStage, QueueGroup> = {
   decide: {
@@ -57,6 +65,7 @@ export const QUEUE_GROUPS: Record<QueueStage, QueueGroup> = {
     hint: 'одобрить или отклонить; после одобрения уходит в «К оплате»',
     act: 'approve',
     collapsedByDefault: false,
+    tier: 'primary',
   },
   pay: {
     stage: 'pay',
@@ -64,6 +73,7 @@ export const QUEUE_GROUPS: Record<QueueStage, QueueGroup> = {
     hint: 'одобрено или уже оплачено с карты компании — осталось отметить оплату',
     act: 'mark-paid',
     collapsedByDefault: false,
+    tier: 'primary',
   },
   reimburse: {
     stage: 'reimburse',
@@ -71,6 +81,7 @@ export const QUEUE_GROUPS: Record<QueueStage, QueueGroup> = {
     hint: 'человек заплатил сам; компания ему должна',
     act: 'mark-reimbursed',
     collapsedByDefault: false,
+    tier: 'secondary',
   },
   draft: {
     stage: 'draft',
@@ -78,15 +89,31 @@ export const QUEUE_GROUPS: Record<QueueStage, QueueGroup> = {
     hint: 'автор ещё не отправил',
     act: null,
     collapsedByDefault: true,
+    tier: 'archived',
   },
-  paid: { stage: 'paid', title: 'Оплачено', hint: '', act: null, collapsedByDefault: false },
-  refused: { stage: 'refused', title: 'Отклонено', hint: '', act: null, collapsedByDefault: false },
+  paid: {
+    stage: 'paid',
+    title: 'Оплачено',
+    hint: '',
+    act: null,
+    collapsedByDefault: false,
+    tier: 'archived',
+  },
+  refused: {
+    stage: 'refused',
+    title: 'Отклонено',
+    hint: '',
+    act: null,
+    collapsedByDefault: false,
+    tier: 'archived',
+  },
   cancelled: {
     stage: 'cancelled',
     title: 'Отменено',
     hint: '',
     act: null,
     collapsedByDefault: false,
+    tier: 'archived',
   },
 }
 
@@ -370,6 +397,37 @@ export function isNewInQueue(request: RequestBoardItem, now: Date): boolean {
 /** A group heading's «1 новая», «2 новые», «5 новых» — for a group whose rows are folded away. */
 export function newCountLabel(count: number): string {
   return `${count} ${russianPlural(count, 'новая', 'новые', 'новых')}`
+}
+
+/**
+ * «Последняя заявка» over the groups (pre-acceptance UX pass — the owner's
+ * «не вижу последнюю заявку»): the newest SUBMITTED request whatever its stage
+ * — a draft is not filed yet — and how many were filed in the last 24 hours.
+ * Null when nothing was ever submitted.
+ */
+export function latestRequest(
+  requests: readonly RequestBoardItem[],
+  now: Date,
+): { request: RequestBoardItem; fresh: number } | null {
+  let newest: RequestBoardItem | null = null
+  let fresh = 0
+  for (const request of requests) {
+    if (request.stage === 'draft') continue
+    if (isNewRequest(request.createdAt, now)) fresh += 1
+    if (newest === null || Date.parse(request.createdAt) > Date.parse(newest.createdAt)) {
+      newest = request
+    }
+  }
+  return newest === null ? null : { request: newest, fresh }
+}
+
+/** The latest request's age: minutes and hours on its first day, then the row's own days. */
+export function latestRequestAge(createdAt: string, now: Date): string {
+  const minutes = Math.floor((now.getTime() - Date.parse(createdAt)) / 60_000)
+  if (minutes < 1) return 'только что'
+  if (minutes < 60) return `${minutes} мин назад`
+  if (minutes < QUEUE_NEW_HOURS * 60) return `${Math.floor(minutes / 60)} ч назад`
+  return requestAge(createdAt, now).label
 }
 
 // ── search and filters (EARS-540) ───────────────────────────────────────────

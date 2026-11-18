@@ -33,6 +33,8 @@ import {
   formatOriginalMoney,
   isNewInQueue,
   isOverdue,
+  latestRequest,
+  latestRequestAge,
   missingRateNote,
   newCountLabel,
   parseStoredDisplayCurrency,
@@ -59,6 +61,7 @@ import {
   type QueueSortKey,
   type QueueStage,
   type QueueSum,
+  type QueueTier,
 } from './request-queue-model'
 import { RequestSourceLink } from './RequestSourceLink'
 import { useDisplayCurrency, writeDisplayCurrency } from './display-currency-store'
@@ -230,7 +233,9 @@ type CellContext = {
 /** «новая» — the newest submissions are found at a glance (review of #562, UX «последняя заявка»). */
 function NewMark({ request, now }: { request: RequestBoardItem; now: Date }) {
   if (!isNewInQueue(request, now)) return null
-  return <Badge variant="secondary">новая</Badge>
+  // The kit's filled badge: the secondary fill sat on the muted date line and
+  // read as part of it (pre-acceptance UX pass, item 2).
+  return <Badge>новая</Badge>
 }
 
 function AgeText({ request, now }: { request: RequestBoardItem; now: Date }) {
@@ -603,6 +608,18 @@ function QueueGroupTable({
   return <DataTable table={table} paginated={false} />
 }
 
+/**
+ * The group heading carries the tier (pre-acceptance UX pass, item 2) — size,
+ * weight and colour from the theme's tokens, no box: the decisions and the
+ * payments are the page's work, a debt to a colleague the next thing, the
+ * drafts and the closed groups the archive.
+ */
+const TIER_HEADING: Record<QueueTier, string> = {
+  primary: 'text-lg font-semibold text-foreground',
+  secondary: 'text-base font-medium text-foreground',
+  archived: 'text-sm font-medium text-muted-foreground',
+}
+
 function QueueGroup({
   stage,
   rows,
@@ -639,20 +656,23 @@ function QueueGroup({
   return (
     <section aria-label={group.title} className="space-y-2">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="font-heading text-base font-semibold">
+        <h2 data-tier={group.tier} className="font-heading">
           <Button
             variant="ghost"
             size="sm"
             aria-expanded={!isCollapsed}
             onClick={onToggle}
-            className="-ml-2 gap-1 px-2 text-base font-semibold aria-expanded:bg-transparent hover:bg-muted"
+            className={cn(
+              '-ml-2 gap-1 px-2 aria-expanded:bg-transparent hover:bg-muted',
+              TIER_HEADING[group.tier],
+            )}
           >
             {isCollapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
             {group.title}
           </Button>
         </h2>
         <span className="text-sm text-muted-foreground tabular-nums">{rows.length}</span>
-        {fresh === 0 ? null : <Badge variant="secondary">{newCountLabel(fresh)}</Badge>}
+        {fresh === 0 ? null : <Badge>{newCountLabel(fresh)}</Badge>}
         {group.hint === '' ? null : (
           <span className="hidden text-sm text-muted-foreground md:inline">{group.hint}</span>
         )}
@@ -675,6 +695,63 @@ function QueueGroup({
         <QueueGroupTable rows={rows} columns={columns} sort={sort} onSort={onSort} />
       )}
     </section>
+  )
+}
+
+// ── the latest request ─────────────────────────────────────────────────────
+
+/**
+ * «Последняя заявка: №N · what · payee · amount · age» right under the page
+ * header (pre-acceptance UX pass, item 1 — the owner's «не вижу последнюю
+ * заявку»), led by «Новых за сутки: K» when the last 24 hours brought any. ONE
+ * line, no box; the number and what it is open the request's sheet. Read off
+ * every request the screen holds, whatever the scope and the filters show.
+ */
+function LatestRequestLine({
+  requests,
+  now,
+  context,
+}: {
+  requests: readonly RequestBoardItem[]
+  now: Date
+  context: CellContext
+}) {
+  const latest = latestRequest(requests, now)
+  if (latest === null) return null
+  const { request, fresh } = latest
+  const shown = request.display[context.currency]
+  const amount =
+    shown.kind === 'no_rate'
+      ? formatOriginalMoney(
+          request.amount,
+          request.currency,
+          currencyPrecision(context.references.currencies, request.currency),
+        )
+      : formatDisplayMoney(BigInt(shown.amount), context.currency)
+  const rest = [queuePayee(request).name, amount, latestRequestAge(request.createdAt, now)]
+  return (
+    // One line from the tablet up: what it is gives way (ellipsis) so the
+    // payee, the amount and the age stay whole; a phone lets it wrap.
+    <p
+      role="status"
+      aria-label="Последняя заявка"
+      className="min-w-0 text-sm sm:flex sm:items-baseline sm:gap-x-1.5 sm:text-base sm:whitespace-nowrap"
+    >
+      {fresh === 0 ? null : (
+        <span className="font-semibold sm:shrink-0">{`Новых за сутки: ${fresh} · `}</span>
+      )}
+      <span className="text-muted-foreground sm:shrink-0">Последняя заявка: </span>
+      <Button
+        variant="link"
+        aria-label={`Открыть последнюю заявку №${request.id}`}
+        title={queueRowTitle(request).title}
+        className="inline h-auto max-w-full min-w-0 p-0 text-left align-baseline text-sm font-semibold whitespace-normal text-foreground sm:inline-flex sm:shrink sm:overflow-hidden sm:text-base sm:whitespace-nowrap"
+        onClick={() => context.onOpen(request)}
+      >
+        <span className="sm:min-w-0 sm:truncate">{`№${request.id} · ${queueRowTitle(request).title}`}</span>
+      </Button>
+      <span className="tabular-nums sm:shrink-0">{` · ${rest.join(' · ')}`}</span>
+    </p>
   )
 }
 
@@ -718,6 +795,8 @@ export function RequestsQueue({
 
   return (
     <div className="space-y-6">
+      <LatestRequestLine requests={requests} now={now} context={context} />
+
       {/* THE THREE SUMS (EARS-537) — over every request, whatever is searched
           or filtered; a click shows only that group, a second click restores
           the scope. Type, not cards: the prototype draws them bare. On a phone
