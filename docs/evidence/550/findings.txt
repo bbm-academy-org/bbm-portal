@@ -1,0 +1,2 @@
+approve #43: now in «К оплате» = true
+member row acts visible: 0
