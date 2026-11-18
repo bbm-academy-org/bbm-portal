@@ -272,3 +272,25 @@ export async function settlementsOf(
     )
   return new Map(rows.map((row) => [row.settles!, row.id]))
 }
+
+/**
+ * Which of these items a LIVE reimbursement (any status but `refused` /
+ * `cancelled`) already names — posted or not. The EARS-528 uniqueness reads
+ * live transfers; the bulk act asks it to list such a row instead of failing.
+ */
+export async function liveSettlementsOf(
+  db: Pick<PlatformTx, 'select'>,
+  itemIds: readonly number[],
+): Promise<Map<number, number>> {
+  if (itemIds.length === 0) return new Map()
+  const rows = await db
+    .select({ id: financeIntakeItem.id, settles: financeIntakeItem.settlesItemId })
+    .from(financeIntakeItem)
+    .where(
+      and(
+        inArray(financeIntakeItem.settlesItemId, [...itemIds]),
+        notInArray(financeIntakeItem.status, ['refused', 'cancelled']),
+      ),
+    )
+  return new Map(rows.map((row) => [row.settles!, row.id]))
+}

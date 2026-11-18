@@ -46,6 +46,9 @@ const documentIdsShape = {
   documentIds: z.array(z.number().int().positive()).max(20).optional(),
 }
 
+/** The EARS-548 token the card read the request at; a changed request is refused (EARS-543/544). */
+const snapshotShape = { snapshot: z.string().trim().min(1).max(128) }
+
 const actionSchema = z
   .discriminatedUnion('act', [
     z.object({ act: z.literal('submit') }),
@@ -56,6 +59,7 @@ const actionSchema = z
     // moved is required; the account and the debited amount as EARS-533 says.
     z.object({
       act: z.literal('mark-paid'),
+      ...snapshotShape,
       ...moneyDetailsShape,
       occurredOn: z.iso.date(),
       ...documentIdsShape,
@@ -63,6 +67,7 @@ const actionSchema = z
     // EARS-544 «Отметить возврат»: the refund's date, account and amount.
     z.object({
       act: z.literal('mark-reimbursed'),
+      ...snapshotShape,
       occurredOn: z.iso.date(),
       accountId: z.number().int().positive(),
       amount: z.string().regex(/^\d+$/),
@@ -127,11 +132,13 @@ export async function POST(
           return confirmExpenseRequest(gate.actor, id, moneyDetails(data))
         case 'mark-paid':
           return markExpenseRequestPaid(gate.actor, id, {
+            snapshot: data.snapshot,
             ...moneyDetails(data),
             ...(data.documentIds === undefined ? {} : { documentIds: data.documentIds }),
           })
         case 'mark-reimbursed':
           return markExpenseRequestReimbursed(gate.actor, id, {
+            snapshot: data.snapshot,
             occurredOn: data.occurredOn,
             accountId: data.accountId,
             amount: BigInt(data.amount),

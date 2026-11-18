@@ -48,6 +48,7 @@ import {
   createExpenseRequest,
   createIntakeItem,
   listCounterparties,
+  listExpenseRequests,
   listFinanceDocuments,
   listIntakeItems,
   listAccounts,
@@ -99,6 +100,13 @@ import { seedFinanceAcceptance } from './finance-acceptance-seed'
 import { loadPlatformToolEnv } from './load-env.mjs'
 
 const TAG = 'dev:seed'
+
+/** The EARS-548 token the queue shows the approver — what the card sends with mark-paid (#549). */
+async function queueSnapshotOf(approver: FinanceActor, id: number): Promise<string> {
+  const row = (await listExpenseRequests(approver)).find((request) => request.id === id)
+  if (row?.snapshot == null) throw new Error(`request #${id} carries no approver snapshot`)
+  return row.snapshot
+}
 
 export type DevSeedOptions = {
   /** Defaults to `PLATFORM_DATABASE_URL`; named explicitly by the refusal tests. */
@@ -401,7 +409,9 @@ async function walkRequestTo(
       case 'posted':
         // «Одобрить и отметить оплату» — the one act from `submitted` (EARS-543).
         await ensureDocument()
-        await markExpenseRequestPaid(approver, item.id)
+        await markExpenseRequestPaid(approver, item.id, {
+          snapshot: await queueSnapshotOf(approver, item.id),
+        })
         return { documentsUploaded }
       default:
         break

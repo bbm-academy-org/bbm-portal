@@ -541,7 +541,7 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
     await refuseExpenseRequest(APPROVER, refused.id, 'не наш расход')
     const cancelled = await submitted(MEMBER, ownFunds(refs))
     await cancelExpenseRequest(MEMBER, cancelled.id)
-    const receipt = await upload(APPROVER, [])
+    const receipt = await upload(ENTRY, [])
 
     for (const request of [refused, cancelled]) {
       const refusal = await refusalOf(

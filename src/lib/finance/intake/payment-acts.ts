@@ -38,7 +38,12 @@ import {
   requireProject,
   type FinanceAccountView,
 } from '../references'
-import { formatMinorUnits, intakeLiabilityOf, settlementsOf } from './account-placement'
+import {
+  formatMinorUnits,
+  intakeLiabilityOf,
+  liveSettlementsOf,
+  settlementsOf,
+} from './account-placement'
 import {
   createIntakeItemInTransaction,
   intakeItemToView,
@@ -59,11 +64,20 @@ type IntakeRow = typeof financeIntakeItem.$inferSelect
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export type MarkExpenseRequestPaidInput = IntakePostingMoneyDetails & {
+  /**
+   * The EARS-548 token of the request as the card showed it
+   * (`FinanceExpenseRequestView.snapshot`). A request changed since — an
+   * amount, a note, a receipt, a settlement — is refused, never posted as the
+   * newer version the owner did not see.
+   */
+  snapshot: string
   /** Already-uploaded ready receipts the act attaches to the request (optional). */
   documentIds?: readonly number[]
 }
 
 export type MarkExpenseRequestReimbursedInput = {
+  /** The EARS-548 token of the request as the card showed it — see `MarkExpenseRequestPaidInput`. */
+  snapshot: string
   /** The date the refund left the company account — the transfer's money date. */
   occurredOn: string
   /** The company money account the refund left. */
@@ -101,6 +115,32 @@ function assertMarkableStatus(row: IntakeRow, act: string): void {
     throw new FinanceRefusal(
       `Заявку #${row.id} в статусе «${row.status}» нельзя ${act}: отметка относится к поданной ` +
         'или одобренной, ещё не проведённой заявке (EARS-524/543).',
+    )
+  }
+}
+
+/**
+ * The single acts' stale-read refusal (EARS-543/544, read with EARS-548):
+ * the token the card showed is recomputed under the row lock, from the same
+ * read model the queue builds it from, BEFORE anything is written. This is
+ * the check `snapshotCheckedByCaller` vouches for.
+ */
+async function assertQueueSnapshot(
+  tx: PlatformTx,
+  row: IntakeRow,
+  snapshot: string,
+): Promise<void> {
+  const documents = await readyQueueDocuments(tx, [row.id])
+  const settlements = await settlementsOf(tx, [row.id])
+  const token = expenseRequestQueueSnapshot(
+    intakeItemToView(row),
+    documents.get(row.id) ?? [],
+    settlements.get(row.id) ?? null,
+  )
+  if (token !== snapshot) {
+    throw new FinanceRefusal(
+      `Заявка #${row.id} изменилась после того, как карточка её показала — отметка не ` +
+        'проведена; откройте заявку заново (EARS-543/544, EARS-548).',
     )
   }
 }
@@ -151,17 +191,18 @@ async function assertDebitedAmountNamed(
 export async function markExpenseRequestPaid(
   actor: FinanceActor,
   id: number,
-  input: MarkExpenseRequestPaidInput = {},
+  input: MarkExpenseRequestPaidInput,
 ): Promise<FinanceIntakeItemView> {
   assertFinanceLedgerAccess(actor)
   assertIsoDate(input.occurredOn, 'Дата оплаты')
   const memberId = await requireActorMemberId(actor)
-  const { documentIds, ...details } = input
+  const { documentIds, snapshot, ...details } = input
 
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const row = await lockIntakeItem(tx, id)
     assertExpenseRequestRow(row)
     assertMarkableStatus(row, 'отметить оплаченной')
+    await assertQueueSnapshot(tx, row, snapshot)
     await linkReadyDocumentsInTransaction(tx, documentIds ?? [], row.id, memberId)
     await assertDebitedAmountNamed(tx, row, details)
     return postIntakeItemInTransaction(tx, actor, row.id, {
@@ -191,8 +232,14 @@ export async function markExpenseRequestReimbursed(
   return platformTransaction(financeAuditContext(actor), async (tx) => {
     const row = await lockIntakeItem(tx, id)
     assertExpenseRequestRow(row)
-    await linkReadyDocumentsInTransaction(tx, input.documentIds ?? [], row.id, memberId)
+    await assertQueueSnapshot(tx, row, input.snapshot)
     const account = await requirePayingAccount(tx, input.accountId)
+    // EARS-544's refusals (a refused or cancelled request among them) come
+    // BEFORE the receipts are linked: the 0014/0019 link guard would otherwise
+    // answer first, with a database error instead of a readable refusal.
+    const plan = planReimbursement(row, account.currency, input.amount)
+    if ('refusal' in plan) throw new FinanceRefusal(plan.refusal)
+    await linkReadyDocumentsInTransaction(tx, input.documentIds ?? [], row.id, memberId)
     const { request } = await reimburseInTransaction(tx, actor, memberId, row, {
       account,
       refund: input.amount,
@@ -472,6 +519,10 @@ export async function bulkMarkExpenseRequestsPaid(
     // EARS-548 first: a batch over data the owner did not see posts nothing.
     const documents = await readyQueueDocuments(tx, ids)
     const settlements = await settlementsOf(tx, ids)
+    // A live but not yet posted reimbursement (a manual transfer awaiting its
+    // posting) does not settle the debt yet — the row stays in «Вернуть
+    // сотруднику» — but the posting gate (EARS-528) would refuse a second one.
+    const pendingSettlements = await liveSettlementsOf(tx, ids)
     const changed = input.items.filter(({ id, snapshot }) => {
       const row = rows.get(id)!
       const token = expenseRequestQueueSnapshot(
@@ -493,7 +544,9 @@ export async function bulkMarkExpenseRequestsPaid(
     const candidates: PlannedRow[] = []
     for (const { id } of input.items) {
       const row = rows.get(id)!
-      const reason = staticIneligibility(row, input.group, account, policy, settlements.get(id))
+      const reason =
+        staticIneligibility(row, input.group, account, policy, settlements.get(id)) ??
+        pendingSettlementIneligibility(row, input.group, pendingSettlements.get(id))
       if (reason !== null) {
         excluded.push({ id, reason })
         continue
@@ -609,6 +662,23 @@ function staticIneligibility(
   }
   const plan = planReimbursement(row, account.currency, null)
   return 'refusal' in plan ? plan.refusal : null
+}
+
+/**
+ * EARS-547 «listed with that refusal»: the posting gate's EARS-528 refusal of
+ * a second live reimbursement of one debt, asked before the batch writes, so
+ * the row is listed instead of aborting the whole transaction.
+ */
+function pendingSettlementIneligibility(
+  row: IntakeRow,
+  group: BulkMarkGroup,
+  pendingTransferId: number | undefined,
+): string | null {
+  if (group !== 'reimburse' || pendingTransferId === undefined) return null
+  return (
+    `Долг по заявке #${row.id} уже гасит возмещение #${pendingTransferId}, ещё не проведённое: ` +
+    'второе возмещение того же долга не принимается (EARS-528/547).'
+  )
 }
 
 /** The posting gate's own refusals, asked read-only before the batch writes. */
