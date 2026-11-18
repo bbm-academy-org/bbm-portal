@@ -92,3 +92,22 @@ number (they now show other requests where the earlier ones had been posted);
 S1 (a refused form remounts on the re-read row with fresh defaults and token)
 and S2 (a receipt failing after its act) are behaviours of the screen's state,
 pinned by `tests/unit/finance-requests-queue-ui.spec.ts`, not framed.
+
+## Pre-acceptance UX pass (items 1–9) — re-capture
+
+`ux-pass.ts` (this folder) re-took, on the lead's acceptance stand
+(`http://localhost:3000`, this worktree, acting on nothing), the frames the pass
+changed — 1440 × 900 and 390 × 844, light and dark; `findings-ux-pass.txt`
+lists what it read along the way.
+
+| Frame                                         | Item | State                                                                                      |
+| --------------------------------------------- | ---- | ------------------------------------------------------------------------------------------ |
+| `550/01-queue-default`                        | 1–2  | «Новых за сутки: K · Последняя заявка: №N · …» on one line; the tiered group headings      |
+| `550/11-scope-closed`                         | 2    | the closed groups as the archive tier                                                      |
+| `551/01`, `551/02`                            | 3–5  | section labels; «Нет файлов.» + «Прикрепить файл», no picker; the quiet «Реквизитов … нет» |
+| `551/35-files-attach-opened`                  | 4    | the picker after «Прикрепить файл», with «Не прикреплять»                                  |
+| `551/05-sheet-fact-not-entered`               | 6    | «факт не внесён — укажите списанную сумму…» in the body colour                             |
+| `559/02-default-12m-rub`, `559/06-this-month` | 7, 9 | measured rows in the table, «… · не измерено: причина» muted under it; counters by the sum |
+
+Item 8 (the empty period) has no stand frame: every period on the shared stand
+has currency payments and the pass writes nothing; the unit spec renders it.
