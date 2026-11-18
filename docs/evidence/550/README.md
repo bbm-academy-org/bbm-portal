@@ -20,11 +20,24 @@ Signed in through the real dev Zitadel as `bbm-test` (`finance-approve` +
 password was read from a scratch file into the process env, never into a tool
 call.
 
-Each state: 1440×900 and 390×844, full page; light here (dark for 01 and 04;
-the rest of the dark matrix was captured and judged, not promoted).
-`findings.txt`: no frame scrolls the PAGE sideways at 390 px (the tables scroll
-inside their block); after «Одобрить» the request is in «К оплате»; the member
-sees no row act.
+Each state: 1440×900 and 390×844, full page; light here (dark for 01, 04 and
+11; the rest of the dark matrix was captured and judged, not promoted).
+`findings.txt`: no frame scrolls the page sideways at 390 px; after «Одобрить»
+the request is in «К оплате»; the member sees no row act.
+
+**Re-captured 2026-11-18 after the review of PR #562 (UX 1–8)**, same stand and
+script, every frame replaced. What the frames now show: on a phone each request
+is one stacked row (date · age / who → payee / what / amount + act) and nothing
+scrolls sideways, not even inside a group; the bold line of «На что» is what the
+author wrote, with «№N · purpose» muted under it; the amount is always the last
+column, so a group heading's sum sits on the same right edge as its rows; every
+amount carries two decimals and the original under it uses ₽ / $ / €; «новая»
+marks an open request filed in the last 24 h, and a group heading says «N новых»
+(the drafts stay folded); «Закрытые» shows the payment date under «Оплачено» and
+the refusal reason under «Отклонено», with no empty act column. The bold line
+starts with `[seed:<slug>]` on this stand because `dev:seed` marks its notes that
+way; real notes have no such prefix. The closed seed rows were filed «today»
+(the backdate tweak leaves them alone), which is why their age says «сегодня».
 
 | Frame   | State                                                                                                                                                                                                           |
 | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
