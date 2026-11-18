@@ -124,6 +124,27 @@ await matrix(page, '04-chain-route-opened', async () => {
 })
 await page.keyboard.press('Escape')
 
+// A row with nothing measured opened: its route alone, no «Переплата 0,00 ₽ · —» (review of #563).
+await matrix(page, '08-not-posted-row-opened', async () => {
+  if ((await page.getByRole('dialog').count()) === 0) {
+    await page
+      .getByRole('region', { name: 'По получателям и маршрутам' })
+      .getByRole('row')
+      .filter({ hasText: 'факт не внесён' })
+      .getByRole('button')
+      .first()
+      .click()
+    await page.getByRole('dialog').waitFor()
+  }
+})
+findings.push(
+  `not-measured row sheet description: ${await page
+    .getByRole('dialog')
+    .locator('[data-slot="sheet-description"]')
+    .innerText()}`,
+)
+await page.keyboard.press('Escape')
+
 // ₽ → $: amounts change, the % does not (EARS-566).
 const wordings = async () => page.locator('[data-slot="badge"]').allInnerTexts()
 const rubWordings = await wordings()
