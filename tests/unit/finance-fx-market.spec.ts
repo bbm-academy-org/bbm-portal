@@ -133,6 +133,20 @@ describe('the measured set (EARS-557)', () => {
     ).toBe('—')
     expect(measureIntakeItem(fact(), USD_92)?.route).toBe('Карта RUB · RUB → USD')
   })
+
+  it('EARS-565: a route whose debit currency is not known yet names its source and the document currency, never a «?»', () => {
+    const pending = {
+      status: 'submitted',
+      paidAmount: null,
+      paidCurrency: null,
+      accountName: null,
+      accountCurrency: null,
+    }
+    expect(measureIntakeItem(fact({ ...pending, personalFunds: true }), USD_92)?.route).toBe(
+      'свои средства → USD',
+    )
+    expect(measureIntakeItem(fact(pending), USD_92)?.route).toBe('счёт не указан → USD')
+  })
 })
 
 describe('the market rate (EARS-558)', () => {

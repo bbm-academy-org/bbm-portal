@@ -31,7 +31,7 @@ import {
   seedMember,
   truncateFinanceTables,
 } from './finance-helpers'
-import { truncateAsFixture } from './privilege-helpers'
+import { asMigrator, truncateAsFixture } from './privilege-helpers'
 
 /**
  * The §J market valuation against the really-migrated ledger (spec
@@ -217,7 +217,7 @@ describe('«факт не внесён», read from the intake (EARS-560)', () =
       date: '2026-11-02',
       personalFunds: true,
       payee: 'Entry Clerk',
-      route: 'свои средства · ? → USD',
+      route: 'свои средства → USD',
       fact: null,
       valuation: { status: 'not_posted', statedPaidAmount: null },
     })
@@ -429,5 +429,58 @@ describe('the report reads (#559)', () => {
     })
     expect(entries.map((e) => e.subject)).toEqual(['payment'])
     expect(excludedChains).toEqual([])
+  })
+
+  it('EARS-560: a «факт не внесён» request with no occurred_on is dated by its Moscow submission day — 22:30 UTC on 1 November is 2 November in the period, in the row and in the entry', async () => {
+    const refs = await seedLedger()
+    const pending = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'expense',
+      alreadyPaid: true,
+      occurredOn: '2026-11-02',
+      accountId: refs.rubId,
+      amount: 10_000n,
+      currency: 'USD',
+      purposeId: refs.purposeId,
+      projectId: refs.projectId,
+      counterpartyId: refs.counterpartyId,
+    })
+    await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item
+           set status = 'submitted', account_id = null, personal_funds = true,
+               member_id = ${refs.entryMemberId}, occurred_on = null
+         where id = ${pending.id}
+      `),
+    )
+    // `created_at` is immutable (`0016` §3), so the fixture claims its submission
+    // moment through the migrating connection with user triggers off.
+    await asMigrator(async (client) => {
+      await client.query('alter table core.finance_intake_item disable trigger user')
+      try {
+        await client.query(
+          `update core.finance_intake_item
+              set created_at = timestamptz '2026-11-01 22:30:00+00'
+            where id = $1`,
+          [pending.id],
+        )
+      } finally {
+        await client.query('alter table core.finance_intake_item enable trigger user')
+      }
+    })
+    // The UTC date is 1 November; the Moscow date (UTC+3) is 2 November.
+    expect(await marketIntakeFacts({ period: { from: '2026-11-01', to: '2026-11-01' } })).toEqual(
+      [],
+    )
+    const [row] = await marketIntakeFacts({ period: { from: '2026-11-02', to: '2026-11-02' } })
+    expect(row).toMatchObject({ itemId: pending.id, occurredOn: null, submittedOn: '2026-11-02' })
+    const { entries } = await loadMarketValuation({ from: '2026-11-02', to: '2026-11-02' })
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      subject: 'payment',
+      date: '2026-11-02',
+      month: '2026-11',
+      valuation: { status: 'not_posted' },
+    })
   })
 })

@@ -231,12 +231,53 @@ describe('the period total (EARS-564)', () => {
     expect(router.push).toHaveBeenCalledWith('/p/finance/reports/market-rate?period=quarter')
   })
 
-  it('EARS-564: an empty period says so in both tables and shows a zero total', () => {
+  it('EARS-564: an empty period says so in both tables and shows «—» for every sum, never a 0 that reads as a result', () => {
     renderReport(buildMarketReport([], CONTEXT, ['RUB', 'USD', 'EUR'], {}))
     expect(screen.getAllByText('За этот период платежей в валюте нет')).toHaveLength(2)
     const total = screen.getByRole('group', { name: 'Итого за период' })
-    expect(total.textContent).toContain('Факт 0,00 ₽ · Рынок 0,00 ₽')
+    expect(total.textContent).not.toContain('0,00')
+    expect(total.textContent).toContain('Факт — · Рынок —')
     expect(total.textContent).toContain('ничего не измерено')
+  })
+
+  it('EARS-564: a period that only «факт не внесён» fills shows «—» in the headline and in every «Итого»', () => {
+    const pending = measureIntakeItem(
+      fact({
+        itemId: 4,
+        status: 'submitted',
+        paidAmount: null,
+        paidCurrency: null,
+        accountName: null,
+        accountCurrency: null,
+      }),
+      CONTEXT,
+    )!
+    renderReport(buildMarketReport([pending], CONTEXT, ['RUB', 'USD', 'EUR'], {}))
+    expect(screen.queryByText(/0,00/)).toBe(null)
+    for (const name of ['По месяцам', 'По получателям и маршрутам']) {
+      const footer = within(screen.getByRole('region', { name })).getByText('Итого')
+      expect(footer.closest('tr')?.textContent).toBe('Итого————')
+    }
+  })
+
+  it('EARS-564: a negative total reads «Экономия» with the amount unsigned, the badge «лучше рынка»', () => {
+    const maria = measureIntakeItem(
+      fact({
+        itemId: 2,
+        personalFunds: true,
+        accountName: null,
+        accountCurrency: null,
+        memberName: 'Мария',
+        paidAmount: 901_600n,
+      }),
+      CONTEXT,
+    )!
+    renderReport(buildMarketReport([maria], CONTEXT, ['RUB', 'USD', 'EUR'], {}))
+    const total = screen.getByRole('group', { name: 'Итого за период' })
+    expect(within(total).getByText('Экономия · последние 12 месяцев')).toBeTruthy()
+    expect(within(total).getByText('184,00 ₽')).toBeTruthy()
+    expect(within(total).getByText('лучше рынка на 2,0%')).toBeTruthy()
+    expect(total.textContent).not.toContain('Переплата')
   })
 })
 
@@ -266,6 +307,19 @@ describe('the breakdowns (EARS-565)', () => {
     expect(sheet.textContent).toContain('100 000,00 ₽ → 1 050,00 $')
     expect(within(sheet).getAllByText('+184,00 ₽').length).toBeGreaterThan(0)
     expect(within(sheet).getByText('факт не внесён')).toBeTruthy()
+    // A conversion is in this list too, so the column is «Операция», not «Платёж».
+    expect(within(sheet).getByRole('columnheader', { name: 'Операция' })).toBeTruthy()
+  })
+
+  it('EARS-565: a row with nothing measured describes itself by its route alone — no «Переплата 0,00 ₽ · —»', () => {
+    renderReport()
+    const payees = screen.getByRole('region', { name: 'По получателям и маршрутам' })
+    const rows = within(payees).getAllByRole('button', { name: 'Anthropic' })
+    fireEvent.click(rows[rows.length - 1])
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).getByText('счёт не указан → USD')).toBeTruthy()
+    expect(sheet.textContent).not.toContain('Переплата 0,00')
+    expect(sheet.textContent).not.toContain('· —')
   })
 })
 
@@ -285,6 +339,13 @@ describe('the display currency (EARS-566)', () => {
     expect(screen.getAllByText(/рынка на|как на рынке/).map((node) => node.textContent)).toEqual(
       wordingsBefore,
     )
+    // The % is the rouble one, so in $ a sum's sign may not match it — the page says why.
+    expect(within(total).getByText('% против рынка считается в рублях')).toBeTruthy()
+  })
+
+  it('EARS-566: in ₽ there is no hint about the % — the amount and the % are the same roubles', () => {
+    renderReport()
+    expect(screen.queryByText('% против рынка считается в рублях')).toBe(null)
   })
 
   it('EARS-566: a stored € choice from the requests queue opens the report in €', () => {

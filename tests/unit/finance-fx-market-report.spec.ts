@@ -316,6 +316,73 @@ describe('the breakdowns (EARS-565)', () => {
   })
 })
 
+describe('rounding and order (lead review of #563)', () => {
+  it('EARS-565: Рынок and Переплата are allocated and Факт = Рынок + Переплата, so a payment exactly at the market reads 0 in every table and currency', () => {
+    // EUR 840 for 84 000 ₽ at 100,00 is exactly at the market: in $ both sides
+    // are 913,043478… $. A USD 100 payment for 9 200,18 ₽ leaves 0,1957 ¢ in $.
+    // Allocating Факт and Рынок separately handed the EUR row the Факт's spare
+    // cent and not the Рынок's — «+0,01 $» next to «как на рынке».
+    const context = ctx([
+      rate('USD', '2026-10-13', '92.0000'),
+      rate('EUR', '2026-10-13', '100.0000'),
+      rate('USD', '2026-11-13', '92.0000'),
+      rate('EUR', '2026-11-13', '100.0000'),
+    ])
+    const entries = [
+      measureIntakeItem(
+        fact({
+          itemId: 1,
+          occurredOn: '2026-10-13',
+          amount: 84_000n,
+          currency: 'EUR',
+          paidAmount: 8_400_000n,
+          counterpartyName: 'ИП Гончарова',
+        }),
+        context,
+      )!,
+      measureIntakeItem(fact({ itemId: 2, paidAmount: 920_018n }), context)!,
+    ]
+    const report = buildMarketReport(entries, context, CURRENCIES, {})
+    const atMarket = [
+      report.months.find((row) => row.label === '2026-10')!,
+      report.payees.find((row) => row.label === 'ИП Гончарова')!,
+    ]
+    for (const row of atMarket) {
+      expect(row.wording).toBe('как на рынке')
+      for (const currency of CURRENCIES) expect(row.figures[currency].overpayment).toBe('0')
+      for (const currency of CURRENCIES) {
+        expect(row.items[0].figures[currency]?.overpayment).toBe('0')
+      }
+    }
+    expectTablesSumToTotal(report)
+    for (const row of [...report.months, ...report.payees, report.total]) {
+      for (const currency of CURRENCIES) {
+        const f = row.figures[currency]
+        expect(BigInt(f.fact)).toBe(BigInt(f.market) + BigInt(f.overpayment))
+      }
+    }
+    for (const item of report.payees.flatMap((row) => row.items)) {
+      for (const currency of CURRENCIES) {
+        const f = item.figures[currency]!
+        expect(BigInt(f.fact)).toBe(BigInt(f.market) + BigInt(f.overpayment))
+      }
+    }
+  })
+
+  it('EARS-565: months run newest first; payees and routes by Переплата, the largest overpayment first, unmeasured rows last', () => {
+    const report = buildMarketReport(scenario(), NOV, CURRENCIES, {})
+    expect(report.months.map((row) => row.label)).toEqual(['2026-11', '2026-10'])
+    expect(report.payees.map((row) => [row.label, row.figures.RUB.overpayment])).toEqual([
+      ['RUB → USDT → USD', '340000'],
+      ['Anthropic', '18400'],
+      ['GPU Cloud', '10000'],
+      ['Мария', '-18400'],
+      ['Anthropic', '0'],
+    ])
+    expect(report.payees.at(-1)?.measured).toEqual({ payments: 0, chains: 0 })
+  })
+})
+
 describe('the display currency (EARS-566)', () => {
   it('EARS-566: ₽ → $ re-presents every amount at the CBR rate of each item’s date, and leaves every percentage unchanged', () => {
     const report = buildMarketReport(scenario(), NOV, CURRENCIES, {})
