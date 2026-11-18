@@ -103,7 +103,7 @@ describe('the details sheet «Курс против рынка» block — serve
     })
   })
 
-  it('EARS-563/566: the percentage is the rouble one in every display currency — only the amounts change', () => {
+  it('EARS-563: the percentage is the rouble one in every display currency — only the amounts change', () => {
     const block = requestMarketBlock(entryOf(), CONTEXT)
     if (block.kind !== 'measured') throw new Error('measured expected')
     expect(block.display.RUB).not.toEqual(block.display.USD)

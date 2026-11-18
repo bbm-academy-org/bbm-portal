@@ -180,9 +180,9 @@ const DEFERRALS_BY_ISSUE = {
       'spec 339 §I (#547): the queue screen — groups, sums, columns, sort, search, filters, role-gated row acts, the display-currency switch and the «нет курса» / «без N заявок» rendering. The list is EMPTY because #550 landed: EARS-536…541/549/551 are asserted in tests/unit/finance-request-queue-model.spec.ts, finance-request-queue-display.spec.ts and finance-requests-queue-ui.spec.ts.',
   },
   551: {
-    ids: ['EARS-542', 'EARS-546', 'EARS-563'],
+    ids: [],
     reason:
-      'spec 339 §I (#547): the details sheet with «как оплатить» and the «без чека» marker, in the sheet and in the queue rows, and the §J «Курс против рынка» block (EARS-563, added 2026-11-18); #551 writes the tests.',
+      'spec 339 §I (#547): the details sheet with «как оплатить», the «без чека» marker in the sheet and the queue rows, the mark-paid / reimburse forms and the bulk dialog, and the §J «Курс против рынка» block (EARS-563). The list is EMPTY because #551 landed: EARS-542/546/563 are asserted in tests/unit/finance-request-sheet-model.spec.ts, finance-request-market-block.spec.ts and finance-requests-queue-ui.spec.ts.',
   },
   559: {
     ids: [],

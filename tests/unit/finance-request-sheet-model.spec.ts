@@ -167,8 +167,9 @@ describe('the details sheet — acts of the stage (EARS-542)', () => {
     }
   })
 
-  it('EARS-548: an act needs the list row’s snapshot token — a row without one offers none', () => {
-    expect(acts(item({ snapshot: null }))).toEqual([])
+  it('EARS-548: a money act needs the list row’s snapshot token — a row without one offers none', () => {
+    expect(acts(item({ snapshot: null }))).toEqual(['Одобрить', 'Отклонить'])
+    expect(acts(item({ snapshot: null, status: 'approved' }))).toEqual(['Отозвать'])
   })
 
   it('EARS-509: the author keeps their own acts beside the approver’s', () => {
@@ -421,7 +422,7 @@ describe('the details sheet — «Курс против рынка» (EARS-563)'
     })
   })
 
-  it('EARS-563/566: switching ₽ → $ changes the amounts, not the percentage', () => {
+  it('EARS-563: switching ₽ → $ changes the amounts, not the percentage', () => {
     const view = marketBlockView(posted, 'USD', REFERENCES)
     expect(view).toMatchObject({
       kind: 'measured',
