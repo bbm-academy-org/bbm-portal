@@ -29,9 +29,10 @@ import {
 export const MARKET_RATE_WINDOW_DAYS = 14
 
 /**
- * The dollar stablecoins CBR does not quote, valued at the USD rate: USDT by
- * decision 41 (EARS-558), USDC by the lead's ruling on #559 (2026-11-18) — the
- * same peg, so the same rule, here and in the queue display that imports it.
+ * The USD-pegged stablecoins CBR does not quote, valued at the USD rate
+ * (EARS-551/558): USDT by decision 41, USDC by the lead's decision on #559
+ * (2026-11-18) — the same peg, so the same rule, here and in the queue display
+ * that imports it.
  */
 const USD_PEGGED = new Set(['USDT', 'USDC'])
 
@@ -262,11 +263,16 @@ function payeeOf(fact: MarketIntakeFact): string {
   return fact.counterpartyName ?? fact.memberName ?? '—'
 }
 
-/** A payment's route (EARS-565): the paying account or «свои средства», and the pair. */
+/**
+ * A payment's route (EARS-565): the paying account or «свои средства», and the
+ * pair. While the debit currency is not known yet (an already-paid request not
+ * posted), the route names its source and the document currency only — never a
+ * «?» standing in for the missing side (review of #563).
+ */
 function paymentRoute(fact: MarketIntakeFact): string {
-  const via = fact.personalFunds ? 'свои средства' : (fact.accountName ?? '—')
-  const debit = fact.accountCurrency ?? fact.paidCurrency ?? '?'
-  return `${via} · ${debit} → ${fact.currency}`
+  const via = fact.personalFunds ? 'свои средства' : (fact.accountName ?? 'счёт не указан')
+  const debit = fact.accountCurrency ?? fact.paidCurrency
+  return debit === null ? `${via} → ${fact.currency}` : `${via} · ${debit} → ${fact.currency}`
 }
 
 /** One intake item valued — or `null` when it is not in the §J set. */
@@ -466,9 +472,11 @@ export type MarketGroup = {
 }
 
 /**
- * The report's breakdowns (EARS-562/565): by `month`, ascending; or by
- * `payee_route` — payments by payee and route first, then chains by route —
- * each row weighted on its own entries, so a table sums to the period total.
+ * The report's breakdowns (EARS-562/565): by `month`, newest first; or by
+ * `payee_route` — payment rows by payee and route, chain rows by route — the
+ * largest rouble Переплата first and the rows with nothing measured last, so
+ * «на чём переплатили» is the top of the table (review of #563). Each row is
+ * weighted on its own entries, so a table sums to the period total.
  */
 export function groupMarket(
   entries: readonly MarketEntry[],
@@ -495,9 +503,19 @@ export function groupMarket(
     }
     group.entries.push(entry)
   }
-  return [...groups.entries()]
+  const byKey = [...groups.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([, group]) => ({ ...group, totals: aggregateMarket(group.entries) }))
+  if (by === 'month') return byKey.reverse()
+  // A stable sort: equal Переплата keeps the key order above.
+  return byKey.sort((a, b) => {
+    const left = a.totals.overpayment?.amount
+    const right = b.totals.overpayment?.amount
+    if (left === undefined || right === undefined) {
+      return left === right ? 0 : left === undefined ? 1 : -1
+    }
+    return left === right ? 0 : left > right ? -1 : 1
+  })
 }
 
 // ── the display currency ─────────────────────────────────────────────────────

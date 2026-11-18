@@ -431,7 +431,7 @@ describe('the report reads (#559)', () => {
     expect(excludedChains).toEqual([])
   })
 
-  it('EARS-560: a «факт не внесён» request with no occurred_on is dated by its Moscow submission day — 22:30 UTC on 1 November is 2 November in the period, in the row and in the entry', async () => {
+  it('EARS-560: the Moscow submission day is read near UTC midnight — 22:30 UTC on 1 November is 2 November — and an already-paid request cannot lose its occurred_on, so that day never stands in for a payment date', async () => {
     const refs = await seedLedger()
     const pending = await createIntakeItem(ENTRY, {
       source: 'manual',
@@ -449,7 +449,7 @@ describe('the report reads (#559)', () => {
       tx.execute(sql`
         update core.finance_intake_item
            set status = 'submitted', account_id = null, personal_funds = true,
-               member_id = ${refs.entryMemberId}, occurred_on = null
+               member_id = ${refs.entryMemberId}
          where id = ${pending.id}
       `),
     )
@@ -469,11 +469,23 @@ describe('the report reads (#559)', () => {
       }
     })
     // The UTC date is 1 November; the Moscow date (UTC+3) is 2 November.
+    const [row] = await marketIntakeFacts({ itemId: pending.id })
+    expect(row).toMatchObject({ occurredOn: '2026-11-02', submittedOn: '2026-11-02' })
+    // The `coalesce(occurred_on, Moscow submission day)` fallback of the period
+    // filter and of EARS-560's date has no row to act on: `0015`'s money-facts
+    // check refuses an already-paid request without occurred_on.
+    const refused = await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item set occurred_on = null where id = ${pending.id}
+      `),
+    ).then(
+      () => null,
+      (error: { cause?: { constraint?: string } }) => error.cause?.constraint ?? null,
+    )
+    expect(refused).toBe('finance_intake_item_money_facts')
     expect(await marketIntakeFacts({ period: { from: '2026-11-01', to: '2026-11-01' } })).toEqual(
       [],
     )
-    const [row] = await marketIntakeFacts({ period: { from: '2026-11-02', to: '2026-11-02' } })
-    expect(row).toMatchObject({ itemId: pending.id, occurredOn: null, submittedOn: '2026-11-02' })
     const { entries } = await loadMarketValuation({ from: '2026-11-02', to: '2026-11-02' })
     expect(entries).toHaveLength(1)
     expect(entries[0]).toMatchObject({

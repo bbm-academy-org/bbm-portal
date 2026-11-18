@@ -10,10 +10,15 @@
  * sums to the period total, so the total of a column is rounded ONCE from the
  * exact sum (EARS-559/562) and the rows share it by the largest-remainder
  * method: every row is its exact value rounded down, and the units left over go
- * to the rows with the largest remainders. Переплата is then Факт − Рынок of
- * the figures shown, in the total and in every row, so no column and no row
- * disagrees with its neighbours. The % never comes from these figures: it is
- * the weighted % of the exact rouble values (EARS-562/566).
+ * to the rows with the largest remainders. The two columns allocated are
+ * **Рынок** and **Переплата** (the exact, signed Факт − Рынок); **Факт** is
+ * then Рынок + Переплата of the figures shown, in the total, in every row and
+ * in every item. Allocating Факт and Рынок on their own let a row whose exact
+ * Переплата is 0 show ±1 unit beside «как на рынке», and one payment read two
+ * different sums in the two tables (review of #563); allocating the difference
+ * itself keeps an exact zero a zero. The price: Факт may differ from
+ * `round(Σ Факт)` by one unit. The % never comes from these figures: it is the
+ * weighted % of the exact rouble values (EARS-562/566).
  *
  * Bigints cross into the browser as strings; nothing here is stored (EARS-553).
  */
@@ -58,9 +63,11 @@ function firstOfMonth(year: number, monthIndex: number): string {
 }
 
 /**
- * The payment dates a period covers, ending today (Moscow). «Последние 12
- * месяцев» is the current month and the eleven before it, whole — so the month
- * table always has twelve calendar rows to fill, never a sliver of a month.
+ * The payment dates a period covers, ending today (Moscow) — so a payment
+ * dated in the future is outside every period but «Всё время». «Последние 12
+ * месяцев» is the current month and the eleven before it, whole: no month row
+ * is a sliver of a month. The month table lists only the months that have
+ * entries.
  */
 export function marketReportPeriod(key: MarketReportPeriodKey, today: string): MarketPeriod {
   const year = Number(today.slice(0, 4))
@@ -125,7 +132,7 @@ const ZERO: ExactAmount = { numerator: 0n, denominator: 1n }
 
 // ── the report ───────────────────────────────────────────────────────────────
 
-/** Minimal units of one display currency, as strings; Переплата = Факт − Рынок. */
+/** Minimal units of one display currency, as strings; Факт = Рынок + Переплата. */
 export type MarketReportFigures = {
   fact: string
   market: string
@@ -196,15 +203,15 @@ function stats(totals: MarketTotals): MarketReportStats {
   }
 }
 
-type ExactFigures = { fact: ExactAmount; market: ExactAmount; noDisplayRate: number }
+type ExactFigures = { market: ExactAmount; overpayment: ExactAmount; noDisplayRate: number }
 
 function exactFigures(
   entries: readonly MarketEntry[],
   currency: string,
   ctx: MarketContext,
 ): ExactFigures {
-  let fact = ZERO
   let market = ZERO
+  let overpayment = ZERO
   let noDisplayRate = 0
   for (const entry of entries) {
     if (entry.valuation.status !== 'measured') continue
@@ -213,17 +220,22 @@ function exactFigures(
       noDisplayRate += 1
       continue
     }
-    fact = addExact(fact, converted.fact)
     market = addExact(market, converted.market)
+    overpayment = addExact(overpayment, difference(converted.fact, converted.market))
   }
-  return { fact, market, noDisplayRate }
+  return { market, overpayment, noDisplayRate }
 }
 
-function figures(fact: bigint, market: bigint, noDisplayRate: number): MarketReportFigures {
+function difference(a: ExactAmount, b: ExactAmount): ExactAmount {
+  return addExact(a, { numerator: -b.numerator, denominator: b.denominator })
+}
+
+/** Рынок and Переплата as shown; Факт is their sum, so the three always agree. */
+function figures(market: bigint, overpayment: bigint, noDisplayRate: number): MarketReportFigures {
   return {
-    fact: fact.toString(),
+    fact: (market + overpayment).toString(),
     market: market.toString(),
-    overpayment: (fact - market).toString(),
+    overpayment: overpayment.toString(),
     noDisplayRate,
   }
 }
@@ -241,12 +253,12 @@ function reportItem(
       itemFigures[currency] = null
       continue
     }
-    const fact = roundExact(converted.fact)
     const market = roundExact(converted.market)
+    const overpayment = roundExact(difference(converted.fact, converted.market))
     itemFigures[currency] = {
-      fact: fact.toString(),
+      fact: (market + overpayment).toString(),
       market: market.toString(),
-      overpayment: (fact - market).toString(),
+      overpayment: overpayment.toString(),
     }
   }
   const base = {
@@ -296,10 +308,14 @@ function table(
   }))
   for (const currency of currencies) {
     const exact = groups.map((group) => exactFigures(group.entries, currency, ctx))
-    const facts = splitByLargestRemainder(exact.map((row) => row.fact))
     const markets = splitByLargestRemainder(exact.map((row) => row.market))
+    const overpayments = splitByLargestRemainder(exact.map((row) => row.overpayment))
     rows.forEach((row, index) => {
-      row.figures[currency] = figures(facts[index], markets[index], exact[index].noDisplayRate)
+      row.figures[currency] = figures(
+        markets[index],
+        overpayments[index],
+        exact[index].noDisplayRate,
+      )
     })
   }
   return rows
@@ -321,8 +337,8 @@ export function buildMarketReport(
   for (const currency of currencies) {
     const exact = exactFigures(entries, currency, ctx)
     totalFigures[currency] = figures(
-      roundExact(exact.fact),
       roundExact(exact.market),
+      roundExact(exact.overpayment),
       exact.noDisplayRate,
     )
   }

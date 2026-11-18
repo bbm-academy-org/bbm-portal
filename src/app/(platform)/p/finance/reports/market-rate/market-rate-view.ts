@@ -52,6 +52,38 @@ export function formatMoney(minor: string, currency: DisplayCurrencyCode): strin
   return formatDisplayMoney(BigInt(minor), currency)
 }
 
+/**
+ * The period's headline (EARS-559/564): a positive or zero sum is «Переплата»
+ * with its sign; a negative one reads «Экономия» with the amount unsigned —
+ * the badge beside it still says «лучше рынка на X,X%» (review of #563).
+ */
+export function headline(
+  minor: string,
+  currency: DisplayCurrencyCode,
+): { label: 'Переплата' | 'Экономия'; amount: string } {
+  const value = BigInt(minor)
+  return value < 0n
+    ? { label: 'Экономия', amount: formatDisplayMoney(-value, currency) }
+    : { label: 'Переплата', amount: formatOverpayment(minor, currency) }
+}
+
+/**
+ * Whether a total or a row has a sum to show in this display currency: some
+ * item measured and converted. Otherwise every sum reads «—», never a 0 that
+ * reads as a result (EARS-560's «never a silent zero»).
+ */
+export function hasSum(
+  stats: Pick<MarketReportStats, 'measured'>,
+  figures: { noDisplayRate: number },
+): boolean {
+  return stats.measured.payments + stats.measured.chains - figures.noDisplayRate > 0
+}
+
+/** «Гончаров А. В.» keeps its initials together: a name breaks only between words. */
+export function keepInitialsTogether(name: string): string {
+  return name.replace(/(\p{L}\.) (?=\p{L}\.)/gu, '$1\u00a0')
+}
+
 /** «3 платежа · 1 конвертация» — what a total is made of (EARS-564). */
 export function measuredLabel(measured: MarketReportStats['measured']): string {
   const parts: string[] = []

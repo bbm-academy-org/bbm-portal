@@ -40,6 +40,9 @@ import {
 import {
   formatMoney,
   formatOverpayment,
+  hasSum,
+  headline,
+  keepInitialsTogether,
   leftOutNotes,
   measuredLabel,
   monthLabel,
@@ -120,9 +123,12 @@ function Wording({ percentTenths, wording }: { percentTenths: string | null; wor
   return <Badge variant={wordingVariant(percentTenths)}>{wording}</Badge>
 }
 
+/** An amount never breaks between its digits or before its currency sign. */
 function Num({ children }: { children: React.ReactNode }) {
-  return <span className="tabular-nums">{children}</span>
+  return <span className="whitespace-nowrap tabular-nums">{children}</span>
 }
+
+const DASH = <span className="text-muted-foreground">—</span>
 
 function rowTitle(row: MarketReportRow): string {
   return row.kind === 'month' ? monthLabel(row.label) : row.label
@@ -131,11 +137,6 @@ function rowTitle(row: MarketReportRow): string {
 /** A numeric column's header and cells sit on the right edge, digits under digits. */
 function Right({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn('w-full text-right', className)}>{children}</div>
-}
-
-/** A row with nothing measured has no sum to show — «—», never a 0 that reads as a result. */
-function hasMeasured(stats: { measured: { payments: number; chains: number } }): boolean {
-  return stats.measured.payments + stats.measured.chains > 0
 }
 
 /** «Факт X» / «Рынок Y» as two short lines — the phone's stand-in for the two columns. */
@@ -189,7 +190,7 @@ function rowColumns(
           ) : row.kind === 'chain' ? (
             <p className="text-xs text-muted-foreground">Конвертация</p>
           ) : null}
-          {narrow && hasMeasured(row) ? (
+          {narrow && hasSum(row, row.figures[currency]) ? (
             <FactMarketLines
               fact={row.figures[currency].fact}
               market={row.figures[currency].market}
@@ -199,7 +200,7 @@ function rowColumns(
           {notes.length > 0 ? (
             <p className="text-xs text-muted-foreground">{notes.join(' · ')}</p>
           ) : null}
-          {narrow && hasMeasured(row) ? (
+          {narrow && hasSum(row, row.figures[currency]) ? (
             <div className="pt-1">
               <Wording percentTenths={row.percentTenths} wording={row.wording} />
             </div>
@@ -220,15 +221,15 @@ function rowColumns(
       size,
       footer: () => (
         <Right className="font-medium">
-          <Num>{format(totals[id], currency)}</Num>
+          {hasSum(total, totals) ? <Num>{format(totals[id], currency)}</Num> : DASH}
         </Right>
       ),
       cell: ({ row: { original: row } }) => (
         <Right>
-          {hasMeasured(row) ? (
+          {hasSum(row, row.figures[currency]) ? (
             <Num>{format(row.figures[currency][id], currency)}</Num>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            DASH
           )}
         </Right>
       ),
@@ -258,17 +259,30 @@ function itemTitle(item: MarketReportItem): React.ReactNode {
   }
   return (
     <Link href={requestHref(item.id)} className="font-medium underline-offset-4 hover:underline">
-      {`Заявка №${item.id}${item.payee === null ? '' : ` · ${item.payee}`}`}
+      <span className="whitespace-nowrap">{`Заявка №${item.id}`}</span>
+      {item.payee === null ? '' : ` · ${keepInitialsTogether(item.payee)}`}
     </Link>
   )
 }
 
-function itemAmount(item: MarketReportItem, precisions: Record<string, number>): string {
-  const original = (side: { amount: string; currency: string }) =>
-    formatOriginalMoney(side.amount, side.currency, precisions[side.currency] ?? 2)
-  return item.arrived === null
-    ? original(item.amount)
-    : `${original(item.amount)} → ${original(item.arrived)}`
+/** The document amount — and, for a chain, what arrived — each amount unbroken. */
+function ItemAmount({
+  item,
+  precisions,
+}: {
+  item: MarketReportItem
+  precisions: Record<string, number>
+}) {
+  const original = (side: { amount: string; currency: string }) => (
+    <Num>{formatOriginalMoney(side.amount, side.currency, precisions[side.currency] ?? 2)}</Num>
+  )
+  return item.arrived === null ? (
+    original(item.amount)
+  ) : (
+    <>
+      {original(item.amount)} → {original(item.arrived)}
+    </>
+  )
 }
 
 function itemState(item: MarketReportItem, currency: DisplayCurrencyCode): string | null {
@@ -290,7 +304,8 @@ function itemColumns(
   return [
     {
       id: 'what',
-      header: 'Платёж',
+      // Payments and conversions both: «Операция», not «Платёж» (review of #563).
+      header: 'Операция',
       size: 200,
       cell: ({ row: { original: item } }) => {
         const figures = item.figures[currency]
@@ -299,7 +314,7 @@ function itemColumns(
           <div className="min-w-0 space-y-0.5 whitespace-normal">
             <div>{itemTitle(item)}</div>
             <p className="text-xs text-muted-foreground">
-              {formatDate(item.date)} · <Num>{itemAmount(item, precisions)}</Num>
+              {formatDate(item.date)} · <ItemAmount item={item} precisions={precisions} />
             </p>
             {item.subject === 'payment' ? (
               <p className="text-xs text-muted-foreground">{item.route}</p>
@@ -399,6 +414,8 @@ export function MarketRateReport({ report, period, periods, precisions }: Market
   const totals = total.figures[currency]
   const notes = leftOutNotes(total, totals.noDisplayRate, currency, total.excludedChains)
   const periodLabel = periods.find((option) => option.value === period)?.label ?? ''
+  const totalShown = hasSum(total, totals)
+  const head = headline(totals.overpayment, currency)
 
   // No manual memo: the React Compiler memoizes these on their real inputs.
   const monthColumns = rowColumns(currency, narrow, 'Месяц', total, setOpened)
@@ -459,16 +476,22 @@ export function MarketRateReport({ report, period, periods, precisions }: Market
       </div>
 
       <div role="group" aria-label="Итого за период" className="space-y-2">
-        <p className="text-sm text-muted-foreground">Переплата · {periodLabel.toLowerCase()}</p>
+        <p className="text-sm text-muted-foreground">
+          {`${totalShown ? head.label : 'Переплата'} · ${periodLabel.toLowerCase()}`}
+        </p>
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-heading text-4xl font-semibold tracking-tight tabular-nums">
-            {formatOverpayment(totals.overpayment, currency)}
+            {totalShown ? head.amount : '—'}
           </span>
           <Wording percentTenths={total.percentTenths} wording={total.wording} />
         </div>
+        {currency !== 'RUB' && totalShown ? (
+          // EARS-566: the % is the rouble one, so a sum in $ / € may not share its sign.
+          <p className="text-xs text-muted-foreground">% против рынка считается в рублях</p>
+        ) : null}
         <p className="text-sm">
-          Факт <Num>{formatMoney(totals.fact, currency)}</Num> · Рынок{' '}
-          <Num>{formatMoney(totals.market, currency)}</Num>
+          Факт {totalShown ? <Num>{formatMoney(totals.fact, currency)}</Num> : '—'} · Рынок{' '}
+          {totalShown ? <Num>{formatMoney(totals.market, currency)}</Num> : '—'}
         </p>
         <p className="text-sm text-muted-foreground">
           {[measuredLabel(total.measured), ...notes].join(' · ')}
@@ -495,7 +518,7 @@ export function MarketRateReport({ report, period, periods, precisions }: Market
             data-bbm-ui
             side="right"
             showCloseButton={false}
-            className="gap-0 overflow-y-auto data-[side=right]:w-full"
+            className="gap-0 overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
           >
             <SheetHeader className="gap-2 pr-12">
               <SheetTitle className="font-heading text-xl font-semibold tracking-tight">
@@ -504,8 +527,13 @@ export function MarketRateReport({ report, period, periods, precisions }: Market
               <SheetDescription>
                 {[
                   opened.route ?? (opened.kind === 'chain' ? 'Конвертация' : null),
-                  `Переплата ${formatOverpayment(opened.figures[currency].overpayment, currency)}`,
-                  opened.wording,
+                  // A row with nothing measured has no Переплата to name (review of #563).
+                  ...(hasSum(opened, opened.figures[currency])
+                    ? [
+                        `Переплата ${formatOverpayment(opened.figures[currency].overpayment, currency)}`,
+                        opened.wording,
+                      ]
+                    : []),
                 ]
                   .filter(Boolean)
                   .join(' · ')}

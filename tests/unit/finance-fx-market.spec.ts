@@ -448,10 +448,11 @@ describe('amount-weighted aggregates (EARS-562)', () => {
     })
     const entries = [a, b, c].map((f) => measureIntakeItem(f, AT_100)!)
     const byMonth = groupMarket(entries, 'month')
-    expect(byMonth.map((g) => g.key)).toEqual(['2026-10', '2026-11'])
+    // Newest month first (review of #563).
+    expect(byMonth.map((g) => g.key)).toEqual(['2026-11', '2026-10'])
     // October: Факт 10 100 + 1 000 = 11 100, Рынок 10 000 + 1 100 = 11 100 → 0,0 %.
-    expect(byMonth[0].totals.overpayment).toMatchObject({ amount: 0n, percentTenths: 0n })
-    expect(byMonth[1].totals.overpayment).toMatchObject({ amount: -10_000n, percentTenths: -91n })
+    expect(byMonth[1].totals.overpayment).toMatchObject({ amount: 0n, percentTenths: 0n })
+    expect(byMonth[0].totals.overpayment).toMatchObject({ amount: -10_000n, percentTenths: -91n })
 
     const byPayee = groupMarket(entries, 'payee_route')
     const anthropic = byPayee.find((g) => g.payee === 'Anthropic')!
