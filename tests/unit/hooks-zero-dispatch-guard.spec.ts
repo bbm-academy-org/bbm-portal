@@ -1,12 +1,14 @@
+// @vitest-environment node
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import { isCodexExecutorTurn } from '../../tools/hooks/codex-subagent-turn-recorder.mjs'
+import { ZERO_DISPATCH_STATE_DIR_REL, stateFilePath } from '../../tools/hooks/shared.mjs'
 import {
   ARM_BYPASS_FLAG,
   BYPASS_ENV,
@@ -549,7 +551,13 @@ describe('zero-dispatch-guard: сообщение блока', () => {
   })
 })
 
-describe('zero-dispatch-guard как процесс', () => {
+// Every case below is a chain of real `node` spawns of the hook, run one after
+// another because each reads the counter the previous one wrote. Measured
+// 2026-11-18 on the Windows dev box: ~110 ms a spawn inside Vitest, the
+// heaviest case 15 spawns ≈ 1.5 s alone — but a loaded box stretched a burst of
+// ten spawns to 4.5 s, i.e. that same case to ~7 s. Vitest's 5 s default then
+// measures the machine, not the guard (#566); 20 s still fails a hung hook.
+describe('zero-dispatch-guard как процесс', { timeout: 20_000 }, () => {
   // Состояние гарда живёт в дереве, которое он резолвит из cwd вызова. Тест
   // даёт ему СВОЁ дерево во временном каталоге: не-git-каталог отправляет
   // `mainRepoRoot` в откат на `CLAUDE_PROJECT_DIR`, и счётчик кладётся туда,
@@ -608,6 +616,46 @@ describe('zero-dispatch-guard как процесс', () => {
     })
   }
 
+  /**
+   * A session that has ALREADY reached the block, without paying THRESHOLD
+   * spawns per case (#566). The counter state is driven once, through the real
+   * process, and its bytes are copied under a fresh session id: the state holds
+   * no session id, only the counter, so the copy is exactly what that many real
+   * mutations would have left. The counting path itself keeps its own cases
+   * («N-я мутация…», «Codex lead…»); the cases that seed are about what happens
+   * AT the block (escapes, the kill switch, a dispatch), not about reaching it.
+   */
+  const seeded = { belowBlock: '', atBlock: '' }
+
+  beforeAll(() => {
+    const session = `zdg-seed-${Date.now()}`
+    const statePath = stateFilePath(FAKE_TREE, ZERO_DISPATCH_STATE_DIR_REL, session)
+    for (let i = 1; i <= ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
+      const res = runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
+      expect(res.status).toBe(i < ZERO_DISPATCH_BLOCK_THRESHOLD ? 0 : 2)
+      if (i === ZERO_DISPATCH_BLOCK_THRESHOLD - 1)
+        seeded.belowBlock = readFileSync(statePath, 'utf8')
+    }
+    seeded.atBlock = readFileSync(statePath, 'utf8')
+  })
+
+  /** A fresh session whose counter stands where `snapshot` left it. */
+  function seededSession(prefix: string, snapshot: 'belowBlock' | 'atBlock') {
+    const session = `${prefix}-${Date.now()}`
+    const statePath = stateFilePath(FAKE_TREE, ZERO_DISPATCH_STATE_DIR_REL, session)
+    mkdirSync(dirname(statePath), { recursive: true })
+    writeFileSync(statePath, seeded[snapshot])
+    return session
+  }
+
+  /**
+   * «Never blocks» is shown one call past the block point, not at 2× it: the
+   * counter saturates at the threshold, and a session that is exempt (executor
+   * turn, dispatched lead) is not counted at all — every further call replays
+   * an identical state and adds spawns, not evidence (#566).
+   */
+  const PAST_BLOCK = ZERO_DISPATCH_BLOCK_THRESHOLD + 1
+
   it('мусор во входе даёт exit 0 (fail-open)', () => {
     expect(runHook('zero-dispatch-guard.mjs', '{ это не JSON').status).toBe(0)
   })
@@ -646,7 +694,7 @@ describe('zero-dispatch-guard как процесс', () => {
 
     const executorPayload = JSON.parse(codexPayload(session, turn))
     expect(isCodexExecutorTurn(executorPayload, { root: FAKE_TREE })).toBe(true)
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+    for (let i = 0; i < PAST_BLOCK; i += 1) {
       expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
         0,
       )
@@ -655,7 +703,7 @@ describe('zero-dispatch-guard как процесс', () => {
     const leadTurn = `turn-parent-${Date.now()}`
     const leadPayload = JSON.parse(codexPayload(session, leadTurn))
     expect(isCodexExecutorTurn(leadPayload, { root: FAKE_TREE })).toBe(false)
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+    for (let i = 0; i < PAST_BLOCK; i += 1) {
       expect(
         runHook('zero-dispatch-guard.mjs', codexPayload(session, leadTurn), LEAD_ENV).status,
       ).toBe(0)
@@ -680,7 +728,7 @@ describe('zero-dispatch-guard как процесс', () => {
         LEAD_ENV,
       ).status,
     ).toBe(0)
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+    for (let i = 0; i < PAST_BLOCK; i += 1) {
       expect(runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV).status).toBe(
         0,
       )
@@ -711,11 +759,8 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('a Codex spawn rejected by another PreToolUse hook does not disarm the guard', () => {
-    const session = `zdg-codex-dispatch-${Date.now()}`
+    const session = seededSession('zdg-codex-dispatch', 'belowBlock')
     const turn = `turn-dispatch-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
-      runHook('zero-dispatch-guard.mjs', codexPayload(session, turn), LEAD_ENV)
-    }
     const attempt = codexPayload(session, turn, 'spawn_agent')
     expect(runHook('zero-dispatch-guard.mjs', attempt, LEAD_ENV).status).toBe(0)
     expect(runHook('agent-model-guard.mjs', attempt, LEAD_ENV).status).toBe(2)
@@ -723,10 +768,7 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('рубильник BBM_HOOKS_DISABLE=1 снимает блок', () => {
-    const session = `zdg-kill-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
-      runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
-    }
+    const session = seededSession('zdg-kill', 'atBlock')
     expect(
       runHook('zero-dispatch-guard.mjs', leadPayload(session), {
         ...LEAD_ENV,
@@ -760,14 +802,7 @@ describe('zero-dispatch-guard как процесс', () => {
   }
 
   it('канал A: инлайн-префикс в команде пропускает ровно следующую мутацию (без env)', () => {
-    const session = `zdg-inline-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
-      runHook(
-        'zero-dispatch-guard.mjs',
-        shellPayload(session, 'gh issue edit 1 --body x'),
-        LEAD_ENV,
-      )
-    }
+    const session = seededSession('zdg-inline', 'atBlock')
     // Блок стоит.
     expect(
       runHook(
@@ -797,11 +832,8 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('канал A в PowerShell: своя форма префикса работает через продакшен-путь', () => {
-    const session = `zdg-ps-${Date.now()}`
+    const session = seededSession('zdg-ps', 'atBlock')
     const cmd = 'gh issue edit 1 --body x'
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
-      runHook('zero-dispatch-guard.mjs', shellPayload(session, cmd, 'PowerShell'), LEAD_ENV)
-    }
     expect(
       runHook('zero-dispatch-guard.mjs', shellPayload(session, cmd, 'PowerShell'), LEAD_ENV).status,
     ).toBe(2)
@@ -815,11 +847,8 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('bash-форма в вызове PowerShell блокируется и причину НЕ расходует (MAJOR 2)', () => {
-    const session = `zdg-ps-wrong-${Date.now()}`
+    const session = seededSession('zdg-ps-wrong', 'atBlock')
     const cmd = 'gh issue edit 1 --body x'
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
-      runHook('zero-dispatch-guard.mjs', shellPayload(session, cmd, 'PowerShell'), LEAD_ENV)
-    }
     // Bash-префикс в PowerShell: сама команда упала бы, поэтому побегом это не
     // считается — блок стоит, а сообщение называет правильную форму.
     const wrong = runHook(
@@ -841,16 +870,13 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('чередование двух причин побег не размножает (продакшен-путь, MAJOR 1)', () => {
-    const session = `zdg-alt-${Date.now()}`
+    const session = seededSession('zdg-alt', 'atBlock')
     const edit = (reason: string) =>
       runHook(
         'zero-dispatch-guard.mjs',
         shellPayload(session, `DISPATCH_BYPASS="${reason}" gh issue edit 1`),
         LEAD_ENV,
       )
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
-      runHook('zero-dispatch-guard.mjs', shellPayload(session, 'gh issue edit 1'), LEAD_ENV)
-    }
     expect(edit('причина r1').status).toBe(0)
     expect(edit('причина r2').status).toBe(0)
     expect(edit('причина r1').status).toBe(2)
@@ -860,10 +886,7 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('канал B: файл-побег, взведённый НЕ мутирующей командой, пропускает Edit (без env)', () => {
-    const session = `zdg-file-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
-      runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
-    }
+    const session = seededSession('zdg-file', 'atBlock')
     const blocked = runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
     expect(blocked.status).toBe(2)
     const bypassPath = bypassPathFor(session)
@@ -895,10 +918,7 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('побег без причины побегом не является (продакшен-путь)', () => {
-    const session = `zdg-noreason-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD; i += 1) {
-      runHook('zero-dispatch-guard.mjs', shellPayload(session, 'git commit -m x'), LEAD_ENV)
-    }
+    const session = seededSession('zdg-noreason', 'atBlock')
     expect(
       runHook(
         'zero-dispatch-guard.mjs',
@@ -909,14 +929,11 @@ describe('zero-dispatch-guard как процесс', () => {
   })
 
   it('Agent снимает блок на всю оставшуюся сессию', () => {
-    const session = `zdg-reset-${Date.now()}`
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD - 1; i += 1) {
-      runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV)
-    }
+    const session = seededSession('zdg-reset', 'belowBlock')
     expect(runHook('zero-dispatch-guard.mjs', leadPayload(session, 'Agent'), LEAD_ENV).status).toBe(
       0,
     )
-    for (let i = 0; i < ZERO_DISPATCH_BLOCK_THRESHOLD * 2; i += 1) {
+    for (let i = 0; i < PAST_BLOCK; i += 1) {
       expect(runHook('zero-dispatch-guard.mjs', leadPayload(session), LEAD_ENV).status).toBe(0)
     }
   })
