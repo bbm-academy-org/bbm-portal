@@ -1,10 +1,11 @@
 // @vitest-environment node
-import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { existsSync, readdirSync } from 'node:fs'
+import { availableParallelism } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 /**
  * `pnpm boundaries` — the module-boundary rules the platform database adds
@@ -36,15 +37,72 @@ const DEPCRUISE_BIN = resolve(
 )
 const FIXTURES = resolve(REPO_ROOT, 'tools', 'lint', 'guard-tests', 'fixtures', 'boundaries')
 
-function cruiseFixture(name: string) {
+type Cruise = { code: number; output: string }
+
+/**
+ * Every case is one dependency-cruiser CLI run, and most of a run is the CLI
+ * loading its own module graph (measured 2026-11-18 on the Windows dev box:
+ * `dependency-cruise --version` ≈ 0.95 s, a fixture cruise ≈ 1.2 s, the real
+ * tree ≈ 3.3 s). Sixteen of them back to back made this file ~20–40 s and
+ * pushed single cases past Vitest's 5 s under machine load (#566). The runs are
+ * independent — each has its own cwd and reads nothing another writes — so
+ * they start together, a bounded pool at a time, ONCE per file, and the cases
+ * read the settled results. Still the real CLI, real config, real exit code.
+ */
+function runCruise(cwd: string): Promise<Cruise> {
+  return new Promise((settle) => {
+    execFile(
+      process.execPath,
+      [DEPCRUISE_BIN, 'src', '--config', CONFIG, '--output-type', 'err'],
+      { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        // A non-zero exit arrives as a numeric `error.code`; a failed spawn or a
+        // signal reads as -1, as `spawnSync`'s null status did.
+        const code = error ? (typeof error.code === 'number' ? error.code : -1) : 0
+        settle({ code, output: `${stdout ?? ''}${stderr ?? ''}` })
+      },
+    )
+  })
+}
+
+async function cruiseAll(dirs: string[], width: number): Promise<Map<string, Cruise>> {
+  const results = new Map<string, Cruise>()
+  const queue = [...dirs]
+  const worker = async () => {
+    for (let dir = queue.shift(); dir !== undefined; dir = queue.shift()) {
+      results.set(dir, await runCruise(dir))
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(width, dirs.length) }, worker))
+  return results
+}
+
+let cruises = new Map<string, Cruise>()
+
+beforeAll(
+  async () => {
+    const fixtureDirs = readdirSync(FIXTURES, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => resolve(FIXTURES, entry.name))
+    cruises = await cruiseAll(
+      [...fixtureDirs, REPO_ROOT],
+      Math.max(2, Math.min(8, availableParallelism())),
+    )
+  },
+  // The whole file's cruising happens in this one hook. Measured 2026-11-18 on
+  // the Windows dev box: the serial file took 40.5 s inside a loaded full
+  // `pnpm test:unit`, and one fixture cruise alone hit 7.8 s. Vitest's 10 s
+  // hook default would turn machine load into a red unit tier; 60 s still
+  // fails a genuinely hung cruise.
+  60_000,
+)
+
+function cruiseFixture(name: string): Cruise {
   const cwd = resolve(FIXTURES, name)
   expect(existsSync(cwd)).toBe(true)
-  const res = spawnSync(
-    process.execPath,
-    [DEPCRUISE_BIN, 'src', '--config', CONFIG, '--output-type', 'err'],
-    { cwd, encoding: 'utf8' },
-  )
-  return { code: res.status ?? -1, output: `${res.stdout ?? ''}${res.stderr ?? ''}` }
+  const result = cruises.get(cwd)
+  if (!result) throw new Error(`fixture ${name} was not cruised in beforeAll`)
+  return result
 }
 
 describe('module-must-not-import-foreign-tables', () => {
@@ -177,12 +235,9 @@ describe('the workspace registry boundary (spec 311 EARS-456/EARS-457, D-3)', ()
 
 describe('the real tree', () => {
   it('is clean under the same rules (this is `pnpm boundaries`)', () => {
-    const res = spawnSync(
-      process.execPath,
-      [DEPCRUISE_BIN, 'src', '--config', CONFIG, '--output-type', 'err'],
-      { cwd: REPO_ROOT, encoding: 'utf8' },
-    )
-    expect(`${res.stdout ?? ''}${res.stderr ?? ''}`).not.toContain('error')
-    expect(res.status).toBe(0)
+    const res = cruises.get(REPO_ROOT)
+    expect(res).toBeDefined()
+    expect(res?.output).not.toContain('error')
+    expect(res?.code).toBe(0)
   })
 })
