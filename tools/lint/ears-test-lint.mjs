@@ -189,9 +189,19 @@ const DEFERRALS_BY_ISSUE = {
       'spec 339 §I (#547): the queue screen — groups, sums, columns, sort, search, filters, role-gated row acts, the display-currency switch and the «нет курса» / «без N заявок» rendering; #550 writes the tests. EARS-535 (stage derivation) is owned by #549, which builds the read model.',
   },
   551: {
-    ids: ['EARS-542', 'EARS-546'],
+    ids: ['EARS-542', 'EARS-546', 'EARS-563'],
     reason:
-      'spec 339 §I (#547): the details sheet with «как оплатить» and the «без чека» marker, in the sheet and in the queue rows; #551 writes the tests.',
+      'spec 339 §I (#547): the details sheet with «как оплатить» and the «без чека» marker, in the sheet and in the queue rows, and the §J «Курс против рынка» block (EARS-563, added 2026-11-18); #551 writes the tests.',
+  },
+  558: {
+    ids: ['EARS-557', 'EARS-558', 'EARS-559', 'EARS-560', 'EARS-561', 'EARS-562'],
+    reason:
+      'spec 339 §J (#547, owner decision 41): the market-valuation read model — the measured set, the CBR market side with its 14-day window and USDT as USD, the overpayment amount and %, the «факт не внесён» / «без курса» exclusions, conversion chains and amount-weighted aggregates; #558 writes the tests (and the EARS-553 write-path assertion, whose id is already covered).',
+  },
+  559: {
+    ids: ['EARS-564', 'EARS-565', 'EARS-566'],
+    reason:
+      'spec 339 §J (#547): the «Курс против рынка» report on /p/finance/reports/market-rate — period totals, the month and payee / route breakdowns and the display currency; #559 writes the tests.',
   },
 }
 
