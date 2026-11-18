@@ -13,7 +13,7 @@
  * Nothing in the ledger reads this file (EARS-553, asserted by
  * `tests/unit/finance-fx-display-rule.spec.ts`).
  */
-import { and, desc, eq, inArray, lte, max } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lte, max } from 'drizzle-orm'
 
 import { getPlatformDb } from '@/lib/platform/db/client'
 import { financeCurrency } from '@/lib/platform/db/schema/finance/finance-currency'
@@ -61,6 +61,37 @@ export async function rateOn(currency: string, date: string): Promise<FxRate | n
     .orderBy(desc(financeFxRate.rateDate))
     .limit(1)
   return row ?? null
+}
+
+/**
+ * Every stored quote of `currencies` effective from `from` through `to`,
+ * inclusive — one read for a valuation over many dates (§J, EARS-558), which
+ * then picks per date with `pickRateOn`'s rule.
+ */
+export async function rateSeries(
+  currencies: readonly string[],
+  from: string,
+  to: string,
+): Promise<FxRate[]> {
+  const quoted = currencies.filter((c) => c !== 'RUB')
+  if (quoted.length === 0) return []
+  return getPlatformDb()
+    .select({
+      currency: financeFxRate.currency,
+      rateDate: financeFxRate.rateDate,
+      nominal: financeFxRate.nominal,
+      valueRub: financeFxRate.valueRub,
+    })
+    .from(financeFxRate)
+    .where(
+      and(
+        eq(financeFxRate.source, FX_SOURCE_CBR),
+        inArray(financeFxRate.currency, quoted),
+        gte(financeFxRate.rateDate, from),
+        lte(financeFxRate.rateDate, to),
+      ),
+    )
+    .orderBy(financeFxRate.rateDate)
 }
 
 /** The newest effective date stored — what the stale-rates notice reads (EARS-552). */

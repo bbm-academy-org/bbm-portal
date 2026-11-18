@@ -327,3 +327,42 @@ export type {
   DisplayRatePostingFacts,
   DisplayRateRequestSnapshot,
 } from './fx/display-rate'
+
+// ── §J market valuation — Рынок / Факт / Переплата (spec 339 §J, #558) ────────
+// A comparison reading over the ledger and the CBR store: computed at read
+// time, never stored, used only by the requests surfaces and the §J report
+// (EARS-553's allowlist).
+export {
+  aggregateMarket,
+  classifyIntakeItem,
+  displayMarketTotals,
+  groupMarket,
+  MARKET_RATE_WINDOW_DAYS,
+  marketQuoteCurrency,
+  measureChain,
+  measureIntakeItem,
+  overpaymentOf,
+  overpaymentWording,
+  pickMarketRate,
+} from './fx/market'
+export type {
+  DisplayMarketTotals,
+  MarketChainEntry,
+  MarketContext,
+  MarketEntry,
+  MarketGroup,
+  MarketPaymentEntry,
+  MarketTotals,
+  MarketValuation,
+  Overpayment,
+} from './fx/market'
+export {
+  loadMarketContext,
+  loadMarketEntries,
+  loadMarketValuation,
+  marketEntryForItem,
+  marketRateOn,
+} from './fx/market-valuation'
+export type { MarketPeriod } from './fx/market-valuation'
+export { rateSeries } from './fx/store'
+export type { MarketChainFact, MarketChainLeg, MarketIntakeFact } from './market-facts'
