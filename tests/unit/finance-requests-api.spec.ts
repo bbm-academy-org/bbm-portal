@@ -214,7 +214,7 @@ describe('/p/finance/api/requests read model', () => {
     state.listCurrencies.mockResolvedValue([
       { code: 'RUB', name: 'Российский рубль', precision: 2, retiredAt: null },
       { code: 'USD', name: 'Доллар США', precision: 2, retiredAt: null },
-      { code: 'USDC', name: 'USD Coin', precision: 2, retiredAt: null },
+      { code: 'DAI', name: 'Dai', precision: 2, retiredAt: null },
     ])
     state.listExpenseRequests.mockResolvedValue([
       { ...request, id: 41, stage: 'pay', hasDocument: false, settledBy: null, snapshot: 'tok-41' },
@@ -222,7 +222,8 @@ describe('/p/finance/api/requests read model', () => {
         ...request,
         id: 42,
         amount: 100_00n,
-        currency: 'USDC',
+        // A coin no peg rule maps to a CBR currency (USDT / USDC are asked as USD, #559).
+        currency: 'DAI',
         memberId: 16,
         stage: 'pay',
         hasDocument: false,
@@ -252,7 +253,7 @@ describe('/p/finance/api/requests read model', () => {
     expect(body.requests[1]).toMatchObject({
       memberId: 16,
       memberName: 'Антон Сидоров',
-      display: { RUB: { kind: 'no_rate', currency: 'USDC' } },
+      display: { RUB: { kind: 'no_rate', currency: 'DAI' } },
     })
   })
 

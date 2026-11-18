@@ -30,6 +30,7 @@ const context: QueueDisplayContext = {
     ['EUR', 2],
     ['USDT', 2],
     ['USDC', 2],
+    ['DAI', 2],
   ]),
   quote: (currency, date) => pickRateOn(SERIES, currency, date),
 }
@@ -110,9 +111,19 @@ describe('the queue display amounts (EARS-549/550/551)', () => {
   })
 
   it('EARS-551: a currency CBR does not quote has no rate — never a zero, never a guess', () => {
-    const shown = queueDisplayAmounts(request({ currency: 'USDC' }), null, context)
-    expect(shown.RUB).toEqual({ kind: 'no_rate', currency: 'USDC', date: '2026-11-18' })
-    expect(shown.USD).toEqual({ kind: 'no_rate', currency: 'USDC', date: '2026-11-18' })
+    // DAI: a coin no peg rule maps to a CBR currency (USDT and USDC are asked as USD, #559).
+    const shown = queueDisplayAmounts(request({ currency: 'DAI' }), null, context)
+    expect(shown.RUB).toEqual({ kind: 'no_rate', currency: 'DAI', date: '2026-11-18' })
+    expect(shown.USD).toEqual({ kind: 'no_rate', currency: 'DAI', date: '2026-11-18' })
+  })
+
+  it('EARS-551: a USDC request is converted at the USD rate, the same peg rule as USDT and §J (#559)', () => {
+    const usdc = queueDisplayAmounts(request({ currency: 'USDC' }), null, context)
+    const usd = queueDisplayAmounts(request({ currency: 'USD' }), null, context)
+    expect(usdc.RUB).toMatchObject({
+      kind: 'converted',
+      amount: (usd.RUB as { amount: string }).amount,
+    })
   })
 
   it('EARS-551: a date before the stored series has no rate', () => {

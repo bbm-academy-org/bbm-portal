@@ -183,4 +183,11 @@ describe('/p/finance F1b overview (spec 338 EARS-325)', () => {
     expect(html).toContain('href="/p/finance/requests"')
     expect(html).toContain('Заявки')
   })
+  it('EARS-564: links «Курс против рынка» from the header, beside «Заявки»', async () => {
+    const page = await import('@/app/(platform)/p/finance/page')
+    const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }))
+
+    expect(html).toContain('href="/p/finance/reports/market-rate"')
+    expect(html.indexOf('Курс против рынка')).toBeLessThan(html.indexOf('>Заявки<'))
+  })
 })
