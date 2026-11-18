@@ -1103,7 +1103,11 @@ no CBR quote and is valued as USD (decision 41).
   converted 1:1, never a silent zero.
 - **EARS-561.** The system shall measure every recorded conversion operation
   (spec 338 EARS-318, `src/lib/finance/conversions.ts`, multi-step chains
-  such as RUB → USDT → USD included), not reversed, as one **chain**: Факт =
+  such as RUB → USDT → USD included) as one **chain**. An operation is a
+  chain when it owns at least one `finance_conversion_step`, carries no
+  purpose, is itself no reversal (`reverses` is empty) and has not been
+  reversed; a reversal of a conversion, a same-currency transfer and an
+  income own no step and are never chains. For a chain: Факт =
   what left the source money account in the operation (its net outflow, the
   fees it bore included), valued in roubles; Рынок = what arrived on the
   target money account (its net inflow, net of fees), valued in roubles —
@@ -1113,10 +1117,19 @@ no CBR quote and is valued as USD (decision 41).
   intake expense's own posting builds (Prior-decisions change 4) belong to
   that payment (EARS-557), not to a separate chain. A chain's **route** is
   its currency path in step order («RUB → USDT → USD»).
+
+  _Revised 2026-11-18 (#558, lead's re-review of #560): the chain definition
+  is now stated by the ledger's shape. The previous version read «The system
+  shall measure every recorded conversion operation (…), not reversed, as one
+  **chain**: Факт = …», which left a reversal of a conversion (it copies the
+  null purpose) and a plain same-currency transfer readable as chains._
+
 - **EARS-562.** Every aggregate of payments and chains — a period, a month,
   a payee, a route — shall be weighted by amount: Σ Переплата = Σ Факт −
   Σ Рынок and its % = Σ Факт / Σ Рынок − 1 over the measured items only
-  (EARS-560), never the mean of the items' percentages.
+  (EARS-560), never the mean of the items' percentages. The % is computed
+  from the rouble figures (EARS-558), so no display currency changes it
+  (EARS-566).
 - **EARS-563.** WHEN the details sheet (EARS-542) shows a posted
   foreign-currency payment or a «факт не внесён» request (EARS-560), it
   shall carry a «Курс против рынка» block:
@@ -1150,9 +1163,18 @@ no CBR quote and is valued as USD (decision 41).
   of EARS-549 (₽ / $ / €, the same remembered per-viewer choice as the
   requests queue), converting each item's rouble figures at the CBR rate of
   its own payment date before any sum; a percentage shall not change with
-  the display currency. IF the display currency has no rate for an item's
-  date under EARS-558's rule, THEN that item shall be left out of the
-  displayed sums and counted «без курса: N», as in EARS-551.
+  the display currency — it is the EARS-562 % of the rouble figures of every
+  measured item. IF the display currency has no rate for an item's date
+  under EARS-558's rule, THEN that item shall be left out of the displayed
+  sums and counted «без курса: N», as in EARS-551; it still counts in the
+  percentage, which no display-currency rate enters.
+
+  _Revised 2026-11-18 (#558, lead's re-review of #560): the previous version
+  ended «…a percentage shall not change with the display currency. IF the
+  display currency has no rate for an item's date under EARS-558's rule, THEN
+  that item shall be left out of the displayed sums and counted «без курса:
+  N», as in EARS-551.» — read literally, dropping such an item from the sums
+  would have moved the % with the display currency._
 
 ## CRUD check (task-cycle stage 1a)
 

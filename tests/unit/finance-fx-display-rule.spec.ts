@@ -201,6 +201,20 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
     'displayRateBasis',
     'roundExact',
     'moscowToday',
+    // §J — the market valuation read model (EARS-557…562, #558).
+    'rateSeries',
+    'pickMarketRate',
+    'marketRateOn',
+    'classifyIntakeItem',
+    'measureIntakeItem',
+    'measureChain',
+    'overpaymentOf',
+    'overpaymentWording',
+    'aggregateMarket',
+    'groupMarket',
+    'displayMarketTotals',
+    'loadMarketEntries',
+    'marketEntryForItem',
   ]
   const FX_CONSUMERS_ALLOWED = [
     FX_DIR,
@@ -232,6 +246,53 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
       })
       .map((f) => f.path)
     expect(offenders).toEqual([])
+  })
+
+  // The §J read model reads the ledger through its READ functions (EARS-553,
+  // rewritten 2026-11-18). Following every relative / `@/lib/finance` import
+  // from the fx files catches the barrel too: `@/lib/finance` re-exports the
+  // writers, so an fx file importing it reaches them.
+  it('EARS-553: no fx file reaches a ledger write path, directly or through what it imports', () => {
+    const WRITE_PATHS = [
+      'src/lib/finance/operations.ts',
+      'src/lib/finance/conversions.ts',
+      'src/lib/finance/intake/posting.ts',
+      'src/lib/finance/index.ts',
+    ]
+    const WRITERS =
+      /\b(recordOperation\w*|recordConversion\w*|appendPostings|postIntakeItem\w*|reverseOperation)\b/
+    const byPath = new Map(files.map((f) => [f.path, f.text]))
+    const resolveImport = (from: string, spec: string): string | null => {
+      let base: string
+      if (spec.startsWith('@/')) base = `src/${spec.slice(2)}`
+      else if (spec.startsWith('.')) base = join(dirname(from), spec).replaceAll('\\', '/')
+      else return null
+      if (!base.startsWith('src/lib/finance')) return null
+      for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, base]) {
+        if (byPath.has(candidate)) return candidate
+      }
+      return null
+    }
+    const fxFiles = files.filter((f) => f.path.startsWith(FX_DIR)).map((f) => f.path)
+    expect(fxFiles).toEqual(expect.arrayContaining(['src/lib/finance/fx/market.ts']))
+    const reached = new Set<string>()
+    const queue = [...fxFiles]
+    while (queue.length > 0) {
+      const path = queue.pop() as string
+      if (reached.has(path)) continue
+      reached.add(path)
+      const code = stripComments(byPath.get(path) ?? '')
+      for (const match of code.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)) {
+        const target = resolveImport(path, match[1])
+        if (target !== null) queue.push(target)
+      }
+    }
+    expect([...reached].filter((p) => WRITE_PATHS.includes(p))).toEqual([])
+    for (const path of reached) {
+      expect(stripComments(byPath.get(path) ?? ''), path).not.toMatch(WRITERS)
+    }
+    // The read model does read the ledger — through a read function outside fx.
+    expect(reached.has('src/lib/finance/market-facts.ts')).toBe(true)
   })
 
   it('EARS-553: the fx directory writes no ledger table', () => {
