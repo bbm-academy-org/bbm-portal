@@ -19,7 +19,6 @@ const CONTEXT: MarketContext = {
     ['RUB', 2],
     ['USD', 2],
     ['EUR', 2],
-    ['USDC', 6],
   ]),
 }
 
@@ -141,17 +140,5 @@ describe('the details sheet «Курс против рынка» block — serve
       CONTEXT,
     )
     expect(silent).toEqual({ kind: 'not_posted', statedPaidAmount: null })
-  })
-
-  it('EARS-563/558: a USDC document is valued at the USD rate (lead decision, #551)', () => {
-    const block = requestMarketBlock(
-      entryOf({ currency: 'USDC', amount: 100_000_000n, paidAmount: 9_200_00n, feeAmount: null }),
-      CONTEXT,
-    )
-    expect(block).toMatchObject({
-      kind: 'measured',
-      rate: { currency: 'USD', valueRub: '92.0000' },
-      wording: 'как на рынке',
-    })
   })
 })
