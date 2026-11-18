@@ -7,6 +7,7 @@ import {
   displayMarketTotals,
   groupMarket,
   MARKET_RATE_WINDOW_DAYS,
+  marketQuoteCurrency,
   measureChain,
   measureIntakeItem,
   overpaymentOf,
@@ -40,8 +41,11 @@ const PRECISIONS = new Map([
   ['USDT', 6],
 ])
 
-function ctx(series: FxRate[]): MarketContext {
-  return { series, precisions: PRECISIONS }
+function ctx(
+  series: FxRate[],
+  precisions: ReadonlyMap<string, number> = PRECISIONS,
+): MarketContext {
+  return { series, precisions }
 }
 
 const USD_92 = ctx([rate('USD', FRIDAY, '92.0000'), rate('EUR', FRIDAY, '100.0000')])
@@ -156,6 +160,21 @@ describe('the market rate (EARS-558)', () => {
     })
     const v = measured(
       measureIntakeItem(fact({ amount: 100_000_000n, currency: 'USDT' }), USD_92), // 100 USDT
+    )
+    expect(v.overpayment.marketRub).toBe(920_000n)
+  })
+
+  it('EARS-558: a USDC document is valued at the USD rate too — the same peg, the same rule as USDT (lead ruling on #559)', () => {
+    expect(marketQuoteCurrency('USDC')).toBe('USD')
+    expect(pickMarketRate(USD_92.series, 'USDC', FRIDAY)).toMatchObject({
+      currency: 'USD',
+      valueRub: '92.0000',
+    })
+    const v = measured(
+      measureIntakeItem(
+        fact({ amount: 10_000n, currency: 'USDC' }),
+        ctx([...USD_92.series], new Map([...PRECISIONS, ['USDC', 2]])),
+      ),
     )
     expect(v.overpayment.marketRub).toBe(920_000n)
   })
